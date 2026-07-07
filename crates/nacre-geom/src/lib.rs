@@ -7,16 +7,18 @@
 //! 절대원칙 4).
 //!
 //! M1 defined [`Plane`] and [`Line`]; M3 adds [`Circle`] (the full-circle
-//! carrier), with `Cylinder`/`Sphere`/`Nurbs` and the `Curve::Intersection`
+//! carrier) and [`Cylinder`], with `Sphere`/`Nurbs` and the `Curve::Intersection`
 //! variant to follow. That intersection variant (holding `Handle<Surface>`) is
 //! the sole reason geom will later depend on `nacre-store`; today it uses no
 //! `Handle` and has no store dependency.
 
 mod circle;
+mod cylinder;
 mod line;
 mod plane;
 
 pub use circle::Circle;
+pub use cylinder::Cylinder;
 pub use line::Line;
 pub use plane::Plane;
 
@@ -24,10 +26,11 @@ use nacre_math::Point3;
 
 /// A surface — the exact truth of a face's geometry.
 ///
-/// Single-variant for now so topology can hold `Handle<Surface>`; variants grow
-/// in M3. **Not `Copy`**: the coming `Nurbs(NurbsSurface)` variant owns
-/// heap-allocated control points, so this type is non-`Copy` from the start to
-/// match its eventual nature.
+/// Single-variant for now so topology can hold `Handle<Surface>`; a
+/// `Cylinder(Cylinder)` variant (the [`Cylinder`] type now exists), `Sphere`,
+/// and `Nurbs` arrive in M3 when wired. **Not `Copy`**: the coming
+/// `Nurbs(NurbsSurface)` variant owns heap-allocated control points, so this
+/// type is non-`Copy` from the start to match its eventual nature.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Surface {
     Plane(Plane),
