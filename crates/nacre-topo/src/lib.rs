@@ -16,8 +16,8 @@ mod topology;
 pub use adjacency::Adjacency;
 pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
 
-use nacre_geom::{Curve, Line, Plane, Surface};
-use nacre_math::Point3;
+use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
+use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
 
 /// Provenance of a vertex or edge (design §4, overview 절대원칙 4).
@@ -177,6 +177,161 @@ impl Model {
             cavities: vec![],
         })
     }
+
+    /// Add a closed cylinder solid and return it: the axis runs from `base` along
+    /// `axis` for `height`, with the given `radius`.
+    ///
+    /// Built as the standard **seam b-rep** (V2/E3/F3): two seam vertices, two
+    /// full-circle rim edges (`bounds: Some([seam, seam])`, start == end), one
+    /// straight seam edge, a cylindrical lateral face whose loop uses the seam
+    /// edge twice (opposite orientation), and two planar caps (each a
+    /// single-half-edge rim loop). This forms a valid CW-complex (Euler χ = 2)
+    /// that [`validate`](../nacre_validate/fn.validate.html) accepts — a closed
+    /// periodic surface needs a seam vertex, so the rims are `Some([v, v])`, not
+    /// `bounds: None` (that form is for a standalone full circle; §4).
+    ///
+    /// `radius`/`height` must be positive and `axis` nonzero (caller bug →
+    /// panic). Every element is [`Origin::Constructed`]. Does **not** rebuild
+    /// adjacency — call [`Model::rebuild_adjacency`] once after all additions.
+    pub fn add_cylinder(
+        &mut self,
+        base: Point3,
+        axis: Vector3,
+        radius: f64,
+        height: f64,
+    ) -> Handle<Solid> {
+        debug_assert!(
+            radius > 0.0 && height > 0.0,
+            "cylinder needs positive radius and height"
+        );
+        let d = axis.normalize().expect("cylinder axis must be nonzero");
+        let u = d
+            .any_perpendicular()
+            .expect("a unit axis has a perpendicular");
+        let c0 = base;
+        let c1 = base + d * height;
+        let p_bot = c0 + u * radius; // seam point on the bottom rim (angle 0)
+        let p_top = c1 + u * radius; // seam point on the top rim
+
+        let v_bot = self.vertices.push(Vertex {
+            point: p_bot,
+            origin: Origin::Constructed,
+        });
+        let v_top = self.vertices.push(Vertex {
+            point: p_top,
+            origin: Origin::Constructed,
+        });
+
+        // Rims are full circles seamed at their vertex (start == end); the seam is
+        // a straight edge joining the two rim seam points.
+        let bottom = {
+            let curve = self.curves.push(Curve::Circle(
+                Circle::from_center_normal(c0, d, u, radius).expect("non-degenerate rim"),
+            ));
+            self.edges.push(Edge {
+                curve,
+                bounds: Some([v_bot, v_bot]),
+                origin: Origin::Constructed,
+            })
+        };
+        let top = {
+            let curve = self.curves.push(Curve::Circle(
+                Circle::from_center_normal(c1, d, u, radius).expect("non-degenerate rim"),
+            ));
+            self.edges.push(Edge {
+                curve,
+                bounds: Some([v_top, v_top]),
+                origin: Origin::Constructed,
+            })
+        };
+        let seam = {
+            let curve = self.curves.push(Curve::Line(
+                Line::through_points(p_bot, p_top).expect("positive height"),
+            ));
+            self.edges.push(Edge {
+                curve,
+                bounds: Some([v_bot, v_top]),
+                origin: Origin::Constructed,
+            })
+        };
+
+        // Lateral cylindrical face: one loop wrapping the seam twice (opposite).
+        let lateral = {
+            let surface = self.surfaces.push(Surface::Cylinder(
+                Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
+            ));
+            let outer = Loop {
+                half_edges: vec![
+                    HalfEdge {
+                        edge: bottom,
+                        forward: true,
+                    },
+                    HalfEdge {
+                        edge: seam,
+                        forward: true,
+                    },
+                    HalfEdge {
+                        edge: top,
+                        forward: false,
+                    },
+                    HalfEdge {
+                        edge: seam,
+                        forward: false,
+                    },
+                ],
+            };
+            self.faces.push(Face {
+                surface,
+                outer,
+                inner: vec![],
+                orientation: Orientation::Forward,
+            })
+        };
+        // Bottom cap: outward normal −d, the bottom rim reversed.
+        let bottom_cap = {
+            let surface = self.surfaces.push(Surface::Plane(
+                Plane::from_point_normal(c0, -d).expect("nonzero axis"),
+            ));
+            let outer = Loop {
+                half_edges: vec![HalfEdge {
+                    edge: bottom,
+                    forward: false,
+                }],
+            };
+            self.faces.push(Face {
+                surface,
+                outer,
+                inner: vec![],
+                orientation: Orientation::Forward,
+            })
+        };
+        // Top cap: outward normal +d, the top rim forward.
+        let top_cap = {
+            let surface = self.surfaces.push(Surface::Plane(
+                Plane::from_point_normal(c1, d).expect("nonzero axis"),
+            ));
+            let outer = Loop {
+                half_edges: vec![HalfEdge {
+                    edge: top,
+                    forward: true,
+                }],
+            };
+            self.faces.push(Face {
+                surface,
+                outer,
+                inner: vec![],
+                orientation: Orientation::Forward,
+            })
+        };
+
+        let shell = self.shells.push(Shell {
+            faces: vec![lateral, bottom_cap, top_cap],
+        });
+        self.solids.push(Solid {
+            outer: shell,
+            cavities: vec![],
+        })
+    }
 }
 
 #[cfg(test)]
@@ -313,6 +468,84 @@ mod tests {
         assert_eq!(v - e + f, 2);
     }
 
+    // --- cylinder (seam b-rep) --- (validate-clean lives in nacre-validate)
+
+    fn cylinder(base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Model {
+        let mut m = Model::new();
+        m.add_cylinder(Point3::from_array(base), Vector3::from_array(axis), r, h);
+        m.rebuild_adjacency();
+        m
+    }
+
+    #[test]
+    fn cylinder_counts_and_euler() {
+        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        assert_eq!(m.vertices.len(), 2);
+        assert_eq!(m.edges.len(), 3);
+        assert_eq!(m.faces.len(), 3);
+        assert_eq!(m.shells.len(), 1);
+        assert_eq!(m.solids.len(), 1);
+        // Euler χ = V − E + F = 2 (one shell, genus 0, no inner loops).
+        assert_eq!(
+            m.vertices.len() as i64 - m.edges.len() as i64 + m.faces.len() as i64,
+            2
+        );
+    }
+
+    #[test]
+    fn cylinder_geometry() {
+        // +Z axis, r=2, h=5. Seam direction is X (least-aligned axis of +Z).
+        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        let pts: Vec<[f64; 3]> = m.vertices.iter().map(|(_, v)| v.point.as_array()).collect();
+        // Seam direction for +Z is any_perpendicular([0,0,1]) = X×Z = [0,-1,0], so
+        // the seam vertices sit at radius 2 along −Y, at z=0 and z=5.
+        assert_eq!(pts, vec![[0.0, -2.0, 0.0], [0.0, -2.0, 5.0]]);
+        // Two rim circles carry a Circle; the straight seam a Line.
+        let mut circles = 0;
+        for (_, e) in m.edges.iter() {
+            if let Curve::Circle(c) = m.curves.get(e.curve) {
+                assert_eq!(c.radius(), 2.0);
+                circles += 1;
+            }
+        }
+        assert_eq!(circles, 2);
+    }
+
+    #[test]
+    fn cylinder_caps_point_outward() {
+        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        // Planar caps only (the lateral cylindrical face has no single normal).
+        let mut caps = 0;
+        for (_, f) in m.faces.iter() {
+            if matches!(m.surfaces.get(f.surface), Surface::Plane(_)) {
+                let n = face_plane_normal(&m, f).as_array();
+                // Bottom cap → −Z, top cap → +Z (outward along the axis).
+                assert!(n == [0.0, 0.0, -1.0] || n == [0.0, 0.0, 1.0]);
+                caps += 1;
+            }
+        }
+        assert_eq!(caps, 2);
+    }
+
+    #[test]
+    fn cylinder_seam_edge_is_self_adjacent() {
+        // The novel topology: the seam edge is used twice by the SAME lateral
+        // face with opposite orientation (a valid non-manifold-looking but
+        // manifold seam). Every edge is still used exactly twice, opposite.
+        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        let mut seam_uses = None;
+        for (eh, e) in m.edges.iter() {
+            let uses = &m.adj.edge_uses[&eh];
+            assert_eq!(uses.len(), 2);
+            assert_ne!(uses[0].1, uses[1].1); // opposite orientation
+            if matches!(m.curves.get(e.curve), Curve::Line(_)) {
+                seam_uses = Some(uses.clone());
+            }
+        }
+        let uses = seam_uses.expect("a seam line edge exists");
+        assert_eq!(uses[0].0, uses[1].0); // both uses are the same (lateral) face
+    }
+
     // --- proptest ---
 
     fn box_strategy() -> impl Strategy<Value = ([f64; 3], [f64; 3])> {
@@ -362,6 +595,28 @@ mod tests {
                 let [a, b] = e.bounds.unwrap();
                 prop_assert!(curve.contains(m.vertices.get(a).point, scale));
                 prop_assert!(curve.contains(m.vertices.get(b).point, scale));
+            }
+        }
+
+        #[test]
+        fn prop_cylinder_structural(
+            base in prop::array::uniform3(-1e3f64..1e3),
+            axis in prop::array::uniform3(-1.0f64..1.0),
+            r in 0.5f64..10.0,
+            h in 0.1f64..10.0,
+        ) {
+            let axis = Vector3::from_array(axis);
+            prop_assume!(axis.norm() > 0.1); // skip near-zero axes
+            let mut m = Model::new();
+            m.add_cylinder(Point3::from_array(base), axis, r, h);
+            m.rebuild_adjacency();
+            prop_assert_eq!(m.vertices.len(), 2);
+            prop_assert_eq!(m.edges.len(), 3);
+            prop_assert_eq!(m.faces.len(), 3);
+            // Every edge used exactly twice, opposite orientation (seam included).
+            for uses in m.adj.edge_uses.values() {
+                prop_assert_eq!(uses.len(), 2);
+                prop_assert_ne!(uses[0].1, uses[1].1);
             }
         }
     }

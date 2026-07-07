@@ -394,12 +394,19 @@ fn check_geometric_incidence(m: &Model, out: &mut Vec<Violation>) {
 mod tests {
     use super::*;
     use nacre_geom::{Curve, Line, Plane, Surface};
+    use nacre_math::Vector3;
     use nacre_topo::{HalfEdge, Orientation, Origin, Shell, Solid};
     use proptest::prelude::*;
 
     fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
         let mut m = Model::new();
         m.add_cuboid(Point3::from_array(min), Point3::from_array(max));
+        m
+    }
+
+    fn cylinder(base: [f64; 3], axis: [f64; 3], r: f64, h: f64) -> Model {
+        let mut m = Model::new();
+        m.add_cylinder(Point3::from_array(base), Vector3::from_array(axis), r, h);
         m
     }
 
@@ -422,6 +429,20 @@ mod tests {
     #[test]
     fn asymmetric_cuboid_is_clean() {
         assert!(validate(&cuboid([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0])).is_empty());
+    }
+
+    #[test]
+    fn cylinder_is_clean() {
+        // The seam b-rep (V2/E3/F3 with a self-adjacent seam edge, single-half-edge
+        // cap loops, and start==end circle edges) validates clean unmodified.
+        let v = validate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0));
+        assert!(v.is_empty(), "{v:?}");
+    }
+
+    #[test]
+    fn slanted_offset_cylinder_is_clean() {
+        let v = validate(&cylinder([3.0, -1.0, 2.0], [1.0, 2.0, 3.0], 0.7, 4.0));
+        assert!(v.is_empty(), "{v:?}");
     }
 
     #[test]
@@ -715,6 +736,20 @@ mod tests {
         ) {
             let max = [min[0] + ext[0], min[1] + ext[1], min[2] + ext[2]];
             prop_assert!(validate(&cuboid(min, max)).is_empty());
+        }
+
+        #[test]
+        fn prop_random_cylinder_is_clean(
+            base in prop::array::uniform3(-1e3f64..1e3),
+            axis in prop::array::uniform3(-1.0f64..1.0),
+            r in 0.5f64..10.0,
+            h in 0.1f64..10.0,
+        ) {
+            let axis = Vector3::from_array(axis);
+            prop_assume!(axis.norm() > 0.1); // skip near-zero axes
+            let mut m = Model::new();
+            m.add_cylinder(Point3::from_array(base), axis, r, h);
+            prop_assert!(validate(&m).is_empty());
         }
     }
 }

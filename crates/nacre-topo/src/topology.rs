@@ -22,8 +22,13 @@ pub struct Vertex {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Edge {
     pub curve: Handle<Curve>,
-    /// `None` = closed edge (full circle, cylinder seam) — arrives in M3. M1
-    /// cube edges are all `Some([start, end])`.
+    /// Endpoint vertices, or `None` for a truly closed edge (no endpoints).
+    ///
+    /// A closed **solid**'s circular rim is *not* `None`: it carries a seam
+    /// vertex and is `Some([v, v])` (start == end), so the b-rep stays a valid
+    /// CW-complex (`add_cylinder`; design §4). `None` is reserved for a
+    /// standalone full circle with no seam — a wireframe/open-shell element,
+    /// which is a v1 non-goal (§9), so it is currently unused.
     pub bounds: Option<[Handle<Vertex>; 2]>,
     pub origin: Origin,
 }

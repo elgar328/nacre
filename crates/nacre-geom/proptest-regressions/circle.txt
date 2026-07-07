@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6432f932b5e8eee3d6d2890a287b561a2573850270d3f80b0183dd14d83db173 # shrinks to c = Circle { center: Point { coords: [0.0, 902680.2476399321, 0.0] }, normal: Vector { coords: [0.0, 0.0, 1.0] }, ref_dir: Vector { coords: [-1.0, 0.0, 0.0] }, radius: 0.5 }, theta = 0.0

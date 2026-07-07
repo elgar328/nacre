@@ -169,7 +169,7 @@ fn build_vertex(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nacre_math::Point3;
+    use nacre_math::{Point3, Vector3};
     use nacre_topo::Solid;
     use step_io::read;
     use step_io::scene::geometry::{CurveKind, SurfaceKind};
@@ -244,5 +244,22 @@ mod tests {
             cavities: vec![shell],
         });
         assert!(matches!(to_step(&m), Err(StepError::Cavities)));
+    }
+
+    #[test]
+    fn cylinder_curved_geometry_is_rejected_for_now() {
+        // Curved STEP emission (CYLINDRICAL_SURFACE / CIRCLE) lands next unit; the
+        // adapter rejects it honestly rather than emitting a plane/line.
+        let mut m = Model::new();
+        m.add_cylinder(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.0,
+            2.0,
+        );
+        assert!(matches!(
+            to_step(&m),
+            Err(StepError::UnsupportedCurvedGeometry)
+        ));
     }
 }
