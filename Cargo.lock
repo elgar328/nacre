@@ -188,6 +188,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nacre-props"
+version = "0.0.0"
+dependencies = [
+ "nacre-geom",
+ "nacre-math",
+ "nacre-ops",
+ "nacre-store",
+ "nacre-topo",
+ "proptest",
+]
+
+[[package]]
 name = "nacre-step"
 version = "0.0.0"
 dependencies = [
