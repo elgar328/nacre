@@ -145,6 +145,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nacre-validate"
+version = "0.0.0"
+dependencies = [
+ "nacre-math",
+ "nacre-store",
+ "nacre-topo",
+ "proptest",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
