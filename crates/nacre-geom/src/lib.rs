@@ -7,19 +7,23 @@
 //! 절대원칙 4).
 //!
 //! M1 defined [`Plane`] and [`Line`]; M3 adds [`Circle`] (the full-circle
-//! carrier) and [`Cylinder`], with `Sphere`/`Nurbs` and the `Curve::Intersection`
-//! variant to follow. That intersection variant (holding `Handle<Surface>`) is
-//! the sole reason geom will later depend on `nacre-store`; today it uses no
-//! `Handle` and has no store dependency.
+//! carrier), [`Cylinder`], and [`NurbsCurve`] (rational B-spline evaluation),
+//! with `Sphere`/`NurbsSurface` and the `Curve::Intersection` variant to follow.
+//! ([`NurbsCurve`] is a standalone evaluator for now — the `Curve::Nurbs` variant
+//! is wired with a producer later.) That intersection variant (holding
+//! `Handle<Surface>`) is the sole reason geom will later depend on `nacre-store`;
+//! today it uses no `Handle` and has no store dependency.
 
 mod circle;
 mod cylinder;
 mod line;
+mod nurbs;
 mod plane;
 
 pub use circle::Circle;
 pub use cylinder::Cylinder;
 pub use line::Line;
+pub use nurbs::NurbsCurve;
 pub use plane::Plane;
 
 use nacre_math::Point3;
