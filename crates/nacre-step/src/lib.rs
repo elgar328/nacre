@@ -6,11 +6,13 @@
 //! `step-io` is confined to this crate, the same isolation used for
 //! `BooleanEngine` and the OCCT helper protocol.
 //!
-//! M2 coverage is **planar b-rep only** (`Surface::Plane` + `Curve::Line`); the
-//! surface/curve `match`es are exhaustive today, so when M3 adds variants the
-//! compiler forces them to be handled here. AP242 Ed2 is stamped by the backend.
+//! Coverage: planar + cylindrical b-rep — `Surface::{Plane, Cylinder}` bounded by
+//! `Curve::{Line, Circle}` (a cylinder is the seam model of `add_cylinder`). The
+//! surface/curve `match`es stay exhaustive, so future variants (sphere, NURBS)
+//! force a compile error here. AP242 Ed2 is stamped by the backend.
 
 use nacre_geom::{Curve, Surface};
+use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Model, Orientation, Vertex};
 use std::collections::HashMap;
@@ -31,10 +33,6 @@ pub enum StepError {
     /// The `step-io` backend rejected the entity graph (its `AuthorError`,
     /// stringified so the backend type does not leak into the public API).
     Backend(String),
-    /// Curved geometry (`Curve::Circle` / `Surface::Cylinder`) — STEP emission
-    /// is deferred to the next unit. Transitional: this variant and its two
-    /// match arms are replaced by real emission (circle/cylinder) then.
-    UnsupportedCurvedGeometry,
 }
 
 impl From<step_io::AuthorError> for StepError {
@@ -45,8 +43,10 @@ impl From<step_io::AuthorError> for StepError {
 
 /// Export every solid in `model` to AP242 (Ed2) STEP text.
 ///
-/// M2: planar faces (`Surface::Plane`) bounded by straight edges
-/// (`Curve::Line`). Rejects closed edges ([`StepError::UnboundedEdge`]) and
+/// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines
+/// and full circles (`Curve::{Line, Circle}`); a full-circle rim is a seam edge
+/// (`bounds: Some([v, v])`, start == end) that emits a closed STEP circle.
+/// Rejects a truly closed edge ([`StepError::UnboundedEdge`], `bounds: None`) and
 /// cavities ([`StepError::Cavities`]). Coordinates are emitted in millimetres
 /// (nacre is unitless; STEP needs a unit).
 pub fn to_step(model: &Model) -> Result<String, StepError> {
@@ -71,21 +71,21 @@ pub fn to_step(model: &Model) -> Result<String, StepError> {
         for &fh in &shell.faces {
             let face = model.faces.get(fh);
 
-            // Surface → plane frame. Exhaustive match: M3's new variants must be
-            // handled here (else compile error), which is the honest rejection point.
-            let frame = match model.surfaces.get(face.surface) {
-                Surface::Plane(p) => Frame {
-                    origin: p.origin().as_array(),
-                    axis: p.normal().as_array(),
-                    // Any perpendicular works — ref_dir is cosmetic for a bounded planar face.
-                    ref_dir: p
-                        .normal()
+            // Surface → step-io SurfaceInput. Exhaustive match: future variants
+            // (sphere, NURBS) must be handled here (else compile error).
+            let surface = match model.surfaces.get(face.surface) {
+                // ref_dir is cosmetic for a bounded planar face — any perpendicular.
+                Surface::Plane(p) => SurfaceInput::Plane(frame(
+                    p.origin(),
+                    p.normal(),
+                    p.normal()
                         .any_perpendicular()
-                        .expect("unit normal has a perpendicular")
-                        .as_array(),
-                },
-                // Cylinder STEP emission (CYLINDRICAL_SURFACE) lands in the next unit.
-                Surface::Cylinder(_) => return Err(StepError::UnsupportedCurvedGeometry),
+                        .expect("unit normal has a perpendicular"),
+                )),
+                Surface::Cylinder(c) => SurfaceInput::Cylinder(
+                    frame(c.axis().origin(), c.axis().direction(), c.ref_dir()),
+                    c.radius(),
+                ),
             };
             let same_sense = matches!(face.orientation, Orientation::Forward);
 
@@ -103,7 +103,7 @@ pub fn to_step(model: &Model) -> Result<String, StepError> {
                 )?));
             }
 
-            face_ids.push(b.face(SurfaceInput::Plane(frame), same_sense, bounds)?);
+            face_ids.push(b.face(surface, same_sense, bounds)?);
         }
 
         b.solid(part, "body", face_ids)?;
@@ -139,11 +139,13 @@ fn build_edge(
     }
     let edge = model.edges.get(eh);
     let [v0, v1] = edge.bounds.ok_or(StepError::UnboundedEdge)?;
-    // Exhaustive: CurveInput::Line derives geometry from the two vertices.
+    // CurveInput::Line derives geometry from the two vertices; a circle carries
+    // its own frame. A seam rim has v0 == v1, giving a closed STEP circle.
     let curve = match model.curves.get(edge.curve) {
         Curve::Line(_) => CurveInput::Line,
-        // Circle STEP emission (CurveInput::Circle) lands in the next unit.
-        Curve::Circle(_) => return Err(StepError::UnsupportedCurvedGeometry),
+        Curve::Circle(c) => {
+            CurveInput::Circle(frame(c.center(), c.normal(), c.ref_dir()), c.radius())
+        }
     };
     let sv0 = build_vertex(b, model, v0, vmap)?;
     let sv1 = build_vertex(b, model, v1, vmap)?;
@@ -164,6 +166,15 @@ fn build_vertex(
     let v = b.vertex(model.vertices.get(vh).point.as_array())?;
     vmap.insert(vh, v);
     Ok(v)
+}
+
+/// A step-io `Frame` (an `AXIS2_PLACEMENT_3D`) from kernel vectors.
+fn frame(origin: Point3, axis: Vector3, ref_dir: Vector3) -> Frame {
+    Frame {
+        origin: origin.as_array(),
+        axis: axis.as_array(),
+        ref_dir: ref_dir.as_array(),
+    }
 }
 
 #[cfg(test)]
@@ -247,19 +258,53 @@ mod tests {
     }
 
     #[test]
-    fn cylinder_curved_geometry_is_rejected_for_now() {
-        // Curved STEP emission (CYLINDRICAL_SURFACE / CIRCLE) lands next unit; the
-        // adapter rejects it honestly rather than emitting a plane/line.
+    fn cylinder_round_trips_through_step_io_reader() {
         let mut m = Model::new();
         m.add_cylinder(
             Point3::origin(),
             Vector3::from_array([0.0, 0.0, 1.0]),
-            1.0,
             2.0,
+            5.0,
         );
-        assert!(matches!(
-            to_step(&m),
-            Err(StepError::UnsupportedCurvedGeometry)
-        ));
+        let text = to_step(&m).expect("export cylinder");
+
+        for needle in ["CYLINDRICAL_SURFACE", "CIRCLE", "442 3 1 4"] {
+            assert!(text.contains(needle), "missing {needle}");
+        }
+
+        let (model, report) = read(text.as_bytes()).expect("re-read");
+        assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+
+        let scene = model.scene();
+        let solids: Vec<_> = scene.all_solids().collect();
+        assert_eq!(solids.len(), 1);
+        let faces: Vec<_> = solids[0].faces().collect();
+        assert_eq!(faces.len(), 3);
+
+        let (mut cylindrical, mut planes) = (0, 0);
+        for face in &faces {
+            match face.surface().kind() {
+                SurfaceKind::Cylindrical(_) => cylindrical += 1,
+                SurfaceKind::Plane(_) => planes += 1,
+                other => panic!("unexpected surface kind: {other:?}"),
+            }
+            for bound in face.bounds() {
+                for (edge, _forward) in bound.oriented_edges() {
+                    assert!(matches!(
+                        edge.curve().kind(),
+                        CurveKind::Line(_) | CurveKind::Circle(_)
+                    ));
+                }
+            }
+        }
+        assert_eq!((cylindrical, planes), (1, 2));
+
+        // The lateral (cylindrical) face's loop reuses the seam edge → 4 oriented edges.
+        let lateral = faces
+            .iter()
+            .find(|f| matches!(f.surface().kind(), SurfaceKind::Cylindrical(_)))
+            .unwrap();
+        let edges: Vec<_> = lateral.bounds().next().unwrap().oriented_edges().collect();
+        assert_eq!(edges.len(), 4);
     }
 }
