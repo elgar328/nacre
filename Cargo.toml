@@ -1,0 +1,14 @@
+# nacre workspace. The top-level `nacre` facade crate is added later (re-export only).
+# Crates are added milestone by milestone — do not create all of them up front.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/elgar328/nacre"
+rust-version = "1.85"
+
+[workspace.dependencies]
+proptest = "1"
