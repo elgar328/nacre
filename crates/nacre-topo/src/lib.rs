@@ -65,4 +65,13 @@ impl Model {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Recompute the [`Adjacency`] cache from the current topology stores.
+    /// Call once after a batch of additions (the cache is otherwise stale).
+    pub fn rebuild_adjacency(&mut self) {
+        // Build against an immutable borrow, then move into place — avoids
+        // borrowing `self.adj` mutably while iterating the other stores.
+        let adj = Adjacency::rebuild(&*self);
+        self.adj = adj;
+    }
 }
