@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# OCCT oracle backend (design §7). Out-of-process helper: reads a STEP file with
+# DRAWEXE (Homebrew opencascade) and reports mass properties, so the kernel never
+# links OCCT — it is a dev-only scoring oracle (overview OCCT rules).
+#
+#   occt-helper props <in.step>
+#     stdout (key-value lines):
+#       volume <v>
+#       area <a>
+#       faces <n>
+#       bbox_min <x> <y> <z>
+#       bbox_max <x> <y> <z>
+#     exit: 0 success / 1 geometry failure (unreadable, no shape) / 2 DRAWEXE crash
+#
+# (fuse|cut|common land with the M5 boolean oracle — the protocol is fixed.)
+set -uo pipefail
+
+case "${1:-}" in
+props)
+    step="${2:-}"
+    [ -f "$step" ] || {
+        echo "error: file not found: $step" >&2
+        exit 1
+    }
+
+    out=$(printf 'pload ALL\nstepread %s a *\nvprops a_1\nsprops a_1\nnbshapes a_1\nbounding a_1\nexit\n' "$step" | DRAWEXE -b 2>&1)
+    status=$?
+    [ "$status" -eq 0 ] || {
+        echo "error: DRAWEXE exited $status" >&2
+        echo "$out" >&2
+        exit 2
+    }
+    echo "$out" | grep -q "Shapes produced" || {
+        echo "error: stepread produced no shape" >&2
+        echo "$out" >&2
+        exit 1
+    }
+
+    # Strip DRAWEXE prompt prefixes, then pull the values out.
+    clean=$(echo "$out" | sed 's/^Draw\[[0-9]*\]> *//')
+    volume=$(echo "$clean" | grep "Mass :" | sed -n '1p' | awk '{print $NF}')
+    area=$(echo "$clean" | grep "Mass :" | sed -n '2p' | awk '{print $NF}')
+    faces=$(echo "$clean" | awk '/^ *FACE/ {print $NF}')
+    # The bounding output is the only line of six numeric fields.
+    bbox=$(echo "$clean" | awk 'NF==6 && $1+0==$1 && $6+0==$6 {print; exit}')
+
+    if [ -z "$volume" ] || [ -z "$area" ] || [ -z "$faces" ] || [ -z "$bbox" ]; then
+        echo "error: could not parse OCCT output" >&2
+        echo "$out" >&2
+        exit 1
+    fi
+
+    read -r x0 y0 z0 x1 y1 z1 <<<"$bbox"
+    echo "volume $volume"
+    echo "area $area"
+    echo "faces $faces"
+    echo "bbox_min $x0 $y0 $z0"
+    echo "bbox_max $x1 $y1 $z1"
+    ;;
+*)
+    echo "usage: occt-helper props <in.step>" >&2
+    echo "  (fuse|cut|common land with the M5 boolean oracle)" >&2
+    exit 64
+    ;;
+esac
