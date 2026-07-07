@@ -9,7 +9,7 @@
 
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
-use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Vertex};
+use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Origin, Vertex};
 
 /// Residual bound for a `Constructed` vertex lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — a `Constructed`
@@ -147,8 +147,19 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
     check_loop_closure(model, &mut out);
     check_manifold(model, &adj, &mut out);
+    check_geometric_incidence(model, &mut out);
     check_euler_poincare(model, &mut out);
     out
+}
+
+/// The tolerance an element's provenance grants: `Constructed` is exact to
+/// [`EPS_CONSTRUCTED`]; `Discovered` carries its own measured tolerance.
+#[inline]
+fn tol_of(o: Origin) -> f64 {
+    match o {
+        Origin::Constructed => EPS_CONSTRUCTED,
+        Origin::Discovered { tol } => tol,
+    }
 }
 
 #[inline]
@@ -326,6 +337,55 @@ fn check_manifold(m: &Model, adj: &Adjacency, out: &mut Vec<Violation>) {
                 edge: eh,
                 faces: [uses[0].0, uses[1].0],
             });
+        }
+    }
+}
+
+fn check_geometric_incidence(m: &Model, out: &mut Vec<Violation>) {
+    // Each edge's bound vertices must lie on the edge's curve.
+    for (eh, edge) in m.edges.iter() {
+        if let Some([a, b]) = edge.bounds {
+            let curve = m.curves.get(edge.curve);
+            for vh in [a, b] {
+                let vertex = m.vertices.get(vh);
+                let residual = curve.distance(vertex.point);
+                let tol = tol_of(vertex.origin).max(tol_of(edge.origin));
+                if residual > tol {
+                    out.push(Violation::VertexOffCurve {
+                        edge: eh,
+                        vertex: vh,
+                        point: vertex.point,
+                        residual,
+                        tol,
+                    });
+                }
+            }
+        }
+    }
+    // Each loop vertex must lie on the face's surface (Face/Surface carry no
+    // Origin, so only the vertex's provenance relaxes the bound). Unbounded
+    // edges have no start vertex here and are skipped (already flagged by
+    // loop-closure).
+    for (fh, face) in m.faces.iter() {
+        let surface = m.surfaces.get(face.surface);
+        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            for he in &lp.half_edges {
+                if let Some([a, b]) = m.edges.get(he.edge).bounds {
+                    let vh = if he.forward { a } else { b };
+                    let vertex = m.vertices.get(vh);
+                    let residual = surface.distance(vertex.point);
+                    let tol = tol_of(vertex.origin);
+                    if residual > tol {
+                        out.push(Violation::VertexOffSurface {
+                            face: fh,
+                            vertex: vh,
+                            point: vertex.point,
+                            residual,
+                            tol,
+                        });
+                    }
+                }
+            }
         }
     }
 }
@@ -604,6 +664,47 @@ mod tests {
                 genus: -1,
             }]
         );
+    }
+
+    #[test]
+    fn vertex_off_curve_and_surface_when_nudged() {
+        // Vertex 0 moved by 2·EPS_CONSTRUCTED; curves/planes stay on the
+        // un-moved corners, so the vertex is off some of them.
+        let vs = validate(&tetra_with(TetraOpts {
+            nudge: Some((0, [0.0, 0.0, 2.0 * EPS_CONSTRUCTED], Origin::Constructed)),
+            ..Default::default()
+        }));
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, Violation::VertexOffSurface { .. }))
+        );
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, Violation::VertexOffCurve { .. }))
+        );
+    }
+
+    #[test]
+    fn discovered_vertex_within_tolerance_is_clean() {
+        let tol = 1e-6;
+        let m = tetra_with(TetraOpts {
+            nudge: Some((0, [0.0, 0.0, 0.5 * tol], Origin::Discovered { tol })),
+            ..Default::default()
+        });
+        assert!(validate(&m).is_empty());
+    }
+
+    #[test]
+    fn discovered_vertex_outside_tolerance_flags() {
+        let tol = 1e-6;
+        let vs = validate(&tetra_with(TetraOpts {
+            nudge: Some((0, [0.0, 0.0, 2.0 * tol], Origin::Discovered { tol })),
+            ..Default::default()
+        }));
+        assert!(vs.iter().any(|v| matches!(
+            v,
+            Violation::VertexOffSurface { .. } | Violation::VertexOffCurve { .. }
+        )));
     }
 
     proptest! {
