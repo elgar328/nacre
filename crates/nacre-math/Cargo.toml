@@ -1,0 +1,16 @@
+[package]
+name = "nacre-math"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "self-contained f64 linear algebra (Point<D>/Vector<D>) for the nacre CAD kernel — affine point/vector distinction in the type system"
+
+[dependencies]
+
+[dev-dependencies]
+proptest.workspace = true
+# NOTE: cargo-husky is intentionally NOT declared here. It installs a single
+# repo-level git pre-commit hook, already owned by nacre-store; this crate
+# inherits it workspace-wide.

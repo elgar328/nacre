@@ -103,6 +103,13 @@ name = "nacre"
 version = "0.0.0"
 
 [[package]]
+name = "nacre-math"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "nacre-store"
 version = "0.0.0"
 dependencies = [
