@@ -319,6 +319,7 @@ fn perp(n: Vector3) -> Vector3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn p2(x: f64, y: f64) -> Point2 {
         Point2::from_array([x, y])
@@ -422,5 +423,112 @@ mod tests {
         let m = replay(&[extrude_op(cw, 1.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.faces.len(), 6);
+    }
+
+    #[test]
+    fn replay_is_deterministic() {
+        let log = vec![extrude_op(square(), 1.0)];
+        let m1 = replay(&log).unwrap();
+        let m2 = replay(&log).unwrap();
+        let pts = |m: &Model| {
+            m.vertices
+                .iter()
+                .map(|(_, v)| v.point.as_array())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(pts(&m1), pts(&m2));
+        assert_eq!(m1.edges.len(), m2.edges.len());
+        assert_eq!(m1.faces.len(), m2.faces.len());
+    }
+
+    #[test]
+    fn two_extrudes_make_two_solids() {
+        let far = SketchPlane {
+            origin: Point3::from_array([5.0, 0.0, 0.0]),
+            ..SketchPlane::world_xy()
+        };
+        let log = vec![
+            extrude_op(square(), 1.0),
+            Operation::Extrude {
+                plane: far,
+                profile: square(),
+                dist: 1.0,
+            },
+        ];
+        let m = replay(&log).unwrap();
+        assert_eq!(m.solids.len(), 2);
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
+
+    #[test]
+    fn degenerate_inputs_are_rejected() {
+        let plane = SketchPlane::world_xy();
+        let two = Profile2d {
+            points: vec![p2(0.0, 0.0), p2(1.0, 0.0)],
+        };
+        assert_eq!(
+            apply(
+                &mut Model::new(),
+                &Operation::Extrude {
+                    plane,
+                    profile: two,
+                    dist: 1.0
+                }
+            ),
+            Err(OpError::DegenerateProfile)
+        );
+        assert_eq!(
+            apply(&mut Model::new(), &extrude_op(square(), 0.0)),
+            Err(OpError::NonPositiveDistance)
+        );
+        let dup = Profile2d {
+            points: vec![p2(0.0, 0.0), p2(0.0, 0.0), p2(1.0, 1.0)],
+        };
+        assert_eq!(
+            apply(
+                &mut Model::new(),
+                &Operation::Extrude {
+                    plane,
+                    profile: dup,
+                    dist: 1.0
+                }
+            ),
+            Err(OpError::DegenerateGeometry)
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn prop_regular_ngon_on_xy_is_clean(
+            n in 3usize..8,
+            r in 0.5f64..10.0,
+            dist in 0.1f64..10.0,
+        ) {
+            let m = replay(&[extrude_op(regular_ngon(n, r), dist)]).unwrap();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
+            prop_assert_eq!(m.vertices.len(), 2 * n);
+            prop_assert_eq!(m.faces.len(), n + 2);
+        }
+
+        #[test]
+        fn prop_ngon_on_arbitrary_plane_is_clean(
+            n in 3usize..8,
+            nx in -1.0f64..1.0,
+            ny in -1.0f64..1.0,
+            nz in -1.0f64..1.0,
+            dist in 0.1f64..10.0,
+        ) {
+            let normal = Vector3::from_array([nx, ny, nz]);
+            prop_assume!(normal.norm() > 0.1); // skip near-zero normals
+            let plane = SketchPlane::from_origin_normal(Point3::origin(), normal).unwrap();
+            let m = replay(&[Operation::Extrude {
+                plane,
+                profile: regular_ngon(n, 2.0),
+                dist,
+            }])
+            .unwrap();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
+            prop_assert_eq!(m.faces.len(), n + 2);
+        }
     }
 }
