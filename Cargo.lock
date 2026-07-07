@@ -126,6 +126,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nacre-topo"
+version = "0.0.0"
+dependencies = [
+ "nacre-geom",
+ "nacre-math",
+ "nacre-store",
+ "proptest",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
