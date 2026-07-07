@@ -76,13 +76,12 @@ pub struct Model {
     pub faces:    Store<Face>,
     pub shells:   Store<Shell>,
     pub solids:   Store<Solid>,
-    // 파생 캐시들
-    pub tess: Tessellation,   // 출처 태그 tessellation — §5
-    pub adj:  Adjacency,      // 역방향 인덱스 — §4
-    // 연산 로그 — §6
-    pub ops: Vec<Operation>,
+    // 파생 캐시 — 역방향 인덱스 (§4)
+    pub adj:  Adjacency,
 }
 ```
+
+**Model은 "진실"만 담는다 — tess도 ops도 Model의 필드가 아니다.** §0에서 "모델은 연산 로그의 재생 **결과**"라 했으니 `ops: Vec<Operation>`은 Model을 *만들어내는 입력*이지 Model 안에 든 게 아니고, tessellation은 Model에서 *뽑아낸 파생 캐시*다(진실/캐시 분리). 게다가 레이어링상 Model은 `nacre-topo`에 사는데 `Tessellation`(§5)·`Operation`(§6)은 topo보다 위 크레이트라, Model에 필드로 넣으면 topo→tess/ops 순환이 된다. 그래서 op 로그와 tess 캐시는 상위 레이어(ops/파사드)에서 Model과 **나란히** 보관하고, "동일 로그·동일 cfg → 동일 모델 + 함께 재생성되는 tess"라는 §5·§6의 커플링은 그 상위 번들이 책임진다.
 
 (점 저장소는 두지 않는다 — 두 Vertex가 한 Point를 공유하는 상황은 설계상 존재하면 안 되고, Point는 작아서 간접화의 실익이 없으므로 `Vertex`에 인라인한다.)
 
@@ -202,7 +201,9 @@ pub struct Adjacency {
 }
 ```
 
-`Adjacency`는 진실이 아니라 캐시라는 점이 중요하다 — 위상 store들이 진실이고, 인덱스는 연산과 함께 증분 갱신되며 불일치 시 재구성한다. (진실/캐시 분리 패턴의 네 번째 반복.)
+(구현은 M1에서 `SmallVec` 대신 평범한 `Vec`으로 시작한다 — 의존성 하나를 아끼고, 인라인 저장 이득은 프로파일링으로 정당화되면 나중에 도입한다. 다양체 케이스를 힙 없이 담는 최적화라 정확성과 무관.)
+
+`Adjacency`는 진실이 아니라 캐시라는 점이 중요하다 — 위상 store들이 진실이고, 인덱스는 연산과 함께 증분 갱신되며 불일치 시 재구성한다(M1은 from-scratch 재구축만, 증분 갱신은 ops 로그가 생기는 M2). (진실/캐시 분리 패턴의 네 번째 반복.)
 
 ## 5. Tessellation 층 (`nacre-tess`) — 출처 태그 파생물
 
