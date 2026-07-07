@@ -16,16 +16,20 @@
 //! system: `Point − Point → Vector`, `Point + Vector → Point`, and
 //! `Point + Point` does not compile.
 
+mod point;
 mod vector;
 
+pub use point::Point;
 pub use vector::Vector;
 
 /// A 2-D displacement vector.
 pub type Vector2 = Vector<2>;
 /// A 3-D displacement vector.
 pub type Vector3 = Vector<3>;
-
-// `Point`, `Point2`, `Point3` are added alongside `point.rs`.
+/// A 2-D position.
+pub type Point2 = Point<2>;
+/// A 3-D position.
+pub type Point3 = Point<3>;
 
 /// Combined relative-or-absolute float comparison for tests.
 ///
