@@ -17,5 +17,10 @@ nacre-store = { path = "../nacre-store", version = "0.0.0" }
 proptest.workspace = true
 # Tests assert the extruded solids are valid closed b-reps.
 nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
+# The end-to-end example/integration test exports models through these; they are
+# dev-only so the published lib's dependency surface stays clean (no cycle: neither
+# depends on nacre-ops).
+nacre-step = { path = "../nacre-step", version = "0.0.0" }
+nacre-tess = { path = "../nacre-tess", version = "0.0.0" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.
