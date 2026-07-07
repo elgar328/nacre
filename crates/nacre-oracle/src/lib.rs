@@ -12,8 +12,8 @@
 //! (1) our STEP is OCCT-valid, (2) a whole closed oriented solid was read (OCCT
 //! reports a positive analytic volume only then), and (3) the transport works —
 //! promoting the old manual FreeCAD check to an automated regression. The
-//! boolean `fuse|cut|common` oracle and a nacre-side volume for direct diff
-//! arrive with M5.
+//! nacre-side volume/area (`nacre-props`) is now diffed directly against OCCT
+//! here (M4); the boolean `fuse|cut|common` oracle arrives with M5.
 
 use nacre_topo::Model;
 use std::path::PathBuf;
@@ -162,6 +162,7 @@ pub fn occt_props_of(model: &Model) -> Result<OcctProps, OracleError> {
 mod tests {
     use super::*;
     use nacre_math::{Point3, Vector3};
+    use nacre_props::mass_props;
     use std::f64::consts::PI;
 
     /// Combined relative-or-absolute float comparison, sized to DRAWEXE's output
@@ -244,5 +245,60 @@ bbox_min 0 0 0
         assert!(approx(p.volume, 20.0 * PI), "volume {}", p.volume); // π·r²·h
         assert!(approx(p.area, 28.0 * PI), "area {}", p.area); // 2πr² + 2πr·h
         assert_eq!(p.faces, 3); // lateral + 2 caps
+    }
+
+    // nacre-vs-OCCT diff: nacre computes volume/area analytically (nacre-props),
+    // OCCT computes them independently from the same STEP. Agreement cross-checks
+    // both — the two are wholly separate implementations. #[ignore]d like the
+    // other DRAWEXE tests.
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn cube_props_diff_occt() {
+        let mut model = Model::new();
+        let solid = model.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let occt = occt_props_of(&model).unwrap();
+        let nacre = mass_props(&model, solid).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "{} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn cylinder_props_diff_occt() {
+        let mut model = Model::new();
+        let solid = model.add_cylinder(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        let occt = occt_props_of(&model).unwrap();
+        let nacre = mass_props(&model, solid).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "{} vs {}",
+            nacre.area,
+            occt.area
+        );
     }
 }
