@@ -257,12 +257,16 @@ pub enum Operation {
 
 pub struct TessConfig { pub default_tol: f64 /* , 면별 override 등 */ }
 
-impl Model {
-    /// 로그를 처음부터 재생. 보장: 동일 로그·동일 cfg → 동일 모델 (인덱스까지 재현).
-    /// 로그 중간 파라미터를 수정한 재생은 v1에서 미지원 — Operation이 원시 Handle을
-    /// 참조하므로 상류 수정이 하류 Handle 번호를 밀어낸다 (topological naming 문제).
-    pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<Model, OpError>;
-}
+// nacre-ops의 자유 함수다 — Model의 메서드가 아니다. `impl Model`은 inherent impl이라
+// Model이 정의된 nacre-topo에만 놓을 수 있는데(coherence), replay는 Operation·Tessellation을
+// 다루므로 topo보다 위 레이어(ops는 topo·tess 위)에 살아야 한다. Model 메서드로 두면
+// §2에서 tess/ops를 Model 필드에서 뺀 것과 같은 층 위반이 된다.
+///
+/// 로그를 처음부터 재생. 보장: 동일 로그·동일 cfg → 동일 (모델, tess) (인덱스까지 재현).
+/// 로그 중간 파라미터를 수정한 재생은 v1에서 미지원 — Operation이 원시 Handle을
+/// 참조하므로 상류 수정이 하류 Handle 번호를 밀어낸다 (topological naming 문제).
+/// 반환 쌍: 진실 Model + 함께 생성되는 tess 캐시(§5 커플링; Model은 tess를 필드로 담지 않으므로 §2).
+pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation), OpError>;
 ```
 
 **파라메트릭 편집의 진화 경로 (v2 이후, 지금은 기록만):** 연산이 원시 Handle 대신 계보 참조 `OpRef { op: usize, output_slot: usize }`("연산 N이 만든 k번째 면")를 담으면, 상류 수정 후에도 참조가 의미로 해석(resolve)되어 편집-재생이 가능해진다. v1에서 이를 구현하지 않되, 로그 직렬화 포맷을 설계할 때 이 확장이 포맷 파괴 없이 들어갈 자리를 남긴다. TessConfig의 tolerance도 같은 맥락에서 연산별 override(`Operation` 항목의 선택 필드)로 확장될 수 있다.
