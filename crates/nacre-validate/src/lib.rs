@@ -9,7 +9,7 @@
 
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
-use nacre_topo::{Edge, Face, Model, Vertex};
+use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Vertex};
 
 /// Residual bound for a `Constructed` vertex lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — a `Constructed`
@@ -144,6 +144,9 @@ pub fn validate(model: &Model) -> Vec<Violation> {
         return out;
     }
 
+    let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
+    check_loop_closure(model, &mut out);
+    check_manifold(model, &adj, &mut out);
     check_euler_poincare(model, &mut out);
     out
 }
@@ -259,10 +262,79 @@ fn check_euler_poincare(m: &Model, out: &mut Vec<Violation>) {
     }
 }
 
+fn check_loop_closure(m: &Model, out: &mut Vec<Violation>) {
+    for (fh, face) in m.faces.iter() {
+        check_loop(m, fh, LoopKind::Outer, &face.outer, out);
+        for (i, lp) in face.inner.iter().enumerate() {
+            check_loop(m, fh, LoopKind::Inner(i), lp, out);
+        }
+    }
+}
+
+fn check_loop(m: &Model, fh: Handle<Face>, kind: LoopKind, lp: &Loop, out: &mut Vec<Violation>) {
+    let hes = &lp.half_edges;
+    let n = hes.len();
+    if n == 0 {
+        out.push(Violation::OpenLoop {
+            face: fh,
+            loop_kind: kind,
+            at: 0,
+        });
+        return;
+    }
+    // Resolve each half-edge to (start, end); unbounded edges are reported and
+    // skipped in the continuity walk (not assumed closed).
+    let ends: Vec<Option<(Handle<Vertex>, Handle<Vertex>)>> = hes
+        .iter()
+        .map(|he| match m.edges.get(he.edge).bounds {
+            None => {
+                out.push(Violation::UnboundedEdgeInLoop {
+                    face: fh,
+                    loop_kind: kind,
+                    edge: he.edge,
+                });
+                None
+            }
+            Some([a, b]) => Some(if he.forward { (a, b) } else { (b, a) }),
+        })
+        .collect();
+
+    for i in 0..n {
+        if let (Some((_, end)), Some((start, _))) = (ends[i], ends[(i + 1) % n]) {
+            if end != start {
+                out.push(Violation::OpenLoop {
+                    face: fh,
+                    loop_kind: kind,
+                    at: i,
+                });
+            }
+        }
+    }
+}
+
+fn check_manifold(m: &Model, adj: &Adjacency, out: &mut Vec<Violation>) {
+    // Iterate the edge store (not just adj) so orphan edges (0 uses) are caught.
+    for (eh, _edge) in m.edges.iter() {
+        let uses = adj.edge_uses.get(&eh).map(Vec::as_slice).unwrap_or(&[]);
+        if uses.len() != 2 {
+            out.push(Violation::NonManifoldEdge {
+                edge: eh,
+                use_count: uses.len(),
+            });
+        } else if uses[0].1 == uses[1].1 {
+            out.push(Violation::NonOpposedEdge {
+                edge: eh,
+                faces: [uses[0].0, uses[1].0],
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nacre_topo::{Origin, Shell, Solid};
+    use nacre_geom::{Curve, Line, Plane, Surface};
+    use nacre_topo::{HalfEdge, Orientation, Origin, Shell, Solid};
     use proptest::prelude::*;
 
     fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
@@ -327,6 +399,209 @@ mod tests {
                 f: 6,
                 s: 1,
                 inner_loops: 0,
+            }]
+        );
+    }
+
+    // --- hand-built tetrahedron (smallest closed 2-manifold), verified winding ---
+
+    const TETRA_BASE: [[f64; 3]; 4] = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    const TETRA_EDGES: [(usize, usize); 6] = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+    /// (plane-defining vertex triple, half-edges as (edge index, forward)).
+    type TetraFace = ([usize; 3], [(usize, bool); 3]);
+    const TETRA_FACES: [TetraFace; 4] = [
+        ([0, 2, 1], [(1, true), (3, false), (0, false)]),
+        ([0, 1, 3], [(0, true), (4, true), (2, false)]),
+        ([0, 3, 2], [(2, true), (5, false), (1, false)]),
+        ([1, 2, 3], [(3, true), (5, true), (4, false)]),
+    ];
+
+    #[derive(Default)]
+    struct TetraOpts {
+        /// (vertex index, coordinate delta, that vertex's origin) — moves a
+        /// vertex off its (un-moved) curves/surfaces.
+        nudge: Option<(usize, [f64; 3], Origin)>,
+        drop_face: Option<usize>,
+        unbind_edge: Option<usize>,
+        flip_he: Option<(usize, usize)>, // (face, half-edge position)
+        swap_he: Option<(usize, usize, usize)>, // (face, position a, position b)
+    }
+
+    /// Push a standard tetra translated by `t` (with `opts` defects) into `m`;
+    /// return its face handles. Curves/planes go through the *un-nudged* corners.
+    fn push_tetra(m: &mut Model, t: [f64; 3], opts: &TetraOpts) -> Vec<Handle<Face>> {
+        let corner = |i: usize| {
+            Point3::from_array([
+                TETRA_BASE[i][0] + t[0],
+                TETRA_BASE[i][1] + t[1],
+                TETRA_BASE[i][2] + t[2],
+            ])
+        };
+        let vh: Vec<Handle<Vertex>> = (0..4)
+            .map(|i| {
+                let mut p = corner(i).as_array();
+                let mut origin = Origin::Constructed;
+                if let Some((vi, d, o)) = opts.nudge {
+                    if vi == i {
+                        p = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+                        origin = o;
+                    }
+                }
+                m.vertices.push(Vertex {
+                    point: Point3::from_array(p),
+                    origin,
+                })
+            })
+            .collect();
+        let eh: Vec<Handle<Edge>> = (0..6)
+            .map(|i| {
+                let (a, b) = TETRA_EDGES[i];
+                let curve = m.curves.push(Curve::Line(
+                    Line::through_points(corner(a), corner(b)).unwrap(),
+                ));
+                let bounds = if opts.unbind_edge == Some(i) {
+                    None
+                } else {
+                    Some([vh[a], vh[b]])
+                };
+                m.edges.push(Edge {
+                    curve,
+                    bounds,
+                    origin: Origin::Constructed,
+                })
+            })
+            .collect();
+        let mut faces = Vec::new();
+        for (fi, (tri, hes)) in TETRA_FACES.iter().enumerate() {
+            if opts.drop_face == Some(fi) {
+                continue;
+            }
+            let surface = m.surfaces.push(Surface::Plane(
+                Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2])).unwrap(),
+            ));
+            let mut half_edges: Vec<HalfEdge> = hes
+                .iter()
+                .map(|&(e, forward)| HalfEdge {
+                    edge: eh[e],
+                    forward,
+                })
+                .collect();
+            if let Some((face_i, pos)) = opts.flip_he {
+                if face_i == fi {
+                    half_edges[pos].forward = !half_edges[pos].forward;
+                }
+            }
+            if let Some((face_i, a, b)) = opts.swap_he {
+                if face_i == fi {
+                    half_edges.swap(a, b);
+                }
+            }
+            faces.push(m.faces.push(Face {
+                surface,
+                outer: Loop { half_edges },
+                inner: vec![],
+                orientation: Orientation::Forward,
+            }));
+        }
+        faces
+    }
+
+    fn tetra_with(opts: TetraOpts) -> Model {
+        let mut m = Model::new();
+        let faces = push_tetra(&mut m, [0.0; 3], &opts);
+        let sh = m.shells.push(Shell { faces });
+        m.solids.push(Solid {
+            outer: sh,
+            cavities: vec![],
+        });
+        m
+    }
+
+    fn tetra() -> Model {
+        tetra_with(TetraOpts::default())
+    }
+
+    #[test]
+    fn tetra_is_clean() {
+        assert!(validate(&tetra()).is_empty());
+    }
+
+    #[test]
+    fn open_loop_from_swapped_half_edges() {
+        let vs = validate(&tetra_with(TetraOpts {
+            swap_he: Some((0, 0, 2)),
+            ..Default::default()
+        }));
+        assert!(!vs.is_empty());
+        assert!(vs.iter().all(|v| matches!(
+            v,
+            Violation::OpenLoop {
+                loop_kind: LoopKind::Outer,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn unbounded_edge_in_loop() {
+        let vs = validate(&tetra_with(TetraOpts {
+            unbind_edge: Some(0),
+            ..Default::default()
+        }));
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, Violation::UnboundedEdgeInLoop { .. }))
+        );
+    }
+
+    #[test]
+    fn non_manifold_edge_from_dropped_face() {
+        let vs = validate(&tetra_with(TetraOpts {
+            drop_face: Some(0),
+            ..Default::default()
+        }));
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, Violation::NonManifoldEdge { use_count: 1, .. }))
+        );
+    }
+
+    #[test]
+    fn non_opposed_edge_from_flipped_half_edge() {
+        let vs = validate(&tetra_with(TetraOpts {
+            flip_he: Some((0, 0)),
+            ..Default::default()
+        }));
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, Violation::NonOpposedEdge { .. }))
+        );
+    }
+
+    #[test]
+    fn negative_genus_two_tetra_one_shell() {
+        let mut m = Model::new();
+        let mut faces = push_tetra(&mut m, [0.0; 3], &TetraOpts::default());
+        faces.extend(push_tetra(&mut m, [5.0, 0.0, 0.0], &TetraOpts::default()));
+        let sh = m.shells.push(Shell { faces });
+        m.solids.push(Solid {
+            outer: sh,
+            cavities: vec![],
+        });
+        assert_eq!(
+            validate(&m),
+            vec![Violation::NegativeGenus {
+                v: 8,
+                e: 12,
+                f: 8,
+                s: 1,
+                inner_loops: 0,
+                genus: -1,
             }]
         );
     }
