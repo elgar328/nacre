@@ -246,11 +246,14 @@ pub struct Tessellation {
 
 ```rust
 pub enum Operation {
-    Sketch { plane: SketchPlane, profile: Profile2d },
-    Extrude { face: Handle<Face>, dir: Vector<3>, dist: f64 },
-    Revolve { face: Handle<Face>, axis: Axis, angle: f64 },
-    ImprintSketch { face: Handle<Face>, profile: Profile2d },
-    PadOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 },
+    // M2: 스케치 평면·프로파일 개념이 Extrude 인자로 흡수된다(별도 Sketch op 없음). Extrude는
+    // 프로파일에서 새 솔리드를 만들므로 앞선 op의 면을 참조할 필연이 없다 — op간 Handle 참조는
+    // 기존 면 위에 작업하는 M4(ImprintSketch/PadOnFace)에서 비로소 필연적으로 도입된다.
+    // M2는 매 Extrude 결과가 닫힌 솔리드라 validate가 빈틈없이 걸린다.
+    Extrude { plane: SketchPlane, profile: Profile2d, dist: f64 },
+    Revolve { plane: SketchPlane, profile: Profile2d, axis: Axis, angle: f64 },
+    ImprintSketch { face: Handle<Face>, profile: Profile2d },        // M4: 기존 면 위 — Handle<Face> 참조
+    PadOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 }, // M4: 기존 면 위 — Handle<Face> 참조
     Boolean { kind: BoolKind, a: Handle<Solid>, b: Handle<Solid> },
     // ...
 }
@@ -267,6 +270,8 @@ pub struct TessConfig { pub default_tol: f64 /* , 면별 override 등 */ }
 /// 참조하므로 상류 수정이 하류 Handle 번호를 밀어낸다 (topological naming 문제).
 /// 반환 쌍: 진실 Model + 함께 생성되는 tess 캐시(§5 커플링; Model은 tess를 필드로 담지 않으므로 §2).
 pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation), OpError>;
+// M2 현재형: tess가 아직 없으므로 `replay(ops: &[Operation]) -> Result<Model, OpError>`(cfg·Tessellation 없음).
+// M3에서 tess 도입과 함께 위 (Model, Tessellation)·TessConfig 시그니처로 확장한다.
 ```
 
 **파라메트릭 편집의 진화 경로 (v2 이후, 지금은 기록만):** 연산이 원시 Handle 대신 계보 참조 `OpRef { op: usize, output_slot: usize }`("연산 N이 만든 k번째 면")를 담으면, 상류 수정 후에도 참조가 의미로 해석(resolve)되어 편집-재생이 가능해진다. v1에서 이를 구현하지 않되, 로그 직렬화 포맷을 설계할 때 이 확장이 포맷 파괴 없이 들어갈 자리를 남긴다. TessConfig의 tolerance도 같은 맥락에서 연산별 override(`Operation` 항목의 선택 필드)로 확장될 수 있다.

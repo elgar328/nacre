@@ -1,0 +1,21 @@
+[package]
+name = "nacre-ops"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "operations for the nacre CAD kernel — sketch profiles, extrude, and a replayable operation log (M2: planar-profile prism extrude)"
+
+[dependencies]
+nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
+nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
+nacre-math = { path = "../nacre-math", version = "0.0.0" }
+nacre-store = { path = "../nacre-store", version = "0.0.0" }
+
+[dev-dependencies]
+proptest.workspace = true
+# Tests assert the extruded solids are valid closed b-reps.
+nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
+# NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
+# pre-commit hook is owned solely by nacre-store; this crate inherits it.
