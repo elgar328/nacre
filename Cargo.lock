@@ -179,6 +179,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nacre-oracle"
+version = "0.0.0"
+dependencies = [
+ "nacre-math",
+ "nacre-step",
+ "nacre-topo",
+]
+
+[[package]]
 name = "nacre-step"
 version = "0.0.0"
 dependencies = [
@@ -201,7 +210,9 @@ dependencies = [
 name = "nacre-tess"
 version = "0.0.0"
 dependencies = [
+ "nacre-geom",
  "nacre-math",
+ "nacre-store",
  "nacre-topo",
  "proptest",
 ]
