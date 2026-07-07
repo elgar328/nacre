@@ -16,8 +16,9 @@ mod topology;
 pub use adjacency::Adjacency;
 pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
 
-use nacre_geom::{Curve, Surface};
-use nacre_store::Store;
+use nacre_geom::{Curve, Line, Plane, Surface};
+use nacre_math::Point3;
+use nacre_store::{Handle, Store};
 
 /// Provenance of a vertex or edge (design §4, overview 절대원칙 4).
 ///
@@ -73,5 +74,293 @@ impl Model {
         // borrowing `self.adj` mutably while iterating the other stores.
         let adj = Adjacency::rebuild(&*self);
         self.adj = adj;
+    }
+
+    /// Add an axis-aligned box `min`..`max` to this model and return its solid.
+    ///
+    /// Requires `max[i] > min[i]` on every axis (a degenerate box is a caller
+    /// bug → panic). Every element is [`Origin::Constructed`] (design §8); each
+    /// face is wound so its plane normal points outward, so all faces are
+    /// [`Orientation::Forward`]. Does **not** rebuild adjacency — call
+    /// [`Model::rebuild_adjacency`] once after all additions.
+    pub fn add_cuboid(&mut self, min: Point3, max: Point3) -> Handle<Solid> {
+        let [x0, y0, z0] = min.as_array();
+        let [x1, y1, z1] = max.as_array();
+        debug_assert!(
+            x1 > x0 && y1 > y0 && z1 > z0,
+            "cuboid needs max > min on every axis"
+        );
+
+        // 8 corners, numbered by bits (i·x, j·y, k·z).
+        let corners = [
+            Point3::from_array([x0, y0, z0]), // V0
+            Point3::from_array([x1, y0, z0]), // V1
+            Point3::from_array([x1, y1, z0]), // V2
+            Point3::from_array([x0, y1, z0]), // V3
+            Point3::from_array([x0, y0, z1]), // V4
+            Point3::from_array([x1, y0, z1]), // V5
+            Point3::from_array([x1, y1, z1]), // V6
+            Point3::from_array([x0, y1, z1]), // V7
+        ];
+        let vh: [Handle<Vertex>; 8] = core::array::from_fn(|i| {
+            self.vertices.push(Vertex {
+                point: corners[i],
+                origin: Origin::Constructed,
+            })
+        });
+
+        // 12 edges as (start, end) vertex indices: bottom ring, top ring, verticals.
+        const EDGES: [(usize, usize); 12] = [
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),
+        ];
+        let eh: [Handle<Edge>; 12] = core::array::from_fn(|i| {
+            let (a, b) = EDGES[i];
+            let curve = self.curves.push(Curve::Line(
+                Line::through_points(corners[a], corners[b]).expect("non-degenerate box"),
+            ));
+            self.edges.push(Edge {
+                curve,
+                bounds: Some([vh[a], vh[b]]),
+                origin: Origin::Constructed,
+            })
+        });
+
+        // 6 faces: (first 3 loop vertices for the outward plane, half-edges as
+        // (edge index, forward)). Loops wound CCW seen from outside → outward
+        // normal. See the design plan's winding table (hand-verified).
+        type FaceDef = ([usize; 3], [(usize, bool); 4]);
+        let faces_def: [FaceDef; 6] = [
+            ([0, 3, 2], [(3, false), (2, false), (1, false), (0, false)]), // Bottom −Z
+            ([4, 5, 6], [(4, true), (5, true), (6, true), (7, true)]),     // Top +Z
+            ([0, 1, 5], [(0, true), (9, true), (4, false), (8, false)]),   // Front −Y
+            ([2, 3, 7], [(2, true), (11, true), (6, false), (10, false)]), // Back +Y
+            ([0, 4, 7], [(8, true), (7, false), (11, false), (3, true)]),  // Left −X
+            ([1, 2, 6], [(1, true), (10, true), (5, false), (9, false)]),  // Right +X
+        ];
+        let fh: [Handle<Face>; 6] = core::array::from_fn(|i| {
+            let (tri, hes) = &faces_def[i];
+            let surface = self.surfaces.push(Surface::Plane(
+                Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
+                    .expect("non-degenerate box"),
+            ));
+            let outer = Loop {
+                half_edges: hes
+                    .iter()
+                    .map(|&(e, forward)| HalfEdge {
+                        edge: eh[e],
+                        forward,
+                    })
+                    .collect(),
+            };
+            self.faces.push(Face {
+                surface,
+                outer,
+                inner: vec![],
+                orientation: Orientation::Forward,
+            })
+        });
+
+        let shell = self.shells.push(Shell { faces: fh.to_vec() });
+        self.solids.push(Solid {
+            outer: shell,
+            cavities: vec![],
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nacre_math::Vector3;
+    use proptest::prelude::*;
+
+    fn build(min: [f64; 3], max: [f64; 3]) -> Model {
+        let mut m = Model::new();
+        m.add_cuboid(Point3::from_array(min), Point3::from_array(max));
+        m.rebuild_adjacency();
+        m
+    }
+
+    fn he_start(m: &Model, he: HalfEdge) -> Handle<Vertex> {
+        let [a, b] = m.edges.get(he.edge).bounds.unwrap();
+        if he.forward { a } else { b }
+    }
+    fn he_end(m: &Model, he: HalfEdge) -> Handle<Vertex> {
+        let [a, b] = m.edges.get(he.edge).bounds.unwrap();
+        if he.forward { b } else { a }
+    }
+    fn face_plane_normal(m: &Model, f: &Face) -> Vector3 {
+        match m.surfaces.get(f.surface) {
+            Surface::Plane(p) => p.normal(),
+        }
+    }
+    fn face_centroid(m: &Model, f: &Face) -> Point3 {
+        let pts: Vec<Point3> = f
+            .outer
+            .half_edges
+            .iter()
+            .map(|he| m.vertices.get(he_start(m, *he)).point)
+            .collect();
+        Point3::centroid(&pts).unwrap()
+    }
+
+    // --- golden ---
+
+    #[test]
+    fn cuboid_counts() {
+        let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(m.vertices.len(), 8);
+        assert_eq!(m.edges.len(), 12);
+        assert_eq!(m.faces.len(), 6);
+        assert_eq!(m.shells.len(), 1);
+        assert_eq!(m.solids.len(), 1);
+        assert_eq!(m.surfaces.len(), 6);
+        assert_eq!(m.curves.len(), 12);
+    }
+
+    #[test]
+    fn cuboid_corner_points() {
+        let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
+        let expected = vec![
+            [-2.0, 1.0, 0.0],
+            [3.0, 1.0, 0.0],
+            [3.0, 4.0, 0.0],
+            [-2.0, 4.0, 0.0],
+            [-2.0, 1.0, 10.0],
+            [3.0, 1.0, 10.0],
+            [3.0, 4.0, 10.0],
+            [-2.0, 4.0, 10.0],
+        ];
+        let got: Vec<[f64; 3]> = m.vertices.iter().map(|(_, v)| v.point.as_array()).collect();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn face_normals_point_outward() {
+        let m = build([0.0, 0.0, 0.0], [2.0, 3.0, 4.0]);
+        let center = Point3::origin().lerp(Point3::from_array([2.0, 3.0, 4.0]), 0.5);
+        for (_, f) in m.faces.iter() {
+            let outward = face_plane_normal(&m, f).dot(face_centroid(&m, f) - center);
+            assert!(outward > 0.0);
+        }
+    }
+
+    #[test]
+    fn every_edge_used_twice_opposite() {
+        let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(m.adj.edge_uses.len(), 12);
+        for uses in m.adj.edge_uses.values() {
+            assert_eq!(uses.len(), 2);
+            assert_ne!(uses[0].1, uses[1].1);
+        }
+    }
+
+    #[test]
+    fn every_vertex_incident_to_three_edges() {
+        let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(m.adj.vertex_edges.len(), 8);
+        for edges in m.adj.vertex_edges.values() {
+            assert_eq!(edges.len(), 3);
+        }
+    }
+
+    #[test]
+    fn outer_loops_are_closed() {
+        let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        for (_, f) in m.faces.iter() {
+            let hes = &f.outer.half_edges;
+            assert_eq!(hes.len(), 4);
+            for i in 0..hes.len() {
+                assert_eq!(he_end(&m, hes[i]), he_start(&m, hes[(i + 1) % hes.len()]));
+            }
+        }
+    }
+
+    #[test]
+    fn edge_endpoints_lie_on_their_curve() {
+        let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
+        for (_, e) in m.edges.iter() {
+            let curve = m.curves.get(e.curve);
+            let [a, b] = e.bounds.unwrap();
+            assert!(curve.contains(m.vertices.get(a).point, 1e-9));
+            assert!(curve.contains(m.vertices.get(b).point, 1e-9));
+        }
+    }
+
+    #[test]
+    fn euler_poincare_holds() {
+        let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let (v, e, f) = (
+            m.vertices.len() as i64,
+            m.edges.len() as i64,
+            m.faces.len() as i64,
+        );
+        // V − E + F = 2(S − G) + L_i, with S=1, G=0, L_i=0. Formal validate:
+        // nacre-validate (next unit).
+        assert_eq!(v - e + f, 2);
+    }
+
+    // --- proptest ---
+
+    fn box_strategy() -> impl Strategy<Value = ([f64; 3], [f64; 3])> {
+        (
+            prop::array::uniform3(-1e3f64..1e3),
+            prop::array::uniform3(1e-2f64..1e3),
+        )
+            .prop_map(|(min, ext)| {
+                let max = [min[0] + ext[0], min[1] + ext[1], min[2] + ext[2]];
+                (min, max)
+            })
+    }
+
+    proptest! {
+        #[test]
+        fn prop_cuboid_structural((min, max) in box_strategy()) {
+            let m = build(min, max);
+            prop_assert_eq!(m.vertices.len(), 8);
+            prop_assert_eq!(m.edges.len(), 12);
+            prop_assert_eq!(m.faces.len(), 6);
+            prop_assert_eq!(m.adj.edge_uses.len(), 12);
+            for uses in m.adj.edge_uses.values() {
+                prop_assert_eq!(uses.len(), 2);
+                prop_assert_ne!(uses[0].1, uses[1].1);
+            }
+            prop_assert_eq!(m.adj.vertex_edges.len(), 8);
+            for edges in m.adj.vertex_edges.values() {
+                prop_assert_eq!(edges.len(), 3);
+            }
+        }
+
+        #[test]
+        fn prop_cuboid_outward_normals((min, max) in box_strategy()) {
+            let m = build(min, max);
+            let center = Point3::from_array(min).lerp(Point3::from_array(max), 0.5);
+            for (_, f) in m.faces.iter() {
+                prop_assert!(face_plane_normal(&m, f).dot(face_centroid(&m, f) - center) > 0.0);
+            }
+        }
+
+        #[test]
+        fn prop_cuboid_endpoints_on_curves((min, max) in box_strategy()) {
+            let m = build(min, max);
+            let scale = 1e-6 * (max.iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
+            for (_, e) in m.edges.iter() {
+                let curve = m.curves.get(e.curve);
+                let [a, b] = e.bounds.unwrap();
+                prop_assert!(curve.contains(m.vertices.get(a).point, scale));
+                prop_assert!(curve.contains(m.vertices.get(b).point, scale));
+            }
+        }
     }
 }
