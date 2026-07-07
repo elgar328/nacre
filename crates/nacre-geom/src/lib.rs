@@ -6,14 +6,17 @@
 //! tolerance: every containment query takes the caller's epsilon (overview
 //! 절대원칙 4).
 //!
-//! M1 defines only [`Plane`] and [`Line`]; `Cylinder`/`Sphere`/`Nurbs`/`Arc`
-//! and the `Curve::Intersection` variant arrive in M3. That intersection
-//! variant (holding `Handle<Surface>`) is the sole reason geom will later
-//! depend on `nacre-store`; M1 uses no `Handle` and has no store dependency.
+//! M1 defined [`Plane`] and [`Line`]; M3 adds [`Circle`] (the full-circle
+//! carrier), with `Cylinder`/`Sphere`/`Nurbs` and the `Curve::Intersection`
+//! variant to follow. That intersection variant (holding `Handle<Surface>`) is
+//! the sole reason geom will later depend on `nacre-store`; today it uses no
+//! `Handle` and has no store dependency.
 
+mod circle;
 mod line;
 mod plane;
 
+pub use circle::Circle;
 pub use line::Line;
 pub use plane::Plane;
 
@@ -52,9 +55,10 @@ impl Surface {
 
 /// A curve — the exact truth of an edge's geometry.
 ///
-/// Single-variant for now so topology can hold `Handle<Curve>`; `Arc`/`Nurbs`
-/// and the `Intersection { surfaces: [Handle<Surface>; 2], .. }` variant
-/// (design §3) arrive in M3 — that variant is the sole reason geom will later
+/// Single-variant for now so topology can hold `Handle<Curve>`; a `Circle(Circle)`
+/// variant (the [`Circle`] carrier already exists), `Nurbs`, and the
+/// `Intersection { surfaces: [Handle<Surface>; 2], .. }` variant (design §3)
+/// arrive in M3 — that intersection variant is the sole reason geom will later
 /// depend on `nacre-store`. **Not `Copy`** (future heap-backed variants), same
 /// as [`Surface`].
 #[derive(Clone, Debug, PartialEq)]

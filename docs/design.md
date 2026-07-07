@@ -100,7 +100,10 @@ pub enum Surface {
 
 pub enum Curve {
     Line(Line),
-    Arc(Arc),
+    /// 전체 원 carrier(중심/법선/반경). 호 = Edge(circle) + 서로 다른 두 끝점,
+    /// 닫힌 엣지(bounds:None) = 전체 원 — Line+Edge와 동일한 carrier-vs-trim.
+    /// step-io CurveInput::Circle(끝점 동일 여부로 원/호 구분)과 정합.
+    Circle(Circle),
     Nurbs(NurbsCurve),
     /// 두 곡면의 교집합 — 절차적 정의(진실) + 근사 캐시(힌트)
     Intersection {
