@@ -173,6 +173,17 @@ impl<T> Default for Store<T> {
     }
 }
 
+/// Concise, `T`-agnostic debug output (item count only) — so `Store<T>` and
+/// aggregates over it are `Debug` without requiring `T: Debug`, and printing a
+/// big store doesn't dump every element.
+impl<T> fmt::Debug for Store<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Store")
+            .field("len", &self.items.len())
+            .finish()
+    }
+}
+
 /// Strip the module path from a type name (`nacre_geom::Surface` -> `Surface`)
 /// for readable `Handle` debug output.
 fn short_type_name<T>() -> &'static str {
