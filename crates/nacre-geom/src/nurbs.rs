@@ -260,6 +260,214 @@ fn ders_basis_funs(degree: usize, knots: &[f64], span: usize, u: f64, n: usize) 
     ders
 }
 
+/// A rectangular grid of control points, `[i][j]` with `i` along u, `j` along v.
+type ControlGrid = Vec<Vec<Point3>>;
+
+/// A rational B-spline (NURBS) **surface**: a tensor product of the curve
+/// construction in u and v (design §3). Same invariants as [`NurbsCurve`] in
+/// each direction, over a rectangular control grid. **Not `Copy`** (heap grid).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NurbsSurface {
+    degree_u: usize,
+    degree_v: usize,
+    control_points: ControlGrid,
+    weights: Vec<Vec<f64>>,
+    knots_u: Vec<f64>,
+    knots_v: Vec<f64>,
+}
+
+impl NurbsSurface {
+    /// Build a surface, validating all invariants. `None` if either degree is 0,
+    /// the control grid is not rectangular or a dimension is below `degree + 1`,
+    /// the weight grid does not match, any weight is not positive (rejects `0`,
+    /// negatives, `NaN`), a knot count is wrong, or a knot vector decreases.
+    pub fn new(
+        degree_u: usize,
+        degree_v: usize,
+        control_points: ControlGrid,
+        weights: Vec<Vec<f64>>,
+        knots_u: Vec<f64>,
+        knots_v: Vec<f64>,
+    ) -> Option<NurbsSurface> {
+        if degree_u < 1 || degree_v < 1 {
+            return None;
+        }
+        let n_u = control_points.len();
+        if n_u < degree_u + 1 {
+            return None;
+        }
+        let n_v = control_points[0].len();
+        if n_v < degree_v + 1 {
+            return None;
+        }
+        // Rectangular grid, matching weight grid, positive weights.
+        if control_points.iter().any(|row| row.len() != n_v) {
+            return None;
+        }
+        if weights.len() != n_u || weights.iter().any(|row| row.len() != n_v) {
+            return None;
+        }
+        if !weights.iter().flatten().all(|&w| w > 0.0) {
+            return None;
+        }
+        if knots_u.len() != n_u + degree_u + 1 || knots_v.len() != n_v + degree_v + 1 {
+            return None;
+        }
+        if !knots_u.windows(2).all(|w| w[1] >= w[0]) || !knots_v.windows(2).all(|w| w[1] >= w[0]) {
+            return None;
+        }
+        Some(NurbsSurface {
+            degree_u,
+            degree_v,
+            control_points,
+            weights,
+            knots_u,
+            knots_v,
+        })
+    }
+
+    /// The u degree.
+    #[inline]
+    pub fn degree_u(&self) -> usize {
+        self.degree_u
+    }
+
+    /// The v degree.
+    #[inline]
+    pub fn degree_v(&self) -> usize {
+        self.degree_v
+    }
+
+    /// The control grid (`[i][j]`, i along u, j along v).
+    #[inline]
+    pub fn control_points(&self) -> &[Vec<Point3>] {
+        &self.control_points
+    }
+
+    /// The weight grid (all positive).
+    #[inline]
+    pub fn weights(&self) -> &[Vec<f64>] {
+        &self.weights
+    }
+
+    /// The u knot vector.
+    #[inline]
+    pub fn knots_u(&self) -> &[f64] {
+        &self.knots_u
+    }
+
+    /// The v knot vector.
+    #[inline]
+    pub fn knots_v(&self) -> &[f64] {
+        &self.knots_v
+    }
+
+    /// The parameter rectangle `((u0, u1), (v0, v1))` the surface spans.
+    #[inline]
+    pub fn domain(&self) -> ((f64, f64), (f64, f64)) {
+        let n_u = self.control_points.len() - 1;
+        let n_v = self.control_points[0].len() - 1;
+        (
+            (self.knots_u[self.degree_u], self.knots_u[n_u + 1]),
+            (self.knots_v[self.degree_v], self.knots_v[n_v + 1]),
+        )
+    }
+
+    /// The point at `(u, v)` (clamped to the domain) — the rational tensor-product
+    /// surface point (A4.3).
+    pub fn point_at(&self, u: f64, v: f64) -> Point3 {
+        let (u, v) = self.clamp(u, v);
+        let (su, nu, sv, nv) = self.spans_and_bases(u, v);
+        let (pu, pv) = (self.degree_u, self.degree_v);
+
+        let mut num = [0.0; 3];
+        let mut den = 0.0;
+        for (k, &nuk) in nu.iter().enumerate() {
+            let i = su - pu + k;
+            for (l, &nvl) in nv.iter().enumerate() {
+                let j = sv - pv + l;
+                let cp = self.control_points[i][j].as_array();
+                let nw = nuk * nvl * self.weights[i][j];
+                num[0] += nw * cp[0];
+                num[1] += nw * cp[1];
+                num[2] += nw * cp[2];
+                den += nw;
+            }
+        }
+        Point3::from_array([num[0] / den, num[1] / den, num[2] / den])
+    }
+
+    /// The first partial derivative `∂S/∂u` at `(u, v)` (A4.4).
+    pub fn du(&self, u: f64, v: f64) -> Vector3 {
+        self.partial(u, v, 1, 0)
+    }
+
+    /// The first partial derivative `∂S/∂v` at `(u, v)` (A4.4).
+    pub fn dv(&self, u: f64, v: f64) -> Vector3 {
+        self.partial(u, v, 0, 1)
+    }
+
+    /// The unit surface normal `normalize(∂S/∂u × ∂S/∂v)` at `(u, v)`; `None` at a
+    /// degenerate point (parallel or zero partials).
+    pub fn normal_at(&self, u: f64, v: f64) -> Option<Vector3> {
+        self.du(u, v).cross(self.dv(u, v)).normalize()
+    }
+
+    /// The `(a, b)`-order rational partial derivative (A4.4), for `a + b == 1`.
+    fn partial(&self, u: f64, v: f64, a: usize, b: usize) -> Vector3 {
+        let (u, v) = self.clamp(u, v);
+        let (pu, pv) = (self.degree_u, self.degree_v);
+        let su = find_span(pu, &self.knots_u, u);
+        let sv = find_span(pv, &self.knots_v, v);
+        let du = ders_basis_funs(pu, &self.knots_u, su, u, a);
+        let dv = ders_basis_funs(pv, &self.knots_v, sv, v, b);
+
+        // Homogeneous numerator/weight at orders (0,0) and (a,b).
+        let (mut a00, mut a_ab) = ([0.0; 3], [0.0; 3]);
+        let (mut w00, mut w_ab) = (0.0, 0.0);
+        for (k, &d0uk) in du[0].iter().enumerate() {
+            let i = su - pu + k;
+            let dauk = du[a][k];
+            for (l, &d0vl) in dv[0].iter().enumerate() {
+                let j = sv - pv + l;
+                let cp = self.control_points[i][j].as_array();
+                let w = self.weights[i][j];
+                let f00 = d0uk * d0vl * w;
+                let fab = dauk * dv[b][l] * w;
+                a00[0] += f00 * cp[0];
+                a00[1] += f00 * cp[1];
+                a00[2] += f00 * cp[2];
+                a_ab[0] += fab * cp[0];
+                a_ab[1] += fab * cp[1];
+                a_ab[2] += fab * cp[2];
+                w00 += f00;
+                w_ab += fab;
+            }
+        }
+        // S_ab = (A_ab − W_ab·S00) / W00, with S00 = A00 / W00.
+        let s00 = [a00[0] / w00, a00[1] / w00, a00[2] / w00];
+        Vector3::from_array([
+            (a_ab[0] - w_ab * s00[0]) / w00,
+            (a_ab[1] - w_ab * s00[1]) / w00,
+            (a_ab[2] - w_ab * s00[2]) / w00,
+        ])
+    }
+
+    fn spans_and_bases(&self, u: f64, v: f64) -> (usize, Vec<f64>, usize, Vec<f64>) {
+        let su = find_span(self.degree_u, &self.knots_u, u);
+        let nu = basis_funs(self.degree_u, &self.knots_u, su, u);
+        let sv = find_span(self.degree_v, &self.knots_v, v);
+        let nv = basis_funs(self.degree_v, &self.knots_v, sv, v);
+        (su, nu, sv, nv)
+    }
+
+    #[inline]
+    fn clamp(&self, u: f64, v: f64) -> (f64, f64) {
+        let ((u0, u1), (v0, v1)) = self.domain();
+        (u.clamp(u0, u1), v.clamp(v0, v1))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,6 +583,146 @@ mod tests {
         assert_eq!(c.derivative(0.5).as_array(), [3.0, 4.0, 5.0]);
     }
 
+    // --- surface golden ---
+
+    /// A bilinear (degree 1×1) surface over the unit square.
+    fn bilinear(p00: Point3, p10: Point3, p01: Point3, p11: Point3) -> NurbsSurface {
+        NurbsSurface::new(
+            1,
+            1,
+            vec![vec![p00, p01], vec![p10, p11]], // [i][j]: i→u, j→v
+            vec![vec![1.0, 1.0], vec![1.0, 1.0]],
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn surface_clamped_corners_interpolate() {
+        let s = bilinear(
+            p3(0.0, 0.0, 0.0),
+            p3(2.0, 0.0, 1.0),
+            p3(0.0, 3.0, 2.0),
+            p3(2.0, 3.0, 5.0),
+        );
+        assert_eq!(s.point_at(0.0, 0.0).as_array(), [0.0, 0.0, 0.0]); // P[0][0]
+        assert_eq!(s.point_at(1.0, 1.0).as_array(), [2.0, 3.0, 5.0]); // P[1][1]
+    }
+
+    #[test]
+    fn bilinear_midpoint_is_corner_average() {
+        let s = bilinear(
+            p3(0.0, 0.0, 0.0),
+            p3(2.0, 0.0, 0.0),
+            p3(0.0, 2.0, 0.0),
+            p3(2.0, 2.0, 4.0),
+        );
+        assert_eq!(s.point_at(0.5, 0.5).as_array(), [1.0, 1.0, 1.0]); // average of the four
+    }
+
+    #[test]
+    fn rational_surface_is_a_quarter_cylinder() {
+        // u: exact quarter-circle (weight √2/2 on the middle column); v: linear
+        // extrusion 0→h. Asymmetric 3×2 grid catches u/v and i/j swaps.
+        let w = std::f64::consts::FRAC_1_SQRT_2;
+        let h = 4.0;
+        let s = NurbsSurface::new(
+            2,
+            1,
+            vec![
+                vec![p3(1.0, 0.0, 0.0), p3(1.0, 0.0, h)],
+                vec![p3(1.0, 1.0, 0.0), p3(1.0, 1.0, h)],
+                vec![p3(0.0, 1.0, 0.0), p3(0.0, 1.0, h)],
+            ],
+            vec![vec![1.0, 1.0], vec![w, w], vec![1.0, 1.0]],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+        )
+        .unwrap();
+        for &v in &[0.0, 0.3, 0.7, 1.0] {
+            let p = s.point_at(0.5, v).as_array();
+            let r = (p[0] * p[0] + p[1] * p[1]).sqrt();
+            assert!(
+                approx_eq(r, 1.0, EPS, EPS),
+                "off the unit cylinder at v={v}: r={r}"
+            );
+            assert!(approx_eq(p[2], v * h, EPS, EPS), "wrong height at v={v}");
+        }
+    }
+
+    #[test]
+    fn surface_degenerate_constructions_return_none() {
+        let ok_cp = vec![
+            vec![p3(0.0, 0.0, 0.0), p3(0.0, 1.0, 0.0)],
+            vec![p3(1.0, 0.0, 0.0), p3(1.0, 1.0, 0.0)],
+        ];
+        let ok_w = vec![vec![1.0, 1.0], vec![1.0, 1.0]];
+        let ku = vec![0.0, 0.0, 1.0, 1.0];
+        let mk =
+            |du, dv, cp, w, ku: Vec<f64>, kv: Vec<f64>| NurbsSurface::new(du, dv, cp, w, ku, kv);
+        assert!(mk(1, 1, ok_cp.clone(), ok_w.clone(), ku.clone(), ku.clone()).is_some());
+        assert!(mk(0, 1, ok_cp.clone(), ok_w.clone(), ku.clone(), ku.clone()).is_none()); // degree_u 0
+        // non-rectangular grid
+        let ragged = vec![
+            vec![p3(0.0, 0.0, 0.0), p3(0.0, 1.0, 0.0)],
+            vec![p3(1.0, 0.0, 0.0)],
+        ];
+        assert!(mk(1, 1, ragged, ok_w.clone(), ku.clone(), ku.clone()).is_none());
+        // weight grid mismatch
+        assert!(
+            mk(
+                1,
+                1,
+                ok_cp.clone(),
+                vec![vec![1.0, 1.0]],
+                ku.clone(),
+                ku.clone()
+            )
+            .is_none()
+        );
+        // non-positive weight
+        assert!(
+            mk(
+                1,
+                1,
+                ok_cp.clone(),
+                vec![vec![1.0, 0.0], vec![1.0, 1.0]],
+                ku.clone(),
+                ku.clone()
+            )
+            .is_none()
+        );
+        // wrong knot count
+        assert!(
+            mk(
+                1,
+                1,
+                ok_cp.clone(),
+                ok_w.clone(),
+                vec![0.0, 0.0, 1.0],
+                ku.clone()
+            )
+            .is_none()
+        );
+        // decreasing knots
+        assert!(mk(1, 1, ok_cp, ok_w, vec![0.0, 1.0, 0.0, 1.0], ku).is_none());
+    }
+
+    #[test]
+    fn bilinear_partials_are_known() {
+        // S(u,v)=(1−u)(1−v)P00+u(1−v)P10+(1−u)v P01+uv P11 over unit square.
+        // ∂u(.5,.5)=½(P10−P00)+½(P11−P01); ∂v(.5,.5)=½(P01−P00)+½(P11−P10).
+        let s = bilinear(
+            p3(0.0, 0.0, 0.0),
+            p3(1.0, 0.0, 0.0),
+            p3(0.0, 1.0, 0.0),
+            p3(1.0, 1.0, 2.0),
+        );
+        assert_eq!(s.du(0.5, 0.5).as_array(), [1.0, 0.0, 1.0]);
+        assert_eq!(s.dv(0.5, 0.5).as_array(), [0.0, 1.0, 1.0]);
+    }
+
     // --- proptest ---
 
     fn nurbs() -> impl Strategy<Value = NurbsCurve> {
@@ -385,6 +733,27 @@ mod tests {
                 let cp: Vec<Point3> = pts.into_iter().map(Point3::from_array).collect();
                 let knots = clamped_uniform_knots(degree, cp.len());
                 NurbsCurve::new(degree, cp, ws, knots).unwrap()
+            })
+        })
+    }
+
+    fn nurbs_surface() -> impl Strategy<Value = NurbsSurface> {
+        (2usize..=3, 2usize..=3, 3usize..=5, 3usize..=5).prop_flat_map(|(du, dv, nu, nv)| {
+            let nu = nu.max(du + 1);
+            let nv = nv.max(dv + 1);
+            let pts = prop::collection::vec(
+                prop::collection::vec(prop::array::uniform3(-10.0f64..10.0), nv),
+                nu,
+            );
+            let ws = prop::collection::vec(prop::collection::vec(0.5f64..2.0, nv), nu);
+            (Just((du, dv)), pts, ws).prop_map(move |((du, dv), pts, ws)| {
+                let cp: Vec<Vec<Point3>> = pts
+                    .into_iter()
+                    .map(|row| row.into_iter().map(Point3::from_array).collect())
+                    .collect();
+                let ku = clamped_uniform_knots(du, nu);
+                let kv = clamped_uniform_knots(dv, nv);
+                NurbsSurface::new(du, dv, cp, ws, ku, kv).unwrap()
             })
         })
     }
@@ -421,6 +790,54 @@ mod tests {
             let (lo, hi) = c.domain();
             prop_assert_eq!(c.point_at(lo - 5.0).as_array(), c.point_at(lo).as_array());
             prop_assert_eq!(c.point_at(hi + 5.0).as_array(), c.point_at(hi).as_array());
+        }
+
+        #[test]
+        fn surface_partials_match_central_differences(
+            s in nurbs_surface(),
+            su in 0.05f64..0.95,
+            sv in 0.05f64..0.95,
+        ) {
+            let ((u0, u1), (v0, v1)) = s.domain();
+            let (u, v) = (u0 + su * (u1 - u0), v0 + sv * (v1 - v0));
+            let h = 1e-6;
+            let cu = (s.point_at(u + h, v) - s.point_at(u - h, v)) / (2.0 * h);
+            let cv = (s.point_at(u, v + h) - s.point_at(u, v - h)) / (2.0 * h);
+            let extent: f64 = s.control_points().iter().flatten()
+                .map(|p| (*p - Point3::origin()).norm()).fold(0.0, f64::max);
+            let tol = 1e-6 * (extent + 1.0);
+            prop_assert!((s.du(u, v) - cu).norm() <= tol);
+            prop_assert!((s.dv(u, v) - cv).norm() <= tol);
+        }
+
+        #[test]
+        fn surface_normal_is_unit_and_perpendicular(
+            s in nurbs_surface(),
+            su in 0.1f64..0.9,
+            sv in 0.1f64..0.9,
+        ) {
+            let ((u0, u1), (v0, v1)) = s.domain();
+            let (u, v) = (u0 + su * (u1 - u0), v0 + sv * (v1 - v0));
+            let (du, dv) = (s.du(u, v), s.dv(u, v));
+            // Skip near-degenerate parameterizations (parallel/zero partials).
+            prop_assume!(du.cross(dv).norm() > 1e-6 * (du.norm() * dv.norm() + 1.0));
+            let n = s.normal_at(u, v).unwrap();
+            prop_assert!(approx_eq(n.norm(), 1.0, EPS, EPS));
+            let scale = du.norm().max(dv.norm()) + 1.0;
+            prop_assert!(n.dot(du).abs() <= 1e-6 * scale);
+            prop_assert!(n.dot(dv).abs() <= 1e-6 * scale);
+        }
+
+        #[test]
+        fn surface_point_lies_in_control_aabb(s in nurbs_surface(), su in 0.0f64..1.0, sv in 0.0f64..1.0) {
+            let ((u0, u1), (v0, v1)) = s.domain();
+            let p = s.point_at(u0 + su * (u1 - u0), v0 + sv * (v1 - v0)).as_array();
+            for (axis, &pa) in p.iter().enumerate() {
+                let coords = || s.control_points().iter().flatten().map(|q| q.as_array()[axis]);
+                let mn = coords().fold(f64::MAX, f64::min);
+                let mx = coords().fold(f64::MIN, f64::max);
+                prop_assert!(pa >= mn - 1e-9 && pa <= mx + 1e-9);
+            }
         }
     }
 }

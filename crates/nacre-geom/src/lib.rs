@@ -7,12 +7,13 @@
 //! 절대원칙 4).
 //!
 //! M1 defined [`Plane`] and [`Line`]; M3 adds [`Circle`] (the full-circle
-//! carrier), [`Cylinder`], and [`NurbsCurve`] (rational B-spline evaluation),
-//! with `Sphere`/`NurbsSurface` and the `Curve::Intersection` variant to follow.
-//! ([`NurbsCurve`] is a standalone evaluator for now — the `Curve::Nurbs` variant
-//! is wired with a producer later.) That intersection variant (holding
-//! `Handle<Surface>`) is the sole reason geom will later depend on `nacre-store`;
-//! today it uses no `Handle` and has no store dependency.
+//! carrier), [`Cylinder`], and [`NurbsCurve`]/[`NurbsSurface`] (rational B-spline
+//! evaluation), with `Sphere` and the `Curve::Intersection` variant to follow.
+//! ([`NurbsCurve`]/[`NurbsSurface`] are standalone evaluators for now — the
+//! `Curve::Nurbs`/`Surface::Nurbs` variants are wired with a producer later.)
+//! That intersection variant (holding `Handle<Surface>`) is the sole reason geom
+//! will later depend on `nacre-store`; today it uses no `Handle` and has no store
+//! dependency.
 
 mod circle;
 mod cylinder;
@@ -23,15 +24,16 @@ mod plane;
 pub use circle::Circle;
 pub use cylinder::Cylinder;
 pub use line::Line;
-pub use nurbs::NurbsCurve;
+pub use nurbs::{NurbsCurve, NurbsSurface};
 pub use plane::Plane;
 
 use nacre_math::Point3;
 
 /// A surface — the exact truth of a face's geometry.
 ///
-/// `Plane` and `Cylinder` are wired; `Sphere` and `Nurbs` arrive later in M3.
-/// **Not `Copy`**: the coming `Nurbs(NurbsSurface)` variant owns heap-allocated
+/// `Plane` and `Cylinder` are wired; a `Nurbs(NurbsSurface)` variant (the
+/// [`NurbsSurface`] evaluator already exists) and `Sphere` arrive when wired with
+/// a producer. **Not `Copy`**: the coming `Nurbs` variant owns heap-allocated
 /// control points, so this type is non-`Copy` from the start to match its
 /// eventual nature.
 #[derive(Clone, Debug, PartialEq)]
