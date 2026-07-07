@@ -33,10 +33,11 @@ impl SketchPlane {
     }
 
     /// A plane through `origin` with the given `normal`; `x`/`y` axes are
-    /// synthesized (`x = perp(n)`, `y = n × x`). `None` if `normal` is zero.
+    /// synthesized (`x = n.any_perpendicular()`, `y = n × x`). `None` if `normal`
+    /// is zero.
     pub fn from_origin_normal(origin: Point3, normal: Vector3) -> Option<Self> {
         let n = normal.normalize()?;
-        let x = perp(n);
+        let x = n.any_perpendicular()?;
         Some(Self {
             origin,
             x_axis: x,
@@ -297,23 +298,6 @@ fn extrude(
         outer: shell,
         cavities: vec![],
     }))
-}
-
-/// A unit vector perpendicular to unit `n`: cross with the coordinate axis `n`
-/// is least aligned with, so the cross is never near-zero. (Second copy after
-/// nacre-step; promote to nacre-math on a third consumer.)
-fn perp(n: Vector3) -> Vector3 {
-    let a = n.as_array().map(f64::abs);
-    let axis = if a[0] <= a[1] && a[0] <= a[2] {
-        Vector3::from_array([1.0, 0.0, 0.0])
-    } else if a[1] <= a[2] {
-        Vector3::from_array([0.0, 1.0, 0.0])
-    } else {
-        Vector3::from_array([0.0, 0.0, 1.0])
-    };
-    axis.cross(n)
-        .normalize()
-        .expect("chosen axis is not parallel to a unit normal")
 }
 
 #[cfg(test)]

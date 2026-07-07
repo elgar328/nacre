@@ -97,6 +97,24 @@ impl Vector<3> {
             a[0] * b[1] - a[1] * b[0],
         ])
     }
+
+    /// An arbitrary **unit** vector perpendicular to `self`.
+    ///
+    /// Crosses `self` with the coordinate axis it is least aligned with (so the
+    /// cross is never near-zero) and normalizes. The choice is arbitrary — any
+    /// perpendicular will do — so this suits synthesizing a reference/seam
+    /// direction. Returns `None` iff `self` is the zero vector.
+    pub fn any_perpendicular(self) -> Option<Vector<3>> {
+        let a = self.coords.map(f64::abs);
+        let axis = if a[0] <= a[1] && a[0] <= a[2] {
+            Vector::from_array([1.0, 0.0, 0.0])
+        } else if a[1] <= a[2] {
+            Vector::from_array([0.0, 1.0, 0.0])
+        } else {
+            Vector::from_array([0.0, 0.0, 1.0])
+        };
+        axis.cross(self).normalize()
+    }
 }
 
 impl<const D: usize> Index<usize> for Vector<D> {
@@ -257,6 +275,16 @@ mod tests {
         assert_eq!(x.cross(x).as_array(), [0.0, 0.0, 0.0]);
     }
 
+    #[test]
+    fn any_perpendicular_values() {
+        // +Z is least aligned with X → cross(X, Z) direction, normalized.
+        let z = Vector::from_array([0.0, 0.0, 1.0]);
+        let p = z.any_perpendicular().unwrap();
+        assert!(approx_eq(p.norm(), 1.0, EPS, EPS));
+        assert!(approx_eq(p.dot(z), 0.0, EPS, EPS));
+        assert!(Vector::<3>::zero().any_perpendicular().is_none());
+    }
+
     // --- proptest algebraic laws ---
 
     fn vec3() -> impl Strategy<Value = Vector<3>> {
@@ -334,6 +362,15 @@ mod tests {
             let scale = a.norm() * b.norm() + 1.0;
             prop_assert!(a.dot(n).abs() <= 1e-6 * scale);
             prop_assert!(b.dot(n).abs() <= 1e-6 * scale);
+        }
+
+        #[test]
+        fn any_perpendicular_is_unit_and_orthogonal(a in vec3()) {
+            prop_assume!(a.norm_squared() >= 1e-12);
+            let p = a.any_perpendicular().unwrap();
+            prop_assert!(approx_eq(p.norm(), 1.0, EPS, EPS));
+            let scale = a.norm() + 1.0;
+            prop_assert!(a.dot(p).abs() <= 1e-6 * scale);
         }
 
         #[test]

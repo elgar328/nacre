@@ -26,26 +26,27 @@ use nacre_math::Point3;
 
 /// A surface — the exact truth of a face's geometry.
 ///
-/// Single-variant for now so topology can hold `Handle<Surface>`; a
-/// `Cylinder(Cylinder)` variant (the [`Cylinder`] type now exists), `Sphere`,
-/// and `Nurbs` arrive in M3 when wired. **Not `Copy`**: the coming
-/// `Nurbs(NurbsSurface)` variant owns heap-allocated control points, so this
-/// type is non-`Copy` from the start to match its eventual nature.
+/// `Plane` and `Cylinder` are wired; `Sphere` and `Nurbs` arrive later in M3.
+/// **Not `Copy`**: the coming `Nurbs(NurbsSurface)` variant owns heap-allocated
+/// control points, so this type is non-`Copy` from the start to match its
+/// eventual nature.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Surface {
     Plane(Plane),
+    Cylinder(Cylinder),
 }
 
 impl Surface {
     /// Unsigned distance from `p` to the surface (the tolerance-free residual).
     ///
-    /// Note: closed-form and always finite for analytic surfaces (planes, and
-    /// the M6 quadrics). When iterative surfaces (NURBS) arrive in M3 this may
-    /// gain fallibility/cost (a `Result` or a separate `try_distance`).
+    /// Note: closed-form and always finite for analytic surfaces (planes,
+    /// cylinders, and the M6 quadrics). When iterative surfaces (NURBS) arrive
+    /// this may gain fallibility/cost (a `Result` or a separate `try_distance`).
     #[inline]
     pub fn distance(&self, p: Point3) -> f64 {
         match self {
             Surface::Plane(s) => s.distance(p),
+            Surface::Cylinder(s) => s.distance(p),
         }
     }
 
@@ -58,15 +59,15 @@ impl Surface {
 
 /// A curve — the exact truth of an edge's geometry.
 ///
-/// Single-variant for now so topology can hold `Handle<Curve>`; a `Circle(Circle)`
-/// variant (the [`Circle`] carrier already exists), `Nurbs`, and the
+/// `Line` and `Circle` (the full-circle carrier) are wired; `Nurbs` and the
 /// `Intersection { surfaces: [Handle<Surface>; 2], .. }` variant (design §3)
-/// arrive in M3 — that intersection variant is the sole reason geom will later
+/// arrive later — that intersection variant is the sole reason geom will later
 /// depend on `nacre-store`. **Not `Copy`** (future heap-backed variants), same
 /// as [`Surface`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Curve {
     Line(Line),
+    Circle(Circle),
 }
 
 impl Curve {
@@ -76,6 +77,7 @@ impl Curve {
     pub fn distance(&self, p: Point3) -> f64 {
         match self {
             Curve::Line(c) => c.distance(p),
+            Curve::Circle(c) => c.distance(p),
         }
     }
 
@@ -125,5 +127,39 @@ mod tests {
         assert_eq!(c.distance(Point3::from_array([0.0, 3.0, 0.0])), 3.0);
         assert!(c.contains(Point3::from_array([5.0, 0.0, 0.0]), 1e-9));
         assert!(!c.contains(Point3::from_array([0.0, 3.0, 0.0]), 1e-9));
+    }
+
+    #[test]
+    fn curve_delegates_to_circle() {
+        // Unit circle in the XY plane, centre origin.
+        let c = Curve::Circle(
+            Circle::from_center_normal(
+                Point3::origin(),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                Vector3::from_array([1.0, 0.0, 0.0]),
+                1.0,
+            )
+            .unwrap(),
+        );
+        assert_eq!(c.distance(Point3::from_array([2.0, 0.0, 0.0])), 1.0);
+        assert!(c.contains(Point3::from_array([1.0, 0.0, 0.0]), 1e-9));
+        assert!(!c.contains(Point3::from_array([2.0, 0.0, 0.0]), 1e-9));
+    }
+
+    #[test]
+    fn surface_delegates_to_cylinder() {
+        // Unit-radius cylinder about the Z axis.
+        let s = Surface::Cylinder(
+            Cylinder::from_axis(
+                Point3::origin(),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                Vector3::from_array([1.0, 0.0, 0.0]),
+                1.0,
+            )
+            .unwrap(),
+        );
+        assert_eq!(s.distance(Point3::from_array([2.0, 0.0, 5.0])), 1.0);
+        assert!(s.contains(Point3::from_array([1.0, 0.0, 3.0]), 1e-9));
+        assert!(!s.contains(Point3::from_array([2.0, 0.0, 5.0]), 1e-9));
     }
 }

@@ -11,7 +11,6 @@
 //! compiler forces them to be handled here. AP242 Ed2 is stamped by the backend.
 
 use nacre_geom::{Curve, Surface};
-use nacre_math::Vector3;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Model, Orientation, Vertex};
 use std::collections::HashMap;
@@ -32,6 +31,10 @@ pub enum StepError {
     /// The `step-io` backend rejected the entity graph (its `AuthorError`,
     /// stringified so the backend type does not leak into the public API).
     Backend(String),
+    /// Curved geometry (`Curve::Circle` / `Surface::Cylinder`) — STEP emission
+    /// is deferred to the next unit. Transitional: this variant and its two
+    /// match arms are replaced by real emission (circle/cylinder) then.
+    UnsupportedCurvedGeometry,
 }
 
 impl From<step_io::AuthorError> for StepError {
@@ -74,8 +77,15 @@ pub fn to_step(model: &Model) -> Result<String, StepError> {
                 Surface::Plane(p) => Frame {
                     origin: p.origin().as_array(),
                     axis: p.normal().as_array(),
-                    ref_dir: perp(p.normal()).as_array(),
+                    // Any perpendicular works — ref_dir is cosmetic for a bounded planar face.
+                    ref_dir: p
+                        .normal()
+                        .any_perpendicular()
+                        .expect("unit normal has a perpendicular")
+                        .as_array(),
                 },
+                // Cylinder STEP emission (CYLINDRICAL_SURFACE) lands in the next unit.
+                Surface::Cylinder(_) => return Err(StepError::UnsupportedCurvedGeometry),
             };
             let same_sense = matches!(face.orientation, Orientation::Forward);
 
@@ -132,6 +142,8 @@ fn build_edge(
     // Exhaustive: CurveInput::Line derives geometry from the two vertices.
     let curve = match model.curves.get(edge.curve) {
         Curve::Line(_) => CurveInput::Line,
+        // Circle STEP emission (CurveInput::Circle) lands in the next unit.
+        Curve::Circle(_) => return Err(StepError::UnsupportedCurvedGeometry),
     };
     let sv0 = build_vertex(b, model, v0, vmap)?;
     let sv1 = build_vertex(b, model, v1, vmap)?;
@@ -152,23 +164,6 @@ fn build_vertex(
     let v = b.vertex(model.vertices.get(vh).point.as_array())?;
     vmap.insert(vh, v);
     Ok(v)
-}
-
-/// A unit vector perpendicular to `n` (the plane's `ref_dir` / local X — its
-/// choice is cosmetic for a bounded planar face). Cross `n` with the coordinate
-/// axis it is least aligned with, so the cross is never near-zero.
-fn perp(n: Vector3) -> Vector3 {
-    let a = n.as_array().map(f64::abs);
-    let axis = if a[0] <= a[1] && a[0] <= a[2] {
-        Vector3::from_array([1.0, 0.0, 0.0])
-    } else if a[1] <= a[2] {
-        Vector3::from_array([0.0, 1.0, 0.0])
-    } else {
-        Vector3::from_array([0.0, 0.0, 1.0])
-    };
-    axis.cross(n)
-        .normalize()
-        .expect("chosen axis is not parallel to a unit normal, so the cross is nonzero")
 }
 
 #[cfg(test)]

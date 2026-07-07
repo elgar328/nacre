@@ -203,6 +203,8 @@ mod tests {
     fn face_plane_normal(m: &Model, f: &Face) -> Vector3 {
         match m.surfaces.get(f.surface) {
             Surface::Plane(p) => p.normal(),
+            // Planar-only helper: callers filter to plane faces (caps), never cylinders.
+            Surface::Cylinder(_) => unreachable!("face_plane_normal called on a curved face"),
         }
     }
     fn face_centroid(m: &Model, f: &Face) -> Point3 {
