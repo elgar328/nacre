@@ -126,6 +126,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nacre-tess"
+version = "0.0.0"
+dependencies = [
+ "nacre-math",
+ "nacre-topo",
+ "proptest",
+]
+
+[[package]]
 name = "nacre-topo"
 version = "0.0.0"
 dependencies = [
