@@ -6,7 +6,7 @@
 //!
 //! **Work in progress.** This is a placeholder release that reserves the crate
 //! name; the public API is not available yet. This facade crate will re-export
-//! the kernel layers (`nacre-core`, `nacre-geom`, `nacre-topo`, …) once they are
+//! the kernel layers (`nacre-store`, `nacre-geom`, `nacre-topo`, …) once they are
 //! published.
 //!
 //! See the repository for design and progress.

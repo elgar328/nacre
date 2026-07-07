@@ -103,7 +103,7 @@ name = "nacre"
 version = "0.0.0"
 
 [[package]]
-name = "nacre-core"
+name = "nacre-store"
 version = "0.0.0"
 dependencies = [
  "cargo-husky",
