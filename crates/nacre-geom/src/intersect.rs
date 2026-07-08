@@ -44,6 +44,74 @@ pub fn plane_plane(a: &Plane, b: &Plane) -> Option<Line> {
     Line::from_point_direction(base, d)
 }
 
+/// `|det|` below which three unit normals are too close to a common plane to
+/// yield a usable vertex coordinate. `det = n1·(n2×n3) ∈ [−1, 1]` for unit
+/// normals, so this is scale-free; and since the coordinate error is roughly
+/// `ε_f64 / |det|`, the cutoff bounds that error (~`1e-7` here) rather than
+/// being an arbitrary constant.
+const COPLANAR_DET_EPS: f64 = 1e-9;
+
+/// The point where three planes meet, or `None` if they do not meet in a
+/// well-conditioned point (two parallel, or the three normals near-coplanar).
+///
+/// Closed-form Cramer: `P = (h1·(n2×n3) + h2·(n3×n1) + h3·(n1×n2)) / det`,
+/// `det = n1·(n2×n3)` (the scalar triple product = determinant of rows
+/// `[n1, n2, n3]`), `hᵢ = nᵢ·originᵢ`.
+///
+/// The f64 coordinate is a **cache** — the three planes are the truth (design
+/// §3/§4). Its residual to the planes is the `Origin::Discovered` tolerance,
+/// which the caller (M5-c) measures when it forms the vertex (closed-form
+/// residual is recomputable, unlike an iterative solve's, so it is not returned
+/// here). The gate is the conditioning threshold [`COPLANAR_DET_EPS`], not the
+/// exact `det3_sign`: an exact-nonzero determinant can still round its f64
+/// counterpart to ~0 and blow the coordinate up, and this function's output is
+/// an inexact coordinate, so an exact existence test would be the wrong gate.
+/// (The exact predicate is used where a *decision* must be exact — M5-c's
+/// combinatorial "do these meet".)
+pub fn three_planes(a: &Plane, b: &Plane, c: &Plane) -> Option<Point3> {
+    let n1 = a.normal();
+    let n2 = b.normal();
+    let n3 = c.normal();
+    let det = n1.dot(n2.cross(n3));
+    if det.abs() <= COPLANAR_DET_EPS {
+        return None; // parallel or near-coplanar normals — no usable vertex
+    }
+    let h1 = n1.dot(a.origin() - Point3::origin());
+    let h2 = n2.dot(b.origin() - Point3::origin());
+    let h3 = n3.dot(c.origin() - Point3::origin());
+    let num = h1 * n2.cross(n3) + h2 * n3.cross(n1) + h3 * n1.cross(n2);
+    Some(Point3::origin() + num / det)
+}
+
+/// The exact sign of `orient3d(V, q, r, s)`, where `V` is the implicit point at
+/// which planes `a, b, c` meet and `q, r, s` are explicit points — the
+/// geom→predicates handoff (design §9). `+1`/`-1`/`0` with the same convention
+/// as [`nacre_predicates::orient3d`] (positive ⇒ `V` on the negative side of the
+/// plane through `q, r, s`).
+///
+/// The three planes' [`coefficients`](Plane::coefficients) fill the rows of a
+/// [`nacre_predicates::ThreePlane`], keeping the predicate dependency inside
+/// geom (so `topo → geom → predicates`, and `topo` need not know predicates).
+/// `V` is never materialized — the sign is exact even though `V`'s coordinates
+/// are generally irrational (design §3, Attene 2020).
+///
+/// **Precondition (inherited from [`nacre_predicates::indirect_orient3d`]):**
+/// `a, b, c` must meet in a single point (`det` of their normals ≠ 0), and
+/// `q, r, s` must be non-collinear. A degenerate input yields `0`, which in a
+/// release build is indistinguishable from a true coplanar `0` (the debug
+/// assertion is compiled out) — callers must pass a valid vertex, as M5-c does.
+pub fn three_plane_orient3d(
+    a: &Plane,
+    b: &Plane,
+    c: &Plane,
+    q: Point3,
+    r: Point3,
+    s: Point3,
+) -> i8 {
+    let tp = nacre_predicates::ThreePlane([a.coefficients(), b.coefficients(), c.coefficients()]);
+    nacre_predicates::indirect_orient3d(&tp, q.as_array(), r.as_array(), s.as_array())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,6 +198,123 @@ mod tests {
             let scale = 1e-9 * (mag + 1.0);
             prop_assert!(a.distance(p) <= scale);
             prop_assert!(b.distance(p) <= scale);
+        }
+    }
+
+    // --- three_planes / three_plane_orient3d ---
+
+    /// The sign of an f64 (`+1`/`-1`/`0`) — not `f64::signum`, which maps `0.0`
+    /// to `+1.0`; a coplanar `orient3d` (exactly `0.0`) must read as `0`.
+    fn sign_f64(x: f64) -> i8 {
+        if x > 0.0 {
+            1
+        } else if x < 0.0 {
+            -1
+        } else {
+            0
+        }
+    }
+
+    #[test]
+    fn three_planes_axis_gives_unit_vertex() {
+        // x = 1, y = 1, z = 1 ⇒ (1, 1, 1).
+        let v = three_planes(
+            &plane([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            &plane([0.0, 1.0, 0.0], [0.0, 1.0, 0.0]),
+            &plane([0.0, 0.0, 1.0], [0.0, 0.0, 1.0]),
+        )
+        .unwrap();
+        assert_eq!(v.as_array(), [1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn three_planes_parallel_pair_is_none() {
+        // x = 0 and x = 1 are parallel ⇒ no vertex, whatever the third plane.
+        assert!(
+            three_planes(
+                &plane([0.0; 3], [1.0, 0.0, 0.0]),
+                &plane([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                &plane([0.0; 3], [0.0, 1.0, 0.0]),
+            )
+            .is_none()
+        );
+    }
+
+    /// Well-conditioned unit normals: three vectors whose triple product is well
+    /// clear of zero (so the vertex is well-conditioned).
+    fn three_unit_normals() -> impl Strategy<Value = (Vector3, Vector3, Vector3)> {
+        (vec3(), vec3(), vec3()).prop_filter_map("zero/near-coplanar normals", |(a, b, c)| {
+            let n1 = a.normalize()?;
+            let n2 = b.normalize()?;
+            let n3 = c.normalize()?;
+            (n1.dot(n2.cross(n3)).abs() >= 0.1).then_some((n1, n2, n3))
+        })
+    }
+
+    fn ivec3() -> impl Strategy<Value = [i64; 3]> {
+        prop::array::uniform3(-30i64..=30)
+    }
+
+    proptest! {
+        /// Three well-conditioned planes through a target point recover it.
+        #[test]
+        fn three_planes_recovers_constructed_vertex(
+            p in prop::array::uniform3(-100.0f64..100.0),
+            (n1, n2, n3) in three_unit_normals(),
+        ) {
+            let p = Point3::from_array(p);
+            let v = three_planes(
+                &Plane::from_point_normal(p, n1).unwrap(),
+                &Plane::from_point_normal(p, n2).unwrap(),
+                &Plane::from_point_normal(p, n3).unwrap(),
+            )
+            .unwrap();
+            let mag = p.as_array().iter().map(|x| x.abs()).fold(0.0, f64::max);
+            prop_assert!(v.distance(p) <= 1e-6 * (mag + 1.0));
+        }
+
+        /// End-to-end wiring: `three_plane_orient3d` (via `coefficients()`) agrees
+        /// with `orient3d` evaluated at the constructed vertex. Because `Plane`
+        /// normalizes, the implicit vertex is `p + O(1e-16)`, not exactly `p`; so
+        /// the config is restricted to well-conditioned normals and a non-coplanar
+        /// (p, q, r, s) — there the true `orient3d` is a nonzero integer, which the
+        /// tiny vertex perturbation cannot flip. This exercises the new geom code
+        /// (coefficient extraction + assembly), not `indirect_orient3d` itself.
+        #[test]
+        fn three_plane_orient3d_matches_materialized(
+            p in ivec3(),
+            normals in prop::array::uniform3(ivec3()),
+            q in ivec3(),
+            r in ivec3(),
+            s in ivec3(),
+        ) {
+            let pf = Point3::from_array(p.map(|v| v as f64));
+            let planes: Option<Vec<Plane>> = normals
+                .iter()
+                .map(|n| {
+                    Plane::from_point_normal(pf, Vector3::from_array(n.map(|v| v as f64)))
+                })
+                .collect();
+            prop_assume!(planes.is_some()); // reject a zero integer normal
+            let planes = planes.unwrap();
+            let u: Vec<_> = planes.iter().map(|pl| pl.normal()).collect();
+            prop_assume!(u[0].dot(u[1].cross(u[2])).abs() >= 0.1); // well-conditioned
+
+            let qf = Point3::from_array(q.map(|v| v as f64));
+            let rf = Point3::from_array(r.map(|v| v as f64));
+            let sf = Point3::from_array(s.map(|v| v as f64));
+            let expected = sign_f64(nacre_predicates::orient3d(
+                pf.as_array(),
+                qf.as_array(),
+                rf.as_array(),
+                sf.as_array(),
+            ));
+            prop_assume!(expected != 0); // coplanar: perturbation could flip it
+
+            prop_assert_eq!(
+                three_plane_orient3d(&planes[0], &planes[1], &planes[2], qf, rf, sf),
+                expected
+            );
         }
     }
 }

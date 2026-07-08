@@ -9,6 +9,9 @@ description = "exact analytic geometry (Surface/Curve, Plane/Line) for the nacre
 
 [dependencies]
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
+# Exact indirect predicates for three-plane vertex sign decisions (design §9).
+# A pure numeric layer with no kernel-crate deps, so this edge is acyclic.
+nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 
 [dev-dependencies]
 proptest.workspace = true
