@@ -61,6 +61,17 @@ pub enum Orientation {
     Reversed,
 }
 
+impl Orientation {
+    /// The opposite orientation.
+    #[inline]
+    pub fn flipped(self) -> Orientation {
+        match self {
+            Orientation::Forward => Orientation::Reversed,
+            Orientation::Reversed => Orientation::Forward,
+        }
+    }
+}
+
 /// The truth-only aggregate: exact geometry + topology stores + the derived
 /// adjacency cache. No `tess`, no `ops` (see the crate docs).
 #[derive(Debug, Default)]
@@ -105,6 +116,24 @@ fn in_bounds<T>(h: Handle<T>, store: &Store<T>) -> bool {
     (h.index() as usize) < store.len()
 }
 
+/// A loop with its winding reversed: half-edges in reverse order, each traversed
+/// the opposite way. Reversing a loop's winding flips the face normal the loop
+/// implies, so paired with an [`Orientation`] toggle it yields a consistent
+/// inward-facing face (`Model::reversed_shell`).
+fn reversed_loop(lp: &Loop) -> Loop {
+    Loop {
+        half_edges: lp
+            .half_edges
+            .iter()
+            .rev()
+            .map(|he| HalfEdge {
+                edge: he.edge,
+                forward: !he.forward,
+            })
+            .collect(),
+    }
+}
+
 impl Model {
     /// An empty model.
     #[inline]
@@ -129,6 +158,33 @@ impl Model {
         let h = self.solids.push(solid);
         self.live_solids.push(h);
         h
+    }
+
+    /// A new shell whose faces are copies of `src`'s with their outward normals
+    /// flipped inward: every loop's winding is reversed and every face
+    /// `orientation` is toggled. Pushes fresh [`Face`] cells and a fresh
+    /// [`Shell`], but **reuses** `src`'s surfaces, edges, curves, and vertices —
+    /// which stay valid handles after the source solid is superseded
+    /// (append-only). This is the building block for a cavity (void) shell: the
+    /// boundary of a solid whose interior becomes empty space (design §8 M5
+    /// containment). The reversed winding keeps each shared edge used with
+    /// opposed half-edges (a valid 2-manifold), and the toggled orientation makes
+    /// the outward normal point into the void.
+    pub fn reversed_shell(&mut self, src: Handle<Shell>) -> Handle<Shell> {
+        let src_faces = self.shells.get(src).faces.clone();
+        let faces: Vec<Handle<Face>> = src_faces
+            .iter()
+            .map(|&fh| {
+                let face = self.faces.get(fh).clone();
+                self.faces.push(Face {
+                    surface: face.surface,
+                    outer: reversed_loop(&face.outer),
+                    inner: face.inner.iter().map(reversed_loop).collect(),
+                    orientation: face.orientation.flipped(),
+                })
+            })
+            .collect();
+        self.shells.push(Shell { faces })
     }
 
     /// The handles reachable from the live solids — the live model (design §2).
@@ -715,6 +771,69 @@ mod tests {
                 prop_assert_eq!(uses.len(), 2);
                 prop_assert_ne!(uses[0].1, uses[1].1);
             }
+        }
+    }
+
+    // --- reversed_shell (M5 containment building block) ---
+
+    #[test]
+    fn orientation_flip_is_involution() {
+        assert_eq!(Orientation::Forward.flipped(), Orientation::Reversed);
+        assert_eq!(Orientation::Reversed.flipped(), Orientation::Forward);
+        assert_eq!(
+            Orientation::Forward.flipped().flipped(),
+            Orientation::Forward
+        );
+    }
+
+    #[test]
+    fn reversed_shell_toggles_orientation_and_reverses_loops() {
+        let mut m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let outer = m.solids.get(m.live_solids[0]).outer;
+        let f0 = m.shells.get(outer).faces[0];
+        let orig = m.faces.get(f0).clone();
+
+        let rev_shell = m.reversed_shell(outer);
+        // Fresh cells (not reused faces), fresh shell.
+        assert_ne!(rev_shell, outer);
+        let rf0 = m.shells.get(rev_shell).faces[0];
+        assert_ne!(rf0, f0);
+        let rev = m.faces.get(rf0);
+
+        assert_eq!(rev.surface, orig.surface); // surface reused
+        assert_eq!(rev.orientation, orig.orientation.flipped());
+        let n = orig.outer.half_edges.len();
+        assert_eq!(rev.outer.half_edges.len(), n);
+        // Reversed winding: he[i] mirrors orig[n-1-i] with the edge reused and
+        // the traversal direction flipped.
+        for i in 0..n {
+            let o = orig.outer.half_edges[n - 1 - i];
+            let r = rev.outer.half_edges[i];
+            assert_eq!(r.edge, o.edge);
+            assert_ne!(r.forward, o.forward);
+        }
+    }
+
+    #[test]
+    fn reversed_shell_is_a_valid_manifold() {
+        // Reversing every face's winding preserves the b-rep manifold: each edge
+        // is still used by exactly two faces with opposed half-edges. The
+        // reversed shell reuses the cube's edges, but the source solid is
+        // superseded, so `Adjacency` (reachable-scoped) counts only the reversed
+        // faces — no 4-use false positive.
+        let mut m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let outer = m.solids.get(m.live_solids[0]).outer;
+        let rev = m.reversed_shell(outer);
+        let s = m.push_solid(Solid {
+            outer: rev,
+            cavities: vec![],
+        });
+        m.live_solids.retain(|&h| h == s); // supersede the original cube
+        m.rebuild_adjacency();
+        assert_eq!(m.adj.edge_uses.len(), 12);
+        for uses in m.adj.edge_uses.values() {
+            assert_eq!(uses.len(), 2);
+            assert_ne!(uses[0].1, uses[1].1); // opposite forward
         }
     }
 }
