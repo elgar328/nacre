@@ -9,7 +9,7 @@
 
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
-use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Origin, Vertex};
+use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Origin, Reachable, Vertex};
 
 /// Residual bound for a `Constructed` vertex lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — a `Constructed`
@@ -144,11 +144,16 @@ pub fn validate(model: &Model) -> Vec<Violation> {
         return out;
     }
 
+    // The live model, not the whole append-only arena (design §2): superseded
+    // cells stay in the store but drop out here, so they neither break Euler nor
+    // pollute manifold use-counts. Reference integrity ran first (and would have
+    // short-circuited on a dangling handle), so this traversal is in-bounds.
+    let reach = model.reachable();
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
-    check_loop_closure(model, &mut out);
-    check_manifold(model, &adj, &mut out);
-    check_geometric_incidence(model, &mut out);
-    check_euler_poincare(model, &mut out);
+    check_loop_closure(model, &reach, &mut out);
+    check_manifold(model, &adj, &reach, &mut out);
+    check_geometric_incidence(model, &reach, &mut out);
+    check_euler_poincare(model, &reach, &mut out);
     out
 }
 
@@ -241,12 +246,17 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     }
 }
 
-fn check_euler_poincare(m: &Model, out: &mut Vec<Violation>) {
-    let v = m.vertices.len();
-    let e = m.edges.len();
-    let f = m.faces.len();
-    let s = m.shells.len();
-    let inner_loops: usize = m.faces.iter().map(|(_, face)| face.inner.len()).sum();
+fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
+    // Count the live model only (design §2), not the append-only store lengths.
+    let v = reach.vertices.len();
+    let e = reach.edges.len();
+    let f = reach.faces.len();
+    let s = reach.shells.len();
+    let inner_loops: usize = reach
+        .faces
+        .iter()
+        .map(|fh| m.faces.get(*fh).inner.len())
+        .sum();
 
     // i64: E can exceed V + F. V - E + F - L_i = 2(S - G) for a closed 2-manifold.
     let chi = v as i64 - e as i64 + f as i64 - inner_loops as i64;
@@ -273,8 +283,12 @@ fn check_euler_poincare(m: &Model, out: &mut Vec<Violation>) {
     }
 }
 
-fn check_loop_closure(m: &Model, out: &mut Vec<Violation>) {
+fn check_loop_closure(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
+    // Store order (deterministic), filtered to the live faces.
     for (fh, face) in m.faces.iter() {
+        if !reach.faces.contains(&fh) {
+            continue;
+        }
         check_loop(m, fh, LoopKind::Outer, &face.outer, out);
         for (i, lp) in face.inner.iter().enumerate() {
             check_loop(m, fh, LoopKind::Inner(i), lp, out);
@@ -323,9 +337,14 @@ fn check_loop(m: &Model, fh: Handle<Face>, kind: LoopKind, lp: &Loop, out: &mut 
     }
 }
 
-fn check_manifold(m: &Model, adj: &Adjacency, out: &mut Vec<Violation>) {
-    // Iterate the edge store (not just adj) so orphan edges (0 uses) are caught.
+fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<Violation>) {
+    // Live edges only (design §2): a superseded edge left in the store has 0 uses
+    // in the live adjacency but is not a defect — skip it. Every reachable edge
+    // is referenced by a live face, so it must be used exactly twice.
     for (eh, _edge) in m.edges.iter() {
+        if !reach.edges.contains(&eh) {
+            continue;
+        }
         let uses = adj.edge_uses.get(&eh).map(Vec::as_slice).unwrap_or(&[]);
         if uses.len() != 2 {
             out.push(Violation::NonManifoldEdge {
@@ -341,9 +360,12 @@ fn check_manifold(m: &Model, adj: &Adjacency, out: &mut Vec<Violation>) {
     }
 }
 
-fn check_geometric_incidence(m: &Model, out: &mut Vec<Violation>) {
-    // Each edge's bound vertices must lie on the edge's curve.
+fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
+    // Each live edge's bound vertices must lie on the edge's curve.
     for (eh, edge) in m.edges.iter() {
+        if !reach.edges.contains(&eh) {
+            continue;
+        }
         if let Some([a, b]) = edge.bounds {
             let curve = m.curves.get(edge.curve);
             for vh in [a, b] {
@@ -367,6 +389,9 @@ fn check_geometric_incidence(m: &Model, out: &mut Vec<Violation>) {
     // edges have no start vertex here and are skipped (already flagged by
     // loop-closure).
     for (fh, face) in m.faces.iter() {
+        if !reach.faces.contains(&fh) {
+            continue;
+        }
         let surface = m.surfaces.get(face.surface);
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
@@ -465,23 +490,60 @@ mod tests {
     }
 
     #[test]
-    fn euler_parity_stray_vertex() {
+    fn stray_vertex_ignored() {
+        // A vertex referenced by nothing is a dead arena item, not a defect: it
+        // is unreachable from the live cube, so validate ignores it (design §2).
+        // (Under the old whole-store count this raised EulerParity{v:9}.)
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        // A vertex referenced by nothing → V becomes odd-parity for Euler.
         m.vertices.push(Vertex {
             point: Point3::origin(),
             origin: Origin::Constructed,
         });
-        assert_eq!(
-            validate(&m),
-            vec![Violation::EulerParity {
-                v: 9,
-                e: 12,
-                f: 6,
-                s: 1,
-                inner_loops: 0,
-            }]
-        );
+        assert!(validate(&m).is_empty());
+    }
+
+    #[test]
+    fn supersede_solid_reuses_cells() {
+        // What an editing op does (design §2): build a new solid that *reuses*
+        // the old solid's cells, then drop the old solid from `live_solids`. The
+        // old cells linger in the arena but, unreferenced by any live solid, fall
+        // out of the reachable closure — so each shared edge is counted twice
+        // (once per live face), not four times, and validate stays clean.
+        let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let old = m.live_solids[0];
+        let old_shell = m.solids.get(old).outer;
+        let faces = m.shells.get(old_shell).faces.clone();
+        let new_shell = m.shells.push(Shell { faces });
+        let new_solid = m.push_solid(Solid {
+            outer: new_shell,
+            cavities: vec![],
+        });
+        m.live_solids.retain(|&s| s != old); // supersede: only the new one is live
+        assert_eq!(m.live_solids, vec![new_solid]);
+        let v = validate(&m);
+        assert!(v.is_empty(), "{v:?}");
+    }
+
+    #[test]
+    fn orphaned_face_is_ignored() {
+        // A face pushed into the store but not part of any live solid is
+        // unreachable, so it adds nothing to Euler and does not pollute manifold
+        // use-counts. It duplicates a cube face (reusing that face's surface and
+        // edges), so reference integrity stays clean; were it counted, those
+        // edges would be over-used (non-manifold) and F would rise by one.
+        let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let dup = {
+            let (_, f0) = m.faces.iter().next().unwrap();
+            Face {
+                surface: f0.surface,
+                outer: f0.outer.clone(),
+                inner: vec![],
+                orientation: f0.orientation,
+            }
+        };
+        m.faces.push(dup);
+        let v = validate(&m);
+        assert!(v.is_empty(), "{v:?}");
     }
 
     // --- hand-built tetrahedron (smallest closed 2-manifold), verified winding ---
@@ -596,7 +658,7 @@ mod tests {
         let mut m = Model::new();
         let faces = push_tetra(&mut m, [0.0; 3], &opts);
         let sh = m.shells.push(Shell { faces });
-        m.solids.push(Solid {
+        m.push_solid(Solid {
             outer: sh,
             cavities: vec![],
         });
@@ -670,7 +732,7 @@ mod tests {
         let mut faces = push_tetra(&mut m, [0.0; 3], &TetraOpts::default());
         faces.extend(push_tetra(&mut m, [5.0, 0.0, 0.0], &TetraOpts::default()));
         let sh = m.shells.push(Shell { faces });
-        m.solids.push(Solid {
+        m.push_solid(Solid {
             outer: sh,
             cavities: vec![],
         });

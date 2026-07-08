@@ -27,8 +27,15 @@ impl Adjacency {
     /// bounded edge → its two endpoint vertices. From scratch — cheap, always
     /// correct; incremental maintenance lands with the operation log (M2).
     pub fn rebuild(model: &Model) -> Adjacency {
+        // Only the live model is indexed (design §2): superseded cells left in
+        // the arena must not pollute edge use-counts. Iterate the stores in
+        // order (deterministic) filtered by the reachable closure.
+        let reach = model.reachable();
         let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
         for (fh, face) in model.faces.iter() {
+            if !reach.faces.contains(&fh) {
+                continue;
+            }
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
                     edge_uses.entry(he.edge).or_default().push((fh, he.forward));
@@ -37,6 +44,9 @@ impl Adjacency {
         }
         let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
         for (eh, edge) in model.edges.iter() {
+            if !reach.edges.contains(&eh) {
+                continue;
+            }
             if let Some([a, b]) = edge.bounds {
                 vertex_edges.entry(a).or_default().push(eh);
                 vertex_edges.entry(b).or_default().push(eh);
@@ -52,7 +62,7 @@ impl Adjacency {
 #[cfg(test)]
 mod tests {
     use crate::topology::{Edge, Face, HalfEdge, Loop};
-    use crate::{Model, Orientation, Origin, Vertex};
+    use crate::{Model, Orientation, Origin, Shell, Solid, Vertex};
     use nacre_geom::{Curve, Line, Plane, Surface};
     use nacre_math::Point3;
 
@@ -106,7 +116,7 @@ mod tests {
             })
         };
         // Triangle A: v0→v1→v2→v0, shared edge forward.
-        mk_face(
+        let fa = mk_face(
             &mut m,
             vec![
                 HalfEdge {
@@ -124,7 +134,7 @@ mod tests {
             ],
         );
         // Triangle B: v1→v0→v3→v1, shared edge reversed.
-        mk_face(
+        let fb = mk_face(
             &mut m,
             vec![
                 HalfEdge {
@@ -142,6 +152,17 @@ mod tests {
             ],
         );
 
+        // Wrap the two faces in a live solid — adjacency now indexes only the
+        // reachable closure (design §2), so loose faces would be invisible. This
+        // pair is an open surface (validate would flag it), but the test only
+        // inspects the rebuilt adjacency, which needs the faces reachable.
+        let shell = m.shells.push(Shell {
+            faces: vec![fa, fb],
+        });
+        m.push_solid(Solid {
+            outer: shell,
+            cavities: vec![],
+        });
         m.rebuild_adjacency();
 
         // shared edge: two uses, opposite flags.
