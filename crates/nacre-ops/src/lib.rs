@@ -96,6 +96,41 @@ pub enum Operation {
         profile: Profile2d,
         dist: f64,
     },
+    /// Boolean of two live solids (design §8 M5). M5-c3 implements only
+    /// `Common` (intersection) of convex planar solids; other kinds/inputs are
+    /// rejected with [`BoolError`].
+    Boolean {
+        kind: BoolKind,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+    },
+}
+
+/// Which boolean to compute.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoolKind {
+    /// A ∪ B (not yet implemented — `Unsupported`).
+    Fuse,
+    /// A − B (not yet implemented — `Unsupported`).
+    Cut,
+    /// A ∩ B.
+    Common,
+}
+
+/// Why a boolean could not be computed. The engine rejects out-of-coverage
+/// input honestly rather than returning a plausibly-wrong solid (overview
+/// 불리언 전략).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoolError {
+    /// Outside the current coverage: a non-`Common` kind, a non-planar face, a
+    /// non-convex input, coplanar faces (across or within an input), a 4-plane
+    /// concurrency, a tangential contact, or any other general-position
+    /// violation.
+    Unsupported,
+    /// An input solid handle is not in `model.live_solids`.
+    InputNotLive,
+    /// The intersection is empty (or too degenerate to be a closed solid).
+    EmptyResult,
 }
 
 /// A failure while applying an operation.
@@ -114,6 +149,8 @@ pub enum OpError {
     /// An imprint target face belongs to no live solid's outer shell (a stale
     /// or non-live handle).
     FaceNotInLiveSolid,
+    /// A boolean operation failed (design §8 M5).
+    Boolean(BoolError),
 }
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
@@ -140,6 +177,8 @@ pub enum OpOutput {
         solid: Handle<Solid>,
         bottom_face: Handle<Face>,
     },
+    /// The boolean result solid (supersedes both inputs).
+    Boolean { solid: Handle<Solid> },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -173,6 +212,10 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         } => {
             let (solid, bottom_face) = pocket(model, *face, profile, *dist)?;
             Ok(OpOutput::PocketOnFace { solid, bottom_face })
+        }
+        Operation::Boolean { kind, a, b } => {
+            let solid = boolean(model, *kind, *a, *b).map_err(OpError::Boolean)?;
+            Ok(OpOutput::Boolean { solid })
         }
     }
 }
@@ -714,6 +757,28 @@ fn raise_region(
 
     let new_solid = finish_split(model, s.solid_h, s.shell_h, face, &new_faces);
     Ok((new_solid, cap))
+}
+
+// ---- boolean (M5-c3) ----
+
+/// Boolean of two live solids. **M5-c3 coverage:** `Common` (intersection) of
+/// two convex, all-planar solids in general position; anything else is rejected
+/// with [`BoolError`] (design §8 M5, overview 불리언 전략 — 정직하게 거절). The
+/// half-space vertex enumeration lands in the next commit; for now every input
+/// is `Unsupported` (empty coverage).
+pub fn boolean(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Handle<Solid>, BoolError> {
+    if kind != BoolKind::Common {
+        return Err(BoolError::Unsupported);
+    }
+    if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
+        return Err(BoolError::InputNotLive);
+    }
+    Err(BoolError::Unsupported)
 }
 
 #[cfg(test)]
@@ -1318,5 +1383,60 @@ mod tests {
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
         }
+    }
+
+    // ---- boolean API (M5-c3 commit 1) ----
+
+    fn two_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.5]),
+        );
+        (m, a, b)
+    }
+
+    #[test]
+    fn boolean_rejects_fuse_and_cut() {
+        let (mut m, a, b) = two_boxes();
+        assert_eq!(
+            boolean(&mut m, BoolKind::Fuse, a, b),
+            Err(BoolError::Unsupported)
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Cut, a, b),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn boolean_rejects_non_live_input() {
+        let (mut m, a, b) = two_boxes();
+        m.live_solids.retain(|&s| s != b); // as if superseded
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, a, b),
+            Err(BoolError::InputNotLive)
+        );
+    }
+
+    #[test]
+    fn boolean_op_applies_and_wraps_error() {
+        // Common is not implemented yet ⇒ Unsupported, surfaced as OpError::Boolean.
+        let (mut m, a, b) = two_boxes();
+        assert_eq!(
+            apply(
+                &mut m,
+                &Operation::Boolean {
+                    kind: BoolKind::Common,
+                    a,
+                    b
+                }
+            ),
+            Err(OpError::Boolean(BoolError::Unsupported))
+        );
     }
 }

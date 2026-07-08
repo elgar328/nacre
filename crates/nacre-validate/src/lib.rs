@@ -108,6 +108,19 @@ pub enum Violation {
         tol: f64,
     },
 
+    /// A `Discovered` vertex does not lie on one of its `VertexDef` planes within
+    /// its measured tolerance — the definition is the truth, so the cached point
+    /// must sit within `tol` of every plane it is defined as intersecting
+    /// (design §4). `surface_index` is type-erased (like [`DanglingReference`]) so
+    /// the checker never names geom's `Surface` (geom stays a dev-dependency).
+    VertexOffDefinition {
+        vertex: Handle<Vertex>,
+        surface_index: u32,
+        point: Point3,
+        residual: f64,
+        tol: f64,
+    },
+
     /// `chi = V - E + F - L_i` is odd, so `2(S - G) = chi` has no integer
     /// solution: the boundary cannot be a valid closed 2-manifold.
     EulerParity {
@@ -428,6 +441,33 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                             tol,
                         });
                     }
+                }
+            }
+        }
+    }
+    // Each live discovered vertex must lie within its tol of every plane its
+    // definition claims it is the intersection of (design §4 — the definition is
+    // the truth, the point is a within-tol cache). Reference integrity ran first,
+    // so the definition's surface handles are in bounds.
+    for (vh, vertex) in m.vertices.iter() {
+        if !reach.vertices.contains(&vh) {
+            continue;
+        }
+        if let Origin::Discovered {
+            tol,
+            definition: VertexDef::ThreePlane(surfaces),
+        } = vertex.origin
+        {
+            for sh in surfaces {
+                let residual = m.surfaces.get(sh).distance(vertex.point);
+                if residual > tol {
+                    out.push(Violation::VertexOffDefinition {
+                        vertex: vh,
+                        surface_index: sh.index(),
+                        point: vertex.point,
+                        residual,
+                        tol,
+                    });
                 }
             }
         }
@@ -906,6 +946,23 @@ mod tests {
             v,
             Violation::VertexOffSurface { .. } | Violation::VertexOffCurve { .. }
         )));
+    }
+
+    #[test]
+    fn discovered_vertex_off_its_definition_flags() {
+        // A discovered vertex nudged beyond tol is off its three definition
+        // planes (its incident faces). Assert the definition check specifically
+        // fires — not merely "some violation" (which VertexOffSurface satisfies).
+        let tol = 1e-6;
+        let vs = validate(&tetra_with(TetraOpts {
+            nudge: Some((0, [0.0, 0.0, 2.0 * tol], NudgeOrigin::Discovered { tol })),
+            ..Default::default()
+        }));
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, Violation::VertexOffDefinition { .. })),
+            "{vs:?}"
+        );
     }
 
     proptest! {
