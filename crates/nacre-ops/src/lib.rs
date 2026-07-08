@@ -788,29 +788,37 @@ struct ResultVertex {
     tol: f64,
 }
 
-/// Boolean of two live solids. **M5-c3 coverage:** `Common` (intersection) of
-/// two convex, all-planar solids in general position; anything else is rejected
-/// with [`BoolError`] (design §8 M5, overview 불리언 전략 — 정직하게 거절).
-///
-/// Half-space vertex enumeration: `A ∩ B` is the set of points inside every face
-/// half-space of both solids, so each result vertex is the intersection of three
-/// of those planes lying inside all the others (an exact indirect-predicate
-/// decision — the point is never materialized for the sign test). Transactional:
-/// the result is computed in local structures and pushed only once every
-/// degeneracy check has passed, so a rejected boolean leaves the model untouched.
+/// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
+/// **M5-c coverage:** convex, all-planar solids in general position — `Common`
+/// (M5-c3, half-space enumeration) and `Fuse`/`Cut` (M5-c4, face clipping,
+/// clean-seam). Anything else is rejected with [`BoolError`]. Transactional:
+/// each variant computes its result in local structures and pushes only after
+/// every degeneracy check passes, so a rejected boolean leaves the model
+/// untouched.
 pub fn boolean(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
-    if kind != BoolKind::Common {
-        return Err(BoolError::Unsupported);
-    }
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
+    match kind {
+        BoolKind::Common => common(model, a, b),
+        BoolKind::Fuse | BoolKind::Cut => fuse_cut(model, kind, a, b),
+    }
+}
 
+/// `A ∩ B` by half-space vertex enumeration: the intersection is the set of
+/// points inside every face half-space of both solids, so each result vertex is
+/// the intersection of three of those planes lying inside all the others (an
+/// exact indirect-predicate decision — the point is never materialized).
+fn common(
+    model: &mut Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Handle<Solid>, BoolError> {
     let planes_a = collect_planes(model, a)?;
     let planes_b = collect_planes(model, b)?;
     // Each input must equal the intersection of its face half-spaces (convex).
@@ -1155,6 +1163,490 @@ fn assemble(
             outer: Loop { half_edges },
             inner: vec![],
             orientation: planes[*m].orient,
+        }));
+    }
+    let shell = model.shells.push(Shell {
+        faces: face_handles,
+    });
+    let solid = model.push_solid(Solid {
+        outer: shell,
+        cavities: vec![],
+    });
+    model.live_solids.retain(|&s| s != a && s != b);
+    solid
+}
+
+// ---- fuse / cut (M5-c4): face clipping, clean-seam convex ----
+
+/// A vertex's side relative to the *other* solid.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    Inside,
+    Outside,
+}
+
+/// A seam vertex — a three-plane point on both `∂A` and `∂B` (2 A-planes + 1
+/// B-plane, or 1 A + 2 B). Shared (one `Handle`) by every incident result piece.
+struct SeamVertex {
+    point: Point3,
+    triple: [usize; 3], // sorted combined-plane indices
+    tol: f64,
+}
+
+/// A node in a reconstructed face loop. `Eq`/`Hash` give identity dedup so an
+/// A-piece and a B-piece that meet at a seam node share one result vertex/edge.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Node {
+    Orig(Handle<Vertex>),
+    Seam([usize; 3]), // sorted triple (key into the seam map)
+}
+
+/// A reconstructed result face: which combined plane it is on, its loop as
+/// nodes, and whether to flip it (cut's inside-A B-pieces).
+struct LocalFace {
+    plane_idx: usize,
+    loop_nodes: Vec<Node>,
+    flip: bool,
+}
+
+/// `Fuse` (A∪B) / `Cut` (A−B) of two convex solids by face clipping (M5-c4).
+/// Clean-seam general position only; else [`BoolError::Unsupported`].
+fn fuse_cut(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Handle<Solid>, BoolError> {
+    if kind == BoolKind::Cut {
+        return Err(BoolError::Unsupported); // M5-c4 commit 2
+    }
+    let planes_a = collect_planes(model, a)?;
+    let planes_b = collect_planes(model, b)?;
+    if !is_convex(&planes_a, &solid_vertices(model, a))
+        || !is_convex(&planes_b, &solid_vertices(model, b))
+    {
+        return Err(BoolError::Unsupported);
+    }
+    let na = planes_a.len();
+    let mut planes = planes_a;
+    planes.extend(planes_b);
+    if has_coplanar_pair(&planes) {
+        return Err(BoolError::Unsupported);
+    }
+    let a_range = 0..na;
+    let b_range = na..planes.len();
+
+    let mut surf_ix: HashMap<Handle<Surface>, usize> = HashMap::new();
+    for (i, pi) in planes.iter().enumerate() {
+        surf_ix.insert(pi.surf, i);
+    }
+
+    // Classify every original vertex vs the other solid (direct signed-distance).
+    let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
+    for &vh in &solid_vertex_handles(model, a) {
+        let side = classify_vertex(model.vertices.get(vh).point, &planes[b_range.clone()])?;
+        classof.insert(vh, side);
+    }
+    for &vh in &solid_vertex_handles(model, b) {
+        let side = classify_vertex(model.vertices.get(vh).point, &planes[a_range.clone()])?;
+        classof.insert(vh, side);
+    }
+
+    // Seam vertices: A-edges piercing B (2A+1B) and B-edges piercing A (1A+2B).
+    let edges_a = edge_incidence(model, a, &surf_ix);
+    let edges_b = edge_incidence(model, b, &surf_ix);
+    let mut seam: Vec<SeamVertex> = Vec::new();
+    let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
+    let mut edge_seam: HashMap<Handle<Edge>, [usize; 3]> = HashMap::new();
+    for (edges, other) in [(&edges_a, b_range.clone()), (&edges_b, a_range.clone())] {
+        for &(eh, bounds, ref inc) in edges {
+            let [v0, v1] = bounds;
+            let (s0, s1) = (classof[&v0], classof[&v1]);
+            if s0 == s1 {
+                continue; // edge does not cross the other solid
+            }
+            let (p_out, p_in) = if s0 == Side::Outside {
+                (model.vertices.get(v0).point, model.vertices.get(v1).point)
+            } else {
+                (model.vertices.get(v1).point, model.vertices.get(v0).point)
+            };
+            let entry =
+                enter_face(p_out, p_in, other.clone(), &planes).ok_or(BoolError::Unsupported)?;
+            let [e0, e1] = [inc[0], inc[1]];
+            let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
+                .ok_or(BoolError::Unsupported)?;
+            // Exact: the point must be inside the entry face (on ∂ of the other solid).
+            for m in other.clone() {
+                if m == entry {
+                    continue;
+                }
+                match three_plane_orient3d(
+                    &planes[e0].plane,
+                    &planes[e1].plane,
+                    &planes[entry].plane,
+                    planes[m].tri[0],
+                    planes[m].tri[1],
+                    planes[m].tri[2],
+                ) {
+                    -1 => {}
+                    _ => return Err(BoolError::Unsupported), // outside or on a 4th plane
+                }
+            }
+            let mut triple = [e0, e1, entry];
+            triple.sort_unstable();
+            edge_seam.insert(eh, triple);
+            if let std::collections::hash_map::Entry::Vacant(slot) = seam_ix.entry(triple) {
+                let tol = vertex_tol(
+                    point,
+                    &planes[e0].plane,
+                    &planes[e1].plane,
+                    &planes[entry].plane,
+                );
+                slot.insert(seam.len());
+                seam.push(SeamVertex { point, triple, tol });
+            }
+        }
+    }
+
+    // Which side of each solid each op keeps.
+    let (keep_a, keep_b, flip_b) = match kind {
+        BoolKind::Fuse => (Side::Outside, Side::Outside, false),
+        BoolKind::Cut => (Side::Outside, Side::Inside, true),
+        BoolKind::Common => unreachable!("common has its own path"),
+    };
+    if seam.is_empty() {
+        // No crossing: either disjoint (empty) or containment (needs a cavity).
+        return Err(disjoint_or_contained(model, a, b, &planes, na));
+    }
+
+    // Reconstruct faces of A (keep_a side) and B (keep_b side, flip_b).
+    let mut faces: Vec<LocalFace> = Vec::new();
+    for (solid, keep, flip) in [(a, keep_a, false), (b, keep_b, flip_b)] {
+        let shell = model.solids.get(solid).outer;
+        for &fh in &model.shells.get(shell).faces {
+            let face = model.faces.get(fh);
+            let pidx = surf_ix[&face.surface];
+            if let Some(lf) = reconstruct_face(
+                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix,
+            )? {
+                faces.push(lf);
+            }
+        }
+    }
+    if faces.len() < 4 {
+        return Err(BoolError::EmptyResult);
+    }
+
+    Ok(assemble_fuse_cut(model, a, b, &planes, &seam, &faces))
+}
+
+/// Inside/outside/on a convex solid by signed distance along each face's outward
+/// normal. On any face plane (`|sd| ≤ scale`) ⇒ not general position ⇒
+/// `Unsupported`.
+fn classify_vertex(v: Point3, other: &[PlaneInfo]) -> Result<Side, BoolError> {
+    let scale = 1e-9 * (v.as_array().iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
+    let mut side = Side::Inside;
+    for pm in other {
+        let sd = (v - pm.tri[0]).dot(pm.n_out);
+        if sd.abs() <= scale {
+            return Err(BoolError::Unsupported); // on the other solid's boundary
+        }
+        if sd > scale {
+            side = Side::Outside; // outside this half-space ⇒ outside the convex
+        }
+    }
+    Ok(side)
+}
+
+/// The face of the convex solid (`range`) that segment `p_out → p_in` enters
+/// through: the last inward crossing (Cyrus–Beck argmax of `t`).
+fn enter_face(
+    p_out: Point3,
+    p_in: Point3,
+    range: std::ops::Range<usize>,
+    planes: &[PlaneInfo],
+) -> Option<usize> {
+    let mut best: Option<(f64, usize)> = None;
+    for m in range {
+        let a = (p_out - planes[m].tri[0]).dot(planes[m].n_out);
+        let b = (p_in - planes[m].tri[0]).dot(planes[m].n_out);
+        if a > 0.0 && b < 0.0 {
+            let t = a / (a - b);
+            if best.is_none_or(|(bt, _)| t > bt) {
+                best = Some((t, m));
+            }
+        }
+    }
+    best.map(|(_, m)| m)
+}
+
+/// Distinct outer-shell vertex handles of a solid, in shell→face→loop order.
+fn solid_vertex_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Vertex>> {
+    let shell = model.solids.get(solid).outer;
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for &fh in &model.shells.get(shell).faces {
+        for &he in &model.faces.get(fh).outer.half_edges {
+            let vh = he_start(model, he);
+            if seen.insert(vh) {
+                out.push(vh);
+            }
+        }
+    }
+    out
+}
+
+/// Each outer-shell edge with its bound vertices and the two combined-plane
+/// indices of its adjacent faces, in first-seen (deterministic) order.
+#[allow(clippy::type_complexity)]
+fn edge_incidence(
+    model: &Model,
+    solid: Handle<Solid>,
+    surf_ix: &HashMap<Handle<Surface>, usize>,
+) -> Vec<(Handle<Edge>, [Handle<Vertex>; 2], Vec<usize>)> {
+    let shell = model.solids.get(solid).outer;
+    let mut order: Vec<Handle<Edge>> = Vec::new();
+    let mut map: HashMap<Handle<Edge>, ([Handle<Vertex>; 2], Vec<usize>)> = HashMap::new();
+    for &fh in &model.shells.get(shell).faces {
+        let face = model.faces.get(fh);
+        let pidx = surf_ix[&face.surface];
+        for he in &face.outer.half_edges {
+            let bounds = model.edges.get(he.edge).bounds.expect("bounded");
+            let entry = map.entry(he.edge).or_insert_with(|| {
+                order.push(he.edge);
+                (bounds, Vec::new())
+            });
+            entry.1.push(pidx);
+        }
+    }
+    order
+        .into_iter()
+        .map(|e| {
+            let (b, p) = map.remove(&e).unwrap();
+            (e, b, p)
+        })
+        .collect()
+}
+
+/// Classify a no-seam overlap: disjoint ⇒ `EmptyResult`, otherwise containment
+/// ⇒ `Unsupported` (would need a cavity shell). Overlap ⇔ any vertex of one
+/// solid is inside the other.
+fn disjoint_or_contained(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    planes: &[PlaneInfo],
+    na: usize,
+) -> BoolError {
+    let a_inside = solid_vertex_handles(model, a).iter().any(|&vh| {
+        classify_vertex(model.vertices.get(vh).point, &planes[na..]) == Ok(Side::Inside)
+    });
+    let b_inside = solid_vertex_handles(model, b).iter().any(|&vh| {
+        classify_vertex(model.vertices.get(vh).point, &planes[..na]) == Ok(Side::Inside)
+    });
+    if a_inside || b_inside {
+        BoolError::Unsupported // containment: cavity needed
+    } else {
+        BoolError::EmptyResult // disjoint
+    }
+}
+
+/// Reconstruct a face's kept portion. `None` if the whole face is dropped.
+#[allow(clippy::too_many_arguments)]
+fn reconstruct_face(
+    model: &Model,
+    face: &Face,
+    plane_idx: usize,
+    keep: Side,
+    flip: bool,
+    classof: &HashMap<Handle<Vertex>, Side>,
+    edge_seam: &HashMap<Handle<Edge>, [usize; 3]>,
+    seam: &[SeamVertex],
+    seam_ix: &HashMap<[usize; 3], usize>,
+) -> Result<Option<LocalFace>, BoolError> {
+    let hes = &face.outer.half_edges;
+    let n = hes.len();
+    let verts: Vec<Handle<Vertex>> = hes.iter().map(|&he| he_start(model, he)).collect();
+    let kept: Vec<bool> = verts.iter().map(|v| classof[v] == keep).collect();
+
+    // Count boundary crossings (kept↔dropped edge transitions).
+    let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
+    match transitions.len() {
+        0 => {
+            if kept[0] {
+                // Whole face kept.
+                let loop_nodes = verts.iter().map(|&v| Node::Orig(v)).collect();
+                return Ok(Some(LocalFace {
+                    plane_idx,
+                    loop_nodes,
+                    flip,
+                }));
+            }
+            // Whole face dropped — but a seam loop interior to it would be a hole.
+            if seam.iter().any(|s| s.triple.contains(&plane_idx)) {
+                return Err(BoolError::Unsupported); // interior seam ⇒ hole
+            }
+            Ok(None)
+        }
+        2 => {
+            // One kept run; splice the seam sub-path across the dropped run.
+            // Transition edge i (kept[i]!=kept[i+1]) carries seam vertex edge_seam[edge].
+            let s_at = |i: usize| -> Result<[usize; 3], BoolError> {
+                edge_seam
+                    .get(&hes[i].edge)
+                    .copied()
+                    .ok_or(BoolError::Unsupported)
+            };
+            // Boundary crossing on each transition edge.
+            let (t0, t1) = (transitions[0], transitions[1]);
+            let (b0, b1) = (s_at(t0)?, s_at(t1)?);
+            // Kept run: vertices with kept==true, starting right after a drop→keep edge.
+            // Identify the keep→drop edge (kept[t]) and drop→keep edge.
+            let (kd, dk) = if kept[t0] { (t0, t1) } else { (t1, t0) };
+            let (s_kd, s_dk) = if kept[t0] { (b0, b1) } else { (b1, b0) };
+            // Walk kept run from dk+1 .. kd (inclusive), CCW.
+            let mut nodes: Vec<Node> = Vec::new();
+            let mut i = (dk + 1) % n;
+            loop {
+                nodes.push(Node::Orig(verts[i]));
+                if i == kd {
+                    break;
+                }
+                i = (i + 1) % n;
+            }
+            // Seam sub-path S_kd → bends → S_dk (bends = seam on this plane, not the
+            // two boundary crossings), ordered along S_kd→S_dk.
+            let p_kd = seam[seam_ix[&s_kd]].point;
+            let p_dk = seam[seam_ix[&s_dk]].point;
+            let dir = p_dk - p_kd;
+            let mut bends: Vec<[usize; 3]> = seam
+                .iter()
+                .filter(|s| s.triple.contains(&plane_idx) && s.triple != s_kd && s.triple != s_dk)
+                .map(|s| s.triple)
+                .collect();
+            bends.sort_by(|x, y| {
+                let px = seam[seam_ix[x]].point;
+                let py = seam[seam_ix[y]].point;
+                (px - p_kd)
+                    .dot(dir)
+                    .partial_cmp(&(py - p_kd).dot(dir))
+                    .expect("finite")
+            });
+            nodes.push(Node::Seam(s_kd));
+            nodes.extend(bends.into_iter().map(Node::Seam));
+            nodes.push(Node::Seam(s_dk));
+            Ok(Some(LocalFace {
+                plane_idx,
+                loop_nodes: nodes,
+                flip,
+            }))
+        }
+        _ => Err(BoolError::Unsupported), // ≥4 crossings ⇒ multiple chords
+    }
+}
+
+/// Push the reconstructed result and supersede the inputs (mirrors `assemble`).
+fn assemble_fuse_cut(
+    model: &mut Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    planes: &[PlaneInfo],
+    seam: &[SeamVertex],
+    faces: &[LocalFace],
+) -> Handle<Solid> {
+    // Vertices (deterministic: first appearance across faces in order).
+    let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
+    let mut node_handle = |model: &mut Model, node: Node| -> Handle<Vertex> {
+        if let Some(&h) = vh.get(&node) {
+            return h;
+        }
+        let handle = match node {
+            Node::Orig(orig) => {
+                let point = model.vertices.get(orig).point;
+                model.vertices.push(Vertex {
+                    point,
+                    origin: Origin::Constructed,
+                })
+            }
+            Node::Seam(triple) => {
+                let sv = seam.iter().find(|s| s.triple == triple).expect("seam node");
+                let def = VertexDef::ThreePlane([
+                    planes[triple[0]].surf,
+                    planes[triple[1]].surf,
+                    planes[triple[2]].surf,
+                ]);
+                model.vertices.push(Vertex {
+                    point: sv.point,
+                    origin: Origin::Discovered {
+                        tol: sv.tol,
+                        definition: def,
+                    },
+                })
+            }
+        };
+        vh.insert(node, handle);
+        handle
+    };
+    // Materialize all vertex handles first (deterministic order).
+    for lf in faces {
+        for &node in &lf.loop_nodes {
+            node_handle(model, node);
+        }
+    }
+
+    // Edges keyed by unordered handle-index pair (lookup only).
+    let mut edge_of: HashMap<(usize, usize), Handle<Edge>> = HashMap::new();
+    let mut edge_for =
+        |model: &mut Model, va: Handle<Vertex>, vb: Handle<Vertex>| -> Handle<Edge> {
+            let key = unordered(va.index() as usize, vb.index() as usize);
+            if let Some(&e) = edge_of.get(&key) {
+                return e;
+            }
+            let pa = model.vertices.get(va).point;
+            let pb = model.vertices.get(vb).point;
+            let curve = model
+                .curves
+                .push(Curve::Line(Line::through_points(pa, pb).expect("distinct")));
+            let e = model.edges.push(Edge {
+                curve,
+                bounds: Some([va, vb]),
+                origin: Origin::Constructed,
+            });
+            edge_of.insert(key, e);
+            e
+        };
+
+    let mut face_handles = Vec::new();
+    for lf in faces {
+        let handles: Vec<Handle<Vertex>> = lf.loop_nodes.iter().map(|&nd| vh[&nd]).collect();
+        let k = handles.len();
+        let mut half_edges: Vec<HalfEdge> = (0..k)
+            .map(|t| {
+                let (va, vb) = (handles[t], handles[(t + 1) % k]);
+                let e = edge_for(model, va, vb);
+                let forward = model.edges.get(e).bounds.expect("bounded")[0] == va;
+                HalfEdge { edge: e, forward }
+            })
+            .collect();
+        let orientation = if lf.flip {
+            // Cut's inside-A B-pieces: reverse the loop and toggle orientation so
+            // the outward normal points into the removed region.
+            half_edges.reverse();
+            for he in &mut half_edges {
+                he.forward = !he.forward;
+            }
+            match planes[lf.plane_idx].orient {
+                Orientation::Forward => Orientation::Reversed,
+                Orientation::Reversed => Orientation::Forward,
+            }
+        } else {
+            planes[lf.plane_idx].orient
+        };
+        face_handles.push(model.faces.push(Face {
+            surface: planes[lf.plane_idx].surf,
+            outer: Loop { half_edges },
+            inner: vec![],
+            orientation,
         }));
     }
     let shell = model.shells.push(Shell {
@@ -1788,16 +2280,58 @@ mod tests {
     }
 
     #[test]
-    fn boolean_rejects_fuse_and_cut() {
+    fn boolean_cut_not_yet_supported() {
+        // Cut lands in M5-c4 commit 2; for now it is Unsupported.
         let (mut m, a, b) = two_boxes();
-        assert_eq!(
-            boolean(&mut m, BoolKind::Fuse, a, b),
-            Err(BoolError::Unsupported)
-        );
         assert_eq!(
             boolean(&mut m, BoolKind::Cut, a, b),
             Err(BoolError::Unsupported)
         );
+    }
+
+    #[test]
+    fn fuse_of_two_cubes() {
+        // A = [0,1]³, B = [0.5,1.5]³ ⇒ A∪B volume 1+1−0.125 = 1.875.
+        let (mut m, a, b) = two_boxes();
+        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.875).abs() < 1e-12, "volume {vol}");
+        assert_eq!(m.live_solids, vec![r]);
+    }
+
+    #[test]
+    fn fuse_common_inclusion_exclusion() {
+        // vol(A∪B) + vol(A∩B) == vol(A) + vol(B). boolean supersedes inputs, so
+        // fuse and common run on independent copies.
+        let corner = |o: f64| {
+            (
+                Point3::from_array([o; 3]),
+                Point3::from_array([o + 1.0, o + 1.0, o + 1.0]),
+            )
+        };
+        let (amin, amax) = corner(0.0);
+        let (bmin, bmax) = corner(0.5);
+        let vol_of = |mn, mx| {
+            let mut m = Model::new();
+            let s = m.add_cuboid(mn, mx);
+            nacre_props::mass_props(&m, s).unwrap().volume
+        };
+        let (va, vb) = (vol_of(amin, amax), vol_of(bmin, bmax));
+
+        let mut m1 = Model::new();
+        let (a1, b1) = (m1.add_cuboid(amin, amax), m1.add_cuboid(bmin, bmax));
+        let rf = boolean(&mut m1, BoolKind::Fuse, a1, b1).unwrap();
+        let vf = nacre_props::mass_props(&m1, rf).unwrap().volume;
+
+        let mut m2 = Model::new();
+        let (a2, b2) = (m2.add_cuboid(amin, amax), m2.add_cuboid(bmin, bmax));
+        let rc = boolean(&mut m2, BoolKind::Common, a2, b2).unwrap();
+        let vc = nacre_props::mass_props(&m2, rc).unwrap().volume;
+
+        assert!((vf + vc - va - vb).abs() < 1e-9, "{vf}+{vc} vs {va}+{vb}");
     }
 
     #[test]
