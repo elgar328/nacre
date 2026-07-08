@@ -52,6 +52,13 @@ impl Expansion {
         Expansion(geometry_predicates::predicates::two_product(a, b).to_vec())
     }
 
+    /// The exact difference `a − b` as a two-component expansion — the exact
+    /// coordinate differences (`q − s`, …) the indirect predicates cross-multiply.
+    #[inline]
+    pub fn two_diff(a: f64, b: f64) -> Expansion {
+        Expansion(geometry_predicates::predicates::two_diff(a, b).to_vec())
+    }
+
     /// `self · b`, exact.
     pub fn scale(&self, b: f64) -> Expansion {
         let mut h = vec![0.0; 2 * self.0.len()];
@@ -73,6 +80,20 @@ impl Expansion {
     pub fn sub(&self, other: &Expansion) -> Expansion {
         let neg = Expansion(other.0.iter().map(|&x| -x).collect());
         self.add(&neg)
+    }
+
+    /// `self · other`, exact. Distributes over `other`'s components —
+    /// `Σⱼ self · other[j]` via [`scale`](Self::scale) + [`add`](Self::add),
+    /// each step exact, so the whole product is exact. Unavoidable for the
+    /// indirect predicates: the implicit-point determinant `M` multiplies two
+    /// expansions (`Row1ᵢ · crossᵢ`) that no factoring can reduce to scalars.
+    pub fn mul(&self, other: &Expansion) -> Expansion {
+        // `other` is never empty (the type invariant), so `other.0[0]` exists.
+        let mut acc = self.scale(other.0[0]);
+        for &c in &other.0[1..] {
+            acc = acc.add(&self.scale(c));
+        }
+        acc
     }
 
     /// The exact sign of the represented value: `+1`, `-1`, or `0`.
@@ -125,6 +146,90 @@ pub fn det3(m: [[f64; 3]; 3]) -> Expansion {
 #[inline]
 pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
     det3(m).sign()
+}
+
+/// Three planes, each `[a, b, c, d]` meaning `a·X + b·Y + c·Z + d = 0`. When they
+/// meet in a single point that point is *implicit* — the indirect predicates
+/// decide signs about it without ever materializing its (generally irrational)
+/// coordinates. The result is invariant under scaling any plane's coefficients,
+/// so the normals need not be unit length (design §8 M5; Attene 2020).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ThreePlane(pub [[f64; 4]; 3]);
+
+/// The exact sign of `orient3d(p, q, r, s)` where `p` is the implicit point at
+/// which the three planes `p` meet and `q, r, s` are explicit points — same sign
+/// convention as [`orient3d`] (`+1` ⇒ `p` on the negative side of the plane
+/// through `q, r, s`; `0` ⇒ the four are coplanar).
+///
+/// By Cramer the implicit point is `(Dx/D, Dy/D, Dz/D)` where `D` is the
+/// determinant of the plane-normal matrix and `Dx/Dy/Dz` replace its column
+/// `0/1/2` with `−d`. Factoring `1/D` out of the first row of
+/// `det[p−s, q−s, r−s]` gives `orient3d = (1/D)·M`, hence the sign is
+/// `sign(D)·sign(M)` with `M = det[(Dx−D·sx, …), q−s, r−s]`. Every part is an
+/// exact polynomial in the inputs, evaluated through [`Expansion`], so the sign
+/// is exact.
+///
+/// **Precondition:** the three planes meet in a point (`D ≠ 0`). `D = 0`
+/// (parallel or coincident planes) leaves the point undefined; the result is
+/// then `0` (unspecified), which falls out of `sign(D)·sign(M)` with no branch —
+/// `M` is division-free, so it stays finite even when `D = 0`. `PolyhedralBoolean`
+/// (M5-c) only forms valid vertices, guaranteeing `D ≠ 0` in practice.
+pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
+    let pl = p.0;
+    // Plane-normal matrix N (rows = normals) and the right-hand side −d.
+    let n = [
+        [pl[0][0], pl[0][1], pl[0][2]],
+        [pl[1][0], pl[1][1], pl[1][2]],
+        [pl[2][0], pl[2][1], pl[2][2]],
+    ];
+    let rhs = [-pl[0][3], -pl[1][3], -pl[2][3]];
+    // Cramer determinants: D and Dx/Dy/Dz (column k replaced by rhs).
+    let col_replaced = |k: usize| {
+        let mut m = n;
+        m[0][k] = rhs[0];
+        m[1][k] = rhs[1];
+        m[2][k] = rhs[2];
+        m
+    };
+    let d = det3(n);
+    let dx = det3(col_replaced(0));
+    let dy = det3(col_replaced(1));
+    let dz = det3(col_replaced(2));
+
+    // cross = (q − s) × (r − s), each component an exact expansion.
+    let dq = [
+        Expansion::two_diff(q[0], s[0]),
+        Expansion::two_diff(q[1], s[1]),
+        Expansion::two_diff(q[2], s[2]),
+    ];
+    let dr = [
+        Expansion::two_diff(r[0], s[0]),
+        Expansion::two_diff(r[1], s[1]),
+        Expansion::two_diff(r[2], s[2]),
+    ];
+    let cross = [
+        dq[1].mul(&dr[2]).sub(&dq[2].mul(&dr[1])),
+        dq[2].mul(&dr[0]).sub(&dq[0].mul(&dr[2])),
+        dq[0].mul(&dr[1]).sub(&dq[1].mul(&dr[0])),
+    ];
+
+    // Row1 = (Dx − D·sx, Dy − D·sy, Dz − D·sz); the D·sᵢ terms are cheap scales.
+    let row1 = [
+        dx.sub(&d.scale(s[0])),
+        dy.sub(&d.scale(s[1])),
+        dz.sub(&d.scale(s[2])),
+    ];
+    // M = Row1 · cross — three exact expansion×expansion products.
+    let m = row1[0]
+        .mul(&cross[0])
+        .add(&row1[1].mul(&cross[1]))
+        .add(&row1[2].mul(&cross[2]));
+
+    debug_assert!(
+        d.sign() != 0,
+        "indirect_orient3d: degenerate three-plane input (D = 0)"
+    );
+    d.sign() * m.sign()
 }
 
 #[cfg(test)]
@@ -186,11 +291,12 @@ mod tests {
     // the exact value — the roundoff tail is what makes exact expansions possible.
     #[test]
     fn adaptive_arithmetic_primitives_are_usable() {
-        use geometry_predicates::predicates::{two_product, two_sum};
+        use geometry_predicates::predicates::{two_diff, two_product, two_sum};
 
         // Exact cases: small integers lose nothing, so the tail is zero.
         assert_eq!(two_product(3.0, 5.0), [0.0, 15.0]);
         assert_eq!(two_sum(1.0, 2.0), [0.0, 3.0]);
+        assert_eq!(two_diff(5.0, 3.0), [0.0, 2.0]);
 
         // Roundoff cases: `hi` is the rounded result, and the tail recovers
         // exactly what an f64 result would drop (this is what enables exact
@@ -262,6 +368,191 @@ mod tests {
             let mf = e.map(|row| row.map(|v| v as f64));
             let mi = e.map(|row| row.map(|v| v as i128));
             prop_assert_eq!(det3_sign(mf), det3_i128(mi).signum() as i8);
+        }
+    }
+
+    // ---- indirect orient3d (M5-a2) ----
+
+    /// The sign of an f64, `+1`/`-1`/`0`. Not `f64::signum`, which maps `0.0` to
+    /// `+1.0` — a coplanar `orient3d` (exactly `0.0`) must read as `0`.
+    fn sign_f64(x: f64) -> i8 {
+        if x > 0.0 {
+            1
+        } else if x < 0.0 {
+            -1
+        } else {
+            0
+        }
+    }
+
+    /// The integer value of an expansion, exact when every component is an
+    /// integer within `i128` (each component is `< 2⁵³`, so `as i128` is lossless).
+    fn expansion_to_i128(e: &Expansion) -> i128 {
+        e.0.iter().map(|&c| c as i128).sum()
+    }
+
+    /// The plane `[n₀, n₁, n₂, −n·p]` through integer point `p` with normal `n`.
+    fn plane_through(n: [i64; 3], p: [i64; 3]) -> [f64; 4] {
+        let dot = n[0] * p[0] + n[1] * p[1] + n[2] * p[2];
+        [n[0] as f64, n[1] as f64, n[2] as f64, -dot as f64]
+    }
+
+    #[test]
+    fn indirect_orient3d_coplanar_is_zero() {
+        // Planes x=1, y=1, z=1 ⇒ implicit point (1,1,1).
+        let planes = ThreePlane([
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0, -1.0],
+        ]);
+        // q,r,s span the plane x+y+z=3, which contains (1,1,1) ⇒ coplanar ⇒ 0.
+        assert_eq!(
+            indirect_orient3d(&planes, [3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]),
+            0
+        );
+    }
+
+    #[test]
+    fn indirect_orient3d_known_sign() {
+        let planes = ThreePlane([
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0, -1.0],
+        ]);
+        // p=(1,1,1) above the CCW triangle in z=0 ⇒ det[p−s,q−s,r−s] = +1 (hand-computed).
+        assert_eq!(
+            indirect_orient3d(&planes, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            1
+        );
+        // Swapping two explicit points flips the sign.
+        assert_eq!(
+            indirect_orient3d(&planes, [1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            -1
+        );
+    }
+
+    proptest! {
+        /// Primary oracle: the exact i128 result. `M` is computed by a **generic**
+        /// `det3_i128([Row1, q−s, r−s])`, a different path than the implementation's
+        /// hand-factored `Row1·cross`, so a factoring/sign/cross bug shows up as a
+        /// mismatch (no self-consistency trap). A `p`-verification pins the oracle's
+        /// own Cramer to truth. Inputs in [−100,100] keep every i128 term ≪ 1.7×10³⁸.
+        #[test]
+        fn prop_indirect_orient3d_matches_i128(
+            planes in prop::array::uniform3(prop::array::uniform4(-100i64..=100)),
+            q in prop::array::uniform3(-100i64..=100),
+            r in prop::array::uniform3(-100i64..=100),
+            s in prop::array::uniform3(-100i64..=100),
+        ) {
+            let n = [
+                [planes[0][0] as i128, planes[0][1] as i128, planes[0][2] as i128],
+                [planes[1][0] as i128, planes[1][1] as i128, planes[1][2] as i128],
+                [planes[2][0] as i128, planes[2][1] as i128, planes[2][2] as i128],
+            ];
+            let rhs = [
+                -(planes[0][3] as i128),
+                -(planes[1][3] as i128),
+                -(planes[2][3] as i128),
+            ];
+            let d = det3_i128(n);
+            prop_assume!(d != 0);
+            let col = |k: usize| {
+                let mut m = n;
+                m[0][k] = rhs[0];
+                m[1][k] = rhs[1];
+                m[2][k] = rhs[2];
+                m
+            };
+            let (dx, dy, dz) = (det3_i128(col(0)), det3_i128(col(1)), det3_i128(col(2)));
+            // p-verification: (dx/d, dy/d, dz/d) lies on all three planes.
+            for pl in &planes {
+                let (a, b, c, dd) = (pl[0] as i128, pl[1] as i128, pl[2] as i128, pl[3] as i128);
+                prop_assert_eq!(a * dx + b * dy + c * dz + dd * d, 0);
+            }
+            let si = [s[0] as i128, s[1] as i128, s[2] as i128];
+            let row1 = [dx - d * si[0], dy - d * si[1], dz - d * si[2]];
+            let dq = [(q[0] - s[0]) as i128, (q[1] - s[1]) as i128, (q[2] - s[2]) as i128];
+            let dr = [(r[0] - s[0]) as i128, (r[1] - s[1]) as i128, (r[2] - s[2]) as i128];
+            let m_int = det3_i128([row1, dq, dr]);
+            let expected = (d.signum() * m_int.signum()) as i8;
+
+            let planes_f = ThreePlane(planes.map(|pl| pl.map(|v| v as f64)));
+            let got = indirect_orient3d(
+                &planes_f,
+                q.map(|v| v as f64),
+                r.map(|v| v as f64),
+                s.map(|v| v as f64),
+            );
+            prop_assert_eq!(got, expected);
+        }
+
+        /// Independent ground truth for the parts the i128 oracle *shares* with the
+        /// implementation (Row1 assembly, the `sign(D)·sign(M)` decomposition, which
+        /// point is subtracted): build an integer point `p` and integer planes
+        /// through it, so `p_f64 = p` exactly, then compare to
+        /// `orient3d(p_f64, q, r, s)` — Shewchuk-direct, no decomposition, no
+        /// conditioning worry.
+        #[test]
+        fn prop_matches_materialized_via_integer_point(
+            p in prop::array::uniform3(-20i64..=20),
+            normals in prop::array::uniform3(prop::array::uniform3(-20i64..=20)),
+            q in prop::array::uniform3(-50i64..=50),
+            r in prop::array::uniform3(-50i64..=50),
+            s in prop::array::uniform3(-50i64..=50),
+        ) {
+            let ni = normals.map(|nn| [nn[0] as i128, nn[1] as i128, nn[2] as i128]);
+            prop_assume!(det3_i128(ni) != 0); // planes meet only at p
+            let planes = ThreePlane([
+                plane_through(normals[0], p),
+                plane_through(normals[1], p),
+                plane_through(normals[2], p),
+            ]);
+            let pf = [p[0] as f64, p[1] as f64, p[2] as f64];
+            let qf = q.map(|v| v as f64);
+            let rf = r.map(|v| v as f64);
+            let sf = s.map(|v| v as f64);
+            let expected = sign_f64(orient3d(pf, qf, rf, sf));
+            prop_assert_eq!(indirect_orient3d(&planes, qf, rf, sf), expected);
+        }
+
+        /// Scaling one plane's coefficients by λ (negative included) leaves the
+        /// result unchanged (`D → λD`, `Row1 → λRow1`). λ is a power of two so the
+        /// scaled coefficients are exact and the invariance is exact — also confirms
+        /// geom need not normalize normals.
+        #[test]
+        fn prop_scaling_a_plane_is_invariant(
+            planes in prop::array::uniform3(prop::array::uniform4(-50.0f64..50.0)),
+            q in prop::array::uniform3(-50.0f64..50.0),
+            r in prop::array::uniform3(-50.0f64..50.0),
+            s in prop::array::uniform3(-50.0f64..50.0),
+            which in 0usize..3,
+            lambda in prop::sample::select(vec![-2.0f64, -1.0, -0.5, 0.5, 2.0, 4.0]),
+        ) {
+            let base = ThreePlane(planes);
+            let mut scaled = planes;
+            for coeff in &mut scaled[which] {
+                *coeff *= lambda;
+            }
+            prop_assert_eq!(
+                indirect_orient3d(&base, q, r, s),
+                indirect_orient3d(&ThreePlane(scaled), q, r, s)
+            );
+        }
+
+        /// Localize the expansion×expansion product: both factors are multi-component
+        /// `det3` results, so the `Σⱼ scale + add` accumulation is exercised (a
+        /// 2×2-component product would not catch accumulation bugs). Exact value is
+        /// checked against the i128 product.
+        #[test]
+        fn prop_mul_matches_i128(
+            a in prop::array::uniform3(prop::array::uniform3(-200i64..=200)),
+            b in prop::array::uniform3(prop::array::uniform3(-200i64..=200)),
+        ) {
+            let ea = det3(a.map(|row| row.map(|v| v as f64)));
+            let eb = det3(b.map(|row| row.map(|v| v as f64)));
+            let ai = a.map(|row| row.map(|v| v as i128));
+            let bi = b.map(|row| row.map(|v| v as i128));
+            prop_assert_eq!(expansion_to_i128(&ea.mul(&eb)), det3_i128(ai) * det3_i128(bi));
         }
     }
 }
