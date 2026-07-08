@@ -10,8 +10,12 @@ not the kernel.
 
 ```
 occt-helper props <in.step>
+occt-helper <fuse|cut|common> <a.step> <b.step> [out.step]
 ```
-Reads the STEP file and prints mass properties as key-value lines:
+`props` reports one solid; the boolean commands run OCCT's `bfuse`/`bcut`/
+`bcommon` on two STEP solids and report the **result's** properties. `cut` is
+`A − B`. `out` optionally writes the boolean result as STEP (unused by the props
+oracle). Every command prints the same key-value schema:
 ```
 volume <v>
 area <a>
@@ -19,18 +23,20 @@ faces <n>
 bbox_min <x> <y> <z>
 bbox_max <x> <y> <z>
 ```
-Exit code: `0` success · `1` geometry failure (file missing, unreadable, no
-shape) · `2` DRAWEXE crash.
+Exit code: `0` success · `1` geometry failure (file missing, unreadable, no/empty
+shape) · `2` DRAWEXE crash. The schema and exit codes are identical across
+commands, so the Rust side (`nacre-oracle`) shares one parser.
 
-(The design's `fuse|cut|common` boolean commands land with the M5 boolean
-oracle; the protocol is fixed so the Rust side — `nacre-oracle` — is unchanged
-when new commands or a new backend arrive.)
+Inputs must be **single-solid** STEP files (nacre's `to_step_solid`): a STEP with
+multiple transferable roots reads as `x_1, x_2, …` and the boolean would use only
+`x_1`. nacre's per-solid export always emits one root.
 
 ## Backend
 
-`props` runs the Homebrew OCCT `DRAWEXE` Tcl shell in batch mode
-(`stepread → vprops/sprops/nbshapes/bounding`) and parses its console output.
-Requires `brew install opencascade` (provides `DRAWEXE` on `PATH`).
+Every command runs the Homebrew OCCT `DRAWEXE` Tcl shell in batch mode
+(`stepread → [bfuse/bcut/bcommon →] vprops/sprops/nbshapes/bounding`) and parses
+its console output. Requires `brew install opencascade` (provides `DRAWEXE` on
+`PATH`).
 
 If the DRAWEXE console scraping ever proves fragile (version/output drift), swap
 this script for a thin C++ helper linking OCCT (`STEPControl_Reader` +
