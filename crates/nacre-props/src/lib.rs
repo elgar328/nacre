@@ -48,9 +48,6 @@ pub enum MassError {
     /// supported; a hole in a cylindrical face has no producer yet, so it is
     /// rejected rather than mis-integrated.
     UnsupportedInnerLoop,
-    /// The solid has inner cavity shells; hollow-solid mass is deferred to the
-    /// boolean milestones (M5+). No producer creates cavities today.
-    HasCavities,
 }
 
 /// Exact mass properties of one solid via the divergence theorem.
@@ -62,13 +59,13 @@ pub enum MassError {
 /// catastrophic cancellation a far-from-origin placement would otherwise cause.
 pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, MassError> {
     let solid = model.solids.get(solid);
-    if !solid.cavities.is_empty() {
-        return Err(MassError::HasCavities);
-    }
-    let shell = model.shells.get(solid.outer);
+    let outer = model.shells.get(solid.outer);
 
-    // R = the first vertex of the first face; any vertex on the solid works.
-    let first_face = model.faces.get(shell.faces[0]);
+    // R = the first vertex of the first face of the outer shell; any vertex on
+    // the solid works. The closed-surface identity ∮ n̂ dA = 0 holds over the
+    // *full* boundary — outer shell plus every cavity shell — so V is
+    // R-independent; keeping R on the outer shell keeps the numbers small.
+    let first_face = model.faces.get(outer.faces[0]);
     let reference = model
         .vertices
         .get(he_start(model, first_face.outer.half_edges[0])?)
@@ -76,10 +73,16 @@ pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, Mass
 
     let mut volume_flux = 0.0;
     let mut area = 0.0;
-    for &face in &shell.faces {
-        let (a, flux) = face_contribution(model, model.faces.get(face), reference)?;
-        area += a;
-        volume_flux += flux;
+    // Outer boundary, then each inner cavity shell. A cavity's faces are wound
+    // with their outward normals pointing into the void (design §8 M5
+    // containment), so its flux is negative and subtracts the void's volume;
+    // its (unsigned) area adds — both surfaces bound material.
+    for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
+        for &face in &model.shells.get(sh).faces {
+            let (a, flux) = face_contribution(model, model.faces.get(face), reference)?;
+            area += a;
+            volume_flux += flux;
+        }
     }
     Ok(MassProps {
         volume: volume_flux / 3.0,
@@ -455,6 +458,36 @@ mod tests {
         assert!(close(m.area, 6.8), "area {}", m.area);
     }
 
+    /// Build a hollow solid: an `outer`-cube with a concentric `inner`-cube void,
+    /// the inner cube's shell reversed inward (M5 containment). Returns its mass.
+    fn cube_in_cube(min: Point3, outer: f64, inner: f64) -> MassProps {
+        let mut m = Model::new();
+        let ext = |s: f64| Vector3::from_array([s, s, s]);
+        let a = m.add_cuboid(min, min + ext(outer));
+        let gap = 0.5 * (outer - inner); // centered ⇒ strictly interior on all sides
+        let inner_min = min + ext(gap);
+        let b = m.add_cuboid(inner_min, inner_min + ext(inner));
+
+        let b_outer = m.solids.get(b).outer;
+        let void = m.reversed_shell(b_outer);
+        let a_outer = m.solids.get(a).outer;
+        let hollow = m.push_solid(Solid {
+            outer: a_outer,
+            cavities: vec![void],
+        });
+        m.live_solids.retain(|&s| s == hollow); // supersede the two source cubes
+        mass_props(&m, hollow).unwrap()
+    }
+
+    #[test]
+    fn cube_in_cube_subtracts_the_void() {
+        // 4-cube with a concentric 2-cube void: V = 4³ − 2³ = 56; total surface
+        // = outer 6·4² + void 6·2² = 96 + 24 = 120 (both surfaces bound material).
+        let props = cube_in_cube(Point3::origin(), 4.0, 2.0);
+        assert!(close(props.volume, 56.0), "vol {}", props.volume);
+        assert!(close(props.area, 120.0), "area {}", props.area);
+    }
+
     /// Unsigned area of a 2D polygon (independent check for the concave test).
     fn shoelace(pts: &[[f64; 2]]) -> f64 {
         let mut two_area = 0.0;
@@ -538,6 +571,24 @@ mod tests {
             let area = 6.0 * size * size + 8.0 * hw * dist;
             prop_assert!(close(m.volume, vol), "vol {} vs {}", m.volume, vol);
             prop_assert!(close(m.area, area), "area {} vs {}", m.area, area);
+        }
+
+        /// A concentric cube void of any interior size: V = outer³ − inner³, and
+        /// the total surface is the sum of both. `min` ranges far from the origin
+        /// to exercise the R-cancellation guard over the *full* (outer + void)
+        /// boundary, not just the outer shell.
+        #[test]
+        fn prop_cube_in_cube(
+            min in wide_point(),
+            outer in 2.0f64..1e3,
+            ratio in 0.1f64..0.85,
+        ) {
+            let inner = outer * ratio;
+            let props = cube_in_cube(min, outer, inner);
+            let vol = outer * outer * outer - inner * inner * inner;
+            let area = 6.0 * (outer * outer + inner * inner);
+            prop_assert!(close(props.volume, vol), "vol {} vs {}", props.volume, vol);
+            prop_assert!(close(props.area, area), "area {} vs {}", props.area, area);
         }
     }
 }
