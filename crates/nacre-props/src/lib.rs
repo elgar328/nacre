@@ -44,6 +44,10 @@ pub enum MassError {
     /// A planar face bounded by something other than a straight polygon or a
     /// single full circle (e.g. a future line+arc mix). None occur today.
     UnsupportedBoundary,
+    /// A face carries an inner loop (a hole — from `ImprintSketch`). Subtracting
+    /// the hole's flux/area is deferred to M4-c; until then mass properties are
+    /// rejected honestly rather than silently over-counted.
+    UnsupportedInnerLoop,
     /// The solid has inner cavity shells; hollow-solid mass is deferred to the
     /// boolean milestones (M5+). No producer creates cavities today.
     HasCavities,
@@ -90,6 +94,11 @@ fn face_contribution(
     face: &Face,
     reference: Point3,
 ) -> Result<(f64, f64), MassError> {
+    // A hole (inner loop) would subtract from the face's flux/area; that support
+    // lands in M4-c. Until then, reject rather than silently over-count.
+    if !face.inner.is_empty() {
+        return Err(MassError::UnsupportedInnerLoop);
+    }
     let sign = match face.orientation {
         Orientation::Forward => 1.0,
         Orientation::Reversed => -1.0,
@@ -283,6 +292,50 @@ mod tests {
 
         let props = mass_props(&m, s).unwrap();
         assert!(close(props.volume, a_l * dist), "volume {}", props.volume);
+    }
+
+    #[test]
+    fn mass_props_rejects_inner_loop() {
+        // Imprint a hole in a cube's top face; hole-aware mass is deferred to
+        // M4-c, so mass_props rejects rather than silently over-counting.
+        let mut m = Model::new();
+        let square = Profile2d {
+            points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                .iter()
+                .map(|&p| Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: square,
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let hole = Profile2d {
+            points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+                .iter()
+                .map(|&p| Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::ImprintSketch { solid, .. } = apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: faces[1],
+                profile: hole,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        assert!(matches!(
+            mass_props(&m, solid),
+            Err(MassError::UnsupportedInnerLoop)
+        ));
     }
 
     /// Unsigned area of a 2D polygon (independent check for the concave test).
