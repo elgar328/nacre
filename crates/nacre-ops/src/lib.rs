@@ -1,11 +1,11 @@
-//! Operations for the nacre kernel: a sketch profile extruded into a solid,
-//! plus a replayable operation log (design.md §6).
+//! Operations for the nacre kernel, plus a replayable operation log (design §6).
 //!
-//! M2 provides one operation — [`Operation::Extrude`], a planar polygon profile
-//! swept into a prism — applied by [`apply`] and folded by [`replay`]. Every
-//! operation result is a **closed** solid, so `nacre-validate` applies fully.
-//! Operation-to-operation `Handle` references (an op consuming a prior op's
-//! face) are introduced at M4, where face operations make them essential.
+//! [`Operation::Extrude`] (M2) sweeps a planar polygon profile into a prism;
+//! [`Operation::ImprintSketch`] (M4) splits an existing planar face along a
+//! closed profile — the first op that consumes a prior op's face by `Handle`
+//! (exposed via [`OpOutput`]) and supersedes a solid (design §2 live-solid
+//! semantics). Ops are applied by [`apply`] and folded by [`replay`]; every
+//! result is a **closed** solid, so `nacre-validate` applies fully.
 
 use nacre_geom::{Curve, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
@@ -66,7 +66,7 @@ pub struct Profile2d {
     pub points: Vec<Point2>,
 }
 
-/// A modelling operation. M2: one variant.
+/// A modelling operation.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
     /// Extrude `profile` (on `plane`) by `dist` along the plane normal.
@@ -74,6 +74,13 @@ pub enum Operation {
         plane: SketchPlane,
         profile: Profile2d,
         dist: f64,
+    },
+    /// Imprint a closed `profile` onto an existing planar `face`, splitting it
+    /// into an outer face with the profile as a hole plus a coplanar region
+    /// face. The profile is expressed in a frame derived from the face (M4).
+    ImprintSketch {
+        face: Handle<Face>,
+        profile: Profile2d,
     },
 }
 
@@ -87,12 +94,28 @@ pub enum OpError {
     /// A curve/surface construction collapsed (collinear/coincident points, a
     /// zero-length profile edge).
     DegenerateGeometry,
+    /// An imprint target face is not planar (only planar faces support imprint
+    /// in M4; curved-face imprint arrives with the quadric milestones).
+    NonPlanarFace,
+    /// An imprint target face belongs to no live solid's outer shell (a stale
+    /// or non-live handle).
+    FaceNotInLiveSolid,
 }
 
-/// The handles an operation produced.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
+#[derive(Clone, Debug, PartialEq)]
 pub enum OpOutput {
-    Extrude { solid: Handle<Solid> },
+    /// The created solid and its faces in push order: `faces[0]` base cap,
+    /// `faces[1]` top cap, then one side face per profile edge.
+    Extrude {
+        solid: Handle<Solid>,
+        faces: Vec<Handle<Face>>,
+    },
+    /// The superseding solid and the new coplanar region face (inside the hole).
+    ImprintSketch {
+        solid: Handle<Solid>,
+        region_face: Handle<Face>,
+    },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -104,8 +127,12 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
             profile,
             dist,
         } => {
-            let solid = extrude(model, plane, profile, *dist)?;
-            Ok(OpOutput::Extrude { solid })
+            let (solid, faces) = extrude(model, plane, profile, *dist)?;
+            Ok(OpOutput::Extrude { solid, faces })
+        }
+        Operation::ImprintSketch { face, profile } => {
+            let (solid, region_face) = imprint(model, *face, profile)?;
+            Ok(OpOutput::ImprintSketch { solid, region_face })
         }
     }
 }
@@ -158,7 +185,7 @@ fn extrude(
     plane: &SketchPlane,
     profile: &Profile2d,
     dist: f64,
-) -> Result<Handle<Solid>, OpError> {
+) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
@@ -293,11 +320,156 @@ fn extrude(
         }));
     }
 
-    let shell = model.shells.push(Shell { faces });
-    Ok(model.push_solid(Solid {
+    let shell = model.shells.push(Shell {
+        faces: faces.clone(),
+    });
+    let solid = model.push_solid(Solid {
         outer: shell,
         cavities: vec![],
-    }))
+    });
+    Ok((solid, faces))
+}
+
+/// The start vertex of a half-edge (`bounds[0]` if forward, else `bounds[1]`).
+/// The target face of an imprint is part of a valid solid, so its edges are
+/// bounded.
+fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
+    let [a, b] = model
+        .edges
+        .get(he.edge)
+        .bounds
+        .expect("a solid's loop edge is bounded");
+    if he.forward { a } else { b }
+}
+
+/// Imprint a closed `profile` onto a planar `face`: split it into an outer face
+/// carrying the profile as an inner-loop hole plus a coplanar region face inside
+/// it. Supersedes the owning solid (design §2) — reuses the untouched cells,
+/// pushes a new shell/solid, and swaps `live_solids`. Returns `(new solid,
+/// region face)`. The model shape is unchanged (a coplanar subdivision).
+fn imprint(
+    model: &mut Model,
+    face: Handle<Face>,
+    profile: &Profile2d,
+) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
+    if profile.points.len() < 3 {
+        return Err(OpError::DegenerateProfile);
+    }
+
+    // Locate the live solid whose outer shell holds this face.
+    let (solid_h, shell_h) = model
+        .live_solids
+        .iter()
+        .map(|&s| (s, model.solids.get(s).outer))
+        .find(|&(_, sh)| model.shells.get(sh).faces.contains(&face))
+        .ok_or(OpError::FaceNotInLiveSolid)?;
+
+    // Read the target face, then release the borrow before mutating.
+    let f = model.faces.get(face);
+    let surface_h = f.surface;
+    let orientation = f.orientation;
+    let outer_loop = f.outer.clone();
+    let plane = match model.surfaces.get(surface_h) {
+        Surface::Plane(p) => *p,
+        Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
+    };
+
+    // Outward normal and an in-plane right-handed frame (x × y = n), centred on
+    // the face so the profile's (0, 0) lands at the face centre.
+    let sign = match orientation {
+        Orientation::Forward => 1.0,
+        Orientation::Reversed => -1.0,
+    };
+    let n = plane.normal() * sign;
+    let x = n.any_perpendicular().ok_or(OpError::DegenerateGeometry)?;
+    let y = n.cross(x);
+    let outer_pts: Vec<Point3> = outer_loop
+        .half_edges
+        .iter()
+        .map(|he| model.vertices.get(he_start(model, *he)).point)
+        .collect();
+    let origin = Point3::centroid(&outer_pts).ok_or(OpError::DegenerateGeometry)?;
+
+    // Profile → CCW in the frame (positive signed area) so its RH normal is +n.
+    let mut pts = profile.points.clone();
+    if signed_area(&pts) < 0.0 {
+        pts.reverse();
+    }
+    let pts3: Vec<Point3> = pts.iter().map(|p| origin + x * p[0] + y * p[1]).collect();
+
+    // Profile vertices and segment edges.
+    let m = pts3.len();
+    let pv: Vec<Handle<Vertex>> = pts3
+        .iter()
+        .map(|p| {
+            model.vertices.push(Vertex {
+                point: *p,
+                origin: Origin::Constructed,
+            })
+        })
+        .collect();
+    let pe: Vec<Handle<Edge>> = (0..m)
+        .map(|i| push_line_edge(model, pv[i], pts3[i], pv[(i + 1) % m], pts3[(i + 1) % m]))
+        .collect::<Result<_, _>>()?;
+
+    // Region face: profile forward (CCW), outward +n.
+    let region_loop = Loop {
+        half_edges: pe
+            .iter()
+            .map(|&edge| HalfEdge {
+                edge,
+                forward: true,
+            })
+            .collect(),
+    };
+    let region_face = model.faces.push(Face {
+        surface: surface_h,
+        outer: region_loop,
+        inner: vec![],
+        orientation,
+    });
+
+    // Outer face: the original boundary with the profile as a hole — same edges
+    // reversed + `forward = false` (CW), so each profile edge pairs oppositely.
+    let hole_loop = Loop {
+        half_edges: pe
+            .iter()
+            .rev()
+            .map(|&edge| HalfEdge {
+                edge,
+                forward: false,
+            })
+            .collect(),
+    };
+    let outer_face = model.faces.push(Face {
+        surface: surface_h,
+        outer: outer_loop,
+        inner: vec![hole_loop],
+        orientation,
+    });
+
+    // New shell: the old faces with `face` replaced by the two new faces.
+    let old_faces = model.shells.get(shell_h).faces.clone();
+    let mut new_faces = Vec::with_capacity(old_faces.len() + 1);
+    for &fh in &old_faces {
+        if fh == face {
+            new_faces.push(outer_face);
+            new_faces.push(region_face);
+        } else {
+            new_faces.push(fh);
+        }
+    }
+    let cavities = model.solids.get(solid_h).cavities.clone();
+    let new_shell = model.shells.push(Shell { faces: new_faces });
+    let new_solid = model.push_solid(Solid {
+        outer: new_shell,
+        cavities,
+    });
+
+    // Supersede: the old solid is no longer live (its old face lingers as arena).
+    model.live_solids.retain(|&s| s != solid_h);
+
+    Ok((new_solid, region_face))
 }
 
 #[cfg(test)]
@@ -481,6 +653,128 @@ mod tests {
         );
     }
 
+    /// Extrude a unit cube and return `(model, top face handle)`.
+    fn cube_with_top() -> (Model, Handle<Face>) {
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
+        else {
+            unreachable!()
+        };
+        let top = faces[1]; // base, top, sides…
+        (m, top)
+    }
+
+    fn small_square() -> Profile2d {
+        Profile2d {
+            points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
+        }
+    }
+
+    #[test]
+    fn imprint_square_hole_in_cube_top() {
+        let (mut m, top) = cube_with_top();
+        let out = apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: top,
+                profile: small_square(),
+            },
+        )
+        .unwrap();
+        let OpOutput::ImprintSketch { region_face, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+
+        let v = nacre_validate::validate(&m);
+        assert!(v.is_empty(), "{v:?}");
+
+        let reach = m.reachable();
+        assert_eq!(reach.faces.len(), 7); // 6 − top + (outer' + region)
+        let inner: usize = reach
+            .faces
+            .iter()
+            .map(|fh| m.faces.get(*fh).inner.len())
+            .sum();
+        assert_eq!(inner, 1); // one hole, in the outer face
+        assert!(reach.faces.contains(&region_face));
+        // Euler: V 12, E 16, F 7, L_i 1 → χ = 2.
+        assert_eq!(reach.vertices.len(), 12);
+        assert_eq!(reach.edges.len(), 16);
+    }
+
+    #[test]
+    fn imprint_rejects_nonplanar_face() {
+        let mut m = Model::new();
+        m.add_cylinder(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        let shell = m.solids.get(m.live_solids[0]).outer;
+        let lateral = *m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .find(|&&fh| {
+                matches!(
+                    m.surfaces.get(m.faces.get(fh).surface),
+                    Surface::Cylinder(_)
+                )
+            })
+            .unwrap();
+        assert!(matches!(
+            apply(
+                &mut m,
+                &Operation::ImprintSketch {
+                    face: lateral,
+                    profile: small_square(),
+                },
+            ),
+            Err(OpError::NonPlanarFace)
+        ));
+    }
+
+    #[test]
+    fn imprint_rejects_degenerate_profile() {
+        let (mut m, top) = cube_with_top();
+        let two = Profile2d {
+            points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
+        };
+        assert!(matches!(
+            apply(
+                &mut m,
+                &Operation::ImprintSketch {
+                    face: top,
+                    profile: two,
+                },
+            ),
+            Err(OpError::DegenerateProfile)
+        ));
+    }
+
+    #[test]
+    fn imprint_step_roundtrips() {
+        let (mut m, top) = cube_with_top();
+        apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: top,
+                profile: small_square(),
+            },
+        )
+        .unwrap();
+        // The imprinted solid exports (nacre-step handles the inner loop), and
+        // the hole is emitted as a FACE_BOUND (distinct from FACE_OUTER_BOUND).
+        let step = nacre_step::to_step(&m).expect("imprinted solid exports");
+        assert!(
+            step.contains("FACE_BOUND("),
+            "hole should emit a FACE_BOUND"
+        );
+    }
+
     proptest! {
         #[test]
         fn prop_regular_ngon_on_xy_is_clean(
@@ -513,6 +807,35 @@ mod tests {
             .unwrap();
             prop_assert!(nacre_validate::validate(&m).is_empty());
             prop_assert_eq!(m.faces.len(), n + 2);
+        }
+
+        /// A random box, then a small centred square imprinted on its top face,
+        /// stays a valid b-rep. The hole half-size `h` keeps its circumradius
+        /// `h√2 < 0.15·√2 ≈ 0.21` below the top face's inradius `min(sx,sy)/2 ≥
+        /// 0.25`, so the profile is interior regardless of the derived frame.
+        #[test]
+        fn prop_imprint_stays_valid(
+            sx in 0.5f64..5.0,
+            sy in 0.5f64..5.0,
+            sz in 0.5f64..5.0,
+            h in 0.05f64..0.15,
+        ) {
+            let rect = Profile2d {
+                points: vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)],
+            };
+            let mut m = Model::new();
+            let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: rect,
+                dist: sz,
+            }).unwrap() else { unreachable!() };
+            let top = faces[1];
+            let hole = Profile2d {
+                points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
+            };
+            apply(&mut m, &Operation::ImprintSketch { face: top, profile: hole }).unwrap();
+            m.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
         }
     }
 }

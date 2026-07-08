@@ -273,8 +273,8 @@ mod tests {
             profile,
             dist,
         };
-        let s = match apply(&mut m, &op).unwrap() {
-            OpOutput::Extrude { solid } => solid,
+        let OpOutput::Extrude { solid: s, .. } = apply(&mut m, &op).unwrap() else {
+            unreachable!("extrude yields Extrude output");
         };
 
         // Independent expected base area via the 2D shoelace (not mass_props).
