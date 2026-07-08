@@ -81,6 +81,21 @@ impl Plane {
     pub fn project(self, p: Point3) -> Point3 {
         p - self.signed_distance(p) * self.normal
     }
+
+    /// The coefficients `[a, b, c, d]` of the implicit form `a·X + b·Y + c·Z + d = 0`
+    /// — i.e. `[normal, −(normal·origin)]`. The constant `d` is `signed_distance`
+    /// evaluated at the coordinate origin, so `a·Px + b·Py + c·Pz + d ==
+    /// signed_distance(P)`: exactly zero on the plane.
+    ///
+    /// This is the handoff to `nacre-predicates` (design §9): the exact indirect
+    /// predicates take plane coefficients as plain arrays, never kernel types.
+    /// The normal is unit, but the predicates are scale-invariant, so its length
+    /// does not matter.
+    #[inline]
+    pub fn coefficients(&self) -> [f64; 4] {
+        let [a, b, c] = self.normal.as_array();
+        [a, b, c, self.signed_distance(Point3::origin())]
+    }
 }
 
 #[cfg(test)]
@@ -137,6 +152,20 @@ mod tests {
         let p = Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 2.0]))
             .unwrap();
         assert_eq!(p.normal().as_array(), [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn coefficients_of_z5_plane() {
+        // z = 5: normal +z, origin (0,0,5) ⇒ d = signed_distance(0) = −5.
+        let p = Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 5.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+        )
+        .unwrap();
+        assert_eq!(p.coefficients(), [0.0, 0.0, 1.0, -5.0]);
+        // A point on the plane evaluates the implicit form to exactly zero.
+        let [a, b, c, d] = p.coefficients();
+        assert_eq!(a * 0.0 + b * 0.0 + c * 5.0 + d, 0.0);
     }
 
     #[test]
@@ -209,6 +238,16 @@ mod tests {
             // h = 1.0 dominates the ~1e-10 projection residual, avoiding flakiness.
             prop_assert!(pl.signed_distance(q + n) > 0.0);
             prop_assert!(pl.signed_distance(q - n) < 0.0);
+        }
+
+        /// The implicit form `a·x + b·y + c·z + d` reproduces `signed_distance`.
+        #[test]
+        fn coefficients_evaluate_to_signed_distance((pl, ..) in plane_and_points(), p in pt3()) {
+            let [a, b, c, d] = pl.coefficients();
+            let [x, y, z] = p.as_array();
+            let eval = a * x + b * y + c * z + d;
+            let scale = 1e-9 * (p.as_array().iter().map(|v| v.abs()).fold(0.0, f64::max) + 1.0);
+            prop_assert!((eval - pl.signed_distance(p)).abs() <= scale);
         }
     }
 }
