@@ -21,19 +21,36 @@ use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
 use std::collections::HashSet;
 
+/// How a discovered vertex is *defined* — the primitives whose intersection it
+/// is (design §4). This definition is the **truth**; the vertex's `f64` point is
+/// a cache derived from it. Sign decisions (in/out, orientation) feed this
+/// definition to the indirect predicates rather than the cached coordinate
+/// (design §3, §8 M5), so a discovered vertex must carry it.
+///
+/// M5 polyhedral vertices are three-plane intersections; later milestones add
+/// variants (a line∩plane point, quadric intersections). `Handle<Surface>` is
+/// `Copy` regardless of `Surface`, so this stays `Copy`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum VertexDef {
+    /// The intersection of three planes (their surface handles).
+    ThreePlane([Handle<Surface>; 3]),
+}
+
 /// Provenance of a vertex or edge (design §4, overview 절대원칙 4).
 ///
 /// `Constructed` elements know their identity by construction and carry no
-/// tolerance; `Discovered` elements come from an intersection and hold the
-/// *measured* accuracy relaxation achieved (M3+). In M1 every element is
-/// `Constructed`, so the tolerance path is never exercised.
+/// tolerance; `Discovered` elements come from an intersection and hold both the
+/// [`VertexDef`] that defines them (the truth) and the *measured* accuracy the
+/// relaxation/closed-form achieved (`tol` — the point is a within-`tol` cache of
+/// the definition). In M1–M4 every element is `Constructed`; M5's
+/// `PolyhedralBoolean` is the first `Discovered` producer.
 ///
 /// Holds an `f64`, so `PartialEq` only — no `Eq`/`Hash` (identity is by
 /// `Handle`, never by value).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Origin {
     Constructed,
-    Discovered { tol: f64 },
+    Discovered { tol: f64, definition: VertexDef },
 }
 
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped

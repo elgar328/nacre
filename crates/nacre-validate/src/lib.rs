@@ -9,7 +9,7 @@
 
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
-use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Origin, Reachable, Vertex};
+use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Origin, Reachable, Vertex, VertexDef};
 
 /// Residual bound for a `Constructed` vertex lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — a `Constructed`
@@ -29,6 +29,8 @@ pub enum RefKind {
     HalfEdgeEdge,
     ShellFace,
     SolidShell,
+    /// A `Discovered` vertex's `VertexDef` surface handle.
+    VertexDefSurface,
 }
 
 /// Which loop of a face a defect was found in.
@@ -163,7 +165,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
 fn tol_of(o: Origin) -> f64 {
     match o {
         Origin::Constructed => EPS_CONSTRUCTED,
-        Origin::Discovered { tol } => tol,
+        Origin::Discovered { tol, .. } => tol,
     }
 }
 
@@ -241,6 +243,23 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
                     target_index: sh.index(),
                     target_len: m.shells.len() as u32,
                 });
+            }
+        }
+    }
+
+    // A discovered vertex's definition references surfaces by handle.
+    for (vh, vertex) in m.vertices.iter() {
+        if let Origin::Discovered { definition, .. } = vertex.origin {
+            let VertexDef::ThreePlane(surfaces) = definition;
+            for s in surfaces {
+                if !in_bounds(s, &m.surfaces) {
+                    out.push(Violation::DanglingReference {
+                        kind: RefKind::VertexDefSurface,
+                        owner_index: vh.index(),
+                        target_index: s.index(),
+                        target_len: m.surfaces.len() as u32,
+                    });
+                }
             }
         }
     }
@@ -446,6 +465,26 @@ mod tests {
         h
     }
 
+    /// A `Handle<Surface>` for `index` (same throwaway-store trick).
+    fn surface_handle_at(index: u32) -> Handle<Surface> {
+        let plane = || {
+            Surface::Plane(
+                Plane::through_points(
+                    Point3::from_array([0.0, 0.0, 0.0]),
+                    Point3::from_array([1.0, 0.0, 0.0]),
+                    Point3::from_array([0.0, 1.0, 0.0]),
+                )
+                .unwrap(),
+            )
+        };
+        let mut s: Store<Surface> = Store::new();
+        let mut h = s.push(plane());
+        for _ in 0..index {
+            h = s.push(plane());
+        }
+        h
+    }
+
     #[test]
     fn cube_is_clean() {
         assert!(validate(&cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])).is_empty());
@@ -487,6 +526,44 @@ mod tests {
                 target_len: 1,
             }]
         );
+    }
+
+    #[test]
+    fn dangling_reference_vertex_definition() {
+        // A discovered vertex whose definition points past the surface store.
+        let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]); // 6 surfaces, 8 vertices
+        let vh = m.vertices.push(Vertex {
+            point: Point3::origin(),
+            origin: Origin::Discovered {
+                tol: 1e-9,
+                definition: VertexDef::ThreePlane([
+                    surface_handle_at(0),
+                    surface_handle_at(1),
+                    surface_handle_at(9), // out of bounds — only 6 surfaces
+                ]),
+            },
+        });
+        assert_eq!(
+            validate(&m),
+            vec![Violation::DanglingReference {
+                kind: RefKind::VertexDefSurface,
+                owner_index: vh.index(),
+                target_index: 9,
+                target_len: 6,
+            }]
+        );
+    }
+
+    #[test]
+    fn vertex_def_and_discovered_origin_are_copy() {
+        let d = VertexDef::ThreePlane([surface_handle_at(0); 3]);
+        let o = Origin::Discovered {
+            tol: 1e-9,
+            definition: d,
+        };
+        let copy = o; // move-or-copy
+        let _again = o; // still usable ⇒ Copy, not moved
+        assert_eq!(o, copy);
     }
 
     #[test]
@@ -564,11 +641,21 @@ mod tests {
         ([1, 2, 3], [(3, true), (5, true), (4, false)]),
     ];
 
+    /// How a nudged vertex is tagged. A lightweight stand-in for [`Origin`]:
+    /// `push_tetra` fills in a `Discovered` vertex's [`VertexDef`] from the three
+    /// tetra faces incident to it (their surface handles are not known until the
+    /// surfaces are built).
+    #[derive(Clone, Copy)]
+    enum NudgeOrigin {
+        Constructed,
+        Discovered { tol: f64 },
+    }
+
     #[derive(Default)]
     struct TetraOpts {
         /// (vertex index, coordinate delta, that vertex's origin) — moves a
         /// vertex off its (un-moved) curves/surfaces.
-        nudge: Option<(usize, [f64; 3], Origin)>,
+        nudge: Option<(usize, [f64; 3], NudgeOrigin)>,
         drop_face: Option<usize>,
         unbind_edge: Option<usize>,
         flip_he: Option<(usize, usize)>, // (face, half-edge position)
@@ -585,6 +672,18 @@ mod tests {
                 TETRA_BASE[i][2] + t[2],
             ])
         };
+        // Surfaces first (they need only corners), so a discovered vertex's
+        // definition can reference their handles. Built for all four faces even
+        // if one is dropped — an orphan surface is outside the reachable set, so
+        // it does not perturb Euler counts or reference checks.
+        let sh: Vec<Handle<Surface>> = TETRA_FACES
+            .iter()
+            .map(|(tri, _)| {
+                m.surfaces.push(Surface::Plane(
+                    Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2])).unwrap(),
+                ))
+            })
+            .collect();
         let vh: Vec<Handle<Vertex>> = (0..4)
             .map(|i| {
                 let mut p = corner(i).as_array();
@@ -592,7 +691,24 @@ mod tests {
                 if let Some((vi, d, o)) = opts.nudge {
                     if vi == i {
                         p = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-                        origin = o;
+                        origin = match o {
+                            NudgeOrigin::Constructed => Origin::Constructed,
+                            NudgeOrigin::Discovered { tol } => {
+                                // The three faces incident to vertex `i` define it.
+                                let incident: Vec<Handle<Surface>> = TETRA_FACES
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, (tri, _))| tri.contains(&i))
+                                    .map(|(fi, _)| sh[fi])
+                                    .collect();
+                                Origin::Discovered {
+                                    tol,
+                                    definition: VertexDef::ThreePlane(
+                                        incident.try_into().expect("a tetra vertex is on 3 faces"),
+                                    ),
+                                }
+                            }
+                        };
                     }
                 }
                 m.vertices.push(Vertex {
@@ -620,13 +736,11 @@ mod tests {
             })
             .collect();
         let mut faces = Vec::new();
-        for (fi, (tri, hes)) in TETRA_FACES.iter().enumerate() {
+        for (fi, (_tri, hes)) in TETRA_FACES.iter().enumerate() {
             if opts.drop_face == Some(fi) {
                 continue;
             }
-            let surface = m.surfaces.push(Surface::Plane(
-                Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2])).unwrap(),
-            ));
+            let surface = sh[fi];
             let mut half_edges: Vec<HalfEdge> = hes
                 .iter()
                 .map(|&(e, forward)| HalfEdge {
@@ -754,7 +868,11 @@ mod tests {
         // Vertex 0 moved by 2·EPS_CONSTRUCTED; curves/planes stay on the
         // un-moved corners, so the vertex is off some of them.
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 2.0 * EPS_CONSTRUCTED], Origin::Constructed)),
+            nudge: Some((
+                0,
+                [0.0, 0.0, 2.0 * EPS_CONSTRUCTED],
+                NudgeOrigin::Constructed,
+            )),
             ..Default::default()
         }));
         assert!(
@@ -771,7 +889,7 @@ mod tests {
     fn discovered_vertex_within_tolerance_is_clean() {
         let tol = 1e-6;
         let m = tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 0.5 * tol], Origin::Discovered { tol })),
+            nudge: Some((0, [0.0, 0.0, 0.5 * tol], NudgeOrigin::Discovered { tol })),
             ..Default::default()
         });
         assert!(validate(&m).is_empty());
@@ -781,7 +899,7 @@ mod tests {
     fn discovered_vertex_outside_tolerance_flags() {
         let tol = 1e-6;
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 2.0 * tol], Origin::Discovered { tol })),
+            nudge: Some((0, [0.0, 0.0, 2.0 * tol], NudgeOrigin::Discovered { tol })),
             ..Default::default()
         }));
         assert!(vs.iter().any(|v| matches!(
