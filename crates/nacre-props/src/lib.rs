@@ -44,9 +44,9 @@ pub enum MassError {
     /// A planar face bounded by something other than a straight polygon or a
     /// single full circle (e.g. a future line+arc mix). None occur today.
     UnsupportedBoundary,
-    /// A face carries an inner loop (a hole — from `ImprintSketch`). Subtracting
-    /// the hole's flux/area is deferred to M4-c; until then mass properties are
-    /// rejected honestly rather than silently over-counted.
+    /// A **curved** face carries an inner loop (a hole). Planar holes are
+    /// supported; a hole in a cylindrical face has no producer yet, so it is
+    /// rejected rather than mis-integrated.
     UnsupportedInnerLoop,
     /// The solid has inner cavity shells; hollow-solid mass is deferred to the
     /// boolean milestones (M5+). No producer creates cavities today.
@@ -94,23 +94,30 @@ fn face_contribution(
     face: &Face,
     reference: Point3,
 ) -> Result<(f64, f64), MassError> {
-    // A hole (inner loop) would subtract from the face's flux/area; that support
-    // lands in M4-c. Until then, reject rather than silently over-count.
-    if !face.inner.is_empty() {
-        return Err(MassError::UnsupportedInnerLoop);
-    }
     let sign = match face.orientation {
         Orientation::Forward => 1.0,
         Orientation::Reversed => -1.0,
     };
     match model.surfaces.get(face.surface) {
         Surface::Plane(plane) => {
+            // Outer boundary, minus each inner loop (a hole): area and first
+            // moment are additive, so both the area and the flux subtract the
+            // hole's contribution (divergence theorem, n̂ constant on a plane).
             let normal = plane.normal() * sign;
-            let (area, centroid) = planar_face(model, &face.outer)?;
-            let flux = normal.dot(centroid - reference) * area;
+            let (mut area, centroid) = planar_face(model, &face.outer)?;
+            let mut flux = normal.dot(centroid - reference) * area;
+            for hole in &face.inner {
+                let (a_in, c_in) = planar_face(model, hole)?;
+                area -= a_in;
+                flux -= normal.dot(c_in - reference) * a_in;
+            }
             Ok((area, flux))
         }
         Surface::Cylinder(cyl) => {
+            // No producer puts a hole in a curved face yet (imprint is planar).
+            if !face.inner.is_empty() {
+                return Err(MassError::UnsupportedInnerLoop);
+            }
             // Full 2π lateral band (seam model A, design §9). Area = 2πr·h; the
             // flux integral ∮(r−R)·n̂ over the full band is 2πr²·h (the axial and
             // off-axis terms cancel over the closed angle), so it needs no R.
@@ -294,35 +301,35 @@ mod tests {
         assert!(close(props.volume, a_l * dist), "volume {}", props.volume);
     }
 
-    #[test]
-    fn mass_props_rejects_inner_loop() {
-        // Imprint a hole in a cube's top face; hole-aware mass is deferred to
-        // M4-c, so mass_props rejects rather than silently over-counting.
-        let mut m = Model::new();
-        let square = Profile2d {
-            points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    /// Build a `size` cube, mass its solid, then imprint a `2·hw` square hole in
+    /// its top face and mass the result. Returns `(before, after)`.
+    fn cube_then_imprint(size: f64, hw: f64) -> (MassProps, MassProps) {
+        let sq = |s: f64| Profile2d {
+            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
                 .iter()
                 .map(|&p| Point2::from_array(p))
                 .collect(),
         };
-        let OpOutput::Extrude { faces, .. } = apply(
+        let mut m = Model::new();
+        let OpOutput::Extrude { solid, faces } = apply(
             &mut m,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: square,
-                dist: 1.0,
+                profile: sq(size),
+                dist: size,
             },
         )
         .unwrap() else {
             unreachable!()
         };
+        let before = mass_props(&m, solid).unwrap();
         let hole = Profile2d {
-            points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+            points: [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
                 .iter()
                 .map(|&p| Point2::from_array(p))
                 .collect(),
         };
-        let OpOutput::ImprintSketch { solid, .. } = apply(
+        let OpOutput::ImprintSketch { solid: new, .. } = apply(
             &mut m,
             &Operation::ImprintSketch {
                 face: faces[1],
@@ -332,10 +339,19 @@ mod tests {
         .unwrap() else {
             unreachable!()
         };
-        assert!(matches!(
-            mass_props(&m, solid),
-            Err(MassError::UnsupportedInnerLoop)
-        ));
+        (before, mass_props(&m, new).unwrap())
+    }
+
+    #[test]
+    fn imprint_preserves_mass() {
+        // Imprint is a coplanar subdivision: the hole cut from the outer face is
+        // filled by the region face, so volume and area are unchanged. This
+        // exercises the inner-loop subtraction (the outer face now has a hole).
+        let (before, after) = cube_then_imprint(1.0, 0.2);
+        assert!(close(before.volume, 1.0));
+        assert!(close(before.area, 6.0));
+        assert!(close(after.volume, before.volume), "vol {}", after.volume);
+        assert!(close(after.area, before.area), "area {}", after.area);
     }
 
     /// Unsigned area of a 2D polygon (independent check for the concave test).
@@ -388,6 +404,16 @@ mod tests {
             let props = mass_props(&m, s).unwrap();
             prop_assert!(close(props.volume, PI * r * r * h), "vol {} vs {}", props.volume, PI*r*r*h);
             prop_assert!(close(props.area, 2.0 * PI * r * (r + h)), "area {}", props.area);
+        }
+
+        /// Imprinting a hole preserves volume and area for any (interior) hole
+        /// size. `hw ≤ 0.3` keeps the hole's circumradius `hw√2 ≈ 0.42` below the
+        /// top face's inradius `size/2 ≥ 0.5`, so the profile stays interior.
+        #[test]
+        fn prop_imprint_preserves_mass(size in 1.0f64..5.0, hw in 0.05f64..0.3) {
+            let (before, after) = cube_then_imprint(size, hw);
+            prop_assert!(close(after.volume, before.volume), "vol {} vs {}", after.volume, before.volume);
+            prop_assert!(close(after.area, before.area), "area {} vs {}", after.area, before.area);
         }
     }
 }
