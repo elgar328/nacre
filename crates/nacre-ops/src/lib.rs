@@ -1217,9 +1217,6 @@ fn fuse_cut(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
-    if kind == BoolKind::Cut {
-        return Err(BoolError::Unsupported); // M5-c4 commit 2
-    }
     let planes_a = collect_planes(model, a)?;
     let planes_b = collect_planes(model, b)?;
     if !is_convex(&planes_a, &solid_vertices(model, a))
@@ -2280,13 +2277,16 @@ mod tests {
     }
 
     #[test]
-    fn boolean_cut_not_yet_supported() {
-        // Cut lands in M5-c4 commit 2; for now it is Unsupported.
+    fn cut_of_two_cubes() {
+        // A − B where A = [0,1]³, B = [0.5,1.5]³ ⇒ 1 − 0.125 = 0.875.
         let (mut m, a, b) = two_boxes();
-        assert_eq!(
-            boolean(&mut m, BoolKind::Cut, a, b),
-            Err(BoolError::Unsupported)
-        );
+        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.875).abs() < 1e-12, "volume {vol}");
+        assert_eq!(m.live_solids, vec![r]);
     }
 
     #[test]
