@@ -585,4 +585,41 @@ bbox_min 0 0 0
             occt.volume
         );
     }
+
+    /// nacre's `Fuse` and `Cut` results diffed against OCCT for two overlapping
+    /// cubes (M5-c4 face clipping).
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn fuse_cut_result_volume_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let boxes = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0, 1.0, 1.0]),
+            );
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.5]),
+                Point3::from_array([1.5, 1.5, 1.5]),
+            );
+            (m, a, b)
+        };
+        for kind in [BoolKind::Fuse, BoolKind::Cut] {
+            let occt_kind = match kind {
+                BoolKind::Fuse => OcctBool::Fuse,
+                BoolKind::Cut => OcctBool::Cut,
+                BoolKind::Common => unreachable!(),
+            };
+            let (mut m, a, b) = boxes();
+            let occt = occt_boolean_of(&m, occt_kind, a, b).unwrap();
+            let r = boolean(&mut m, kind, a, b).unwrap();
+            let nacre = mass_props(&m, r).unwrap();
+            assert!(
+                approx(nacre.volume, occt.volume),
+                "{kind:?}: {} vs {}",
+                nacre.volume,
+                occt.volume
+            );
+        }
+    }
 }

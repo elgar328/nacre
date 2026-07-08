@@ -1258,14 +1258,21 @@ fn fuse_cut(
     for (edges, other) in [(&edges_a, b_range.clone()), (&edges_b, a_range.clone())] {
         for &(eh, bounds, ref inc) in edges {
             let [v0, v1] = bounds;
+            let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
             if s0 == s1 {
-                continue; // edge does not cross the other solid
+                // Both endpoints outside but the segment passes through the other
+                // solid ⇒ this edge pierces a face mid-face (a poke-through) ⇒
+                // out of clean-seam coverage.
+                if s0 == Side::Outside && segment_enters(p0, p1, other.clone(), &planes) {
+                    return Err(BoolError::Unsupported);
+                }
+                continue;
             }
             let (p_out, p_in) = if s0 == Side::Outside {
-                (model.vertices.get(v0).point, model.vertices.get(v1).point)
+                (p0, p1)
             } else {
-                (model.vertices.get(v1).point, model.vertices.get(v0).point)
+                (p1, p0)
             };
             let entry =
                 enter_face(p_out, p_in, other.clone(), &planes).ok_or(BoolError::Unsupported)?;
@@ -1353,6 +1360,34 @@ fn classify_vertex(v: Point3, other: &[PlaneInfo]) -> Result<Side, BoolError> {
         }
     }
     Ok(side)
+}
+
+/// Whether a segment (both endpoints outside the convex solid `range`) passes
+/// *through* it — Cyrus–Beck line clip yields a non-empty interior interval.
+fn segment_enters(
+    p0: Point3,
+    p1: Point3,
+    range: std::ops::Range<usize>,
+    planes: &[PlaneInfo],
+) -> bool {
+    let (mut t_enter, mut t_exit) = (0.0f64, 1.0f64);
+    for m in range {
+        let d0 = (p0 - planes[m].tri[0]).dot(planes[m].n_out); // >0 outside plane m
+        let d1 = (p1 - planes[m].tri[0]).dot(planes[m].n_out);
+        if d0 > 0.0 && d1 > 0.0 {
+            return false; // segment entirely outside this half-space
+        }
+        if d0 <= 0.0 && d1 <= 0.0 {
+            continue; // no constraint from this plane
+        }
+        let t = d0 / (d0 - d1);
+        if d0 > 0.0 {
+            t_enter = t_enter.max(t);
+        } else {
+            t_exit = t_exit.min(t);
+        }
+    }
+    t_enter < t_exit
 }
 
 /// The face of the convex solid (`range`) that segment `p_out → p_in` enters
@@ -1470,20 +1505,21 @@ fn reconstruct_face(
     let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
     match transitions.len() {
         0 => {
+            // No boundary crossing: an interior seam on this plane means the other
+            // solid pokes through this face (a hole) — out of clean-seam coverage.
+            if seam.iter().any(|s| s.triple.contains(&plane_idx)) {
+                return Err(BoolError::Unsupported);
+            }
             if kept[0] {
-                // Whole face kept.
                 let loop_nodes = verts.iter().map(|&v| Node::Orig(v)).collect();
-                return Ok(Some(LocalFace {
+                Ok(Some(LocalFace {
                     plane_idx,
                     loop_nodes,
                     flip,
-                }));
+                }))
+            } else {
+                Ok(None)
             }
-            // Whole face dropped — but a seam loop interior to it would be a hole.
-            if seam.iter().any(|s| s.triple.contains(&plane_idx)) {
-                return Err(BoolError::Unsupported); // interior seam ⇒ hole
-            }
-            Ok(None)
         }
         2 => {
             // One kept run; splice the seam sub-path across the dropped run.
@@ -2287,6 +2323,92 @@ mod tests {
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 0.875).abs() < 1e-12, "volume {vol}");
         assert_eq!(m.live_solids, vec![r]);
+    }
+
+    #[test]
+    fn fuse_of_disjoint_boxes_is_empty() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+        assert_eq!(
+            boolean(&mut m, BoolKind::Fuse, a, b),
+            Err(BoolError::EmptyResult)
+        );
+    }
+
+    #[test]
+    fn fuse_rejects_containment() {
+        // B strictly inside A ⇒ A∪B = A but there is no seam; the difference
+        // A−B would need a cavity. Out of clean-seam coverage.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        assert_eq!(
+            boolean(&mut m, BoolKind::Fuse, a, b),
+            Err(BoolError::Unsupported)
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Cut, a, b),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn fuse_rejects_poke_through_hole() {
+        // A bar through A's interior pierces two A-faces mid-face (an interior
+        // seam loop = a hole) — out of clean-seam coverage.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let bar = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Fuse, a, bar),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    proptest! {
+        /// Diagonal corner overlaps (clean seam): fuse/cut volumes match the
+        /// independent AABB formula (not nacre's own common).
+        #[test]
+        fn fuse_cut_diagonal_boxes_match_aabb(
+            amin in prop::array::uniform3(-3.0f64..3.0),
+            aext in prop::array::uniform3(1.0f64..3.0),
+            t in prop::array::uniform3(0.15f64..0.6),
+            s in prop::array::uniform3(0.3f64..2.0),
+        ) {
+            let amax: [f64; 3] = std::array::from_fn(|i| amin[i] + aext[i]);
+            let bmin: [f64; 3] = std::array::from_fn(|i| amin[i] + t[i] * aext[i]);
+            let bmax: [f64; 3] = std::array::from_fn(|i| amax[i] + s[i]);
+            let ov: f64 = (0..3).map(|i| amax[i] - bmin[i]).product();
+            let va: f64 = aext.iter().product();
+            let vb: f64 = (0..3).map(|i| bmax[i] - bmin[i]).product();
+
+            let build = || {
+                let mut m = Model::new();
+                let a = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
+                let b = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+                (m, a, b)
+            };
+
+            let (mut m1, a1, b1) = build();
+            let rf = boolean(&mut m1, BoolKind::Fuse, a1, b1);
+            prop_assume!(rf.is_ok()); // skip rare coplanar/degenerate configs
+            let rf = rf.unwrap();
+            m1.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m1).is_empty());
+            let vf = nacre_props::mass_props(&m1, rf).unwrap().volume;
+            prop_assert!((vf - (va + vb - ov)).abs() <= 1e-9 * (va + vb), "fuse {vf}");
+
+            let (mut m2, a2, b2) = build();
+            let rc = boolean(&mut m2, BoolKind::Cut, a2, b2).unwrap();
+            m2.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m2).is_empty());
+            let vc = nacre_props::mass_props(&m2, rc).unwrap().volume;
+            prop_assert!((vc - (va - ov)).abs() <= 1e-9 * va, "cut {vc}");
+        }
     }
 
     #[test]
