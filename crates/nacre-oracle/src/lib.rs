@@ -15,7 +15,8 @@
 //! nacre-side volume/area (`nacre-props`) is now diffed directly against OCCT
 //! here (M4); the boolean `fuse|cut|common` oracle arrives with M5.
 
-use nacre_topo::Model;
+use nacre_store::Handle;
+use nacre_topo::{Model, Solid};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -156,6 +157,96 @@ pub fn occt_props(step: &str) -> Result<OcctProps, OracleError> {
 pub fn occt_props_of(model: &Model) -> Result<OcctProps, OracleError> {
     let step = nacre_step::to_step(model).map_err(|e| OracleError::Export(format!("{e:?}")))?;
     occt_props(&step)
+}
+
+/// Which binary boolean the OCCT oracle should run. Its own enum — `nacre-ops`
+/// (which will define `BoolKind`) is only a dev-dependency here, so it cannot
+/// appear in this crate's public API.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OcctBool {
+    /// A ∪ B.
+    Fuse,
+    /// A − B.
+    Cut,
+    /// A ∩ B.
+    Common,
+}
+
+impl OcctBool {
+    /// The `occt-helper` command name.
+    fn as_str(self) -> &'static str {
+        match self {
+            OcctBool::Fuse => "fuse",
+            OcctBool::Cut => "cut",
+            OcctBool::Common => "common",
+        }
+    }
+}
+
+/// Score the OCCT boolean of two single-solid STEP texts: write each to a unique
+/// temp file, run `occt-helper <fuse|cut|common>`, and parse the result's props.
+///
+/// Each input must be a single-solid STEP ([`nacre_step::to_step_solid`]); a
+/// multi-root STEP would have OCCT operate on only its first shape. This is the
+/// M5 boolean ground truth — the answer key for the nacre `PolyhedralBoolean`.
+pub fn occt_boolean(kind: OcctBool, a_step: &str, b_step: &str) -> Result<OcctProps, OracleError> {
+    let helper = helper_path();
+    if !helper.is_file() {
+        return Err(OracleError::HelperMissing);
+    }
+
+    // Two unique temp paths: pid + a process-lifetime counter (no external deps).
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
+    let stamp = |tag: char| {
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "nacre-oracle-{}-{}{}.step",
+            std::process::id(),
+            tag,
+            n
+        ));
+        path
+    };
+    let a_path = stamp('a');
+    let b_path = stamp('b');
+    std::fs::write(&a_path, a_step).map_err(|e| OracleError::Io(e.to_string()))?;
+    std::fs::write(&b_path, b_step).map_err(|e| OracleError::Io(e.to_string()))?;
+
+    let output = std::process::Command::new(&helper)
+        .arg(kind.as_str())
+        .arg(&a_path)
+        .arg(&b_path)
+        .output();
+
+    // Best-effort cleanup; ignore removal errors.
+    let _ = std::fs::remove_file(&a_path);
+    let _ = std::fs::remove_file(&b_path);
+
+    let output = output.map_err(|e| OracleError::Io(e.to_string()))?;
+    match output.status.code() {
+        Some(0) => OcctProps::parse(&String::from_utf8_lossy(&output.stdout)),
+        Some(1) => Err(OracleError::GeometryFailed),
+        Some(2) => Err(OracleError::Crashed(
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )),
+        other => Err(OracleError::Io(format!(
+            "occt-helper exited with unexpected status {other:?}"
+        ))),
+    }
+}
+
+/// Convenience: export solids `a` and `b` from `model` (each as a single-solid
+/// STEP) and score their OCCT boolean.
+pub fn occt_boolean_of(
+    model: &Model,
+    kind: OcctBool,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<OcctProps, OracleError> {
+    let export =
+        |h| nacre_step::to_step_solid(model, h).map_err(|e| OracleError::Export(format!("{e:?}")));
+    occt_boolean(kind, &export(a)?, &export(b)?)
 }
 
 #[cfg(test)]
@@ -421,5 +512,49 @@ bbox_min 0 0 0
             nacre.area,
             occt.area
         );
+    }
+
+    // --- boolean oracle (M5) ---
+
+    /// Two overlapping unit boxes A = [0,1]³, B = [0.5,1.5]³ (overlap [0.5,1]³ =
+    /// 0.125). Hand-computable boolean volumes: union 1.875, difference A−B
+    /// 0.875, intersection 0.125 — so they calibrate the OCCT boolean harness
+    /// end to end (helper commands + single-solid export + parse).
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn boolean_volumes_match_occt() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.5]),
+        );
+        let fuse = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
+        let cut = occt_boolean_of(&m, OcctBool::Cut, a, b).unwrap();
+        let common = occt_boolean_of(&m, OcctBool::Common, a, b).unwrap();
+        assert!(approx(fuse.volume, 1.875), "fuse {}", fuse.volume);
+        assert!(approx(cut.volume, 0.875), "cut {}", cut.volume);
+        assert!(approx(common.volume, 0.125), "common {}", common.volume);
+    }
+
+    /// Disjoint boxes fuse to a compound whose total volume is the sum — a sanity
+    /// check that the harness handles a non-overlapping (compound) result.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn disjoint_fuse_sums_volumes() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([2.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        let fuse = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
+        assert!(approx(fuse.volume, 2.0), "disjoint fuse {}", fuse.volume);
     }
 }

@@ -193,6 +193,7 @@ dependencies = [
  "nacre-ops",
  "nacre-props",
  "nacre-step",
+ "nacre-store",
  "nacre-topo",
 ]
 
