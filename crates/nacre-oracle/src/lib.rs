@@ -557,4 +557,32 @@ bbox_min 0 0 0
         let fuse = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
         assert!(approx(fuse.volume, 2.0), "disjoint fuse {}", fuse.volume);
     }
+
+    /// nacre's own `Common` result diffed against OCCT: build two overlapping
+    /// cubes, ask OCCT for the intersection volume, and compare it to
+    /// `mass_props` of the solid nacre's half-space enumeration produced.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn common_result_volume_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.5]),
+        );
+        // OCCT ground truth from the inputs (before nacre supersedes them).
+        let occt = occt_boolean_of(&m, OcctBool::Common, a, b).unwrap();
+        let r = boolean(&mut m, BoolKind::Common, a, b).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
 }

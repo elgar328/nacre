@@ -902,17 +902,18 @@ fn solid_vertices(model: &Model, solid: Handle<Solid>) -> Vec<Point3> {
     out
 }
 
-/// Exact convexity: every vertex is on the inner (or on) side of every face
-/// plane. `orient3d(mv0,mv1,mv2,v) < 0` ⇒ `v` outside face `m` ⇒ not convex.
+/// Convexity: every vertex is on the inner side of (or on) every face plane.
+/// The signed distance along the outward normal `n_out` is `≤ 0` on the inside;
+/// a small scale-relative tolerance absorbs the f64 non-coplanarity of a
+/// constructed solid's own vertices with its faces (an exact predicate would
+/// read that ~1e-13 slop as "outside"). A genuine reflex vertex pokes out by a
+/// macroscopic amount, far above the tolerance.
 fn is_convex(planes: &[PlaneInfo], verts: &[Point3]) -> bool {
     planes.iter().all(|pi| {
         verts.iter().all(|&v| {
-            nacre_predicates::orient3d(
-                pi.tri[0].as_array(),
-                pi.tri[1].as_array(),
-                pi.tri[2].as_array(),
-                v.as_array(),
-            ) >= 0.0
+            let sd = (v - pi.tri[0]).dot(pi.n_out);
+            let scale = 1e-9 * (v.as_array().iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
+            sd <= scale
         })
     })
 }
@@ -1948,5 +1949,70 @@ mod tests {
             boolean(&mut m, BoolKind::Common, solid, b),
             Err(BoolError::Unsupported)
         );
+    }
+
+    proptest! {
+        /// Overlapping axis-aligned boxes: the intersection volume equals the
+        /// independent AABB-overlap product (mixed A/B axis-aligned vertices).
+        #[test]
+        fn common_axis_boxes_volume_matches_aabb_overlap(
+            amin in prop::array::uniform3(-5.0f64..5.0),
+            aext in prop::array::uniform3(1.0f64..4.0),
+            t in prop::array::uniform3(0.05f64..0.7),
+            bext in prop::array::uniform3(1.0f64..4.0),
+        ) {
+            let amax: [f64; 3] = std::array::from_fn(|i| amin[i] + aext[i]);
+            let bmin: [f64; 3] = std::array::from_fn(|i| amin[i] + t[i] * aext[i]);
+            let bmax: [f64; 3] = std::array::from_fn(|i| bmin[i] + bext[i]);
+            let expected: f64 = (0..3)
+                .map(|i| (amax[i].min(bmax[i]) - bmin[i]).max(0.0))
+                .product();
+            prop_assume!(expected > 1e-3);
+
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
+            let b = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+            let res = boolean(&mut m, BoolKind::Common, a, b);
+            prop_assume!(res.is_ok()); // skip rare coplanar/degenerate configs
+            let r = res.unwrap();
+            m.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
+            let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+            prop_assert!((vol - expected).abs() <= 1e-9 * expected.max(1.0), "{vol} vs {expected}");
+        }
+
+        /// A tilted square prism (oblique planes) intersected with a big enclosing
+        /// box is the prism — exercises non-axis-aligned face normals (the in/out
+        /// sign and CCW ordering) with an independent oracle (the prism's own mass).
+        #[test]
+        fn common_tilted_prism_with_enclosing_box_is_the_prism(
+            nx in -0.5f64..0.5,
+            ny in -0.5f64..0.5,
+        ) {
+            let plane = SketchPlane::from_origin_normal(
+                Point3::origin(),
+                Vector3::from_array([nx, ny, 1.0]),
+            )
+            .unwrap();
+            let mut m = replay(&[Operation::Extrude {
+                plane,
+                profile: square(),
+                dist: 1.0,
+            }])
+            .unwrap();
+            let prism = *m.live_solids.first().unwrap();
+            let vol_prism = nacre_props::mass_props(&m, prism).unwrap().volume;
+            let c = m.add_cuboid(Point3::from_array([-10.0; 3]), Point3::from_array([10.0; 3]));
+            let res = boolean(&mut m, BoolKind::Common, prism, c);
+            prop_assume!(res.is_ok());
+            let r = res.unwrap();
+            m.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
+            let vol_r = nacre_props::mass_props(&m, r).unwrap().volume;
+            prop_assert!(
+                (vol_r - vol_prism).abs() <= 1e-9 * vol_prism.max(1.0),
+                "{vol_r} vs {vol_prism}"
+            );
+        }
     }
 }
