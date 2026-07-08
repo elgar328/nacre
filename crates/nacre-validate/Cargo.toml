@@ -11,6 +11,10 @@ description = "b-rep invariant checker for the nacre CAD kernel — reference in
 nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
 nacre-store = { path = "../nacre-store", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
+# Geometry is below topo (no cycle). The cavity-orientation check reads a planar
+# face's normal to sign its signed volume; the M1 checks reach geom's
+# distance/normal transitively, this makes that dependency explicit.
+nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 
 [dev-dependencies]
 proptest.workspace = true

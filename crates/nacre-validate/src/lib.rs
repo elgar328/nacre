@@ -7,9 +7,13 @@
 //! tessellation checks (§5, §7 — provenance coherence, crack-free) arrive in M3
 //! when a `Tessellation` exists.
 
-use nacre_math::Point3;
+use nacre_geom::Surface;
+use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
-use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Origin, Reachable, Vertex, VertexDef};
+use nacre_topo::{
+    Adjacency, Edge, Face, Loop, Model, Orientation, Origin, Reachable, Shell, Solid, Vertex,
+    VertexDef,
+};
 
 /// Residual bound for a `Constructed` vertex lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — a `Constructed`
@@ -142,6 +146,19 @@ pub enum Violation {
         inner_loops: usize,
         genus: i64,
     },
+
+    /// A cavity (inner void) shell's faces do not point their outward normals
+    /// into the void: its signed self-volume is `≥ 0` (a correct inward void is
+    /// negative). Such a cavity would *add* to the solid's volume instead of
+    /// subtracting it (design §8 M5 containment). The other checks miss it — a
+    /// globally-reversed shell keeps edge opposition (so `check_manifold`
+    /// passes) and the same V/E/F/S (so Euler passes). Planar cavities only; a
+    /// non-planar void is not checked here.
+    CavityMisoriented {
+        solid: Handle<Solid>,
+        cavity: Handle<Shell>,
+        signed_volume: f64,
+    },
 }
 
 /// Check every M1 invariant of `model`, returning all violations (empty = valid).
@@ -167,6 +184,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
+    check_cavity_orientation(model, &mut out);
     check_geometric_incidence(model, &reach, &mut out);
     check_euler_poincare(model, &reach, &mut out);
     out
@@ -390,6 +408,102 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
             });
         }
     }
+}
+
+/// Each live solid's cavity (void) shells must be inward-oriented: the shell's
+/// signed self-volume (via each face's `plane.normal() × orientation`, the same
+/// normal `nacre-props` integrates) must be negative. A `≥ 0` value means the
+/// void points outward and would add to the solid's volume. Runs after the
+/// reference-integrity short-circuit, so every dereferenced handle is in bounds.
+fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
+    for &sh in &m.live_solids {
+        if !in_bounds(sh, &m.solids) {
+            continue;
+        }
+        for &cavity in &m.solids.get(sh).cavities {
+            if let Some(v) = shell_signed_volume(m, cavity) {
+                if v >= 0.0 {
+                    out.push(Violation::CavityMisoriented {
+                        solid: sh,
+                        cavity,
+                        signed_volume: v,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Signed volume of a planar shell via the divergence theorem, about a
+/// shell-local reference `R` (the closed-surface identity `∮ n̂ dA = 0` makes it
+/// `R`-independent; a local `R` avoids the cancellation an origin-far shell
+/// would suffer). Outward-oriented shell ⇒ `+V`; a correct inward cavity ⇒ `−V`.
+/// `None` if any face is non-planar or a loop is unbounded (M5 cavities are
+/// planar; a curved void is simply not checked). Mirrors `nacre-props`'
+/// `face_contribution`, duplicated to keep validate off the props layer.
+fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
+    let faces = &m.shells.get(shell).faces;
+    let first = m.faces.get(*faces.first()?);
+    let reference = m.vertices.get(loop_start(m, &first.outer)?).point;
+
+    let mut flux = 0.0;
+    for &fh in faces {
+        let face = m.faces.get(fh);
+        let Surface::Plane(plane) = m.surfaces.get(face.surface) else {
+            return None;
+        };
+        let sign = match face.orientation {
+            Orientation::Forward => 1.0,
+            Orientation::Reversed => -1.0,
+        };
+        let normal = plane.normal() * sign;
+        let (area, centroid) = loop_area_centroid(m, &face.outer)?;
+        flux += normal.dot(centroid - reference) * area;
+        for hole in &face.inner {
+            let (a_in, c_in) = loop_area_centroid(m, hole)?;
+            flux -= normal.dot(c_in - reference) * a_in;
+        }
+    }
+    Some(flux / 3.0)
+}
+
+/// The start vertex of a loop's first half-edge (`None` if unbounded).
+fn loop_start(m: &Model, lp: &Loop) -> Option<Handle<Vertex>> {
+    let he = lp.half_edges.first()?;
+    let [a, b] = m.edges.get(he.edge).bounds?;
+    Some(if he.forward { a } else { b })
+}
+
+/// `(unsigned area, area-weighted centroid)` of a planar polygon loop, via a
+/// signed triangle fan from the first vertex (exact for concave loops). `None`
+/// if the loop has an unbounded edge or fewer than three vertices.
+fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
+    let pts: Vec<Point3> = lp
+        .half_edges
+        .iter()
+        .map(|he| {
+            let [a, b] = m.edges.get(he.edge).bounds?;
+            Some(m.vertices.get(if he.forward { a } else { b }).point)
+        })
+        .collect::<Option<_>>()?;
+    if pts.len() < 3 {
+        return None;
+    }
+    let base = pts[0];
+    let mut area_vec = Vector3::zero();
+    for w in pts[1..].windows(2) {
+        area_vec += (w[0] - base).cross(w[1] - base);
+    }
+    let unit = area_vec.normalize()?;
+    let mut weighted = Vector3::zero();
+    let mut weight = 0.0;
+    for w in pts[1..].windows(2) {
+        let signed = (w[0] - base).cross(w[1] - base).dot(unit);
+        let centroid_rel = ((w[0] - base) + (w[1] - base)) * (1.0 / 3.0);
+        weighted += centroid_rel * signed;
+        weight += signed;
+    }
+    Some((0.5 * area_vec.norm(), base + weighted * (1.0 / weight)))
 }
 
 fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
@@ -962,6 +1076,51 @@ mod tests {
             vs.iter()
                 .any(|v| matches!(v, Violation::VertexOffDefinition { .. })),
             "{vs:?}"
+        );
+    }
+
+    // --- cavity orientation (M5 containment) ---
+
+    /// A hollow `outer`-cube with a concentric `inner`-cube void. `reverse`
+    /// selects a correct inward cavity (`reversed_shell`) or a mis-oriented one
+    /// (the inner shell used as-is, normals still pointing outward). Supersedes
+    /// the two source cubes so only the hollow solid is live.
+    fn hollow_cube(outer: f64, inner: f64, reverse: bool) -> Model {
+        let mut m = Model::new();
+        let ext = |s: f64| Vector3::from_array([s, s, s]);
+        let a = m.add_cuboid(Point3::origin(), Point3::origin() + ext(outer));
+        let inner_min = Point3::origin() + ext(0.5 * (outer - inner));
+        let b = m.add_cuboid(inner_min, inner_min + ext(inner));
+        let b_outer = m.solids.get(b).outer;
+        let void = if reverse {
+            m.reversed_shell(b_outer)
+        } else {
+            b_outer
+        };
+        let a_outer = m.solids.get(a).outer;
+        let hollow = m.push_solid(Solid {
+            outer: a_outer,
+            cavities: vec![void],
+        });
+        m.live_solids.retain(|&s| s == hollow);
+        m
+    }
+
+    #[test]
+    fn correctly_oriented_cavity_is_clean() {
+        let v = validate(&hollow_cube(4.0, 2.0, true));
+        assert!(v.is_empty(), "{v:?}");
+    }
+
+    #[test]
+    fn misoriented_cavity_is_flagged() {
+        // The un-reversed inner shell as a cavity: manifold and Euler still pass
+        // (V16/E24/F12/S2), so the *only* violation is the orientation one.
+        let v = validate(&hollow_cube(4.0, 2.0, false));
+        assert_eq!(v.len(), 1, "{v:?}");
+        assert!(
+            matches!(v[0], Violation::CavityMisoriented { signed_volume, .. } if signed_volume > 0.0),
+            "{v:?}"
         );
     }
 
