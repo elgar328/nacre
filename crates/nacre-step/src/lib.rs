@@ -56,7 +56,10 @@ pub fn to_step(model: &Model) -> Result<String, StepError> {
         ..Default::default()
     });
 
-    for (_, solid) in model.solids.iter() {
+    // Export the live model, not the whole append-only store (design §2):
+    // superseded solids linger in the arena but must not reach the file.
+    for &solid_h in &model.live_solids {
+        let solid = model.solids.get(solid_h);
         if !solid.cavities.is_empty() {
             return Err(StepError::Cavities);
         }
@@ -250,7 +253,8 @@ mod tests {
     fn solid_with_cavities_is_rejected() {
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         let shell = m.shells.iter().next().unwrap().0; // an existing shell handle
-        m.solids.push(Solid {
+        // push_solid so it is live — export walks the live model (design §2).
+        m.push_solid(Solid {
             outer: shell,
             cavities: vec![shell],
         });
