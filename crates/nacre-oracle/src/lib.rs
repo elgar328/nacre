@@ -622,4 +622,30 @@ bbox_min 0 0 0
             );
         }
     }
+
+    /// nacre's coincident-coplanar merge (M5-c5) vs OCCT: two cubes stacked on a
+    /// shared z=1 face fuse to a 1×1×2 box.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn stacked_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
 }

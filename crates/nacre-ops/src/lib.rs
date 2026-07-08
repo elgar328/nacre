@@ -2669,6 +2669,49 @@ mod tests {
             let vc = nacre_props::mass_props(&m2, rc).unwrap().volume;
             prop_assert!((vc - (va - ov)).abs() <= 1e-9 * va, "cut {vc}");
         }
+
+        /// Matched-footprint stacked boxes (coincident z-interface): fuse volume
+        /// is the sum, cut is A, common is empty.
+        #[test]
+        fn stacked_boxes_merge_volumes(
+            x0 in -3.0f64..3.0,
+            y0 in -3.0f64..3.0,
+            dx in 0.5f64..3.0,
+            dy in 0.5f64..3.0,
+            z0 in -3.0f64..3.0,
+            h1 in 0.5f64..3.0,
+            h2 in 0.5f64..3.0,
+        ) {
+            let (x1, y1) = (x0 + dx, y0 + dy);
+            let (zm, z1) = (z0 + h1, z0 + h1 + h2);
+            let build = || {
+                let mut m = Model::new();
+                let a = m.add_cuboid(Point3::from_array([x0, y0, z0]), Point3::from_array([x1, y1, zm]));
+                let b = m.add_cuboid(Point3::from_array([x0, y0, zm]), Point3::from_array([x1, y1, z1]));
+                (m, a, b)
+            };
+            let (va, vb) = (dx * dy * h1, dx * dy * h2);
+
+            let (mut m1, a1, b1) = build();
+            let rf = boolean(&mut m1, BoolKind::Fuse, a1, b1);
+            prop_assume!(rf.is_ok());
+            let rf = rf.unwrap();
+            m1.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m1).is_empty());
+            let vf = nacre_props::mass_props(&m1, rf).unwrap().volume;
+            prop_assert!((vf - (va + vb)).abs() <= 1e-9 * (va + vb), "fuse {vf}");
+
+            let (mut m2, a2, b2) = build();
+            prop_assert_eq!(
+                boolean(&mut m2, BoolKind::Common, a2, b2),
+                Err(BoolError::EmptyResult)
+            );
+
+            let (mut m3, a3, b3) = build();
+            let rc = boolean(&mut m3, BoolKind::Cut, a3, b3).unwrap();
+            let vc = nacre_props::mass_props(&m3, rc).unwrap().volume;
+            prop_assert!((vc - va).abs() <= 1e-9 * va, "cut {vc}");
+        }
     }
 
     #[test]
