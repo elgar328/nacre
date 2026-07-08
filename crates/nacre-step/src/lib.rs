@@ -14,7 +14,7 @@
 use nacre_geom::{Curve, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Model, Orientation, Vertex};
+use nacre_topo::{Edge, Model, Orientation, Solid, Vertex};
 use std::collections::HashMap;
 use step_io::StepBuilder;
 use step_io::build::Vertex as StepVertex;
@@ -41,7 +41,7 @@ impl From<step_io::AuthorError> for StepError {
     }
 }
 
-/// Export every solid in `model` to AP242 (Ed2) STEP text.
+/// Export every live solid in `model` to AP242 (Ed2) STEP text.
 ///
 /// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines
 /// and full circles (`Curve::{Line, Circle}`); a full-circle rim is a seam edge
@@ -50,15 +50,31 @@ impl From<step_io::AuthorError> for StepError {
 /// cavities ([`StepError::Cavities`]). Coordinates are emitted in millimetres
 /// (nacre is unitless; STEP needs a unit).
 pub fn to_step(model: &Model) -> Result<String, StepError> {
+    build_step(model, &model.live_solids)
+}
+
+/// Export a single solid to AP242 (Ed2) STEP text — the solid's live closure
+/// only, as one STEP part. Same coverage and errors as [`to_step`].
+///
+/// Needed by the M5 boolean oracle: OCCT's binary `fuse`/`cut`/`common` take two
+/// separate single-solid STEP files, whereas [`to_step`] emits the whole live set
+/// as one file.
+pub fn to_step_solid(model: &Model, solid: Handle<Solid>) -> Result<String, StepError> {
+    build_step(model, &[solid])
+}
+
+/// Export the given solids to AP242 (Ed2) STEP text, one STEP part each. The
+/// shared body of [`to_step`] and [`to_step_solid`].
+fn build_step(model: &Model, solids: &[Handle<Solid>]) -> Result<String, StepError> {
     let mut b = StepBuilder::new()?;
     b.header(&HeaderInput {
         originating_system: Some("nacre".to_owned()),
         ..Default::default()
     });
 
-    // Export the live model, not the whole append-only store (design §2):
-    // superseded solids linger in the arena but must not reach the file.
-    for &solid_h in &model.live_solids {
+    // Export the given (live) solids, not the whole append-only store (design
+    // §2): superseded solids linger in the arena but must not reach the file.
+    for &solid_h in solids {
         let solid = model.solids.get(solid_h);
         if !solid.cavities.is_empty() {
             return Err(StepError::Cavities);
@@ -247,6 +263,35 @@ mod tests {
         let text = to_step(&cuboid([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0])).expect("export");
         let (_, report) = read(text.as_bytes()).expect("re-read");
         assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+    }
+
+    #[test]
+    fn single_solid_export_isolates_one_solid() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([2.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+
+        // The whole live model exports both solids.
+        let both = to_step(&m).expect("export both");
+        let (model_both, _) = read(both.as_bytes()).expect("re-read");
+        assert_eq!(model_both.scene().all_solids().count(), 2);
+
+        // A single-solid export isolates exactly one solid with its six faces.
+        for h in [a, b] {
+            let text = to_step_solid(&m, h).expect("export one");
+            let (model, report) = read(text.as_bytes()).expect("re-read");
+            assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+            let scene = model.scene();
+            let solids: Vec<_> = scene.all_solids().collect();
+            assert_eq!(solids.len(), 1);
+            assert_eq!(solids[0].faces().count(), 6);
+        }
     }
 
     #[test]
