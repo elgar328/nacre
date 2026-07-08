@@ -19,6 +19,7 @@ pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
+use std::collections::HashSet;
 
 /// Provenance of a vertex or edge (design §4, overview 절대원칙 4).
 ///
@@ -56,8 +57,35 @@ pub struct Model {
     pub faces: Store<Face>,
     pub shells: Store<Shell>,
     pub solids: Store<Solid>,
+    /// The live solids — the "current model" (design §2 supersede semantics).
+    /// Editing ops supersede topology by pushing new cells and updating this
+    /// list; the old cells stay in the append-only arena but, unreferenced by
+    /// any live solid, drop out of the reachable closure. Producers register
+    /// through [`Model::push_solid`]; `validate`/`Adjacency`/`nacre-step`
+    /// traverse [`Model::reachable`], not the whole store.
+    pub live_solids: Vec<Handle<Solid>>,
     // derived cache (rebuilt on demand)
     pub adj: Adjacency,
+}
+
+/// The handles reachable from a model's live solids — the live model (design §2).
+///
+/// Only the sets consumers need today: `validate`'s Euler counts vertices/edges/
+/// faces/shells, and `Adjacency`/loop/incidence walk faces/edges. Surfaces and
+/// curves are never orphaned by the M4 face ops, so they are not tracked.
+#[derive(Debug, Default)]
+pub struct Reachable {
+    pub vertices: HashSet<Handle<Vertex>>,
+    pub edges: HashSet<Handle<Edge>>,
+    pub faces: HashSet<Handle<Face>>,
+    pub shells: HashSet<Handle<Shell>>,
+}
+
+/// Whether a handle indexes inside its store (guards the reachable traversal
+/// against dangling/out-of-range handles).
+#[inline]
+fn in_bounds<T>(h: Handle<T>, store: &Store<T>) -> bool {
+    (h.index() as usize) < store.len()
 }
 
 impl Model {
@@ -74,6 +102,58 @@ impl Model {
         // borrowing `self.adj` mutably while iterating the other stores.
         let adj = Adjacency::rebuild(&*self);
         self.adj = adj;
+    }
+
+    /// Push a solid into the store **and mark it live** (design §2). This is the
+    /// blessed way for a producer to add a solid; the reachable closure
+    /// ([`Model::reachable`]) grows to include it. Editing ops instead mutate
+    /// [`Model::live_solids`] directly (drop the superseded solid, add the new).
+    pub fn push_solid(&mut self, solid: Solid) -> Handle<Solid> {
+        let h = self.solids.push(solid);
+        self.live_solids.push(h);
+        h
+    }
+
+    /// The handles reachable from the live solids — the live model (design §2).
+    ///
+    /// Superseded cells left in the append-only arena are excluded (nothing live
+    /// references them). Every step is bounds-guarded, so this is safe even on a
+    /// corrupt or partially-built model (a dangling handle simply prunes that
+    /// branch; `validate`'s reference-integrity check reports it separately).
+    pub fn reachable(&self) -> Reachable {
+        let mut r = Reachable::default();
+        for &solid_h in &self.live_solids {
+            if !in_bounds(solid_h, &self.solids) {
+                continue;
+            }
+            let solid = self.solids.get(solid_h);
+            for &shell_h in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
+                if !in_bounds(shell_h, &self.shells) || !r.shells.insert(shell_h) {
+                    continue;
+                }
+                for &face_h in &self.shells.get(shell_h).faces {
+                    if !in_bounds(face_h, &self.faces) || !r.faces.insert(face_h) {
+                        continue;
+                    }
+                    let face = self.faces.get(face_h);
+                    for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                        for he in &lp.half_edges {
+                            if !in_bounds(he.edge, &self.edges) || !r.edges.insert(he.edge) {
+                                continue;
+                            }
+                            if let Some(bounds) = self.edges.get(he.edge).bounds {
+                                for v in bounds {
+                                    if in_bounds(v, &self.vertices) {
+                                        r.vertices.insert(v);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        r
     }
 
     /// Add an axis-aligned box `min`..`max` to this model and return its solid.
@@ -172,7 +252,7 @@ impl Model {
         });
 
         let shell = self.shells.push(Shell { faces: fh.to_vec() });
-        self.solids.push(Solid {
+        self.push_solid(Solid {
             outer: shell,
             cavities: vec![],
         })
@@ -327,7 +407,7 @@ impl Model {
         let shell = self.shells.push(Shell {
             faces: vec![lateral, bottom_cap, top_cap],
         });
-        self.solids.push(Solid {
+        self.push_solid(Solid {
             outer: shell,
             cavities: vec![],
         })

@@ -294,7 +294,7 @@ fn extrude(
     }
 
     let shell = model.shells.push(Shell { faces });
-    Ok(model.solids.push(Solid {
+    Ok(model.push_solid(Solid {
         outer: shell,
         cavities: vec![],
     }))
