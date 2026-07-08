@@ -362,4 +362,64 @@ bbox_min 0 0 0
             occt.area
         );
     }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_diff_occt() {
+        use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
+
+        // Unit cube, then a 0.4-square pocket of depth 0.5 in the top face. The
+        // inward walls remove material; this checks OCCT reads the holed,
+        // concave solid and agrees (volume 0.92, area 6.8) with nacre.
+        let sq = |s: f64| Profile2d {
+            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let mut model = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut model,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: sq(1.0),
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let pocket = Profile2d {
+            points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::PocketOnFace { solid, .. } = apply(
+            &mut model,
+            &Operation::PocketOnFace {
+                face: faces[1],
+                profile: pocket,
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+
+        let occt = occt_props_of(&model).unwrap();
+        let nacre = mass_props(&model, solid).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "{} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
 }
