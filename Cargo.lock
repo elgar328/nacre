@@ -177,6 +177,8 @@ version = "0.0.0"
 dependencies = [
  "nacre-geom",
  "nacre-math",
+ "nacre-predicates",
+ "nacre-props",
  "nacre-step",
  "nacre-store",
  "nacre-tess",

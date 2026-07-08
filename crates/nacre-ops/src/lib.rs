@@ -10,7 +10,9 @@
 use nacre_geom::{Curve, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex};
+use nacre_topo::{
+    Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,
+};
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// `x_axis`/`y_axis` are assumed unit and orthogonal (the constructors ensure
@@ -761,11 +763,41 @@ fn raise_region(
 
 // ---- boolean (M5-c3) ----
 
+use nacre_geom::intersect::{plane_plane, three_plane_orient3d, three_planes};
+use std::collections::{HashMap, HashSet};
+
+/// A face's supporting plane plus the data the half-space enumeration needs.
+struct PlaneInfo {
+    surf: Handle<Surface>,
+    plane: Plane,
+    /// Three non-collinear outer-CCW loop points; their RH normal is outward.
+    tri: [Point3; 3],
+    /// Outward normal, `(tri[1]−tri[0])×(tri[2]−tri[0])` normalized — the single
+    /// source of "outward" for both the in/out sign test and face ordering.
+    n_out: Vector3,
+    orient: Orientation,
+}
+
+/// A vertex of the result: a point on exactly three planes, inside all others.
+struct ResultVertex {
+    point: Point3,
+    /// Indices (into the combined plane list) of the three defining planes.
+    triple: [usize; 3],
+    /// Measured accuracy: max distance of `point` to its 3 planes and 3 pairwise
+    /// lines (so a `Constructed` edge's `VertexOffCurve` bound holds too).
+    tol: f64,
+}
+
 /// Boolean of two live solids. **M5-c3 coverage:** `Common` (intersection) of
 /// two convex, all-planar solids in general position; anything else is rejected
-/// with [`BoolError`] (design §8 M5, overview 불리언 전략 — 정직하게 거절). The
-/// half-space vertex enumeration lands in the next commit; for now every input
-/// is `Unsupported` (empty coverage).
+/// with [`BoolError`] (design §8 M5, overview 불리언 전략 — 정직하게 거절).
+///
+/// Half-space vertex enumeration: `A ∩ B` is the set of points inside every face
+/// half-space of both solids, so each result vertex is the intersection of three
+/// of those planes lying inside all the others (an exact indirect-predicate
+/// decision — the point is never materialized for the sign test). Transactional:
+/// the result is computed in local structures and pushed only once every
+/// degeneracy check has passed, so a rejected boolean leaves the model untouched.
 pub fn boolean(
     model: &mut Model,
     kind: BoolKind,
@@ -778,7 +810,361 @@ pub fn boolean(
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
-    Err(BoolError::Unsupported)
+
+    let planes_a = collect_planes(model, a)?;
+    let planes_b = collect_planes(model, b)?;
+    // Each input must equal the intersection of its face half-spaces (convex).
+    if !is_convex(&planes_a, &solid_vertices(model, a))
+        || !is_convex(&planes_b, &solid_vertices(model, b))
+    {
+        return Err(BoolError::Unsupported);
+    }
+    let mut planes = planes_a;
+    planes.extend(planes_b);
+    // Coplanar faces (within one input — e.g. an imprinted face's outer+region —
+    // or shared across inputs) give the enumeration duplicate half-spaces.
+    if has_coplanar_pair(&planes) {
+        return Err(BoolError::Unsupported);
+    }
+
+    // --- all-local computation (nothing pushed to the model yet) ---
+    let verts = enumerate_vertices(&planes)?;
+    if verts.len() < 4 {
+        return Err(BoolError::EmptyResult); // disjoint or degenerate-empty
+    }
+    let edges = build_edges(&planes, &verts)?;
+    let edge_pairs: HashSet<(usize, usize)> = edges.iter().map(|e| unordered(e.va, e.vb)).collect();
+    let faces = build_faces(&planes, &verts, &edge_pairs)?;
+    if faces.len() < 4 {
+        return Err(BoolError::EmptyResult);
+    }
+
+    // --- push (deterministic order → reproducible handles) ---
+    Ok(assemble(model, a, b, &planes, &verts, &edges, &faces))
+}
+
+/// The supporting planes of a solid's outer shell. `Unsupported` if any face is
+/// non-planar or lacks three non-collinear loop points.
+fn collect_planes(model: &Model, solid: Handle<Solid>) -> Result<Vec<PlaneInfo>, BoolError> {
+    let shell = model.solids.get(solid).outer;
+    let mut out = Vec::new();
+    for &fh in &model.shells.get(shell).faces {
+        let face = model.faces.get(fh);
+        let plane = match model.surfaces.get(face.surface) {
+            Surface::Plane(p) => *p,
+            Surface::Cylinder(_) => return Err(BoolError::Unsupported),
+        };
+        let tri = outer_tri(model, face).ok_or(BoolError::Unsupported)?;
+        let n_out = (tri[1] - tri[0])
+            .cross(tri[2] - tri[0])
+            .normalize()
+            .ok_or(BoolError::Unsupported)?;
+        out.push(PlaneInfo {
+            surf: face.surface,
+            plane,
+            tri,
+            n_out,
+            orient: face.orientation,
+        });
+    }
+    Ok(out)
+}
+
+/// The first three non-collinear consecutive start points of a face's outer loop
+/// (outer-CCW, so their RH normal is the outward normal).
+fn outer_tri(model: &Model, face: &Face) -> Option<[Point3; 3]> {
+    let pts: Vec<Point3> = face
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| model.vertices.get(he_start(model, he)).point)
+        .collect();
+    let n = pts.len();
+    (0..n).find_map(|i| {
+        let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
+        ((b - a).cross(c - a).norm() > 0.0).then_some([a, b, c])
+    })
+}
+
+/// The distinct outer-shell vertices of a solid.
+fn solid_vertices(model: &Model, solid: Handle<Solid>) -> Vec<Point3> {
+    let shell = model.solids.get(solid).outer;
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for &fh in &model.shells.get(shell).faces {
+        for &he in &model.faces.get(fh).outer.half_edges {
+            let vh = he_start(model, he);
+            if seen.insert(vh) {
+                out.push(model.vertices.get(vh).point);
+            }
+        }
+    }
+    out
+}
+
+/// Exact convexity: every vertex is on the inner (or on) side of every face
+/// plane. `orient3d(mv0,mv1,mv2,v) < 0` ⇒ `v` outside face `m` ⇒ not convex.
+fn is_convex(planes: &[PlaneInfo], verts: &[Point3]) -> bool {
+    planes.iter().all(|pi| {
+        verts.iter().all(|&v| {
+            nacre_predicates::orient3d(
+                pi.tri[0].as_array(),
+                pi.tri[1].as_array(),
+                pi.tri[2].as_array(),
+                v.as_array(),
+            ) >= 0.0
+        })
+    })
+}
+
+/// Whether any two planes in the set are coplanar (parallel normals + each
+/// origin on the other plane).
+fn has_coplanar_pair(planes: &[PlaneInfo]) -> bool {
+    (0..planes.len())
+        .any(|i| (i + 1..planes.len()).any(|j| coplanar(&planes[i].plane, &planes[j].plane)))
+}
+
+fn coplanar(a: &Plane, b: &Plane) -> bool {
+    const EPS: f64 = 1e-9;
+    a.normal().cross(b.normal()).norm() <= EPS
+        && a.distance(b.origin()) <= EPS
+        && b.distance(a.origin()) <= EPS
+}
+
+/// Enumerate result vertices: every plane triple whose intersection point lies
+/// inside all other half-spaces. `three_plane_orient3d == −1` means the implicit
+/// point is on the inner side of a face (derived in the plan); `+1` outside
+/// (reject the triple); `0` on a 4th plane (a concurrency degeneracy →
+/// `Unsupported`).
+fn enumerate_vertices(planes: &[PlaneInfo]) -> Result<Vec<ResultVertex>, BoolError> {
+    let n = planes.len();
+    let mut verts = Vec::new();
+    for i in 0..n {
+        for j in i + 1..n {
+            for k in j + 1..n {
+                let (pi, pj, pk) = (&planes[i].plane, &planes[j].plane, &planes[k].plane);
+                let Some(point) = three_planes(pi, pj, pk) else {
+                    continue; // parallel/near-coplanar triple — no vertex
+                };
+                let mut outside = false;
+                let mut on_extra = false;
+                for (m, pm) in planes.iter().enumerate() {
+                    if m == i || m == j || m == k {
+                        continue;
+                    }
+                    match three_plane_orient3d(pi, pj, pk, pm.tri[0], pm.tri[1], pm.tri[2]) {
+                        1 => {
+                            outside = true;
+                            break;
+                        }
+                        0 => on_extra = true,
+                        _ => {} // −1: inside this half-space
+                    }
+                }
+                if outside {
+                    continue;
+                }
+                if on_extra {
+                    return Err(BoolError::Unsupported); // 4-plane concurrency
+                }
+                verts.push(ResultVertex {
+                    point,
+                    triple: [i, j, k],
+                    tol: vertex_tol(point, pi, pj, pk),
+                });
+            }
+        }
+    }
+    Ok(verts)
+}
+
+/// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
+/// `Origin::Discovered` tolerance).
+fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
+    let mut tol = a.distance(p).max(b.distance(p)).max(c.distance(p));
+    for (x, y) in [(a, b), (a, c), (b, c)] {
+        if let Some(line) = plane_plane(x, y) {
+            tol = tol.max(line.distance(p));
+        }
+    }
+    tol
+}
+
+/// A result edge: two vertices sharing two planes, on the line of that plane pair.
+struct ResultEdge {
+    va: usize,
+    vb: usize,
+    planes: [usize; 2],
+}
+
+/// One edge per plane pair whose line carries exactly two result vertices.
+fn build_edges(planes: &[PlaneInfo], verts: &[ResultVertex]) -> Result<Vec<ResultEdge>, BoolError> {
+    let n = planes.len();
+    let mut edges = Vec::new();
+    for i in 0..n {
+        for j in i + 1..n {
+            let on_pair: Vec<usize> = verts
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| v.triple.contains(&i) && v.triple.contains(&j))
+                .map(|(vi, _)| vi)
+                .collect();
+            match on_pair.len() {
+                0 => {}
+                2 => edges.push(ResultEdge {
+                    va: on_pair[0],
+                    vb: on_pair[1],
+                    planes: [i, j],
+                }),
+                _ => return Err(BoolError::Unsupported), // tangent / degenerate edge
+            }
+        }
+    }
+    Ok(edges)
+}
+
+/// One face per plane carrying ≥3 result vertices, ordered CCW about the outward
+/// normal, with each consecutive pair confirmed to be a result edge.
+fn build_faces(
+    planes: &[PlaneInfo],
+    verts: &[ResultVertex],
+    edge_pairs: &HashSet<(usize, usize)>,
+) -> Result<Vec<(usize, Vec<usize>)>, BoolError> {
+    let mut faces = Vec::new();
+    for (m, pm) in planes.iter().enumerate() {
+        let on_m: Vec<usize> = verts
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.triple.contains(&m))
+            .map(|(vi, _)| vi)
+            .collect();
+        if on_m.len() < 3 {
+            continue; // this plane is not a face of the result
+        }
+        let ordered = order_ccw(&on_m, verts, pm.n_out)?;
+        // Every consecutive pair must be a result edge (else non-manifold).
+        let k = ordered.len();
+        for t in 0..k {
+            if !edge_pairs.contains(&unordered(ordered[t], ordered[(t + 1) % k])) {
+                return Err(BoolError::Unsupported);
+            }
+        }
+        faces.push((m, ordered));
+    }
+    Ok(faces)
+}
+
+/// Order coplanar points CCW about the outward normal `n_out` (angle about the
+/// centroid). `Unsupported` if they are collinear (a tangential contact).
+fn order_ccw(
+    idxs: &[usize],
+    verts: &[ResultVertex],
+    n_out: Vector3,
+) -> Result<Vec<usize>, BoolError> {
+    let pts: Vec<Point3> = idxs.iter().map(|&vi| verts[vi].point).collect();
+    let c = Point3::centroid(&pts).ok_or(BoolError::Unsupported)?;
+    let u = (pts[0] - c).normalize().ok_or(BoolError::Unsupported)?;
+    let w = n_out.cross(u);
+    // Collinear ⇒ every point lies on the `u` axis (no `w` spread) ⇒ tangent.
+    let spread = idxs
+        .iter()
+        .map(|&vi| (verts[vi].point - c).dot(w).abs())
+        .fold(0.0, f64::max);
+    let scale = idxs
+        .iter()
+        .map(|&vi| (verts[vi].point - c).norm())
+        .fold(0.0, f64::max);
+    if spread <= 1e-9 * scale.max(1.0) {
+        return Err(BoolError::Unsupported);
+    }
+    let mut keyed: Vec<(f64, usize)> = idxs
+        .iter()
+        .map(|&vi| {
+            let d = verts[vi].point - c;
+            (d.dot(w).atan2(d.dot(u)), vi)
+        })
+        .collect();
+    keyed.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("finite angles"));
+    Ok(keyed.iter().map(|&(_, vi)| vi).collect())
+}
+
+fn unordered(a: usize, b: usize) -> (usize, usize) {
+    (a.min(b), a.max(b))
+}
+
+/// Push the computed result and supersede the inputs (mirrors `finish_split`).
+fn assemble(
+    model: &mut Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    planes: &[PlaneInfo],
+    verts: &[ResultVertex],
+    edges: &[ResultEdge],
+    faces: &[(usize, Vec<usize>)],
+) -> Handle<Solid> {
+    // Vertices (discovered three-plane points).
+    let vh: Vec<Handle<Vertex>> = verts
+        .iter()
+        .map(|v| {
+            let def = VertexDef::ThreePlane([
+                planes[v.triple[0]].surf,
+                planes[v.triple[1]].surf,
+                planes[v.triple[2]].surf,
+            ]);
+            model.vertices.push(Vertex {
+                point: v.point,
+                origin: Origin::Discovered {
+                    tol: v.tol,
+                    definition: def,
+                },
+            })
+        })
+        .collect();
+    // Edges (constructed; lines are the plane-pair intersections).
+    let mut edge_of: HashMap<(usize, usize), Handle<Edge>> = HashMap::new();
+    for e in edges {
+        let line = plane_plane(&planes[e.planes[0]].plane, &planes[e.planes[1]].plane)
+            .expect("survivor edge planes meet in a line");
+        let curve = model.curves.push(Curve::Line(line));
+        let eh = model.edges.push(Edge {
+            curve,
+            bounds: Some([vh[e.va], vh[e.vb]]),
+            origin: Origin::Constructed,
+        });
+        edge_of.insert(
+            unordered(vh[e.va].index() as usize, vh[e.vb].index() as usize),
+            eh,
+        );
+    }
+    // Faces (outward-CCW loops of the plane's vertices).
+    let mut face_handles = Vec::new();
+    for (m, loop_verts) in faces {
+        let k = loop_verts.len();
+        let half_edges = (0..k)
+            .map(|t| {
+                let va = vh[loop_verts[t]];
+                let vb = vh[loop_verts[(t + 1) % k]];
+                let eh = edge_of[&unordered(va.index() as usize, vb.index() as usize)];
+                let forward = model.edges.get(eh).bounds.expect("bounded")[0] == va;
+                HalfEdge { edge: eh, forward }
+            })
+            .collect();
+        face_handles.push(model.faces.push(Face {
+            surface: planes[*m].surf,
+            outer: Loop { half_edges },
+            inner: vec![],
+            orientation: planes[*m].orient,
+        }));
+    }
+    let shell = model.shells.push(Shell {
+        faces: face_handles,
+    });
+    let solid = model.push_solid(Solid {
+        outer: shell,
+        cavities: vec![],
+    });
+    model.live_solids.retain(|&s| s != a && s != b);
+    solid
 }
 
 #[cfg(test)]
@@ -1425,8 +1811,13 @@ mod tests {
 
     #[test]
     fn boolean_op_applies_and_wraps_error() {
-        // Common is not implemented yet ⇒ Unsupported, surfaced as OpError::Boolean.
-        let (mut m, a, b) = two_boxes();
+        // A degenerate boolean's error is surfaced as OpError::Boolean.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        // Offset in all axes so no faces are coplanar with A (else the coplanar
+        // gate fires first).
+        let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
+        // Disjoint ⇒ EmptyResult, wrapped.
         assert_eq!(
             apply(
                 &mut m,
@@ -1436,7 +1827,126 @@ mod tests {
                     b
                 }
             ),
-            Err(OpError::Boolean(BoolError::Unsupported))
+            Err(OpError::Boolean(BoolError::EmptyResult))
+        );
+    }
+
+    // ---- boolean Common algorithm (M5-c3 commit 2) ----
+
+    #[test]
+    fn common_of_two_cubes_is_their_overlap() {
+        // A = [0,1]³, B = [0.5,1.5]³ ⇒ A∩B = [0.5,1]³ (volume 0.125). This also
+        // pins the in/out sign convention end to end: a flipped parity would take
+        // the complement and give a wrong (or non-closed) result.
+        let (mut m, a, b) = two_boxes();
+        let r = boolean(&mut m, BoolKind::Common, a, b).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let reach = m.reachable();
+        assert_eq!(reach.vertices.len(), 8);
+        assert_eq!(reach.edges.len(), 12);
+        assert_eq!(reach.faces.len(), 6);
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.125).abs() < 1e-12, "volume {vol}");
+        assert_eq!(m.live_solids, vec![r]); // A and B superseded
+    }
+
+    #[test]
+    fn common_with_enclosing_box_is_the_inner_solid() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let c = m.add_cuboid(Point3::from_array([-5.0; 3]), Point3::from_array([5.0; 3]));
+        let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
+        let r = boolean(&mut m, BoolKind::Common, a, c).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let reach = m.reachable();
+        assert_eq!(reach.vertices.len(), 8);
+        assert_eq!(reach.faces.len(), 6);
+        let vol_r = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol_r - vol_a).abs() < 1e-9, "{vol_r} vs {vol_a}");
+    }
+
+    #[test]
+    fn common_of_disjoint_boxes_is_empty() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        // Offset in all axes so no faces are coplanar with A.
+        let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, a, b),
+            Err(BoolError::EmptyResult)
+        );
+    }
+
+    #[test]
+    fn common_rejects_non_planar_input() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let cyl = m.add_cylinder(
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, a, cyl),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn common_rejects_non_convex_input() {
+        // An L-shaped prism (reflex edge) is not the intersection of its face
+        // half-spaces.
+        let l = Profile2d {
+            points: vec![
+                p2(0.0, 0.0),
+                p2(2.0, 0.0),
+                p2(2.0, 1.0),
+                p2(1.0, 1.0),
+                p2(1.0, 2.0),
+                p2(0.0, 2.0),
+            ],
+        };
+        let mut m = replay(&[extrude_op(l, 1.0)]).unwrap();
+        let lsolid = *m.live_solids.first().unwrap();
+        let b = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.5, 1.5, 0.5]),
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, lsolid, b),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn common_rejects_coplanar_faces_from_imprint() {
+        // Imprinting splits a face into two coplanar faces (outer + region), so
+        // the imprinted-but-still-convex cube has coplanar half-spaces.
+        let (mut m, top) = cube_with_top();
+        let hole = Profile2d {
+            points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
+        };
+        let OpOutput::ImprintSketch { solid, .. } = apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: top,
+                profile: hole,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let b = m.add_cuboid(
+            Point3::from_array([0.2, 0.2, 0.2]),
+            Point3::from_array([1.2, 1.2, 1.2]),
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, solid, b),
+            Err(BoolError::Unsupported)
         );
     }
 }

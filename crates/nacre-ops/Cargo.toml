@@ -12,6 +12,8 @@ nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
 nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-store = { path = "../nacre-store", version = "0.0.0" }
+# Exact orient3d for the boolean convexity gate (design §3 sign layer).
+nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 
 [dev-dependencies]
 proptest.workspace = true
@@ -22,5 +24,7 @@ nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
 # depends on nacre-ops).
 nacre-step = { path = "../nacre-step", version = "0.0.0" }
 nacre-tess = { path = "../nacre-tess", version = "0.0.0" }
+# Boolean tests diff result volumes against the analytic mass properties.
+nacre-props = { path = "../nacre-props", version = "0.0.0" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.
