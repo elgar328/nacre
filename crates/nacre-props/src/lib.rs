@@ -354,6 +354,57 @@ mod tests {
         assert!(close(after.area, before.area), "area {}", after.area);
     }
 
+    /// Pad a `2·hw` square boss of height `dist` on a `size` cube's top face,
+    /// returning the padded solid's mass.
+    fn cube_then_pad(size: f64, hw: f64, dist: f64) -> MassProps {
+        let sq = |s: f64| Profile2d {
+            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                .iter()
+                .map(|&p| Point2::from_array(p))
+                .collect(),
+        };
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: sq(size),
+                dist: size,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let boss = Profile2d {
+            points: [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
+                .iter()
+                .map(|&p| Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::PadOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: faces[1],
+                profile: boss,
+                dist,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        mass_props(&m, solid).unwrap()
+    }
+
+    #[test]
+    fn pad_boss_mass() {
+        // Unit cube + a 0.4-square boss (area 0.16, perimeter 1.6) of height 0.5.
+        // Volume = 1 + 0.16·0.5 = 1.08; area = 6 + 1.6·0.5 = 6.8. This is the
+        // *absolute* test of the inner-loop subtraction (the hole is not filled).
+        let m = cube_then_pad(1.0, 0.2, 0.5);
+        assert!(close(m.volume, 1.08), "vol {}", m.volume);
+        assert!(close(m.area, 6.8), "area {}", m.area);
+    }
+
     /// Unsigned area of a 2D polygon (independent check for the concave test).
     fn shoelace(pts: &[[f64; 2]]) -> f64 {
         let mut two_area = 0.0;
@@ -414,6 +465,18 @@ mod tests {
             let (before, after) = cube_then_imprint(size, hw);
             prop_assert!(close(after.volume, before.volume), "vol {} vs {}", after.volume, before.volume);
             prop_assert!(close(after.area, before.area), "area {} vs {}", after.area, before.area);
+        }
+
+        /// A boss adds `A_p·dist` of volume and `P·dist` of surface (the top hole
+        /// area cancels the boss cap). For a `2·hw` square: `A_p = 4hw²`, `P = 8hw`.
+        /// This absolutely exercises the inner-loop subtraction (uncancelled hole).
+        #[test]
+        fn prop_pad_volume(size in 1.0f64..5.0, hw in 0.05f64..0.3, dist in 0.1f64..5.0) {
+            let m = cube_then_pad(size, hw, dist);
+            let vol = size * size * size + 4.0 * hw * hw * dist;
+            let area = 6.0 * size * size + 8.0 * hw * dist;
+            prop_assert!(close(m.volume, vol), "vol {} vs {}", m.volume, vol);
+            prop_assert!(close(m.area, area), "area {} vs {}", m.area, area);
         }
     }
 }

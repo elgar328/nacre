@@ -82,6 +82,13 @@ pub enum Operation {
         face: Handle<Face>,
         profile: Profile2d,
     },
+    /// Pad a boss: imprint `profile` on a planar `face`, then raise the region
+    /// outward by `dist` (walls + a top cap). Adds material (design §6, M4).
+    PadOnFace {
+        face: Handle<Face>,
+        profile: Profile2d,
+        dist: f64,
+    },
 }
 
 /// A failure while applying an operation.
@@ -116,6 +123,11 @@ pub enum OpOutput {
         solid: Handle<Solid>,
         region_face: Handle<Face>,
     },
+    /// The superseding solid and the boss's top cap face.
+    PadOnFace {
+        solid: Handle<Solid>,
+        top_face: Handle<Face>,
+    },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -133,6 +145,14 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         Operation::ImprintSketch { face, profile } => {
             let (solid, region_face) = imprint(model, *face, profile)?;
             Ok(OpOutput::ImprintSketch { solid, region_face })
+        }
+        Operation::PadOnFace {
+            face,
+            profile,
+            dist,
+        } => {
+            let (solid, top_face) = pad(model, *face, profile, *dist)?;
+            Ok(OpOutput::PadOnFace { solid, top_face })
         }
     }
 }
@@ -342,16 +362,36 @@ fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
     if he.forward { a } else { b }
 }
 
-/// Imprint a closed `profile` onto a planar `face`: split it into an outer face
-/// carrying the profile as an inner-loop hole plus a coplanar region face inside
-/// it. Supersedes the owning solid (design §2) — reuses the untouched cells,
-/// pushes a new shell/solid, and swaps `live_solids`. Returns `(new solid,
-/// region face)`. The model shape is unchanged (a coplanar subdivision).
-fn imprint(
+/// The result of splitting a planar face along a profile: the base profile
+/// geometry (on the face's plane) plus the rebuilt outer face carrying the
+/// profile as a hole. Shared by [`imprint`] and [`pad`]; each finishes by adding
+/// its own faces (a coplanar region, or boss walls + a cap) and calling
+/// [`finish_split`].
+struct Split {
+    solid_h: Handle<Solid>,
+    shell_h: Handle<Shell>,
+    /// The target face's surface and orientation (for a coplanar region face).
+    surface_h: Handle<Surface>,
+    orientation: Orientation,
+    /// Outward normal of the target face.
+    n: Vector3,
+    base_pv: Vec<Handle<Vertex>>,
+    base_pts: Vec<Point3>,
+    /// Profile segment edges `base_i → base_{i+1}` (CCW about `n`).
+    base_pe: Vec<Handle<Edge>>,
+    /// The original face rebuilt with the profile as an inner-loop hole.
+    f_outer: Handle<Face>,
+}
+
+/// Split a planar `face` along a closed `profile`: push the profile's vertices
+/// and edges onto the face's plane (centred on the face, CCW about the outward
+/// normal) and build the outer face carrying the profile as a hole. The caller
+/// adds the faces that fill/raise the profile region, then calls [`finish_split`].
+fn prepare_face_split(
     model: &mut Model,
     face: Handle<Face>,
     profile: &Profile2d,
-) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
+) -> Result<Split, OpError> {
     if profile.points.len() < 3 {
         return Err(OpError::DegenerateProfile);
     }
@@ -395,11 +435,11 @@ fn imprint(
     if signed_area(&pts) < 0.0 {
         pts.reverse();
     }
-    let pts3: Vec<Point3> = pts.iter().map(|p| origin + x * p[0] + y * p[1]).collect();
+    let base_pts: Vec<Point3> = pts.iter().map(|p| origin + x * p[0] + y * p[1]).collect();
 
     // Profile vertices and segment edges.
-    let m = pts3.len();
-    let pv: Vec<Handle<Vertex>> = pts3
+    let m = base_pts.len();
+    let base_pv: Vec<Handle<Vertex>> = base_pts
         .iter()
         .map(|p| {
             model.vertices.push(Vertex {
@@ -408,31 +448,23 @@ fn imprint(
             })
         })
         .collect();
-    let pe: Vec<Handle<Edge>> = (0..m)
-        .map(|i| push_line_edge(model, pv[i], pts3[i], pv[(i + 1) % m], pts3[(i + 1) % m]))
+    let base_pe: Vec<Handle<Edge>> = (0..m)
+        .map(|i| {
+            push_line_edge(
+                model,
+                base_pv[i],
+                base_pts[i],
+                base_pv[(i + 1) % m],
+                base_pts[(i + 1) % m],
+            )
+        })
         .collect::<Result<_, _>>()?;
 
-    // Region face: profile forward (CCW), outward +n.
-    let region_loop = Loop {
-        half_edges: pe
-            .iter()
-            .map(|&edge| HalfEdge {
-                edge,
-                forward: true,
-            })
-            .collect(),
-    };
-    let region_face = model.faces.push(Face {
-        surface: surface_h,
-        outer: region_loop,
-        inner: vec![],
-        orientation,
-    });
-
-    // Outer face: the original boundary with the profile as a hole — same edges
-    // reversed + `forward = false` (CW), so each profile edge pairs oppositely.
+    // Outer face: the original boundary with the profile as a hole — the profile
+    // edges reversed + `forward = false` (CW), so each pairs oppositely with the
+    // caller's region/wall use.
     let hole_loop = Loop {
-        half_edges: pe
+        half_edges: base_pe
             .iter()
             .rev()
             .map(|&edge| HalfEdge {
@@ -441,35 +473,192 @@ fn imprint(
             })
             .collect(),
     };
-    let outer_face = model.faces.push(Face {
+    let f_outer = model.faces.push(Face {
         surface: surface_h,
         outer: outer_loop,
         inner: vec![hole_loop],
         orientation,
     });
 
-    // New shell: the old faces with `face` replaced by the two new faces.
+    Ok(Split {
+        solid_h,
+        shell_h,
+        surface_h,
+        orientation,
+        n,
+        base_pv,
+        base_pts,
+        base_pe,
+        f_outer,
+    })
+}
+
+/// Supersede the split solid (design §2): rebuild its shell with `face` replaced
+/// by `new_faces`, push a new solid, and drop the old one from `live_solids`.
+fn finish_split(
+    model: &mut Model,
+    solid_h: Handle<Solid>,
+    shell_h: Handle<Shell>,
+    face: Handle<Face>,
+    new_faces: &[Handle<Face>],
+) -> Handle<Solid> {
     let old_faces = model.shells.get(shell_h).faces.clone();
-    let mut new_faces = Vec::with_capacity(old_faces.len() + 1);
+    let mut faces = Vec::with_capacity(old_faces.len() + new_faces.len());
     for &fh in &old_faces {
         if fh == face {
-            new_faces.push(outer_face);
-            new_faces.push(region_face);
+            faces.extend_from_slice(new_faces);
         } else {
-            new_faces.push(fh);
+            faces.push(fh);
         }
     }
     let cavities = model.solids.get(solid_h).cavities.clone();
-    let new_shell = model.shells.push(Shell { faces: new_faces });
+    let new_shell = model.shells.push(Shell { faces });
     let new_solid = model.push_solid(Solid {
         outer: new_shell,
         cavities,
     });
-
-    // Supersede: the old solid is no longer live (its old face lingers as arena).
+    // The old solid is no longer live (its old face lingers as arena).
     model.live_solids.retain(|&s| s != solid_h);
+    new_solid
+}
 
+/// Imprint a closed `profile` onto a planar `face`: split it into an outer face
+/// carrying the profile as an inner-loop hole plus a coplanar region face inside
+/// it. Returns `(new solid, region face)`. The model shape is unchanged.
+fn imprint(
+    model: &mut Model,
+    face: Handle<Face>,
+    profile: &Profile2d,
+) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
+    let s = prepare_face_split(model, face, profile)?;
+
+    // Region face: profile forward (CCW), same surface/orientation, outward +n.
+    let region_loop = Loop {
+        half_edges: s
+            .base_pe
+            .iter()
+            .map(|&edge| HalfEdge {
+                edge,
+                forward: true,
+            })
+            .collect(),
+    };
+    let region_face = model.faces.push(Face {
+        surface: s.surface_h,
+        outer: region_loop,
+        inner: vec![],
+        orientation: s.orientation,
+    });
+
+    let new_solid = finish_split(model, s.solid_h, s.shell_h, face, &[s.f_outer, region_face]);
     Ok((new_solid, region_face))
+}
+
+/// Pad a boss on a planar `face`: imprint `profile`, then raise its region
+/// outward by `dist` into a prism (walls + a top cap) whose open base is the
+/// hole in the outer face. Adds `profile_area · dist` of material. Returns
+/// `(new solid, top cap face)`.
+fn pad(
+    model: &mut Model,
+    face: Handle<Face>,
+    profile: &Profile2d,
+    dist: f64,
+) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
+    // Check before `prepare` mutates the model (an early error leaves live_solids
+    // untouched, so the model stays valid — the op is atomic w.r.t. live).
+    if dist <= 0.0 {
+        return Err(OpError::NonPositiveDistance);
+    }
+    let s = prepare_face_split(model, face, profile)?;
+    let n = s.base_pts.len();
+
+    // Top ring: the base profile translated outward by `n · dist`.
+    let top_pts: Vec<Point3> = s.base_pts.iter().map(|p| *p + s.n * dist).collect();
+    let top_pv: Vec<Handle<Vertex>> = top_pts
+        .iter()
+        .map(|p| {
+            model.vertices.push(Vertex {
+                point: *p,
+                origin: Origin::Constructed,
+            })
+        })
+        .collect();
+    let top_pe: Vec<Handle<Edge>> = (0..n)
+        .map(|i| {
+            push_line_edge(
+                model,
+                top_pv[i],
+                top_pts[i],
+                top_pv[(i + 1) % n],
+                top_pts[(i + 1) % n],
+            )
+        })
+        .collect::<Result<_, _>>()?;
+    let vert_e: Vec<Handle<Edge>> = (0..n)
+        .map(|i| push_line_edge(model, s.base_pv[i], s.base_pts[i], top_pv[i], top_pts[i]))
+        .collect::<Result<_, _>>()?;
+
+    // Side walls: outward-facing quads (base_i, base_j, top_j, top_i) — the same
+    // winding as an extrude side quad. Each base edge pairs oppositely with the
+    // outer face's hole; each top edge with the cap; each vertical with a wall.
+    let mut new_faces = Vec::with_capacity(n + 2);
+    new_faces.push(s.f_outer);
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let surface = model.surfaces.push(Surface::Plane(
+            Plane::through_points(s.base_pts[i], s.base_pts[j], top_pts[i])
+                .ok_or(OpError::DegenerateGeometry)?,
+        ));
+        let outer = Loop {
+            half_edges: vec![
+                HalfEdge {
+                    edge: s.base_pe[i],
+                    forward: true,
+                },
+                HalfEdge {
+                    edge: vert_e[j],
+                    forward: true,
+                },
+                HalfEdge {
+                    edge: top_pe[i],
+                    forward: false,
+                },
+                HalfEdge {
+                    edge: vert_e[i],
+                    forward: false,
+                },
+            ],
+        };
+        new_faces.push(model.faces.push(Face {
+            surface,
+            outer,
+            inner: vec![],
+            orientation: Orientation::Forward,
+        }));
+    }
+
+    // Top cap: outward normal +n, the top ring forward.
+    let cap_surface = model.surfaces.push(Surface::Plane(
+        Plane::from_point_normal(top_pts[0], s.n).ok_or(OpError::DegenerateGeometry)?,
+    ));
+    let cap = model.faces.push(Face {
+        surface: cap_surface,
+        outer: Loop {
+            half_edges: top_pe
+                .iter()
+                .map(|&edge| HalfEdge {
+                    edge,
+                    forward: true,
+                })
+                .collect(),
+        },
+        inner: vec![],
+        orientation: Orientation::Forward,
+    });
+    new_faces.push(cap);
+
+    let new_solid = finish_split(model, s.solid_h, s.shell_h, face, &new_faces);
+    Ok((new_solid, cap))
 }
 
 #[cfg(test)]
@@ -775,6 +964,98 @@ mod tests {
         );
     }
 
+    fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
+        Operation::PadOnFace {
+            face,
+            profile,
+            dist,
+        }
+    }
+
+    #[test]
+    fn pad_boss_on_cube_top() {
+        let (mut m, top) = cube_with_top();
+        let out = apply(&mut m, &pad_op(top, small_square(), 0.5)).unwrap();
+        let OpOutput::PadOnFace { top_face, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+
+        let v = nacre_validate::validate(&m);
+        assert!(v.is_empty(), "{v:?}");
+
+        let reach = m.reachable();
+        // 6 cube faces − top + (outer' + 4 walls + cap) = 11.
+        assert_eq!(reach.faces.len(), 11);
+        assert_eq!(reach.vertices.len(), 16); // 8 cube + 4 base + 4 top
+        assert_eq!(reach.edges.len(), 24); // 12 cube + 4 base + 4 top + 4 vertical
+        let inner: usize = reach
+            .faces
+            .iter()
+            .map(|fh| m.faces.get(*fh).inner.len())
+            .sum();
+        assert_eq!(inner, 1);
+        assert!(reach.faces.contains(&top_face));
+    }
+
+    #[test]
+    fn pad_rejects_nonplanar_face() {
+        let mut m = Model::new();
+        m.add_cylinder(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        let shell = m.solids.get(m.live_solids[0]).outer;
+        let lateral = *m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .find(|&&fh| {
+                matches!(
+                    m.surfaces.get(m.faces.get(fh).surface),
+                    Surface::Cylinder(_)
+                )
+            })
+            .unwrap();
+        assert!(matches!(
+            apply(&mut m, &pad_op(lateral, small_square(), 0.5)),
+            Err(OpError::NonPlanarFace)
+        ));
+    }
+
+    #[test]
+    fn pad_rejects_nonpositive_dist() {
+        let (mut m, top) = cube_with_top();
+        assert!(matches!(
+            apply(&mut m, &pad_op(top, small_square(), 0.0)),
+            Err(OpError::NonPositiveDistance)
+        ));
+    }
+
+    #[test]
+    fn pad_rejects_degenerate_profile() {
+        let (mut m, top) = cube_with_top();
+        let two = Profile2d {
+            points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
+        };
+        assert!(matches!(
+            apply(&mut m, &pad_op(top, two, 0.5)),
+            Err(OpError::DegenerateProfile)
+        ));
+    }
+
+    #[test]
+    fn pad_step_exports() {
+        // The boss (holed outer face + walls + cap) exports without error.
+        let (mut m, top) = cube_with_top();
+        apply(&mut m, &pad_op(top, small_square(), 0.5)).unwrap();
+        let step = nacre_step::to_step(&m).expect("boss exports");
+        assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
+    }
+
     proptest! {
         #[test]
         fn prop_regular_ngon_on_xy_is_clean(
@@ -834,6 +1115,33 @@ mod tests {
                 points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
             };
             apply(&mut m, &Operation::ImprintSketch { face: top, profile: hole }).unwrap();
+            m.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
+        }
+
+        /// A random boss on a random box stays a valid b-rep (any interior
+        /// profile, any positive height).
+        #[test]
+        fn prop_pad_stays_valid(
+            sx in 0.5f64..5.0,
+            sy in 0.5f64..5.0,
+            sz in 0.5f64..5.0,
+            h in 0.05f64..0.15,
+            dist in 0.1f64..5.0,
+        ) {
+            let rect = Profile2d {
+                points: vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)],
+            };
+            let mut m = Model::new();
+            let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: rect,
+                dist: sz,
+            }).unwrap() else { unreachable!() };
+            let hole = Profile2d {
+                points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
+            };
+            apply(&mut m, &Operation::PadOnFace { face: faces[1], profile: hole, dist }).unwrap();
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
         }
