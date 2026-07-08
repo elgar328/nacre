@@ -43,7 +43,7 @@ nacre = 진주층(자개). 한 겹씩 침착만 되고 이미 만든 겹은 절�
 
 ## 마일스톤 (docs/design.md §8 참조)
 
-M1 뼈대(Store/Handle, Plane/Line, 정육면체, validate, OBJ덤프→최소 뷰어) → M2 스케치·extrude·replay·STEP → M3 곡선기하(NURBS·Arc·Cylinder, tess 출처태그) → M4 면 위 작업(imprint·pad, 여기까지 전부 Constructed, 오라클 가동) → M5~M7 불리언 사다리.
+M1 뼈대(Store/Handle, Plane/Line, 정육면체, validate, OBJ덤프·STEP출력→기존 뷰어에 위임) → M2 스케치·extrude·replay·STEP → M3 곡선기하(NURBS·Arc·Cylinder, tess 출처태그) → M4 면 위 작업(imprint·pad, 여기까지 전부 Constructed, 오라클 가동) → M5~M7 불리언 사다리(이 즈음 워크스페이스 밖 인터랙티브 디버그 뷰어 — §design 1).
 
 **첫 작업: M1의 `Store<T>`/`Handle<T>`를 proptest와 함께.** 인프라(검증·테스트)가 코드보다 먼저라는 게 이 프로젝트의 방법론이다.
 
