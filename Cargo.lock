@@ -200,6 +200,7 @@ name = "nacre-predicates"
 version = "0.0.0"
 dependencies = [
  "geometry-predicates",
+ "proptest",
 ]
 
 [[package]]

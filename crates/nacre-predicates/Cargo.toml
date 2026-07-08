@@ -11,5 +11,6 @@ description = "Exact geometric predicates for the nacre CAD kernel (design §3, 
 geometry-predicates = "0.3"
 
 [dev-dependencies]
+proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.
