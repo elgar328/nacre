@@ -405,6 +405,56 @@ mod tests {
         assert!(close(m.area, 6.8), "area {}", m.area);
     }
 
+    /// Carve a `2·hw` square pocket of depth `dist` into a `size` cube's top face.
+    fn cube_then_pocket(size: f64, hw: f64, dist: f64) -> MassProps {
+        let sq = |s: f64| Profile2d {
+            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                .iter()
+                .map(|&p| Point2::from_array(p))
+                .collect(),
+        };
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: sq(size),
+                dist: size,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let pocket = Profile2d {
+            points: [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
+                .iter()
+                .map(|&p| Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::PocketOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PocketOnFace {
+                face: faces[1],
+                profile: pocket,
+                dist,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        mass_props(&m, solid).unwrap()
+    }
+
+    #[test]
+    fn pocket_mass() {
+        // Unit cube − a 0.4-square pocket of depth 0.5. Volume = 1 − 0.16·0.5 =
+        // 0.92 (the inward walls contribute negatively); area = 6 + 1.6·0.5 = 6.8
+        // (same as the boss). Exercises the hole subtraction with inward walls.
+        let m = cube_then_pocket(1.0, 0.2, 0.5);
+        assert!(close(m.volume, 0.92), "vol {}", m.volume);
+        assert!(close(m.area, 6.8), "area {}", m.area);
+    }
+
     /// Unsigned area of a 2D polygon (independent check for the concave test).
     fn shoelace(pts: &[[f64; 2]]) -> f64 {
         let mut two_area = 0.0;
@@ -474,6 +524,17 @@ mod tests {
         fn prop_pad_volume(size in 1.0f64..5.0, hw in 0.05f64..0.3, dist in 0.1f64..5.0) {
             let m = cube_then_pad(size, hw, dist);
             let vol = size * size * size + 4.0 * hw * hw * dist;
+            let area = 6.0 * size * size + 8.0 * hw * dist;
+            prop_assert!(close(m.volume, vol), "vol {} vs {}", m.volume, vol);
+            prop_assert!(close(m.area, area), "area {} vs {}", m.area, area);
+        }
+
+        /// A pocket *removes* `A_p·dist` of volume (inward walls) while adding the
+        /// same `P·dist` of surface as a boss. `dist ≤ 0.9 < size` keeps it blind.
+        #[test]
+        fn prop_pocket_volume(size in 1.0f64..5.0, hw in 0.05f64..0.3, dist in 0.1f64..0.9) {
+            let m = cube_then_pocket(size, hw, dist);
+            let vol = size * size * size - 4.0 * hw * hw * dist;
             let area = 6.0 * size * size + 8.0 * hw * dist;
             prop_assert!(close(m.volume, vol), "vol {} vs {}", m.volume, vol);
             prop_assert!(close(m.area, area), "area {} vs {}", m.area, area);

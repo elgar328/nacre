@@ -89,6 +89,13 @@ pub enum Operation {
         profile: Profile2d,
         dist: f64,
     },
+    /// Carve a blind pocket: imprint `profile` on a planar `face`, then sink the
+    /// region inward by `dist` (walls + a floor). Removes material (design §6, M4).
+    PocketOnFace {
+        face: Handle<Face>,
+        profile: Profile2d,
+        dist: f64,
+    },
 }
 
 /// A failure while applying an operation.
@@ -128,6 +135,11 @@ pub enum OpOutput {
         solid: Handle<Solid>,
         top_face: Handle<Face>,
     },
+    /// The superseding solid and the pocket's floor face.
+    PocketOnFace {
+        solid: Handle<Solid>,
+        bottom_face: Handle<Face>,
+    },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -153,6 +165,14 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         } => {
             let (solid, top_face) = pad(model, *face, profile, *dist)?;
             Ok(OpOutput::PadOnFace { solid, top_face })
+        }
+        Operation::PocketOnFace {
+            face,
+            profile,
+            dist,
+        } => {
+            let (solid, bottom_face) = pocket(model, *face, profile, *dist)?;
+            Ok(OpOutput::PocketOnFace { solid, bottom_face })
         }
     }
 }
@@ -554,9 +574,8 @@ fn imprint(
     Ok((new_solid, region_face))
 }
 
-/// Pad a boss on a planar `face`: imprint `profile`, then raise its region
-/// outward by `dist` into a prism (walls + a top cap) whose open base is the
-/// hole in the outer face. Adds `profile_area · dist` of material. Returns
+/// Pad a boss on a planar `face`: raise the imprinted region **outward** by
+/// `dist` (walls + a cap), adding `profile_area · dist` of material. Returns
 /// `(new solid, top cap face)`.
 fn pad(
     model: &mut Model,
@@ -564,16 +583,49 @@ fn pad(
     profile: &Profile2d,
     dist: f64,
 ) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
-    // Check before `prepare` mutates the model (an early error leaves live_solids
-    // untouched, so the model stays valid — the op is atomic w.r.t. live).
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
+    raise_region(model, face, profile, dist)
+}
+
+/// Carve a blind pocket on a planar `face`: raise the imprinted region
+/// **inward** by `dist` (walls + a floor), removing `profile_area · dist` of
+/// material. Geometrically this is [`pad`] with a negative displacement — the
+/// walls face inward and the cap becomes the pocket floor. Returns `(new solid,
+/// floor face)`. Precondition (unchecked): `dist` is less than the solid's
+/// thickness at the face, so the pocket does not punch through.
+fn pocket(
+    model: &mut Model,
+    face: Handle<Face>,
+    profile: &Profile2d,
+    dist: f64,
+) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
+    if dist <= 0.0 {
+        return Err(OpError::NonPositiveDistance);
+    }
+    raise_region(model, face, profile, -dist)
+}
+
+/// Imprint `profile` on a planar `face`, then displace its region along the
+/// outward normal by `signed_dist` into a prism (walls + a cap) whose open base
+/// is the hole in the outer face. `signed_dist > 0` grows a boss (outward);
+/// `< 0` carves a pocket (inward — the walls flip to face inward and the cap
+/// becomes the floor, since it is built from `base + n·signed_dist`). Callers
+/// guarantee `signed_dist != 0`. Returns `(new solid, cap/floor face)`.
+fn raise_region(
+    model: &mut Model,
+    face: Handle<Face>,
+    profile: &Profile2d,
+    signed_dist: f64,
+) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
+    // `prepare` mutates the model; callers check `dist > 0` first so an early
+    // error leaves live_solids untouched (the op is atomic w.r.t. live).
     let s = prepare_face_split(model, face, profile)?;
     let n = s.base_pts.len();
 
-    // Top ring: the base profile translated outward by `n · dist`.
-    let top_pts: Vec<Point3> = s.base_pts.iter().map(|p| *p + s.n * dist).collect();
+    // Displaced ring: the base profile moved along the normal by `n · signed_dist`.
+    let top_pts: Vec<Point3> = s.base_pts.iter().map(|p| *p + s.n * signed_dist).collect();
     let top_pv: Vec<Handle<Vertex>> = top_pts
         .iter()
         .map(|p| {
@@ -598,9 +650,11 @@ fn pad(
         .map(|i| push_line_edge(model, s.base_pv[i], s.base_pts[i], top_pv[i], top_pts[i]))
         .collect::<Result<_, _>>()?;
 
-    // Side walls: outward-facing quads (base_i, base_j, top_j, top_i) — the same
-    // winding as an extrude side quad. Each base edge pairs oppositely with the
-    // outer face's hole; each top edge with the cap; each vertical with a wall.
+    // Side walls: quads (base_i, base_j, top_j, top_i) with the extrude side-quad
+    // winding. Their normal is `edge × (n·signed_dist)`, so it faces outward for a
+    // boss and inward for a pocket automatically. Each base edge pairs oppositely
+    // with the outer face's hole; each top edge with the cap; each vertical with a
+    // neighbouring wall.
     let mut new_faces = Vec::with_capacity(n + 2);
     new_faces.push(s.f_outer);
     for i in 0..n {
@@ -637,7 +691,8 @@ fn pad(
         }));
     }
 
-    // Top cap: outward normal +n, the top ring forward.
+    // Cap: outward normal +n (the boss top, or the pocket floor seen from the
+    // opening), the displaced ring forward.
     let cap_surface = model.surfaces.push(Surface::Plane(
         Plane::from_point_normal(top_pts[0], s.n).ok_or(OpError::DegenerateGeometry)?,
     ));
@@ -1056,6 +1111,97 @@ mod tests {
         assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
     }
 
+    fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
+        Operation::PocketOnFace {
+            face,
+            profile,
+            dist,
+        }
+    }
+
+    #[test]
+    fn pocket_on_cube_top() {
+        let (mut m, top) = cube_with_top();
+        let out = apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap();
+        let OpOutput::PocketOnFace { bottom_face, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+
+        let v = nacre_validate::validate(&m);
+        assert!(v.is_empty(), "{v:?}");
+
+        // Same topology as a boss (a downward prism instead of upward).
+        let reach = m.reachable();
+        assert_eq!(reach.faces.len(), 11);
+        assert_eq!(reach.vertices.len(), 16);
+        assert_eq!(reach.edges.len(), 24);
+        let inner: usize = reach
+            .faces
+            .iter()
+            .map(|fh| m.faces.get(*fh).inner.len())
+            .sum();
+        assert_eq!(inner, 1);
+        assert!(reach.faces.contains(&bottom_face));
+    }
+
+    #[test]
+    fn pocket_rejects_nonplanar_face() {
+        let mut m = Model::new();
+        m.add_cylinder(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        let shell = m.solids.get(m.live_solids[0]).outer;
+        let lateral = *m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .find(|&&fh| {
+                matches!(
+                    m.surfaces.get(m.faces.get(fh).surface),
+                    Surface::Cylinder(_)
+                )
+            })
+            .unwrap();
+        assert!(matches!(
+            apply(&mut m, &pocket_op(lateral, small_square(), 0.5)),
+            Err(OpError::NonPlanarFace)
+        ));
+    }
+
+    #[test]
+    fn pocket_rejects_nonpositive_dist() {
+        let (mut m, top) = cube_with_top();
+        assert!(matches!(
+            apply(&mut m, &pocket_op(top, small_square(), 0.0)),
+            Err(OpError::NonPositiveDistance)
+        ));
+    }
+
+    #[test]
+    fn pocket_rejects_degenerate_profile() {
+        let (mut m, top) = cube_with_top();
+        let two = Profile2d {
+            points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
+        };
+        assert!(matches!(
+            apply(&mut m, &pocket_op(top, two, 0.5)),
+            Err(OpError::DegenerateProfile)
+        ));
+    }
+
+    #[test]
+    fn pocket_step_exports() {
+        let (mut m, top) = cube_with_top();
+        apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap();
+        let step = nacre_step::to_step(&m).expect("pocket exports");
+        assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
+    }
+
     proptest! {
         #[test]
         fn prop_regular_ngon_on_xy_is_clean(
@@ -1142,6 +1288,33 @@ mod tests {
                 points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
             };
             apply(&mut m, &Operation::PadOnFace { face: faces[1], profile: hole, dist }).unwrap();
+            m.rebuild_adjacency();
+            prop_assert!(nacre_validate::validate(&m).is_empty());
+        }
+
+        /// A random blind pocket on a random box stays valid. `dist ≤ 0.8 < sz`
+        /// keeps the pocket from punching through the box (height `sz ≥ 1`).
+        #[test]
+        fn prop_pocket_stays_valid(
+            sx in 0.5f64..5.0,
+            sy in 0.5f64..5.0,
+            sz in 1.0f64..5.0,
+            h in 0.05f64..0.15,
+            dist in 0.1f64..0.8,
+        ) {
+            let rect = Profile2d {
+                points: vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)],
+            };
+            let mut m = Model::new();
+            let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: rect,
+                dist: sz,
+            }).unwrap() else { unreachable!() };
+            let hole = Profile2d {
+                points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
+            };
+            apply(&mut m, &Operation::PocketOnFace { face: faces[1], profile: hole, dist }).unwrap();
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
         }
