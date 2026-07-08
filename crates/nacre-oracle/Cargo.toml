@@ -15,5 +15,7 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 [dev-dependencies]
 # The nacre-side mass properties, diffed against OCCT in the end-to-end tests.
 nacre-props = { path = "../nacre-props", version = "0.0.0" }
+# Builds a padded boss to diff against OCCT.
+nacre-ops = { path = "../nacre-ops", version = "0.0.0" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

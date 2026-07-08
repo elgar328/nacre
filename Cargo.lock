@@ -183,6 +183,7 @@ name = "nacre-oracle"
 version = "0.0.0"
 dependencies = [
  "nacre-math",
+ "nacre-ops",
  "nacre-props",
  "nacre-step",
  "nacre-topo",

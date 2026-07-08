@@ -301,4 +301,65 @@ bbox_min 0 0 0
             occt.area
         );
     }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pad_diff_occt() {
+        use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
+
+        // Unit cube, then a 0.4-square boss of height 0.5 on the top face. The
+        // padded solid's top face has a real hole (a FACE_BOUND in STEP); this
+        // checks OCCT reads that holed boss as a closed solid and agrees on its
+        // volume (1.08) and area (6.8) with nacre's analytic value.
+        let sq = |s: f64| Profile2d {
+            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let mut model = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut model,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: sq(1.0),
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let boss = Profile2d {
+            points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::PadOnFace { solid, .. } = apply(
+            &mut model,
+            &Operation::PadOnFace {
+                face: faces[1],
+                profile: boss,
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+
+        let occt = occt_props_of(&model).unwrap();
+        let nacre = mass_props(&model, solid).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "{} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
 }
