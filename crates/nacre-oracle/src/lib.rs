@@ -623,6 +623,28 @@ bbox_min 0 0 0
         }
     }
 
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn containment_cut_cavity_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        // A = [0,3]³ with B = [1,2]³ strictly inside ⇒ A − B is a hollow solid
+        // (an internal void). OCCT diffs the two cavity-free inputs; nacre builds
+        // the cavity independently, so the volume agreement is non-self-referential.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        // Capture OCCT's answer before the boolean supersedes the inputs.
+        let occt = occt_boolean_of(&m, OcctBool::Cut, a, b).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "cavity cut: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
     /// nacre's coincident-coplanar merge (M5-c5) vs OCCT: two cubes stacked on a
     /// shared z=1 face fuse to a 1×1×2 box.
     #[test]

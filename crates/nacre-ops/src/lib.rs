@@ -1323,8 +1323,9 @@ fn fuse_cut(
         BoolKind::Common => unreachable!("common has its own path"),
     };
     if seam.is_empty() {
-        // No crossing: either disjoint (empty) or containment (needs a cavity).
-        return Err(disjoint_or_contained(model, a, b, &planes, na));
+        // No boundary crossing: one solid contains the other (Cut ⇒ a cavity,
+        // Fuse ⇒ the container) or they are disjoint (empty).
+        return contained_result(model, kind, a, b, &classof);
     }
 
     // Reconstruct faces of A (keep_a side) and B (keep_b side, flip_b).
@@ -1464,27 +1465,71 @@ fn edge_incidence(
         .collect()
 }
 
-/// Classify a no-seam overlap: disjoint ⇒ `EmptyResult`, otherwise containment
-/// ⇒ `Unsupported` (would need a cavity shell). Overlap ⇔ any vertex of one
-/// solid is inside the other.
-fn disjoint_or_contained(
-    model: &Model,
+/// The result when no edge crosses the other solid's boundary: one solid
+/// contains the other, or they are disjoint. Direction is read from `classof`
+/// (already `Err`-free — a boundary vertex would have failed `classify_vertex`
+/// before this point): every B vertex inside A ⇒ B⊂A, every A vertex inside B ⇒
+/// A⊂B. `Cut(A−B)` with B⊂A adds B as an inward cavity; A⊂B removes A entirely;
+/// `Fuse` yields the container. `Common` never reaches here (its own path).
+fn contained_result(
+    model: &mut Model,
+    kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    planes: &[PlaneInfo],
-    na: usize,
-) -> BoolError {
-    let a_inside = solid_vertex_handles(model, a).iter().any(|&vh| {
-        classify_vertex(model.vertices.get(vh).point, &planes[na..]) == Ok(Side::Inside)
-    });
-    let b_inside = solid_vertex_handles(model, b).iter().any(|&vh| {
-        classify_vertex(model.vertices.get(vh).point, &planes[..na]) == Ok(Side::Inside)
-    });
-    if a_inside || b_inside {
-        BoolError::Unsupported // containment: cavity needed
-    } else {
-        BoolError::EmptyResult // disjoint
+    classof: &HashMap<Handle<Vertex>, Side>,
+) -> Result<Handle<Solid>, BoolError> {
+    let all_inside = |s: Handle<Solid>| {
+        solid_vertex_handles(model, s)
+            .iter()
+            .all(|vh| classof.get(vh) == Some(&Side::Inside))
+    };
+    let b_in_a = all_inside(b);
+    let a_in_b = all_inside(a);
+    match (kind, b_in_a, a_in_b) {
+        (BoolKind::Cut, true, false) => Ok(supersede_with_cavity(model, a, b)), // A − B = A + void(B)
+        (BoolKind::Cut, false, true) => Err(BoolError::EmptyResult),            // A ⊂ B ⇒ A removed
+        (BoolKind::Cut, false, false) => Ok(supersede_reuse(model, a, b, a)), // disjoint ⇒ A − B = A
+        (BoolKind::Fuse, true, false) => Ok(supersede_reuse(model, a, b, a)), // A ∪ B = A
+        (BoolKind::Fuse, false, true) => Ok(supersede_reuse(model, a, b, b)), // A ∪ B = B
+        (BoolKind::Fuse, false, false) => Err(BoolError::EmptyResult), // disconnected union unrepresentable
+        (BoolKind::Common, _, _) => unreachable!("common has its own path"),
+        (_, true, true) => {
+            unreachable!("mutual containment means a shared boundary — rejected by classify_vertex")
+        }
     }
+}
+
+/// `A` with `B`'s boundary attached as an inward-oriented cavity — the result of
+/// `Cut(A − B)` when B is strictly inside A. Reuses A's outer shell and B's
+/// cells (via [`Model::reversed_shell`]); supersedes both inputs.
+fn supersede_with_cavity(model: &mut Model, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
+    let b_outer = model.solids.get(b).outer;
+    let void = model.reversed_shell(b_outer);
+    let outer = model.solids.get(a).outer;
+    let solid = model.push_solid(Solid {
+        outer,
+        cavities: vec![void],
+    });
+    model.live_solids.retain(|&s| s != a && s != b);
+    solid
+}
+
+/// The solid `keep` re-emitted as a fresh live solid (reusing its outer shell),
+/// superseding both inputs — the result of a containment `Fuse` (the union is
+/// just the container).
+fn supersede_reuse(
+    model: &mut Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    keep: Handle<Solid>,
+) -> Handle<Solid> {
+    let outer = model.solids.get(keep).outer;
+    let solid = model.push_solid(Solid {
+        outer,
+        cavities: vec![],
+    });
+    model.live_solids.retain(|&s| s != a && s != b);
+    solid
 }
 
 /// Reconstruct a face's kept portion. `None` if the whole face is dropped.
@@ -2481,6 +2526,15 @@ mod tests {
         (m, a, b)
     }
 
+    /// Outer A = [0,3]³ (volume 27) with inner B = [1,2]³ (volume 1) strictly
+    /// inside it — the containment fixture (returns `(model, outer, inner)`).
+    fn nested_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        (m, a, b)
+    }
+
     #[test]
     fn cut_of_two_cubes() {
         // A − B where A = [0,1]³, B = [0.5,1.5]³ ⇒ 1 − 0.125 = 0.875.
@@ -2506,20 +2560,101 @@ mod tests {
     }
 
     #[test]
-    fn fuse_rejects_containment() {
-        // B strictly inside A ⇒ A∪B = A but there is no seam; the difference
-        // A−B would need a cavity. Out of clean-seam coverage.
+    fn cut_containment_makes_a_cavity() {
+        // A = [0,3]³ (27) with B = [1,2]³ (1) strictly inside ⇒ A − B is a
+        // hollow solid: volume 26, an outer + one void shell (V16/E24/F12/S2).
+        let (mut m, a, b) = nested_boxes();
+        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 26.0).abs() < 1e-12, "volume {vol}");
+        assert_eq!(m.solids.get(r).cavities.len(), 1);
+        let reach = m.reachable();
+        assert_eq!(reach.shells.len(), 2);
+        assert_eq!(reach.faces.len(), 12);
+        assert_eq!(reach.vertices.len(), 16);
+        assert_eq!(reach.edges.len(), 24);
+        assert_eq!(m.live_solids, vec![r]);
+    }
+
+    #[test]
+    fn cut_containment_off_center_cavity() {
+        // The inner box need not be concentric — any strictly-interior B works.
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        assert_eq!(
-            boolean(&mut m, BoolKind::Fuse, a, b),
-            Err(BoolError::Unsupported)
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 2.5, 3.5]),
         );
+        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (64.0 - 6.0)).abs() < 1e-12, "volume {vol}"); // 4³ − 1·2·3
+        assert_eq!(m.solids.get(r).cavities.len(), 1);
+    }
+
+    #[test]
+    fn fuse_containment_is_the_container() {
+        // A ∪ B with B ⊂ A is just A (no cavity).
+        let (mut m, a, b) = nested_boxes();
+        let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
+        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - vol_a).abs() < 1e-12, "volume {vol}");
+        assert!(m.solids.get(r).cavities.is_empty());
+        assert_eq!(m.live_solids, vec![r]);
+    }
+
+    #[test]
+    fn containment_symmetric_when_a_inside_b() {
+        // Arguments swapped: A = inner ⊂ B = outer.
+        let (mut m, outer, inner) = nested_boxes();
+        let vol_outer = nacre_props::mass_props(&m, outer).unwrap().volume;
+        // Cut(inner − outer): inner is wholly removed ⇒ empty.
         assert_eq!(
-            boolean(&mut m, BoolKind::Cut, a, b),
-            Err(BoolError::Unsupported)
+            boolean(&mut m, BoolKind::Cut, inner, outer),
+            Err(BoolError::EmptyResult)
         );
+        // Fuse(inner ∪ outer) = outer.
+        let r = boolean(&mut m, BoolKind::Fuse, inner, outer).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - vol_outer).abs() < 1e-12, "volume {vol}");
+    }
+
+    #[test]
+    fn common_containment_is_the_inner_solid() {
+        // Either argument order ⇒ the intersection is the inner solid (handled
+        // by the existing half-space enumeration path, no cavity code).
+        for swap in [false, true] {
+            let (mut m, outer, inner) = nested_boxes();
+            let vol_inner = nacre_props::mass_props(&m, inner).unwrap().volume;
+            let (x, y) = if swap { (inner, outer) } else { (outer, inner) };
+            let r = boolean(&mut m, BoolKind::Common, x, y).unwrap();
+            let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+            assert!((vol - vol_inner).abs() < 1e-9, "swap={swap} volume {vol}");
+        }
+    }
+
+    #[test]
+    fn cut_of_disjoint_is_a() {
+        // A − B with B disjoint from A removes nothing ⇒ the result is A.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+        let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
+        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - vol_a).abs() < 1e-12, "volume {vol}");
+        assert_eq!(m.live_solids, vec![r]);
     }
 
     // ---- coincident-coplanar merge (M5-c5) ----
