@@ -804,6 +804,10 @@ pub fn boolean(
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
+    // Coincident-coplanar degeneracy (M5-c5): a clean matched-interface stack.
+    if let Some(iface) = detect_coincident_interface(model, a, b) {
+        return coincident_merge(model, kind, a, b, &iface);
+    }
     match kind {
         BoolKind::Common => common(model, a, b),
         BoolKind::Fuse | BoolKind::Cut => fuse_cut(model, kind, a, b),
@@ -1693,6 +1697,171 @@ fn assemble_fuse_cut(
     solid
 }
 
+// ---- coincident-coplanar merge (M5-c5): matched-interface stack ----
+
+/// A detected clean coincident-coplanar glue: the two faces meeting on the
+/// shared plane (dropped by fuse) and the B→A correspondence for their shared
+/// interface ring.
+struct Interface {
+    fa: Handle<Face>,
+    fb: Handle<Face>,
+    remap: HashMap<Handle<Vertex>, Handle<Vertex>>,
+}
+
+/// `Some` iff A and B share exactly one fully-coincident, opposite-normal face
+/// pair (identical boundary) — the clean stack/glue case. `None` (fall through to
+/// the coplanar-rejecting paths) for anything else.
+fn detect_coincident_interface(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Option<Interface> {
+    let planes_a = collect_planes(model, a).ok()?;
+    let planes_b = collect_planes(model, b).ok()?;
+    if !is_convex(&planes_a, &solid_vertices(model, a))
+        || !is_convex(&planes_b, &solid_vertices(model, b))
+    {
+        return None;
+    }
+    // Opposite-normal coplanar face pairs (same-normal coplanar side faces are
+    // the expected coplanar-adjacent result and are ignored).
+    let mut opposite: Vec<(usize, usize)> = Vec::new();
+    for (i, pa) in planes_a.iter().enumerate() {
+        for (j, pb) in planes_b.iter().enumerate() {
+            if coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) < 0.0 {
+                opposite.push((i, j));
+            }
+        }
+    }
+    if opposite.len() != 1 {
+        return None; // 0 ⇒ not a stack; ≥2 ⇒ multiple interfaces (out of scope)
+    }
+    let (i, j) = opposite[0];
+    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
+    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
+    let ring_a = face_ring(model, model.faces.get(fa));
+    let ring_b = face_ring(model, model.faces.get(fb));
+    let remap = interface_correspondence(&ring_a, &ring_b)?;
+    Some(Interface { fa, fb, remap })
+}
+
+/// A face's outer-loop (start vertex, point) ring, in loop order.
+fn face_ring(model: &Model, face: &Face) -> Vec<(Handle<Vertex>, Point3)> {
+    face.outer
+        .half_edges
+        .iter()
+        .map(|&he| {
+            let vh = he_start(model, he);
+            (vh, model.vertices.get(vh).point)
+        })
+        .collect()
+}
+
+/// A bijective coordinate match B-ring → A-ring within a scale-relative tol, or
+/// `None` if the boundaries are not identical (different length, an unmatched or
+/// ambiguous vertex, or two B vertices sharing an A vertex). Input analysis only.
+fn interface_correspondence(
+    ring_a: &[(Handle<Vertex>, Point3)],
+    ring_b: &[(Handle<Vertex>, Point3)],
+) -> Option<HashMap<Handle<Vertex>, Handle<Vertex>>> {
+    if ring_a.len() != ring_b.len() {
+        return None;
+    }
+    let mut remap = HashMap::new();
+    for &(bh, bp) in ring_b {
+        let scale = 1e-9 * (bp.as_array().iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
+        let found: Vec<Handle<Vertex>> = ring_a
+            .iter()
+            .filter(|&&(_, ap)| (ap - bp).norm() <= scale)
+            .map(|&(ah, _)| ah)
+            .collect();
+        if found.len() != 1 {
+            return None; // unmatched or ambiguous ⇒ boundaries differ
+        }
+        remap.insert(bh, found[0]);
+    }
+    let distinct: HashSet<Handle<Vertex>> = remap.values().copied().collect();
+    if distinct.len() != remap.len() {
+        return None; // two B vertices mapped to one A vertex
+    }
+    Some(remap)
+}
+
+/// A solid's faces as `LocalFace`s (`Node::Orig`, `flip:false`), with
+/// `plane_idx` offset by `plane_offset`, optionally skipping one face and
+/// remapping vertices (for B's interface vertices → A's handle).
+fn solid_local_faces(
+    model: &Model,
+    solid: Handle<Solid>,
+    plane_offset: usize,
+    skip: Option<Handle<Face>>,
+    remap: Option<&HashMap<Handle<Vertex>, Handle<Vertex>>>,
+) -> Vec<LocalFace> {
+    let shell = model.solids.get(solid).outer;
+    let mut out = Vec::new();
+    for (pos, &fh) in model.shells.get(shell).faces.iter().enumerate() {
+        if Some(fh) == skip {
+            continue;
+        }
+        let face = model.faces.get(fh);
+        let loop_nodes = face
+            .outer
+            .half_edges
+            .iter()
+            .map(|&he| {
+                let vh = he_start(model, he);
+                let mapped = remap.and_then(|r| r.get(&vh)).copied().unwrap_or(vh);
+                Node::Orig(mapped)
+            })
+            .collect();
+        out.push(LocalFace {
+            plane_idx: plane_offset + pos,
+            loop_nodes,
+            flip: false,
+        });
+    }
+    out
+}
+
+/// The coincident-merge result (reuses `assemble_fuse_cut`; no seam, no flip).
+fn coincident_merge(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    iface: &Interface,
+) -> Result<Handle<Solid>, BoolError> {
+    match kind {
+        // The intersection is the flat shared face (zero volume).
+        BoolKind::Common => Err(BoolError::EmptyResult),
+        // A and B are on opposite sides of the interface, so B removes nothing:
+        // A − B is a fresh copy of A (its interface face survives).
+        BoolKind::Cut => {
+            let planes_a = collect_planes(model, a).map_err(|_| BoolError::Unsupported)?;
+            let faces = solid_local_faces(model, a, 0, None, None);
+            Ok(assemble_fuse_cut(model, a, b, &planes_a, &[], &faces))
+        }
+        // Drop both interface faces; keep every other face, sewing B's interface
+        // ring to A's shared vertices. Coplanar-adjacent side faces stay separate.
+        BoolKind::Fuse => {
+            let planes_a = collect_planes(model, a).map_err(|_| BoolError::Unsupported)?;
+            let na = planes_a.len();
+            let planes_b = collect_planes(model, b).map_err(|_| BoolError::Unsupported)?;
+            let mut planes = planes_a;
+            planes.extend(planes_b);
+            let mut faces = solid_local_faces(model, a, 0, Some(iface.fa), None);
+            faces.extend(solid_local_faces(
+                model,
+                b,
+                na,
+                Some(iface.fb),
+                Some(&iface.remap),
+            ));
+            Ok(assemble_fuse_cut(model, a, b, &planes, &[], &faces))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2349,6 +2518,97 @@ mod tests {
         );
         assert_eq!(
             boolean(&mut m, BoolKind::Cut, a, b),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    // ---- coincident-coplanar merge (M5-c5) ----
+
+    fn stacked_cubes() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        (m, a, b)
+    }
+
+    #[test]
+    fn fuse_stacked_cubes() {
+        // A=[0,1]³ and B=[0,1]²×[1,2] share the z=1 face ⇒ merge into a 1×1×2 box
+        // (10 faces: the 4 side pairs stay coplanar-adjacent, unmerged).
+        let (mut m, a, b) = stacked_cubes();
+        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let reach = m.reachable();
+        assert_eq!(reach.faces.len(), 10);
+        assert_eq!(reach.vertices.len(), 12);
+        assert_eq!(reach.edges.len(), 20);
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
+        assert_eq!(m.live_solids, vec![r]);
+    }
+
+    #[test]
+    fn common_stacked_cubes_is_empty() {
+        let (mut m, a, b) = stacked_cubes();
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, a, b),
+            Err(BoolError::EmptyResult)
+        );
+    }
+
+    #[test]
+    fn cut_stacked_cubes_is_a() {
+        let (mut m, a, b) = stacked_cubes();
+        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
+    }
+
+    #[test]
+    fn coincident_merge_rejects_offset_footprint() {
+        // Coplanar z=1 interface but B's footprint is offset ⇒ boundaries differ ⇒
+        // partial 2D overlap, out of scope.
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Fuse, a, b),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn same_ground_overlap_is_unsupported() {
+        // Two boxes sharing the z=0 ground with overlapping footprints: only
+        // same-normal coplanar contact + 3D overlap ⇒ needs the general 2D
+        // coplanar path (next unit) ⇒ Unsupported.
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Fuse, a, b),
             Err(BoolError::Unsupported)
         );
     }
