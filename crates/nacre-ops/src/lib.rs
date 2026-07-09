@@ -148,6 +148,20 @@ pub(crate) mod tag {
     /// odd crossing count are expected to trip `CONTACT_DEGENERATE` first. Recorded
     /// as unverified in design.md §9, alongside `fourplane`.
     pub const ARRANGEMENT_DEGENERATE: &str = "arrangement_degenerate";
+    /// The arrangement and the vertex classification disagree about where the seam
+    /// meets `∂f`, or the `seam` list and the arrangement disagree about whether it
+    /// meets `f` at all.
+    ///
+    /// Not a defensive assert but a cross-check between two machineries, neither of
+    /// which is allowed to be assumed right: `classof`'s ray casting (`point_in_solid`)
+    /// and the arrangement's exact segment/face crossings. Cell 3c pinned that
+    /// agreement in a test; here it is production.
+    ///
+    /// Unreachable today, and not dead code: breaking the equality takes an edge
+    /// crossed twice, which `pierced_face` rejects first. When sub-unit 3e relaxes
+    /// that, this fires before anything else does — and that is where multi-chord gets
+    /// its real handling rather than a reject.
+    pub const SEAM_COUNT_MISMATCH: &str = "seam_count_mismatch";
     /// Three seam segments meeting at one node.
     ///
     /// Unreachable today, and *not* dead code. A node is a boundary node (two
@@ -848,7 +862,7 @@ use nacre_geom::intersect::{
     RayCross, SegCross, plane_plane, ray_face_cross, segment_face_cross, three_plane_orient3d,
     three_planes,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// A face's supporting plane plus the data the half-space enumeration needs.
 ///
@@ -1069,9 +1083,8 @@ fn overlap_fuse_cut(
     let edges_b = edge_incidence(model, b, &surf_ix);
     let mut seam: Vec<SeamVertex> = Vec::new();
     let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
-    let mut edge_seam: HashMap<Handle<Edge>, [usize; 3]> = HashMap::new();
     for (edges, other) in [(&edges_a, b), (&edges_b, a)] {
-        for &(eh, bounds, ref inc) in edges {
+        for &(_, bounds, ref inc) in edges {
             let [v0, v1] = bounds;
             let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
@@ -1127,7 +1140,6 @@ fn overlap_fuse_cut(
             }
             let mut triple = [e0, e1, entry];
             triple.sort_unstable();
-            edge_seam.insert(eh, triple);
             if let std::collections::hash_map::Entry::Vacant(slot) = seam_ix.entry(triple) {
                 let tol = vertex_tol(
                     point,
@@ -1150,14 +1162,24 @@ fn overlap_fuse_cut(
         return contained_result(model, kind, a, b, &classof);
     }
 
+    // `edge_seam` is gone from this path: the arrangement carries each boundary
+    // crossing on the edge it was produced on (`SeamSegment::on_edge`), so nothing has
+    // to key a splice by `Handle<Edge>` — the map that could hold only one crossing per
+    // edge no longer exists here.
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+
     let mut faces: Vec<LocalFace> = Vec::new();
-    for (solid, keep, flip) in [(a, keep_a, false), (b, keep_b, flip_b)] {
+    for (solid, other, inc_f, inc_o, keep, flip) in [
+        (a, b, &inc_a, &inc_b, keep_a, false),
+        (b, a, &inc_b, &inc_a, keep_b, flip_b),
+    ] {
         let shell = model.solids.get(solid).outer;
         for &fh in &model.shells.get(shell).faces {
-            let face = model.faces.get(fh);
-            let pidx = surf_ix[&face.surface];
-            if let Some(lf) = reconstruct_face(
-                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix, true,
+            let pidx = surf_ix[&model.faces.get(fh).surface];
+            if let Some(lf) = reconstruct_face_paths(
+                model, fh, other, pidx, keep, flip, &classof, &seam, &seam_ix, &planes, &surf_ix,
+                inc_f, inc_o,
             )? {
                 faces.push(lf);
             }
@@ -1709,7 +1731,7 @@ fn fuse_cut(
             let face = model.faces.get(fh);
             let pidx = surf_ix[&face.surface];
             if let Some(lf) = reconstruct_face(
-                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix, false,
+                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix,
             )? {
                 faces.push(lf);
             }
@@ -2102,7 +2124,171 @@ fn supersede_reuse(
     solid
 }
 
-/// Reconstruct a face's kept portion. `None` if the whole face is dropped.
+/// Reconstruct a face's kept portion, non-convex path. `None` if the face is dropped.
+///
+/// Same shape as [`reconstruct_face`], but the seam sub-path comes from the
+/// arrangement (`arrange::seam_paths_on`) rather than from `edge_seam` plus a
+/// projection sort. Walking the arrangement's adjacency gives the *true* arc order, so
+/// nothing here assumes the arc is monotone along its chord — on a reflex bend it is
+/// not, and a bend can project outside the chord's endpoints entirely.
+///
+/// The arrangement is a source of *combinatorics*, never of geometry: the points that
+/// reach the model stay `seam[..]`'s, with their tolerance. `SeamEnd::point` is a cache.
+#[allow(clippy::too_many_arguments)]
+fn reconstruct_face_paths(
+    model: &Model,
+    fh: Handle<Face>,
+    other: Handle<Solid>,
+    plane_idx: usize,
+    keep: Side,
+    flip: bool,
+    classof: &HashMap<Handle<Vertex>, Side>,
+    seam: &[SeamVertex],
+    seam_ix: &HashMap<[usize; 3], usize>,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Surface>, usize>,
+    inc_f: &arrange::EdgePlanes,
+    inc_o: &arrange::EdgePlanes,
+) -> Result<Option<LocalFace>, BoolError> {
+    let face = model.faces.get(fh);
+    let hes = &face.outer.half_edges;
+    let n = hes.len();
+    let verts: Vec<Handle<Vertex>> = hes.iter().map(|&he| he_start(model, he)).collect();
+    let kept: Vec<bool> = verts.iter().map(|v| classof[v] == keep).collect();
+    let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
+
+    let whole = || {
+        kept[0].then(|| LocalFace {
+            plane_idx,
+            loop_nodes: verts.iter().map(|&v| Node::Orig(v)).collect(),
+            flip,
+        })
+    };
+
+    // The seam misses this face: today's `transitions == 0` branch, unchanged. Running
+    // the arrangement here would be worse than useless — it calls
+    // `segment_crosses_face`, which can honestly reject a grazing contact on a face
+    // that has nothing to do with the seam, and that would rewrite a reject tag.
+    let touches_seam = seam.iter().any(|s| s.triple.contains(&plane_idx));
+    if transitions.is_empty() && !touches_seam {
+        return Ok(whole());
+    }
+
+    let paths = arrange::seam_paths_on(model, fh, other, planes, surf_ix, inc_f, inc_o)?;
+    let opens: Vec<&arrange::SeamPath> = paths
+        .iter()
+        .filter(|p| matches!(p, arrange::SeamPath::Open(_)))
+        .collect();
+    let n_closed = paths.len() - opens.len();
+
+    // The index in `hes` of the edge a boundary node rides.
+    let edge_ix = |e: Handle<Edge>| {
+        hes.iter()
+            .position(|he| he.edge == e)
+            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))
+    };
+    let bnd: BTreeSet<usize> = paths
+        .iter()
+        .flat_map(|p| p.nodes())
+        .filter_map(|nd| nd.on_edge)
+        .map(edge_ix)
+        .collect::<Result<_, _>>()?;
+
+    // Two machineries must agree, and neither may be assumed right: `classof`'s ray
+    // casting vs the arrangement's exact crossings, and the `seam` list (built by
+    // `pierced_face`) vs the arrangement's paths. A *set*, not a count: two ends of one
+    // chord riding the same edge would pass a count and leave the splice undefined.
+    let meets_face = !paths.is_empty();
+    if bnd != transitions.iter().copied().collect::<BTreeSet<_>>() || touches_seam != meets_face {
+        return Err(reject(tag::SEAM_COUNT_MISMATCH));
+    }
+
+    // Guard order mirrors today's `match transitions.len()`: `>= 4` returned before the
+    // hole check could ever run, so multi-chord still wins over an inner loop.
+    if opens.len() >= 2 {
+        return Err(reject(tag::MULTICHORD));
+    }
+    if n_closed > 0 {
+        return Err(reject(tag::POKEHOLE));
+    }
+    let Some(arc) = opens.first() else {
+        return Ok(whole()); // no seam on this face after all
+    };
+
+    // Orient the arc `s_kd → bends → s_dk`, the direction the kept run is spliced in.
+    let (t0, t1) = (transitions[0], transitions[1]);
+    let (kd, dk) = if kept[t0] { (t0, t1) } else { (t1, t0) };
+    let nodes_arc = arc.nodes();
+    let head = nodes_arc[0]
+        .on_edge
+        .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
+    let forward = edge_ix(head)? == kd;
+    let ordered: Vec<[usize; 3]> = if forward {
+        nodes_arc.iter().map(|nd| nd.triple).collect()
+    } else {
+        nodes_arc.iter().rev().map(|nd| nd.triple).collect()
+    };
+    for t in &ordered {
+        if !seam_ix.contains_key(t) {
+            return Err(reject(tag::MISSING_SEAM));
+        }
+    }
+    let (s_kd, s_dk) = (ordered[0], ordered[ordered.len() - 1]);
+    let bends = &ordered[1..ordered.len() - 1];
+
+    // `strict`: a folded arc would build a self-intersecting face that `validate`
+    // accepts. The order above is true, so this no longer guards a bad *sort* — it
+    // still rejects a genuinely reflex arc, which sub-unit 3e will admit.
+    if !bends.is_empty() {
+        let nrm = {
+            let t = outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
+            (t[1] - t[0]).cross(t[2] - t[0])
+        };
+        let arc_pts: Vec<Point3> = ordered.iter().map(|t| seam[seam_ix[t]].point).collect();
+        let mut sign = 0i32;
+        for w in arc_pts.windows(3) {
+            let turn = (w[1] - w[0]).cross(w[2] - w[1]).dot(nrm);
+            let s = if turn > 0.0 {
+                1
+            } else if turn < 0.0 {
+                -1
+            } else {
+                0
+            };
+            if s != 0 {
+                if sign != 0 && sign != s {
+                    return Err(reject(tag::STRICTARC)); // non-convex seam arc
+                }
+                sign = s;
+            }
+        }
+    }
+
+    // Kept run: walk `dk+1 ..= kd` CCW, then splice the seam sub-path back.
+    let mut loop_nodes: Vec<Node> = Vec::new();
+    let mut i = (dk + 1) % n;
+    loop {
+        loop_nodes.push(Node::Orig(verts[i]));
+        if i == kd {
+            break;
+        }
+        i = (i + 1) % n;
+    }
+    loop_nodes.push(Node::Seam(s_kd));
+    loop_nodes.extend(bends.iter().copied().map(Node::Seam));
+    loop_nodes.push(Node::Seam(s_dk));
+    Ok(Some(LocalFace {
+        plane_idx,
+        loop_nodes,
+        flip,
+    }))
+}
+
+/// Reconstruct a face's kept portion, convex path. `None` if the whole face is dropped.
+///
+/// The bends are ordered by projecting them onto the chord, which assumes the arc is
+/// monotone along it. Both operands being convex, it is. The non-convex path reads the
+/// order off the arrangement instead — see [`reconstruct_face_paths`].
 #[allow(clippy::too_many_arguments)]
 fn reconstruct_face(
     model: &Model,
@@ -2114,7 +2300,6 @@ fn reconstruct_face(
     edge_seam: &HashMap<Handle<Edge>, [usize; 3]>,
     seam: &[SeamVertex],
     seam_ix: &HashMap<[usize; 3], usize>,
-    strict: bool,
 ) -> Result<Option<LocalFace>, BoolError> {
     let hes = &face.outer.half_edges;
     let n = hes.len();
@@ -2185,41 +2370,6 @@ fn reconstruct_face(
                     .partial_cmp(&(py - p_kd).dot(dir))
                     .expect("finite")
             });
-            // `strict` (non-convex overlap): the bend-sort projects the seam arc
-            // onto the chord direction, which assumes a convex (monotone) arc — a
-            // non-convex operand can fold the arc back, and the linear sort would
-            // then build a self-intersecting face that `validate` cannot catch. Guard
-            // it: the sorted sub-path `p_kd → bends → p_dk` must turn one way about
-            // the face normal (a convex chain). Any sign flip ⇒ honest `Unsupported`
-            // (the true arrangement is a later sub-unit). Convex `fuse_cut` passes
-            // `strict = false` and is unaffected.
-            if strict && !bends.is_empty() {
-                let n = {
-                    let t = outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
-                    (t[1] - t[0]).cross(t[2] - t[0])
-                };
-                let mut arc: Vec<Point3> = Vec::with_capacity(bends.len() + 2);
-                arc.push(p_kd);
-                arc.extend(bends.iter().map(|t| seam[seam_ix[t]].point));
-                arc.push(p_dk);
-                let mut sign = 0i32;
-                for w in arc.windows(3) {
-                    let turn = (w[1] - w[0]).cross(w[2] - w[1]).dot(n);
-                    let s = if turn > 0.0 {
-                        1
-                    } else if turn < 0.0 {
-                        -1
-                    } else {
-                        0
-                    };
-                    if s != 0 {
-                        if sign != 0 && sign != s {
-                            return Err(reject(tag::STRICTARC)); // non-convex seam arc
-                        }
-                        sign = s;
-                    }
-                }
-            }
             nodes.push(Node::Seam(s_kd));
             nodes.extend(bends.into_iter().map(Node::Seam));
             nodes.push(Node::Seam(s_dk));
@@ -3370,17 +3520,16 @@ pub mod tests {
     #[test]
     fn an_edge_crossed_twice_is_rejected() {
         // `edge_seam` holds one seam triple per edge, and `reconstruct_face` reads one.
-        // That 1:1 is not enforced by the type — it is enforced by the guards, and this
-        // pins the one standing over `cube_and_notch`. On the convex path an edge with
-        // both ends outside that still enters the other solid is `poke_through`;
-        // `poke_through_hole_is_unsupported` pins the non-convex twin (`pierced_multi`,
-        // via `pierced_face`).
+        // Cell 3d deleted that map from the non-convex path; on the convex path it
+        // survives, and there the 1:1 is a geometric fact, not a guard — a segment
+        // meets a convex boundary at most twice, so a straddling edge crosses exactly
+        // once. What still stands over `cube_and_notch` is `segment_enters`:
+        // `poke_through`. `poke_through_hole_is_unsupported` pins the non-convex twin
+        // (`pierced_multi`, via `pierced_face`), which is what sub-unit 3e relaxes.
         //
-        // Retire either guard (sub-unit 3e opens multi-chord) without re-keying
-        // `edge_seam` by the seam triple, and one crossing is silently dropped: a
-        // manifold face that `validate` accepts and that is wrong. This test goes red
-        // first. `seam_path_crosses_one_face_edge_twice` shows what the arrangement
-        // sees on the same input.
+        // `seam_path_crosses_one_face_edge_twice` shows what the arrangement sees on
+        // this same input, and `seam_count_mismatch` is what would fire if the
+        // arrangement ever handed such a face to the splice.
         let (mut m, a, y) = cube_and_notch();
         assert_rejects(|| boolean(&mut m, BoolKind::Cut, a, y), tag::POKE_THROUGH);
     }
