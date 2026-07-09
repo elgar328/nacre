@@ -8,7 +8,13 @@
 //! **sign** decisions live in `nacre-predicates`.
 
 use crate::{Line, Plane};
-use nacre_math::Point3;
+use nacre_math::{Point3, Vector3};
+
+/// The exact ray/segment vs triangle crossing outcomes, re-exported so callers
+/// (`nacre-ops`) reach them through geom without depending on `nacre-predicates`
+/// directly (the same `topo → geom → predicates` layering as the surface
+/// handoffs).
+pub use nacre_predicates::{RayCross, SegCross};
 
 /// `sin²θ` below which two plane normals count as parallel. Unit normals make
 /// `‖n1 × n2‖² = sin²θ ∈ [0, 1]`, so this absolute cutoff is scale-free.
@@ -110,6 +116,32 @@ pub fn three_plane_orient3d(
 ) -> i8 {
     let tp = nacre_predicates::ThreePlane([a.coefficients(), b.coefficients(), c.coefficients()]);
     nacre_predicates::indirect_orient3d(&tp, q.as_array(), r.as_array(), s.as_array())
+}
+
+/// Exact forward-ray/triangle crossing for kernel types — the geom→predicates
+/// handoff for [`nacre_predicates::ray_triangle_cross`] (design §8 M5-d
+/// point-in-polyhedron). `d` is the ray direction; `tri` is a single triangle
+/// (a caller triangulates a face into these). See [`RayCross`] for the outcome.
+pub fn ray_face_cross(p: Point3, d: Vector3, tri: [Point3; 3]) -> RayCross {
+    nacre_predicates::ray_triangle_cross(
+        p.as_array(),
+        d.as_array(),
+        tri[0].as_array(),
+        tri[1].as_array(),
+        tri[2].as_array(),
+    )
+}
+
+/// Exact segment/triangle crossing for kernel types — the handoff for
+/// [`nacre_predicates::segment_triangle_cross`]. See [`SegCross`].
+pub fn segment_face_cross(a: Point3, b: Point3, tri: [Point3; 3]) -> SegCross {
+    nacre_predicates::segment_triangle_cross(
+        a.as_array(),
+        b.as_array(),
+        tri[0].as_array(),
+        tri[1].as_array(),
+        tri[2].as_array(),
+    )
 }
 
 #[cfg(test)]
@@ -316,5 +348,42 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn ray_and_segment_face_cross_handoff() {
+        // CCW triangle in z = 0, right-hand normal +z.
+        let tri = [
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+        ];
+        // Ray from below, straight up through the interior ⇒ forward Cross(+1).
+        assert_eq!(
+            ray_face_cross(
+                Point3::from_array([0.25, 0.25, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                tri,
+            ),
+            RayCross::Cross(1)
+        );
+        // Ray pointing away from the triangle ⇒ Miss.
+        assert_eq!(
+            ray_face_cross(
+                Point3::from_array([0.25, 0.25, 1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                tri,
+            ),
+            RayCross::Miss
+        );
+        // Segment straddling the plane through the interior ⇒ Cross(+1).
+        assert_eq!(
+            segment_face_cross(
+                Point3::from_array([0.25, 0.25, -1.0]),
+                Point3::from_array([0.25, 0.25, 1.0]),
+                tri,
+            ),
+            SegCross::Cross(1)
+        );
     }
 }
