@@ -319,12 +319,18 @@ pub enum SegCross {
     Degenerate,
 }
 
-/// Exact segment/triangle crossing, by `orient3d` signs only. The segment's line
-/// pierces the triangle interior iff `orient3d(a, b, ·, ·)` shares one nonzero
-/// sign over the three edges; the segment actually crosses (parameter in `(0,1)`)
-/// iff its endpoints are on strictly opposite sides of the triangle's plane
-/// (`sign(orient3d(v0,v1,v2,a)) = −sign(…,b)`, both nonzero). The oriented sign is
-/// then `sign(orient3d(v0,v1,v2,a))` (= `sign((b−a)·n)`).
+/// Exact segment/triangle crossing, by `orient3d` signs only.
+///
+/// The plane test comes **first**: unless the endpoints straddle the triangle's
+/// plane (`sign(orient3d(v0,v1,v2,a)) = −sign(…,b)`, both nonzero) the segment
+/// cannot cross the triangle, so it is a `Miss` (or `Degenerate` if an endpoint
+/// lies on the plane) — without consulting the edge tests. This ordering matters
+/// for axis-aligned input: a segment parallel-coplanar to a triangle edge makes
+/// `orient3d(a, b, ·, ·) = 0` yet is not a real contact, and must not be reported
+/// as `Degenerate`. Only once the segment genuinely pierces the plane do the edge
+/// tests decide whether the crossing point is inside the triangle; a zero there
+/// is a true edge/vertex hit ⇒ `Degenerate`. The oriented sign is
+/// `sign(orient3d(v0,v1,v2,a))` (= `sign((b−a)·n)`).
 pub fn segment_triangle_cross(
     a: [f64; 3],
     b: [f64; 3],
@@ -332,24 +338,26 @@ pub fn segment_triangle_cross(
     v1: [f64; 3],
     v2: [f64; 3],
 ) -> SegCross {
-    let e0 = sgn(orient3d(a, b, v1, v2));
-    let e1 = sgn(orient3d(a, b, v2, v0));
-    let e2 = sgn(orient3d(a, b, v0, v1));
-    if e0 == 0 || e1 == 0 || e2 == 0 {
-        return SegCross::Degenerate; // line through an edge/vertex
-    }
-    if e0 != e1 || e1 != e2 {
-        return SegCross::Miss; // line misses the triangle
-    }
     let sa = sgn(orient3d(v0, v1, v2, a));
     let sb = sgn(orient3d(v0, v1, v2, b));
     if sa == 0 || sb == 0 {
         return SegCross::Degenerate; // an endpoint on the plane (touching/coplanar contact)
     }
     if sa == sb {
-        return SegCross::Miss; // both endpoints on the same side — no crossing
+        return SegCross::Miss; // both endpoints on one side — no plane crossing
     }
-    SegCross::Cross(sa) // opposite sides ⇒ crosses at t ∈ (0,1), oriented by sa
+    // The segment pierces the plane at t ∈ (0,1); is that point inside the triangle?
+    let e0 = sgn(orient3d(a, b, v1, v2));
+    let e1 = sgn(orient3d(a, b, v2, v0));
+    let e2 = sgn(orient3d(a, b, v0, v1));
+    if e0 == 0 || e1 == 0 || e2 == 0 {
+        return SegCross::Degenerate; // crossing point on a triangle edge/vertex
+    }
+    if e0 == e1 && e1 == e2 {
+        SegCross::Cross(sa) // inside the triangle
+    } else {
+        SegCross::Miss // pierces the plane outside the triangle
+    }
 }
 
 #[cfg(test)]
@@ -742,6 +750,13 @@ mod tests {
         // Off to the side ⇒ Miss.
         assert_eq!(
             segment_triangle_cross([2.0, 2.0, -1.0], [2.0, 2.0, 1.0], T0, T1, T2),
+            SegCross::Miss
+        );
+        // Parallel-coplanar to edge v0-v1 (both in plane y = 0) but above the
+        // triangle's plane: no plane crossing ⇒ Miss, NOT a false Degenerate
+        // (the ordering fix that matters for axis-aligned input).
+        assert_eq!(
+            segment_triangle_cross([0.2, 0.0, 0.5], [0.8, 0.0, 0.5], T0, T1, T2),
             SegCross::Miss
         );
     }
