@@ -1007,11 +1007,19 @@ fn overlap_fuse_cut(
             let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
             if s0 == s1 {
-                // Both endpoints on the same side but the edge pierces a face of the
-                // other solid ⇒ it tunnels through (out→in→out, or a reflex
-                // in→out→in) — a multi-chord crossing beyond this sub-unit. (Convex
-                // `fuse_cut` only had to guard the both-outside case; a non-convex
-                // other solid can also be tunnelled from inside a reflex pocket.)
+                // Same-side endpoints, yet the edge pierces exactly one outer face of
+                // the other solid. This is *not* the out→in→out tunnel it looks like:
+                // such an edge crosses two faces and `pierced_face` already rejected
+                // it above as `pierced_multi`. Nor is it parity-impossible — that
+                // argument only holds for a cavity-free solid.
+                //
+                // The one way in is a cavitied operand. `point_in_solid` counts the
+                // cavity shells, so an edge running from outside the solid to a point
+                // inside a void classifies `Outside` at both ends; `pierced_face`
+                // scans the outer shell alone, so it reports one crossing. The seam
+                // machinery cannot represent that (`collect_planes` drops the void's
+                // planes), and this guard is what stops it. Verified: a hollow L cut
+                // by a stub reaching into its void reaches exactly here.
                 if pierced_face(model, p0, p1, other, &surf_ix)?.is_some() {
                     return Err(reject(tag::TUNNEL));
                 }
@@ -2835,6 +2843,26 @@ mod tests {
         // `LocalFace` cannot carry. Honest reject until sub-unit 3 emits inner loops.
         let (mut m, l, stub) = l_and_dimple();
         assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, stub), tag::POKEHOLE);
+    }
+
+    #[test]
+    fn cut_into_a_cavity_hits_the_tunnel_guard() {
+        // The `tunnel` guard's only reachable path: a cavitied operand. `point_in_solid`
+        // counts cavity shells, so the stub's vertical edges — running from below the
+        // hollow L up into its void — classify Outside at both ends, while
+        // `pierced_face` (outer shell only) sees a single crossing of the z=0 face.
+        //
+        // That asymmetry is also why the guard has to stay: `collect_planes` never
+        // collected the void's planes, so without this reject the seam would be built
+        // from a boundary the classifier does not agree with.
+        let (mut m, l, inner) = l_and_inner_box();
+        let hollow = boolean(&mut m, BoolKind::Cut, l, inner).unwrap();
+        assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+        let stub = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, -0.2]),
+            Point3::from_array([0.6, 0.6, 0.5]),
+        );
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, hollow, stub), tag::TUNNEL);
     }
 
     #[test]
