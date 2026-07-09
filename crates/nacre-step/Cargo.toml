@@ -14,7 +14,7 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-store = { path = "../nacre-store", version = "0.0.0" }
 # Serialization backend (kernel is backend-agnostic; step-io is confined to this
 # crate). StepBuilder has existed since 0.1.0, so ^0.2 (→ 0.2.2) works.
-step-io = "0.2"
+step-io = "0.2.4"
 
 [dev-dependencies]
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git

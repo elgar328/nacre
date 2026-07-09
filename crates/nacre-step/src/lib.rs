@@ -14,12 +14,14 @@
 use nacre_geom::{Curve, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Model, Orientation, Solid, Vertex};
+use nacre_topo::{Edge, Model, Orientation, Shell, Solid, Vertex};
 use std::collections::HashMap;
 use step_io::StepBuilder;
 use step_io::build::Vertex as StepVertex;
-use step_io::build::{CurveInput, FaceBoundInput, Frame, HeaderInput, SurfaceInput};
-use step_io::generated::model::EdgeCurveId;
+use step_io::build::{
+    CurveInput, FaceBoundInput, Frame, HeaderInput, SurfaceInput, VoidShellNormals,
+};
+use step_io::generated::model::{AdvancedFaceId, EdgeCurveId};
 
 /// A failure while translating a [`Model`] to STEP.
 #[derive(Debug)]
@@ -27,9 +29,6 @@ pub enum StepError {
     /// An edge has no endpoint vertices (a closed edge — M3). M2 expects all
     /// edges bounded.
     UnboundedEdge,
-    /// A solid has inner cavity shells (`brep_with_voids` — deferred). M2
-    /// exports the outer shell only.
-    Cavities,
     /// The `step-io` backend rejected the entity graph (its `AuthorError`,
     /// stringified so the backend type does not leak into the public API).
     Backend(String),
@@ -46,9 +45,9 @@ impl From<step_io::AuthorError> for StepError {
 /// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines
 /// and full circles (`Curve::{Line, Circle}`); a full-circle rim is a seam edge
 /// (`bounds: Some([v, v])`, start == end) that emits a closed STEP circle.
-/// Rejects a truly closed edge ([`StepError::UnboundedEdge`], `bounds: None`) and
-/// cavities ([`StepError::Cavities`]). Coordinates are emitted in millimetres
-/// (nacre is unitless; STEP needs a unit).
+/// Rejects a truly closed edge ([`StepError::UnboundedEdge`], `bounds: None`). A
+/// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
+/// emitted in millimetres (nacre is unitless; STEP needs a unit).
 pub fn to_step(model: &Model) -> Result<String, StepError> {
     build_step(model, &model.live_solids)
 }
@@ -76,59 +75,90 @@ fn build_step(model: &Model, solids: &[Handle<Solid>]) -> Result<String, StepErr
     // §2): superseded solids linger in the arena but must not reach the file.
     for &solid_h in solids {
         let solid = model.solids.get(solid_h);
-        if !solid.cavities.is_empty() {
-            return Err(StepError::Cavities);
-        }
         let part = b.part("nacre_solid")?;
-        let shell = model.shells.get(solid.outer);
 
         // Deduped per export: a shared vertex/edge becomes one STEP entity.
         let mut vmap: HashMap<Handle<Vertex>, StepVertex> = HashMap::new();
         let mut emap: HashMap<Handle<Edge>, EdgeCurveId> = HashMap::new();
-        let mut face_ids = Vec::new();
 
-        for &fh in &shell.faces {
-            let face = model.faces.get(fh);
-
-            // Surface → step-io SurfaceInput. Exhaustive match: future variants
-            // (sphere, NURBS) must be handled here (else compile error).
-            let surface = match model.surfaces.get(face.surface) {
-                // ref_dir is cosmetic for a bounded planar face — any perpendicular.
-                Surface::Plane(p) => SurfaceInput::Plane(frame(
-                    p.origin(),
-                    p.normal(),
-                    p.normal()
-                        .any_perpendicular()
-                        .expect("unit normal has a perpendicular"),
-                )),
-                Surface::Cylinder(c) => SurfaceInput::Cylinder(
-                    frame(c.axis().origin(), c.axis().direction(), c.ref_dir()),
-                    c.radius(),
-                ),
-            };
-            let same_sense = matches!(face.orientation, Orientation::Forward);
-
-            let mut bounds = Vec::with_capacity(1 + face.inner.len());
-            bounds.push(FaceBoundInput::outer(build_loop(
-                &mut b,
-                model,
-                &face.outer,
-                &mut vmap,
-                &mut emap,
-            )?));
-            for inner in &face.inner {
-                bounds.push(FaceBoundInput::inner(build_loop(
-                    &mut b, model, inner, &mut vmap, &mut emap,
-                )?));
+        let outer = build_shell_faces(&mut b, model, solid.outer, &mut vmap, &mut emap)?;
+        if solid.cavities.is_empty() {
+            b.solid(part, "body", outer)?;
+        } else {
+            // A hollow solid → BREP_WITH_VOIDS. Each cavity shell is built the
+            // same way as the outer shell: nacre stores a cavity with its face
+            // normals pointing into the void (away from the material, like the
+            // outer shell points outward), which is exactly `AwayFromMaterial`
+            // — step-io keeps the authored orientation (no reversal).
+            let mut voids = Vec::with_capacity(solid.cavities.len());
+            for &cavity in &solid.cavities {
+                voids.push(build_shell_faces(
+                    &mut b, model, cavity, &mut vmap, &mut emap,
+                )?);
             }
-
-            face_ids.push(b.face(surface, same_sense, bounds)?);
+            b.solid_with_voids(
+                part,
+                "body",
+                outer,
+                voids,
+                VoidShellNormals::AwayFromMaterial,
+            )?;
         }
-
-        b.solid(part, "body", face_ids)?;
     }
 
     b.finish().map_err(StepError::from)
+}
+
+/// Build every face of one shell as step-io `AdvancedFaceId`s, deduping shared
+/// vertices/edges through `vmap`/`emap`. Used for both the outer shell and each
+/// cavity shell of a solid (a cavity is emitted identically — its faces already
+/// carry the correct inward orientation).
+fn build_shell_faces(
+    b: &mut StepBuilder,
+    model: &Model,
+    shell: Handle<Shell>,
+    vmap: &mut HashMap<Handle<Vertex>, StepVertex>,
+    emap: &mut HashMap<Handle<Edge>, EdgeCurveId>,
+) -> Result<Vec<AdvancedFaceId>, StepError> {
+    let mut face_ids = Vec::new();
+    for &fh in &model.shells.get(shell).faces {
+        let face = model.faces.get(fh);
+
+        // Surface → step-io SurfaceInput. Exhaustive match: future variants
+        // (sphere, NURBS) must be handled here (else compile error).
+        let surface = match model.surfaces.get(face.surface) {
+            // ref_dir is cosmetic for a bounded planar face — any perpendicular.
+            Surface::Plane(p) => SurfaceInput::Plane(frame(
+                p.origin(),
+                p.normal(),
+                p.normal()
+                    .any_perpendicular()
+                    .expect("unit normal has a perpendicular"),
+            )),
+            Surface::Cylinder(c) => SurfaceInput::Cylinder(
+                frame(c.axis().origin(), c.axis().direction(), c.ref_dir()),
+                c.radius(),
+            ),
+        };
+        let same_sense = matches!(face.orientation, Orientation::Forward);
+
+        let mut bounds = Vec::with_capacity(1 + face.inner.len());
+        bounds.push(FaceBoundInput::outer(build_loop(
+            b,
+            model,
+            &face.outer,
+            vmap,
+            emap,
+        )?));
+        for inner in &face.inner {
+            bounds.push(FaceBoundInput::inner(build_loop(
+                b, model, inner, vmap, emap,
+            )?));
+        }
+
+        face_ids.push(b.face(surface, same_sense, bounds)?);
+    }
+    Ok(face_ids)
 }
 
 /// Build a loop's edges as `(edge, forward)` for a `FaceBoundInput`.
@@ -295,15 +325,34 @@ mod tests {
     }
 
     #[test]
-    fn solid_with_cavities_is_rejected() {
-        let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        let shell = m.shells.iter().next().unwrap().0; // an existing shell handle
-        // push_solid so it is live — export walks the live model (design §2).
-        m.push_solid(Solid {
-            outer: shell,
-            cavities: vec![shell],
+    fn hollow_solid_round_trips_as_brep_with_voids() {
+        // A 4-cube with a concentric 2-cube void, built with the cavity
+        // producer's primitive (`reversed_shell`): the inner shell reversed
+        // inward. Exports as a BREP_WITH_VOIDS and reads back with one cavity.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let b_outer = m.solids.get(b).outer;
+        let void = m.reversed_shell(b_outer);
+        let a_outer = m.solids.get(a).outer;
+        let hollow = m.push_solid(Solid {
+            outer: a_outer,
+            cavities: vec![void],
         });
-        assert!(matches!(to_step(&m), Err(StepError::Cavities)));
+        m.live_solids.retain(|&s| s == hollow); // supersede the two source cubes
+
+        let text = to_step(&m).expect("export hollow");
+        assert!(text.contains("BREP_WITH_VOIDS"), "no void entity in output");
+
+        let (model, report) = read(text.as_bytes()).expect("re-read");
+        assert!(report.dropped.is_empty(), "drops: {:?}", report.dropped);
+        let scene = model.scene();
+        let solids: Vec<_> = scene.all_solids().collect();
+        assert_eq!(solids.len(), 1);
+        assert_eq!(solids[0].faces().count(), 6); // outer shell
+        let voids = solids[0].voids();
+        assert_eq!(voids.len(), 1);
+        assert_eq!(voids[0].len(), 6); // one cavity shell, 6 faces
     }
 
     #[test]
