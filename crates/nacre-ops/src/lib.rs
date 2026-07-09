@@ -1044,7 +1044,9 @@ fn pierced_face(
 /// * `coincident_merge` drops the hole through `solid_local_faces`: `Ok`, volume
 ///   2.0533 instead of 2.0.
 ///
-/// Cell 3f teaches the arrangement to carry inner loops and retires this.
+/// Cell 3f-1 taught the arrangement to *emit* an inner loop, but a holed face as an
+/// **operand** is a different job: the walks above must learn to see a hole ring's
+/// second use. Cell 3f-3 retires this — until then a 3f-1 result cannot be fed back in.
 fn reject_holed_operands(
     model: &Model,
     a: Handle<Solid>,
@@ -1614,6 +1616,9 @@ enum Node {
 struct LocalFace {
     plane_idx: usize,
     loop_nodes: Vec<Node>,
+    /// Hole rings, each already wound so the kept material stays on its left
+    /// (`arrange::orient_hole_loop`). Only the non-convex path ever fills this.
+    inner: Vec<Vec<Node>>,
     flip: bool,
 }
 
@@ -2179,10 +2184,11 @@ fn reconstruct_face_paths(
     let kept: Vec<bool> = verts.iter().map(|v| classof[v] == keep).collect();
     let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
 
-    let whole = || {
+    let whole = |inner: Vec<Vec<Node>>| {
         kept[0].then(|| LocalFace {
             plane_idx,
             loop_nodes: verts.iter().map(|&v| Node::Orig(v)).collect(),
+            inner,
             flip,
         })
     };
@@ -2193,7 +2199,7 @@ fn reconstruct_face_paths(
     // that has nothing to do with the seam, and that would rewrite a reject tag.
     let touches_seam = seam.iter().any(|s| s.triple.contains(&plane_idx));
     if transitions.is_empty() && !touches_seam {
-        return Ok(whole());
+        return Ok(whole(vec![]));
     }
 
     let paths = arrange::seam_paths_on(model, fh, other, planes, surf_ix, inc_f, inc_o)?;
@@ -2231,10 +2237,32 @@ fn reconstruct_face_paths(
         return Err(reject(tag::MULTICHORD));
     }
     if n_closed > 0 {
-        return Err(reject(tag::POKEHOLE));
+        // A closed loop bounds a hole exactly when the face's whole outer boundary is
+        // kept and the loop is alone: crossing the seam flips the class, so the loop's
+        // interior is dropped. Anything else needs a containment test — two loops may
+        // nest, and a dropped boundary makes the loop an *island* whose interior is the
+        // face. Neither is decidable from `kept[0]`, so neither is opened (3f-2).
+        if !opens.is_empty() || !kept[0] || n_closed != 1 {
+            return Err(reject(tag::POKEHOLE));
+        }
+        let arrange::SeamPath::Closed(nodes) = paths
+            .iter()
+            .find(|p| matches!(p, arrange::SeamPath::Closed(_)))
+            .expect("n_closed > 0")
+        else {
+            unreachable!("filtered to Closed")
+        };
+        let ring = arrange::orient_hole_loop(planes, plane_idx, nodes, keep == Side::Outside)?;
+        for t in &ring {
+            if !seam_ix.contains_key(t) {
+                return Err(reject(tag::MISSING_SEAM));
+            }
+        }
+        let hole: Vec<Node> = ring.into_iter().map(Node::Seam).collect();
+        return Ok(whole(vec![hole]));
     }
     let Some(arc) = opens.first() else {
-        return Ok(whole()); // no seam on this face after all
+        return Ok(whole(vec![])); // no seam on this face after all
     };
 
     // Orient the arc `s_kd → bends → s_dk`, the direction the kept run is spliced in.
@@ -2274,6 +2302,7 @@ fn reconstruct_face_paths(
     Ok(Some(LocalFace {
         plane_idx,
         loop_nodes,
+        inner: vec![],
         flip,
     }))
 }
@@ -2314,6 +2343,7 @@ fn reconstruct_face(
                 Ok(Some(LocalFace {
                     plane_idx,
                     loop_nodes,
+                    inner: vec![],
                     flip,
                 }))
             } else {
@@ -2370,6 +2400,7 @@ fn reconstruct_face(
             Ok(Some(LocalFace {
                 plane_idx,
                 loop_nodes: nodes,
+                inner: vec![],
                 flip,
             }))
         }
@@ -2419,9 +2450,10 @@ fn assemble_fuse_cut(
         vh.insert(node, handle);
         handle
     };
-    // Materialize all vertex handles first (deterministic order).
+    // Materialize all vertex handles first. Outer then inner, rings in order: `vh`'s
+    // first-appearance order fixes the vertex handles, and replay depends on it.
     for lf in faces {
-        for &node in &lf.loop_nodes {
+        for &node in lf.loop_nodes.iter().chain(lf.inner.iter().flatten()) {
             node_handle(model, node);
         }
     }
@@ -2450,23 +2482,31 @@ fn assemble_fuse_cut(
 
     let mut face_handles = Vec::new();
     for lf in faces {
-        let handles: Vec<Handle<Vertex>> = lf.loop_nodes.iter().map(|&nd| vh[&nd]).collect();
-        let k = handles.len();
-        let mut half_edges: Vec<HalfEdge> = (0..k)
-            .map(|t| {
-                let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                let e = edge_for(model, va, vb);
-                let forward = model.edges.get(e).bounds.expect("bounded")[0] == va;
-                HalfEdge { edge: e, forward }
-            })
-            .collect();
-        let orientation = if lf.flip {
-            // Cut's inside-A B-pieces: reverse the loop and toggle orientation so
-            // the outward normal points into the removed region.
-            half_edges.reverse();
-            for he in &mut half_edges {
-                he.forward = !he.forward;
+        let mut ring = |model: &mut Model, nodes: &[Node]| -> Loop {
+            let handles: Vec<Handle<Vertex>> = nodes.iter().map(|nd| vh[nd]).collect();
+            let k = handles.len();
+            let mut half_edges: Vec<HalfEdge> = (0..k)
+                .map(|t| {
+                    let (va, vb) = (handles[t], handles[(t + 1) % k]);
+                    let e = edge_for(model, va, vb);
+                    let forward = model.edges.get(e).bounds.expect("bounded")[0] == va;
+                    HalfEdge { edge: e, forward }
+                })
+                .collect();
+            if lf.flip {
+                // Cut's inside-A B-pieces: reverse every loop and toggle the
+                // orientation below, so the outward normal points into the removed
+                // region and each loop still keeps material on its left.
+                half_edges.reverse();
+                for he in &mut half_edges {
+                    he.forward = !he.forward;
+                }
             }
+            Loop { half_edges }
+        };
+        let outer = ring(model, &lf.loop_nodes);
+        let inner: Vec<Loop> = lf.inner.iter().map(|h| ring(model, h)).collect();
+        let orientation = if lf.flip {
             match planes[lf.plane_idx].orient {
                 Orientation::Forward => Orientation::Reversed,
                 Orientation::Reversed => Orientation::Forward,
@@ -2476,8 +2516,8 @@ fn assemble_fuse_cut(
         };
         face_handles.push(model.faces.push(Face {
             surface: planes[lf.plane_idx].surf,
-            outer: Loop { half_edges },
-            inner: vec![],
+            outer,
+            inner,
             orientation,
         }));
     }
@@ -2612,6 +2652,7 @@ fn solid_local_faces(
         out.push(LocalFace {
             plane_idx: plane_offset + pos,
             loop_nodes,
+            inner: vec![],
             flip: false,
         });
     }
@@ -3616,7 +3657,7 @@ pub mod tests {
             // `(1, 0)`: nothing about the arrangement ever blocked this one. What
             // rejected it was the shape of a single arc, until cell 3e-1.
             case("l_and_popup_box (folded arc)", (1, 0), l_and_popup_box()),
-            case("l_and_dimple (pokehole)", (1, 1), l_and_dimple()),
+            case("l_and_dimple (inner loop)", (1, 1), l_and_dimple()),
         ]
     }
 
@@ -3819,6 +3860,15 @@ pub mod tests {
         let (mut m, l, bx) = l_and_popup_box();
         let from_arrange = seam_endpoint_triples(&m, l, bx);
         boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
+
+        // And the inner loop (cell 3f-1): its four nodes are the hole's rim, used once
+        // by the lid and once by a pocket wall. Lose the loop and they leave `reachable`.
+        let (mut m, l, stub) = l_and_dimple();
+        let from_arrange = seam_endpoint_triples(&m, l, stub);
+        assert_eq!(from_arrange.len(), 4);
+        boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
     }
@@ -4059,13 +4109,84 @@ pub mod tests {
     }
 
     #[test]
-    fn cut_blind_dimple_is_unsupported() {
-        // The stub's footprint never reaches the top face's boundary, so that face's
-        // loop has zero kept/dropped transitions — yet four seam vertices sit on its
-        // plane. The seam is a closed ring in the face interior: an inner loop, which
-        // `LocalFace` cannot carry. Honest reject until sub-unit 3 emits inner loops.
+    fn cut_blind_dimple() {
+        // The stub's footprint never reaches the L's top-face boundary, so the seam is
+        // a closed ring in the face interior. It is the face's inner loop, and the
+        // result is a blind pocket: `3 − 0.4² × 0.5`.
         let (mut m, l, stub) = l_and_dimple();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, stub), tag::POKEHOLE);
+        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.08)).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn a_flipped_hole_loop_is_caught() {
+        // `hole_orient_mismatch` cannot see a loop flipped as a whole, and `f2`'s golden
+        // pins the derivation — but the two downstream detectors must actually fire on
+        // *this* shape, not merely exist. They are different in kind: `validate` sees a
+        // rim edge used twice the same way, `tessellate` sees a hole wound like its
+        // outer ring. Volume and OCCT see neither: `props` sums `|area|`.
+        //
+        // `Store` is append-only, so the face cannot be edited. Push a replacement with
+        // the hole reversed, swap it into a fresh shell and solid, and move the live
+        // handle: the old face falls out of `reachable()`.
+        let (mut m, l, stub) = l_and_dimple();
+        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        m.rebuild_adjacency();
+
+        let faces = m.shells.get(m.solids.get(r).outer).faces.clone();
+        let holed = *faces
+            .iter()
+            .find(|&&f| !m.faces.get(f).inner.is_empty())
+            .expect("the L's top face carries the hole");
+        let f = m.faces.get(holed).clone();
+        let mut hole = f.inner[0].clone();
+        hole.half_edges.reverse();
+        for he in &mut hole.half_edges {
+            he.forward = !he.forward;
+        }
+        let bad = m.faces.push(Face {
+            inner: vec![hole],
+            ..f
+        });
+        let swapped = faces
+            .iter()
+            .map(|&x| if x == holed { bad } else { x })
+            .collect();
+        let shell = m.shells.push(Shell { faces: swapped });
+        let solid = m.push_solid(Solid {
+            outer: shell,
+            cavities: vec![],
+        });
+        m.live_solids = vec![solid];
+        m.rebuild_adjacency();
+
+        let vs = nacre_validate::validate(&m);
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, nacre_validate::Violation::NonOpposedEdge { .. })),
+            "validate stayed quiet: {vs:?}"
+        );
+        assert!(matches!(
+            nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()),
+            Err(nacre_tess::TessError::HoleWinding)
+        ));
+    }
+
+    #[test]
+    fn fuse_blind_dimple() {
+        // The `Fuse` counterpart — a boss on the L — closing the inclusion–exclusion:
+        // `V_L + V_stub − V_overlap`. Both put a hole in the same face of the L.
+        let (mut m, l, stub) = l_and_dimple();
+        let r = boolean(&mut m, BoolKind::Fuse, l, stub).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 + 0.16 - 0.08)).abs() < 1e-9, "volume {vol}");
     }
 
     /// The unit cube with a 0.4-square pocket, 0.5 deep, in its top face: the void
