@@ -872,6 +872,63 @@ bbox_min 0 0 0
         );
     }
 
+    /// A stub standing in the L's top face, its footprint strictly inside that face.
+    /// The seam is a closed loop in the face interior, so the result has a face with
+    /// an inner loop — the shape M5-d3 cell 3f-1 opens.
+    fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
+        l_prism_and_box([0.3, 0.3, 0.5], [0.7, 0.7, 1.5])
+    }
+
+    /// nacre's first boolean result carrying a *hole* (M5-d3 cell 3f-1) vs OCCT: the
+    /// L with a blind pocket. Area is scored alongside volume here — the hole is an
+    /// area-visible feature, and nacre's own gates all read the same rings, so an
+    /// independent kernel is what makes the hole's size a real claim.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn blind_dimple_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_dimple();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "blind dimple cut volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "blind dimple cut area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    /// The `Fuse` counterpart — a boss on the L. The same face gains the same hole,
+    /// so the two agree on area while their volumes straddle the L's own 3.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn blind_dimple_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_dimple();
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "blind dimple fuse volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "blind dimple fuse area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// nacre's hole-aware classification (M5-d3 cell 3a) vs OCCT: a pocketed cube
     /// cut by a box sitting wholly inside the pocket void. The two solids are
     /// disjoint, so the answer is the pocketed cube untouched — but only if the
