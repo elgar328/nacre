@@ -141,6 +141,7 @@ pub enum BoolError {
 /// builds too. They are `const`, so they inline away where the tag is unused.
 mod tag {
     pub const HOLLOW_OPERAND: &str = "hollow_operand";
+    pub const INNER_LOOP_OPERAND: &str = "inner_loop_operand";
     pub const COMMON_OVERLAP: &str = "common_overlap";
     pub const PIERCED_MULTI: &str = "pierced_multi";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
@@ -978,12 +979,48 @@ fn pierced_face(
 /// reconstructs faces in `strict` mode (rejecting a non-convex/self-intersecting
 /// seam arc). Multiple chords, poke-through holes, and non-convex `Common` are
 /// honestly `Unsupported` (later sub-units).
+/// Reject an operand carrying a face with holes.
+///
+/// The seam machinery and `solid_local_faces` walk outer rings only, so a hole-ring
+/// edge is seen once — its other use is on the lid's inner loop. Three things then
+/// go wrong, and all three were measured on a pocketed cube:
+///
+/// * `reconstruct_face` rebuilds the lid from its outer ring and `assemble_fuse_cut`
+///   emits `inner: vec![]`, so the hole is dropped: `Ok`, volume 0.96996 instead of
+///   0.916625, `validate` reporting five violations.
+/// * `edge_incidence` gives such an edge one incident plane, and `overlap_fuse_cut`
+///   indexes `inc[1]` — a panic, whenever a rim edge straddles the seam.
+/// * `coincident_merge` drops the hole through `solid_local_faces`: `Ok`, volume
+///   2.0533 instead of 2.0.
+///
+/// Cell 3f teaches the arrangement to carry inner loops and retires this.
+fn reject_holed_operands(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<(), BoolError> {
+    for solid in [a, b] {
+        let shell = model.solids.get(solid).outer;
+        if model
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .any(|&fh| !model.faces.get(fh).inner.is_empty())
+        {
+            return Err(reject(tag::INNER_LOOP_OPERAND));
+        }
+    }
+    Ok(())
+}
+
 fn overlap_fuse_cut(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
+    reject_holed_operands(model, a, b)?;
     let mut planes = collect_planes(model, a)?;
     planes.extend(collect_planes(model, b)?);
     if has_coplanar_pair(&planes) {
@@ -1523,6 +1560,12 @@ fn fuse_cut(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
+    // Defense-in-depth: a convex operand cannot reach here with a holed face, since
+    // a hole in an outer-shell face is bounded either by inward walls (making the
+    // solid non-convex) or by a coplanar region face (imprint), and `has_coplanar_pair`
+    // below catches the latter. That argument depends on the order of the two checks,
+    // so the guard is explicit rather than implied.
+    reject_holed_operands(model, a, b)?;
     let planes_a = collect_planes(model, a)?;
     let planes_b = collect_planes(model, b)?;
     if !is_convex(&planes_a, &solid_vertices(model, a))
@@ -2407,6 +2450,11 @@ fn coincident_merge(
     b: Handle<Solid>,
     iface: &Interface,
 ) -> Result<Handle<Solid>, BoolError> {
+    // `detect_coincident_interface` counts only *cross-solid, opposite-normal*
+    // coplanar pairs, so an imprint on some other face — whose coplanar region face
+    // is same-normal and within one solid — does not disqualify the stack. Such an
+    // operand reaches here with a holed face; `solid_local_faces` would drop the hole.
+    reject_holed_operands(model, a, b)?;
     match kind {
         // The intersection is the flat shared face (zero volume).
         BoolKind::Common => Err(BoolError::EmptyResult),
@@ -2822,6 +2870,72 @@ mod tests {
         assert!(vs.is_empty(), "{vs:?}");
         let vol = nacre_props::mass_props(&m, u).unwrap().volume;
         assert!((vol - 5.3).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn overlap_with_a_holed_face_is_unsupported() {
+        // The box bites a corner far from the pocket, so no rim edge straddles the
+        // seam and nothing stops `reconstruct_face` from rebuilding the lid without
+        // its hole. Measured before the guard: `Ok`, volume 0.96996 against a correct
+        // 0.916625, and `validate` reporting five violations.
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.85, 0.85, 0.85]),
+            Point3::from_array([1.15, 1.15, 1.15]),
+        );
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, pc, bx),
+            tag::INNER_LOOP_OPERAND,
+        );
+    }
+
+    #[test]
+    fn overlap_across_a_hole_rim_is_unsupported() {
+        // Here the box crosses the pocket rim, so a rim edge straddles. That edge is
+        // used once by the lid's inner loop and once by a wall's outer loop, but
+        // `edge_incidence` walks outer loops only and hands back a single incident
+        // plane. Measured before the guard: a panic indexing `inc[1]`.
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.55, 0.55, 0.85]),
+            Point3::from_array([1.15, 1.15, 1.15]),
+        );
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, pc, bx),
+            tag::INNER_LOOP_OPERAND,
+        );
+    }
+
+    #[test]
+    fn coincident_merge_with_a_holed_face_is_unsupported() {
+        // `detect_coincident_interface` counts only cross-solid opposite-normal
+        // coplanar pairs, so imprinting a *different* face leaves the stack looking
+        // clean and routes into `coincident_merge`, whose `solid_local_faces` drops
+        // the hole. Measured before the guard: `Ok`, volume 2.0533 against 2.0.
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
+        else {
+            unreachable!()
+        };
+        let side = faces[3]; // the x=1 face
+        let OpOutput::ImprintSketch { solid, .. } = apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: side,
+                profile: small_square(),
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let bx = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Fuse, solid, bx),
+            tag::INNER_LOOP_OPERAND,
+        );
     }
 
     #[test]
