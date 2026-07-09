@@ -162,6 +162,22 @@ pub(crate) mod tag {
     /// that, this fires before anything else does — and that is where multi-chord gets
     /// its real handling rather than a reject.
     pub const SEAM_COUNT_MISMATCH: &str = "seam_count_mismatch";
+    /// A closed seam loop's edges disagree about which side its material lies on, or
+    /// two of its nodes coincide, or two neighbours share no plane pair.
+    ///
+    /// Like `SEAM_COUNT_MISMATCH`, a cross-check rather than a defence: the exact
+    /// predicate (`order_along`) and the orientation bookkeeping (`PlaneInfo::n_out`
+    /// vs its plane's normal) must agree, edge by edge, and neither is assumed right.
+    /// It survives release on purpose — `validate` and `tessellate` also catch a wrong
+    /// hole, but a caller may run neither.
+    ///
+    /// It cannot catch a *globally* flipped loop: every edge would be wrong together.
+    /// That is pinned before wiring, by a golden on `orient_hole_loop` itself.
+    ///
+    /// Unreachable today: "material on the left" is a global property, so a consistent
+    /// loop makes every edge agree. Not dead code — relax `FOURPLANE` or cell 3c's
+    /// node-identity argument and this is what speaks first.
+    pub const HOLE_ORIENT_MISMATCH: &str = "hole_orient_mismatch";
     /// Three seam segments meeting at one node.
     ///
     /// Unreachable today, and *not* dead code. A node is a boundary node (two
@@ -3440,9 +3456,9 @@ pub mod tests {
             &out[0],
             &[
                 [0.3, 0.3, 1.0],
-                [0.7, 0.3, 1.0],
-                [0.7, 0.7, 1.0],
                 [0.3, 0.7, 1.0],
+                [0.7, 0.7, 1.0],
+                [0.7, 0.3, 1.0],
             ],
         );
     }
@@ -3973,6 +3989,61 @@ pub mod tests {
             let v = m.vertices.get(he_start(&m, he)).point;
             assert_eq!(point_in_solid(&m, v, stub).unwrap(), Side::Outside);
         }
+    }
+
+    #[test]
+    fn a_hole_loop_keeps_material_on_its_left() {
+        // The global sign, pinned before anything is wired. `hole_orient_mismatch`
+        // cannot catch a loop that is flipped *as a whole* — every edge would be wrong
+        // together — and `validate`/`tessellate` are a caller's option, not the
+        // kernel's. So the derivation is checked here, on the real fixture, against a
+        // sequence computed by hand.
+        //
+        // The L's top face has `n_out = +z`; the hole is the stub's footprint. Walk it
+        // with the material (outside the stub) on the left and you go clockwise seen
+        // from +z. On the edge (0.3,0.3) → (0.3,0.7) the left is `z × y = −x`: outside
+        // the stub. Only the test reads a coordinate; the rule reads three signs.
+        let (m, l, stub) = l_and_dimple();
+        let (planes, surf_ix) = combined(&m, l, stub);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+        let p = surf_ix[&m.faces.get(top).surface];
+
+        let out = paths(&m, top, l, stub, &planes, &surf_ix);
+        let arrange::SeamPath::Closed(nodes) = &out[0] else {
+            panic!("closed loop")
+        };
+        let point_of = |t: &[usize; 3]| nodes.iter().find(|nd| nd.triple == *t).unwrap().point;
+
+        let outside = arrange::orient_hole_loop(&planes, p, nodes, true).unwrap();
+        let got: Vec<[f64; 3]> = outside.iter().map(|t| point_of(t).as_array()).collect();
+        assert_points_cycle(
+            &got,
+            &[
+                [0.3, 0.3, 1.0],
+                [0.3, 0.7, 1.0],
+                [0.7, 0.7, 1.0],
+                [0.7, 0.3, 1.0],
+            ],
+        );
+
+        // The rule's only degree of freedom is that bit. Flip it and the loop must
+        // reverse exactly — if it does not, the derivation is wrong somewhere.
+        let inside = arrange::orient_hole_loop(&planes, p, nodes, false).unwrap();
+        let mut rev = outside.clone();
+        rev.reverse();
+        assert_eq!(inside, rev);
+    }
+
+    /// Compare two closed sequences up to rotation (not reflection — the direction is
+    /// the whole point).
+    fn assert_points_cycle(got: &[[f64; 3]], want: &[[f64; 3]]) {
+        assert_eq!(got.len(), want.len(), "{got:?} vs {want:?}");
+        let hit = (0..want.len()).any(|r| {
+            got.iter()
+                .zip(want[r..].iter().chain(&want[..r]))
+                .all(|(g, w)| near(Point3::from_array(*g), *w))
+        });
+        assert!(hit, "{got:?} vs {want:?} up to rotation");
     }
 
     #[test]

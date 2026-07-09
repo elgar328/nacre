@@ -225,6 +225,94 @@ fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> 
     ) * dir_sign(planes, p, q, j)
 }
 
+/// `+1` when a plane's stored normal already points out of its solid, `-1` when the
+/// face is `Reversed` and the two oppose.
+fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
+    let dot = planes[i].plane.normal().dot(planes[i].n_out);
+    debug_assert!(
+        dot.abs() > 0.5,
+        "a plane's normal must be parallel to n_out"
+    );
+    debug_assert_eq!(
+        dot > 0.0,
+        planes[i].orient == Orientation::Forward,
+        "n_out's sign against the surface normal is the face's orientation"
+    );
+    if dot > 0.0 { 1 } else { -1 }
+}
+
+/// A closed seam loop's triples, ordered so that every directed edge keeps the kept
+/// material on its left — the convention **every** b-rep loop obeys, outer or inner.
+/// So the caller wraps them in `Node::Seam` and needs no further knowledge; returning
+/// a "should I reverse?" flag would leave it an obligation it could forget.
+///
+/// **No coordinate is read.** Every loop of a face winds CCW about that face's outward
+/// normal, and for a planar ring the interior of a CCW loop lies along `n × t`. So with
+/// `f` on plane `P` and the loop's edge on `f ∩ g` (`g` a face of the other solid),
+/// wanting the material — the `+n_out_g` side when `keep == Outside` — on the left:
+///
+/// ```text
+///   n_out_f × t ∝ +n_out_g   ⇒   t = n_out_g × n_out_f = −(keep)·s_f·s_g·d
+/// ```
+///
+/// where `n_out_f = s_f·n_P`, `n_out_g = s_g·n_Q`, `d = n_P × n_Q`, and `keep = ±1` for
+/// `Outside`/`Inside`. (Expand: `n_f × (n_g × n_f) = n_g − (n_f·n_g) n_f`, the in-plane
+/// part of `n_out_g`, a positive multiple.) `d` is the direction [`seam_segments_on`]
+/// already sorted its crossings along, so [`order_along`] answers "does this edge run
+/// along `+d`?" exactly. Three signs, no area.
+///
+/// Every edge must give the same verdict, the wrap-around one included — a loop that
+/// keeps material on its left does so everywhere. `order_along` is *recomputed* rather
+/// than remembered from the assembly walk: the walk's memory and the exact predicate
+/// are the two machines, and a check that reuses one machine's memory checks nothing.
+pub(crate) fn orient_hole_loop(
+    planes: &[PlaneInfo],
+    p: usize,
+    nodes: &[SeamEnd],
+    material_outside: bool,
+) -> Result<Vec<[usize; 3]>, BoolError> {
+    let n = nodes.len();
+    if n < 3 {
+        return Err(reject(tag::HOLE_ORIENT_MISMATCH));
+    }
+    let keep: i8 = if material_outside { 1 } else { -1 };
+    let mut verdict: Option<bool> = None;
+
+    for i in 0..n {
+        let (a, b) = (nodes[i].triple, nodes[(i + 1) % n].triple);
+        let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
+        // `P` plus exactly one `Q`: adjacent loop nodes bound one seam segment.
+        if shared.len() != 2 || !shared.contains(&p) {
+            return Err(reject(tag::HOLE_ORIENT_MISMATCH));
+        }
+        let q = shared[usize::from(shared[0] == p)];
+        let third = |t: [usize; 3]| t.iter().copied().find(|&x| x != p && x != q);
+        let (Some(ri), Some(rj)) = (third(a), third(b)) else {
+            return Err(reject(tag::HOLE_ORIENT_MISMATCH));
+        };
+
+        let ord = order_along(planes, p, q, ri, rj);
+        if ord == 0 {
+            return Err(reject(tag::HOLE_ORIENT_MISMATCH)); // two nodes coincide
+        }
+        let along_d = ord == -1;
+        let want_along_d = -keep * orient_sign(planes, p) * orient_sign(planes, q) > 0;
+        let reverse = along_d != want_along_d;
+        match verdict {
+            None => verdict = Some(reverse),
+            Some(v) if v == reverse => {}
+            Some(_) => return Err(reject(tag::HOLE_ORIENT_MISMATCH)),
+        }
+    }
+
+    let it = nodes.iter().map(|nd| nd.triple);
+    Ok(if verdict == Some(true) {
+        it.rev().collect()
+    } else {
+        it.collect()
+    })
+}
+
 /// The seam of `other` on face `f`, assembled into open arcs and closed loops.
 ///
 /// `∂other ∩ P ∩ f` is a 1-manifold: the segments of [`seam_segments_on`] never cross,
@@ -342,18 +430,8 @@ pub(crate) fn seam_paths_on(
 /// invariant to break, an `orient`-based order would reverse silently. Assert the
 /// agreement; do not depend on it.
 fn dir_sign(planes: &[PlaneInfo], p: usize, q: usize, r: usize) -> i8 {
-    let dot = planes[r].plane.normal().dot(planes[r].n_out);
-    debug_assert!(
-        dot.abs() > 0.5,
-        "a plane's normal must be parallel to n_out"
-    );
-    debug_assert_eq!(
-        dot > 0.0,
-        planes[r].orient == Orientation::Forward,
-        "n_out's sign against the surface normal is the face's orientation"
-    );
-    let s = plane_pair_dir_sign(&planes[p].plane, &planes[q].plane, &planes[r].plane);
-    if dot > 0.0 { s } else { -s }
+    plane_pair_dir_sign(&planes[p].plane, &planes[q].plane, &planes[r].plane)
+        * orient_sign(planes, r)
 }
 
 fn triple(a: usize, b: usize, c: usize) -> [usize; 3] {
