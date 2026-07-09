@@ -20,7 +20,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 ├── nacre-geom       # 정확 기하: Surface, Curve, 평가·미분·국소 교차(SSI relaxation)
 ├── nacre-topo       # Vertex/Edge/Face/Shell/Solid, half-edge, Model 집계
 ├── nacre-tess       # 출처 태그 tessellation: TessVertex, TessTriangle, 증분 갱신
-├── nacre-ops        # 연산: sketch, extrude, revolve, imprint, boolean(자체 — 커버리지 사다리)
+├── nacre-ops        # 연산: sketch, extrude, revolve, imprint, boolean(자체 — 커버리지 사다리). private `arrange` 모듈 = 면당 평면 arrangement(seam 세그먼트 수집 → 셀 추출). `Model`과 geom을 둘 다 쓰므로 geom에 둘 수 없다(§1 의존 방향)
 ├── nacre-validate   # 불변식 검사: 오일러-푸앵카레, watertight, 방향성, 참조 무결성
 ├── nacre-props      # mass properties: 정확 기하 발산정리로 부피·면적(해석적, tess 무관). 소비: 사용자 질의·M5 부피보존 불변식·오라클 diff
 ├── nacre-step       # Model→AP242(Ed2) 엔티티 번역 어댑터. 직렬화 백엔드 교체 가능(커널 무지); 개발=step-io, 최종=경량 라이터
@@ -423,7 +423,11 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 재구성 경로는 아직 구멍을 못 다룬다. **실측된 세 가지 파손:** `reconstruct_face`는 구멍을 잃고(`Ok`, 부피 0.96996 vs 0.916625, `validate` 위반 5건), `edge_incidence`는 rim 엣지의 인접 면을 하나만 봐서 `inc[1]`에서 **패닉**하며, `coincident_merge`는 `solid_local_faces`로 구멍을 버린다(`Ok`, 부피 2.0533 vs 2.0). → `overlap_fuse_cut`·`fuse_cut`·`coincident_merge` 진입부에서 `tag::INNER_LOOP_OPERAND`로 거절. 셀 3f(arrangement의 inner loop 방출)에서 은퇴한다. 주의: `detect_coincident_interface`는 **교차-솔리드 반대법선** 공면 쌍만 세므로, 인터페이스가 아닌 면에 imprint한 볼록 솔리드는 스택으로 보여 merge 경로로 들어온다 — `common`은 `is_convex`+`has_coplanar_pair`가 이미 막아 가드가 불필요하다.
 
-**`indirect_orient3d`는 implicit point를 하나만 받는다 (서브유닛 3의 arrangement 제약).** `nacre_predicates::indirect_orient3d(p: &ThreePlane, q, r, s)` — explicit 점 셋. 면당 arrangement의 조합 판정은 seam 정점 둘·셋이 얽히므로 Attene 2020의 LPI/TPI 계열 **2·3-implicit 변형**이 필요하다. 그때까지 arrangement 코어는 "exact orient2d(투영 좌표에 대해 정확) + 투영 불확실성 필터 → 애매하면 `ARRANGEMENT_DEGENERATE`로 거절"로 선다. 추측으로 형상을 만들지 않으며, 술어가 들어오면 그 거절이 exact 답으로 바뀌어 커버리지가 넓어진다. 술어를 arrangement보다 먼저 만들지 않는다 — 무엇을 어떤 인자 조합으로 부르는지 모른 채 설계하게 된다.
+**`indirect_orient3d`는 implicit point를 하나만 받는다 — 그런데 seam 수집에는 그걸로 충분했다 (M5-d3 셀 3b에서 실증).** `nacre_predicates::indirect_orient3d(p: &ThreePlane, q, r, s)`는 explicit 점 셋을 받는다. 애초 예상은 "면당 arrangement의 조합 판정이 seam 정점 둘·셋을 얽으므로 Attene 2020의 LPI/TPI 계열 2·3-implicit 변형이 필요하고, 그때까지 arrangement 코어는 exact orient2d(투영 좌표) + 투영 불확실성 필터로 서야 한다"였다. **seam 세그먼트 수집 단계에 관해서는 틀렸다.** 실제로는 (a) 끝점이 `three_planes(P,Q,R)` — 이미 쓰는 3-평면 implicit point고, (b) "엣지 안 + 상대 면 안" 포함 판정은 `segment_crosses_face`가 exact orient3d로 이미 답하며, (c) 직선 위 두 교점의 전후는 `three_plane_orient3d(P,Q,R_i, R_j.tri)`(1-implicit)와 `det3_sign([n_P,n_Q,n_{R_j}])`(exact)의 곱으로 정해진다. **두 implicit 점이 한 술어에 동시에 들어가는 자리가 없다.** 그래서 2D 투영도, orient2d도, `ARRANGEMENT_DEGENERATE`의 "투영 불확실성 필터"도 필요 없었다(geom에 `plane_pair_dir_sign` 얇은 exact 래퍼 하나만 추가). 다중 implicit 술어가 정말 필요해지는 곳은 **셀 추출**(두 implicit 점의 orient)이며, 그 셀에 이르러 다시 판단한다 — 쓰지도 않을 술어를 미리 만들지 않는다.
+
+**`ARRANGEMENT_DEGENERATE`는 미검증 백스톱이다 (`fourplane`과 같은 줄).** `arrange::seam_segments_on`이 홀수 교차 카운트에서 거절한다(패리티상 짝수여야 한다 — 교점은 enter/exit로 교대하고 직선의 양 끝은 바깥). 그런 퇴화(정점 스침, 엣지 공선)는 그 전에 `CONTACT_DEGENERATE`가 잡을 공산이 크므로, 발화 테스트가 없다. 셀 3c에서 실제 arrangement가 서면 도달 가능성을 다시 잰다.
+
+**`segment_crosses_face`는 관통점이 면의 중심에 놓이면 모든 apex에서 스친다.** 사각형 면의 두 대각선이 중심에서 만나므로 fan을 어느 꼭짓점에서 시작해도 관통점이 대각선 위에 놓인다 ⇒ `CONTACT_DEGENERATE`. 정직한 거절이지만, **정육면체 두 개를 축정렬로 겹치면 실제로 걸린다**(M5-d2의 `l_and_corner_box` 주석이 이미 비대칭 좌표를 고른 이유). 픽스처는 변을 서로 다르게 잡는다. 근본 해소는 fan 대신 실제 삼각분할(또는 대각선을 피하는 apex 선택)이며 서브유닛 5(퇴화 경화)의 항목이다.
 
 **`nacre-tess::triangulate_planar`는 inner loop를 무시해 구멍을 메운다.** pocket으로 이미 존재하는 결함. 지금은 어떤 정답 게이트도 안 건드린다(props는 `face.inner`를 해석적으로 빼고, validate는 위상만 보며 tess를 안 쓰고, OCCT는 STEP 경유). 그러나 셀 3f가 불리언 결과에 inner loop를 방출하는 순간 OBJ 덤프가 거짓말을 시작한다 — 디버깅 생명줄이므로 3f에 묶어 고친다.
 
