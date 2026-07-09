@@ -20,6 +20,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 ├── nacre-geom       # 정확 기하: Surface, Curve, 평가·미분·국소 교차(SSI relaxation)
 ├── nacre-topo       # Vertex/Edge/Face/Shell/Solid, half-edge, Model 집계
 ├── nacre-tess       # 출처 태그 tessellation: TessVertex, TessTriangle, 증분 갱신
+│   └── polygon      # 평면 다각형 삼각분할: Newell 투영 + 구멍 브리징 + ear clipping
 ├── nacre-ops        # 연산: sketch, extrude, revolve, imprint, boolean(자체 — 커버리지 사다리). private `arrange` 모듈 = 면당 평면 arrangement(seam 세그먼트 수집 → 셀 추출). `Model`과 geom을 둘 다 쓰므로 geom에 둘 수 없다(§1 의존 방향)
 ├── nacre-validate   # 불변식 검사: 오일러-푸앵카레, watertight, 방향성, 참조 무결성
 ├── nacre-props      # mass properties: 정확 기하 발산정리로 부피·면적(해석적, tess 무관). 소비: 사용자 질의·M5 부피보존 불변식·오라클 diff
@@ -455,7 +456,19 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 **`segment_crosses_face`는 관통점이 면의 중심에 놓이면 모든 apex에서 스친다.** 사각형 면의 두 대각선이 중심에서 만나므로 fan을 어느 꼭짓점에서 시작해도 관통점이 대각선 위에 놓인다 ⇒ `CONTACT_DEGENERATE`. 정직한 거절이지만, **정육면체 두 개를 축정렬로 겹치면 실제로 걸린다**(M5-d2의 `l_and_corner_box` 주석이 이미 비대칭 좌표를 고른 이유). 픽스처는 변을 서로 다르게 잡는다. 근본 해소는 fan 대신 실제 삼각분할(또는 대각선을 피하는 apex 선택)이며 서브유닛 5(퇴화 경화)의 항목이다.
 
-**`nacre-tess::triangulate_planar`는 inner loop를 무시해 구멍을 메운다.** pocket으로 이미 존재하는 결함. 지금은 어떤 정답 게이트도 안 건드린다(props는 `face.inner`를 해석적으로 빼고, validate는 위상만 보며 tess를 안 쓰고, OCCT는 STEP 경유). 그러나 셀 3f가 불리언 결과에 inner loop를 방출하는 순간 OBJ 덤프가 거짓말을 시작한다 — 디버깅 생명줄이므로 3f에 묶어 고친다.
+**평면 삼각분할 — 결함이 기록보다 컸고, 3f 앞에 독립 셀로 수선했다 (tess 셀).** §9는 원래 "`triangulate_planar`가 inner loop를 무시해 구멍을 메운다 … 셀 3f에 묶어 고친다"고만 적었다. 3f-1 계획을 검토하다 **세 가지**가 드러나, 약속을 사실에 맞게 고치고 별개 셀로 처리했다.
+
+- **부채꼴은 구멍만이 아니라 비볼록 외곽 링에서도 틀렸다.** `ring[0]`에서 부채꼴로 자르는 것은 링이 **그 정점에서 별 모양일 때만** 옳다. L-프리즘 캡은 `(0,0)`에서, 3e-1이 만든 계단 면은 `(0.5,0.5)`에서 별 모양이라 **우연히** 맞고 있었다. U-프리즘 캡은 아니다 — 부채꼴 변이 노치를 지나 삼각형이 **뒤집혀** 나온다(실측: 캡마다 넓이 `2.6`이 부호 없이 더해져 `+5.2`).
+- **`tessellate`와 `to_obj`가 supersede된 죽은 면을 뱉었다.** `Store`는 append-only이고 불리언·pocket·pad는 피연산자를 지우지 않는데, 둘 다 면 저장소를 통째로 순회했다. 실측: stacked-fuse에서 죽은 큐브 둘의 표면적 `+12.0`. 이제 `live_solids`에서 도달 가능한 셀만 메시로 만든다(`Reachable`은 `HashSet`이므로 **저장소 순서로 순회하며 멤버십만 묻는다** — 재생 가능성).
+- **★ 사용자가 보는 OBJ는 `tessellate`를 거치지 않았다.** 외부 호출부는 부트스트랩 `to_obj(&Model)`뿐이고, 그건 `face.inner`를 아예 무시하는 **두 번째 부채꼴**이었다. `triangulate_planar`만 고쳤다면 생명줄은 하나도 안 고쳐졌을 것이다. 이제 둘이 `tess::polygon::triangulate_polygon`을 공유한다. (파이프라인 통합 자체는 남았다 — `to_obj`의 "OBJ 인덱스 == 정점 핸들 인덱스" 계약을 바꾸므로 별개 셀이다.)
+
+**게이트: `Σ|삼각형 넓이| == props.area`.** 부채꼴 버그와 구멍 버그를 **동시에** 잡는 등식이다. **부호 있는 합으로는 못 잡는다** — 다각형 밖으로 삐져나간 삼각형은 뒤집혀 있어 상쇄되고 shoelace가 자기 자신과 맞아버린다. 그리고 `watertight`(무방향 변 다중도 2)는 **구멍 버그는 잡지만 부채꼴 버그는 못 잡는다**(부채꼴도 변은 짝을 이룬다). 검사마다 담당이 다르다.
+
+**정직한 실패.** `tessellate`·`to_obj`가 `Result<_, TessError>`를 낸다. 옳은 메시가 없으면(자기교차 링, 감김이 뒤집힌 구멍, 브리징 불가) 에러다 — **부채꼴로 되돌아가지 않는다.** 그 정직함이 곧바로 값을 했다: 새로 쓴 pocket 픽스처가 구멍을 뚜껑 밖에 반쯤 걸쳐 놓았는데(`PocketOnFace`의 프로파일은 면에서 유도된 좌표계에 산다), `validate`는 위상만 보아 통과시켰고 `props`는 링을 그냥 적분했으며 옛 부채꼴은 `face.inner`를 무시했다. **`NoEar`만이 찾아냈다.**
+
+**Newell 법선이 `Orientation` 가정을 없앴다.** `tessellate`의 doc은 "`Orientation::Forward`를 가정한다"고 적혀 있었으나 `assemble_fuse_cut`의 `flip`이 이미 `Reversed` 면을 만든다. 링에서 법선을 뽑으므로 표면 법선을 볼 필요가 없다. 부수적으로 알게 된 것: **링은 언제나 자기 Newell 법선에 대해 CCW다.** 뒤집으면 법선이 뒤집힐 뿐이므로 "시계방향 외곽 링"은 탐지할 수 없고, 탐지하려 들지도 않는다 — 어느 쪽이 바깥인지는 호출자가 안다.
+
+**메시는 캐시이므로 `f64`를 쓴다.** 정확한 기하가 진실이라는 원칙과 충돌하지 않는다.
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
