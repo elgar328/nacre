@@ -3591,17 +3591,21 @@ pub mod tests {
     /// changes. Measuring only the accepted inputs would not see it.
     struct OverlapCase {
         name: &'static str,
-        /// `boolean` succeeds on it today (vs. rejects from inside `reconstruct_face`).
-        accepted: bool,
+        /// `(most open arcs on any one face, closed loops over all faces)`.
+        ///
+        /// This is exactly what stands between the fixture and a result: `> 1` arc on a
+        /// face is `multichord`, a loop anywhere is `pokehole`. `(1, 0)` means the only
+        /// thing left rejecting it is the arc's *shape*, not the arrangement.
+        expect: (usize, usize),
         m: Model,
         x: Handle<Solid>,
         y: Handle<Solid>,
     }
 
     fn overlap_fixtures() -> Vec<OverlapCase> {
-        let case = |name, accepted, (m, x, y)| OverlapCase {
+        let case = |name, expect, (m, x, y)| OverlapCase {
             name,
-            accepted,
+            expect,
             m,
             x,
             y,
@@ -3609,11 +3613,17 @@ pub mod tests {
         vec![
             // `l_and_corner_box` serves both the Cut and the Fuse test: the arrangement
             // never sees `BoolKind`.
-            case("l_and_corner_box", true, l_and_corner_box()),
-            case("l_and_reflex_box", true, l_and_reflex_box()),
-            case("u_and_slab (multichord)", false, u_and_slab()),
-            case("l_and_popup_box (strictarc)", false, l_and_popup_box()),
-            case("l_and_dimple (pokehole)", false, l_and_dimple()),
+            case("l_and_corner_box", (1, 0), l_and_corner_box()),
+            case("l_and_reflex_box", (1, 0), l_and_reflex_box()),
+            // Two loops, measured, not guessed: the U pierces the slab's `y=1.5` face
+            // twice — its two prongs cut rectangles wholly inside that face. So this
+            // fixture needs *both* multi-chord and inner loops before it can pass;
+            // `multichord` merely happens to fire first, on the U's base cap.
+            case("u_and_slab (multichord)", (2, 2), u_and_slab()),
+            // `(1, 0)`: nothing about the arrangement blocks this one. What rejects it
+            // is the shape of a single arc — the `strict` reflex-turn guard.
+            case("l_and_popup_box (strictarc)", (1, 0), l_and_popup_box()),
+            case("l_and_dimple (pokehole)", (1, 1), l_and_dimple()),
         ]
     }
 
@@ -3625,12 +3635,13 @@ pub mod tests {
         let (mut n_faces, mut n_arcs, mut n_loops) = (0usize, 0usize, 0usize);
         for OverlapCase {
             name,
-            accepted,
+            expect,
             m,
             x,
             y,
         } in overlap_fixtures()
         {
+            let (mut max_open, mut tot_closed) = (0usize, 0usize);
             for (f_solid, o_solid) in [(x, y), (y, x)] {
                 let (planes, surf_ix) = combined(&m, x, y);
                 for &f in &m.shells.get(m.solids.get(f_solid).outer).faces {
@@ -3666,10 +3677,8 @@ pub mod tests {
                         transitions_on(&m, f, o_solid).into_iter().collect();
                     assert_eq!(bnd, trans, "{name}: face {f:?}");
 
-                    // (3) The accepted inputs carry no inner loop.
-                    if accepted {
-                        assert_eq!(closed, 0, "{name}: face {f:?} has an inner loop");
-                    }
+                    max_open = max_open.max(opens.len());
+                    tot_closed += closed;
 
                     // (4) On a single chord the *bends* — the interior nodes, the only
                     // thing today sorts — are strictly increasing along the chord
@@ -3698,6 +3707,10 @@ pub mod tests {
                     }
                 }
             }
+            // (3) What the arrangement sees, per fixture. `l_and_popup_box` claiming
+            // `(1, 0)` is what says only the arc's shape blocks it — necessary, not
+            // sufficient: the wired code still checks the seam list agrees.
+            assert_eq!((max_open, tot_closed), expect, "{name}");
         }
         // Pin the exercise. A fixture edit that quietly stops reaching the arrangement
         // would otherwise leave every assertion above vacuously true.
