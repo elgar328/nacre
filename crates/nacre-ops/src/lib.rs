@@ -2813,6 +2813,30 @@ mod tests {
         assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, bx), tag::STRICTARC);
     }
 
+    /// The L with a stub rising out of its top face, footprint strictly inside that
+    /// face. Unlike the rod of `poke_through_hole_is_unsupported`, the stub enters
+    /// the L from within, so each of its vertical edges crosses exactly one face
+    /// (`pierced_multi` cannot fire) and its bottom ring stays inside (`tunnel`
+    /// cannot fire either).
+    fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let stub = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, 0.5]),
+            Point3::from_array([0.7, 0.7, 1.5]),
+        );
+        (m, l, stub)
+    }
+
+    #[test]
+    fn cut_blind_dimple_is_unsupported() {
+        // The stub's footprint never reaches the top face's boundary, so that face's
+        // loop has zero kept/dropped transitions — yet four seam vertices sit on its
+        // plane. The seam is a closed ring in the face interior: an inner loop, which
+        // `LocalFace` cannot carry. Honest reject until sub-unit 3 emits inner loops.
+        let (mut m, l, stub) = l_and_dimple();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, stub), tag::POKEHOLE);
+    }
+
     #[test]
     fn clockwise_input_is_auto_corrected() {
         // The square wound CW; auto-CCW makes it a valid cube anyway.
