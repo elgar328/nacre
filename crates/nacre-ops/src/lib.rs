@@ -959,8 +959,8 @@ fn pierced_face(
     let shell = model.solids.get(face_solid).outer;
     let mut hit: Option<usize> = None;
     for &fh in &model.shells.get(shell).faces {
-        let pts = face_points(model, fh);
-        if segment_crosses_face(p0, p1, &pts)? {
+        let rings = face_loops(model, fh);
+        if segment_crosses_face(p0, p1, &rings)? {
             if hit.is_some() {
                 return Err(reject(tag::PIERCED_MULTI)); // pierces >1 face — multi-chord edge
             }
@@ -1196,6 +1196,9 @@ fn outer_tri(model: &Model, face: &Face) -> Option<[Point3; 3]> {
 }
 
 /// The distinct outer-shell vertices of a solid.
+///
+/// Outer loops only, and that is complete: manifoldness puts every hole-ring
+/// vertex on the outer loop of an adjacent wall face too.
 fn solid_vertices(model: &Model, solid: Handle<Solid>) -> Vec<Point3> {
     let shell = model.solids.get(solid).outer;
     let mut seen = HashSet::new();
@@ -1694,19 +1697,21 @@ const RAY_DIRECTIONS: [[f64; 3]; 6] = [
 /// edge-face gate guarantees `p` is not coplanar with any face plane, so the
 /// per-face `s0 = 0` case never arises here.
 fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side, BoolError> {
-    let faces: Vec<Vec<Point3>> = solid_faces(model, solid)
+    let faces: Vec<Vec<Vec<Point3>>> = solid_faces(model, solid)
         .into_iter()
-        .map(|fh| face_points(model, fh))
+        .map(|fh| face_loops(model, fh))
         .collect();
     'dirs: for dir in RAY_DIRECTIONS {
         let d = Vector3::from_array(dir);
         let mut winding = 0i32;
-        for pts in &faces {
-            for tri in fan_triangles(pts, 0) {
-                match ray_face_cross(p, d, tri) {
-                    RayCross::Cross(sign) => winding += sign as i32,
-                    RayCross::Miss => {}
-                    RayCross::Degenerate => continue 'dirs, // grazed — try another direction
+        for rings in &faces {
+            for ring in rings {
+                for tri in fan_triangles(ring, 0) {
+                    match ray_face_cross(p, d, tri) {
+                        RayCross::Cross(sign) => winding += sign as i32,
+                        RayCross::Miss => {}
+                        RayCross::Degenerate => continue 'dirs, // grazed — try another direction
+                    }
                 }
             }
         }
@@ -1728,15 +1733,26 @@ fn solid_faces(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Face>> {
         .collect()
 }
 
-/// The ordered outer-loop vertex points of a planar face.
-fn face_points(model: &Model, fh: Handle<Face>) -> Vec<Point3> {
-    model
-        .faces
-        .get(fh)
-        .outer
-        .half_edges
-        .iter()
-        .map(|&he| model.vertices.get(he_start(model, he)).point)
+/// A planar face's rings of vertex points: the outer loop, then each hole.
+///
+/// Fanning only the outer ring would fill the holes in, and every winding-number
+/// classifier below would call a point over the hole "material". A hole ring runs
+/// CW about the face's outward normal — not by convention but by manifoldness,
+/// since each of its edges is used once here and once, oppositely, on the outer
+/// loop of the adjacent wall face (`validate` enforces it as `NonOpposedEdge`).
+/// So the hole's fan triangles are oriented against the outer ring's and its
+/// signed crossings subtract. No ear-clipping, no tolerance — the same
+/// orientation-cancellation the concave-outer fan already relies on.
+fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
+    let face = model.faces.get(fh);
+    std::iter::once(&face.outer)
+        .chain(face.inner.iter())
+        .map(|lp| {
+            lp.half_edges
+                .iter()
+                .map(|&he| model.vertices.get(he_start(model, he)).point)
+                .collect()
+        })
         .collect()
 }
 
@@ -1762,6 +1778,10 @@ fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
 
 /// Distinct boundary edges of a solid (outer + cavity shells) as endpoint-point
 /// pairs. First-seen order → deterministic.
+///
+/// Outer loops only, and that is complete: manifoldness uses every edge exactly
+/// twice, so a hole ring's edges also appear on the outer loop of the adjacent
+/// wall face.
 fn solid_edges(model: &Model, solid: Handle<Solid>) -> Vec<(Point3, Point3)> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
@@ -1795,13 +1815,13 @@ fn boundaries_intersect(
 ) -> Result<bool, BoolError> {
     for (edge_solid, face_solid) in [(a, b), (b, a)] {
         let edges = solid_edges(model, edge_solid);
-        let faces: Vec<Vec<Point3>> = solid_faces(model, face_solid)
+        let faces: Vec<Vec<Vec<Point3>>> = solid_faces(model, face_solid)
             .into_iter()
-            .map(|fh| face_points(model, fh))
+            .map(|fh| face_loops(model, fh))
             .collect();
         for (p0, p1) in &edges {
-            for pts in &faces {
-                if segment_crosses_face(*p0, *p1, pts)? {
+            for rings in &faces {
+                if segment_crosses_face(*p0, *p1, rings)? {
                     return Ok(true); // a genuine seam
                 }
             }
@@ -1810,21 +1830,27 @@ fn boundaries_intersect(
     Ok(false)
 }
 
-/// Whether segment `p0→p1` pierces the interior of planar face `pts` (its outer
-/// loop points), by the oriented [`segment_face_cross`] winding over a fan. A fan
-/// diagonal may be coplanar with an axis-aligned query edge (a spurious
+/// Whether segment `p0→p1` pierces the *material* of planar face `rings` (outer
+/// loop first, then holes), by the oriented [`segment_face_cross`] winding summed
+/// over every ring's fan. A segment through a hole gets `+1` from the outer fan and
+/// `−1` from the hole's, so it correctly reports no crossing.
+///
+/// A fan diagonal may be coplanar with an axis-aligned query edge (a spurious
 /// `Degenerate`); re-fanning from another apex uses different diagonals, so we
-/// retry every apex — mirroring the ray's direction retry. A genuine contact (the
-/// segment grazing a *real* edge/vertex) is `Degenerate` from every apex ⇒
-/// `Unsupported`.
-fn segment_crosses_face(p0: Point3, p1: Point3, pts: &[Point3]) -> Result<bool, BoolError> {
-    'apex: for apex in 0..pts.len() {
+/// retry — for the face as a whole, since one ring's verdict is meaningless without
+/// the others. A genuine contact (the segment grazing a *real* edge/vertex) is
+/// `Degenerate` from every apex ⇒ `Unsupported`.
+fn segment_crosses_face(p0: Point3, p1: Point3, rings: &[Vec<Point3>]) -> Result<bool, BoolError> {
+    let apexes = rings.iter().map(|r| r.len()).max().unwrap_or(0);
+    'apex: for apex in 0..apexes {
         let mut crossing = 0i32;
-        for tri in fan_triangles(pts, apex) {
-            match segment_face_cross(p0, p1, tri) {
-                SegCross::Cross(sign) => crossing += sign as i32,
-                SegCross::Miss => {}
-                SegCross::Degenerate => continue 'apex, // fan diagonal grazed — try another apex
+        for ring in rings {
+            for tri in fan_triangles(ring, apex % ring.len()) {
+                match segment_face_cross(p0, p1, tri) {
+                    SegCross::Cross(sign) => crossing += sign as i32,
+                    SegCross::Miss => {}
+                    SegCross::Degenerate => continue 'apex, // fan diagonal grazed — re-fan the face
+                }
             }
         }
         return Ok(crossing != 0);
@@ -2858,6 +2884,53 @@ mod tests {
         // `LocalFace` cannot carry. Honest reject until sub-unit 3 emits inner loops.
         let (mut m, l, stub) = l_and_dimple();
         assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, stub), tag::POKEHOLE);
+    }
+
+    /// The unit cube with a 0.4-square pocket, 0.5 deep, in its top face: the void
+    /// is `[0.3,0.7]² × [0.5,1]` and the solid measures `1 − 0.16·0.5 = 0.92`. Its
+    /// lid is the only face in the suite that carries an inner loop.
+    fn pocketed_cube() -> (Model, Handle<Solid>) {
+        let (mut m, top) = cube_with_top();
+        let OpOutput::PocketOnFace { solid, .. } =
+            apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap()
+        else {
+            unreachable!()
+        };
+        (m, solid)
+    }
+
+    #[test]
+    fn point_in_solid_sees_through_a_pocket() {
+        // Fanning the lid's outer ring alone fills the pocket mouth in, and a ray
+        // leaving the void through it counts a crossing that is not there. Worse, the
+        // error is not even uniform: rays that exit sideways through a pocket wall
+        // miss the lid entirely, so neighbouring points disagree.
+        let (m, pc) = pocketed_cube();
+        assert!((nacre_props::mass_props(&m, pc).unwrap().volume - 0.92).abs() < 1e-9);
+        let at = |p: [f64; 3]| point_in_solid(&m, Point3::from_array(p), pc).unwrap();
+        assert_eq!(at([0.5, 0.5, 0.75]), Side::Outside); // in the void
+        assert_eq!(at([0.1, 0.1, 0.75]), Side::Inside); // in the wall around it
+        assert_eq!(at([0.5, 0.5, 0.25]), Side::Inside); // under the pocket floor
+    }
+
+    #[test]
+    fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
+        // The box sits wholly in the void, so the solids are disjoint and `A − B = A`.
+        // Reading the lid as filled instead classified the box's eight corners five
+        // Inside and three Outside, and the seam-free path's own `debug_assert`
+        // ("classification must be consistent per solid") caught it.
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.6]),
+            Point3::from_array([0.6, 0.6, 0.9]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!(m.solids.get(r).cavities.is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.92).abs() < 1e-9, "volume {vol}");
     }
 
     #[test]
