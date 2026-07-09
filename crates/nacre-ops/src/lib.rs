@@ -2820,19 +2820,25 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn cut_across_reflex_corner_bite() {
-        // A box straddling the reflex corner (1,1) leaves a *single* chord with one
-        // reflex bend — still transitions==2, so it reconstructs into a correct
-        // L-shaped face. This is the strongest classification test: the box vertex
-        // (1.6,1.6,·) sits in the L's notch (inside the convex hull, outside the L),
-        // exactly where a convex half-space test would misclassify it Inside; only
-        // exact `point_in_solid` gets the volume right.
+    /// The L with a box straddling its reflex corner (1,1): a *single* chord with one
+    /// reflex bend. The box vertex `(1.6,1.6,·)` sits in the L's notch — inside the
+    /// convex hull, outside the L — exactly where a convex half-space test would
+    /// misclassify it `Inside`. Overlap = `xy(1.0 − notch 0.36) · z(0.8)` = `0.512`.
+    fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
         let bx = m.add_cuboid(
             Point3::from_array([0.6, 0.6, 0.2]),
             Point3::from_array([1.6, 1.6, 1.4]),
         );
+        (m, l, bx)
+    }
+
+    #[test]
+    fn cut_across_reflex_corner_bite() {
+        // Still transitions==2, so it reconstructs into a correct L-shaped face. The
+        // strongest classification test: only exact `point_in_solid` gets the volume
+        // right, a convex half-space test would not.
+        let (mut m, l, bx) = l_and_reflex_box();
         let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
@@ -3379,11 +3385,12 @@ pub mod tests {
         assert_rejects(|| boolean(&mut m, BoolKind::Cut, a, y), tag::POKE_THROUGH);
     }
 
-    /// `reconstruct_face`'s kept/dropped alternation count on `f`'s outer loop.
+    /// `reconstruct_face`'s kept/dropped alternation edges on `f`'s outer loop, as
+    /// indices into `f.outer.half_edges`.
     ///
-    /// Independent of `keep`: flipping it flips every `kept[i]`, and the count only
+    /// Independent of `keep`: flipping it flips every `kept[i]`, and this only
     /// compares neighbours. So no `BoolKind` need be chosen here.
-    fn transitions_on(m: &Model, f: Handle<Face>, other: Handle<Solid>) -> usize {
+    fn transitions_on(m: &Model, f: Handle<Face>, other: Handle<Solid>) -> Vec<usize> {
         let hes = &m.faces.get(f).outer.half_edges;
         let inside: Vec<bool> = hes
             .iter()
@@ -3394,7 +3401,7 @@ pub mod tests {
             .collect();
         (0..inside.len())
             .filter(|&i| inside[i] != inside[(i + 1) % inside.len()])
-            .count()
+            .collect()
     }
 
     #[test]
@@ -3422,9 +3429,130 @@ pub mod tests {
                     .flat_map(|p| p.nodes())
                     .filter(|n| n.on_edge.is_some())
                     .count();
-                assert_eq!(boundary, transitions_on(&m, f, y), "face {f:?}");
+                assert_eq!(boundary, transitions_on(&m, f, y).len(), "face {f:?}");
             }
         }
+    }
+
+    /// Every non-convex overlap input that reaches `reconstruct_face`: the three that
+    /// succeed and the three that it rejects from *inside*. The rejecting three matter
+    /// most — cell 3d makes `reconstruct_face` call `seam_paths_on`, which can reject
+    /// for reasons the old code never could (`contact_degenerate`, `fourplane`). Should
+    /// that fire on a face visited *before* the intended one, the reject tag silently
+    /// changes. Measuring only the accepted inputs would not see it.
+    struct OverlapCase {
+        name: &'static str,
+        /// `boolean` succeeds on it today (vs. rejects from inside `reconstruct_face`).
+        accepted: bool,
+        m: Model,
+        x: Handle<Solid>,
+        y: Handle<Solid>,
+    }
+
+    fn overlap_fixtures() -> Vec<OverlapCase> {
+        let case = |name, accepted, (m, x, y)| OverlapCase {
+            name,
+            accepted,
+            m,
+            x,
+            y,
+        };
+        vec![
+            // `l_and_corner_box` serves both the Cut and the Fuse test: the arrangement
+            // never sees `BoolKind`.
+            case("l_and_corner_box", true, l_and_corner_box()),
+            case("l_and_reflex_box", true, l_and_reflex_box()),
+            case("u_and_slab (multichord)", false, u_and_slab()),
+            case("l_and_popup_box (strictarc)", false, l_and_popup_box()),
+            case("l_and_dimple (pokehole)", false, l_and_dimple()),
+        ]
+    }
+
+    #[test]
+    fn arrangement_agrees_with_todays_seam_bookkeeping() {
+        // Cell 3d swaps `reconstruct_face`'s projection sort for the arrangement's arc
+        // order. This proves the swap is output-preserving *before* any production code
+        // moves. Every claim below is one the wired code will rely on.
+        let (mut n_faces, mut n_arcs, mut n_loops) = (0usize, 0usize, 0usize);
+        for OverlapCase {
+            name,
+            accepted,
+            m,
+            x,
+            y,
+        } in overlap_fixtures()
+        {
+            for (f_solid, o_solid) in [(x, y), (y, x)] {
+                let (planes, surf_ix) = combined(&m, x, y);
+                for &f in &m.shells.get(m.solids.get(f_solid).outer).faces {
+                    let inc_f = arrange::edge_planes(&m, f_solid, &surf_ix).unwrap();
+                    let inc_o = arrange::edge_planes(&m, o_solid, &surf_ix).unwrap();
+
+                    // (1) The precondition of the whole cell: no face rejects.
+                    let out =
+                        arrange::seam_paths_on(&m, f, o_solid, &planes, &surf_ix, &inc_f, &inc_o)
+                            .unwrap_or_else(|e| panic!("{name}: face {f:?} rejected: {e:?}"));
+
+                    let hes = &m.faces.get(f).outer.half_edges;
+                    let opens: Vec<&arrange::SeamPath> = out
+                        .iter()
+                        .filter(|p| matches!(p, arrange::SeamPath::Open(_)))
+                        .collect();
+                    let closed = out.len() - opens.len();
+
+                    // (2) Boundary nodes ride exactly the transition edges. This is the
+                    // set equality the wired code checks in production; a count would
+                    // pass even with both ends on one edge.
+                    let bnd: std::collections::BTreeSet<usize> = out
+                        .iter()
+                        .flat_map(|p| p.nodes())
+                        .filter_map(|n| n.on_edge)
+                        .map(|e| {
+                            hes.iter()
+                                .position(|he| he.edge == e)
+                                .expect("a boundary node rides an edge of its own face")
+                        })
+                        .collect();
+                    let trans: std::collections::BTreeSet<usize> =
+                        transitions_on(&m, f, o_solid).into_iter().collect();
+                    assert_eq!(bnd, trans, "{name}: face {f:?}");
+
+                    // (3) The accepted inputs carry no inner loop.
+                    if accepted {
+                        assert_eq!(closed, 0, "{name}: face {f:?} has an inner loop");
+                    }
+
+                    // (4) On a single chord the *bends* — the interior nodes, the only
+                    // thing today sorts — are strictly increasing along the chord
+                    // direction, so today's stable projection sort reproduces the arc
+                    // order exactly. Ties would not: the sort would then fall back on
+                    // `seam`'s insertion order, which the arrangement knows nothing of.
+                    //
+                    // The endpoints are *not* part of this. A reflex bend projects
+                    // outside the chord interval — on `l_and_reflex_box` the bends land
+                    // at −0.24 and 0.96 against endpoints 0.0 and 0.72. "Bends lie
+                    // between the endpoints" is false, and does not need to be true.
+                    n_faces += 1;
+                    n_arcs += opens.len();
+                    n_loops += closed;
+                    if opens.len() == 1 {
+                        let pts: Vec<Point3> = opens[0].nodes().iter().map(|n| n.point).collect();
+                        let dir = pts[pts.len() - 1] - pts[0];
+                        let proj: Vec<f64> = pts[1..pts.len() - 1]
+                            .iter()
+                            .map(|&p| (p - pts[0]).dot(dir))
+                            .collect();
+                        assert!(
+                            proj.windows(2).all(|w| w[0] < w[1]),
+                            "{name}: face {f:?} bends not strictly monotone: {proj:?}"
+                        );
+                    }
+                }
+            }
+        }
+        // Pin the exercise. A fixture edit that quietly stops reaching the arrangement
+        // would otherwise leave every assertion above vacuously true.
+        assert_eq!((n_faces, n_arcs, n_loops), (72, 34, 3));
     }
 
     #[test]
@@ -3436,7 +3564,7 @@ pub mod tests {
         let (planes, surf_ix) = combined(&m, a, y);
         let floor = face_facing(&m, a, &planes, &surf_ix, [0.0, 0.0, -1.0]);
 
-        assert_eq!(transitions_on(&m, floor, y), 0);
+        assert_eq!(transitions_on(&m, floor, y).len(), 0);
         let boundary = paths(&m, floor, a, y, &planes, &surf_ix)
             .iter()
             .flat_map(|p| p.nodes())
@@ -3522,11 +3650,7 @@ pub mod tests {
 
         // The reflex-corner bite too: eight seam vertices, one of them where the box
         // straddles the L's notch.
-        let (mut m, l) = l_prism();
-        let bx = m.add_cuboid(
-            Point3::from_array([0.6, 0.6, 0.2]),
-            Point3::from_array([1.6, 1.6, 1.4]),
-        );
+        let (mut m, l, bx) = l_and_reflex_box();
         let from_arrange = seam_endpoint_triples(&m, l, bx);
         assert_eq!(from_arrange.len(), 8);
         boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
