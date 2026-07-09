@@ -726,6 +726,80 @@ bbox_min 0 0 0
         );
     }
 
+    /// A concave L-prism plus a box biting its convex corner `(2, 0)` — the
+    /// non-convex single-chord overlap fixture of M5-d2. Rebuilt per test because
+    /// `boolean` supersedes its operands.
+    fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+        use nacre_math::Point2;
+        use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
+        let mut m = Model::new();
+        let l_profile = Profile2d {
+            points: [
+                [0.0, 0.0],
+                [2.0, 0.0],
+                [2.0, 1.0],
+                [1.0, 1.0],
+                [1.0, 2.0],
+                [0.0, 2.0],
+            ]
+            .iter()
+            .map(|&p| Point2::from_array(p))
+            .collect(),
+        };
+        let OpOutput::Extrude { solid: l, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: l_profile,
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!("extrude yields Extrude output");
+        };
+        let bx = m.add_cuboid(
+            Point3::from_array([1.3, -0.3, 0.2]),
+            Point3::from_array([2.4, 0.4, 1.4]),
+        );
+        (m, l, bx)
+    }
+
+    /// nacre's non-convex single-chord overlap (M5-d2) vs OCCT, `Cut`. The seam is
+    /// a real boundary crossing, so this scores `overlap_fuse_cut`'s exact
+    /// classification and seam reconstruction against an independent kernel.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn nonconvex_overlap_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_corner_box();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "non-convex overlap cut: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
+    /// The `Fuse` counterpart — the box protrudes past the L, so the union grows.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn nonconvex_overlap_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_corner_box();
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "non-convex overlap fuse: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
     /// nacre's coincident-coplanar merge (M5-c5) vs OCCT: two cubes stacked on a
     /// shared z=1 face fuse to a 1×1×2 box.
     #[test]
