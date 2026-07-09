@@ -232,6 +232,126 @@ pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) 
     d.sign() * m.sign()
 }
 
+/// The exact sign of `x`: `+1`, `-1`, or `0` (unlike `f64::signum`, which maps
+/// `0.0` to `+1.0`).
+#[inline]
+fn sgn(x: f64) -> i8 {
+    if x > 0.0 {
+        1
+    } else if x < 0.0 {
+        -1
+    } else {
+        0
+    }
+}
+
+#[inline]
+fn add3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+/// The outcome of casting a **forward** ray (half-line `p + t·d`, `t > 0`) at a
+/// triangle. `Cross(s)` carries the *oriented* crossing sign `s = sign(d · n)`
+/// (`n` = the triangle's right-hand normal `(v1−v0)×(v2−v0)`): summing these over
+/// a triangulated closed surface is its winding number about `p` (design §8 M5
+/// point-in-polyhedron). `Degenerate` means the ray grazes an edge/vertex or lies
+/// in the triangle's plane — an incidence `orient3d` is exactly `0` — so the
+/// caller must retry with another direction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RayCross {
+    Cross(i8),
+    Miss,
+    Degenerate,
+}
+
+/// Exact forward-ray/triangle crossing, decided entirely by `orient3d` **signs**
+/// (no coordinate is materialized, no `orient3d` value is subtracted — so the
+/// result is exact). `q = p + d`.
+///
+/// The ray *line* pierces the triangle interior iff `orient3d(p, q, ·, ·)` has the
+/// same nonzero sign for all three edges. The crossing is *forward* (`t > 0`) iff
+/// `p` is on the side the ray recedes from: `sign(orient3d(v0,v1,v2,p))` equals
+/// the direction sign `sd = sign(d·n)`. `sd` is computed exactly as
+/// `−sign(orient3d(v0,v1,v2, v0+d))` (since `orient3d(v0,v1,v2,v0+d) = −(d·n)` —
+/// `orient3d` is affine in its 4th point). `v0 + d` is exact for small-integer
+/// directions `d` and normal-range coordinates.
+pub fn ray_triangle_cross(
+    p: [f64; 3],
+    d: [f64; 3],
+    v0: [f64; 3],
+    v1: [f64; 3],
+    v2: [f64; 3],
+) -> RayCross {
+    let q = add3(p, d);
+    let e0 = sgn(orient3d(p, q, v1, v2));
+    let e1 = sgn(orient3d(p, q, v2, v0));
+    let e2 = sgn(orient3d(p, q, v0, v1));
+    if e0 == 0 || e1 == 0 || e2 == 0 {
+        return RayCross::Degenerate; // ray line through an edge/vertex
+    }
+    if e0 != e1 || e1 != e2 {
+        return RayCross::Miss; // ray line misses the triangle
+    }
+    let s0 = sgn(orient3d(v0, v1, v2, p));
+    if s0 == 0 {
+        return RayCross::Degenerate; // p on the triangle's plane (excluded upstream by the gate)
+    }
+    let sd = -sgn(orient3d(v0, v1, v2, add3(v0, d)));
+    if sd == 0 {
+        return RayCross::Degenerate; // ray parallel to the plane (cannot co-occur with a pierce)
+    }
+    if s0 == sd {
+        RayCross::Cross(sd) // forward crossing, oriented by sd
+    } else {
+        RayCross::Miss // the crossing is behind p
+    }
+}
+
+/// The outcome of a **finite segment** `a→b` meeting a triangle. `Cross(s)` is the
+/// oriented crossing sign `s = sign((b−a)·n)`; `Degenerate` means an endpoint lies
+/// on the triangle's plane or the segment grazes an edge/vertex (an incidence
+/// `orient3d` is `0`) — the caller rejects such contacts (design §8 M5 coplanar /
+/// edge-edge casework).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SegCross {
+    Cross(i8),
+    Miss,
+    Degenerate,
+}
+
+/// Exact segment/triangle crossing, by `orient3d` signs only. The segment's line
+/// pierces the triangle interior iff `orient3d(a, b, ·, ·)` shares one nonzero
+/// sign over the three edges; the segment actually crosses (parameter in `(0,1)`)
+/// iff its endpoints are on strictly opposite sides of the triangle's plane
+/// (`sign(orient3d(v0,v1,v2,a)) = −sign(…,b)`, both nonzero). The oriented sign is
+/// then `sign(orient3d(v0,v1,v2,a))` (= `sign((b−a)·n)`).
+pub fn segment_triangle_cross(
+    a: [f64; 3],
+    b: [f64; 3],
+    v0: [f64; 3],
+    v1: [f64; 3],
+    v2: [f64; 3],
+) -> SegCross {
+    let e0 = sgn(orient3d(a, b, v1, v2));
+    let e1 = sgn(orient3d(a, b, v2, v0));
+    let e2 = sgn(orient3d(a, b, v0, v1));
+    if e0 == 0 || e1 == 0 || e2 == 0 {
+        return SegCross::Degenerate; // line through an edge/vertex
+    }
+    if e0 != e1 || e1 != e2 {
+        return SegCross::Miss; // line misses the triangle
+    }
+    let sa = sgn(orient3d(v0, v1, v2, a));
+    let sb = sgn(orient3d(v0, v1, v2, b));
+    if sa == 0 || sb == 0 {
+        return SegCross::Degenerate; // an endpoint on the plane (touching/coplanar contact)
+    }
+    if sa == sb {
+        return SegCross::Miss; // both endpoints on the same side — no crossing
+    }
+    SegCross::Cross(sa) // opposite sides ⇒ crosses at t ∈ (0,1), oriented by sa
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,6 +673,123 @@ mod tests {
             let ai = a.map(|row| row.map(|v| v as i128));
             let bi = b.map(|row| row.map(|v| v as i128));
             prop_assert_eq!(expansion_to_i128(&ea.mul(&eb)), det3_i128(ai) * det3_i128(bi));
+        }
+    }
+
+    // ---- ray / segment vs triangle (M5-d1) ----
+    //
+    // Reference triangle in z = 0, wound CCW so its right-hand normal is +z:
+    //   v0 = (0,0,0), v1 = (1,0,0), v2 = (0,1,0).
+    const T0: [f64; 3] = [0.0, 0.0, 0.0];
+    const T1: [f64; 3] = [1.0, 0.0, 0.0];
+    const T2: [f64; 3] = [0.0, 1.0, 0.0];
+
+    #[test]
+    fn ray_forward_crossing_is_oriented_by_direction() {
+        // From below, straight up through the interior: forward, +z aligned ⇒ Cross(+1).
+        assert_eq!(
+            ray_triangle_cross([0.25, 0.25, -1.0], [0.0, 0.0, 1.0], T0, T1, T2),
+            RayCross::Cross(1)
+        );
+        // From above, straight down through the interior: forward, −z aligned ⇒ Cross(−1).
+        assert_eq!(
+            ray_triangle_cross([0.25, 0.25, 1.0], [0.0, 0.0, -1.0], T0, T1, T2),
+            RayCross::Cross(-1)
+        );
+        // From above, going up (away): the triangle is behind ⇒ Miss.
+        assert_eq!(
+            ray_triangle_cross([0.25, 0.25, 1.0], [0.0, 0.0, 1.0], T0, T1, T2),
+            RayCross::Miss
+        );
+    }
+
+    #[test]
+    fn ray_missing_and_degenerate() {
+        // Vertical line through (2,2) is outside the unit triangle ⇒ Miss.
+        assert_eq!(
+            ray_triangle_cross([2.0, 2.0, -1.0], [0.0, 0.0, 1.0], T0, T1, T2),
+            RayCross::Miss
+        );
+        // Vertical line through (0.5,0) grazes edge v0-v1 (y = 0) ⇒ Degenerate.
+        assert_eq!(
+            ray_triangle_cross([0.5, 0.0, -1.0], [0.0, 0.0, 1.0], T0, T1, T2),
+            RayCross::Degenerate
+        );
+        // Origin p on the triangle's plane (z = 0) ⇒ Degenerate (s0 == 0).
+        assert_eq!(
+            ray_triangle_cross([0.25, 0.25, 0.0], [1.0, 0.0, 0.0], T0, T1, T2),
+            RayCross::Degenerate
+        );
+    }
+
+    #[test]
+    fn segment_crossing_and_contacts() {
+        // Below → above through the interior ⇒ Cross(+1).
+        assert_eq!(
+            segment_triangle_cross([0.25, 0.25, -1.0], [0.25, 0.25, 1.0], T0, T1, T2),
+            SegCross::Cross(1)
+        );
+        // Both endpoints above ⇒ Miss.
+        assert_eq!(
+            segment_triangle_cross([0.25, 0.25, 1.0], [0.25, 0.25, 2.0], T0, T1, T2),
+            SegCross::Miss
+        );
+        // An endpoint lands on the plane ⇒ Degenerate (touching contact).
+        assert_eq!(
+            segment_triangle_cross([0.25, 0.25, -1.0], [0.25, 0.25, 0.0], T0, T1, T2),
+            SegCross::Degenerate
+        );
+        // Off to the side ⇒ Miss.
+        assert_eq!(
+            segment_triangle_cross([2.0, 2.0, -1.0], [2.0, 2.0, 1.0], T0, T1, T2),
+            SegCross::Miss
+        );
+    }
+
+    proptest! {
+        /// A forward ray and its reverse can never *both* be a forward crossing of
+        /// the same triangle: the full line meets the triangle's plane once, so at
+        /// most one half-line reaches it (`n_cross ∈ {0,1}`). Integer coords keep
+        /// every `orient3d` exact.
+        #[test]
+        fn prop_opposite_rays_not_both_forward(
+            p in prop::array::uniform3(-40i64..=40),
+            d in prop::array::uniform3(-40i64..=40),
+        ) {
+            let pf = p.map(|v| v as f64);
+            let df = d.map(|v| v as f64);
+            let dn = [-df[0], -df[1], -df[2]];
+            let (a, b, c) = ([0.0, 0.0, 0.0], [9.0, 0.0, 0.0], [0.0, 9.0, 0.0]);
+            let fwd = ray_triangle_cross(pf, df, a, b, c);
+            let bwd = ray_triangle_cross(pf, dn, a, b, c);
+            prop_assume!(fwd != RayCross::Degenerate && bwd != RayCross::Degenerate);
+            let n_cross = [fwd, bwd].iter().filter(|c| matches!(c, RayCross::Cross(_))).count();
+            prop_assert!(n_cross <= 1, "fwd={:?} bwd={:?}", fwd, bwd);
+        }
+
+        /// A forward ray reaching the triangle and the segment from `p` to a point
+        /// just past the plane agree on the oriented crossing sign — the ray and
+        /// segment predicates share the same orientation convention. Aim from `p`
+        /// through the triangle's interior so a crossing is guaranteed.
+        #[test]
+        fn prop_ray_and_segment_agree_when_aimed_through(
+            p in prop::array::uniform3(-30i64..=30),
+        ) {
+            let pf = p.map(|v| v as f64);
+            let (a, b, c) = ([0.0, 0.0, 0.0], [9.0, 0.0, 0.0], [0.0, 9.0, 0.0]);
+            // Target the interior point (3,3,0); direction and a segment well past it.
+            let target = [3.0, 3.0, 0.0];
+            let d = [target[0] - pf[0], target[1] - pf[1], target[2] - pf[2]];
+            let far = [pf[0] + 2.0 * d[0], pf[1] + 2.0 * d[1], pf[2] + 2.0 * d[2]];
+            let ray = ray_triangle_cross(pf, d, a, b, c);
+            let seg = segment_triangle_cross(pf, far, a, b, c);
+            prop_assume!(ray != RayCross::Degenerate && seg != SegCross::Degenerate);
+            // p is off the plane and aims through the interior ⇒ both cross, same sign.
+            if let (RayCross::Cross(rs), SegCross::Cross(ss)) = (ray, seg) {
+                prop_assert_eq!(rs, ss);
+            } else {
+                prop_assert!(false, "expected both to cross: ray={:?} seg={:?}", ray, seg);
+            }
         }
     }
 }
