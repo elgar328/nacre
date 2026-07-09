@@ -645,6 +645,41 @@ bbox_min 0 0 0
         );
     }
 
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn hollow_solid_step_volume_matches_occt() {
+        // A = [0,4]³ (64) with a concentric B = [1,3]³ (8) void ⇒ material 56.
+        // OCCT reads nacre's BREP_WITH_VOIDS export and computes the material
+        // volume — the true gate on the exported void orientation. A flipped
+        // void would read as 72 (= V_A + V_B), which the face-count round-trip
+        // in nacre-step cannot catch.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let b_outer = m.solids.get(b).outer;
+        let void = m.reversed_shell(b_outer);
+        let a_outer = m.solids.get(a).outer;
+        let hollow = m.push_solid(Solid {
+            outer: a_outer,
+            cavities: vec![void],
+        });
+        m.live_solids.retain(|&s| s == hollow);
+
+        let occt = occt_props_of(&m).unwrap();
+        let nacre = mass_props(&m, hollow).unwrap();
+        assert!(
+            (nacre.volume - 56.0).abs() < 1e-9,
+            "nacre volume {}",
+            nacre.volume
+        );
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "hollow volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
     /// nacre's coincident-coplanar merge (M5-c5) vs OCCT: two cubes stacked on a
     /// shared z=1 face fuse to a 1×1×2 box.
     #[test]
