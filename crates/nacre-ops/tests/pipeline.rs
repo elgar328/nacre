@@ -203,6 +203,37 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
     (m, solid)
 }
 
+/// The L-prism with a stub standing in its top face, footprint strictly inside it —
+/// the `l_and_dimple` of the boolean suite. `Cut` leaves a blind pocket, `Fuse` a
+/// boss; either way the L's top face gains an inner loop, and that loop's rim edges
+/// must pair with the walls that drop or rise from them.
+fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
+    let l = Profile2d {
+        points: vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ],
+    };
+    let mut m = replay(&[Operation::Extrude {
+        plane: SketchPlane::world_xy(),
+        profile: l,
+        dist: 1.0,
+    }])
+    .unwrap();
+    let a = m.live_solids[0];
+    let b = m.add_cuboid(
+        Point3::from_array([0.3, 0.3, 0.5]),
+        Point3::from_array([0.7, 0.7, 1.5]),
+    );
+    let r = boolean(&mut m, kind, a, b).unwrap();
+    m.rebuild_adjacency();
+    (m, r)
+}
+
 /// Two cubes fused across their shared face. `boolean` supersedes both operands —
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
@@ -265,6 +296,30 @@ fn the_bootstrap_obj_carries_holes_too() {
     let f_lines = obj.lines().filter(|l| l.starts_with("f ")).count();
     let (tris, _, _) = mesh_vs_props(&m, s);
     assert_eq!(f_lines, tris);
+}
+
+#[test]
+fn a_boolean_result_carries_its_hole() {
+    // The gate's first run on a boolean result. Cell 3f-1 gives the L's top face an
+    // inner loop, and the pocket's walls (or the boss's) hang off that loop's rim
+    // edges — so watertight is what proves the rim is shared rather than duplicated.
+    //
+    // 36 triangles: the holed lid is `6 + 4 + 2·1 − 2 = 10`, the bottom cap `6 − 2 = 4`,
+    // and 2 apiece for the L's six sides, the four walls and the far cap. `Cut` and
+    // `Fuse` only differ in which way the walls point, so both counts and both areas
+    // agree — the same 14.8 = `(8·1 + 2·3) − 0.16 + 4·0.4·0.5 + 0.16`, though the
+    // solids differ (2.92 against 3.08, pinned in the boolean suite).
+    //
+    // Meshing the lid solid would overshoot the area by the hole's 0.16 while staying
+    // watertight; that is the fault this catches, and the fan had it until the tess cell.
+    for kind in [BoolKind::Cut, BoolKind::Fuse] {
+        let (m, s) = l_and_dimple(kind);
+        let (tris, delta, leaks) = mesh_vs_props(&m, s);
+        assert_eq!((tris, leaks), (36, 0), "{kind:?}");
+        assert!(delta.abs() < 1e-12, "{kind:?} area delta {delta}");
+        let area = nacre_props::mass_props(&m, s).unwrap().area;
+        assert!((area - 14.8).abs() < 1e-9, "{kind:?} area {area}");
+    }
 }
 
 #[test]
