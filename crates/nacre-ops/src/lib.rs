@@ -2519,7 +2519,7 @@ fn coincident_merge(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use proptest::prelude::*;
 
@@ -3018,6 +3018,65 @@ mod tests {
                 }
             }
         }
+
+        /// The assembly's structure, checked without repeating the assembly. A node is
+        /// a boundary node (on `∂f`, two A-planes in its triple) or an interior node
+        /// (a B-edge piercing `f`, two B-planes); an arc has exactly the former at its
+        /// two ends and the latter within; a loop has none.
+        ///
+        /// Like the proptest above, an honest `Err` is skipped, so this says nothing
+        /// about rejected inputs. And it says nothing about closed loops: two boxes
+        /// sharing a corner cannot make one. Measured over a 144-instance sweep of
+        /// this generator: 859 faces accepted, 5 rejected, 381 arcs, **0 loops**. The
+        /// loop and the doubly-crossed edge are covered by hand-built fixtures, not
+        /// by chance.
+        #[test]
+        fn prop_seam_paths_have_manifold_structure(
+            aext in prop::array::uniform3(1.0f64..2.0),
+            bmin in prop::array::uniform3(0.3f64..0.9),
+            bext in prop::array::uniform3(1.1f64..2.0),
+        ) {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(aext));
+            let b = m.add_cuboid(
+                Point3::from_array(bmin),
+                Point3::from_array([bmin[0] + bext[0], bmin[1] + bext[1], bmin[2] + bext[2]]),
+            );
+            let len_a = collect_planes(&m, a).unwrap().len();
+            let (planes, surf_ix) = combined(&m, a, b);
+            let (Ok(inc_x), Ok(inc_y)) = (
+                arrange::edge_planes(&m, a, &surf_ix),
+                arrange::edge_planes(&m, b, &surf_ix),
+            ) else {
+                return Ok(());
+            };
+            for &f in &m.shells.get(m.solids.get(a).outer).faces {
+                let Ok(out) = arrange::seam_paths_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y)
+                else {
+                    continue;
+                };
+                for path in &out {
+                    let n = path.nodes();
+                    for e in n {
+                        // A plane index < len_a belongs to A. Boundary ⇔ two of them.
+                        let from_a = e.triple.iter().filter(|&&i| i < len_a).count();
+                        prop_assert_eq!(e.on_edge.is_some(), from_a == 2, "{:?}", e);
+                        prop_assert!(from_a == 1 || from_a == 2, "{e:?}");
+                    }
+                    match path {
+                        arrange::SeamPath::Open(_) => {
+                            prop_assert!(n.len() >= 2);
+                            prop_assert!(n[0].on_edge.is_some() && n[n.len() - 1].on_edge.is_some());
+                            prop_assert!(n[1..n.len() - 1].iter().all(|e| e.on_edge.is_none()));
+                        }
+                        arrange::SeamPath::Closed(_) => {
+                            prop_assert!(n.len() >= 3);
+                            prop_assert!(n.iter().all(|e| e.on_edge.is_none()));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -3164,6 +3223,222 @@ mod tests {
             (spans[1].0 - 2.0).abs() < 1e-9 && (spans[1].1 - 3.0).abs() < 1e-9,
             "{spans:?}"
         );
+    }
+
+    /// Canonicalize a node sequence: an arc up to reversal, a loop up to rotation and
+    /// reversal. `seam_paths_on` does fix a start and a direction — that is a contract
+    /// and `seam_paths_are_deterministic` pins it — but these goldens are about the
+    /// *arc order*, and should not also freeze which end the walk entered from.
+    fn canon(pts: &[[f64; 3]], closed: bool) -> Vec<[f64; 3]> {
+        let rots = if closed { pts.len() } else { 1 };
+        (0..rots)
+            .flat_map(|i| {
+                let rot: Vec<[f64; 3]> = pts[i..].iter().chain(&pts[..i]).copied().collect();
+                let mut rev = rot.clone();
+                rev.reverse();
+                [rot, rev]
+            })
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or_default()
+    }
+
+    fn assert_points(p: &arrange::SeamPath, want: &[[f64; 3]]) {
+        let closed = matches!(p, arrange::SeamPath::Closed(_));
+        let got: Vec<[f64; 3]> = p.nodes().iter().map(|n| n.point.as_array()).collect();
+        let (got, want) = (canon(&got, closed), canon(want, closed));
+        assert_eq!(got.len(), want.len(), "{got:?} vs {want:?}");
+        assert!(
+            got.iter()
+                .zip(&want)
+                .all(|(g, w)| near(Point3::from_array(*g), *w)),
+            "{got:?} vs {want:?}"
+        );
+    }
+
+    #[test]
+    fn seam_paths_follow_the_true_arc_order_through_a_bend() {
+        // The staircase of `cut_staircase_seam_arc_is_unsupported`, assembled. On the
+        // box's bottom face the arc runs (2,0.5) → (2,1) → (1,1) → (1,1.5): two bends
+        // turning opposite ways. `reconstruct_face` projects the bends onto the chord
+        // and `strict` rejects, because a projection cannot tell a reflex turn from an
+        // arc folded back on itself. Adjacency can: this order is read off the
+        // 1-manifold, not sorted. `strictarc` becomes unnecessary (retired in 3e).
+        let (m, l, bx) = l_and_popup_box();
+        let (planes, surf_ix) = combined(&m, l, bx);
+        let floor = face_facing(&m, bx, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+
+        let out = paths(&m, floor, bx, l, &planes, &surf_ix);
+        assert_eq!(out.len(), 1, "one arc: {out:?}");
+        assert!(matches!(out[0], arrange::SeamPath::Open(_)), "{:?}", out[0]);
+        assert_points(
+            &out[0],
+            &[
+                [2.0, 0.5, 0.2],
+                [2.0, 1.0, 0.2],
+                [1.0, 1.0, 0.2],
+                [1.0, 1.5, 0.2],
+            ],
+        );
+        // Ends on `∂floor`, bends where the L's two vertical edges pierce it.
+        let n = out[0].nodes();
+        assert!(n[0].on_edge.is_some() && n[3].on_edge.is_some());
+        assert!(n[1].on_edge.is_none() && n[2].on_edge.is_none());
+    }
+
+    #[test]
+    fn seam_paths_close_a_loop_inside_a_face() {
+        // The dimple of `cut_blind_dimple_is_unsupported`. The stub's footprint never
+        // reaches the top face's boundary, so the seam is a closed ring in the face
+        // interior — an inner loop. Zero boundary nodes, four interior ones, one per
+        // vertical stub edge.
+        let (m, l, stub) = l_and_dimple();
+        let (planes, surf_ix) = combined(&m, l, stub);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+
+        let out = paths(&m, top, l, stub, &planes, &surf_ix);
+        assert_eq!(out.len(), 1, "one loop: {out:?}");
+        assert!(
+            matches!(out[0], arrange::SeamPath::Closed(_)),
+            "{:?}",
+            out[0]
+        );
+        assert!(out[0].nodes().iter().all(|n| n.on_edge.is_none()));
+        assert_points(
+            &out[0],
+            &[
+                [0.3, 0.3, 1.0],
+                [0.7, 0.3, 1.0],
+                [0.7, 0.7, 1.0],
+                [0.3, 0.7, 1.0],
+            ],
+        );
+    }
+
+    /// A big cube whose `y=0, z=0` edge is crossed **twice** by the seam: the notch
+    /// spans `x∈[3,7]` and hangs below both `y=0` and `z=0`, so that one edge enters
+    /// and leaves it. Extents are asymmetric so no crossing lands on a face centre or
+    /// a fan diagonal (the `contact_degenerate` trap of `l_and_corner_box`).
+    ///
+    /// `edge_seam` maps an edge to *one* seam triple. This input is what that map
+    /// cannot represent — and `boolean` rejects it today (see
+    /// `an_edge_crossed_twice_is_rejected`).
+    fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+        let y = m.add_cuboid(
+            Point3::from_array([3.0, -1.0, -1.0]),
+            Point3::from_array([7.0, 1.4, 1.2]),
+        );
+        (m, a, y)
+    }
+
+    #[test]
+    fn seam_path_crosses_one_face_edge_twice() {
+        // Both boundary nodes lie on the *same* edge of `f`. Any splice keyed by
+        // `Handle<Edge>` keeps one and drops the other — a manifold face that
+        // `validate` accepts and that is wrong. Cell 3d must key by the seam triple
+        // and order the two crossings along the edge with `order_along`.
+        let (m, a, y) = cube_and_notch();
+        let (planes, surf_ix) = combined(&m, a, y);
+        let floor = face_facing(&m, a, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+
+        let out = paths(&m, floor, a, y, &planes, &surf_ix);
+        assert_eq!(out.len(), 1, "one arc: {out:?}");
+        assert_points(
+            &out[0],
+            &[
+                [3.0, 0.0, 0.0],
+                [3.0, 1.4, 0.0],
+                [7.0, 1.4, 0.0],
+                [7.0, 0.0, 0.0],
+            ],
+        );
+        let n = out[0].nodes();
+        assert_eq!(
+            n[0].on_edge, n[3].on_edge,
+            "both ends ride the cube's y=0,z=0 edge"
+        );
+        assert!(n[0].on_edge.is_some());
+    }
+
+    /// `reconstruct_face`'s kept/dropped alternation count on `f`'s outer loop.
+    ///
+    /// Independent of `keep`: flipping it flips every `kept[i]`, and the count only
+    /// compares neighbours. So no `BoolKind` need be chosen here.
+    fn transitions_on(m: &Model, f: Handle<Face>, other: Handle<Solid>) -> usize {
+        let hes = &m.faces.get(f).outer.half_edges;
+        let inside: Vec<bool> = hes
+            .iter()
+            .map(|&he| {
+                let v = m.vertices.get(he_start(m, he)).point;
+                point_in_solid(m, v, other).unwrap() == Side::Inside
+            })
+            .collect();
+        (0..inside.len())
+            .filter(|&i| inside[i] != inside[(i + 1) % inside.len()])
+            .count()
+    }
+
+    #[test]
+    fn boundary_nodes_match_reconstruct_faces_transition_count() {
+        // An independent oracle: `reconstruct_face` finds the seam's ends by counting
+        // kept/dropped alternations around `∂f`; the arrangement finds them as
+        // degree-1 nodes. They must agree — through entirely different machinery
+        // (ray-cast classification vs. exact segment/face crossings).
+        //
+        // The identity needs one hypothesis: no edge of `f` is crossed twice. An edge
+        // crossed twice has equal endpoint classes, contributing no transition, while
+        // the arrangement sees both nodes. `cube_and_notch` is exactly that case, and
+        // it is checked below as the documented counterexample rather than hidden.
+        let cases: Vec<(Model, Handle<Solid>, Handle<Solid>)> = vec![
+            l_and_corner_box(),
+            u_and_slab(),
+            l_and_popup_box(),
+            l_and_dimple(),
+        ];
+        for (m, x, y) in cases {
+            let (planes, surf_ix) = combined(&m, x, y);
+            for &f in &m.shells.get(m.solids.get(x).outer).faces {
+                let boundary = paths(&m, f, x, y, &planes, &surf_ix)
+                    .iter()
+                    .flat_map(|p| p.nodes())
+                    .filter(|n| n.on_edge.is_some())
+                    .count();
+                assert_eq!(boundary, transitions_on(&m, f, y), "face {f:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_doubly_crossed_edge_breaks_the_transition_oracle() {
+        // The domain boundary of the oracle above, kept as a test rather than a
+        // comment. The cube's floor has zero transitions — all four of its corners
+        // sit outside the notch — yet the seam enters and leaves across one edge.
+        let (m, a, y) = cube_and_notch();
+        let (planes, surf_ix) = combined(&m, a, y);
+        let floor = face_facing(&m, a, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+
+        assert_eq!(transitions_on(&m, floor, y), 0);
+        let boundary = paths(&m, floor, a, y, &planes, &surf_ix)
+            .iter()
+            .flat_map(|p| p.nodes())
+            .filter(|n| n.on_edge.is_some())
+            .count();
+        assert_eq!(boundary, 2);
+    }
+
+    #[test]
+    fn seam_paths_are_deterministic() {
+        // The assembly queries its adjacency map but never iterates it: `HashMap`
+        // order varies per instance, and a path's start and direction must not. Cell
+        // 3d builds faces from these paths, and the operation log replays them.
+        let (m, l, bx) = l_and_popup_box();
+        let (planes, surf_ix) = combined(&m, l, bx);
+        let floor = face_facing(&m, bx, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+        let once = paths(&m, floor, bx, l, &planes, &surf_ix);
+        for _ in 0..8 {
+            assert_eq!(paths(&m, floor, bx, l, &planes, &surf_ix), once);
+        }
     }
 
     /// Every seam-segment endpoint, as a sorted triple of surface handles.
