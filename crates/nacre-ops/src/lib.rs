@@ -3945,6 +3945,49 @@ pub mod tests {
     }
 
     #[test]
+    fn the_dimple_face_matches_the_shape_cell_3f_1_opens() {
+        // What `pokehole` guards on `l_and_dimple` is exactly one face of the L, and
+        // exactly one shape: no open arc, one closed loop, and the face's whole outer
+        // boundary outside the stub. That last part is `kept[0] == true` written
+        // without choosing a `keep` — for both `Cut` and `Fuse`, A keeps its outside.
+        //
+        // Crossing the seam flips the class, so a lone loop on an all-kept boundary
+        // must bound a *dropped* interior: a hole, never an island. That is the whole
+        // proof, and it needs no area.
+        //
+        // The arrangement's own preconditions are already measured — the five-fixture
+        // sweep in `arrangement_agrees_with_todays_seam_bookkeeping` unwraps
+        // `seam_paths_on` on every face of both solids.
+        let (m, l, stub) = l_and_dimple();
+        let (planes, surf_ix) = combined(&m, l, stub);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+
+        let out = paths(&m, top, l, stub, &planes, &surf_ix);
+        assert_eq!(out.len(), 1);
+        let arrange::SeamPath::Closed(nodes) = &out[0] else {
+            panic!("the dimple's seam is a closed loop: {out:?}");
+        };
+        assert_eq!(nodes.len(), 4);
+
+        for &he in &m.faces.get(top).outer.half_edges {
+            let v = m.vertices.get(he_start(&m, he)).point;
+            assert_eq!(point_in_solid(&m, v, stub).unwrap(), Side::Outside);
+        }
+    }
+
+    #[test]
+    fn the_stub_cut_by_the_l_needs_an_island_face() {
+        // Swap the operands and the same loop lands on a face whose boundary is *all*
+        // dropped: the kept region is the loop's interior alone. That face has no `∂f`
+        // at all — its outer loop would have to *be* the seam ring. Cell 3f-1 does not
+        // open it, so `pokehole` keeps a firing test after the guard narrows.
+        //
+        // (The answer is a `0.4 × 0.4 × 0.5` box sitting above `z = 1`. Sub-unit 3f-2.)
+        let (mut m, l, stub) = l_and_dimple();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, stub, l), tag::POKEHOLE);
+    }
+
+    #[test]
     fn cut_blind_dimple_is_unsupported() {
         // The stub's footprint never reaches the top face's boundary, so that face's
         // loop has zero kept/dropped transitions — yet four seam vertices sit on its
