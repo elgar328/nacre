@@ -840,7 +840,12 @@ fn nonconvex_seamfree(
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
     if boundaries_intersect(model, a, b)? {
-        return Err(BoolError::Unsupported); // a genuine seam — general overlap not yet built
+        // A genuine seam. Single-chord `Fuse`/`Cut` (M5-d2) is handled here; the
+        // non-convex `Common`, and multi-chord/multi-loop seams, are later sub-units.
+        return match kind {
+            BoolKind::Fuse | BoolKind::Cut => overlap_fuse_cut(model, kind, a, b),
+            BoolKind::Common => Err(BoolError::Unsupported),
+        };
     }
     // Seam-free: each solid's vertices all fall on one side of the other.
     let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
@@ -862,6 +867,161 @@ fn nonconvex_seamfree(
         "seam-free classification must be consistent per solid"
     );
     contained_result(model, kind, a, b, &classof)
+}
+
+/// The single outer-shell face of `face_solid` that segment `p0 → p1` pierces,
+/// returned as a combined-plane index (`surf_ix`). The non-convex analogue of
+/// [`enter_face`]: each face is fanned and tested by [`segment_crosses_face`]
+/// (oriented winding, apex retry). `Ok(None)` if no face is pierced, `Ok(Some)`
+/// for exactly one, `Unsupported` if the segment pierces more than one face (it
+/// threads multiple chords — beyond this sub-unit) or any contact is `Degenerate`.
+fn pierced_face(
+    model: &Model,
+    p0: Point3,
+    p1: Point3,
+    face_solid: Handle<Solid>,
+    surf_ix: &HashMap<Handle<Surface>, usize>,
+) -> Result<Option<usize>, BoolError> {
+    let shell = model.solids.get(face_solid).outer;
+    let mut hit: Option<usize> = None;
+    for &fh in &model.shells.get(shell).faces {
+        let pts = face_points(model, fh);
+        if segment_crosses_face(p0, p1, &pts)? {
+            if hit.is_some() {
+                return Err(BoolError::Unsupported); // pierces >1 face — multi-chord edge
+            }
+            hit = Some(surf_ix[&model.faces.get(fh).surface]);
+        }
+    }
+    Ok(hit)
+}
+
+/// `Fuse`/`Cut` of two solids, at least one non-convex, whose boundaries cross in
+/// a single chord per face (M5-d2). Mirrors [`fuse_cut`] but (a) classifies each
+/// original vertex with exact [`point_in_solid`] instead of the convex
+/// half-space [`classify_vertex`], (b) finds seam entries with [`pierced_face`]
+/// instead of the convex Cyrus–Beck [`enter_face`]/[`segment_enters`], and (c)
+/// reconstructs faces in `strict` mode (rejecting a non-convex/self-intersecting
+/// seam arc). Multiple chords, poke-through holes, and non-convex `Common` are
+/// honestly `Unsupported` (later sub-units).
+fn overlap_fuse_cut(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Handle<Solid>, BoolError> {
+    let mut planes = collect_planes(model, a)?;
+    planes.extend(collect_planes(model, b)?);
+    if has_coplanar_pair(&planes) {
+        return Err(BoolError::Unsupported);
+    }
+
+    let mut surf_ix: HashMap<Handle<Surface>, usize> = HashMap::new();
+    for (i, pi) in planes.iter().enumerate() {
+        surf_ix.insert(pi.surf, i);
+    }
+
+    // Classify every original vertex vs the other solid (exact forward-ray winding).
+    let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
+    for (verts_solid, other) in [(a, b), (b, a)] {
+        for &vh in &solid_vertex_handles(model, verts_solid) {
+            let side = point_in_solid(model, model.vertices.get(vh).point, other)?;
+            classof.insert(vh, side);
+        }
+    }
+
+    // Seam vertices: an edge straddling the other boundary pierces exactly one of
+    // its faces (that face's plane is the seam vertex's third plane).
+    let edges_a = edge_incidence(model, a, &surf_ix);
+    let edges_b = edge_incidence(model, b, &surf_ix);
+    let mut seam: Vec<SeamVertex> = Vec::new();
+    let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
+    let mut edge_seam: HashMap<Handle<Edge>, [usize; 3]> = HashMap::new();
+    for (edges, other) in [(&edges_a, b), (&edges_b, a)] {
+        for &(eh, bounds, ref inc) in edges {
+            let [v0, v1] = bounds;
+            let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
+            let (s0, s1) = (classof[&v0], classof[&v1]);
+            if s0 == s1 {
+                // Both endpoints on the same side but the edge pierces a face of the
+                // other solid ⇒ it tunnels through (out→in→out, or a reflex
+                // in→out→in) — a multi-chord crossing beyond this sub-unit. (Convex
+                // `fuse_cut` only had to guard the both-outside case; a non-convex
+                // other solid can also be tunnelled from inside a reflex pocket.)
+                if pierced_face(model, p0, p1, other, &surf_ix)?.is_some() {
+                    return Err(BoolError::Unsupported);
+                }
+                continue;
+            }
+            let entry =
+                pierced_face(model, p0, p1, other, &surf_ix)?.ok_or(BoolError::Unsupported)?;
+            let [e0, e1] = [inc[0], inc[1]];
+            let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
+                .ok_or(BoolError::Unsupported)?;
+            // Exact 4-plane-concurrency guard: the seam vertex must not lie on any
+            // *other* plane (a degenerate 4-plane meet). Unlike the convex path we do
+            // NOT require it inside every half-space (`== -1`): a seam vertex of a
+            // non-convex solid can be outside some face's half-space yet on the
+            // boundary — `pierced_face` already certified it is on the entry face.
+            for (m, pm) in planes.iter().enumerate() {
+                if m == e0 || m == e1 || m == entry {
+                    continue;
+                }
+                if three_plane_orient3d(
+                    &planes[e0].plane,
+                    &planes[e1].plane,
+                    &planes[entry].plane,
+                    pm.tri[0],
+                    pm.tri[1],
+                    pm.tri[2],
+                ) == 0
+                {
+                    return Err(BoolError::Unsupported); // seam vertex on a 4th plane
+                }
+            }
+            let mut triple = [e0, e1, entry];
+            triple.sort_unstable();
+            edge_seam.insert(eh, triple);
+            if let std::collections::hash_map::Entry::Vacant(slot) = seam_ix.entry(triple) {
+                let tol = vertex_tol(
+                    point,
+                    &planes[e0].plane,
+                    &planes[e1].plane,
+                    &planes[entry].plane,
+                );
+                slot.insert(seam.len());
+                seam.push(SeamVertex { point, triple, tol });
+            }
+        }
+    }
+
+    let (keep_a, keep_b, flip_b) = match kind {
+        BoolKind::Fuse => (Side::Outside, Side::Outside, false),
+        BoolKind::Cut => (Side::Outside, Side::Inside, true),
+        BoolKind::Common => return Err(BoolError::Unsupported),
+    };
+    if seam.is_empty() {
+        return contained_result(model, kind, a, b, &classof);
+    }
+
+    let mut faces: Vec<LocalFace> = Vec::new();
+    for (solid, keep, flip) in [(a, keep_a, false), (b, keep_b, flip_b)] {
+        let shell = model.solids.get(solid).outer;
+        for &fh in &model.shells.get(shell).faces {
+            let face = model.faces.get(fh);
+            let pidx = surf_ix[&face.surface];
+            if let Some(lf) = reconstruct_face(
+                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix, true,
+            )? {
+                faces.push(lf);
+            }
+        }
+    }
+    if faces.len() < 4 {
+        return Err(BoolError::EmptyResult);
+    }
+
+    Ok(assemble_fuse_cut(model, a, b, &planes, &seam, &faces))
 }
 
 /// `A ∩ B` by half-space vertex enumeration: the intersection is the set of
@@ -1386,7 +1546,7 @@ fn fuse_cut(
             let face = model.faces.get(fh);
             let pidx = surf_ix[&face.surface];
             if let Some(lf) = reconstruct_face(
-                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix,
+                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix, false,
             )? {
                 faces.push(lf);
             }
@@ -1764,6 +1924,7 @@ fn reconstruct_face(
     edge_seam: &HashMap<Handle<Edge>, [usize; 3]>,
     seam: &[SeamVertex],
     seam_ix: &HashMap<[usize; 3], usize>,
+    strict: bool,
 ) -> Result<Option<LocalFace>, BoolError> {
     let hes = &face.outer.half_edges;
     let n = hes.len();
@@ -1834,6 +1995,41 @@ fn reconstruct_face(
                     .partial_cmp(&(py - p_kd).dot(dir))
                     .expect("finite")
             });
+            // `strict` (non-convex overlap): the bend-sort projects the seam arc
+            // onto the chord direction, which assumes a convex (monotone) arc — a
+            // non-convex operand can fold the arc back, and the linear sort would
+            // then build a self-intersecting face that `validate` cannot catch. Guard
+            // it: the sorted sub-path `p_kd → bends → p_dk` must turn one way about
+            // the face normal (a convex chain). Any sign flip ⇒ honest `Unsupported`
+            // (the true arrangement is a later sub-unit). Convex `fuse_cut` passes
+            // `strict = false` and is unaffected.
+            if strict && !bends.is_empty() {
+                let n = {
+                    let t = outer_tri(model, face).ok_or(BoolError::Unsupported)?;
+                    (t[1] - t[0]).cross(t[2] - t[0])
+                };
+                let mut arc: Vec<Point3> = Vec::with_capacity(bends.len() + 2);
+                arc.push(p_kd);
+                arc.extend(bends.iter().map(|t| seam[seam_ix[t]].point));
+                arc.push(p_dk);
+                let mut sign = 0i32;
+                for w in arc.windows(3) {
+                    let turn = (w[1] - w[0]).cross(w[2] - w[1]).dot(n);
+                    let s = if turn > 0.0 {
+                        1
+                    } else if turn < 0.0 {
+                        -1
+                    } else {
+                        0
+                    };
+                    if s != 0 {
+                        if sign != 0 && sign != s {
+                            return Err(BoolError::Unsupported); // non-convex seam arc
+                        }
+                        sign = s;
+                    }
+                }
+            }
             nodes.push(Node::Seam(s_kd));
             nodes.extend(bends.into_iter().map(Node::Seam));
             nodes.push(Node::Seam(s_dk));
@@ -2374,6 +2570,49 @@ mod tests {
             boolean(&mut m, BoolKind::Common, l, d),
             Err(BoolError::EmptyResult)
         );
+    }
+
+    /// The L-prism with a box biting its convex corner `(2, 0)` — the first
+    /// non-convex *overlap* (a real single-chord seam), M5-d2. The box spans
+    /// `x∈[1.3,2.4]`, `y∈[-0.3,0.4]`, `z∈[0.2,1.4]`: it straddles the corner in x
+    /// and y, and its z-range pokes above the L (`z=1`) while its floor `z=0.2`
+    /// sits inside — so every crossing edge is a clean straddle (no edge tunnels
+    /// fully through the other) and no box face is coplanar with an L face. The
+    /// span is deliberately asymmetric so no seam point lands on a face centre
+    /// (where both fan diagonals cross and every apex would graze).
+    /// Overlap = `x∈[1.3,2]·y∈[0,0.4]·z∈[0.2,1]` = `0.224`;
+    /// `V_L=3`, `V_box=1.1·0.7·1.2=0.924`.
+    fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let bx = m.add_cuboid(
+            Point3::from_array([1.3, -0.3, 0.2]),
+            Point3::from_array([2.4, 0.4, 1.4]),
+        );
+        (m, l, bx)
+    }
+
+    #[test]
+    fn cut_non_convex_overlap_corner_bite() {
+        // Cut(L − box): the corner bite carves 0.175 off the L.
+        let (mut m, l, bx) = l_and_corner_box();
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.224)).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn fuse_non_convex_overlap_corner_bite() {
+        // Fuse(L ∪ box): the protruding box adds (0.924 − 0.224) to the L.
+        let (mut m, l, bx) = l_and_corner_box();
+        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 + 0.924 - 0.224)).abs() < 1e-9, "volume {vol}");
     }
 
     #[test]
