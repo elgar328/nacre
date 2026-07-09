@@ -415,6 +415,8 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 트리밍 곡면의 pcurve 표현 시점(M3에 선행 도입 vs M5까지 지연), 닫힌 엣지의 seam 처리(방식 확정 — 아래 "원통 seam: A vs B" 항목), Sketch 제약 솔버의 범위(초기엔 무제약 프로파일만), OpRef 계보 참조의 도입 시점과 직렬화 포맷 여유분, `Store` 스냅샷·직렬화 포맷(자체 vs STEP 재활용) — 이와 함께 **세션 중 메모리 관리: compact보다 재구축(rebuild-from-log) 우선**(§2 "재검토 예정 (v2)" 참조; 재구축=주력 정리·undo 유지, live 폐포 필터링=저장, compact=비상 회수), OCCT history → 출처 매핑의 실제 충실도(M5에서 실측 필요), 멀티스레딩 경계(Store가 &mut 독점인 설계라 연산 단위 병렬은 미지원 — 의도적 단순화).
 
+**볼록 경로 vs ray casting 경로 통합 여부 (M5-d 사다리 완료 후 프로파일링으로 결정).** M5-d1에서 비볼록 ray casting(`point_in_solid`)이 도입됐고, 원리적으로 볼록도 커버 가능하다(볼록 = 비볼록의 특수 경우). 현재는 `boolean()` 셀렉터가 **볼록 → 옛 half-space 경로**, **비볼록 → ray casting 경로**로 분기한다(볼록 회귀 0 보장). **결정 시점: M5-d 서브유닛 2~5 완료 후** — (a) 서브유닛 4에서 `classify_vertex` 은퇴 예정이라 볼록 경로 잔여분이 그때 드러나고, (b) 비볼록 경로가 완성돼야 볼록 완전 대체 가능성을 판단할 수 있으며, (c) 볼록 입력에서 half-space vs ray casting 속도 프로파일링이 필요하다. **판단 기준:** 속도 차이 유의미 + 볼록 흔함 → 두 경로 유지(fast path); 미미 or 유지보수 부담 → ray casting으로 통합. "측정 후 최적화" 원칙(§ SmallVec·reachability 캐시 결정과 동일).
+
 **원통 seam: A(seam 엣지) vs B(seamless periodic) — A 채택 (M3.3a에서 확정).** 주기 곡면(원통·구·토러스)의 옆면을 b-rep로 담는 두 방식이 있고, 둘 다 유효 AP242·유효 CW-복합체다(초기 판단에서 "B는 오일러가 깨진다"고 봤으나 **오류** — 깨지는 건 정점조차 없는 제3의 변형 C[`bounds:None`, V0]이고, B는 각 원을 seam 정점 `Some([v,v])`로 두고 옆면을 두 루프[outer=아래원, inner=위원]로 담아 `V−E+F−L_i = 2−2+3−1 = 2`로 통과한다).
 - **A(채택):** 위 원 + 아래 원 + **세로 seam 직선 엣지**, 옆면 = 4-엣지 단일 닫힌 루프 `[bottom, seam, top⁻, seam⁻]`(seam이 같은 면에서 2회 반대 — self-adjacent). `add_cylinder`가 이 방식. STEP 출력도 A(OCCT 계열이 생산·기대하는 형태; step-io 검증 테스트와 동형).
 - **B(미채택):** seam 엣지 없이 위·아래 원 두 개로만 옆면 경계(옆면이 두 루프). NIST 샘플 계열.
