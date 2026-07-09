@@ -39,6 +39,13 @@ pub enum TessError {
 /// Export a model to Wavefront OBJ text (vertices shared; each face fan-
 /// triangulated). Bootstrap — see the crate docs for the scope.
 ///
+/// Only faces **reachable from `live_solids`** are emitted. `Store` is append-only
+/// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the face
+/// store would mesh the operands alongside the result.
+///
+/// Every model vertex is still written, in store order, so an OBJ index stays a
+/// vertex handle's index; a superseded vertex simply goes unreferenced.
+///
 /// Assumes every edge is bounded (M1); a closed edge (`bounds: None`, M3) would
 /// panic. Faces are emitted in their loop winding, which for M1's outward-wound
 /// `Orientation::Forward` faces yields outward-facing triangles.
@@ -57,7 +64,12 @@ pub fn to_obj(model: &Model) -> String {
         writeln!(out, "v {} {} {}", x, y, z).unwrap();
     }
 
-    for (_, face) in model.faces.iter() {
+    let reach = model.reachable();
+    // Store order, not `HashSet` order: the OBJ must be reproducible.
+    for (fh, face) in model.faces.iter() {
+        if !reach.faces.contains(&fh) {
+            continue;
+        }
         // Ordered boundary as 1-based OBJ vertex indices.
         let boundary: Vec<u32> = face
             .outer
@@ -167,18 +179,31 @@ impl Tessellation {
 /// circular rims. Edge polylines are sampled once and shared, so adjacent faces
 /// meet watertight (design §5). Assumes `Orientation::Forward` faces (every
 /// current producer) — the loop winding already points outward.
+///
+/// Only cells **reachable from `live_solids`** are meshed. `Store` is append-only
+/// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the
+/// stores would mesh the operands alongside the result.
 pub fn tessellate(model: &Model, cfg: &TessConfig) -> Tessellation {
     let mut t = Tessellation::default();
     let mut vmap: HashMap<Handle<Vertex>, Handle<TessVertex>> = HashMap::new();
+    // `Reachable` is a `HashSet`; walk the stores in their own order and merely ask
+    // membership, so the mesh stays reproducible (design §2: replay).
+    let reach = model.reachable();
 
-    // 1. Sample every edge into a shared polyline (the crack-free contract).
+    // 1. Sample every live edge into a shared polyline (the crack-free contract).
     for (eh, edge) in model.edges.iter() {
+        if !reach.edges.contains(&eh) {
+            continue;
+        }
         let polyline = sample_edge(&mut t, &mut vmap, model, cfg, eh, edge);
         t.by_edge.insert(eh, polyline);
     }
 
-    // 2. Triangulate each face, reusing the shared edge polylines.
+    // 2. Triangulate each live face, reusing the shared edge polylines.
     for (fh, face) in model.faces.iter() {
+        if !reach.faces.contains(&fh) {
+            continue;
+        }
         match model.surfaces.get(face.surface) {
             Surface::Plane(_) => triangulate_planar(&mut t, fh, face),
             Surface::Cylinder(cyl) => triangulate_cylinder(&mut t, model, fh, face, cyl),

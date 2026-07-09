@@ -229,24 +229,25 @@ fn a_non_star_shaped_cap_overshoots_its_area_today() {
 }
 
 #[test]
-fn a_pocket_lid_is_filled_and_its_old_face_lingers_today() {
-    // Two bugs at once. `triangulate_planar` ignores `face.inner`, so the lid's hole
-    // (0.16) is meshed solid — and the rim edges are then used once, not twice, which
-    // watertight does catch. On top of that `tessellate` walks every face ever
-    // pushed, so the superseded top face (1.0) is meshed too.
+fn a_pocket_lid_is_filled_today() {
+    // `triangulate_planar` ignores `face.inner`, so the lid's hole (0.16) is meshed
+    // solid. Its rim edges are then used once instead of twice — the one bug that
+    // watertight does catch. (The superseded top face used to ride along too, worth
+    // another 1.0; the reachable walk retired that.)
     let (m, s) = pocketed_cube();
     let (tris, delta, leaks) = mesh_vs_props(&m, s);
-    assert_eq!(tris, 24);
-    assert_eq!(leaks, 9);
-    assert!((delta - (0.16 + 1.0)).abs() < 1e-9, "area delta {delta}");
+    assert_eq!(tris, 22);
+    // The four rim edges of the hole: used once by a pocket wall, never by the lid.
+    assert_eq!(leaks, 4);
+    assert!((delta - 0.16).abs() < 1e-9, "area delta {delta}");
 }
 
 #[test]
-fn a_boolean_result_still_meshes_its_dead_operands_today() {
-    // `Store` is append-only; `boolean` supersedes rather than deletes. `tessellate`
-    // iterates the store, so both original cubes (6 + 6) ride along.
+fn a_boolean_result_meshes_only_the_live_solid() {
+    // `Store` is append-only; `boolean` supersedes rather than deletes. Walking the
+    // face store meshed both original cubes (6 + 6) alongside the union.
     let (m, s) = stacked_fuse();
     let (tris, delta, leaks) = mesh_vs_props(&m, s);
-    assert_eq!((tris, leaks), (44, 0));
-    assert!((delta - 12.0).abs() < 1e-9, "area delta {delta}");
+    assert_eq!((tris, leaks), (20, 0));
+    assert!(delta.abs() < 1e-12, "area delta {delta}");
 }
