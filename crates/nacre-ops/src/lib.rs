@@ -194,7 +194,6 @@ pub(crate) mod tag {
     pub const CONTACT_DEGENERATE: &str = "contact_degenerate";
     pub const POKEHOLE: &str = "pokehole";
     pub const MISSING_SEAM: &str = "missing_seam";
-    pub const STRICTARC: &str = "strictarc";
     pub const MULTICHORD: &str = "multichord";
 }
 
@@ -2134,6 +2133,13 @@ fn supersede_reuse(
 ///
 /// The arrangement is a source of *combinatorics*, never of geometry: the points that
 /// reach the model stay `seam[..]`'s, with their tolerance. `SeamEnd::point` is a cache.
+///
+/// **This function reads no coordinate.** `touches_seam` compares plane triples, `bnd`
+/// compares handles, the splice emits handles and triples. A folded arc needs no
+/// turn test because the arc is a component of `∂other ∩ P ∩ f`, a 1-manifold: it is a
+/// simple curve meeting `∂f` only at its two ends, so `kept run + arc` is a simple
+/// polygon whichever way it turns. Checking that would take an axis projection and
+/// `orient2d` — the 2D machinery this sub-unit has done without since cell 3b.
 #[allow(clippy::too_many_arguments)]
 fn reconstruct_face_paths(
     model: &Model,
@@ -2235,34 +2241,6 @@ fn reconstruct_face_paths(
     }
     let (s_kd, s_dk) = (ordered[0], ordered[ordered.len() - 1]);
     let bends = &ordered[1..ordered.len() - 1];
-
-    // `strict`: a folded arc would build a self-intersecting face that `validate`
-    // accepts. The order above is true, so this no longer guards a bad *sort* — it
-    // still rejects a genuinely reflex arc, which sub-unit 3e will admit.
-    if !bends.is_empty() {
-        let nrm = {
-            let t = outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
-            (t[1] - t[0]).cross(t[2] - t[0])
-        };
-        let arc_pts: Vec<Point3> = ordered.iter().map(|t| seam[seam_ix[t]].point).collect();
-        let mut sign = 0i32;
-        for w in arc_pts.windows(3) {
-            let turn = (w[1] - w[0]).cross(w[2] - w[1]).dot(nrm);
-            let s = if turn > 0.0 {
-                1
-            } else if turn < 0.0 {
-                -1
-            } else {
-                0
-            };
-            if s != 0 {
-                if sign != 0 && sign != s {
-                    return Err(reject(tag::STRICTARC)); // non-convex seam arc
-                }
-                sign = s;
-            }
-        }
-    }
 
     // Kept run: walk `dk+1 ..= kd` CCW, then splice the seam sub-path back.
     let mut loop_nodes: Vec<Node> = Vec::new();
@@ -3413,12 +3391,11 @@ pub mod tests {
 
     #[test]
     fn seam_paths_follow_the_true_arc_order_through_a_bend() {
-        // The staircase of `cut_staircase_seam_arc_is_unsupported`, assembled. On the
-        // box's bottom face the arc runs (2,0.5) → (2,1) → (1,1) → (1,1.5): two bends
-        // turning opposite ways. `reconstruct_face` projects the bends onto the chord
-        // and `strict` rejects, because a projection cannot tell a reflex turn from an
-        // arc folded back on itself. Adjacency can: this order is read off the
-        // 1-manifold, not sorted. `strictarc` becomes unnecessary (retired in 3e).
+        // The staircase of `cut_staircase_seam_arc`, assembled. On the box's bottom face
+        // the arc runs (2,0.5) → (2,1) → (1,1) → (1,1.5): two bends turning opposite
+        // ways. The old projection sort could not tell a reflex turn from an arc folded
+        // back on itself, so `strict` rejected both. Adjacency reads this order off the
+        // 1-manifold instead, and cell 3e-1 retired the guard.
         let (m, l, bx) = l_and_popup_box();
         let (planes, surf_ix) = combined(&m, l, bx);
         let floor = face_facing(&m, bx, &planes, &surf_ix, [0.0, 0.0, -1.0]);
@@ -3620,9 +3597,9 @@ pub mod tests {
             // fixture needs *both* multi-chord and inner loops before it can pass;
             // `multichord` merely happens to fire first, on the U's base cap.
             case("u_and_slab (multichord)", (2, 2), u_and_slab()),
-            // `(1, 0)`: nothing about the arrangement blocks this one. What rejects it
-            // is the shape of a single arc — the `strict` reflex-turn guard.
-            case("l_and_popup_box (strictarc)", (1, 0), l_and_popup_box()),
+            // `(1, 0)`: nothing about the arrangement ever blocked this one. What
+            // rejected it was the shape of a single arc, until cell 3e-1.
+            case("l_and_popup_box (folded arc)", (1, 0), l_and_popup_box()),
             case("l_and_dimple (pokehole)", (1, 1), l_and_dimple()),
         ]
     }
@@ -3818,6 +3795,16 @@ pub mod tests {
         boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
+
+        // And the folded arc (cell 3e-1). `discovered_triples` reads `reachable()`, so
+        // a seam vertex the reconstruction built but no result face used would drop out
+        // of the set and break this — which is what a lost face looks like. Volume
+        // alone could coincide; this cannot.
+        let (mut m, l, bx) = l_and_popup_box();
+        let from_arrange = seam_endpoint_triples(&m, l, bx);
+        boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
     }
 
     #[test]
@@ -3910,18 +3897,37 @@ pub mod tests {
     }
 
     #[test]
-    fn cut_staircase_seam_arc_is_unsupported() {
-        // On the box's bottom face the seam runs (2,0.5) → (2,1) → (1,1) → (1,1.5):
-        // a staircase whose two bends turn opposite ways, so `strict` rejects it.
+    fn cut_staircase_seam_arc() {
+        // On the box's bottom face the seam runs (2,0.5) → (2,1) → (1,1) → (1,1.5): a
+        // staircase whose two bends turn opposite ways. `strict` used to reject it,
+        // unable to tell a reflex turn from an arc folded back on itself.
         //
-        // This is an **over-rejection**, and deliberately so. The arc is simple, the
-        // projection-sort orders it correctly, and the reconstructed face would have
-        // been valid. `strict` cannot tell a reflex turn from an arc folded back on
-        // itself, and a folded arc builds a self-intersecting face that `validate`
-        // accepts (still manifold, Euler holds). Rejecting both is the sound trade
-        // until the real arrangement lands (sub-unit 3).
+        // The reconstructed face there is (0.5,0.5) → (0.5,1.5) → (1,1.5) → (1,1) →
+        // (2,1) → (2,0.5): the overlap footprint, area 1.0, reflex at (1,1). A correct
+        // simple polygon. `strict` was rejecting a right answer.
+        //
+        // Overlap = footprint 1.0 × z∈[0.2,1] = 0.8.
         let (mut m, l, bx) = l_and_popup_box();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, bx), tag::STRICTARC);
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.8)).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn fuse_staircase_seam_arc() {
+        // The `Fuse` counterpart, closing the inclusion–exclusion: V_L + V_box − 0.8.
+        // `validate` cannot see a self-intersecting face (it stays manifold, Euler
+        // holds), so the volume is what pins the folded arc — with OCCT alongside.
+        let (mut m, l, bx) = l_and_popup_box();
+        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 + 2.0 - 0.8)).abs() < 1e-9, "volume {vol}");
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that
