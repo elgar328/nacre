@@ -3361,6 +3361,24 @@ pub mod tests {
         assert!(n[0].on_edge.is_some());
     }
 
+    #[test]
+    fn an_edge_crossed_twice_is_rejected() {
+        // `edge_seam` holds one seam triple per edge, and `reconstruct_face` reads one.
+        // That 1:1 is not enforced by the type — it is enforced by the guards, and this
+        // pins the one standing over `cube_and_notch`. On the convex path an edge with
+        // both ends outside that still enters the other solid is `poke_through`;
+        // `poke_through_hole_is_unsupported` pins the non-convex twin (`pierced_multi`,
+        // via `pierced_face`).
+        //
+        // Retire either guard (sub-unit 3e opens multi-chord) without re-keying
+        // `edge_seam` by the seam triple, and one crossing is silently dropped: a
+        // manifold face that `validate` accepts and that is wrong. This test goes red
+        // first. `seam_path_crosses_one_face_edge_twice` shows what the arrangement
+        // sees on the same input.
+        let (mut m, a, y) = cube_and_notch();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, a, y), tag::POKE_THROUGH);
+    }
+
     /// `reconstruct_face`'s kept/dropped alternation count on `f`'s outer loop.
     ///
     /// Independent of `keep`: flipping it flips every `kept[i]`, and the count only
