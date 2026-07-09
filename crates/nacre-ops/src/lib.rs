@@ -2616,6 +2616,54 @@ mod tests {
     }
 
     #[test]
+    fn common_non_convex_overlap_is_unsupported() {
+        // Non-convex ∩ needs the full arrangement (a later sub-unit) — honest reject.
+        let (mut m, l, bx) = l_and_corner_box();
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, l, bx),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn cut_across_reflex_corner_bite() {
+        // A box straddling the reflex corner (1,1) leaves a *single* chord with one
+        // reflex bend — still transitions==2, so it reconstructs into a correct
+        // L-shaped face. This is the strongest classification test: the box vertex
+        // (1.6,1.6,·) sits in the L's notch (inside the convex hull, outside the L),
+        // exactly where a convex half-space test would misclassify it Inside; only
+        // exact `point_in_solid` gets the volume right.
+        let (mut m, l) = l_prism();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.6, 0.6, 0.2]),
+            Point3::from_array([1.6, 1.6, 1.4]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        // Overlap = xy(1.0 − notch 0.36 = 0.64) · z(0.8) = 0.512.
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.512)).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn poke_through_hole_is_unsupported() {
+        // A thin rod skewering the L's bottom bar in z (both ends outside) would
+        // drill a through-hole (an inner loop) — not yet representable. Its vertical
+        // edges tunnel through the bar, so `pierced_face` sees >1 face ⇒ reject.
+        let (mut m, l) = l_prism();
+        let rod = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, -0.5]),
+            Point3::from_array([0.5, 0.6, 1.5]),
+        );
+        assert_eq!(
+            boolean(&mut m, BoolKind::Cut, l, rod),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
     fn clockwise_input_is_auto_corrected() {
         // The square wound CW; auto-CCW makes it a valid cube anyway.
         let cw = Profile2d {
