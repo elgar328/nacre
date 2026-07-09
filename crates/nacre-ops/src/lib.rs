@@ -763,7 +763,10 @@ fn raise_region(
 
 // ---- boolean (M5-c3) ----
 
-use nacre_geom::intersect::{plane_plane, three_plane_orient3d, three_planes};
+use nacre_geom::intersect::{
+    RayCross, SegCross, plane_plane, ray_face_cross, segment_face_cross, three_plane_orient3d,
+    three_planes,
+};
 use std::collections::{HashMap, HashSet};
 
 /// A face's supporting plane plus the data the half-space enumeration needs.
@@ -808,10 +811,57 @@ pub fn boolean(
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
     }
-    match kind {
-        BoolKind::Common => common(model, a, b),
-        BoolKind::Fuse | BoolKind::Cut => fuse_cut(model, kind, a, b),
+    // Convexity selector (M5-d1): the convex paths (`common`/`fuse_cut`) treat each
+    // operand as the intersection of its face half-spaces. A non-convex operand
+    // instead takes the general seam-free path (containment/disjoint); a
+    // non-convex *overlap* (a real seam) is out of this sub-unit's coverage.
+    let planes_a = collect_planes(model, a)?;
+    let planes_b = collect_planes(model, b)?;
+    if is_convex(&planes_a, &solid_vertices(model, a))
+        && is_convex(&planes_b, &solid_vertices(model, b))
+    {
+        match kind {
+            BoolKind::Common => common(model, a, b),
+            BoolKind::Fuse | BoolKind::Cut => fuse_cut(model, kind, a, b),
+        }
+    } else {
+        nonconvex_seamfree(model, kind, a, b)
     }
+}
+
+/// The boolean of two solids, at least one non-convex, when their boundaries do
+/// not cross (M5-d1). A real seam ⇒ `Unsupported` (the general arrangement is a
+/// later sub-unit); otherwise one solid contains the other or they are disjoint,
+/// classified by exact [`point_in_solid`] and assembled by [`contained_result`].
+fn nonconvex_seamfree(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Handle<Solid>, BoolError> {
+    if boundaries_intersect(model, a, b)? {
+        return Err(BoolError::Unsupported); // a genuine seam — general overlap not yet built
+    }
+    // Seam-free: each solid's vertices all fall on one side of the other.
+    let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
+    for (verts_solid, other) in [(a, b), (b, a)] {
+        for vh in solid_vertex_handles(model, verts_solid) {
+            let side = point_in_solid(model, model.vertices.get(vh).point, other)?;
+            classof.insert(vh, side);
+        }
+    }
+    debug_assert!(
+        {
+            let one = |s: Handle<Solid>| {
+                let hs = solid_vertex_handles(model, s);
+                let first = hs.first().and_then(|vh| classof.get(vh)).copied();
+                hs.iter().all(|vh| classof.get(vh).copied() == first)
+            };
+            one(a) && one(b)
+        },
+        "seam-free classification must be consistent per solid"
+    );
+    contained_result(model, kind, a, b, &classof)
 }
 
 /// `A ∩ B` by half-space vertex enumeration: the intersection is the set of
@@ -1183,7 +1233,7 @@ fn assemble(
 // ---- fuse / cut (M5-c4): face clipping, clean-seam convex ----
 
 /// A vertex's side relative to the *other* solid.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Side {
     Inside,
     Outside,
@@ -1367,6 +1417,172 @@ fn classify_vertex(v: Point3, other: &[PlaneInfo]) -> Result<Side, BoolError> {
     Ok(side)
 }
 
+/// Deterministic generic ray directions (small coprime integers, none
+/// axis-aligned) for the point-in-polyhedron cast. Axis-aligned rays would
+/// systematically graze the axis-aligned faces/edges of typical inputs, so the
+/// list starts off-axis; retrying down it finds a degeneracy-free ray.
+const RAY_DIRECTIONS: [[f64; 3]; 6] = [
+    [2.0, 3.0, 5.0],
+    [3.0, 5.0, 7.0],
+    [5.0, 7.0, 11.0],
+    [7.0, 11.0, 13.0],
+    [11.0, 13.0, 17.0],
+    [13.0, 17.0, 19.0],
+];
+
+/// Exact point-in-polyhedron for a general (non-convex, possibly hollow) planar
+/// solid, by **forward-ray winding** (design §8 M5-d): cast a ray from `p` and
+/// sum the oriented crossings ([`ray_face_cross`]) over every face of every shell
+/// (outer + cavities), each face fanned from its first vertex `(v0, vi, vi+1)`.
+/// The sum is the winding number about `p` — nonzero ⇒ inside the material. A
+/// concave face's spurious fan triangles cancel by orientation, so no ear-clip is
+/// needed; every decision is an exact `orient3d` sign (no tolerance).
+///
+/// Degeneracies (the ray grazing an edge/vertex) retry the next
+/// [`RAY_DIRECTIONS`]; exhausting the list yields `Unsupported` (astronomically
+/// unlikely without adversarial alignment — a symbolic-perturbation upgrade is
+/// deferred). **Precondition:** `p` is not on the solid's boundary — the caller's
+/// edge-face gate guarantees `p` is not coplanar with any face plane, so the
+/// per-face `s0 = 0` case never arises here.
+fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side, BoolError> {
+    let faces: Vec<Vec<Point3>> = solid_faces(model, solid)
+        .into_iter()
+        .map(|fh| face_points(model, fh))
+        .collect();
+    'dirs: for dir in RAY_DIRECTIONS {
+        let d = Vector3::from_array(dir);
+        let mut winding = 0i32;
+        for pts in &faces {
+            for tri in fan_triangles(pts, 0) {
+                match ray_face_cross(p, d, tri) {
+                    RayCross::Cross(sign) => winding += sign as i32,
+                    RayCross::Miss => {}
+                    RayCross::Degenerate => continue 'dirs, // grazed — try another direction
+                }
+            }
+        }
+        return Ok(if winding != 0 {
+            Side::Inside
+        } else {
+            Side::Outside
+        });
+    }
+    Err(BoolError::Unsupported) // every direction grazed the boundary (adversarial)
+}
+
+/// Every face of a solid's boundary — outer shell then each cavity shell.
+fn solid_faces(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Face>> {
+    let s = model.solids.get(solid);
+    std::iter::once(&s.outer)
+        .chain(s.cavities.iter())
+        .flat_map(|&sh| model.shells.get(sh).faces.iter().copied())
+        .collect()
+}
+
+/// The ordered outer-loop vertex points of a planar face.
+fn face_points(model: &Model, fh: Handle<Face>) -> Vec<Point3> {
+    model
+        .faces
+        .get(fh)
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| model.vertices.get(he_start(model, he)).point)
+        .collect()
+}
+
+/// The non-degenerate fan triangles `(pts[apex], pts[apex+s], pts[apex+s+1])` of a
+/// planar loop, fanned from vertex `apex` (indices mod `k`). A concave loop's
+/// spurious (reflex) triangles are kept — they cancel by orientation in the
+/// oriented crossing sum — but zero-area (collinear) triangles are dropped.
+/// Varying `apex` changes which internal diagonals appear, which the segment gate
+/// exploits to sidestep a diagonal that happens to be coplanar with a query edge.
+fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
+    let k = pts.len();
+    let mut tris = Vec::new();
+    for s in 1..k.saturating_sub(1) {
+        let (t0, t1, t2) = (pts[apex], pts[(apex + s) % k], pts[(apex + s + 1) % k]);
+        let (e1, e2) = (t1 - t0, t2 - t0);
+        if e1.cross(e2).norm() <= 1e-12 * e1.norm() * e2.norm() {
+            continue; // degenerate (collinear) fan triangle
+        }
+        tris.push([t0, t1, t2]);
+    }
+    tris
+}
+
+/// Distinct boundary edges of a solid (outer + cavity shells) as endpoint-point
+/// pairs. First-seen order → deterministic.
+fn solid_edges(model: &Model, solid: Handle<Solid>) -> Vec<(Point3, Point3)> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for fh in solid_faces(model, solid) {
+        for &he in &model.faces.get(fh).outer.half_edges {
+            if seen.insert(he.edge) {
+                let [v0, v1] = model.edges.get(he.edge).bounds.expect("bounded");
+                out.push((model.vertices.get(v0).point, model.vertices.get(v1).point));
+            }
+        }
+    }
+    out
+}
+
+/// Whether the boundaries of `a` and `b` actually cross — an edge of one pierces
+/// a face of the other (either direction). Each face is fanned and the oriented
+/// [`segment_face_cross`] sum decides "pierces this face"; a concave face's
+/// spurious triangles cancel. A `Degenerate` contact (a coplanar face, or an edge
+/// grazing another's edge/vertex) is out of clean coverage ⇒ `Unsupported`.
+///
+/// `Ok(false)` means seam-free: the two solids are disjoint or one strictly
+/// contains the other (their interiors do not partially overlap) — the only cases
+/// this sub-unit's boolean handles. This edge-face test, not vertex
+/// classification, is what makes non-convex containment sound: an edge can pierce
+/// a reflex region with both endpoints inside, or the solids can interlock with
+/// every vertex outside, and only a direct boundary-crossing test catches those.
+fn boundaries_intersect(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<bool, BoolError> {
+    for (edge_solid, face_solid) in [(a, b), (b, a)] {
+        let edges = solid_edges(model, edge_solid);
+        let faces: Vec<Vec<Point3>> = solid_faces(model, face_solid)
+            .into_iter()
+            .map(|fh| face_points(model, fh))
+            .collect();
+        for (p0, p1) in &edges {
+            for pts in &faces {
+                if segment_crosses_face(*p0, *p1, pts)? {
+                    return Ok(true); // a genuine seam
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Whether segment `p0→p1` pierces the interior of planar face `pts` (its outer
+/// loop points), by the oriented [`segment_face_cross`] winding over a fan. A fan
+/// diagonal may be coplanar with an axis-aligned query edge (a spurious
+/// `Degenerate`); re-fanning from another apex uses different diagonals, so we
+/// retry every apex — mirroring the ray's direction retry. A genuine contact (the
+/// segment grazing a *real* edge/vertex) is `Degenerate` from every apex ⇒
+/// `Unsupported`.
+fn segment_crosses_face(p0: Point3, p1: Point3, pts: &[Point3]) -> Result<bool, BoolError> {
+    'apex: for apex in 0..pts.len() {
+        let mut crossing = 0i32;
+        for tri in fan_triangles(pts, apex) {
+            match segment_face_cross(p0, p1, tri) {
+                SegCross::Cross(sign) => crossing += sign as i32,
+                SegCross::Miss => {}
+                SegCross::Degenerate => continue 'apex, // fan diagonal grazed — try another apex
+            }
+        }
+        return Ok(crossing != 0);
+    }
+    Err(BoolError::Unsupported) // grazed a real edge/vertex from every apex
+}
+
 /// Whether a segment (both endpoints outside the convex solid `range`) passes
 /// *through* it — Cyrus–Beck line clip yields a non-empty interior interval.
 fn segment_enters(
@@ -1470,7 +1686,9 @@ fn edge_incidence(
 /// (already `Err`-free — a boundary vertex would have failed `classify_vertex`
 /// before this point): every B vertex inside A ⇒ B⊂A, every A vertex inside B ⇒
 /// A⊂B. `Cut(A−B)` with B⊂A adds B as an inward cavity; A⊂B removes A entirely;
-/// `Fuse` yields the container. `Common` never reaches here (its own path).
+/// `Fuse` yields the container; `Common` yields the contained one. The convex
+/// path routes only `Fuse`/`Cut` here (its `Common` enumerates directly); the
+/// non-convex seam-free path routes all three kinds here.
 fn contained_result(
     model: &mut Model,
     kind: BoolKind,
@@ -1492,9 +1710,11 @@ fn contained_result(
         (BoolKind::Fuse, true, false) => Ok(supersede_reuse(model, a, b, a)), // A ∪ B = A
         (BoolKind::Fuse, false, true) => Ok(supersede_reuse(model, a, b, b)), // A ∪ B = B
         (BoolKind::Fuse, false, false) => Err(BoolError::EmptyResult), // disconnected union unrepresentable
-        (BoolKind::Common, _, _) => unreachable!("common has its own path"),
+        (BoolKind::Common, true, false) => Ok(supersede_reuse(model, a, b, b)), // A ∩ B = B (B ⊂ A)
+        (BoolKind::Common, false, true) => Ok(supersede_reuse(model, a, b, a)), // A ∩ B = A (A ⊂ B)
+        (BoolKind::Common, false, false) => Err(BoolError::EmptyResult), // disjoint ⇒ empty
         (_, true, true) => {
-            unreachable!("mutual containment means a shared boundary — rejected by classify_vertex")
+            unreachable!("mutual containment means a shared boundary — rejected before this point")
         }
     }
 }
@@ -2003,6 +2223,157 @@ mod tests {
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 12);
         assert_eq!(m.faces.len(), 8);
+    }
+
+    /// The L-prism: profile `[(0,0),(2,0),(2,1),(1,1),(1,2),(0,2)]` extruded to
+    /// z ∈ [0,1]. Material = bottom bar (x∈[0,2],y∈[0,1]) ∪ left bar (x∈[0,1],
+    /// y∈[1,2]); the notch (x∈[1,2],y∈[1,2]) is empty.
+    fn l_prism() -> (Model, Handle<Solid>) {
+        let l = Profile2d {
+            points: vec![
+                p2(0.0, 0.0),
+                p2(2.0, 0.0),
+                p2(2.0, 1.0),
+                p2(1.0, 1.0),
+                p2(1.0, 2.0),
+                p2(0.0, 2.0),
+            ],
+        };
+        let m = replay(&[extrude_op(l, 1.0)]).unwrap();
+        let s = m.live_solids[0];
+        (m, s)
+    }
+
+    #[test]
+    fn point_in_solid_classifies_concave_prism() {
+        let (m, s) = l_prism();
+        let side = |x, y, z| point_in_solid(&m, Point3::from_array([x, y, z]), s).unwrap();
+        // Interior of the arm, near the reflex corner, and the left bar.
+        assert_eq!(side(0.5, 0.5, 0.5), Side::Inside);
+        assert_eq!(side(0.9, 0.9, 0.5), Side::Inside);
+        assert_eq!(side(0.5, 1.5, 0.5), Side::Inside);
+        // The notch is OUTSIDE the L though inside its bounding box — the concave
+        // case a convex all-half-spaces test gets wrong.
+        assert_eq!(side(1.5, 1.5, 0.5), Side::Outside);
+        // Clearly outside (beside, below, above).
+        assert_eq!(side(3.0, 3.0, 0.5), Side::Outside);
+        assert_eq!(side(0.5, 0.5, -1.0), Side::Outside);
+        assert_eq!(side(0.5, 0.5, 2.0), Side::Outside);
+    }
+
+    #[test]
+    fn point_in_solid_classifies_cube() {
+        let mut m = Model::new();
+        let s = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        assert_eq!(
+            point_in_solid(&m, Point3::from_array([1.0, 1.0, 1.0]), s).unwrap(),
+            Side::Inside
+        );
+        assert_eq!(
+            point_in_solid(&m, Point3::from_array([3.0, 1.0, 1.0]), s).unwrap(),
+            Side::Outside
+        );
+    }
+
+    #[test]
+    fn point_in_solid_handles_cavity() {
+        // 4-cube with a concentric 2-cube void [1,3]³: a point in the material
+        // wall is Inside, a point in the empty void is Outside (the winding sums
+        // outer + cavity shells).
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let b_outer = m.solids.get(b).outer;
+        let void = m.reversed_shell(b_outer);
+        let a_outer = m.solids.get(a).outer;
+        let hollow = m.push_solid(Solid {
+            outer: a_outer,
+            cavities: vec![void],
+        });
+        m.live_solids.retain(|&x| x == hollow);
+        assert_eq!(
+            point_in_solid(&m, Point3::from_array([0.5, 0.5, 0.5]), hollow).unwrap(),
+            Side::Inside // in the wall
+        );
+        assert_eq!(
+            point_in_solid(&m, Point3::from_array([2.0, 2.0, 2.0]), hollow).unwrap(),
+            Side::Outside // in the void
+        );
+    }
+
+    /// The L-prism with a `[0.1,0.9]³` box strictly inside its bottom bar
+    /// (non-coplanar coordinates ⇒ no shared face planes). `V_L = 3`, `V_box =
+    /// 0.512`.
+    fn l_and_inner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let bx = m.add_cuboid(Point3::from_array([0.1; 3]), Point3::from_array([0.9; 3]));
+        (m, l, bx)
+    }
+
+    #[test]
+    fn cut_non_convex_containment_makes_cavity() {
+        // Cut(L − box) with box ⊂ L ⇒ a hollow L (outer L shell + box void).
+        let (mut m, l, bx) = l_and_inner_box();
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.512)).abs() < 1e-9, "volume {vol}");
+        assert_eq!(m.solids.get(r).cavities.len(), 1);
+    }
+
+    #[test]
+    fn fuse_non_convex_containment_is_container() {
+        let (mut m, l, bx) = l_and_inner_box();
+        let vol_l = nacre_props::mass_props(&m, l).unwrap().volume;
+        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_l).abs() < 1e-9);
+        assert!(m.solids.get(r).cavities.is_empty());
+    }
+
+    #[test]
+    fn common_non_convex_containment_is_inner() {
+        let (mut m, l, bx) = l_and_inner_box();
+        let vol_bx = nacre_props::mass_props(&m, bx).unwrap().volume;
+        let r = boolean(&mut m, BoolKind::Common, l, bx).unwrap();
+        assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_bx).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cut_box_inside_non_convex_is_empty() {
+        // Cut(box − L): the box is wholly inside L ⇒ nothing remains.
+        let (mut m, l, bx) = l_and_inner_box();
+        assert_eq!(
+            boolean(&mut m, BoolKind::Cut, bx, l),
+            Err(BoolError::EmptyResult)
+        );
+    }
+
+    #[test]
+    fn disjoint_non_convex_operand() {
+        // L and a far box (non-coplanar): Cut ⇒ L, Fuse ⇒ empty, Common ⇒ empty.
+        let far = || Point3::from_array([10.0; 3]);
+        let far_max = || Point3::from_array([11.0; 3]);
+        let (mut m, l) = l_prism();
+        let vol_l = nacre_props::mass_props(&m, l).unwrap().volume;
+        let d = m.add_cuboid(far(), far_max());
+        let r = boolean(&mut m, BoolKind::Cut, l, d).unwrap();
+        assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_l).abs() < 1e-9);
+        let (mut m, l) = l_prism();
+        let d = m.add_cuboid(far(), far_max());
+        assert_eq!(
+            boolean(&mut m, BoolKind::Fuse, l, d),
+            Err(BoolError::EmptyResult)
+        );
+        let (mut m, l) = l_prism();
+        let d = m.add_cuboid(far(), far_max());
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, l, d),
+            Err(BoolError::EmptyResult)
+        );
     }
 
     #[test]

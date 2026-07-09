@@ -680,6 +680,52 @@ bbox_min 0 0 0
         );
     }
 
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn nonconvex_containment_cut_matches_occt() {
+        use nacre_math::Point2;
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean};
+        // A concave L-prism with a box strictly inside its bottom bar — a
+        // non-convex containment cut ⇒ the L with an internal box void. OCCT reads
+        // both (concave) inputs and cuts them independently of nacre's
+        // point-in-polyhedron classification.
+        let mut m = Model::new();
+        let l_profile = Profile2d {
+            points: [
+                [0.0, 0.0],
+                [2.0, 0.0],
+                [2.0, 1.0],
+                [1.0, 1.0],
+                [1.0, 2.0],
+                [0.0, 2.0],
+            ]
+            .iter()
+            .map(|&p| Point2::from_array(p))
+            .collect(),
+        };
+        let OpOutput::Extrude { solid: l, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: l_profile,
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!("extrude yields Extrude output");
+        };
+        let bx = m.add_cuboid(Point3::from_array([0.1; 3]), Point3::from_array([0.9; 3]));
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "non-convex containment cut: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
     /// nacre's coincident-coplanar merge (M5-c5) vs OCCT: two cubes stacked on a
     /// shared z=1 face fuse to a 1×1×2 box.
     #[test]
