@@ -38,6 +38,46 @@ pub(crate) struct SeamSegment {
     pub(crate) plane_pair: [usize; 2],
     pub(crate) ends: [[usize; 3]; 2],
     pub(crate) points: [Point3; 2],
+    /// The edge of `∂f` each end lies on, recorded where the crossing is produced.
+    /// `Some` for a crossing of `∂f` with `g` (a boundary node); `None` for a
+    /// crossing of `f` with `∂g` (an interior node, where a `g`-edge pierces `f`).
+    ///
+    /// Never back-derive this from the endpoint's triple `{P, Q, R}`: a non-convex
+    /// face can carry two collinear edges on one neighbour plane `R`, and the seam
+    /// would silently attach to the wrong one.
+    ///
+    /// An interior node loses no information by holding `None`. It is a boundary
+    /// node of the *other* solid's face `g`, and running this on `g` records the
+    /// `g`-edge there. Each face records only the edges of its own boundary.
+    pub(crate) on_edge: [Option<Handle<Edge>>; 2],
+}
+
+/// One node of an assembled seam path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SeamEnd {
+    pub(crate) triple: [usize; 3],
+    /// f64 cache of the triple's exact meet. No decision reads it.
+    pub(crate) point: Point3,
+    pub(crate) on_edge: Option<Handle<Edge>>,
+}
+
+/// The seam of one solid on a face `f` of the other, decomposed into its components.
+///
+/// `Open` runs between two nodes of `∂f`; `Closed` never touches `∂f` — that is an
+/// inner loop, a hole punched through `f`. `Closed`'s node list does **not** repeat
+/// its first node; the cycle closes implicitly.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SeamPath {
+    Open(Vec<SeamEnd>),
+    Closed(Vec<SeamEnd>),
+}
+
+impl SeamPath {
+    pub(crate) fn nodes(&self) -> &[SeamEnd] {
+        match self {
+            SeamPath::Open(n) | SeamPath::Closed(n) => n,
+        }
+    }
 }
 
 /// Index a solid's edges by handle.
@@ -94,8 +134,14 @@ pub(crate) fn seam_segments_on(
         // `∂(f ∩ g) ⊆ (∂f ∩ g) ∪ (f ∩ ∂g)`, and these two sweeps collect exactly
         // those parts: a boundary crossing that lands outside the other face never
         // enters. That is what lets the sorted crossings be paired off directly.
-        let mut third: Vec<usize> = Vec::new();
-        for (face, rings, inc, own) in [(f, &g_rings, inc_x, p), (g, &f_rings, inc_y, q)] {
+        //
+        // Sweep 1 walks `∂f`, so its crossings are boundary nodes and carry the edge
+        // they lie on. Sweep 2 walks `∂g`: interior nodes, no edge of `f`.
+        let mut third: Vec<(usize, Option<Handle<Edge>>)> = Vec::new();
+        for (face, rings, inc, own, on_f) in [
+            (f, &g_rings, inc_x, p, true),
+            (g, &f_rings, inc_y, q, false),
+        ] {
             for he in &model.faces.get(face).outer.half_edges {
                 let (bounds, [pa, pb]) = inc[&he.edge];
                 let r = if pa == own { pb } else { pa };
@@ -104,7 +150,7 @@ pub(crate) fn seam_segments_on(
                     model.vertices.get(bounds[1]).point,
                 );
                 if segment_crosses_face(v0, v1, rings)? {
-                    third.push(r);
+                    third.push((r, on_f.then_some(he.edge)));
                 }
             }
         }
@@ -112,29 +158,18 @@ pub(crate) fn seam_segments_on(
             continue;
         }
 
-        // Order along `L`. With `V_i = P ∩ Q ∩ R_i`, we want `sign((V_i − V_j)·d)`.
-        // Since `V_j ∈ R_j`, `three_plane_orient3d(P, Q, R_i, R_j.tri)` is
-        // `sign((V_i − V_j)·N_j)` for `N_j` the RH normal of `R_j.tri`; multiplying by
-        // `sign(d·N_j)` recovers the order. Both factors are exact predicates.
-        let order = |i: usize, j: usize| -> i8 {
-            three_plane_orient3d(
-                &planes[p].plane,
-                &planes[q].plane,
-                &planes[i].plane,
-                planes[j].tri[0],
-                planes[j].tri[1],
-                planes[j].tri[2],
-            ) * dir_sign(planes, p, q, j)
-        };
-        third.sort_by(|&i, &j| match order(i, j) {
+        third.sort_by(|&(i, _), &(j, _)| match order_along(planes, p, q, i, j) {
             -1 => Ordering::Less,
             1 => Ordering::Greater,
             _ => Ordering::Equal,
         });
         for w in third.windows(2) {
-            if order(w[0], w[1]) != -1 {
+            if order_along(planes, p, q, w[0].0, w[1].0) != -1 {
                 // Coincident crossings, or `L` through a vertex of a face: four planes
-                // meet at one point.
+                // meet at one point. A duplicate `R` (two collinear edges of a
+                // non-convex face on one neighbour plane) lands here too — `order` of a
+                // plane against itself is 0 — which is what keeps two distinct nodes
+                // from ever collapsing onto one triple.
                 return Err(reject(tag::FOURPLANE));
             }
         }
@@ -146,7 +181,7 @@ pub(crate) fn seam_segments_on(
         }
 
         for w in third.chunks_exact(2) {
-            let (r0, r1) = (w[0], w[1]);
+            let ((r0, e0), (r1, e1)) = (w[0], w[1]);
             let point_of = |r: usize| {
                 three_planes(&planes[p].plane, &planes[q].plane, &planes[r].plane)
                     .ok_or_else(|| reject(tag::THREE_PLANES))
@@ -155,6 +190,7 @@ pub(crate) fn seam_segments_on(
                 plane_pair: [p, q],
                 ends: [triple(p, q, r0), triple(p, q, r1)],
                 points: [point_of(r0)?, point_of(r1)?],
+                on_edge: [e0, e1],
             };
             debug_assert_eq!(
                 shared_planes(&seg.ends),
@@ -164,6 +200,132 @@ pub(crate) fn seam_segments_on(
             out.push(seg);
         }
     }
+    Ok(out)
+}
+
+/// Order two crossings of the line `P ∩ Q` along that line: `-1` if `V_i` precedes
+/// `V_j`, `+1` if it follows, `0` if they coincide.
+///
+/// With `V_k = P ∩ Q ∩ R_k` and `d = n_P × n_Q`, we want `sign((V_i − V_j)·d)`. Since
+/// `V_j ∈ R_j`, [`three_plane_orient3d`] gives `sign((V_i − V_j)·N_j)` for `N_j` the
+/// right-hand normal of `R_j.tri`; multiplying by `sign(d·N_j)` recovers the order.
+/// Both factors are exact predicates, so the comparator is a true total order.
+///
+/// The pair `(P, Q)` is a parameter, not the seam pair: sub-unit 3d orders two seam
+/// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
+/// two planes. No new predicate is needed for that.
+fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> i8 {
+    three_plane_orient3d(
+        &planes[p].plane,
+        &planes[q].plane,
+        &planes[i].plane,
+        planes[j].tri[0],
+        planes[j].tri[1],
+        planes[j].tri[2],
+    ) * dir_sign(planes, p, q, j)
+}
+
+/// The seam of `other` on face `f`, assembled into open arcs and closed loops.
+///
+/// `∂other ∩ P ∩ f` is a 1-manifold: the segments of [`seam_segments_on`] never cross,
+/// they only meet at endpoints. So the assembly is pure combinatorics on the endpoint
+/// triples — **no coordinate is ever read here**, and no convexity is assumed. That is
+/// what makes the arc order *true* rather than a projection's guess.
+///
+/// Two nodes never collapse onto one triple, so the adjacency map is faithful:
+///
+/// * A boundary node's triple holds two `f`-solid planes, an interior node's two
+///   `other`-solid planes — the two species cannot coincide.
+/// * Crossings against different faces `g` name different `Q`.
+/// * Within one `g`, a duplicate third plane compares `0` against itself and
+///   [`seam_segments_on`] has already rejected it as `FOURPLANE`.
+///
+/// Degrees follow: a boundary node is produced by exactly one `g`, so degree 1; an
+/// interior node sits on a pierced `other`-edge, whose two faces each produce it, so
+/// degree 2. Anything else is `SEAM_BRANCH`.
+///
+/// **Determinism comes from the walk, not the map.** `HashMap` iteration order varies
+/// per instance, so the map is only ever *queried*. Segments are produced in a
+/// deterministic order (`Shell::faces` is a `Vec`, crossings are sorted by an exact
+/// predicate), and paths start at the lowest-index unused segment — so the same model
+/// yields the same paths, in the same order, walked in the same direction. Sub-unit
+/// 3d's operation-log replay rests on this.
+pub(crate) fn seam_paths_on(
+    model: &Model,
+    f: Handle<Face>,
+    other: Handle<Solid>,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Surface>, usize>,
+    inc_x: &EdgePlanes,
+    inc_y: &EdgePlanes,
+) -> Result<Vec<SeamPath>, BoolError> {
+    let segs = seam_segments_on(model, f, other, planes, surf_ix, inc_x, inc_y)?;
+
+    let mut adj: HashMap<[usize; 3], Vec<usize>> = HashMap::new();
+    for (i, s) in segs.iter().enumerate() {
+        for e in s.ends {
+            adj.entry(e).or_default().push(i);
+        }
+    }
+    if segs.iter().any(|s| s.ends.iter().any(|e| adj[e].len() > 2)) {
+        return Err(reject(tag::SEAM_BRANCH));
+    }
+
+    let node = |i: usize, k: usize| SeamEnd {
+        triple: segs[i].ends[k],
+        point: segs[i].points[k],
+        on_edge: segs[i].on_edge[k],
+    };
+    // Walk from segment `i`, leaving by its end `k`; mark every segment consumed.
+    let walk = |used: &mut Vec<bool>, i: usize, k: usize| -> Vec<SeamEnd> {
+        let mut nodes = vec![node(i, k)];
+        let (mut si, mut sk) = (i, k);
+        loop {
+            used[si] = true;
+            let far = 1 - sk;
+            nodes.push(node(si, far));
+            let t = segs[si].ends[far];
+            let Some(&next) = adj[&t].iter().find(|&&j| !used[j]) else {
+                return nodes;
+            };
+            si = next;
+            sk = usize::from(segs[next].ends[1] == t && segs[next].ends[0] != t);
+        }
+    };
+
+    let mut used = vec![false; segs.len()];
+    let mut out: Vec<SeamPath> = Vec::new();
+
+    // Open arcs first: every one has exactly two degree-1 ends, and the lower-indexed
+    // of its segments carries one of them — so index order fixes start and direction.
+    for i in 0..segs.len() {
+        for k in 0..2 {
+            if !used[i] && adj[&segs[i].ends[k]].len() == 1 {
+                out.push(SeamPath::Open(walk(&mut used, i, k)));
+            }
+        }
+    }
+    // What survives is all-degree-2: a disjoint union of cycles.
+    for i in 0..segs.len() {
+        if !used[i] {
+            let mut nodes = walk(&mut used, i, 0);
+            // `walk` re-emits the start triple when the cycle closes; drop it.
+            debug_assert_eq!(nodes.last().map(|n| n.triple), Some(nodes[0].triple));
+            nodes.pop();
+            out.push(SeamPath::Closed(nodes));
+        }
+    }
+
+    debug_assert!(out.iter().all(|p| match p {
+        // `on_edge.is_some()` ⇔ boundary node ⇔ degree 1: an arc's two ends, and
+        // nothing else. A closed loop touches `∂f` nowhere.
+        SeamPath::Open(n) =>
+            n.len() >= 2
+                && n[1..n.len() - 1].iter().all(|e| e.on_edge.is_none())
+                && n[0].on_edge.is_some()
+                && n[n.len() - 1].on_edge.is_some(),
+        SeamPath::Closed(n) => n.iter().all(|e| e.on_edge.is_none()),
+    }));
     Ok(out)
 }
 

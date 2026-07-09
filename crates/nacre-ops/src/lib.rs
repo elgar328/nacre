@@ -148,6 +148,15 @@ pub(crate) mod tag {
     /// odd crossing count are expected to trip `CONTACT_DEGENERATE` first. Recorded
     /// as unverified in design.md §9, alongside `fourplane`.
     pub const ARRANGEMENT_DEGENERATE: &str = "arrangement_degenerate";
+    /// Three seam segments meeting at one node.
+    ///
+    /// Unreachable today, and *not* dead code. A node is a boundary node (two
+    /// X-planes in its triple, degree 1) or an interior node (two Y-planes, degree
+    /// 2 — the pierced Y-edge has exactly two faces); the only way to collapse two
+    /// distinct nodes onto one triple is a duplicate third plane within one plane
+    /// pair, which `FOURPLANE` rejects. Relax that guard (sub-unit 3e/3h) and a
+    /// node can gain a third segment. This is the backstop for that day.
+    pub const SEAM_BRANCH: &str = "seam_branch";
     pub const COMMON_OVERLAP: &str = "common_overlap";
     pub const PIERCED_MULTI: &str = "pierced_multi";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
@@ -2949,6 +2958,19 @@ mod tests {
         arrange::seam_segments_on(m, f, y, planes, surf_ix, &inc_x, &inc_y).unwrap()
     }
 
+    fn paths(
+        m: &Model,
+        f: Handle<Face>,
+        x: Handle<Solid>,
+        y: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Surface>, usize>,
+    ) -> Vec<arrange::SeamPath> {
+        let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
+        let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
+        arrange::seam_paths_on(m, f, y, planes, surf_ix, &inc_x, &inc_y).unwrap()
+    }
+
     fn near(a: Point3, b: [f64; 3]) -> bool {
         (a - Point3::from_array(b)).norm() < 1e-9
     }
@@ -3100,6 +3122,42 @@ mod tests {
         spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         assert!(
             (spans[0].0 - 0.0).abs() < 1e-9 && (spans[0].1 - 1.0).abs() < 1e-9,
+            "{spans:?}"
+        );
+        assert!(
+            (spans[1].0 - 2.0).abs() < 1e-9 && (spans[1].1 - 3.0).abs() < 1e-9,
+            "{spans:?}"
+        );
+    }
+
+    #[test]
+    fn seam_paths_split_a_face_into_two_open_arcs() {
+        // The same base cap as `seam_segments_split_a_face_into_two_chords`, now
+        // assembled. Two disjoint arcs, each a lone segment whose both ends sit on
+        // `∂cap` — exactly what `reconstruct_face` rejects as `multichord`.
+        let (m, u, slab) = u_and_slab();
+        let (planes, surf_ix) = combined(&m, u, slab);
+        let cap = face_facing(&m, u, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+
+        let out = paths(&m, cap, u, slab, &planes, &surf_ix);
+        assert_eq!(out.len(), 2, "two arcs on one face: {out:?}");
+        for p in &out {
+            assert!(matches!(p, arrange::SeamPath::Open(_)), "{p:?}");
+            let n = p.nodes();
+            assert_eq!(n.len(), 2);
+            // Both ends are boundary nodes, so both carry the cap edge they lie on.
+            assert!(n.iter().all(|e| e.on_edge.is_some()), "{n:?}");
+        }
+        let mut spans: Vec<(f64, f64)> = out
+            .iter()
+            .map(|p| {
+                let (a, b) = (p.nodes()[0].point[0], p.nodes()[1].point[0]);
+                (a.min(b), a.max(b))
+            })
+            .collect();
+        spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        assert!(
+            (spans[0].0).abs() < 1e-9 && (spans[0].1 - 1.0).abs() < 1e-9,
             "{spans:?}"
         );
         assert!(
