@@ -800,6 +800,57 @@ bbox_min 0 0 0
         );
     }
 
+    /// nacre's hole-aware classification (M5-d3 cell 3a) vs OCCT: a pocketed cube
+    /// cut by a box sitting wholly inside the pocket void. The two solids are
+    /// disjoint, so the answer is the pocketed cube untouched — but only if the
+    /// classifier reads the lid's inner loop. Fanning the lid's outer ring alone
+    /// put the box's corners on both sides of the boundary.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocketed_cut_in_the_void_matches_occt() {
+        use nacre_math::Point2;
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean};
+        let mut m = Model::new();
+        let sq = |pts: [[f64; 2]; 4]| Profile2d {
+            points: pts.iter().map(|&p| Point2::from_array(p)).collect(),
+        };
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: sq([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!("extrude yields Extrude output");
+        };
+        let OpOutput::PocketOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PocketOnFace {
+                face: faces[1], // top cap
+                profile: sq([[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!("pocket yields PocketOnFace output");
+        };
+        let bx = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.6]),
+            Point3::from_array([0.6, 0.6, 0.9]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Cut, solid, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, solid, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "pocketed cut in the void: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
     /// nacre's coincident-coplanar merge (M5-c5) vs OCCT: two cubes stacked on a
     /// shared z=1 face fuse to a 1×1×2 box.
     #[test]
