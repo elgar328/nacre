@@ -2953,6 +2953,51 @@ mod tests {
         (a - Point3::from_array(b)).norm() < 1e-9
     }
 
+    proptest! {
+        /// Whatever the sort, the pairing and the parity sweep do, an endpoint is the
+        /// meet of the three planes its triple names. This holds independently of all
+        /// of them — and breaks the instant `three_planes` and the triple disagree.
+        #[test]
+        fn prop_seam_endpoints_lie_on_their_three_planes(
+            aext in prop::array::uniform3(1.0f64..2.0),
+            bmin in prop::array::uniform3(0.3f64..0.9),
+            bext in prop::array::uniform3(1.1f64..2.0),
+        ) {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(aext));
+            let b = m.add_cuboid(
+                Point3::from_array(bmin),
+                Point3::from_array([bmin[0] + bext[0], bmin[1] + bext[1], bmin[2] + bext[2]]),
+            );
+            let (planes, surf_ix) = combined(&m, a, b);
+            let (Ok(inc_x), Ok(inc_y)) = (
+                arrange::edge_planes(&m, a, &surf_ix),
+                arrange::edge_planes(&m, b, &surf_ix),
+            ) else {
+                return Ok(());
+            };
+            let shell = m.solids.get(a).outer;
+            for &f in &m.shells.get(shell).faces {
+                // A degenerate touch is an honest reject, not a counterexample.
+                let Ok(segs) =
+                    arrange::seam_segments_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y)
+                else {
+                    continue;
+                };
+                for s in segs {
+                    for (t, p) in s.ends.iter().zip(s.points) {
+                        for &i in t {
+                            prop_assert!(
+                                planes[i].plane.distance(p) < 1e-9,
+                                "endpoint {p:?} off plane {i}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn seam_segments_on_two_overlapping_boxes() {
         // A = [0,2]×[0,2.2]×[0,2.4] and B = [1,3.5]×[1,3.2]×[1,3.4] share a corner.
@@ -3061,6 +3106,81 @@ mod tests {
             (spans[1].0 - 2.0).abs() < 1e-9 && (spans[1].1 - 3.0).abs() < 1e-9,
             "{spans:?}"
         );
+    }
+
+    /// Every seam-segment endpoint, as a sorted triple of surface handles.
+    fn seam_endpoint_triples(
+        m: &Model,
+        x: Handle<Solid>,
+        y: Handle<Solid>,
+    ) -> std::collections::BTreeSet<[Handle<Surface>; 3]> {
+        let (planes, surf_ix) = combined(m, x, y);
+        let inc_x = arrange::edge_planes(m, x, &surf_ix).unwrap();
+        let inc_y = arrange::edge_planes(m, y, &surf_ix).unwrap();
+        let shell = m.solids.get(x).outer;
+        let mut out = std::collections::BTreeSet::new();
+        for &f in &m.shells.get(shell).faces {
+            let segs =
+                arrange::seam_segments_on(m, f, y, &planes, &surf_ix, &inc_x, &inc_y).unwrap();
+            for s in segs {
+                for t in s.ends {
+                    let mut surfs = [planes[t[0]].surf, planes[t[1]].surf, planes[t[2]].surf];
+                    surfs.sort_unstable();
+                    out.insert(surfs);
+                }
+            }
+        }
+        out
+    }
+
+    /// The `ThreePlane` definitions of a solid's `Discovered` vertices.
+    fn discovered_triples(m: &Model) -> std::collections::BTreeSet<[Handle<Surface>; 3]> {
+        let reach = m.reachable();
+        let mut out = std::collections::BTreeSet::new();
+        for vh in &reach.vertices {
+            if let Origin::Discovered {
+                definition: VertexDef::ThreePlane(mut t),
+                ..
+            } = m.vertices.get(*vh).origin
+            {
+                t.sort_unstable();
+                out.insert(t);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn seam_endpoints_match_the_boolean_result_vertices() {
+        // An independent oracle. `assemble_fuse_cut` stamps every result vertex it
+        // discovers with `VertexDef::ThreePlane` — the same identity a seam-segment
+        // endpoint carries. The two are computed along completely different routes:
+        // one walks edges through faces and reconstructs, the other clips a plane-pair
+        // line to a face pair. On a clean single-chord overlap they must agree exactly.
+        //
+        // (They would not on `poke_through` or `tunnel` fixtures, where the reconstruction
+        // rejects part-way through enumeration while the face-local gathering completes.)
+        for kind in [BoolKind::Cut, BoolKind::Fuse] {
+            let (mut m, l, bx) = l_and_corner_box();
+            let from_arrange = seam_endpoint_triples(&m, l, bx);
+            assert_eq!(from_arrange.len(), 6);
+            boolean(&mut m, kind, l, bx).unwrap();
+            m.rebuild_adjacency();
+            assert_eq!(from_arrange, discovered_triples(&m), "{kind:?}");
+        }
+
+        // The reflex-corner bite too: eight seam vertices, one of them where the box
+        // straddles the L's notch.
+        let (mut m, l) = l_prism();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.6, 0.6, 0.2]),
+            Point3::from_array([1.6, 1.6, 1.4]),
+        );
+        let from_arrange = seam_endpoint_triples(&m, l, bx);
+        assert_eq!(from_arrange.len(), 8);
+        boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
     }
 
     #[test]
