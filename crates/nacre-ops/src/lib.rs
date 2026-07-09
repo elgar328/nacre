@@ -140,6 +140,7 @@ pub enum BoolError {
 /// of a test's expectation. Not `#[cfg(test)]`: the guards name these in release
 /// builds too. They are `const`, so they inline away where the tag is unused.
 mod tag {
+    pub const HOLLOW_OPERAND: &str = "hollow_operand";
     pub const COMMON_OVERLAP: &str = "common_overlap";
     pub const PIERCED_MULTI: &str = "pierced_multi";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
@@ -871,6 +872,15 @@ pub fn boolean(
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
+    // A cavitied operand is out of coverage, and every path below gets it wrong
+    // *silently*: `collect_planes`/`solid_vertices` see the outer shell alone, so a
+    // hollow box reads as convex; `assemble_fuse_cut` then emits `cavities: vec![]`
+    // and the void vanishes with `validate` still clean. Reject rather than answer
+    // wrong. Whether to support cavities or keep rejecting is a sub-unit 5 decision.
+    // Inputs only — a *result* may be hollow (containment `Cut` builds one).
+    if !model.solids.get(a).cavities.is_empty() || !model.solids.get(b).cavities.is_empty() {
+        return Err(reject(tag::HOLLOW_OPERAND));
+    }
     // Coincident-coplanar degeneracy (M5-c5): a clean matched-interface stack.
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
@@ -1016,10 +1026,15 @@ fn overlap_fuse_cut(
                 // The one way in is a cavitied operand. `point_in_solid` counts the
                 // cavity shells, so an edge running from outside the solid to a point
                 // inside a void classifies `Outside` at both ends; `pierced_face`
-                // scans the outer shell alone, so it reports one crossing. The seam
-                // machinery cannot represent that (`collect_planes` drops the void's
-                // planes), and this guard is what stops it. Verified: a hollow L cut
-                // by a stub reaching into its void reaches exactly here.
+                // scans the outer shell alone, so it reports one crossing.
+                //
+                // `boolean` now rejects cavitied operands at the door
+                // (`tag::HOLLOW_OPERAND`), so nothing reaches here through the public
+                // entry. This stays as defense-in-depth: for direct callers of
+                // `overlap_fuse_cut` (the test that pins it does exactly that), and
+                // for the day sub-unit 5 relaxes that door to admit cavities — the
+                // asymmetry above is what would still stop a seam being built from a
+                // boundary the classifier disagrees with.
                 if pierced_face(model, p0, p1, other, &surf_ix)?.is_some() {
                     return Err(reject(tag::TUNNEL));
                 }
@@ -2846,15 +2861,33 @@ mod tests {
     }
 
     #[test]
+    fn cut_with_a_hollow_operand_is_unsupported() {
+        // The convex path would read this hollow box as convex (`solid_vertices` sees
+        // the outer shell alone) and drop the void, returning a wrong volume that
+        // `validate` accepts. Reject at the door instead.
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+        let cutter = m.add_cuboid(Point3::from_array([2.5; 3]), Point3::from_array([3.5; 3]));
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, hollow, cutter),
+            tag::HOLLOW_OPERAND,
+        );
+    }
+
+    #[test]
     fn cut_into_a_cavity_hits_the_tunnel_guard() {
-        // The `tunnel` guard's only reachable path: a cavitied operand. `point_in_solid`
-        // counts cavity shells, so the stub's vertical edges — running from below the
-        // hollow L up into its void — classify Outside at both ends, while
-        // `pierced_face` (outer shell only) sees a single crossing of the z=0 face.
+        // `boolean` now rejects cavitied operands at the door, so this calls the seam
+        // path directly — the `tunnel` guard is still load-bearing for direct callers
+        // and for the day sub-unit 5 admits cavities, and an unverified safety guard
+        // is its own kind of silent failure.
         //
-        // That asymmetry is also why the guard has to stay: `collect_planes` never
-        // collected the void's planes, so without this reject the seam would be built
-        // from a boundary the classifier does not agree with.
+        // The guard's only reachable path: `point_in_solid` counts cavity shells, so
+        // the stub's vertical edges — running from below the hollow L up into its void
+        // — classify Outside at both ends, while `pierced_face` (outer shell only)
+        // sees a single crossing of the z=0 face.
         let (mut m, l, inner) = l_and_inner_box();
         let hollow = boolean(&mut m, BoolKind::Cut, l, inner).unwrap();
         assert_eq!(m.solids.get(hollow).cavities.len(), 1);
@@ -2862,7 +2895,10 @@ mod tests {
             Point3::from_array([0.4, 0.4, -0.2]),
             Point3::from_array([0.6, 0.6, 0.5]),
         );
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, hollow, stub), tag::TUNNEL);
+        assert_rejects(
+            || overlap_fuse_cut(&mut m, BoolKind::Cut, hollow, stub),
+            tag::TUNNEL,
+        );
     }
 
     #[test]
