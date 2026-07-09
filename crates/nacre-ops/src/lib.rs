@@ -135,6 +135,70 @@ pub enum BoolError {
     EmptyResult,
 }
 
+/// Names of the `Unsupported` reject sites, shared by the guard that raises one
+/// and the test that asserts it — a renamed tag then cannot silently drift out
+/// of a test's expectation. Not `#[cfg(test)]`: the guards name these in release
+/// builds too. They are `const`, so they inline away where the tag is unused.
+mod tag {
+    pub const COMMON_OVERLAP: &str = "common_overlap";
+    pub const PIERCED_MULTI: &str = "pierced_multi";
+    pub const COPLANAR_PAIR: &str = "coplanar_pair";
+    pub const TUNNEL: &str = "tunnel";
+    pub const NO_ENTRY_FACE: &str = "no_entry_face";
+    pub const THREE_PLANES: &str = "three_planes";
+    pub const FOURPLANE: &str = "fourplane";
+    pub const NONCONVEX_OPERAND: &str = "nonconvex_operand";
+    pub const CYLINDER_FACE: &str = "cylinder_face";
+    pub const DEGENERATE_FACE: &str = "degenerate_face";
+    pub const DEGENERATE_NORMAL: &str = "degenerate_normal";
+    pub const TANGENT_EDGE: &str = "tangent_edge";
+    pub const NONMANIFOLD_FACE: &str = "nonmanifold_face";
+    pub const DEGENERATE_CENTROID: &str = "degenerate_centroid";
+    pub const DEGENERATE_RADIUS: &str = "degenerate_radius";
+    pub const COLLINEAR_FACE: &str = "collinear_face";
+    pub const POKE_THROUGH: &str = "poke_through";
+    pub const OUTSIDE_OR_FOURPLANE: &str = "outside_or_fourplane";
+    pub const ON_BOUNDARY: &str = "on_boundary";
+    pub const RAY_DEGENERATE: &str = "ray_degenerate";
+    pub const CONTACT_DEGENERATE: &str = "contact_degenerate";
+    pub const POKEHOLE: &str = "pokehole";
+    pub const MISSING_SEAM: &str = "missing_seam";
+    pub const STRICTARC: &str = "strictarc";
+    pub const MULTICHORD: &str = "multichord";
+}
+
+#[cfg(test)]
+thread_local! {
+    static LAST_REJECT: std::cell::Cell<Option<&'static str>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Build an `Unsupported`, recording *which* guard raised it. `Err(Unsupported)`
+/// alone cannot distinguish the guards, so a reject test whose fixture drifts
+/// onto a different guard would still pass — [`assert_rejects`] closes that hole.
+/// Every `Unsupported` site in this crate goes through here: two call sites
+/// discard a `collect_planes` error (`detect_coincident_interface`), so only
+/// exhaustive tagging makes "last tag written == the site that returned" hold.
+#[inline]
+#[cfg_attr(not(test), allow(unused_variables))]
+fn reject(tag: &'static str) -> BoolError {
+    #[cfg(test)]
+    LAST_REJECT.with(|c| c.set(Some(tag)));
+    BoolError::Unsupported
+}
+
+/// Assert that `f` rejects *through the intended guard*. Clears any stale tag
+/// first, so a prior call in the same test cannot be mistaken for this one.
+#[cfg(test)]
+fn assert_rejects<T: std::fmt::Debug + PartialEq>(
+    f: impl FnOnce() -> Result<T, BoolError>,
+    expect: &'static str,
+) {
+    LAST_REJECT.with(|c| c.take());
+    assert_eq!(f(), Err(BoolError::Unsupported));
+    assert_eq!(LAST_REJECT.with(|c| c.take()), Some(expect));
+}
+
 /// A failure while applying an operation.
 #[derive(Debug, PartialEq)]
 pub enum OpError {
@@ -844,7 +908,7 @@ fn nonconvex_seamfree(
         // non-convex `Common`, and multi-chord/multi-loop seams, are later sub-units.
         return match kind {
             BoolKind::Fuse | BoolKind::Cut => overlap_fuse_cut(model, kind, a, b),
-            BoolKind::Common => Err(BoolError::Unsupported),
+            BoolKind::Common => Err(reject(tag::COMMON_OVERLAP)),
         };
     }
     // Seam-free: each solid's vertices all fall on one side of the other.
@@ -888,7 +952,7 @@ fn pierced_face(
         let pts = face_points(model, fh);
         if segment_crosses_face(p0, p1, &pts)? {
             if hit.is_some() {
-                return Err(BoolError::Unsupported); // pierces >1 face — multi-chord edge
+                return Err(reject(tag::PIERCED_MULTI)); // pierces >1 face — multi-chord edge
             }
             hit = Some(surf_ix[&model.faces.get(fh).surface]);
         }
@@ -913,7 +977,7 @@ fn overlap_fuse_cut(
     let mut planes = collect_planes(model, a)?;
     planes.extend(collect_planes(model, b)?);
     if has_coplanar_pair(&planes) {
-        return Err(BoolError::Unsupported);
+        return Err(reject(tag::COPLANAR_PAIR));
     }
 
     let mut surf_ix: HashMap<Handle<Surface>, usize> = HashMap::new();
@@ -949,15 +1013,15 @@ fn overlap_fuse_cut(
                 // `fuse_cut` only had to guard the both-outside case; a non-convex
                 // other solid can also be tunnelled from inside a reflex pocket.)
                 if pierced_face(model, p0, p1, other, &surf_ix)?.is_some() {
-                    return Err(BoolError::Unsupported);
+                    return Err(reject(tag::TUNNEL));
                 }
                 continue;
             }
-            let entry =
-                pierced_face(model, p0, p1, other, &surf_ix)?.ok_or(BoolError::Unsupported)?;
+            let entry = pierced_face(model, p0, p1, other, &surf_ix)?
+                .ok_or_else(|| reject(tag::NO_ENTRY_FACE))?;
             let [e0, e1] = [inc[0], inc[1]];
             let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
-                .ok_or(BoolError::Unsupported)?;
+                .ok_or_else(|| reject(tag::THREE_PLANES))?;
             // Exact 4-plane-concurrency guard: the seam vertex must not lie on any
             // *other* plane (a degenerate 4-plane meet). Unlike the convex path we do
             // NOT require it inside every half-space (`== -1`): a seam vertex of a
@@ -976,7 +1040,7 @@ fn overlap_fuse_cut(
                     pm.tri[2],
                 ) == 0
                 {
-                    return Err(BoolError::Unsupported); // seam vertex on a 4th plane
+                    return Err(reject(tag::FOURPLANE)); // seam vertex on a 4th plane
                 }
             }
             let mut triple = [e0, e1, entry];
@@ -998,7 +1062,7 @@ fn overlap_fuse_cut(
     let (keep_a, keep_b, flip_b) = match kind {
         BoolKind::Fuse => (Side::Outside, Side::Outside, false),
         BoolKind::Cut => (Side::Outside, Side::Inside, true),
-        BoolKind::Common => return Err(BoolError::Unsupported),
+        BoolKind::Common => return Err(reject(tag::COMMON_OVERLAP)),
     };
     if seam.is_empty() {
         return contained_result(model, kind, a, b, &classof);
@@ -1039,14 +1103,14 @@ fn common(
     if !is_convex(&planes_a, &solid_vertices(model, a))
         || !is_convex(&planes_b, &solid_vertices(model, b))
     {
-        return Err(BoolError::Unsupported);
+        return Err(reject(tag::NONCONVEX_OPERAND));
     }
     let mut planes = planes_a;
     planes.extend(planes_b);
     // Coplanar faces (within one input — e.g. an imprinted face's outer+region —
     // or shared across inputs) give the enumeration duplicate half-spaces.
     if has_coplanar_pair(&planes) {
-        return Err(BoolError::Unsupported);
+        return Err(reject(tag::COPLANAR_PAIR));
     }
 
     // --- all-local computation (nothing pushed to the model yet) ---
@@ -1074,13 +1138,13 @@ fn collect_planes(model: &Model, solid: Handle<Solid>) -> Result<Vec<PlaneInfo>,
         let face = model.faces.get(fh);
         let plane = match model.surfaces.get(face.surface) {
             Surface::Plane(p) => *p,
-            Surface::Cylinder(_) => return Err(BoolError::Unsupported),
+            Surface::Cylinder(_) => return Err(reject(tag::CYLINDER_FACE)),
         };
-        let tri = outer_tri(model, face).ok_or(BoolError::Unsupported)?;
+        let tri = outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
         let n_out = (tri[1] - tri[0])
             .cross(tri[2] - tri[0])
             .normalize()
-            .ok_or(BoolError::Unsupported)?;
+            .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
         out.push(PlaneInfo {
             surf: face.surface,
             plane,
@@ -1188,7 +1252,7 @@ fn enumerate_vertices(planes: &[PlaneInfo]) -> Result<Vec<ResultVertex>, BoolErr
                     continue;
                 }
                 if on_extra {
-                    return Err(BoolError::Unsupported); // 4-plane concurrency
+                    return Err(reject(tag::FOURPLANE)); // 4-plane concurrency
                 }
                 verts.push(ResultVertex {
                     point,
@@ -1239,7 +1303,7 @@ fn build_edges(planes: &[PlaneInfo], verts: &[ResultVertex]) -> Result<Vec<Resul
                     vb: on_pair[1],
                     planes: [i, j],
                 }),
-                _ => return Err(BoolError::Unsupported), // tangent / degenerate edge
+                _ => return Err(reject(tag::TANGENT_EDGE)), // tangent / degenerate edge
             }
         }
     }
@@ -1269,7 +1333,7 @@ fn build_faces(
         let k = ordered.len();
         for t in 0..k {
             if !edge_pairs.contains(&unordered(ordered[t], ordered[(t + 1) % k])) {
-                return Err(BoolError::Unsupported);
+                return Err(reject(tag::NONMANIFOLD_FACE));
             }
         }
         faces.push((m, ordered));
@@ -1285,8 +1349,10 @@ fn order_ccw(
     n_out: Vector3,
 ) -> Result<Vec<usize>, BoolError> {
     let pts: Vec<Point3> = idxs.iter().map(|&vi| verts[vi].point).collect();
-    let c = Point3::centroid(&pts).ok_or(BoolError::Unsupported)?;
-    let u = (pts[0] - c).normalize().ok_or(BoolError::Unsupported)?;
+    let c = Point3::centroid(&pts).ok_or_else(|| reject(tag::DEGENERATE_CENTROID))?;
+    let u = (pts[0] - c)
+        .normalize()
+        .ok_or_else(|| reject(tag::DEGENERATE_RADIUS))?;
     let w = n_out.cross(u);
     // Collinear ⇒ every point lies on the `u` axis (no `w` spread) ⇒ tangent.
     let spread = idxs
@@ -1298,7 +1364,7 @@ fn order_ccw(
         .map(|&vi| (verts[vi].point - c).norm())
         .fold(0.0, f64::max);
     if spread <= 1e-9 * scale.max(1.0) {
-        return Err(BoolError::Unsupported);
+        return Err(reject(tag::COLLINEAR_FACE));
     }
     let mut keyed: Vec<(f64, usize)> = idxs
         .iter()
@@ -1436,13 +1502,13 @@ fn fuse_cut(
     if !is_convex(&planes_a, &solid_vertices(model, a))
         || !is_convex(&planes_b, &solid_vertices(model, b))
     {
-        return Err(BoolError::Unsupported);
+        return Err(reject(tag::NONCONVEX_OPERAND));
     }
     let na = planes_a.len();
     let mut planes = planes_a;
     planes.extend(planes_b);
     if has_coplanar_pair(&planes) {
-        return Err(BoolError::Unsupported);
+        return Err(reject(tag::COPLANAR_PAIR));
     }
     let a_range = 0..na;
     let b_range = na..planes.len();
@@ -1479,7 +1545,7 @@ fn fuse_cut(
                 // solid ⇒ this edge pierces a face mid-face (a poke-through) ⇒
                 // out of clean-seam coverage.
                 if s0 == Side::Outside && segment_enters(p0, p1, other.clone(), &planes) {
-                    return Err(BoolError::Unsupported);
+                    return Err(reject(tag::POKE_THROUGH));
                 }
                 continue;
             }
@@ -1488,11 +1554,11 @@ fn fuse_cut(
             } else {
                 (p1, p0)
             };
-            let entry =
-                enter_face(p_out, p_in, other.clone(), &planes).ok_or(BoolError::Unsupported)?;
+            let entry = enter_face(p_out, p_in, other.clone(), &planes)
+                .ok_or_else(|| reject(tag::NO_ENTRY_FACE))?;
             let [e0, e1] = [inc[0], inc[1]];
             let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
-                .ok_or(BoolError::Unsupported)?;
+                .ok_or_else(|| reject(tag::THREE_PLANES))?;
             // Exact: the point must be inside the entry face (on ∂ of the other solid).
             for m in other.clone() {
                 if m == entry {
@@ -1507,7 +1573,7 @@ fn fuse_cut(
                     planes[m].tri[2],
                 ) {
                     -1 => {}
-                    _ => return Err(BoolError::Unsupported), // outside or on a 4th plane
+                    _ => return Err(reject(tag::OUTSIDE_OR_FOURPLANE)), // outside or on a 4th plane
                 }
             }
             let mut triple = [e0, e1, entry];
@@ -1568,7 +1634,7 @@ fn classify_vertex(v: Point3, other: &[PlaneInfo]) -> Result<Side, BoolError> {
     for pm in other {
         let sd = (v - pm.tri[0]).dot(pm.n_out);
         if sd.abs() <= scale {
-            return Err(BoolError::Unsupported); // on the other solid's boundary
+            return Err(reject(tag::ON_BOUNDARY)); // on the other solid's boundary
         }
         if sd > scale {
             side = Side::Outside; // outside this half-space ⇒ outside the convex
@@ -1627,7 +1693,7 @@ fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side
             Side::Outside
         });
     }
-    Err(BoolError::Unsupported) // every direction grazed the boundary (adversarial)
+    Err(reject(tag::RAY_DEGENERATE)) // every direction grazed the boundary (adversarial)
 }
 
 /// Every face of a solid's boundary — outer shell then each cavity shell.
@@ -1740,7 +1806,7 @@ fn segment_crosses_face(p0: Point3, p1: Point3, pts: &[Point3]) -> Result<bool, 
         }
         return Ok(crossing != 0);
     }
-    Err(BoolError::Unsupported) // grazed a real edge/vertex from every apex
+    Err(reject(tag::CONTACT_DEGENERATE)) // grazed a real edge/vertex from every apex
 }
 
 /// Whether a segment (both endpoints outside the convex solid `range`) passes
@@ -1938,7 +2004,7 @@ fn reconstruct_face(
             // No boundary crossing: an interior seam on this plane means the other
             // solid pokes through this face (a hole) — out of clean-seam coverage.
             if seam.iter().any(|s| s.triple.contains(&plane_idx)) {
-                return Err(BoolError::Unsupported);
+                return Err(reject(tag::POKEHOLE));
             }
             if kept[0] {
                 let loop_nodes = verts.iter().map(|&v| Node::Orig(v)).collect();
@@ -1958,7 +2024,7 @@ fn reconstruct_face(
                 edge_seam
                     .get(&hes[i].edge)
                     .copied()
-                    .ok_or(BoolError::Unsupported)
+                    .ok_or_else(|| reject(tag::MISSING_SEAM))
             };
             // Boundary crossing on each transition edge.
             let (t0, t1) = (transitions[0], transitions[1]);
@@ -2005,7 +2071,7 @@ fn reconstruct_face(
             // `strict = false` and is unaffected.
             if strict && !bends.is_empty() {
                 let n = {
-                    let t = outer_tri(model, face).ok_or(BoolError::Unsupported)?;
+                    let t = outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
                     (t[1] - t[0]).cross(t[2] - t[0])
                 };
                 let mut arc: Vec<Point3> = Vec::with_capacity(bends.len() + 2);
@@ -2024,7 +2090,7 @@ fn reconstruct_face(
                     };
                     if s != 0 {
                         if sign != 0 && sign != s {
-                            return Err(BoolError::Unsupported); // non-convex seam arc
+                            return Err(reject(tag::STRICTARC)); // non-convex seam arc
                         }
                         sign = s;
                     }
@@ -2039,7 +2105,7 @@ fn reconstruct_face(
                 flip,
             }))
         }
-        _ => Err(BoolError::Unsupported), // ≥4 crossings ⇒ multiple chords
+        _ => Err(reject(tag::MULTICHORD)), // ≥4 crossings ⇒ multiple chords
     }
 }
 
@@ -2298,16 +2364,16 @@ fn coincident_merge(
         // A and B are on opposite sides of the interface, so B removes nothing:
         // A − B is a fresh copy of A (its interface face survives).
         BoolKind::Cut => {
-            let planes_a = collect_planes(model, a).map_err(|_| BoolError::Unsupported)?;
+            let planes_a = collect_planes(model, a)?;
             let faces = solid_local_faces(model, a, 0, None, None);
             Ok(assemble_fuse_cut(model, a, b, &planes_a, &[], &faces))
         }
         // Drop both interface faces; keep every other face, sewing B's interface
         // ring to A's shared vertices. Coplanar-adjacent side faces stay separate.
         BoolKind::Fuse => {
-            let planes_a = collect_planes(model, a).map_err(|_| BoolError::Unsupported)?;
+            let planes_a = collect_planes(model, a)?;
             let na = planes_a.len();
-            let planes_b = collect_planes(model, b).map_err(|_| BoolError::Unsupported)?;
+            let planes_b = collect_planes(model, b)?;
             let mut planes = planes_a;
             planes.extend(planes_b);
             let mut faces = solid_local_faces(model, a, 0, Some(iface.fa), None);
@@ -2619,9 +2685,9 @@ mod tests {
     fn common_non_convex_overlap_is_unsupported() {
         // Non-convex ∩ needs the full arrangement (a later sub-unit) — honest reject.
         let (mut m, l, bx) = l_and_corner_box();
-        assert_eq!(
-            boolean(&mut m, BoolKind::Common, l, bx),
-            Err(BoolError::Unsupported)
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Common, l, bx),
+            tag::COMMON_OVERLAP,
         );
     }
 
@@ -2657,9 +2723,9 @@ mod tests {
             Point3::from_array([0.3, 0.3, -0.5]),
             Point3::from_array([0.5, 0.6, 1.5]),
         );
-        assert_eq!(
-            boolean(&mut m, BoolKind::Cut, l, rod),
-            Err(BoolError::Unsupported)
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, l, rod),
+            tag::PIERCED_MULTI,
         );
     }
 
@@ -3380,10 +3446,8 @@ mod tests {
             Point3::from_array([0.5, 0.5, 1.0]),
             Point3::from_array([1.5, 1.5, 2.0]),
         );
-        assert_eq!(
-            boolean(&mut m, BoolKind::Fuse, a, b),
-            Err(BoolError::Unsupported)
-        );
+        // Rejected by the combined-plane coplanar check, not by a merge-specific guard.
+        assert_rejects(|| boolean(&mut m, BoolKind::Fuse, a, b), tag::COPLANAR_PAIR);
     }
 
     #[test]
@@ -3400,10 +3464,7 @@ mod tests {
             Point3::from_array([0.5, 0.5, 0.0]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        assert_eq!(
-            boolean(&mut m, BoolKind::Fuse, a, b),
-            Err(BoolError::Unsupported)
-        );
+        assert_rejects(|| boolean(&mut m, BoolKind::Fuse, a, b), tag::COPLANAR_PAIR);
     }
 
     #[test]
@@ -3416,9 +3477,9 @@ mod tests {
             Point3::from_array([1.0, 1.0, -1.0]),
             Point3::from_array([2.0, 2.0, 4.0]),
         );
-        assert_eq!(
-            boolean(&mut m, BoolKind::Fuse, a, bar),
-            Err(BoolError::Unsupported)
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Fuse, a, bar),
+            tag::POKE_THROUGH,
         );
     }
 
@@ -3643,16 +3704,18 @@ mod tests {
             0.5,
             2.0,
         );
-        assert_eq!(
-            boolean(&mut m, BoolKind::Common, a, cyl),
-            Err(BoolError::Unsupported)
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Common, a, cyl),
+            tag::CYLINDER_FACE,
         );
     }
 
     #[test]
     fn common_rejects_non_convex_input() {
         // An L-shaped prism (reflex edge) is not the intersection of its face
-        // half-spaces.
+        // half-spaces. It never reaches `common`'s `is_convex` guard, though: the
+        // box's corner grazes the L's boundary, so `boundaries_intersect` bails on a
+        // degenerate contact first. Measured, not assumed.
         let l = Profile2d {
             points: vec![
                 p2(0.0, 0.0),
@@ -3669,9 +3732,9 @@ mod tests {
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.5, 1.5, 0.5]),
         );
-        assert_eq!(
-            boolean(&mut m, BoolKind::Common, lsolid, b),
-            Err(BoolError::Unsupported)
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Common, lsolid, b),
+            tag::CONTACT_DEGENERATE,
         );
     }
 
@@ -3697,9 +3760,9 @@ mod tests {
             Point3::from_array([0.2, 0.2, 0.2]),
             Point3::from_array([1.2, 1.2, 1.2]),
         );
-        assert_eq!(
-            boolean(&mut m, BoolKind::Common, solid, b),
-            Err(BoolError::Unsupported)
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Common, solid, b),
+            tag::COPLANAR_PAIR,
         );
     }
 
