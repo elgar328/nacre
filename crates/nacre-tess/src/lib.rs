@@ -34,6 +34,9 @@ pub enum TessError {
     /// Ear clipping stalled — the ring self-intersects, so no triangulation of it
     /// exists.
     NoEar,
+    /// The bootstrap OBJ writer met a curved face. It used to fan the face's edge
+    /// endpoints and emit nonsense; `tessellate` is the path that handles those.
+    NonPlanarFace,
 }
 
 /// Export a model to Wavefront OBJ text (vertices shared; each face fan-
@@ -49,7 +52,7 @@ pub enum TessError {
 /// Assumes every edge is bounded (M1); a closed edge (`bounds: None`, M3) would
 /// panic. Faces are emitted in their loop winding, which for M1's outward-wound
 /// `Orientation::Forward` faces yields outward-facing triangles.
-pub fn to_obj(model: &Model) -> String {
+pub fn to_obj(model: &Model) -> Result<String, TessError> {
     let mut out = String::new();
     // Writing to a String is infallible; unwrap keeps `unused_must_use` quiet.
     writeln!(
@@ -59,21 +62,15 @@ pub fn to_obj(model: &Model) -> String {
     .unwrap();
 
     // Vertices in store order → OBJ indices 1..=n (matches each handle's index).
-    for (_, v) in model.vertices.iter() {
-        let [x, y, z] = v.point.as_array();
+    let pts: Vec<Point3> = model.vertices.iter().map(|(_, v)| v.point).collect();
+    for p in &pts {
+        let [x, y, z] = p.as_array();
         writeln!(out, "v {} {} {}", x, y, z).unwrap();
     }
 
-    let reach = model.reachable();
-    // Store order, not `HashSet` order: the OBJ must be reproducible.
-    for (fh, face) in model.faces.iter() {
-        if !reach.faces.contains(&fh) {
-            continue;
-        }
-        // Ordered boundary as 1-based OBJ vertex indices.
-        let boundary: Vec<u32> = face
-            .outer
-            .half_edges
+    /// A loop's start vertices, as indices into the vertex store.
+    fn ring(model: &Model, lp: &Loop) -> Vec<usize> {
+        lp.half_edges
             .iter()
             .map(|he| {
                 let bounds = model
@@ -82,16 +79,29 @@ pub fn to_obj(model: &Model) -> String {
                     .bounds
                     .expect("M1: bounded edges only (closed edges arrive in M3)");
                 let start = if he.forward { bounds[0] } else { bounds[1] };
-                start.index() + 1
+                start.index() as usize
             })
-            .collect();
-        // Fan triangulation — valid for convex faces (M1 faces are convex quads).
-        for i in 1..boundary.len().saturating_sub(1) {
-            writeln!(out, "f {} {} {}", boundary[0], boundary[i], boundary[i + 1]).unwrap();
+            .collect()
+    }
+
+    let reach = model.reachable();
+    // Store order, not `HashSet` order: the OBJ must be reproducible.
+    for (fh, face) in model.faces.iter() {
+        if !reach.faces.contains(&fh) {
+            continue;
+        }
+        if !matches!(model.surfaces.get(face.surface), Surface::Plane(_)) {
+            return Err(TessError::NonPlanarFace);
+        }
+        let outer = ring(model, &face.outer);
+        let holes: Vec<Vec<usize>> = face.inner.iter().map(|lp| ring(model, lp)).collect();
+        let holes: Vec<&[usize]> = holes.iter().map(|h| h.as_slice()).collect();
+        for t in polygon::triangulate_polygon(&pts, &outer, &holes)? {
+            writeln!(out, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1).unwrap();
         }
     }
 
-    out
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +193,7 @@ impl Tessellation {
 /// Only cells **reachable from `live_solids`** are meshed. `Store` is append-only
 /// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the
 /// stores would mesh the operands alongside the result.
-pub fn tessellate(model: &Model, cfg: &TessConfig) -> Tessellation {
+pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessError> {
     let mut t = Tessellation::default();
     let mut vmap: HashMap<Handle<Vertex>, Handle<TessVertex>> = HashMap::new();
     // `Reachable` is a `HashSet`; walk the stores in their own order and merely ask
@@ -205,12 +215,12 @@ pub fn tessellate(model: &Model, cfg: &TessConfig) -> Tessellation {
             continue;
         }
         match model.surfaces.get(face.surface) {
-            Surface::Plane(_) => triangulate_planar(&mut t, fh, face),
+            Surface::Plane(_) => triangulate_planar(&mut t, fh, face)?,
             Surface::Cylinder(cyl) => triangulate_cylinder(&mut t, model, fh, face, cyl),
         }
     }
 
-    t
+    Ok(t)
 }
 
 /// A deduped mesh vertex for a topology vertex (tagged `OnVertex`).
@@ -312,13 +322,40 @@ fn push_tri(t: &mut Tessellation, fh: Handle<Face>, vertices: [Handle<TessVertex
     t.by_face.entry(fh).or_default().push(th);
 }
 
-/// Fan-triangulate a planar face's outer boundary from its first vertex (convex
-/// only). The loop winds outward, so the fan does too.
-fn triangulate_planar(t: &mut Tessellation, fh: Handle<Face>, face: &Face) {
-    let ring = boundary_ring(t, &face.outer);
-    for i in 1..ring.len().saturating_sub(1) {
-        push_tri(t, fh, [ring[0], ring[i], ring[i + 1]]);
+/// Triangulate a planar face: its outer ring, minus its holes.
+///
+/// The rings are shared edge polylines, and [`polygon::triangulate_polygon`] adds no
+/// vertices — a hole is bridged by repeating two of them — so adjacent faces still
+/// meet exactly (design §5).
+fn triangulate_planar(
+    t: &mut Tessellation,
+    fh: Handle<Face>,
+    face: &Face,
+) -> Result<(), TessError> {
+    let outer_h = boundary_ring(t, &face.outer);
+    let holes_h: Vec<Vec<Handle<TessVertex>>> =
+        face.inner.iter().map(|lp| boundary_ring(t, lp)).collect();
+
+    // `triangulate_polygon` indexes a flat point slice; map the mesh handles onto one.
+    let mut handles: Vec<Handle<TessVertex>> = outer_h.clone();
+    handles.extend(holes_h.iter().flatten().copied());
+    let pts: Vec<Point3> = handles.iter().map(|&h| t.vertices.get(h).pos).collect();
+    let outer: Vec<usize> = (0..outer_h.len()).collect();
+    let mut cut = outer_h.len();
+    let holes: Vec<Vec<usize>> = holes_h
+        .iter()
+        .map(|h| {
+            let r = (cut..cut + h.len()).collect();
+            cut += h.len();
+            r
+        })
+        .collect();
+    let holes: Vec<&[usize]> = holes.iter().map(|h| h.as_slice()).collect();
+
+    for tri in polygon::triangulate_polygon(&pts, &outer, &holes)? {
+        push_tri(t, fh, tri.map(|i| handles[i]));
     }
+    Ok(())
 }
 
 /// The centroid's projection onto `axis` (for ordering the two rims).
@@ -420,7 +457,7 @@ mod tests {
 
     #[test]
     fn unit_cube_obj_shape() {
-        let obj = to_obj(&cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
+        let obj = to_obj(&cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])).unwrap();
         assert!(obj.lines().next().unwrap().starts_with('#'));
         assert_eq!(v_lines(&obj).len(), 8);
 
@@ -440,7 +477,7 @@ mod tests {
 
     #[test]
     fn vertices_round_trip() {
-        let obj = to_obj(&cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]));
+        let obj = to_obj(&cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0])).unwrap();
         let got: Vec<[f64; 3]> = v_lines(&obj)
             .into_iter()
             .map(|l| {
@@ -468,7 +505,8 @@ mod tests {
         let t = tessellate(
             &cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
             &TessConfig::default(),
-        );
+        )
+        .unwrap();
         assert_eq!(t.vertices.len(), 8);
         assert_eq!(t.triangles.len(), 12); // 6 quads × 2
         assert_eq!(non_watertight_edges(&t), 0);
@@ -481,7 +519,7 @@ mod tests {
     fn cylinder_tessellates_watertight() {
         let cfg = TessConfig::default();
         let n = circle_segments(cfg.tol, 2.0);
-        let t = tessellate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0), &cfg);
+        let t = tessellate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0), &cfg).unwrap();
         assert_eq!(t.vertices.len(), 2 * n); // two rim rings, seam vertices shared
         assert_eq!(t.triangles.len(), 4 * n - 4); // 2 caps (n−2) + band (2n)
         assert_eq!(non_watertight_edges(&t), 0);
@@ -490,7 +528,7 @@ mod tests {
     #[test]
     fn cylinder_provenance_matches_positions() {
         let m = cylinder([1.0, -2.0, 0.5], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let t = tessellate(&m, &TessConfig::default());
+        let t = tessellate(&m, &TessConfig::default()).unwrap();
         for (_, tv) in t.vertices.iter() {
             let expected = match tv.origin {
                 TessOrigin::OnVertex(v) => m.vertices.get(v).point,
@@ -509,8 +547,14 @@ mod tests {
     #[test]
     fn finer_tolerance_adds_triangles() {
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let coarse = tessellate(&m, &TessConfig { tol: 0.5 }).triangles.len();
-        let fine = tessellate(&m, &TessConfig { tol: 0.001 }).triangles.len();
+        let coarse = tessellate(&m, &TessConfig { tol: 0.5 })
+            .unwrap()
+            .triangles
+            .len();
+        let fine = tessellate(&m, &TessConfig { tol: 0.001 })
+            .unwrap()
+            .triangles
+            .len();
         assert!(fine > coarse, "fine {fine} should exceed coarse {coarse}");
     }
 
@@ -521,7 +565,7 @@ mod tests {
             ext in prop::array::uniform3(1e-2f64..1e3),
         ) {
             let max = [min[0] + ext[0], min[1] + ext[1], min[2] + ext[2]];
-            let obj = to_obj(&cube(min, max));
+            let obj = to_obj(&cube(min, max)).unwrap();
             prop_assert_eq!(v_lines(&obj).len(), 8);
             let faces = f_lines(&obj);
             prop_assert_eq!(faces.len(), 12);
@@ -543,7 +587,7 @@ mod tests {
             prop_assume!(Vector3::from_array(axis).norm() > 0.1);
             let cfg = TessConfig::default();
             let n = circle_segments(cfg.tol, r);
-            let t = tessellate(&cylinder([0.0, 0.0, 0.0], axis, r, h), &cfg);
+            let t = tessellate(&cylinder([0.0, 0.0, 0.0], axis, r, h), &cfg).unwrap();
             prop_assert_eq!(t.vertices.len(), 2 * n);
             prop_assert_eq!(t.triangles.len(), 4 * n - 4);
             prop_assert_eq!(non_watertight_edges(&t), 0);

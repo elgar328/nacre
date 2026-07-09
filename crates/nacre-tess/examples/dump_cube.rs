@@ -17,6 +17,7 @@ fn main() {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "cube.obj".to_string());
-    std::fs::write(&path, to_obj(&model)).expect("write OBJ file");
+    let obj = to_obj(&model).expect("planar model meshes");
+    std::fs::write(&path, obj).expect("write OBJ file");
     println!("wrote {path} — open in MeshLab / f3d / any OBJ viewer");
 }

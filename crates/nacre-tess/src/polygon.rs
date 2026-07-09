@@ -8,9 +8,6 @@
 //! which is why it can be tested on hand-built polygons, and why both the
 //! provenance tessellator and the bootstrap OBJ writer can share it.
 
-// Wired in by the next commit; until then only the tests below reach it.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use crate::TessError;
 use nacre_math::{Point3, Vector3};
 

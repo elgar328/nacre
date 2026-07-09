@@ -25,7 +25,9 @@ fn main() {
         .unwrap_or_else(|| "cylinder".to_string());
 
     for (label, tol) in [("coarse", 1.0), ("fine", 0.02)] {
-        let obj = tessellate(&model, &TessConfig { tol }).to_obj();
+        let obj = tessellate(&model, &TessConfig { tol })
+            .expect("cylinder meshes")
+            .to_obj();
         let path = format!("{prefix}_{label}.obj");
         std::fs::write(&path, obj).expect("write OBJ file");
         println!("wrote {path} (tol {tol}) — open in Quick Look");

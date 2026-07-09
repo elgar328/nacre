@@ -39,7 +39,7 @@ fn hexagon_extrude_exports_to_step_and_obj() {
     assert!(step.contains("MANIFOLD_SOLID_BREP"));
 
     // ops model → an OBJ mesh: 12 vertices (2n for a hexagon prism) plus faces.
-    let obj = nacre_tess::to_obj(&model);
+    let obj = nacre_tess::to_obj(&model).expect("planar model meshes");
     let v_lines = obj.lines().filter(|l| l.starts_with("v ")).count();
     let f_lines = obj.lines().filter(|l| l.starts_with("f ")).count();
     assert_eq!(v_lines, 12);
@@ -109,7 +109,7 @@ fn non_watertight(t: &Tessellation) -> usize {
 
 /// `(triangles, mesh area − props area, non-watertight edges)`.
 fn mesh_vs_props(model: &Model, solid: Handle<Solid>) -> (usize, f64, usize) {
-    let t = tessellate(model, &TessConfig::default());
+    let t = tessellate(model, &TessConfig::default()).expect("planar model meshes");
     let props = nacre_props::mass_props(model, solid).expect("planar mass props");
     (
         t.triangles.len(),
@@ -121,6 +121,19 @@ fn mesh_vs_props(model: &Model, solid: Handle<Solid>) -> (usize, f64, usize) {
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d {
         points: vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)],
+    }
+}
+
+/// `PocketOnFace`'s profile lives in a frame **derived from the face** (design §6),
+/// centred on it — not in world coordinates. `±0.2` here is the `[0.3,0.7]²` void.
+fn centred_square(half: f64) -> Profile2d {
+    Profile2d {
+        points: vec![
+            p2(-half, -half),
+            p2(half, -half),
+            p2(half, half),
+            p2(-half, half),
+        ],
     }
 }
 
@@ -180,7 +193,7 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
         &mut m,
         &Operation::PocketOnFace {
             face: top,
-            profile: square(0.3, 0.7),
+            profile: centred_square(0.2),
             dist: 0.5,
         },
     )
@@ -216,30 +229,42 @@ fn a_convex_hole_free_solid_meshes_exactly() {
 }
 
 #[test]
-fn a_non_star_shaped_cap_overshoots_its_area_today() {
-    // `triangulate_planar` fans from `ring[0]`. On the U's cap that drags a triangle
-    // across the notch: it comes out clockwise, and the unsigned sum counts its 2.6
-    // twice over instead of cancelling. Once per cap ⇒ +5.2.
+fn a_non_star_shaped_cap_meshes_exactly() {
+    // The fan used to drag a triangle across the U's notch: clockwise, so the
+    // unsigned sum counted its 2.6 forwards instead of backwards, once per cap ⇒
+    // +5.2. Watertight saw nothing — the fan's edges still paired up. Only area
+    // spoke, which is why both checks are here.
     //
-    // Watertight sees **nothing**: the fan's edges still pair up. Only area speaks.
+    // Ear clipping owes nothing to `ring[0]`. Each cap is `8 − 2 = 6` triangles.
     let (m, s) = u_prism();
     let (tris, delta, leaks) = mesh_vs_props(&m, s);
     assert_eq!((tris, leaks), (28, 0));
-    assert!((delta - 5.2).abs() < 1e-9, "area delta {delta}");
+    assert!(delta.abs() < 1e-12, "area delta {delta}");
 }
 
 #[test]
-fn a_pocket_lid_is_filled_today() {
-    // `triangulate_planar` ignores `face.inner`, so the lid's hole (0.16) is meshed
-    // solid. Its rim edges are then used once instead of twice — the one bug that
-    // watertight does catch. (The superseded top face used to ride along too, worth
-    // another 1.0; the reachable walk retired that.)
+fn a_pocket_lid_carries_its_hole() {
+    // The lid used to be meshed solid (Δ +0.16), and its four rim edges were then
+    // used once by a pocket wall and never by the lid — the one bug watertight
+    // caught. Bridged and ear-clipped, the lid is `4 + 4 + 2·1 − 2 = 8` triangles;
+    // the solid comes to 28.
     let (m, s) = pocketed_cube();
     let (tris, delta, leaks) = mesh_vs_props(&m, s);
-    assert_eq!(tris, 22);
-    // The four rim edges of the hole: used once by a pocket wall, never by the lid.
-    assert_eq!(leaks, 4);
-    assert!((delta - 0.16).abs() < 1e-9, "area delta {delta}");
+    assert_eq!((tris, leaks), (28, 0));
+    assert!(delta.abs() < 1e-12, "area delta {delta}");
+}
+
+#[test]
+fn the_bootstrap_obj_carries_holes_too() {
+    // The OBJ a user actually looks at comes from `to_obj(&Model)`, not from
+    // `tessellate`. It was a second fan with the same two bugs. Both now share one
+    // triangulator, so the lid's hole survives to Quick Look: `f` lines match the
+    // tessellation's triangles, and no triangle references a superseded vertex.
+    let (m, s) = pocketed_cube();
+    let obj = nacre_tess::to_obj(&m).expect("planar model meshes");
+    let f_lines = obj.lines().filter(|l| l.starts_with("f ")).count();
+    let (tris, _, _) = mesh_vs_props(&m, s);
+    assert_eq!(f_lines, tris);
 }
 
 #[test]

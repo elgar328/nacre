@@ -9,9 +9,9 @@
 //! STEP in step-loupe (its report flags dropped/orphan entities) or FreeCAD (an
 //! independent OCCT reader — cross-check face orientation), and the OBJ in Quick Look.
 //!
-//! A regular hexagon is used because it is convex: `nacre_tess::to_obj` fan-
-//! triangulates each face, which is only valid for convex faces. A concave profile
-//! would still yield a correct b-rep and STEP, but a broken OBJ cap.
+//! A regular hexagon, for no reason but familiarity: `nacre_tess::to_obj` ear-clips
+//! planar faces and bridges their holes, so a concave profile would mesh correctly
+//! too. That was not true before the triangulator landed.
 
 use nacre_math::Point2;
 use nacre_ops::{Operation, Profile2d, SketchPlane, replay};
@@ -48,7 +48,7 @@ fn main() {
     let step_path = format!("{prefix}.step");
     std::fs::write(&step_path, step).expect("write STEP file");
 
-    let obj = nacre_tess::to_obj(&model);
+    let obj = nacre_tess::to_obj(&model).expect("planar model meshes");
     let obj_path = format!("{prefix}.obj");
     std::fs::write(&obj_path, obj).expect("write OBJ file");
 
