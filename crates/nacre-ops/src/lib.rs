@@ -14,6 +14,8 @@ use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,
 };
 
+mod arrange;
+
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// `x_axis`/`y_axis` are assumed unit and orthogonal (the constructors ensure
 /// it); the plane normal is `x × y`.
@@ -139,7 +141,7 @@ pub enum BoolError {
 /// and the test that asserts it — a renamed tag then cannot silently drift out
 /// of a test's expectation. Not `#[cfg(test)]`: the guards name these in release
 /// builds too. They are `const`, so they inline away where the tag is unused.
-mod tag {
+pub(crate) mod tag {
     pub const HOLLOW_OPERAND: &str = "hollow_operand";
     pub const INNER_LOOP_OPERAND: &str = "inner_loop_operand";
     pub const COMMON_OVERLAP: &str = "common_overlap";
@@ -183,7 +185,7 @@ thread_local! {
 /// exhaustive tagging makes "last tag written == the site that returned" hold.
 #[inline]
 #[cfg_attr(not(test), allow(unused_variables))]
-fn reject(tag: &'static str) -> BoolError {
+pub(crate) fn reject(tag: &'static str) -> BoolError {
     #[cfg(test)]
     LAST_REJECT.with(|c| c.set(Some(tag)));
     BoolError::Unsupported
@@ -484,7 +486,7 @@ fn extrude(
 /// The start vertex of a half-edge (`bounds[0]` if forward, else `bounds[1]`).
 /// The target face of an imprint is part of a valid solid, so its edges are
 /// bounded.
-fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
+pub(crate) fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
     let [a, b] = model
         .edges
         .get(he.edge)
@@ -843,15 +845,15 @@ use std::collections::{HashMap, HashSet};
 /// only because `tri` is taken outer-CCW; `plane.normal()` is the *surface's*
 /// normal and may point inward on a `Reversed` face. Every sign test here reads
 /// `n_out` (or `tri`), and none reads `plane.normal()`.
-struct PlaneInfo {
-    surf: Handle<Surface>,
-    plane: Plane,
+pub(crate) struct PlaneInfo {
+    pub(crate) surf: Handle<Surface>,
+    pub(crate) plane: Plane,
     /// Three non-collinear outer-CCW loop points; their RH normal is outward.
-    tri: [Point3; 3],
+    pub(crate) tri: [Point3; 3],
     /// Outward normal, `(tri[1]−tri[0])×(tri[2]−tri[0])` normalized — the single
     /// source of "outward" for both the in/out sign test and face ordering.
-    n_out: Vector3,
-    orient: Orientation,
+    pub(crate) n_out: Vector3,
+    pub(crate) orient: Orientation,
 }
 
 /// A vertex of the result: a point on exactly three planes, inside all others.
@@ -1198,7 +1200,10 @@ fn common(
 
 /// The supporting planes of a solid's outer shell. `Unsupported` if any face is
 /// non-planar or lacks three non-collinear loop points.
-fn collect_planes(model: &Model, solid: Handle<Solid>) -> Result<Vec<PlaneInfo>, BoolError> {
+pub(crate) fn collect_planes(
+    model: &Model,
+    solid: Handle<Solid>,
+) -> Result<Vec<PlaneInfo>, BoolError> {
     let shell = model.solids.get(solid).outer;
     let mut out = Vec::new();
     for &fh in &model.shells.get(shell).faces {
@@ -1340,7 +1345,7 @@ fn enumerate_vertices(planes: &[PlaneInfo]) -> Result<Vec<ResultVertex>, BoolErr
 
 /// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
 /// `Origin::Discovered` tolerance).
-fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
+pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
     let mut tol = a.distance(p).max(b.distance(p)).max(c.distance(p));
     for (x, y) in [(a, b), (a, c), (b, c)] {
         if let Some(line) = plane_plane(x, y) {
@@ -1533,7 +1538,7 @@ fn assemble(
 
 /// A vertex's side relative to the *other* solid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Side {
+pub(crate) enum Side {
     Inside,
     Outside,
 }
@@ -1796,7 +1801,7 @@ fn solid_faces(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Face>> {
 /// So the hole's fan triangles are oriented against the outer ring's and its
 /// signed crossings subtract. No ear-clipping, no tolerance — the same
 /// orientation-cancellation the concave-outer fan already relies on.
-fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
+pub(crate) fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
     let face = model.faces.get(fh);
     std::iter::once(&face.outer)
         .chain(face.inner.iter())
@@ -1893,7 +1898,11 @@ fn boundaries_intersect(
 /// retry — for the face as a whole, since one ring's verdict is meaningless without
 /// the others. A genuine contact (the segment grazing a *real* edge/vertex) is
 /// `Degenerate` from every apex ⇒ `Unsupported`.
-fn segment_crosses_face(p0: Point3, p1: Point3, rings: &[Vec<Point3>]) -> Result<bool, BoolError> {
+pub(crate) fn segment_crosses_face(
+    p0: Point3,
+    p1: Point3,
+    rings: &[Vec<Point3>],
+) -> Result<bool, BoolError> {
     let apexes = rings.iter().map(|r| r.len()).max().unwrap_or(0);
     'apex: for apex in 0..apexes {
         let mut crossing = 0i32;
@@ -1980,7 +1989,7 @@ fn solid_vertex_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Verte
 /// Each outer-shell edge with its bound vertices and the two combined-plane
 /// indices of its adjacent faces, in first-seen (deterministic) order.
 #[allow(clippy::type_complexity)]
-fn edge_incidence(
+pub(crate) fn edge_incidence(
     model: &Model,
     solid: Handle<Solid>,
     surf_ix: &HashMap<Handle<Surface>, usize>,
