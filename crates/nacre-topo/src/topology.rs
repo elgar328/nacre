@@ -3,7 +3,7 @@
 //! Every cell references exact geometry only by `Handle` — the topology never
 //! looks at coordinates. Identity is by `Handle`, so nothing here derives
 //! `Eq`/`Hash` if it transitively holds an `f64` (a `Point3` or a
-//! `Origin::Discovered { tol }`); those get `PartialEq` for tests only.
+//! `Origin::Discovered { tol, definition }`); those get `PartialEq` for tests only.
 
 use crate::{Orientation, Origin};
 use nacre_geom::{Curve, Surface};

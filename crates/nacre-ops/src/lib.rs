@@ -836,6 +836,13 @@ use nacre_geom::intersect::{
 use std::collections::{HashMap, HashSet};
 
 /// A face's supporting plane plus the data the half-space enumeration needs.
+///
+/// `three_plane_orient3d(.., tri[0], tri[1], tri[2])` returns `+1` when the
+/// implicit point lies on **`tri`'s right-hand-normal side** — the convention is
+/// tied to the triangle, never to `plane`. `n_out` happens to equal that RH normal
+/// only because `tri` is taken outer-CCW; `plane.normal()` is the *surface's*
+/// normal and may point inward on a `Reversed` face. Every sign test here reads
+/// `n_out` (or `tri`), and none reads `plane.normal()`.
 struct PlaneInfo {
     surf: Handle<Surface>,
     plane: Plane,
@@ -1302,6 +1309,9 @@ fn enumerate_vertices(planes: &[PlaneInfo]) -> Result<Vec<ResultVertex>, BoolErr
                     if m == i || m == j || m == k {
                         continue;
                     }
+                    // `+1` = the vertex is on `pm.tri`'s RH-normal side, and an
+                    // outer-CCW triple's RH normal is the outward normal — so `+1`
+                    // is "outside this half-space" (see `PlaneInfo`).
                     match three_plane_orient3d(pi, pj, pk, pm.tri[0], pm.tri[1], pm.tri[2]) {
                         1 => {
                             outside = true;

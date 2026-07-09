@@ -91,9 +91,18 @@ pub fn three_planes(a: &Plane, b: &Plane, c: &Plane) -> Option<Point3> {
 
 /// The exact sign of `orient3d(V, q, r, s)`, where `V` is the implicit point at
 /// which planes `a, b, c` meet and `q, r, s` are explicit points — the
-/// geom→predicates handoff (design §9). `+1`/`-1`/`0` with the same convention
-/// as [`nacre_predicates::orient3d`] (positive ⇒ `V` on the negative side of the
-/// plane through `q, r, s`).
+/// geom→predicates handoff (design §9).
+///
+/// **Sign convention.** `orient3d(a,b,c,d) = det[a−d, b−d, c−d]`, so with `V`
+/// first this is `(V − s) · ((q − s) × (r − s))`, and `(q−s)×(r−s) = (r−q)×(s−q)`
+/// is the right-hand normal of the triangle `(q, r, s)`. Therefore
+///
+/// > `+1` ⇔ `V` lies on the **right-hand-normal side** of the triangle `(q, r, s)`,
+/// > `-1` on the other side, `0` on its plane.
+///
+/// Callers that pass a face's outer-CCW triple get "positive = outside" for free,
+/// because an outer-CCW loop's RH normal is the outward normal. Do not substitute
+/// a `Plane`'s stored normal for the triangle's — the two need not agree in sign.
 ///
 /// The three planes' [`coefficients`](Plane::coefficients) fill the rows of a
 /// [`nacre_predicates::ThreePlane`], keeping the predicate dependency inside
@@ -285,6 +294,39 @@ mod tests {
 
     fn ivec3() -> impl Strategy<Value = [i64; 3]> {
         prop::array::uniform3(-30i64..=30)
+    }
+
+    /// `+1` means `V` is on the triangle's right-hand-normal side — pinned here
+    /// because the whole seam-ordering algebra in `nacre-ops` hangs off it, and
+    /// the doc comment said the opposite until this test existed.
+    #[test]
+    fn three_plane_orient3d_is_positive_on_the_rh_normal_side() {
+        let at = |n: [f64; 3], d: f64| {
+            Plane::from_point_normal(
+                Point3::from_array([n[0] * d, n[1] * d, n[2] * d]),
+                Vector3::from_array(n),
+            )
+            .unwrap()
+        };
+        // x=1, y=1, z=1 meet at V = (1,1,1).
+        let (px, py, pz) = (
+            at([1.0, 0.0, 0.0], 1.0),
+            at([0.0, 1.0, 0.0], 1.0),
+            at([0.0, 0.0, 1.0], 1.0),
+        );
+        // Triangle in the z=0 plane, CCW seen from +z ⇒ RH normal is +z. V is above it.
+        let (q, r, s) = (
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+        );
+        assert_eq!(three_plane_orient3d(&px, &py, &pz, q, r, s), 1);
+        // Swapping two triangle points flips its RH normal, hence the sign.
+        assert_eq!(three_plane_orient3d(&px, &py, &pz, r, q, s), -1);
+        // A plane's *stored* normal is not the triangle's RH normal: `pz` above has
+        // normal +z, but the triangle (q, s, r) spans the same plane with RH normal
+        // −z. Reading the convention off `Plane::normal()` would invert the answer.
+        assert_eq!(three_plane_orient3d(&px, &py, &pz, q, s, r), -1);
     }
 
     proptest! {
