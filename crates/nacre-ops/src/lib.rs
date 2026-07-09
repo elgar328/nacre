@@ -2729,6 +2729,90 @@ mod tests {
         );
     }
 
+    /// A U-prism: a bottom bar `y∈[0,1]` with two prongs rising from it. The prong
+    /// tops sit at *different* heights (y=2.3 and y=2.0) on purpose — level tops
+    /// would be coplanar faces and `has_coplanar_pair` would reject before the seam
+    /// machinery ran. Area 3 + 1 + 1.3, extruded 1.0 ⇒ volume 5.3.
+    fn u_prism() -> (Model, Handle<Solid>) {
+        let u = Profile2d {
+            points: vec![
+                p2(0.0, 0.0),
+                p2(3.0, 0.0),
+                p2(3.0, 2.3),
+                p2(2.0, 2.3),
+                p2(2.0, 1.0),
+                p2(1.0, 1.0),
+                p2(1.0, 2.0),
+                p2(0.0, 2.0),
+            ],
+        };
+        let m = replay(&[extrude_op(u, 1.0)]).unwrap();
+        let s = m.live_solids[0];
+        (m, s)
+    }
+
+    /// The U with a slab shearing off both prong tops. The slab overhangs the U in
+    /// x and z, so **every slab edge lies outside the U** (pierces nothing) and every
+    /// U edge either straddles cleanly (one crossing of the slab's `y=1.5` face) or
+    /// misses. Neither `pierced_multi` nor `tunnel` can fire.
+    fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, u) = u_prism();
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 1.5, -0.5]),
+            Point3::from_array([3.5, 2.5, 1.5]),
+        );
+        (m, u, slab)
+    }
+
+    #[test]
+    fn u_prism_is_valid() {
+        // Pin the fixture itself: a mistyped profile could still trip `multichord`
+        // below, for the wrong reason.
+        let (m, u) = u_prism();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, u).unwrap().volume;
+        assert!((vol - 5.3).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn cut_multi_chord_slab_is_unsupported() {
+        // The slab cuts both prongs, so the U's base cap alternates kept/dropped four
+        // times around its loop — two chords on one face. Each crossing is contributed
+        // by a *different* straddle edge piercing exactly one face, which is why the
+        // per-edge guards let it through to `reconstruct_face`.
+        let (mut m, u, slab) = u_and_slab();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, u, slab), tag::MULTICHORD);
+    }
+
+    /// The L with a box biting its reflex corner and poking out the top. The box top
+    /// (z=1.2) clears the L's z=1 **deliberately**: sunk inside the L's slab, the L's
+    /// vertical edges at (2,1) and (1,1) would pierce the box's bottom *and* top face
+    /// and `pierced_multi` would reject first.
+    fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.2]),
+            Point3::from_array([2.5, 1.5, 1.2]),
+        );
+        (m, l, bx)
+    }
+
+    #[test]
+    fn cut_staircase_seam_arc_is_unsupported() {
+        // On the box's bottom face the seam runs (2,0.5) → (2,1) → (1,1) → (1,1.5):
+        // a staircase whose two bends turn opposite ways, so `strict` rejects it.
+        //
+        // This is an **over-rejection**, and deliberately so. The arc is simple, the
+        // projection-sort orders it correctly, and the reconstructed face would have
+        // been valid. `strict` cannot tell a reflex turn from an arc folded back on
+        // itself, and a folded arc builds a self-intersecting face that `validate`
+        // accepts (still manifold, Euler holds). Rejecting both is the sound trade
+        // until the real arrangement lands (sub-unit 3).
+        let (mut m, l, bx) = l_and_popup_box();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, bx), tag::STRICTARC);
+    }
+
     #[test]
     fn clockwise_input_is_auto_corrected() {
         // The square wound CW; auto-CCW makes it a valid cube anyway.
