@@ -8,12 +8,33 @@
 //!   samples edges into shared polylines and triangulates faces (planar fans +
 //!   ruled cylinder bands) crack-free, tagging every vertex with its origin.
 
+mod polygon;
+
 use nacre_geom::{Curve, Cylinder, Surface};
 use nacre_math::Point3;
 use nacre_store::{Handle, Store};
 use nacre_topo::{Edge, Face, Loop, Model, Vertex};
 use std::collections::HashMap;
 use std::fmt::Write;
+
+/// A face this tessellator cannot mesh. Returned rather than approximated: the
+/// mesh is a cache, but a *wrong* cache is worse than none — silently fanning a
+/// ring that is not star-shaped puts triangles outside the solid.
+///
+/// There is deliberately no `Fallback` variant. The old fan was one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TessError {
+    /// Fewer than three vertices, a zero-area ring, or a clockwise outer ring.
+    DegenerateRing,
+    /// A hole wound the same way as its outer ring: the b-rep does not keep
+    /// material on every loop's left. A broken solid, not a repairable mesh.
+    HoleWinding,
+    /// No mutually visible vertex pair to bridge a hole to its outer ring.
+    NoBridge,
+    /// Ear clipping stalled — the ring self-intersects, so no triangulation of it
+    /// exists.
+    NoEar,
+}
 
 /// Export a model to Wavefront OBJ text (vertices shared; each face fan-
 /// triangulated). Bootstrap — see the crate docs for the scope.
