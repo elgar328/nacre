@@ -726,10 +726,9 @@ bbox_min 0 0 0
         );
     }
 
-    /// A concave L-prism plus a box biting its convex corner `(2, 0)` — the
-    /// non-convex single-chord overlap fixture of M5-d2. Rebuilt per test because
-    /// `boolean` supersedes its operands.
-    fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+    /// A concave L-prism (volume 3) plus a box. Rebuilt per test because `boolean`
+    /// supersedes its operands.
+    fn l_prism_and_box(lo: [f64; 3], hi: [f64; 3]) -> (Model, Handle<Solid>, Handle<Solid>) {
         use nacre_math::Point2;
         use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
         let mut m = Model::new();
@@ -757,11 +756,27 @@ bbox_min 0 0 0
         .unwrap() else {
             unreachable!("extrude yields Extrude output");
         };
-        let bx = m.add_cuboid(
-            Point3::from_array([1.3, -0.3, 0.2]),
-            Point3::from_array([2.4, 0.4, 1.4]),
-        );
+        let bx = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
         (m, l, bx)
+    }
+
+    /// The box bites the L's convex corner `(2, 0)`: a single chord, monotone bends.
+    /// The non-convex overlap fixture of M5-d2.
+    fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+        l_prism_and_box([1.3, -0.3, 0.2], [2.4, 0.4, 1.4])
+    }
+
+    /// The box straddles the L's *reflex* corner `(1, 1)`: one chord with one reflex
+    /// bend, and that bend projects outside its chord's endpoints (M5-d3 cell 3d).
+    fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+        l_prism_and_box([0.6, 0.6, 0.2], [1.6, 1.6, 1.4])
+    }
+
+    /// The box crosses the reflex corner and pops out the L's top: on its bottom face
+    /// the seam is a staircase whose two bends turn opposite ways. `strict` rejected
+    /// this until M5-d3 cell 3e-1; the reconstructed face is a correct simple polygon.
+    fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+        l_prism_and_box([0.5, 0.5, 0.2], [2.5, 1.5, 1.2])
     }
 
     /// nacre's non-convex single-chord overlap (M5-d2) vs OCCT, `Cut`. The seam is
@@ -795,6 +810,63 @@ bbox_min 0 0 0
         assert!(
             approx(nacre.volume, occt.volume),
             "non-convex overlap fuse: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
+    /// The reflex-corner bite (M5-d3 cell 3d). The arc's single bend projects *outside*
+    /// its chord's endpoints, so the old projection sort was ordering it by luck. Fills
+    /// the OCCT gap that cell left.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn reflex_bite_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_reflex_box();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "reflex bite cut: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
+    /// The folded (staircase) arc admitted by M5-d3 cell 3e-1, `Cut`.
+    ///
+    /// **This is the only gate on that cell.** A folded arc mis-ordered would build a
+    /// self-intersecting face, and `validate` accepts one — still manifold, Euler holds.
+    /// Only an independent kernel's volume says the face is right.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn folded_arc_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_popup_box();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "folded arc cut: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
+    /// The `Fuse` counterpart of the folded arc.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn folded_arc_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_popup_box();
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "folded arc fuse: {} vs {}",
             nacre.volume,
             occt.volume
         );
