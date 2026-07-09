@@ -127,6 +127,27 @@ pub fn three_plane_orient3d(
     nacre_predicates::indirect_orient3d(&tp, q.as_array(), r.as_array(), s.as_array())
 }
 
+/// The exact sign of `(nA × nB) · nC` — how the line `A ∩ B` runs relative to
+/// plane `C`'s normal.
+///
+/// The line is oriented the way [`plane_plane`] orients it (direction `nA × nB`),
+/// so a caller may use this to reason about order along that line without ever
+/// building it. `0` iff the three normals are coplanar, i.e. the planes have no
+/// well-conditioned common point — the same condition that makes
+/// [`three_planes`] return `None`, but decided exactly.
+///
+/// Exact: `det3_sign` of the three normals as rows, since
+/// `det[nA; nB; nC] = nA · (nB × nC) = (nA × nB) · nC`. Not an f64 dot product —
+/// the sign of a decision, so it belongs to the predicate side of the precision
+/// split (design §3).
+pub fn plane_pair_dir_sign(a: &Plane, b: &Plane, c: &Plane) -> i8 {
+    nacre_predicates::det3_sign([
+        a.normal().as_array(),
+        b.normal().as_array(),
+        c.normal().as_array(),
+    ])
+}
+
 /// Exact forward-ray/triangle crossing for kernel types — the geom→predicates
 /// handoff for [`nacre_predicates::ray_triangle_cross`] (design §8 M5-d
 /// point-in-polyhedron). `d` is the ray direction; `tri` is a single triangle
@@ -294,6 +315,45 @@ mod tests {
 
     fn ivec3() -> impl Strategy<Value = [i64; 3]> {
         prop::array::uniform3(-30i64..=30)
+    }
+
+    /// Pinned against `plane_plane` itself: the sign must agree with the dot of
+    /// that function's actual line direction and `c`'s normal. The seam ordering
+    /// in `nacre-ops` assumes exactly this coupling.
+    #[test]
+    fn plane_pair_dir_sign_agrees_with_plane_plane() {
+        let cases = [
+            // x=0 ∩ y=0 is the z axis, direction (1,0,0)×(0,1,0) = +z.
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], 1),
+            // Flip c's normal ⇒ flip the sign.
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0], -1),
+            // Swap a and b ⇒ the line reverses ⇒ flip the sign.
+            ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], -1),
+            // c parallel to the line ⇒ normals coplanar ⇒ 0.
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0], 0),
+        ];
+        for (na, nb, nc, expect) in cases {
+            let (a, b, c) = (
+                plane([0.0; 3], na),
+                plane([0.0; 3], nb),
+                plane([0.0; 3], nc),
+            );
+            assert_eq!(
+                plane_pair_dir_sign(&a, &b, &c),
+                expect,
+                "{na:?} {nb:?} {nc:?}"
+            );
+            let l = plane_plane(&a, &b).expect("a and b are not parallel here");
+            let dot = l.direction().dot(c.normal());
+            let dot_sign = if dot > 1e-12 {
+                1
+            } else if dot < -1e-12 {
+                -1
+            } else {
+                0
+            };
+            assert_eq!(dot_sign, expect, "plane_plane's direction disagrees");
+        }
     }
 
     /// `+1` means `V` is on the triangle's right-hand-normal side — pinned here

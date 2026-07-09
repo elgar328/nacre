@@ -144,6 +144,10 @@ pub enum BoolError {
 pub(crate) mod tag {
     pub const HOLLOW_OPERAND: &str = "hollow_operand";
     pub const INNER_LOOP_OPERAND: &str = "inner_loop_operand";
+    /// A backstop with no firing test yet — the degeneracies that would produce an
+    /// odd crossing count are expected to trip `CONTACT_DEGENERATE` first. Recorded
+    /// as unverified in design.md §9, alongside `fourplane`.
+    pub const ARRANGEMENT_DEGENERATE: &str = "arrangement_degenerate";
     pub const COMMON_OVERLAP: &str = "common_overlap";
     pub const PIERCED_MULTI: &str = "pierced_multi";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
@@ -2889,6 +2893,174 @@ mod tests {
         assert!(vs.is_empty(), "{vs:?}");
         let vol = nacre_props::mass_props(&m, u).unwrap().volume;
         assert!((vol - 5.3).abs() < 1e-9, "volume {vol}");
+    }
+
+    // ---- arrangement: seam segment gathering (M5-d3 cell 3b) ----
+
+    /// Combined plane list (A then B) plus the surface→index map, as the boolean
+    /// builds them.
+    fn combined(
+        m: &Model,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+    ) -> (Vec<PlaneInfo>, HashMap<Handle<Surface>, usize>) {
+        let mut planes = collect_planes(m, a).unwrap();
+        planes.extend(collect_planes(m, b).unwrap());
+        let surf_ix = planes
+            .iter()
+            .enumerate()
+            .map(|(i, pi)| (pi.surf, i))
+            .collect();
+        (planes, surf_ix)
+    }
+
+    /// The face of `solid` whose outward normal is `n` (there is exactly one, for
+    /// the axis-aligned fixtures here).
+    fn face_facing(
+        m: &Model,
+        solid: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Surface>, usize>,
+        n: [f64; 3],
+    ) -> Handle<Face> {
+        let want = Vector3::from_array(n);
+        let shell = m.solids.get(solid).outer;
+        let mut hit = None;
+        for &fh in &m.shells.get(shell).faces {
+            let pi = &planes[surf_ix[&m.faces.get(fh).surface]];
+            if (pi.n_out - want).norm() < 1e-9 {
+                assert!(hit.is_none(), "two faces share an outward normal");
+                hit = Some(fh);
+            }
+        }
+        hit.expect("no face with that outward normal")
+    }
+
+    fn segs(
+        m: &Model,
+        f: Handle<Face>,
+        x: Handle<Solid>,
+        y: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Surface>, usize>,
+    ) -> Vec<arrange::SeamSegment> {
+        let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
+        let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
+        arrange::seam_segments_on(m, f, y, planes, surf_ix, &inc_x, &inc_y).unwrap()
+    }
+
+    fn near(a: Point3, b: [f64; 3]) -> bool {
+        (a - Point3::from_array(b)).norm() < 1e-9
+    }
+
+    #[test]
+    fn seam_segments_on_two_overlapping_boxes() {
+        // A = [0,2]×[0,2.2]×[0,2.4] and B = [1,3.5]×[1,3.2]×[1,3.4] share a corner.
+        // Extents are deliberately unequal: with two cubes the seam lands on a face's
+        // *centre*, where both fan diagonals cross, and `segment_crosses_face` grazes
+        // from every apex and honestly reports `contact_degenerate` (the same trap the
+        // `l_and_corner_box` fixture avoids).
+        //
+        // On A's x=2 face (y∈[0,2.2], z∈[0,2.4]) two of B's faces cut a seam:
+        //   B's z=1 face ⇒ the line {x=2, z=1} clipped to y∈[1, 2.2]
+        //   B's y=1 face ⇒ the line {x=2, y=1} clipped to z∈[1, 2.4]
+        // They meet at (2,1,1), the overlap's corner on this face. Hand-computed.
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 2.2, 2.4]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0; 3]),
+            Point3::from_array([3.5, 3.2, 3.4]),
+        );
+        let (planes, surf_ix) = combined(&m, a, b);
+        let f = face_facing(&m, a, &planes, &surf_ix, [1.0, 0.0, 0.0]);
+
+        let out = segs(&m, f, a, b, &planes, &surf_ix);
+        assert_eq!(
+            out.len(),
+            2,
+            "one seam segment per B-face that cuts A's face: {out:?}"
+        );
+
+        let mut ends: Vec<[[f64; 3]; 2]> = out
+            .iter()
+            .map(|s| {
+                let mut e = [s.points[0].as_array(), s.points[1].as_array()];
+                e.sort_by(|x, y| x.partial_cmp(y).unwrap());
+                e
+            })
+            .collect();
+        ends.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        let want = {
+            let mut w = [
+                [[2.0, 1.0, 1.0], [2.0, 2.2, 1.0]],
+                [[2.0, 1.0, 1.0], [2.0, 1.0, 2.4]],
+            ];
+            for e in &mut w {
+                e.sort_by(|x, y| x.partial_cmp(y).unwrap());
+            }
+            w.sort_by(|x, y| x.partial_cmp(y).unwrap());
+            w
+        };
+        for (got, want) in ends.iter().zip(want.iter()) {
+            for (g, w) in got.iter().zip(want.iter()) {
+                assert!(near(Point3::from_array(*g), *w), "{ends:?} vs {want:?}");
+            }
+        }
+
+        // Each segment's two endpoint triples differ in exactly one plane: the two they
+        // share are the pair that defines the seam line.
+        for s in &out {
+            let shared: Vec<usize> = s.ends[0]
+                .iter()
+                .filter(|i| s.ends[1].contains(i))
+                .copied()
+                .collect();
+            assert_eq!(shared.len(), 2);
+            assert!(shared.contains(&s.plane_pair[0]) && shared.contains(&s.plane_pair[1]));
+        }
+    }
+
+    #[test]
+    fn seam_segments_split_a_face_into_two_chords() {
+        // What `reconstruct_face` cannot do. The slab meets the U-prism's base cap
+        // (z=0) along {z=0, y=1.5}; the U has material there only for x∈[0,1] and
+        // x∈[2,3], so the seam is *two* segments. Today the boolean rejects this
+        // fixture with `multichord`.
+        //
+        // All four crossings come from the base cap's own edges (neighbour planes
+        // x=0,1,2,3); the slab's edges miss the cap, lying outside the U in x or off
+        // the z=0 plane.
+        let (m, u, slab) = u_and_slab();
+        let (planes, surf_ix) = combined(&m, u, slab);
+        let cap = face_facing(&m, u, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+
+        let out = segs(&m, cap, u, slab, &planes, &surf_ix);
+        assert_eq!(out.len(), 2, "two chords on one face: {out:?}");
+        let mut spans: Vec<(f64, f64)> = out
+            .iter()
+            .map(|s| {
+                for e in s.points {
+                    assert!(
+                        (e[1] - 1.5).abs() < 1e-9 && e[2].abs() < 1e-9,
+                        "off the seam line"
+                    );
+                }
+                let (a, b) = (s.points[0][0], s.points[1][0]);
+                (a.min(b), a.max(b))
+            })
+            .collect();
+        spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        assert!(
+            (spans[0].0 - 0.0).abs() < 1e-9 && (spans[0].1 - 1.0).abs() < 1e-9,
+            "{spans:?}"
+        );
+        assert!(
+            (spans[1].0 - 2.0).abs() < 1e-9 && (spans[1].1 - 3.0).abs() < 1e-9,
+            "{spans:?}"
+        );
     }
 
     #[test]
