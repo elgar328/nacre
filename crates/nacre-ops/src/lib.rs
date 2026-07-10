@@ -890,7 +890,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 pub(crate) struct PlaneInfo {
     pub(crate) surf: Handle<Surface>,
     pub(crate) plane: Plane,
-    /// Three non-collinear outer-CCW loop points; their RH normal is outward.
+    /// Three non-collinear outer-loop points, **ordered so their RH normal is outward**.
+    /// The order need not follow the loop: at a reflex corner it is reversed.
     pub(crate) tri: [Point3; 3],
     /// Outward normal, `(tri[1]−tri[0])×(tri[2]−tri[0])` normalized — the single
     /// source of "outward" for both the in/out sign test and face ordering.
@@ -1279,8 +1280,8 @@ pub(crate) fn collect_planes(
     Ok(out)
 }
 
-/// The first three non-collinear consecutive start points of a face's outer loop
-/// (outer-CCW, so their RH normal is the outward normal).
+/// Three non-collinear points of a face's outer loop, ordered so their right-hand
+/// normal points **out** of the solid.
 fn outer_tri(model: &Model, face: &Face) -> Option<[Point3; 3]> {
     let pts: Vec<Point3> = face
         .outer
@@ -1289,9 +1290,21 @@ fn outer_tri(model: &Model, face: &Face) -> Option<[Point3; 3]> {
         .map(|&he| model.vertices.get(he_start(model, he)).point)
         .collect();
     let n = pts.len();
-    (0..n).find_map(|i| {
+    // The turn at one corner does not know which way the ring winds. Every b-rep loop is
+    // CCW about its face's outward normal, but at a *reflex* corner the local turn
+    // opposes the global winding, so three consecutive points can hand back an inward
+    // normal. The Newell sum has no single corner to be fooled by.
+    let newell = (0..n).fold(Vector3::zero(), |acc, i| {
+        acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
+    });
+    let [a, b, c] = (0..n).find_map(|i| {
         let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
         ((b - a).cross(c - a).norm() > 0.0).then_some([a, b, c])
+    })?;
+    Some(if (b - a).cross(c - a).dot(newell) < 0.0 {
+        [a, c, b]
+    } else {
+        [a, b, c]
     })
 }
 
@@ -2843,6 +2856,84 @@ pub mod tests {
         let m = replay(&[extrude_op(l, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
+    }
+
+    /// The same L-prism, its profile started one vertex earlier so the reflex corner
+    /// `(1,1)` lands at index 1 of the cap's loop. Geometrically identical.
+    fn rotated_l_prism() -> (Model, Handle<Solid>) {
+        let l = Profile2d {
+            points: vec![
+                p2(2.0, 1.0),
+                p2(1.0, 1.0),
+                p2(1.0, 2.0),
+                p2(0.0, 2.0),
+                p2(0.0, 0.0),
+                p2(2.0, 0.0),
+            ],
+        };
+        let m = replay(&[extrude_op(l, 1.0)]).unwrap();
+        let s = m.live_solids[0];
+        (m, s)
+    }
+
+    /// `PlaneInfo::n_out` is documented as the single source of "outward". Two
+    /// independent sources say which way that is: the ring, which winds CCW about the
+    /// outward normal, and the b-rep's own `Surface` plus `Orientation`. They must agree
+    /// on every face of every solid.
+    ///
+    /// `outer_tri` used to read the turn at the first non-collinear corner, which is the
+    /// ring's winding **only when that corner is convex**. Nothing enforced that. The
+    /// four fixtures below were safe by accident — none starts its cap loop one vertex
+    /// before a reflex corner. `rotated_l_prism` does, and it is the same solid.
+    #[test]
+    fn outward_normals_agree_with_their_orientation() {
+        let mut cube = Model::new();
+        let c = cube.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let (ml, sl) = l_prism();
+        let (mu, su) = u_prism();
+        let (mr, sr) = rotated_l_prism();
+        for (name, m, s) in [
+            ("cube", &cube, c),
+            ("l_prism", &ml, sl),
+            ("u_prism", &mu, su),
+            ("rotated_l_prism", &mr, sr),
+        ] {
+            for pi in &collect_planes(m, s).unwrap() {
+                let dot = pi.plane.normal().dot(pi.n_out);
+                assert!(
+                    dot.abs() > 0.5,
+                    "{name}: n_out is not parallel to its plane"
+                );
+                assert_eq!(
+                    dot > 0.0,
+                    pi.orient == Orientation::Forward,
+                    "{name}: n_out disagrees with the face's orientation"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_rotated_profile_is_the_same_solid_to_the_boolean() {
+        // The silent half of the same fault. `orient_seam_loop` multiplies `orient_sign`
+        // of two planes, and nothing pairs that with a `tri` whose sign would cancel it
+        // (as `order_along` does — there both factors flip together). So an inward `n_out`
+        // on the L's cap reverses the hole, and only `validate` and the signed mesh volume
+        // would ever say so, in release where the `debug_assert` is gone.
+        //
+        // Rotating a profile cannot change a solid. Here the cap is the face that carries
+        // the dimple's hole, so this is the shortest path from the fault to a wrong b-rep.
+        let (mut m, l) = rotated_l_prism();
+        let stub = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, 0.5]),
+            Point3::from_array([0.7, 0.7, 1.5]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.08)).abs() < 1e-9, "volume {vol}");
     }
 
     #[test]
