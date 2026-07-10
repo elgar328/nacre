@@ -208,6 +208,20 @@ pub(crate) mod tag {
     pub const ON_BOUNDARY: &str = "on_boundary";
     pub const RAY_DEGENERATE: &str = "ray_degenerate";
     pub const CONTACT_DEGENERATE: &str = "contact_degenerate";
+    /// A closed seam loop's winding and the face boundary's class disagree.
+    ///
+    /// A hole keeps its material outside, so walked material-left it runs clockwise about
+    /// the face's outward normal; an island runs counter-clockwise. Whether the boundary is
+    /// kept says the same thing, by ray casting. Three sources meet in that one equation and
+    /// none is assumed right: the local sign rule (`n_out` bookkeeping and `order_along`),
+    /// the ring's global winding (`det3` at a hull vertex, found by exact comparison), and
+    /// `classof`. `keep` cancels — it flips the ring and `kept[0]` together — so this checks
+    /// the geometry, not the operation.
+    ///
+    /// Unreachable today; the three agree on every fixture. Cell 3f-3 promotes the same
+    /// equation into a *nesting* detector, where the winding classifies each loop and
+    /// `kept[0]` only cross-checks depth zero.
+    pub const LOOP_CLASS_MISMATCH: &str = "loop_class_mismatch";
     pub const POKEHOLE: &str = "pokehole";
     pub const MISSING_SEAM: &str = "missing_seam";
     /// Four or more boundary crossings on one face — the convex path only.
@@ -2163,6 +2177,20 @@ fn supersede_reuse(
     solid
 }
 
+/// Is the loop a hole (`true`) or an island's outer ring (`false`)?
+///
+/// `kept0` is the class of the face boundary — the annulus side — and `winding` is the
+/// ring's, about the face's outward normal. A hole keeps its material outside itself and so
+/// runs clockwise; an island runs counter-clockwise. The two must say the same thing, and
+/// they arrive by routes that share nothing: ray casting, and an exact turn at a hull vertex.
+fn classify_loop(kept0: bool, winding: i8) -> Result<bool, BoolError> {
+    match (kept0, winding) {
+        (true, -1) => Ok(true),
+        (false, 1) => Ok(false),
+        _ => Err(reject(tag::LOOP_CLASS_MISMATCH)),
+    }
+}
+
 /// Reconstruct a face's kept portion, non-convex path. `None` if the face is dropped.
 ///
 /// Same shape as [`reconstruct_face`], but the seam sub-path comes from the
@@ -2282,8 +2310,10 @@ fn reconstruct_face_paths(
                 return Err(reject(tag::MISSING_SEAM));
             }
         }
+        // Ask the ring itself which it is, and make it agree with the boundary's class.
+        let is_hole = classify_loop(kept[0], arrange::loop_winding(planes, plane_idx, &ring)?)?;
         let ring: Vec<Node> = ring.into_iter().map(Node::Seam).collect();
-        return Ok(if kept[0] {
+        return Ok(if is_hole {
             whole(vec![ring]) // annulus kept: `∂f` outer, the loop its hole
         } else {
             // Disk kept: the loop *is* the outer boundary and `∂f` contributes nothing.
@@ -4025,6 +4055,14 @@ pub mod tests {
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
+        // The non-convex hole (cell 3h): six rim nodes, none of them on `∂f`.
+        let (mut m, l, stub) = l_and_ell_stub();
+        let from_arrange = seam_endpoint_triples(&m, l, stub);
+        assert_eq!(from_arrange.len(), 6);
+        boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
+
         // Swapped, the same four nodes are the island's whole outer ring (cell 3f-2).
         // The arrangement does not know which solid is `a`, so it offers the same set;
         // the result has to still contain all of it. If the island face were dropped,
@@ -4428,6 +4466,46 @@ pub mod tests {
                     .as_array()
             })
             .collect()
+    }
+
+    #[test]
+    fn a_loop_that_winds_the_wrong_way_for_its_boundary_is_rejected() {
+        // The four combinations, on paper. A kept boundary means the loop's interior is
+        // dropped, which means the material lies outside it, which means it runs clockwise.
+        assert!(
+            classify_loop(true, -1).unwrap(),
+            "kept boundary, clockwise ring ⇒ hole"
+        );
+        assert!(
+            !classify_loop(false, 1).unwrap(),
+            "dropped boundary, ccw ring ⇒ island"
+        );
+        assert_rejects(
+            || classify_loop(true, 1).map(|_| ()),
+            tag::LOOP_CLASS_MISMATCH,
+        );
+        assert_rejects(
+            || classify_loop(false, -1).map(|_| ()),
+            tag::LOOP_CLASS_MISMATCH,
+        );
+
+        // And on the real dimple: reversing the ring reverses the winding, so the boundary
+        // and the loop stop agreeing. Nothing else in the kernel would notice.
+        let (m, l, stub) = l_and_dimple();
+        let (planes, surf_ix) = combined(&m, l, stub);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+        let p = surf_ix[&m.faces.get(top).surface];
+        let ps = paths(&m, top, l, stub, &planes, &surf_ix);
+        let arrange::SeamPath::Closed(nodes) = &ps[0] else {
+            panic!("closed loop")
+        };
+        let mut ring = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
+        ring.reverse();
+        let w = arrange::loop_winding(&planes, p, &ring).unwrap();
+        assert_rejects(
+            || classify_loop(true, w).map(|_| ()),
+            tag::LOOP_CLASS_MISMATCH,
+        );
     }
 
     #[test]
