@@ -2343,12 +2343,20 @@ fn reconstruct_face_paths(
     let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
 
     // A dropped face contributes nothing, so `whole` returns zero faces or one — the
-    // `Vec` a split face will need (cell 3e-2), not yet used for more than that.
-    let whole = |inner: Vec<Vec<Node>>| {
+    // `Vec` a split face will need (cell 3e-2), not yet used for more than that. A
+    // face the seam misses keeps its holes exactly as it had them; `flip` reverses
+    // every ring alike, so a hole of a `Cut`'s inside-B piece stays a hole.
+    let orig_ring = |l: &Loop| -> Vec<Node> {
+        l.half_edges
+            .iter()
+            .map(|&he| Node::Orig(he_start(model, he)))
+            .collect()
+    };
+    let whole = || {
         Vec::from_iter(kept[0].then(|| LocalFace {
             plane_idx,
             loop_nodes: verts.iter().map(|&v| Node::Orig(v)).collect(),
-            inner,
+            inner: face.inner.iter().map(&orig_ring).collect(),
             flip,
         }))
     };
@@ -2359,7 +2367,7 @@ fn reconstruct_face_paths(
     // that has nothing to do with the seam, and that would rewrite a reject tag.
     let touches_seam = seam.iter().any(|s| s.triple.contains(&plane_idx));
     if transitions.is_empty() && !touches_seam {
-        return Ok(whole(vec![]));
+        return Ok(whole());
     }
 
     let paths = arrange::seam_paths_on(model, fh, other, planes, surf_ix, inc_f, inc_o)?;
@@ -2392,7 +2400,10 @@ fn reconstruct_face_paths(
     }
 
     if opens.is_empty() && n_closed == 0 {
-        return Ok(whole(vec![])); // no seam on this face after all
+        // Defensive, and believed unreachable: `paths.is_empty()` forces
+        // `touches_seam == false` through the equality just checked, and then the set
+        // equality forces `transitions == ∅` — a pair that already returned above.
+        return Ok(whole()); // no seam on this face after all
     }
 
     // Each arc, oriented `s_kd → bends → s_dk`: the direction its kept run is spliced in.
@@ -2885,20 +2896,20 @@ fn solid_local_faces(
             continue;
         }
         let face = model.faces.get(fh);
-        let loop_nodes = face
-            .outer
-            .half_edges
-            .iter()
-            .map(|&he| {
-                let vh = he_start(model, he);
-                let mapped = remap.and_then(|r| r.get(&vh)).copied().unwrap_or(vh);
-                Node::Orig(mapped)
-            })
-            .collect();
+        let ring = |l: &Loop| -> Vec<Node> {
+            l.half_edges
+                .iter()
+                .map(|&he| {
+                    let vh = he_start(model, he);
+                    let mapped = remap.and_then(|r| r.get(&vh)).copied().unwrap_or(vh);
+                    Node::Orig(mapped)
+                })
+                .collect()
+        };
         out.push(LocalFace {
             plane_idx: plane_offset + pos,
-            loop_nodes,
-            inner: vec![],
+            loop_nodes: ring(&face.outer),
+            inner: face.inner.iter().map(ring).collect(),
             flip: false,
         });
     }

@@ -14,7 +14,10 @@
 // build rightly sees it as unreachable.
 #![cfg_attr(not(test), allow(dead_code))]
 
-use crate::{BoolError, PlaneInfo, edge_incidence, face_loops, reject, segment_crosses_face, tag};
+use crate::{
+    BoolError, PlaneInfo, edge_incidence, face_half_edges, face_loops, reject,
+    segment_crosses_face, tag,
+};
 use nacre_geom::Surface;
 use nacre_geom::intersect::{
     plane_pair_dir_sign, three_plane_cmp_coord, three_plane_orient3d, three_planes,
@@ -133,12 +136,16 @@ pub(crate) fn seam_segments_on(
         //
         // Sweep 1 walks `∂f`, so its crossings are boundary nodes and carry the edge
         // they lie on. Sweep 2 walks `∂g`: interior nodes, no edge of `f`.
+        //
+        // `∂f` and `∂g` are every loop, holes included. A hole rim of `g` crossing `P`
+        // inside `f` is a seam node like any other; skipping it left an odd crossing
+        // count, and `ARRANGEMENT_DEGENERATE` cried in place of the honest guard.
         let mut third: Vec<(usize, Option<Handle<Edge>>)> = Vec::new();
         for (face, rings, inc, own, on_f) in [
             (f, &g_rings, inc_x, p, true),
             (g, &f_rings, inc_y, q, false),
         ] {
-            for he in &model.faces.get(face).outer.half_edges {
+            for he in face_half_edges(model.faces.get(face)) {
                 let (bounds, [pa, pb]) = inc[&he.edge];
                 let r = if pa == own { pb } else { pa };
                 let (v0, v1) = (
