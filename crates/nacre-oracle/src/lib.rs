@@ -966,6 +966,55 @@ bbox_min 0 0 0
         (m, l, bar)
     }
 
+    /// The L-prism with an L-shaped stub standing wholly inside its cap. The blind pocket's
+    /// lid carries the suite's first **non-convex** inner loop (M5-d3 cell 3h).
+    fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let raised = SketchPlane {
+            origin: Point3::from_array([0.0, 0.0, 0.5]),
+            ..SketchPlane::world_xy()
+        };
+        let stub = extrude(
+            &mut m,
+            raised,
+            &[
+                [0.2, 0.25],
+                [0.85, 0.25],
+                [0.85, 0.4],
+                [0.35, 0.4],
+                [0.35, 0.9],
+                [0.2, 0.9],
+            ],
+        );
+        (m, l, stub)
+    }
+
+    /// An independent kernel on a hole that is not a rectangle. Volume scores the pocket;
+    /// area scores its six walls, since the lid gives up exactly what the floor hands back.
+    /// Neither can see the loop's *winding* — both kernels sum unsigned areas — which is why
+    /// cell 3h added a second source for that and did not lean on this diff.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn ell_dimple_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, stub) = l_and_ell_stub();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, stub).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "ell dimple cut volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "ell dimple cut area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// nacre's first face carrying more than one chord (M5-d3 cell 3e-2) vs OCCT, `Cut`.
     /// The L's cap keeps a single ring that uses both arcs, while the bar's floor splits
     /// into two faces — the two bites' floors. Volume scores the bites; area cannot, since
