@@ -247,10 +247,12 @@ pub(crate) mod tag {
     /// winding is exactly the statement that none contains another**. One sign settles it;
     /// no containment test, no representative point.
     ///
-    /// Nesting is *reachable* — a polyhedral torus cut through its hole gives two nested
-    /// loops, and all its faces are simple, so `inner_loop_operand` does not stop it. It is
-    /// not on the `fourplane` row of unreachable backstops; the suite simply cannot build
-    /// such an operand. `classify_loops`'s golden fires it instead.
+    /// Nesting is reached, and by something far more ordinary than the polyhedral torus
+    /// this comment used to reach for: slice a pocketed cube between its floor and its lid
+    /// and the cut plane carries the cube's cross-section as a hole with the pocket's
+    /// inside it (`a_slab_between_the_lid_and_the_floor_nests_two_loops`). The torus was a
+    /// sound argument for reachability and a bad way to find the case — that operand was
+    /// waiting behind the holed-operand guard, which cell 3f-5 retired.
     ///
     /// **The inference needs `∂f` to be one class throughout**, i.e. no arc on the face.
     /// With an arc, a hole in the kept region and an island in the dropped one wind
