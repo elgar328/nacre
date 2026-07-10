@@ -424,7 +424,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 재구성 경로는 아직 구멍을 못 다룬다. **실측된 세 가지 파손:** `reconstruct_face`는 구멍을 잃고(`Ok`, 부피 0.96996 vs 0.916625, `validate` 위반 5건), `edge_incidence`는 rim 엣지의 인접 면을 하나만 봐서 `inc[1]`에서 **패닉**하며, `coincident_merge`는 `solid_local_faces`로 구멍을 버린다(`Ok`, 부피 2.0533 vs 2.0). → `overlap_fuse_cut`·`fuse_cut`·`coincident_merge` 진입부에서 `tag::INNER_LOOP_OPERAND`로 거절. 셀 3f-1은 결과에 구멍을 **내지만** 이 가드를 은퇴시키지 않는다 — 구멍 있는 면을 **입력으로 받는** 것은 별개의 일이고, 은퇴는 셀 3f-4다. 주의: `detect_coincident_interface`는 **교차-솔리드 반대법선** 공면 쌍만 세므로, 인터페이스가 아닌 면에 imprint한 볼록 솔리드는 스택으로 보여 merge 경로로 들어온다 — `common`은 `is_convex`+`has_coplanar_pair`가 이미 막아 가드가 불필요하다.
 
-**`indirect_orient3d`는 implicit point를 하나만 받는다 — 그런데 seam 수집에는 그걸로 충분했다 (M5-d3 셀 3b에서 실증).** `nacre_predicates::indirect_orient3d(p: &ThreePlane, q, r, s)`는 explicit 점 셋을 받는다. 애초 예상은 "면당 arrangement의 조합 판정이 seam 정점 둘·셋을 얽으므로 Attene 2020의 LPI/TPI 계열 2·3-implicit 변형이 필요하고, 그때까지 arrangement 코어는 exact orient2d(투영 좌표) + 투영 불확실성 필터로 서야 한다"였다. **seam 세그먼트 수집 단계에 관해서는 틀렸다.** 실제로는 (a) 끝점이 `three_planes(P,Q,R)` — 이미 쓰는 3-평면 implicit point고, (b) "엣지 안 + 상대 면 안" 포함 판정은 `segment_crosses_face`가 exact orient3d로 이미 답하며, (c) 직선 위 두 교점의 전후는 `three_plane_orient3d(P,Q,R_i, R_j.tri)`(1-implicit)와 `det3_sign([n_P,n_Q,n_{R_j}])`(exact)의 곱으로 정해진다. **두 implicit 점이 한 술어에 동시에 들어가는 자리가 없다.** 그래서 2D 투영도, orient2d도, `ARRANGEMENT_DEGENERATE`의 "투영 불확실성 필터"도 필요 없었다(geom에 `plane_pair_dir_sign` 얇은 exact 래퍼 하나만 추가). 다중 implicit 술어가 정말 필요해지는 곳은 **셀 추출**(두 implicit 점의 orient)이며, 그 셀에 이르러 다시 판단한다 — 쓰지도 않을 술어를 미리 만들지 않는다. **그 셀은 3f-3이고, 사야 할 것은 정확히 하나다: 고리의 감김.** 고리들의 감김이 **모두 같으면 서로 포함하지 않는다** — 직접 포함은 깊이를 1 바꾸고 깊이 패리티가 재료의 안팎을 정하므로 감김이 반대가 된다. 그러므로 감김 하나가 중첩 판정과 hole/island 판정을 동시에 준다(그리고 `kept[0]`과 서로를 검산한다). 다중 chord(3e-2)는 조합만으로 풀렸으니 좌표는 여기서 처음 필요하다.
+**`indirect_orient3d`는 implicit point를 하나만 받는다 — 그런데 seam 수집에는 그걸로 충분했다 (M5-d3 셀 3b에서 실증).** `nacre_predicates::indirect_orient3d(p: &ThreePlane, q, r, s)`는 explicit 점 셋을 받는다. 애초 예상은 "면당 arrangement의 조합 판정이 seam 정점 둘·셋을 얽으므로 Attene 2020의 LPI/TPI 계열 2·3-implicit 변형이 필요하고, 그때까지 arrangement 코어는 exact orient2d(투영 좌표) + 투영 불확실성 필터로 서야 한다"였다. **seam 세그먼트 수집 단계에 관해서는 틀렸다.** 실제로는 (a) 끝점이 `three_planes(P,Q,R)` — 이미 쓰는 3-평면 implicit point고, (b) "엣지 안 + 상대 면 안" 포함 판정은 `segment_crosses_face`가 exact orient3d로 이미 답하며, (c) 직선 위 두 교점의 전후는 `three_plane_orient3d(P,Q,R_i, R_j.tri)`(1-implicit)와 `det3_sign([n_P,n_Q,n_{R_j}])`(exact)의 곱으로 정해진다. **두 implicit 점이 한 술어에 동시에 들어가는 자리가 없다.** 그래서 2D 투영도, orient2d도, `ARRANGEMENT_DEGENERATE`의 "투영 불확실성 필터"도 필요 없었다(geom에 `plane_pair_dir_sign` 얇은 exact 래퍼 하나만 추가). 다중 implicit 술어가 정말 필요해지는 곳은 **셀 추출**(두 implicit 점의 orient)이며, 그 셀에 이르러 다시 판단한다 — 쓰지도 않을 술어를 미리 만들지 않는다. **그 셀은 3f-3이고, 사야 할 것은 정확히 하나다: 고리의 감김.** 고리들의 감김이 **모두 같으면 서로 포함하지 않는다** — 직접 포함은 깊이를 1 바꾸고 깊이 패리티가 재료의 안팎을 정하므로 감김이 반대가 된다. 그러므로 감김 하나가 중첩 판정과 hole/island 판정을 동시에 준다(그리고 `kept[0]`과 서로를 검산한다). 다중 chord(3e-2)는 조합만으로 풀렸으니 좌표는 여기서 처음 필요하다. **예약은 셀 3h에서 집행됐고, 예상의 절반은 틀렸다 — 아래.**
 
 **`u_and_slab`은 다중 chord와 inner loop를 **둘 다** 요구한다 (셀 3e-1에서 실측).** 손계산은 닫힌 고리 0을 예측했으나 실제는 **2**다: U의 두 기둥이 슬래브의 `y=1.5` 면 **내부에** 사각형 둘을 뚫는다. `multichord`가 U의 base cap에서 먼저 발화할 뿐이고, 그 픽스처는 3e-2(다중 chord)만으로는 열리지 않는다. **셀 3e-2 이후 같은 입력이 `pokehole`로 거절된다** — 태그가 움직인 것이 호 쪽이 끝났다는 측정이다. 픽스처마다 `(한 면당 최대 열린 호, 전체 닫힌 고리)`를 `arrangement_agrees_with_todays_seam_bookkeeping`이 못박는다 — 사다리의 어느 칸이 무엇을 여는지가 테스트에서 읽힌다.
 
@@ -551,6 +551,33 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 - **고침:** 링 전체의 Newell 합이 부호를 정하고 삼각형을 그에 맞춰 뒤바꾼다. 한 모서리에 속을 것이 없다. `PlaneInfo::tri`는 이제 "링을 따른다"고 주장하지 않고 소비자가 실제로 요구하는 것 — **RH 법선이 바깥을 향한다** — 만 주장한다.
 - **두 겹으로 못박았다.** `outward_normals_agree_with_their_orientation`은 서로 독립인 두 출처(링의 감김 vs b-rep의 `Surface`+`Orientation`)를 네 솔리드의 모든 면에서 맞대본다 — `debug_assert`가 면 하나씩 하던 일이다. `a_rotated_profile_is_the_same_solid_to_the_boolean`은 회전한 L에서 dimple을 잘라 2.92와 클린 `validate`를 요구한다. **둘 다 옛 `outer_tri`에서 실패한다.**
 - **교훈:** "우연히 안전"은 `Vec` 하나만큼도 안전하지 않다. 프로파일을 회전해도 솔리드는 같아야 한다는 것이 이 버그를 잡은 최소 진술이었다.
+
+**★ 예약을 집행했다 — 그런데 3-implicit `orient2d`는 끝내 필요 없었다 (셀 3h).** 427행은 "다중 implicit 술어가 정말 필요해지는 곳은 셀 추출(두 implicit 점의 orient)"이라 적었다. **절반만 맞았다.** 필요한 것은 두 implicit 점의 **좌표 비교** 하나였고, orient는 하나도 필요 없었다.
+
+**이유가 우연이 아니라 구조적이다.** seam 고리의 모든 변은 `P ∩ Q_j` 선 위에 있고 방향이 `d_j = n_P × n_{Q_j}`다. 그러면 노드에서의 회전이 점을 만들지 않고 떨어진다:
+
+```
+(n_P × n_A) × (n_P × n_B) = n_P · det[n_P, n_A, n_B]        (a×b)×(a×c) = a·det(a,b,c)
+  ⇒  turn = s_a · s_b · plane_pair_dir_sign(P, A, B) · orient_sign(P)
+```
+
+`s_j`는 `order_along`이 정확히 준다(순회의 기억이 아니라 **재계산**). `det`는 절대 `0`이 아니다 — 노드가 세 평면 위에 있고, 그 점이 존재한다는 것이 곧 법선들의 독립이다. `arrange::turn_at`.
+
+**남는 것은 볼록 껍질 꼭짓점 하나를 고르는 일이고, 거기서만 두 implicit 점이 한 술어에 들어간다.** 사전식 최소 노드는 평면 위 점집합의 극점이므로 껍질 꼭짓점이다. `nacre_predicates::indirect_cmp_coord` — Cramer의 `N/D`를 교차 곱해 `sign(N_a·D_b − N_b·D_a)·sign(D_a)·sign(D_b)`. **Cramer는 공개하지 않는다**(numerator를 넘겨주는 것은 implicit 점을 재료화해 넘기는 것과 같다). `arrange::loop_winding`.
+
+**★ 지름길을 찾았다가 반증했다 — 다음 사람이 같은 길을 다시 걷지 않도록 남긴다.** 고리의 각 변은 `P ∩ Q_j` 위에 있으므로, "다른 모든 노드가 `Q_j`의 한쪽에 있는가"는 **1-implicit** `three_plane_orient3d` 하나로 답한다. 그런 **지지 변**이 있으면 그 끝점이 껍질 꼭짓점이고 새 술어가 필요 없다. **그러나 단순 다각형은 껍질 위에 놓인 변을 하나도 갖지 않을 수 있다** — 정오각형의 각 변을 안쪽으로 얕게 접으면 껍질 꼭짓점은 전부 다각형 꼭짓점이지만 어떤 변도 껍질 위에 없다. 껍질 **꼭짓점**은 언제나 있고 **변**은 없을 수 있다. 지름길은 죽는다.
+
+**감김은 `kept[0]`의 검산이다 — "두 기계"라 쓰면 부정확하다. 세 출처다.** `orient_seam_loop`이 낸 링의 방향은 `keep`에 의존하고 `kept[0]`도 그렇다. `keep`은 양쪽에서 **상쇄된다.** 검사가 실제로 묶는 것은 (1) 국소 부호 규칙(`n_out` 장부 + `order_along`), (2) 고리의 전역 감김(껍질 꼭짓점의 `det3`), (3) `classof`의 광선 캐스팅. 셋 중 어느 것도 옳다고 가정하지 않는다.
+
+- 구멍 ⇔ `kept[0] == true` ⇔ 감김 `−1`(CW, 재료가 고리 밖). 섬 ⇔ `false` ⇔ `+1`.
+- 불일치는 `LOOP_CLASS_MISMATCH`로 **릴리스에서 거절**한다. 오늘 도달 불가 — **동작 변화 0이 곧 셋의 합의다.**
+- 3f-3에서 같은 등식이 **중첩 탐지기**로 승격된다: 감김이 각 고리의 분류를 정하고, `kept[0]`은 깊이 0에서만 검산한다.
+
+**볼록 고리에서는 껍질 탐색이 무의미하다 — 그래서 비볼록 고리를 만들었다.** 오늘까지 닫힌 고리는 전부 사각형이었고, 볼록 다각형은 모든 꼭짓점의 회전이 같다. `l_and_ell_stub`(L의 캡 안에 선 L자 스텁)의 구멍은 reflex 노드를 갖는다. `Cut` = `3 − 0.1725·0.5`, 넓이 `15.3`, `validate` 클린, OCCT 26. `triangulate_polygon`의 브리징도 **비볼록 구멍을 처음 만나 그대로 통과했다**(리스크로 적어 두었으나 버그는 없었다).
+
+- **★ 반증에 이빨을 붙이는 데 두 번 걸렸다.** `turn_at(reflex) == +1`인데 `loop_winding == −1`임을 단언하는 것은 **참이지만 무력하다** — 이 고리의 `ring[0]`이 우연히 볼록이라, `turn_at(ring[0])`을 쓰는 순진한 구현도 통과한다(실측). 고리는 순환이므로 **감김은 시작점에 불변**이다. reflex 노드로 회전시킨 링을 먹이면 순진한 구현이 `+1`을 낸다. **`outer_tri` 버그와 같은 함정을, 이번엔 코드가 아니라 테스트가 먼저 밟았다.**
+- **§9 438행의 미검증 전제가 처음 검사된다.** "triple 동일성 ≠ 기하 동일성 … 좌표 근접 검사로 `debug_assert`를 만들지 않는다 — tolerance가 필요하고, tolerance는 `Origin::Discovered` 밖에 설 자리가 없다." 사전식 탐색에서 세 좌표가 **정확히** 같은 서로 다른 triple이 나오면 `LOOP_ORIENT_MISMATCH`로 거절한다. 근접이 아니라 상등이므로 tolerance가 없다 — exact 술어가 그때의 거부 이유를 지웠다. (최소값과 겹치는 경우만 보므로 부분 탐지다.)
+- **`SeamEnd::point`는 여전히 읽지 않는다.** 비교는 평면 계수만 본다. "`reconstruct_face_paths`는 좌표를 하나도 읽지 않는다"가 유지된다.
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
