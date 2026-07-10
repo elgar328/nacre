@@ -127,6 +127,33 @@ pub fn three_plane_orient3d(
     nacre_predicates::indirect_orient3d(&tp, q.as_array(), r.as_array(), s.as_array())
 }
 
+/// The exact side of triangle `tri`'s plane that the **explicit** point `p` lies on:
+/// `+1` on the right-hand-normal side, `-1` on the other, `0` on the plane.
+///
+/// The all-explicit twin of [`three_plane_orient3d`], and it shares that function's
+/// convention exactly — `p` takes `V`'s slot, so `orient3d(p, tri…) = (p − tri[2]) ·
+/// (RH normal of tri)`. A face's outward-oriented `tri` therefore reads `+1` for
+/// "outside the face's plane".
+///
+/// This is what decides whether a segment straddles a face's plane, and it is the only
+/// place a coordinate enters that decision. For a vertex the operations built, the
+/// coordinate *is* the truth; for a `Origin::Discovered` vertex it is a rounded cache of
+/// a plane triple, and an exact answer would come from [`three_plane_orient3d`] on that
+/// triple instead.
+pub fn plane_side(tri: [Point3; 3], p: Point3) -> i8 {
+    let d = nacre_predicates::orient3d(
+        p.as_array(),
+        tri[0].as_array(),
+        tri[1].as_array(),
+        tri[2].as_array(),
+    );
+    match d.partial_cmp(&0.0) {
+        Some(std::cmp::Ordering::Greater) => 1,
+        Some(std::cmp::Ordering::Less) => -1,
+        _ => 0,
+    }
+}
+
 /// The exact sign of `a[axis] − b[axis]`, where `a` and `b` are the implicit points at
 /// which each plane triple meets — the two-implicit handoff to `nacre-predicates`.
 ///
@@ -447,6 +474,61 @@ mod tests {
         // normal +z, but the triangle (q, s, r) spans the same plane with RH normal
         // −z. Reading the convention off `Plane::normal()` would invert the answer.
         assert_eq!(three_plane_orient3d(&px, &py, &pz, q, s, r), -1);
+    }
+
+    /// `plane_side` is the all-explicit twin, and shares the convention exactly: put the
+    /// implicit point's coordinates in and the two agree, sign for sign. Pinning that
+    /// here is what lets a caller mix them without thinking.
+    #[test]
+    fn plane_side_shares_three_plane_orient3d_s_convention() {
+        // The same triangle in `z = 0`, RH normal `+z`.
+        let (q, r, s) = (
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+        );
+        let v = Point3::from_array([1.0, 1.0, 1.0]); // above it
+        assert_eq!(plane_side([q, r, s], v), 1);
+        assert_eq!(plane_side([r, q, s], v), -1); // flip the triangle, flip the sign
+        assert_eq!(
+            plane_side([q, r, s], Point3::from_array([1.0, 1.0, -1.0])),
+            -1
+        );
+        // On the plane is exactly zero, however far from the triangle itself.
+        assert_eq!(
+            plane_side([q, r, s], Point3::from_array([9.0, -4.0, 0.0])),
+            0
+        );
+        assert_eq!(plane_side([q, r, s], q), 0);
+    }
+
+    proptest! {
+        /// The two orient3d handoffs are one predicate seen from two sides: a plane
+        /// triple's meet, fed to `plane_side` as coordinates, gives the same sign the
+        /// implicit form gives without ever building it.
+        #[test]
+        fn prop_plane_side_agrees_with_three_plane_orient3d(
+            v in prop::array::uniform3(-20.0f64..20.0),
+            t in prop::array::uniform3(prop::array::uniform3(-20.0f64..20.0)),
+        ) {
+            let tri = t.map(Point3::from_array);
+            let e1 = tri[1] - tri[0];
+            let e2 = tri[2] - tri[0];
+            prop_assume!(e1.cross(e2).norm() > 1e-6);
+            // Three axis planes meeting exactly at `v`.
+            let at = |n: [f64; 3]| {
+                Plane::from_point_normal(Point3::from_array(v), Vector3::from_array(n)).unwrap()
+            };
+            let (px, py, pz) = (
+                at([1.0, 0.0, 0.0]),
+                at([0.0, 1.0, 0.0]),
+                at([0.0, 0.0, 1.0]),
+            );
+            prop_assert_eq!(
+                plane_side(tri, Point3::from_array(v)),
+                three_plane_orient3d(&px, &py, &pz, tri[0], tri[1], tri[2])
+            );
+        }
     }
 
     proptest! {
