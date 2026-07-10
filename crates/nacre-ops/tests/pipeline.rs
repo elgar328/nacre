@@ -5,7 +5,7 @@
 //! stay owned by `nacre-step`'s own tests — here we only prove the pipeline hands
 //! a valid model through to real STEP/OBJ output.
 
-use nacre_math::{Point2, Point3};
+use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{Operation, Profile2d, SketchPlane, replay};
 
 /// A regular hexagon of the given radius, centred on the sketch origin.
@@ -423,6 +423,55 @@ fn u_cut_by_slab() -> (Model, Handle<Solid>) {
     (m, r)
 }
 
+/// `Cut(staple, L)` — a П drawn in the XZ plane, extruded along `−y`, minus the L-prism.
+/// The L's cap contributes two faces to the result: the kept region around the reflex corner,
+/// and an **island** where the near leg's footprint sits in a dropped region (cell 3f-4).
+fn staple_cut_by_l() -> (Model, Handle<Solid>) {
+    let l = Profile2d {
+        points: vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ],
+    };
+    let staple = Profile2d {
+        points: vec![
+            p2(0.1, 0.5),
+            p2(0.6, 0.5),
+            p2(0.6, 1.3),
+            p2(0.8, 1.3),
+            p2(0.8, 0.45),
+            p2(1.4, 0.45),
+            p2(1.4, 1.5),
+            p2(0.1, 1.5),
+        ],
+    };
+    let mut m = replay(&[
+        Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile: l,
+            dist: 1.0,
+        },
+        Operation::Extrude {
+            plane: SketchPlane {
+                origin: Point3::from_array([0.0, 1.3, 0.0]),
+                x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
+                y_axis: Vector3::from_array([0.0, 0.0, 1.0]),
+            },
+            profile: staple,
+            dist: 0.65,
+        },
+    ])
+    .unwrap();
+    let (a, b) = (m.live_solids[0], m.live_solids[1]);
+    let r = boolean(&mut m, BoolKind::Cut, b, a).unwrap();
+    m.rebuild_adjacency();
+    (m, r)
+}
+
 /// Two cubes fused across their shared face. `boolean` supersedes both operands —
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
@@ -573,6 +622,25 @@ fn two_islands_from_one_face_mesh_like_two() {
     let props = nacre_props::mass_props(&m, s).unwrap();
     assert!((props.area - 18.0).abs() < 1e-9, "area {}", props.area);
     assert!((props.volume - 4.0).abs() < 1e-9, "volume {}", props.volume);
+}
+
+#[test]
+fn an_island_beside_an_arc_meshes() {
+    // Cell 3f-4 on the gate. One input face — the L's cap — gives the result a kept region
+    // *and* an island, and the two were told apart by containment alone. Both are flipped
+    // (`Cut`'s B-piece), and the signed mesh volume is the only check in this file that
+    // compares each face's `Orientation` against its own ring.
+    let (m, s) = staple_cut_by_l();
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 40);
+    assert_agrees(&g, "staple cut by l");
+    let props = nacre_props::mass_props(&m, s).unwrap();
+    assert!(
+        (props.volume - (0.7605 - 0.311)).abs() < 1e-9,
+        "volume {}",
+        props.volume
+    );
+    assert!((props.area - 4.68).abs() < 1e-9, "area {}", props.area);
 }
 
 #[test]
