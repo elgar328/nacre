@@ -1447,13 +1447,17 @@ bbox_min 0 0 0
 
     /// A boolean composing on a shape a boolean can make (M5-d3 cell 3f-5). The seam bites
     /// the holed lid's corner, and the hole is placed inside the region left behind.
+    ///
+    /// The box is the symmetric one cell (5a) gave back: its vertical edge pierces the lid
+    /// at `(0.85, 0.85)`, on a fan diagonal from every apex. OCCT is asked the same question
+    /// on the same coordinates, and it does not fan.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn pocket_corner_cut_matches_occt() {
         diff_holed(
             "pocket corner cut",
             OcctBool::Cut,
-            [[0.85, 0.8, 0.75], [1.2, 1.15, 1.1]],
+            [[0.85, 0.85, 0.85], [1.15, 1.15, 1.15]],
             false,
         );
     }
@@ -1465,7 +1469,7 @@ bbox_min 0 0 0
         diff_holed(
             "pocket bottom corner cut",
             OcctBool::Cut,
-            [[0.85, 0.8, -0.1], [1.2, 1.15, 0.25]],
+            [[0.85, 0.85, -0.15], [1.15, 1.15, 0.15]],
             false,
         );
     }
