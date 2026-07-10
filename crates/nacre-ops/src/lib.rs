@@ -3800,6 +3800,8 @@ pub mod tests {
             // `(2, 0)`: two chords on one face and not a single closed loop — the only
             // fixture that asks for multi-chord alone. Measured.
             case("l_and_notch_bar (two chords)", (2, 0), l_and_notch_bar()),
+            // The first non-convex inner loop: six nodes, one of them reflex.
+            case("l_and_ell_stub (non-convex loop)", (1, 1), l_and_ell_stub()),
         ]
     }
 
@@ -3890,7 +3892,7 @@ pub mod tests {
         }
         // Pin the exercise. A fixture edit that quietly stops reaching the arrangement
         // would otherwise leave every assertion above vacuously true.
-        assert_eq!((n_faces, n_arcs, n_loops), (88, 46, 3));
+        assert_eq!((n_faces, n_arcs, n_loops), (104, 52, 4));
     }
 
     #[test]
@@ -4377,6 +4379,77 @@ pub mod tests {
             props.volume
         );
         assert!((props.area - 19.62).abs() < 1e-9, "area {}", props.area);
+    }
+
+    /// The L-prism with an **L-shaped** stub standing wholly inside its top face,
+    /// `z ∈ [0.5, 1.5]`. The seam on the cap is a closed loop with a reflex node — the
+    /// suite's first non-convex inner loop, and the shape a winding must be read from.
+    ///
+    /// Its coordinates dodge the cap's fan diagonals from `(0,0)` (`y = x`, `y = x/2`,
+    /// `y = 2x`), which `segment_crosses_face` would graze.
+    fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let ell = Profile2d {
+            points: vec![
+                p2(0.2, 0.25),
+                p2(0.85, 0.25),
+                p2(0.85, 0.4),
+                p2(0.35, 0.4), // reflex
+                p2(0.35, 0.9),
+                p2(0.2, 0.9),
+            ],
+        };
+        let OpOutput::Extrude { solid: stub, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane {
+                    origin: Point3::from_array([0.0, 0.0, 0.5]),
+                    ..SketchPlane::world_xy()
+                },
+                profile: ell,
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!("extrude yields Extrude output")
+        };
+        (m, l, stub)
+    }
+
+    #[test]
+    fn the_ell_stub_cuts_a_non_convex_loop() {
+        // Every closed seam loop in the suite so far has been a rectangle, and a convex
+        // ring turns the same way at every node. Cell 3h's hull-vertex search would never
+        // be exercised by one. This loop has a reflex node, at `(0.35, 0.4)`.
+        let (m, l, stub) = l_and_ell_stub();
+        let (planes, surf_ix) = combined(&m, l, stub);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+        let ps = paths(&m, top, l, stub, &planes, &surf_ix);
+        assert_eq!(ps.len(), 1);
+        let arrange::SeamPath::Closed(nodes) = &ps[0] else {
+            panic!("closed loop")
+        };
+        assert_eq!(nodes.len(), 6);
+        assert!(nodes.iter().all(|nd| nd.on_edge.is_none()));
+    }
+
+    #[test]
+    fn cut_ell_dimple() {
+        // The blind pocket is the stub's L-shaped section, `0.65·0.15 + 0.15·0.5 = 0.1725`,
+        // half a unit deep. Area `14 − 0.1725 + 2.6·0.5 + 0.1725`: the lid gives up exactly
+        // what the floor hands back, so only the walls move it.
+        let (mut m, l, stub) = l_and_ell_stub();
+        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - (3.0 - 0.1725 * 0.5)).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!((props.area - 15.3).abs() < 1e-9, "area {}", props.area);
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that

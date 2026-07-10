@@ -364,6 +364,51 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
     (m, r)
 }
 
+/// The L-prism with an L-shaped stub standing wholly inside its cap: a blind pocket whose
+/// lid carries a **non-convex** inner loop, the first the bridging triangulator has seen.
+fn ell_dimple_cut() -> (Model, Handle<Solid>) {
+    let l = Profile2d {
+        points: vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ],
+    };
+    let ell = Profile2d {
+        points: vec![
+            p2(0.2, 0.25),
+            p2(0.85, 0.25),
+            p2(0.85, 0.4),
+            p2(0.35, 0.4),
+            p2(0.35, 0.9),
+            p2(0.2, 0.9),
+        ],
+    };
+    let mut m = replay(&[
+        Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile: l,
+            dist: 1.0,
+        },
+        Operation::Extrude {
+            plane: SketchPlane {
+                origin: Point3::from_array([0.0, 0.0, 0.5]),
+                ..SketchPlane::world_xy()
+            },
+            profile: ell,
+            dist: 1.0,
+        },
+    ])
+    .unwrap();
+    let (a, b) = (m.live_solids[0], m.live_solids[1]);
+    let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+    m.rebuild_adjacency();
+    (m, r)
+}
+
 /// Two cubes fused across their shared face. `boolean` supersedes both operands —
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
@@ -471,6 +516,27 @@ fn a_split_face_meshes_like_two() {
     assert!((props.area - 14.0).abs() < 1e-9, "area {}", props.area);
     assert!(
         (props.volume - 2.96).abs() < 1e-9,
+        "volume {}",
+        props.volume
+    );
+}
+
+#[test]
+fn a_non_convex_hole_bridges_and_meshes() {
+    // Every inner loop the triangulator has met was a rectangle. This one has a reflex
+    // node, so `bridge_holes` must find a mutually-visible pair across a ring that is not
+    // star-shaped from anywhere obvious, and ear clipping must survive the slit.
+    //
+    // 44 triangles: the bitten lid is `6 + 6 + 2·1 − 2 = 12`, the bottom cap `6 − 2 = 4`,
+    // 2 apiece for the L's six walls and the pocket's six, and `6 − 2 = 4` for the floor.
+    let (m, s) = ell_dimple_cut();
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 44);
+    assert_agrees(&g, "ell dimple cut");
+    let props = nacre_props::mass_props(&m, s).unwrap();
+    assert!((props.area - 15.3).abs() < 1e-9, "area {}", props.area);
+    assert!(
+        (props.volume - (3.0 - 0.1725 * 0.5)).abs() < 1e-9,
         "volume {}",
         props.volume
     );
