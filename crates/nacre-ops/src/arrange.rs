@@ -82,24 +82,18 @@ impl SeamPath {
     }
 }
 
-/// Index a solid's edges by handle.
+/// Index a solid's edges by handle — [`edge_incidence`] keyed for lookup.
 ///
-/// `edge_incidence` walks outer loops only, so a hole-ring edge is seen once — its
-/// other use is on the lid's inner loop. Callers must have rejected holed operands
-/// (`INNER_LOOP_OPERAND`); we check rather than index blindly, because indexing
-/// `inc[1]` on such an edge is exactly what used to panic.
+/// Hole-ring edges are in here too: `edge_incidence` walks every loop of every
+/// face, and rejects an edge whose incidence is not a pair.
 pub(crate) fn edge_planes(
     model: &Model,
     solid: Handle<Solid>,
     surf_ix: &HashMap<Handle<Surface>, usize>,
 ) -> Result<EdgePlanes, BoolError> {
     let mut out = EdgePlanes::new();
-    for (eh, bounds, inc) in edge_incidence(model, solid, surf_ix) {
-        let [a, b] = match inc[..] {
-            [a, b] => [a, b],
-            _ => return Err(reject(tag::INNER_LOOP_OPERAND)),
-        };
-        out.insert(eh, (bounds, [a, b]));
+    for (eh, bounds, inc) in edge_incidence(model, solid, surf_ix)? {
+        out.insert(eh, (bounds, inc));
     }
     Ok(out)
 }

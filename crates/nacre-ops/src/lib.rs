@@ -144,6 +144,11 @@ pub enum BoolError {
 pub(crate) mod tag {
     pub const HOLLOW_OPERAND: &str = "hollow_operand";
     pub const INNER_LOOP_OPERAND: &str = "inner_loop_operand";
+    /// An outer-shell edge used by other than two face loops. A backstop with no
+    /// firing test: `validate` calls this `NonOpposedEdge` and every shell the
+    /// operations build is manifold — but `boolean` never runs `validate` on its
+    /// inputs, so a direct caller could still hand one in.
+    pub const NON_MANIFOLD_EDGE: &str = "non_manifold_edge";
     /// A backstop with no firing test yet — the degeneracies that would produce an
     /// odd crossing count are expected to trip `CONTACT_DEGENERATE` first. Recorded
     /// as unverified in design.md §9, alongside `fourplane`.
@@ -1157,12 +1162,12 @@ fn overlap_fuse_cut(
 
     // Seam vertices: an edge straddling the other boundary pierces exactly one of
     // its faces (that face's plane is the seam vertex's third plane).
-    let edges_a = edge_incidence(model, a, &surf_ix);
-    let edges_b = edge_incidence(model, b, &surf_ix);
+    let edges_a = edge_incidence(model, a, &surf_ix)?;
+    let edges_b = edge_incidence(model, b, &surf_ix)?;
     let mut seam: Vec<SeamVertex> = Vec::new();
     let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
     for (edges, other) in [(&edges_a, b), (&edges_b, a)] {
-        for &(_, bounds, ref inc) in edges {
+        for &(_, bounds, inc) in edges {
             let [v0, v1] = bounds;
             let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
@@ -1192,7 +1197,7 @@ fn overlap_fuse_cut(
             }
             let entry = pierced_face(model, p0, p1, other, &surf_ix)?
                 .ok_or_else(|| reject(tag::NO_ENTRY_FACE))?;
-            let [e0, e1] = [inc[0], inc[1]];
+            let [e0, e1] = inc;
             let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
                 .ok_or_else(|| reject(tag::THREE_PLANES))?;
             // Exact 4-plane-concurrency guard: the seam vertex must not lie on any
@@ -1741,13 +1746,13 @@ fn fuse_cut(
     }
 
     // Seam vertices: A-edges piercing B (2A+1B) and B-edges piercing A (1A+2B).
-    let edges_a = edge_incidence(model, a, &surf_ix);
-    let edges_b = edge_incidence(model, b, &surf_ix);
+    let edges_a = edge_incidence(model, a, &surf_ix)?;
+    let edges_b = edge_incidence(model, b, &surf_ix)?;
     let mut seam: Vec<SeamVertex> = Vec::new();
     let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
     let mut edge_seam: HashMap<Handle<Edge>, [usize; 3]> = HashMap::new();
     for (edges, other) in [(&edges_a, b_range.clone()), (&edges_b, a_range.clone())] {
-        for &(eh, bounds, ref inc) in edges {
+        for &(eh, bounds, inc) in edges {
             let [v0, v1] = bounds;
             let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
@@ -1767,7 +1772,7 @@ fn fuse_cut(
             };
             let entry = enter_face(p_out, p_in, other.clone(), &planes)
                 .ok_or_else(|| reject(tag::NO_ENTRY_FACE))?;
-            let [e0, e1] = [inc[0], inc[1]];
+            let [e0, e1] = inc;
             let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
                 .ok_or_else(|| reject(tag::THREE_PLANES))?;
             // Exact: the point must be inside the entry face (on ∂ of the other solid).
@@ -2115,19 +2120,27 @@ fn solid_vertex_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Verte
 
 /// Each outer-shell edge with its bound vertices and the two combined-plane
 /// indices of its adjacent faces, in first-seen (deterministic) order.
+///
+/// Every loop of every face is walked, holes included: a hole-ring edge is used
+/// once by the holed face's inner loop and once by the neighbouring wall's outer
+/// loop, so it too has exactly two incident faces. Walking `outer` before `inner`
+/// on each face leaves the order of a hole-free solid untouched.
+///
+/// The pair is returned as `[usize; 2]`, so no caller can index a third slot: an
+/// edge with any other incidence count is a non-manifold shell and rejects here.
 #[allow(clippy::type_complexity)]
 pub(crate) fn edge_incidence(
     model: &Model,
     solid: Handle<Solid>,
     surf_ix: &HashMap<Handle<Surface>, usize>,
-) -> Vec<(Handle<Edge>, [Handle<Vertex>; 2], Vec<usize>)> {
+) -> Result<Vec<(Handle<Edge>, [Handle<Vertex>; 2], [usize; 2])>, BoolError> {
     let shell = model.solids.get(solid).outer;
     let mut order: Vec<Handle<Edge>> = Vec::new();
     let mut map: HashMap<Handle<Edge>, ([Handle<Vertex>; 2], Vec<usize>)> = HashMap::new();
     for &fh in &model.shells.get(shell).faces {
         let face = model.faces.get(fh);
         let pidx = surf_ix[&face.surface];
-        for he in &face.outer.half_edges {
+        for he in face_half_edges(face) {
             let bounds = model.edges.get(he.edge).bounds.expect("bounded");
             let entry = map.entry(he.edge).or_insert_with(|| {
                 order.push(he.edge);
@@ -2140,9 +2153,22 @@ pub(crate) fn edge_incidence(
         .into_iter()
         .map(|e| {
             let (b, p) = map.remove(&e).unwrap();
-            (e, b, p)
+            match p[..] {
+                [x, y] => Ok((e, b, [x, y])),
+                // `validate` would call this `NonOpposedEdge`, but `boolean` never runs
+                // `validate` on its inputs, so the guard stays. No firing test.
+                _ => Err(reject(tag::NON_MANIFOLD_EDGE)),
+            }
         })
         .collect()
+}
+
+/// Every half-edge of a face: its outer loop first, then each hole ring in order.
+pub(crate) fn face_half_edges(face: &Face) -> impl Iterator<Item = &HalfEdge> {
+    face.outer
+        .half_edges
+        .iter()
+        .chain(face.inner.iter().flat_map(|l| l.half_edges.iter()))
 }
 
 /// The result when no edge crosses the other solid's boundary: one solid
@@ -5329,6 +5355,65 @@ pub mod tests {
             unreachable!()
         };
         (m, solid)
+    }
+
+    /// The unit cube with a 0.4-square imprinted on its top face: no material moves,
+    /// the face is merely split into a holed lid and a coplanar region face.
+    fn imprinted_cube() -> (Model, Handle<Solid>) {
+        let (mut m, top) = cube_with_top();
+        let OpOutput::ImprintSketch { solid, .. } = apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: top,
+                profile: small_square(),
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        (m, solid)
+    }
+
+    /// A face with an inner loop implies one of exactly two things about the shell: the
+    /// rim is bounded by inward walls, making the solid non-convex (a pocket), or by a
+    /// coplanar region face (an imprint). Nothing else closes. These two tests measure
+    /// both halves, and together they say where a holed operand can arrive: `fuse_cut`
+    /// and `common` see only the imprint, and reject it as `COPLANAR_PAIR` on the
+    /// combined plane list; everything else takes the non-convex path.
+    #[test]
+    fn a_pocketed_cube_is_not_convex() {
+        let (m, pc) = pocketed_cube();
+        assert!(!m.faces.get(solid_faces(&m, pc)[1]).inner.is_empty()); // the lid is holed
+        let planes = collect_planes(&m, pc).unwrap();
+        assert!(!is_convex(&planes, &solid_vertices(&m, pc)));
+    }
+
+    #[test]
+    fn an_imprinted_cube_is_convex() {
+        let (m, ic) = imprinted_cube();
+        let planes = collect_planes(&m, ic).unwrap();
+        assert!(is_convex(&planes, &solid_vertices(&m, ic)));
+        assert!(has_coplanar_pair(&planes)); // the lid and its region face
+    }
+
+    /// A holed operand already survives the seam-free path — `nonconvex_seamfree` never
+    /// had a hole guard, and `contained_result` reuses whole shells, so the pocket rides
+    /// through untouched. Nothing tested it. Pin it before the guard comes down.
+    #[test]
+    fn containment_boolean_already_keeps_a_pocket() {
+        for (kind, want) in [(BoolKind::Cut, 0.919), (BoolKind::Fuse, 0.92)] {
+            let (mut m, pc) = pocketed_cube();
+            let bx = m.add_cuboid(
+                Point3::from_array([0.05, 0.05, 0.05]),
+                Point3::from_array([0.15, 0.15, 0.15]),
+            );
+            let r = boolean(&mut m, kind, pc, bx).unwrap();
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{kind:?} {vs:?}");
+            let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+            assert!((vol - want).abs() < 1e-9, "{kind:?} volume {vol}");
+        }
     }
 
     #[test]
