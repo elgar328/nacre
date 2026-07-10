@@ -3627,9 +3627,11 @@ pub mod tests {
         name: &'static str,
         /// `(most open arcs on any one face, closed loops over all faces)`.
         ///
-        /// This is exactly what stands between the fixture and a result: `> 1` arc on a
-        /// face is `multichord`, a loop anywhere is `pokehole`. `(1, 0)` means the only
-        /// thing left rejecting it is the arc's *shape*, not the arrangement.
+        /// The arrangement's own reading of each fixture, and it moves as the ladder
+        /// climbs. `> 1` arc on a face is still `multichord`. A lone loop on a face is
+        /// no longer fatal — cell 3f-1 made it a hole, cell 3f-2 an island — but two
+        /// loops on one face, or a loop beside an arc, remain `pokehole`. `(1, 0)` says
+        /// the arrangement never had anything to say about this fixture at all.
         expect: (usize, usize),
         m: Model,
         x: Handle<Solid>,
@@ -3937,6 +3939,26 @@ pub mod tests {
             || boolean(&mut m, BoolKind::Fuse, solid, bx),
             tag::INNER_LOOP_OPERAND,
         );
+    }
+
+    #[test]
+    fn two_loops_on_one_face_are_unsupported() {
+        // `pokehole` narrows in cell 3f-2 (the island face opens), so it needs a firing
+        // test that survives. Measured, not guessed: swapping the operands of
+        // `cut_multi_chord_slab_is_unsupported` reaches a different guard first.
+        //
+        // Faces are enumerated A-then-B (`overlap_fuse_cut`), so with the slab as A its
+        // `y = 1.5` face — pierced by *both* prongs, two closed loops wholly inside it —
+        // is reached before the U's base cap, where `multichord` waits. `u_and_slab`'s
+        // `expect = (2, 2)` already pins that this fixture has one of each.
+        //
+        // The tag therefore depends on face enumeration order. That is not a flaw to be
+        // hidden: if the order ever changes, this test says so out loud.
+        //
+        // Two loops may *nest* — the outer one a hole, the inner one's interior kept
+        // again and so a face of its own — and no local sign rule can tell. Cell 3f-3.
+        let (mut m, u, slab) = u_and_slab();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, slab, u), tag::POKEHOLE);
     }
 
     #[test]
