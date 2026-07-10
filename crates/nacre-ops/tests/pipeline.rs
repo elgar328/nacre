@@ -825,3 +825,50 @@ fn a_boolean_result_meshes_only_the_live_solid() {
     assert_eq!(g.tris, 20);
     assert_agrees(&g, "stacked fuse");
 }
+
+/// The gate on a holed *operand*. Cell 3f-5 lets a pocketed cube be cut, and the lid
+/// keeps its hole either by riding through `whole()` untouched or by being placed inside
+/// the region a seam arc leaves. Both roads end here.
+///
+/// `Σ|area| == props.area` catches a hole filled in or a fan spilling out; `mesh_volume ==
+/// props.volume` is the only one of the four that can see a hole ring reversed, since
+/// `props` reads the face's `orientation` and never the ring's winding.
+#[test]
+fn a_holed_operand_keeps_its_hole_through_a_cut() {
+    for (name, box_lo, box_hi) in [
+        ("corner", [0.85, 0.8, 0.75], [1.2, 1.15, 1.1]),
+        ("bottom corner", [0.85, 0.8, -0.1], [1.2, 1.15, 0.25]),
+    ] {
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(Point3::from_array(box_lo), Point3::from_array(box_hi));
+        let s = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let g = mesh_vs_props(&m, s);
+        assert_agrees(&g, name);
+        let vol = nacre_props::mass_props(&m, s).unwrap().volume;
+        assert!((vol - 0.9125).abs() < 1e-9, "{name} volume {vol}");
+    }
+}
+
+/// A `Cut`'s inside-B piece with a hole in it: the pocket's lid, kept, reversed, hole and
+/// all. `flip` and `inner` had never met. Only the signed volume tells a hole reversed
+/// with its face from a hole reversed alone, and it is the one check `props` cannot make
+/// for itself.
+#[test]
+fn a_flipped_face_keeps_its_hole() {
+    let (mut m, pc) = pocketed_cube();
+    let slab = m.add_cuboid(
+        Point3::from_array([-0.2, -0.25, 0.3]),
+        Point3::from_array([1.3, 1.2, 1.5]),
+    );
+    let s = boolean(&mut m, BoolKind::Cut, slab, pc).unwrap();
+    m.rebuild_adjacency();
+    let g = mesh_vs_props(&m, s);
+    assert_agrees(&g, "slab cut by pocket");
+    let props = nacre_props::mass_props(&m, s).unwrap();
+    assert!(
+        (props.volume - 1.99).abs() < 1e-9,
+        "volume {}",
+        props.volume
+    );
+}

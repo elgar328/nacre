@@ -4323,22 +4323,22 @@ pub mod tests {
         );
     }
 
-    /// The same volume by the other road: the box bites the *bottom* corner, so the lid
-    /// never meets the seam and its hole rides out through `whole()` rather than through
-    /// `place_loops`. Two paths, one number.
+    /// The same bite, mirrored in `z`, so the lid never meets the seam and its hole rides
+    /// out through `whole()` rather than through `place_loops`. Two paths, one number.
     #[test]
     fn cut_a_pocket_at_a_bottom_corner() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
-            Point3::from_array([0.85, 0.85, -0.15]),
-            Point3::from_array([1.15, 1.15, 0.15]),
+            Point3::from_array([0.85, 0.8, -0.1]),
+            Point3::from_array([1.2, 1.15, 0.25]),
         );
         let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
         let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!((props.volume - 0.916625).abs() < 1e-9, "{}", props.volume);
+        assert!((props.volume - 0.9125).abs() < 1e-9, "{}", props.volume);
+        assert!(holed_faces(&m, r).len() == 1, "the lid kept its hole");
     }
 
     /// The box crosses the pocket rim, so a boundary node rides a rim edge and `∂f` is no
