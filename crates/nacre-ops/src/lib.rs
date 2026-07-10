@@ -6142,6 +6142,15 @@ pub mod tests {
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - (1.0 - 0.125)).abs() < 1e-9, "volume {vol}");
+
+        // The `Fuse` leg of the same corner overlap, which cell (5a) never measured on the
+        // seam path — cell (5b) routes it here. `1 + 1 − 0.125`.
+        let (mut m, a, b) = two_boxes();
+        let r = overlap_fuse_cut(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.875).abs() < 1e-9, "volume {vol}");
     }
 
     /// A hole subtracts. An edge dropped straight through the pocket's mouth crosses the lid's
@@ -6174,6 +6183,71 @@ pub mod tests {
             assert!(!arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings).unwrap());
         }
         assert_eq!(vertical, 4);
+    }
+
+    /// The two inputs the convex `Fuse`/`Cut` path rejects but the seam path answers — both
+    /// convex, both blocked only by `edge_seam`'s one-triple-per-edge, both already green on
+    /// their non-convex twins (`cut_notch_bar`, `drill_through_the_l`, `fuse_the_l_and_the_rod`).
+    /// Cell (5b) routes them here by deleting the convex path; this measures the answer first.
+    ///
+    /// The drilled cube is genus 1, and `validate` clean does not prove that (a tunnel is
+    /// clean too). Its two holed caps — the drill's entry and exit — do: `holed_faces == 2`.
+    #[test]
+    fn the_seam_path_answers_both_convex_pokes() {
+        // A notch bitten out of one edge: the edge is crossed twice, so it threads the notch
+        // rather than straddling. `10³ − 4·1.4·1.2` cut, `+2·4·1.4·1.2 − 6.72` fused.
+        let (mut m, a, y) = cube_and_notch();
+        let cut = overlap_fuse_cut(&mut m, BoolKind::Cut, a, y).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let v = nacre_props::mass_props(&m, cut).unwrap().volume;
+        assert!((v - 993.28).abs() < 1e-9, "notch cut {v}");
+
+        let (mut m, a, y) = cube_and_notch();
+        let fuse = overlap_fuse_cut(&mut m, BoolKind::Fuse, a, y).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let v = nacre_props::mass_props(&m, fuse).unwrap().volume;
+        assert!((v - 1014.4).abs() < 1e-9, "notch fuse {v}");
+
+        // A bar straight through a cube: a genus-1 solid, and the canonical thing a user
+        // drills. `27 − 1·1·3` cut, `27 + (5·1·1) − 3` fused.
+        let drill = |kind| {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+            let bar = m.add_cuboid(
+                Point3::from_array([1.0, 1.0, -1.0]),
+                Point3::from_array([2.0, 2.0, 4.0]),
+            );
+            let r = overlap_fuse_cut(&mut m, kind, a, bar).unwrap();
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
+            (m, r)
+        };
+        let (m, cut) = drill(BoolKind::Cut);
+        assert_eq!(holed_faces(&m, cut).len(), 2, "the drill's two caps");
+        assert!((nacre_props::mass_props(&m, cut).unwrap().volume - 24.0).abs() < 1e-9);
+        let (m, fuse) = drill(BoolKind::Fuse);
+        assert!((nacre_props::mass_props(&m, fuse).unwrap().volume - 29.0).abs() < 1e-9);
+    }
+
+    /// An edge of one convex solid, threading the other, severs it. The bar runs through the
+    /// cube and out both ends, so `Cut(bar, cube)` leaves the bar in two pieces — two solids,
+    /// which one handle cannot answer. The convex path rejected this as `poke_through`; the
+    /// seam path names it for what it is. First convex firing of `disconnected_result`
+    /// (cell 3e-3's was the non-convex `Cut(rod, L)`).
+    #[test]
+    fn a_convex_cut_can_sever_its_operand() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let bar = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        assert_rejects(
+            || overlap_fuse_cut(&mut m, BoolKind::Cut, bar, a),
+            tag::DISCONNECTED_RESULT,
+        );
     }
 
     /// The two contacts, named. Both were `contact_degenerate` — "grazed a fan diagonal" — and
