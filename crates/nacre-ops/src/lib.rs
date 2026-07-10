@@ -239,6 +239,19 @@ pub(crate) mod tag {
     /// With an arc, a hole in the kept region and an island in the dropped one wind
     /// oppositely without containing each other. `pokehole` holds that case.
     pub const NESTED_LOOPS: &str = "nested_loops";
+    /// Every candidate ray from a loop's nodes has a ring node on its line.
+    ///
+    /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
+    /// that line makes the crossing parity ambiguous. Candidates are `2 · |loop|` lines and
+    /// two directions, and half of them can be spoiled at once — `l_and_staple`'s loop and
+    /// arc share both `y` planes, so only the `x` lines are clear there. Unfired today.
+    pub const NO_CLEAR_RAY: &str = "no_clear_ray";
+    /// A loop's node lies *on* the ring it is being tested against.
+    ///
+    /// `SeamPath::Closed` has claimed since cell 3f-1 that a closed seam loop never touches
+    /// `∂f`. Nothing checked it. `point_in_ring` does, exactly: the ray's line meets an edge
+    /// at `X`, and `X == v` strictly inside that edge means `v` is on the ring. Unfired.
+    pub const POINT_ON_RING: &str = "point_on_ring";
     pub const POKEHOLE: &str = "pokehole";
     pub const MISSING_SEAM: &str = "missing_seam";
     /// Four or more boundary crossings on one face — the convex path only.
@@ -4775,6 +4788,155 @@ pub mod tests {
             unreachable!("extrude yields Extrude output")
         };
         (m, l, st)
+    }
+
+    /// The staple cap's `(∂f ring, cycle ring, oriented loop ring)`, as plane triples.
+    ///
+    /// The cycle is built the way `reconstruct_face_paths` builds it: `Cut(L, staple)` keeps
+    /// `[T,T,T,F,T,T]`, so the run is `4,5,0,1,2` and the arc is spliced starting at its
+    /// `kd` end (edge 2). `material_outside` picks the loop's direction.
+    #[allow(clippy::type_complexity)]
+    fn staple_cap_rings(
+        material_outside: bool,
+        kept_run: &[usize],
+        arc_forward: bool,
+    ) -> (
+        Vec<PlaneInfo>,
+        usize,
+        Vec<[usize; 3]>,
+        Vec<[usize; 3]>,
+        Vec<[usize; 3]>,
+    ) {
+        let (m, l, st) = l_and_staple();
+        let (planes, surf_ix) = combined(&m, l, st);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+        let p = surf_ix[&m.faces.get(top).surface];
+        let ps = paths(&m, top, l, st, &planes, &surf_ix);
+        let arrange::SeamPath::Open(arc) = &ps[0] else {
+            panic!("an arc")
+        };
+        let arrange::SeamPath::Closed(lp) = &ps[1] else {
+            panic!("a loop")
+        };
+        let inc_f = arrange::edge_planes(&m, l, &surf_ix).unwrap();
+        let bnd = arrange::face_vertex_triples(&m, top, p, &inc_f).unwrap();
+
+        let mut cycle: Vec<[usize; 3]> = kept_run.iter().map(|&i| bnd[i]).collect();
+        if arc_forward {
+            cycle.extend(arc.iter().map(|nd| nd.triple));
+        } else {
+            cycle.extend(arc.iter().rev().map(|nd| nd.triple));
+        }
+        let ring = arrange::orient_seam_loop(&planes, p, lp, material_outside).unwrap();
+        (planes, p, bnd, cycle, ring)
+    }
+
+    #[test]
+    fn a_loop_is_inside_the_face_it_was_found_on() {
+        // `SeamPath::Closed` has claimed since cell 3f-1 that a closed seam loop never
+        // touches `∂f`. Nothing checked it. Every node of the staple's loop is strictly
+        // inside the cap's own ring, and `point_on_ring` is what would say otherwise.
+        //
+        // The `∂f` ring is a hexagon with a reflex corner, so this is not a convex test.
+        let (planes, p, bnd, _, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
+        for t in &ring {
+            assert!(arrange::point_in_ring(&planes, p, *t, &bnd).unwrap());
+        }
+    }
+
+    #[test]
+    fn the_older_loops_are_inside_their_faces_too() {
+        // The two fixtures cell 3f-4 must not move: a square hole and an L-shaped one. Both
+        // rings sit strictly inside the same reflex hexagon, and every clear ray agrees.
+        for (name, f) in [
+            (
+                "dimple",
+                l_and_dimple as fn() -> (Model, Handle<Solid>, Handle<Solid>),
+            ),
+            ("ell stub", l_and_ell_stub),
+        ] {
+            let (m, l, stub) = f();
+            let (planes, surf_ix) = combined(&m, l, stub);
+            let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+            let p = surf_ix[&m.faces.get(top).surface];
+            let ps = paths(&m, top, l, stub, &planes, &surf_ix);
+            let arrange::SeamPath::Closed(lp) = &ps[0] else {
+                panic!("{name}: a loop")
+            };
+            let inc_f = arrange::edge_planes(&m, l, &surf_ix).unwrap();
+            let bnd = arrange::face_vertex_triples(&m, top, p, &inc_f).unwrap();
+            let ring = arrange::orient_seam_loop(&planes, p, lp, true).unwrap();
+            for t in &ring {
+                let rays = arrange::every_ray(&planes, p, *t, &bnd).unwrap();
+                assert!(!rays.is_empty(), "{name}: no clear ray");
+                assert!(rays.iter().all(|&x| x), "{name}: {rays:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_loop_is_placed_by_where_it_is_not_by_how_it_winds() {
+        // The shape cell 3f-3 could not decide. One face, one arc, one loop — and the loop
+        // is a *hole* or an *island* depending only on which side of the arc it lies.
+        //
+        // `Cut(L, staple)`: the kept region is the cap minus the corner bite, and the loop
+        // sits inside it. `Cut(staple, L)`: the kept region *is* the corner bite, and the
+        // same loop sits outside it. Neither the winding nor `kept[0]` can tell those apart.
+        let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
+        for t in &ring {
+            assert!(
+                arrange::point_in_ring(&planes, p, *t, &cycle).unwrap(),
+                "the loop is inside the kept region: a hole"
+            );
+        }
+        // And the ring does not contain the region: containment is not symmetric.
+        assert!(!arrange::point_in_ring(&planes, p, cycle[0], &ring).unwrap());
+        assert!(!arrange::point_in_ring(&planes, p, cycle[7], &ring).unwrap());
+
+        let (planes, p, _, cycle, ring) = staple_cap_rings(false, &[3], true);
+        for t in &ring {
+            assert!(
+                !arrange::point_in_ring(&planes, p, *t, &cycle).unwrap(),
+                "the loop is outside the kept region: an island"
+            );
+        }
+    }
+
+    #[test]
+    fn every_clear_ray_agrees_and_half_of_them_are_not_clear() {
+        // The ring is simple, so the parity cannot depend on which ray was cast. That is a
+        // second machine, free.
+        //
+        // And the candidates are not interchangeable, which is why both of a node's planes
+        // must be tried: the staple's legs are extruded from the same `y = 0.65` and
+        // `y = 1.3` caps, so the loop and the arc *share* those planes. A ray along the
+        // loop's `y` plane runs straight through the arc's nodes `(0.8, 0.65)` and
+        // `(1.4, 0.65)`. Only the `x` lines survive — two of four candidates.
+        let (planes, p, bnd, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
+
+        let vs_face = arrange::every_ray(&planes, p, ring[0], &bnd).unwrap();
+        assert_eq!(vs_face.len(), 4, "all four candidates are clear of `∂f`");
+        assert!(vs_face.iter().all(|&x| x), "and all agree: inside");
+
+        let vs_cycle = arrange::every_ray(&planes, p, ring[0], &cycle).unwrap();
+        assert_eq!(
+            vs_cycle.len(),
+            2,
+            "the loop's `y` plane meets the arc's nodes"
+        );
+        assert!(vs_cycle.iter().all(|&x| x), "the clear ones agree: inside");
+    }
+
+    #[test]
+    fn a_ring_inside_a_ring_is_what_nesting_looks_like() {
+        // `nested_loops` has no operand in the suite that produces it — a polyhedral torus
+        // would. The detector can still be aimed at real geometry: the staple cap's kept
+        // region contains its loop, so feeding that pair to the containment test as though
+        // they were two loops fires exactly the condition cell 3f-4 rejects. It is the
+        // detector under test, not the fixture.
+        let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
+        assert!(arrange::point_in_ring(&planes, p, ring[0], &cycle).unwrap());
+        assert!(!arrange::point_in_ring(&planes, p, cycle[0], &ring).unwrap());
     }
 
     #[test]

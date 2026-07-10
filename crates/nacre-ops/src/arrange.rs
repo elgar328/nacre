@@ -401,6 +401,133 @@ pub(crate) fn turn_at(
     Ok(sa * sb * det * orient_sign(planes, p))
 }
 
+/// Face `f`'s outer-loop vertices as three-plane triples: `f`'s own plane, and the
+/// neighbouring planes of the two edges meeting there.
+///
+/// An original vertex is as implicit a point as a seam node, so a cycle's ring — which mixes
+/// them — is one uniform list and [`point_in_ring`] need not know the difference. Two
+/// adjacent edges on one neighbour plane would be a straight angle, and it rejects.
+pub(crate) fn face_vertex_triples(
+    model: &Model,
+    f: Handle<Face>,
+    p: usize,
+    inc: &EdgePlanes,
+) -> Result<Vec<[usize; 3]>, BoolError> {
+    let hes = &model.faces.get(f).outer.half_edges;
+    let other = |he: &nacre_topo::HalfEdge| -> Result<usize, BoolError> {
+        let (_, [pa, pb]) = *inc.get(&he.edge).ok_or_else(|| reject(tag::MISSING_SEAM))?;
+        Ok(if pa == p { pb } else { pa })
+    };
+    let n = hes.len();
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        // Vertex `i` starts edge `i` and ends edge `i - 1`.
+        let (a, b) = (other(&hes[(i + n - 1) % n])?, other(&hes[i])?);
+        if a == b {
+            return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // a straight angle
+        }
+        let mut t = [p, a, b];
+        t.sort_unstable();
+        out.push(t);
+    }
+    Ok(out)
+}
+
+/// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
+fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
+    three_plane_orient3d(
+        &planes[t[0]].plane,
+        &planes[t[1]].plane,
+        &planes[t[2]].plane,
+        planes[q].tri[0],
+        planes[q].tri[1],
+        planes[q].tri[2],
+    )
+}
+
+/// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
+///
+/// **A ray, cast along a line we already have.** Every ring edge lies on `P ∩ R`, and `v`
+/// lies on `P ∩ Q_a` for either of its own two planes. Those two lines meet at
+/// `X = {P, Q_a, R}`, which is *itself* a three-plane point — so "is `X` inside the edge"
+/// and "is `X` ahead of `v`" are both [`order_along`], the comparator cell 3d already built
+/// for two three-plane points on one line. **No coordinate is read and no point is built.**
+///
+/// **Choosing the ray first deletes the special cases.** A ring node on the ray's *line*
+/// would make the parity ambiguous; `side_of` decides that exactly. Once no node lies on the
+/// line, an edge's line cannot *be* the ray's line (its endpoints would be on it), so a zero
+/// determinant always means "parallel and distinct" — no crossing, no collinearity to handle
+/// — and every crossing is transversal, so parity is containment.
+///
+/// Candidates are each node's two non-`P` planes, in ring order, `+d` before `-d`; the first
+/// clear one wins, which keeps the answer deterministic. `no_clear_ray` if none is clear.
+/// The answer must not depend on which was chosen, and a golden says so.
+///
+/// `v` must not lie *on* `ring`. That is `SeamPath::Closed`'s standing claim — a closed seam
+/// loop never touches `∂f` — and this is where it is finally checked: an intersection at
+/// `X == v` strictly inside an edge is `point_on_ring`.
+pub(crate) fn point_in_ring(
+    planes: &[PlaneInfo],
+    p: usize,
+    v: [usize; 3],
+    ring: &[[usize; 3]],
+) -> Result<bool, BoolError> {
+    every_ray(planes, p, v, ring)?
+        .first()
+        .copied()
+        .ok_or_else(|| reject(tag::NO_CLEAR_RAY))
+}
+
+/// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
+/// says so, which is a second machine for free.
+pub(crate) fn every_ray(
+    planes: &[PlaneInfo],
+    p: usize,
+    v: [usize; 3],
+    ring: &[[usize; 3]],
+) -> Result<Vec<bool>, BoolError> {
+    if ring.len() < 3 {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+    }
+    let mut out = Vec::new();
+    for &qa in v.iter().filter(|&&x| x != p) {
+        // Clear iff no ring node sits on `Q_a`, hence none on the line `P ∩ Q_a`.
+        if ring.iter().any(|&m| side_of(planes, m, qa) == 0) {
+            continue;
+        }
+        let qb = *v
+            .iter()
+            .find(|&&x| x != p && x != qa)
+            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+        for dir in [1i8, -1] {
+            let mut crossings = 0usize;
+            for i in 0..ring.len() {
+                let (r, si, sj) = ring_edge(p, ring, i)?;
+                // Parallel: distinct lines, because no ring node lies on `P ∩ Q_a`.
+                if plane_pair_dir_sign(&planes[p].plane, &planes[qa].plane, &planes[r].plane) == 0 {
+                    continue;
+                }
+                // `X = {P, Q_a, R}` strictly inside the edge?
+                let (a, b) = (
+                    order_along(planes, p, r, qa, si),
+                    order_along(planes, p, r, qa, sj),
+                );
+                if a * b >= 0 {
+                    continue; // outside the edge, or on an endpoint (excluded above)
+                }
+                // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
+                match order_along(planes, p, qa, r, qb) {
+                    0 => return Err(reject(tag::POINT_ON_RING)), // `X == v`, inside an edge
+                    o if o == dir => crossings += 1,
+                    _ => {}
+                }
+            }
+            out.push(crossings % 2 == 1);
+        }
+    }
+    Ok(out)
+}
+
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///
