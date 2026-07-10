@@ -252,6 +252,15 @@ pub(crate) mod tag {
     /// `∂f`. Nothing checked it. `point_in_ring` does, exactly: the ray's line meets an edge
     /// at `X`, and `X == v` strictly inside that edge means `v` is on the ring. Unfired.
     pub const POINT_ON_RING: &str = "point_on_ring";
+    /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
+    /// convex path only.
+    ///
+    /// **Unreachable, and a backstop rather than a coverage limit.** For convex operands a
+    /// straddling edge of the other solid pierces exactly one face, and an edge that pokes
+    /// through a face's interior without straddling is caught by `poke_through` first. Cell
+    /// 3f-4 taught the non-convex path to place a loop by containment, and this arm is what
+    /// is left. **Believed, not verified**: unlike `multichord`, the argument leans on
+    /// `segment_enters` firing first rather than on a property of convex sets.
     pub const POKEHOLE: &str = "pokehole";
     pub const MISSING_SEAM: &str = "missing_seam";
     /// Four or more boundary crossings on one face — the convex path only.
@@ -2356,64 +2365,7 @@ fn reconstruct_face_paths(
         return Err(reject(tag::SEAM_COUNT_MISMATCH));
     }
 
-    if n_closed > 0 {
-        // A loop is a hole of the kept region containing it, and an island when no kept
-        // region does — its interior is then what survives. Only containment can say which,
-        // and with an arc present nothing else can: cell 3f-3's counterexample is a hole in
-        // the kept region beside an island in the dropped one, winding oppositely without
-        // nesting. Cell 3f-4 opens that; until then the arc rejects.
-        if !opens.is_empty() {
-            return Err(reject(tag::POKEHOLE));
-        }
-        // With no arc there is one region, `f` itself, kept iff `∂f` is.
-        let bnd_ring = arrange::face_vertex_triples(model, fh, plane_idx, inc_f)?;
-        let regions: Vec<Vec<[usize; 3]>> = if kept[0] { vec![bnd_ring] } else { vec![] };
-
-        let mut rings = Vec::with_capacity(n_closed);
-        let mut windings = Vec::with_capacity(n_closed);
-        for path in &paths {
-            let arrange::SeamPath::Closed(nodes) = path else {
-                unreachable!("`opens` is empty")
-            };
-            let ring = arrange::orient_seam_loop(planes, plane_idx, nodes, keep == Side::Outside)?;
-            for t in &ring {
-                if !seam_ix.contains_key(t) {
-                    return Err(reject(tag::MISSING_SEAM));
-                }
-            }
-            windings.push(arrange::loop_winding(planes, plane_idx, &ring)?);
-            rings.push(ring);
-        }
-
-        let owners = place_loops(planes, plane_idx, &regions, &rings)?;
-        for (&owner, &w) in owners.iter().zip(&windings) {
-            check_loop_class(owner.is_some(), w)?;
-        }
-
-        let node_ring = |r: Vec<[usize; 3]>| r.into_iter().map(Node::Seam).collect::<Vec<Node>>();
-        let holes: Vec<Vec<Node>> = rings
-            .iter()
-            .zip(&owners)
-            .filter(|(_, o)| o.is_some())
-            .map(|(r, _)| node_ring(r.clone()))
-            .collect();
-        let islands = rings
-            .into_iter()
-            .zip(&owners)
-            .filter(|(_, o)| o.is_none())
-            .map(|(r, _)| LocalFace {
-                plane_idx,
-                loop_nodes: node_ring(r),
-                inner: vec![],
-                flip,
-            });
-        // Regions first, then islands: `assemble_fuse_cut` fixes vertex handles by first
-        // appearance across `faces`, and replay rests on that order.
-        let mut out = whole(holes);
-        out.extend(islands);
-        return Ok(out);
-    }
-    if opens.is_empty() {
+    if opens.is_empty() && n_closed == 0 {
         return Ok(whole(vec![])); // no seam on this face after all
     }
 
@@ -2421,7 +2373,7 @@ fn reconstruct_face_paths(
     // Which end is which comes from `kept` at the transition the end rides.
     let mut kd = Vec::with_capacity(opens.len());
     let mut dk = Vec::with_capacity(opens.len());
-    let mut nodes: Vec<Vec<[usize; 3]>> = Vec::with_capacity(opens.len());
+    let mut arc_nodes: Vec<Vec<[usize; 3]>> = Vec::with_capacity(opens.len());
     for arc in &opens {
         let ends = arc.nodes();
         let head = ends[0]
@@ -2444,37 +2396,128 @@ fn reconstruct_face_paths(
         }
         kd.push(if forward { h } else { t });
         dk.push(if forward { t } else { h });
-        nodes.push(ordered);
+        arc_nodes.push(ordered);
     }
 
-    // The arcs' successor map decomposes into cycles, one kept region each. With a single
-    // arc the only cycle is `[0]` and this is the old splice, walk for walk.
-    let cycles = arrange::stitch_cycles(&kept, &kd, &dk)?;
-    Ok(cycles
-        .into_iter()
-        .map(|cycle| {
-            let mut loop_nodes: Vec<Node> = Vec::new();
-            for w in 0..cycle.len() {
-                let (prev, this) = (cycle[(w + cycle.len() - 1) % cycle.len()], cycle[w]);
-                // Kept run `dk[prev] + 1 ..= kd[this]`, CCW.
-                let mut i = (dk[prev] + 1) % n;
-                loop {
-                    loop_nodes.push(Node::Orig(verts[i]));
-                    if i == kd[this] {
-                        break;
+    // The kept regions of `f`, as walks over indices — a boundary vertex, or an arc spliced
+    // whole. The arcs' successor map decomposes into cycles, one region each; with no arc the
+    // only region is `f` itself, kept iff `∂f` is. One arc gives the old splice, walk for walk.
+    enum Step {
+        Vert(usize),
+        Arc(usize),
+    }
+    let regions: Vec<Vec<Step>> = if opens.is_empty() {
+        Vec::from_iter(kept[0].then(|| (0..n).map(Step::Vert).collect()))
+    } else {
+        arrange::stitch_cycles(&kept, &kd, &dk)?
+            .into_iter()
+            .map(|cycle| {
+                let mut steps = Vec::new();
+                for w in 0..cycle.len() {
+                    let (prev, this) = (cycle[(w + cycle.len() - 1) % cycle.len()], cycle[w]);
+                    let mut i = (dk[prev] + 1) % n;
+                    loop {
+                        steps.push(Step::Vert(i));
+                        if i == kd[this] {
+                            break;
+                        }
+                        i = (i + 1) % n;
                     }
-                    i = (i + 1) % n;
+                    steps.push(Step::Arc(this));
                 }
-                loop_nodes.extend(nodes[this].iter().copied().map(Node::Seam));
+                steps
+            })
+            .collect()
+    };
+
+    let region_face = |steps: &[Step], inner: Vec<Vec<Node>>| LocalFace {
+        plane_idx,
+        loop_nodes: steps
+            .iter()
+            .flat_map(|s| match s {
+                Step::Vert(i) => vec![Node::Orig(verts[*i])],
+                Step::Arc(a) => arc_nodes[*a].iter().copied().map(Node::Seam).collect(),
+            })
+            .collect(),
+        inner,
+        flip,
+    };
+
+    if n_closed == 0 {
+        return Ok(regions.iter().map(|r| region_face(r, vec![])).collect());
+    }
+
+    // A loop is a hole of the kept region containing it, and an island when no kept region
+    // does — its interior is then what survives. Only containment can say which, and with an
+    // arc present nothing else can: a hole in the kept region beside an island in the dropped
+    // one wind oppositely without nesting (cell 3f-3's counterexample, realized by
+    // `l_and_staple`). The winding is kept as the cross-check, not the decision.
+    //
+    // `∂f`'s vertices are three-plane points too, so a region's ring is one uniform list.
+    let bnd = arrange::face_vertex_triples(model, fh, plane_idx, inc_f)?;
+    let region_rings: Vec<Vec<[usize; 3]>> = regions
+        .iter()
+        .map(|steps| {
+            steps
+                .iter()
+                .flat_map(|s| match s {
+                    Step::Vert(i) => vec![bnd[*i]],
+                    Step::Arc(a) => arc_nodes[*a].clone(),
+                })
+                .collect()
+        })
+        .collect();
+
+    let mut rings = Vec::with_capacity(n_closed);
+    let mut windings = Vec::with_capacity(n_closed);
+    for path in &paths {
+        let arrange::SeamPath::Closed(nodes) = path else {
+            continue;
+        };
+        let ring = arrange::orient_seam_loop(planes, plane_idx, nodes, keep == Side::Outside)?;
+        for t in &ring {
+            if !seam_ix.contains_key(t) {
+                return Err(reject(tag::MISSING_SEAM));
             }
-            LocalFace {
+        }
+        windings.push(arrange::loop_winding(planes, plane_idx, &ring)?);
+        rings.push(ring);
+    }
+
+    let owners = place_loops(planes, plane_idx, &region_rings, &rings)?;
+    for (&owner, &w) in owners.iter().zip(&windings) {
+        check_loop_class(owner.is_some(), w)?;
+    }
+
+    let node_ring = |r: &[[usize; 3]]| r.iter().copied().map(Node::Seam).collect::<Vec<Node>>();
+    // Regions first, each with its holes; then the islands. `assemble_fuse_cut` fixes vertex
+    // handles by first appearance across `faces`, and replay rests on that order.
+    let mut out: Vec<LocalFace> = regions
+        .iter()
+        .enumerate()
+        .map(|(k, steps)| {
+            let holes = rings
+                .iter()
+                .zip(&owners)
+                .filter(|(_, o)| **o == Some(k))
+                .map(|(r, _)| node_ring(r))
+                .collect();
+            region_face(steps, holes)
+        })
+        .collect();
+    out.extend(
+        rings
+            .iter()
+            .zip(&owners)
+            .filter(|(_, o)| o.is_none())
+            .map(|(r, _)| LocalFace {
                 plane_idx,
-                loop_nodes,
+                loop_nodes: node_ring(r),
                 inner: vec![],
                 flip,
-            }
-        })
-        .collect())
+            }),
+    );
+    Ok(out)
 }
 
 /// Reconstruct a face's kept portion, convex path. `None` if the whole face is dropped.
@@ -2507,8 +2550,10 @@ fn reconstruct_face(
     let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
     match transitions.len() {
         0 => {
-            // No boundary crossing: an interior seam on this plane means the other
-            // solid pokes through this face (a hole) — out of clean-seam coverage.
+            // No boundary crossing, yet a seam on this plane: the other solid pokes a loop
+            // through this face's interior. The non-convex path places such a loop by
+            // containment (cell 3f-4); here convexity is believed to make it unreachable.
+            // See `tag::POKEHOLE`.
             if seam.iter().any(|s| s.triple.contains(&plane_idx)) {
                 return Err(reject(tag::POKEHOLE));
             }
@@ -4151,6 +4196,14 @@ pub mod tests {
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
+        // An arc beside a loop (cell 3f-4). Lose the loop, or place it on the wrong region,
+        // and its four rim nodes leave `reachable`.
+        let (mut m, l, st) = l_and_staple();
+        let from_arrange = seam_endpoint_triples(&m, l, st);
+        boolean(&mut m, BoolKind::Cut, l, st).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
+
         // Two flat loops (cell 3f-3): sixteen nodes, and the two prong cross-sections must
         // both survive as faces or their eight rim nodes leave `reachable`.
         let (mut m, u, slab) = u_and_slab();
@@ -4975,13 +5028,66 @@ pub mod tests {
     }
 
     #[test]
-    fn an_arc_beside_a_loop_is_unsupported() {
-        // Measured, and fed the wrong tag once to check it has teeth. Placing the loop
-        // needs to know which of the face's kept regions contains it, and with an arc
-        // present the winding cannot say — a hole in the kept region and an island in the
-        // dropped one do not contain each other. Cell 3f-4 buys a containment test.
+    fn cut_l_staple() {
+        // A loop beside an arc, resolved. The cap's kept region is the hexagon minus the
+        // corner bite, and the near leg's rectangle sits inside it — so the loop is a
+        // **hole** of that region. The winding says clockwise, which is only a cross-check
+        // now: containment decided.
+        //
+        // `V_∩ = 0.5·0.5·0.65 + 0.27·0.55 = 0.311`, the two legs' parts inside the L.
         let (mut m, l, st) = l_and_staple();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, st), tag::POKEHOLE);
+        let r = boolean(&mut m, BoolKind::Cut, l, st).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - 2.689).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!((props.area - 15.755).abs() < 1e-9, "area {}", props.area);
+    }
+
+    #[test]
+    fn fuse_l_staple() {
+        // `3 + 0.7605 − 0.311`. The staple measures `1.17` in section, `0.65` deep.
+        let (mut m, l, st) = l_and_staple();
+        let r = boolean(&mut m, BoolKind::Fuse, l, st).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - (3.0 + 0.7605 - 0.311)).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!((props.area - 16.72).abs() < 1e-9, "area {}", props.area);
+    }
+
+    #[test]
+    fn cut_staple_by_l() {
+        // ★ The same loop, on the same face, is now an **island**. Swap the operands and the
+        // cap's kept region becomes the corner bite alone; the loop lies outside it, in a
+        // dropped region, so its interior is what survives.
+        //
+        // Cell 3f-3's counterexample made flesh: a hole and an island wind oppositely without
+        // nesting, so no winding could have told these two apart. Position did.
+        //
+        // `0.7605 − 0.311`, and the three volumes close inclusion–exclusion exactly.
+        let (mut m, l, st) = l_and_staple();
+        let r = boolean(&mut m, BoolKind::Cut, st, l).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - (0.7605 - 0.311)).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!((props.area - 4.68).abs() < 1e-9, "area {}", props.area);
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that
