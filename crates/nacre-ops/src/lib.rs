@@ -239,9 +239,6 @@ pub(crate) mod tag {
     pub const DEGENERATE_CENTROID: &str = "degenerate_centroid";
     pub const DEGENERATE_RADIUS: &str = "degenerate_radius";
     pub const COLLINEAR_FACE: &str = "collinear_face";
-    pub const POKE_THROUGH: &str = "poke_through";
-    pub const OUTSIDE_OR_FOURPLANE: &str = "outside_or_fourplane";
-    pub const ON_BOUNDARY: &str = "on_boundary";
     pub const RAY_DEGENERATE: &str = "ray_degenerate";
     /// An endpoint of an edge lies exactly on a face's plane — and if both do, the edge lies
     /// in that plane. A tangential contact, not a crossing, and out of clean-seam coverage.
@@ -295,22 +292,7 @@ pub(crate) mod tag {
     /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
     /// convex path only.
     ///
-    /// **Unreachable, and a backstop rather than a coverage limit.** For convex operands a
-    /// straddling edge of the other solid pierces exactly one face, and an edge that pokes
-    /// through a face's interior without straddling is caught by `poke_through` first. Cell
-    /// 3f-4 taught the non-convex path to place a loop by containment, and this arm is what
-    /// is left. **Believed, not verified**: unlike `multichord`, the argument leans on
-    /// `segment_enters` firing first rather than on a property of convex sets.
-    pub const POKEHOLE: &str = "pokehole";
     pub const MISSING_SEAM: &str = "missing_seam";
-    /// Four or more boundary crossings on one face — the convex path only.
-    ///
-    /// **Unreachable, and a backstop rather than a coverage limit.** `∂f` is a convex
-    /// closed curve and the other operand a convex set, so `∂f ∩ B` is a single arc and
-    /// there are exactly zero or two crossings. Cell 3e-2 taught the non-convex path to
-    /// stitch any number of arcs into rings, and this arm is what is left. It is not
-    /// `unreachable!()`: a release panic is worse than an honest rejection.
-    pub const MULTICHORD: &str = "multichord";
 }
 
 #[cfg(test)]
@@ -1039,28 +1021,30 @@ pub fn boolean(
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
     }
-    // Convexity selector (M5-d1): the convex paths (`common`/`fuse_cut`) treat each
-    // operand as the intersection of its face half-spaces. A non-convex operand
-    // instead takes the general seam-free path (containment/disjoint); a
-    // non-convex *overlap* (a real seam) is out of this sub-unit's coverage.
-    let planes_a = collect_planes(model, a)?;
-    let planes_b = collect_planes(model, b)?;
-    if is_convex(&planes_a, &solid_vertices(model, a))
-        && is_convex(&planes_b, &solid_vertices(model, b))
-    {
-        match kind {
-            BoolKind::Common => common(model, a, b),
-            BoolKind::Fuse | BoolKind::Cut => fuse_cut(model, kind, a, b),
+    // `Common` alone keeps a convex fast path: half-space enumeration (`common`) is
+    // exact — it classifies no vertex and puts no tolerance on truth. `Fuse`/`Cut` do
+    // not; cell (5b) retired their convex path (`fuse_cut`), which decided in/out with a
+    // 1e-9 tolerance and picked seam planes by an f64 Cyrus–Beck argmax, *and* rejected
+    // inputs the seam path answers (a bar drilled through a block). So both kinds now go
+    // to `nonconvex_seamfree` unless `Common` finds both operands convex.
+    if kind == BoolKind::Common {
+        let planes_a = collect_planes(model, a)?;
+        let planes_b = collect_planes(model, b)?;
+        if is_convex(&planes_a, &solid_vertices(model, a))
+            && is_convex(&planes_b, &solid_vertices(model, b))
+        {
+            return common(model, a, b);
         }
-    } else {
-        nonconvex_seamfree(model, kind, a, b)
     }
+    nonconvex_seamfree(model, kind, a, b)
 }
 
-/// The boolean of two solids, at least one non-convex, when their boundaries do
-/// not cross (M5-d1). A real seam ⇒ `Unsupported` (the general arrangement is a
-/// later sub-unit); otherwise one solid contains the other or they are disjoint,
-/// classified by exact [`point_in_solid`] and assembled by [`contained_result`].
+/// The general `Fuse`/`Cut` entry point. **The name is stale as of cell (5b)** — it is no
+/// longer "non-convex" only (convex operands route here too, `fuse_cut` being gone) nor
+/// "seam-free" only (a crossing seam goes to [`overlap_fuse_cut`]). Cell n6 renames it to
+/// `general_boolean`. When the boundaries do not cross, one solid contains the other or
+/// they are disjoint, classified by exact [`point_in_solid`] and assembled by
+/// [`contained_result`].
 fn nonconvex_seamfree(
     model: &mut Model,
     kind: BoolKind,
@@ -1144,7 +1128,8 @@ fn solid_face_rings(
 }
 
 /// Every face of `rings` that the edge on planes `pair`, running `p0 → p1`, pierces — as
-/// combined-plane indices, in shell order. The non-convex analogue of [`enter_face`].
+/// combined-plane indices, in shell order. The exact analogue of the retired convex
+/// `enter_face` (cell (5b)).
 ///
 /// A segment meets a plane at most once, so no plane appears twice — and two faces on one
 /// plane would already have been rejected as a `coplanar_pair`. So each hit is a distinct
@@ -1165,14 +1150,13 @@ fn pierced_faces(
     Ok(hits)
 }
 
-/// `Fuse`/`Cut` of two solids, at least one non-convex, whose boundaries cross in
-/// a single chord per face (M5-d2). Mirrors [`fuse_cut`] but (a) classifies each
-/// original vertex with exact [`point_in_solid`] instead of the convex
-/// half-space [`classify_vertex`], (b) finds seam entries with [`pierced_faces`]
-/// instead of the convex Cyrus–Beck [`enter_face`]/[`segment_enters`], and (c)
-/// reconstructs faces in `strict` mode (rejecting a non-convex/self-intersecting
-/// seam arc). Multiple chords, poke-through holes, and non-convex `Common` are
-/// honestly `Unsupported` (later sub-units).
+/// `Fuse`/`Cut` of two solids whose boundaries cross. Since cell (5b) this is the only
+/// `Fuse`/`Cut` path — the convex `fuse_cut` is gone. It (a) classifies each original
+/// vertex with exact [`point_in_solid`], (b) finds seam entries with [`pierced_faces`],
+/// and (c) reconstructs faces from the arrangement. Multiple chords (3e-2), poke-through
+/// holes and through-drilling (3e-3), and holed operands (3f-5) are handled; non-convex
+/// `Common` is `COMMON_OVERLAP` (cell 3g). A result that falls into disconnected pieces is
+/// `DISCONNECTED_RESULT`.
 fn overlap_fuse_cut(
     model: &mut Model,
     kind: BoolKind,
@@ -1774,165 +1758,6 @@ struct LocalFace {
     flip: bool,
 }
 
-/// `Fuse` (A∪B) / `Cut` (A−B) of two convex solids by face clipping (M5-c4).
-/// Clean-seam general position only; else [`BoolError::Unsupported`].
-fn fuse_cut(
-    model: &mut Model,
-    kind: BoolKind,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<Handle<Solid>, BoolError> {
-    // No hole guard here. A hole in an outer-shell face is bounded either by inward
-    // walls — the solid is then non-convex and `boolean` routes it elsewhere — or by a
-    // coplanar region face, an imprint, which `has_coplanar_pair` below rejects.
-    // Nothing else closes: a rim edge's other face turns inward or lies in the plane.
-    // Both halves are measured (`a_pocketed_cube_is_not_convex`, `an_imprinted_cube_is_convex`).
-    let planes_a = collect_planes(model, a)?;
-    let planes_b = collect_planes(model, b)?;
-    if !is_convex(&planes_a, &solid_vertices(model, a))
-        || !is_convex(&planes_b, &solid_vertices(model, b))
-    {
-        return Err(reject(tag::NONCONVEX_OPERAND));
-    }
-    let na = planes_a.len();
-    let mut planes = planes_a;
-    planes.extend(planes_b);
-    if has_coplanar_pair(&planes) {
-        return Err(reject(tag::COPLANAR_PAIR));
-    }
-    let a_range = 0..na;
-    let b_range = na..planes.len();
-
-    let mut surf_ix: HashMap<Handle<Surface>, usize> = HashMap::new();
-    for (i, pi) in planes.iter().enumerate() {
-        surf_ix.insert(pi.surf, i);
-    }
-
-    // Classify every original vertex vs the other solid (direct signed-distance).
-    let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
-    for &vh in &solid_vertex_handles(model, a) {
-        let side = classify_vertex(model.vertices.get(vh).point, &planes[b_range.clone()])?;
-        classof.insert(vh, side);
-    }
-    for &vh in &solid_vertex_handles(model, b) {
-        let side = classify_vertex(model.vertices.get(vh).point, &planes[a_range.clone()])?;
-        classof.insert(vh, side);
-    }
-
-    // Seam vertices: A-edges piercing B (2A+1B) and B-edges piercing A (1A+2B).
-    let edges_a = edge_incidence(model, a, &surf_ix)?;
-    let edges_b = edge_incidence(model, b, &surf_ix)?;
-    let mut seam: Vec<SeamVertex> = Vec::new();
-    let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
-    let mut edge_seam: HashMap<Handle<Edge>, [usize; 3]> = HashMap::new();
-    for (edges, other) in [(&edges_a, b_range.clone()), (&edges_b, a_range.clone())] {
-        for &(eh, bounds, inc) in edges {
-            let [v0, v1] = bounds;
-            let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
-            let (s0, s1) = (classof[&v0], classof[&v1]);
-            if s0 == s1 {
-                // Both endpoints outside but the segment passes through the other
-                // solid ⇒ this edge pierces a face mid-face (a poke-through) ⇒
-                // out of clean-seam coverage.
-                if s0 == Side::Outside && segment_enters(p0, p1, other.clone(), &planes) {
-                    return Err(reject(tag::POKE_THROUGH));
-                }
-                continue;
-            }
-            let (p_out, p_in) = if s0 == Side::Outside {
-                (p0, p1)
-            } else {
-                (p1, p0)
-            };
-            let entry = enter_face(p_out, p_in, other.clone(), &planes)
-                .ok_or_else(|| reject(tag::NO_ENTRY_FACE))?;
-            let [e0, e1] = inc;
-            let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
-                .ok_or_else(|| reject(tag::THREE_PLANES))?;
-            // Exact: the point must be inside the entry face (on ∂ of the other solid).
-            for m in other.clone() {
-                if m == entry {
-                    continue;
-                }
-                match three_plane_orient3d(
-                    &planes[e0].plane,
-                    &planes[e1].plane,
-                    &planes[entry].plane,
-                    planes[m].tri[0],
-                    planes[m].tri[1],
-                    planes[m].tri[2],
-                ) {
-                    -1 => {}
-                    _ => return Err(reject(tag::OUTSIDE_OR_FOURPLANE)), // outside or on a 4th plane
-                }
-            }
-            let mut triple = [e0, e1, entry];
-            triple.sort_unstable();
-            edge_seam.insert(eh, triple);
-            if let std::collections::hash_map::Entry::Vacant(slot) = seam_ix.entry(triple) {
-                let tol = vertex_tol(
-                    point,
-                    &planes[e0].plane,
-                    &planes[e1].plane,
-                    &planes[entry].plane,
-                );
-                slot.insert(seam.len());
-                seam.push(SeamVertex { point, triple, tol });
-            }
-        }
-    }
-
-    // Which side of each solid each op keeps.
-    let (keep_a, keep_b, flip_b) = match kind {
-        BoolKind::Fuse => (Side::Outside, Side::Outside, false),
-        BoolKind::Cut => (Side::Outside, Side::Inside, true),
-        BoolKind::Common => unreachable!("common has its own path"),
-    };
-    if seam.is_empty() {
-        // No boundary crossing: one solid contains the other (Cut ⇒ a cavity,
-        // Fuse ⇒ the container) or they are disjoint (empty).
-        return contained_result(model, kind, a, b, &classof);
-    }
-
-    // Reconstruct faces of A (keep_a side) and B (keep_b side, flip_b).
-    let mut faces: Vec<LocalFace> = Vec::new();
-    for (solid, keep, flip) in [(a, keep_a, false), (b, keep_b, flip_b)] {
-        let shell = model.solids.get(solid).outer;
-        for &fh in &model.shells.get(shell).faces {
-            let face = model.faces.get(fh);
-            let pidx = surf_ix[&face.surface];
-            if let Some(lf) = reconstruct_face(
-                model, face, pidx, keep, flip, &classof, &edge_seam, &seam, &seam_ix,
-            )? {
-                faces.push(lf);
-            }
-        }
-    }
-    if faces.len() < 4 {
-        return Err(BoolError::EmptyResult);
-    }
-
-    Ok(assemble_fuse_cut(model, a, b, &planes, &seam, &faces))
-}
-
-/// Inside/outside/on a convex solid by signed distance along each face's outward
-/// normal. On any face plane (`|sd| ≤ scale`) ⇒ not general position ⇒
-/// `Unsupported`.
-fn classify_vertex(v: Point3, other: &[PlaneInfo]) -> Result<Side, BoolError> {
-    let scale = 1e-9 * (v.as_array().iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
-    let mut side = Side::Inside;
-    for pm in other {
-        let sd = (v - pm.tri[0]).dot(pm.n_out);
-        if sd.abs() <= scale {
-            return Err(reject(tag::ON_BOUNDARY)); // on the other solid's boundary
-        }
-        if sd > scale {
-            side = Side::Outside; // outside this half-space ⇒ outside the convex
-        }
-    }
-    Ok(side)
-}
-
 /// Deterministic generic ray directions (small coprime integers, none
 /// axis-aligned) for the point-in-polyhedron cast. Axis-aligned rays would
 /// systematically graze the axis-aligned faces/edges of typical inputs, so the
@@ -2073,56 +1898,6 @@ fn boundaries_intersect(
     Ok(false)
 }
 
-/// Whether a segment (both endpoints outside the convex solid `range`) passes
-/// *through* it — Cyrus–Beck line clip yields a non-empty interior interval.
-fn segment_enters(
-    p0: Point3,
-    p1: Point3,
-    range: std::ops::Range<usize>,
-    planes: &[PlaneInfo],
-) -> bool {
-    let (mut t_enter, mut t_exit) = (0.0f64, 1.0f64);
-    for m in range {
-        let d0 = (p0 - planes[m].tri[0]).dot(planes[m].n_out); // >0 outside plane m
-        let d1 = (p1 - planes[m].tri[0]).dot(planes[m].n_out);
-        if d0 > 0.0 && d1 > 0.0 {
-            return false; // segment entirely outside this half-space
-        }
-        if d0 <= 0.0 && d1 <= 0.0 {
-            continue; // no constraint from this plane
-        }
-        let t = d0 / (d0 - d1);
-        if d0 > 0.0 {
-            t_enter = t_enter.max(t);
-        } else {
-            t_exit = t_exit.min(t);
-        }
-    }
-    t_enter < t_exit
-}
-
-/// The face of the convex solid (`range`) that segment `p_out → p_in` enters
-/// through: the last inward crossing (Cyrus–Beck argmax of `t`).
-fn enter_face(
-    p_out: Point3,
-    p_in: Point3,
-    range: std::ops::Range<usize>,
-    planes: &[PlaneInfo],
-) -> Option<usize> {
-    let mut best: Option<(f64, usize)> = None;
-    for m in range {
-        let a = (p_out - planes[m].tri[0]).dot(planes[m].n_out);
-        let b = (p_in - planes[m].tri[0]).dot(planes[m].n_out);
-        if a > 0.0 && b < 0.0 {
-            let t = a / (a - b);
-            if best.is_none_or(|(bt, _)| t > bt) {
-                best = Some((t, m));
-            }
-        }
-    }
-    best.map(|(_, m)| m)
-}
-
 /// Distinct outer-shell vertex handles of a solid, in shell→face→loop order.
 fn solid_vertex_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Vertex>> {
     let shell = model.solids.get(solid).outer;
@@ -2194,7 +1969,7 @@ pub(crate) fn face_half_edges(face: &Face) -> impl Iterator<Item = &HalfEdge> {
 
 /// The result when no edge crosses the other solid's boundary: one solid
 /// contains the other, or they are disjoint. Direction is read from `classof`
-/// (already `Err`-free — a boundary vertex would have failed `classify_vertex`
+/// (already `Err`-free — a boundary vertex would have failed `point_in_solid`
 /// before this point): every B vertex inside A ⇒ B⊂A, every A vertex inside B ⇒
 /// A⊂B. `Cut(A−B)` with B⊂A adds B as an inward cavity; A⊂B removes A entirely;
 /// `Fuse` yields the container; `Common` yields the contained one. The convex
@@ -2323,11 +2098,10 @@ fn place_loops(
     Ok(out)
 }
 
-/// Reconstruct a face's kept portion, non-convex path. `None` if the face is dropped.
+/// Reconstruct a face's kept portion. `None` if the face is dropped.
 ///
-/// Same shape as [`reconstruct_face`], but the seam sub-path comes from the
-/// arrangement (`arrange::seam_paths_on`) rather than from `edge_seam` plus a
-/// projection sort. Walking the arrangement's adjacency gives the *true* arc order, so
+/// The seam sub-path comes from the arrangement (`arrange::seam_paths_on`), which walks
+/// the true arc order, so
 /// nothing here assumes the arc is monotone along its chord — on a reflex bend it is
 /// not, and a bend can project outside the chord's endpoints entirely.
 ///
@@ -2669,114 +2443,6 @@ fn reconstruct_face_paths(
             }),
     );
     Ok(out)
-}
-
-/// Reconstruct a face's kept portion, convex path. `None` if the whole face is dropped.
-///
-/// Unlike [`reconstruct_face_paths`] this returns at most one face, and that is a fact
-/// about convexity rather than a limitation: `∂f` is a convex closed curve and `B` a
-/// convex set, so `∂f ∩ B` is a single arc and the kept part of `f` is connected.
-///
-/// The bends are ordered by projecting them onto the chord, which assumes the arc is
-/// monotone along it. Both operands being convex, it is. The non-convex path reads the
-/// order off the arrangement instead — see [`reconstruct_face_paths`].
-#[allow(clippy::too_many_arguments)]
-fn reconstruct_face(
-    model: &Model,
-    face: &Face,
-    plane_idx: usize,
-    keep: Side,
-    flip: bool,
-    classof: &HashMap<Handle<Vertex>, Side>,
-    edge_seam: &HashMap<Handle<Edge>, [usize; 3]>,
-    seam: &[SeamVertex],
-    seam_ix: &HashMap<[usize; 3], usize>,
-) -> Result<Option<LocalFace>, BoolError> {
-    let hes = &face.outer.half_edges;
-    let n = hes.len();
-    let verts: Vec<Handle<Vertex>> = hes.iter().map(|&he| he_start(model, he)).collect();
-    let kept: Vec<bool> = verts.iter().map(|v| classof[v] == keep).collect();
-
-    // Count boundary crossings (kept↔dropped edge transitions).
-    let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
-    match transitions.len() {
-        0 => {
-            // No boundary crossing, yet a seam on this plane: the other solid pokes a loop
-            // through this face's interior. The non-convex path places such a loop by
-            // containment (cell 3f-4); here convexity is believed to make it unreachable.
-            // See `tag::POKEHOLE`.
-            if seam.iter().any(|s| s.triple.contains(&plane_idx)) {
-                return Err(reject(tag::POKEHOLE));
-            }
-            if kept[0] {
-                let loop_nodes = verts.iter().map(|&v| Node::Orig(v)).collect();
-                Ok(Some(LocalFace {
-                    plane_idx,
-                    loop_nodes,
-                    inner: vec![],
-                    flip,
-                }))
-            } else {
-                Ok(None)
-            }
-        }
-        2 => {
-            // One kept run; splice the seam sub-path across the dropped run.
-            // Transition edge i (kept[i]!=kept[i+1]) carries seam vertex edge_seam[edge].
-            let s_at = |i: usize| -> Result<[usize; 3], BoolError> {
-                edge_seam
-                    .get(&hes[i].edge)
-                    .copied()
-                    .ok_or_else(|| reject(tag::MISSING_SEAM))
-            };
-            // Boundary crossing on each transition edge.
-            let (t0, t1) = (transitions[0], transitions[1]);
-            let (b0, b1) = (s_at(t0)?, s_at(t1)?);
-            // Kept run: vertices with kept==true, starting right after a drop→keep edge.
-            // Identify the keep→drop edge (kept[t]) and drop→keep edge.
-            let (kd, dk) = if kept[t0] { (t0, t1) } else { (t1, t0) };
-            let (s_kd, s_dk) = if kept[t0] { (b0, b1) } else { (b1, b0) };
-            // Walk kept run from dk+1 .. kd (inclusive), CCW.
-            let mut nodes: Vec<Node> = Vec::new();
-            let mut i = (dk + 1) % n;
-            loop {
-                nodes.push(Node::Orig(verts[i]));
-                if i == kd {
-                    break;
-                }
-                i = (i + 1) % n;
-            }
-            // Seam sub-path S_kd → bends → S_dk (bends = seam on this plane, not the
-            // two boundary crossings), ordered along S_kd→S_dk.
-            let p_kd = seam[seam_ix[&s_kd]].point;
-            let p_dk = seam[seam_ix[&s_dk]].point;
-            let dir = p_dk - p_kd;
-            let mut bends: Vec<[usize; 3]> = seam
-                .iter()
-                .filter(|s| s.triple.contains(&plane_idx) && s.triple != s_kd && s.triple != s_dk)
-                .map(|s| s.triple)
-                .collect();
-            bends.sort_by(|x, y| {
-                let px = seam[seam_ix[x]].point;
-                let py = seam[seam_ix[y]].point;
-                (px - p_kd)
-                    .dot(dir)
-                    .partial_cmp(&(py - p_kd).dot(dir))
-                    .expect("finite")
-            });
-            nodes.push(Node::Seam(s_kd));
-            nodes.extend(bends.into_iter().map(Node::Seam));
-            nodes.push(Node::Seam(s_dk));
-            Ok(Some(LocalFace {
-                plane_idx,
-                loop_nodes: nodes,
-                inner: vec![],
-                flip,
-            }))
-        }
-        // Convexity bounds `∂f ∩ B` to one arc, so this cannot happen. See `tag::MULTICHORD`.
-        _ => Err(reject(tag::MULTICHORD)),
-    }
 }
 
 /// Push the reconstructed result and supersede the inputs (mirrors `assemble`).
@@ -3832,10 +3498,10 @@ pub mod tests {
 
     #[test]
     fn seam_segments_split_a_face_into_two_chords() {
-        // What `reconstruct_face` cannot do. The slab meets the U-prism's base cap
+        // A face split into two chords. The slab meets the U-prism's base cap
         // (z=0) along {z=0, y=1.5}; the U has material there only for x∈[0,1] and
-        // x∈[2,3], so the seam is *two* segments. Today the boolean rejects this
-        // fixture with `multichord`.
+        // x∈[2,3], so the seam is *two* segments — which cell 3e-2 taught the seam path
+        // to stitch (the old `multichord` guard retired there).
         //
         // All four crossings come from the base cap's own edges (neighbour planes
         // x=0,1,2,3); the slab's edges miss the cap, lying outside the U in x or off
@@ -3874,7 +3540,7 @@ pub mod tests {
     fn seam_paths_split_a_face_into_two_open_arcs() {
         // The same base cap as `seam_segments_split_a_face_into_two_chords`, now
         // assembled. Two disjoint arcs, each a lone segment whose both ends sit on
-        // `∂cap` — exactly what `reconstruct_face` rejects as `multichord`.
+        // `∂cap` — the two-chord shape the retired `multichord` guard once rejected.
         let (m, u, slab) = u_and_slab();
         let (planes, surf_ix) = combined(&m, u, slab);
         let cap = face_facing(&m, u, &planes, &surf_ix, [0.0, 0.0, -1.0]);
@@ -4256,27 +3922,7 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn an_edge_crossed_twice_is_rejected() {
-        // Both operands are convex, so this takes the convex path, and there `edge_seam`
-        // holds one seam triple per `Handle<Edge>` while `reconstruct_face` reads one and
-        // returns at most one face. Neither is a fact about convexity — a straddling edge
-        // does cross a convex boundary once, but *this* edge does not straddle: its ends
-        // are both outside, and it threads the notch. `segment_enters` sees that and says
-        // `poke_through`.
-        //
-        // The non-convex path stopped saying so in cell 3e-3, which drills through
-        // (`drill_through_the_l`). What is left here is the convex path's data structure,
-        // and paying that off is sub-unit 5's business, not convexity's.
-        //
-        // `seam_path_crosses_one_face_edge_twice` and
-        // `two_crossings_on_one_edge_make_a_run_with_no_vertex` show what the arrangement
-        // and the run model see on this same input.
-        let (mut m, a, y) = cube_and_notch();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, a, y), tag::POKE_THROUGH);
-    }
-
-    /// `reconstruct_face`'s kept/dropped alternation edges on `f`'s outer loop, as
+    /// `reconstruct_face_paths`'s kept/dropped alternation edges on `f`'s outer loop, as
     /// indices into `f.outer.half_edges`.
     ///
     /// Independent of `keep`: flipping it flips every `kept[i]`, and this only
@@ -4296,8 +3942,8 @@ pub mod tests {
     }
 
     #[test]
-    fn boundary_nodes_match_reconstruct_faces_transition_count() {
-        // An independent oracle: `reconstruct_face` finds the seam's ends by counting
+    fn boundary_nodes_match_the_transition_count() {
+        // An independent oracle: `reconstruct_face_paths` finds the seam's ends by counting
         // kept/dropped alternations around `∂f`; the arrangement finds them as
         // degree-1 nodes. They must agree — through entirely different machinery
         // (ray-cast classification vs. exact segment/face crossings).
@@ -4325,13 +3971,12 @@ pub mod tests {
         }
     }
 
-    /// Every non-convex overlap input that reaches `reconstruct_face`: the three that
+    /// Every non-convex overlap input that reaches `reconstruct_face_paths`: the three that
     /// succeed and the three that it rejects from *inside*. The rejecting three matter
-    /// most — cell 3d makes `reconstruct_face` call `seam_paths_on`, which can reject
-    /// for reasons the old code never could (`vertex_on_face_plane`, `point_on_ring`,
-    /// `fourplane`). Should
-    /// that fire on a face visited *before* the intended one, the reject tag silently
-    /// changes. Measuring only the accepted inputs would not see it.
+    /// most — it calls `seam_paths_on`, which can reject for reasons the old convex code
+    /// never could (`vertex_on_face_plane`, `point_on_ring`, `fourplane`). Should that fire
+    /// on a face visited *before* the intended one, the reject tag silently changes.
+    /// Measuring only the accepted inputs would not see it.
     struct OverlapCase {
         name: &'static str,
         /// `(most open arcs on any one face, closed loops over all faces)`.
@@ -5951,9 +5596,9 @@ pub mod tests {
     /// A face with an inner loop implies one of exactly two things about the shell: the
     /// rim is bounded by inward walls, making the solid non-convex (a pocket), or by a
     /// coplanar region face (an imprint). Nothing else closes. These two tests measure
-    /// both halves, and together they say where a holed operand can arrive: `fuse_cut`
-    /// and `common` see only the imprint, and reject it as `COPLANAR_PAIR` on the
-    /// combined plane list; everything else takes the non-convex path.
+    /// both halves, and together they say where a holed operand can arrive: `common` sees
+    /// only the imprint and rejects it as `COPLANAR_PAIR` on the combined plane list;
+    /// everything else takes the non-convex path.
     #[test]
     fn a_pocketed_cube_is_not_convex() {
         let (m, pc) = pocketed_cube();
@@ -6133,9 +5778,9 @@ pub mod tests {
         );
         assert!(arrange::edge_crosses_face(&planes, along_x, p0, p1, q, &rings).unwrap());
 
-        // And the whole boolean now runs on it, through the non-convex path. Both operands
-        // are convex, so `boolean` still routes them to `fuse_cut`; calling the seam path
-        // directly is the measurement design.md §9 line 447 asked for. The gate is open.
+        // And the whole boolean runs on it through the seam path — the measurement
+        // design.md §9 line 447 asked for. Cell (5b) then deleted the convex path, so
+        // `boolean` reaches the same code; this keeps the direct call as the §447 record.
         let (mut m, a, b) = two_boxes();
         let r = overlap_fuse_cut(&mut m, BoolKind::Cut, a, b).unwrap();
         m.rebuild_adjacency();
@@ -6185,10 +5830,10 @@ pub mod tests {
         assert_eq!(vertical, 4);
     }
 
-    /// The two inputs the convex `Fuse`/`Cut` path rejects but the seam path answers — both
+    /// The two inputs the convex `Fuse`/`Cut` path rejected but the seam path answers — both
     /// convex, both blocked only by `edge_seam`'s one-triple-per-edge, both already green on
     /// their non-convex twins (`cut_notch_bar`, `drill_through_the_l`, `fuse_the_l_and_the_rod`).
-    /// Cell (5b) routes them here by deleting the convex path; this measures the answer first.
+    /// Cell (5b) deleted the convex path, so `boolean` routes these here now.
     ///
     /// The drilled cube is genus 1, and `validate` clean does not prove that (a tunnel is
     /// clean too). Its two holed caps — the drill's entry and exit — do: `holed_faces == 2`.
@@ -6197,14 +5842,14 @@ pub mod tests {
         // A notch bitten out of one edge: the edge is crossed twice, so it threads the notch
         // rather than straddling. `10³ − 4·1.4·1.2` cut, `+2·4·1.4·1.2 − 6.72` fused.
         let (mut m, a, y) = cube_and_notch();
-        let cut = overlap_fuse_cut(&mut m, BoolKind::Cut, a, y).unwrap();
+        let cut = boolean(&mut m, BoolKind::Cut, a, y).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let v = nacre_props::mass_props(&m, cut).unwrap().volume;
         assert!((v - 993.28).abs() < 1e-9, "notch cut {v}");
 
         let (mut m, a, y) = cube_and_notch();
-        let fuse = overlap_fuse_cut(&mut m, BoolKind::Fuse, a, y).unwrap();
+        let fuse = boolean(&mut m, BoolKind::Fuse, a, y).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let v = nacre_props::mass_props(&m, fuse).unwrap().volume;
@@ -6219,7 +5864,7 @@ pub mod tests {
                 Point3::from_array([1.0, 1.0, -1.0]),
                 Point3::from_array([2.0, 2.0, 4.0]),
             );
-            let r = overlap_fuse_cut(&mut m, kind, a, bar).unwrap();
+            let r = boolean(&mut m, kind, a, bar).unwrap();
             m.rebuild_adjacency();
             assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
             (m, r)
@@ -6245,7 +5890,7 @@ pub mod tests {
             Point3::from_array([2.0, 2.0, 4.0]),
         );
         assert_rejects(
-            || overlap_fuse_cut(&mut m, BoolKind::Cut, bar, a),
+            || boolean(&mut m, BoolKind::Cut, bar, a),
             tag::DISCONNECTED_RESULT,
         );
     }
@@ -7230,8 +6875,14 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 1.0]),
             Point3::from_array([1.5, 1.5, 2.0]),
         );
-        // Rejected by the combined-plane coplanar check, not by a merge-specific guard.
-        assert_rejects(|| boolean(&mut m, BoolKind::Fuse, a, b), tag::COPLANAR_PAIR);
+        // Cell (5b) deleted `fuse_cut`, whose combined-plane coplanar check caught this;
+        // the seam path's per-operand check passes and `edge_crosses_face` finds A's top
+        // edge lying in B's z=1 plane, so the tag moves to `vertex_on_face_plane`. Still
+        // rejected, one plane shy of honest (§9 line 451): the cause is two coplanar faces.
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Fuse, a, b),
+            tag::VERTEX_ON_FACE_PLANE,
+        );
     }
 
     #[test]
@@ -7239,6 +6890,12 @@ pub mod tests {
         // Two boxes sharing the z=0 ground with overlapping footprints: only
         // same-normal coplanar contact + 3D overlap ⇒ needs the general 2D
         // coplanar path (next unit) ⇒ Unsupported.
+        //
+        // Until cell (5b) this was `coplanar_pair`, from `fuse_cut`'s combined-plane check.
+        // With that path gone, the seam path's per-operand check passes and `plane_side`
+        // meets A's floor edge on B's z=0 plane first — `vertex_on_face_plane`. Still an
+        // honest rejection, less specific about why (§9 line 451). One of two fixtures that
+        // moved this way; `coincident_merge_rejects_offset_footprint` is the other.
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -7248,22 +6905,9 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 0.0]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        assert_rejects(|| boolean(&mut m, BoolKind::Fuse, a, b), tag::COPLANAR_PAIR);
-    }
-
-    #[test]
-    fn fuse_rejects_poke_through_hole() {
-        // A bar through A's interior pierces two A-faces mid-face (an interior
-        // seam loop = a hole) — out of clean-seam coverage.
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let bar = m.add_cuboid(
-            Point3::from_array([1.0, 1.0, -1.0]),
-            Point3::from_array([2.0, 2.0, 4.0]),
-        );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, a, bar),
-            tag::POKE_THROUGH,
+            || boolean(&mut m, BoolKind::Fuse, a, b),
+            tag::VERTEX_ON_FACE_PLANE,
         );
     }
 
