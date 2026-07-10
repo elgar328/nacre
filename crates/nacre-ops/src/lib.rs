@@ -1026,7 +1026,7 @@ pub fn boolean(
     // not; cell (5b) retired their convex path (`fuse_cut`), which decided in/out with a
     // 1e-9 tolerance and picked seam planes by an f64 Cyrus–Beck argmax, *and* rejected
     // inputs the seam path answers (a bar drilled through a block). So both kinds now go
-    // to `nonconvex_seamfree` unless `Common` finds both operands convex.
+    // to `general_boolean` unless `Common` finds both operands convex.
     if kind == BoolKind::Common {
         let planes_a = collect_planes(model, a)?;
         let planes_b = collect_planes(model, b)?;
@@ -1036,16 +1036,15 @@ pub fn boolean(
             return common(model, a, b);
         }
     }
-    nonconvex_seamfree(model, kind, a, b)
+    general_boolean(model, kind, a, b)
 }
 
-/// The general `Fuse`/`Cut` entry point. **The name is stale as of cell (5b)** — it is no
-/// longer "non-convex" only (convex operands route here too, `fuse_cut` being gone) nor
-/// "seam-free" only (a crossing seam goes to [`overlap_fuse_cut`]). Cell n6 renames it to
-/// `general_boolean`. When the boundaries do not cross, one solid contains the other or
+/// The general `Fuse`/`Cut` entry point (every input since cell (5b) deleted the convex
+/// `fuse_cut`; only convex `Common` is dispatched away, to `common`). If the boundaries
+/// cross it hands off to [`overlap_fuse_cut`]; otherwise one solid contains the other or
 /// they are disjoint, classified by exact [`point_in_solid`] and assembled by
 /// [`contained_result`].
-fn nonconvex_seamfree(
+fn general_boolean(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,
@@ -5640,7 +5639,7 @@ pub mod tests {
         (m, solid)
     }
 
-    /// The price of exact containment, paid at the last door. `nonconvex_seamfree` had no
+    /// The price of exact containment, paid at the last door. `general_boolean` had no
     /// coplanar guard — `contained_result` reuses whole shells and never looks at a ring —
     /// so an imprinted non-convex operand used to sail through containment and disjointness.
     /// Now `edge_crosses_face` asks a face for its rings as three-plane triples, and an
@@ -5660,7 +5659,7 @@ pub mod tests {
         );
     }
 
-    /// A holed operand already survives the seam-free path — `nonconvex_seamfree` never
+    /// A holed operand already survives the seam-free path — `general_boolean` never
     /// had a hole guard, and `contained_result` reuses whole shells, so the pocket rides
     /// through untouched. Nothing tested it. Pin it before the guard comes down.
     #[test]
