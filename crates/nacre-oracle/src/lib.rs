@@ -839,6 +839,117 @@ bbox_min 0 0 0
         );
     }
 
+    /// The two convex pokes cell (5b) opened, against OCCT. Both operands are convex; the
+    /// convex path rejected these as `poke_through` and cell (5b) routes them to the seam
+    /// path. The notch is an edge crossed twice; the drill is a genus-1 solid.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn notch_cube_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+        let y = m.add_cuboid(
+            Point3::from_array([3.0, -1.0, -1.0]),
+            Point3::from_array([7.0, 1.4, 1.2]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Cut, a, y).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, a, y).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "vol {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn notch_cube_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+        let y = m.add_cuboid(
+            Point3::from_array([3.0, -1.0, -1.0]),
+            Point3::from_array([7.0, 1.4, 1.2]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, a, y).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, a, y).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "vol {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn drilled_cube_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let bar = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Cut, a, bar).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, a, bar).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "vol {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn drilled_cube_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let bar = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, a, bar).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, a, bar).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "vol {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// The reflex-corner bite (M5-d3 cell 3d). The arc's single bend projects *outside*
     /// its chord's endpoints, so the old projection sort was ordering it by luck. Fills
     /// the OCCT gap that cell left.
