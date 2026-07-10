@@ -38,10 +38,13 @@ pub fn orient3d(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
 /// determinant polynomials *exactly* — the value the indirect predicates (M5-a2)
 /// combine (a mere sign would not compose).
 ///
-/// The value is always exact (no adaptive fast path yet — "make it work first";
-/// a Shewchuk-style error-bounded fast path is a later optimization). The inner
-/// list is never empty (a zero value is `[0.0]`), so the primitives — which read
-/// the first component — are always safe.
+/// The value is always exact — the expansions carry every bit. The *sign* is what
+/// gets a fast path: [`indirect_orient3d`] filters in `f64` first (cell (5b-0)) and
+/// only falls back to these expansions when the rounding bound cannot separate the
+/// sign from zero. The expansion arithmetic itself is unfiltered; a filtered
+/// coordinate representation would be a separate optimization. The inner list is
+/// never empty (a zero value is `[0.0]`), so the primitives — which read the first
+/// component — are always safe.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expansion(Vec<f64>);
 
@@ -230,7 +233,141 @@ pub fn indirect_cmp_coord(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
     na[axis].mul(&db).sub(&nb[axis].mul(&da)).sign() * da.sign() * db.sign()
 }
 
+/// Unit roundoff, `2^-53`: the relative error of one correctly rounded `f64` operation.
+const U: f64 = f64::EPSILON / 2.0;
+
+/// `det3` in plain `f64` — the same cofactor expansion [`det3`] evaluates exactly.
+#[inline]
+fn det3_val(m: [[f64; 3]; 3]) -> f64 {
+    let minor = |p: f64, q: f64, r: f64, t: f64| p * q - r * t;
+    m[0][0] * minor(m[1][1], m[2][2], m[1][2], m[2][1])
+        - m[0][1] * minor(m[1][0], m[2][2], m[1][2], m[2][0])
+        + m[0][2] * minor(m[1][0], m[2][1], m[1][1], m[2][0])
+}
+
+/// The same expression with every input replaced by its magnitude and every
+/// subtraction by an addition. Two things at once: an upper bound on the exact
+/// `|det3|`, and the scale against which the floating-point evaluation's rounding
+/// error is measured (Higham, *Accuracy and Stability*, §3.1 — a straight-line
+/// program of `n` rounded operations on exact inputs errs by at most `γₙ` times
+/// this cancellation-free evaluation).
+#[inline]
+fn det3_mag(m: [[f64; 3]; 3]) -> f64 {
+    let minor = |p: f64, q: f64, r: f64, t: f64| p.abs() * q.abs() + r.abs() * t.abs();
+    m[0][0].abs() * minor(m[1][1], m[2][2], m[1][2], m[2][1])
+        + m[0][1].abs() * minor(m[1][0], m[2][2], m[1][2], m[2][0])
+        + m[0][2].abs() * minor(m[1][0], m[2][1], m[1][1], m[2][0])
+}
+
+/// [`cramer`] in `f64`, alongside the cancellation-free magnitudes of each part.
+#[inline]
+fn cramer_val(p: &ThreePlane) -> ([f64; 3], f64, [f64; 3], f64) {
+    let pl = p.0;
+    let n = [
+        [pl[0][0], pl[0][1], pl[0][2]],
+        [pl[1][0], pl[1][1], pl[1][2]],
+        [pl[2][0], pl[2][1], pl[2][2]],
+    ];
+    let rhs = [-pl[0][3], -pl[1][3], -pl[2][3]];
+    let col_replaced = |k: usize| {
+        let mut m = n;
+        m[0][k] = rhs[0];
+        m[1][k] = rhs[1];
+        m[2][k] = rhs[2];
+        m
+    };
+    let num = [
+        det3_val(col_replaced(0)),
+        det3_val(col_replaced(1)),
+        det3_val(col_replaced(2)),
+    ];
+    let num_mag = [
+        det3_mag(col_replaced(0)),
+        det3_mag(col_replaced(1)),
+        det3_mag(col_replaced(2)),
+    ];
+    (num, det3_val(n), num_mag, det3_mag(n))
+}
+
+/// The floating-point filter for [`indirect_orient3d`]: the same polynomial in
+/// `f64`, with a rounding-error bound. `None` when the bound does not separate a
+/// sign from zero — then, and only then, the caller pays for exact expansions.
+///
+/// Attene 2020's implicit predicates are built this way, and without the filter
+/// the exact path runs on *every* call: measured at `1.46 µs`, against `~50 ns`
+/// here (design.md §9, cell (5b-0)).
+///
+/// **The filter never returns a wrong sign.** `|fl(x) − x| ≤ εₓ·x̃` where `x̃` is the
+/// cancellation-free ([`det3_mag`]-style) evaluation, so `|fl(x)| > εₓ·x̃` forces `x`
+/// to share `fl(x)`'s sign. The error grows along the dependency chain — each product
+/// of two relatively-accurate terms adds one more `u` (`|fl(a)fl(b) − AB| ≤
+/// (εₐ + ε_b + u)·ãb̃`):
+///
+/// | value | rounded ops | derived εₓ | constant used | margin |
+/// |---|---|---|---|---|
+/// | `D` | 2 mul, 1 sub, scale, 2 add | `≈ 5u` | `32·U` | 6× |
+/// | `M = row1 · cross` | `D`→`row1`→`M` | `≈ 19u` | `64·U` | 3.4× |
+///
+/// `U = 2⁻⁵³`. **The constants are deliberately above the derived bound: raising one
+/// only sends more calls to the exact path, never changes an answer.** Because the
+/// filter answers only when `|fl(x)| > εₓ·x̃ > 0`, it never claims a zero — every
+/// coplanarity and degeneracy still reaches the exact expansions below.
+#[inline]
+fn indirect_orient3d_filter(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> Option<i8> {
+    let (num, d, num_mag, d_mag) = cramer_val(p);
+
+    let dq = [q[0] - s[0], q[1] - s[1], q[2] - s[2]];
+    let dr = [r[0] - s[0], r[1] - s[1], r[2] - s[2]];
+    let dq_mag = [
+        q[0].abs() + s[0].abs(),
+        q[1].abs() + s[1].abs(),
+        q[2].abs() + s[2].abs(),
+    ];
+    let dr_mag = [
+        r[0].abs() + s[0].abs(),
+        r[1].abs() + s[1].abs(),
+        r[2].abs() + s[2].abs(),
+    ];
+
+    let cross = [
+        dq[1] * dr[2] - dq[2] * dr[1],
+        dq[2] * dr[0] - dq[0] * dr[2],
+        dq[0] * dr[1] - dq[1] * dr[0],
+    ];
+    let cross_mag = [
+        dq_mag[1] * dr_mag[2] + dq_mag[2] * dr_mag[1],
+        dq_mag[2] * dr_mag[0] + dq_mag[0] * dr_mag[2],
+        dq_mag[0] * dr_mag[1] + dq_mag[1] * dr_mag[0],
+    ];
+
+    let row1 = [num[0] - d * s[0], num[1] - d * s[1], num[2] - d * s[2]];
+    let row1_mag = [
+        num_mag[0] + d_mag * s[0].abs(),
+        num_mag[1] + d_mag * s[1].abs(),
+        num_mag[2] + d_mag * s[2].abs(),
+    ];
+
+    let m = row1[0] * cross[0] + row1[1] * cross[1] + row1[2] * cross[2];
+    let m_mag =
+        row1_mag[0] * cross_mag[0] + row1_mag[1] * cross_mag[1] + row1_mag[2] * cross_mag[2];
+
+    // An overflow to infinity makes the bound meaningless; hand it to the expansions.
+    if !m.is_finite() || !m_mag.is_finite() || !d_mag.is_finite() {
+        return None;
+    }
+    (d.abs() > 32.0 * U * d_mag && m.abs() > 64.0 * U * m_mag).then(|| sgn(d) * sgn(m))
+}
+
 pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
+    if let Some(sign) = indirect_orient3d_filter(p, q, r, s) {
+        return sign;
+    }
+    indirect_orient3d_exact(p, q, r, s)
+}
+
+/// [`indirect_orient3d`] with no filter: exact expansions, every time. The fallback,
+/// and the oracle its filter is tested against.
+fn indirect_orient3d_exact(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
     let ([dx, dy, dz], d) = cramer(p);
 
     // cross = (q − s) × (r − s), each component an exact expansion.
@@ -613,6 +750,33 @@ mod tests {
         [n[0] as f64, n[1] as f64, n[2] as f64, -dot as f64]
     }
 
+    /// The filter decides the everyday case, and the exact path is what a coplanar
+    /// input costs. Both halves matter: a filter that never fires buys nothing, and
+    /// one that fires on a zero would be wrong.
+    #[test]
+    fn the_filter_answers_a_clear_sign_and_declines_a_coplanar_one() {
+        let planes = ThreePlane([
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0, -1.0],
+        ]);
+        // (1,1,1) against the plane x+y+z=3 it lies on: the bound cannot separate 0.
+        assert_eq!(
+            indirect_orient3d_filter(&planes, [3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 3.0]),
+            None
+        );
+        // The same point against z=0: a clear sign, and no expansion is built.
+        assert_eq!(
+            indirect_orient3d_filter(&planes, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            Some(indirect_orient3d_exact(
+                &planes,
+                [0.0; 3],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0]
+            ))
+        );
+    }
+
     #[test]
     fn indirect_orient3d_coplanar_is_zero() {
         // Planes x=1, y=1, z=1 ⇒ implicit point (1,1,1).
@@ -648,6 +812,47 @@ mod tests {
     }
 
     proptest! {
+        /// The filter's one obligation: when it answers, it answers correctly. It is a
+        /// rounding-error bound, so a wrong sign here is not a slow path but a silently
+        /// wrong b-rep. The scale factor spans nine decades so the bound is tested where
+        /// it is tight, not only where it is slack.
+        #[test]
+        fn prop_the_filter_never_disagrees_with_the_exact_path(
+            planes in prop::array::uniform3(prop::array::uniform4(-1e3f64..1e3)),
+            q in prop::array::uniform3(-1e3f64..1e3),
+            r in prop::array::uniform3(-1e3f64..1e3),
+            s in prop::array::uniform3(-1e3f64..1e3),
+            scale in -4i32..5,
+        ) {
+            let k = 10f64.powi(scale);
+            let tp = ThreePlane(planes.map(|pl| pl.map(|c| c * k)));
+            let (q, r, s) = (q.map(|c| c * k), r.map(|c| c * k), s.map(|c| c * k));
+            if let Some(fast) = indirect_orient3d_filter(&tp, q, r, s) {
+                prop_assert_eq!(fast, indirect_orient3d_exact(&tp, q, r, s));
+                prop_assert_ne!(fast, 0); // the filter may never claim a zero
+            }
+        }
+
+        /// The near-degenerate triple: the third plane is a *rounded* linear combination
+        /// of the other two, so `D` is noise rather than an exact zero. The bound should
+        /// swallow that noise and decline — but "should" is not "must", so this asserts
+        /// only what is owed: whatever the filter says, the expansions say too.
+        #[test]
+        fn prop_the_filter_agrees_near_a_degenerate_triple(
+            a in prop::array::uniform4(-100f64..100.0),
+            b in prop::array::uniform4(-100f64..100.0),
+            t in -3f64..3.0,
+            q in prop::array::uniform3(-100f64..100.0),
+            r in prop::array::uniform3(-100f64..100.0),
+            s in prop::array::uniform3(-100f64..100.0),
+        ) {
+            let c: [f64; 4] = std::array::from_fn(|i| a[i] + t * b[i]);
+            let tp = ThreePlane([a, b, c]);
+            if let Some(fast) = indirect_orient3d_filter(&tp, q, r, s) {
+                prop_assert_eq!(fast, indirect_orient3d_exact(&tp, q, r, s));
+            }
+        }
+
         /// Primary oracle: the exact i128 result. `M` is computed by a **generic**
         /// `det3_i128([Row1, q−s, r−s])`, a different path than the implementation's
         /// hand-factored `Row1·cross`, so a factoring/sign/cross bug shows up as a
