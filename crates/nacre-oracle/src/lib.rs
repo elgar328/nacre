@@ -929,6 +929,37 @@ bbox_min 0 0 0
         );
     }
 
+    /// nacre's first face whose outer loop is *all* seam (M5-d3 cell 3f-2) vs OCCT: the
+    /// stub cut by the L, leaving the `0.4 × 0.4 × 0.5` box above `z = 1`. Its floor is
+    /// that island face.
+    ///
+    /// Both kernels take a face's normal from their own bookkeeping and sum unsigned
+    /// areas, so neither this diff nor any other can see the island wound backwards —
+    /// `validate` and the signed mesh volume do that. What an independent kernel scores
+    /// here is the face's *existence and extent*: get the ring's nodes wrong and the
+    /// polygon's area moves with it.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn island_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_dimple();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, bx, l).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, bx, l).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "island cut volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "island cut area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// nacre's hole-aware classification (M5-d3 cell 3a) vs OCCT: a pocketed cube
     /// cut by a box sitting wholly inside the pocket void. The two solids are
     /// disjoint, so the answer is the pocketed cube untouched — but only if the
