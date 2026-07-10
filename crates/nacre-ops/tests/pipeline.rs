@@ -409,6 +409,20 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
     (m, r)
 }
 
+/// `Cut(u, slab)` — the slab shears off both prong tops. Its `y = 1.5` face has its whole
+/// boundary dropped, so its two loops are **islands**: one input face, two output faces,
+/// both flipped, and they become the result's new end caps (cell 3f-3).
+fn u_cut_by_slab() -> (Model, Handle<Solid>) {
+    let (mut m, u) = u_prism();
+    let slab = m.add_cuboid(
+        Point3::from_array([-0.5, 1.5, -0.5]),
+        Point3::from_array([3.5, 2.5, 1.5]),
+    );
+    let r = boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+    m.rebuild_adjacency();
+    (m, r)
+}
+
 /// Two cubes fused across their shared face. `boolean` supersedes both operands —
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
@@ -540,6 +554,25 @@ fn a_non_convex_hole_bridges_and_meshes() {
         "volume {}",
         props.volume
     );
+}
+
+#[test]
+fn two_islands_from_one_face_mesh_like_two() {
+    // Cell 3f-3's payoff on the gate. The slab's face yields two islands, and each took its
+    // `Orientation` from `flip` and its ring from `orient_seam_loop`. The signed volume is
+    // the only check here that compares those two sources; watertight and the unsigned area
+    // would wave a reversed island through.
+    //
+    // 28 triangles: the clipped U is an octagonal prism, so `6 + 6` for its caps and 2 for
+    // each of eight walls — **two of those walls are the islands**, not extras. Area 18,
+    // volume 4.0.
+    let (m, s) = u_cut_by_slab();
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 28);
+    assert_agrees(&g, "u cut by slab");
+    let props = nacre_props::mass_props(&m, s).unwrap();
+    assert!((props.area - 18.0).abs() < 1e-9, "area {}", props.area);
+    assert!((props.volume - 4.0).abs() < 1e-9, "volume {}", props.volume);
 }
 
 #[test]
