@@ -4416,6 +4416,103 @@ pub mod tests {
         (m, l, stub)
     }
 
+    /// The ring's nodes as points, in ring order — tests only, to name a node by where it is.
+    fn ring_points(nodes: &[arrange::SeamEnd], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
+        ring.iter()
+            .map(|t| {
+                nodes
+                    .iter()
+                    .find(|nd| nd.triple == *t)
+                    .unwrap()
+                    .point
+                    .as_array()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
+        // The dimple's square hole. Walked with the material on its left it runs clockwise
+        // about the cap's `+z`, so the winding is `-1`. Flip `material_outside` — which is
+        // exactly how cell 3f-2 reads the same face as an island — and it must be `+1`.
+        let (m, l, stub) = l_and_dimple();
+        let (planes, surf_ix) = combined(&m, l, stub);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+        let p = surf_ix[&m.faces.get(top).surface];
+        let ps = paths(&m, top, l, stub, &planes, &surf_ix);
+        let arrange::SeamPath::Closed(nodes) = &ps[0] else {
+            panic!("closed loop")
+        };
+
+        let hole = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
+        assert_eq!(arrange::loop_winding(&planes, p, &hole).unwrap(), -1);
+
+        let island = arrange::orient_seam_loop(&planes, p, nodes, false).unwrap();
+        assert_eq!(arrange::loop_winding(&planes, p, &island).unwrap(), 1);
+
+        // Nothing but the ring's direction went into that. Reversing it by hand agrees.
+        let mut reversed = hole.clone();
+        reversed.reverse();
+        assert_eq!(arrange::loop_winding(&planes, p, &reversed).unwrap(), 1);
+
+        // A square turns the same way everywhere, so `nodes[0]` would have done. That is
+        // precisely what the next test refutes.
+        for i in 0..hole.len() {
+            assert_eq!(arrange::turn_at(&planes, p, &hole, i).unwrap(), -1);
+        }
+    }
+
+    #[test]
+    fn a_reflex_node_turns_against_its_ring() {
+        // The whole reason `loop_winding` hunts for a hull vertex. On the L-shaped hole the
+        // turn is `-1` at five nodes and `+1` at the reflex one, `(0.35, 0.4)` — read
+        // `turn_at` there and the ring looks counter-clockwise, which it is not.
+        //
+        // This is the `outer_tri` bug restated: the turn at one corner is the ring's winding
+        // only when that corner is convex. There a fixture found it after the fact; here the
+        // test finds it before there is any code to be wrong.
+        let (m, l, stub) = l_and_ell_stub();
+        let (planes, surf_ix) = combined(&m, l, stub);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+        let p = surf_ix[&m.faces.get(top).surface];
+        let ps = paths(&m, top, l, stub, &planes, &surf_ix);
+        let arrange::SeamPath::Closed(nodes) = &ps[0] else {
+            panic!("closed loop")
+        };
+        let hole = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
+        assert_eq!(arrange::loop_winding(&planes, p, &hole).unwrap(), -1);
+
+        let pts = ring_points(nodes, &hole);
+        let reflex = pts
+            .iter()
+            .position(|q| near(Point3::from_array(*q), [0.35, 0.4, 1.0]))
+            .expect("the reflex node");
+        assert_eq!(arrange::turn_at(&planes, p, &hole, reflex).unwrap(), 1);
+        let turns: Vec<i8> = (0..hole.len())
+            .map(|i| arrange::turn_at(&planes, p, &hole, i).unwrap())
+            .collect();
+        assert_eq!(turns.iter().filter(|&&t| t == 1).count(), 1);
+
+        // And the node the search lands on is the lexicographically least, `(0.2, 0.25)` —
+        // a hull vertex, where the turn is the winding. The test finds it by reading
+        // coordinates; `loop_winding` finds it with an exact predicate.
+        let lo = (0..pts.len())
+            .min_by(|&i, &j| pts[i].partial_cmp(&pts[j]).unwrap())
+            .unwrap();
+        assert!(near(Point3::from_array(pts[lo]), [0.2, 0.25, 1.0]));
+        assert_eq!(arrange::turn_at(&planes, p, &hole, lo).unwrap(), -1);
+        assert_ne!(lo, reflex);
+
+        // ★ The teeth. A ring is a cycle, so its winding cannot depend on where the walk
+        // began. Start it at the reflex node and a `turn_at(ring[0])` implementation reads
+        // `+1` — the exact fault `outer_tri` shipped. Measured: without this rotation, such
+        // an implementation passes every assertion above.
+        let mut rotated = hole.clone();
+        rotated.rotate_left(reflex);
+        assert_eq!(arrange::turn_at(&planes, p, &rotated, 0).unwrap(), 1);
+        assert_eq!(arrange::loop_winding(&planes, p, &rotated).unwrap(), -1);
+    }
+
     #[test]
     fn the_ell_stub_cuts_a_non_convex_loop() {
         // Every closed seam loop in the suite so far has been a rectangle, and a convex

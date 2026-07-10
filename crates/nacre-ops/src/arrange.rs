@@ -16,7 +16,9 @@
 
 use crate::{BoolError, PlaneInfo, edge_incidence, face_loops, reject, segment_crosses_face, tag};
 use nacre_geom::Surface;
-use nacre_geom::intersect::{plane_pair_dir_sign, three_plane_orient3d, three_planes};
+use nacre_geom::intersect::{
+    plane_pair_dir_sign, three_plane_cmp_coord, three_plane_orient3d, three_planes,
+};
 use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Model, Orientation, Solid, Vertex};
@@ -329,6 +331,120 @@ pub(crate) fn stitch_cycles(
         cycles.push(cycle);
     }
     Ok(cycles)
+}
+
+/// The two planes an ordered ring's edge `i → i+1` shares beyond `P`, plus the two nodes'
+/// third planes — everything [`order_along`] needs to say which way that edge runs.
+fn ring_edge(p: usize, ring: &[[usize; 3]], i: usize) -> Result<(usize, usize, usize), BoolError> {
+    let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+    let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
+    if shared.len() != 2 || !shared.contains(&p) {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+    }
+    let q = shared[usize::from(shared[0] == p)];
+    let third = |t: [usize; 3]| t.iter().copied().find(|&x| x != p && x != q);
+    let (Some(ri), Some(rj)) = (third(a), third(b)) else {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+    };
+    Ok((q, ri, rj))
+}
+
+/// `+1` when the ring's edge `i → i+1` runs along `d = n_P × n_Q`, `-1` against it.
+fn edge_sign(
+    planes: &[PlaneInfo],
+    p: usize,
+    ring: &[[usize; 3]],
+    i: usize,
+) -> Result<i8, BoolError> {
+    let (q, ri, rj) = ring_edge(p, ring, i)?;
+    // `order_along` is `sign((V_i − V_j)·d)`, so `-1` — `V_i` precedes `V_j` — is the edge
+    // running along `+d`. Recomputed rather than remembered from the assembly walk.
+    match order_along(planes, p, q, ri, rj) {
+        -1 => Ok(1),
+        1 => Ok(-1),
+        _ => Err(reject(tag::LOOP_ORIENT_MISMATCH)), // two nodes coincide
+    }
+}
+
+/// The turn at ring node `i`, about the face's **outward** normal: `+1` left, `-1` right.
+///
+/// **No point is materialized, and no coordinate is read.** The incoming edge runs along
+/// `s_a·(n_P × n_A)` and the outgoing along `s_b·(n_P × n_B)`, where `A` and `B` are node
+/// `i`'s two non-`P` planes. Their cross product, dotted with `n_P`:
+///
+/// ```text
+///   (n_P × n_A) × (n_P × n_B) = n_P · det[n_P, n_A, n_B]      (a×b)×(a×c) = a·det(a,b,c)
+///     ⇒  turn = s_a · s_b · sign(det[n_P, n_A, n_B]) · orient_sign(P)
+/// ```
+///
+/// and `sign(det[…])` is [`plane_pair_dir_sign`], already exact. It is never `0`: node `i`
+/// lies on all three planes, and a point exists there only if their normals are independent.
+///
+/// A ring is not convex, so this is **not** the winding — at a reflex node it is its
+/// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
+pub(crate) fn turn_at(
+    planes: &[PlaneInfo],
+    p: usize,
+    ring: &[[usize; 3]],
+    i: usize,
+) -> Result<i8, BoolError> {
+    let n = ring.len();
+    let prev = (i + n - 1) % n;
+    let (a, _, _) = ring_edge(p, ring, prev)?; // plane of the edge arriving at `i`
+    let (b, _, _) = ring_edge(p, ring, i)?; // plane of the edge leaving `i`
+    let sa = edge_sign(planes, p, ring, prev)?;
+    let sb = edge_sign(planes, p, ring, i)?;
+    let det = plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
+    if det == 0 {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+    }
+    Ok(sa * sb * det * orient_sign(planes, p))
+}
+
+/// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
+/// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
+///
+/// The turn at a convex-hull vertex is the winding, and the lexicographically smallest node
+/// is one: it is an extreme point of the node set, which is planar, so it is a vertex of the
+/// ring's hull. Finding it is the **only** thing here that needs two implicit points in one
+/// decision, and [`three_plane_cmp_coord`] is that predicate.
+///
+/// A shortcut dies here, and is recorded so it is not walked twice: a *supporting edge* —
+/// one whose plane `Q_j` has every other node on one side — would give a hull vertex from
+/// the one-implicit `three_plane_orient3d` alone. But a simple polygon need not have an edge
+/// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
+/// A hull *vertex* always exists.
+///
+/// Two distinct triples that compare equal on all three axes are the same point, and the
+/// loop is not simple. That is `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than
+/// by a tolerance — which is why design.md §9 could not check it before.
+pub(crate) fn loop_winding(
+    planes: &[PlaneInfo],
+    p: usize,
+    ring: &[[usize; 3]],
+) -> Result<i8, BoolError> {
+    if ring.len() < 3 {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+    }
+    let tri = |t: [usize; 3]| {
+        [
+            &planes[t[0]].plane,
+            &planes[t[1]].plane,
+            &planes[t[2]].plane,
+        ]
+    };
+    let mut lo = 0usize;
+    for i in 1..ring.len() {
+        let ord = (0..3)
+            .map(|axis| three_plane_cmp_coord(tri(ring[i]), tri(ring[lo]), axis))
+            .find(|&c| c != 0);
+        match ord {
+            Some(-1) => lo = i,
+            Some(_) => {}
+            None => return Err(reject(tag::LOOP_ORIENT_MISMATCH)), // two nodes coincide
+        }
+    }
+    turn_at(planes, p, ring, lo)
 }
 
 /// A closed seam loop's triples, ordered so that every directed edge keeps the kept
