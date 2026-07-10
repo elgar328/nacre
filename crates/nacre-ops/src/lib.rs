@@ -5427,6 +5427,92 @@ pub mod tests {
         }
     }
 
+    /// The pocketed cube's planes, its lid, that lid's plane index, and its edge index.
+    fn pocket_lid_setup() -> (
+        Model,
+        Vec<PlaneInfo>,
+        Handle<Face>,
+        usize,
+        arrange::EdgePlanes,
+    ) {
+        let (m, pc) = pocketed_cube();
+        let planes = collect_planes(&m, pc).unwrap();
+        let surf_ix: HashMap<Handle<Surface>, usize> = planes
+            .iter()
+            .enumerate()
+            .map(|(i, pi)| (pi.surf, i))
+            .collect();
+        // The lid and the pocket floor share an outward normal, so pick by the hole.
+        let lid = solid_faces(&m, pc)
+            .into_iter()
+            .find(|&fh| !m.faces.get(fh).inner.is_empty())
+            .expect("a holed face");
+        let p = surf_ix[&m.faces.get(lid).surface];
+        let inc = arrange::edge_planes(&m, pc, &surf_ix).unwrap();
+        (m, planes, lid, p, inc)
+    }
+
+    /// A hole rim is a ring of three-plane points, exactly like a seam loop: the lid's
+    /// plane and the two pocket walls meeting at each rim vertex. So `place_loops` can
+    /// place it with no new machinery — cell 3f-5 just appends it to the loop list.
+    ///
+    /// The winding is the load-bearing measurement. `f.inner` is stored clockwise about
+    /// the face's *outward* normal, and `loop_winding` reads `orient_sign(P)`; whether
+    /// those two conventions agree was assumed, never measured. They do: `−1`, the value
+    /// `check_loop_class(is_hole = true, ·)` demands, and it does not depend on `flip`.
+    #[test]
+    fn a_pocket_rim_is_a_clockwise_ring_of_three_plane_points() {
+        let (m, planes, lid, p, inc) = pocket_lid_setup();
+        let rims = arrange::hole_rings(&m, lid, p, &inc).unwrap();
+        assert_eq!(rims.len(), 1);
+        let rim = &rims[0];
+        assert_eq!(rim.len(), 4);
+        for t in rim {
+            assert!(t.contains(&p), "every rim node lies on the lid");
+            // Its other two planes are pocket walls: neither is the lid, and each pair
+            // is distinct (a straight angle would already have rejected).
+            assert_eq!(t.iter().filter(|&&x| x != p).count(), 2);
+        }
+        assert_eq!(arrange::loop_winding(&planes, p, rim).unwrap(), -1);
+    }
+
+    /// The rim sits inside the lid's outer ring, and the outer ring's vertices sit outside
+    /// the rim. Both are ordinary `point_in_ring` questions once the rim is triples.
+    #[test]
+    fn a_pocket_rim_is_inside_its_lid_and_the_lid_is_not_inside_it() {
+        let (m, planes, lid, p, inc) = pocket_lid_setup();
+        let rim = &arrange::hole_rings(&m, lid, p, &inc).unwrap()[0];
+        let bnd = arrange::face_vertex_triples(&m, lid, p, &inc).unwrap();
+
+        for t in rim {
+            assert!(arrange::point_in_ring(&planes, p, *t, &bnd).unwrap());
+            // Every clear ray must agree — the ring is simple. A second machine, free.
+            let rays = arrange::every_ray(&planes, p, *t, &bnd).unwrap();
+            assert!(!rays.is_empty() && rays.iter().all(|&r| r), "{rays:?}");
+        }
+        for t in &bnd {
+            assert!(!arrange::point_in_ring(&planes, p, *t, rim).unwrap());
+        }
+    }
+
+    /// The whole of cell 3f-5's placement, before a line of it is wired: append the hole
+    /// rings to the loop list and `place_loops` answers. The region owning the rim comes
+    /// out as `Some(0)`, and the pairwise nesting check sees nothing to reject.
+    #[test]
+    fn place_loops_owns_a_hole_ring_with_no_new_machinery() {
+        let (m, planes, lid, p, inc) = pocket_lid_setup();
+        let rim = arrange::hole_rings(&m, lid, p, &inc).unwrap().remove(0);
+        let bnd = arrange::face_vertex_triples(&m, lid, p, &inc).unwrap();
+        assert_eq!(
+            place_loops(&planes, p, &[bnd], &[rim]).unwrap(),
+            vec![Some(0)]
+        );
+        // A region ring the seam has bitten a corner from is exercised end to end by
+        // `cut_a_pocket_at_a_corner`; it cannot be faked here, because dropping a node
+        // from `bnd` leaves two nodes sharing only the lid's plane and `ring_edge`
+        // rightly refuses to invent an edge between them.
+    }
+
     #[test]
     fn point_in_solid_sees_through_a_pocket() {
         // Fanning the lid's outer ring alone fills the pocket mouth in, and a ray

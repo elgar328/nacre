@@ -24,7 +24,7 @@ use nacre_geom::intersect::{
 };
 use nacre_math::Point3;
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, Model, Orientation, Solid, Vertex};
+use nacre_topo::{Edge, Face, Loop, Model, Orientation, Solid, Vertex};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -414,7 +414,32 @@ pub(crate) fn face_vertex_triples(
     p: usize,
     inc: &EdgePlanes,
 ) -> Result<Vec<[usize; 3]>, BoolError> {
-    let hes = &model.faces.get(f).outer.half_edges;
+    loop_triples(&model.faces.get(f).outer, p, inc)
+}
+
+/// Each hole ring of face `f`, as three-plane triples.
+///
+/// A rim edge's incidence is `[p, wall]`, so the neighbour plane is the wall on the other
+/// side of the rim — the same construction as an outer vertex, and the same rejection of a
+/// straight angle. The ring keeps its stored direction: clockwise about `f`'s outward
+/// normal, which is what makes it a hole.
+pub(crate) fn hole_rings(
+    model: &Model,
+    f: Handle<Face>,
+    p: usize,
+    inc: &EdgePlanes,
+) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
+    model
+        .faces
+        .get(f)
+        .inner
+        .iter()
+        .map(|l| loop_triples(l, p, inc))
+        .collect()
+}
+
+fn loop_triples(l: &Loop, p: usize, inc: &EdgePlanes) -> Result<Vec<[usize; 3]>, BoolError> {
+    let hes = &l.half_edges;
     let other = |he: &nacre_topo::HalfEdge| -> Result<usize, BoolError> {
         let (_, [pa, pb]) = *inc.get(&he.edge).ok_or_else(|| reject(tag::MISSING_SEAM))?;
         Ok(if pa == p { pb } else { pa })
