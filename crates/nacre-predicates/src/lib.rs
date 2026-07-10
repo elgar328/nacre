@@ -654,12 +654,36 @@ mod tests {
     proptest! {
         /// geometry-predicates' own `orient3d(r1, r2, r3, origin)` equals
         /// `det[r1, r2, r3]`, so it is an exact-sign oracle for any f64 rows.
+        ///
+        /// `sign_f64`, not `f64::signum`: the latter reads `0.0` as `+1`, so on a
+        /// singular matrix this comparison would demand `det3_sign == 1` and pass only
+        /// because random continuous rows never land exactly singular. `det3_sign` reads
+        /// a true zero as `0`, and this oracle must too — see `prop_a_singular_matrix_reads_zero`.
         #[test]
         fn prop_det3_sign_matches_orient3d(
             m in prop::array::uniform3(prop::array::uniform3(-1e6f64..1e6)),
         ) {
-            let expected = orient3d(m[0], m[1], m[2], [0.0, 0.0, 0.0]).signum() as i8;
+            let expected = sign_f64(orient3d(m[0], m[1], m[2], [0.0, 0.0, 0.0]));
             prop_assert_eq!(det3_sign(m), expected);
+        }
+
+        /// A rank-deficient matrix has determinant exactly zero, and both machines must
+        /// read it. Rows are integers and the combining coefficients are integers, so
+        /// `row2 = a·row0 + b·row1` is an exact integer vector — the matrix is singular in
+        /// f64, not merely near it. This is the case the oracle above cannot reach on its
+        /// own (random continuous rows never land exactly singular).
+        #[test]
+        fn prop_a_singular_matrix_reads_zero(
+            r0 in prop::array::uniform3(-1000i32..1000),
+            r1 in prop::array::uniform3(-1000i32..1000),
+            a in prop::sample::select(vec![-2i32, -1, 1, 2]),
+            b in prop::sample::select(vec![-2i32, -1, 1, 2]),
+        ) {
+            let row = |r: [i32; 3]| r.map(f64::from);
+            let r2 = std::array::from_fn(|i| f64::from(a * r0[i] + b * r1[i]));
+            let m = [row(r0), row(r1), r2];
+            prop_assert_eq!(det3_sign(m), 0);
+            prop_assert_eq!(sign_f64(orient3d(m[0], m[1], m[2], [0.0; 3])), 0);
         }
 
         /// Independent integer oracle: the exact i128 determinant sign.
