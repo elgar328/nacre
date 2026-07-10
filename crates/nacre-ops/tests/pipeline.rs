@@ -319,6 +319,51 @@ fn island_cut() -> (Model, Handle<Solid>) {
     (m, r)
 }
 
+/// The L-prism and an L-shaped bar in its notch, biting two corners of the cap. Two
+/// chords on one face; under `Cut` the bar's floor splits into the two bites' floors.
+fn notch_bar_cut() -> (Model, Handle<Solid>) {
+    let l = Profile2d {
+        points: vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ],
+    };
+    let bar = Profile2d {
+        points: vec![
+            p2(1.8, 0.8),
+            p2(2.1, 0.8),
+            p2(2.1, 2.1),
+            p2(0.8, 2.1),
+            p2(0.8, 1.8),
+            p2(1.8, 1.8),
+        ],
+    };
+    let mut m = replay(&[
+        Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile: l,
+            dist: 1.0,
+        },
+        Operation::Extrude {
+            plane: SketchPlane {
+                origin: Point3::from_array([0.0, 0.0, 0.5]),
+                ..SketchPlane::world_xy()
+            },
+            profile: bar,
+            dist: 1.0,
+        },
+    ])
+    .unwrap();
+    let (a, b) = (m.live_solids[0], m.live_solids[1]);
+    let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+    m.rebuild_adjacency();
+    (m, r)
+}
+
 /// Two cubes fused across their shared face. `boolean` supersedes both operands —
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
@@ -404,6 +449,31 @@ fn a_boolean_result_carries_its_hole() {
         let area = nacre_props::mass_props(&m, s).unwrap().area;
         assert!((area - 14.8).abs() < 1e-9, "{kind:?} area {area}");
     }
+}
+
+#[test]
+fn a_split_face_meshes_like_two() {
+    // Cell 3e-2's first shape whose bar floor becomes *two* b-rep faces. The signed volume
+    // is the only check here that looks at their orientation: each floor got its own
+    // `Orientation` from `flip` and its own ring from the stitcher, and nothing else in
+    // this file compares those two sources.
+    //
+    // The bites are corner cuts, so `props.area` is the L's own 14.0 — the three faces
+    // removed and the three added cancel. A gate that only summed area would see nothing.
+    let (m, s) = notch_bar_cut();
+    // 44: the bitten cap is a 10-gon (8), the bottom cap a hexagon (4), two untouched
+    // walls (2 each), four bitten walls that are hexagons (4 each), then the bar's four
+    // side pieces (2 each) and its two floors (2 each).
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 44);
+    assert_agrees(&g, "notch bar cut");
+    let props = nacre_props::mass_props(&m, s).unwrap();
+    assert!((props.area - 14.0).abs() < 1e-9, "area {}", props.area);
+    assert!(
+        (props.volume - 2.96).abs() < 1e-9,
+        "volume {}",
+        props.volume
+    );
 }
 
 #[test]
