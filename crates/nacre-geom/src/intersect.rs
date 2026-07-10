@@ -127,6 +127,26 @@ pub fn three_plane_orient3d(
     nacre_predicates::indirect_orient3d(&tp, q.as_array(), r.as_array(), s.as_array())
 }
 
+/// The exact sign of `a[axis] − b[axis]`, where `a` and `b` are the implicit points at
+/// which each plane triple meets — the two-implicit handoff to `nacre-predicates`.
+///
+/// `0` means the coordinates are exactly equal. Neither point is materialized, and no
+/// tolerance is involved: this is the sign of a decision, so it belongs on the predicate
+/// side of the precision split (design §3), exactly like [`plane_pair_dir_sign`].
+///
+/// **Precondition (inherited):** each triple meets in a single point (`det` of its normals
+/// ≠ 0), as for [`three_plane_orient3d`].
+pub fn three_plane_cmp_coord(a: [&Plane; 3], b: [&Plane; 3], axis: usize) -> i8 {
+    let tp = |t: [&Plane; 3]| {
+        nacre_predicates::ThreePlane([
+            t[0].coefficients(),
+            t[1].coefficients(),
+            t[2].coefficients(),
+        ])
+    };
+    nacre_predicates::indirect_cmp_coord(&tp(a), &tp(b), axis)
+}
+
 /// The exact sign of `(nA × nB) · nC` — how the line `A ∩ B` runs relative to
 /// plane `C`'s normal.
 ///
@@ -320,6 +340,46 @@ mod tests {
     /// Pinned against `plane_plane` itself: the sign must agree with the dot of
     /// that function's actual line direction and `c`'s normal. The seam ordering
     /// in `nacre-ops` assumes exactly this coupling.
+    #[test]
+    fn three_plane_cmp_coord_orders_two_meets() {
+        // The unit cube's corners `(0,0,0)` and `(1,1,0)`, each as a triple of its faces.
+        let px = |d: f64| {
+            Plane::from_point_normal(
+                Point3::from_array([d, 0.0, 0.0]),
+                Vector3::from_array([1.0, 0.0, 0.0]),
+            )
+            .unwrap()
+        };
+        let py = |d: f64| {
+            Plane::from_point_normal(
+                Point3::from_array([0.0, d, 0.0]),
+                Vector3::from_array([0.0, 1.0, 0.0]),
+            )
+            .unwrap()
+        };
+        let pz = Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
+            .unwrap();
+        let (x0, x1, y0, y1) = (px(0.0), px(1.0), py(0.0), py(1.0));
+        let a = [&x0, &y0, &pz];
+        let b = [&x1, &y1, &pz];
+        assert_eq!(three_plane_cmp_coord(a, b, 0), -1);
+        assert_eq!(three_plane_cmp_coord(b, a, 0), 1);
+        assert_eq!(three_plane_cmp_coord(a, b, 1), -1);
+        assert_eq!(three_plane_cmp_coord(a, b, 2), 0); // both on z = 0
+
+        // A `Plane`'s normal is unit, so the coefficients carry a `d` that is not an
+        // integer here — the predicate is scale-invariant and never divides.
+        let tilt = Plane::through_points(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+            Point3::from_array([0.0, 0.0, 1.0]),
+        )
+        .unwrap();
+        let c = [&x0, &y0, &tilt];
+        assert_eq!(three_plane_cmp_coord(c, c, 2), 0);
+        assert_eq!(three_plane_cmp_coord(a, c, 2), -1); // (0,0,0) below (0,0,1)
+    }
+
     #[test]
     fn plane_pair_dir_sign_agrees_with_plane_plane() {
         let cases = [
