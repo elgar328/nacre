@@ -243,6 +243,9 @@ pub(crate) mod tag {
     pub const ON_BOUNDARY: &str = "on_boundary";
     pub const RAY_DEGENERATE: &str = "ray_degenerate";
     pub const CONTACT_DEGENERATE: &str = "contact_degenerate";
+    /// An endpoint of an edge lies exactly on a face's plane — and if both do, the edge lies
+    /// in that plane. A tangential contact, not a crossing, and out of clean-seam coverage.
+    pub const VERTEX_ON_FACE_PLANE: &str = "vertex_on_face_plane";
     /// A closed seam loop's winding and the face boundary's class disagree.
     ///
     /// A hole keeps its material outside, so walked material-left it runs clockwise about
@@ -5997,6 +6000,254 @@ pub mod tests {
             assert!(vs.is_empty(), "{kind:?} {vs:?}");
             let vol = nacre_props::mass_props(&m, r).unwrap().volume;
             assert!((vol - want).abs() < 1e-9, "{kind:?} volume {vol}");
+        }
+    }
+
+    /// Count the crossings of `x`'s edges through `y`'s faces, once by exact containment and
+    /// once by the fan.
+    fn crossings_both_ways(
+        m: &Model,
+        x: Handle<Solid>,
+        y: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Surface>, usize>,
+    ) -> (Result<usize, BoolError>, Result<usize, BoolError>) {
+        let exact = (|| {
+            let inc_y = arrange::edge_planes(m, y, surf_ix)?;
+            let rings: Vec<(usize, Vec<Vec<[usize; 3]>>)> = solid_faces(m, y)
+                .into_iter()
+                .map(|g| {
+                    let q = surf_ix[&m.faces.get(g).surface];
+                    arrange::face_rings(m, g, q, &inc_y).map(|r| (q, r))
+                })
+                .collect::<Result<_, _>>()?;
+            let mut hits = 0;
+            for (_, bounds, inc) in edge_incidence(m, x, surf_ix)? {
+                let (p0, p1) = (
+                    m.vertices.get(bounds[0]).point,
+                    m.vertices.get(bounds[1]).point,
+                );
+                for (q, r) in &rings {
+                    hits += usize::from(arrange::edge_crosses_face(planes, inc, p0, p1, *q, r)?);
+                }
+            }
+            Ok(hits)
+        })();
+        let fan = (|| {
+            let mut hits = 0;
+            for (_, bounds, _) in edge_incidence(m, x, surf_ix)? {
+                let (p0, p1) = (
+                    m.vertices.get(bounds[0]).point,
+                    m.vertices.get(bounds[1]).point,
+                );
+                for g in solid_faces(m, y) {
+                    hits += usize::from(segment_crosses_face(p0, p1, &face_loops(m, g))?);
+                }
+            }
+            Ok(hits)
+        })();
+        (exact, fan)
+    }
+
+    /// The census. Every edge against every face, on every fixture, both directions: the exact
+    /// test and the fan must count the same crossings. Nothing here is a sample.
+    ///
+    /// It also measures what cell (5a) risked. `face_rings` calls `face_vertex_triples` on
+    /// every face now, not only the ones the seam touches, so a straight angle anywhere would
+    /// reject; and `point_in_ring` needs a clear ray for every piercing point, inside the face
+    /// or outside it. Neither fires. `no_clear_ray` and `loop_orient_mismatch` stay unfired.
+    #[test]
+    fn exact_crossings_match_the_fan_on_every_fixture() {
+        let extra = [
+            ("cube_and_notch", cube_and_notch()),
+            ("l_and_rod", l_and_rod()),
+            ("pocket_and_slab(0.3)", pocket_and_slab(0.3)),
+            ("pocket_and_slab(0.7)", pocket_and_slab(0.7)),
+        ];
+        let cases = overlap_fixtures()
+            .into_iter()
+            .map(|c| (c.name, c.m, c.x, c.y))
+            .chain(extra.into_iter().map(|(n, (m, x, y))| (n, m, x, y)));
+        for (name, m, x, y) in cases {
+            let (planes, surf_ix) = combined(&m, x, y);
+            for (a, b) in [(x, y), (y, x)] {
+                let (exact, fan) = crossings_both_ways(&m, a, b, &planes, &surf_ix);
+                assert_eq!(exact.unwrap(), fan.unwrap(), "{name}");
+            }
+        }
+    }
+
+    /// The one fixture the fan will not speak on, and the reason cell (5a) exists.
+    ///
+    /// `B`'s edge along `x` at `(y, z) = (0.5, 0.5)` meets `A`'s `x = 1` face at `(1, 0.5,
+    /// 0.5)` — that square's **centre**, where both its diagonals cross. A fan from any apex
+    /// lays a diagonal through it, so the fan grazes from all four and rejects. Exact
+    /// containment does not care: the piercing point is `{B_y05, B_z05, A_x1}`, a three-plane
+    /// point, and cell 3f-4 built its containment test for a different reason entirely.
+    ///
+    /// design.md §9 line 447 calls this the gate on unifying the convex path.
+    #[test]
+    fn the_centre_of_a_square_face_is_pierced_not_grazed() {
+        let (m, a, b) = two_boxes();
+        let (planes, surf_ix) = combined(&m, a, b);
+        let (exact, fan) = crossings_both_ways(&m, b, a, &planes, &surf_ix);
+        assert_eq!(exact.unwrap(), 3);
+        assert_eq!(fan, Err(BoolError::Unsupported));
+
+        // Down to the one pair, so the point is named rather than counted.
+        let x_face = face_facing(&m, a, &planes, &surf_ix, [1.0, 0.0, 0.0]);
+        let q = surf_ix[&m.faces.get(x_face).surface];
+        let inc_a = arrange::edge_planes(&m, a, &surf_ix).unwrap();
+        let rings = arrange::face_rings(&m, x_face, q, &inc_a).unwrap();
+        let (bounds, along_x) = *arrange::edge_planes(&m, b, &surf_ix)
+            .unwrap()
+            .values()
+            .find(|(bd, _)| {
+                bd.iter().all(|&v| {
+                    let p = m.vertices.get(v).point.as_array();
+                    p[1] == 0.5 && p[2] == 0.5
+                })
+            })
+            .expect("B's edge through (0.5, 0.5)");
+        let (p0, p1) = (
+            m.vertices.get(bounds[0]).point,
+            m.vertices.get(bounds[1]).point,
+        );
+        assert!(arrange::edge_crosses_face(&planes, along_x, p0, p1, q, &rings).unwrap());
+        assert_rejects(
+            || segment_crosses_face(p0, p1, &face_loops(&m, x_face)),
+            tag::CONTACT_DEGENERATE,
+        );
+    }
+
+    /// A hole subtracts. An edge dropped straight through the pocket's mouth crosses the lid's
+    /// plane inside its outer ring and inside its rim, so it pierces no material.
+    #[test]
+    fn an_edge_through_a_pocket_mouth_pierces_nothing() {
+        let (mut m, pc) = pocketed_cube();
+        let rod = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.6]),
+            Point3::from_array([0.6, 0.6, 1.4]),
+        );
+        let (planes, surf_ix) = combined(&m, pc, rod);
+        let inc_pc = arrange::edge_planes(&m, pc, &surf_ix).unwrap();
+        let lid = solid_faces(&m, pc)
+            .into_iter()
+            .find(|&f| !m.faces.get(f).inner.is_empty())
+            .unwrap();
+        let q = surf_ix[&m.faces.get(lid).surface];
+        let rings = arrange::face_rings(&m, lid, q, &inc_pc).unwrap();
+        let mut vertical = 0;
+        for (_, bounds, inc) in edge_incidence(&m, rod, &surf_ix).unwrap() {
+            let (p0, p1) = (
+                m.vertices.get(bounds[0]).point,
+                m.vertices.get(bounds[1]).point,
+            );
+            if p0.as_array()[2] == p1.as_array()[2] {
+                continue;
+            }
+            vertical += 1;
+            assert!(!arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings).unwrap());
+        }
+        assert_eq!(vertical, 4);
+    }
+
+    /// The two contacts, named. Both were `contact_degenerate` — "grazed a fan diagonal" — and
+    /// neither ever was a graze.
+    ///
+    /// The vertex case is why `point_on_ring` is asked **before** `point_in_ring`: when the
+    /// piercing point is a ring node, both of its rays carry that node, every candidate is
+    /// skipped, and `point_in_ring` alone comes back `no_clear_ray`. Measured below.
+    #[test]
+    fn an_edge_touching_a_face_is_a_contact_not_a_graze() {
+        let (mut m, l) = l_prism();
+        // Its floor lies in the L's own bottom plane.
+        let flat = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.5, 1.5, 0.5]),
+        );
+        // A corner exactly on the L cap's reflex vertex `(1,1)`, and one on an edge's interior.
+        let at_vertex = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -0.5]),
+            Point3::from_array([1.2, 1.2, 0.5]),
+        );
+        let at_edge = m.add_cuboid(
+            Point3::from_array([1.5, 0.0, -0.5]),
+            Point3::from_array([1.7, 0.2, 0.5]),
+        );
+
+        let pierce = |other: Handle<Solid>, want: [f64; 2]| {
+            let (planes, surf_ix) = combined(&m, l, other);
+            let inc_l = arrange::edge_planes(&m, l, &surf_ix).unwrap();
+            let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+            let q = surf_ix[&m.faces.get(bottom).surface];
+            let rings = arrange::face_rings(&m, bottom, q, &inc_l).unwrap();
+            let (bounds, inc) = *arrange::edge_planes(&m, other, &surf_ix)
+                .unwrap()
+                .values()
+                .find(|(bd, _)| {
+                    bd.iter().all(|&v| {
+                        let p = m.vertices.get(v).point.as_array();
+                        [p[0], p[1]] == want
+                    }) && bd
+                        .iter()
+                        .any(|&v| m.vertices.get(v).point.as_array()[2] < 0.0)
+                })
+                .expect("the vertical edge");
+            let (p0, p1) = (
+                m.vertices.get(bounds[0]).point,
+                m.vertices.get(bounds[1]).point,
+            );
+            (planes, q, rings, inc, p0, p1)
+        };
+
+        // (a) The whole edge lies in the other face's plane. Both endpoint signs are zero.
+        {
+            let (planes, surf_ix) = combined(&m, l, flat);
+            let inc_flat = arrange::edge_planes(&m, flat, &surf_ix).unwrap();
+            let floor = face_facing(&m, flat, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+            let q = surf_ix[&m.faces.get(floor).surface];
+            let rings = arrange::face_rings(&m, floor, q, &inc_flat).unwrap();
+            let (bounds, inc) = *arrange::edge_planes(&m, l, &surf_ix)
+                .unwrap()
+                .values()
+                .find(|(bd, _)| {
+                    bd.iter()
+                        .all(|&v| m.vertices.get(v).point.as_array()[2] == 0.0)
+                })
+                .expect("an edge of the L's bottom");
+            let (p0, p1) = (
+                m.vertices.get(bounds[0]).point,
+                m.vertices.get(bounds[1]).point,
+            );
+            assert_rejects(
+                || arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings),
+                tag::VERTEX_ON_FACE_PLANE,
+            );
+        }
+
+        // (b) The piercing point is a ring node.
+        {
+            let (planes, q, rings, inc, p0, p1) = pierce(at_vertex, [1.0, 1.0]);
+            assert_rejects(
+                || arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings),
+                tag::POINT_ON_RING,
+            );
+            let mut x = [inc[0], inc[1], q];
+            x.sort_unstable();
+            assert_rejects(
+                || arrange::point_in_ring(&planes, q, x, &rings[0]),
+                tag::NO_CLEAR_RAY, // the tag the pre-check exists to prevent
+            );
+        }
+
+        // (c) The piercing point is inside a ring edge. `point_in_ring` names this one itself.
+        {
+            let (planes, q, rings, inc, p0, p1) = pierce(at_edge, [1.5, 0.0]);
+            assert_rejects(
+                || arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings),
+                tag::POINT_ON_RING,
+            );
         }
     }
 

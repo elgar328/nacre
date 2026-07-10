@@ -20,7 +20,7 @@ use crate::{
 };
 use nacre_geom::Surface;
 use nacre_geom::intersect::{
-    plane_pair_dir_sign, three_plane_cmp_coord, three_plane_orient3d, three_planes,
+    plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d, three_planes,
 };
 use nacre_math::Point3;
 use nacre_store::Handle;
@@ -634,6 +634,119 @@ pub(crate) fn point_in_ring(
         .first()
         .copied()
         .ok_or_else(|| reject(tag::NO_CLEAR_RAY))
+}
+
+/// Is the implicit point `v` **on** the simple ring `ring` — on an edge, endpoints included?
+///
+/// [`point_in_ring`] cannot answer this. It casts a ray along `P ∩ Q_a` for each of `v`'s own
+/// planes, and skips a line that carries a ring node; when `v` *is* a ring node, both of its
+/// lines carry it and every candidate is skipped, so the honest `point_on_ring` comes back as
+/// `no_clear_ray`. Asking first, and separately, is what keeps the tag truthful.
+///
+/// The question is two exact signs per edge. `v` lies on edge `i`'s line `P ∩ R` iff `v` lies
+/// on `R` ([`side_of`]); it lies within the edge iff it does not fall on the same side of both
+/// endpoints along that line ([`order_along`]). No new predicate, and no coordinate.
+pub(crate) fn point_on_ring(
+    planes: &[PlaneInfo],
+    p: usize,
+    v: [usize; 3],
+    ring: &[[usize; 3]],
+) -> Result<bool, BoolError> {
+    if ring.len() < 3 {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+    }
+    for i in 0..ring.len() {
+        let (r, si, sj) = ring_edge(p, ring, i)?;
+        if side_of(planes, v, r) != 0 {
+            continue; // `v` is not even on the edge's line
+        }
+        // Name `v` as a point of that line: `{P, R, S}` for one of its own planes `S`. Both
+        // cannot fail — if neither `E0` nor `E1` is independent of `P, R`, then `E0` and `E1`
+        // lie in `span(n_P, n_R)` and `v = {P, E0, E1}` would not have been a point.
+        let s = *v
+            .iter()
+            .find(|&&x| {
+                x != p
+                    && plane_pair_dir_sign(&planes[p].plane, &planes[r].plane, &planes[x].plane)
+                        != 0
+            })
+            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+        let (a, b) = (
+            order_along(planes, p, r, s, si),
+            order_along(planes, p, r, s, sj),
+        );
+        if a * b <= 0 {
+            return Ok(true); // between the endpoints, or on one of them
+        }
+    }
+    Ok(false)
+}
+
+/// Face `f`'s rings as three-plane triples: its outer loop, then each hole.
+///
+/// The triple form of [`face_loops`], and what [`edge_crosses_face`] needs. Building it costs
+/// the straight-angle rejection of [`face_vertex_triples`] — a face with two adjacent edges on
+/// one neighbour plane has no triple for the vertex between them.
+pub(crate) fn face_rings(
+    model: &Model,
+    f: Handle<Face>,
+    p: usize,
+    inc: &EdgePlanes,
+) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
+    let mut out = vec![face_vertex_triples(model, f, p, inc)?];
+    out.extend(hole_rings(model, f, p, inc)?);
+    Ok(out)
+}
+
+/// Does the edge on planes `[e0, e1]`, running `p0 → p1`, pierce the **material** of face `g`
+/// (plane `q`, `rings` outer-first)?
+///
+/// **The piercing point is a three-plane point.** The edge lies on `E0` and `E1`, the face on
+/// `Q`, so the point is `{E0, E1, Q}` — the same species the seam machinery already builds,
+/// and [`point_in_ring`] already answers containment for. The fan that stood here instead cut
+/// the face into triangles and asked which one the point fell in; its own diagonals then
+/// grazed the point whenever the geometry was symmetric, and a square's centre lies on the
+/// diagonal of **every** apex. Design §9 guessed the fix would be a real triangulation, or a
+/// choice of apex. It is neither: no triangulation is free of diagonals.
+///
+/// **One coordinate is read, and it is exact.** Whether `p0` and `p1` straddle `Q` is
+/// [`plane_side`], an exact `orient3d` on the stored points. Everything after is combinatorial:
+/// straddling means the segment meets `Q` exactly once, so the crossing is inside the edge by
+/// construction, and containment is a ray cast along a line the planes already give.
+///
+/// **Contacts are named, not lumped.** An endpoint on `Q` — or the whole edge lying in it — is
+/// `vertex_on_face_plane`. A crossing exactly on `∂g` is `point_on_ring`. Neither is a graze:
+/// they are the two ways an edge can touch a face without properly piercing it.
+pub(crate) fn edge_crosses_face(
+    planes: &[PlaneInfo],
+    [e0, e1]: [usize; 2],
+    p0: Point3,
+    p1: Point3,
+    q: usize,
+    rings: &[Vec<[usize; 3]>],
+) -> Result<bool, BoolError> {
+    let (s0, s1) = (plane_side(planes[q].tri, p0), plane_side(planes[q].tri, p1));
+    if s0 == 0 || s1 == 0 {
+        return Err(reject(tag::VERTEX_ON_FACE_PLANE));
+    }
+    if s0 == s1 {
+        return Ok(false); // the segment never reaches `Q`
+    }
+    let x = triple(e0, e1, q);
+    for ring in rings {
+        if point_on_ring(planes, q, x, ring)? {
+            return Err(reject(tag::POINT_ON_RING));
+        }
+    }
+    if !point_in_ring(planes, q, x, &rings[0])? {
+        return Ok(false);
+    }
+    for hole in &rings[1..] {
+        if point_in_ring(planes, q, x, hole)? {
+            return Ok(false); // through the hole, not the material
+        }
+    }
+    Ok(true)
 }
 
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
