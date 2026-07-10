@@ -755,6 +755,16 @@ bbox_min 0 0 0
 
     /// Extrude a closed profile 1.0 along `plane`'s normal.
     fn extrude(m: &mut Model, plane: SketchPlane, pts: &[[f64; 2]]) -> Handle<Solid> {
+        extrude_dist(m, plane, pts, 1.0)
+    }
+
+    /// Extrude a closed profile `dist` along `plane`'s normal.
+    fn extrude_dist(
+        m: &mut Model,
+        plane: SketchPlane,
+        pts: &[[f64; 2]],
+        dist: f64,
+    ) -> Handle<Solid> {
         use nacre_math::Point2;
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
         let profile = Profile2d {
@@ -765,7 +775,7 @@ bbox_min 0 0 0
             &Operation::Extrude {
                 plane,
                 profile,
-                dist: 1.0,
+                dist,
             },
         )
         .unwrap() else {
@@ -964,6 +974,105 @@ bbox_min 0 0 0
             ],
         );
         (m, l, bar)
+    }
+
+    /// The L-prism and a П-shaped staple drawn in the XZ plane and extruded along `−y`, so
+    /// the L's cap is parallel to the extrusion axis and the staple's section there falls in
+    /// two: a loop wholly inside the cap, and an arc wrapping the reflex corner (cell 3f-4).
+    fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
+        use nacre_math::Vector3;
+        let (mut m, l) = l_prism();
+        let xz = SketchPlane {
+            origin: Point3::from_array([0.0, 1.3, 0.0]),
+            x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
+            y_axis: Vector3::from_array([0.0, 0.0, 1.0]),
+        };
+        let st = extrude_dist(
+            &mut m,
+            xz,
+            &[
+                [0.1, 0.5],
+                [0.6, 0.5],
+                [0.6, 1.3],
+                [0.8, 1.3],
+                [0.8, 0.45],
+                [1.4, 0.45],
+                [1.4, 1.5],
+                [0.1, 1.5],
+            ],
+            0.65,
+        );
+        (m, l, st)
+    }
+
+    /// The same loop is a **hole** here — inside the cap's kept region — and an **island**
+    /// under `Cut(staple, L)`, where the kept region is the corner bite alone. Containment
+    /// alone tells them apart; the three volumes close inclusion–exclusion on `V_∩ = 0.311`.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn l_staple_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, st) = l_and_staple();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, st).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, st).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "l staple cut volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "l staple cut area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn l_staple_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, st) = l_and_staple();
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, l, st).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, l, st).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "l staple fuse volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "l staple fuse area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    /// The island case, scored by a kernel that never heard of our containment test.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn staple_cut_by_l_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, st) = l_and_staple();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, st, l).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, st, l).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "staple cut by l volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "staple cut by l area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
     }
 
     /// The U-prism (volume 5.3) and a slab shearing off both prong tops. The slab's
