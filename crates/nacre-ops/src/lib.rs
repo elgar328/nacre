@@ -3916,6 +3916,220 @@ pub mod tests {
         assert!(n[0].on_edge.is_some());
     }
 
+    /// A thin rod skewering the L's bottom bar in `z`, both ends outside. Each of its four
+    /// vertical edges pierces the L's two caps, so the caps take a closed seam loop and the
+    /// rod's walls take two chords apiece — and each wall's vertical edges are crossed
+    /// **twice**, leaving runs with no vertex at all.
+    fn l_and_rod() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let rod = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, -0.5]),
+            Point3::from_array([0.5, 0.6, 1.5]),
+        );
+        (m, l, rod)
+    }
+
+    /// Group a face's boundary seam nodes by the index of the edge each rides.
+    fn by_edge(m: &Model, f: Handle<Face>, paths: &[arrange::SeamPath]) -> Vec<Vec<[usize; 3]>> {
+        let hes = &m.faces.get(f).outer.half_edges;
+        let mut out = vec![Vec::new(); hes.len()];
+        for nd in paths.iter().flat_map(|p| p.nodes()) {
+            if let Some(e) = nd.on_edge {
+                let i = hes
+                    .iter()
+                    .position(|he| he.edge == e)
+                    .expect("an outer edge");
+                out[i].push(nd.triple);
+            }
+        }
+        out
+    }
+
+    /// Cell 3e-3's core object. The cube's floor has all four corners outside the notch and
+    /// yet the seam enters and leaves across one edge, so an edge-indexed model sees one
+    /// transition slot where there are two crossings. The run model sees two crossings and
+    /// two runs, one of which holds **no vertex** — the piece of that edge inside the notch.
+    #[test]
+    fn two_crossings_on_one_edge_make_a_run_with_no_vertex() {
+        let (m, a, y) = cube_and_notch();
+        let (planes, surf_ix) = combined(&m, a, y);
+        let floor = face_facing(&m, a, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+        let p = surf_ix[&m.faces.get(floor).surface];
+        let inc = arrange::edge_planes(&m, a, &surf_ix).unwrap();
+        let ps = paths(&m, floor, a, y, &planes, &surf_ix);
+        let be = by_edge(&m, floor, &ps);
+        assert_eq!(be.iter().map(|v| v.len()).max(), Some(2));
+
+        let bnd = arrange::face_vertex_triples(&m, floor, p, &inc).unwrap();
+        let br = arrange::boundary_runs(&planes, p, &bnd, &be).unwrap();
+        assert_eq!(br.crossings.len(), 2);
+        let mut lens: Vec<usize> = br.runs.iter().map(|r| r.len()).collect();
+        assert_eq!(br.runs.len(), 2);
+        lens.sort_unstable();
+        assert_eq!(
+            lens,
+            vec![0, 4],
+            "one run holds nothing, the other the whole floor"
+        );
+
+        // The empty run runs from the first crossing the walk meets to the second, so the
+        // pair must be ordered the way the doubly-crossed edge is directed. That edge is
+        // `y = 0, z = 0`; the notch cuts it at `x = 3` and `x = 7`.
+        let empty = br.runs.iter().position(|r| r.is_empty()).unwrap();
+        let x_of = |t: [usize; 3]| {
+            three_planes(
+                &planes[t[0]].plane,
+                &planes[t[1]].plane,
+                &planes[t[2]].plane,
+            )
+            .unwrap()
+            .as_array()[0]
+        };
+        let hes = &m.faces.get(floor).outer.half_edges;
+        let on_y0 = hes
+            .iter()
+            .position(|he| {
+                let b = m.edges.get(he.edge).bounds.unwrap();
+                b.iter()
+                    .all(|&v| m.vertices.get(v).point.as_array()[1] == 0.0)
+            })
+            .unwrap();
+        let b = m.edges.get(hes[on_y0].edge).bounds.unwrap();
+        let start = m.vertices.get(he_start(&m, hes[on_y0])).point.as_array()[0];
+        let end = b
+            .iter()
+            .map(|&v| m.vertices.get(v).point.as_array()[0])
+            .find(|&x| x != start)
+            .unwrap();
+        let (first, second) = if end > start { (3.0, 7.0) } else { (7.0, 3.0) };
+        assert!((x_of(br.crossings[empty]) - first).abs() < 1e-9);
+        assert!((x_of(br.crossings[(empty + 1) % 2]) - second).abs() < 1e-9);
+    }
+
+    /// The rod's wall: four crossings on two edges, two apiece, and **two** runs with no
+    /// vertex. The kept region of that face (for a `Cut`) is bounded by arcs alone.
+    #[test]
+    fn a_rod_wall_has_two_runs_with_no_vertex() {
+        let (m, l, rod) = l_and_rod();
+        let (planes, surf_ix) = combined(&m, l, rod);
+        let wall = face_facing(&m, rod, &planes, &surf_ix, [-1.0, 0.0, 0.0]);
+        let p = surf_ix[&m.faces.get(wall).surface];
+        let inc = arrange::edge_planes(&m, rod, &surf_ix).unwrap();
+        let ps = paths(&m, wall, rod, l, &planes, &surf_ix);
+        assert_eq!(ps.len(), 2, "two chords, one per cap: {ps:?}");
+
+        let be = by_edge(&m, wall, &ps);
+        let bnd = arrange::face_vertex_triples(&m, wall, p, &inc).unwrap();
+        let br = arrange::boundary_runs(&planes, p, &bnd, &be).unwrap();
+        assert_eq!(br.crossings.len(), 4);
+        let mut lens: Vec<usize> = br.runs.iter().map(|r| r.len()).collect();
+        lens.sort_unstable();
+        assert_eq!(lens, vec![0, 0, 2, 2]);
+
+        // `Cut(l, rod)` keeps the rod's inside-L piece, so the vertex-bearing runs (which
+        // hold the wall's corners, all outside L) are dropped and the empty ones are kept.
+        let kept_vert: Vec<bool> = m
+            .faces
+            .get(wall)
+            .outer
+            .half_edges
+            .iter()
+            .map(|&he| {
+                point_in_solid(&m, m.vertices.get(he_start(&m, he)).point, l).unwrap()
+                    == Side::Inside
+            })
+            .collect();
+        assert_eq!(kept_vert, vec![false; 4]);
+        let kept = arrange::run_classes(&br.runs, &kept_vert).unwrap();
+        assert_eq!(kept.iter().filter(|&&k| k).count(), 2);
+        for (j, r) in br.runs.iter().enumerate() {
+            assert_eq!(kept[j], r.is_empty(), "run {j}");
+        }
+    }
+
+    /// `run_classes` on paper. Alternation shapes it, `classof` anchors it, and a run with
+    /// no vertex has only the alternation to go by.
+    #[test]
+    fn run_classes_alternate_and_are_anchored_by_a_vertex() {
+        // `cube_and_notch`'s floor: run 0 empty (inside the notch), run 1 the four corners.
+        let runs = vec![vec![], vec![0, 1, 2, 3]];
+        let kept = arrange::run_classes(&runs, &[true; 4]).unwrap();
+        assert_eq!(kept, vec![false, true]);
+
+        // A vertex disagreeing with the propagation is the two machineries in conflict.
+        assert_rejects(
+            || arrange::run_classes(&[vec![0], vec![1]], &[true, true]),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+        // Crossings alternate enter/exit around a closed curve, so an odd count is a lie.
+        assert_rejects(
+            || arrange::run_classes(&[vec![0]], &[true]),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+        // Nothing anchors a boundary made only of vertex-free runs.
+        assert_rejects(
+            || arrange::run_classes(&[vec![], vec![]], &[]),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+    }
+
+    /// The integer algebra cell 3e-3 rests on, before a line of it is wired: with crossings
+    /// as the index space, `kept[t] && !kept[t+1]` says "crossing `t+1` is kept→dropped",
+    /// so an arc's `kd` slot is its kd **crossing minus one**. `stitch_cycles` is then the
+    /// same function it always was — it never knew what its indices meant.
+    #[test]
+    fn crossing_indices_feed_stitch_cycles_unchanged() {
+        // The cube's floor: crossings `[c0 (x=3), c1 (x=7)]`, runs `[empty, corners]`.
+        // The single arc runs c1 → c0 through the notch; c1 is dropped→kept, c0 the other.
+        let kept = [false, true];
+        let (kd_cross, dk_cross) = (0usize, 1usize);
+        let n = 2;
+        let kd = vec![(kd_cross + n - 1) % n];
+        let dk = vec![(dk_cross + n - 1) % n];
+        assert_eq!((kd.clone(), dk.clone()), (vec![1], vec![0]));
+        assert_eq!(
+            arrange::stitch_cycles(&kept, &kd, &dk).unwrap(),
+            vec![vec![0]]
+        );
+
+        // The rod's wall: crossings `c0,c1` on one vertical edge and `c2,c3` on the other,
+        // the chords `c1–c2` (at `z = 1`) and `c3–c0` (at `z = 0`). An arc's kd end is the
+        // crossing whose *incoming* run is kept — `is_kd(c_j) = kept[j-1]`.
+        let n = 4;
+        let kd_dk = |kept: [bool; 4], arcs: [[usize; 2]; 2]| {
+            let is_kd = |c: usize| kept[(c + n - 1) % n];
+            let (mut kd, mut dk) = (vec![], vec![]);
+            for [x, y] in arcs {
+                let (k, d) = if is_kd(x) { (x, y) } else { (y, x) };
+                assert!(is_kd(k) && !is_kd(d), "an arc's ends oppose");
+                kd.push((k + n - 1) % n);
+                dk.push((d + n - 1) % n);
+            }
+            (kd, dk)
+        };
+        let arcs = [[1, 2], [3, 0]];
+
+        // `Cut(l, rod)` keeps the vertex-free runs: one region, the rectangle inside L.
+        let (kd, dk) = kd_dk([true, false, true, false], arcs);
+        assert_eq!((kd.clone(), dk.clone()), (vec![0, 2], vec![1, 3]));
+        let kept = [true, false, true, false];
+        assert_eq!(
+            arrange::stitch_cycles(&kept, &kd, &dk).unwrap(),
+            vec![vec![0, 1]],
+            "one cycle: the wall's middle"
+        );
+
+        // `Fuse` keeps the other two: the stub above L and the stub below, two faces.
+        let (kd, dk) = kd_dk([false, true, false, true], arcs);
+        assert_eq!((kd.clone(), dk.clone()), (vec![1, 3], vec![0, 2]));
+        let kept = [false, true, false, true];
+        assert_eq!(
+            arrange::stitch_cycles(&kept, &kd, &dk).unwrap(),
+            vec![vec![0], vec![1]],
+            "two cycles: one face becomes two"
+        );
+    }
+
     #[test]
     fn an_edge_crossed_twice_is_rejected() {
         // `edge_seam` holds one seam triple per edge, and `reconstruct_face` reads one.

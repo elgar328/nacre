@@ -367,6 +367,132 @@ fn edge_sign(
     }
 }
 
+/// `∂f` cut into runs by the seam's boundary crossings.
+///
+/// A crossing always flips the kept/dropped class, so the runs alternate — which is what
+/// lets the crossings, rather than the edges, index the splice. An edge may carry more
+/// than one crossing (the other solid's boundary enters and leaves through it), and then
+/// the run between them holds **no vertex at all**. That is the case an edge-indexed
+/// model cannot express, and the whole reason this exists.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BoundaryRuns {
+    /// Crossing `j`'s plane triple, in walk order around `∂f`.
+    pub(crate) crossings: Vec<[usize; 3]>,
+    /// The original vertices strictly inside run `j` (crossing `j` → crossing `j+1`), as
+    /// indices into `f.outer.half_edges`. Possibly empty.
+    pub(crate) runs: Vec<Vec<usize>>,
+}
+
+/// Assemble [`BoundaryRuns`] from the crossings grouped by the edge each rides.
+///
+/// `bnd` is `f`'s outer-vertex triples ([`face_vertex_triples`]); it is read only for
+/// edges carrying more than one crossing, so the caller may pass an empty slice when no
+/// edge does — building it rejects a straight angle, and there is no reason to run that
+/// on a face this cell does not need it for.
+pub(crate) fn boundary_runs(
+    planes: &[PlaneInfo],
+    p: usize,
+    bnd: &[[usize; 3]],
+    by_edge: &[Vec<[usize; 3]>],
+) -> Result<BoundaryRuns, BoolError> {
+    let mut crossings: Vec<[usize; 3]> = Vec::new();
+    let mut runs: Vec<Vec<usize>> = Vec::new();
+    // Vertices seen before the first crossing belong to the last run, which wraps.
+    let mut pre: Vec<usize> = Vec::new();
+    for (i, list) in by_edge.iter().enumerate() {
+        match runs.last_mut() {
+            Some(r) => r.push(i),
+            None => pre.push(i),
+        }
+        for t in ordered_on_edge(planes, p, bnd, list, i)? {
+            crossings.push(t);
+            runs.push(Vec::new());
+        }
+    }
+    let Some(last) = runs.last_mut() else {
+        return Err(reject(tag::SEAM_COUNT_MISMATCH)); // an arc, but no boundary crossing
+    };
+    last.extend(pre);
+    Ok(BoundaryRuns { crossings, runs })
+}
+
+/// The crossings on edge `i`, in the order the boundary walk meets them.
+///
+/// They all lie on `P ∩ R_i`, so [`order_along`] with `(P, R_i)` sorts them — the use its
+/// doc reserved. The walk's direction along that line is [`edge_sign`], because the edge's
+/// own endpoints are three-plane points on it too.
+fn ordered_on_edge(
+    planes: &[PlaneInfo],
+    p: usize,
+    bnd: &[[usize; 3]],
+    list: &[[usize; 3]],
+    i: usize,
+) -> Result<Vec<[usize; 3]>, BoolError> {
+    if list.len() < 2 {
+        return Ok(list.to_vec());
+    }
+    let (r, _, _) = ring_edge(p, bnd, i)?;
+    let q_of = |t: &[usize; 3]| -> Result<usize, BoolError> {
+        let mut it = t.iter().copied().filter(|&x| x != p && x != r);
+        match (it.next(), it.next()) {
+            (Some(q), None) => Ok(q),
+            // The node does not ride this edge's line: the two machines disagree.
+            _ => Err(reject(tag::SEAM_COUNT_MISMATCH)),
+        }
+    };
+    let qs: Vec<usize> = list.iter().map(q_of).collect::<Result<_, _>>()?;
+    let mut ord: Vec<usize> = (0..list.len()).collect();
+    // Insertion sort: the lists are two long in practice, and `?` stays available.
+    for a in 1..ord.len() {
+        let mut j = a;
+        while j > 0 && order_along(planes, p, r, qs[ord[j]], qs[ord[j - 1]]) == -1 {
+            ord.swap(j, j - 1);
+            j -= 1;
+        }
+    }
+    for w in ord.windows(2) {
+        if order_along(planes, p, r, qs[w[0]], qs[w[1]]) != -1 {
+            return Err(reject(tag::FOURPLANE)); // two crossings at one point on the edge
+        }
+    }
+    if edge_sign(planes, p, bnd, i)? < 0 {
+        ord.reverse();
+    }
+    Ok(ord.into_iter().map(|k| list[k]).collect())
+}
+
+/// The kept/dropped class of every run, from two machines that must agree.
+///
+/// Alternation gives the shape: a crossing flips the class, so run `j+1` opposes run `j`.
+/// `kept_vert` gives the anchor: a run holding an original vertex takes that vertex's
+/// class. Seed from any such run, propagate, then check **every** vertex against the
+/// propagation — `classof`'s ray casting against the arrangement's exact crossings, which
+/// is what `SEAM_COUNT_MISMATCH` has always arbitrated.
+///
+/// A run with no vertex is decided by alternation alone. That is exactly the run between
+/// two crossings of one edge, and it has no other source of truth.
+pub(crate) fn run_classes(runs: &[Vec<usize>], kept_vert: &[bool]) -> Result<Vec<bool>, BoolError> {
+    let n = runs.len();
+    // Crossings alternate enter/exit around a closed `∂f`, so there are evenly many.
+    if n == 0 || n % 2 != 0 {
+        return Err(reject(tag::SEAM_COUNT_MISMATCH));
+    }
+    let seed = (0..n)
+        .find(|&j| !runs[j].is_empty())
+        .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
+    let s = kept_vert[runs[seed][0]];
+    let mut kept = vec![false; n];
+    for j in 0..n {
+        kept[(seed + j) % n] = if j % 2 == 0 { s } else { !s };
+    }
+    for (j, run) in runs.iter().enumerate() {
+        if run.iter().any(|&v| kept_vert[v] != kept[j]) {
+            return Err(reject(tag::SEAM_COUNT_MISMATCH));
+        }
+    }
+    Ok(kept)
+}
+
 /// The turn at ring node `i`, about the face's **outward** normal: `+1` left, `-1` right.
 ///
 /// **No point is materialized, and no coordinate is read.** The incoming edge runs along
