@@ -2237,12 +2237,20 @@ fn reconstruct_face_paths(
         return Err(reject(tag::MULTICHORD));
     }
     if n_closed > 0 {
-        // A closed loop bounds a hole exactly when the face's whole outer boundary is
-        // kept and the loop is alone: crossing the seam flips the class, so the loop's
-        // interior is dropped. Anything else needs a containment test — two loops may
-        // nest, and a dropped boundary makes the loop an *island* whose interior is the
-        // face. Neither is decidable from `kept[0]`, so neither is opened (3f-2).
-        if !opens.is_empty() || !kept[0] || n_closed != 1 {
+        // A lone loop with no arc beside it always divides the face into a disk and an
+        // annulus, and `∂f` lies in the annulus — so `kept[0]` classifies the annulus,
+        // and crossing the seam flips the class for the disk. Which one survives is the
+        // whole difference between a hole and an island. Neither needs an area, and
+        // there is no third answer.
+        //
+        // (A boundary whose *vertices* are all one class but whose edge is crossed twice
+        // would break that. It cannot get here: that edge would join `bnd` while
+        // `transitions` stayed empty, and the set equality above already rejected it.)
+        //
+        // Two loops still need a containment test — they may nest, and then the inner
+        // loop's interior is kept again and belongs to a face of its own, which this
+        // signature cannot return. Nor can a loop beside an arc be placed. Cell 3f-3.
+        if !opens.is_empty() || n_closed != 1 {
             return Err(reject(tag::POKEHOLE));
         }
         let arrange::SeamPath::Closed(nodes) = paths
@@ -2258,8 +2266,20 @@ fn reconstruct_face_paths(
                 return Err(reject(tag::MISSING_SEAM));
             }
         }
-        let hole: Vec<Node> = ring.into_iter().map(Node::Seam).collect();
-        return Ok(whole(vec![hole]));
+        let ring: Vec<Node> = ring.into_iter().map(Node::Seam).collect();
+        return Ok(if kept[0] {
+            whole(vec![ring]) // annulus kept: `∂f` outer, the loop its hole
+        } else {
+            // Disk kept: the loop *is* the outer boundary and `∂f` contributes nothing.
+            // The sign rule is local — it reads `keep`, never which side is enclosed —
+            // so the very same call wound this ring the other way round.
+            Some(LocalFace {
+                plane_idx,
+                loop_nodes: ring,
+                inner: vec![],
+                flip,
+            })
+        });
     }
     let Some(arc) = opens.first() else {
         return Ok(whole(vec![])); // no seam on this face after all
@@ -3873,6 +3893,17 @@ pub mod tests {
         boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
+
+        // Swapped, the same four nodes are the island's whole outer ring (cell 3f-2).
+        // The arrangement does not know which solid is `a`, so it offers the same set;
+        // the result has to still contain all of it. If the island face were dropped,
+        // the box would lose its floor and every one of the four would go with it.
+        let (mut m, l, stub) = l_and_dimple();
+        let from_arrange = seam_endpoint_triples(&m, stub, l);
+        assert_eq!(from_arrange.len(), 4);
+        boolean(&mut m, BoolKind::Cut, stub, l).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
     }
 
     #[test]
@@ -4043,6 +4074,11 @@ pub mod tests {
         // must bound a *dropped* interior: a hole, never an island. That is the whole
         // proof, and it needs no area.
         //
+        // Read the same geometric fact with the operands swapped and it says the other
+        // thing: with the L as B, `keep == Inside`, so every one of those boundary
+        // vertices is *dropped* and the loop's interior is what survives — the island of
+        // cell 3f-2. One measurement, two shapes; there is nothing further to measure.
+        //
         // The arrangement's own preconditions are already measured — the five-fixture
         // sweep in `arrangement_agrees_with_todays_seam_bookkeeping` unwraps
         // `seam_paths_on` on every face of both solids.
@@ -4126,15 +4162,38 @@ pub mod tests {
     }
 
     #[test]
-    fn the_stub_cut_by_the_l_needs_an_island_face() {
-        // Swap the operands and the same loop lands on a face whose boundary is *all*
-        // dropped: the kept region is the loop's interior alone. That face has no `∂f`
-        // at all — its outer loop would have to *be* the seam ring. Cell 3f-1 does not
-        // open it, so `pokehole` keeps a firing test after the guard narrows.
+    fn cut_the_stub_by_the_l_leaves_an_island_face() {
+        // Swap the operands of `cut_blind_dimple` and the same loop lands on a face whose
+        // boundary is *all* dropped: the kept region is the loop's interior alone. That
+        // face has no `∂f` at all — its outer loop *is* the seam ring, four `Discovered`
+        // vertices and nothing else. The answer is the `0.4 × 0.4 × 0.5` box above `z = 1`.
         //
-        // (The answer is a `0.4 × 0.4 × 0.5` box sitting above `z = 1`. Sub-unit 3f-2.)
+        // This is where `flip` first meets a ring that came from `orient_seam_loop`. The
+        // rule wound it CCW about the L's `+z`, keeping the material (inside the stub) on
+        // its left; `flip` reverses it and the face becomes the box's downward-facing
+        // floor. Nothing but `validate` and the signed mesh volume can see that go wrong.
         let (mut m, l, stub) = l_and_dimple();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, stub, l), tag::POKEHOLE);
+        let r = boolean(&mut m, BoolKind::Cut, stub, l).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.08).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn fuse_the_stub_and_the_l() {
+        // Not a new branch — the same hole, on the same face of the L, reached with the
+        // operands the other way round. `Fuse` keeps both outsides and flips neither, so
+        // what this pins is that the answer does not depend on which solid is `a`: the
+        // hole now lands on B, and 3.08 is 3.08.
+        let (mut m, l, stub) = l_and_dimple();
+        let r = boolean(&mut m, BoolKind::Fuse, stub, l).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 + 0.16 - 0.08)).abs() < 1e-9, "volume {vol}");
     }
 
     #[test]
