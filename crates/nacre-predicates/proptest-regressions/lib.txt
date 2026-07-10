@@ -5,3 +5,5 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 3fc07233a078b3898eef1ff4f4a20afd127fa3d21fe44fcf5759063f8d84c1cf # shrinks to d = [0, -3, -1], pz = -7
+cc 8db97466ecec0102a694cf52e4f0bc7aa4a06c20ec65e156cee36f5c891a3a41 # shrinks to pa = [0, 0, 0], pb = [0, -1, 0], na = [[0, 0, 1], [0, 1, 0], [1, 0, 0]], nb = [[0, 8, 0], [0, 0, 1], [1, 0, 0]], axis = 1
+cc 74eeb386013f0be4aa6856b0ff3359d088feafb46f80fd0b5a82b0f3cee2adb5 # shrinks to pa = [[4, 20, 0, 0], [0, 0, 1, 0], [0, -1, 0, 0]], pb = [[0, 0, 1, 1], [0, 1, 0, 0], [1, 0, 0, 0]], axis = 2

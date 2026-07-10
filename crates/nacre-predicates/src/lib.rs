@@ -174,7 +174,14 @@ pub struct ThreePlane(pub [[f64; 4]; 3]);
 /// then `0` (unspecified), which falls out of `sign(D)·sign(M)` with no branch —
 /// `M` is division-free, so it stays finite even when `D = 0`. `PolyhedralBoolean`
 /// (M5-c) only forms valid vertices, guaranteeing `D ≠ 0` in practice.
-pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
+/// The implicit point's exact rational coordinates: numerators `(Dx, Dy, Dz)` over the
+/// common denominator `D`, by Cramer. `D` is the determinant of the plane-normal matrix;
+/// `Dx/Dy/Dz` replace its column `0/1/2` with `−d`.
+///
+/// Never public. The coordinates are only ever *compared*, never handed out — a caller
+/// holding `Expansion`s would be holding a materialized point in all but name, and the
+/// whole point of an implicit point is that it is never materialized.
+fn cramer(p: &ThreePlane) -> ([Expansion; 3], Expansion) {
     let pl = p.0;
     // Plane-normal matrix N (rows = normals) and the right-hand side −d.
     let n = [
@@ -183,7 +190,6 @@ pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) 
         [pl[2][0], pl[2][1], pl[2][2]],
     ];
     let rhs = [-pl[0][3], -pl[1][3], -pl[2][3]];
-    // Cramer determinants: D and Dx/Dy/Dz (column k replaced by rhs).
     let col_replaced = |k: usize| {
         let mut m = n;
         m[0][k] = rhs[0];
@@ -191,10 +197,41 @@ pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) 
         m[2][k] = rhs[2];
         m
     };
-    let d = det3(n);
-    let dx = det3(col_replaced(0));
-    let dy = det3(col_replaced(1));
-    let dz = det3(col_replaced(2));
+    (
+        [
+            det3(col_replaced(0)),
+            det3(col_replaced(1)),
+            det3(col_replaced(2)),
+        ],
+        det3(n),
+    )
+}
+
+/// The exact sign of `a[axis] − b[axis]` for two implicit points: `-1`, `0`, `+1`.
+///
+/// Each coordinate is a ratio `N/D` of exact determinants ([`cramer`]), so
+///
+/// > `sign(Na/Da − Nb/Db) = sign(Na·Db − Nb·Da) · sign(Da) · sign(Db)`
+///
+/// — three exact signs, no division, nothing materialized. This is the *two*-implicit
+/// predicate: the only place two implicit points meet inside one decision. A `0` means the
+/// coordinates are exactly equal, which for distinct three-plane triples is real
+/// information and not a tolerance question.
+///
+/// **Precondition:** both triples meet in a point (`D ≠ 0`), as in [`indirect_orient3d`].
+pub fn indirect_cmp_coord(a: &ThreePlane, b: &ThreePlane, axis: usize) -> i8 {
+    debug_assert!(axis < 3, "indirect_cmp_coord: axis must be 0, 1 or 2");
+    let (na, da) = cramer(a);
+    let (nb, db) = cramer(b);
+    debug_assert!(
+        da.sign() != 0 && db.sign() != 0,
+        "indirect_cmp_coord: degenerate three-plane input (D = 0)"
+    );
+    na[axis].mul(&db).sub(&nb[axis].mul(&da)).sign() * da.sign() * db.sign()
+}
+
+pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
+    let ([dx, dy, dz], d) = cramer(p);
 
     // cross = (q − s) × (r − s), each component an exact expansion.
     let dq = [
@@ -519,6 +556,57 @@ mod tests {
         e.0.iter().map(|&c| c as i128).sum()
     }
 
+    #[test]
+    fn indirect_cmp_coord_orders_two_axis_points() {
+        // (1,2,3) and (1,5,0), each cut out by three axis planes.
+        let at = |p: [f64; 3]| {
+            ThreePlane([
+                [1.0, 0.0, 0.0, -p[0]],
+                [0.0, 1.0, 0.0, -p[1]],
+                [0.0, 0.0, 1.0, -p[2]],
+            ])
+        };
+        let a = at([1.0, 2.0, 3.0]);
+        let b = at([1.0, 5.0, 0.0]);
+        assert_eq!(indirect_cmp_coord(&a, &b, 0), 0); // equal x
+        assert_eq!(indirect_cmp_coord(&a, &b, 1), -1); // 2 < 5
+        assert_eq!(indirect_cmp_coord(&a, &b, 2), 1); // 3 > 0
+        assert_eq!(indirect_cmp_coord(&b, &a, 1), 1); // antisymmetric
+
+        // A genuinely irrational-looking point: the planes are not axis-aligned, and the
+        // ratio Dx/D has no exact f64 form. Only the sign is asked for.
+        let tilted = ThreePlane([
+            [3.0, 1.0, 0.0, -1.0],
+            [0.0, 7.0, 1.0, -1.0],
+            [1.0, 0.0, 5.0, -1.0],
+        ]);
+        assert_eq!(indirect_cmp_coord(&tilted, &tilted, 0), 0);
+    }
+
+    /// Two *different* points whose denominators have opposite signs. Cross-multiplying
+    /// `Na·Db − Nb·Da` flips with `D`, so the numerator alone reports the order backwards
+    /// half the time; `sign(Da)·sign(Db)` puts it right. Drop that factor and this test
+    /// says so — the same-point test cannot, since there the numerator is exactly zero.
+    #[test]
+    fn opposite_denominators_keep_the_order() {
+        // (1,2,3): axis planes in order ⇒ D = +1.
+        let a = ThreePlane([
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, -2.0],
+            [0.0, 0.0, 1.0, -3.0],
+        ]);
+        // (4,2,3): the same planes with two rows swapped ⇒ D = −1.
+        let b = ThreePlane([
+            [0.0, 1.0, 0.0, -2.0],
+            [1.0, 0.0, 0.0, -4.0],
+            [0.0, 0.0, 1.0, -3.0],
+        ]);
+        assert_eq!(indirect_cmp_coord(&a, &b, 0), -1); // 1 < 4
+        assert_eq!(indirect_cmp_coord(&b, &a, 0), 1);
+        assert_eq!(indirect_cmp_coord(&a, &b, 1), 0); // 2 == 2
+        assert_eq!(indirect_cmp_coord(&a, &b, 2), 0); // 3 == 3
+    }
+
     /// The plane `[n₀, n₁, n₂, −n·p]` through integer point `p` with normal `n`.
     fn plane_through(n: [i64; 3], p: [i64; 3]) -> [f64; 4] {
         let dot = n[0] * p[0] + n[1] * p[1] + n[2] * p[2];
@@ -641,6 +729,95 @@ mod tests {
             let sf = s.map(|v| v as f64);
             let expected = sign_f64(orient3d(pf, qf, rf, sf));
             prop_assert_eq!(indirect_orient3d(&planes, qf, rf, sf), expected);
+        }
+
+        /// The two-implicit comparator against the exact i128 rational. `Na/Da < Nb/Db`
+        /// is compared by cross-multiplication *there too*, but through a different
+        /// route: i128 integers rather than expansion arithmetic, and the sign of the
+        /// product `Da·Db` rather than a product of two signs.
+        #[test]
+        fn prop_indirect_cmp_coord_matches_i128(
+            pa in prop::array::uniform3(prop::array::uniform4(-100i64..=100)),
+            pb in prop::array::uniform3(prop::array::uniform4(-100i64..=100)),
+            axis in 0usize..3,
+        ) {
+            let cramer_i128 = |pl: [[i64; 4]; 3]| {
+                let n = pl.map(|row| [row[0] as i128, row[1] as i128, row[2] as i128]);
+                let rhs = [-(pl[0][3] as i128), -(pl[1][3] as i128), -(pl[2][3] as i128)];
+                let col = |k: usize| {
+                    let mut m = n;
+                    m[0][k] = rhs[0];
+                    m[1][k] = rhs[1];
+                    m[2][k] = rhs[2];
+                    m
+                };
+                ([det3_i128(col(0)), det3_i128(col(1)), det3_i128(col(2))], det3_i128(n))
+            };
+            let (na, da) = cramer_i128(pa);
+            let (nb, db) = cramer_i128(pb);
+            prop_assume!(da != 0 && db != 0);
+            // a[axis] − b[axis] = (Na·Db − Nb·Da) / (Da·Db).
+            let expected = ((na[axis] * db - nb[axis] * da).signum() * (da * db).signum()) as i8;
+
+            let ta = ThreePlane(pa.map(|row| row.map(|v| v as f64)));
+            let tb = ThreePlane(pb.map(|row| row.map(|v| v as f64)));
+            prop_assert_eq!(indirect_cmp_coord(&ta, &tb, axis), expected);
+        }
+
+        /// A point does not precede itself, however it is described. Swapping two of a
+        /// triple's planes negates `D`, so this also says the comparator is invariant
+        /// under the representation.
+        ///
+        /// It does **not** guard the `sign(Da)·sign(Db)` factor, which was measured: with
+        /// two descriptions of one point the numerator is exactly zero, and zero times a
+        /// wrong sign is still zero. `opposite_denominators_keep_the_order` below is what
+        /// catches that, along with both cross-checks against the i128 and materialized
+        /// oracles.
+        #[test]
+        fn prop_a_point_does_not_precede_itself(
+            p in prop::array::uniform3(-20i64..=20),
+            normals in prop::array::uniform3(prop::array::uniform3(-20i64..=20)),
+        ) {
+            let ni = normals.map(|nn| [nn[0] as i128, nn[1] as i128, nn[2] as i128]);
+            prop_assume!(det3_i128(ni) != 0);
+            let rows = [
+                plane_through(normals[0], p),
+                plane_through(normals[1], p),
+                plane_through(normals[2], p),
+            ];
+            let straight = ThreePlane(rows);
+            let swapped = ThreePlane([rows[1], rows[0], rows[2]]); // D → −D
+            for axis in 0..3 {
+                prop_assert_eq!(indirect_cmp_coord(&straight, &swapped, axis), 0);
+                prop_assert_eq!(indirect_cmp_coord(&straight, &straight, axis), 0);
+            }
+        }
+
+        /// Ground truth from the other side: build two integer points and integer planes
+        /// through each, so both coordinates are exactly representable, then compare the
+        /// f64 coordinates directly.
+        #[test]
+        fn prop_indirect_cmp_coord_matches_materialized(
+            pa in prop::array::uniform3(-20i64..=20),
+            pb in prop::array::uniform3(-20i64..=20),
+            na in prop::array::uniform3(prop::array::uniform3(-20i64..=20)),
+            nb in prop::array::uniform3(prop::array::uniform3(-20i64..=20)),
+            axis in 0usize..3,
+        ) {
+            let det = |nn: [[i64; 3]; 3]| det3_i128(nn.map(|r| [r[0] as i128, r[1] as i128, r[2] as i128]));
+            prop_assume!(det(na) != 0 && det(nb) != 0);
+            let ta = ThreePlane([
+                plane_through(na[0], pa),
+                plane_through(na[1], pa),
+                plane_through(na[2], pa),
+            ]);
+            let tb = ThreePlane([
+                plane_through(nb[0], pb),
+                plane_through(nb[1], pb),
+                plane_through(nb[2], pb),
+            ]);
+            let expected = (pa[axis] - pb[axis]).signum() as i8;
+            prop_assert_eq!(indirect_cmp_coord(&ta, &tb, axis), expected);
         }
 
         /// Scaling one plane's coefficients by λ (negative included) leaves the
