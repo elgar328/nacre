@@ -249,14 +249,20 @@ fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
 /// Each arc has one end on a kept→dropped transition (`kd`) and one on a dropped→kept
 /// transition (`dk`) — the arc separates `f` in two, and the two pieces of `∂f` it lands
 /// between belong to opposite sides, so `∂f` flips class at one end and back at the other.
-/// Walking `∂f` forward from `dk[a] + 1` while the vertices are kept therefore arrives at
+/// Walking `∂f` forward from `dk[a] + 1` while the positions are kept therefore arrives at
 /// some `kd[b]`, and `b` is the next arc of `a`'s ring. That successor map is a
 /// permutation of the arcs; its cycles are the face's kept regions, one `LocalFace` each.
 ///
 /// With one arc this is the old splice verbatim: the single cycle is `[0]`.
 ///
-/// **Only integers go in and out.** The caller turns a cycle into a ring by emitting, for
-/// each arc `b` in it, the boundary run `dk[prev] + 1 ..= kd[b]` and then `b`'s nodes.
+/// **Only integers go in and out**, and it does not know what they count. Cell 3e-2 fed it
+/// `∂f`'s vertices, one per edge. Cell 3e-3 feeds it [`BoundaryRuns`] instead, because an
+/// edge may carry two crossings — and there the classes alternate, so the walk above is
+/// always exactly one step. The function is the more general of the two; its goldens say
+/// so, and its callers no longer need that generality.
+///
+/// The caller turns a cycle into a ring by emitting, for each arc `b` in it, the boundary
+/// positions `dk[prev] + 1 ..= kd[b]` and then `b`'s nodes.
 ///
 /// Three things are checked rather than assumed, because they are exactly where
 /// `classof`'s ray casting and the arrangement's exact crossings would disagree — the same

@@ -174,10 +174,12 @@ pub(crate) mod tag {
     /// and the arrangement's exact segment/face crossings. Cell 3c pinned that
     /// agreement in a test; here it is production.
     ///
-    /// Unreachable today, and not dead code: breaking the equality takes an edge
-    /// crossed twice, which `pierced_face` rejects first. When sub-unit 3e relaxes
-    /// that, this fires before anything else does — and that is where multi-chord gets
-    /// its real handling rather than a reject.
+    /// Cell 3e-3 gave it its real work. `∂f` is cut into runs at the seam's crossings,
+    /// and the runs alternate kept/dropped because a crossing flips the class. That shape
+    /// is one machine; `classof` at each original vertex is the other. A run with no vertex
+    /// — the piece of an edge the other solid enters and leaves through — has only the
+    /// alternation, so the check is what makes the rest of it trustworthy. It also holds
+    /// the arc bookkeeping: every arc has two boundary ends whose classes oppose.
     pub const SEAM_COUNT_MISMATCH: &str = "seam_count_mismatch";
     /// A closed seam loop's edges disagree about which side its material lies on, or
     /// two of its nodes coincide, or two neighbours share no plane pair.
@@ -205,8 +207,24 @@ pub(crate) mod tag {
     /// node can gain a third segment. This is the backstop for that day.
     pub const SEAM_BRANCH: &str = "seam_branch";
     pub const COMMON_OVERLAP: &str = "common_overlap";
-    pub const PIERCED_MULTI: &str = "pierced_multi";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
+    /// The result would be two solids, and `boolean` returns one handle. Reachable since
+    /// cell 3e-3 let an edge thread the other solid: `Cut(rod, L)` leaves the rod's two
+    /// ends on either side of the bar.
+    pub const DISCONNECTED_RESULT: &str = "disconnected_result";
+    /// The two machines that decide where the seam is disagree about *parity*: a segment
+    /// crosses a closed surface an odd number of times exactly when its endpoints lie on
+    /// opposite sides, and `point_in_solid`'s winding says one thing while
+    /// `pierced_faces`' exact crossings say the other.
+    ///
+    /// The one way that happens is a cavitied operand, which is where the name comes from:
+    /// the classifier counts the cavity shells, the crossing count scans the outer shell
+    /// alone, so an edge reaching into a void reads `Outside` at both ends while piercing
+    /// once. `boolean` rejects those at the door (`HOLLOW_OPERAND`); this stands for the
+    /// tests that call `overlap_fuse_cut` directly, and for the day that door opens.
+    ///
+    /// It is *not* the out→in→out tunnel the name suggests. That edge crosses twice, the
+    /// parity agrees, and since cell 3e-3 it earns two seam vertices and drills a hole.
     pub const TUNNEL: &str = "tunnel";
     pub const NO_ENTRY_FACE: &str = "no_entry_face";
     pub const THREE_PLANES: &str = "three_planes";
@@ -956,7 +974,9 @@ use nacre_geom::intersect::{
     RayCross, SegCross, plane_plane, ray_face_cross, segment_face_cross, three_plane_orient3d,
     three_planes,
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+#[cfg(test)]
+use std::collections::BTreeSet;
+use std::collections::{HashMap, HashSet};
 
 /// A face's supporting plane plus the data the half-space enumeration needs.
 ///
@@ -1075,37 +1095,35 @@ fn nonconvex_seamfree(
     contained_result(model, kind, a, b, &classof)
 }
 
-/// The single outer-shell face of `face_solid` that segment `p0 → p1` pierces,
-/// returned as a combined-plane index (`surf_ix`). The non-convex analogue of
-/// [`enter_face`]: each face is fanned and tested by [`segment_crosses_face`]
-/// (oriented winding, apex retry). `Ok(None)` if no face is pierced, `Ok(Some)`
-/// for exactly one, `Unsupported` if the segment pierces more than one face (it
-/// threads multiple chords — beyond this sub-unit) or any contact is `Degenerate`.
-fn pierced_face(
+/// Every outer-shell face of `face_solid` that segment `p0 → p1` pierces, as combined-plane
+/// indices (`surf_ix`), in shell order. The non-convex analogue of [`enter_face`]: each face
+/// is fanned and tested by [`segment_crosses_face`] (oriented winding, apex retry).
+///
+/// A segment meets a plane at most once, so no plane appears twice — and two faces on one
+/// plane would already have been rejected as a `coplanar_pair`. So each hit is a distinct
+/// seam vertex.
+fn pierced_faces(
     model: &Model,
     p0: Point3,
     p1: Point3,
     face_solid: Handle<Solid>,
     surf_ix: &HashMap<Handle<Surface>, usize>,
-) -> Result<Option<usize>, BoolError> {
+) -> Result<Vec<usize>, BoolError> {
     let shell = model.solids.get(face_solid).outer;
-    let mut hit: Option<usize> = None;
+    let mut hits = Vec::new();
     for &fh in &model.shells.get(shell).faces {
         let rings = face_loops(model, fh);
         if segment_crosses_face(p0, p1, &rings)? {
-            if hit.is_some() {
-                return Err(reject(tag::PIERCED_MULTI)); // pierces >1 face — multi-chord edge
-            }
-            hit = Some(surf_ix[&model.faces.get(fh).surface]);
+            hits.push(surf_ix[&model.faces.get(fh).surface]);
         }
     }
-    Ok(hit)
+    Ok(hits)
 }
 
 /// `Fuse`/`Cut` of two solids, at least one non-convex, whose boundaries cross in
 /// a single chord per face (M5-d2). Mirrors [`fuse_cut`] but (a) classifies each
 /// original vertex with exact [`point_in_solid`] instead of the convex
-/// half-space [`classify_vertex`], (b) finds seam entries with [`pierced_face`]
+/// half-space [`classify_vertex`], (b) finds seam entries with [`pierced_faces`]
 /// instead of the convex Cyrus–Beck [`enter_face`]/[`segment_enters`], and (c)
 /// reconstructs faces in `strict` mode (rejecting a non-convex/self-intersecting
 /// seam arc). Multiple chords, poke-through holes, and non-convex `Common` are
@@ -1147,67 +1165,64 @@ fn overlap_fuse_cut(
             let [v0, v1] = bounds;
             let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
-            if s0 == s1 {
-                // Same-side endpoints, yet the edge pierces exactly one outer face of
-                // the other solid. This is *not* the out→in→out tunnel it looks like:
-                // such an edge crosses two faces and `pierced_face` already rejected
-                // it above as `pierced_multi`. Nor is it parity-impossible — that
-                // argument only holds for a cavity-free solid.
-                //
-                // The one way in is a cavitied operand. `point_in_solid` counts the
-                // cavity shells, so an edge running from outside the solid to a point
-                // inside a void classifies `Outside` at both ends; `pierced_face`
-                // scans the outer shell alone, so it reports one crossing.
-                //
-                // `boolean` now rejects cavitied operands at the door
-                // (`tag::HOLLOW_OPERAND`), so nothing reaches here through the public
-                // entry. This stays as defense-in-depth: for direct callers of
-                // `overlap_fuse_cut` (the test that pins it does exactly that), and
-                // for the day sub-unit 5 relaxes that door to admit cavities — the
-                // asymmetry above is what would still stop a seam being built from a
-                // boundary the classifier disagrees with.
-                if pierced_face(model, p0, p1, other, &surf_ix)?.is_some() {
-                    return Err(reject(tag::TUNNEL));
-                }
-                continue;
+            let hits = pierced_faces(model, p0, p1, other, &surf_ix)?;
+            let straddles = s0 != s1;
+            if straddles && hits.is_empty() {
+                return Err(reject(tag::NO_ENTRY_FACE)); // an unfired backstop, now
             }
-            let entry = pierced_face(model, p0, p1, other, &surf_ix)?
-                .ok_or_else(|| reject(tag::NO_ENTRY_FACE))?;
+            // A segment crosses a closed surface an odd number of times exactly when its
+            // endpoints lie on opposite sides of it. Two machines say those two things —
+            // `point_in_solid`'s winding and `pierced_faces`' exact crossings — and they
+            // must agree. The one way they can differ is a cavitied operand: the classifier
+            // counts the cavity shells, the crossing count scans the outer shell alone, so
+            // an edge reaching into a void reads `Outside` at both ends while piercing once.
+            // `boolean` rejects those at the door (`tag::HOLLOW_OPERAND`); this stays for the
+            // tests that call `overlap_fuse_cut` directly, and for the day that door opens.
+            //
+            // An edge threading the other solid — out, in, out — is no longer a tunnel: it
+            // crosses twice, the parity agrees, and it earns two seam vertices. That is what
+            // cell 3e-3 opened, and it is why the guard is a parity check and not a count.
+            if (hits.len() % 2 == 1) != straddles {
+                return Err(reject(tag::TUNNEL));
+            }
             let [e0, e1] = inc;
-            let point = three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
-                .ok_or_else(|| reject(tag::THREE_PLANES))?;
-            // Exact 4-plane-concurrency guard: the seam vertex must not lie on any
-            // *other* plane (a degenerate 4-plane meet). Unlike the convex path we do
-            // NOT require it inside every half-space (`== -1`): a seam vertex of a
-            // non-convex solid can be outside some face's half-space yet on the
-            // boundary — `pierced_face` already certified it is on the entry face.
-            for (m, pm) in planes.iter().enumerate() {
-                if m == e0 || m == e1 || m == entry {
-                    continue;
+            for entry in hits {
+                let point =
+                    three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
+                        .ok_or_else(|| reject(tag::THREE_PLANES))?;
+                // Exact 4-plane-concurrency guard: the seam vertex must not lie on any
+                // *other* plane (a degenerate 4-plane meet). Unlike the convex path we do
+                // NOT require it inside every half-space (`== -1`): a seam vertex of a
+                // non-convex solid can be outside some face's half-space yet on the
+                // boundary — `pierced_faces` already certified it is on the entry face.
+                for (m, pm) in planes.iter().enumerate() {
+                    if m == e0 || m == e1 || m == entry {
+                        continue;
+                    }
+                    if three_plane_orient3d(
+                        &planes[e0].plane,
+                        &planes[e1].plane,
+                        &planes[entry].plane,
+                        pm.tri[0],
+                        pm.tri[1],
+                        pm.tri[2],
+                    ) == 0
+                    {
+                        return Err(reject(tag::FOURPLANE)); // seam vertex on a 4th plane
+                    }
                 }
-                if three_plane_orient3d(
-                    &planes[e0].plane,
-                    &planes[e1].plane,
-                    &planes[entry].plane,
-                    pm.tri[0],
-                    pm.tri[1],
-                    pm.tri[2],
-                ) == 0
-                {
-                    return Err(reject(tag::FOURPLANE)); // seam vertex on a 4th plane
+                let mut triple = [e0, e1, entry];
+                triple.sort_unstable();
+                if let std::collections::hash_map::Entry::Vacant(slot) = seam_ix.entry(triple) {
+                    let tol = vertex_tol(
+                        point,
+                        &planes[e0].plane,
+                        &planes[e1].plane,
+                        &planes[entry].plane,
+                    );
+                    slot.insert(seam.len());
+                    seam.push(SeamVertex { point, triple, tol });
                 }
-            }
-            let mut triple = [e0, e1, entry];
-            triple.sort_unstable();
-            if let std::collections::hash_map::Entry::Vacant(slot) = seam_ix.entry(triple) {
-                let tol = vertex_tol(
-                    point,
-                    &planes[e0].plane,
-                    &planes[e1].plane,
-                    &planes[entry].plane,
-                );
-                slot.insert(seam.len());
-                seam.push(SeamVertex { point, triple, tol });
             }
         }
     }
@@ -1246,8 +1261,45 @@ fn overlap_fuse_cut(
     if faces.len() < 4 {
         return Err(BoolError::EmptyResult);
     }
+    // An edge of one solid threading the other can cut it in two — `Cut(rod, L)` leaves the
+    // rod's ends on either side of the bar. A `Solid` has one outer shell and `boolean`
+    // returns one handle, so two components are two solids and this cannot answer them.
+    // Before cell 3e-3 `pierced_multi` made that unreachable: severing A takes an edge of A
+    // through B. `validate` calls such a result `NegativeGenus` — but `boolean` never runs
+    // `validate`, so without this the answer is `Ok` and wrong (measured: `0.06`, `genus -1`).
+    if !faces_connected(&faces) {
+        return Err(reject(tag::DISCONNECTED_RESULT));
+    }
 
     Ok(assemble_fuse_cut(model, a, b, &planes, &seam, &faces))
+}
+
+/// Do the reconstructed faces form a single connected component? Two faces are joined when
+/// they share a node — the same identity `assemble_fuse_cut` welds result vertices by.
+fn faces_connected(faces: &[LocalFace]) -> bool {
+    fn find(p: &mut [usize], mut x: usize) -> usize {
+        while p[x] != x {
+            p[x] = p[p[x]];
+            x = p[x];
+        }
+        x
+    }
+    let mut parent: Vec<usize> = (0..faces.len()).collect();
+    let mut owner: HashMap<Node, usize> = HashMap::new();
+    for (i, lf) in faces.iter().enumerate() {
+        for &nd in lf.loop_nodes.iter().chain(lf.inner.iter().flatten()) {
+            match owner.entry(nd) {
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    let (ra, rb) = (find(&mut parent, *e.get()), find(&mut parent, i));
+                    parent[ra] = rb;
+                }
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(i);
+                }
+            }
+        }
+    }
+    (0..faces.len()).all(|i| find(&mut parent, i) == find(&mut parent, 0))
 }
 
 /// `A ∩ B` by half-space vertex enumeration: the intersection is the set of
@@ -2382,44 +2434,80 @@ fn reconstruct_face_paths(
             })
         })
     };
-    let bnd: BTreeSet<usize> = paths
-        .iter()
-        .flat_map(|p| p.nodes())
-        .filter_map(|nd| nd.on_edge)
-        .map(edge_ix)
-        .collect::<Result<_, _>>()?;
+    // The boundary crossings, grouped by the edge each rides. An edge may carry more than
+    // one: that is an edge the other solid's boundary enters and leaves through, and it is
+    // what an edge-indexed model cannot express.
+    let mut by_edge: Vec<Vec<[usize; 3]>> = vec![Vec::new(); n];
+    for nd in paths.iter().flat_map(|p| p.nodes()) {
+        if let Some(e) = nd.on_edge {
+            by_edge[edge_ix(e)?].push(nd.triple);
+        }
+    }
+    let n_bnd: usize = by_edge.iter().map(|v| v.len()).sum();
 
-    // Two machineries must agree, and neither may be assumed right: `classof`'s ray
-    // casting vs the arrangement's exact crossings, and the `seam` list (built by
-    // `pierced_face`) vs the arrangement's paths. A *set*, not a count: two ends of one
-    // chord riding the same edge would pass a count and leave the splice undefined.
+    // The `seam` list (built by `pierced_faces`) and the arrangement's paths must agree that
+    // this face is met at all; and every arc has exactly two boundary ends, so a boundary
+    // node anywhere else — an arc's interior touching `∂f` — is caught by the count.
     let meets_face = !paths.is_empty();
-    if bnd != transitions.iter().copied().collect::<BTreeSet<_>>() || touches_seam != meets_face {
+    if touches_seam != meets_face || n_bnd != 2 * opens.len() {
         return Err(reject(tag::SEAM_COUNT_MISMATCH));
     }
 
     if opens.is_empty() && n_closed == 0 {
         // Defensive, and believed unreachable: `paths.is_empty()` forces
-        // `touches_seam == false` through the equality just checked, and then the set
-        // equality forces `transitions == ∅` — a pair that already returned above.
+        // `touches_seam == false`, and then `transitions` must be empty too — the pair
+        // that already returned above.
         return Ok(whole()); // no seam on this face after all
     }
 
+    // `∂f` cut into runs at those crossings. `bnd` orders two crossings on one edge and is
+    // needed for nothing else here, so it is built only when some edge carries two — its
+    // construction rejects a straight angle, and a face with a single crossing per edge has
+    // no business being held to that.
+    let need_bnd = by_edge.iter().any(|v| v.len() > 1) || n_closed > 0 || !face.inner.is_empty();
+    let bnd = if need_bnd {
+        arrange::face_vertex_triples(model, fh, plane_idx, inc_f)?
+    } else {
+        Vec::new()
+    };
+    // With no arc there is one run, the whole of `∂f`, and no crossing to cut it at.
+    let (crossings, runs, run_kept) = if opens.is_empty() {
+        (Vec::new(), vec![(0..n).collect::<Vec<_>>()], Vec::new())
+    } else {
+        let br = arrange::boundary_runs(planes, plane_idx, &bnd, &by_edge)?;
+        // Alternation gives the run classes their shape, `classof` anchors them, and every
+        // vertex is checked against the propagation. A run with no vertex has only the
+        // alternation — and that is the run this cell exists for.
+        let rk = arrange::run_classes(&br.runs, &kept)?;
+        (br.crossings, br.runs, rk)
+    };
+    let cross_ix: HashMap<[usize; 3], usize> =
+        crossings.iter().enumerate().map(|(j, &t)| (t, j)).collect();
+    // Crossing `c_j` is kept→dropped exactly when the run flowing into it is kept.
+    let is_kd = |c: usize| run_kept[(c + run_kept.len() - 1) % run_kept.len()];
+
     // Each arc, oriented `s_kd → bends → s_dk`: the direction its kept run is spliced in.
-    // Which end is which comes from `kept` at the transition the end rides.
+    // Its ends are found by *triple*, not by edge — both may ride the same one.
+    //
+    // `stitch_cycles` reads a transition as "position `t` kept, `t+1` dropped", which in
+    // this index space names crossing `t+1`. So an arc's slot is its crossing minus one.
     let mut kd = Vec::with_capacity(opens.len());
     let mut dk = Vec::with_capacity(opens.len());
     let mut arc_nodes: Vec<Vec<[usize; 3]>> = Vec::with_capacity(opens.len());
+    let n_x = crossings.len();
     for arc in &opens {
         let ends = arc.nodes();
-        let head = ends[0]
-            .on_edge
-            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
-        let tail = ends[ends.len() - 1]
-            .on_edge
-            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
-        let (h, t) = (edge_ix(head)?, edge_ix(tail)?);
-        let forward = kept[h];
+        let at = |nd: &arrange::SeamEnd| {
+            cross_ix
+                .get(&nd.triple)
+                .copied()
+                .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))
+        };
+        let (h, t) = (at(&ends[0])?, at(&ends[ends.len() - 1])?);
+        let forward = is_kd(h);
+        if forward == is_kd(t) {
+            return Err(reject(tag::SEAM_COUNT_MISMATCH)); // an arc's ends must oppose
+        }
         let ordered: Vec<[usize; 3]> = if forward {
             ends.iter().map(|nd| nd.triple).collect()
         } else {
@@ -2430,34 +2518,35 @@ fn reconstruct_face_paths(
                 return Err(reject(tag::MISSING_SEAM));
             }
         }
-        kd.push(if forward { h } else { t });
-        dk.push(if forward { t } else { h });
+        let (kd_c, dk_c) = if forward { (h, t) } else { (t, h) };
+        kd.push((kd_c + n_x - 1) % n_x);
+        dk.push((dk_c + n_x - 1) % n_x);
         arc_nodes.push(ordered);
     }
 
-    // The kept regions of `f`, as walks over indices — a boundary vertex, or an arc spliced
-    // whole. The arcs' successor map decomposes into cycles, one region each; with no arc the
-    // only region is `f` itself, kept iff `∂f` is. One arc gives the old splice, walk for walk.
+    // The kept regions of `f`, as walks over indices — a boundary run of original vertices,
+    // or an arc spliced whole. The arcs' successor map decomposes into cycles, one region
+    // each; with no arc the only region is `f` itself, kept iff `∂f` is.
     enum Step {
-        Vert(usize),
+        Run(usize),
         Arc(usize),
     }
     let regions: Vec<Vec<Step>> = if opens.is_empty() {
-        Vec::from_iter(kept[0].then(|| (0..n).map(Step::Vert).collect()))
+        Vec::from_iter(kept[0].then(|| vec![Step::Run(0)]))
     } else {
-        arrange::stitch_cycles(&kept, &kd, &dk)?
+        arrange::stitch_cycles(&run_kept, &kd, &dk)?
             .into_iter()
             .map(|cycle| {
                 let mut steps = Vec::new();
                 for w in 0..cycle.len() {
                     let (prev, this) = (cycle[(w + cycle.len() - 1) % cycle.len()], cycle[w]);
-                    let mut i = (dk[prev] + 1) % n;
+                    let mut i = (dk[prev] + 1) % n_x;
                     loop {
-                        steps.push(Step::Vert(i));
+                        steps.push(Step::Run(i));
                         if i == kd[this] {
                             break;
                         }
-                        i = (i + 1) % n;
+                        i = (i + 1) % n_x;
                     }
                     steps.push(Step::Arc(this));
                 }
@@ -2471,7 +2560,10 @@ fn reconstruct_face_paths(
         loop_nodes: steps
             .iter()
             .flat_map(|s| match s {
-                Step::Vert(i) => vec![Node::Orig(verts[*i])],
+                Step::Run(j) => runs[*j]
+                    .iter()
+                    .map(|&i| Node::Orig(verts[i]))
+                    .collect::<Vec<_>>(),
                 Step::Arc(a) => arc_nodes[*a].iter().copied().map(Node::Seam).collect(),
             })
             .collect(),
@@ -2490,14 +2582,13 @@ fn reconstruct_face_paths(
     // `l_and_staple`). The winding is kept as the cross-check, not the decision.
     //
     // `∂f`'s vertices are three-plane points too, so a region's ring is one uniform list.
-    let bnd = arrange::face_vertex_triples(model, fh, plane_idx, inc_f)?;
     let region_rings: Vec<Vec<[usize; 3]>> = regions
         .iter()
         .map(|steps| {
             steps
                 .iter()
                 .flat_map(|s| match s {
-                    Step::Vert(i) => vec![bnd[*i]],
+                    Step::Run(j) => runs[*j].iter().map(|&i| bnd[i]).collect(),
                     Step::Arc(a) => arc_nodes[*a].clone(),
                 })
                 .collect()
@@ -3398,19 +3489,59 @@ pub mod tests {
         assert!((vol - (3.0 - 0.512)).abs() < 1e-9, "volume {vol}");
     }
 
+    /// Drilling. A rod skewers the L's bottom bar, both its ends outside, and what comes
+    /// out is a solid of genus 1 — the first this kernel has ever made.
+    ///
+    /// The guard that stood here said a through-hole was "not yet representable". It had
+    /// been representable since cell 3f-1 put an inner loop on a face; what could not
+    /// follow were the seam list, which built no vertex for an edge whose endpoints agree,
+    /// and the boundary model, which indexed `∂f` by edge. Both are cell 3e-3's.
+    ///
+    /// `3 − 0.2·0.3·1`. Each cap takes the rod's cross-section as a hole, and the rod's
+    /// four walls contribute the tunnel — each of them a face whose kept region is bounded
+    /// by two arcs and two runs holding no vertex at all.
     #[test]
-    fn poke_through_hole_is_unsupported() {
-        // A thin rod skewering the L's bottom bar in z (both ends outside) would
-        // drill a through-hole (an inner loop) — not yet representable. Its vertical
-        // edges tunnel through the bar, so `pierced_face` sees >1 face ⇒ reject.
-        let (mut m, l) = l_prism();
-        let rod = m.add_cuboid(
-            Point3::from_array([0.3, 0.3, -0.5]),
-            Point3::from_array([0.5, 0.6, 1.5]),
-        );
+    fn drill_through_the_l() {
+        let (mut m, l, rod) = l_and_rod();
+        let r = boolean(&mut m, BoolKind::Cut, l, rod).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "genus 1 is clean: {vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 2.94).abs() < 1e-9, "{}", props.volume);
+        assert!((props.area - 14.88).abs() < 1e-9, "{}", props.area);
+        assert_eq!(holed_faces(&m, r).len(), 2, "both caps");
+    }
+
+    /// The `Fuse`: the rod stands proud on both faces of the bar, so the caps take the
+    /// same two holes and each rod wall splits into the stub above and the stub below.
+    /// `3 + 0.12 − 0.06`.
+    #[test]
+    fn fuse_the_l_and_the_rod() {
+        let (mut m, l, rod) = l_and_rod();
+        let r = boolean(&mut m, BoolKind::Fuse, l, rod).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 3.06).abs() < 1e-9, "{}", props.volume);
+        assert!((props.area - 15.0).abs() < 1e-9, "{}", props.area);
+        assert_eq!(holed_faces(&m, r).len(), 2);
+    }
+
+    /// The same two solids the other way round: the bar severs the rod, and `Cut` must
+    /// answer with two solids. It cannot — a `Solid` has one outer shell.
+    ///
+    /// Measured with the guard removed: `Ok`, volume `0.06`, and `validate` reporting
+    /// `NegativeGenus { v: 16, e: 24, f: 12, genus: -1 }` — two disjoint boxes in one
+    /// shell. `boolean` never runs `validate`, so nothing else would have said a word.
+    /// `pierced_multi` had been hiding this: severing A takes an edge of A through B.
+    #[test]
+    fn cut_rod_by_l_disconnects() {
+        let (mut m, l, rod) = l_and_rod();
         assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, l, rod),
-            tag::PIERCED_MULTI,
+            || boolean(&mut m, BoolKind::Cut, rod, l),
+            tag::DISCONNECTED_RESULT,
         );
     }
 
@@ -3439,7 +3570,7 @@ pub mod tests {
     /// The U with a slab shearing off both prong tops. The slab overhangs the U in
     /// x and z, so **every slab edge lies outside the U** (pierces nothing) and every
     /// U edge either straddles cleanly (one crossing of the slab's `y=1.5` face) or
-    /// misses. Neither `pierced_multi` nor `tunnel` can fire.
+    /// misses. No edge threads the other solid, so the arcs are the whole story.
     fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, u) = u_prism();
         let slab = m.add_cuboid(
@@ -4132,17 +4263,20 @@ pub mod tests {
 
     #[test]
     fn an_edge_crossed_twice_is_rejected() {
-        // `edge_seam` holds one seam triple per edge, and `reconstruct_face` reads one.
-        // Cell 3d deleted that map from the non-convex path; on the convex path it
-        // survives, and there the 1:1 is a geometric fact, not a guard — a segment
-        // meets a convex boundary at most twice, so a straddling edge crosses exactly
-        // once. What still stands over `cube_and_notch` is `segment_enters`:
-        // `poke_through`. `poke_through_hole_is_unsupported` pins the non-convex twin
-        // (`pierced_multi`, via `pierced_face`), which is what sub-unit 3e relaxes.
+        // Both operands are convex, so this takes the convex path, and there `edge_seam`
+        // holds one seam triple per `Handle<Edge>` while `reconstruct_face` reads one and
+        // returns at most one face. Neither is a fact about convexity — a straddling edge
+        // does cross a convex boundary once, but *this* edge does not straddle: its ends
+        // are both outside, and it threads the notch. `segment_enters` sees that and says
+        // `poke_through`.
         //
-        // `seam_path_crosses_one_face_edge_twice` shows what the arrangement sees on
-        // this same input, and `seam_count_mismatch` is what would fire if the
-        // arrangement ever handed such a face to the splice.
+        // The non-convex path stopped saying so in cell 3e-3, which drills through
+        // (`drill_through_the_l`). What is left here is the convex path's data structure,
+        // and paying that off is sub-unit 5's business, not convexity's.
+        //
+        // `seam_path_crosses_one_face_edge_twice` and
+        // `two_crossings_on_one_edge_make_a_run_with_no_vertex` show what the arrangement
+        // and the run model see on this same input.
         let (mut m, a, y) = cube_and_notch();
         assert_rejects(|| boolean(&mut m, BoolKind::Cut, a, y), tag::POKE_THROUGH);
     }
@@ -4563,9 +4697,11 @@ pub mod tests {
     /// `edge_incidence` gives it both incident planes and a seam vertex gets built on it.
     ///
     /// The box hangs over the rim's `(0.7, 0.7)` corner without reaching the cube's side
-    /// walls. A box that did — the obvious `[0.55,1.15]² × [0.85,1.15]` — threads the
-    /// pocket void and leaves through a wall, so one of its edges pierces two faces and
-    /// `pierced_multi` speaks first. Honest, but about something else.
+    /// walls. The obvious `[0.55,1.15]² × [0.85,1.15]` threads the pocket void and leaves
+    /// through a wall; cell 3f-5 measured `pierced_multi` there. Cell 3e-3 retired that
+    /// guard, and re-measuring finds `contact_degenerate` underneath it — the fan, not the
+    /// coverage. Both were honest, and both were about something else.
+
     #[test]
     fn overlap_across_a_hole_rim_is_unsupported() {
         let (mut m, pc) = pocketed_cube();
@@ -4817,8 +4953,9 @@ pub mod tests {
 
     /// The L with a box biting its reflex corner and poking out the top. The box top
     /// (z=1.2) clears the L's z=1 **deliberately**: sunk inside the L's slab, the L's
-    /// vertical edges at (2,1) and (1,1) would pierce the box's bottom *and* top face
-    /// and `pierced_multi` would reject first.
+    /// vertical edges at (2,1) and (1,1) would pierce the box's bottom *and* top face,
+    /// which `pierced_multi` used to reject. Cell 3e-3 supports it; the fixture keeps its
+    /// clearance so that it goes on testing one thing.
     fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
         let bx = m.add_cuboid(
@@ -4973,8 +5110,9 @@ pub mod tests {
         //
         // The bar bites two *corners* of the L's cap, so each of its two arcs ends on two
         // **different** edges of `∂f`. That is the whole trick: an arc with both ends on
-        // one edge means that edge is pierced twice, and `pierced_multi` takes the fixture
-        // before `multichord` ever sees it. Every multi-chord shape I tried first fell
+        // one edge means that edge is pierced twice, which `pierced_multi` took before
+        // `multichord` ever saw it (cell 3e-3 retired that guard, and the fixture keeps its
+        // corners so it goes on testing one thing). Every multi-chord shape I tried first fell
         // into exactly that trap.
         //
         // The cap keeps its corners `(0,0) (2,0) (1,1) (0,2)` and drops `(2,1) (1,2)`.
@@ -5004,7 +5142,8 @@ pub mod tests {
             .collect();
         assert_eq!(inside, [false, false, true, false, true, false]);
 
-        // Four transitions on four distinct edges — the reason `pierced_multi` stays quiet.
+        // Four transitions on four distinct edges: one crossing apiece, so the run model
+        // and the old edge-indexed one agree here, which is the point of the fixture.
         let ts = transitions_on(&m, top, bar);
         assert_eq!(ts.len(), 4);
         let ends: BTreeSet<Handle<Edge>> = ps
@@ -5476,8 +5615,9 @@ pub mod tests {
     fn the_staple_leaves_an_arc_beside_a_loop() {
         // The one shape `pokehole` will still guard after cell 3f-3. The cap carries both:
         // the near leg cuts a rectangle wholly inside it, the far leg wraps the reflex
-        // corner `(1,1)` and leaves an arc whose two ends ride *different* edges — so
-        // `pierced_multi` stays quiet.
+        // corner `(1,1)` and leaves an arc whose two ends ride *different* edges. That was
+        // chosen to keep `pierced_multi` quiet; cell 3e-3 retired it, and the fixture stays
+        // as it is so that it goes on testing one thing.
         let (m, l, st) = l_and_staple();
         let (planes, surf_ix) = combined(&m, l, st);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
@@ -5562,10 +5702,9 @@ pub mod tests {
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that
-    /// face. Unlike the rod of `poke_through_hole_is_unsupported`, the stub enters
-    /// the L from within, so each of its vertical edges crosses exactly one face
-    /// (`pierced_multi` cannot fire) and its bottom ring stays inside (`tunnel`
-    /// cannot fire either).
+    /// face. Unlike the rod of `drill_through_the_l`, the stub enters the L from within,
+    /// so each of its vertical edges crosses exactly one face and its bottom ring stays
+    /// inside — one chord, no tunnel, and the seam loop is the whole story.
     fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
         let stub = m.add_cuboid(
@@ -6007,8 +6146,11 @@ pub mod tests {
         //
         // The guard's only reachable path: `point_in_solid` counts cavity shells, so
         // the stub's vertical edges — running from below the hollow L up into its void
-        // — classify Outside at both ends, while `pierced_face` (outer shell only)
-        // sees a single crossing of the z=0 face.
+        // — classify Outside at both ends, while `pierced_faces` (outer shell only)
+        // sees a single crossing of the z=0 face. One crossing is odd, agreeing ends are
+        // even: the parity guard. An edge that threaded the whole cavity would cross the
+        // outer shell twice, the parity would agree, and cell 3e-3 lost that net —
+        // `HOLLOW_OPERAND` at the door is what stands there now.
         let (mut m, l, inner) = l_and_inner_box();
         let hollow = boolean(&mut m, BoolKind::Cut, l, inner).unwrap();
         assert_eq!(m.solids.get(hollow).cavities.len(), 1);
