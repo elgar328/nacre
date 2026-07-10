@@ -3776,6 +3776,9 @@ pub mod tests {
             // rejected it was the shape of a single arc, until cell 3e-1.
             case("l_and_popup_box (folded arc)", (1, 0), l_and_popup_box()),
             case("l_and_dimple (inner loop)", (1, 1), l_and_dimple()),
+            // `(2, 0)`: two chords on one face and not a single closed loop — the only
+            // fixture that asks for multi-chord alone. Measured.
+            case("l_and_notch_bar (multichord)", (2, 0), l_and_notch_bar()),
         ]
     }
 
@@ -3866,7 +3869,7 @@ pub mod tests {
         }
         // Pin the exercise. A fixture edit that quietly stops reaching the arrangement
         // would otherwise leave every assertion above vacuously true.
-        assert_eq!((n_faces, n_arcs, n_loops), (72, 34, 3));
+        assert_eq!((n_faces, n_arcs, n_loops), (88, 46, 3));
     }
 
     #[test]
@@ -4143,6 +4146,96 @@ pub mod tests {
         assert!(vs.is_empty(), "{vs:?}");
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - (3.0 + 2.0 - 0.8)).abs() < 1e-9, "volume {vol}");
+    }
+
+    /// The L-prism and an L-shaped bar lying in its notch, biting two convex corners of
+    /// the L's top face. The bar spans `z ∈ [0.5, 1.5]`, so its body clears the cap.
+    ///
+    /// Each bite crosses **two different** edges of the cap, which is exactly why no edge
+    /// is pierced twice — the bar takes corners, not edges. Two chords, no closed loop.
+    fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let bar = Profile2d {
+            points: vec![
+                p2(1.8, 0.8),
+                p2(2.1, 0.8),
+                p2(2.1, 2.1),
+                p2(0.8, 2.1),
+                p2(0.8, 1.8),
+                p2(1.8, 1.8),
+            ],
+        };
+        let OpOutput::Extrude { solid: b, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane {
+                    origin: Point3::from_array([0.0, 0.0, 0.5]),
+                    ..SketchPlane::world_xy()
+                },
+                profile: bar,
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!("extrude yields Extrude output")
+        };
+        (m, l, b)
+    }
+
+    #[test]
+    fn the_notch_bar_cuts_two_chords_in_one_face() {
+        // What `multichord` guards on `l_and_notch_bar`, pinned before the guard moves.
+        //
+        // The bar bites two *corners* of the L's cap, so each of its two arcs ends on two
+        // **different** edges of `∂f`. That is the whole trick: an arc with both ends on
+        // one edge means that edge is pierced twice, and `pierced_multi` takes the fixture
+        // before `multichord` ever sees it. Every multi-chord shape I tried first fell
+        // into exactly that trap.
+        //
+        // The cap keeps its corners `(0,0) (2,0) (1,1) (0,2)` and drops `(2,1) (1,2)`.
+        let (m, l, bar) = l_and_notch_bar();
+        let (planes, surf_ix) = combined(&m, l, bar);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+
+        let ps = paths(&m, top, l, bar, &planes, &surf_ix);
+        assert_eq!(ps.len(), 2);
+        assert!(ps.iter().all(|p| matches!(p, arrange::SeamPath::Open(_))));
+        // Two boundary ends and one bend apiece; the bend is the bar's vertical edge
+        // piercing the cap, and the ends ride the cap's own edges.
+        for p in &ps {
+            let nodes = p.nodes();
+            assert_eq!(nodes.len(), 3);
+            assert!(nodes[0].on_edge.is_some() && nodes[2].on_edge.is_some());
+            assert!(nodes[1].on_edge.is_none());
+        }
+
+        let hes = &m.faces.get(top).outer.half_edges;
+        let inside: Vec<bool> = hes
+            .iter()
+            .map(|&he| {
+                point_in_solid(&m, m.vertices.get(he_start(&m, he)).point, bar).unwrap()
+                    == Side::Inside
+            })
+            .collect();
+        assert_eq!(inside, [false, false, true, false, true, false]);
+
+        // Four transitions on four distinct edges — the reason `pierced_multi` stays quiet.
+        let ts = transitions_on(&m, top, bar);
+        assert_eq!(ts.len(), 4);
+        let ends: BTreeSet<Handle<Edge>> = ps
+            .iter()
+            .flat_map(|p| p.nodes())
+            .filter_map(|nd| nd.on_edge)
+            .collect();
+        assert_eq!(ends.len(), 4);
+    }
+
+    #[test]
+    fn two_chords_on_one_face_are_unsupported() {
+        // Measured, and fed the wrong tag once to check it has teeth. Cell 3e-2 inverts
+        // this: `Cut` gives `3 − 2·(0.2 · 0.2 · 0.5) = 2.96`.
+        let (mut m, l, bar) = l_and_notch_bar();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, bar), tag::MULTICHORD);
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that
