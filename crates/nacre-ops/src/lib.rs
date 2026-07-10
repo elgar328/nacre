@@ -210,6 +210,13 @@ pub(crate) mod tag {
     pub const CONTACT_DEGENERATE: &str = "contact_degenerate";
     pub const POKEHOLE: &str = "pokehole";
     pub const MISSING_SEAM: &str = "missing_seam";
+    /// Four or more boundary crossings on one face — the convex path only.
+    ///
+    /// **Unreachable, and a backstop rather than a coverage limit.** `∂f` is a convex
+    /// closed curve and the other operand a convex set, so `∂f ∩ B` is a single arc and
+    /// there are exactly zero or two crossings. Cell 3e-2 taught the non-convex path to
+    /// stitch any number of arcs into rings, and this arm is what is left. It is not
+    /// `unreachable!()`: a release panic is worse than an honest rejection.
     pub const MULTICHORD: &str = "multichord";
 }
 
@@ -2245,11 +2252,6 @@ fn reconstruct_face_paths(
         return Err(reject(tag::SEAM_COUNT_MISMATCH));
     }
 
-    // Guard order mirrors today's `match transitions.len()`: `>= 4` returned before the
-    // hole check could ever run, so multi-chord still wins over an inner loop.
-    if opens.len() >= 2 {
-        return Err(reject(tag::MULTICHORD));
-    }
     if n_closed > 0 {
         // A lone loop with no arc beside it always divides the face into a disk and an
         // annulus, and `∂f` lies in the annulus — so `kept[0]` classifies the annulus,
@@ -2295,50 +2297,68 @@ fn reconstruct_face_paths(
             }]
         });
     }
-    let Some(arc) = opens.first() else {
+    if opens.is_empty() {
         return Ok(whole(vec![])); // no seam on this face after all
-    };
-
-    // Orient the arc `s_kd → bends → s_dk`, the direction the kept run is spliced in.
-    let (t0, t1) = (transitions[0], transitions[1]);
-    let (kd, dk) = if kept[t0] { (t0, t1) } else { (t1, t0) };
-    let nodes_arc = arc.nodes();
-    let head = nodes_arc[0]
-        .on_edge
-        .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
-    let forward = edge_ix(head)? == kd;
-    let ordered: Vec<[usize; 3]> = if forward {
-        nodes_arc.iter().map(|nd| nd.triple).collect()
-    } else {
-        nodes_arc.iter().rev().map(|nd| nd.triple).collect()
-    };
-    for t in &ordered {
-        if !seam_ix.contains_key(t) {
-            return Err(reject(tag::MISSING_SEAM));
-        }
     }
-    let (s_kd, s_dk) = (ordered[0], ordered[ordered.len() - 1]);
-    let bends = &ordered[1..ordered.len() - 1];
 
-    // Kept run: walk `dk+1 ..= kd` CCW, then splice the seam sub-path back.
-    let mut loop_nodes: Vec<Node> = Vec::new();
-    let mut i = (dk + 1) % n;
-    loop {
-        loop_nodes.push(Node::Orig(verts[i]));
-        if i == kd {
-            break;
+    // Each arc, oriented `s_kd → bends → s_dk`: the direction its kept run is spliced in.
+    // Which end is which comes from `kept` at the transition the end rides.
+    let mut kd = Vec::with_capacity(opens.len());
+    let mut dk = Vec::with_capacity(opens.len());
+    let mut nodes: Vec<Vec<[usize; 3]>> = Vec::with_capacity(opens.len());
+    for arc in &opens {
+        let ends = arc.nodes();
+        let head = ends[0]
+            .on_edge
+            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
+        let tail = ends[ends.len() - 1]
+            .on_edge
+            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
+        let (h, t) = (edge_ix(head)?, edge_ix(tail)?);
+        let forward = kept[h];
+        let ordered: Vec<[usize; 3]> = if forward {
+            ends.iter().map(|nd| nd.triple).collect()
+        } else {
+            ends.iter().rev().map(|nd| nd.triple).collect()
+        };
+        for tr in &ordered {
+            if !seam_ix.contains_key(tr) {
+                return Err(reject(tag::MISSING_SEAM));
+            }
         }
-        i = (i + 1) % n;
+        kd.push(if forward { h } else { t });
+        dk.push(if forward { t } else { h });
+        nodes.push(ordered);
     }
-    loop_nodes.push(Node::Seam(s_kd));
-    loop_nodes.extend(bends.iter().copied().map(Node::Seam));
-    loop_nodes.push(Node::Seam(s_dk));
-    Ok(vec![LocalFace {
-        plane_idx,
-        loop_nodes,
-        inner: vec![],
-        flip,
-    }])
+
+    // The arcs' successor map decomposes into cycles, one kept region each. With a single
+    // arc the only cycle is `[0]` and this is the old splice, walk for walk.
+    let cycles = arrange::stitch_cycles(&kept, &kd, &dk)?;
+    Ok(cycles
+        .into_iter()
+        .map(|cycle| {
+            let mut loop_nodes: Vec<Node> = Vec::new();
+            for w in 0..cycle.len() {
+                let (prev, this) = (cycle[(w + cycle.len() - 1) % cycle.len()], cycle[w]);
+                // Kept run `dk[prev] + 1 ..= kd[this]`, CCW.
+                let mut i = (dk[prev] + 1) % n;
+                loop {
+                    loop_nodes.push(Node::Orig(verts[i]));
+                    if i == kd[this] {
+                        break;
+                    }
+                    i = (i + 1) % n;
+                }
+                loop_nodes.extend(nodes[this].iter().copied().map(Node::Seam));
+            }
+            LocalFace {
+                plane_idx,
+                loop_nodes,
+                inner: vec![],
+                flip,
+            }
+        })
+        .collect())
 }
 
 /// Reconstruct a face's kept portion, convex path. `None` if the whole face is dropped.
@@ -2442,7 +2462,8 @@ fn reconstruct_face(
                 flip,
             }))
         }
-        _ => Err(reject(tag::MULTICHORD)), // ≥4 crossings ⇒ multiple chords
+        // Convexity bounds `∂f ∩ B` to one arc, so this cannot happen. See `tag::MULTICHORD`.
+        _ => Err(reject(tag::MULTICHORD)),
     }
 }
 
@@ -3771,14 +3792,14 @@ pub mod tests {
             // twice — its two prongs cut rectangles wholly inside that face. So this
             // fixture needs *both* multi-chord and inner loops before it can pass;
             // `multichord` merely happens to fire first, on the U's base cap.
-            case("u_and_slab (multichord)", (2, 2), u_and_slab()),
+            case("u_and_slab (two loops)", (2, 2), u_and_slab()),
             // `(1, 0)`: nothing about the arrangement ever blocked this one. What
             // rejected it was the shape of a single arc, until cell 3e-1.
             case("l_and_popup_box (folded arc)", (1, 0), l_and_popup_box()),
             case("l_and_dimple (inner loop)", (1, 1), l_and_dimple()),
             // `(2, 0)`: two chords on one face and not a single closed loop — the only
             // fixture that asks for multi-chord alone. Measured.
-            case("l_and_notch_bar (multichord)", (2, 0), l_and_notch_bar()),
+            case("l_and_notch_bar (two chords)", (2, 0), l_and_notch_bar()),
         ]
     }
 
@@ -3993,6 +4014,15 @@ pub mod tests {
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
+        // Two chords (cell 3e-2). Six seam nodes: two boundary ends and a bend for each of
+        // the cap's arcs, and the same six seen again from the bar's floor. Lose one of the
+        // bar's two floor faces and its four nodes leave `reachable`.
+        let (mut m, l, bar) = l_and_notch_bar();
+        let from_arrange = seam_endpoint_triples(&m, l, bar);
+        boolean(&mut m, BoolKind::Cut, l, bar).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
+
         // Swapped, the same four nodes are the island's whole outer ring (cell 3f-2).
         // The arrangement does not know which solid is `a`, so it offers the same set;
         // the result has to still contain all of it. If the island face were dropped,
@@ -4092,13 +4122,16 @@ pub mod tests {
     }
 
     #[test]
-    fn cut_multi_chord_slab_is_unsupported() {
-        // The slab cuts both prongs, so the U's base cap alternates kept/dropped four
-        // times around its loop — two chords on one face. Each crossing is contributed
-        // by a *different* straddle edge piercing exactly one face, which is why the
-        // per-edge guards let it through to `reconstruct_face`.
+    fn the_slab_still_needs_two_loops_on_one_face() {
+        // This was `cut_multi_chord_slab_is_unsupported`. The U's base cap alternates
+        // kept/dropped four times — two chords — and cell 3e-2 resolves it. What is left
+        // is the slab's `y = 1.5` face, which the prongs pierce twice, wholly inside it:
+        // two closed loops, and `pokehole` still cannot place them.
+        //
+        // The tag moving from `multichord` to `pokehole` on an unchanged fixture is the
+        // measurement that says the arc half of `u_and_slab` is done.
         let (mut m, u, slab) = u_and_slab();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, u, slab), tag::MULTICHORD);
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, u, slab), tag::POKEHOLE);
     }
 
     /// The L with a box biting its reflex corner and poking out the top. The box top
@@ -4302,11 +4335,48 @@ pub mod tests {
     }
 
     #[test]
-    fn two_chords_on_one_face_are_unsupported() {
-        // Measured, and fed the wrong tag once to check it has teeth. Cell 3e-2 inverts
-        // this: `Cut` gives `3 − 2·(0.2 · 0.2 · 0.5) = 2.96`.
+    fn cut_notch_bar() {
+        // Two chords on one face, resolved. The bar bites the cap's corners `(2,1)` and
+        // `(1,2)`; the kept region is the cap minus both, one ring using both arcs.
+        // `3 − 2·(0.2 · 0.2 · 0.5) = 2.96`.
+        //
+        // The area is unchanged at 14: a corner bite removes `0.04` of cap, `0.1` of the
+        // `x=2` wall and `0.1` of the `y=1` wall, and hands back exactly those three as
+        // the bar's own faces. So area alone would not have noticed the bite at all — the
+        // volume and `validate` are what score it here.
         let (mut m, l, bar) = l_and_notch_bar();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, bar), tag::MULTICHORD);
+        let r = boolean(&mut m, BoolKind::Cut, l, bar).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - 2.96).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!((props.area - 14.0).abs() < 1e-9, "area {}", props.area);
+    }
+
+    #[test]
+    fn fuse_notch_bar() {
+        // The `Fuse` counterpart, closing inclusion–exclusion: `3 + 0.69 − 0.04`. The bar
+        // measures `0.3·1.3 + 1.0·0.3` in section, `1.0` tall.
+        //
+        // Area `14 + 6.58 − 0.96`: the bar's own surface is `5.2·1.0 + 2·0.69`, and each
+        // bite buries `0.24` on either side of the interface.
+        let (mut m, l, bar) = l_and_notch_bar();
+        let r = boolean(&mut m, BoolKind::Fuse, l, bar).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - (3.0 + 0.69 - 0.04)).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!((props.area - 19.62).abs() < 1e-9, "area {}", props.area);
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that
