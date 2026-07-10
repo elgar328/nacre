@@ -168,16 +168,16 @@ pub(crate) mod tag {
     /// Like `SEAM_COUNT_MISMATCH`, a cross-check rather than a defence: the exact
     /// predicate (`order_along`) and the orientation bookkeeping (`PlaneInfo::n_out`
     /// vs its plane's normal) must agree, edge by edge, and neither is assumed right.
-    /// It survives release on purpose — `validate` and `tessellate` also catch a wrong
-    /// hole, but a caller may run neither.
+    /// It survives release on purpose. Downstream, `validate` catches a wrong loop and
+    /// `tessellate` catches a wrong *hole* — but a caller may run neither.
     ///
     /// It cannot catch a *globally* flipped loop: every edge would be wrong together.
-    /// That is pinned before wiring, by a golden on `orient_hole_loop` itself.
+    /// That is pinned before wiring, by a golden on `orient_seam_loop` itself.
     ///
     /// Unreachable today: "material on the left" is a global property, so a consistent
     /// loop makes every edge agree. Not dead code — relax `FOURPLANE` or cell 3c's
     /// node-identity argument and this is what speaks first.
-    pub const HOLE_ORIENT_MISMATCH: &str = "hole_orient_mismatch";
+    pub const LOOP_ORIENT_MISMATCH: &str = "loop_orient_mismatch";
     /// Three seam segments meeting at one node.
     ///
     /// Unreachable today, and *not* dead code. A node is a boundary node (two
@@ -1617,7 +1617,7 @@ struct LocalFace {
     plane_idx: usize,
     loop_nodes: Vec<Node>,
     /// Hole rings, each already wound so the kept material stays on its left
-    /// (`arrange::orient_hole_loop`). Only the non-convex path ever fills this.
+    /// (`arrange::orient_seam_loop`). Only the non-convex path ever fills this.
     inner: Vec<Vec<Node>>,
     flip: bool,
 }
@@ -2252,7 +2252,7 @@ fn reconstruct_face_paths(
         else {
             unreachable!("filtered to Closed")
         };
-        let ring = arrange::orient_hole_loop(planes, plane_idx, nodes, keep == Side::Outside)?;
+        let ring = arrange::orient_seam_loop(planes, plane_idx, nodes, keep == Side::Outside)?;
         for t in &ring {
             if !seam_ix.contains_key(t) {
                 return Err(reject(tag::MISSING_SEAM));
@@ -4064,17 +4064,24 @@ pub mod tests {
     }
 
     #[test]
-    fn a_hole_loop_keeps_material_on_its_left() {
-        // The global sign, pinned before anything is wired. `hole_orient_mismatch`
+    fn a_seam_loop_keeps_material_on_its_left() {
+        // The global sign, pinned before anything is wired. `loop_orient_mismatch`
         // cannot catch a loop that is flipped *as a whole* — every edge would be wrong
-        // together — and `validate`/`tessellate` are a caller's option, not the
-        // kernel's. So the derivation is checked here, on the real fixture, against a
-        // sequence computed by hand.
+        // together — and `validate` is a caller's option, not the kernel's. So the
+        // derivation is checked here, on the real fixture, against a sequence computed
+        // by hand.
         //
         // The L's top face has `n_out = +z`; the hole is the stub's footprint. Walk it
         // with the material (outside the stub) on the left and you go clockwise seen
         // from +z. On the edge (0.3,0.3) → (0.3,0.7) the left is `z × y = −x`: outside
         // the stub. Only the test reads a coordinate; the rule reads three signs.
+        //
+        // The rule is local: it asks which side of the seam the kept material lies on,
+        // never whether the loop bounds a hole or an island. So the second call below
+        // is not a symmetry curiosity — `material_outside == false` is exactly the
+        // island's outer ring, the same L face read with `keep == Inside` when the
+        // operands are swapped. Cell 3f-2 wires it, and this golden is what pins its
+        // direction: downstream, only `validate` and the signed mesh volume look.
         let (m, l, stub) = l_and_dimple();
         let (planes, surf_ix) = combined(&m, l, stub);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
@@ -4086,7 +4093,7 @@ pub mod tests {
         };
         let point_of = |t: &[usize; 3]| nodes.iter().find(|nd| nd.triple == *t).unwrap().point;
 
-        let outside = arrange::orient_hole_loop(&planes, p, nodes, true).unwrap();
+        let outside = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
         let got: Vec<[f64; 3]> = outside.iter().map(|t| point_of(t).as_array()).collect();
         assert_points_cycle(
             &got,
@@ -4100,7 +4107,7 @@ pub mod tests {
 
         // The rule's only degree of freedom is that bit. Flip it and the loop must
         // reverse exactly — if it does not, the derivation is wrong somewhere.
-        let inside = arrange::orient_hole_loop(&planes, p, nodes, false).unwrap();
+        let inside = arrange::orient_seam_loop(&planes, p, nodes, false).unwrap();
         let mut rev = outside.clone();
         rev.reverse();
         assert_eq!(inside, rev);
@@ -4146,7 +4153,7 @@ pub mod tests {
 
     #[test]
     fn a_flipped_hole_loop_is_caught() {
-        // `hole_orient_mismatch` cannot see a loop flipped as a whole, and `f2`'s golden
+        // `loop_orient_mismatch` cannot see a loop flipped as a whole, and `f2`'s golden
         // pins the derivation — but the two downstream detectors must actually fire on
         // *this* shape, not merely exist. They are different in kind: `validate` sees a
         // rim edge used twice the same way, `tessellate` sees a hole wound like its

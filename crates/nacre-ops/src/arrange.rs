@@ -265,7 +265,7 @@ fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
 /// keeps material on its left does so everywhere. `order_along` is *recomputed* rather
 /// than remembered from the assembly walk: the walk's memory and the exact predicate
 /// are the two machines, and a check that reuses one machine's memory checks nothing.
-pub(crate) fn orient_hole_loop(
+pub(crate) fn orient_seam_loop(
     planes: &[PlaneInfo],
     p: usize,
     nodes: &[SeamEnd],
@@ -273,7 +273,7 @@ pub(crate) fn orient_hole_loop(
 ) -> Result<Vec<[usize; 3]>, BoolError> {
     let n = nodes.len();
     if n < 3 {
-        return Err(reject(tag::HOLE_ORIENT_MISMATCH));
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
     let keep: i8 = if material_outside { 1 } else { -1 };
     let mut verdict: Option<bool> = None;
@@ -283,17 +283,17 @@ pub(crate) fn orient_hole_loop(
         let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
         // `P` plus exactly one `Q`: adjacent loop nodes bound one seam segment.
         if shared.len() != 2 || !shared.contains(&p) {
-            return Err(reject(tag::HOLE_ORIENT_MISMATCH));
+            return Err(reject(tag::LOOP_ORIENT_MISMATCH));
         }
         let q = shared[usize::from(shared[0] == p)];
         let third = |t: [usize; 3]| t.iter().copied().find(|&x| x != p && x != q);
         let (Some(ri), Some(rj)) = (third(a), third(b)) else {
-            return Err(reject(tag::HOLE_ORIENT_MISMATCH));
+            return Err(reject(tag::LOOP_ORIENT_MISMATCH));
         };
 
         let ord = order_along(planes, p, q, ri, rj);
         if ord == 0 {
-            return Err(reject(tag::HOLE_ORIENT_MISMATCH)); // two nodes coincide
+            return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // two nodes coincide
         }
         let along_d = ord == -1;
         let want_along_d = -keep * orient_sign(planes, p) * orient_sign(planes, q) > 0;
@@ -301,7 +301,7 @@ pub(crate) fn orient_hole_loop(
         match verdict {
             None => verdict = Some(reverse),
             Some(v) if v == reverse => {}
-            Some(_) => return Err(reject(tag::HOLE_ORIENT_MISMATCH)),
+            Some(_) => return Err(reject(tag::LOOP_ORIENT_MISMATCH)),
         }
     }
 
