@@ -1194,14 +1194,13 @@ fn overlap_fuse_cut(
         let shell = model.solids.get(solid).outer;
         for &fh in &model.shells.get(shell).faces {
             let pidx = surf_ix[&model.faces.get(fh).surface];
-            if let Some(lf) = reconstruct_face_paths(
+            faces.extend(reconstruct_face_paths(
                 model, fh, other, pidx, keep, flip, &classof, &seam, &seam_ix, &planes, &surf_ix,
                 inc_f, inc_o,
-            )? {
-                faces.push(lf);
-            }
+            )?);
         }
     }
+    // Output faces, not surviving input faces: one input face may split into several.
     if faces.len() < 4 {
         return Err(BoolError::EmptyResult);
     }
@@ -2176,7 +2175,7 @@ fn reconstruct_face_paths(
     surf_ix: &HashMap<Handle<Surface>, usize>,
     inc_f: &arrange::EdgePlanes,
     inc_o: &arrange::EdgePlanes,
-) -> Result<Option<LocalFace>, BoolError> {
+) -> Result<Vec<LocalFace>, BoolError> {
     let face = model.faces.get(fh);
     let hes = &face.outer.half_edges;
     let n = hes.len();
@@ -2184,13 +2183,15 @@ fn reconstruct_face_paths(
     let kept: Vec<bool> = verts.iter().map(|v| classof[v] == keep).collect();
     let transitions: Vec<usize> = (0..n).filter(|&i| kept[i] != kept[(i + 1) % n]).collect();
 
+    // A dropped face contributes nothing, so `whole` returns zero faces or one — the
+    // `Vec` a split face will need (cell 3e-2), not yet used for more than that.
     let whole = |inner: Vec<Vec<Node>>| {
-        kept[0].then(|| LocalFace {
+        Vec::from_iter(kept[0].then(|| LocalFace {
             plane_idx,
             loop_nodes: verts.iter().map(|&v| Node::Orig(v)).collect(),
             inner,
             flip,
-        })
+        }))
     };
 
     // The seam misses this face: today's `transitions == 0` branch, unchanged. Running
@@ -2273,12 +2274,12 @@ fn reconstruct_face_paths(
             // Disk kept: the loop *is* the outer boundary and `∂f` contributes nothing.
             // The sign rule is local — it reads `keep`, never which side is enclosed —
             // so the very same call wound this ring the other way round.
-            Some(LocalFace {
+            vec![LocalFace {
                 plane_idx,
                 loop_nodes: ring,
                 inner: vec![],
                 flip,
-            })
+            }]
         });
     }
     let Some(arc) = opens.first() else {
@@ -2319,15 +2320,19 @@ fn reconstruct_face_paths(
     loop_nodes.push(Node::Seam(s_kd));
     loop_nodes.extend(bends.iter().copied().map(Node::Seam));
     loop_nodes.push(Node::Seam(s_dk));
-    Ok(Some(LocalFace {
+    Ok(vec![LocalFace {
         plane_idx,
         loop_nodes,
         inner: vec![],
         flip,
-    }))
+    }])
 }
 
 /// Reconstruct a face's kept portion, convex path. `None` if the whole face is dropped.
+///
+/// Unlike [`reconstruct_face_paths`] this returns at most one face, and that is a fact
+/// about convexity rather than a limitation: `∂f` is a convex closed curve and `B` a
+/// convex set, so `∂f ∩ B` is a single arc and the kept part of `f` is connected.
 ///
 /// The bends are ordered by projecting them onto the chord, which assumes the arc is
 /// monotone along it. Both operands being convex, it is. The non-convex path reads the
