@@ -833,11 +833,17 @@ fn a_boolean_result_meshes_only_the_live_solid() {
 /// `Σ|area| == props.area` catches a hole filled in or a fan spilling out; `mesh_volume ==
 /// props.volume` is the only one of the four that can see a hole ring reversed, since
 /// `props` reads the face's `orientation` and never the ring's winding.
+///
+/// The bite is the symmetric `[0.85,1.15]³` cell (5a) gave back: its vertical edge pierces
+/// the lid at `(0.85, 0.85)`, a point on the lid's fan diagonal from every apex, so the
+/// boolean's exact crossing test is what carries it here. The lid that comes out is holed
+/// *and* notched, and `nacre-tess` clips ears rather than fanning, so the gate is a second
+/// opinion from machinery that never shared the fan's blind spot.
 #[test]
 fn a_holed_operand_keeps_its_hole_through_a_cut() {
     for (name, box_lo, box_hi) in [
-        ("corner", [0.85, 0.8, 0.75], [1.2, 1.15, 1.1]),
-        ("bottom corner", [0.85, 0.8, -0.1], [1.2, 1.15, 0.25]),
+        ("corner", [0.85, 0.85, 0.85], [1.15, 1.15, 1.15]),
+        ("bottom corner", [0.85, 0.85, -0.15], [1.15, 1.15, 0.15]),
     ] {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(Point3::from_array(box_lo), Point3::from_array(box_hi));
@@ -846,7 +852,7 @@ fn a_holed_operand_keeps_its_hole_through_a_cut() {
         let g = mesh_vs_props(&m, s);
         assert_agrees(&g, name);
         let vol = nacre_props::mass_props(&m, s).unwrap().volume;
-        assert!((vol - 0.9125).abs() < 1e-9, "{name} volume {vol}");
+        assert!((vol - 0.916625).abs() < 1e-9, "{name} volume {vol}");
     }
 }
 
