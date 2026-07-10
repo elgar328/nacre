@@ -14,10 +14,7 @@
 // build rightly sees it as unreachable.
 #![cfg_attr(not(test), allow(dead_code))]
 
-use crate::{
-    BoolError, PlaneInfo, edge_incidence, face_half_edges, face_loops, reject,
-    segment_crosses_face, tag,
-};
+use crate::{BoolError, PlaneInfo, edge_incidence, face_half_edges, reject, tag};
 use nacre_geom::Surface;
 use nacre_geom::intersect::{
     plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d, three_planes,
@@ -110,8 +107,8 @@ pub(crate) fn edge_planes(
 /// A crossing of `L` with `∂f` lies on an edge of `f`, which lies on `P ∩ R` for the
 /// neighbouring face's plane `R` — so the crossing is exactly `P ∩ Q ∩ R`, the same
 /// species of three-plane point the seam machinery already builds. Whether it lies
-/// *within* that edge and *inside* `g` is a single question, and `segment_crosses_face`
-/// already answers it exactly.
+/// *within* that edge and *inside* `g` is a single question, and [`edge_crosses_face`]
+/// answers it exactly.
 pub(crate) fn seam_segments_on(
     model: &Model,
     f: Handle<Face>,
@@ -122,13 +119,13 @@ pub(crate) fn seam_segments_on(
     inc_y: &EdgePlanes,
 ) -> Result<Vec<SeamSegment>, BoolError> {
     let p = surf_ix[&model.faces.get(f).surface];
-    let f_rings = face_loops(model, f);
+    let f_rings = face_rings(model, f, p, inc_x)?;
     let shell = model.solids.get(other).outer;
 
     let mut out = Vec::new();
     for &g in &model.shells.get(shell).faces {
         let q = surf_ix[&model.faces.get(g).surface];
-        let g_rings = face_loops(model, g);
+        let g_rings = face_rings(model, g, q, inc_y)?;
 
         // `∂(f ∩ g) ⊆ (∂f ∩ g) ∪ (f ∩ ∂g)`, and these two sweeps collect exactly
         // those parts: a boundary crossing that lands outside the other face never
@@ -141,18 +138,19 @@ pub(crate) fn seam_segments_on(
         // inside `f` is a seam node like any other; skipping it left an odd crossing
         // count, and `ARRANGEMENT_DEGENERATE` cried in place of the honest guard.
         let mut third: Vec<(usize, Option<Handle<Edge>>)> = Vec::new();
-        for (face, rings, inc, own, on_f) in [
-            (f, &g_rings, inc_x, p, true),
-            (g, &f_rings, inc_y, q, false),
+        for (face, rings, inc, own, into, on_f) in [
+            (f, &g_rings, inc_x, p, q, true),
+            (g, &f_rings, inc_y, q, p, false),
         ] {
             for he in face_half_edges(model.faces.get(face)) {
-                let (bounds, [pa, pb]) = inc[&he.edge];
+                let (bounds, pair) = inc[&he.edge];
+                let [pa, pb] = pair;
                 let r = if pa == own { pb } else { pa };
                 let (v0, v1) = (
                     model.vertices.get(bounds[0]).point,
                     model.vertices.get(bounds[1]).point,
                 );
-                if segment_crosses_face(v0, v1, rings)? {
+                if edge_crosses_face(planes, pair, v0, v1, into, rings)? {
                     third.push((r, on_f.then_some(he.edge)));
                 }
             }

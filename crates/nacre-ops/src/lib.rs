@@ -162,8 +162,9 @@ pub(crate) mod tag {
     /// inputs, so a direct caller could still hand one in.
     pub const NON_MANIFOLD_EDGE: &str = "non_manifold_edge";
     /// A backstop with no firing test yet — the degeneracies that would produce an
-    /// odd crossing count are expected to trip `CONTACT_DEGENERATE` first. Recorded
-    /// as unverified in design.md §9, alongside `fourplane`.
+    /// odd crossing count are expected to trip `VERTEX_ON_FACE_PLANE` or `POINT_ON_RING`
+    /// first, since an edge that neither straddles a face's plane nor pierces it cleanly
+    /// is named there. Recorded as unverified in design.md §9, alongside `fourplane`.
     pub const ARRANGEMENT_DEGENERATE: &str = "arrangement_degenerate";
     /// The arrangement and the vertex classification disagree about where the seam
     /// meets `∂f`, or the `seam` list and the arrangement disagree about whether it
@@ -242,7 +243,6 @@ pub(crate) mod tag {
     pub const OUTSIDE_OR_FOURPLANE: &str = "outside_or_fourplane";
     pub const ON_BOUNDARY: &str = "on_boundary";
     pub const RAY_DEGENERATE: &str = "ray_degenerate";
-    pub const CONTACT_DEGENERATE: &str = "contact_degenerate";
     /// An endpoint of an edge lies exactly on a face's plane — and if both do, the edge lies
     /// in that plane. A tangential contact, not a crossing, and out of clean-seam coverage.
     pub const VERTEX_ON_FACE_PLANE: &str = "vertex_on_face_plane";
@@ -974,8 +974,7 @@ fn raise_region(
 // ---- boolean (M5-c3) ----
 
 use nacre_geom::intersect::{
-    RayCross, SegCross, plane_plane, ray_face_cross, segment_face_cross, three_plane_orient3d,
-    three_planes,
+    RayCross, plane_plane, ray_face_cross, three_plane_orient3d, three_planes,
 };
 #[cfg(test)]
 use std::collections::BTreeSet;
@@ -1068,7 +1067,26 @@ fn nonconvex_seamfree(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
-    if boundaries_intersect(model, a, b)? {
+    // Exact containment reads a face's rings as three-plane triples, and an imprinted face
+    // cannot give them: its hole rim's two neighbours are *coplanar* (the holed face and the
+    // region face cut from it), so the rim's vertices have no triple and the line `P ∩ R` no
+    // direction. `overlap_fuse_cut`, `fuse_cut` and `common` all reject that at their door;
+    // this path was the last one without the guard, and it is narrow — a coplanar pair
+    // *across* the two solids is harmless, since a face's rings only ever name its own
+    // solid's planes.
+    let mut planes = collect_planes(model, a)?;
+    let na = planes.len();
+    planes.extend(collect_planes(model, b)?);
+    if has_coplanar_pair(&planes[..na]) || has_coplanar_pair(&planes[na..]) {
+        return Err(reject(tag::COPLANAR_PAIR));
+    }
+    let surf_ix: HashMap<Handle<Surface>, usize> = planes
+        .iter()
+        .enumerate()
+        .map(|(i, pi)| (pi.surf, i))
+        .collect();
+
+    if boundaries_intersect(model, a, b, &planes, &surf_ix)? {
         // A genuine seam. Single-chord `Fuse`/`Cut` (M5-d2) is handled here; the
         // non-convex `Common`, and multi-chord/multi-loop seams, are later sub-units.
         return match kind {
@@ -1098,26 +1116,50 @@ fn nonconvex_seamfree(
     contained_result(model, kind, a, b, &classof)
 }
 
-/// Every outer-shell face of `face_solid` that segment `p0 → p1` pierces, as combined-plane
-/// indices (`surf_ix`), in shell order. The non-convex analogue of [`enter_face`]: each face
-/// is fanned and tested by [`segment_crosses_face`] (oriented winding, apex retry).
+/// A solid's outer-shell faces, each as its combined-plane index and its rings in triple
+/// form — the input [`pierced_faces`] tests against, built once per solid.
+type FaceRings = Vec<(usize, Vec<Vec<[usize; 3]>>)>;
+
+fn solid_face_rings(
+    model: &Model,
+    solid: Handle<Solid>,
+    surf_ix: &HashMap<Handle<Surface>, usize>,
+    inc: &arrange::EdgePlanes,
+) -> Result<FaceRings, BoolError> {
+    // The **outer** shell alone, as `pierced_faces` has always scanned. That asymmetry
+    // against `point_in_solid`, which counts the cavity shells too, is the whole of the
+    // `tunnel` guard: an edge reaching into a void reads `Outside` at both ends while
+    // piercing the outer boundary once, and the parity check catches it.
+    let shell = model.solids.get(solid).outer;
+    model
+        .shells
+        .get(shell)
+        .faces
+        .iter()
+        .map(|&fh| {
+            let q = surf_ix[&model.faces.get(fh).surface];
+            arrange::face_rings(model, fh, q, inc).map(|r| (q, r))
+        })
+        .collect()
+}
+
+/// Every face of `rings` that the edge on planes `pair`, running `p0 → p1`, pierces — as
+/// combined-plane indices, in shell order. The non-convex analogue of [`enter_face`].
 ///
 /// A segment meets a plane at most once, so no plane appears twice — and two faces on one
 /// plane would already have been rejected as a `coplanar_pair`. So each hit is a distinct
 /// seam vertex.
 fn pierced_faces(
-    model: &Model,
+    planes: &[PlaneInfo],
+    pair: [usize; 2],
     p0: Point3,
     p1: Point3,
-    face_solid: Handle<Solid>,
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    rings: &FaceRings,
 ) -> Result<Vec<usize>, BoolError> {
-    let shell = model.solids.get(face_solid).outer;
     let mut hits = Vec::new();
-    for &fh in &model.shells.get(shell).faces {
-        let rings = face_loops(model, fh);
-        if segment_crosses_face(p0, p1, &rings)? {
-            hits.push(surf_ix[&model.faces.get(fh).surface]);
+    for (q, r) in rings {
+        if arrange::edge_crosses_face(planes, pair, p0, p1, *q, r)? {
+            hits.push(*q);
         }
     }
     Ok(hits)
@@ -1161,14 +1203,19 @@ fn overlap_fuse_cut(
     // its faces (that face's plane is the seam vertex's third plane).
     let edges_a = edge_incidence(model, a, &surf_ix)?;
     let edges_b = edge_incidence(model, b, &surf_ix)?;
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    // Each solid's faces as triple rings, once. `edge_crosses_face` reads them per edge.
+    let rings_a = solid_face_rings(model, a, &surf_ix, &inc_a)?;
+    let rings_b = solid_face_rings(model, b, &surf_ix, &inc_b)?;
     let mut seam: Vec<SeamVertex> = Vec::new();
     let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
-    for (edges, other) in [(&edges_a, b), (&edges_b, a)] {
+    for (edges, other) in [(&edges_a, &rings_b), (&edges_b, &rings_a)] {
         for &(_, bounds, inc) in edges {
             let [v0, v1] = bounds;
             let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
-            let hits = pierced_faces(model, p0, p1, other, &surf_ix)?;
+            let hits = pierced_faces(&planes, inc, p0, p1, other)?;
             let straddles = s0 != s1;
             if straddles && hits.is_empty() {
                 return Err(reject(tag::NO_ENTRY_FACE)); // an unfired backstop, now
@@ -1243,9 +1290,6 @@ fn overlap_fuse_cut(
     // crossing on the edge it was produced on (`SeamSegment::on_edge`), so nothing has
     // to key a splice by `Handle<Edge>` — the map that could hold only one crossing per
     // edge no longer exists here.
-    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
-    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
-
     let mut faces: Vec<LocalFace> = Vec::new();
     for (solid, other, inc_f, inc_o, keep, flip) in [
         (a, b, &inc_a, &inc_b, keep_a, false),
@@ -1996,31 +2040,9 @@ fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
     tris
 }
 
-/// Distinct boundary edges of a solid (outer + cavity shells) as endpoint-point
-/// pairs. First-seen order → deterministic.
-///
-/// Outer loops only, and that is complete: manifoldness uses every edge exactly
-/// twice, so a hole ring's edges also appear on the outer loop of the adjacent
-/// wall face.
-fn solid_edges(model: &Model, solid: Handle<Solid>) -> Vec<(Point3, Point3)> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for fh in solid_faces(model, solid) {
-        for &he in &model.faces.get(fh).outer.half_edges {
-            if seen.insert(he.edge) {
-                let [v0, v1] = model.edges.get(he.edge).bounds.expect("bounded");
-                out.push((model.vertices.get(v0).point, model.vertices.get(v1).point));
-            }
-        }
-    }
-    out
-}
-
-/// Whether the boundaries of `a` and `b` actually cross — an edge of one pierces
-/// a face of the other (either direction). Each face is fanned and the oriented
-/// [`segment_face_cross`] sum decides "pierces this face"; a concave face's
-/// spurious triangles cancel. A `Degenerate` contact (a coplanar face, or an edge
-/// grazing another's edge/vertex) is out of clean coverage ⇒ `Unsupported`.
+/// Whether the boundaries of `a` and `b` actually cross — an edge of one pierces a face of
+/// the other (either direction). The same question [`pierced_faces`] answers, so it is the
+/// same function, and one degeneracy policy covers both.
 ///
 /// `Ok(false)` means seam-free: the two solids are disjoint or one strictly
 /// contains the other (their interiors do not partially overlap) — the only cases
@@ -2032,54 +2054,23 @@ fn boundaries_intersect(
     model: &Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Surface>, usize>,
 ) -> Result<bool, BoolError> {
     for (edge_solid, face_solid) in [(a, b), (b, a)] {
-        let edges = solid_edges(model, edge_solid);
-        let faces: Vec<Vec<Vec<Point3>>> = solid_faces(model, face_solid)
-            .into_iter()
-            .map(|fh| face_loops(model, fh))
-            .collect();
-        for (p0, p1) in &edges {
-            for rings in &faces {
-                if segment_crosses_face(*p0, *p1, rings)? {
-                    return Ok(true); // a genuine seam
-                }
+        let inc_f = arrange::edge_planes(model, face_solid, surf_ix)?;
+        let rings = solid_face_rings(model, face_solid, surf_ix, &inc_f)?;
+        for (_, bounds, pair) in edge_incidence(model, edge_solid, surf_ix)? {
+            let (p0, p1) = (
+                model.vertices.get(bounds[0]).point,
+                model.vertices.get(bounds[1]).point,
+            );
+            if !pierced_faces(planes, pair, p0, p1, &rings)?.is_empty() {
+                return Ok(true); // a genuine seam
             }
         }
     }
     Ok(false)
-}
-
-/// Whether segment `p0→p1` pierces the *material* of planar face `rings` (outer
-/// loop first, then holes), by the oriented [`segment_face_cross`] winding summed
-/// over every ring's fan. A segment through a hole gets `+1` from the outer fan and
-/// `−1` from the hole's, so it correctly reports no crossing.
-///
-/// A fan diagonal may be coplanar with an axis-aligned query edge (a spurious
-/// `Degenerate`); re-fanning from another apex uses different diagonals, so we
-/// retry — for the face as a whole, since one ring's verdict is meaningless without
-/// the others. A genuine contact (the segment grazing a *real* edge/vertex) is
-/// `Degenerate` from every apex ⇒ `Unsupported`.
-pub(crate) fn segment_crosses_face(
-    p0: Point3,
-    p1: Point3,
-    rings: &[Vec<Point3>],
-) -> Result<bool, BoolError> {
-    let apexes = rings.iter().map(|r| r.len()).max().unwrap_or(0);
-    'apex: for apex in 0..apexes {
-        let mut crossing = 0i32;
-        for ring in rings {
-            for tri in fan_triangles(ring, apex % ring.len()) {
-                match segment_face_cross(p0, p1, tri) {
-                    SegCross::Cross(sign) => crossing += sign as i32,
-                    SegCross::Miss => {}
-                    SegCross::Degenerate => continue 'apex, // fan diagonal grazed — re-fan the face
-                }
-            }
-        }
-        return Ok(crossing != 0);
-    }
-    Err(reject(tag::CONTACT_DEGENERATE)) // grazed a real edge/vertex from every apex
 }
 
 /// Whether a segment (both endpoints outside the convex solid `range`) passes
@@ -3772,10 +3763,10 @@ pub mod tests {
     #[test]
     fn seam_segments_on_two_overlapping_boxes() {
         // A = [0,2]×[0,2.2]×[0,2.4] and B = [1,3.5]×[1,3.2]×[1,3.4] share a corner.
-        // Extents are deliberately unequal: with two cubes the seam lands on a face's
-        // *centre*, where both fan diagonals cross, and `segment_crosses_face` grazes
-        // from every apex and honestly reports `contact_degenerate` (the same trap the
-        // `l_and_corner_box` fixture avoids).
+        // Extents were unequal because with two cubes the seam lands on a face's *centre*,
+        // where both fan diagonals cross; `segment_crosses_face` grazed from every apex
+        // and said `contact_degenerate`. Cell (5a) deleted the fan, and `two_boxes` now
+        // runs this shape at the centre. The coordinates stay: one variable at a time.
         //
         // On A's x=2 face (y∈[0,2.2], z∈[0,2.4]) two of B's faces cut a seam:
         //   B's z=1 face ⇒ the line {x=2, z=1} clipped to y∈[1, 2.2]
@@ -4005,8 +3996,9 @@ pub mod tests {
 
     /// A big cube whose `y=0, z=0` edge is crossed **twice** by the seam: the notch
     /// spans `x∈[3,7]` and hangs below both `y=0` and `z=0`, so that one edge enters
-    /// and leaves it. Extents are asymmetric so no crossing lands on a face centre or
-    /// a fan diagonal (the `contact_degenerate` trap of `l_and_corner_box`).
+    /// and leaves it. Extents are asymmetric so no crossing lands on a face centre or a
+    /// fan diagonal — a debt to the fan, which cell (5a) deleted. Kept: one variable at
+    /// a time.
     ///
     /// `edge_seam` maps an edge to *one* seam triple. This input is what that map
     /// cannot represent — and `boolean` rejects it today (see
@@ -4336,7 +4328,8 @@ pub mod tests {
     /// Every non-convex overlap input that reaches `reconstruct_face`: the three that
     /// succeed and the three that it rejects from *inside*. The rejecting three matter
     /// most — cell 3d makes `reconstruct_face` call `seam_paths_on`, which can reject
-    /// for reasons the old code never could (`contact_degenerate`, `fourplane`). Should
+    /// for reasons the old code never could (`vertex_on_face_plane`, `point_on_ring`,
+    /// `fourplane`). Should
     /// that fire on a face visited *before* the intended one, the reject tag silently
     /// changes. Measuring only the accepted inputs would not see it.
     struct OverlapCase {
@@ -4648,32 +4641,27 @@ pub mod tests {
     /// gets. Measured before cell 3f-5: `Ok`, volume 0.96996 for a correct 0.916625, with
     /// `validate` reporting five violations.
     ///
-    /// `0.92 − 0.15·0.2·0.25`. A boolean composing on a shape a boolean can make.
+    /// `0.92 − 0.15³`. A boolean composing on a shape a boolean can make.
     ///
-    /// The box is asymmetric because the fan is not. Bite the corner with `[0.85,1.15]³`
-    /// and the box's vertical edge pierces the lid at `(0.85, 0.85)`, dead on the diagonal
-    /// of every fan the lid and its rim admit — `contact_degenerate`, honestly. Sub-unit 5
-    /// owes this coordinate back.
-
+    /// The box was asymmetric until cell (5a), because the fan was. `[0.85,1.15]³` pierces
+    /// the lid at `(0.85, 0.85)`, dead on the diagonal of every fan the lid and its rim
+    /// admit, and `contact_degenerate` spoke — honestly, but about the triangulation rather
+    /// than about the geometry. Exact containment has no diagonals, so the coordinate comes
+    /// back and brings with it the `0.916625` design.md §9 has called the right answer since
+    /// before cell 3f-5.
     #[test]
     fn cut_a_pocket_at_a_corner() {
         let (mut m, pc) = pocketed_cube();
-        let bx = m.add_cuboid(
-            Point3::from_array([0.85, 0.8, 0.75]),
-            Point3::from_array([1.2, 1.15, 1.1]),
-        );
+        let bx = m.add_cuboid(Point3::from_array([0.85; 3]), Point3::from_array([1.15; 3]));
         let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
         let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!((props.volume - 0.9125).abs() < 1e-9, "{}", props.volume);
-        assert!(
-            solid_faces(&m, r)
-                .into_iter()
-                .any(|fh| !m.faces.get(fh).inner.is_empty()),
-            "the lid kept its hole"
-        );
+        assert!((props.volume - 0.916625).abs() < 1e-9, "{}", props.volume);
+        // A rectangular bite at a convex corner trades three quarter-faces for three more.
+        assert!((props.area - 6.8).abs() < 1e-9, "{}", props.area);
+        assert_eq!(holed_faces(&m, r).len(), 1, "the lid kept its hole");
     }
 
     /// The same bite, mirrored in `z`, so the lid never meets the seam and its hole rides
@@ -4682,16 +4670,16 @@ pub mod tests {
     fn cut_a_pocket_at_a_bottom_corner() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
-            Point3::from_array([0.85, 0.8, -0.1]),
-            Point3::from_array([1.2, 1.15, 0.25]),
+            Point3::from_array([0.85, 0.85, -0.15]),
+            Point3::from_array([1.15, 1.15, 0.15]),
         );
         let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
         let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!((props.volume - 0.9125).abs() < 1e-9, "{}", props.volume);
-        assert!(holed_faces(&m, r).len() == 1, "the lid kept its hole");
+        assert!((props.volume - 0.916625).abs() < 1e-9, "{}", props.volume);
+        assert_eq!(holed_faces(&m, r).len(), 1, "the lid kept its hole");
     }
 
     /// The box crosses the pocket rim, so a boundary node rides a rim edge and `∂f` is no
@@ -4699,18 +4687,17 @@ pub mod tests {
     /// it is. The rim edge itself is fine now: it reaches this far only because
     /// `edge_incidence` gives it both incident planes and a seam vertex gets built on it.
     ///
-    /// The box hangs over the rim's `(0.7, 0.7)` corner without reaching the cube's side
-    /// walls. The obvious `[0.55,1.15]² × [0.85,1.15]` threads the pocket void and leaves
-    /// through a wall; cell 3f-5 measured `pierced_multi` there. Cell 3e-3 retired that
-    /// guard, and re-measuring finds `contact_degenerate` underneath it — the fan, not the
-    /// coverage. Both were honest, and both were about something else.
-
+    /// The obvious box, which threads the pocket void and leaves through a wall. Cell 3f-5
+    /// had to hang a smaller one over the rim's corner instead, because `pierced_multi`
+    /// spoke here; cell 3e-3 retired that guard and `contact_degenerate` spoke underneath
+    /// it; cell (5a) retired that one too. Three guards deep, and the shape was in coverage
+    /// all along for every reason except the one that finally rejects it.
     #[test]
     fn overlap_across_a_hole_rim_is_unsupported() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
-            Point3::from_array([0.55, 0.6, 0.95]),
-            Point3::from_array([0.9, 0.95, 1.15]),
+            Point3::from_array([0.55, 0.55, 0.85]),
+            Point3::from_array([1.15; 3]),
         );
         assert_rejects(
             || boolean(&mut m, BoolKind::Cut, pc, bx),
@@ -4730,8 +4717,8 @@ pub mod tests {
     fn overlap_across_a_hole_rim_rejects_either_way() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
-            Point3::from_array([0.55, 0.6, 0.95]),
-            Point3::from_array([0.9, 0.95, 1.15]),
+            Point3::from_array([0.55, 0.55, 0.85]),
+            Point3::from_array([1.15; 3]),
         );
         assert_rejects(
             || boolean(&mut m, BoolKind::Cut, bx, pc),
@@ -5983,6 +5970,51 @@ pub mod tests {
         assert!(has_coplanar_pair(&planes)); // the lid and its region face
     }
 
+    /// The pocketed cube with a second square imprinted on the pocket's floor: non-convex,
+    /// so it takes the seam-free path, and carrying a coplanar pair (that floor and the
+    /// region face cut from it), so exact containment cannot read its rings as triples.
+    fn imprinted_pocketed_cube() -> (Model, Handle<Solid>) {
+        let (mut m, top) = cube_with_top();
+        let OpOutput::PocketOnFace { bottom_face, .. } =
+            apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap()
+        else {
+            unreachable!()
+        };
+        let OpOutput::ImprintSketch { solid, .. } = apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: bottom_face,
+                profile: Profile2d {
+                    points: vec![p2(-0.1, -0.1), p2(0.1, -0.1), p2(0.1, 0.1), p2(-0.1, 0.1)],
+                },
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        (m, solid)
+    }
+
+    /// The price of exact containment, paid at the last door. `nonconvex_seamfree` had no
+    /// coplanar guard — `contained_result` reuses whole shells and never looks at a ring —
+    /// so an imprinted non-convex operand used to sail through containment and disjointness.
+    /// Now `edge_crosses_face` asks a face for its rings as three-plane triples, and an
+    /// imprinted face has none: the rim's two neighbours are the same plane. Rejected, and
+    /// `containment_boolean_already_keeps_a_pocket` measures that a *pocket* still rides
+    /// through — the guard costs the imprint alone, not every hole.
+    #[test]
+    fn an_imprinted_nonconvex_operand_rejects_as_coplanar_pair() {
+        let (mut m, ipc) = imprinted_pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.05, 0.05, 0.05]),
+            Point3::from_array([0.15, 0.15, 0.15]),
+        );
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, ipc, bx),
+            tag::COPLANAR_PAIR,
+        );
+    }
+
     /// A holed operand already survives the seam-free path — `nonconvex_seamfree` never
     /// had a hole guard, and `contained_result` reuses whole shells, so the pocket rides
     /// through untouched. Nothing tested it. Pin it before the guard comes down.
@@ -6003,77 +6035,65 @@ pub mod tests {
         }
     }
 
-    /// Count the crossings of `x`'s edges through `y`'s faces, once by exact containment and
-    /// once by the fan.
-    fn crossings_both_ways(
+    /// How many of `x`'s edges pierce a face of `y`, by exact containment.
+    fn crossings_of(
         m: &Model,
         x: Handle<Solid>,
         y: Handle<Solid>,
         planes: &[PlaneInfo],
         surf_ix: &HashMap<Handle<Surface>, usize>,
-    ) -> (Result<usize, BoolError>, Result<usize, BoolError>) {
-        let exact = (|| {
-            let inc_y = arrange::edge_planes(m, y, surf_ix)?;
-            let rings: Vec<(usize, Vec<Vec<[usize; 3]>>)> = solid_faces(m, y)
-                .into_iter()
-                .map(|g| {
-                    let q = surf_ix[&m.faces.get(g).surface];
-                    arrange::face_rings(m, g, q, &inc_y).map(|r| (q, r))
-                })
-                .collect::<Result<_, _>>()?;
-            let mut hits = 0;
-            for (_, bounds, inc) in edge_incidence(m, x, surf_ix)? {
-                let (p0, p1) = (
-                    m.vertices.get(bounds[0]).point,
-                    m.vertices.get(bounds[1]).point,
-                );
-                for (q, r) in &rings {
-                    hits += usize::from(arrange::edge_crosses_face(planes, inc, p0, p1, *q, r)?);
-                }
-            }
-            Ok(hits)
-        })();
-        let fan = (|| {
-            let mut hits = 0;
-            for (_, bounds, _) in edge_incidence(m, x, surf_ix)? {
-                let (p0, p1) = (
-                    m.vertices.get(bounds[0]).point,
-                    m.vertices.get(bounds[1]).point,
-                );
-                for g in solid_faces(m, y) {
-                    hits += usize::from(segment_crosses_face(p0, p1, &face_loops(m, g))?);
-                }
-            }
-            Ok(hits)
-        })();
-        (exact, fan)
+    ) -> Result<usize, BoolError> {
+        let inc_y = arrange::edge_planes(m, y, surf_ix)?;
+        let rings = solid_face_rings(m, y, surf_ix, &inc_y)?;
+        let mut hits = 0;
+        for (_, bounds, inc) in edge_incidence(m, x, surf_ix)? {
+            let (p0, p1) = (
+                m.vertices.get(bounds[0]).point,
+                m.vertices.get(bounds[1]).point,
+            );
+            hits += pierced_faces(planes, inc, p0, p1, &rings)?.len();
+        }
+        Ok(hits)
     }
 
-    /// The census. Every edge against every face, on every fixture, both directions: the exact
-    /// test and the fan must count the same crossings. Nothing here is a sample.
+    /// The census: every edge against every face, on every fixture, both directions. The
+    /// counts are the ones the fan gave before cell (5a) deleted it — the exact test
+    /// reproduces them all, and adds `two_boxes`, which the fan could not answer at all.
     ///
     /// It also measures what cell (5a) risked. `face_rings` calls `face_vertex_triples` on
     /// every face now, not only the ones the seam touches, so a straight angle anywhere would
     /// reject; and `point_in_ring` needs a clear ray for every piercing point, inside the face
     /// or outside it. Neither fires. `no_clear_ray` and `loop_orient_mismatch` stay unfired.
     #[test]
-    fn exact_crossings_match_the_fan_on_every_fixture() {
+    fn every_edge_against_every_face_on_every_fixture() {
         let extra = [
-            ("cube_and_notch", cube_and_notch()),
-            ("l_and_rod", l_and_rod()),
-            ("pocket_and_slab(0.3)", pocket_and_slab(0.3)),
-            ("pocket_and_slab(0.7)", pocket_and_slab(0.7)),
+            ("cube_and_notch", (2, 4), cube_and_notch()),
+            ("l_and_rod", (0, 8), l_and_rod()),
+            ("pocket_and_slab(0.3)", (0, 4), pocket_and_slab(0.3)),
+            ("pocket_and_slab(0.7)", (0, 8), pocket_and_slab(0.7)),
+            ("two_boxes", (3, 3), two_boxes()),
         ];
-        let cases = overlap_fixtures()
+        let want: HashMap<&str, (usize, usize)> = HashMap::from([
+            ("l_and_corner_box", (3, 3)),
+            ("l_and_reflex_box", (3, 5)),
+            ("u_and_slab (two flat loops)", (8, 0)),
+            ("l_and_popup_box (folded arc)", (4, 4)),
+            ("l_and_dimple (inner loop)", (0, 4)),
+            ("l_and_notch_bar (two chords)", (6, 6)),
+            ("l_and_ell_stub (non-convex loop)", (0, 6)),
+            ("l_and_staple (arc beside a loop)", (3, 9)),
+        ]);
+        for (name, expect, m, x, y) in overlap_fixtures()
             .into_iter()
-            .map(|c| (c.name, c.m, c.x, c.y))
-            .chain(extra.into_iter().map(|(n, (m, x, y))| (n, m, x, y)));
-        for (name, m, x, y) in cases {
+            .map(|c| (c.name, want[c.name], c.m, c.x, c.y))
+            .chain(extra.into_iter().map(|(n, e, (m, x, y))| (n, e, m, x, y)))
+        {
             let (planes, surf_ix) = combined(&m, x, y);
-            for (a, b) in [(x, y), (y, x)] {
-                let (exact, fan) = crossings_both_ways(&m, a, b, &planes, &surf_ix);
-                assert_eq!(exact.unwrap(), fan.unwrap(), "{name}");
-            }
+            let got = (
+                crossings_of(&m, x, y, &planes, &surf_ix).unwrap(),
+                crossings_of(&m, y, x, &planes, &surf_ix).unwrap(),
+            );
+            assert_eq!(got, expect, "{name}");
         }
     }
 
@@ -6090,9 +6110,7 @@ pub mod tests {
     fn the_centre_of_a_square_face_is_pierced_not_grazed() {
         let (m, a, b) = two_boxes();
         let (planes, surf_ix) = combined(&m, a, b);
-        let (exact, fan) = crossings_both_ways(&m, b, a, &planes, &surf_ix);
-        assert_eq!(exact.unwrap(), 3);
-        assert_eq!(fan, Err(BoolError::Unsupported));
+        assert_eq!(crossings_of(&m, b, a, &planes, &surf_ix).unwrap(), 3);
 
         // Down to the one pair, so the point is named rather than counted.
         let x_face = face_facing(&m, a, &planes, &surf_ix, [1.0, 0.0, 0.0]);
@@ -6114,10 +6132,16 @@ pub mod tests {
             m.vertices.get(bounds[1]).point,
         );
         assert!(arrange::edge_crosses_face(&planes, along_x, p0, p1, q, &rings).unwrap());
-        assert_rejects(
-            || segment_crosses_face(p0, p1, &face_loops(&m, x_face)),
-            tag::CONTACT_DEGENERATE,
-        );
+
+        // And the whole boolean now runs on it, through the non-convex path. Both operands
+        // are convex, so `boolean` still routes them to `fuse_cut`; calling the seam path
+        // directly is the measurement design.md §9 line 447 asked for. The gate is open.
+        let (mut m, a, b) = two_boxes();
+        let r = overlap_fuse_cut(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (1.0 - 0.125)).abs() < 1e-9, "volume {vol}");
     }
 
     /// A hole subtracts. An edge dropped straight through the pocket's mouth crosses the lid's
@@ -7399,9 +7423,13 @@ pub mod tests {
     #[test]
     fn common_rejects_non_convex_input() {
         // An L-shaped prism (reflex edge) is not the intersection of its face
-        // half-spaces. It never reaches `common`'s `is_convex` guard, though: the
-        // box's corner grazes the L's boundary, so `boundaries_intersect` bails on a
-        // degenerate contact first. Measured, not assumed.
+        // half-spaces. It never reaches `common`'s `is_convex` guard, though: the box's
+        // floor is **coplanar with the L's**, so the L's bottom edges lie in that plane and
+        // `boundaries_intersect` bails on a tangential contact first. Measured, not assumed.
+        //
+        // The fan used to call this `contact_degenerate` — "grazed a diagonal from every
+        // apex". It never was a graze. Cell (5a) reads the endpoints' exact sides of the
+        // plane, finds both zero, and says what is actually true.
         let l = Profile2d {
             points: vec![
                 p2(0.0, 0.0),
@@ -7420,7 +7448,7 @@ pub mod tests {
         );
         assert_rejects(
             || boolean(&mut m, BoolKind::Common, lsolid, b),
-            tag::CONTACT_DEGENERATE,
+            tag::VERTEX_ON_FACE_PLANE,
         );
     }
 
