@@ -518,7 +518,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 - **증명이 짧아졌다.** 호 없이 고리 하나면 면이 원반 + annulus로 갈리고 `∂f`는 annulus에 있다. 그러니 `kept[0]`이 annulus를 분류하고 원반은 반대 분류를 갖는다. annulus가 살면 **구멍**, 원반이 살면 **섬**. 제3의 답은 없고 넓이는 필요 없다. 빠져나갈 구멍("정점은 다 같은 분류인데 엣지가 두 번 교차")은 그 엣지가 `bnd`에 들자마자 빈 `transitions`와 **집합으로** 달라져 `SEAM_COUNT_MISMATCH`가 먼저 운다 — 3d가 개수 대신 집합을 택한 값.
 - **새 부호도, 새 술어도, 새 태그도 없다.** 부호 규칙은 국소적이다: seam 위의 한 점에서 유지 재료가 **어느 쪽인지**만 묻고, 그 고리가 무엇을 **감싸는지**는 묻지 않는다. 그래서 구멍을 CW로 감던 바로 그 `orient_seam_loop` 호출이 섬을 CCW로 감는다. 3f-1의 골든이 `inside == rev(outside)`로 **두 방향을 다 못박아 둔** 것이 한 셀 뒤에 값을 했다. `assemble_fuse_cut`도 손대지 않았다 — `ring` 클로저는 노드 종류를 묻지 않는다.
-- **이름이 거짓이 되어 개명했다.** `orient_hole_loop` → `orient_seam_loop`, `HOLE_ORIENT_MISMATCH` → `LOOP_ORIENT_MISMATCH`. doc은 이미 일반적이었다("outer or inner"). `POKEHOLE`은 개명하지 않는다 — 3f-3이 비볼록 발화 지점을 은퇴시키면 볼록 경로의 문자 그대로의 poke-through만 남아 이름이 **다시 정확해진다.**
+- **이름이 거짓이 되어 개명했다.** `orient_hole_loop` → `orient_seam_loop`, `HOLE_ORIENT_MISMATCH` → `LOOP_ORIENT_MISMATCH`. doc은 이미 일반적이었다("outer or inner"). ~~`POKEHOLE`은 개명하지 않는다 — 3f-3이 비볼록 발화 지점을 은퇴시키면 볼록 경로의 문자 그대로의 poke-through만 남아 이름이 **다시 정확해진다.**~~ **(5b)에서 뒤집혔다:** 볼록 경로가 통째로 죽어 `POKEHOLE`은 남지 못하고 은퇴했다(아래 셀 (5b)).
 - **`flip`이 그런 고리를 처음 만난다.** `Cut`의 B-조각이므로 링이 뒤집혀 면 법선이 `−z`가 되고, 그 면이 박스의 **바닥**이 된다. rim 엣지 넷은 `edge_for`의 정점쌍 dedup 덕에 스텁 옆면 조각이 쓰는 바로 그 엣지이고, `flip` 덕에 두 사용이 대립한다. (`flip` + **inner**는 여전히 미검증.)
 - **검출기 표를 실측했다 — 구멍과 정반대다.**
 
@@ -733,6 +733,20 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **★ §9 419행의 답을 이 숫자 위에 다시 쓴다.** 필터 뒤에도 씨임 경로는 볼록 경로의 **~21–27배**다. 그러나 그 잔차는 exact 산술이 아니다 — 술어는 이제 `0.01 µs`로 무시할 수준이고, `point_in_ring`의 `1.26 µs`는 그 안에서 도는 **~60번의 값싼 술어 호출**, 즉 광선 캐스팅의 `O(r)` 순회다. **그것을 더 줄이는 것은 (5d)의 `plane_orient`(광선 없는 `O(F)` 분류기)이지 필터가 아니다.** "measure then decide"의 실측 답: 필터로 끝, 나머지는 알고리즘이라 (5d).
 - **필터 발화율도 쟀다** — 축정렬 박스 평면(불리언이 만드는 계수)의 3-평면 정점 × 면 질의 768건에서 **88.3%**. 축정렬은 공면 영이 가장 많은 최악이고, miss 12%는 어차피 exact로 가야 하는 진짜 영이다.
 - **크레이트 doc을 고쳤다.** *"no adaptive fast path yet"*은 **`Expansion` 값에 대해서는 여전히 참**이고 `indirect_orient3d`의 **부호에 대해서는 거짓**이 됐다 — 필터가 값이 아니라 부호에 붙는다.
+
+**볼록 Fuse/Cut 경로가 죽었다 — `fuse_cut`·`classify_vertex`·`enter_face`·`POKE_THROUGH` 은퇴 (M5 셀 (5b)).** §9 419행이 "속도 프로파일링 후 결정"이라 미뤄 둔 볼록 vs ray-cast 통합 질문의 답이다(421행 참조). **속도가 아니라 커버리지와 정확성이 답했다.** fast path의 전제 "같은 답을 더 빨리"가 깨진다.
+
+- **커버리지.** 볼록 경로는 일반 경로가 답하는 입력을 거절했다: `cube_and_notch`(엣지 두 번 교차)와 드릴 큐브(막대 관통)를 `POKE_THROUGH`로. 넷 다 비볼록 쌍둥이가 이미 그린이었고(`cut_notch_bar`·`drill_through_the_l`·`fuse_the_l_and_the_rod`·`cut_rod_by_l_disconnects`), 막던 것은 볼록성이 아니라 `edge_seam`의 엣지당 triple 하나(689행)다. **드릴 큐브는 이 커널의 두 번째 토러스이고, 첫 번째와 달리 두 피연산자가 모두 볼록이다.** 이 셀은 새 기계를 만들지 않았다 — 디스패처 한 줄이 막던 것을 열었다.
+- **정확성.** `classify_vertex`의 `1e-9` tolerance와 `enter_face`의 `t = d0/(d0−d1)` argmax가 `Fuse`/`Cut`의 진리를 f64로 정했다. 씨임 경로는 exact `point_in_solid`와 exact `edge_crosses_face`를 쓴다. **`Fuse`/`Cut` 경로의 마지막 부동소수점 술어가 사라졌다** — 커널 전체에서가 아니다((5b-0)의 전수조사 표: `is_convex`·`coplanar`는 (5d), `order_ccw`는 3g).
+- **★ 419행 (a)의 예고가 한 셀 늦었다.** "서브유닛 4에서 `classify_vertex` 은퇴 예정"이라 했으나 (5b)까지 살았다.
+- **`common`은 남고 이유가 있다.** 열거(`three_planes`+`three_plane_orient3d`)는 exact라 논거 (b)가 안 걸린다. `is_convex`도 남는다 — `detect_coincident_interface`가 문지기로 쓴다((5b-0) 표대로 (5d) 몫). 비볼록 `Common`(3g)이 `common`을 지운다.
+- **태그 넷이 발화 테스트 없이 죽었다** — `MULTICHORD`·`ON_BOUNDARY`·`POKEHOLE`·`OUTSIDE_OR_FOURPLANE`. 디스패치가 `is_convex`를 먼저 검사하므로 볼록 전용 백스톱이었다. `NONCONVEX_OPERAND`도 같은 이유로 미발화지만 `common`이 쓰므로 남는다.
+- **★ 521행의 예측이 뒤집혔다.** "`POKEHOLE`은 개명하지 않는다 … 볼록 경로의 문자 그대로 poke-through만 남아 이름이 다시 정확해진다"고 적었으나, (5b)가 볼록 경로를 지워 `POKEHOLE`은 살아남지 못하고 죽었다.
+- **★ 태그 하나가 움직였다 — 예측보다 하나 더.** `same_ground_overlap`**과 `coincident_merge_rejects_offset_footprint`**가 `COPLANAR_PAIR` → `VERTEX_ON_FACE_PLANE`으로 바뀌었다(n0 인구조사는 고정 픽스처라 하나만 예측했다 — 측정이 둘째를 찾았다). `fuse_cut`의 **결합** 평면 공면 검사가 사라지고 씨임 경로의 **피연산자별** 검사가 통과한 뒤 `plane_side`가 공유 평면을 만난다. **커버리지는 보존**(여전히 거절)되고 태그만 한 평면 덜 구체적이다 — 451행의 두 번째 실례. 결합 검사를 앞당기면 컨테이너 벽에 닿는 포함 박스를 과잉 거절하므로 **열린 문제로 남긴다.**
+- **`fuse_common_inclusion_exclusion`이 두 기계를 잇는 항등식이 됐다** — `V_A+V_B = V_fuse+V_common`에서 `fuse`는 씨임 경로, `common`은 열거 경로. 3g가 `common`을 지울 때까지 교차 검증이다.
+- **검증.** 손 골든 `993.28`/`1014.4`/`24`/`29`, 드릴 큐브 genus-1은 `holed_faces == 2`(뚜껑 둘)로(validate 클린이 genus-1을 증명하지 않으므로), 노치 컷의 정점 없는 run을 가진 면은 mesh 게이트 넷으로, `PROPTEST_CASES=4096`이 씨임 경로로 통과(`Cut`의 `.unwrap()`도 `prop_assume` 거절률도 그물). OCCT diff 40 → 44(노치·드릴 Cut/Fuse). ops 스위트는 (5b-0) 덕에 그대로 빠르다.
+- **부채 둘.** (1) `boundaries_intersect`는 `overlap_fuse_cut`의 `seam.is_empty()`와 같은 질문을 두 번 묻는다 — 삭제하면 스캔이 한 번이 된다(답·태그 불변). (5b-0)이 속도를 이미 닫아 성능 동기는 없고, 중복 제거가 근거이므로 미뤘다. (2) `edge_crosses_face`의 `VERTEX_ON_FACE_PLANE`은 접촉이 아니라 **평면 위**(공면)면 발화한다 — (5a)가 남긴 과잉 거절이 이제 모든 불리언에 노출됐다. 좁힘은 `point_on_ring`/`point_in_ring`로 가능하다.
+- **다음.** 3f-6(`SEAM_ACROSS_HOLE_RIM`), 3g(비볼록 `Common` — `common`·`order_ccw`·열거 기계 사망, `is_convex`는 잔존), (5c) cavity 결정, (5d) exactness sweep(`plane_orient`, `plane_side`·광선·`coplanar`·`is_convex` 은퇴).
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
