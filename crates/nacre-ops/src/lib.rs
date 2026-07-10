@@ -3832,6 +3832,8 @@ pub mod tests {
             case("l_and_notch_bar (two chords)", (2, 0), l_and_notch_bar()),
             // The first non-convex inner loop: six nodes, one of them reflex.
             case("l_and_ell_stub (non-convex loop)", (1, 1), l_and_ell_stub()),
+            // An arc and a loop on one face — the only shape `pokehole` keeps after 3f-3.
+            case("l_and_staple (arc beside a loop)", (2, 1), l_and_staple()),
         ]
     }
 
@@ -3922,7 +3924,7 @@ pub mod tests {
         }
         // Pin the exercise. A fixture edit that quietly stops reaching the arrangement
         // would otherwise leave every assertion above vacuously true.
-        assert_eq!((n_faces, n_arcs, n_loops), (104, 52, 4));
+        assert_eq!((n_faces, n_arcs, n_loops), (122, 64, 5));
     }
 
     #[test]
@@ -4625,6 +4627,88 @@ pub mod tests {
             props.volume
         );
         assert!((props.area - 15.3).abs() < 1e-9, "area {}", props.area);
+    }
+
+    /// The L-prism and a П-shaped staple straddling the L's reflex corner. The profile
+    /// lives in the **XZ** sketch plane and extrudes along `−y`, so the L's cap (`z = 1`)
+    /// is *parallel* to the extrusion axis and the staple's section there falls into two
+    /// pieces: one wholly inside the cap, one wrapping the corner `(1,1)`.
+    ///
+    /// That parallelism is the whole point. A prism cut by a plane **perpendicular** to
+    /// its axis meets a face in the profile, which is connected — so every component of
+    /// `profile ∩ f` reaches `∂f`, and a face can never carry both an arc and a loop. Every
+    /// earlier attempt at such a fixture died on that.
+    ///
+    /// Leg bottoms sit at `z = 0.5` and `z = 0.45`: two coplanar faces of *one* operand
+    /// trip `coplanar_pair` at the door, exactly as `u_prism`'s staggered prongs avoid.
+    /// And the legs span `y ∈ [0.65, 1.3]`, not `[0.7, 1.3]`, because `(1.4, 0.7)` lies on
+    /// the cap's fan diagonal `y = x/2` and `segment_crosses_face` would graze it.
+    fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let staple = Profile2d {
+            points: vec![
+                p2(0.1, 0.5),
+                p2(0.6, 0.5),
+                p2(0.6, 1.3),
+                p2(0.8, 1.3),
+                p2(0.8, 0.45),
+                p2(1.4, 0.45),
+                p2(1.4, 1.5),
+                p2(0.1, 1.5),
+            ],
+        };
+        let OpOutput::Extrude { solid: st, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane {
+                    origin: Point3::from_array([0.0, 1.3, 0.0]),
+                    x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
+                    y_axis: Vector3::from_array([0.0, 0.0, 1.0]),
+                },
+                profile: staple,
+                dist: 0.65,
+            },
+        )
+        .unwrap() else {
+            unreachable!("extrude yields Extrude output")
+        };
+        (m, l, st)
+    }
+
+    #[test]
+    fn the_staple_leaves_an_arc_beside_a_loop() {
+        // The one shape `pokehole` will still guard after cell 3f-3. The cap carries both:
+        // the near leg cuts a rectangle wholly inside it, the far leg wraps the reflex
+        // corner `(1,1)` and leaves an arc whose two ends ride *different* edges — so
+        // `pierced_multi` stays quiet.
+        let (m, l, st) = l_and_staple();
+        let (planes, surf_ix) = combined(&m, l, st);
+        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
+        let ps = paths(&m, top, l, st, &planes, &surf_ix);
+        assert_eq!(ps.len(), 2);
+
+        let arrange::SeamPath::Open(arc) = &ps[0] else {
+            panic!("an open arc")
+        };
+        assert_eq!(arc.len(), 5);
+        let ends: BTreeSet<Handle<Edge>> = arc.iter().filter_map(|nd| nd.on_edge).collect();
+        assert_eq!(ends.len(), 2, "the arc's ends ride two distinct edges");
+
+        let arrange::SeamPath::Closed(loop_) = &ps[1] else {
+            panic!("a closed loop")
+        };
+        assert_eq!(loop_.len(), 4);
+        assert!(loop_.iter().all(|nd| nd.on_edge.is_none()));
+    }
+
+    #[test]
+    fn an_arc_beside_a_loop_is_unsupported() {
+        // Measured, and fed the wrong tag once to check it has teeth. Placing the loop
+        // needs to know which of the face's kept regions contains it, and with an arc
+        // present the winding cannot say — a hole in the kept region and an island in the
+        // dropped one do not contain each other. Cell 3f-4 buys a containment test.
+        let (mut m, l, st) = l_and_staple();
+        assert_rejects(|| boolean(&mut m, BoolKind::Cut, l, st), tag::POKEHOLE);
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that
