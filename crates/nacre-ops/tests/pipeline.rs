@@ -62,17 +62,31 @@ fn multi_op_log_composes_through_export() {
 }
 
 // ---------------------------------------------------------------------------
-// Mesh gate: watertight structure + area against an independent computation.
+// Mesh gate: watertight structure + area and volume against an independent
+// computation.
 //
 // These live here because `nacre-tess` cannot reach `extrude` (ops sits above it)
-// and cannot reach `nacre-props` at all. The three checks catch different faults:
+// and cannot reach `nacre-props` at all. Four checks, four faults, none of them
+// interchangeable:
 //
-//   * `non_watertight` — an undirected triangle edge used other than twice. Blind
-//     to a fan that escapes its polygon; that fan's edges pair up fine.
+//   * triangle count — pins how many the triangulator should emit.
+//   * `non_watertight` — an undirected triangle edge used other than twice. Catches
+//     a lost face or an unshared rim. Blind to a fan that escapes its polygon
+//     (that fan's edges still pair up) and to a face wound backwards.
 //   * `mesh_area` vs `props.area` — the *unsigned* sum. A triangle outside the
 //     polygon is wound backwards, so a signed sum cancels and shoelace agrees with
-//     itself. Unsigned, it overshoots.
-//   * triangle count — pins how many the triangulator should emit.
+//     itself. Unsigned, it overshoots. Blind to a face wound backwards.
+//   * `mesh_volume` vs `props.volume` — the *signed* sum. This one is worth stating
+//     precisely, because it looks circular and is not. `props` takes each face's
+//     normal from `Face.orientation` and its area from `|A_vec|`; it never reads a
+//     loop's winding. `tess` reads only the ring's Newell normal and never reads
+//     `orientation`. So the two volumes agreeing says exactly:
+//
+//         on every face, `Face.orientation` agrees with its ring's winding.
+//
+//     Two different sources, compared. `validate` asks the same question
+//     topologically (a shared edge used twice the same way); this asks it
+//     geometrically, and neither stands in for the other.
 //
 // Several assertions below pin **today's bugs**, not today's contract. Each is
 // inverted by the commit that fixes it, so the fix shows up in the diff rather
@@ -82,7 +96,7 @@ fn multi_op_log_composes_through_export() {
 use nacre_ops::{BoolKind, OpOutput, apply, boolean};
 use nacre_store::Handle;
 use nacre_tess::{TessConfig, Tessellation, tessellate};
-use nacre_topo::{Model, Solid};
+use nacre_topo::{Face, Model, Shell, Solid};
 
 /// Σ |triangle area| — unsigned on purpose.
 fn mesh_area(t: &Tessellation) -> f64 {
@@ -91,6 +105,20 @@ fn mesh_area(t: &Tessellation) -> f64 {
         .map(|(_, tri)| {
             let p = tri.vertices.map(|h| t.vertices.get(h).pos);
             0.5 * (p[1] - p[0]).cross(p[2] - p[0]).norm()
+        })
+        .sum()
+}
+
+/// Σ ⅙ p₀·(p₁ × p₂) — the divergence theorem on a closed triangle soup. Signed on
+/// purpose: a face whose triangles wind the other way subtracts where it should add.
+fn mesh_volume(t: &Tessellation) -> f64 {
+    t.triangles
+        .iter()
+        .map(|(_, tri)| {
+            let p = tri
+                .vertices
+                .map(|h| t.vertices.get(h).pos - Point3::origin());
+            p[0].dot(p[1].cross(p[2])) / 6.0
         })
         .sum()
 }
@@ -107,15 +135,42 @@ fn non_watertight(t: &Tessellation) -> usize {
     counts.values().filter(|&&n| n != 2).count()
 }
 
-/// `(triangles, mesh area − props area, non-watertight edges)`.
-fn mesh_vs_props(model: &Model, solid: Handle<Solid>) -> (usize, f64, usize) {
+/// What the gate measured. Named fields: four numbers read positionally is one
+/// transposition away from a test that passes for the wrong reason.
+struct Gate {
+    tris: usize,
+    /// mesh − props, unsigned area.
+    area_delta: f64,
+    /// mesh − props, signed volume.
+    volume_delta: f64,
+    leaks: usize,
+}
+
+fn mesh_vs_props(model: &Model, solid: Handle<Solid>) -> Gate {
     let t = tessellate(model, &TessConfig::default()).expect("planar model meshes");
     let props = nacre_props::mass_props(model, solid).expect("planar mass props");
-    (
-        t.triangles.len(),
-        mesh_area(&t) - props.area,
-        non_watertight(&t),
-    )
+    Gate {
+        tris: t.triangles.len(),
+        area_delta: mesh_area(&t) - props.area,
+        volume_delta: mesh_volume(&t) - props.volume,
+        leaks: non_watertight(&t),
+    }
+}
+
+/// Both deltas are zero to a hair. Every fixture in this file must satisfy this;
+/// the individual tests add their own triangle counts and hand values.
+fn assert_agrees(g: &Gate, what: &str) {
+    assert_eq!(g.leaks, 0, "{what}: non-watertight edges");
+    assert!(
+        g.area_delta.abs() < 1e-12,
+        "{what}: area delta {}",
+        g.area_delta
+    );
+    assert!(
+        g.volume_delta.abs() < 1e-12,
+        "{what}: volume delta {}",
+        g.volume_delta
+    );
 }
 
 fn square(a: f64, b: f64) -> Profile2d {
@@ -254,9 +309,9 @@ fn a_convex_hole_free_solid_meshes_exactly() {
     // itself, so a later failure means the gate moved, not the mesh.
     let mut m = Model::new();
     let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let (tris, delta, leaks) = mesh_vs_props(&m, c);
-    assert_eq!((tris, leaks), (12, 0));
-    assert!(delta.abs() < 1e-12, "area delta {delta}");
+    let g = mesh_vs_props(&m, c);
+    assert_eq!(g.tris, 12);
+    assert_agrees(&g, "cube");
 }
 
 #[test]
@@ -268,9 +323,9 @@ fn a_non_star_shaped_cap_meshes_exactly() {
     //
     // Ear clipping owes nothing to `ring[0]`. Each cap is `8 − 2 = 6` triangles.
     let (m, s) = u_prism();
-    let (tris, delta, leaks) = mesh_vs_props(&m, s);
-    assert_eq!((tris, leaks), (28, 0));
-    assert!(delta.abs() < 1e-12, "area delta {delta}");
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 28);
+    assert_agrees(&g, "u prism");
 }
 
 #[test]
@@ -280,9 +335,9 @@ fn a_pocket_lid_carries_its_hole() {
     // caught. Bridged and ear-clipped, the lid is `4 + 4 + 2·1 − 2 = 8` triangles;
     // the solid comes to 28.
     let (m, s) = pocketed_cube();
-    let (tris, delta, leaks) = mesh_vs_props(&m, s);
-    assert_eq!((tris, leaks), (28, 0));
-    assert!(delta.abs() < 1e-12, "area delta {delta}");
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 28);
+    assert_agrees(&g, "pocketed cube");
 }
 
 #[test]
@@ -294,8 +349,7 @@ fn the_bootstrap_obj_carries_holes_too() {
     let (m, s) = pocketed_cube();
     let obj = nacre_tess::to_obj(&m).expect("planar model meshes");
     let f_lines = obj.lines().filter(|l| l.starts_with("f ")).count();
-    let (tris, _, _) = mesh_vs_props(&m, s);
-    assert_eq!(f_lines, tris);
+    assert_eq!(f_lines, mesh_vs_props(&m, s).tris);
 }
 
 #[test]
@@ -314,12 +368,83 @@ fn a_boolean_result_carries_its_hole() {
     // watertight; that is the fault this catches, and the fan had it until the tess cell.
     for kind in [BoolKind::Cut, BoolKind::Fuse] {
         let (m, s) = l_and_dimple(kind);
-        let (tris, delta, leaks) = mesh_vs_props(&m, s);
-        assert_eq!((tris, leaks), (36, 0), "{kind:?}");
-        assert!(delta.abs() < 1e-12, "{kind:?} area delta {delta}");
+        let g = mesh_vs_props(&m, s);
+        assert_eq!(g.tris, 36, "{kind:?}");
+        assert_agrees(&g, &format!("{kind:?} dimple"));
         let area = nacre_props::mass_props(&m, s).unwrap().area;
         assert!((area - 14.8).abs() < 1e-9, "{kind:?} area {area}");
     }
+}
+
+#[test]
+fn only_the_signed_volume_sees_a_reversed_face() {
+    // The check earns its place by being the only one in the gate that speaks.
+    //
+    // Reverse one face's outer loop and nothing else. The mesh keeps its 12 triangles;
+    // every undirected edge is still used twice; every triangle keeps its area, so the
+    // unsigned sum is unmoved. `props` is unmoved too — it reads `Face.orientation` for
+    // the normal and `|A_vec|` for the area, and neither changed. Only the signed
+    // volume, which reads the ring, dissents.
+    //
+    // `validate` also speaks (`NonOpposedEdge`), topologically, and it is not what is on
+    // trial here. The point is that the *mesh* gate would have waved this through.
+    //
+    // The cuboid is `[1,2]³`, not `[0,1]³`: three faces of the latter pass through the
+    // origin and contribute nothing to `Σ ⅙ p₀·(p₁ × p₂)`, so reversing one of those
+    // would move the signed volume by exactly zero and this test would pass vacuously.
+    let mut m = Model::new();
+    let c = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let good = mesh_vs_props(&m, c);
+    assert_eq!(good.tris, 12);
+    assert_agrees(&good, "offset cube");
+
+    // `Store` is append-only: push a replacement face, swap it into a fresh shell and
+    // solid, and move the live handle. The original falls out of `reachable()`.
+    let faces = m.shells.get(m.solids.get(c).outer).faces.clone();
+    let victim = faces[0];
+    let f = m.faces.get(victim).clone();
+    let mut outer = f.outer.clone();
+    outer.half_edges.reverse();
+    for he in &mut outer.half_edges {
+        he.forward = !he.forward;
+    }
+    let bad = m.faces.push(Face { outer, ..f });
+    let swapped = faces
+        .iter()
+        .map(|&x| if x == victim { bad } else { x })
+        .collect();
+    let shell = m.shells.push(Shell { faces: swapped });
+    let solid = m.push_solid(Solid {
+        outer: shell,
+        cavities: vec![],
+    });
+    m.live_solids = vec![solid];
+    m.rebuild_adjacency();
+
+    let g = mesh_vs_props(&m, solid);
+    assert_eq!((g.tris, g.leaks), (12, 0), "watertight stayed quiet");
+    assert!(
+        g.area_delta.abs() < 1e-12,
+        "area stayed quiet: {}",
+        g.area_delta
+    );
+    let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
+    assert!((vol - 1.0).abs() < 1e-12, "props stayed quiet: {vol}");
+    // Exactly ⅔: `faces[0]` is the `x = 1` face, whose flux `∮ r·n̂ dA` is `−1`, so it
+    // contributed `−⅓` and now contributes `+⅓`. A different face would give a
+    // different number — if `add_cuboid` ever reorders, this says so rather than
+    // shrugging at a loose bound.
+    assert!(
+        (g.volume_delta - 2.0 / 3.0).abs() < 1e-12,
+        "the signed volume should have moved by twice the face's flux, got {}",
+        g.volume_delta
+    );
+    assert!(
+        nacre_validate::validate(&m)
+            .iter()
+            .any(|v| matches!(v, nacre_validate::Violation::NonOpposedEdge { .. })),
+        "and validate speaks too, of its own accord"
+    );
 }
 
 #[test]
@@ -327,7 +452,7 @@ fn a_boolean_result_meshes_only_the_live_solid() {
     // `Store` is append-only; `boolean` supersedes rather than deletes. Walking the
     // face store meshed both original cubes (6 + 6) alongside the union.
     let (m, s) = stacked_fuse();
-    let (tris, delta, leaks) = mesh_vs_props(&m, s);
-    assert_eq!((tris, leaks), (20, 0));
-    assert!(delta.abs() < 1e-12, "area delta {delta}");
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 20);
+    assert_agrees(&g, "stacked fuse");
 }
