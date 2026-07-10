@@ -4400,6 +4400,111 @@ pub mod tests {
         );
     }
 
+    /// A slab over the pocketed cube, its underside at height `z0`. The rectangle is
+    /// asymmetric so that the cube's four vertical edges, which pierce the underside at
+    /// `(0,0)`, `(1,0)`, `(1,1)`, `(0,1)`, miss its fan diagonals; a square slab has all
+    /// four apexes degenerate at once.
+    ///
+    /// `z0 = 0.3` runs below the pocket floor, so the slab's underside meets only the
+    /// cube's outer walls. `z0 = 0.7` runs between the floor and the lid and meets the
+    /// pocket walls as well — two loops, nested.
+    fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, pc) = pocketed_cube();
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.2, -0.25, z0]),
+            Point3::from_array([1.3, 1.2, 1.5]),
+        );
+        (m, slab, pc)
+    }
+
+    fn holed_faces(m: &Model, s: Handle<Solid>) -> Vec<Handle<Face>> {
+        solid_faces(m, s)
+            .into_iter()
+            .filter(|&f| !m.faces.get(f).inner.is_empty())
+            .collect()
+    }
+
+    /// `flip` + `inner`, finally exercised. The pocket's lid is strictly inside the slab
+    /// and the seam misses it, so it rides out through `whole()` as a `Cut`'s inside-B
+    /// piece: every ring reversed, orientation toggled, and the hole still a hole. Written
+    /// since cell 3f-1, believed but never run — no operand could carry a hole in.
+    ///
+    /// Two holed faces come out: that lid at `z = 1`, and the slab's underside at
+    /// `z = 0.3`, where the cube's cross-section is a seam loop placed as a hole. So the
+    /// two roads to an inner loop — carried in, and discovered — meet on one solid.
+    ///
+    /// `V(slab) − V(B ∩ {z ≥ 0.3}) = 2.61 − (0.7 − 0.08)`.
+    #[test]
+    fn cut_slab_by_pocket() {
+        let (mut m, slab, pc) = pocket_and_slab(0.3);
+        let r = boolean(&mut m, BoolKind::Cut, slab, pc).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 1.99).abs() < 1e-9, "{}", props.volume);
+        assert!((props.area - 15.03).abs() < 1e-9, "{}", props.area);
+
+        let mut z: Vec<f64> = holed_faces(&m, r)
+            .into_iter()
+            .map(|f| {
+                let l = &m.faces.get(f).outer.half_edges[0];
+                m.vertices.get(m.edges.get(l.edge).bounds.unwrap()[0]).point[2]
+            })
+            .collect();
+        z.sort_by(f64::total_cmp);
+        assert_eq!(z, vec![0.3, 1.0]);
+    }
+
+    /// The union. `2.61 + 0.92 − 0.62`, closing inclusion–exclusion with the two cuts.
+    /// Here the lid is inside the slab and dropped, so only the discovered hole survives.
+    #[test]
+    fn fuse_slab_and_pocket() {
+        let (mut m, slab, pc) = pocket_and_slab(0.3);
+        let r = boolean(&mut m, BoolKind::Fuse, slab, pc).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 2.91).abs() < 1e-9, "{}", props.volume);
+        assert!((props.area - 12.63).abs() < 1e-9, "{}", props.area);
+        assert_eq!(holed_faces(&m, r).len(), 1);
+    }
+
+    /// The other cut: `0.92 − 0.62 = 0.30`, a plain `1 × 1 × 0.3` box. The pocket is
+    /// entirely above the slab's underside, so nothing of it survives — a strong check,
+    /// because a hole leaking through here would show up in the volume at once.
+    #[test]
+    fn cut_pocket_by_slab() {
+        let (mut m, slab, pc) = pocket_and_slab(0.3);
+        let r = boolean(&mut m, BoolKind::Cut, pc, slab).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 0.3).abs() < 1e-9, "{}", props.volume);
+        assert!((props.area - 3.2).abs() < 1e-9, "{}", props.area);
+        assert!(holed_faces(&m, r).is_empty());
+    }
+
+    /// `NESTED_LOOPS` fires on a real operand, at last. Cell 3f-3 argued it was reachable
+    /// and reached for a polyhedral torus; a pocket sliced between its floor and its lid
+    /// is enough. The slab's underside carries the cube's cross-section as a hole, and
+    /// inside that hole the pocket's cross-section as an island — a loop within a loop,
+    /// which `place_loops` cannot hang on one `LocalFace`.
+    ///
+    /// Both operand orders, both kinds. `INNER_LOOP_OPERAND` used to stop this at the door.
+    #[test]
+    fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
+        for kind in [BoolKind::Cut, BoolKind::Fuse] {
+            for swap in [false, true] {
+                let (mut m, slab, pc) = pocket_and_slab(0.7);
+                let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
+                assert_rejects(|| boolean(&mut m, kind, x, y), tag::NESTED_LOOPS);
+            }
+        }
+    }
+
     /// `detect_coincident_interface` counts only cross-solid opposite-normal coplanar
     /// pairs, so imprinting a *different* face leaves the stack looking clean and routes
     /// into `coincident_merge` — the one path an imprinted operand can take. Measured
