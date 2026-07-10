@@ -439,12 +439,12 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 - **`insert` 충돌 `debug_assert`는 넣지 않았다 — 공허하기 때문.** `edge_incidence`가 엣지를 중복 제거해 각 엣지를 정확히 한 번 돌려주고 두 솔리드의 엣지 집합은 서로소이므로, `edge_seam.insert`의 이전 값은 입력과 무관하게 항상 `None`이다.
 - **경계 끝점의 엣지는 `{P,R}`로 역추적하지 않는다.** 비볼록 면은 같은 이웃 평면 `R` 위에 공선 엣지 둘을 가질 수 있어 엉뚱한 엣지에 붙는다. 생산 시점에 `he.edge`를 `SeamSegment.on_edge`에 기록한다. 내부 노드가 `None`인 것은 정보 손실이 아니다 — 그 점은 상대 솔리드의 면에서 **경계 노드**로 나타나며 거기서 그쪽 엣지를 기록한다.
 - **결정성은 자료구조가 아니라 순회 규율에서 나온다.** 인접 맵은 조회에만 쓰고 절대 순회하지 않는다(`HashMap` 순서는 인스턴스마다 다르다). 경로는 가장 낮은 인덱스의 미사용 세그먼트에서 시작한다. 이게 깨지면 골든이 산발적으로 깨지는 데 그치지 않고 셀 3d에서 **연산 로그 재생**(§2 절대 원칙)이 무너진다. `seam_paths_are_deterministic`이 고정한다.
-- **검증하지 못한 전제 둘 (정직하게 남긴다).** (a) **triple 동일성 ≠ 기하 동일성**: 서로 다른 triple이 같은 점에 놓이면 경로가 갈라진다. `fourplane`과 `segment_crosses_face`의 graze 검사가 막는다고 보지만 확인하지 않았다. 좌표 근접 검사로 `debug_assert`를 만들지 않는다 — tolerance가 필요하고, tolerance는 `Origin::Discovered` 밖에 설 자리가 없다. (b) **Y의 엣지가 `f`의 평면 `P` 안에 통째로 누우면** 접선 접촉이다. `has_coplanar_pair`는 *면*의 공면만 막는다. `CONTACT_DEGENERATE`가 거절한다고 보지만 확인하지 않았다.
+- **검증하지 못한 전제 둘 (정직하게 남긴다).** (a) **triple 동일성 ≠ 기하 동일성**: 서로 다른 triple이 같은 점에 놓이면 경로가 갈라진다. `fourplane`과 `segment_crosses_face`의 graze 검사가 막는다고 보지만 확인하지 않았다. 좌표 근접 검사로 `debug_assert`를 만들지 않는다 — tolerance가 필요하고, tolerance는 `Origin::Discovered` 밖에 설 자리가 없다. (b) **Y의 엣지가 `f`의 평면 `P` 안에 통째로 누우면** 접선 접촉이다. `has_coplanar_pair`는 *면*의 공면만 막는다. `CONTACT_DEGENERATE`가 거절한다고 보지만 확인하지 않았다. (**셀 (5a)가 확인했고 이름을 줬다** — `VERTEX_ON_FACE_PLANE`. 옛 부채꼴도 같은 입력을 거절하고 있었다: `segment_triangle_cross`가 평면 검사를 먼저 하므로 끝점이 평면 위면 모든 삼각형이 `Degenerate`다. 커버리지는 변하지 않았고 태그만 정직해졌다. 전제 (a)는 여전히 미검증이다.)
 - **검증의 세 겹 중 두 겹만 걸 수 있다.** 이 셀은 솔리드를 만들지 않으므로 OCCT diff도 부피 항등식도 없다. 대신 (1) 손계산 골든 넷, (2) 독립 오라클 — 차수-1 노드 수 == `reconstruct_face`의 kept/dropped 전이 수(`point_in_solid` 광선 캐스팅으로 테스트가 직접 센다; 전이 수는 `keep` 선택과 무관하므로 `BoolKind`를 고르지 않는다), (3) 구조 불변식 proptest. 오라클의 전제는 "한 엣지가 두 번 교차되지 않음"이고, `cube_and_notch`가 정확히 그 반례라 **테스트로 남겨 도메인 경계를 문서화한다**. 세 겹은 셀 3d(동등 치환)에서 복원된다 — 그때 기존 OCCT diff 17건이 그대로 걸린다.
 
 **arrangement 배선 — 비볼록 경로만, `edge_seam` 소멸 (M5-d3 셀 3d).** `overlap_fuse_cut`이 면을 `arrange::seam_paths_on`으로 재구성한다. 출력과 거절 태그가 전부 불변이고, 3b·3c에서 걸 수 없던 **OCCT diff 17건이 복귀**했다(직접 게이트는 `nonconvex_overlap_{cut,fuse}_matches_occt`).
 
-- **볼록 경로는 배선하지 않았다 — 측정된 차단 요인.** `two_boxes`(`A=[0,1]³`, `B=[0.5,1.5]³`)에서 B의 `y=0.5` 면은 A의 `x=1` 면을 `(1,0.5,0.5)`, 즉 **그 정사각형의 정중앙**에서 가로지른다. 두 대각선이 거기서 만나므로 `segment_crosses_face`가 네 apex 전부에서 스쳐 `contact_degenerate`로 정직하게 거절한다(위 항목). 배선하면 `cut_of_two_cubes`와 그 OCCT 골든이 깨진다. **후퇴가 아니다:** 볼록 경로의 "엣지당 교차 하나"는 가드가 아니라 **볼록성이라는 기하학적 사실**이다(선분은 볼록 경계를 최대 2회 만나고 straddle이면 정확히 1회). 지뢰는 비볼록 경로에만 있었고, 거기서 `edge_seam`은 **재키잉이 아니라 삭제**됐다 — 경계 교차가 생산 시점의 `SeamSegment::on_edge`를 들고 다니므로 `Handle<Edge>`로 splice를 키잉할 이유가 없다. 두 경로 통합은 `segment_crosses_face`의 부채꼴 퇴화 해소(서브유닛 5)에 걸려 있으며, 그건 위 "볼록 경로 vs ray casting 경로 통합"과 **같은 게이트**다.
+- **볼록 경로는 배선하지 않았다 — 측정된 차단 요인.** `two_boxes`(`A=[0,1]³`, `B=[0.5,1.5]³`)에서 B의 `y=0.5` 면은 A의 `x=1` 면을 `(1,0.5,0.5)`, 즉 **그 정사각형의 정중앙**에서 가로지른다. 두 대각선이 거기서 만나므로 `segment_crosses_face`가 네 apex 전부에서 스쳐 `contact_degenerate`로 정직하게 거절한다(위 항목). 배선하면 `cut_of_two_cubes`와 그 OCCT 골든이 깨진다. **후퇴가 아니다:** 볼록 경로의 "엣지당 교차 하나"는 가드가 아니라 **볼록성이라는 기하학적 사실**이다(선분은 볼록 경계를 최대 2회 만나고 straddle이면 정확히 1회). 지뢰는 비볼록 경로에만 있었고, 거기서 `edge_seam`은 **재키잉이 아니라 삭제**됐다 — 경계 교차가 생산 시점의 `SeamSegment::on_edge`를 들고 다니므로 `Handle<Edge>`로 splice를 키잉할 이유가 없다. 두 경로 통합은 `segment_crosses_face`의 부채꼴 퇴화 해소(서브유닛 5)에 걸려 있으며, 그건 위 "볼록 경로 vs ray casting 경로 통합"과 **같은 게이트**다. (**셀 (5a)가 그 게이트를 열었다.** `the_centre_of_a_square_face_is_pierced_not_grazed`가 `two_boxes`를 비볼록 경로로 직접 통과시킨다 — `Cut` 부피 `0.875`, `validate` 클린. 배선 자체는 셀 (5b).)
 - **`transitions`는 버리지 않고 남겼다.** `kd`/`dk`는 여전히 거기서 나온다. 호의 양 끝에서 뽑으면 두 끝이 **같은 엣지**에 앉을 때(3c의 `cube_and_notch`) 무너진다. 경로로 옮긴 것은 **분류뿐**이고, 3e가 확장할 자리가 바로 거기다.
 - ~~**가드 우선순위는 `MULTICHORD` → `POKEHOLE` → splice.**~~ **셀 3e-2에서 거짓이 됐다** — 비볼록 경로의 `MULTICHORD`가 사라져 우선순위 자체가 없다. 호 옆의 고리는 이제 `POKEHOLE` 하나가 잡는다.
 - **`SEAM_COUNT_MISMATCH` — 3c의 내부 오라클을 프로덕션 불변식으로 승격.** 처음엔 `debug_assert`로 두려 했으나 **그럴 수 없다**: `n_open`으로 분류한 뒤 `transitions[0]`을 인덱싱하므로 릴리스에서 인덱스 패닉이 된다. 그리고 이 검사는 방어가 아니라 **서로 독립인 두 기계의 합의**다 — `classof`의 광선 캐스팅과 arrangement의 정확한 교차, 그리고 `pierced_face`가 만든 `seam` 목록과 arrangement의 경로. **개수가 아니라 집합 상등**으로 검사한다(개수는 한 chord의 두 끝이 같은 엣지에 앉아도 통과한다). 오늘 미발화 백스톱이며(`fourplane`·`arrangement_degenerate`·`seam_branch`와 같은 줄), 죽은 코드가 아니다: 3e가 `pierced_multi`를 완화하면 가장 먼저 울고, 그 자리는 거절이 아니라 **다중 chord의 진짜 처리**가 되어야 한다. (**셀 3e-3이 그 자리를 채웠다.** 집합 상등이 죽고 run의 **교대 vs `classof`** 가 섰다. 정점 없는 run은 교대만이 정한다 — 예고가 정확했다.)
@@ -454,7 +454,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 - **배선 전에 측정했다.** `arrangement_agrees_with_todays_seam_bookkeeping`이 `reconstruct_face`에 도달하는 다섯 픽스처(받아들여지는 셋 + **거절하는 셋**) × 양쪽 솔리드 × 모든 면 = 72면에서 (1) 어떤 면도 거절하지 않고, (2) 경계 노드가 transition 엣지와 **집합으로** 같고, (3) 받아들여지는 입력엔 고리가 없고, (4) 단일 chord의 **bend들**이 chord 방향으로 **강한 단조**임을 확인한다. (4)가 치환의 출력 불변을 증명한다 — 오늘의 `sort_by`는 안정 정렬이라 동률이면 `seam` 삽입 순서로 떨어지고, 그건 arrangement가 모른다. 거절 픽스처를 포함한 이유: 새 코드가 **다른 면에서 먼저** 거절하면 태그가 바뀌는데 받아들여지는 입력만 재서는 그걸 못 본다.
 - **측정이 가르친 것: 반사 bend는 chord 구간 밖으로 투영된다.** `l_and_reflex_box`에서 bend들은 끝점 `0.0`·`0.72`에 대해 `−0.24`와 `0.96`에 투영된다. "bend는 두 끝점 사이에 놓인다"는 거짓이고, 참일 필요도 없다 — 오늘 정렬되는 것은 끝점이 아니라 bend뿐이다.
 
-**`segment_crosses_face`는 관통점이 면의 중심에 놓이면 모든 apex에서 스친다.** 사각형 면의 두 대각선이 중심에서 만나므로 fan을 어느 꼭짓점에서 시작해도 관통점이 대각선 위에 놓인다 ⇒ `CONTACT_DEGENERATE`. 정직한 거절이지만, **정육면체 두 개를 축정렬로 겹치면 실제로 걸린다**(M5-d2의 `l_and_corner_box` 주석이 이미 비대칭 좌표를 고른 이유). 픽스처는 변을 서로 다르게 잡는다. 근본 해소는 fan 대신 실제 삼각분할(또는 대각선을 피하는 apex 선택)이며 서브유닛 5(퇴화 경화)의 항목이다.
+**`segment_crosses_face`는 관통점이 면의 중심에 놓이면 모든 apex에서 스친다.** 사각형 면의 두 대각선이 중심에서 만나므로 fan을 어느 꼭짓점에서 시작해도 관통점이 대각선 위에 놓인다 ⇒ `CONTACT_DEGENERATE`. 정직한 거절이지만, **정육면체 두 개를 축정렬로 겹치면 실제로 걸린다**(M5-d2의 `l_and_corner_box` 주석이 이미 비대칭 좌표를 고른 이유). 픽스처는 변을 서로 다르게 잡는다. ~~근본 해소는 fan 대신 실제 삼각분할(또는 대각선을 피하는 apex 선택)이며 서브유닛 5(퇴화 경화)의 항목이다.~~ **이 예측은 틀렸다 — 셀 (5a)를 볼 것.** 어떤 삼각분할이든 대각선을 만들고, 정사각형의 정중앙은 **모든** apex의 대각선 위에 있다. 부채꼴을 고치는 것이 아니라 없애는 것이 답이었다.
 
 **평면 삼각분할 — 결함이 기록보다 컸고, 3f 앞에 독립 셀로 수선했다 (tess 셀).** §9는 원래 "`triangulate_planar`가 inner loop를 무시해 구멍을 메운다 … 셀 3f에 묶어 고친다"고만 적었다. 3f-1 계획을 검토하다 **세 가지**가 드러나, 약속을 사실에 맞게 고치고 별개 셀로 처리했다.
 
@@ -599,7 +599,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 그래서 `l_and_staple`은 **축에 평행한** 면을 노린다: XZ 평면의 П자를 `−y`로 압출하면 L의 캡(`z=1`)이 축과 평행해 단면이 둘로 끊긴다. 가까운 다리는 캡 안에 고리를, 먼 다리는 반사 모서리 `(1,1)`을 감싸며 **서로 다른 두 엣지**에 끝을 둔 호를 남긴다(그래서 `pierced_multi`가 조용하다).
 
 - **문 앞의 가드가 손계산을 잡았다.** `has_coplanar_pair`는 **합친** 평면 목록을 훑으므로 **한 피연산자 안의** 두 공면 면도 거절한다. 스테이플의 두 다리 바닥이 처음엔 둘 다 `z=0.5`였다 — `u_prism`이 기둥 높이를 어긋나게 둔 이유가 바로 이것이다. `0.45`로 내렸다.
-- **부채꼴이 좌표 하나를 강제했다.** `y∈[0.7,1.3]`이면 관통점 `(1.4, 0.7)`이 캡의 부채꼴 대각선 `y = x/2` 위에 정확히 놓여 `contact_degenerate`다. `0.65`가 그것을 피한다. 서브유닛 5가 부채꼴을 없애면 사라질 제약이다.
+- **부채꼴이 좌표 하나를 강제했다.** `y∈[0.7,1.3]`이면 관통점 `(1.4, 0.7)`이 캡의 부채꼴 대각선 `y = x/2` 위에 정확히 놓여 `contact_degenerate`다. `0.65`가 그것을 피한다. 서브유닛 5가 부채꼴을 없애면 사라질 제약이다. (**셀 (5a)가 없앴다.** `0.65`는 이제 불필요하지만 되돌리지 않는다 — 한 번에 한 변수.)
 
 **호 옆의 고리 — `POKEHOLE` 은퇴, 그리고 세 번째로 아낀 술어 (M5-d3 셀 3f-4).** `l_and_staple`이 세 방향으로 열린다: `Cut(L,st)` `2.689`(구멍), `Fuse` `3.4495`, `Cut(st,L)` `0.4495`(**섬**). 셋이 `V_∩ = 0.311`로 포함–배제를 정확히 닫는다. OCCT 32.
 
@@ -633,7 +633,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 **구멍 있는 피연산자 — `INNER_LOOP_OPERAND` 은퇴 (M5-d3 셀 3f-5).** 3f-1 이래 불리언은 구멍 있는 면을 **만들 수는** 있어도 **받을 수는** 없었다. `Cut(Cut(a,b),c)`가 안 됐고, pocket된 솔리드도 안 됐다. 계획 단계에서 가설 셋을 세우고 셋 다 코드를 읽어 반증했다.
 
-- **`segment_crosses_face`는 이미 구멍을 옳게 처리한다 — 셀 3a가 고쳤다.** `face_loops`가 outer + `inner`를 모두 돌려주고 구멍 링은 CW이므로 부호 있는 부채꼴 합이 저절로 상쇄된다. `point_in_solid`·`boundaries_intersect`·`pierced_face`도 같은 함수를 쓴다. 부채꼴의 남은 문제는 **퇴화**(대각선 스침)뿐이고 구멍과 무관하다 — 사다리 항목 (5)를 앞당길 이유가 없었다.
+- **`segment_crosses_face`는 이미 구멍을 옳게 처리한다 — 셀 3a가 고쳤다.** `face_loops`가 outer + `inner`를 모두 돌려주고 구멍 링은 CW이므로 부호 있는 부채꼴 합이 저절로 상쇄된다. `point_in_solid`·`boundaries_intersect`·`pierced_face`도 같은 함수를 쓴다. 부채꼴의 남은 문제는 **퇴화**(대각선 스침)뿐이고 구멍과 무관하다 — 사다리 항목 (5)를 앞당길 이유가 없었다. (셀 (5a)에서 `segment_crosses_face`는 삭제됐다. `point_in_solid`의 **광선** 부채꼴만 남는다.)
 - **`nonconvex_seamfree`에는 가드가 없었다.** 구멍 있는 피연산자의 **포함/분리** 불리언은 이미 옳게 통과하고 있었다(`contained_result`가 셸을 통째로 재사용한다). 테스트만 없었다 — `containment_boolean_already_keeps_a_pocket`이 못 박았다(0.919 / 0.92).
 - **"볼록 경로는 구멍 있는 면을 못 본다"는 틀렸다.** `imprint`가 region face에 `Surface`를 **재사용**하므로 imprint된 큐브는 **볼록한데 구멍 있는 면을 갖는다**. 옳은 명제는 **구멍 있는 면 ⇒ 오목하거나 공면 쌍이 있다**(rim 엣지의 반대쪽 면은 안쪽 벽이거나 같은 평면의 region face다; 닫힌 셸에서 셋째는 없다). 그래서 `fuse_cut`의 가드는 죽은 코드가 아니라 `has_coplanar_pair`와 **중복**이었고, 지우니 더 정확한 `COPLANAR_PAIR`가 나온다. `fuse_cut`의 옛 주석이 이 논증을 적어 두었으나 **측정된 적이 없었다.** 이제 잰다(`a_pocketed_cube_is_not_convex`, `an_imprinted_cube_is_convex`).
 
@@ -652,10 +652,10 @@ seam 고리와 다른 점은 정확히 둘이다.
 **★ 문 앞의 가드는 그 뒤의 버그를 숨긴다.** `arrange::seam_segments_on`의 두 스윕이 `outer.half_edges`만 돌고 있었다. 상대 면 `g`의 rim 엣지가 `f`의 평면을 `f` 안에서 뚫는 교차를 놓친다. **오답은 아니다** — 그런 엣지는 straddle하므로 `g`가 어차피 거절된다. 피해는 **태그 오염**이다: 그 면에서 홀수 카운트가 나 `ARRANGEMENT_DEGENERATE`가 정직한 가드보다 먼저 운다. **실측:** 스윕 수정을 되돌리면 `overlap_across_a_hole_rim_*` 두 테스트가 **양쪽 피연산자 순서 모두** `arrangement_degenerate`로 떨어진다. 검출기는 서로 대체 가능하지 않다. 같은 자리에서 `edge_incidence`의 반환형을 `Vec<usize>` → `[usize; 2]`로 좁혀 `inc[1]` 맹목 인덱싱(옛 패닉의 근원)을 **타입으로** 없앴다.
 
 **두 좌표가 움직였고 둘 다 측정 결과다.**
-- 코너 박스를 `[0.85,1.15]³`로 잡으면 그 수직 엣지가 뚜껑을 `(0.85, 0.85)`에서 뚫는데, 그 점이 뚜껑과 rim이 허용하는 **모든 apex의 부채꼴 대각선 위에** 있다 → `contact_degenerate`. 비대칭 `[0.85,0.8,0.75] → [1.2,1.15,1.1]`이 피한다. **서브유닛 5가 갚을 빚이다.**
+- 코너 박스를 `[0.85,1.15]³`로 잡으면 그 수직 엣지가 뚜껑을 `(0.85, 0.85)`에서 뚫는데, 그 점이 뚜껑과 rim이 허용하는 **모든 apex의 부채꼴 대각선 위에** 있다 → `contact_degenerate`. 비대칭 `[0.85,0.8,0.75] → [1.2,1.15,1.1]`이 피한다. **서브유닛 5가 갚을 빚이다.** (**셀 (5a)가 갚았다.** 대칭 박스가 돌아왔고 부피는 `0.9125`가 아니라 아래 "결과"가 처음부터 적어 둔 `0.916625`다.)
 - rim 테스트의 박스는 rim 코너 위에 걸치되 큐브 옆벽에 닿지 않는다. 닿는 박스(`[0.55,1.15]² × [0.85,1.15]`)는 pocket 공동을 관통해 벽으로 빠져나가므로 엣지 하나가 면 둘을 뚫고 **`pierced_multi`가 먼저 운다** — 정직하지만 다른 것에 대해서. (**3e-3이 그 가드를 은퇴시킨 뒤 다시 재니 그 아래에 `contact_degenerate`가 있었다** — 부채꼴이지 커버리지가 아니다. 가드 하나를 걷으면 그 아래 가드가 드러난다.)
 
-**결과.** `cut_a_pocket_at_a_corner`(구멍이 `place_loops`로 배치)와 `cut_a_pocket_at_a_bottom_corner`(구멍이 `whole()`로 실려 나감)가 **서로 다른 두 경로로 같은 `0.9125`**를 낸다. `coincident_merge_keeps_an_imprinted_hole`은 2.0(옛 오답 2.0533). `cut_slab_by_pocket`은 부피 1.99에 구멍 있는 면 **둘** — `z = 1`의 뒤집힌 뚜껑(`flip` + `inner`, 3f-1 이래 미검증이던 상호작용)과 `z = 0.3`의 발견된 구멍. **실려 들어온 구멍과 발견된 구멍이 한 솔리드에서 만난다.** OCCT diff 여섯(부피 + **넓이**), 32 → 38.
+**결과.** `cut_a_pocket_at_a_corner`(구멍이 `place_loops`로 배치)와 `cut_a_pocket_at_a_bottom_corner`(구멍이 `whole()`로 실려 나감)가 **서로 다른 두 경로로 같은 `0.9125`**를 낸다(셀 (5a)가 대칭 박스를 돌려준 뒤로는 `0.916625`). `coincident_merge_keeps_an_imprinted_hole`은 2.0(옛 오답 2.0533). `cut_slab_by_pocket`은 부피 1.99에 구멍 있는 면 **둘** — `z = 1`의 뒤집힌 뚜껑(`flip` + `inner`, 3f-1 이래 미검증이던 상호작용)과 `z = 0.3`의 발견된 구멍. **실려 들어온 구멍과 발견된 구멍이 한 솔리드에서 만난다.** OCCT diff 여섯(부피 + **넓이**), 32 → 38.
 
 **★ `NESTED_LOOPS`가 처음으로 실물에서 발화한다.** 3f-3 이래 "도달 가능하나 픽스처가 없다"고 적어 왔고 다면체 토러스를 상상했다. 필요 없다 — **pocket된 큐브를 뚜껑과 바닥 사이 높이에서 슬래브로 자르면** 슬래브 밑면 위에 큐브 단면이 구멍으로, 그 안에 pocket 단면이 섬으로 앉는다. 두 kind × 두 피연산자 순서 모두 발화한다. 그것을 막고 있던 것이 `INNER_LOOP_OPERAND`였다. (토러스는 애초에 그 가드에 걸리지 않았다 — 그 면들은 전부 단순하다. 도달 가능성을 논증하며 **가장 이국적인 예**를 들었기에, 문 앞의 가드가 가리고 있던 평범한 예를 못 봤다.)
 
@@ -685,11 +685,40 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 **잃은 것과 드러난 것, 정직하게.**
 - **cavity를 통째로 가로지르는 엣지의 그물이 사라졌다.** 그런 엣지는 outer shell을 **두 번** 뚫으므로 패리티가 맞고(짝수 == 짝수) 통과한다. 옛 `pierced_face`는 hits ≥ 2를 그 자리에서 삼켰다. 이제 문 앞의 `HOLLOW_OPERAND`만이 막는다. `cut_into_a_cavity_hits_the_tunnel_guard`(hits=1, 홀수)는 그대로 발화한다.
 - **`NO_ENTRY_FACE`가 비볼록 경로에서 미발화 백스톱이 됐다** — 기계가 옳으면 `s0 != s1`에 hits가 빌 수 없다. 패리티보다 먼저 검사해 더 구체적인 태그를 남긴다.
-- **3f-5의 rim 픽스처 아래에는 `contact_degenerate`가 있었다.** `pierced_multi`를 피하려 고른 좌표였는데, 그 가드를 걷고 재니 부채꼴이 나온다. 서브유닛 5의 빚 다섯째 줄.
+- **3f-5의 rim 픽스처 아래에는 `contact_degenerate`가 있었다.** `pierced_multi`를 피하려 고른 좌표였는데, 그 가드를 걷고 재니 부채꼴이 나온다. 서브유닛 5의 빚 다섯째 줄. (**셀 (5a) 뒤에 다시 재니 자연스러운 `[0.55,1.15]² × [0.85,1.15]`가 양쪽 피연산자 순서 모두 `seam_across_hole_rim`까지 도달한다.** 가드 셋을 걷어 낸 자리에 마침내 그 도형에 관한 가드가 섰다.)
 - **볼록 경로는 여전히 `POKE_THROUGH`로 거절한다.** `reconstruct_face`가 `edge_seam`(엣지당 triple 하나)을 읽고 `Option<LocalFace>`를 낸다. `cube_and_notch`가 그 자리에 남는다 — **볼록성의 사실이 아니라 그 자료구조의 한계다.** 사다리 (5).
 - **`multichord`·`pierced_multi`를 피하려 비틀었던 픽스처들**(`l_and_notch_bar`의 모서리 물기, `l_and_staple`의 축평행 면, `l_and_popup_box`의 여유 높이)은 **그대로 둔다.** 한 번에 한 변수.
 
 **M5-d3에 남은 가드는 하나다:** `SEAM_ACROSS_HOLE_RIM`(3f-6). 3f-5가 `INNER_LOOP_OPERAND`를 그것으로 좁혔고, 3e-3이 `PIERCED_MULTI`를 은퇴시켰다.
+
+**선분 부채꼴이 죽는다 — `CONTACT_DEGENERATE` 은퇴, 좌표가 풀린다 (M5 셀 (5a)).** 커버리지 경계가 기하가 아니라 **좌표의 대칭성**에 달려 있었다. 이 커널의 DNA에 어긋난다.
+
+**★ 457행의 예측이 틀렸다.** "fan 대신 실제 삼각분할(또는 대각선을 피하는 apex 선택)"은 둘 다 답이 아니다 — 어떤 삼각분할이든 대각선을 만들고, 정사각형의 정중앙은 **모든** apex의 대각선 위에 있다(447행이 이미 실측해 둔 사실인데 457행이 읽지 못했다). 옳은 관찰은 하나뿐이다: **엣지가 면을 뚫는 점은 3-평면 점이다.** 엣지는 평면 `E0`·`E1` 위에, 면은 `Q` 위에 있으니 교점은 `{E0, E1, Q}`이고, **셀 3f-4가 다른 이유로 지은 `point_in_ring`이 바로 그 점의 포함 판정**이다. 3b·3h·3f-4·3f-5·3e-3에 이어 **여섯 번째로 아낀 술어.**
+
+`arrange::edge_crosses_face`는 exact `plane_side`로 straddle을 먼저 묻고(대부분의 (엣지, 면) 쌍이 여기서 걸러진다 — 옛 부채꼴은 **모든** 쌍에서 면 전체를 잘랐다), straddle이면 `det[n_E0, n_E1, n_Q] ≠ 0`이 보장되므로 `X = {E0,E1,Q}`가 존재한다. `point_on_ring`이 `X ∈ ∂g`를, `point_in_ring`이 `X ∈ g`를 답한다. **좌표를 읽는 자리는 `plane_side`의 부호 둘뿐이고 그것도 exact `orient3d`다.**
+
+- **`point_in_ring`만으로는 태그가 거짓말한다 — 검토가 배선 전에 찾았다.** `X`가 면의 **꼭짓점**에 정확히 놓이면 `X`의 두 평면이 둘 다 그 링 노드를 지나 `every_ray`의 광선 후보가 전부 불명확해지고 **`NO_CLEAR_RAY`**가 뜬다. 정직한 답은 `POINT_ON_RING`이다. 그래서 `point_on_ring` 선검사를 세웠다 — 새 술어 없이 `side_of` + `order_along`으로. `an_edge_touching_a_face_is_a_contact_not_a_graze`가 두 자리(변 내부, 꼭짓점)를 모두 못박고 후자에 그 주석을 단다.
+- **`plane_side`는 geom의 한 줄이다.** `three_plane_orient3d`는 implicit 점을 받고, 이쪽은 **explicit** 점이 평면의 어느 쪽인지 묻는다. 부호 규약이 뒤집힐 수 있어 **배선 전에 골든과 proptest로 못박았다**(3f-5의 `loop_winding(rim) == −1`이 그랬듯이). geom 67.
+- **세 호출부, 하나의 퇴화 정책.** `seam_segments_on`·`pierced_faces`·`boundaries_intersect`가 모두 `edge_crosses_face` 위로 옮겼고, `boundaries_intersect`는 계약이 같으므로 `pierced_faces` 위에 **다시 썼다.**
+- **광선 부채꼴은 산다.** `point_in_solid`의 광선 원점은 임의의 explicit 점이라 교점이 3-평면 점이 아니다. `RAY_DEGENERATE`는 남고, 이 셀이 죽인 것은 **선분** 부채꼴뿐이다.
+
+**★ 부채꼴의 죄는 스침을 접촉과 구별하지 못한 것이다.** 이제 `VERTEX_ON_FACE_PLANE`(끝점이 `Q` 위 — 둘 다면 엣지가 `Q` 안에 통째로 누웠다)과 `POINT_ON_RING`(관통점이 `∂g` 위)이 **진짜 접촉**을 이름으로 부르고, 스침은 존재하지 않는다. `common_rejects_non_convex_input`의 박스는 `[0,0,0]`–`[1.5,1.5,0.5]`, 즉 **L의 바닥면과 공면**이다. L의 바닥 엣지들이 통째로 그 평면 안에 눕는다. "모든 apex에서 대각선을 스쳤다"고 부르던 것이 처음부터 접선 접촉이었고, 이제 태그가 그렇게 말한다. 442행의 미검증 전제 (b)가 여기서 검증됐다.
+
+**좌표가 풀렸다.**
+- `cut_a_pocket_at_a_corner`가 대칭 `[0.85,1.15]³`로 돌아가 **`0.916625`** — 655행이 "서브유닛 5가 갚을 빚"이라 적고 3f-5가 `0.9125`로 우회했던 그 수. 넓이 `6.8`(직각 코너의 사각 물기는 사분면 셋을 사분면 셋과 맞바꾼다). 두 코너 컷 모두 mesh 게이트 네 검사와 OCCT diff를 통과한다. OCCT 40 유지.
+- `overlap_across_a_hole_rim_*`가 자연스러운 `[0.55,1.15]² × [0.85,1.15]`로 돌아가고 **여전히 `SEAM_ACROSS_HOLE_RIM`**이다. 그 도형은 `pierced_multi` → `contact_degenerate` → `seam_across_hole_rim`, **가드 셋 아래**에 있었다.
+- 447행의 게이트가 열렸다 — `overlap_fuse_cut(two_boxes)`가 정중앙을 뚫고 `Cut` 부피 `0.875`, `validate` 클린.
+- `l_and_staple`의 `y = 0.65`(602행), `cube_and_notch`·`seam_segments_on_two_overlapping_boxes`의 비대칭 extent는 **되돌리지 않았다.** 한 번에 한 변수. 되돌릴 수 있다는 사실만 여기 적는다.
+
+**대가 하나 — imprint된 비볼록 피연산자.** 정확한 포함 판정은 면의 링을 **triple로** 요구하는데, imprint된 면은 rim 엣지의 두 이웃이 **공면**(구멍 있는 면 + 거기서 잘라낸 region 면)이라 triple을 낼 수 없다. `overlap_fuse_cut`·`fuse_cut`·`common`은 이미 `has_coplanar_pair`를 문 앞에 두고 있었고, **`nonconvex_seamfree`만 없었다** — `contained_result`가 셸을 통째로 재사용하며 링을 보지 않았기 때문이다. 이제 그 가드도 선다(피연산자 **각각** 안의 공면 쌍만 본다; 교차-솔리드 공면은 무해하다 — 면의 링은 제 솔리드의 평면만 쓰고, `X`의 `E0`·`E1`은 straddle이 `det ≠ 0`을 보장하므로 `Q`와 평행할 수 없다). **정직한 회귀다:** imprint된 비볼록 피연산자의 포함/분리 불리언이 `COPLANAR_PAIR`로 거절된다. 발화 테스트 `an_imprinted_nonconvex_operand_rejects_as_coplanar_pair`(pocket 바닥에 imprint한 pocketed cube)가 그것을 고정하고, `containment_boolean_already_keeps_a_pocket`이 **pocket은 그대로 통과함**을 고정한다 — 가드가 imprint만 무는지, 모든 구멍을 무는지의 차이다.
+
+**남긴 정직한 빚.**
+- **좌표를 읽는 자리가 하나 남았다.** `plane_side`에 넘기는 `p0`·`p1`은 저장된 `Point3`다. 원본 정점이면 그것이 진리이지만, 불리언 **결과를 다시 넣으면**(3f-5 이래 가능) `Discovered` 정점의 점은 반올림된 캐시이고 진리는 triple이다. `face_vertex_triples`로 정점의 triple을 되살려 `three_plane_orient3d`로 부호를 내면 좌표를 아예 안 읽는다. **이 셀은 그러지 않았다** — `point_in_solid`도 같은 좌표를 읽고, 옛 부채꼴도 같은 좌표로 같은 판정을 했으므로 커버리지도 정확도도 변하지 않는다. 다음 기회.
+- **ops 스위트가 `1.16s` → `3.85s`(약 3.3×).** `seam_segments_on`이 `(f, g)` 쌍마다 `face_rings`를 다시 만든다. 측정 후 최적화 — 링 triple을 상위에서 캐시하면 된다.
+- **451행의 경고는 그대로다.** 씨임과 무관한 먼 면의 접촉이 거절 태그를 갈아치울 수 있다. 이름이 정확해졌을 뿐 문제는 남는다.
+- **`face_vertex_triples`의 거절 표면이 전역이 됐다.** 이제 교차 검사에 관여하는 **모든** 면에서 부른다. `LOOP_ORIENT_MISMATCH`(180° 각)와 `ring_edge`의 "한 이웃 평면 위 공선 엣지 둘" 제약이 전역이다. `every_edge_against_every_face_on_every_fixture`가 오늘의 픽스처 전부 × 양쪽 방향에서 교차 수를 못박아 그것을 지킨다.
+
+**다음.** (5b) 볼록 경로 통합(`fuse_cut`·`edge_seam`·`reconstruct_face`·`MULTICHORD`·`POKE_THROUGH` 은퇴 — 3e-3이 poke-through를 열어 뒀고, (5a)가 정중앙을 열었다), 이어서 3f-6.
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
