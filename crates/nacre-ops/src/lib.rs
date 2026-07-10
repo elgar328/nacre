@@ -143,7 +143,19 @@ pub enum BoolError {
 /// builds too. They are `const`, so they inline away where the tag is unused.
 pub(crate) mod tag {
     pub const HOLLOW_OPERAND: &str = "hollow_operand";
-    pub const INNER_LOOP_OPERAND: &str = "inner_loop_operand";
+    /// The seam runs across the rim of a hole in the face it is being arranged on.
+    ///
+    /// Then `∂f` is several rings, `stitch_cycles`' permutation over one ring no longer
+    /// models the kept regions, and a loop enclosing the hole would make an island with
+    /// a hole of its own. All of that is cell 3f-6. Everything short of it — a holed
+    /// face the seam only crosses on its outer ring, or misses entirely — is supported.
+    pub const SEAM_ACROSS_HOLE_RIM: &str = "seam_across_hole_rim";
+    /// A seam-free face whose rings do not agree about which side of the other solid
+    /// they are on. A backstop with no firing test: were a rim vertex classified against
+    /// the outer ring, the other boundary would separate the two rings and so would cut
+    /// `f`, which is a seam. A cross-check between `point_in_solid` and the arrangement,
+    /// not a defensive assert.
+    pub const HOLE_CLASS_SPLIT: &str = "hole_class_split";
     /// An outer-shell edge used by other than two face loops. A backstop with no
     /// firing test: `validate` calls this `NonOpposedEdge` and every shell the
     /// operations build is manifold — but `boolean` never runs `validate` on its
@@ -1096,50 +1108,12 @@ fn pierced_face(
 /// reconstructs faces in `strict` mode (rejecting a non-convex/self-intersecting
 /// seam arc). Multiple chords, poke-through holes, and non-convex `Common` are
 /// honestly `Unsupported` (later sub-units).
-/// Reject an operand carrying a face with holes.
-///
-/// The seam machinery and `solid_local_faces` walk outer rings only, so a hole-ring
-/// edge is seen once — its other use is on the lid's inner loop. Three things then
-/// go wrong, and all three were measured on a pocketed cube:
-///
-/// * `reconstruct_face` rebuilds the lid from its outer ring and `assemble_fuse_cut`
-///   emits `inner: vec![]`, so the hole is dropped: `Ok`, volume 0.96996 instead of
-///   0.916625, `validate` reporting five violations.
-/// * `edge_incidence` gives such an edge one incident plane, and `overlap_fuse_cut`
-///   indexes `inc[1]` — a panic, whenever a rim edge straddles the seam.
-/// * `coincident_merge` drops the hole through `solid_local_faces`: `Ok`, volume
-///   2.0533 instead of 2.0.
-///
-/// Cell 3f-1 taught the arrangement to *emit* an inner loop, but a holed face as an
-/// **operand** is a different job: the walks above must learn to see a hole ring's
-/// second use. Cell 3f-3 retires this — until then a 3f-1 result cannot be fed back in.
-fn reject_holed_operands(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<(), BoolError> {
-    for solid in [a, b] {
-        let shell = model.solids.get(solid).outer;
-        if model
-            .shells
-            .get(shell)
-            .faces
-            .iter()
-            .any(|&fh| !model.faces.get(fh).inner.is_empty())
-        {
-            return Err(reject(tag::INNER_LOOP_OPERAND));
-        }
-    }
-    Ok(())
-}
-
 fn overlap_fuse_cut(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
-    reject_holed_operands(model, a, b)?;
     let mut planes = collect_planes(model, a)?;
     planes.extend(collect_planes(model, b)?);
     if has_coplanar_pair(&planes) {
@@ -1707,12 +1681,11 @@ fn fuse_cut(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
-    // Defense-in-depth: a convex operand cannot reach here with a holed face, since
-    // a hole in an outer-shell face is bounded either by inward walls (making the
-    // solid non-convex) or by a coplanar region face (imprint), and `has_coplanar_pair`
-    // below catches the latter. That argument depends on the order of the two checks,
-    // so the guard is explicit rather than implied.
-    reject_holed_operands(model, a, b)?;
+    // No hole guard here. A hole in an outer-shell face is bounded either by inward
+    // walls — the solid is then non-convex and `boolean` routes it elsewhere — or by a
+    // coplanar region face, an imprint, which `has_coplanar_pair` below rejects.
+    // Nothing else closes: a rim edge's other face turns inward or lies in the plane.
+    // Both halves are measured (`a_pocketed_cube_is_not_convex`, `an_imprinted_cube_is_convex`).
     let planes_a = collect_planes(model, a)?;
     let planes_b = collect_planes(model, b)?;
     if !is_convex(&planes_a, &solid_vertices(model, a))
@@ -2367,6 +2340,17 @@ fn reconstruct_face_paths(
     // that has nothing to do with the seam, and that would rewrite a reject tag.
     let touches_seam = seam.iter().any(|s| s.triple.contains(&plane_idx));
     if transitions.is_empty() && !touches_seam {
+        // The whole face is kept or dropped, holes with it, so every ring must classify
+        // alike. Were a rim vertex to disagree, the other boundary would separate the
+        // rings and hence cut `f` — a seam, which we just established is not there.
+        if face
+            .inner
+            .iter()
+            .flat_map(|l| &l.half_edges)
+            .any(|&he| (classof[&he_start(model, he)] == keep) != kept[0])
+        {
+            return Err(reject(tag::HOLE_CLASS_SPLIT));
+        }
         return Ok(whole());
     }
 
@@ -2378,10 +2362,23 @@ fn reconstruct_face_paths(
     let n_closed = paths.len() - opens.len();
 
     // The index in `hes` of the edge a boundary node rides.
+    //
+    // A boundary node on a *hole* rim is what puts `∂f` beyond one ring, and this is the
+    // one place that can see it — `bnd` below feeds every node of every path through
+    // here, not just the arc ends, and a `Closed` path touches `∂f` nowhere. So the guard
+    // is complete, and `stitch_cycles` may keep walking the outer ring alone.
     let edge_ix = |e: Handle<Edge>| {
-        hes.iter()
-            .position(|he| he.edge == e)
-            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))
+        hes.iter().position(|he| he.edge == e).ok_or_else(|| {
+            let on_rim = face
+                .inner
+                .iter()
+                .any(|l| l.half_edges.iter().any(|he| he.edge == e));
+            reject(if on_rim {
+                tag::SEAM_ACROSS_HOLE_RIM
+            } else {
+                tag::SEAM_COUNT_MISMATCH
+            })
+        })
     };
     let bnd: BTreeSet<usize> = paths
         .iter()
@@ -2480,7 +2477,7 @@ fn reconstruct_face_paths(
         flip,
     };
 
-    if n_closed == 0 {
+    if n_closed == 0 && face.inner.is_empty() {
         return Ok(regions.iter().map(|r| region_face(r, vec![])).collect());
     }
 
@@ -2521,12 +2518,33 @@ fn reconstruct_face_paths(
         rings.push(ring);
     }
 
-    let owners = place_loops(planes, plane_idx, &region_rings, &rings)?;
+    // `f`'s own holes join the loop list, and `place_loops` answers for them too: which
+    // region owns each, whether any tangles with a seam loop (`nested_loops` — which over-
+    // rejects, since a hole inside a seam loop is merely dropped or merely an island's own
+    // hole; cell 3f-6), and whether two regions claim one. No new machinery.
+    //
+    // Two things do differ. A hole is never an island: it is not material, so an unowned
+    // one is simply discarded with the `∂f` region it sat in. And its class is not up for
+    // decision — `f.inner` is stored clockwise, hole or not — so it cross-checks against
+    // `true`, not against its owner.
+    let holes = arrange::hole_rings(model, fh, plane_idx, inc_f)?;
+    for h in &holes {
+        check_loop_class(true, arrange::loop_winding(planes, plane_idx, h)?)?;
+    }
+    let mut all: Vec<Vec<[usize; 3]>> = rings.clone();
+    all.extend(holes.iter().cloned());
+    let owners = place_loops(planes, plane_idx, &region_rings, &all)?;
+    let (owners, hole_owners) = owners.split_at(rings.len());
     for (&owner, &w) in owners.iter().zip(&windings) {
         check_loop_class(owner.is_some(), w)?;
     }
 
     let node_ring = |r: &[[usize; 3]]| r.iter().copied().map(Node::Seam).collect::<Vec<Node>>();
+    // A hole's nodes are `f`'s own vertices. Emitting them as `Node::Seam` would mint a
+    // fresh `Discovered` vertex on top of each one — the arrangement is a source of
+    // combinatorics, never of geometry, and here that principle shows up as a node kind.
+    let hole_ring = |i: usize| orig_ring(&face.inner[i]);
+
     // Regions first, each with its holes; then the islands. `assemble_fuse_cut` fixes vertex
     // handles by first appearance across `faces`, and replay rests on that order.
     let mut out: Vec<LocalFace> = regions
@@ -2535,17 +2553,26 @@ fn reconstruct_face_paths(
         .map(|(k, steps)| {
             let holes = rings
                 .iter()
-                .zip(&owners)
+                .zip(owners.iter())
                 .filter(|(_, o)| **o == Some(k))
                 .map(|(r, _)| node_ring(r))
+                .chain(
+                    hole_owners
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| **o == Some(k))
+                        .map(|(i, _)| hole_ring(i)),
+                )
                 .collect();
             region_face(steps, holes)
         })
         .collect();
+    // Islands. A hole with no owner is not one of them — it is void, not material, and
+    // goes wherever the dropped `∂f` region it sat in went.
     out.extend(
         rings
             .iter()
-            .zip(&owners)
+            .zip(owners.iter())
             .filter(|(_, o)| o.is_none())
             .map(|(r, _)| LocalFace {
                 plane_idx,
@@ -2924,11 +2951,12 @@ fn coincident_merge(
     b: Handle<Solid>,
     iface: &Interface,
 ) -> Result<Handle<Solid>, BoolError> {
-    // `detect_coincident_interface` counts only *cross-solid, opposite-normal*
-    // coplanar pairs, so an imprint on some other face — whose coplanar region face
-    // is same-normal and within one solid — does not disqualify the stack. Such an
-    // operand reaches here with a holed face; `solid_local_faces` would drop the hole.
-    reject_holed_operands(model, a, b)?;
+    // `detect_coincident_interface` counts only *cross-solid, opposite-normal* coplanar
+    // pairs, so an imprint on some other face — whose coplanar region face is
+    // same-normal and within one solid — does not disqualify the stack. Such an operand
+    // reaches here with a holed face, and `solid_local_faces` carries the hole through.
+    // This is the one path that admits an imprint: the seam paths never see one, because
+    // `has_coplanar_pair` stops it at their door.
     match kind {
         // The intersection is the flat shared face (zero volume).
         BoolKind::Common => Err(BoolError::EmptyResult),
@@ -4261,46 +4289,123 @@ pub mod tests {
         assert_eq!(from_arrange, discovered_triples(&m));
     }
 
+    /// The lid's hole survives a seam that crosses the lid's outer ring. `stitch_cycles`
+    /// leaves one region — the lid with a corner bitten off — and the rim, being a ring of
+    /// three-plane points, is placed inside it by the same containment test a seam loop
+    /// gets. Measured before cell 3f-5: `Ok`, volume 0.96996 for a correct 0.916625, with
+    /// `validate` reporting five violations.
+    ///
+    /// `0.92 − 0.15·0.2·0.25`. A boolean composing on a shape a boolean can make.
+    ///
+    /// The box is asymmetric because the fan is not. Bite the corner with `[0.85,1.15]³`
+    /// and the box's vertical edge pierces the lid at `(0.85, 0.85)`, dead on the diagonal
+    /// of every fan the lid and its rim admit — `contact_degenerate`, honestly. Sub-unit 5
+    /// owes this coordinate back.
+
     #[test]
-    fn overlap_with_a_holed_face_is_unsupported() {
-        // The box bites a corner far from the pocket, so no rim edge straddles the
-        // seam and nothing stops `reconstruct_face` from rebuilding the lid without
-        // its hole. Measured before the guard: `Ok`, volume 0.96996 against a correct
-        // 0.916625, and `validate` reporting five violations.
+    fn cut_a_pocket_at_a_corner() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
-            Point3::from_array([0.85, 0.85, 0.85]),
-            Point3::from_array([1.15, 1.15, 1.15]),
+            Point3::from_array([0.85, 0.8, 0.75]),
+            Point3::from_array([1.2, 1.15, 1.1]),
         );
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, pc, bx),
-            tag::INNER_LOOP_OPERAND,
+        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 0.9125).abs() < 1e-9, "{}", props.volume);
+        assert!(
+            solid_faces(&m, r)
+                .into_iter()
+                .any(|fh| !m.faces.get(fh).inner.is_empty()),
+            "the lid kept its hole"
         );
     }
 
+    /// The same volume by the other road: the box bites the *bottom* corner, so the lid
+    /// never meets the seam and its hole rides out through `whole()` rather than through
+    /// `place_loops`. Two paths, one number.
+    #[test]
+    fn cut_a_pocket_at_a_bottom_corner() {
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.85, 0.85, -0.15]),
+            Point3::from_array([1.15, 1.15, 0.15]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 0.916625).abs() < 1e-9, "{}", props.volume);
+    }
+
+    /// The box crosses the pocket rim, so a boundary node rides a rim edge and `∂f` is no
+    /// longer one ring. Rejected where the rule applies, in `edge_ix`, and named for what
+    /// it is. The rim edge itself is fine now: it reaches this far only because
+    /// `edge_incidence` gives it both incident planes and a seam vertex gets built on it.
+    ///
+    /// The box hangs over the rim's `(0.7, 0.7)` corner without reaching the cube's side
+    /// walls. A box that did — the obvious `[0.55,1.15]² × [0.85,1.15]` — threads the
+    /// pocket void and leaves through a wall, so one of its edges pierces two faces and
+    /// `pierced_multi` speaks first. Honest, but about something else.
     #[test]
     fn overlap_across_a_hole_rim_is_unsupported() {
-        // Here the box crosses the pocket rim, so a rim edge straddles. That edge is
-        // used once by the lid's inner loop and once by a wall's outer loop, but
-        // `edge_incidence` walks outer loops only and hands back a single incident
-        // plane. Measured before the guard: a panic indexing `inc[1]`.
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
-            Point3::from_array([0.55, 0.55, 0.85]),
-            Point3::from_array([1.15, 1.15, 1.15]),
+            Point3::from_array([0.55, 0.6, 0.95]),
+            Point3::from_array([0.9, 0.95, 1.15]),
         );
         assert_rejects(
             || boolean(&mut m, BoolKind::Cut, pc, bx),
-            tag::INNER_LOOP_OPERAND,
+            tag::SEAM_ACROSS_HOLE_RIM,
         );
     }
 
+    /// Same two solids, opposite order — a face of the *box* is arranged first, and the
+    /// pocket's rim edge pierces it. The reject must not depend on which operand is named
+    /// first.
+    ///
+    /// Both orders also pin `seam_segments_on`'s hole-aware sweep. Revert it to walk outer
+    /// rings only and the rim crossings go uncounted, the crossing count on the face turns
+    /// odd, and `arrangement_degenerate` speaks in place of the honest guard — measured,
+    /// both ways. Detectors are not interchangeable.
     #[test]
-    fn coincident_merge_with_a_holed_face_is_unsupported() {
-        // `detect_coincident_interface` counts only cross-solid opposite-normal
-        // coplanar pairs, so imprinting a *different* face leaves the stack looking
-        // clean and routes into `coincident_merge`, whose `solid_local_faces` drops
-        // the hole. Measured before the guard: `Ok`, volume 2.0533 against 2.0.
+    fn overlap_across_a_hole_rim_rejects_either_way() {
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.55, 0.6, 0.95]),
+            Point3::from_array([0.9, 0.95, 1.15]),
+        );
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, bx, pc),
+            tag::SEAM_ACROSS_HOLE_RIM,
+        );
+    }
+
+    /// An imprint is the one holed operand the convex path can see, and `has_coplanar_pair`
+    /// catches it — the region face is coplanar with the lid it was cut from. This pins the
+    /// tag that took over when the door guard came down.
+    #[test]
+    fn an_imprinted_convex_operand_rejects_as_coplanar_pair() {
+        let (mut m, ic) = imprinted_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.5]),
+        );
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Fuse, ic, bx),
+            tag::COPLANAR_PAIR,
+        );
+    }
+
+    /// `detect_coincident_interface` counts only cross-solid opposite-normal coplanar
+    /// pairs, so imprinting a *different* face leaves the stack looking clean and routes
+    /// into `coincident_merge` — the one path an imprinted operand can take. Measured
+    /// before `solid_local_faces` learned to carry `face.inner`: `Ok`, volume 2.0533.
+    #[test]
+    fn coincident_merge_keeps_an_imprinted_hole() {
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
         else {
@@ -4321,9 +4426,17 @@ pub mod tests {
             Point3::from_array([0.0, 0.0, 1.0]),
             Point3::from_array([1.0, 1.0, 2.0]),
         );
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, solid, bx),
-            tag::INNER_LOOP_OPERAND,
+        let r = boolean(&mut m, BoolKind::Fuse, solid, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 2.0).abs() < 1e-9, "volume {vol}");
+        assert!(
+            solid_faces(&m, r)
+                .into_iter()
+                .any(|fh| !m.faces.get(fh).inner.is_empty()),
+            "the imprinted face kept its hole"
         );
     }
 
