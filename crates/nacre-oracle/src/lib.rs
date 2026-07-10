@@ -253,6 +253,7 @@ pub fn occt_boolean_of(
 mod tests {
     use super::*;
     use nacre_math::{Point3, Vector3};
+    use nacre_ops::SketchPlane;
     use nacre_props::mass_props;
     use std::f64::consts::PI;
 
@@ -396,7 +397,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn pad_diff_occt() {
-        use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
+        use nacre_ops::{OpOutput, Operation, Profile2d, apply};
 
         // Unit cube, then a 0.4-square boss of height 0.5 on the top face. The
         // padded solid's top face has a real hole (a FACE_BOUND in STEP); this
@@ -457,7 +458,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn pocket_diff_occt() {
-        use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
+        use nacre_ops::{OpOutput, Operation, Profile2d, apply};
 
         // Unit cube, then a 0.4-square pocket of depth 0.5 in the top face. The
         // inward walls remove material; this checks OCCT reads the holed,
@@ -729,35 +730,48 @@ bbox_min 0 0 0
     /// A concave L-prism (volume 3) plus a box. Rebuilt per test because `boolean`
     /// supersedes its operands.
     fn l_prism_and_box(lo: [f64; 3], hi: [f64; 3]) -> (Model, Handle<Solid>, Handle<Solid>) {
-        use nacre_math::Point2;
-        use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
+        let (mut m, l) = l_prism();
+        let bx = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        (m, l, bx)
+    }
+
+    /// The concave L-prism alone (volume 3).
+    fn l_prism() -> (Model, Handle<Solid>) {
         let mut m = Model::new();
-        let l_profile = Profile2d {
-            points: [
+        let l = extrude(
+            &mut m,
+            SketchPlane::world_xy(),
+            &[
                 [0.0, 0.0],
                 [2.0, 0.0],
                 [2.0, 1.0],
                 [1.0, 1.0],
                 [1.0, 2.0],
                 [0.0, 2.0],
-            ]
-            .iter()
-            .map(|&p| Point2::from_array(p))
-            .collect(),
+            ],
+        );
+        (m, l)
+    }
+
+    /// Extrude a closed profile 1.0 along `plane`'s normal.
+    fn extrude(m: &mut Model, plane: SketchPlane, pts: &[[f64; 2]]) -> Handle<Solid> {
+        use nacre_math::Point2;
+        use nacre_ops::{OpOutput, Operation, Profile2d, apply};
+        let profile = Profile2d {
+            points: pts.iter().map(|&p| Point2::from_array(p)).collect(),
         };
-        let OpOutput::Extrude { solid: l, .. } = apply(
-            &mut m,
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
-                profile: l_profile,
+                plane,
+                profile,
                 dist: 1.0,
             },
         )
         .unwrap() else {
             unreachable!("extrude yields Extrude output");
         };
-        let bx = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
-        (m, l, bx)
+        solid
     }
 
     /// The box bites the L's convex corner `(2, 0)`: a single chord, monotone bends.
@@ -924,6 +938,80 @@ bbox_min 0 0 0
         assert!(
             approx(nacre.area, occt.area),
             "blind dimple fuse area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    /// The L-prism and an L-shaped bar lying in its notch, `z ∈ [0.5, 1.5]`, its two arm
+    /// ends biting the cap's convex corners. Two chords on one face (M5-d3 cell 3e-2).
+    fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let (mut m, l) = l_prism();
+        let raised = SketchPlane {
+            origin: Point3::from_array([0.0, 0.0, 0.5]),
+            ..SketchPlane::world_xy()
+        };
+        let bar = extrude(
+            &mut m,
+            raised,
+            &[
+                [1.8, 0.8],
+                [2.1, 0.8],
+                [2.1, 2.1],
+                [0.8, 2.1],
+                [0.8, 1.8],
+                [1.8, 1.8],
+            ],
+        );
+        (m, l, bar)
+    }
+
+    /// nacre's first face carrying more than one chord (M5-d3 cell 3e-2) vs OCCT, `Cut`.
+    /// The L's cap keeps a single ring that uses both arcs, while the bar's floor splits
+    /// into two faces — the two bites' floors. Volume scores the bites; area cannot, since
+    /// a corner cut hands back exactly the faces it removes (14.0 either way).
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn notch_bar_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bar) = l_and_notch_bar();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, bar).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, bar).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "notch bar cut volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "notch bar cut area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    /// The `Fuse` counterpart, and not a symmetry re-ask: it reconstructs different faces.
+    /// Keeping both outsides, the bar's floor stays one ring spanning both arcs instead of
+    /// splitting, and the area — `14 + 6.58 − 0.96` — finally has something to score.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn notch_bar_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bar) = l_and_notch_bar();
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bar).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, l, bar).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "notch bar fuse volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "notch bar fuse area: {} vs {}",
             nacre.area,
             occt.area
         );
