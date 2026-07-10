@@ -222,6 +222,23 @@ pub(crate) mod tag {
     /// equation into a *nesting* detector, where the winding classifies each loop and
     /// `kept[0]` only cross-checks depth zero.
     pub const LOOP_CLASS_MISMATCH: &str = "loop_class_mismatch";
+    /// One of a face's closed seam loops lies inside another.
+    ///
+    /// A loop's winding is decided by the parity of its depth — how many loops contain it
+    /// — because crossing a loop flips the class and material always keeps to the left. So
+    /// a loop directly inside another winds the other way, and **all loops sharing a
+    /// winding is exactly the statement that none contains another**. One sign settles it;
+    /// no containment test, no representative point.
+    ///
+    /// Nesting is *reachable* — a polyhedral torus cut through its hole gives two nested
+    /// loops, and all its faces are simple, so `inner_loop_operand` does not stop it. It is
+    /// not on the `fourplane` row of unreachable backstops; the suite simply cannot build
+    /// such an operand. `classify_loops`'s golden fires it instead.
+    ///
+    /// **The inference needs `∂f` to be one class throughout**, i.e. no arc on the face.
+    /// With an arc, a hole in the kept region and an island in the dropped one wind
+    /// oppositely without containing each other. `pokehole` holds that case.
+    pub const NESTED_LOOPS: &str = "nested_loops";
     pub const POKEHOLE: &str = "pokehole";
     pub const MISSING_SEAM: &str = "missing_seam";
     /// Four or more boundary crossings on one face — the convex path only.
@@ -2191,6 +2208,28 @@ fn classify_loop(kept0: bool, winding: i8) -> Result<bool, BoolError> {
     }
 }
 
+/// The same question for a face's whole set of loops: all holes, or all islands?
+///
+/// **Precondition: the face carries no open arc.** Then `∂f` is one class throughout, the
+/// region holding it has depth zero, and a loop's winding is fixed by the parity of its
+/// depth. Containment shifts depth by one, so loops that all wind the same way cannot
+/// contain one another — and being flat, they all take the class `kept0` dictates.
+///
+/// With an arc present the argument dies: `∂f` is no longer one class, and a hole in the
+/// kept region beside an island in the dropped one wind oppositely without nesting. Calling
+/// this there would raise a false `nested_loops`. Cell 3f-4 pays for that with a real
+/// containment test.
+///
+/// Nothing more can be checked in the mixed case. The outermost loops sit at depth zero and
+/// wind the way `kept0` dictates — but "mixed" already means both signs are present, so
+/// that sign is there by definition and the cross-check would be vacuous.
+fn classify_loops(kept0: bool, windings: &[i8]) -> Result<bool, BoolError> {
+    if windings.is_empty() || windings.iter().any(|&w| w != windings[0]) {
+        return Err(reject(tag::NESTED_LOOPS));
+    }
+    classify_loop(kept0, windings[0])
+}
+
 /// Reconstruct a face's kept portion, non-convex path. `None` if the face is dropped.
 ///
 /// Same shape as [`reconstruct_face`], but the seam sub-path comes from the
@@ -2311,7 +2350,7 @@ fn reconstruct_face_paths(
             }
         }
         // Ask the ring itself which it is, and make it agree with the boundary's class.
-        let is_hole = classify_loop(kept[0], arrange::loop_winding(planes, plane_idx, &ring)?)?;
+        let is_hole = classify_loops(kept[0], &[arrange::loop_winding(planes, plane_idx, &ring)?])?;
         let ring: Vec<Node> = ring.into_iter().map(Node::Seam).collect();
         return Ok(if is_hole {
             whole(vec![ring]) // annulus kept: `∂f` outer, the loop its hole
@@ -4468,6 +4507,41 @@ pub mod tests {
                     .as_array()
             })
             .collect()
+    }
+
+    #[test]
+    fn loops_that_wind_differently_must_nest() {
+        // A loop's winding is the parity of its depth, so a loop directly inside another
+        // winds the other way. "All the same winding" is therefore exactly "none contains
+        // another" — one sign, no containment test, no representative point.
+        assert!(
+            classify_loops(true, &[-1, -1, -1]).unwrap(),
+            "three flat holes"
+        );
+        assert!(!classify_loops(false, &[1, 1]).unwrap(), "two flat islands");
+
+        // Mixed ⇒ nesting. Either way round, and whatever the boundary says.
+        for kept0 in [true, false] {
+            assert_rejects(
+                || classify_loops(kept0, &[-1, 1]).map(|_| ()),
+                tag::NESTED_LOOPS,
+            );
+            assert_rejects(
+                || classify_loops(kept0, &[1, -1, 1]).map(|_| ()),
+                tag::NESTED_LOOPS,
+            );
+        }
+
+        // Flat but disagreeing with the boundary: that is the three-source check, not
+        // nesting, and it keeps its own tag.
+        assert_rejects(
+            || classify_loops(true, &[1, 1]).map(|_| ()),
+            tag::LOOP_CLASS_MISMATCH,
+        );
+        assert_rejects(
+            || classify_loops(false, &[-1, -1]).map(|_| ()),
+            tag::LOOP_CLASS_MISMATCH,
+        );
     }
 
     #[test]
