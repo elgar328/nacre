@@ -2207,20 +2207,6 @@ fn supersede_reuse(
     solid
 }
 
-/// Is the loop a hole (`true`) or an island's outer ring (`false`)?
-///
-/// `kept0` is the class of the face boundary — the annulus side — and `winding` is the
-/// ring's, about the face's outward normal. A hole keeps its material outside itself and so
-/// runs clockwise; an island runs counter-clockwise. The two must say the same thing, and
-/// they arrive by routes that share nothing: ray casting, and an exact turn at a hull vertex.
-fn classify_loop(kept0: bool, winding: i8) -> Result<bool, BoolError> {
-    match (kept0, winding) {
-        (true, -1) => Ok(true),
-        (false, 1) => Ok(false),
-        _ => Err(reject(tag::LOOP_CLASS_MISMATCH)),
-    }
-}
-
 /// The same question for a face's whole set of loops: all holes, or all islands?
 ///
 /// **Precondition: the face carries no open arc.** Then `∂f` is one class throughout, the
@@ -2236,11 +2222,49 @@ fn classify_loop(kept0: bool, winding: i8) -> Result<bool, BoolError> {
 /// Nothing more can be checked in the mixed case. The outermost loops sit at depth zero and
 /// wind the way `kept0` dictates — but "mixed" already means both signs are present, so
 /// that sign is there by definition and the cross-check would be vacuous.
-fn classify_loops(kept0: bool, windings: &[i8]) -> Result<bool, BoolError> {
-    if windings.is_empty() || windings.iter().any(|&w| w != windings[0]) {
-        return Err(reject(tag::NESTED_LOOPS));
+/// The winding a loop must have, given where it turned out to be.
+///
+/// A hole keeps its material outside itself and so runs clockwise; an island runs the other
+/// way. `is_hole` comes from containment, the winding from an exact turn at a hull vertex,
+/// and the ring's direction from the local sign rule. Three sources, none assumed right.
+fn check_loop_class(is_hole: bool, winding: i8) -> Result<(), BoolError> {
+    if winding == if is_hole { -1 } else { 1 } {
+        Ok(())
+    } else {
+        Err(reject(tag::LOOP_CLASS_MISMATCH))
     }
-    classify_loop(kept0, windings[0])
+}
+
+/// Which kept region each loop lies in, or `None` for a loop in a dropped one.
+///
+/// A loop inside another loop nests, and this cell cannot place it. Two regions containing
+/// one loop would mean the regions overlap, which `stitch_cycles` forbids — the arrangement
+/// contradicting itself, so `seam_count_mismatch`.
+fn place_loops(
+    planes: &[PlaneInfo],
+    p: usize,
+    regions: &[Vec<[usize; 3]>],
+    loops: &[Vec<[usize; 3]>],
+) -> Result<Vec<Option<usize>>, BoolError> {
+    let mut out = Vec::with_capacity(loops.len());
+    for (i, l) in loops.iter().enumerate() {
+        for (j, other) in loops.iter().enumerate() {
+            if i != j && arrange::point_in_ring(planes, p, l[0], other)? {
+                return Err(reject(tag::NESTED_LOOPS));
+            }
+        }
+        let mut owner = None;
+        for (k, r) in regions.iter().enumerate() {
+            if arrange::point_in_ring(planes, p, l[0], r)? {
+                if owner.is_some() {
+                    return Err(reject(tag::SEAM_COUNT_MISMATCH));
+                }
+                owner = Some(k);
+            }
+        }
+        out.push(owner);
+    }
+    Ok(out)
 }
 
 /// Reconstruct a face's kept portion, non-convex path. `None` if the face is dropped.
@@ -2333,18 +2357,18 @@ fn reconstruct_face_paths(
     }
 
     if n_closed > 0 {
-        // With no arc, `∂f` is one class throughout, so the region holding it has depth
-        // zero and every loop's winding is fixed by the parity of its depth. Loops that all
-        // wind the same way therefore cannot nest, and being flat they are all holes (if
-        // `∂f` is kept) or all islands (if it is dropped). `classify_loops` decides both
-        // from that one sign; an arc beside them breaks the argument, so it rejects first.
-        //
-        // (A boundary whose *vertices* are all one class but whose edge is crossed twice
-        // would break it too. That edge would join `bnd` while `transitions` stayed empty,
-        // and the set equality above already rejected it.)
+        // A loop is a hole of the kept region containing it, and an island when no kept
+        // region does — its interior is then what survives. Only containment can say which,
+        // and with an arc present nothing else can: cell 3f-3's counterexample is a hole in
+        // the kept region beside an island in the dropped one, winding oppositely without
+        // nesting. Cell 3f-4 opens that; until then the arc rejects.
         if !opens.is_empty() {
             return Err(reject(tag::POKEHOLE));
         }
+        // With no arc there is one region, `f` itself, kept iff `∂f` is.
+        let bnd_ring = arrange::face_vertex_triples(model, fh, plane_idx, inc_f)?;
+        let regions: Vec<Vec<[usize; 3]>> = if kept[0] { vec![bnd_ring] } else { vec![] };
+
         let mut rings = Vec::with_capacity(n_closed);
         let mut windings = Vec::with_capacity(n_closed);
         for path in &paths {
@@ -2358,25 +2382,36 @@ fn reconstruct_face_paths(
                 }
             }
             windings.push(arrange::loop_winding(planes, plane_idx, &ring)?);
-            rings.push(ring.into_iter().map(Node::Seam).collect::<Vec<Node>>());
+            rings.push(ring);
         }
-        // Ask the rings themselves which they are, and make them agree with the boundary.
-        return Ok(if classify_loops(kept[0], &windings)? {
-            whole(rings) // annulus kept: `∂f` outer, every loop one of its holes
-        } else {
-            // Disks kept: each loop *is* an outer boundary and `∂f` contributes nothing.
-            // The sign rule is local — it reads `keep`, never which side is enclosed — so
-            // the very same calls wound these rings the other way round.
-            rings
-                .into_iter()
-                .map(|loop_nodes| LocalFace {
-                    plane_idx,
-                    loop_nodes,
-                    inner: vec![],
-                    flip,
-                })
-                .collect()
-        });
+
+        let owners = place_loops(planes, plane_idx, &regions, &rings)?;
+        for (&owner, &w) in owners.iter().zip(&windings) {
+            check_loop_class(owner.is_some(), w)?;
+        }
+
+        let node_ring = |r: Vec<[usize; 3]>| r.into_iter().map(Node::Seam).collect::<Vec<Node>>();
+        let holes: Vec<Vec<Node>> = rings
+            .iter()
+            .zip(&owners)
+            .filter(|(_, o)| o.is_some())
+            .map(|(r, _)| node_ring(r.clone()))
+            .collect();
+        let islands = rings
+            .into_iter()
+            .zip(&owners)
+            .filter(|(_, o)| o.is_none())
+            .map(|(r, _)| LocalFace {
+                plane_idx,
+                loop_nodes: node_ring(r),
+                inner: vec![],
+                flip,
+            });
+        // Regions first, then islands: `assemble_fuse_cut` fixes vertex handles by first
+        // appearance across `faces`, and replay rests on that order.
+        let mut out = whole(holes);
+        out.extend(islands);
+        return Ok(out);
     }
     if opens.is_empty() {
         return Ok(whole(vec![])); // no seam on this face after all
@@ -4551,63 +4586,20 @@ pub mod tests {
     }
 
     #[test]
-    fn loops_that_wind_differently_must_nest() {
-        // A loop's winding is the parity of its depth, so a loop directly inside another
-        // winds the other way. "All the same winding" is therefore exactly "none contains
-        // another" — one sign, no containment test, no representative point.
+    fn a_loop_that_winds_the_wrong_way_for_where_it_sits_is_rejected() {
+        // Containment says hole or island; the winding must agree. Two of the four
+        // combinations are contradictions, and neither `props`, OCCT, nor the mesh gate
+        // would notice — only this, and `validate` downstream.
+        assert!(check_loop_class(true, -1).is_ok(), "a hole runs clockwise");
         assert!(
-            classify_loops(true, &[-1, -1, -1]).unwrap(),
-            "three flat holes"
+            check_loop_class(false, 1).is_ok(),
+            "an island runs counter-clockwise"
         );
-        assert!(!classify_loops(false, &[1, 1]).unwrap(), "two flat islands");
+        assert_rejects(|| check_loop_class(true, 1), tag::LOOP_CLASS_MISMATCH);
+        assert_rejects(|| check_loop_class(false, -1), tag::LOOP_CLASS_MISMATCH);
 
-        // Mixed ⇒ nesting. Either way round, and whatever the boundary says.
-        for kept0 in [true, false] {
-            assert_rejects(
-                || classify_loops(kept0, &[-1, 1]).map(|_| ()),
-                tag::NESTED_LOOPS,
-            );
-            assert_rejects(
-                || classify_loops(kept0, &[1, -1, 1]).map(|_| ()),
-                tag::NESTED_LOOPS,
-            );
-        }
-
-        // Flat but disagreeing with the boundary: that is the three-source check, not
-        // nesting, and it keeps its own tag.
-        assert_rejects(
-            || classify_loops(true, &[1, 1]).map(|_| ()),
-            tag::LOOP_CLASS_MISMATCH,
-        );
-        assert_rejects(
-            || classify_loops(false, &[-1, -1]).map(|_| ()),
-            tag::LOOP_CLASS_MISMATCH,
-        );
-    }
-
-    #[test]
-    fn a_loop_that_winds_the_wrong_way_for_its_boundary_is_rejected() {
-        // The four combinations, on paper. A kept boundary means the loop's interior is
-        // dropped, which means the material lies outside it, which means it runs clockwise.
-        assert!(
-            classify_loop(true, -1).unwrap(),
-            "kept boundary, clockwise ring ⇒ hole"
-        );
-        assert!(
-            !classify_loop(false, 1).unwrap(),
-            "dropped boundary, ccw ring ⇒ island"
-        );
-        assert_rejects(
-            || classify_loop(true, 1).map(|_| ()),
-            tag::LOOP_CLASS_MISMATCH,
-        );
-        assert_rejects(
-            || classify_loop(false, -1).map(|_| ()),
-            tag::LOOP_CLASS_MISMATCH,
-        );
-
-        // And on the real dimple: reversing the ring reverses the winding, so the boundary
-        // and the loop stop agreeing. Nothing else in the kernel would notice.
+        // On the real dimple: reversing the ring reverses the winding, so containment and
+        // the ring stop agreeing. Nothing else in the kernel would notice.
         let (m, l, stub) = l_and_dimple();
         let (planes, surf_ix) = combined(&m, l, stub);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
@@ -4619,10 +4611,27 @@ pub mod tests {
         let mut ring = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
         ring.reverse();
         let w = arrange::loop_winding(&planes, p, &ring).unwrap();
+        assert_rejects(|| check_loop_class(true, w), tag::LOOP_CLASS_MISMATCH);
+    }
+
+    #[test]
+    fn a_loop_inside_another_loop_is_unsupported() {
+        // Cell 3f-3 detected nesting from the windings, which only works when the face has
+        // no arc. Cell 3f-4 detects it by containment, which works either way — and the
+        // staple cap gives a real pair of rings, one inside the other, to fire it with.
+        //
+        // No operand in the suite produces two nested *loops*; a polyhedral torus would.
+        let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
         assert_rejects(
-            || classify_loop(true, w).map(|_| ()),
-            tag::LOOP_CLASS_MISMATCH,
+            || place_loops(&planes, p, &[], &[cycle.clone(), ring.clone()]).map(|_| ()),
+            tag::NESTED_LOOPS,
         );
+        // Un-nested rings place cleanly, both in the dropped region.
+        let alone = place_loops(&planes, p, &[], std::slice::from_ref(&ring)).unwrap();
+        assert_eq!(alone, vec![None]);
+        // And with the cycle as a region, the loop is its hole.
+        let owned = place_loops(&planes, p, std::slice::from_ref(&cycle), &[ring]).unwrap();
+        assert_eq!(owned, vec![Some(0)]);
     }
 
     #[test]
