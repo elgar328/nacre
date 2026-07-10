@@ -422,13 +422,13 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 **inner loop를 가진 면 — 분류기는 고쳤고, 재구성 경로는 임시 거절 (M5-d3 셀 3a).** `face_points`가 `face.outer`만 읽어 `point_in_solid`·`segment_crosses_face`가 구멍을 메운 것처럼 취급했다. `prepare_face_split`이 `ImprintSketch`/`PocketOnFace`에서 이미 그런 면을 만든다. **실측(pocket된 단위 큐브, 공동 `[0.3,0.7]²×[0.5,1]`):** 공동 안의 점이 `Inside`로 오분류되고, 더 나쁘게는 **분류가 점마다 엇갈린다**(공동 안 박스의 8개 코너가 5 Inside / 3 Outside) — 옆으로 빠져나가는 광선은 뚜껑을 아예 안 만나기 때문. → `face_loops`가 outer 링과 각 구멍 링을 모두 돌려주고 전부 부채꼴 분할한다. 구멍 링은 외향 법선 기준 CW이며(관례가 아니라 매니폴드 조건 — 각 엣지가 인접 벽면 outer 링에서 반대 방향으로 쓰이고 `validate`가 `NonOpposedEdge`로 검사한다), 그래서 부호 붙은 교차가 저절로 상쇄된다. 새 tolerance도 ear-clipping도 없다.
 
-재구성 경로는 아직 구멍을 못 다룬다. **실측된 세 가지 파손:** `reconstruct_face`는 구멍을 잃고(`Ok`, 부피 0.96996 vs 0.916625, `validate` 위반 5건), `edge_incidence`는 rim 엣지의 인접 면을 하나만 봐서 `inc[1]`에서 **패닉**하며, `coincident_merge`는 `solid_local_faces`로 구멍을 버린다(`Ok`, 부피 2.0533 vs 2.0). → `overlap_fuse_cut`·`fuse_cut`·`coincident_merge` 진입부에서 `tag::INNER_LOOP_OPERAND`로 거절. 셀 3f-1은 결과에 구멍을 **내지만** 이 가드를 은퇴시키지 않는다 — 구멍 있는 면을 **입력으로 받는** 것은 별개의 일이고, 은퇴는 셀 3f-3이다. 주의: `detect_coincident_interface`는 **교차-솔리드 반대법선** 공면 쌍만 세므로, 인터페이스가 아닌 면에 imprint한 볼록 솔리드는 스택으로 보여 merge 경로로 들어온다 — `common`은 `is_convex`+`has_coplanar_pair`가 이미 막아 가드가 불필요하다.
+재구성 경로는 아직 구멍을 못 다룬다. **실측된 세 가지 파손:** `reconstruct_face`는 구멍을 잃고(`Ok`, 부피 0.96996 vs 0.916625, `validate` 위반 5건), `edge_incidence`는 rim 엣지의 인접 면을 하나만 봐서 `inc[1]`에서 **패닉**하며, `coincident_merge`는 `solid_local_faces`로 구멍을 버린다(`Ok`, 부피 2.0533 vs 2.0). → `overlap_fuse_cut`·`fuse_cut`·`coincident_merge` 진입부에서 `tag::INNER_LOOP_OPERAND`로 거절. 셀 3f-1은 결과에 구멍을 **내지만** 이 가드를 은퇴시키지 않는다 — 구멍 있는 면을 **입력으로 받는** 것은 별개의 일이고, 은퇴는 셀 3f-4다. 주의: `detect_coincident_interface`는 **교차-솔리드 반대법선** 공면 쌍만 세므로, 인터페이스가 아닌 면에 imprint한 볼록 솔리드는 스택으로 보여 merge 경로로 들어온다 — `common`은 `is_convex`+`has_coplanar_pair`가 이미 막아 가드가 불필요하다.
 
 **`indirect_orient3d`는 implicit point를 하나만 받는다 — 그런데 seam 수집에는 그걸로 충분했다 (M5-d3 셀 3b에서 실증).** `nacre_predicates::indirect_orient3d(p: &ThreePlane, q, r, s)`는 explicit 점 셋을 받는다. 애초 예상은 "면당 arrangement의 조합 판정이 seam 정점 둘·셋을 얽으므로 Attene 2020의 LPI/TPI 계열 2·3-implicit 변형이 필요하고, 그때까지 arrangement 코어는 exact orient2d(투영 좌표) + 투영 불확실성 필터로 서야 한다"였다. **seam 세그먼트 수집 단계에 관해서는 틀렸다.** 실제로는 (a) 끝점이 `three_planes(P,Q,R)` — 이미 쓰는 3-평면 implicit point고, (b) "엣지 안 + 상대 면 안" 포함 판정은 `segment_crosses_face`가 exact orient3d로 이미 답하며, (c) 직선 위 두 교점의 전후는 `three_plane_orient3d(P,Q,R_i, R_j.tri)`(1-implicit)와 `det3_sign([n_P,n_Q,n_{R_j}])`(exact)의 곱으로 정해진다. **두 implicit 점이 한 술어에 동시에 들어가는 자리가 없다.** 그래서 2D 투영도, orient2d도, `ARRANGEMENT_DEGENERATE`의 "투영 불확실성 필터"도 필요 없었다(geom에 `plane_pair_dir_sign` 얇은 exact 래퍼 하나만 추가). 다중 implicit 술어가 정말 필요해지는 곳은 **셀 추출**(두 implicit 점의 orient)이며, 그 셀에 이르러 다시 판단한다 — 쓰지도 않을 술어를 미리 만들지 않는다.
 
 **`u_and_slab`은 다중 chord와 inner loop를 **둘 다** 요구한다 (셀 3e-1에서 실측).** 손계산은 닫힌 고리 0을 예측했으나 실제는 **2**다: U의 두 기둥이 슬래브의 `y=1.5` 면 **내부에** 사각형 둘을 뚫는다. `multichord`가 U의 base cap에서 먼저 발화할 뿐이고, 그 픽스처는 3e-2(다중 chord)만으로는 열리지 않는다. 픽스처마다 `(한 면당 최대 열린 호, 전체 닫힌 고리)`를 `arrangement_agrees_with_todays_seam_bookkeeping`이 못박는다 — 사다리의 어느 칸이 무엇을 여는지가 테스트에서 읽힌다.
 
-**`ARRANGEMENT_DEGENERATE`는 미검증 백스톱이다 (`fourplane`·`seam_branch`·`seam_count_mismatch`·`loop_orient_mismatch`와 같은 줄).** `arrange::seam_segments_on`이 홀수 교차 카운트에서 거절한다(패리티상 짝수여야 한다 — 교점은 enter/exit로 교대하고 직선의 양 끝은 바깥). 그런 퇴화(정점 스침, 엣지 공선)는 그 전에 `CONTACT_DEGENERATE`가 잡을 공산이 크므로, 발화 테스트가 없다. **셀 3c에서 다시 쟀다: 여전히 미발화다.** 조립 골든 넷과 144-인스턴스 proptest(면 859건 통과·5건 거절) 어디서도 뜨지 않았다. **셀 3f-1에서 또 쟀다: 여전히 미발화다** — 불리언 결과가 구멍을 갖는 첫 형상까지 포함해서. (3f-1은 "대표점 분류"를 **쓰지 않았다.** seam을 건널 때마다 분류가 뒤집힌다는 패리티 논증이 대신했고, 대표점이 필요한 것은 중첩 고리를 가리는 3f-2다. 거기서 다시 잰다.)
+**`ARRANGEMENT_DEGENERATE`는 미검증 백스톱이다 (`fourplane`·`seam_branch`·`seam_count_mismatch`·`loop_orient_mismatch`와 같은 줄).** `arrange::seam_segments_on`이 홀수 교차 카운트에서 거절한다(패리티상 짝수여야 한다 — 교점은 enter/exit로 교대하고 직선의 양 끝은 바깥). 그런 퇴화(정점 스침, 엣지 공선)는 그 전에 `CONTACT_DEGENERATE`가 잡을 공산이 크므로, 발화 테스트가 없다. **셀 3c에서 다시 쟀다: 여전히 미발화다.** 조립 골든 넷과 144-인스턴스 proptest(면 859건 통과·5건 거절) 어디서도 뜨지 않았다. **셀 3f-1에서 또 쟀다: 여전히 미발화다** — 불리언 결과가 구멍을 갖는 첫 형상까지 포함해서. (3f-1도 3f-2도 "대표점 분류"를 **쓰지 않았다.** seam을 건널 때마다 분류가 뒤집힌다는 패리티 논증이 대신했고, 대표점이 필요한 것은 중첩 고리를 가리는 3f-3이다. 거기서 다시 잰다.)
 
 **seam 경로 조립 — 노드 동일성은 증명되고, `edge_seam`의 1:1은 가드에 얹혀 있다 (M5-d3 셀 3c).** `arrange::seam_paths_on`이 seam 세그먼트를 **끝점 triple의 동일성만으로** 이어 붙여 열린 호와 닫힌 고리를 낸다. `∂Y ∩ P ∩ f`는 1-manifold이므로 세그먼트는 끝점에서만 만나고, 그 자리는 Y의 엣지가 `f`를 뚫는 지점이며, 그 엣지를 공유하는 두 Y-면이 양쪽에서 같은 정렬 triple을 낸다. **좌표를 한 번도 읽지 않는다.**
 
@@ -489,9 +489,46 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 - **`LOOP_ORIENT_MISMATCH`는 `debug_assert`가 아니라 진짜 거절이다.** 고리의 모든 변이 같은 답을 내야 한다(되감기 변 `n−1 → 0`을 포함해서 — 빠뜨리기 쉽다). 이건 방어가 아니라 **서로 독립인 두 기계의 검산**이다: 정확한 술어 `order_along`과 방향 장부 `PlaneInfo::{n_out, orient}`. `SEAM_COUNT_MISMATCH`와 같은 종(種)이고, 같은 이유로 릴리스에서 살아남는다. 공유 평면 추출 실패와 `order_along == 0`도 같은 태그로 묶인다 — `expect`로 뽑으면 릴리스 패닉이다. **오늘 미발화 백스톱**이며, 3c의 노드 동일성 논증이나 `FOURPLANE`이 완화되면 운다.
   - `seam_paths_on`의 순회 기록을 재사용해 `order_along` 재계산을 피할 수도 있었다. **그러면 안 된다** — 한 기계의 기억을 믿으면 검산할 것이 없다. **재계산이 곧 두 번째 기계다.**
 - **전역 부호 뒤집힘은 커널이 못 잡는다.** 모든 변이 일관되게 틀리기 때문이다. 그건 `validate`(위상: `NonOpposedEdge`)와 `tessellate`(기하: `HoleWinding`)의 몫인데 **둘 다 사용자가 부를 수도, 안 부를 수도 있는 검사다.** 그래서 (1) 배선 **전에** `orient_seam_loop`의 순수 골든이 전역 부호를 못박고(`material_outside`를 뒤집으면 결과가 정확히 역순이어야 한다 — 규칙의 유일한 자유도가 그 불리언이므로), (2) `a_flipped_hole_loop_is_caught`가 **이 형상에서** 두 검출기가 실제로 우는지 확인한다. `Store`에 `get_mut`이 없으므로(append-only) 뒤집힌 고리를 가진 새 `Face`를 push하고 새 `Shell`·`Solid`로 갈아끼운 뒤 `live_solids`를 옮긴다 — 옛 면은 `reachable()` 밖으로 떨어진다.
-- **부피와 OCCT는 방향에 무감각하다** (`props`가 `|넓이|`를 합한다). 대신 `blind_dimple_{cut,fuse}_matches_occt`는 **넓이도** 비교한다 — 우리 게이트(`props`·메시 넓이 합·손계산 14.8)는 모두 **같은 링을 적분**하므로 구멍의 크기에 대해서는 서로를 검산하지 못한다. 독립 커널만이 그 주장을 세운다. OCCT diff 20 → 22.
+- **부피와 OCCT는 방향에 무감각하다** (`props`가 `|넓이|`를 합한다 — 더 정확히는 **법선을 `Face.orientation`에서 뽑고 링을 읽지 않는다.** 셀 3f-2에서 소스로 확인했고, 그래서 눈멂이 구멍에 국한되지 않는다). 대신 `blind_dimple_{cut,fuse}_matches_occt`는 **넓이도** 비교한다 — 우리 게이트(`props`·메시 넓이 합·손계산 14.8)는 모두 **같은 링을 적분**하므로 구멍의 크기에 대해서는 서로를 검산하지 못한다. 독립 커널만이 그 주장을 세운다. OCCT diff 20 → 22.
 - **`flip`과 `inner`의 상호작용은 쓰였으나 미검증이다.** `Cut`의 B-조각은 모든 고리를 뒤집는데, 스텁 쪽 면에는 고리가 없다. B의 면이 `kept[0] == true` + 고리를 가지려면 A에 관통 구멍이 있어야 하고 그런 피연산자는 `INNER_LOOP_OPERAND`가 문 앞에서 거절한다. **믿지만 검증하지 않았다.**
-- **`INNER_LOOP_OPERAND`는 그대로 남는다.** 결과에 구멍을 **내는** 것과 구멍 있는 면을 **입력으로 받는** 것은 다른 일이다 — 3f-1의 결과를 다시 불리언에 넣으면 정직하게 거절된다. 은퇴는 3f-3.
+- **`INNER_LOOP_OPERAND`는 그대로 남는다.** 결과에 구멍을 **내는** 것과 구멍 있는 면을 **입력으로 받는** 것은 다른 일이다 — 3f-1의 결과를 다시 불리언에 넣으면 정직하게 거절된다. 은퇴는 3f-4.
+
+**메시 게이트에 부호 있는 부피를 더했다 — 방향을 보는 두 번째 기계 ((gate) 셀).** 3f-2를 검토하다 그물의 구멍이 드러났고, 추측 대신 **소스를 읽어** 확정했다.
+
+- `props::face_contribution`은 면 법선을 **`Face.orientation`에서** 뽑고 `polygon_area_centroid`는 `|A_vec|`(부호 없는 크기)을 돌려준다. ⇒ `props`는 **어떤 고리 뒤집힘도 읽지 않는다.** 구멍이든 외곽이든. 부피도, 그것으로 채점하는 모든 OCCT diff도 눈멀었다.
+- `tess::triangulate_planar`는 `face.orientation`도 표면 법선도 **읽지 않는다.** 삼각형 감김이 링을 따라간다. `HoleWinding`은 inner loop만 본다.
+
+그래서 면의 링을 보는 기계가 `validate` **하나뿐**이었다. 놓치는 결함이 있어서가 아니라 — 뒤집힌 고리는 공유 엣지를 같은 방향으로 두 번 쓰므로 `NonOpposedEdge`가 반드시 뜬다 — **기계가 하나**여서 문제다. `SEAM_COUNT_MISMATCH`와 `order_along` 재계산에서 지켜온 기준에 미달한다.
+
+**`mesh_volume == props.volume`이 두 번째 기계다. 순환이 아니다.** `props`는 `orientation`을 읽고 링을 안 읽는다. `tess`는 링을 읽고 `orientation`을 안 읽는다. 그러므로 두 부피의 일치는 정확히 **"모든 면에서 `Face.orientation`이 제 링의 감김과 일치한다"**는 진술이다. `validate`가 위상(엣지 대립)으로 묻는 것을 기하(표면 발산)로 묻는다.
+
+| 검사 | 잡는 것 | 못 잡는 것 |
+|---|---|---|
+| watertight | 잃은 면, 공유되지 않은 rim | 다각형 밖으로 나간 부채꼴, 뒤집힌 면 |
+| `Σ\|넓이\| == props.area` | 부채꼴, 메워진 구멍 | 뒤집힌 면 (부호가 없다) |
+| `mesh_volume == props.volume` | 뒤집힌 면·고리 | 넓이만 틀린 것 |
+
+여섯 픽스처 전부에서 **먼저 쟀다**: 최대 불일치 `1.3e-15`. `only_the_signed_volume_sees_a_reversed_face`가 이빨을 보인다 — 정육면체 한 면의 outer loop를 뒤집으면 삼각형 수·watertight·부호 없는 넓이·`props.volume`이 **전부 침묵**하고 부호 있는 부피만 `⅔`(= `x=1` 면 flux의 두 배) 어긋난다. 정육면체는 `[1,2]³`다 — `[0,1]³`이면 원점을 지나는 세 면의 기여가 `0`이라 그중 하나를 뒤집어도 **공허하게 통과**한다.
+
+*미래 후보(구현 금지):* 이 검사를 `nacre-validate`의 진짜 `Violation`으로 승격할 수 있다. 오늘은 테스트 게이트뿐이라 라이브러리 사용자는 여전히 부를 수도 안 부를 수도 있다. 반쪽엣지 하나짜리 원 고리에서 Newell 법선이 정의되지 않는 문제를 먼저 풀어야 한다.
+
+**면이 섬(island)일 수 있다 — `POKEHOLE` 두 번째 축소 (M5-d3 셀 3f-2).** `Cut(stub, L)`이 열린다: `l_and_dimple`의 피연산자를 뒤집으면 같은 seam 고리가 **경계가 통째로 버려진** 면에 앉는다. 그 면의 유지 영역은 고리의 내부뿐이고 `∂f` 조각이 하나도 없다 — outer loop가 곧 seam ring, 정점 넷 전부 `Discovered`다. 답은 `z=1` 위의 `0.4×0.4×0.5` 박스(0.08), `validate` 클린.
+
+- **증명이 짧아졌다.** 호 없이 고리 하나면 면이 원반 + annulus로 갈리고 `∂f`는 annulus에 있다. 그러니 `kept[0]`이 annulus를 분류하고 원반은 반대 분류를 갖는다. annulus가 살면 **구멍**, 원반이 살면 **섬**. 제3의 답은 없고 넓이는 필요 없다. 빠져나갈 구멍("정점은 다 같은 분류인데 엣지가 두 번 교차")은 그 엣지가 `bnd`에 들자마자 빈 `transitions`와 **집합으로** 달라져 `SEAM_COUNT_MISMATCH`가 먼저 운다 — 3d가 개수 대신 집합을 택한 값.
+- **새 부호도, 새 술어도, 새 태그도 없다.** 부호 규칙은 국소적이다: seam 위의 한 점에서 유지 재료가 **어느 쪽인지**만 묻고, 그 고리가 무엇을 **감싸는지**는 묻지 않는다. 그래서 구멍을 CW로 감던 바로 그 `orient_seam_loop` 호출이 섬을 CCW로 감는다. 3f-1의 골든이 `inside == rev(outside)`로 **두 방향을 다 못박아 둔** 것이 한 셀 뒤에 값을 했다. `assemble_fuse_cut`도 손대지 않았다 — `ring` 클로저는 노드 종류를 묻지 않는다.
+- **이름이 거짓이 되어 개명했다.** `orient_hole_loop` → `orient_seam_loop`, `HOLE_ORIENT_MISMATCH` → `LOOP_ORIENT_MISMATCH`. doc은 이미 일반적이었다("outer or inner"). `POKEHOLE`은 개명하지 않는다 — 3f-3이 비볼록 발화 지점을 은퇴시키면 볼록 경로의 문자 그대로의 poke-through만 남아 이름이 **다시 정확해진다.**
+- **`flip`이 그런 고리를 처음 만난다.** `Cut`의 B-조각이므로 링이 뒤집혀 면 법선이 `−z`가 되고, 그 면이 박스의 **바닥**이 된다. rim 엣지 넷은 `edge_for`의 정점쌍 dedup 덕에 스텁 옆면 조각이 쓰는 바로 그 엣지이고, `flip` 덕에 두 사용이 대립한다. (`flip` + **inner**는 여전히 미검증.)
+- **검출기 표를 실측했다 — 구멍과 정반대다.**
+
+| 오류 | props / OCCT | `validate` | `tessellate` | 부호 있는 메시 부피 |
+|---|---|---|---|---|
+| **구멍** 고리 뒤집힘 | 눈멂 | `NonOpposedEdge` | `HoleWinding` | (도달 못 함) |
+| **섬** 고리 뒤집힘 | 눈멂 (0.08 그대로) | `NonOpposedEdge` | `Ok` — 침묵 | `2·0.16/3` 어긋남 |
+
+  `tessellate`가 섬을 못 보는 이유는 링에서 법선을 **뽑기** 때문이다 — 삼각형이 조용히 안쪽을 향할 뿐이다. (gate) 셀이 없었다면 섬의 방향을 보는 기계가 `validate` 하나였다. `a_flipped_island_loop_is_caught`가 네 검출기에 물어 나온 대로 적었다.
+
+- **`POKEHOLE`이 지키는 것.** 고리 둘은 **중첩**일 수 있고, 그러면 안쪽 고리의 내부가 다시 유지되어 **별개의 면**이 된다 — `Option<LocalFace>` 하나로는 못 돌려준다. 호 옆의 고리도 배치할 수 없다. **"오늘 픽스처에 없으니 도달 불가"라고 쓸 수 없다:** 다면체 **토러스**를 구멍 평면으로 자르면 중첩 고리 둘이 나오고 그 면들은 전부 단순하므로 `INNER_LOOP_OPERAND`도 막지 못한다. 셀 3f-3.
+- **발화 테스트는 좁히기 전에 확보했다.** `Cut(slab, u)` — `cut_multi_chord_slab_is_unsupported`의 피연산자를 뒤집으면, 면이 A→B 순으로 도므로(`overlap_fuse_cut`) 슬래브의 `y=1.5` 면(고리 둘)이 U의 base cap(`multichord`)보다 먼저 운다. **실측했고**, 틀린 태그를 먹여 이빨을 확인했다. 태그가 면 열거 순서에 의존한다는 것을 주석에 적었다 — 순서가 바뀌면 소리내어 깨지는 것이 옳다.
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
@@ -502,7 +539,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
   **볼록 경로(`reconstruct_face`)는 여전히 투영 정렬을 쓰지만 `strict`가 필요 없다.** 볼록 영역 둘의 경계 교선은 볼록이므로 chord 방향으로 단조다 — 가드가 아니라 기하학적 사실이고, `edge_seam`의 1:1과 같은 종류의 진술이다.
 - **`tunnel` 가드의 진짜 역할.** 주석이 주장하던 out→in→out 터널은 두 면을 뚫으므로 `pierced_multi`가 먼저 삼킨다. `tunnel`의 **유일한** 발화 경로는 cavity 비대칭이다: `point_in_solid`는 outer+cavity를, `pierced_face`·`collect_planes`·`solid_vertices`는 **outer shell만** 센다. cavity 안에서 끝나는 엣지는 양 끝이 `Outside`로 분류되면서 outer 경계를 1회 관통한다. 살아있는 백스톱이며, 위 hollow 오답을 비볼록 경로에서 막고 있는 것이 바로 이 가드다.
-- **`fourplane` 가드는 미검증.** 유리수 좌표로 4-평면 동시성을 인위적으로 맞추는 적대적 픽스처만 존재하고 자연스러운 형상이 없다. 서브유닛 3에서 정상 경로로 확인 가능. (`multichord`·`pokehole`·`tunnel`은 발화 테스트를 갖췄다 — `pokehole`은 셀 3f-1에서 **축소**됐고 `the_stub_cut_by_the_l_needs_an_island_face`가 남은 범위를 고정한다; `strictarc`는 셀 3e-1에서 은퇴했다. 한 설계 검토는 `multichord`가 "구조적으로 도달 불가능"하다고 결론냈으나 반증됐다 — 한 면의 4-transition은 **서로 다른 두 straddle 엣지**가 각각 1회씩 관통해 만든다.)
+- **`fourplane` 가드는 미검증.** 유리수 좌표로 4-평면 동시성을 인위적으로 맞추는 적대적 픽스처만 존재하고 자연스러운 형상이 없다. 서브유닛 3에서 정상 경로로 확인 가능. (`multichord`·`pokehole`·`tunnel`은 발화 테스트를 갖췄다 — `pokehole`은 3f-1·3f-2에서 두 번 **축소**됐고 이제 `two_loops_on_one_face_are_unsupported`가 남은 범위(고리 ≥2, 호 옆의 고리)를 고정한다; `strictarc`는 셀 3e-1에서 은퇴했다. 한 설계 검토는 `multichord`가 "구조적으로 도달 불가능"하다고 결론냈으나 반증됐다 — 한 면의 4-transition은 **서로 다른 두 straddle 엣지**가 각각 1회씩 관통해 만든다.)
 
 **원통 seam: A(seam 엣지) vs B(seamless periodic) — A 채택 (M3.3a에서 확정).** 주기 곡면(원통·구·토러스)의 옆면을 b-rep로 담는 두 방식이 있고, 둘 다 유효 AP242·유효 CW-복합체다(초기 판단에서 "B는 오일러가 깨진다"고 봤으나 **오류** — 깨지는 건 정점조차 없는 제3의 변형 C[`bounds:None`, V0]이고, B는 각 원을 seam 정점 `Some([v,v])`로 두고 옆면을 두 루프[outer=아래원, inner=위원]로 담아 `V−E+F−L_i = 2−2+3−1 = 2`로 통과한다).
 - **A(채택):** 위 원 + 아래 원 + **세로 seam 직선 엣지**, 옆면 = 4-엣지 단일 닫힌 루프 `[bottom, seam, top⁻, seam⁻]`(seam이 같은 면에서 2회 반대 — self-adjacent). `add_cylinder`가 이 방식. STEP 출력도 A(OCCT 계열이 생산·기대하는 형태; step-io 검증 테스트와 동형).
