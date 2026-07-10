@@ -2320,50 +2320,49 @@ fn reconstruct_face_paths(
     }
 
     if n_closed > 0 {
-        // A lone loop with no arc beside it always divides the face into a disk and an
-        // annulus, and `∂f` lies in the annulus — so `kept[0]` classifies the annulus,
-        // and crossing the seam flips the class for the disk. Which one survives is the
-        // whole difference between a hole and an island. Neither needs an area, and
-        // there is no third answer.
+        // With no arc, `∂f` is one class throughout, so the region holding it has depth
+        // zero and every loop's winding is fixed by the parity of its depth. Loops that all
+        // wind the same way therefore cannot nest, and being flat they are all holes (if
+        // `∂f` is kept) or all islands (if it is dropped). `classify_loops` decides both
+        // from that one sign; an arc beside them breaks the argument, so it rejects first.
         //
         // (A boundary whose *vertices* are all one class but whose edge is crossed twice
-        // would break that. It cannot get here: that edge would join `bnd` while
-        // `transitions` stayed empty, and the set equality above already rejected it.)
-        //
-        // Two loops still need a containment test — they may nest, and then the inner
-        // loop's interior is kept again and belongs to a face of its own, which this
-        // signature cannot return. Nor can a loop beside an arc be placed. Cell 3f-3.
-        if !opens.is_empty() || n_closed != 1 {
+        // would break it too. That edge would join `bnd` while `transitions` stayed empty,
+        // and the set equality above already rejected it.)
+        if !opens.is_empty() {
             return Err(reject(tag::POKEHOLE));
         }
-        let arrange::SeamPath::Closed(nodes) = paths
-            .iter()
-            .find(|p| matches!(p, arrange::SeamPath::Closed(_)))
-            .expect("n_closed > 0")
-        else {
-            unreachable!("filtered to Closed")
-        };
-        let ring = arrange::orient_seam_loop(planes, plane_idx, nodes, keep == Side::Outside)?;
-        for t in &ring {
-            if !seam_ix.contains_key(t) {
-                return Err(reject(tag::MISSING_SEAM));
+        let mut rings = Vec::with_capacity(n_closed);
+        let mut windings = Vec::with_capacity(n_closed);
+        for path in &paths {
+            let arrange::SeamPath::Closed(nodes) = path else {
+                unreachable!("`opens` is empty")
+            };
+            let ring = arrange::orient_seam_loop(planes, plane_idx, nodes, keep == Side::Outside)?;
+            for t in &ring {
+                if !seam_ix.contains_key(t) {
+                    return Err(reject(tag::MISSING_SEAM));
+                }
             }
+            windings.push(arrange::loop_winding(planes, plane_idx, &ring)?);
+            rings.push(ring.into_iter().map(Node::Seam).collect::<Vec<Node>>());
         }
-        // Ask the ring itself which it is, and make it agree with the boundary's class.
-        let is_hole = classify_loops(kept[0], &[arrange::loop_winding(planes, plane_idx, &ring)?])?;
-        let ring: Vec<Node> = ring.into_iter().map(Node::Seam).collect();
-        return Ok(if is_hole {
-            whole(vec![ring]) // annulus kept: `∂f` outer, the loop its hole
+        // Ask the rings themselves which they are, and make them agree with the boundary.
+        return Ok(if classify_loops(kept[0], &windings)? {
+            whole(rings) // annulus kept: `∂f` outer, every loop one of its holes
         } else {
-            // Disk kept: the loop *is* the outer boundary and `∂f` contributes nothing.
-            // The sign rule is local — it reads `keep`, never which side is enclosed —
-            // so the very same call wound this ring the other way round.
-            vec![LocalFace {
-                plane_idx,
-                loop_nodes: ring,
-                inner: vec![],
-                flip,
-            }]
+            // Disks kept: each loop *is* an outer boundary and `∂f` contributes nothing.
+            // The sign rule is local — it reads `keep`, never which side is enclosed — so
+            // the very same calls wound these rings the other way round.
+            rings
+                .into_iter()
+                .map(|loop_nodes| LocalFace {
+                    plane_idx,
+                    loop_nodes,
+                    inner: vec![],
+                    flip,
+                })
+                .collect()
         });
     }
     if opens.is_empty() {
@@ -3834,10 +3833,10 @@ pub mod tests {
         /// `(most open arcs on any one face, closed loops over all faces)`.
         ///
         /// The arrangement's own reading of each fixture, and it moves as the ladder
-        /// climbs. `> 1` arc on a face is still `multichord`. A lone loop on a face is
-        /// no longer fatal — cell 3f-1 made it a hole, cell 3f-2 an island — but two
-        /// loops on one face, or a loop beside an arc, remain `pokehole`. `(1, 0)` says
-        /// the arrangement never had anything to say about this fixture at all.
+        /// climbs. Arcs stopped mattering at cell 3e-2, and loops at 3f-3 — however many,
+        /// so long as they share a winding. What is left for `pokehole` is a loop *beside*
+        /// an arc. `(1, 0)` says the arrangement never had anything to say about this
+        /// fixture at all.
         expect: (usize, usize),
         m: Model,
         x: Handle<Solid>,
@@ -3861,7 +3860,7 @@ pub mod tests {
             // twice — its two prongs cut rectangles wholly inside that face. So this
             // fixture needs *both* multi-chord and inner loops before it can pass;
             // `multichord` merely happens to fire first, on the U's base cap.
-            case("u_and_slab (two loops)", (2, 2), u_and_slab()),
+            case("u_and_slab (two flat loops)", (2, 2), u_and_slab()),
             // `(1, 0)`: nothing about the arrangement ever blocked this one. What
             // rejected it was the shape of a single arc, until cell 3e-1.
             case("l_and_popup_box (folded arc)", (1, 0), l_and_popup_box()),
@@ -4104,6 +4103,14 @@ pub mod tests {
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
+        // Two flat loops (cell 3f-3): sixteen nodes, and the two prong cross-sections must
+        // both survive as faces or their eight rim nodes leave `reachable`.
+        let (mut m, u, slab) = u_and_slab();
+        let from_arrange = seam_endpoint_triples(&m, u, slab);
+        boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(from_arrange, discovered_triples(&m));
+
         // Swapped, the same four nodes are the island's whole outer ring (cell 3f-2).
         // The arrangement does not know which solid is `a`, so it offers the same set;
         // the result has to still contain all of it. If the island face were dropped,
@@ -4183,36 +4190,57 @@ pub mod tests {
     }
 
     #[test]
-    fn two_loops_on_one_face_are_unsupported() {
-        // `pokehole` narrows in cell 3f-2 (the island face opens), so it needs a firing
-        // test that survives. Measured, not guessed: swapping the operands of
-        // `cut_multi_chord_slab_is_unsupported` reaches a different guard first.
+    fn cut_u_by_slab() {
+        // Two loops on one face, resolved. The slab's `y = 1.5` face has its whole boundary
+        // dropped, so both loops are islands: the two prong cross-sections become the
+        // result's new end caps, one input face giving two output faces, both flipped.
         //
-        // Faces are enumerated A-then-B (`overlap_fuse_cut`), so with the slab as A its
-        // `y = 1.5` face — pierced by *both* prongs, two closed loops wholly inside it —
-        // is reached before the U's base cap, where `multichord` waits. `u_and_slab`'s
-        // `expect = (2, 2)` already pins that this fixture has one of each.
-        //
-        // The tag therefore depends on face enumeration order. That is not a flaw to be
-        // hidden: if the order ever changes, this test says so out loud.
-        //
-        // Two loops may *nest* — the outer one a hole, the inner one's interior kept
-        // again and so a face of its own — and no local sign rule can tell. Cell 3f-3.
+        // `5.3 − 1.3`. Area 18: the clipped U's perimeter is 10, its caps 4 apiece.
         let (mut m, u, slab) = u_and_slab();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, slab, u), tag::POKEHOLE);
+        let r = boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 4.0).abs() < 1e-9, "volume {}", props.volume);
+        assert!((props.area - 18.0).abs() < 1e-9, "area {}", props.area);
     }
 
     #[test]
-    fn the_slab_still_needs_two_loops_on_one_face() {
-        // This was `cut_multi_chord_slab_is_unsupported`. The U's base cap alternates
-        // kept/dropped four times — two chords — and cell 3e-2 resolves it. What is left
-        // is the slab's `y = 1.5` face, which the prongs pierce twice, wholly inside it:
-        // two closed loops, and `pokehole` still cannot place them.
+    fn fuse_u_and_slab() {
+        // The same face, the other way: `Fuse` keeps both outsides, so its boundary is kept
+        // and both loops are *holes*. `5.3 + 8 − 1.3`.
         //
-        // The tag moving from `multichord` to `pokehole` on an unchanged fixture is the
-        // measurement that says the arc half of `u_and_slab` is done.
+        // Area `28 + 18 − 2·2`: each island's 1.0 is buried on both sides of the interface.
         let (mut m, u, slab) = u_and_slab();
-        assert_rejects(|| boolean(&mut m, BoolKind::Cut, u, slab), tag::POKEHOLE);
+        let r = boolean(&mut m, BoolKind::Fuse, u, slab).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - 12.0).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!((props.area - 42.0).abs() < 1e-9, "area {}", props.area);
+    }
+
+    #[test]
+    fn cut_slab_by_u() {
+        // Operands swapped: the holed face is now on **A**, and the U's caps split into two
+        // cycles apiece under `flip`. Two blind pockets, `8 − 1.3`.
+        //
+        // Area `28 − 2 + (4·0.5 + 1) + (4·0.8 + 1)`: the face gives up its two 1.0 holes and
+        // the pockets hand back walls and floors.
+        let (mut m, u, slab) = u_and_slab();
+        let r = boolean(&mut m, BoolKind::Cut, slab, u).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 6.7).abs() < 1e-9, "volume {}", props.volume);
+        assert!((props.area - 33.2).abs() < 1e-9, "area {}", props.area);
     }
 
     /// The L with a box biting its reflex corner and poking out the top. The box top
