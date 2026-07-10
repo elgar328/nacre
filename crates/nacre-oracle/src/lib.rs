@@ -966,6 +966,101 @@ bbox_min 0 0 0
         (m, l, bar)
     }
 
+    /// The U-prism (volume 5.3) and a slab shearing off both prong tops. The slab's
+    /// `y = 1.5` face carries **two** closed loops — one per prong — wholly inside it.
+    fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let u = extrude(
+            &mut m,
+            SketchPlane::world_xy(),
+            &[
+                [0.0, 0.0],
+                [3.0, 0.0],
+                [3.0, 2.3],
+                [2.0, 2.3],
+                [2.0, 1.0],
+                [1.0, 1.0],
+                [1.0, 2.0],
+                [0.0, 2.0],
+            ],
+        );
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 1.5, -0.5]),
+            Point3::from_array([3.5, 2.5, 1.5]),
+        );
+        (m, u, slab)
+    }
+
+    /// Three diffs on one fixture, because the three reconstruct different things: two
+    /// **islands** from one face (`Cut(u, slab)`), the same face's two **holes** on B
+    /// (`Fuse`), and two holes on A with the U's caps split into cycles (`Cut(slab, u)`).
+    /// Cell 3f-3.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn u_slab_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, u, slab) = u_and_slab();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, u, slab).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "u slab cut volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "u slab cut area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn u_slab_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, u, slab) = u_and_slab();
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, u, slab).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, u, slab).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "u slab fuse volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "u slab fuse area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_cut_by_u_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, u, slab) = u_and_slab();
+        let occt = occt_boolean_of(&m, OcctBool::Cut, slab, u).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, slab, u).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "slab cut by u volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "slab cut by u area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// The L-prism with an L-shaped stub standing wholly inside its cap. The blind pocket's
     /// lid carries the suite's first **non-convex** inner loop (M5-d3 cell 3h).
     fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
