@@ -1377,4 +1377,189 @@ bbox_min 0 0 0
             occt.volume
         );
     }
+
+    /// The unit cube with a `0.4`-square pocket `0.5` deep in its top face — the fixture
+    /// whose lid carries an inner loop. OCCT reads the same solid from STEP; nothing here
+    /// asks it to reproduce `PocketOnFace`.
+    fn pocketed_cube() -> (Model, Handle<Solid>) {
+        use nacre_ops::{OpOutput, Operation, Profile2d, apply};
+        let prof = |pts: &[[f64; 2]]| Profile2d {
+            points: pts
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: prof(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let OpOutput::PocketOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PocketOnFace {
+                face: faces[1],
+                profile: prof(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        (m, solid)
+    }
+
+    /// Score one boolean of a holed operand against OCCT, on volume and on area. Area
+    /// matters here: nacre's own gates all read the same rings, so only an independent
+    /// kernel makes the surviving hole's size a real claim.
+    fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool) {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(Point3::from_array(boxes[0]), Point3::from_array(boxes[1]));
+        let (x, y) = if swap { (bx, pc) } else { (pc, bx) };
+        let occt = occt_boolean_of(&m, kind, x, y).unwrap();
+        let bk = match kind {
+            OcctBool::Cut => BoolKind::Cut,
+            OcctBool::Fuse => BoolKind::Fuse,
+            OcctBool::Common => BoolKind::Common,
+        };
+        let r = boolean(&mut m, bk, x, y).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{name} volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "{name} area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    /// A boolean composing on a shape a boolean can make (M5-d3 cell 3f-5). The seam bites
+    /// the holed lid's corner, and the hole is placed inside the region left behind.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_corner_cut_matches_occt() {
+        diff_holed(
+            "pocket corner cut",
+            OcctBool::Cut,
+            [[0.85, 0.8, 0.75], [1.2, 1.15, 1.1]],
+            false,
+        );
+    }
+
+    /// The same bite mirrored in `z`: the seam misses the lid, which rides out whole.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_bottom_corner_cut_matches_occt() {
+        diff_holed(
+            "pocket bottom corner cut",
+            OcctBool::Cut,
+            [[0.85, 0.8, -0.1], [1.2, 1.15, 0.25]],
+            false,
+        );
+    }
+
+    /// A slab over the pocket, its underside below the pocket floor. `Cut` keeps the lid
+    /// as a reversed inside-B piece, hole and all — `flip` meeting `inner` for the first
+    /// time. `Fuse` drops it. The third scores the complement.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_cut_by_pocket_matches_occt() {
+        diff_holed(
+            "slab cut by pocket",
+            OcctBool::Cut,
+            [[-0.2, -0.25, 0.3], [1.3, 1.2, 1.5]],
+            true,
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_and_pocket_fuse_matches_occt() {
+        diff_holed(
+            "slab and pocket fuse",
+            OcctBool::Fuse,
+            [[-0.2, -0.25, 0.3], [1.3, 1.2, 1.5]],
+            true,
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_cut_by_slab_matches_occt() {
+        diff_holed(
+            "pocket cut by slab",
+            OcctBool::Cut,
+            [[-0.2, -0.25, 0.3], [1.3, 1.2, 1.5]],
+            false,
+        );
+    }
+
+    /// `coincident_merge` with a holed operand. The imprint splits the `x = 1` face into a
+    /// holed remainder and a coplanar region face — the one holed shape the convex and seam
+    /// paths never see, since `has_coplanar_pair` stops it at their door. OCCT reads the
+    /// STEP as one cube either way, so this scores the merge, not the imprint.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn imprinted_merge_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        let prof = |pts: &[[f64; 2]]| Profile2d {
+            points: pts
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: prof(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let OpOutput::ImprintSketch { solid, .. } = apply(
+            &mut m,
+            &Operation::ImprintSketch {
+                face: faces[3],
+                profile: prof(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let bx = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, solid, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, solid, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "imprinted merge volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "imprinted merge area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
 }
