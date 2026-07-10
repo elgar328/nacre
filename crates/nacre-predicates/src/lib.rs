@@ -145,10 +145,16 @@ pub fn det3(m: [[f64; 3]; 3]) -> Expansion {
         .add(&c2.scale(m[0][2]))
 }
 
-/// The exact sign of the 3×3 determinant [`det3`]: `+1`, `-1`, or `0`.
+/// The exact sign of the 3×3 determinant of `m`: `+1`, `-1`, or `0`.
+///
+/// `det[r0, r1, r2] = orient3d(r0, r1, r2, 0)`, and `geometry_predicates::orient3d`
+/// is already adaptive (filtered), so this borrows its fast path — no expansion is
+/// built unless the sign is too close to call. The value (not the sign) still comes
+/// from [`det3`], which [`cramer`] uses; `prop_det3_sign_matches_orient3d` pins the
+/// two together.
 #[inline]
 pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
-    det3(m).sign()
+    sgn(orient3d(m[0], m[1], m[2], [0.0; 3]))
 }
 
 /// Three planes, each `[a, b, c, d]` meaning `a·X + b·Y + c·Z + d = 0`. When they
@@ -652,19 +658,16 @@ mod tests {
     use proptest::prelude::*;
 
     proptest! {
-        /// geometry-predicates' own `orient3d(r1, r2, r3, origin)` equals
-        /// `det[r1, r2, r3]`, so it is an exact-sign oracle for any f64 rows.
-        ///
-        /// `sign_f64`, not `f64::signum`: the latter reads `0.0` as `+1`, so on a
-        /// singular matrix this comparison would demand `det3_sign == 1` and pass only
-        /// because random continuous rows never land exactly singular. `det3_sign` reads
-        /// a true zero as `0`, and this oracle must too — see `prop_a_singular_matrix_reads_zero`.
+        /// The two machines agree on the sign of a determinant: `det3`'s exact
+        /// expansion and `det3_sign`'s adaptive `orient3d`. Since `det3_sign` is now
+        /// *defined* as `sgn(orient3d(..))`, comparing it to `orient3d` directly would
+        /// be a tautology — so this compares it to the **expansion**, which `cramer`
+        /// still depends on. Two paths, one sign.
         #[test]
-        fn prop_det3_sign_matches_orient3d(
+        fn prop_det3_sign_matches_the_expansion(
             m in prop::array::uniform3(prop::array::uniform3(-1e6f64..1e6)),
         ) {
-            let expected = sign_f64(orient3d(m[0], m[1], m[2], [0.0, 0.0, 0.0]));
-            prop_assert_eq!(det3_sign(m), expected);
+            prop_assert_eq!(det3_sign(m), det3(m).sign());
         }
 
         /// A rank-deficient matrix has determinant exactly zero, and both machines must
