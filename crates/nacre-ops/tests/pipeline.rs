@@ -289,6 +289,36 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
     (m, r)
 }
 
+/// `Cut(stub, L)` — the operands of `l_and_dimple` reversed. The L's top face keeps only
+/// the stub's footprint, so the answer is a `0.4 × 0.4 × 0.5` box whose floor is that
+/// island face: an outer loop made of nothing but seam vertices (cell 3f-2).
+fn island_cut() -> (Model, Handle<Solid>) {
+    let l = Profile2d {
+        points: vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ],
+    };
+    let mut m = replay(&[Operation::Extrude {
+        plane: SketchPlane::world_xy(),
+        profile: l,
+        dist: 1.0,
+    }])
+    .unwrap();
+    let a = m.live_solids[0];
+    let b = m.add_cuboid(
+        Point3::from_array([0.3, 0.3, 0.5]),
+        Point3::from_array([0.7, 0.7, 1.5]),
+    );
+    let r = boolean(&mut m, BoolKind::Cut, b, a).unwrap();
+    m.rebuild_adjacency();
+    (m, r)
+}
+
 /// Two cubes fused across their shared face. `boolean` supersedes both operands —
 /// it does not delete them, and `Store` is append-only by design.
 fn stacked_fuse() -> (Model, Handle<Solid>) {
@@ -444,6 +474,108 @@ fn only_the_signed_volume_sees_a_reversed_face() {
             .iter()
             .any(|v| matches!(v, nacre_validate::Violation::NonOpposedEdge { .. })),
         "and validate speaks too, of its own accord"
+    );
+}
+
+#[test]
+fn an_island_face_meshes_like_any_other() {
+    // The gate's first run on a face whose outer loop is *all* seam. It is a plain box —
+    // 12 triangles, `2·0.16 + 4·0.4·0.5 = 1.12` of surface, 0.08 of volume — and that is
+    // the claim: cell 3f-2's island is not a special kind of face downstream.
+    //
+    // The signed volume is the one check with something new to say. `props` reads
+    // `Face.orientation`, which `assemble_fuse_cut` set from the `flip` flag; `tess`
+    // reads the ring, which `orient_seam_loop` wound and `flip` then reversed. Two
+    // routes to the same face's outward direction, and they have to meet.
+    let (m, s) = island_cut();
+    let g = mesh_vs_props(&m, s);
+    assert_eq!(g.tris, 12);
+    assert_agrees(&g, "island cut");
+    let props = nacre_props::mass_props(&m, s).unwrap();
+    assert!((props.area - 1.12).abs() < 1e-9, "area {}", props.area);
+    assert!(
+        (props.volume - 0.08).abs() < 1e-9,
+        "volume {}",
+        props.volume
+    );
+}
+
+#[test]
+fn a_flipped_island_loop_is_caught() {
+    // Cell 3f-1 showed that a flipped *hole* is caught by `validate` (topologically) and
+    // by `tessellate` (geometrically, `HoleWinding`), while volume and OCCT see nothing.
+    // The island inverts that, and the inversion was measured rather than assumed.
+    //
+    // `tessellate` never looks at an outer ring's winding — it takes its normal *from*
+    // the ring — so it returns `Ok` and its triangles simply face inward. `props` never
+    // looks at a ring at all, so its volume is still exactly 0.08. Watertight and the
+    // unsigned area are blind by construction. `validate` speaks, and until this cell it
+    // was the only thing that did.
+    //
+    // The signed volume moves by `2 · 0.16 / 3`: the island is the `z = 1` floor, area
+    // 0.16, outward normal `−z`, flux `−0.16`, so its contribution goes from `−0.0533`
+    // to `+0.0533`.
+    let (mut m, s) = island_cut();
+
+    // The island is the only face all of whose vertices are `Discovered` — the stub's
+    // side pieces each keep two of the original box's corners.
+    let faces = m.shells.get(m.solids.get(s).outer).faces.clone();
+    let isle = *faces
+        .iter()
+        .find(|&&f| {
+            m.faces.get(f).outer.half_edges.iter().all(|he| {
+                let b = m.edges.get(he.edge).bounds.unwrap();
+                b.iter().all(|&v| {
+                    matches!(
+                        m.vertices.get(v).origin,
+                        nacre_topo::Origin::Discovered { .. }
+                    )
+                })
+            })
+        })
+        .expect("the island face");
+
+    // `Store` is append-only: push the reversed face, swap it into a fresh shell and
+    // solid, move the live handle.
+    let f = m.faces.get(isle).clone();
+    let mut outer = f.outer.clone();
+    outer.half_edges.reverse();
+    for he in &mut outer.half_edges {
+        he.forward = !he.forward;
+    }
+    let bad = m.faces.push(Face { outer, ..f });
+    let swapped = faces
+        .iter()
+        .map(|&x| if x == isle { bad } else { x })
+        .collect();
+    let shell = m.shells.push(Shell { faces: swapped });
+    let solid = m.push_solid(Solid {
+        outer: shell,
+        cavities: vec![],
+    });
+    m.live_solids = vec![solid];
+    m.rebuild_adjacency();
+
+    assert!(
+        nacre_validate::validate(&m)
+            .iter()
+            .any(|v| matches!(v, nacre_validate::Violation::NonOpposedEdge { .. })),
+        "validate stayed quiet"
+    );
+    assert!(
+        tessellate(&m, &TessConfig::default()).is_ok(),
+        "tessellate has no opinion about an outer ring's winding"
+    );
+    let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
+    assert!((vol - 0.08).abs() < 1e-12, "props stayed quiet: {vol}");
+
+    let g = mesh_vs_props(&m, solid);
+    assert_eq!((g.tris, g.leaks), (12, 0), "watertight stayed quiet");
+    assert!(g.area_delta.abs() < 1e-12, "area stayed quiet");
+    assert!(
+        (g.volume_delta - 2.0 * 0.16 / 3.0).abs() < 1e-12,
+        "signed volume delta {}",
+        g.volume_delta
     );
 }
 
