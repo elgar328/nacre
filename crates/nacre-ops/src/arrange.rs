@@ -241,6 +241,96 @@ fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
     if dot > 0.0 { 1 } else { -1 }
 }
 
+/// Group a face's seam arcs into rings, by index alone.
+///
+/// Each arc has one end on a kept→dropped transition (`kd`) and one on a dropped→kept
+/// transition (`dk`) — the arc separates `f` in two, and the two pieces of `∂f` it lands
+/// between belong to opposite sides, so `∂f` flips class at one end and back at the other.
+/// Walking `∂f` forward from `dk[a] + 1` while the vertices are kept therefore arrives at
+/// some `kd[b]`, and `b` is the next arc of `a`'s ring. That successor map is a
+/// permutation of the arcs; its cycles are the face's kept regions, one `LocalFace` each.
+///
+/// With one arc this is the old splice verbatim: the single cycle is `[0]`.
+///
+/// **Only integers go in and out.** The caller turns a cycle into a ring by emitting, for
+/// each arc `b` in it, the boundary run `dk[prev] + 1 ..= kd[b]` and then `b`'s nodes.
+///
+/// Three things are checked rather than assumed, because they are exactly where
+/// `classof`'s ray casting and the arrangement's exact crossings would disagree — the same
+/// two machines `SEAM_COUNT_MISMATCH` already arbitrates, so it is the same rejection:
+/// as many `kd` transitions as arcs, no two arcs claiming one `kd`, and every arc used
+/// exactly once. The walk is bounded, so a broken successor map rejects rather than hangs.
+pub(crate) fn stitch_cycles(
+    kept: &[bool],
+    kd: &[usize],
+    dk: &[usize],
+) -> Result<Vec<Vec<usize>>, BoolError> {
+    let n = kept.len();
+    let m = kd.len();
+    let bad = || reject(tag::SEAM_COUNT_MISMATCH);
+    if m == 0 || dk.len() != m {
+        return Err(bad());
+    }
+    // `kd`s and `dk`s are the two halves of the transition set, one per arc.
+    if (0..n).filter(|&i| kept[i] && !kept[(i + 1) % n]).count() != m {
+        return Err(bad());
+    }
+    let mut arc_at_kd: HashMap<usize, usize> = HashMap::new();
+    for (a, &t) in kd.iter().enumerate() {
+        if t >= n || !kept[t] || kept[(t + 1) % n] || arc_at_kd.insert(t, a).is_some() {
+            return Err(bad());
+        }
+    }
+    for &t in dk {
+        if t >= n || kept[t] || !kept[(t + 1) % n] {
+            return Err(bad());
+        }
+    }
+
+    // The successor of arc `a`: walk the kept run that starts just past `dk[a]`.
+    let succ = |a: usize| -> Result<usize, BoolError> {
+        let mut i = (dk[a] + 1) % n;
+        for _ in 0..n {
+            if kept[i] && !kept[(i + 1) % n] {
+                return arc_at_kd.get(&i).copied().ok_or_else(bad);
+            }
+            if !kept[i] {
+                return Err(bad()); // the run died before reaching a `kd`
+            }
+            i = (i + 1) % n;
+        }
+        Err(bad())
+    };
+
+    let mut used = vec![false; m];
+    let mut cycles = Vec::new();
+    // Start at the lowest unused arc: `opens` is already in a deterministic order and
+    // replay rests on the face order this fixes.
+    for start in 0..m {
+        if used[start] {
+            continue;
+        }
+        let mut cycle = Vec::new();
+        let mut a = start;
+        for _ in 0..=m {
+            if used[a] {
+                return Err(bad()); // re-entered a used arc: not a permutation
+            }
+            used[a] = true;
+            cycle.push(a);
+            a = succ(a)?;
+            if a == start {
+                break;
+            }
+        }
+        if a != start {
+            return Err(bad());
+        }
+        cycles.push(cycle);
+    }
+    Ok(cycles)
+}
+
 /// A closed seam loop's triples, ordered so that every directed edge keeps the kept
 /// material on its left — the convention **every** b-rep loop obeys, outer or inner.
 /// So the caller wraps them in `Node::Seam` and needs no further knowledge; returning

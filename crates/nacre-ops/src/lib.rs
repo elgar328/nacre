@@ -4183,6 +4183,77 @@ pub mod tests {
     }
 
     #[test]
+    fn one_arc_stitches_to_the_old_splice() {
+        // The single-arc case must come out `[[0]]`, because that cycle *is* today's
+        // splice: run `dk+1 ..= kd`, then the arc. A hexagon with one chord.
+        let kept = [true, true, true, false, false, false];
+        assert_eq!(
+            arrange::stitch_cycles(&kept, &[2], &[5]).unwrap(),
+            vec![vec![0]]
+        );
+    }
+
+    #[test]
+    fn two_chords_make_one_ring_or_two() {
+        // Which it is depends on nothing but where the kept vertices sit.
+        //
+        // The L's cap: `[T,T,F,T,F,T]`, arcs on transitions `(kd=1, dk=2)` and
+        // `(kd=3, dk=4)`. From `dk=2` the run is vertex 3 alone and ends at `kd=3`, arc 1;
+        // from `dk=4` the run is `5,0,1` and ends at `kd=1`, arc 0. One cycle, two arcs —
+        // the kept region is the cap minus two corners.
+        let cap = [true, true, false, true, false, true];
+        assert_eq!(
+            arrange::stitch_cycles(&cap, &[1, 3], &[2, 4]).unwrap(),
+            vec![vec![0, 1]]
+        );
+
+        // The bar's floor seen from `Cut`'s B-piece: `[T,F,F,F,T,F]`, arcs `(kd=0, dk=5)`
+        // and `(kd=4, dk=3)`. Each run is one vertex and closes on its own arc: two
+        // cycles, two faces — the two bites.
+        let floor = [true, false, false, false, true, false];
+        assert_eq!(
+            arrange::stitch_cycles(&floor, &[0, 4], &[5, 3]).unwrap(),
+            vec![vec![0], vec![1]]
+        );
+    }
+
+    #[test]
+    fn cycles_start_at_the_lowest_unused_arc() {
+        // Replay rests on the order of `LocalFace`s, which rests on this. Feed the same
+        // two cycles with the arcs swapped and the output order swaps with them — it
+        // follows `opens`, which `seam_paths_on` already orders deterministically.
+        let floor = [true, false, false, false, true, false];
+        assert_eq!(
+            arrange::stitch_cycles(&floor, &[4, 0], &[3, 5]).unwrap(),
+            vec![vec![0], vec![1]]
+        );
+    }
+
+    #[test]
+    fn a_broken_successor_map_is_rejected_not_looped() {
+        // Where `classof`'s ray casting and the arrangement's exact crossings would
+        // disagree. Today's single-arc code *assumes* all three; with several arcs the
+        // assumption can be silently false, so it becomes the same reject that already
+        // arbitrates those two machines.
+        let cap = [true, true, false, true, false, true];
+        // A `kd` that is not a kept→dropped transition.
+        assert_rejects(
+            || arrange::stitch_cycles(&cap, &[0, 3], &[2, 4]).map(|_| ()),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+        // Two arcs claiming the same `kd`.
+        assert_rejects(
+            || arrange::stitch_cycles(&cap, &[1, 1], &[2, 4]).map(|_| ()),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+        // Four transitions but only one arc: the `kd`s no longer cover them.
+        assert_rejects(
+            || arrange::stitch_cycles(&cap, &[1], &[2]).map(|_| ()),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+    }
+
+    #[test]
     fn the_notch_bar_cuts_two_chords_in_one_face() {
         // What `multichord` guards on `l_and_notch_bar`, pinned before the guard moves.
         //
