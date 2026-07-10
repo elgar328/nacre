@@ -922,3 +922,23 @@ fn a_drilled_solid_meshes_watertight() {
         props.volume
     );
 }
+
+/// A notch bitten from one edge of a cube: cell (5b) opened it (the convex path rejected
+/// it as `poke_through`). The kept region's boundary is a seam chord plus part of one
+/// edge — a run with no vertex — and that shape is new to the mesh gate, which had only
+/// ever fanned squares-with-square-holes and reflex caps. `10³ − 4·1.4·1.2`.
+#[test]
+fn a_notched_cube_meshes() {
+    let mut m = Model::new();
+    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+    let notch = m.add_cuboid(
+        Point3::from_array([3.0, -1.0, -1.0]),
+        Point3::from_array([7.0, 1.4, 1.2]),
+    );
+    let s = boolean(&mut m, BoolKind::Cut, a, notch).unwrap();
+    m.rebuild_adjacency();
+    let g = mesh_vs_props(&m, s);
+    assert_agrees(&g, "notched cube");
+    let vol = nacre_props::mass_props(&m, s).unwrap().volume;
+    assert!((vol - 993.28).abs() < 1e-9, "volume {vol}");
+}
