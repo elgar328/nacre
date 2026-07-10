@@ -1562,4 +1562,54 @@ bbox_min 0 0 0
             occt.area
         );
     }
+
+    /// A rod drilled clean through the L's bar: the first genus-1 solid this kernel makes
+    /// (M5-d3 cell 3e-3). Area is scored alongside volume — a tunnel's walls are area, and
+    /// nacre's own gates all read the same rings, so only an independent kernel makes the
+    /// hole's size a claim rather than a restatement.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn drilled_l_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, rod) = l_prism_and_box([0.3, 0.3, -0.5], [0.5, 0.6, 1.5]);
+        let occt = occt_boolean_of(&m, OcctBool::Cut, l, rod).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, l, rod).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "drilled L volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "drilled L area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
+    /// The `Fuse`: the rod stands proud on both faces of the bar, and each of its walls
+    /// splits into the stub above and the stub below.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn l_and_rod_fuse_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, rod) = l_prism_and_box([0.3, 0.3, -0.5], [0.5, 0.6, 1.5]);
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, l, rod).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, l, rod).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "l and rod fuse volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "l and rod fuse area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
 }

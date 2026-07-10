@@ -872,3 +872,47 @@ fn a_flipped_face_keeps_its_hole() {
         props.volume
     );
 }
+
+/// The gate on a solid of genus 1 — the first this kernel makes. A rod drilled clean
+/// through the L's bar leaves each cap holed and the four tunnel walls joining the two
+/// rims, so `watertight` is what proves the rims are shared rather than duplicated, and
+/// `Σ|area| == props.area` is what proves neither hole was filled in.
+///
+/// `mesh_volume == props.volume` has the sharpest teeth here. A tunnel is a hole ring on
+/// one cap and a hole ring on the other, wound oppositely about their own faces' normals;
+/// reverse either and props, reading `orientation` and `|A_vec|`, would not notice.
+#[test]
+fn a_drilled_solid_meshes_watertight() {
+    let l = Profile2d {
+        points: vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ],
+    };
+    let mut m = replay(&[Operation::Extrude {
+        plane: SketchPlane::world_xy(),
+        profile: l,
+        dist: 1.0,
+    }])
+    .unwrap();
+    let a = m.live_solids[0];
+    let rod = m.add_cuboid(
+        Point3::from_array([0.3, 0.3, -0.5]),
+        Point3::from_array([0.5, 0.6, 1.5]),
+    );
+    let s = boolean(&mut m, BoolKind::Cut, a, rod).unwrap();
+    m.rebuild_adjacency();
+
+    let g = mesh_vs_props(&m, s);
+    assert_agrees(&g, "drilled L");
+    let props = nacre_props::mass_props(&m, s).unwrap();
+    assert!(
+        (props.volume - 2.94).abs() < 1e-9,
+        "volume {}",
+        props.volume
+    );
+}
