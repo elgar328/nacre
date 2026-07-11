@@ -143,13 +143,6 @@ pub enum BoolError {
 /// builds too. They are `const`, so they inline away where the tag is unused.
 pub(crate) mod tag {
     pub const HOLLOW_OPERAND: &str = "hollow_operand";
-    /// The seam runs across the rim of a hole in the face it is being arranged on.
-    ///
-    /// Then `∂f` is several rings, `stitch_cycles`' permutation over one ring no longer
-    /// models the kept regions, and a loop enclosing the hole would make an island with
-    /// a hole of its own. All of that is cell 3f-6. Everything short of it — a holed
-    /// face the seam only crosses on its outer ring, or misses entirely — is supported.
-    pub const SEAM_ACROSS_HOLE_RIM: &str = "seam_across_hole_rim";
     /// A seam-free face whose rings do not agree about which side of the other solid
     /// they are on. A backstop with no firing test: were a rim vertex classified against
     /// the outer ring, the other boundary would separate the two rings and so would cut
@@ -1887,24 +1880,66 @@ fn reconstruct_face_paths(
         .collect();
     let n_closed = paths.len() - opens.len();
 
-    // The index in `hes` of the edge a boundary node rides.
-    //
-    // A boundary node on a *hole* rim is what puts `∂f` beyond one ring, and this is the
-    // one place that can see it — `bnd` below feeds every node of every path through
-    // here, not just the arc ends, and a `Closed` path touches `∂f` nowhere. So the guard
-    // is complete, and `stitch_cycles` may keep walking the outer ring alone.
-    let edge_ix = |e: Handle<Edge>| {
-        hes.iter().position(|he| he.edge == e).ok_or_else(|| {
-            let on_rim = face
-                .inner
+    // `∂f` is the outer loop plus every hole rim the seam crosses. A boundary node riding a
+    // rim edge is what takes `∂f` beyond one ring; `crossed` names those holes and is the one
+    // source of truth for it — the same set joins the boundary here and is withheld from
+    // `place_loops` below (a crossed hole is absorbed into the outer boundary, not placed).
+    let ring_of = |e: Handle<Edge>| -> Option<usize> {
+        // `None` is the outer loop; `Some(k)` is hole `k`.
+        if face.outer.half_edges.iter().any(|he| he.edge == e) {
+            None
+        } else {
+            face.inner
                 .iter()
-                .any(|l| l.half_edges.iter().any(|he| he.edge == e));
-            reject(if on_rim {
-                tag::SEAM_ACROSS_HOLE_RIM
-            } else {
-                tag::SEAM_COUNT_MISMATCH
-            })
+                .position(|l| l.half_edges.iter().any(|he| he.edge == e))
+        }
+    };
+    let mut crossed: Vec<usize> = Vec::new();
+    for nd in paths.iter().flat_map(|p| p.nodes()) {
+        if let Some(k) = nd.on_edge.and_then(ring_of) {
+            if !crossed.contains(&k) {
+                crossed.push(k);
+            }
+        }
+    }
+    crossed.sort_unstable(); // `f.inner` order, so the boundary layout is deterministic
+
+    // The boundary loops — outer, then each crossed rim — and the per-vertex arrays laid out
+    // over them. A rim vertex is `classof`'d like any other. `bases[r]` starts ring `r` in the
+    // concatenated edge/vertex space.
+    let boundary: Vec<&Loop> = std::iter::once(&face.outer)
+        .chain(crossed.iter().map(|&k| &face.inner[k]))
+        .collect();
+    let ring_edges: Vec<usize> = boundary.iter().map(|l| l.half_edges.len()).collect();
+    let bases: Vec<usize> = ring_edges
+        .iter()
+        .scan(0, |s, &len| {
+            let b = *s;
+            *s += len;
+            Some(b)
         })
+        .collect();
+    let verts: Vec<Handle<Vertex>> = boundary
+        .iter()
+        .flat_map(|l| l.half_edges.iter().map(|&he| he_start(model, he)))
+        .collect();
+    let kept: Vec<bool> = verts.iter().map(|v| classof[v] == keep).collect();
+    let n = verts.len();
+
+    // The concatenated-space position of the edge a boundary node rides. A crossed rim edge
+    // now resolves to its slot — this is where `SEAM_ACROSS_HOLE_RIM` used to reject. An edge
+    // on no boundary loop (an uncrossed rim, or foreign) is the two machines disagreeing.
+    let edge_pos: HashMap<Handle<Edge>, usize> = boundary
+        .iter()
+        .flat_map(|l| l.half_edges.iter())
+        .enumerate()
+        .map(|(i, he)| (he.edge, i))
+        .collect();
+    let edge_ix = |e: Handle<Edge>| {
+        edge_pos
+            .get(&e)
+            .copied()
+            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))
     };
     // The boundary crossings, grouped by the edge each rides. An edge may carry more than
     // one: that is an edge the other solid's boundary enters and leaves through, and it is
@@ -1932,42 +1967,98 @@ fn reconstruct_face_paths(
         return Ok(whole()); // no seam on this face after all
     }
 
-    // `∂f` cut into runs at those crossings. `bnd` orders two crossings on one edge and is
-    // needed for nothing else here, so it is built only when some edge carries two — its
-    // construction rejects a straight angle, and a face with a single crossing per edge has
-    // no business being held to that.
+    // `∂f`'s rings as triples, outer then each crossed rim, co-indexed with `by_edge`/`verts`.
+    // Built whenever a run is emitted (`region_rings` reads `bnd[i]`) or an edge carries two —
+    // its construction rejects a straight angle. `all_holes` also feeds `place_loops` below.
+    let all_holes = arrange::hole_rings(model, fh, plane_idx, inc_f)?;
     let need_bnd = by_edge.iter().any(|v| v.len() > 1) || n_closed > 0 || !face.inner.is_empty();
-    let bnd = if need_bnd {
-        arrange::face_vertex_triples(model, fh, plane_idx, inc_f)?
+    let bnd: Vec<[usize; 3]> = if need_bnd {
+        let mut b = arrange::face_vertex_triples(model, fh, plane_idx, inc_f)?;
+        for &k in &crossed {
+            b.extend(all_holes[k].iter().copied());
+        }
+        b
     } else {
         Vec::new()
     };
-    // With no arc there is one run, the whole of `∂f`, and no crossing to cut it at.
-    let (crossings, runs, run_kept) = if opens.is_empty() {
-        (Vec::new(), vec![(0..n).collect::<Vec<_>>()], Vec::new())
+    // Each ring is cut into runs on its own — a rim wraps to itself, not to the outer loop —
+    // and the runs are concatenated. `boundary_runs` returns slice-relative vertex indices, so
+    // `+base` lifts them into the concatenated `verts`/`bnd`. `ring_runs[r]` is ring `r`'s run
+    // count, the size of its block in the crossing/run index space.
+    let (crossings, runs, run_kept, ring_runs) = if opens.is_empty() {
+        (
+            Vec::new(),
+            vec![(0..n).collect::<Vec<_>>()],
+            Vec::new(),
+            Vec::new(),
+        )
     } else {
-        let br = arrange::boundary_runs(planes, plane_idx, &bnd, &by_edge)?;
+        let mut crossings = Vec::new();
+        let mut runs: Vec<Vec<usize>> = Vec::new();
+        let mut ring_runs = Vec::with_capacity(boundary.len());
+        for (r, &base) in bases.iter().enumerate() {
+            let span = base..base + ring_edges[r];
+            let ring_by_edge = &by_edge[span.clone()];
+            // `boundary_runs` reads `bnd` only to order two crossings sharing an edge; a ring
+            // with at most one crossing per edge needs none, and `bnd` may be empty for it (a
+            // single-crossing hole-free face never built it — a straight angle it carries has
+            // no business rejecting).
+            let ring_bnd: &[[usize; 3]] = if ring_by_edge.iter().any(|v| v.len() > 1) {
+                &bnd[span]
+            } else {
+                &[]
+            };
+            let mut br = arrange::boundary_runs(planes, plane_idx, ring_bnd, ring_by_edge)?;
+            for run in &mut br.runs {
+                for v in run.iter_mut() {
+                    *v += base;
+                }
+            }
+            ring_runs.push(br.runs.len());
+            crossings.extend(br.crossings);
+            runs.extend(br.runs);
+        }
         // Alternation gives the run classes their shape, `classof` anchors them, and every
-        // vertex is checked against the propagation. A run with no vertex has only the
-        // alternation — and that is the run this cell exists for.
-        // One ring for now: cell 3f-6 splits `ring_lens` when `∂f` spans several.
-        let rk = arrange::run_classes(&br.runs, &kept, &[br.runs.len()])?;
-        (br.crossings, br.runs, rk)
+        // vertex is checked against the propagation. Each ring is classed on its own, so a rim
+        // and the outer loop may carry opposite classes.
+        let rk = arrange::run_classes(&runs, &kept, &ring_runs)?;
+        (crossings, runs, rk, ring_runs)
     };
+    let n_x = crossings.len();
+    debug_assert!(
+        opens.is_empty() || ring_runs.iter().sum::<usize>() == n_x,
+        "the per-ring run blocks tile the crossing/run index space"
+    );
+    // The per-ring cyclic successor over the crossing/run index space, and its inverse. `next`
+    // steps forward one position along `∂f` without leaving its ring; `prev[c]` names the run
+    // flowing into crossing `c`. A single ring makes these `(i ± 1) % n_x`.
+    let mut next = vec![0usize; n_x];
+    let mut prev = vec![0usize; n_x];
+    {
+        let mut base = 0;
+        for &rl in &ring_runs {
+            for j in 0..rl {
+                let (cur, nxt) = (base + j, base + (j + 1) % rl);
+                next[cur] = nxt;
+                prev[nxt] = cur;
+            }
+            base += rl;
+        }
+    }
     let cross_ix: HashMap<[usize; 3], usize> =
         crossings.iter().enumerate().map(|(j, &t)| (t, j)).collect();
-    // Crossing `c_j` is kept→dropped exactly when the run flowing into it is kept.
-    let is_kd = |c: usize| run_kept[(c + run_kept.len() - 1) % run_kept.len()];
+    // Crossing `c` is kept→dropped exactly when the run flowing into it is kept.
+    let is_kd = |c: usize| run_kept[prev[c]];
 
     // Each arc, oriented `s_kd → bends → s_dk`: the direction its kept run is spliced in.
     // Its ends are found by *triple*, not by edge — both may ride the same one.
     //
-    // `stitch_cycles` reads a transition as "position `t` kept, `t+1` dropped", which in
-    // this index space names crossing `t+1`. So an arc's slot is its crossing minus one.
+    // `stitch_cycles` reads a transition as "position `t` kept, `t+1` dropped", which in this
+    // index space names crossing `next[t]`. So an arc's slot is `prev` of its crossing — the
+    // run flowing into it, the multi-ring form of "crossing minus one".
     let mut kd = Vec::with_capacity(opens.len());
     let mut dk = Vec::with_capacity(opens.len());
     let mut arc_nodes: Vec<Vec<[usize; 3]>> = Vec::with_capacity(opens.len());
-    let n_x = crossings.len();
     for arc in &opens {
         let ends = arc.nodes();
         let at = |nd: &arrange::SeamEnd| {
@@ -1992,8 +2083,8 @@ fn reconstruct_face_paths(
             }
         }
         let (kd_c, dk_c) = if forward { (h, t) } else { (t, h) };
-        kd.push((kd_c + n_x - 1) % n_x);
-        dk.push((dk_c + n_x - 1) % n_x);
+        kd.push(prev[kd_c]);
+        dk.push(prev[dk_c]);
         arc_nodes.push(ordered);
     }
 
@@ -2004,9 +2095,6 @@ fn reconstruct_face_paths(
         Run(usize),
         Arc(usize),
     }
-    // Single ring for now: the successor is `(i + 1) % n_x`. Cell 3f-6 replaces this with a
-    // per-ring cyclic map when `∂f` spans several rings.
-    let next: Vec<usize> = (0..n_x).map(|i| (i + 1) % n_x).collect();
     let regions: Vec<Vec<Step>> = if opens.is_empty() {
         Vec::from_iter(kept[0].then(|| vec![Step::Run(0)]))
     } else {
@@ -2015,14 +2103,14 @@ fn reconstruct_face_paths(
             .map(|cycle| {
                 let mut steps = Vec::new();
                 for w in 0..cycle.len() {
-                    let (prev, this) = (cycle[(w + cycle.len() - 1) % cycle.len()], cycle[w]);
-                    let mut i = (dk[prev] + 1) % n_x;
+                    let (pre, this) = (cycle[(w + cycle.len() - 1) % cycle.len()], cycle[w]);
+                    let mut i = next[dk[pre]];
                     loop {
                         steps.push(Step::Run(i));
                         if i == kd[this] {
                             break;
                         }
-                        i = (i + 1) % n_x;
+                        i = next[i];
                     }
                     steps.push(Step::Arc(this));
                 }
@@ -2090,13 +2178,20 @@ fn reconstruct_face_paths(
     // `f`'s own holes join the loop list, and `place_loops` answers for them too: which
     // region owns each, whether any tangles with a seam loop (`nested_loops` — which over-
     // rejects, since a hole inside a seam loop is merely dropped or merely an island's own
-    // hole; cell 3f-6), and whether two regions claim one. No new machinery.
+    // hole; cell 3f-7), and whether two regions claim one. No new machinery.
+    //
+    // Only the *uncrossed* holes: a crossed one was absorbed into the outer boundary above,
+    // so placing it again would count it twice. `uncrossed` remaps `hole_owners`' indices back
+    // to `f.inner`.
     //
     // Two things do differ. A hole is never an island: it is not material, so an unowned
     // one is simply discarded with the `∂f` region it sat in. And its class is not up for
     // decision — `f.inner` is stored clockwise, hole or not — so it cross-checks against
     // `true`, not against its owner.
-    let holes = arrange::hole_rings(model, fh, plane_idx, inc_f)?;
+    let uncrossed: Vec<usize> = (0..face.inner.len())
+        .filter(|k| !crossed.contains(k))
+        .collect();
+    let holes: Vec<Vec<[usize; 3]>> = uncrossed.iter().map(|&k| all_holes[k].clone()).collect();
     for h in &holes {
         check_loop_class(true, arrange::loop_winding(planes, plane_idx, h)?)?;
     }
@@ -2112,7 +2207,7 @@ fn reconstruct_face_paths(
     // A hole's nodes are `f`'s own vertices. Emitting them as `Node::Seam` would mint a
     // fresh `Discovered` vertex on top of each one — the arrangement is a source of
     // combinatorics, never of geometry, and here that principle shows up as a node kind.
-    let hole_ring = |i: usize| orig_ring(&face.inner[i]);
+    let hole_ring = |i: usize| orig_ring(&face.inner[uncrossed[i]]);
 
     // Regions first, each with its holes; then the islands. `assemble_fuse_cut` fixes vertex
     // handles by first appearance across `faces`, and replay rests on that order.
@@ -4165,40 +4260,52 @@ pub mod tests {
     /// The obvious box, which threads the pocket void and leaves through a wall. Cell 3f-5
     /// had to hang a smaller one over the rim's corner instead, because `pierced_multi`
     /// spoke here; cell 3e-3 retired that guard and `contact_degenerate` spoke underneath
-    /// it; cell (5a) retired that one too. Three guards deep, and the shape was in coverage
-    /// all along for every reason except the one that finally rejects it.
+    /// it; cell (5a) retired that one too, and `SEAM_ACROSS_HOLE_RIM` the last — cell 3f-6.
+    /// The box crosses the lid's pocket rim, so `∂(lid)` is two rings the seam threads into
+    /// one corner notch; the pocket opens to the outside and the lid is left hole-free.
+    ///
+    /// `V = 0.92 − (cube∩box − pocket∩box) = 0.92 − (0.030375 − 0.003375) = 0.893`.
     #[test]
-    fn overlap_across_a_hole_rim_is_unsupported() {
+    fn cut_across_a_hole_rim() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
             Point3::from_array([0.55, 0.55, 0.85]),
             Point3::from_array([1.15; 3]),
         );
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, pc, bx),
-            tag::SEAM_ACROSS_HOLE_RIM,
-        );
+        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 0.893).abs() < 1e-9, "{}", props.volume);
+        // The absorbed rim leaves genus 0: no face carries an inner loop.
+        assert!(holed_faces(&m, r).is_empty());
     }
 
     /// Same two solids, opposite order — a face of the *box* is arranged first, and the
-    /// pocket's rim edge pierces it. The reject must not depend on which operand is named
+    /// pocket's rim edge pierces it. The result must not depend on which operand is named
     /// first.
     ///
     /// Both orders also pin `seam_segments_on`'s hole-aware sweep. Revert it to walk outer
     /// rings only and the rim crossings go uncounted, the crossing count on the face turns
-    /// odd, and `arrangement_degenerate` speaks in place of the honest guard — measured,
-    /// both ways. Detectors are not interchangeable.
+    /// odd, and `arrangement_degenerate` speaks in place of the honest one — measured, both
+    /// ways. Detectors are not interchangeable.
+    ///
+    /// `V(box) − (cube∩box − pocket∩box) = 0.108 − 0.027 = 0.081`.
     #[test]
-    fn overlap_across_a_hole_rim_rejects_either_way() {
+    fn cut_across_a_hole_rim_either_way() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(
             Point3::from_array([0.55, 0.55, 0.85]),
             Point3::from_array([1.15; 3]),
         );
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, bx, pc),
-            tag::SEAM_ACROSS_HOLE_RIM,
-        );
+        let r = boolean(&mut m, BoolKind::Cut, bx, pc).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!((props.volume - 0.081).abs() < 1e-9, "{}", props.volume);
+        assert!(holed_faces(&m, r).is_empty());
     }
 
     /// An imprint is the one holed operand the convex path can see, and `has_coplanar_pair`
