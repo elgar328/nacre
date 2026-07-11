@@ -229,15 +229,9 @@ pub(crate) mod tag {
     pub const NO_ENTRY_FACE: &str = "no_entry_face";
     pub const THREE_PLANES: &str = "three_planes";
     pub const FOURPLANE: &str = "fourplane";
-    pub const NONCONVEX_OPERAND: &str = "nonconvex_operand";
     pub const CYLINDER_FACE: &str = "cylinder_face";
     pub const DEGENERATE_FACE: &str = "degenerate_face";
     pub const DEGENERATE_NORMAL: &str = "degenerate_normal";
-    pub const TANGENT_EDGE: &str = "tangent_edge";
-    pub const NONMANIFOLD_FACE: &str = "nonmanifold_face";
-    pub const DEGENERATE_CENTROID: &str = "degenerate_centroid";
-    pub const DEGENERATE_RADIUS: &str = "degenerate_radius";
-    pub const COLLINEAR_FACE: &str = "collinear_face";
     pub const RAY_DEGENERATE: &str = "ray_degenerate";
     /// An endpoint of an edge lies exactly on a face's plane — and if both do, the edge lies
     /// in that plane. A tangential contact, not a crossing, and out of clean-seam coverage.
@@ -961,7 +955,7 @@ use nacre_geom::intersect::{
 use std::collections::BTreeSet;
 use std::collections::{HashMap, HashSet};
 
-/// A face's supporting plane plus the data the half-space enumeration needs.
+/// A face's supporting plane plus the exact in/out data the seam path needs.
 ///
 /// `three_plane_orient3d(.., tri[0], tri[1], tri[2])` returns `+1` when the
 /// implicit point lies on **`tri`'s right-hand-normal side** — the convention is
@@ -981,20 +975,10 @@ pub(crate) struct PlaneInfo {
     pub(crate) orient: Orientation,
 }
 
-/// A vertex of the result: a point on exactly three planes, inside all others.
-struct ResultVertex {
-    point: Point3,
-    /// Indices (into the combined plane list) of the three defining planes.
-    triple: [usize; 3],
-    /// Measured accuracy: max distance of `point` to its 3 planes and 3 pairwise
-    /// lines (so a `Constructed` edge's `VertexOffCurve` bound holds too).
-    tol: f64,
-}
-
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
-/// **M5-c coverage:** convex, all-planar solids in general position — `Common`
-/// (M5-c3, half-space enumeration) and `Fuse`/`Cut` (M5-c4, face clipping,
-/// clean-seam). Anything else is rejected with [`BoolError`]. Transactional:
+/// **Coverage:** planar solids in general position — all three kinds go through one
+/// exact seam path (`general_boolean`), the convex fast paths (`fuse_cut` cell (5b),
+/// `common` cell 3g) retired. Anything else is rejected with [`BoolError`]. Transactional:
 /// each variant computes its result in local structures and pushes only after
 /// every degeneracy check passes, so a rejected boolean leaves the model
 /// untouched.
@@ -1020,27 +1004,16 @@ pub fn boolean(
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
     }
-    // `Common` alone keeps a convex fast path: half-space enumeration (`common`) is
-    // exact — it classifies no vertex and puts no tolerance on truth. `Fuse`/`Cut` do
-    // not; cell (5b) retired their convex path (`fuse_cut`), which decided in/out with a
-    // 1e-9 tolerance and picked seam planes by an f64 Cyrus–Beck argmax, *and* rejected
-    // inputs the seam path answers (a bar drilled through a block). So both kinds now go
-    // to `general_boolean` unless `Common` finds both operands convex.
-    if kind == BoolKind::Common {
-        let planes_a = collect_planes(model, a)?;
-        let planes_b = collect_planes(model, b)?;
-        if is_convex(&planes_a, &solid_vertices(model, a))
-            && is_convex(&planes_b, &solid_vertices(model, b))
-        {
-            return common(model, a, b);
-        }
-    }
+    // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
+    // (it decided in/out with a 1e-9 tolerance) and cell 3g the convex `common` (its
+    // `order_ccw` was the last `atan2` enumeration) — the seam path answers all three
+    // exactly, so there is no fast path left to gate.
     general_boolean(model, kind, a, b)
 }
 
-/// The general `Fuse`/`Cut` entry point (every input since cell (5b) deleted the convex
-/// `fuse_cut`; only convex `Common` is dispatched away, to `common`). If the boundaries
-/// cross it hands off to [`overlap_fuse_cut`]; otherwise one solid contains the other or
+/// The general boolean entry point for all three kinds since cells (5b) and 3g deleted the
+/// convex `fuse_cut` and `common`. If the boundaries cross it hands off to
+/// [`overlap_fuse_cut`]; otherwise one solid contains the other or
 /// they are disjoint, classified by exact [`point_in_solid`] and assembled by
 /// [`contained_result`].
 fn general_boolean(
@@ -1052,7 +1025,7 @@ fn general_boolean(
     // Exact containment reads a face's rings as three-plane triples, and an imprinted face
     // cannot give them: its hole rim's two neighbours are *coplanar* (the holed face and the
     // region face cut from it), so the rim's vertices have no triple and the line `P ∩ R` no
-    // direction. `overlap_fuse_cut`, `fuse_cut` and `common` all reject that at their door;
+    // direction. `overlap_fuse_cut` rejects that at its door (per-operand `has_coplanar_pair`);
     // this path was the last one without the guard, and it is narrow — a coplanar pair
     // *across* the two solids is harmless, since a face's rings only ever name its own
     // solid's planes.
@@ -1330,47 +1303,6 @@ fn faces_connected(faces: &[LocalFace]) -> bool {
     (0..faces.len()).all(|i| find(&mut parent, i) == find(&mut parent, 0))
 }
 
-/// `A ∩ B` by half-space vertex enumeration: the intersection is the set of
-/// points inside every face half-space of both solids, so each result vertex is
-/// the intersection of three of those planes lying inside all the others (an
-/// exact indirect-predicate decision — the point is never materialized).
-fn common(
-    model: &mut Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<Handle<Solid>, BoolError> {
-    let planes_a = collect_planes(model, a)?;
-    let planes_b = collect_planes(model, b)?;
-    // Each input must equal the intersection of its face half-spaces (convex).
-    if !is_convex(&planes_a, &solid_vertices(model, a))
-        || !is_convex(&planes_b, &solid_vertices(model, b))
-    {
-        return Err(reject(tag::NONCONVEX_OPERAND));
-    }
-    let mut planes = planes_a;
-    planes.extend(planes_b);
-    // Coplanar faces (within one input — e.g. an imprinted face's outer+region —
-    // or shared across inputs) give the enumeration duplicate half-spaces.
-    if has_coplanar_pair(&planes) {
-        return Err(reject(tag::COPLANAR_PAIR));
-    }
-
-    // --- all-local computation (nothing pushed to the model yet) ---
-    let verts = enumerate_vertices(&planes)?;
-    if verts.len() < 4 {
-        return Err(BoolError::EmptyResult); // disjoint or degenerate-empty
-    }
-    let edges = build_edges(&planes, &verts)?;
-    let edge_pairs: HashSet<(usize, usize)> = edges.iter().map(|e| unordered(e.va, e.vb)).collect();
-    let faces = build_faces(&planes, &verts, &edge_pairs)?;
-    if faces.len() < 4 {
-        return Err(BoolError::EmptyResult);
-    }
-
-    // --- push (deterministic order → reproducible handles) ---
-    Ok(assemble(model, a, b, &planes, &verts, &edges, &faces))
-}
-
 /// The supporting planes of a solid's outer shell. `Unsupported` if any face is
 /// non-planar or lacks three non-collinear loop points.
 pub(crate) fn collect_planes(
@@ -1478,56 +1410,6 @@ fn coplanar(a: &Plane, b: &Plane) -> bool {
         && b.distance(a.origin()) <= EPS
 }
 
-/// Enumerate result vertices: every plane triple whose intersection point lies
-/// inside all other half-spaces. `three_plane_orient3d == −1` means the implicit
-/// point is on the inner side of a face (derived in the plan); `+1` outside
-/// (reject the triple); `0` on a 4th plane (a concurrency degeneracy →
-/// `Unsupported`).
-fn enumerate_vertices(planes: &[PlaneInfo]) -> Result<Vec<ResultVertex>, BoolError> {
-    let n = planes.len();
-    let mut verts = Vec::new();
-    for i in 0..n {
-        for j in i + 1..n {
-            for k in j + 1..n {
-                let (pi, pj, pk) = (&planes[i].plane, &planes[j].plane, &planes[k].plane);
-                let Some(point) = three_planes(pi, pj, pk) else {
-                    continue; // parallel/near-coplanar triple — no vertex
-                };
-                let mut outside = false;
-                let mut on_extra = false;
-                for (m, pm) in planes.iter().enumerate() {
-                    if m == i || m == j || m == k {
-                        continue;
-                    }
-                    // `+1` = the vertex is on `pm.tri`'s RH-normal side, and an
-                    // outer-CCW triple's RH normal is the outward normal — so `+1`
-                    // is "outside this half-space" (see `PlaneInfo`).
-                    match three_plane_orient3d(pi, pj, pk, pm.tri[0], pm.tri[1], pm.tri[2]) {
-                        1 => {
-                            outside = true;
-                            break;
-                        }
-                        0 => on_extra = true,
-                        _ => {} // −1: inside this half-space
-                    }
-                }
-                if outside {
-                    continue;
-                }
-                if on_extra {
-                    return Err(reject(tag::FOURPLANE)); // 4-plane concurrency
-                }
-                verts.push(ResultVertex {
-                    point,
-                    triple: [i, j, k],
-                    tol: vertex_tol(point, pi, pj, pk),
-                });
-            }
-        }
-    }
-    Ok(verts)
-}
-
 /// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
 /// `Origin::Discovered` tolerance).
 pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
@@ -1540,183 +1422,8 @@ pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
     tol
 }
 
-/// A result edge: two vertices sharing two planes, on the line of that plane pair.
-struct ResultEdge {
-    va: usize,
-    vb: usize,
-    planes: [usize; 2],
-}
-
-/// One edge per plane pair whose line carries exactly two result vertices.
-fn build_edges(planes: &[PlaneInfo], verts: &[ResultVertex]) -> Result<Vec<ResultEdge>, BoolError> {
-    let n = planes.len();
-    let mut edges = Vec::new();
-    for i in 0..n {
-        for j in i + 1..n {
-            let on_pair: Vec<usize> = verts
-                .iter()
-                .enumerate()
-                .filter(|(_, v)| v.triple.contains(&i) && v.triple.contains(&j))
-                .map(|(vi, _)| vi)
-                .collect();
-            match on_pair.len() {
-                0 => {}
-                2 => edges.push(ResultEdge {
-                    va: on_pair[0],
-                    vb: on_pair[1],
-                    planes: [i, j],
-                }),
-                _ => return Err(reject(tag::TANGENT_EDGE)), // tangent / degenerate edge
-            }
-        }
-    }
-    Ok(edges)
-}
-
-/// One face per plane carrying ≥3 result vertices, ordered CCW about the outward
-/// normal, with each consecutive pair confirmed to be a result edge.
-fn build_faces(
-    planes: &[PlaneInfo],
-    verts: &[ResultVertex],
-    edge_pairs: &HashSet<(usize, usize)>,
-) -> Result<Vec<(usize, Vec<usize>)>, BoolError> {
-    let mut faces = Vec::new();
-    for (m, pm) in planes.iter().enumerate() {
-        let on_m: Vec<usize> = verts
-            .iter()
-            .enumerate()
-            .filter(|(_, v)| v.triple.contains(&m))
-            .map(|(vi, _)| vi)
-            .collect();
-        if on_m.len() < 3 {
-            continue; // this plane is not a face of the result
-        }
-        let ordered = order_ccw(&on_m, verts, pm.n_out)?;
-        // Every consecutive pair must be a result edge (else non-manifold).
-        let k = ordered.len();
-        for t in 0..k {
-            if !edge_pairs.contains(&unordered(ordered[t], ordered[(t + 1) % k])) {
-                return Err(reject(tag::NONMANIFOLD_FACE));
-            }
-        }
-        faces.push((m, ordered));
-    }
-    Ok(faces)
-}
-
-/// Order coplanar points CCW about the outward normal `n_out` (angle about the
-/// centroid). `Unsupported` if they are collinear (a tangential contact).
-fn order_ccw(
-    idxs: &[usize],
-    verts: &[ResultVertex],
-    n_out: Vector3,
-) -> Result<Vec<usize>, BoolError> {
-    let pts: Vec<Point3> = idxs.iter().map(|&vi| verts[vi].point).collect();
-    let c = Point3::centroid(&pts).ok_or_else(|| reject(tag::DEGENERATE_CENTROID))?;
-    let u = (pts[0] - c)
-        .normalize()
-        .ok_or_else(|| reject(tag::DEGENERATE_RADIUS))?;
-    let w = n_out.cross(u);
-    // Collinear ⇒ every point lies on the `u` axis (no `w` spread) ⇒ tangent.
-    let spread = idxs
-        .iter()
-        .map(|&vi| (verts[vi].point - c).dot(w).abs())
-        .fold(0.0, f64::max);
-    let scale = idxs
-        .iter()
-        .map(|&vi| (verts[vi].point - c).norm())
-        .fold(0.0, f64::max);
-    if spread <= 1e-9 * scale.max(1.0) {
-        return Err(reject(tag::COLLINEAR_FACE));
-    }
-    let mut keyed: Vec<(f64, usize)> = idxs
-        .iter()
-        .map(|&vi| {
-            let d = verts[vi].point - c;
-            (d.dot(w).atan2(d.dot(u)), vi)
-        })
-        .collect();
-    keyed.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("finite angles"));
-    Ok(keyed.iter().map(|&(_, vi)| vi).collect())
-}
-
 fn unordered(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
-}
-
-/// Push the computed result and supersede the inputs (mirrors `finish_split`).
-fn assemble(
-    model: &mut Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-    planes: &[PlaneInfo],
-    verts: &[ResultVertex],
-    edges: &[ResultEdge],
-    faces: &[(usize, Vec<usize>)],
-) -> Handle<Solid> {
-    // Vertices (discovered three-plane points).
-    let vh: Vec<Handle<Vertex>> = verts
-        .iter()
-        .map(|v| {
-            let def = VertexDef::ThreePlane([
-                planes[v.triple[0]].surf,
-                planes[v.triple[1]].surf,
-                planes[v.triple[2]].surf,
-            ]);
-            model.vertices.push(Vertex {
-                point: v.point,
-                origin: Origin::Discovered {
-                    tol: v.tol,
-                    definition: def,
-                },
-            })
-        })
-        .collect();
-    // Edges (constructed; lines are the plane-pair intersections).
-    let mut edge_of: HashMap<(usize, usize), Handle<Edge>> = HashMap::new();
-    for e in edges {
-        let line = plane_plane(&planes[e.planes[0]].plane, &planes[e.planes[1]].plane)
-            .expect("survivor edge planes meet in a line");
-        let curve = model.curves.push(Curve::Line(line));
-        let eh = model.edges.push(Edge {
-            curve,
-            bounds: Some([vh[e.va], vh[e.vb]]),
-            origin: Origin::Constructed,
-        });
-        edge_of.insert(
-            unordered(vh[e.va].index() as usize, vh[e.vb].index() as usize),
-            eh,
-        );
-    }
-    // Faces (outward-CCW loops of the plane's vertices).
-    let mut face_handles = Vec::new();
-    for (m, loop_verts) in faces {
-        let k = loop_verts.len();
-        let half_edges = (0..k)
-            .map(|t| {
-                let va = vh[loop_verts[t]];
-                let vb = vh[loop_verts[(t + 1) % k]];
-                let eh = edge_of[&unordered(va.index() as usize, vb.index() as usize)];
-                let forward = model.edges.get(eh).bounds.expect("bounded")[0] == va;
-                HalfEdge { edge: eh, forward }
-            })
-            .collect();
-        face_handles.push(model.faces.push(Face {
-            surface: planes[*m].surf,
-            outer: Loop { half_edges },
-            inner: vec![],
-            orientation: planes[*m].orient,
-        }));
-    }
-    let shell = model.shells.push(Shell {
-        faces: face_handles,
-    });
-    let solid = model.push_solid(Solid {
-        outer: shell,
-        cavities: vec![],
-    });
-    model.live_solids.retain(|&s| s != a && s != b);
-    solid
 }
 
 // ---- fuse / cut (M5-c4): face clipping, clean-seam convex ----
@@ -3144,10 +2851,11 @@ pub mod tests {
         assert!((vol - 3.0).abs() < 1e-9, "volume {vol}");
     }
 
-    /// Prove the seam path answers a *convex* overlap `Common` before cell 3g deletes the
-    /// convex `common` that answers it today. `two_boxes ∩ = [0.5,1]³`, called through
-    /// `overlap_fuse_cut` directly (the dispatcher still routes convex Common to `common`).
-    /// Cell 3g's n2 deletes `common` and this same result must come from the dispatcher.
+    /// The seam path answers a *convex* overlap `Common` — `two_boxes ∩ = [0.5,1]³` with
+    /// the same 8 verts / 12 edges / 6 faces the deleted convex `common` gave. This was
+    /// the measurement cell 3g's n1 took (through `overlap_fuse_cut` directly) before n2
+    /// deleted `common`; `common_of_two_cubes_is_their_overlap` now exercises the same
+    /// result through the dispatcher.
     #[test]
     fn the_seam_path_answers_common_overlap() {
         let (mut m, a, b) = two_boxes();
@@ -5637,9 +5345,9 @@ pub mod tests {
     /// A face with an inner loop implies one of exactly two things about the shell: the
     /// rim is bounded by inward walls, making the solid non-convex (a pocket), or by a
     /// coplanar region face (an imprint). Nothing else closes. These two tests measure
-    /// both halves, and together they say where a holed operand can arrive: `common` sees
-    /// only the imprint and rejects it as `COPLANAR_PAIR` on the combined plane list;
-    /// everything else takes the non-convex path.
+    /// both halves, and together they say where a holed operand can arrive: an imprint is
+    /// rejected as `COPLANAR_PAIR` (its region face is coplanar with the lid it was cut
+    /// from); everything else takes the general seam path.
     #[test]
     fn a_pocketed_cube_is_not_convex() {
         let (m, pc) = pocketed_cube();
