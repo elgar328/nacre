@@ -897,6 +897,46 @@ bbox_min 0 0 0
         );
     }
 
+    /// A boss fuses onto a face inside its boundary (cell coplanar-contact-boss): the base's
+    /// top gains the boss footprint as a hole and the boss rides on it. OCCT scores the fuse
+    /// and a Cut chained onto the bossed solid.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn boss_fuse_then_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let boss = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, 1.0]),
+            Point3::from_array([0.75, 0.75, 2.0]),
+        );
+        let occt_fuse = occt_boolean_of(&m, OcctBool::Fuse, base, boss).unwrap();
+        let bossed = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, bossed).unwrap().volume, occt_fuse.volume),
+            "boss fuse: {} vs {}",
+            mass_props(&m, bossed).unwrap().volume,
+            occt_fuse.volume
+        );
+        // Chain a cut through the boss.
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.5]),
+            Point3::from_array([0.6, 0.6, 2.5]),
+        );
+        let occt_cut = occt_boolean_of(&m, OcctBool::Cut, bossed, cutter).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, bossed, cutter).unwrap();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
+            "boss then cut: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt_cut.volume
+        );
+    }
+
     /// Two face-to-face cubes fuse into a clean box (cell fuse-coplanar-merge merges the
     /// coplanar side faces and dissolves the interface corners), which then chains a Cut.
     /// OCCT scores both the fuse and the chained cut on the exported b-rep.
