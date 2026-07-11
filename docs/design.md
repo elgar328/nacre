@@ -973,6 +973,14 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **★ n0가 클래스 전체 안전을 확정.** 가드를 걷으면 모든 하위-케이스가 노출되므로 배선 전 전수 측정: **blind hole 25.96·cavities=0·shells=1**, **through-tunnel 25.92(genus-1)**, l_and_inner stub 2.484 — 전부 정답·validate 클린. **slab이 박스를 가르면 `DISCONNECTED_RESULT`**(loud). **silent-wrong 0, seam_count_mismatch조차 없음.** 클래스가 전부 정답-이거나-loud라 `SEAM_ENTERS_CAVITY`·`PlaneInfo.is_cavity` 완전 은퇴.
 - **재사용.** (5c) 성분 분할이 병합을 표현하고, 3e-3 genus-1 drilling(BoundaryRuns·run-class·엣지당 다중 교차)이 관통을 재구성 — 새 코드는 seam_segments_on 한 자리뿐. 회귀 0(비-hollow·far-cut 불변).
 
+**split-face 슬롯 지원 — 공면 가드를 공유-엣지 쌍으로 좁힘 (M5 셀 coplanar-narrow).** `has_coplanar_pair`(문 앞 가드)가 인접성 무시하고 **떨어진 공면 면**까지 거절해, 전폭 홈을 판 바(top이 두 스트립으로 갈라져 한 `Surface`를 공유)가 두 번째 불리언을 못 태웠다. 각인(niche)이 아니라 정상 다중-피처 부품이 진짜 갭이었다(각인은 명시적 `ImprintSketch`만 만든다). 세 개 맞물린 수정으로 연다.
+
+- **★ A′ 정적 감사가 셀의 진짜 깊이를 배선 전에 쟀다.** "공면 면을 distinct 인덱스로" 하면 `order_along`/`side_of`(둘 다 `three_plane_orient3d`)가 **공면 쌍 `(i,j)`에 0을 반환**한다(`V_i=P∩Q∩R_i`가 `R_j`에도 놓임). 그 0을 "축퇴/일치/평면 위"로 읽는 소비자가 **~12곳**(3 FOURPLANE 사이트 + `LOOP_ORIENT_MISMATCH`·`POINT_ON_RING`·`SEAM_COUNT_MISMATCH` 하류) — "한 평면당 한 면" 불변식이 seam 기계에 pervasive하다. **그러나 기하가 대부분을 막는다:** `edge_crosses_face` 봉쇄로 엣지는 공유 평면을 한 점에서만 통과하고 그 점은 최대 한 스트립 안이라, 두 disjoint 스트립은 같은 `third`/ring에 co-appear하지 않는다. **기하 무관하게 발화하는 건 전수-스캔 FOURPLANE(lib:1178) 하나뿐** — n3 gate가 이 예측을 실증(슬롯이 완전 재구성, 남은 11곳 미발화).
+- **A. per-face 인덱싱.** `surf_ix`를 `Surface→usize`에서 **`Face→usize`**로 (PlaneInfo에 `face` 필드 추가). 두 코플래너 스트립이 한 `Surface`를 공유해 인덱스가 **덮어써져 붕괴**하던 것을 면마다 distinct 인덱스로. 현 통과 경로의 모든 면은 distinct Surface(전단사)라 **동작 보존**(전 스위트 + 50 OCCT 불변).
+- **B. FOURPLANE 좁힘.** seam 정점 삼중 `(e0,e1,entry)`에 대해, 셋 중 하나와 `planes_coplanar`인 평면 `m`은 진짜 4번째가 아니라 같은 평면의 다른 면이므로 skip. 가드가 아직 닫혀 no-op(동작 보존).
+- **C. 가드 per-edge 좁힘.** `has_coplanar_pair`(임의 두 공면)를 **`solid_has_coplanar_neighbour_edge`**(엣지를 공유하는 두 공면만)로. 각인 rim·Fuse flat-edge(엣지 공유)는 계속 거절, 슬롯의 두 disjoint 스트립(엣지 미공유)은 통과. `overlap_fuse_cut`은 cross-operand 공면 검사(`cross_coplanar`, 접선 접촉) 유지. `has_coplanar_pair`는 이제 테스트 전용 특성화 술어.
+- **정직한 회귀 0.** 각인 거절 3종 불변(rim이 엣지 공유 → 새 가드가 계속 거절; `an_imprinted_cube_is_convex`에 새 가드 단언 추가). 발화 테스트 `a_slotted_bar_chains_through_a_cut`(슬롯 바에 blind pocket) + OCCT diff `slotted_bar_pocket_cut_matches_occt`. **Fuse 결과 인접 공면 병합은 다음 셀(fuse-coplanar-merge)** — 여전히 `COPLANAR_PAIR`.
+
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
 
