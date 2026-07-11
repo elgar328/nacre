@@ -1638,6 +1638,35 @@ bbox_min 0 0 0
         );
     }
 
+    /// A slab through the pocket between its floor and its lid (M5-d3 cell 3f-7). Its underside
+    /// carries the cube's cross-section as one loop with the pocket's nested inside it — a loop
+    /// within a loop. `Cut(slab, pc) = 1.488`, the pocket loop hung in the slab region as a hole
+    /// beside an island; the area is the independent claim that the nesting placed both rings.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_nests_pocket_cut_matches_occt() {
+        diff_holed(
+            "slab nests pocket cut",
+            OcctBool::Cut,
+            [[-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]],
+            false,
+        );
+    }
+
+    /// The other order: `Cut(pc, slab) = 0.668`, where the slab's dropped underside leaves no
+    /// region, so the cube section becomes an island carrying the pocket loop as its own hole.
+    /// (`Fuse` of the two seals the pocket into a cavity — cell (5c), not scored here.)
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_nests_pocket_cut_either_way_matches_occt() {
+        diff_holed(
+            "slab nests pocket cut either way",
+            OcctBool::Cut,
+            [[-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]],
+            true,
+        );
+    }
+
     /// A slab over the pocket, its underside below the pocket floor. `Cut` keeps the lid
     /// as a reversed inside-B piece, hole and all — `flip` meeting `inner` for the first
     /// time. `Fuse` drops it. The third scores the complement.
