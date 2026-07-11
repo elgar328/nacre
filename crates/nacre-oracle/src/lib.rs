@@ -1655,7 +1655,6 @@ bbox_min 0 0 0
 
     /// The other order: `Cut(pc, slab) = 0.668`, where the slab's dropped underside leaves no
     /// region, so the cube section becomes an island carrying the pocket loop as its own hole.
-    /// (`Fuse` of the two seals the pocket into a cavity — cell (5c), not scored here.)
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn slab_nests_pocket_cut_either_way_matches_occt() {
@@ -1664,6 +1663,21 @@ bbox_min 0 0 0
             OcctBool::Cut,
             [[-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]],
             true,
+        );
+    }
+
+    /// `Fuse` of the same two seals the pocket into an enclosed cavity (cell 5c): material
+    /// `2.408`, a void of `0.032`. OCCT builds the same hollow solid and its volume subtracts
+    /// the void while its area adds both surfaces — the independent claim that the seam path
+    /// assembled the void inward, not as a phantom outer piece.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_seals_pocket_fuse_matches_occt() {
+        diff_holed(
+            "slab seals pocket fuse",
+            OcctBool::Fuse,
+            [[-0.2, -0.25, 0.7], [1.3, 1.2, 1.5]],
+            false,
         );
     }
 
