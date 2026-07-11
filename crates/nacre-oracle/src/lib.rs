@@ -864,6 +864,39 @@ bbox_min 0 0 0
         );
     }
 
+    /// A slotted bar — a cuboid with a full-width groove — carries two coplanar top strips
+    /// that share one Surface. Cell coplanar-narrow lets it chain a second boolean; OCCT
+    /// scores the blind pocket cut into one strip on the exported b-rep.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slotted_bar_pocket_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let bar = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        let groove = m.add_cuboid(
+            Point3::from_array([1.0, -0.5, 0.5]),
+            Point3::from_array([2.0, 1.5, 1.5]),
+        );
+        let slotted = boolean(&mut m, BoolKind::Cut, bar, groove).unwrap();
+        m.rebuild_adjacency();
+        let pocket = m.add_cuboid(
+            Point3::from_array([0.2, 0.2, 0.7]),
+            Point3::from_array([0.5, 0.5, 1.5]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Cut, slotted, pocket).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, slotted, pocket).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "slotted bar pocket cut: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
     /// The two convex pokes cell (5b) opened, against OCCT. Both operands are convex; the
     /// convex path rejected these as `poke_through` and cell (5b) routes them to the seam
     /// path. The notch is an edge crossed twice; the drill is a genus-1 solid.

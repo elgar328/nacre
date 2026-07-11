@@ -998,14 +998,16 @@ fn general_boolean(
     // Exact containment reads a face's rings as three-plane triples, and an imprinted face
     // cannot give them: its hole rim's two neighbours are *coplanar* (the holed face and the
     // region face cut from it), so the rim's vertices have no triple and the line `P ∩ R` no
-    // direction. `overlap_fuse_cut` rejects that at its door (per-operand `has_coplanar_pair`);
-    // this path was the last one without the guard, and it is narrow — a coplanar pair
-    // *across* the two solids is harmless, since a face's rings only ever name its own
-    // solid's planes.
+    // direction. That is a coplanar pair sharing an *edge*; `solid_has_coplanar_neighbour_edge`
+    // rejects it while passing disjoint coplanar faces (a slot's two top strips), so
+    // multi-feature parts chain (cell coplanar-narrow). A coplanar pair *across* the two
+    // solids is harmless here, since a face's rings only ever name its own solid's planes.
     let mut planes = collect_planes(model, a)?;
     let na = planes.len();
     planes.extend(collect_planes(model, b)?);
-    if has_coplanar_pair(&planes[..na]) || has_coplanar_pair(&planes[na..]) {
+    if solid_has_coplanar_neighbour_edge(model, a, &planes[..na])
+        || solid_has_coplanar_neighbour_edge(model, b, &planes[na..])
+    {
         return Err(reject(tag::COPLANAR_PAIR));
     }
     let surf_ix: HashMap<Handle<Face>, usize> = planes
@@ -1101,8 +1103,16 @@ fn overlap_fuse_cut(
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
     let mut planes = collect_planes(model, a)?;
+    let na = planes.len();
     planes.extend(collect_planes(model, b)?);
-    if has_coplanar_pair(&planes) {
+    // Reject a coplanar pair that shares an edge within either operand (imprint rim, Fuse
+    // flat-edge) — disjoint coplanar faces (a slot) pass. A coplanar pair *across* the two
+    // operands is a tangential face-to-face contact the seam machinery does not handle, so
+    // it stays rejected (cell coplanar-narrow).
+    if solid_has_coplanar_neighbour_edge(model, a, &planes[..na])
+        || solid_has_coplanar_neighbour_edge(model, b, &planes[na..])
+        || cross_coplanar(&planes[..na], &planes[na..])
+    {
         return Err(reject(tag::COPLANAR_PAIR));
     }
 
@@ -1462,10 +1472,45 @@ fn is_convex(model: &Model, planes: &[PlaneInfo], vhs: &[Handle<Vertex>]) -> boo
 }
 
 /// Whether any two planes in the set are the same plane, by the exact rank-1
-/// [`planes_coplanar`] test (design §3 (5d)-2).
+/// [`planes_coplanar`] test (design §3 (5d)-2). Superseded in production by
+/// [`solid_has_coplanar_neighbour_edge`] (cell coplanar-narrow); kept as a test predicate
+/// that characterises the coplanar content of a fixture.
+#[cfg(test)]
 fn has_coplanar_pair(planes: &[PlaneInfo]) -> bool {
     (0..planes.len())
         .any(|i| (i + 1..planes.len()).any(|j| planes_coplanar(&planes[i].plane, &planes[j].plane)))
+}
+
+/// Whether two faces of `solid` that meet at an edge are coplanar — an imprint rim (the
+/// holed face and the region cut from it) or a Fuse flat-edge, both defeature artifacts the
+/// seam machinery cannot arrange. Unlike [`has_coplanar_pair`] this passes *disjoint*
+/// coplanar faces: a slot's two top strips share no edge, so multi-feature parts chain
+/// (cell coplanar-narrow). `planes` are the faces of `solid` alone (per-operand).
+fn solid_has_coplanar_neighbour_edge(
+    model: &Model,
+    solid: Handle<Solid>,
+    planes: &[PlaneInfo],
+) -> bool {
+    let plane_of: HashMap<Handle<Face>, &Plane> =
+        planes.iter().map(|pi| (pi.face, &pi.plane)).collect();
+    let mut edge_faces: HashMap<Handle<Edge>, Vec<Handle<Face>>> = HashMap::new();
+    for sh in solid_shell_handles(model, solid) {
+        for &fh in &model.shells.get(sh).faces {
+            for he in face_half_edges(model.faces.get(fh)) {
+                edge_faces.entry(he.edge).or_default().push(fh);
+            }
+        }
+    }
+    edge_faces
+        .values()
+        .any(|fs| fs.len() == 2 && planes_coplanar(plane_of[&fs[0]], plane_of[&fs[1]]))
+}
+
+/// Whether a face of `a` is coplanar with a face of `b` — a tangential face-to-face contact
+/// across the two operands, which the seam machinery does not handle (cell coplanar-narrow).
+fn cross_coplanar(a: &[PlaneInfo], b: &[PlaneInfo]) -> bool {
+    a.iter()
+        .any(|pa| b.iter().any(|pb| planes_coplanar(&pa.plane, &pb.plane)))
 }
 
 /// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
@@ -5707,6 +5752,44 @@ pub mod tests {
         assert!((vol - (3.0 - 0.08)).abs() < 1e-9, "volume {vol}");
     }
 
+    /// A slotted bar — a cuboid with a full-width groove cut across its top — has two
+    /// coplanar top strips that share one Surface. Before cell coplanar-narrow the door
+    /// guard rejected any second boolean on it as `COPLANAR_PAIR`; the strips are disjoint
+    /// (they share no edge), so it now chains. Cut a blind pocket into one strip: the result
+    /// is the bar minus the groove (`3 − 0.5`) minus the pocket (`0.3³`).
+    #[test]
+    fn a_slotted_bar_chains_through_a_cut() {
+        let mut m = Model::new();
+        let bar = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        // Oversized in y so the groove walls do not coincide with the bar's y-faces
+        // (a flush cutter would be a cross-operand coplanar pair).
+        let groove = m.add_cuboid(
+            Point3::from_array([1.0, -0.5, 0.5]),
+            Point3::from_array([2.0, 1.5, 1.5]),
+        );
+        let slotted = boolean(&mut m, BoolKind::Cut, bar, groove).unwrap();
+        m.rebuild_adjacency();
+        // The two z=1 strips are coplanar (share one Surface) but disjoint (no shared edge):
+        // `has_coplanar_pair` sees the pair, the narrowed guard passes it.
+        let planes = collect_planes(&m, slotted).unwrap();
+        assert!(has_coplanar_pair(&planes));
+        assert!(!solid_has_coplanar_neighbour_edge(&m, slotted, &planes));
+
+        let pocket = m.add_cuboid(
+            Point3::from_array([0.2, 0.2, 0.7]),
+            Point3::from_array([0.5, 0.5, 1.5]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, slotted, pocket).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.5 - 0.027)).abs() < 1e-9, "volume {vol}");
+    }
+
     #[test]
     fn a_flipped_hole_loop_is_caught() {
         // `loop_orient_mismatch` cannot see a loop flipped as a whole, and `f2`'s golden
@@ -5824,6 +5907,9 @@ pub mod tests {
         let planes = collect_planes(&m, ic).unwrap();
         assert!(is_convex(&m, &planes, &solid_vertex_handles(&m, ic)));
         assert!(has_coplanar_pair(&planes)); // the lid and its region face
+        // The rim shares an edge, so the production guard also rejects it — unlike a slot's
+        // two disjoint strips (cell coplanar-narrow).
+        assert!(solid_has_coplanar_neighbour_edge(&m, ic, &planes));
     }
 
     /// A boolean *result* (here `Common` of two overlapping cubes) carries
