@@ -32,6 +32,16 @@ pub fn orient3d(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
     geometry_predicates::orient3d(a, b, c, d)
 }
 
+/// The signed area of triangle `abc` (positive when `abc` turns counter-clockwise);
+/// zero means the three points are collinear. A thin wrapper over
+/// [`geometry_predicates::orient2d`] — robust to rounding, so the sign is always exact.
+/// Used for exact in-plane containment (drop the face normal's dominant axis first, so
+/// the projection is exact — a coordinate is discarded, not recomputed).
+#[inline]
+pub fn orient2d(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
+    geometry_predicates::orient2d(a, b, c)
+}
+
 /// A Shewchuk **nonoverlapping expansion**: a list of f64 components whose exact
 /// sum is the represented value, most-significant last. Built from
 /// [`geometry_predicates`]' adaptive-arithmetic primitives, it lets us evaluate

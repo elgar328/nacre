@@ -309,6 +309,12 @@ pub enum OpError {
     /// An imprint target face belongs to no live solid's outer shell (a stale
     /// or non-live handle).
     FaceNotInLiveSolid,
+    /// The imprint/pad/pocket profile is not strictly inside the target face's region
+    /// (it crosses, sits outside, or overhangs the boundary, or touches a hole). A
+    /// face-local imprint needs a clean inner-loop hole; profiles that reach past the face
+    /// belong to a boolean pad/pocket (extrude + fuse/cut), not this path (cell
+    /// imprint-containment).
+    ProfileNotContainedInFace,
     /// A boolean operation failed (design §8 M5).
     Boolean(BoolError),
 }
@@ -610,6 +616,94 @@ struct Split {
 /// and edges onto the face's plane (centred on the face, CCW about the outward
 /// normal) and build the outer face carrying the profile as a hole. The caller
 /// adds the faces that fill/raise the profile region, then calls [`finish_split`].
+/// Drop the axis of the face normal's largest component to project a planar point to 2D.
+/// An exact projection — a coordinate is discarded, never recomputed — so `orient2d` on the
+/// result stays exact (cell imprint-containment).
+fn planar_drop_axes(n: Vector3) -> (usize, usize) {
+    let a = [n[0].abs(), n[1].abs(), n[2].abs()];
+    if a[0] >= a[1] && a[0] >= a[2] {
+        (1, 2)
+    } else if a[1] >= a[2] {
+        (0, 2)
+    } else {
+        (0, 1)
+    }
+}
+
+fn proj2(p: Point3, (i, j): (usize, usize)) -> [f64; 2] {
+    [p[i], p[j]]
+}
+
+/// `c` is within the axis-aligned bounding box of segment `ab` — paired with an exact
+/// `orient2d == 0` collinearity test to decide on-segment.
+fn in_bbox(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> bool {
+    c[0] >= a[0].min(b[0])
+        && c[0] <= a[0].max(b[0])
+        && c[1] >= a[1].min(b[1])
+        && c[1] <= a[1].max(b[1])
+}
+
+/// Exact strict point-in-ring: `Some(true)` strictly inside, `Some(false)` strictly
+/// outside, `None` on the boundary. Even-odd ray cast, `orient2d` for the crossing side.
+fn point_in_ring2(p: [f64; 2], ring: &[[f64; 2]]) -> Option<bool> {
+    let n = ring.len();
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        if orient2d(a, b, p) == 0.0 && in_bbox(a, b, p) {
+            return None;
+        }
+        if (a[1] > p[1]) != (b[1] > p[1]) && (orient2d(a, b, p) > 0.0) == (b[1] > a[1]) {
+            inside = !inside;
+        }
+    }
+    Some(inside)
+}
+
+/// Exact: do closed segments `p0p1` and `q0q1` meet at all (cross or merely touch)?
+fn segments_meet(p0: [f64; 2], p1: [f64; 2], q0: [f64; 2], q1: [f64; 2]) -> bool {
+    let (o1, o2) = (orient2d(p0, p1, q0), orient2d(p0, p1, q1));
+    let (o3, o4) = (orient2d(q0, q1, p0), orient2d(q0, q1, p1));
+    if o1 != 0.0 && o2 != 0.0 && o3 != 0.0 && o4 != 0.0 {
+        return (o1 > 0.0) != (o2 > 0.0) && (o3 > 0.0) != (o4 > 0.0);
+    }
+    (o1 == 0.0 && in_bbox(p0, p1, q0))
+        || (o2 == 0.0 && in_bbox(p0, p1, q1))
+        || (o3 == 0.0 && in_bbox(q0, q1, p0))
+        || (o4 == 0.0 && in_bbox(q0, q1, p1))
+}
+
+/// Whether `profile` is strictly inside the face region: inside `outer`, outside every
+/// hole, and touching no boundary edge. The imprint contract — a profile that reaches past
+/// the face makes an invalid inner loop (cell imprint-containment). All rings are exact 2D
+/// projections onto the face plane (dominant axis dropped).
+fn profile_strictly_in_region(
+    profile: &[[f64; 2]],
+    outer: &[[f64; 2]],
+    holes: &[Vec<[f64; 2]>],
+) -> bool {
+    for &v in profile {
+        if point_in_ring2(v, outer) != Some(true) {
+            return false;
+        }
+        if holes.iter().any(|h| point_in_ring2(v, h) != Some(false)) {
+            return false;
+        }
+    }
+    let m = profile.len();
+    let rings = std::iter::once(outer).chain(holes.iter().map(|h| h.as_slice()));
+    for ring in rings {
+        let rn = ring.len();
+        for i in 0..m {
+            let (p0, p1) = (profile[i], profile[(i + 1) % m]);
+            if (0..rn).any(|j| segments_meet(p0, p1, ring[j], ring[(j + 1) % rn])) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn prepare_face_split(
     model: &mut Model,
     face: Handle<Face>,
@@ -632,6 +726,7 @@ fn prepare_face_split(
     let surface_h = f.surface;
     let orientation = f.orientation;
     let outer_loop = f.outer.clone();
+    let inner_loops = f.inner.clone();
     let plane = match model.surfaces.get(surface_h) {
         Surface::Plane(p) => *p,
         Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
@@ -659,6 +754,27 @@ fn prepare_face_split(
         pts.reverse();
     }
     let base_pts: Vec<Point3> = pts.iter().map(|p| origin + x * p[0] + y * p[1]).collect();
+
+    // Strict containment: the profile must lie inside the face region (inside the outer
+    // ring, outside every hole, touching no boundary). Otherwise the "hole" is not a clean
+    // inner loop and the result is silently invalid — validate sees only topology, props
+    // integrates the ring, and only tessellate's `NoEar` catches it (cell imprint-containment;
+    // measured in design.md §10). A profile reaching past the face is a boolean pad/pocket.
+    let drop = planar_drop_axes(n);
+    let profile2: Vec<[f64; 2]> = base_pts.iter().map(|&p| proj2(p, drop)).collect();
+    let outer2: Vec<[f64; 2]> = outer_pts.iter().map(|&p| proj2(p, drop)).collect();
+    let holes2: Vec<Vec<[f64; 2]>> = inner_loops
+        .iter()
+        .map(|l| {
+            l.half_edges
+                .iter()
+                .map(|he| proj2(model.vertices.get(he_start(model, *he)).point, drop))
+                .collect()
+        })
+        .collect();
+    if !profile_strictly_in_region(&profile2, &outer2, &holes2) {
+        return Err(OpError::ProfileNotContainedInFace);
+    }
 
     // Profile vertices and segment edges.
     let m = base_pts.len();
@@ -922,8 +1038,8 @@ fn raise_region(
 // ---- boolean (M5-c3) ----
 
 use nacre_geom::intersect::{
-    RayCross, plane_plane, plane_side, planes_coplanar, ray_face_cross, three_plane_orient3d,
-    three_planes,
+    RayCross, orient2d, plane_plane, plane_side, planes_coplanar, ray_face_cross,
+    three_plane_orient3d, three_planes,
 };
 #[cfg(test)]
 use std::collections::BTreeSet;
@@ -6856,6 +6972,58 @@ pub mod tests {
         // Euler: V 12, E 16, F 7, L_i 1 → χ = 2.
         assert_eq!(reach.vertices.len(), 12);
         assert_eq!(reach.edges.len(), 16);
+    }
+
+    #[test]
+    fn a_profile_reaching_past_the_face_is_rejected() {
+        // The frame origin is the top face centroid (0.5, 0.5). Each profile reaches past
+        // the [0,1]² face region, so all three face ops reject rather than build a
+        // silently-invalid inner loop (cell imprint-containment; n0 measured that apply was
+        // Ok, validate passed, props integrated garbage — including a negative volume — and
+        // only tessellate's NoEar caught it). Boundary contact ("touches") rejects too.
+        let crosses = Profile2d {
+            points: vec![p2(-0.7, -0.2), p2(0.7, -0.2), p2(0.7, 0.2), p2(-0.7, 0.2)],
+        };
+        let outside = Profile2d {
+            points: vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)],
+        };
+        let overhang = Profile2d {
+            points: vec![p2(-2.0, -2.0), p2(2.0, -2.0), p2(2.0, 2.0), p2(-2.0, 2.0)],
+        };
+        let touches = Profile2d {
+            points: vec![p2(-0.5, -0.2), p2(0.3, -0.2), p2(0.3, 0.2), p2(-0.5, 0.2)],
+        };
+        for (name, profile) in [
+            ("crosses", crosses),
+            ("outside", outside),
+            ("overhang", overhang),
+            ("touches", touches),
+        ] {
+            for kind in ["imprint", "pad", "pocket"] {
+                let (mut m, top) = cube_with_top();
+                let op = match kind {
+                    "imprint" => Operation::ImprintSketch {
+                        face: top,
+                        profile: profile.clone(),
+                    },
+                    "pad" => Operation::PadOnFace {
+                        face: top,
+                        profile: profile.clone(),
+                        dist: 0.3,
+                    },
+                    _ => Operation::PocketOnFace {
+                        face: top,
+                        profile: profile.clone(),
+                        dist: 0.3,
+                    },
+                };
+                assert_eq!(
+                    apply(&mut m, &op),
+                    Err(OpError::ProfileNotContainedInFace),
+                    "{name}/{kind}"
+                );
+            }
+        }
     }
 
     #[test]

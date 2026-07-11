@@ -14,7 +14,7 @@ use nacre_math::{Point3, Vector3};
 /// (`nacre-ops`) reach them through geom without depending on `nacre-predicates`
 /// directly (the same `topo → geom → predicates` layering as the surface
 /// handoffs).
-pub use nacre_predicates::{RayCross, SegCross};
+pub use nacre_predicates::{RayCross, SegCross, orient2d};
 
 /// `sin²θ` below which two plane normals count as parallel. Unit normals make
 /// `‖n1 × n2‖² = sin²θ ∈ [0, 1]`, so this absolute cutoff is scale-free.
