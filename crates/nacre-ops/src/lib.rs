@@ -965,10 +965,10 @@ pub fn boolean(
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
-    // Cavitied operands are supported (cell (5c-in)): the seam front-end walks all
-    // shells (outer + cavities) via `solid_shell_handles`, so a void is carried through
-    // and preserved. A cut that *reaches into* a void is not yet reconstructed and is
-    // rejected downstream as `SEAM_ENTERS_CAVITY`.
+    // Cavitied operands are supported (cells (5c-in), (5c-in-2)): the seam front-end and
+    // reconstruction walk all shells (outer + cavities) via `solid_shell_handles`, so a
+    // void the cut misses is carried through, and a cut reaching into a void reconstructs
+    // (the opened void merges with the outer shell).
     // Coincident-coplanar degeneracy (M5-c5): a clean matched-interface stack.
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
