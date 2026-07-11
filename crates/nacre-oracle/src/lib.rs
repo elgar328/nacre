@@ -839,6 +839,31 @@ bbox_min 0 0 0
         );
     }
 
+    /// The `Common` counterpart — cell 3g opened non-convex `Common` (the intersection is
+    /// the corner bite, `0.224`) and retired the convex `common`. Same seam as the Cut/Fuse
+    /// above, only the keep/flip table differs.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn nonconvex_overlap_common_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let (mut m, l, bx) = l_and_corner_box();
+        let occt = occt_boolean_of(&m, OcctBool::Common, l, bx).unwrap();
+        let r = boolean(&mut m, BoolKind::Common, l, bx).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "vol {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// The two convex pokes cell (5b) opened, against OCCT. Both operands are convex; the
     /// convex path rejected these as `poke_through` and cell (5b) routes them to the seam
     /// path. The notch is an edge crossed twice; the drill is a genus-1 solid.
