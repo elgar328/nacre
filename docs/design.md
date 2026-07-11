@@ -436,15 +436,15 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 |---|---|---|---|---|---|
 | 1 | `is_convex` (ops) | 볼록성 → coincident 병합 분기 | **exact `plane_side` ((5d)-1 완료)** | 옛 tolerance가 정점 f64 비공면을 흡수. n0: 도달 피연산자 전부 Constructed 축정렬이라 이미 exact → tolerance 은퇴는 **무동작 청소**(Case A). Discovered 정점이 닿으면 #3로 넘어감 | 완료(작음) |
 | 2 | `coplanar` (geom/ops) | 두 면 공면 여부 → 인터페이스 탐지 | **exact rank-1 `planes_coplanar` ((5d)-2 완료)** | 옛 `1e-9` 절대-길이 tolerance는 scale-비불변(근접-공면 false-merge 위험). exact = 두 평면 계수 2×4의 rank-1(여섯 2×2 minor). n0: 유일 불일치는 float-박스 옆면의 같은-법선 공면쌍뿐 → 반대-법선 인터페이스 필터가 배제 → **동작 보존** | 완료(작음) |
-| 3 | `is_convex`/`plane_side`의 **triple-sourcing** | Discovered 정점을 f64 캐시가 아니라 제 정의(triple)로 | f64 캐시 읽음 (**미발화**, Case A) | **is_convex의 진짜 exact화는 여기**다 — 평면 계수 exact화만으로 #1이 열리지 않는다(축정렬 입력은 이미 exact였다). Discovered 정점 `v=meet(Q1,Q2,Q3)` vs 면 `P` = `plane_orient(Q1,Q2,Q3,P)=sign(det4)·sign(det3)`. 발화 픽스처(연쇄 불리언+coincident) 필요 | 중(`plane_orient` 신설) |
+| 3 | `is_convex`의 **triple-sourcing** | Discovered 정점을 f64 캐시가 아니라 제 정의(triple)로 | **exact `three_plane_orient3d` ((5d)-3 완료)** | ★ 술어를 새로 안 지음 — `plane_orient(Q1,Q2,Q3,P)=sign(det4)·sign(det3)`는 이미 `three_plane_orient3d`(det3 인수가 술어에 내재, 순서 무관). 발화 픽스처 = **불리언 결과를 피연산자로 넣는 첫 사례**(볼록 `Common` 결과=Discovered 코너 6개 → 셋째 박스 스택). M5 동작 보존(축정렬 교점 f64-exact라 triple=캐시); 소득은 결정에서 캐시-읽기 제거 + ingestion 경화 + TIP 대비 | 완료(중) |
 | 4 | `point_in_solid` → 광선-free 분류기 | 점 내/외 (일반 경로) | exact ray casting | 광선 캐스팅은 exact지만 방향 선택·퇴화 처리가 무겁다. `plane_orient` 기반 **광선-free 분류기**로 통일하면 #3과 술어를 공유 | 미측정(중) |
 | 5 | cavity 분류 부호 (ops, (5c)) | 성분이 outer(+)인가 void(−)인가 | **f64 signed volume** | 거시적 부피라 견고(필터의 "clear sign"과 같은 결)하나 **위상 결정**이라 (5d) 대상. exact 대안 = 성분 containment를 indirect predicates로(대표점 vs 다른 성분). 진리는 씨임의 exact 술어가 정하고 이 부호는 파생 캐시 위 라벨 | 미측정(중) |
-| 6 | `interface_correspondence` (ops, :2574) | coincident-merge 정점 대응 (B링 → A링) | scale-상대 tol (`1e-9×크기`) | (5d)-2 n0의 완결성 grep이 발견 — coincident 경로의 **두 번째** f64-진리-읽기. 공면(#2)이 아니라 좌표 근접 매칭. 이미 scale-상대라 `coplanar`보다 나음. exact 대안 = 정점 정의(triple) 동일성 | 미측정(중) |
+| 6 | `interface_correspondence` (ops) | coincident-merge 정점 대응 (B링 → A링) | **exact 좌표 동일성 `ap==bp` ((5d)-3 완료)** | (5d)-2 완결성 grep이 발견 — coincident 경로의 두 번째 f64-읽기. 인터페이스 정점은 **Constructed라 triple 정의가 없다** → 정답은 좌표 동일성(대응 코너는 같은 점, bit-동일). 견고했으나(순수성 청소) scale-상대 tol 은퇴. 전 fixture Case A | 완료(작음) |
 | — | `vertex_tol` (Discovered 정점) | — | tol 보유 | **은퇴 안 함.** 존재론적 tol이며 판정 fudge가 아니다. TIP가 이 tol을 전파·판정에 반영하는 층(회전 도입 시) | 해당 없음 |
 
 **★ "평면 계수 exact화"만으로 #1이 열리지 않는다.** 축정렬 정수 입력의 Constructed 정점은 정규화 전에도 정확히 공면이었다 — (5d)-1의 계수 exact화는 **토대**(그 위에서 `plane_orient`·`coplanar`가 참 평면에 서게)일 뿐, is_convex의 과잉 거절을 실제로 없앤 것은 tolerance 은퇴다. is_convex의 남은 exact화(Discovered 경로)는 **#3 triple-sourcing**이 열고, 그건 발화 픽스처가 있어야 짓는다.
 
-**진행:** #1·#2 완료. #3~#6은 각각 발화 경로·크기를 n0로 측정한 뒤 셀로 연다((5d)-3+). §10 (5b-0)/(5c) 기록의 "전수조사 표" 참조는 모두 이 표를 가리킨다.
+**진행:** #1·#2·#3·#6 완료. 남은 #4(광선-free 분류기)·#5(cavity 증인점)는 "아는 것의 정리"라 뒤로((5d)-4+). §10 (5b-0)/(5c) 기록의 "전수조사 표" 참조는 모두 이 표를 가리킨다.
 
 **M6 부호 판정·내외 분류 방식 — 세 마일스톤 중 유일한 미정 (M6 직전 확정).** M5는 방법 확정(indirect predicates), M7은 방법 미정이어도 무방(SSI 실패 시 `Unsupported`로 정직하게 거절하는 게 설계에 내장). 반면 **M6만 "확실히 되는 실용 영역"이라 문서가 약속했는데 정작 어떤 방법으로 판정할지가 비어 있다** — M5의 indirect predicates는 선·평면(다항식)에 특화라 이차곡면에 그대로 안 맞고, M7의 exact ray casting은 메시 경유 하이브리드용이라 M6엔 과하다.
 
@@ -951,6 +951,13 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **정직한 프레이밍.** 현재 버그 수정이 아니라 **잠재적 'plausible but wrong' 오병합 함정 제거 + scale-불변 + 순수성**. 헤드라인 골든은 z=0 vs z=1e-9(정확히 1e-9 떨어짐) — 옛 절대 tolerance는 `distance≤EPS`로 false-merge, exact는 `minor(2,3)=−1e9≠0`으로 분리.
 - **완결성 grep이 둘째 tolerance를 찾았다 — `interface_correspondence`(ops:2574).** coincident-merge가 B링→A링 정점을 `1e-9×크기` scale-상대 tol로 매칭한다. 공면(#2)이 아니라 좌표 대응이라 이 셀 밖 — 표 #6으로 기록(이미 scale-상대라 `coplanar`보다 나음; exact 대안은 정점 triple 동일성).
 - **범위 밖 f64(의도적).** `:2542`의 `n_out.dot<0`은 방향 라벨(=rank-1 비례상수 λ의 부호, coarse·견고 — 후속 `sign(raw·raw)`로 exact화 가능). `three_planes`의 `COPLANAR_DET_EPS`·`plane_plane`의 `PARALLEL_EPS`는 **구성 게이트**(좌표 캐시 conditioning, 진리-읽기 아님)라 불변.
+
+**is_convex triple-sourcing + interface_correspondence exact (M5 셀 5d-3).** 표 #3·#6. is_convex가 볼록 판정에서 정점의 f64 좌표 캐시(`v.point`)를 읽던 것을 **정의-기반**으로 바꿨다: Constructed 정점은 좌표가 진리라 `plane_side` 그대로, Discovered 정점은 세-평면 교점이므로 그 implicit point를 `three_plane_orient3d`로 면에 대해 직접 판정(캐시 무독).
+
+- **★ 술어를 새로 안 지었다.** 계획했던 `plane_orient(Q1,Q2,Q3,P)=sign(det4)·sign(det3)`가 **이미 있었다** — `three_plane_orient3d`(=`indirect_orient3d`)가 그것이다. (5d)-1 계획이 "det3 인수 필수(det4만 쓰면 D 부호로 뒤집힘)"라 걱정한 그 인수는 **술어 안에 내재**하고, 교점 V가 순서 불변이라 세 평면 순서도 무관. 새 수치 코드 0, 배관뿐(시그니처 `model+handles`, `solid_vertex_handles` 재사용).
+- **★ 발화 = 불리언 결과를 피연산자로 넣는 첫 사례.** is_convex는 coincident 게이트에서만 호출되고 Discovered 정점은 불리언 결과에만 있는데, 스위트 어디도 결과를 후속 피연산자로 안 썼다(연쇄 둘은 hollow라 문 앞 거절). n0 픽스처: 축정렬 정수 박스 둘의 `Common`=[1,2]³ → 8코너 중 **6개가 혼합-평면 교점이라 Discovered**(2개는 원래 코너 Constructed). 이를 셋째 박스에 스택 → coincident 병합이 Discovered-코너 솔리드에 is_convex 발화. **ingestion 클린**(부피 2.0, cavities 0, validate 통과) — 잠재 버그 없음.
+- **정직한 프레이밍 — "더 정확"이 아니라 "결정에서 캐시-읽기 제거".** M5에선 triple=캐시(축정렬 교점 f64-exact). 진짜 불일치는 exact-계수 평면이 f64-비표현 점에서 만나는 TIP-류라 M5 밖. 소득: **(a) sweep 원칙 집행(결정이 f64 캐시 안 읽음), (b) Discovered-operand 경로 첫 측정·경화, (c) TIP/회전 대비 정의-기반화.** #1·#2처럼 동작 보존(전 스위트 + 50 OCCT 불변).
+- **곁들이 #6 (별도 커밋).** `interface_correspondence`의 `1e-9×크기` scale-상대 정점 대응을 **exact 좌표 동일성 `ap==bp`**로. 계획의 "triple 동일성" 제안은 **부적용**(인터페이스 정점은 Constructed라 정의가 없다) — 대응 코너는 같은 점(bit-동일)이라 좌표 동일성이 정답. 견고했던 tol이라 순수성 청소, 전 fixture Case A. #3과 원인 분리 위해 별도 커밋(먼저 착지).
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
