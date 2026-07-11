@@ -1236,22 +1236,14 @@ fn overlap_fuse_cut(
     if faces.len() < 4 {
         return Err(BoolError::EmptyResult);
     }
-    // An edge of one solid threading the other can cut it in two — `Cut(rod, L)` leaves the
-    // rod's ends on either side of the bar. A `Solid` has one outer shell and `boolean`
-    // returns one handle, so two components are two solids and this cannot answer them.
-    // Before cell 3e-3 `pierced_multi` made that unreachable: severing A takes an edge of A
-    // through B. `validate` calls such a result `NegativeGenus` — but `boolean` never runs
-    // `validate`, so without this the answer is `Ok` and wrong (measured: `0.06`, `genus -1`).
-    if !faces_connected(&faces) {
-        return Err(reject(tag::DISCONNECTED_RESULT));
-    }
-
-    Ok(assemble_fuse_cut(model, a, b, &planes, &seam, &faces))
+    assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
 }
 
-/// Do the reconstructed faces form a single connected component? Two faces are joined when
-/// they share a node — the same identity `assemble_fuse_cut` welds result vertices by.
-fn faces_connected(faces: &[LocalFace]) -> bool {
+/// Connected components of the reconstructed faces by shared `Node` — the same identity
+/// `assemble_fuse_cut` welds result vertices by. Returns a component label per face (dense
+/// `0..n` in order of first appearance, for replay determinism) and the component count. An
+/// enclosed void is its own component: its boundary shares no vertex with the outer.
+fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     fn find(p: &mut [usize], mut x: usize) -> usize {
         while p[x] != x {
             p[x] = p[p[x]];
@@ -1274,7 +1266,82 @@ fn faces_connected(faces: &[LocalFace]) -> bool {
             }
         }
     }
-    (0..faces.len()).all(|i| find(&mut parent, i) == find(&mut parent, 0))
+    let mut label: HashMap<usize, usize> = HashMap::new();
+    let mut labels = Vec::with_capacity(faces.len());
+    let mut n = 0;
+    for i in 0..faces.len() {
+        let root = find(&mut parent, i);
+        let next = label.len();
+        let l = *label.entry(root).or_insert(next);
+        labels.push(l);
+        n = n.max(l + 1);
+    }
+    (labels, n)
+}
+
+/// Area and area-weighted centroid of a planar loop (straight polygon), mirroring
+/// `nacre-props::polygon_area_centroid`: a signed triangle fan from the first vertex, exact
+/// for concave rings.
+fn loop_area_centroid(model: &Model, l: &Loop) -> (f64, Point3) {
+    let pts: Vec<Point3> = l
+        .half_edges
+        .iter()
+        .map(|&he| model.vertices.get(he_start(model, he)).point)
+        .collect();
+    let base = pts[0];
+    let mut area_vec = Vector3::zero();
+    for w in pts[1..].windows(2) {
+        area_vec += (w[0] - base).cross(w[1] - base);
+    }
+    let unit = area_vec.normalize().unwrap_or(Vector3::zero());
+    let (mut weighted, mut weight) = (Vector3::zero(), 0.0);
+    for w in pts[1..].windows(2) {
+        let signed = (w[0] - base).cross(w[1] - base).dot(unit);
+        let c_rel = ((w[0] - base) + (w[1] - base)) * (1.0 / 3.0);
+        weighted += c_rel * signed;
+        weight += signed;
+    }
+    let area = 0.5 * area_vec.norm();
+    let centroid = if weight != 0.0 {
+        base + weighted * (1.0 / weight)
+    } else {
+        base
+    };
+    (area, centroid)
+}
+
+/// The signed volume flux `∮ (r − R)·n̂ dA` (three times the signed volume) over a set of
+/// faces forming one closed shell — **positive** for an outward, material-enclosing shell,
+/// **negative** for an inward void shell. That sign is exactly "solid region vs enclosed
+/// void": a genuinely-separate solid piece holds material inside (faces outward, positive),
+/// a void holds material outside (faces inward, negative). Planar faces only (M5). Mirrors
+/// `nacre-props::face_contribution`, reading the materialized `Face` so orientation/flip is
+/// already baked in.
+fn shell_signed_flux(model: &Model, faces: &[Handle<Face>]) -> f64 {
+    let f0 = model.faces.get(faces[0]);
+    let reference = model
+        .vertices
+        .get(he_start(model, f0.outer.half_edges[0]))
+        .point;
+    let mut flux = 0.0;
+    for &fh in faces {
+        let face = model.faces.get(fh);
+        let sign = match face.orientation {
+            Orientation::Forward => 1.0,
+            Orientation::Reversed => -1.0,
+        };
+        let Surface::Plane(plane) = model.surfaces.get(face.surface) else {
+            continue;
+        };
+        let normal = plane.normal() * sign;
+        let (area, centroid) = loop_area_centroid(model, &face.outer);
+        flux += normal.dot(centroid - reference) * area;
+        for hole in &face.inner {
+            let (a, c) = loop_area_centroid(model, hole);
+            flux -= normal.dot(c - reference) * a;
+        }
+    }
+    flux
 }
 
 /// The supporting planes of a solid's outer shell. `Unsupported` if any face is
@@ -2302,7 +2369,7 @@ fn assemble_fuse_cut(
     planes: &[PlaneInfo],
     seam: &[SeamVertex],
     faces: &[LocalFace],
-) -> Handle<Solid> {
+) -> Result<Handle<Solid>, BoolError> {
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
     let mut node_handle = |model: &mut Model, node: Node| -> Handle<Vertex> {
@@ -2407,15 +2474,39 @@ fn assemble_fuse_cut(
             orientation,
         }));
     }
-    let shell = model.shells.push(Shell {
-        faces: face_handles,
-    });
+    // Partition the faces into connected components (by shared node). One component is the
+    // whole result; several mean either an enclosed void (a cavity — one component holds
+    // material outside it, signed flux negative) or a severed operand (two solids — two
+    // components each holding material inside, flux positive). The sign tells them apart:
+    // exactly one positive component is the outer shell, the rest are cavities; anything else
+    // is two solids one handle cannot answer (`Cut(rod, L)`), which stays `DISCONNECTED_RESULT`.
+    let (labels, n) = face_components(faces);
+    let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
+    for (i, &fh) in face_handles.iter().enumerate() {
+        by_comp[labels[i]].push(fh);
+    }
+    let positives: Vec<usize> = (0..n)
+        .filter(|&c| shell_signed_flux(model, &by_comp[c]) > 0.0)
+        .collect();
+    let [outer_c] = positives[..] else {
+        return Err(reject(tag::DISCONNECTED_RESULT));
+    };
+    let shells: Vec<Handle<Shell>> = by_comp
+        .into_iter()
+        .map(|faces| model.shells.push(Shell { faces }))
+        .collect();
+    // A cavity shell's faces already point into the void (the material is outside it, so the
+    // material-on-correct-side reconstruction winds them inward) — measured, so no reversal.
+    let cavities = (0..n)
+        .filter(|&c| c != outer_c)
+        .map(|c| shells[c])
+        .collect();
     let solid = model.push_solid(Solid {
-        outer: shell,
-        cavities: vec![],
+        outer: shells[outer_c],
+        cavities,
     });
     model.live_solids.retain(|&s| s != a && s != b);
-    solid
+    Ok(solid)
 }
 
 // ---- coincident-coplanar merge (M5-c5): matched-interface stack ----
@@ -2567,7 +2658,7 @@ fn coincident_merge(
         BoolKind::Cut => {
             let planes_a = collect_planes(model, a)?;
             let faces = solid_local_faces(model, a, 0, None, None);
-            Ok(assemble_fuse_cut(model, a, b, &planes_a, &[], &faces))
+            assemble_fuse_cut(model, a, b, &planes_a, &[], &faces)
         }
         // Drop both interface faces; keep every other face, sewing B's interface
         // ring to A's shared vertices. Coplanar-adjacent side faces stay separate.
@@ -2585,7 +2676,7 @@ fn coincident_merge(
                 Some(iface.fb),
                 Some(&iface.remap),
             ));
-            Ok(assemble_fuse_cut(model, a, b, &planes, &[], &faces))
+            assemble_fuse_cut(model, a, b, &planes, &[], &faces)
         }
     }
 }
@@ -4468,10 +4559,10 @@ pub mod tests {
     /// underside dropped, so no region survives to own the loops); `Cut(slab,pc)` keeps the slab
     /// region and hangs the pocket loop in it as a hole beside an island.
     ///
-    /// `Fuse` still rejects — for a *different* reason now. The union seals the pocket
-    /// (`[0.3,0.7]² × [0.5,0.7]`, capped by the slab at `z = 0.7`) into an enclosed cavity, a
-    /// second shell the seam path cannot assemble: `disconnected_result`. Cavities are cell
-    /// (5c), not this one; the nesting itself is handled — the reject moved past it.
+    /// `Fuse` seals the pocket (`[0.3,0.7]² × [0.5,0.7]`, capped by the slab at `z = 0.7`) into
+    /// an enclosed cavity — a second shell. Cell (5c) assembles it: the union material is
+    /// `2.408` and the result carries one cavity of volume `0.032`, two shells, `validate`
+    /// clean (the void's inward orientation). Both orders (Fuse is commutative).
     #[test]
     fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
         for (swap, expect) in [(false, 1.488), (true, 0.668)] {
@@ -4488,15 +4579,38 @@ pub mod tests {
                 props.volume
             );
         }
-        // Fuse seals the pocket into a cavity — a second shell, deferred to cell (5c).
+        // Fuse seals the pocket into a cavity — a second shell, assembled by cell (5c).
         for swap in [false, true] {
             let (mut m, slab, pc) = pocket_and_slab(0.7);
             let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
-            assert_rejects(
-                || boolean(&mut m, BoolKind::Fuse, x, y),
-                tag::DISCONNECTED_RESULT,
+            let r = boolean(&mut m, BoolKind::Fuse, x, y).unwrap();
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "Fuse swap={swap}: {vs:?}");
+            let props = nacre_props::mass_props(&m, r).unwrap();
+            assert!(
+                (props.volume - 2.408).abs() < 1e-9,
+                "Fuse swap={swap}: {}",
+                props.volume
             );
+            assert_eq!(m.solids.get(r).cavities.len(), 1, "Fuse swap={swap}");
+            assert_eq!(m.reachable().shells.len(), 2, "Fuse swap={swap}");
         }
+    }
+
+    /// The sign convention `assemble_fuse_cut` classifies components by (cell 5c): an outward,
+    /// material-enclosing shell has positive signed flux; an inward void shell (a cavity) has
+    /// negative. `reversed_shell` flips one into the other.
+    #[test]
+    fn shell_signed_flux_is_positive_outward_and_negative_inward() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let outer = m.solids.get(cube).outer;
+        let out_faces = m.shells.get(outer).faces.clone();
+        assert!(shell_signed_flux(&m, &out_faces) > 0.0); // 3 · 8 = 24
+        let void = m.reversed_shell(outer);
+        let void_faces = m.shells.get(void).faces.clone();
+        assert!(shell_signed_flux(&m, &void_faces) < 0.0);
     }
 
     /// `detect_coincident_interface` counts only cross-solid opposite-normal coplanar

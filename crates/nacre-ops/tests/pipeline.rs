@@ -560,6 +560,24 @@ fn a_boolean_result_carries_its_hole() {
 }
 
 #[test]
+fn a_sealed_cavity_meshes_watertight() {
+    // Cell 5c: fusing a slab across the pocket mouth seals it into an enclosed void, so the
+    // result has two shells. The gate proves both close (watertight, no leaks between the
+    // outer surface and the void's) and that the void's inward faces subtract in the mesh
+    // volume exactly as they do in `props` — the cavity's `2.408` against the outer `2.44`.
+    let (mut m, pc) = pocketed_cube();
+    let slab = m.add_cuboid(
+        Point3::from_array([-0.2, -0.25, 0.7]),
+        Point3::from_array([1.3, 1.2, 1.5]),
+    );
+    let s = boolean(&mut m, BoolKind::Fuse, slab, pc).unwrap();
+    assert_eq!(m.solids.get(s).cavities.len(), 1);
+    let g = mesh_vs_props(&m, s);
+    assert_agrees(&g, "sealed cavity");
+    assert!((nacre_props::mass_props(&m, s).unwrap().volume - 2.408).abs() < 1e-9);
+}
+
+#[test]
 fn a_split_face_meshes_like_two() {
     // Cell 3e-2's first shape whose bar floor becomes *two* b-rep faces. The signed volume
     // is the only check here that looks at their orientation: each floor got its own
