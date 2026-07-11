@@ -1763,36 +1763,60 @@ fn check_loop_class(is_hole: bool, winding: i8) -> Result<(), BoolError> {
     }
 }
 
+/// Each loop's place in the containment forest, as pure geometry.
+///
+/// `containers` are the loops whose interior holds this loop's representative node; their count
+/// is the loop's nesting depth. `region` is the one kept region holding it, if any — two would
+/// mean the regions overlap, which `stitch_cycles` forbids, so `seam_count_mismatch`. Neither
+/// class nor winding is read here; `classify_nesting` turns this into hole/island placement.
+struct Nesting {
+    containers: Vec<usize>,
+    region: Option<usize>,
+}
+
+fn nest_loops(
+    planes: &[PlaneInfo],
+    p: usize,
+    regions: &[Vec<[usize; 3]>],
+    loops: &[Vec<[usize; 3]>],
+) -> Result<Vec<Nesting>, BoolError> {
+    let mut out = Vec::with_capacity(loops.len());
+    for (i, l) in loops.iter().enumerate() {
+        let mut containers = Vec::new();
+        for (j, other) in loops.iter().enumerate() {
+            if i != j && arrange::point_in_ring(planes, p, l[0], other)? {
+                containers.push(j);
+            }
+        }
+        let mut region = None;
+        for (k, r) in regions.iter().enumerate() {
+            if arrange::point_in_ring(planes, p, l[0], r)? {
+                if region.is_some() {
+                    return Err(reject(tag::SEAM_COUNT_MISMATCH));
+                }
+                region = Some(k);
+            }
+        }
+        out.push(Nesting { containers, region });
+    }
+    Ok(out)
+}
+
 /// Which kept region each loop lies in, or `None` for a loop in a dropped one.
 ///
-/// A loop inside another loop nests, and this cell cannot place it. Two regions containing
-/// one loop would mean the regions overlap, which `stitch_cycles` forbids — the arrangement
-/// contradicting itself, so `seam_count_mismatch`.
+/// A loop inside another loop nests, and this cell cannot place it — cell 3f-7 replaces this
+/// with `classify_nesting`, which does. Kept only until then.
 fn place_loops(
     planes: &[PlaneInfo],
     p: usize,
     regions: &[Vec<[usize; 3]>],
     loops: &[Vec<[usize; 3]>],
 ) -> Result<Vec<Option<usize>>, BoolError> {
-    let mut out = Vec::with_capacity(loops.len());
-    for (i, l) in loops.iter().enumerate() {
-        for (j, other) in loops.iter().enumerate() {
-            if i != j && arrange::point_in_ring(planes, p, l[0], other)? {
-                return Err(reject(tag::NESTED_LOOPS));
-            }
-        }
-        let mut owner = None;
-        for (k, r) in regions.iter().enumerate() {
-            if arrange::point_in_ring(planes, p, l[0], r)? {
-                if owner.is_some() {
-                    return Err(reject(tag::SEAM_COUNT_MISMATCH));
-                }
-                owner = Some(k);
-            }
-        }
-        out.push(owner);
+    let nest = nest_loops(planes, p, regions, loops)?;
+    if nest.iter().any(|n| !n.containers.is_empty()) {
+        return Err(reject(tag::NESTED_LOOPS));
     }
-    Ok(out)
+    Ok(nest.iter().map(|n| n.region).collect())
 }
 
 /// Reconstruct a face's kept portion. `None` if the face is dropped.
@@ -4867,6 +4891,21 @@ pub mod tests {
         // And with the cycle as a region, the loop is its hole.
         let owned = place_loops(&planes, p, std::slice::from_ref(&cycle), &[ring]).unwrap();
         assert_eq!(owned, vec![Some(0)]);
+    }
+
+    /// The containment forest `place_loops` now rests on, measured directly (cell 3f-7). The
+    /// staple cap's nested pair: the ring sits inside the cycle, the cycle inside nothing.
+    #[test]
+    fn nest_loops_reads_the_containment_forest() {
+        let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
+        let nest = nest_loops(&planes, p, &[], &[cycle.clone(), ring.clone()]).unwrap();
+        assert_eq!(nest[0].containers, Vec::<usize>::new()); // cycle: contained by nothing
+        assert_eq!(nest[1].containers, vec![0]); // ring: inside the cycle
+        assert!(nest[0].region.is_none() && nest[1].region.is_none());
+        // With the cycle as a region, the ring nests in no loop and that region holds it.
+        let owned = nest_loops(&planes, p, std::slice::from_ref(&cycle), &[ring]).unwrap();
+        assert_eq!(owned[0].containers, Vec::<usize>::new());
+        assert_eq!(owned[0].region, Some(0));
     }
 
     #[test]
