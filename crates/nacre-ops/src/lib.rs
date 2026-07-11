@@ -2702,6 +2702,120 @@ fn solid_local_faces(
     out
 }
 
+/// The vertex handle of an original-face node (coincident-merge loops carry no seam nodes).
+fn node_vh(n: Node) -> Handle<Vertex> {
+    match n {
+        Node::Orig(v) => v,
+        Node::Seam(_) => unreachable!("coincident-merge faces are all Node::Orig"),
+    }
+}
+
+/// Splice A's and B's coplanar side faces, which share the interface edge at `lf_a`'s
+/// position `ia` (`a[ia] → a[ia+1]`), into one loop: walk A from the edge's far end all the
+/// way round to its near end, then insert B's complementary path. The shared interface edge
+/// is dropped; its two endpoints remain as (collinear, for a right prism) boundary points.
+fn splice_side_faces(lf_a: &LocalFace, lf_b: &LocalFace, ia: usize) -> LocalFace {
+    let (a, b) = (&lf_a.loop_nodes, &lf_b.loop_nodes);
+    let (m, n) = (a.len(), b.len());
+    let x = node_vh(a[ia]);
+    let y = node_vh(a[(ia + 1) % m]);
+    // B traverses the shared edge the opposite way: `b[ib] = Y`, `b[ib+1] = X`.
+    let ib = (0..n)
+        .find(|&j| node_vh(b[j]) == y && node_vh(b[(j + 1) % n]) == x)
+        .expect("B's side face shares the interface edge, opposite orientation");
+    let mut nodes = Vec::with_capacity(m + n - 2);
+    // A from Y (ia+1) forward all the way to X (ia): the whole A loop, less the dropped edge.
+    for t in 0..m {
+        nodes.push(a[(ia + 1 + t) % m]);
+    }
+    // B's interior, strictly between X and Y (skip the shared edge's two endpoints).
+    for t in 2..n {
+        nodes.push(b[(ib + t) % n]);
+    }
+    LocalFace {
+        plane_idx: lf_a.plane_idx,
+        loop_nodes: nodes,
+        inner: Vec::new(),
+        flip: false,
+    }
+}
+
+/// For a coincident Fuse, merge each interface edge's two incident side faces (one from A,
+/// one from B) into a single face **when they are coplanar** — the flat-edge defeature that
+/// lets the fused solid chain (cell fuse-coplanar-merge). A non-coplanar pair is a genuine
+/// dihedral (a slanted operand) and stays separate; a holed side face stays separate; cap
+/// faces (no interface edge) pass through. `faces_a`/`faces_b` already skip the interface
+/// faces, with B's interface vertices remapped to A's handles.
+fn merge_coincident_fuse_faces(
+    model: &Model,
+    iface: &Interface,
+    faces_a: Vec<LocalFace>,
+    faces_b: Vec<LocalFace>,
+    planes: &[PlaneInfo],
+) -> Vec<LocalFace> {
+    let ring: Vec<Handle<Vertex>> = model
+        .faces
+        .get(iface.fa)
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| he_start(model, he))
+        .collect();
+    let iface_edges: HashSet<(usize, usize)> = (0..ring.len())
+        .map(|i| {
+            unordered(
+                ring[i].index() as usize,
+                ring[(i + 1) % ring.len()].index() as usize,
+            )
+        })
+        .collect();
+    // A side face has exactly one interface edge; return its key and the position of the
+    // edge's start node in the loop. A cap face has none.
+    let side_edge = |lf: &LocalFace| -> Option<((usize, usize), usize)> {
+        let k = lf.loop_nodes.len();
+        (0..k).find_map(|i| {
+            let u = node_vh(lf.loop_nodes[i]).index() as usize;
+            let w = node_vh(lf.loop_nodes[(i + 1) % k]).index() as usize;
+            let key = unordered(u, w);
+            iface_edges.contains(&key).then_some((key, i))
+        })
+    };
+    let b_side: HashMap<(usize, usize), usize> = faces_b
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, lf)| side_edge(lf).map(|(key, _)| (key, idx)))
+        .collect();
+
+    let mut b_taken = vec![false; faces_b.len()];
+    let mut out = Vec::new();
+    for lf_a in faces_a {
+        let Some((key, ia)) = side_edge(&lf_a) else {
+            out.push(lf_a); // cap
+            continue;
+        };
+        match b_side.get(&key) {
+            Some(&ib) => {
+                let lf_b = &faces_b[ib];
+                let coplanar =
+                    planes_coplanar(&planes[lf_a.plane_idx].plane, &planes[lf_b.plane_idx].plane);
+                if coplanar && lf_a.inner.is_empty() && lf_b.inner.is_empty() {
+                    b_taken[ib] = true;
+                    out.push(splice_side_faces(&lf_a, lf_b, ia));
+                } else {
+                    out.push(lf_a); // real dihedral, or holed: keep separate
+                }
+            }
+            None => out.push(lf_a),
+        }
+    }
+    for (ib, lf_b) in faces_b.into_iter().enumerate() {
+        if !b_taken[ib] {
+            out.push(lf_b);
+        }
+    }
+    out
+}
+
 /// The coincident-merge result (reuses `assemble_fuse_cut`; no seam, no flip).
 fn coincident_merge(
     model: &mut Model,
@@ -2726,22 +2840,19 @@ fn coincident_merge(
             let faces = solid_local_faces(model, a, 0, None, None);
             assemble_fuse_cut(model, a, b, &planes_a, &[], &faces)
         }
-        // Drop both interface faces; keep every other face, sewing B's interface
-        // ring to A's shared vertices. Coplanar-adjacent side faces stay separate.
+        // Drop both interface faces; keep every other face, sewing B's interface ring to A's
+        // shared vertices. Each interface edge's two coplanar side faces (one from A, one
+        // from B) are spliced into one, dropping the flat edge so the result chains
+        // (cell fuse-coplanar-merge).
         BoolKind::Fuse => {
             let planes_a = collect_planes(model, a)?;
             let na = planes_a.len();
             let planes_b = collect_planes(model, b)?;
             let mut planes = planes_a;
             planes.extend(planes_b);
-            let mut faces = solid_local_faces(model, a, 0, Some(iface.fa), None);
-            faces.extend(solid_local_faces(
-                model,
-                b,
-                na,
-                Some(iface.fb),
-                Some(&iface.remap),
-            ));
+            let faces_a = solid_local_faces(model, a, 0, Some(iface.fa), None);
+            let faces_b = solid_local_faces(model, b, na, Some(iface.fb), Some(&iface.remap));
+            let faces = merge_coincident_fuse_faces(model, iface, faces_a, faces_b, &planes);
             assemble_fuse_cut(model, a, b, &planes, &[], &faces)
         }
     }
@@ -7246,17 +7357,23 @@ pub mod tests {
 
     #[test]
     fn fuse_stacked_cubes() {
-        // A=[0,1]³ and B=[0,1]²×[1,2] share the z=1 face ⇒ merge into a 1×1×2 box
-        // (10 faces: the 4 side pairs stay coplanar-adjacent, unmerged).
+        // A=[0,1]³ and B=[0,1]²×[1,2] share the z=1 face ⇒ merge into a 1×1×2 box. The four
+        // coplanar side pairs are spliced into 4 faces (cell fuse-coplanar-merge): 6 faces.
+        // The 4 interface corners survive as collinear boundary points (each on a split
+        // vertical edge), so 12 vertices / 16 edges — canonicalising those away is the
+        // follow-up dissolve cell.
         let (mut m, a, b) = stacked_cubes();
         let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
         let reach = m.reachable();
-        assert_eq!(reach.faces.len(), 10);
+        assert_eq!(reach.faces.len(), 6);
         assert_eq!(reach.vertices.len(), 12);
-        assert_eq!(reach.edges.len(), 20);
+        assert_eq!(reach.edges.len(), 16);
+        // No coplanar-adjacent faces remain, so the fused solid can chain into a seam boolean.
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
         assert_eq!(m.live_solids, vec![r]);
