@@ -691,7 +691,7 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **볼록 경로는 여전히 `POKE_THROUGH`로 거절한다.** `reconstruct_face`가 `edge_seam`(엣지당 triple 하나)을 읽고 `Option<LocalFace>`를 낸다. `cube_and_notch`가 그 자리에 남는다 — **볼록성의 사실이 아니라 그 자료구조의 한계다.** 사다리 (5).
 - **`multichord`·`pierced_multi`를 피하려 비틀었던 픽스처들**(`l_and_notch_bar`의 모서리 물기, `l_and_staple`의 축평행 면, `l_and_popup_box`의 여유 높이)은 **그대로 둔다.** 한 번에 한 변수.
 
-**M5-d3의 가드는 모두 은퇴했다.** `SEAM_ACROSS_HOLE_RIM`이 마지막이었고 3f-6이 은퇴시켰다(3f-5가 `INNER_LOOP_OPERAND`를 그것으로 좁혔고, 3e-3이 `PIERCED_MULTI`를 은퇴시켰다). `NESTED_LOOPS`(닫힌 고리 nesting)도 3f-7이 은퇴시켰다. 남은 커버리지 확장은 (5c) cavity(`disconnected_result`/`HOLLOW_OPERAND`)·(5d) exactness sweep.
+**M5-d3의 가드는 모두 은퇴했다.** `SEAM_ACROSS_HOLE_RIM`이 마지막이었고 3f-6이 은퇴시켰다(3f-5가 `INNER_LOOP_OPERAND`를 그것으로 좁혔고, 3e-3이 `PIERCED_MULTI`를 은퇴시켰다). `NESTED_LOOPS`(닫힌 고리 nesting)도 3f-7이 은퇴시켰다. **출력 cavity는 (5c)가 열었다**(씨임 경로가 밀봉 void를 cavity 셸로; `disconnected_result`는 진짜 분리에만 남음). 남은 확장은 입력 hollow(`HOLLOW_OPERAND`)·(5d) exactness sweep.
 
 **선분 부채꼴이 죽는다 — `CONTACT_DEGENERATE` 은퇴, 좌표가 풀린다 (M5 셀 (5a)).** 커버리지 경계가 기하가 아니라 **좌표의 대칭성**에 달려 있었다. 이 커널의 DNA에 어긋난다.
 
@@ -737,7 +737,7 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 **볼록 Fuse/Cut 경로가 죽었다 — `fuse_cut`·`classify_vertex`·`enter_face`·`POKE_THROUGH` 은퇴 (M5 셀 (5b)).** §9 419행이 "속도 프로파일링 후 결정"이라 미뤄 둔 볼록 vs ray-cast 통합 질문의 답이다(421행 참조). **속도가 아니라 커버리지와 정확성이 답했다.** fast path의 전제 "같은 답을 더 빨리"가 깨진다.
 
 - **커버리지.** 볼록 경로는 일반 경로가 답하는 입력을 거절했다: `cube_and_notch`(엣지 두 번 교차)와 드릴 큐브(막대 관통)를 `POKE_THROUGH`로. 넷 다 비볼록 쌍둥이가 이미 그린이었고(`cut_notch_bar`·`drill_through_the_l`·`fuse_the_l_and_the_rod`·`cut_rod_by_l_disconnects`), 막던 것은 볼록성이 아니라 `edge_seam`의 엣지당 triple 하나(689행)다. **드릴 큐브는 이 커널의 두 번째 토러스이고, 첫 번째와 달리 두 피연산자가 모두 볼록이다.** 이 셀은 새 기계를 만들지 않았다 — 디스패처 한 줄이 막던 것을 열었다.
-- **정확성.** `classify_vertex`의 `1e-9` tolerance와 `enter_face`의 `t = d0/(d0−d1)` argmax가 `Fuse`/`Cut`의 진리를 f64로 정했다. 씨임 경로는 exact `point_in_solid`와 exact `edge_crosses_face`를 쓴다. **`Fuse`/`Cut` 경로의 마지막 부동소수점 술어가 사라졌다** — 커널 전체에서가 아니다((5b-0)의 전수조사 표: `is_convex`·`coplanar`는 (5d), `order_ccw`는 3g).
+- **정확성.** `classify_vertex`의 `1e-9` tolerance와 `enter_face`의 `t = d0/(d0−d1)` argmax가 `Fuse`/`Cut`의 진리를 f64로 정했다. 씨임 경로는 exact `point_in_solid`와 exact `edge_crosses_face`를 쓴다. **`Fuse`/`Cut` 경로의 마지막 부동소수점 술어가 사라졌다** — 커널 전체에서가 아니다((5b-0)의 전수조사 표: `is_convex`·`coplanar`는 (5d), `order_ccw`는 3g, **cavity 분류 부호는 (5c)에서 f64로 두고 (5d)** — 거시적 부피라 견고, exact 대안은 성분 containment).
 - **★ 419행 (a)의 예고가 한 셀 늦었다.** "서브유닛 4에서 `classify_vertex` 은퇴 예정"이라 했으나 (5b)까지 살았다.
 - **`common`은 남고 이유가 있다.** 열거(`three_planes`+`three_plane_orient3d`)는 exact라 논거 (b)가 안 걸린다. `is_convex`도 남는다 — `detect_coincident_interface`가 문지기로 쓴다((5b-0) 표대로 (5d) 몫). 비볼록 `Common`(3g)이 `common`을 지운다.
 - **태그 넷이 발화 테스트 없이 죽었다** — `MULTICHORD`·`ON_BOUNDARY`·`POKEHOLE`·`OUTSIDE_OR_FOURPLANE`. 디스패치가 `is_convex`를 먼저 검사하므로 볼록 전용 백스톱이었다. `NONCONVEX_OPERAND`도 같은 이유로 미발화지만 `common`이 쓰므로 남는다.
@@ -773,6 +773,14 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **분해: `nest_loops`(순수 기하 forest) + `classify_nesting`(순수 조합).** 전자는 `point_in_ring`으로 각 고리의 containers·region을, 후자는 좌표 없이 깊이 패리티·owner를 낸다. 조합이 순수라 depth-2 최심 섬 선택·`f` 구멍 강제·감김 불일치를 **합성 forest 골든**으로 배선 전 못박았다(실물 3-링 픽스처 불필요). 섬은 이제 제 구멍을 담는 `LocalFace`가 된다(옛 `inner: vec![]`).
 - **결과.** `Cut` 양쪽이 열린다 — `Cut(slab,pc)=1.488`(region 속 구멍 C 곁에 섬 P), `Cut(pc,slab)=0.668`(슬래브 밑면 dropped·regions 비어 **섬 C가 구멍 P를 가짐**, `flip=true`). validate 클린·OCCT diff(부피+넓이) 양쪽. `place_loops`·`NESTED_LOOPS` 삭제. OCCT 47 → 49.
 - **★ `Fuse`는 여전히 거절 — 이유가 바뀌었다.** 합집합이 pocket을 밀봉해(`[0.3,0.7]²×[0.5,0.7]`, z=0.7 슬래브가 뚜껑) **닫힌 cavity**를 만든다 — 씨임 경로가 못 만드는 둘째 셸. `disconnected_result`로 거절(옛 `NESTED_LOOPS` 자리). **중첩 자체는 처리됐고**(면 재구성 성공), 거절이 그 너머 cavity로 옮겨갔을 뿐. cavity는 (5c)의 몫. 계획은 Fuse도 열릴 줄 알았으나 **측정이 cavity를 드러냈다.**
+
+**씨임 경로가 갇힌 cavity를 낸다 — `DISCONNECTED_RESULT`를 부호로 가른다 (M5 셀 5c).** 3f-7이 드러낸 Fuse 밀봉 cavity를 연다. `assemble_fuse_cut`이 `cavities: vec![]`을 하드코딩해 못 내던 것을, 재구성 면을 성분 분해해 outer 셸 + N cavity 셸로 조립한다.
+
+- **★ 부호가 곧 "재료 vs void"다.** `DISCONNECTED_RESULT`가 두 의미를 혼동했다 — 진짜 분리(로드가 둘로, 두 솔리드)와 갇힌 void(한 솔리드 + cavity 셸). 재구성 면은 material이 옳은 쪽으로 방향지어졌으므로, 성분의 **부호 있는 부피**가 가른다: 재료 덩어리는 material이 안 → 법선 바깥 → **양수**, void는 material이 밖 → 법선 안쪽 → **음수**. **양수 성분 정확히 1개면 outer+voids(수용), 아니면 거절.** 이 부호는 `validate::check_cavity_orientation`이 재검하는 그 발산식이라 수용=validate 통과. containment 판정도 새 술어도 없이 부호 하나가 판별·검산을 한다(3f-3 "감김 하나가 중첩을 가린다"의 결).
+- **★ 측정: void는 이미 안쪽, 진짜 분리는 양수 둘.** n0 실측 — `Fuse(slab,pc)`: 성분 둘, outer `+7.32`(=2.44)·void `−0.096`(=−0.032). **void가 음수라 `reversed_shell` 불필요** — Fuse가 flip 안 하고 pc 벽·바닥이 이미 pocket(=void) 안쪽을 향한다. `Cut(rod,L)`·`convex_cut_can_sever`: 성분 둘 다 양수 → `positives.len()!=1` → 여전히 `DISCONNECTED_RESULT`. 부호를 **materialize된 Face에서 재므로** assemble의 orient/flip 재현 중복이 없다.
+- **하류는 이미 cavity-ready — 변경 0.** `Solid { outer, cavities }`·`reversed_shell`·`point_in_solid`·`mass_props`(void 빼기)·`check_cavity_orientation`·`tessellate`/`reachable`·STEP `solid_with_voids`가 이미 `once(&outer).chain(cavities)`를 돈다. 변경은 nacre-ops 조립부뿐(`faces_connected` → `face_components` + `shell_signed_flux`).
+- **결과.** `Fuse(slab,pc) = 2.408`(재료), cavity 1(부피 `0.032`), 셸 2, validate 클린, watertight 메시, OCCT `BREP_WITH_VOIDS` 부피+넓이 확인. 양 순서. OCCT 49 → 50.
+- **정직한 빚.** (a) **입력 hollow(`HOLLOW_OPERAND`)은 별개 셀** — `collect_planes`·`solid_vertices`·`edge_incidence`·`pierced_faces`가 outer 셸만 돌아 폭발 반경이 크다. (b) **부호 분류는 f64** — 거시적 부피라 견고(필터의 "clear sign"과 같은 결)하나 위상 결정이라 **(5d) exactness sweep의 전수조사 표에 추가**(exact 대안: 성분 containment를 indirect predicates로). 진리는 여전히 씨임의 exact 술어가 정하고, 이 부호는 파생 캐시 위 위상 라벨이며 validate·부피·OCCT가 net이다.
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
