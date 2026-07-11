@@ -1610,6 +1610,34 @@ bbox_min 0 0 0
         );
     }
 
+    /// A corner box whose footprint overlaps the pocket, so its walls cross the lid's hole
+    /// rim (M5-d3 cell 3f-6). `∂(lid)` is two rings the seam threads into one notch, opening
+    /// the pocket to the outside. Only an independent kernel makes the absorbed hole's area a
+    /// real claim; OCCT is asked on the same coordinates. `Cut(pc, box) = 0.893`.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_rim_corner_cut_matches_occt() {
+        diff_holed(
+            "pocket rim corner cut",
+            OcctBool::Cut,
+            [[0.55, 0.55, 0.85], [1.15, 1.15, 1.15]],
+            false,
+        );
+    }
+
+    /// The same two solids named the other way — the box's face is arranged first and the
+    /// pocket's rim pierces it. `Cut(box, pc) = 0.081`.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_rim_corner_cut_either_way_matches_occt() {
+        diff_holed(
+            "pocket rim corner cut either way",
+            OcctBool::Cut,
+            [[0.55, 0.55, 0.85], [1.15, 1.15, 1.15]],
+            true,
+        );
+    }
+
     /// A slab over the pocket, its underside below the pocket floor. `Cut` keeps the lid
     /// as a reversed inside-B piece, hole and all — `flip` meeting `inner` for the first
     /// time. `Fuse` drops it. The third scores the complement.
