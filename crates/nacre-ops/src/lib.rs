@@ -2562,9 +2562,12 @@ fn face_ring(model: &Model, face: &Face) -> Vec<(Handle<Vertex>, Point3)> {
         .collect()
 }
 
-/// A bijective coordinate match B-ring → A-ring within a scale-relative tol, or
-/// `None` if the boundaries are not identical (different length, an unmatched or
-/// ambiguous vertex, or two B vertices sharing an A vertex). Input analysis only.
+/// A bijective **exact-coordinate** match B-ring → A-ring, or `None` if the
+/// boundaries are not identical (different length, an unmatched or ambiguous
+/// vertex, or two B vertices sharing an A vertex). A coincident interface's
+/// corresponding vertices are literally the same point, so exact `Point3`
+/// equality decides the match — no tolerance (design §3 (5d)-3). Input analysis
+/// only.
 fn interface_correspondence(
     ring_a: &[(Handle<Vertex>, Point3)],
     ring_b: &[(Handle<Vertex>, Point3)],
@@ -2574,10 +2577,9 @@ fn interface_correspondence(
     }
     let mut remap = HashMap::new();
     for &(bh, bp) in ring_b {
-        let scale = 1e-9 * (bp.as_array().iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
         let found: Vec<Handle<Vertex>> = ring_a
             .iter()
-            .filter(|&&(_, ap)| (ap - bp).norm() <= scale)
+            .filter(|&&(_, ap)| ap == bp)
             .map(|&(ah, _)| ah)
             .collect();
         if found.len() != 1 {
