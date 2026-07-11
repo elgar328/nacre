@@ -259,8 +259,14 @@ fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
 /// always exactly one step. The function is the more general of the two; its goldens say
 /// so, and its callers no longer need that generality.
 ///
+/// `next` is the successor over the crossing/run index space: `next[i]` is the position one
+/// step forward along `∂f`. For a single ring it is `(i + 1) % n`; when `∂f` is several rings
+/// each occupies a contiguous block and `next` cycles within it, so a run's walk never leaves
+/// its ring. An arc bridges two rings by having its ends on both, and `succ` following that
+/// arc is what threads a cycle across them — the index space alone carries the topology.
+///
 /// The caller turns a cycle into a ring by emitting, for each arc `b` in it, the boundary
-/// positions `dk[prev] + 1 ..= kd[b]` and then `b`'s nodes.
+/// positions `next[dk[prev]] ..= kd[b]` (walked with `next`) and then `b`'s nodes.
 ///
 /// Three things are checked rather than assumed, because they are exactly where
 /// `classof`'s ray casting and the arrangement's exact crossings would disagree — the same
@@ -271,40 +277,44 @@ pub(crate) fn stitch_cycles(
     kept: &[bool],
     kd: &[usize],
     dk: &[usize],
+    next: &[usize],
 ) -> Result<Vec<Vec<usize>>, BoolError> {
     let n = kept.len();
     let m = kd.len();
     let bad = || reject(tag::SEAM_COUNT_MISMATCH);
-    if m == 0 || dk.len() != m {
+    if m == 0 || dk.len() != m || next.len() != n {
         return Err(bad());
     }
     // `kd`s and `dk`s are the two halves of the transition set, one per arc.
-    if (0..n).filter(|&i| kept[i] && !kept[(i + 1) % n]).count() != m {
+    if (0..n).filter(|&i| kept[i] && !kept[next[i]]).count() != m {
         return Err(bad());
     }
     let mut arc_at_kd: HashMap<usize, usize> = HashMap::new();
     for (a, &t) in kd.iter().enumerate() {
-        if t >= n || !kept[t] || kept[(t + 1) % n] || arc_at_kd.insert(t, a).is_some() {
+        if t >= n || !kept[t] || kept[next[t]] || arc_at_kd.insert(t, a).is_some() {
             return Err(bad());
         }
     }
     for &t in dk {
-        if t >= n || kept[t] || !kept[(t + 1) % n] {
+        if t >= n || kept[t] || !kept[next[t]] {
             return Err(bad());
         }
     }
 
-    // The successor of arc `a`: walk the kept run that starts just past `dk[a]`.
+    // The successor of arc `a`: walk the kept run that starts just past `dk[a]`. `next` is the
+    // per-ring cyclic successor over the crossing/run index space, so the walk stays on the
+    // ring `dk[a]` lies on, and an arc whose ends sit on two different rings is what carries
+    // the walk across — no ring index is named, the successor map already encodes it.
     let succ = |a: usize| -> Result<usize, BoolError> {
-        let mut i = (dk[a] + 1) % n;
+        let mut i = next[dk[a]];
         for _ in 0..n {
-            if kept[i] && !kept[(i + 1) % n] {
+            if kept[i] && !kept[next[i]] {
                 return arc_at_kd.get(&i).copied().ok_or_else(bad);
             }
             if !kept[i] {
                 return Err(bad()); // the run died before reaching a `kd`
             }
-            i = (i + 1) % n;
+            i = next[i];
         }
         Err(bad())
     };

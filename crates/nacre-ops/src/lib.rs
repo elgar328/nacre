@@ -2003,10 +2003,13 @@ fn reconstruct_face_paths(
         Run(usize),
         Arc(usize),
     }
+    // Single ring for now: the successor is `(i + 1) % n_x`. Cell 3f-6 replaces this with a
+    // per-ring cyclic map when `∂f` spans several rings.
+    let next: Vec<usize> = (0..n_x).map(|i| (i + 1) % n_x).collect();
     let regions: Vec<Vec<Step>> = if opens.is_empty() {
         Vec::from_iter(kept[0].then(|| vec![Step::Run(0)]))
     } else {
-        arrange::stitch_cycles(&run_kept, &kd, &dk)?
+        arrange::stitch_cycles(&run_kept, &kd, &dk, &next)?
             .into_iter()
             .map(|cycle| {
                 let mut steps = Vec::new();
@@ -2449,6 +2452,12 @@ fn coincident_merge(
 pub mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// The single-ring successor `(i + 1) % n` — what every caller but a multi-ring `∂f`
+    /// hands [`arrange::stitch_cycles`].
+    fn ident_next(n: usize) -> Vec<usize> {
+        (0..n).map(|i| (i + 1) % n).collect()
+    }
 
     fn p2(x: f64, y: f64) -> Point2 {
         Point2::from_array([x, y])
@@ -3629,7 +3638,7 @@ pub mod tests {
         let dk = vec![(dk_cross + n - 1) % n];
         assert_eq!((kd.clone(), dk.clone()), (vec![1], vec![0]));
         assert_eq!(
-            arrange::stitch_cycles(&kept, &kd, &dk).unwrap(),
+            arrange::stitch_cycles(&kept, &kd, &dk, &ident_next(kept.len())).unwrap(),
             vec![vec![0]]
         );
 
@@ -3655,7 +3664,7 @@ pub mod tests {
         assert_eq!((kd.clone(), dk.clone()), (vec![0, 2], vec![1, 3]));
         let kept = [true, false, true, false];
         assert_eq!(
-            arrange::stitch_cycles(&kept, &kd, &dk).unwrap(),
+            arrange::stitch_cycles(&kept, &kd, &dk, &ident_next(kept.len())).unwrap(),
             vec![vec![0, 1]],
             "one cycle: the wall's middle"
         );
@@ -3665,9 +3674,51 @@ pub mod tests {
         assert_eq!((kd.clone(), dk.clone()), (vec![1, 3], vec![0, 2]));
         let kept = [false, true, false, true];
         assert_eq!(
-            arrange::stitch_cycles(&kept, &kd, &dk).unwrap(),
+            arrange::stitch_cycles(&kept, &kd, &dk, &ident_next(kept.len())).unwrap(),
             vec![vec![0], vec![1]],
             "two cycles: one face becomes two"
+        );
+    }
+
+    /// Two rings, threaded by arcs, before the multi-ring `∂f` is wired (cell 3f-6). The
+    /// firing fixture's lid: outer loop crossed twice, the pocket rim crossed twice, and two
+    /// arcs each running outer↔rim. In the crossing/run index space the outer ring takes
+    /// `{0, 1}` and the rim `{2, 3}`, so `next` cycles *within* each block — `[1, 0, 3, 2]`,
+    /// not the single ring's `(i + 1) % 4`.
+    ///
+    /// The kept runs are `0` (outer) and `2` (rim). Arc `0` joins the outer kd to the rim dk,
+    /// arc `1` the rim kd to the outer dk; `succ` walking each arc's `dk` ring lands on the
+    /// other ring's kd, so the two arcs close into **one** cycle spanning both rings. Feed the
+    /// same runs the single-ring `next` and each arc closes on *itself* — two cycles, the one
+    /// connected region wrongly split. That split is the whole of what the successor map fixes.
+    #[test]
+    fn two_rings_thread_into_one_cycle() {
+        let run_kept = [true, false, true, false]; // outer {0,1}, rim {2,3}, each alternating
+        let next = [1, 0, 3, 2]; // per-ring cyclic successor
+        // `prev` is `next`'s inverse — the caller derives an arc's slot as `prev[crossing]`,
+        // the multi-ring form of cell 3e-3's `crossing − 1`.
+        let mut prev = [0usize; 4];
+        for (i, &j) in next.iter().enumerate() {
+            prev[j] = i;
+        }
+        assert_eq!(prev, [1, 0, 3, 2]);
+        // kd crossings `1` (outer) and `3` (rim); dk crossings `0` (outer) and `2` (rim). Slots
+        // via `prev`: arc 0 = (kd slot `prev[1]=0`, dk slot `prev[2]=3`), arc 1 = (kd `prev[3]=2`,
+        // dk `prev[0]=1`).
+        let kd = [prev[1], prev[3]]; // [0, 2]
+        let dk = [prev[2], prev[0]]; // [3, 1]
+        assert_eq!((kd, dk), ([0, 2], [3, 1]));
+        assert_eq!(
+            arrange::stitch_cycles(&run_kept, &kd, &dk, &next).unwrap(),
+            vec![vec![0, 1]],
+            "one cycle threads the outer ring and the rim"
+        );
+        // The single-ring successor severs the crossing: `succ` cannot leave the ring `dk`
+        // sits on, so each arc closes on itself and the one region splits into two.
+        assert_eq!(
+            arrange::stitch_cycles(&run_kept, &kd, &dk, &ident_next(4)).unwrap(),
+            vec![vec![0], vec![1]],
+            "single-ring next wrongly splits the region"
         );
     }
 
@@ -4423,7 +4474,7 @@ pub mod tests {
         // splice: run `dk+1 ..= kd`, then the arc. A hexagon with one chord.
         let kept = [true, true, true, false, false, false];
         assert_eq!(
-            arrange::stitch_cycles(&kept, &[2], &[5]).unwrap(),
+            arrange::stitch_cycles(&kept, &[2], &[5], &ident_next(6)).unwrap(),
             vec![vec![0]]
         );
     }
@@ -4438,7 +4489,7 @@ pub mod tests {
         // the kept region is the cap minus two corners.
         let cap = [true, true, false, true, false, true];
         assert_eq!(
-            arrange::stitch_cycles(&cap, &[1, 3], &[2, 4]).unwrap(),
+            arrange::stitch_cycles(&cap, &[1, 3], &[2, 4], &ident_next(6)).unwrap(),
             vec![vec![0, 1]]
         );
 
@@ -4447,7 +4498,7 @@ pub mod tests {
         // cycles, two faces — the two bites.
         let floor = [true, false, false, false, true, false];
         assert_eq!(
-            arrange::stitch_cycles(&floor, &[0, 4], &[5, 3]).unwrap(),
+            arrange::stitch_cycles(&floor, &[0, 4], &[5, 3], &ident_next(6)).unwrap(),
             vec![vec![0], vec![1]]
         );
     }
@@ -4459,7 +4510,7 @@ pub mod tests {
         // follows `opens`, which `seam_paths_on` already orders deterministically.
         let floor = [true, false, false, false, true, false];
         assert_eq!(
-            arrange::stitch_cycles(&floor, &[4, 0], &[3, 5]).unwrap(),
+            arrange::stitch_cycles(&floor, &[4, 0], &[3, 5], &ident_next(6)).unwrap(),
             vec![vec![0], vec![1]]
         );
     }
@@ -4473,17 +4524,17 @@ pub mod tests {
         let cap = [true, true, false, true, false, true];
         // A `kd` that is not a kept→dropped transition.
         assert_rejects(
-            || arrange::stitch_cycles(&cap, &[0, 3], &[2, 4]).map(|_| ()),
+            || arrange::stitch_cycles(&cap, &[0, 3], &[2, 4], &ident_next(6)).map(|_| ()),
             tag::SEAM_COUNT_MISMATCH,
         );
         // Two arcs claiming the same `kd`.
         assert_rejects(
-            || arrange::stitch_cycles(&cap, &[1, 1], &[2, 4]).map(|_| ()),
+            || arrange::stitch_cycles(&cap, &[1, 1], &[2, 4], &ident_next(6)).map(|_| ()),
             tag::SEAM_COUNT_MISMATCH,
         );
         // Four transitions but only one arc: the `kd`s no longer cover them.
         assert_rejects(
-            || arrange::stitch_cycles(&cap, &[1], &[2]).map(|_| ()),
+            || arrange::stitch_cycles(&cap, &[1], &[2], &ident_next(6)).map(|_| ()),
             tag::SEAM_COUNT_MISMATCH,
         );
     }
