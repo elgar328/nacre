@@ -746,7 +746,16 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **`fuse_common_inclusion_exclusion`이 두 기계를 잇는 항등식이 됐다** — `V_A+V_B = V_fuse+V_common`에서 `fuse`는 씨임 경로, `common`은 열거 경로. 3g가 `common`을 지울 때까지 교차 검증이다.
 - **검증.** 손 골든 `993.28`/`1014.4`/`24`/`29`, 드릴 큐브 genus-1은 `holed_faces == 2`(뚜껑 둘)로(validate 클린이 genus-1을 증명하지 않으므로), 노치 컷의 정점 없는 run을 가진 면은 mesh 게이트 넷으로, `PROPTEST_CASES=4096`이 씨임 경로로 통과(`Cut`의 `.unwrap()`도 `prop_assume` 거절률도 그물). OCCT diff 40 → 44(노치·드릴 Cut/Fuse). ops 스위트는 (5b-0) 덕에 그대로 빠르다.
 - **부채 둘.** (1) `boundaries_intersect`는 `overlap_fuse_cut`의 `seam.is_empty()`와 같은 질문을 두 번 묻는다 — 삭제하면 스캔이 한 번이 된다(답·태그 불변). (5b-0)이 속도를 이미 닫아 성능 동기는 없고, 중복 제거가 근거이므로 미뤘다. (2) `edge_crosses_face`의 `VERTEX_ON_FACE_PLANE`은 접촉이 아니라 **평면 위**(공면)면 발화한다 — (5a)가 남긴 과잉 거절이 이제 모든 불리언에 노출됐다. 좁힘은 `point_on_ring`/`point_in_ring`로 가능하다.
-- **다음.** 3f-6(`SEAM_ACROSS_HOLE_RIM`), 3g(비볼록 `Common` — `common`·`order_ccw`·열거 기계 사망, `is_convex`는 잔존), (5c) cavity 결정, (5d) exactness sweep(`plane_orient`, `plane_side`·광선·`coplanar`·`is_convex` 은퇴).
+- **다음.** 3g(비볼록 `Common`), 3f-6(`SEAM_ACROSS_HOLE_RIM`), (5c) cavity 결정, (5d) exactness sweep.
+
+**비볼록 `Common`을 열고 볼록 `common`을 지웠다 — `order_ccw`의 `atan2` 은퇴 (M5 셀 3g).** (5b)의 테마가 이어졌다: 특수 경로를 지우고 하나의 일반 exact 경로만 남긴다. 이제 `Fuse`·`Cut`·`Common` 셋 다 씨임 경로를 지난다.
+
+- **★ 핵심 새 로직은 keep/flip 한 줄이었다 — De Morgan 쌍대.** `overlap_fuse_cut`의 keep/flip 표에 `Common => (Side::Inside, Side::Inside, false)`. A∩B는 A의 B-안쪽 재료 + B의 A-안쪽 재료, 둘 다 원래 바깥 법선(Cut과 달리 어느 셸도 cavity 벽이 안 되므로 `flip=false`). Fuse `(Outside,Outside,false)`의 쌍대다. 씨임 재구성 기계는 이미 이 픽스처들에서 검증돼 있었다 — `l_and_corner_box`의 `Cut`(2.776)/`Fuse`가 열린 호를, `cut_the_stub_by_the_l`이 island 면을 `keep=Outside`로 돌린다. Common은 **같은 기계를 `keep=Inside`로** 밟는다.
+- **★ `orient_seam_loop`의 `Inside` 부호가 처음 밟혔다.** `material_outside = (keep == Side::Outside)` 매핑이 hole(Cut, 재료가 고리 밖 → true)과 island(Common, 재료가 고리 안 → false)를 정확히 가른다 — 공식은 대칭일 뿐 아니라 의미적으로 옳았고 값만 미실행이었다. 발화: `a_common_can_leave_a_closed_seam_loop`(막대가 큐브를 관통, `∩ = [1,2]²×[0,3]` = `3.0`), cube의 캡에서 유지 영역 `[1,2]²`가 씨임으로만 둘러싸인 닫힌 고리. validate 클린.
+- **삭제전 증명((5b)의 규율).** `common`이 살아 있는 동안 `the_seam_path_answers_common_overlap`이 `overlap_fuse_cut(Common, two_boxes)`을 직접 불러 `[0.5,1]³ = 0.125`·정점 8·엣지 12·면 6을 못박았다. n2가 `common`을 지운 뒤 `common_of_two_cubes`가 디스패처로 같은 답을 낸다 — **씨임 재구성이 열거와 같은 위상을 낸다는 실측**(카운트가 안 바뀌었다).
+- **삭제.** `common`·`enumerate_vertices`·`build_edges`·`build_faces`·`order_ccw`·`assemble` + `ResultEdge`/`ResultVertex`(~240줄). **`order_ccw`의 `atan2`가 커널의 마지막 열거 술어였다.** 태그 여섯이 발화 테스트 없이 죽었다(볼록 전용 백스톱): `NONCONVEX_OPERAND`·`TANGENT_EDGE`·`NONMANIFOLD_FACE`·`DEGENERATE_CENTROID`·`DEGENERATE_RADIUS`·`COLLINEAR_FACE`. `COMMON_OVERLAP`도 두 자리를 열며 죽었다. `FOURPLANE`은 산다(`overlap_fuse_cut`); `is_convex`·`solid_vertices`는 `detect_coincident_interface`가 붙잡아 (5d)로.
+- **OCCT diff** 비볼록 Common(`l_and_corner_box`, 부피+넓이), 44 → 45. **동작 보존**은 살아남은 Common 골든(`common_of_two_cubes` 0.125, 포함, proptest 둘)이 씨임 경로로 그대로 냄으로 확인.
+- 694행은 그대로 유효하다: M5-d3의 남은 가드는 `SEAM_ACROSS_HOLE_RIM`(3f-6) 하나 — 3g는 그것과 독립이다.
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
