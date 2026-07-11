@@ -897,6 +897,47 @@ bbox_min 0 0 0
         );
     }
 
+    /// A blind pocket cut into a face (cell coplanar-contact-cut): a prism inside the base with
+    /// its top flush is carved out. OCCT scores the pocket and a transversal Cut chained onto
+    /// the (non-convex) pocketed solid.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_cut_then_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, 0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let occt_pocket = occt_boolean_of(&m, OcctBool::Cut, base, prism).unwrap();
+        let pocketed = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, pocketed).unwrap().volume, occt_pocket.volume),
+            "pocket cut: {} vs {}",
+            mass_props(&m, pocketed).unwrap().volume,
+            occt_pocket.volume
+        );
+        // Chain a transversal cut at a corner, away from the pocket and off its face planes
+        // (the pocketed solid is non-convex → seam path).
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.8, 0.8, 0.3]),
+            Point3::from_array([1.5, 1.5, 1.5]),
+        );
+        let occt_cut = occt_boolean_of(&m, OcctBool::Cut, pocketed, cutter).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, pocketed, cutter).unwrap();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
+            "pocket then cut: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt_cut.volume
+        );
+    }
+
     /// A boss fuses onto a face inside its boundary (cell coplanar-contact-boss): the base's
     /// top gains the boss footprint as a hole and the boss rides on it. OCCT scores the fuse
     /// and a Cut chained onto the bossed solid.
