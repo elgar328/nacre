@@ -1093,6 +1093,13 @@ pub fn boolean(
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
     }
+    // A boss sitting on a face inside its boundary — coplanar contact with a contained
+    // footprint (cell coplanar-contact-boss). Fuse only for now; Cut/Common fall through.
+    if kind == BoolKind::Fuse {
+        if let Some(cc) = detect_contained_contact(model, a, b) {
+            return contained_boss_fuse(model, &cc);
+        }
+    }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
     // (it decided in/out with a 1e-9 tolerance) and cell 3g the convex `common` (its
     // `order_ccw` was the last `atan2` enumeration) — the seam path answers all three
@@ -2781,6 +2788,85 @@ fn interface_correspondence(
     Some(remap)
 }
 
+/// A coplanar face-on-face contact where one face is strictly contained in the other — a
+/// boss touching a face inside its boundary (cell coplanar-contact-boss). Unlike a coincident
+/// interface the footprints differ, so the containing face keeps its boundary and gains the
+/// contained footprint as a hole.
+struct ContainedContact {
+    big_solid: Handle<Solid>,
+    big_face: Handle<Face>,
+    small_solid: Handle<Solid>,
+    small_face: Handle<Face>,
+}
+
+/// Whether `small`'s outer boundary is strictly inside `big`'s region (inside `big`'s outer
+/// loop, outside its holes, touching no boundary), both on the shared plane with normal `n`.
+/// Exact 2D containment on the plane (drop the dominant axis) — reuses the imprint-containment
+/// predicate.
+fn face_contains_face(model: &Model, big: Handle<Face>, small: Handle<Face>, n: Vector3) -> bool {
+    let drop = planar_drop_axes(n);
+    let proj_loop = |l: &Loop| -> Vec<[f64; 2]> {
+        l.half_edges
+            .iter()
+            .map(|&he| proj2(model.vertices.get(he_start(model, he)).point, drop))
+            .collect()
+    };
+    let bf = model.faces.get(big);
+    let small_2d = proj_loop(&model.faces.get(small).outer);
+    let outer_2d = proj_loop(&bf.outer);
+    let holes_2d: Vec<Vec<[f64; 2]>> = bf.inner.iter().map(&proj_loop).collect();
+    profile_strictly_in_region(&small_2d, &outer_2d, &holes_2d)
+}
+
+/// `Some` iff A and B meet at exactly one opposite-normal coplanar face pair whose footprints
+/// are strictly nested (one contained in the other) — the boss-on-a-face case that
+/// `detect_coincident_interface` (which needs identical boundaries) does not cover.
+fn detect_contained_contact(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Option<ContainedContact> {
+    let planes_a = collect_planes(model, a).ok()?;
+    let planes_b = collect_planes(model, b).ok()?;
+    if !is_convex(model, &planes_a, &solid_vertex_handles(model, a))
+        || !is_convex(model, &planes_b, &solid_vertex_handles(model, b))
+    {
+        return None;
+    }
+    let mut opposite: Vec<(usize, usize)> = Vec::new();
+    for (i, pa) in planes_a.iter().enumerate() {
+        for (j, pb) in planes_b.iter().enumerate() {
+            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) < 0.0 {
+                opposite.push((i, j));
+            }
+        }
+    }
+    if opposite.len() != 1 {
+        return None;
+    }
+    let (i, j) = opposite[0];
+    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
+    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
+    let n = planes_a[i].plane.normal();
+    if face_contains_face(model, fa, fb, n) {
+        Some(ContainedContact {
+            big_solid: a,
+            big_face: fa,
+            small_solid: b,
+            small_face: fb,
+        })
+    } else if face_contains_face(model, fb, fa, n) {
+        Some(ContainedContact {
+            big_solid: b,
+            big_face: fb,
+            small_solid: a,
+            small_face: fa,
+        })
+    } else {
+        None
+    }
+}
+
 /// A solid's faces as `LocalFace`s (`Node::Orig`, `flip:false`), with
 /// `plane_idx` offset by `plane_offset`, optionally skipping one face and
 /// remapping vertices (for B's interface vertices → A's handle).
@@ -3009,6 +3095,60 @@ fn coincident_merge(
             assemble_fuse_cut(model, a, b, &planes, &[], &faces)
         }
     }
+}
+
+/// Fuse a boss: `small` sits on `big`'s face inside its boundary. `big`'s contact face keeps
+/// its boundary and gains `small`'s footprint as a hole; `small`'s contact face is dropped;
+/// the shared footprint edges stitch the hole to `small`'s walls (`assemble_fuse_cut`'s
+/// `edge_for` dedups them). `small`'s footprint region becomes interior — solid on both sides,
+/// so no face there — which is exactly what the dropped pair leaves (cell coplanar-contact-boss).
+fn contained_boss_fuse(
+    model: &mut Model,
+    cc: &ContainedContact,
+) -> Result<Handle<Solid>, BoolError> {
+    let planes_big = collect_planes(model, cc.big_solid)?;
+    let na = planes_big.len();
+    let planes_small = collect_planes(model, cc.small_solid)?;
+    let mut planes = planes_big;
+    planes.extend(planes_small);
+
+    // Big's faces, skipping its contact face — re-added below as an annulus.
+    let mut faces = solid_local_faces(model, cc.big_solid, 0, Some(cc.big_face), None);
+    let big_shell = model.solids.get(cc.big_solid).outer;
+    let big_pos = model
+        .shells
+        .get(big_shell)
+        .faces
+        .iter()
+        .position(|&f| f == cc.big_face)
+        .expect("contact face is on big's shell");
+    let ring_nodes = |l: &Loop| -> Vec<Node> {
+        l.half_edges
+            .iter()
+            .map(|&he| Node::Orig(he_start(model, he)))
+            .collect()
+    };
+    let big_f = model.faces.get(cc.big_face);
+    let mut inner: Vec<Vec<Node>> = big_f.inner.iter().map(&ring_nodes).collect();
+    // `small`'s outer loop is CCW about its own (opposite) normal, i.e. CW about big's normal —
+    // exactly the hole winding, used as-is so its edges stay opposed to small's walls.
+    inner.push(ring_nodes(&model.faces.get(cc.small_face).outer));
+    faces.push(LocalFace {
+        plane_idx: big_pos,
+        loop_nodes: ring_nodes(&big_f.outer),
+        inner,
+        flip: false,
+    });
+    // Small's faces except the dropped contact face.
+    faces.extend(solid_local_faces(
+        model,
+        cc.small_solid,
+        na,
+        Some(cc.small_face),
+        None,
+    ));
+
+    assemble_fuse_cut(model, cc.big_solid, cc.small_solid, &planes, &[], &faces)
 }
 
 #[cfg(test)]
@@ -7558,6 +7698,33 @@ pub mod tests {
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         (m, a, b)
+    }
+
+    #[test]
+    fn fuse_a_boss_onto_a_face() {
+        // A small box sits on the base's top face inside its boundary (contained footprint).
+        // Coplanar contact: before this cell it rejected as vertex_on_face_plane. The base
+        // top face gains the boss footprint as a hole, the boss contact face is dropped, and
+        // the footprint edges stitch the two. Volume 1 + 0.5²·1 = 1.25.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let boss = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, 1.0]),
+            Point3::from_array([0.75, 0.75, 2.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.25).abs() < 1e-12, "volume {vol}");
+        // No coplanar-adjacent faces (the boss walls are perpendicular to the base top), so
+        // the bossed solid chains into a further boolean.
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
     #[test]
