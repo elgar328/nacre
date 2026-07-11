@@ -923,7 +923,8 @@ fn raise_region(
 // ---- boolean (M5-c3) ----
 
 use nacre_geom::intersect::{
-    RayCross, plane_plane, plane_side, ray_face_cross, three_plane_orient3d, three_planes,
+    RayCross, plane_plane, plane_side, planes_coplanar, ray_face_cross, three_plane_orient3d,
+    three_planes,
 };
 #[cfg(test)]
 use std::collections::BTreeSet;
@@ -1436,18 +1437,11 @@ fn is_convex(planes: &[PlaneInfo], verts: &[Point3]) -> bool {
         .all(|pi| verts.iter().all(|&v| plane_side(pi.tri, v) <= 0))
 }
 
-/// Whether any two planes in the set are coplanar (parallel normals + each
-/// origin on the other plane).
+/// Whether any two planes in the set are the same plane, by the exact rank-1
+/// [`planes_coplanar`] test (design §3 (5d)-2).
 fn has_coplanar_pair(planes: &[PlaneInfo]) -> bool {
     (0..planes.len())
-        .any(|i| (i + 1..planes.len()).any(|j| coplanar(&planes[i].plane, &planes[j].plane)))
-}
-
-fn coplanar(a: &Plane, b: &Plane) -> bool {
-    const EPS: f64 = 1e-9;
-    a.normal().cross(b.normal()).norm() <= EPS
-        && a.distance(b.origin()) <= EPS
-        && b.distance(a.origin()) <= EPS
+        .any(|i| (i + 1..planes.len()).any(|j| planes_coplanar(&planes[i].plane, &planes[j].plane)))
 }
 
 /// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
@@ -2539,7 +2533,7 @@ fn detect_coincident_interface(
     let mut opposite: Vec<(usize, usize)> = Vec::new();
     for (i, pa) in planes_a.iter().enumerate() {
         for (j, pb) in planes_b.iter().enumerate() {
-            if coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) < 0.0 {
+            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) < 0.0 {
                 opposite.push((i, j));
             }
         }
