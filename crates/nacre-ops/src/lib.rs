@@ -939,6 +939,10 @@ use std::collections::{HashMap, HashSet};
 /// `n_out` (or `tri`), and none reads `plane.normal()`.
 pub(crate) struct PlaneInfo {
     pub(crate) surf: Handle<Surface>,
+    /// The face this plane came from. Distinguishes two coplanar faces that share one
+    /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
+    /// cell coplanar-narrow), which `surf` alone collapses. `surf_ix` keys on this.
+    pub(crate) face: Handle<Face>,
     pub(crate) plane: Plane,
     /// Three non-collinear outer-loop points, **ordered so their RH normal is outward**.
     /// The order need not follow the loop: at a reflex corner it is reversed.
@@ -1004,10 +1008,10 @@ fn general_boolean(
     if has_coplanar_pair(&planes[..na]) || has_coplanar_pair(&planes[na..]) {
         return Err(reject(tag::COPLANAR_PAIR));
     }
-    let surf_ix: HashMap<Handle<Surface>, usize> = planes
+    let surf_ix: HashMap<Handle<Face>, usize> = planes
         .iter()
         .enumerate()
-        .map(|(i, pi)| (pi.surf, i))
+        .map(|(i, pi)| (pi.face, i))
         .collect();
 
     if boundaries_intersect(model, a, b, &planes, &surf_ix)? {
@@ -1044,7 +1048,7 @@ type FaceRings = Vec<(usize, Vec<Vec<[usize; 3]>>)>;
 fn solid_face_rings(
     model: &Model,
     solid: Handle<Solid>,
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &arrange::EdgePlanes,
 ) -> Result<FaceRings, BoolError> {
     // All shells, outer + cavities: `pierced_faces` must see the void walls too, so
@@ -1053,7 +1057,7 @@ fn solid_face_rings(
     let mut out = FaceRings::new();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
-            let q = surf_ix[&model.faces.get(fh).surface];
+            let q = surf_ix[&fh];
             out.push((q, arrange::face_rings(model, fh, q, inc)?));
         }
     }
@@ -1102,9 +1106,9 @@ fn overlap_fuse_cut(
         return Err(reject(tag::COPLANAR_PAIR));
     }
 
-    let mut surf_ix: HashMap<Handle<Surface>, usize> = HashMap::new();
+    let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
-        surf_ix.insert(pi.surf, i);
+        surf_ix.insert(pi.face, i);
     }
 
     // Classify every original vertex vs the other solid (exact forward-ray winding).
@@ -1216,7 +1220,7 @@ fn overlap_fuse_cut(
     ] {
         for sh in solid_shell_handles(model, solid) {
             for &fh in &model.shells.get(sh).faces {
-                let pidx = surf_ix[&model.faces.get(fh).surface];
+                let pidx = surf_ix[&fh];
                 faces.extend(reconstruct_face_paths(
                     model, fh, other, pidx, keep, flip, &classof, &seam, &seam_ix, &planes,
                     &surf_ix, inc_f, inc_o,
@@ -1357,6 +1361,7 @@ pub(crate) fn collect_planes(
                 .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
             out.push(PlaneInfo {
                 surf: face.surface,
+                face: fh,
                 plane,
                 tri,
                 n_out,
@@ -1628,7 +1633,7 @@ fn boundaries_intersect(
     a: Handle<Solid>,
     b: Handle<Solid>,
     planes: &[PlaneInfo],
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
 ) -> Result<bool, BoolError> {
     for (edge_solid, face_solid) in [(a, b), (b, a)] {
         let inc_f = arrange::edge_planes(model, face_solid, surf_ix)?;
@@ -1677,14 +1682,14 @@ fn solid_vertex_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Verte
 pub(crate) fn edge_incidence(
     model: &Model,
     solid: Handle<Solid>,
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
 ) -> Result<Vec<(Handle<Edge>, [Handle<Vertex>; 2], [usize; 2])>, BoolError> {
     let mut order: Vec<Handle<Edge>> = Vec::new();
     let mut map: HashMap<Handle<Edge>, ([Handle<Vertex>; 2], Vec<usize>)> = HashMap::new();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
-            let pidx = surf_ix[&face.surface];
+            let pidx = surf_ix[&fh];
             for he in face_half_edges(face) {
                 let bounds = model.edges.get(he.edge).bounds.expect("bounded");
                 let entry = map.entry(he.edge).or_insert_with(|| {
@@ -1952,7 +1957,7 @@ fn reconstruct_face_paths(
     seam: &[SeamVertex],
     seam_ix: &HashMap<[usize; 3], usize>,
     planes: &[PlaneInfo],
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
     inc_f: &arrange::EdgePlanes,
     inc_o: &arrange::EdgePlanes,
 ) -> Result<Vec<LocalFace>, BoolError> {
@@ -3257,13 +3262,13 @@ pub mod tests {
         m: &Model,
         a: Handle<Solid>,
         b: Handle<Solid>,
-    ) -> (Vec<PlaneInfo>, HashMap<Handle<Surface>, usize>) {
+    ) -> (Vec<PlaneInfo>, HashMap<Handle<Face>, usize>) {
         let mut planes = collect_planes(m, a).unwrap();
         planes.extend(collect_planes(m, b).unwrap());
         let surf_ix = planes
             .iter()
             .enumerate()
-            .map(|(i, pi)| (pi.surf, i))
+            .map(|(i, pi)| (pi.face, i))
             .collect();
         (planes, surf_ix)
     }
@@ -3274,14 +3279,14 @@ pub mod tests {
         m: &Model,
         solid: Handle<Solid>,
         planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Surface>, usize>,
+        surf_ix: &HashMap<Handle<Face>, usize>,
         n: [f64; 3],
     ) -> Handle<Face> {
         let want = Vector3::from_array(n);
         let shell = m.solids.get(solid).outer;
         let mut hit = None;
         for &fh in &m.shells.get(shell).faces {
-            let pi = &planes[surf_ix[&m.faces.get(fh).surface]];
+            let pi = &planes[surf_ix[&fh]];
             if (pi.n_out - want).norm() < 1e-9 {
                 assert!(hit.is_none(), "two faces share an outward normal");
                 hit = Some(fh);
@@ -3296,7 +3301,7 @@ pub mod tests {
         x: Handle<Solid>,
         y: Handle<Solid>,
         planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Surface>, usize>,
+        surf_ix: &HashMap<Handle<Face>, usize>,
     ) -> Vec<arrange::SeamSegment> {
         let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
         let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
@@ -3309,7 +3314,7 @@ pub mod tests {
         x: Handle<Solid>,
         y: Handle<Solid>,
         planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Surface>, usize>,
+        surf_ix: &HashMap<Handle<Face>, usize>,
     ) -> Vec<arrange::SeamPath> {
         let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
         let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
@@ -3744,7 +3749,7 @@ pub mod tests {
         let (m, a, y) = cube_and_notch();
         let (planes, surf_ix) = combined(&m, a, y);
         let floor = face_facing(&m, a, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-        let p = surf_ix[&m.faces.get(floor).surface];
+        let p = surf_ix[&floor];
         let inc = arrange::edge_planes(&m, a, &surf_ix).unwrap();
         let ps = paths(&m, floor, a, y, &planes, &surf_ix);
         let be = by_edge(&m, floor, &ps);
@@ -3803,7 +3808,7 @@ pub mod tests {
         let (m, l, rod) = l_and_rod();
         let (planes, surf_ix) = combined(&m, l, rod);
         let wall = face_facing(&m, rod, &planes, &surf_ix, [-1.0, 0.0, 0.0]);
-        let p = surf_ix[&m.faces.get(wall).surface];
+        let p = surf_ix[&wall];
         let inc = arrange::edge_planes(&m, rod, &surf_ix).unwrap();
         let ps = paths(&m, wall, rod, l, &planes, &surf_ix);
         assert_eq!(ps.len(), 2, "two chords, one per cap: {ps:?}");
@@ -5029,7 +5034,7 @@ pub mod tests {
         let (m, l, stub) = l_and_dimple();
         let (planes, surf_ix) = combined(&m, l, stub);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&m.faces.get(top).surface];
+        let p = surf_ix[&top];
         let ps = paths(&m, top, l, stub, &planes, &surf_ix);
         let arrange::SeamPath::Closed(nodes) = &ps[0] else {
             panic!("closed loop")
@@ -5137,7 +5142,7 @@ pub mod tests {
         let (m, l, stub) = l_and_dimple();
         let (planes, surf_ix) = combined(&m, l, stub);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&m.faces.get(top).surface];
+        let p = surf_ix[&top];
         let ps = paths(&m, top, l, stub, &planes, &surf_ix);
         let arrange::SeamPath::Closed(nodes) = &ps[0] else {
             panic!("closed loop")
@@ -5173,7 +5178,7 @@ pub mod tests {
         let (m, l, stub) = l_and_ell_stub();
         let (planes, surf_ix) = combined(&m, l, stub);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&m.faces.get(top).surface];
+        let p = surf_ix[&top];
         let ps = paths(&m, top, l, stub, &planes, &surf_ix);
         let arrange::SeamPath::Closed(nodes) = &ps[0] else {
             panic!("closed loop")
@@ -5314,7 +5319,7 @@ pub mod tests {
         let (m, l, st) = l_and_staple();
         let (planes, surf_ix) = combined(&m, l, st);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&m.faces.get(top).surface];
+        let p = surf_ix[&top];
         let ps = paths(&m, top, l, st, &planes, &surf_ix);
         let arrange::SeamPath::Open(arc) = &ps[0] else {
             panic!("an arc")
@@ -5362,7 +5367,7 @@ pub mod tests {
             let (m, l, stub) = f();
             let (planes, surf_ix) = combined(&m, l, stub);
             let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-            let p = surf_ix[&m.faces.get(top).surface];
+            let p = surf_ix[&top];
             let ps = paths(&m, top, l, stub, &planes, &surf_ix);
             let arrange::SeamPath::Closed(lp) = &ps[0] else {
                 panic!("{name}: a loop")
@@ -5604,7 +5609,7 @@ pub mod tests {
         let (m, l, stub) = l_and_dimple();
         let (planes, surf_ix) = combined(&m, l, stub);
         let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&m.faces.get(top).surface];
+        let p = surf_ix[&top];
 
         let out = paths(&m, top, l, stub, &planes, &surf_ix);
         let arrange::SeamPath::Closed(nodes) = &out[0] else {
@@ -5942,7 +5947,7 @@ pub mod tests {
         x: Handle<Solid>,
         y: Handle<Solid>,
         planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Surface>, usize>,
+        surf_ix: &HashMap<Handle<Face>, usize>,
     ) -> Result<usize, BoolError> {
         let inc_y = arrange::edge_planes(m, y, surf_ix)?;
         let rings = solid_face_rings(m, y, surf_ix, &inc_y)?;
@@ -6015,7 +6020,7 @@ pub mod tests {
 
         // Down to the one pair, so the point is named rather than counted.
         let x_face = face_facing(&m, a, &planes, &surf_ix, [1.0, 0.0, 0.0]);
-        let q = surf_ix[&m.faces.get(x_face).surface];
+        let q = surf_ix[&x_face];
         let inc_a = arrange::edge_planes(&m, a, &surf_ix).unwrap();
         let rings = arrange::face_rings(&m, x_face, q, &inc_a).unwrap();
         let (bounds, along_x) = *arrange::edge_planes(&m, b, &surf_ix)
@@ -6069,7 +6074,7 @@ pub mod tests {
             .into_iter()
             .find(|&f| !m.faces.get(f).inner.is_empty())
             .unwrap();
-        let q = surf_ix[&m.faces.get(lid).surface];
+        let q = surf_ix[&lid];
         let rings = arrange::face_rings(&m, lid, q, &inc_pc).unwrap();
         let mut vertical = 0;
         for (_, bounds, inc) in edge_incidence(&m, rod, &surf_ix).unwrap() {
@@ -6179,7 +6184,7 @@ pub mod tests {
             let (planes, surf_ix) = combined(&m, l, other);
             let inc_l = arrange::edge_planes(&m, l, &surf_ix).unwrap();
             let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-            let q = surf_ix[&m.faces.get(bottom).surface];
+            let q = surf_ix[&bottom];
             let rings = arrange::face_rings(&m, bottom, q, &inc_l).unwrap();
             let (bounds, inc) = *arrange::edge_planes(&m, other, &surf_ix)
                 .unwrap()
@@ -6205,7 +6210,7 @@ pub mod tests {
             let (planes, surf_ix) = combined(&m, l, flat);
             let inc_flat = arrange::edge_planes(&m, flat, &surf_ix).unwrap();
             let floor = face_facing(&m, flat, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-            let q = surf_ix[&m.faces.get(floor).surface];
+            let q = surf_ix[&floor];
             let rings = arrange::face_rings(&m, floor, q, &inc_flat).unwrap();
             let (bounds, inc) = *arrange::edge_planes(&m, l, &surf_ix)
                 .unwrap()
@@ -6260,17 +6265,17 @@ pub mod tests {
     ) {
         let (m, pc) = pocketed_cube();
         let planes = collect_planes(&m, pc).unwrap();
-        let surf_ix: HashMap<Handle<Surface>, usize> = planes
+        let surf_ix: HashMap<Handle<Face>, usize> = planes
             .iter()
             .enumerate()
-            .map(|(i, pi)| (pi.surf, i))
+            .map(|(i, pi)| (pi.face, i))
             .collect();
         // The lid and the pocket floor share an outward normal, so pick by the hole.
         let lid = solid_faces(&m, pc)
             .into_iter()
             .find(|&fh| !m.faces.get(fh).inner.is_empty())
             .expect("a holed face");
-        let p = surf_ix[&m.faces.get(lid).surface];
+        let p = surf_ix[&lid];
         let inc = arrange::edge_planes(&m, pc, &surf_ix).unwrap();
         (m, planes, lid, p, inc)
     }

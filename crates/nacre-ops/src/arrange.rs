@@ -17,7 +17,6 @@
 use crate::{
     BoolError, PlaneInfo, edge_incidence, face_half_edges, reject, solid_shell_handles, tag,
 };
-use nacre_geom::Surface;
 use nacre_geom::intersect::{
     plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d, three_planes,
 };
@@ -91,7 +90,7 @@ impl SeamPath {
 pub(crate) fn edge_planes(
     model: &Model,
     solid: Handle<Solid>,
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
 ) -> Result<EdgePlanes, BoolError> {
     let mut out = EdgePlanes::new();
     for (eh, bounds, inc) in edge_incidence(model, solid, surf_ix)? {
@@ -116,17 +115,17 @@ pub(crate) fn seam_segments_on(
     f: Handle<Face>,
     other: Handle<Solid>,
     planes: &[PlaneInfo],
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
     inc_x: &EdgePlanes,
     inc_y: &EdgePlanes,
 ) -> Result<Vec<SeamSegment>, BoolError> {
-    let p = surf_ix[&model.faces.get(f).surface];
+    let p = surf_ix[&f];
     let f_rings = face_rings(model, f, p, inc_x)?;
 
     let mut out = Vec::new();
     for shell in solid_shell_handles(model, other) {
         for &g in &model.shells.get(shell).faces {
-            let q = surf_ix[&model.faces.get(g).surface];
+            let q = surf_ix[&g];
             let g_rings = face_rings(model, g, q, inc_y)?;
 
             // `∂(f ∩ g) ⊆ (∂f ∩ g) ∪ (f ∩ ∂g)`, and these two sweeps collect exactly
@@ -976,7 +975,7 @@ pub(crate) fn seam_paths_on(
     f: Handle<Face>,
     other: Handle<Solid>,
     planes: &[PlaneInfo],
-    surf_ix: &HashMap<Handle<Surface>, usize>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
     inc_x: &EdgePlanes,
     inc_y: &EdgePlanes,
 ) -> Result<Vec<SeamPath>, BoolError> {
