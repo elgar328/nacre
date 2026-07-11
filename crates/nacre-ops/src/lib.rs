@@ -1093,11 +1093,18 @@ pub fn boolean(
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
     }
-    // A boss sitting on a face inside its boundary — coplanar contact with a contained
-    // footprint (cell coplanar-contact-boss). Fuse only for now; Cut/Common fall through.
+    // A boss sitting on a face inside its boundary — coplanar contact, contained footprint,
+    // opposite normals (cell coplanar-contact-boss).
     if kind == BoolKind::Fuse {
         if let Some(cc) = detect_contained_contact(model, a, b) {
-            return contained_boss_fuse(model, &cc);
+            return contained_contact_result(model, &cc, false);
+        }
+    }
+    // A blind pocket: `b` sits inside `a` with its top flush on `a`'s face (same normals,
+    // contained footprint) (cell coplanar-contact-cut). `Cut(a, b)` carves it.
+    if kind == BoolKind::Cut {
+        if let Some(cc) = detect_pocket_contact(model, a, b) {
+            return contained_contact_result(model, &cc, true);
         }
     }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
@@ -2867,6 +2874,59 @@ fn detect_contained_contact(
     }
 }
 
+/// `Some` iff `b` is a blind pocket in `a`: they meet at exactly one **same-normal** coplanar
+/// pair whose footprint is strictly inside `a`'s face, and `b` lies wholly inside `a` (its walls
+/// cross none of `a`'s faces — a `b` that punched through would be a seam cut, not a pocket).
+/// For `Cut(a, b)`, `a` is kept and `b` is carved out, so `a` must be the containing solid.
+fn detect_pocket_contact(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Option<ContainedContact> {
+    let planes_a = collect_planes(model, a).ok()?;
+    let planes_b = collect_planes(model, b).ok()?;
+    if !is_convex(model, &planes_a, &solid_vertex_handles(model, a))
+        || !is_convex(model, &planes_b, &solid_vertex_handles(model, b))
+    {
+        return None;
+    }
+    let mut same: Vec<(usize, usize)> = Vec::new();
+    for (i, pa) in planes_a.iter().enumerate() {
+        for (j, pb) in planes_b.iter().enumerate() {
+            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) > 0.0 {
+                same.push((i, j));
+            }
+        }
+    }
+    if same.len() != 1 {
+        return None;
+    }
+    let (i, j) = same[0];
+    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
+    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
+    let n = planes_a[i].plane.normal();
+    if !face_contains_face(model, fa, fb, n) {
+        return None; // `a`'s face must contain `b`'s footprint (a is the kept solid)
+    }
+    // `b` must be blind — every vertex off the contact plane lies strictly inside `a`. A
+    // through-`b` has vertices below `a` (a transversal seam cut, not a pocket); the flush
+    // contact vertices sit on the plane and are skipped. (boundaries_intersect is unusable
+    // here — the flush contact itself reads as a boundary touch.)
+    let contact_tri = planes_a[i].tri;
+    for &vh in &solid_vertex_handles(model, b) {
+        let p = model.vertices.get(vh).point;
+        if plane_side(contact_tri, p) != 0 && point_in_solid(model, p, a).ok()? != Side::Inside {
+            return None;
+        }
+    }
+    Some(ContainedContact {
+        big_solid: a,
+        big_face: fa,
+        small_solid: b,
+        small_face: fb,
+    })
+}
+
 /// A solid's faces as `LocalFace`s (`Node::Orig`, `flip:false`), with
 /// `plane_idx` offset by `plane_offset`, optionally skipping one face and
 /// remapping vertices (for B's interface vertices → A's handle).
@@ -3097,14 +3157,21 @@ fn coincident_merge(
     }
 }
 
-/// Fuse a boss: `small` sits on `big`'s face inside its boundary. `big`'s contact face keeps
-/// its boundary and gains `small`'s footprint as a hole; `small`'s contact face is dropped;
-/// the shared footprint edges stitch the hole to `small`'s walls (`assemble_fuse_cut`'s
-/// `edge_for` dedups them). `small`'s footprint region becomes interior — solid on both sides,
-/// so no face there — which is exactly what the dropped pair leaves (cell coplanar-contact-boss).
-fn contained_boss_fuse(
+/// A contained coplanar contact (`small`'s face inside `big`'s). `big`'s contact face keeps its
+/// boundary and gains `small`'s footprint as a hole; `small`'s contact face is dropped; the
+/// shared footprint edges stitch the hole to `small`'s walls (`assemble_fuse_cut`'s `edge_for`
+/// dedups them). `small`'s footprint region becomes interior — no face there.
+///
+/// `cut` picks the operation. **Boss (`Fuse`, `cut = false`):** `small` sits outside `big` (the
+/// faces have opposite normals), its walls kept as-is. **Pocket (`Cut`, `cut = true`):** `small`
+/// sits inside `big` (same normals), so its faces flip — walls face into the removed region and
+/// the far face becomes the pocket floor. The hole flips with it: `small`'s outer loop is CW
+/// about `big`'s normal for the boss (opposite normals) but CCW for the pocket (same normals), so
+/// the pocket reverses it (cells coplanar-contact-boss / -cut).
+fn contained_contact_result(
     model: &mut Model,
     cc: &ContainedContact,
+    cut: bool,
 ) -> Result<Handle<Solid>, BoolError> {
     let planes_big = collect_planes(model, cc.big_solid)?;
     let na = planes_big.len();
@@ -3130,23 +3197,24 @@ fn contained_boss_fuse(
     };
     let big_f = model.faces.get(cc.big_face);
     let mut inner: Vec<Vec<Node>> = big_f.inner.iter().map(&ring_nodes).collect();
-    // `small`'s outer loop is CCW about its own (opposite) normal, i.e. CW about big's normal —
-    // exactly the hole winding, used as-is so its edges stay opposed to small's walls.
-    inner.push(ring_nodes(&model.faces.get(cc.small_face).outer));
+    let mut hole = ring_nodes(&model.faces.get(cc.small_face).outer);
+    if cut {
+        hole.reverse(); // same normals: reverse to CW about big's normal
+    }
+    inner.push(hole);
     faces.push(LocalFace {
         plane_idx: big_pos,
         loop_nodes: ring_nodes(&big_f.outer),
         inner,
         flip: false,
     });
-    // Small's faces except the dropped contact face.
-    faces.extend(solid_local_faces(
-        model,
-        cc.small_solid,
-        na,
-        Some(cc.small_face),
-        None,
-    ));
+    // Small's faces except the dropped contact face; flipped for a cut so they bound the
+    // removed region.
+    faces.extend(
+        solid_local_faces(model, cc.small_solid, na, Some(cc.small_face), None)
+            .into_iter()
+            .map(|lf| LocalFace { flip: cut, ..lf }),
+    );
 
     assemble_fuse_cut(model, cc.big_solid, cc.small_solid, &planes, &[], &faces)
 }
@@ -7725,6 +7793,48 @@ pub mod tests {
         // the bossed solid chains into a further boolean.
         let planes = collect_planes(&m, r).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    #[test]
+    fn cut_a_blind_pocket_into_a_face() {
+        // A prism inside the base with its top flush on the base's top (same-normal coplanar
+        // contact, contained footprint). Cut carves a blind pocket: the base top gains the
+        // footprint as a hole (the mouth), the prism faces flip to bound the removed region.
+        // Before this cell it rejected as vertex_on_face_plane. Volume 1 − 0.5²·0.5 = 0.875.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, 0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.875).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    #[test]
+    fn a_pocket_that_punches_through_is_not_a_pocket_contact() {
+        // The prism's top is flush, but it pokes out the base's bottom — its walls cross the
+        // base's bottom face, so it is a seam cut, not a blind pocket. detect_pocket_contact
+        // must decline it (leaving it to the seam path) rather than build a floor outside the base.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let through = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, -0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        assert!(detect_pocket_contact(&m, base, through).is_none());
     }
 
     #[test]
