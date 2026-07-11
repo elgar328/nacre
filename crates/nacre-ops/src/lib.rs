@@ -243,25 +243,6 @@ pub(crate) mod tag {
     /// equation into a *nesting* detector, where the winding classifies each loop and
     /// `kept[0]` only cross-checks depth zero.
     pub const LOOP_CLASS_MISMATCH: &str = "loop_class_mismatch";
-    /// One of a face's closed seam loops lies inside another.
-    ///
-    /// A loop's winding is decided by the parity of its depth — how many loops contain it
-    /// — because crossing a loop flips the class and material always keeps to the left. So
-    /// a loop directly inside another winds the other way, and **all loops sharing a
-    /// winding is exactly the statement that none contains another**. One sign settles it;
-    /// no containment test, no representative point.
-    ///
-    /// Nesting is reached, and by something far more ordinary than the polyhedral torus
-    /// this comment used to reach for: slice a pocketed cube between its floor and its lid
-    /// and the cut plane carries the cube's cross-section as a hole with the pocket's
-    /// inside it (`a_slab_between_the_lid_and_the_floor_nests_two_loops`). The torus was a
-    /// sound argument for reachability and a bad way to find the case — that operand was
-    /// waiting behind the holed-operand guard, which cell 3f-5 retired.
-    ///
-    /// **The inference needs `∂f` to be one class throughout**, i.e. no arc on the face.
-    /// With an arc, a hole in the kept region and an island in the dropped one wind
-    /// oppositely without containing each other. `pokehole` holds that case.
-    pub const NESTED_LOOPS: &str = "nested_loops";
     /// Every candidate ray from a loop's nodes has a ring node on its line.
     ///
     /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
@@ -1802,21 +1783,73 @@ fn nest_loops(
     Ok(out)
 }
 
-/// Which kept region each loop lies in, or `None` for a loop in a dropped one.
+/// The material face a loop belongs to: a kept `∂f` region, or a seam island (an index into
+/// the loop list, the island's own place).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Owner {
+    Region(usize),
+    Island(usize),
+}
+
+/// What becomes of a loop: it is a material island in its own right, a hole of some owner, or
+/// void that is discarded.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Placement {
+    Island,
+    Hole(Owner),
+    Dropped,
+}
+
+/// Turn the containment forest into hole/island placement — pure combinatorics, no geometry.
 ///
-/// A loop inside another loop nests, and this cell cannot place it — cell 3f-7 replaces this
-/// with `classify_nesting`, which does. Kept only until then.
-fn place_loops(
-    planes: &[PlaneInfo],
-    p: usize,
-    regions: &[Vec<[usize; 3]>],
-    loops: &[Vec<[usize; 3]>],
-) -> Result<Vec<Option<usize>>, BoolError> {
-    let nest = nest_loops(planes, p, regions, loops)?;
-    if nest.iter().any(|n| !n.containers.is_empty()) {
-        return Err(reject(tag::NESTED_LOOPS));
+/// A loop's interior is material iff its region's class flipped once per containing loop, since
+/// material keeps to the left and crossing a loop reverses it: `is_island = base_kept XOR
+/// (depth even)`, `depth` the number of containers. So a seam loop alternates with nesting
+/// depth — a hole in a kept region, an island in that hole, a hole in that island. `f`'s own
+/// holes (`i >= n_rings`) are never reclassified: they are stored clockwise and can only be
+/// holes, whatever their depth (feeding them to the parity would call an unowned one an island
+/// and reject a shape that is merely discarded). `check_loop_class` is the third, independent
+/// source — the exact winding must agree with the parity.
+///
+/// A hole belongs to the innermost material face containing it: the deepest island among its
+/// containers, else its region, else nothing — void in void, discarded as a hole in a dropped
+/// `∂f` region always was. An island is a material face of its own.
+fn classify_nesting(
+    nest: &[Nesting],
+    n_rings: usize,
+    windings: &[i8],
+) -> Result<Vec<Placement>, BoolError> {
+    let is_island: Vec<bool> = nest
+        .iter()
+        .enumerate()
+        .map(|(i, n)| i < n_rings && (n.region.is_some() ^ (n.containers.len() % 2 == 0)))
+        .collect();
+    for (i, &island) in is_island.iter().enumerate() {
+        check_loop_class(!island, windings[i])?;
     }
-    Ok(nest.iter().map(|n| n.region).collect())
+    let place = is_island
+        .iter()
+        .enumerate()
+        .map(|(i, &island)| {
+            if island {
+                return Placement::Island;
+            }
+            let inner_island = nest[i]
+                .containers
+                .iter()
+                .copied()
+                .filter(|&c| is_island[c])
+                .max_by_key(|&c| nest[c].containers.len());
+            match inner_island {
+                Some(c) => Placement::Hole(Owner::Island(c)),
+                None => match nest[i].region {
+                    Some(k) => Placement::Hole(Owner::Region(k)),
+                    None => Placement::Dropped,
+                },
+            }
+        })
+        .collect();
+    Ok(place)
 }
 
 /// Reconstruct a face's kept portion. `None` if the face is dropped.
@@ -2199,76 +2232,65 @@ fn reconstruct_face_paths(
         rings.push(ring);
     }
 
-    // `f`'s own holes join the loop list, and `place_loops` answers for them too: which
-    // region owns each, whether any tangles with a seam loop (`nested_loops` — which over-
-    // rejects, since a hole inside a seam loop is merely dropped or merely an island's own
-    // hole; cell 3f-7), and whether two regions claim one. No new machinery.
+    // `f`'s own holes join the loop list, and `classify_nesting` places them too, with the
+    // seam loops, in one containment forest: which material face — a region or a seam island —
+    // owns each, and which loops are islands in their own right. A hole tangled inside a seam
+    // loop, which the old pairwise guard over-rejected as `nested_loops`, now finds its owner.
     //
-    // Only the *uncrossed* holes: a crossed one was absorbed into the outer boundary above,
-    // so placing it again would count it twice. `uncrossed` remaps `hole_owners`' indices back
-    // to `f.inner`.
+    // Only the *uncrossed* holes: a crossed one was absorbed into the outer boundary above, so
+    // placing it again would count it twice. `all` is the seam rings then the holes; indices
+    // `>= rings.len()` are holes, remapped through `uncrossed` back to `f.inner`.
     //
-    // Two things do differ. A hole is never an island: it is not material, so an unowned
-    // one is simply discarded with the `∂f` region it sat in. And its class is not up for
-    // decision — `f.inner` is stored clockwise, hole or not — so it cross-checks against
-    // `true`, not against its owner.
+    // A hole's winding joins `windings` and is checked by `classify_nesting` like any loop's —
+    // it must run clockwise, whatever region or island it falls in.
     let uncrossed: Vec<usize> = (0..face.inner.len())
         .filter(|k| !crossed.contains(k))
         .collect();
     let holes: Vec<Vec<[usize; 3]>> = uncrossed.iter().map(|&k| all_holes[k].clone()).collect();
-    for h in &holes {
-        check_loop_class(true, arrange::loop_winding(planes, plane_idx, h)?)?;
+    let n_rings = rings.len();
+    let mut all: Vec<Vec<[usize; 3]>> = rings;
+    all.extend(holes);
+    for h in &all[n_rings..] {
+        windings.push(arrange::loop_winding(planes, plane_idx, h)?);
     }
-    let mut all: Vec<Vec<[usize; 3]>> = rings.clone();
-    all.extend(holes.iter().cloned());
-    let owners = place_loops(planes, plane_idx, &region_rings, &all)?;
-    let (owners, hole_owners) = owners.split_at(rings.len());
-    for (&owner, &w) in owners.iter().zip(&windings) {
-        check_loop_class(owner.is_some(), w)?;
-    }
+    let nest = nest_loops(planes, plane_idx, &region_rings, &all)?;
+    let place = classify_nesting(&nest, n_rings, &windings)?;
 
     let node_ring = |r: &[[usize; 3]]| r.iter().copied().map(Node::Seam).collect::<Vec<Node>>();
-    // A hole's nodes are `f`'s own vertices. Emitting them as `Node::Seam` would mint a
-    // fresh `Discovered` vertex on top of each one — the arrangement is a source of
-    // combinatorics, never of geometry, and here that principle shows up as a node kind.
-    let hole_ring = |i: usize| orig_ring(&face.inner[uncrossed[i]]);
+    // Loop `j`'s nodes: a seam ring as `Node::Seam`, an `f` hole as `Node::Orig`. Emitting a
+    // hole's own vertices as `Node::Seam` would mint a fresh `Discovered` vertex on each — the
+    // arrangement is a source of combinatorics, never of geometry, and here that is a node kind.
+    let inner_of = |j: usize| -> Vec<Node> {
+        if j < n_rings {
+            node_ring(&all[j])
+        } else {
+            orig_ring(&face.inner[uncrossed[j - n_rings]])
+        }
+    };
+    let holes_of = |owner: Owner| -> Vec<Vec<Node>> {
+        (0..all.len())
+            .filter(|&j| place[j] == Placement::Hole(owner))
+            .map(&inner_of)
+            .collect()
+    };
 
-    // Regions first, each with its holes; then the islands. `assemble_fuse_cut` fixes vertex
-    // handles by first appearance across `faces`, and replay rests on that order.
+    // Regions first, each with its holes; then islands, each with its holes. `assemble_fuse_cut`
+    // fixes vertex handles by first appearance across `faces`, and replay rests on that order.
     let mut out: Vec<LocalFace> = regions
         .iter()
         .enumerate()
-        .map(|(k, steps)| {
-            let holes = rings
-                .iter()
-                .zip(owners.iter())
-                .filter(|(_, o)| **o == Some(k))
-                .map(|(r, _)| node_ring(r))
-                .chain(
-                    hole_owners
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, o)| **o == Some(k))
-                        .map(|(i, _)| hole_ring(i)),
-                )
-                .collect();
-            region_face(steps, holes)
-        })
+        .map(|(k, steps)| region_face(steps, holes_of(Owner::Region(k))))
         .collect();
-    // Islands. A hole with no owner is not one of them — it is void, not material, and
-    // goes wherever the dropped `∂f` region it sat in went.
-    out.extend(
-        rings
-            .iter()
-            .zip(owners.iter())
-            .filter(|(_, o)| o.is_none())
-            .map(|(r, _)| LocalFace {
+    for j in 0..n_rings {
+        if place[j] == Placement::Island {
+            out.push(LocalFace {
                 plane_idx,
-                loop_nodes: node_ring(r),
-                inner: vec![],
+                loop_nodes: node_ring(&all[j]),
+                inner: holes_of(Owner::Island(j)),
                 flip,
-            }),
-    );
+            });
+        }
+    }
     Ok(out)
 }
 
@@ -4435,21 +4457,45 @@ pub mod tests {
         assert!(holed_faces(&m, r).is_empty());
     }
 
-    /// `NESTED_LOOPS` fires on a real operand, at last. Cell 3f-3 argued it was reachable
-    /// and reached for a polyhedral torus; a pocket sliced between its floor and its lid
-    /// is enough. The slab's underside carries the cube's cross-section as a hole, and
-    /// inside that hole the pocket's cross-section as an island — a loop within a loop,
-    /// which `place_loops` cannot hang on one `LocalFace`.
+    /// Nested loops, at last (cell 3f-7). Cell 3f-3 argued nesting was reachable and reached
+    /// for a polyhedral torus; a pocket sliced between its floor and its lid is enough. The
+    /// slab's underside carries the cube's cross-section as one loop and the pocket's inside
+    /// it — a loop within a loop, which the pairwise guard over-rejected.
     ///
-    /// Both operand orders, both kinds. `INNER_LOOP_OPERAND` used to stop this at the door.
+    /// `Cut` opens, both orders: `A ∩ B = B ∩ {z ≥ 0.7}` = `0.30 − 0.048 = 0.252`, slab `1.74`,
+    /// pocketed cube `0.92`, so `Cut(slab,pc) = 1.488` and `Cut(pc,slab) = 0.668`. `Cut(pc,slab)`
+    /// is the one that makes the cube cross-section an *island with a hole* (the slab is B, its
+    /// underside dropped, so no region survives to own the loops); `Cut(slab,pc)` keeps the slab
+    /// region and hangs the pocket loop in it as a hole beside an island.
+    ///
+    /// `Fuse` still rejects — for a *different* reason now. The union seals the pocket
+    /// (`[0.3,0.7]² × [0.5,0.7]`, capped by the slab at `z = 0.7`) into an enclosed cavity, a
+    /// second shell the seam path cannot assemble: `disconnected_result`. Cavities are cell
+    /// (5c), not this one; the nesting itself is handled — the reject moved past it.
     #[test]
     fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
-        for kind in [BoolKind::Cut, BoolKind::Fuse] {
-            for swap in [false, true] {
-                let (mut m, slab, pc) = pocket_and_slab(0.7);
-                let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
-                assert_rejects(|| boolean(&mut m, kind, x, y), tag::NESTED_LOOPS);
-            }
+        for (swap, expect) in [(false, 1.488), (true, 0.668)] {
+            let (mut m, slab, pc) = pocket_and_slab(0.7);
+            let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
+            let r = boolean(&mut m, BoolKind::Cut, x, y).unwrap();
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "Cut swap={swap}: {vs:?}");
+            let props = nacre_props::mass_props(&m, r).unwrap();
+            assert!(
+                (props.volume - expect).abs() < 1e-9,
+                "Cut swap={swap}: {} vs {expect}",
+                props.volume
+            );
+        }
+        // Fuse seals the pocket into a cavity — a second shell, deferred to cell (5c).
+        for swap in [false, true] {
+            let (mut m, slab, pc) = pocket_and_slab(0.7);
+            let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
+            assert_rejects(
+                || boolean(&mut m, BoolKind::Fuse, x, y),
+                tag::DISCONNECTED_RESULT,
+            );
         }
     }
 
@@ -4873,28 +4919,10 @@ pub mod tests {
         assert_rejects(|| check_loop_class(true, w), tag::LOOP_CLASS_MISMATCH);
     }
 
-    #[test]
-    fn a_loop_inside_another_loop_is_unsupported() {
-        // Cell 3f-3 detected nesting from the windings, which only works when the face has
-        // no arc. Cell 3f-4 detects it by containment, which works either way — and the
-        // staple cap gives a real pair of rings, one inside the other, to fire it with.
-        //
-        // No operand in the suite produces two nested *loops*; a polyhedral torus would.
-        let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
-        assert_rejects(
-            || place_loops(&planes, p, &[], &[cycle.clone(), ring.clone()]).map(|_| ()),
-            tag::NESTED_LOOPS,
-        );
-        // Un-nested rings place cleanly, both in the dropped region.
-        let alone = place_loops(&planes, p, &[], std::slice::from_ref(&ring)).unwrap();
-        assert_eq!(alone, vec![None]);
-        // And with the cycle as a region, the loop is its hole.
-        let owned = place_loops(&planes, p, std::slice::from_ref(&cycle), &[ring]).unwrap();
-        assert_eq!(owned, vec![Some(0)]);
-    }
-
-    /// The containment forest `place_loops` now rests on, measured directly (cell 3f-7). The
+    /// The containment forest the placement rests on, measured directly (cell 3f-7). The
     /// staple cap's nested pair: the ring sits inside the cycle, the cycle inside nothing.
+    /// Cells 3f-3/3f-4 reached for a polyhedral torus to fire nesting; the staple cap is a
+    /// real pair of rings, one inside the other, and nesting is now supported, not rejected.
     #[test]
     fn nest_loops_reads_the_containment_forest() {
         let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
@@ -4906,6 +4934,78 @@ pub mod tests {
         let owned = nest_loops(&planes, p, std::slice::from_ref(&cycle), &[ring]).unwrap();
         assert_eq!(owned[0].containers, Vec::<usize>::new());
         assert_eq!(owned[0].region, Some(0));
+    }
+
+    /// `classify_nesting` on paper (cell 3f-7): the combinatorics, with no coordinate read, so
+    /// every branch is a synthetic forest. Depth parity classes each seam loop, containment
+    /// gives each hole its owner, and the winding is the independent third check.
+    #[test]
+    fn classify_nesting_places_the_forest() {
+        let nst = |region: Option<usize>, containers: &[usize]| Nesting {
+            region,
+            containers: containers.to_vec(),
+        };
+        use Owner::{Island as IslandOf, Region};
+        use Placement::*;
+
+        // Depth 0, all four: a seam loop is a hole in a kept region and an island in a dropped
+        // one; an `f` hole (index >= n_rings) is always a hole, owned if a region holds it and
+        // discarded otherwise — never reclassified an island.
+        let nest = [
+            nst(Some(0), &[]),
+            nst(None, &[]),
+            nst(Some(0), &[]),
+            nst(None, &[]),
+        ];
+        assert_eq!(
+            classify_nesting(&nest, 2, &[-1, 1, -1, -1]).unwrap(),
+            vec![Hole(Region(0)), Island, Hole(Region(0)), Dropped]
+        );
+
+        // Depth 1 in a kept region: hole C, island P inside it.
+        let nest = [nst(Some(0), &[]), nst(Some(0), &[0])];
+        assert_eq!(
+            classify_nesting(&nest, 2, &[-1, 1]).unwrap(),
+            vec![Hole(Region(0)), Island]
+        );
+        // Depth 1 in a dropped region (the `Cut(pc,slab)` order): island C, hole P owned by it.
+        let nest = [nst(None, &[]), nst(None, &[0])];
+        assert_eq!(
+            classify_nesting(&nest, 2, &[1, -1]).unwrap(),
+            vec![Island, Hole(IslandOf(0))]
+        );
+
+        // A deep concentric chain in a dropped region — island, hole, island, hole. The last
+        // hole is owned by the *deepest* island (L2), not the outermost (L0). A kept region
+        // cannot start this chain: a depth-0 loop in it is a hole, so deep islands live only in
+        // a dropped one.
+        let nest = [
+            nst(None, &[]),
+            nst(None, &[0]),
+            nst(None, &[0, 1]),
+            nst(None, &[0, 1, 2]),
+        ];
+        assert_eq!(
+            classify_nesting(&nest, 4, &[1, -1, 1, -1]).unwrap(),
+            vec![Island, Hole(IslandOf(0)), Island, Hole(IslandOf(2))]
+        );
+
+        // The same lone loop is an island as a seam ring but a discarded hole as an `f` hole —
+        // `n_rings` is what withholds the parity from the hole.
+        assert_eq!(
+            classify_nesting(&[nst(None, &[])], 1, &[1]).unwrap(),
+            vec![Island]
+        );
+        assert_eq!(
+            classify_nesting(&[nst(None, &[])], 0, &[-1]).unwrap(),
+            vec![Dropped]
+        );
+
+        // The winding disagreeing with the parity is the two machines in conflict.
+        assert_rejects(
+            || classify_nesting(&[nst(Some(0), &[])], 1, &[1]).map(|_| ()),
+            tag::LOOP_CLASS_MISMATCH,
+        );
     }
 
     #[test]
@@ -6038,18 +6138,16 @@ pub mod tests {
         }
     }
 
-    /// The whole of cell 3f-5's placement, before a line of it is wired: append the hole
-    /// rings to the loop list and `place_loops` answers. The region owning the rim comes
-    /// out as `Some(0)`, and the pairwise nesting check sees nothing to reject.
+    /// A lid's hole rim, placed by `nest_loops`: the lid's outer boundary is its region, and
+    /// the rim nests in no loop, so it comes out owned by region `0` and depth `0`.
     #[test]
-    fn place_loops_owns_a_hole_ring_with_no_new_machinery() {
+    fn nest_loops_owns_a_hole_ring() {
         let (m, planes, lid, p, inc) = pocket_lid_setup();
         let rim = arrange::hole_rings(&m, lid, p, &inc).unwrap().remove(0);
         let bnd = arrange::face_vertex_triples(&m, lid, p, &inc).unwrap();
-        assert_eq!(
-            place_loops(&planes, p, &[bnd], &[rim]).unwrap(),
-            vec![Some(0)]
-        );
+        let nest = nest_loops(&planes, p, &[bnd], &[rim]).unwrap();
+        assert_eq!(nest[0].region, Some(0));
+        assert_eq!(nest[0].containers, Vec::<usize>::new());
         // A region ring the seam has bitten a corner from is exercised end to end by
         // `cut_a_pocket_at_a_corner`; it cannot be faked here, because dropping a node
         // from `bnd` leaves two nodes sharing only the lid's plane and `ring_edge`
