@@ -207,7 +207,6 @@ pub(crate) mod tag {
     /// pair, which `FOURPLANE` rejects. Relax that guard (sub-unit 3e/3h) and a
     /// node can gain a third segment. This is the backstop for that day.
     pub const SEAM_BRANCH: &str = "seam_branch";
-    pub const COMMON_OVERLAP: &str = "common_overlap";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
     /// The result would be two solids, and `boolean` returns one handle. Reachable since
     /// cell 3e-3 let an edge thread the other solid: `Cut(rod, L)` leaves the rod's two
@@ -1070,12 +1069,9 @@ fn general_boolean(
         .collect();
 
     if boundaries_intersect(model, a, b, &planes, &surf_ix)? {
-        // A genuine seam. Single-chord `Fuse`/`Cut` (M5-d2) is handled here; the
-        // non-convex `Common`, and multi-chord/multi-loop seams, are later sub-units.
-        return match kind {
-            BoolKind::Fuse | BoolKind::Cut => overlap_fuse_cut(model, kind, a, b),
-            BoolKind::Common => Err(reject(tag::COMMON_OVERLAP)),
-        };
+        // A genuine seam — all three kinds arrange the same faces, differing only in the
+        // keep/flip table (cell 3g opened `Common`).
+        return overlap_fuse_cut(model, kind, a, b);
     }
     // Seam-free: each solid's vertices all fall on one side of the other.
     let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
@@ -1263,7 +1259,9 @@ fn overlap_fuse_cut(
     let (keep_a, keep_b, flip_b) = match kind {
         BoolKind::Fuse => (Side::Outside, Side::Outside, false),
         BoolKind::Cut => (Side::Outside, Side::Inside, true),
-        BoolKind::Common => return Err(reject(tag::COMMON_OVERLAP)),
+        // A∩B: keep each solid's material *inside* the other, neither shell flipped —
+        // the De Morgan dual of Fuse. Cell 3g.
+        BoolKind::Common => (Side::Inside, Side::Inside, false),
     };
     if seam.is_empty() {
         return contained_result(model, kind, a, b, &classof);
@@ -3110,14 +3108,58 @@ pub mod tests {
         assert!((vol - (3.0 + 0.924 - 0.224)).abs() < 1e-9, "volume {vol}");
     }
 
+    /// Cell 3g opened non-convex `Common`: the same seam the corner bite arranges for
+    /// `Cut`/`Fuse` (`cut_non_convex_overlap_corner_bite` says `Cut = 3.0 − 0.224`, so the
+    /// overlap is `0.224`), now kept as the intersection. Only the keep/flip table differs.
     #[test]
-    fn common_non_convex_overlap_is_unsupported() {
-        // Non-convex ∩ needs the full arrangement (a later sub-unit) — honest reject.
+    fn common_non_convex_overlap_is_their_intersection() {
         let (mut m, l, bx) = l_and_corner_box();
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Common, l, bx),
-            tag::COMMON_OVERLAP,
+        let r = boolean(&mut m, BoolKind::Common, l, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.224).abs() < 1e-9, "volume {vol}");
+    }
+
+    /// The first `Common` whose seam closes into a loop — where cell 3g's `Inside` keep
+    /// first reaches `orient_seam_loop`. A bar drilled through a cube: `∩ = [1,2]²×[0,3]`,
+    /// the middle segment of the bar. On the cube's `z=0` and `z=3` caps the kept square
+    /// `[1,2]²` is bounded entirely by seam (an island face, no `∂f`), so the loop's
+    /// orientation runs through `orient_seam_loop` with `material_outside = false` — the
+    /// sign a hole (Cut) never exercised. `1·1·3`.
+    #[test]
+    fn a_common_can_leave_a_closed_seam_loop() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let bar = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
         );
+        let r = boolean(&mut m, BoolKind::Common, cube, bar).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 3.0).abs() < 1e-9, "volume {vol}");
+    }
+
+    /// Prove the seam path answers a *convex* overlap `Common` before cell 3g deletes the
+    /// convex `common` that answers it today. `two_boxes ∩ = [0.5,1]³`, called through
+    /// `overlap_fuse_cut` directly (the dispatcher still routes convex Common to `common`).
+    /// Cell 3g's n2 deletes `common` and this same result must come from the dispatcher.
+    #[test]
+    fn the_seam_path_answers_common_overlap() {
+        let (mut m, a, b) = two_boxes();
+        let r = overlap_fuse_cut(&mut m, BoolKind::Common, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let reach = m.reachable();
+        assert_eq!(reach.vertices.len(), 8);
+        assert_eq!(reach.edges.len(), 12);
+        assert_eq!(reach.faces.len(), 6);
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.125).abs() < 1e-12, "volume {vol}");
     }
 
     /// The L with a box straddling its reflex corner (1,1): a *single* chord with one
