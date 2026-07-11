@@ -923,7 +923,7 @@ fn raise_region(
 // ---- boolean (M5-c3) ----
 
 use nacre_geom::intersect::{
-    RayCross, plane_plane, ray_face_cross, three_plane_orient3d, three_planes,
+    RayCross, plane_plane, plane_side, ray_face_cross, three_plane_orient3d, three_planes,
 };
 #[cfg(test)]
 use std::collections::BTreeSet;
@@ -1421,20 +1421,19 @@ fn solid_vertices(model: &Model, solid: Handle<Solid>) -> Vec<Point3> {
     out
 }
 
-/// Convexity: every vertex is on the inner side of (or on) every face plane.
-/// The signed distance along the outward normal `n_out` is `≤ 0` on the inside;
-/// a small scale-relative tolerance absorbs the f64 non-coplanarity of a
-/// constructed solid's own vertices with its faces (an exact predicate would
-/// read that ~1e-13 slop as "outside"). A genuine reflex vertex pokes out by a
-/// macroscopic amount, far above the tolerance.
+/// Convexity: every vertex is on the inner side of (or on) every face plane, by
+/// the **exact** `plane_side` predicate (cell 5d-1). `pi.tri` is oriented so its
+/// right-hand normal is `n_out`, so `plane_side(pi.tri, v) ≤ 0` is exactly "`v` on
+/// the inner side or on the plane". No tolerance: every operand reaching this is a
+/// solid of exact-coordinate (`Constructed`) vertices, exactly coplanar with their
+/// own axis-aligned faces, so the sign is exact and a reflex vertex pokes out with
+/// a clear sign. (A `Discovered`-vertex operand — a boolean result fed back in —
+/// would read its f64 cache; measured never to reach here, so the exact input path
+/// stands. When it does, cell 5d-2's `plane_orient` judges the triple.)
 fn is_convex(planes: &[PlaneInfo], verts: &[Point3]) -> bool {
-    planes.iter().all(|pi| {
-        verts.iter().all(|&v| {
-            let sd = (v - pi.tri[0]).dot(pi.n_out);
-            let scale = 1e-9 * (v.as_array().iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
-            sd <= scale
-        })
-    })
+    planes
+        .iter()
+        .all(|pi| verts.iter().all(|&v| plane_side(pi.tri, v) <= 0))
 }
 
 /// Whether any two planes in the set are coplanar (parallel normals + each
