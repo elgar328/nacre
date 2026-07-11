@@ -1170,6 +1170,15 @@ fn overlap_fuse_cut(
                     if m == e0 || m == e1 || m == entry {
                         continue;
                     }
+                    // A coplanar twin of one of the triple's planes (two disjoint faces
+                    // sharing a Surface — cell coplanar-narrow) is not a genuine 4th plane:
+                    // the vertex lies on it only because it *is* one of the triple's planes.
+                    if planes_coplanar(&pm.plane, &planes[e0].plane)
+                        || planes_coplanar(&pm.plane, &planes[e1].plane)
+                        || planes_coplanar(&pm.plane, &planes[entry].plane)
+                    {
+                        continue;
+                    }
                     if three_plane_orient3d(
                         &planes[e0].plane,
                         &planes[e1].plane,
