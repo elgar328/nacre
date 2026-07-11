@@ -839,13 +839,13 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 **★ 문 앞의 가드는 뒤에 있는 버그뿐 아니라 뒤에 있는 요구사항도 숨긴다.** `Cut(rod, L)`은 로드를 **둘로 자른다.** 가드를 걷고 재니 `Ok`, 부피 `0.06`, `validate`가 `NegativeGenus { v:16, e:24, f:12, genus:-1 }` — 한 셸 안의 떨어진 두 상자. **`boolean`은 `validate`를 부르지 않으므로 아무도 말하지 않았을 것이다.** `Solid`는 outer shell 하나를 갖고 `boolean`은 핸들 하나를 돌려주므로, 두 성분은 두 솔리드다. 새 가드 `DISCONNECTED_RESULT`(면의 `Node` 공유로 union-find)가 **발화 테스트와 함께** 태어난다. 오늘까지 도달 불가였던 이유가 정확히 `PIERCED_MULTI`다 — A를 가르려면 A의 엣지가 B를 관통해야 하므로.
 
 **잃은 것과 드러난 것, 정직하게.**
-- **cavity를 통째로 가로지르는 엣지의 그물이 사라졌다.** 그런 엣지는 outer shell을 **두 번** 뚫으므로 패리티가 맞고(짝수 == 짝수) 통과한다. 옛 `pierced_face`는 hits ≥ 2를 그 자리에서 삼켰다. 이제 문 앞의 `HOLLOW_OPERAND`만이 막는다. `cut_into_a_cavity_hits_the_tunnel_guard`(hits=1, 홀수)는 그대로 발화한다.
+- **cavity를 통째로 가로지르는 엣지의 그물이 사라졌다.** 그런 엣지는 outer shell을 **두 번** 뚫으므로 패리티가 맞고(짝수 == 짝수) 통과한다. 옛 `pierced_face`는 hits ≥ 2를 그 자리에서 삼켰다. 당시엔 문 앞의 `HOLLOW_OPERAND`만이 막았다. **((5c-in)이 문을 열어 seam front-end를 all-shells로 바꿨다 — void를 비껴가는 cut은 지원, void에 *들어가는* cut은 `SEAM_ENTERS_CAVITY`로 거절. 패리티 TUNNEL은 이제 비대칭이 없어 이 자리를 못 지키므로 명시적 가드로 대체.)**
 - **`NO_ENTRY_FACE`가 비볼록 경로에서 미발화 백스톱이 됐다** — 기계가 옳으면 `s0 != s1`에 hits가 빌 수 없다. 패리티보다 먼저 검사해 더 구체적인 태그를 남긴다.
 - **3f-5의 rim 픽스처 아래에는 `contact_degenerate`가 있었다.** `pierced_multi`를 피하려 고른 좌표였는데, 그 가드를 걷고 재니 부채꼴이 나온다. 서브유닛 5의 빚 다섯째 줄. (**셀 (5a) 뒤에 다시 재니 자연스러운 `[0.55,1.15]² × [0.85,1.15]`가 양쪽 피연산자 순서 모두 `seam_across_hole_rim`까지 도달한다.** 가드 셋을 걷어 낸 자리에 마침내 그 도형에 관한 가드가 섰다.)
 - **볼록 경로는 여전히 `POKE_THROUGH`로 거절한다.** `reconstruct_face`가 `edge_seam`(엣지당 triple 하나)을 읽고 `Option<LocalFace>`를 낸다. `cube_and_notch`가 그 자리에 남는다 — **볼록성의 사실이 아니라 그 자료구조의 한계다.** 사다리 (5).
 - **`multichord`·`pierced_multi`를 피하려 비틀었던 픽스처들**(`l_and_notch_bar`의 모서리 물기, `l_and_staple`의 축평행 면, `l_and_popup_box`의 여유 높이)은 **그대로 둔다.** 한 번에 한 변수.
 
-**M5-d3의 가드는 모두 은퇴했다.** `SEAM_ACROSS_HOLE_RIM`이 마지막이었고 3f-6이 은퇴시켰다(3f-5가 `INNER_LOOP_OPERAND`를 그것으로 좁혔고, 3e-3이 `PIERCED_MULTI`를 은퇴시켰다). `NESTED_LOOPS`(닫힌 고리 nesting)도 3f-7이 은퇴시켰다. **출력 cavity는 (5c)가 열었다**(씨임 경로가 밀봉 void를 cavity 셸로; `disconnected_result`는 진짜 분리에만 남음). 남은 확장은 입력 hollow(`HOLLOW_OPERAND`)·(5d) exactness sweep.
+**M5-d3의 가드는 모두 은퇴했다.** `SEAM_ACROSS_HOLE_RIM`이 마지막이었고 3f-6이 은퇴시켰다(3f-5가 `INNER_LOOP_OPERAND`를 그것으로 좁혔고, 3e-3이 `PIERCED_MULTI`를 은퇴시켰다). `NESTED_LOOPS`(닫힌 고리 nesting)도 3f-7이 은퇴시켰다. **출력 cavity는 (5c)가 열었다**(씨임 경로가 밀봉 void를 cavity 셸로; `disconnected_result`는 진짜 분리에만 남음). **입력 hollow는 (5c-in)이 열었다**(seam이 void를 비껴가면 지원; 진입은 `SEAM_ENTERS_CAVITY`→(5c-in-2)). 남은 확장은 (5d) sweep #4·#5.
 
 **선분 부채꼴이 죽는다 — `CONTACT_DEGENERATE` 은퇴, 좌표가 풀린다 (M5 셀 (5a)).** 커버리지 경계가 기하가 아니라 **좌표의 대칭성**에 달려 있었다. 이 커널의 DNA에 어긋난다.
 
@@ -934,7 +934,7 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **★ 측정: void는 이미 안쪽, 진짜 분리는 양수 둘.** n0 실측 — `Fuse(slab,pc)`: 성분 둘, outer `+7.32`(=2.44)·void `−0.096`(=−0.032). **void가 음수라 `reversed_shell` 불필요** — Fuse가 flip 안 하고 pc 벽·바닥이 이미 pocket(=void) 안쪽을 향한다. `Cut(rod,L)`·`convex_cut_can_sever`: 성분 둘 다 양수 → `positives.len()!=1` → 여전히 `DISCONNECTED_RESULT`. 부호를 **materialize된 Face에서 재므로** assemble의 orient/flip 재현 중복이 없다.
 - **하류는 이미 cavity-ready — 변경 0.** `Solid { outer, cavities }`·`reversed_shell`·`point_in_solid`·`mass_props`(void 빼기)·`check_cavity_orientation`·`tessellate`/`reachable`·STEP `solid_with_voids`가 이미 `once(&outer).chain(cavities)`를 돈다. 변경은 nacre-ops 조립부뿐(`faces_connected` → `face_components` + `shell_signed_flux`).
 - **결과.** `Fuse(slab,pc) = 2.408`(재료), cavity 1(부피 `0.032`), 셸 2, validate 클린, watertight 메시, OCCT `BREP_WITH_VOIDS` 부피+넓이 확인. 양 순서. OCCT 49 → 50.
-- **정직한 빚.** (a) **입력 hollow(`HOLLOW_OPERAND`)은 별개 셀** — `collect_planes`·`solid_vertices`·`edge_incidence`·`pierced_faces`가 outer 셸만 돌아 폭발 반경이 크다. (b) **부호 분류는 f64** — 거시적 부피라 견고(필터의 "clear sign"과 같은 결)하나 위상 결정이라 §9 **"(5d) exactness sweep — 전수조사 표"** #5 항목(exact 대안: 성분 containment를 indirect predicates로). 진리는 여전히 씨임의 exact 술어가 정하고, 이 부호는 파생 캐시 위 위상 라벨이며 validate·부피·OCCT가 net이다.
+- **정직한 빚.** (a) **입력 hollow(`HOLLOW_OPERAND`) — (5c-in)이 해소** (seam front-end 다섯 자리를 all-shells로; seam이 void 비껴가면 지원, 진입은 `SEAM_ENTERS_CAVITY`→(5c-in-2)). (b) **부호 분류는 f64** — 거시적 부피라 견고(필터의 "clear sign"과 같은 결)하나 위상 결정이라 §9 **"(5d) exactness sweep — 전수조사 표"** #5 항목(exact 대안: 성분 containment를 indirect predicates로). 진리는 여전히 씨임의 exact 술어가 정하고, 이 부호는 파생 캐시 위 위상 라벨이며 validate·부피·OCCT가 net이다.
 
 **평면 계수 exact + is_convex tolerance 은퇴 (M5 셀 5d-1).** (5d) exactness sweep 시작. `is_convex`의 `1e-9` tolerance가 무엇을 가리는지 조사하다 전제 둘을 정정했다.
 
@@ -958,6 +958,13 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **★ 발화 = 불리언 결과를 피연산자로 넣는 첫 사례.** is_convex는 coincident 게이트에서만 호출되고 Discovered 정점은 불리언 결과에만 있는데, 스위트 어디도 결과를 후속 피연산자로 안 썼다(연쇄 둘은 hollow라 문 앞 거절). n0 픽스처: 축정렬 정수 박스 둘의 `Common`=[1,2]³ → 8코너 중 **6개가 혼합-평면 교점이라 Discovered**(2개는 원래 코너 Constructed). 이를 셋째 박스에 스택 → coincident 병합이 Discovered-코너 솔리드에 is_convex 발화. **ingestion 클린**(부피 2.0, cavities 0, validate 통과) — 잠재 버그 없음.
 - **정직한 프레이밍 — "더 정확"이 아니라 "결정에서 캐시-읽기 제거".** M5에선 triple=캐시(축정렬 교점 f64-exact). 진짜 불일치는 exact-계수 평면이 f64-비표현 점에서 만나는 TIP-류라 M5 밖. 소득: **(a) sweep 원칙 집행(결정이 f64 캐시 안 읽음), (b) Discovered-operand 경로 첫 측정·경화, (c) TIP/회전 대비 정의-기반화.** #1·#2처럼 동작 보존(전 스위트 + 50 OCCT 불변).
 - **곁들이 #6 (별도 커밋).** `interface_correspondence`의 `1e-9×크기` scale-상대 정점 대응을 **exact 좌표 동일성 `ap==bp`**로. 계획의 "triple 동일성" 제안은 **부적용**(인터페이스 정점은 Constructed라 정의가 없다) — 대응 코너는 같은 점(bit-동일)이라 좌표 동일성이 정답. 견고했던 tol이라 순수성 청소, 전 fixture Case A. #3과 원인 분리 위해 별도 커밋(먼저 착지).
+
+**hollow 입력 operand — seam이 void를 비껴가면 지원 (M5 셀 5c-in). `HOLLOW_OPERAND` 은퇴.** 커버리지 매트릭스의 빨강 하나. cavity는 이미 1급(결과-조립 5c·하류 validate/props/STEP이 `once(&outer).chain(cavities)`로 순회)이라, 갭은 **seam 프론트엔드가 outer 셸만 도는 것**뿐. `solid_shell_handles`(outer+cavities)로 다섯 자리를 all-shells로: `collect_planes`·`solid_vertex_handles`·`edge_incidence`·`solid_face_rings`·**면-재구성 루프**. void가 손 안 대고 결과로 실려 (5c) 성분 분할이 보존.
+
+- **★ 놓친 다섯째 자리 — 재구성 루프.** 4함수만 all-shells로 바꾸고 측정하니 여전히 **silent-drop**(코너 Cut 부피 `26.875`·cavities=0·validate 클린). cavity 면이 `planes`엔 들었으나 `overlap_fuse_cut`의 재구성 루프(`solids.get(solid).outer`만 순회)가 결과로 안 실었다. 그 루프까지 all-shells로 하니 **정답 `25.875`·cavities=1**. 탐색 목록(4함수)이 놓친 자리를 n0 실측이 잡았다.
+- **★ silent-wrong이 loud해졌나 — 그게 문을 여는 조건.** 옛 `HOLLOW_OPERAND`가 막던 건 crash가 아니라 조용한 오답이고, 그 조용함을 잡던 게 outer/cavity **비대칭 TUNNEL**이었다. 둘 다 all-shells면 비대칭이 사라져 TUNNEL이 재구성 버그를 못 잡는다. 그래서 **cut이 void에 *들어가면*(seam 정점이 cavity 벽에 앉으면) 재구성 전에 명시적으로 `SEAM_ENTERS_CAVITY`로 거절** — 조용히 틀릴 자리를 원천 차단. `PlaneInfo.is_cavity`로 판정.
+- **하위-케이스 사다리.** **(A) far-cut**(seam이 void 비껴감, pocket 부품의 다른 곳 bore) = 지원, 정답. **(B) cut-enters-cavity**(void 진입/관통) = `SEAM_ENTERS_CAVITY` 거절, 재구성은 (5c-in-2). n0가 (A) 통과·(B) 거절(silent 아님)을 배선 전 확정.
+- **소득·회귀.** 첫 cavity-생성 연산 뒤에도 **연쇄 불리언**이 된다(hollow 결과를 다시 피연산자로 — (5d)-3 ingestion 위에 얹힘). 비-hollow는 `chain(빈)`이라 불변, 전 스위트 + 50 OCCT 그대로.
 
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
