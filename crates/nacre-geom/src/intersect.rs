@@ -195,6 +195,19 @@ pub fn plane_pair_dir_sign(a: &Plane, b: &Plane, c: &Plane) -> i8 {
     ])
 }
 
+/// Whether `a` and `b` are the **same plane** — coplanar, exactly.
+///
+/// The geom→predicates handoff for [`nacre_predicates::planes_coplanar`]: it hands
+/// over each plane's exact (un-normalized) [`coefficients`](Plane::coefficients) and
+/// asks whether the two `[a, b, c, d]` rows are proportional (rank ≤ 1). Coplanarity
+/// is a topological decision, so it lives on the predicate side of the precision
+/// split (design §3), like [`plane_side`] and [`plane_pair_dir_sign`] — not a
+/// `Plane` method with a length tolerance. Scale-invariant and direction-agnostic:
+/// opposite normals still name the same plane.
+pub fn planes_coplanar(a: &Plane, b: &Plane) -> bool {
+    nacre_predicates::planes_coplanar(a.coefficients(), b.coefficients())
+}
+
 /// Exact forward-ray/triangle crossing for kernel types — the geom→predicates
 /// handoff for [`nacre_predicates::ray_triangle_cross`] (design §8 M5-d
 /// point-in-polyhedron). `d` is the ray direction; `tri` is a single triangle
@@ -441,6 +454,38 @@ mod tests {
             };
             assert_eq!(dot_sign, expect, "plane_plane's direction disagrees");
         }
+    }
+
+    #[test]
+    fn planes_coplanar_names_the_same_plane_regardless_of_scale_or_direction() {
+        // z = 0, built three ways: two positive normals of different magnitude and
+        // one opposite normal. All name the same plane.
+        let a = Plane::through_points(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+        )
+        .unwrap();
+        let bigger = Plane::through_points(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 0.0, 0.0]),
+            Point3::from_array([0.0, 3.0, 0.0]),
+        )
+        .unwrap();
+        let opposite = Plane::through_points(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]),
+        )
+        .unwrap();
+        assert!(planes_coplanar(&a, &bigger));
+        assert!(planes_coplanar(&a, &opposite));
+        // Parallel but offset (z = 1) and non-parallel (y = 0): distinct planes.
+        assert!(!planes_coplanar(
+            &a,
+            &plane([0.0, 0.0, 1.0], [0.0, 0.0, 1.0])
+        ));
+        assert!(!planes_coplanar(&a, &plane([0.0; 3], [0.0, 1.0, 0.0])));
     }
 
     /// `+1` means `V` is on the triangle's right-hand-normal side — pinned here
