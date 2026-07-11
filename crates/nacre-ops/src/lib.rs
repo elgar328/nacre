@@ -2714,7 +2714,12 @@ fn node_vh(n: Node) -> Handle<Vertex> {
 /// position `ia` (`a[ia] → a[ia+1]`), into one loop: walk A from the edge's far end all the
 /// way round to its near end, then insert B's complementary path. The shared interface edge
 /// is dropped; its two endpoints remain as (collinear, for a right prism) boundary points.
-fn splice_side_faces(lf_a: &LocalFace, lf_b: &LocalFace, ia: usize) -> LocalFace {
+fn splice_side_faces(
+    lf_a: &LocalFace,
+    lf_b: &LocalFace,
+    ia: usize,
+    dissolve: &HashSet<Handle<Vertex>>,
+) -> LocalFace {
     let (a, b) = (&lf_a.loop_nodes, &lf_b.loop_nodes);
     let (m, n) = (a.len(), b.len());
     let x = node_vh(a[ia]);
@@ -2732,6 +2737,9 @@ fn splice_side_faces(lf_a: &LocalFace, lf_b: &LocalFace, ia: usize) -> LocalFace
     for t in 2..n {
         nodes.push(b[(ib + t) % n]);
     }
+    // Drop the straight-angle interface vertices: each is flanked by its A and B far
+    // corners, so removing it fuses the split vertical edge into one (cell fuse-coplanar-merge).
+    nodes.retain(|nd| !dissolve.contains(&node_vh(*nd)));
     LocalFace {
         plane_idx: lf_a.plane_idx,
         loop_nodes: nodes,
@@ -2780,10 +2788,46 @@ fn merge_coincident_fuse_faces(
             iface_edges.contains(&key).then_some((key, i))
         })
     };
-    let b_side: HashMap<(usize, usize), usize> = faces_b
+    let edge_to_face = |faces: &[LocalFace]| -> HashMap<(usize, usize), usize> {
+        faces
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, lf)| side_edge(lf).map(|(key, _)| (key, idx)))
+            .collect()
+    };
+    let a_side = edge_to_face(&faces_a);
+    let b_side = edge_to_face(&faces_b);
+    // An interface edge merges when both incident side faces are coplanar and hole-free.
+    let merged: HashSet<(usize, usize)> = iface_edges
         .iter()
-        .enumerate()
-        .filter_map(|(idx, lf)| side_edge(lf).map(|(key, _)| (key, idx)))
+        .filter(|key| match (a_side.get(key), b_side.get(key)) {
+            (Some(&ia), Some(&ib)) => {
+                let (la, lb) = (&faces_a[ia], &faces_b[ib]);
+                la.inner.is_empty()
+                    && lb.inner.is_empty()
+                    && planes_coplanar(&planes[la.plane_idx].plane, &planes[lb.plane_idx].plane)
+            }
+            _ => false,
+        })
+        .copied()
+        .collect();
+    // An interface vertex whose *both* incident interface edges merge is a straight angle:
+    // its A and B vertical edges are the same line `P_i ∩ P_{i-1}`. Dissolve it (drop from
+    // the merged loops) so the split vertical edge fuses into one — a clean box.
+    let nr = ring.len();
+    let dissolve: HashSet<Handle<Vertex>> = (0..nr)
+        .filter(|&i| {
+            let prev = unordered(
+                ring[(i + nr - 1) % nr].index() as usize,
+                ring[i].index() as usize,
+            );
+            let next = unordered(
+                ring[i].index() as usize,
+                ring[(i + 1) % nr].index() as usize,
+            );
+            merged.contains(&prev) && merged.contains(&next)
+        })
+        .map(|i| ring[i])
         .collect();
 
     let mut b_taken = vec![false; faces_b.len()];
@@ -2793,19 +2837,12 @@ fn merge_coincident_fuse_faces(
             out.push(lf_a); // cap
             continue;
         };
-        match b_side.get(&key) {
-            Some(&ib) => {
-                let lf_b = &faces_b[ib];
-                let coplanar =
-                    planes_coplanar(&planes[lf_a.plane_idx].plane, &planes[lf_b.plane_idx].plane);
-                if coplanar && lf_a.inner.is_empty() && lf_b.inner.is_empty() {
-                    b_taken[ib] = true;
-                    out.push(splice_side_faces(&lf_a, lf_b, ia));
-                } else {
-                    out.push(lf_a); // real dihedral, or holed: keep separate
-                }
-            }
-            None => out.push(lf_a),
+        if merged.contains(&key) {
+            let ib = b_side[&key];
+            b_taken[ib] = true;
+            out.push(splice_side_faces(&lf_a, &faces_b[ib], ia, &dissolve));
+        } else {
+            out.push(lf_a); // real dihedral, or holed: keep separate
         }
     }
     for (ib, lf_b) in faces_b.into_iter().enumerate() {
@@ -7357,11 +7394,10 @@ pub mod tests {
 
     #[test]
     fn fuse_stacked_cubes() {
-        // A=[0,1]³ and B=[0,1]²×[1,2] share the z=1 face ⇒ merge into a 1×1×2 box. The four
-        // coplanar side pairs are spliced into 4 faces (cell fuse-coplanar-merge): 6 faces.
-        // The 4 interface corners survive as collinear boundary points (each on a split
-        // vertical edge), so 12 vertices / 16 edges — canonicalising those away is the
-        // follow-up dissolve cell.
+        // A=[0,1]³ and B=[0,1]²×[1,2] share the z=1 face ⇒ merge into a clean 1×1×2 box. The
+        // four coplanar side pairs are spliced into 4 faces, and the four interface corners
+        // (each a straight angle on a split vertical edge) are dissolved, fusing the split
+        // edges — a canonical 6-face / 8-vertex / 12-edge box (cell fuse-coplanar-merge).
         let (mut m, a, b) = stacked_cubes();
         let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
@@ -7369,14 +7405,36 @@ pub mod tests {
         assert!(vs.is_empty(), "{vs:?}");
         let reach = m.reachable();
         assert_eq!(reach.faces.len(), 6);
-        assert_eq!(reach.vertices.len(), 12);
-        assert_eq!(reach.edges.len(), 16);
-        // No coplanar-adjacent faces remain, so the fused solid can chain into a seam boolean.
+        assert_eq!(reach.vertices.len(), 8);
+        assert_eq!(reach.edges.len(), 12);
+        // No coplanar-adjacent faces and no straight angles, so the fused solid chains.
         let planes = collect_planes(&m, r).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
         assert_eq!(m.live_solids, vec![r]);
+    }
+
+    #[test]
+    fn a_fused_stack_chains_through_a_cut() {
+        // The dissolved 1×1×2 box (cell fuse-coplanar-merge) feeds a second boolean. Before
+        // the merge/dissolve this rejected — first as COPLANAR_PAIR (the flat edges), then as
+        // LOOP_ORIENT_MISMATCH (the straight-angle interface corners). A clean box cuts.
+        let (mut m, a, b) = stacked_cubes();
+        let stack = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        // A cutter straddling z=1 (the fused interface) — the seam runs where the split
+        // vertical edges used to be. Result: 2 − 0.5·0.5·1.0.
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.5]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, stack, cutter).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.75).abs() < 1e-12, "volume {vol}");
     }
 
     #[test]

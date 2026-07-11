@@ -837,10 +837,12 @@ fn a_flipped_island_loop_is_caught() {
 #[test]
 fn a_boolean_result_meshes_only_the_live_solid() {
     // `Store` is append-only; `boolean` supersedes rather than deletes. Walking the
-    // face store meshed both original cubes (6 + 6) alongside the union.
+    // face store meshed both original cubes (6 + 6) alongside the union. The union is a
+    // clean 6-face 1×1×2 box (cell fuse-coplanar-merge dissolves the interface corners),
+    // so 12 triangles — not the superseded operands' faces.
     let (m, s) = stacked_fuse();
     let g = mesh_vs_props(&m, s);
-    assert_eq!(g.tris, 20);
+    assert_eq!(g.tris, 12);
     assert_agrees(&g, "stacked fuse");
 }
 
