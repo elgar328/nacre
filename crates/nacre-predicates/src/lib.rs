@@ -157,6 +157,35 @@ pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
     sgn(orient3d(m[0], m[1], m[2], [0.0; 3]))
 }
 
+/// Whether two planes `a, b` (each `[a, b, c, d]` meaning `a·X + b·Y + c·Z + d = 0`)
+/// are the **same plane** — coplanar, independent of normal direction or coefficient
+/// scale. Exact and coordinate-free.
+///
+/// Two planes coincide iff their coefficient 4-vectors are proportional, i.e. the
+/// `2×4` matrix `[a; b]` has rank ≤ 1, i.e. all six `2×2` minors vanish:
+/// `minor(i, j) = a[i]·b[j] − a[j]·b[i] == 0`. The first three (over the normal
+/// components) force the normals parallel; the three pairing `d` force the offsets
+/// consistent. Both signs of proportionality are accepted — opposite normals still
+/// name the same plane.
+///
+/// This is a topological decision, so it sits on the predicate side of the precision
+/// split (design §3). Unlike an absolute-length coincidence tolerance it is
+/// scale-invariant (proportionality is unchanged by scaling either plane), so it
+/// neither false-merges near-but-distinct planes nor false-splits coincident ones.
+/// Each minor's exact sign comes from the same error-free `2×2` machinery as [`det3`].
+pub fn planes_coplanar(a: [f64; 4], b: [f64; 4]) -> bool {
+    // Exact zero-test of the 2×2 minor `a[i]·b[j] − a[j]·b[i]`.
+    let minor_zero = |i: usize, j: usize| {
+        Expansion::two_product(a[i], b[j])
+            .sub(&Expansion::two_product(a[j], b[i]))
+            .sign()
+            == 0
+    };
+    [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
+        .iter()
+        .all(|&(i, j)| minor_zero(i, j))
+}
+
 /// Three planes, each `[a, b, c, d]` meaning `a·X + b·Y + c·Z + d = 0`. When they
 /// meet in a single point that point is *implicit* — the indirect predicates
 /// decide signs about it without ever materializing its (generally irrational)
@@ -697,6 +726,70 @@ mod tests {
             let mf = e.map(|row| row.map(|v| v as f64));
             let mi = e.map(|row| row.map(|v| v as i128));
             prop_assert_eq!(det3_sign(mf), det3_i128(mi).signum() as i8);
+        }
+    }
+
+    // ---- planes_coplanar (M5 (5d)-2) ----
+
+    #[test]
+    fn planes_coplanar_names_the_same_plane() {
+        // Same plane, and the same plane scaled by a negative (opposite normal).
+        assert!(planes_coplanar(
+            [0.0, 0.0, 1.0, -1.0],
+            [0.0, 0.0, 1.0, -1.0]
+        ));
+        assert!(planes_coplanar(
+            [0.0, 0.0, 1.0, -1.0],
+            [0.0, 0.0, -2.0, 2.0]
+        ));
+        // Parallel but offset (z=1 vs z=2): not the same plane.
+        assert!(!planes_coplanar(
+            [0.0, 0.0, 1.0, -1.0],
+            [0.0, 0.0, 1.0, -2.0]
+        ));
+        // Non-parallel normals.
+        assert!(!planes_coplanar(
+            [0.0, 0.0, 1.0, -1.0],
+            [0.0, 1.0, 0.0, -1.0]
+        ));
+        // Through the origin (d = 0): coplanarity reduces to parallel normals, but a
+        // parallel plane with d ≠ 0 is still distinct.
+        assert!(planes_coplanar([1.0, 1.0, 0.0, 0.0], [2.0, 2.0, 0.0, 0.0]));
+        assert!(!planes_coplanar(
+            [1.0, 1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0, -1.0]
+        ));
+    }
+
+    /// The headline for retiring the old absolute-`1e-9` `coplanar` tolerance: two
+    /// planes exactly `1e-9` apart (`z = 0` and `z = 1e-9`). An absolute
+    /// `distance ≤ 1e-9` test **false-merges** them; the exact rank-1 test splits them
+    /// (`minor(2,3) = 1e9·(−1) − 0·1e9 = −1e9 ≠ 0`). `two_product(1e9, 1)` is exact —
+    /// no overflow, no rounding.
+    #[test]
+    fn planes_coplanar_splits_a_1e_9_gap_the_absolute_tolerance_would_merge() {
+        assert!(!planes_coplanar(
+            [0.0, 0.0, 1e9, 0.0],
+            [0.0, 0.0, 1e9, -1.0]
+        ));
+    }
+
+    proptest! {
+        /// Scale-invariance — the property an absolute-length coincidence tolerance
+        /// lacks. Scaling either plane's coefficients by any nonzero λ names the same
+        /// plane, so the decision is unchanged; λ is a power of two so the scaled
+        /// coefficients are exact and the invariance is exact. A plane is always
+        /// coplanar with its own scaling.
+        #[test]
+        fn prop_planes_coplanar_is_scale_invariant(
+            a in prop::array::uniform4(-50.0f64..50.0),
+            b in prop::array::uniform4(-50.0f64..50.0),
+            lambda in prop::sample::select(vec![-4.0f64, -2.0, -0.5, 0.5, 2.0, 4.0]),
+        ) {
+            let scale = |p: [f64; 4], k: f64| p.map(|c| c * k);
+            prop_assert_eq!(planes_coplanar(a, b), planes_coplanar(scale(a, lambda), b));
+            prop_assert_eq!(planes_coplanar(a, b), planes_coplanar(a, scale(b, lambda)));
+            prop_assert!(planes_coplanar(a, scale(a, lambda)));
         }
     }
 
