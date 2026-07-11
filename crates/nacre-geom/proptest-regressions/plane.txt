@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 80cccf2658d438a09bbdd742b46088b5632d2ad2e207de78f03ea70dacc0ca18 # shrinks to (pl, ..) = (Plane { origin: Point { coords: [0.0, 0.0, 0.0] }, normal: Vector { coords: [-1.0, 0.0, 0.0] }, raw: Vector { coords: [-746589392702.8044, 0.0, 0.0] } }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 762276.0338827744] }, Point { coords: [0.0, 979421.3113325004, 0.0] }), p = Point { coords: [-704976.3887488652, 0.0, 0.0] }

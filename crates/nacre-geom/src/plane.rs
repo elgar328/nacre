@@ -2,35 +2,48 @@
 
 use nacre_math::{Point3, Vector3};
 
-/// An unbounded plane, stored as an origin point and a **unit** normal.
+/// An unbounded plane, stored as an origin point, a **unit** normal, and the
+/// **un-normalized** normal it was built from.
 ///
 /// Invariant: `normal` is unit length (to machine precision) — every
-/// constructor normalizes and rejects a zero normal, so downstream code may
-/// assume unit length without re-checking. `origin` is any point on the plane
-/// and is not canonicalized (two `Plane`s describing the same geometric plane
-/// but with different origins, or opposite normals, are distinct under
-/// `PartialEq`).
+/// constructor normalizes and rejects a zero normal, so magnitude consumers
+/// (`signed_distance`, `project`, the conditioning gates in [`crate::intersect`])
+/// may assume unit length without re-checking. `raw` is a positive multiple of
+/// `normal` (the pre-normalization normal), kept because [`Plane::coefficients`]
+/// — the handoff to the exact predicates — must be **exact**: a `through_points`
+/// plane on exact vertices has integer-arithmetic `raw`, so its own vertices
+/// satisfy `a·X + b·Y + c·Z + d = 0` exactly, which the `sqrt`-rounded unit
+/// normal cannot. The predicates are scale-invariant, so `raw`'s length does not
+/// affect their sign (design §9; `prop_scaling_a_plane_is_invariant`). `origin`
+/// is any point on the plane and is not canonicalized.
 ///
 /// Minimal by design (M1): no uv-frame / parametric `evaluate(u, v)` yet. A
 /// parametric frame (two in-plane basis vectors) arrives in M3, when tess
 /// uv-tagging (design §5) and NURBS need surface parameters.
 ///
-/// `PartialEq` is exact `f64` comparison — for tests and literal coincidence
-/// only. "Is this point on the plane?" goes through [`Plane::distance`] /
-/// [`Plane::contains`] with a caller-supplied tolerance, never `==` (overview
-/// 절대원칙 2 & 4). `Eq`/`Hash` are deliberately not implemented.
+/// `PartialEq` is exact `f64` comparison (including `raw`) — for tests and
+/// literal coincidence only. "Is this point on the plane?" goes through
+/// [`Plane::distance`] / [`Plane::contains`] with a caller-supplied tolerance,
+/// never `==` (overview 절대원칙 2 & 4). `Eq`/`Hash` are deliberately not
+/// implemented.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Plane {
     origin: Point3,
     normal: Vector3,
+    raw: Vector3,
 }
 
 impl Plane {
-    /// From an origin and a normal of any nonzero length. Normalizes the
-    /// normal; returns `None` iff `normal` is the zero vector.
+    /// From an origin and a normal of any nonzero length. Stores the unit normal
+    /// for magnitude use and the given normal verbatim as `raw` for exact
+    /// coefficients; returns `None` iff `normal` is the zero vector.
     #[inline]
     pub fn from_point_normal(origin: Point3, normal: Vector3) -> Option<Plane> {
-        normal.normalize().map(|normal| Plane { origin, normal })
+        normal.normalize().map(|unit| Plane {
+            origin,
+            normal: unit,
+            raw: normal,
+        })
     }
 
     /// The plane through three points: `normal = (b − a) × (c − a)` normalized,
@@ -83,18 +96,19 @@ impl Plane {
     }
 
     /// The coefficients `[a, b, c, d]` of the implicit form `a·X + b·Y + c·Z + d = 0`
-    /// — i.e. `[normal, −(normal·origin)]`. The constant `d` is `signed_distance`
-    /// evaluated at the coordinate origin, so `a·Px + b·Py + c·Pz + d ==
-    /// signed_distance(P)`: exactly zero on the plane.
+    /// — `[raw, −(raw·origin)]`, using the **un-normalized** `raw` normal. For a
+    /// plane built through exact vertices this is exact integer arithmetic, so its
+    /// defining points satisfy the form to **exactly zero** (the `sqrt`-rounded
+    /// unit normal does not).
     ///
     /// This is the handoff to `nacre-predicates` (design §9): the exact indirect
-    /// predicates take plane coefficients as plain arrays, never kernel types.
-    /// The normal is unit, but the predicates are scale-invariant, so its length
-    /// does not matter.
+    /// predicates take plane coefficients as plain arrays, never kernel types, and
+    /// are scale-invariant — so `raw`'s length does not affect their sign, only
+    /// its exactness matters.
     #[inline]
     pub fn coefficients(&self) -> [f64; 4] {
-        let [a, b, c] = self.normal.as_array();
-        [a, b, c, self.signed_distance(Point3::origin())]
+        let [a, b, c] = self.raw.as_array();
+        [a, b, c, -self.raw.dot(self.origin - Point3::origin())]
     }
 }
 
@@ -169,6 +183,29 @@ mod tests {
     }
 
     #[test]
+    fn coefficients_are_exact_on_defining_points() {
+        // Un-normalized coefficients from integer points evaluate the implicit form to
+        // **exactly** zero on the plane — the sqrt-rounded unit normal could not. The
+        // tilted plane through these three is `3x − 6y = 0` (normal (3,−6,0), un-normalized).
+        let a = Point3::from_array([0.0, 0.0, 0.0]);
+        let b = Point3::from_array([2.0, 1.0, 0.0]);
+        let c = Point3::from_array([0.0, 0.0, 3.0]);
+        let pl = Plane::through_points(a, b, c).unwrap();
+        assert_eq!(pl.coefficients(), [3.0, -6.0, 0.0, 0.0]);
+        let [ca, cb, cc, cd] = pl.coefficients();
+        let eval = |p: Point3| {
+            let [x, y, z] = p.as_array();
+            ca * x + cb * y + cc * z + cd
+        };
+        assert_eq!(eval(a), 0.0);
+        assert_eq!(eval(b), 0.0);
+        assert_eq!(eval(c), 0.0);
+        assert_eq!(eval(Point3::from_array([2.0, 1.0, 5.0])), 0.0); // a 4th exactly-coplanar point
+        // `normal()` is still the unit normal, for magnitude consumers.
+        assert!((pl.normal().norm() - 1.0).abs() < 1e-15);
+    }
+
+    #[test]
     fn degenerate_constructions_return_none() {
         assert!(Plane::from_point_normal(Point3::origin(), Vector3::zero()).is_none());
         // collinear
@@ -240,14 +277,17 @@ mod tests {
             prop_assert!(pl.signed_distance(q - n) < 0.0);
         }
 
-        /// The implicit form `a·x + b·y + c·z + d` reproduces `signed_distance`.
+        /// The implicit form `a·x + b·y + c·z + d` is `signed_distance` scaled by the
+        /// un-normalized `raw`'s length: `raw = |raw|·n̂`, so `eval = |raw|·signed_distance`.
+        /// Its **sign** matches (scale-invariant), which is all the predicates read.
         #[test]
-        fn coefficients_evaluate_to_signed_distance((pl, ..) in plane_and_points(), p in pt3()) {
+        fn coefficients_evaluate_to_scaled_signed_distance((pl, ..) in plane_and_points(), p in pt3()) {
             let [a, b, c, d] = pl.coefficients();
             let [x, y, z] = p.as_array();
             let eval = a * x + b * y + c * z + d;
-            let scale = 1e-9 * (p.as_array().iter().map(|v| v.abs()).fold(0.0, f64::max) + 1.0);
-            prop_assert!((eval - pl.signed_distance(p)).abs() <= scale);
+            let raw_len = (a * a + b * b + c * c).sqrt();
+            let scale = 1e-9 * raw_len * (p.as_array().iter().map(|v| v.abs()).fold(0.0, f64::max) + 1.0);
+            prop_assert!((eval - raw_len * pl.signed_distance(p)).abs() <= scale);
         }
     }
 }
