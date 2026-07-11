@@ -1950,7 +1950,8 @@ fn reconstruct_face_paths(
         // Alternation gives the run classes their shape, `classof` anchors them, and every
         // vertex is checked against the propagation. A run with no vertex has only the
         // alternation — and that is the run this cell exists for.
-        let rk = arrange::run_classes(&br.runs, &kept)?;
+        // One ring for now: cell 3f-6 splits `ring_lens` when `∂f` spans several.
+        let rk = arrange::run_classes(&br.runs, &kept, &[br.runs.len()])?;
         (br.crossings, br.runs, rk)
     };
     let cross_ix: HashMap<[usize; 3], usize> =
@@ -3590,7 +3591,7 @@ pub mod tests {
             })
             .collect();
         assert_eq!(kept_vert, vec![false; 4]);
-        let kept = arrange::run_classes(&br.runs, &kept_vert).unwrap();
+        let kept = arrange::run_classes(&br.runs, &kept_vert, &[br.runs.len()]).unwrap();
         assert_eq!(kept.iter().filter(|&&k| k).count(), 2);
         for (j, r) in br.runs.iter().enumerate() {
             assert_eq!(kept[j], r.is_empty(), "run {j}");
@@ -3603,22 +3604,51 @@ pub mod tests {
     fn run_classes_alternate_and_are_anchored_by_a_vertex() {
         // `cube_and_notch`'s floor: run 0 empty (inside the notch), run 1 the four corners.
         let runs = vec![vec![], vec![0, 1, 2, 3]];
-        let kept = arrange::run_classes(&runs, &[true; 4]).unwrap();
+        let kept = arrange::run_classes(&runs, &[true; 4], &[2]).unwrap();
         assert_eq!(kept, vec![false, true]);
 
         // A vertex disagreeing with the propagation is the two machineries in conflict.
         assert_rejects(
-            || arrange::run_classes(&[vec![0], vec![1]], &[true, true]),
+            || arrange::run_classes(&[vec![0], vec![1]], &[true, true], &[2]),
             tag::SEAM_COUNT_MISMATCH,
         );
         // Crossings alternate enter/exit around a closed curve, so an odd count is a lie.
         assert_rejects(
-            || arrange::run_classes(&[vec![0]], &[true]),
+            || arrange::run_classes(&[vec![0]], &[true], &[1]),
             tag::SEAM_COUNT_MISMATCH,
         );
         // Nothing anchors a boundary made only of vertex-free runs.
         assert_rejects(
-            || arrange::run_classes(&[vec![], vec![]], &[]),
+            || arrange::run_classes(&[vec![], vec![]], &[], &[2]),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+
+        // Two rings, seeded apart (cell 3f-6). The outer runs `[_, {0,1}]` are kept, the rim
+        // runs `[_, {2,3}]` dropped — the firing lid, whose outer boundary lies in the box and
+        // whose pocket rim lies out of it. A single global alternation would carry the outer
+        // seed onto the rim and conflict with the rim's own vertices; per-ring seeding is what
+        // lets the two loops disagree. Result `[F, T, T, F]`.
+        let runs = vec![vec![], vec![0, 1], vec![], vec![2, 3]];
+        let kept_vert = [true, true, false, false];
+        assert_eq!(
+            arrange::run_classes(&runs, &kept_vert, &[2, 2]).unwrap(),
+            vec![false, true, true, false],
+            "each ring seeded by its own vertex"
+        );
+        // A ring with an odd run count: its crossings do not alternate around a closed loop.
+        assert_rejects(
+            || arrange::run_classes(&[vec![0], vec![1], vec![2], vec![3]], &[true; 4], &[1, 3]),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+        // A ring of only vertex-free runs, beside a well-anchored one: no anchor, still a lie.
+        assert_rejects(
+            || arrange::run_classes(&[vec![], vec![], vec![0], vec![1]], &[true; 2], &[2, 2]),
+            tag::SEAM_COUNT_MISMATCH,
+        );
+        // A vertex inside one ring disagreeing with that ring's propagation — the two machines
+        // in conflict, caught by the global check even when the other ring is clean.
+        assert_rejects(
+            || arrange::run_classes(&[vec![], vec![0, 1], vec![2], vec![3]], &[true; 4], &[2, 2]),
             tag::SEAM_COUNT_MISMATCH,
         );
     }

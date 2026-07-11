@@ -485,19 +485,37 @@ fn ordered_on_edge(
 ///
 /// A run with no vertex is decided by alternation alone. That is exactly the run between
 /// two crossings of one edge, and it has no other source of truth.
-pub(crate) fn run_classes(runs: &[Vec<usize>], kept_vert: &[bool]) -> Result<Vec<bool>, BoolError> {
-    let n = runs.len();
-    // Crossings alternate enter/exit around a closed `∂f`, so there are evenly many.
-    if n == 0 || n % 2 != 0 {
+///
+/// `ring_lens` is the run count of each ring of `∂f`, in the concatenated order `runs` are
+/// laid out. Alternation only wraps within a ring — a crossing on the outer loop says nothing
+/// about a run on a hole rim — so each ring is seeded and propagated on its own. A single ring
+/// passes `&[runs.len()]`. Each ring must have evenly many runs (its crossings alternate
+/// around a closed loop) and at least one vertex to anchor it; a ring of vertex-free runs has
+/// no source of truth and is rejected. The vertex check is global: every run, every ring.
+pub(crate) fn run_classes(
+    runs: &[Vec<usize>],
+    kept_vert: &[bool],
+    ring_lens: &[usize],
+) -> Result<Vec<bool>, BoolError> {
+    if ring_lens.iter().sum::<usize>() != runs.len() {
         return Err(reject(tag::SEAM_COUNT_MISMATCH));
     }
-    let seed = (0..n)
-        .find(|&j| !runs[j].is_empty())
-        .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
-    let s = kept_vert[runs[seed][0]];
-    let mut kept = vec![false; n];
-    for j in 0..n {
-        kept[(seed + j) % n] = if j % 2 == 0 { s } else { !s };
+    let mut kept = vec![false; runs.len()];
+    let mut base = 0;
+    for &len in ring_lens {
+        // Crossings alternate enter/exit around a closed ring, so there are evenly many.
+        if len == 0 || len % 2 != 0 {
+            return Err(reject(tag::SEAM_COUNT_MISMATCH));
+        }
+        let ring = &runs[base..base + len];
+        let seed = (0..len)
+            .find(|&j| !ring[j].is_empty())
+            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
+        let s = kept_vert[ring[seed][0]];
+        for j in 0..len {
+            kept[base + (seed + j) % len] = if j % 2 == 0 { s } else { !s };
+        }
+        base += len;
     }
     for (j, run) in runs.iter().enumerate() {
         if run.iter().any(|&v| kept_vert[v] != kept[j]) {
