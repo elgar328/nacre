@@ -1405,36 +1405,44 @@ fn outer_tri(model: &Model, face: &Face) -> Option<[Point3; 3]> {
 
 /// The distinct outer-shell vertices of a solid.
 ///
-/// Outer loops only, and that is complete: manifoldness puts every hole-ring
-/// vertex on the outer loop of an adjacent wall face too.
-fn solid_vertices(model: &Model, solid: Handle<Solid>) -> Vec<Point3> {
-    let shell = model.solids.get(solid).outer;
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for &fh in &model.shells.get(shell).faces {
-        for &he in &model.faces.get(fh).outer.half_edges {
-            let vh = he_start(model, he);
-            if seen.insert(vh) {
-                out.push(model.vertices.get(vh).point);
-            }
-        }
-    }
-    out
-}
-
-/// Convexity: every vertex is on the inner side of (or on) every face plane, by
-/// the **exact** `plane_side` predicate (cell 5d-1). `pi.tri` is oriented so its
-/// right-hand normal is `n_out`, so `plane_side(pi.tri, v) ≤ 0` is exactly "`v` on
-/// the inner side or on the plane". No tolerance: every operand reaching this is a
-/// solid of exact-coordinate (`Constructed`) vertices, exactly coplanar with their
-/// own axis-aligned faces, so the sign is exact and a reflex vertex pokes out with
-/// a clear sign. (A `Discovered`-vertex operand — a boolean result fed back in —
-/// would read its f64 cache; measured never to reach here, so the exact input path
-/// stands. When it does, cell 5d-2's `plane_orient` judges the triple.)
-fn is_convex(planes: &[PlaneInfo], verts: &[Point3]) -> bool {
-    planes
-        .iter()
-        .all(|pi| verts.iter().all(|&v| plane_side(pi.tri, v) <= 0))
+/// Convexity: every vertex is on the inner side of (or on) every face plane,
+/// judged by the vertex's **definition**, not its f64 coordinate cache (cell
+/// 5d-3). `pi.tri` is oriented so its right-hand normal is `n_out`, so `side ≤ 0`
+/// is exactly "inner side or on the plane", and no tolerance enters:
+/// - a `Constructed` vertex's coordinate *is* the truth → exact `plane_side`;
+/// - a `Discovered` vertex is the meet of three planes → judge that implicit
+///   point against the face directly with `three_plane_orient3d`, never reading
+///   its rounded `point` cache.
+///
+/// A boolean *result* fed back as an operand carries `Discovered` corners (the
+/// first such operand is cell 5d-3's fixture), so this branch is live. In M5 the
+/// two paths agree (axis-aligned meets are f64-exact); the point is to keep the
+/// convexity decision off the coordinate cache, as the sweep requires.
+fn is_convex(model: &Model, planes: &[PlaneInfo], vhs: &[Handle<Vertex>]) -> bool {
+    let plane_of = |s: Handle<Surface>| match model.surfaces.get(s) {
+        Surface::Plane(p) => Some(p),
+        _ => None,
+    };
+    planes.iter().all(|pi| {
+        vhs.iter().all(|&vh| {
+            let v = model.vertices.get(vh);
+            let side = match v.origin {
+                Origin::Discovered {
+                    definition: VertexDef::ThreePlane([s0, s1, s2]),
+                    ..
+                } => match (plane_of(s0), plane_of(s1), plane_of(s2)) {
+                    (Some(p0), Some(p1), Some(p2)) => {
+                        three_plane_orient3d(p0, p1, p2, pi.tri[0], pi.tri[1], pi.tri[2])
+                    }
+                    // M5-impossible (a three-plane def whose surfaces aren't all
+                    // planes); fall back to the cached point defensively.
+                    _ => plane_side(pi.tri, v.point),
+                },
+                Origin::Constructed => plane_side(pi.tri, v.point),
+            };
+            side <= 0
+        })
+    })
 }
 
 /// Whether any two planes in the set are the same plane, by the exact rank-1
@@ -2523,8 +2531,8 @@ fn detect_coincident_interface(
 ) -> Option<Interface> {
     let planes_a = collect_planes(model, a).ok()?;
     let planes_b = collect_planes(model, b).ok()?;
-    if !is_convex(&planes_a, &solid_vertices(model, a))
-        || !is_convex(&planes_b, &solid_vertices(model, b))
+    if !is_convex(model, &planes_a, &solid_vertex_handles(model, a))
+        || !is_convex(model, &planes_b, &solid_vertex_handles(model, b))
     {
         return None;
     }
@@ -5789,15 +5797,74 @@ pub mod tests {
         let (m, pc) = pocketed_cube();
         assert!(!m.faces.get(solid_faces(&m, pc)[1]).inner.is_empty()); // the lid is holed
         let planes = collect_planes(&m, pc).unwrap();
-        assert!(!is_convex(&planes, &solid_vertices(&m, pc)));
+        assert!(!is_convex(&m, &planes, &solid_vertex_handles(&m, pc)));
     }
 
     #[test]
     fn an_imprinted_cube_is_convex() {
         let (m, ic) = imprinted_cube();
         let planes = collect_planes(&m, ic).unwrap();
-        assert!(is_convex(&planes, &solid_vertices(&m, ic)));
+        assert!(is_convex(&m, &planes, &solid_vertex_handles(&m, ic)));
         assert!(has_coplanar_pair(&planes)); // the lid and its region face
+    }
+
+    /// A boolean *result* (here `Common` of two overlapping cubes) carries
+    /// `Discovered` corners — the mixed-plane meets. This is the first operand
+    /// that drives `is_convex`'s definition-based branch (cell 5d-3): those
+    /// corners must be judged by their plane triple (`three_plane_orient3d`), not
+    /// their coordinate cache, and the overlap box still reads convex.
+    #[test]
+    fn is_convex_judges_a_discovered_operand_by_its_triple() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 1.0]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let c = boolean(&mut m, BoolKind::Common, a, b).unwrap(); // the box [1,2]³
+        m.rebuild_adjacency();
+        let vhs = solid_vertex_handles(&m, c);
+        // Six of the eight corners are mixed A/B-plane meets ⇒ Discovered; the
+        // branch is genuinely exercised (the two original corners stay Constructed).
+        let n_disc = vhs
+            .iter()
+            .filter(|&&vh| matches!(m.vertices.get(vh).origin, Origin::Discovered { .. }))
+            .count();
+        assert_eq!(n_disc, 6, "expected 6 Discovered corners, got {n_disc}");
+        let planes = collect_planes(&m, c).unwrap();
+        assert!(is_convex(&m, &planes, &vhs));
+    }
+
+    /// The first time a boolean result is fed back as an operand: the overlap box
+    /// (Discovered corners) stacked on a third box merges through the coincident-
+    /// interface path — which runs `is_convex` on that Discovered-cornered
+    /// operand. Volume is the sum and the shell stays closed.
+    #[test]
+    fn a_boolean_result_stacks_as_an_operand() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 1.0]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let c = boolean(&mut m, BoolKind::Common, a, b).unwrap(); // [1,2]³
+        m.rebuild_adjacency();
+        let d = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 2.0]),
+            Point3::from_array([2.0, 2.0, 3.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Fuse, c, d).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
+        assert_eq!(m.solids.get(r).cavities.len(), 0);
     }
 
     /// The pocketed cube with a second square imprinted on the pocket's floor: non-convex,
