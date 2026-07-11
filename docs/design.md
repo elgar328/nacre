@@ -782,6 +782,14 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **결과.** `Fuse(slab,pc) = 2.408`(재료), cavity 1(부피 `0.032`), 셸 2, validate 클린, watertight 메시, OCCT `BREP_WITH_VOIDS` 부피+넓이 확인. 양 순서. OCCT 49 → 50.
 - **정직한 빚.** (a) **입력 hollow(`HOLLOW_OPERAND`)은 별개 셀** — `collect_planes`·`solid_vertices`·`edge_incidence`·`pierced_faces`가 outer 셸만 돌아 폭발 반경이 크다. (b) **부호 분류는 f64** — 거시적 부피라 견고(필터의 "clear sign"과 같은 결)하나 위상 결정이라 **(5d) exactness sweep의 전수조사 표에 추가**(exact 대안: 성분 containment를 indirect predicates로). 진리는 여전히 씨임의 exact 술어가 정하고, 이 부호는 파생 캐시 위 위상 라벨이며 validate·부피·OCCT가 net이다.
 
+**평면 계수 exact + is_convex tolerance 은퇴 (M5 셀 5d-1).** (5d) exactness sweep 시작. `is_convex`의 `1e-9` tolerance가 무엇을 가리는지 조사하다 전제 둘을 정정했다.
+
+- **★ 회전은 M5 관심사가 아니다.** is_convex tolerance는 "constructed 솔리드 정점의 f64 비공면"을 흡수한다는데, 그 뿌리로 의심된 회전 픽스처가 **없다** — `rotated_l_prism`은 정점 순서 순환 이동(정수 축정렬, 기하 회전 아님)이고 프로덕션도 솔리드 회전이 없다. 기울어진 형상이 필요하면 정수/유리수 좌표로 직접 구성해 면을 정확히 공면으로 둔다. **M5 픽스처는 exact 좌표만.** 회전(모델링 변환)은 도입 시점에 그 f64 오차를 tol 추적으로 별도 설계한다. (예외: `common_tilted_prism` proptest가 f64-기울어진 SketchPlane을 쓰나, 그 결과가 coincident 인터페이스가 없어 is_convex 값이 결과에 무관 — 오염 없음.)
+- **★ 측정: Discovered 정점은 is_convex에 한 번도 안 닿는다.** 전체 스위트 계측 결과 is_convex 도달 피연산자가 **전부 Constructed**(`Discovered=0`). tolerance의 명목(Discovered 캐시 흡수)은 **미발화**였다. is_convex는 `detect_coincident_interface`(imprint/coincident)에서만 호출되고 불리언 결과는 대개 비볼록이라, "볼록+Discovered+coincident"가 빈 교집합인 것이다.
+- **은퇴.** is_convex의 `sd≤scale(1e-9)`를 **exact `plane_side(pi.tri, v) ≤ 0`**로. `pi.tri`가 RH 법선=`n_out` 정렬이라 부호 직접, tolerance·`n_out` 읽기 삭제. 시그니처 불변(Constructed만 닿으므로 handle 불필요). exact가 tolerance와 **모든 피연산자에서 일치**함을 계측이 확인(과잉 거절 0). Discovered가 닿는 날은 (5d)-2의 `plane_orient`(det4: `sign(det4[Q1;Q2;Q3;P])·sign(det3)`)가 triple로 판정 — 그러나 발화 픽스처가 없어 **미리 안 짓는다**(미발화 machinery 회피).
+- **토대: 평면 계수 exact.** `Plane`이 `through_points`에서 정규화(sqrt)해 계수가 반올림이던 것을, **비정규화 `raw`를 함께 저장**해 `coefficients()`가 exact(정의 정점에서 `a·v+d=0` 정확). `normal()`은 저장 unit 바이트 동일이라 좌표(`plane_plane`·`three_planes`)·게이트(`PARALLEL_EPS`)·크기(flux·STEP)·`project` 전부 불변. 술어는 scale-invariant라 큰 계수도 부호 불변(`prop_scaling_a_plane_is_invariant`), 회귀 0. 씨임 경로의 Discovered 교점이 이제 참 평면 위에 정의된다 — coplanar·plane_side triple-sourcing·plane_orient가 딛는 토대.
+- **전수조사 표 갱신:** `is_convex`는 은퇴(exact `plane_side`). 남은 (5d): `coplanar`·plane_side triple-sourcing·cavity 분류 부호·`plane_orient` 광선-free 분류기.
+
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
 
