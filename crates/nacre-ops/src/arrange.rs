@@ -14,7 +14,9 @@
 // build rightly sees it as unreachable.
 #![cfg_attr(not(test), allow(dead_code))]
 
-use crate::{BoolError, PlaneInfo, edge_incidence, face_half_edges, reject, tag};
+use crate::{
+    BoolError, PlaneInfo, edge_incidence, face_half_edges, reject, solid_shell_handles, tag,
+};
 use nacre_geom::Surface;
 use nacre_geom::intersect::{
     plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d, three_planes,
@@ -120,85 +122,86 @@ pub(crate) fn seam_segments_on(
 ) -> Result<Vec<SeamSegment>, BoolError> {
     let p = surf_ix[&model.faces.get(f).surface];
     let f_rings = face_rings(model, f, p, inc_x)?;
-    let shell = model.solids.get(other).outer;
 
     let mut out = Vec::new();
-    for &g in &model.shells.get(shell).faces {
-        let q = surf_ix[&model.faces.get(g).surface];
-        let g_rings = face_rings(model, g, q, inc_y)?;
+    for shell in solid_shell_handles(model, other) {
+        for &g in &model.shells.get(shell).faces {
+            let q = surf_ix[&model.faces.get(g).surface];
+            let g_rings = face_rings(model, g, q, inc_y)?;
 
-        // `∂(f ∩ g) ⊆ (∂f ∩ g) ∪ (f ∩ ∂g)`, and these two sweeps collect exactly
-        // those parts: a boundary crossing that lands outside the other face never
-        // enters. That is what lets the sorted crossings be paired off directly.
-        //
-        // Sweep 1 walks `∂f`, so its crossings are boundary nodes and carry the edge
-        // they lie on. Sweep 2 walks `∂g`: interior nodes, no edge of `f`.
-        //
-        // `∂f` and `∂g` are every loop, holes included. A hole rim of `g` crossing `P`
-        // inside `f` is a seam node like any other; skipping it left an odd crossing
-        // count, and `ARRANGEMENT_DEGENERATE` cried in place of the honest guard.
-        let mut third: Vec<(usize, Option<Handle<Edge>>)> = Vec::new();
-        for (face, rings, inc, own, into, on_f) in [
-            (f, &g_rings, inc_x, p, q, true),
-            (g, &f_rings, inc_y, q, p, false),
-        ] {
-            for he in face_half_edges(model.faces.get(face)) {
-                let (bounds, pair) = inc[&he.edge];
-                let [pa, pb] = pair;
-                let r = if pa == own { pb } else { pa };
-                let (v0, v1) = (
-                    model.vertices.get(bounds[0]).point,
-                    model.vertices.get(bounds[1]).point,
-                );
-                if edge_crosses_face(planes, pair, v0, v1, into, rings)? {
-                    third.push((r, on_f.then_some(he.edge)));
+            // `∂(f ∩ g) ⊆ (∂f ∩ g) ∪ (f ∩ ∂g)`, and these two sweeps collect exactly
+            // those parts: a boundary crossing that lands outside the other face never
+            // enters. That is what lets the sorted crossings be paired off directly.
+            //
+            // Sweep 1 walks `∂f`, so its crossings are boundary nodes and carry the edge
+            // they lie on. Sweep 2 walks `∂g`: interior nodes, no edge of `f`.
+            //
+            // `∂f` and `∂g` are every loop, holes included. A hole rim of `g` crossing `P`
+            // inside `f` is a seam node like any other; skipping it left an odd crossing
+            // count, and `ARRANGEMENT_DEGENERATE` cried in place of the honest guard.
+            let mut third: Vec<(usize, Option<Handle<Edge>>)> = Vec::new();
+            for (face, rings, inc, own, into, on_f) in [
+                (f, &g_rings, inc_x, p, q, true),
+                (g, &f_rings, inc_y, q, p, false),
+            ] {
+                for he in face_half_edges(model.faces.get(face)) {
+                    let (bounds, pair) = inc[&he.edge];
+                    let [pa, pb] = pair;
+                    let r = if pa == own { pb } else { pa };
+                    let (v0, v1) = (
+                        model.vertices.get(bounds[0]).point,
+                        model.vertices.get(bounds[1]).point,
+                    );
+                    if edge_crosses_face(planes, pair, v0, v1, into, rings)? {
+                        third.push((r, on_f.then_some(he.edge)));
+                    }
                 }
             }
-        }
-        if third.is_empty() {
-            continue;
-        }
-
-        third.sort_by(|&(i, _), &(j, _)| match order_along(planes, p, q, i, j) {
-            -1 => Ordering::Less,
-            1 => Ordering::Greater,
-            _ => Ordering::Equal,
-        });
-        for w in third.windows(2) {
-            if order_along(planes, p, q, w[0].0, w[1].0) != -1 {
-                // Coincident crossings, or `L` through a vertex of a face: four planes
-                // meet at one point. A duplicate `R` (two collinear edges of a
-                // non-convex face on one neighbour plane) lands here too — `order` of a
-                // plane against itself is 0 — which is what keeps two distinct nodes
-                // from ever collapsing onto one triple.
-                return Err(reject(tag::FOURPLANE));
+            if third.is_empty() {
+                continue;
             }
-        }
-        if third.len() % 2 != 0 {
-            // Crossings alternate enter/exit and both ends of `L` lie outside, so an
-            // odd count means one was missed: `L` grazed a vertex or ran along an edge.
-            // Never guess where the material is.
-            return Err(reject(tag::ARRANGEMENT_DEGENERATE));
-        }
 
-        for w in third.chunks_exact(2) {
-            let ((r0, e0), (r1, e1)) = (w[0], w[1]);
-            let point_of = |r: usize| {
-                three_planes(&planes[p].plane, &planes[q].plane, &planes[r].plane)
-                    .ok_or_else(|| reject(tag::THREE_PLANES))
-            };
-            let seg = SeamSegment {
-                plane_pair: [p, q],
-                ends: [triple(p, q, r0), triple(p, q, r1)],
-                points: [point_of(r0)?, point_of(r1)?],
-                on_edge: [e0, e1],
-            };
-            debug_assert_eq!(
-                shared_planes(&seg.ends),
-                sorted_pair(p, q),
-                "a segment's endpoint triples must share exactly P and Q"
-            );
-            out.push(seg);
+            third.sort_by(|&(i, _), &(j, _)| match order_along(planes, p, q, i, j) {
+                -1 => Ordering::Less,
+                1 => Ordering::Greater,
+                _ => Ordering::Equal,
+            });
+            for w in third.windows(2) {
+                if order_along(planes, p, q, w[0].0, w[1].0) != -1 {
+                    // Coincident crossings, or `L` through a vertex of a face: four planes
+                    // meet at one point. A duplicate `R` (two collinear edges of a
+                    // non-convex face on one neighbour plane) lands here too — `order` of a
+                    // plane against itself is 0 — which is what keeps two distinct nodes
+                    // from ever collapsing onto one triple.
+                    return Err(reject(tag::FOURPLANE));
+                }
+            }
+            if third.len() % 2 != 0 {
+                // Crossings alternate enter/exit and both ends of `L` lie outside, so an
+                // odd count means one was missed: `L` grazed a vertex or ran along an edge.
+                // Never guess where the material is.
+                return Err(reject(tag::ARRANGEMENT_DEGENERATE));
+            }
+
+            for w in third.chunks_exact(2) {
+                let ((r0, e0), (r1, e1)) = (w[0], w[1]);
+                let point_of = |r: usize| {
+                    three_planes(&planes[p].plane, &planes[q].plane, &planes[r].plane)
+                        .ok_or_else(|| reject(tag::THREE_PLANES))
+                };
+                let seg = SeamSegment {
+                    plane_pair: [p, q],
+                    ends: [triple(p, q, r0), triple(p, q, r1)],
+                    points: [point_of(r0)?, point_of(r1)?],
+                    on_edge: [e0, e1],
+                };
+                debug_assert_eq!(
+                    shared_planes(&seg.ends),
+                    sorted_pair(p, q),
+                    "a segment's endpoint triples must share exactly P and Q"
+                );
+                out.push(seg);
+            }
         }
     }
     Ok(out)

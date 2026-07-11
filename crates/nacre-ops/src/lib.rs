@@ -142,10 +142,6 @@ pub enum BoolError {
 /// of a test's expectation. Not `#[cfg(test)]`: the guards name these in release
 /// builds too. They are `const`, so they inline away where the tag is unused.
 pub(crate) mod tag {
-    /// A seam vertex lands on a cavity (void) wall — the operation reaches into an
-    /// operand's void. Cavitied operands are supported when the seam misses the void
-    /// (cell (5c-in)); reconstructing a cut that enters a void is (5c-in-2).
-    pub const SEAM_ENTERS_CAVITY: &str = "seam_enters_cavity";
     /// A seam-free face whose rings do not agree about which side of the other solid
     /// they are on. A backstop with no firing test: were a rim vertex classified against
     /// the outer ring, the other boundary would separate the two rings and so would cut
@@ -951,10 +947,6 @@ pub(crate) struct PlaneInfo {
     /// source of "outward" for both the in/out sign test and face ordering.
     pub(crate) n_out: Vector3,
     pub(crate) orient: Orientation,
-    /// The face is on a cavity (void) shell, not the outer shell. A seam vertex
-    /// landing on such a face means the operation reaches into a void — reconstruction
-    /// of that is cell (5c-in-2)'s job, so it is rejected here (`SEAM_ENTERS_CAVITY`).
-    pub(crate) is_cavity: bool,
 }
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
@@ -1141,14 +1133,6 @@ fn overlap_fuse_cut(
             let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
             let hits = pierced_faces(&planes, inc, p0, p1, other)?;
-            // A seam vertex on a cavity wall means the cut reaches into a void.
-            // Cell (5c-in) carries voids the seam *misses*; reconstructing a cut that
-            // *enters* one is (5c-in-2). Reject explicitly so it can never silently
-            // mis-reconstruct (the old outer-only asymmetry is gone, so the parity
-            // guard below no longer catches it).
-            if hits.iter().any(|&q| planes[q].is_cavity) {
-                return Err(reject(tag::SEAM_ENTERS_CAVITY));
-            }
             let straddles = s0 != s1;
             if straddles && hits.is_empty() {
                 return Err(reject(tag::NO_ENTRY_FACE)); // an unfired backstop, now
@@ -1359,8 +1343,7 @@ pub(crate) fn collect_planes(
     solid: Handle<Solid>,
 ) -> Result<Vec<PlaneInfo>, BoolError> {
     let mut out = Vec::new();
-    for (si, sh) in solid_shell_handles(model, solid).into_iter().enumerate() {
-        let is_cavity = si > 0; // shell 0 is the outer shell; the rest are cavities
+    for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
             let plane = match model.surfaces.get(face.surface) {
@@ -1378,7 +1361,6 @@ pub(crate) fn collect_planes(
                 tri,
                 n_out,
                 orient: face.orientation,
-                is_cavity,
             });
         }
     }
@@ -1388,7 +1370,7 @@ pub(crate) fn collect_planes(
 /// All shells of a solid — outer first, then cavities. The boolean seam
 /// front-end walks these so a cavitied operand's void walls are seen (cell
 /// (5c-in)); a non-hollow solid yields just its outer shell, unchanged.
-fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Shell>> {
+pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Shell>> {
     let s = model.solids.get(solid);
     std::iter::once(s.outer)
         .chain(s.cavities.iter().copied())
@@ -6409,24 +6391,69 @@ pub mod tests {
     }
 
     #[test]
-    fn cut_into_a_cavity_is_unsupported() {
-        // A cut reaching *into* a void: the stub rises from below the hollow L up into
-        // its cavity, so a seam vertex lands on a cavity wall. Carrying voids the seam
-        // *misses* is (5c-in); reconstructing a cut that *enters* one is (5c-in-2), so
-        // this rejects explicitly as `SEAM_ENTERS_CAVITY` — before reconstruction, so it
-        // can never silently mis-reconstruct (the old outer-only parity net is gone now
-        // that both shells are counted).
-        let (mut m, l, inner) = l_and_inner_box();
-        let hollow = boolean(&mut m, BoolKind::Cut, l, inner).unwrap();
+    fn blind_hole_drills_into_a_void() {
+        // A cut reaching *into* a void: a stub drilled from below the hollow box up into
+        // its void. The void loses its enclosure and merges with the outer shell (an
+        // open pocket, cavities 0). The seam machinery (all-shells) + the (5c) component
+        // split reconstruct it exactly: remove the channel [1.4,1.6]²×[0,1]=0.04 through
+        // the floor, void interior removes nothing ⇒ 26 − 0.04 = 25.96.
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
         assert_eq!(m.solids.get(hollow).cavities.len(), 1);
         m.rebuild_adjacency();
         let stub = m.add_cuboid(
-            Point3::from_array([0.4, 0.4, -0.2]),
-            Point3::from_array([0.6, 0.6, 0.5]),
+            Point3::from_array([1.4, 1.4, -0.5]),
+            Point3::from_array([1.6, 1.6, 1.5]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, hollow, stub).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 25.96).abs() < 1e-9, "volume {vol}");
+        assert_eq!(m.solids.get(r).cavities.len(), 0); // the void opened to outside
+    }
+
+    #[test]
+    fn a_tunnel_drilled_through_a_void() {
+        // A cut passing all the way through the void (bottom to top). Removes the floor
+        // and ceiling channels [1.4,1.6]²×([0,1]∪[2,3]) = 0.08; the void interior removes
+        // nothing ⇒ 26 − 0.08 = 25.92. Result is a genus-1 solid (a straight tunnel),
+        // one shell, no cavity.
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        let tunnel = m.add_cuboid(
+            Point3::from_array([1.4, 1.4, -0.5]),
+            Point3::from_array([1.6, 1.6, 3.5]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, hollow, tunnel).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 25.92).abs() < 1e-9, "volume {vol}");
+        assert_eq!(m.solids.get(r).cavities.len(), 0);
+    }
+
+    #[test]
+    fn a_slab_that_splits_a_hollow_box_disconnects() {
+        // A slab cut through the whole box (and its void) severs it into two solids —
+        // honestly rejected as `DISCONNECTED_RESULT`, not silently mis-assembled.
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 1.4, -0.5]),
+            Point3::from_array([3.5, 1.6, 3.5]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, hollow, stub),
-            tag::SEAM_ENTERS_CAVITY,
+            || boolean(&mut m, BoolKind::Cut, hollow, slab),
+            tag::DISCONNECTED_RESULT,
         );
     }
 
