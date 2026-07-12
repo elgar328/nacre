@@ -204,6 +204,9 @@ pub(crate) mod tag {
     /// cell 3e-3 let an edge thread the other solid: `Cut(rod, L)` leaves the rod's two
     /// ends on either side of the bar.
     pub const DISCONNECTED_RESULT: &str = "disconnected_result";
+    /// An overhang overlap arc could not be paired with a complementary arc sharing its two
+    /// crossings (a non-convex-cyclic arrangement `is_convex` did not screen out) — out of scope.
+    pub const OVERHANG_ARCS: &str = "overhang_arcs";
     /// The two machines that decide where the seam is disagree about *parity*: a segment
     /// crosses a closed surface an odd number of times exactly when its endpoints lie on
     /// opposite sides, and `point_in_solid`'s winding says one thing while
@@ -3242,17 +3245,17 @@ struct Crossing {
     q_seg: usize,       // Q outer-loop edge index (distinct per crossing)
 }
 
-/// A single-edge overhang boss contact (cell coplanar-contact-overhang). Two convex solids
-/// meet at one opposite-normal coplanar face pair whose footprints partially overlap: Q's
-/// boundary crosses a *single* edge of P at exactly two points (on two distinct Q edges).
-/// `Fuse` welds a cantilever — P's face keeps its boundary minus the covered notch, Q's face
-/// keeps only its overhanging remainder, and the two crossing points stitch the walls.
+/// An overhang boss contact (cells coplanar-contact-overhang / -corner / -multi). Two convex
+/// solids meet at one opposite-normal coplanar face pair whose footprints overlap, their
+/// boundaries ∂P × ∂Q crossing at `2k` points. `Fuse` welds the boss: each contact face keeps
+/// its region minus the overlap (as one or more notch/cantilever pieces), the crossings stitch
+/// the walls.
 struct OverhangContact {
-    p_solid: Handle<Solid>, // base — its face P owns the single crossed edge (→ notch)
+    p_solid: Handle<Solid>, // base — its face P → notch piece(s)
     p_face: Handle<Face>,
-    q_solid: Handle<Solid>, // boss — its face Q pokes past that edge (→ cantilever)
+    q_solid: Handle<Solid>, // boss — its face Q → cantilever piece(s)
     q_face: Handle<Face>,
-    crossings: [Crossing; 2],
+    crossings: Vec<Crossing>,
 }
 
 /// Strict proper 2D crossing: the two closed segments cross in their interiors (no shared
@@ -3348,20 +3351,26 @@ fn splice_notch(
     out
 }
 
-/// Split a contact face's outer loop at the two crossings into `(outside_arc, inside_arc)`:
-/// `outside_arc` carries a vertex strictly outside the other footprint, `inside_arc` is the
-/// complementary arc (empty interior when nothing is swallowed — the single-edge case). Each arc
-/// runs crossing→…→crossing (endpoints are the shared crossing `Node::Seam`s). `seg` gives each
-/// crossing's edge index on this loop; same-edge crossings are inserted in parameter order so the
-/// arc stays simple.
-fn split_loop_at_crossings(
+/// One arc of a contact face's outer loop between two consecutive crossings.
+struct LoopArc {
+    nodes: Vec<Node>,     // crossing → … → crossing (endpoints are `Node::Seam`s)
+    ends: (usize, usize), // the two crossing indices (unordered key)
+    outside: bool,        // an interior vertex lies strictly outside the other footprint
+}
+
+/// Split a contact face's outer loop at all `2k` crossings into its `2k` arcs, each labelled by
+/// its endpoint crossing indices and whether it lies outside the other footprint (empty interior
+/// ⇒ `false`, i.e. inside — a same-edge segment between two crossings is inside by convexity).
+/// `seg` gives each crossing's edge index on this loop; same-edge crossings are inserted in
+/// parameter order so each arc stays simple.
+fn split_loop_all_arcs(
     loop_vh: &[Handle<Vertex>],
     loop_pts: &[Point3],
-    crossings: &[Crossing; 2],
+    crossings: &[Crossing],
     other2d: &[[f64; 2]],
     drop: (usize, usize),
     seg: impl Fn(&Crossing) -> usize,
-) -> (Vec<Node>, Vec<Node>) {
+) -> Vec<LoopArc> {
     let n = loop_vh.len();
     let inside: Vec<bool> = loop_pts
         .iter()
@@ -3376,7 +3385,9 @@ fn split_loop_at_crossings(
         aug.push(Aug::V(j));
         let ea = loop_pts[j];
         let dir = loop_pts[(j + 1) % n] - ea;
-        let mut here: Vec<usize> = (0..2).filter(|&ci| seg(&crossings[ci]) == j).collect();
+        let mut here: Vec<usize> = (0..crossings.len())
+            .filter(|&ci| seg(&crossings[ci]) == j)
+            .collect();
         here.sort_by(|&x, &y| {
             let px = (crossings[x].point - ea).dot(dir);
             let py = (crossings[y].point - ea).dot(dir);
@@ -3388,16 +3399,23 @@ fn split_loop_at_crossings(
     }
     let m = aug.len();
     let cpos: Vec<usize> = (0..m).filter(|&i| matches!(aug[i], Aug::C(_))).collect();
-    let arc = |from: usize, to: usize| -> (Vec<Node>, bool) {
+    let ci_at = |pos: usize| match aug[pos] {
+        Aug::C(ci) => ci,
+        Aug::V(_) => unreachable!("cpos indexes crossings"),
+    };
+    // Each arc runs from one crossing forward to the next.
+    let mut arcs = Vec::new();
+    for k in 0..cpos.len() {
+        let (from, to) = (cpos[k], cpos[(k + 1) % cpos.len()]);
         let mut nodes = Vec::new();
-        let mut has_outside = false;
+        let mut outside = false;
         let mut i = from;
         loop {
             match aug[i] {
                 Aug::V(j) => {
                     nodes.push(Node::Orig(loop_vh[j]));
                     if !inside[j] {
-                        has_outside = true;
+                        outside = true;
                     }
                 }
                 Aug::C(ci) => nodes.push(Node::Seam(crossings[ci].triple)),
@@ -3407,11 +3425,13 @@ fn split_loop_at_crossings(
             }
             i = (i + 1) % m;
         }
-        (nodes, has_outside)
-    };
-    let (a1, o1) = arc(cpos[0], cpos[1]);
-    let (a2, _) = arc(cpos[1], cpos[0]);
-    if o1 { (a1, a2) } else { (a2, a1) }
+        arcs.push(LoopArc {
+            nodes,
+            ends: (ci_at(from), ci_at(to)),
+            outside,
+        });
+    }
+    arcs
 }
 
 /// Join two arcs sharing their two crossing endpoints into one closed loop. `outer` sets the
@@ -3431,10 +3451,9 @@ fn stitch_arcs(outer: Vec<Node>, inner: Vec<Node>) -> Vec<Node> {
     out
 }
 
-/// With `p_solid`'s contact face as P and `q_solid`'s as Q, decide whether their footprints form
-/// a single 2-crossing overlap lens (∂P and ∂Q meet at exactly two points — a single-edge
-/// overhang or a swallowed corner), returning the two crossings (each with its own P/Q edge).
-/// `None` if not exactly two crossings, or a boundary graze.
+/// With `p_solid`'s contact face as P and `q_solid`'s as Q, find the proper crossings of their
+/// footprint boundaries (∂P × ∂Q) — a general convex-convex overlap. Returns the `2k` crossings
+/// (each with its own P/Q edge), or `None` on an odd/zero count or a boundary graze.
 #[allow(clippy::too_many_arguments)]
 fn try_overhang(
     model: &Model,
@@ -3446,7 +3465,7 @@ fn try_overhang(
     planes_q: &[PlaneInfo],
     q_face: Handle<Face>,
     na_p: usize,
-) -> Option<[Crossing; 2]> {
+) -> Option<Vec<Crossing>> {
     let drop = planar_drop_axes(planes_p[p_pos].n_out);
     let ring = |face: Handle<Face>| -> Vec<(Handle<Vertex>, Point3)> {
         model
@@ -3476,9 +3495,9 @@ fn try_overhang(
             }
         }
     }
-    // Exactly two proper crossings — a single convex overlap lens (single-edge, or a corner of
-    // one footprint swallowed by the other). More crossings (a spanning slab) are out of scope.
-    if crs.len() != 2 {
+    // An even number 2k (≥2) of proper crossings — a general convex-convex overlap (k lens
+    // pieces). Odd/zero means a degenerate or non-crossing case, out of scope.
+    if crs.len() < 2 || crs.len() % 2 != 0 {
         return None;
     }
     // No boundary graze on either side (a vertex exactly on the other's boundary is out of scope).
@@ -3508,13 +3527,13 @@ fn try_overhang(
             q_seg: j,
         });
     }
-    Some([out[0].clone(), out[1].clone()])
+    Some(out)
 }
 
-/// `Some` iff `a` and `b` form a 2-crossing overhang boss contact: exactly one opposite-normal
-/// coplanar face pair, neither footprint contained in the other (that is the boss cell), their
-/// footprints overlapping in a single lens (∂P meets ∂Q at exactly two points — single-edge or a
-/// swallowed corner), and no transversal piercing (a pure coplanar contact, not a seam cut).
+/// `Some` iff `a` and `b` form an overhang boss contact: exactly one opposite-normal coplanar
+/// face pair, neither footprint contained in the other (that is the boss cell), their footprints
+/// overlapping (∂P meets ∂Q at `2k` points — single-edge, swallowed corner, or a spanning slab),
+/// and no transversal piercing (a pure coplanar contact, not a seam cut).
 fn detect_overhang_contact(
     model: &Model,
     a: Handle<Solid>,
@@ -3664,56 +3683,79 @@ fn overhang_contact_result(
     let p2: Vec<[f64; 2]> = p_pts.iter().map(|&p| proj2(p, drop)).collect();
     let q2: Vec<[f64; 2]> = q_pts.iter().map(|&p| proj2(p, drop)).collect();
 
-    // Split each contact face at the two crossings into (outside, inside) arcs; the notch and
-    // cantilever are the symmetric stitches. Single-edge leaves `p_inside` empty, so the
-    // cantilever reduces to `q_outside` — the previous behavior.
-    let (p_outside, p_inside) =
-        split_loop_at_crossings(&p_vh, &p_pts, &cc.crossings, &q2, drop, |c| c.p_seg);
-    let (q_outside, q_inside) =
-        split_loop_at_crossings(&q_vh, &q_pts, &cc.crossings, &p2, drop, |c| c.q_seg);
-    let notch = stitch_arcs(p_outside, q_inside);
-    let cantilever = stitch_arcs(q_outside, p_inside);
+    // Split both contact faces at the crossings into arcs. Each notch piece is a P-outside arc
+    // stitched to the Q-inside arc sharing its two crossings; each cantilever piece a Q-outside
+    // arc stitched to the P-inside arc sharing its ends. (Single-edge/corner = one piece each.)
+    let p_arcs = split_loop_all_arcs(&p_vh, &p_pts, &cc.crossings, &q2, drop, |c| c.p_seg);
+    let q_arcs = split_loop_all_arcs(&q_vh, &q_pts, &cc.crossings, &p2, drop, |c| c.q_seg);
+    let match_arc = |arcs: &[LoopArc], ends: (usize, usize)| -> Option<Vec<Node>> {
+        arcs.iter()
+            .find(|a| !a.outside && unordered(a.ends.0, a.ends.1) == unordered(ends.0, ends.1))
+            .map(|a| a.nodes.clone())
+    };
     #[cfg(debug_assertions)]
-    {
-        let sarea = |ring: &[[f64; 2]]| -> f64 {
-            let k = ring.len();
-            (0..k)
-                .map(|i| {
-                    let j = (i + 1) % k;
-                    ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
-                })
-                .sum()
-        };
-        let proj = |nodes: &[Node]| -> Vec<[f64; 2]> {
-            nodes
-                .iter()
-                .map(|&nd| proj2(overhang_node_point(model, nd, &cc.crossings), drop))
-                .collect()
-        };
+    let sarea = |ring: &[[f64; 2]]| -> f64 {
+        let k = ring.len();
+        (0..k)
+            .map(|i| {
+                let j = (i + 1) % k;
+                ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
+            })
+            .sum()
+    };
+    #[cfg(debug_assertions)]
+    let proj = |nodes: &[Node]| -> Vec<[f64; 2]> {
+        nodes
+            .iter()
+            .map(|&nd| proj2(overhang_node_point(model, nd, &cc.crossings), drop))
+            .collect()
+    };
+
+    // P's holes (each assigned to the notch piece that contains it).
+    let hole_pt = |hole: &[Node]| -> [f64; 2] {
+        proj2(overhang_node_point(model, hole[0], &cc.crossings), drop)
+    };
+
+    let mut faces = Vec::new();
+    for pa in p_arcs.iter().filter(|a| a.outside) {
+        let qi = match_arc(&q_arcs, pa.ends).ok_or_else(|| reject(tag::OVERHANG_ARCS))?;
+        let notch = stitch_arcs(pa.nodes.clone(), qi);
+        #[cfg(debug_assertions)]
         debug_assert!(
             sarea(&proj(&notch)).signum() == sarea(&p2).signum(),
             "overhang notch winding flipped"
         );
+        let notch2: Vec<[f64; 2]> = notch
+            .iter()
+            .map(|&nd| proj2(overhang_node_point(model, nd, &cc.crossings), drop))
+            .collect();
+        let inner: Vec<Vec<Node>> = p_inner
+            .iter()
+            .filter(|h| point_in_ring2(hole_pt(h), &notch2) == Some(true))
+            .cloned()
+            .collect();
+        faces.push(LocalFace {
+            plane_idx: p_pos,
+            loop_nodes: notch,
+            inner,
+            flip: false,
+        });
+    }
+    for qa in q_arcs.iter().filter(|a| a.outside) {
+        let pi = match_arc(&p_arcs, qa.ends).ok_or_else(|| reject(tag::OVERHANG_ARCS))?;
+        let cantilever = stitch_arcs(qa.nodes.clone(), pi);
+        #[cfg(debug_assertions)]
         debug_assert!(
             sarea(&proj(&cantilever)).signum() == sarea(&q2).signum(),
             "overhang cantilever winding flipped"
         );
-    }
-
-    let mut faces = vec![
-        LocalFace {
-            plane_idx: p_pos,
-            loop_nodes: notch,
-            inner: p_inner,
-            flip: false,
-        },
-        LocalFace {
+        faces.push(LocalFace {
             plane_idx: na + q_pos,
             loop_nodes: cantilever,
             inner: Vec::new(),
             flip: false,
-        },
-    ];
+        });
+    }
     let mut p_walls = solid_local_faces(model, cc.p_solid, 0, Some(cc.p_face), None);
     let mut q_walls = solid_local_faces(model, cc.q_solid, na, Some(cc.q_face), None);
     resplit_overhang(model, &mut p_walls, &planes, &cc.crossings);
@@ -3731,7 +3773,7 @@ fn resplit_overhang(
     model: &Model,
     walls: &mut [LocalFace],
     planes: &[PlaneInfo],
-    crossings: &[Crossing; 2],
+    crossings: &[Crossing],
 ) {
     for lf in walls.iter_mut() {
         let tri = planes[lf.plane_idx].tri;
@@ -3890,9 +3932,10 @@ fn detect_overhang_cut_contact(
     }
     let na = planes_a.len();
     let cs = try_overhang(model, a, &planes_a, pi, p_face, b, &planes_b, q_face, na)?;
-    // The edge-slot Cut needs a single-edge crossing (one crossed wall W). `try_overhang` also
-    // admits a swallowed corner (crossings on two P edges); that is a corner Cut — out of scope.
-    if cs[0].p_seg != cs[1].p_seg {
+    // The edge-slot Cut needs a single-edge crossing (exactly two crossings on one wall W).
+    // `try_overhang` now admits a swallowed corner / spanning slab (more crossings, or two P
+    // edges); those are corner / multi Cuts — out of scope here.
+    if cs.len() != 2 || cs[0].p_seg != cs[1].p_seg {
         return None;
     }
 
@@ -8854,9 +8897,11 @@ pub mod tests {
     }
 
     #[test]
-    fn a_spanning_slab_is_not_a_2_crossing_overhang() {
-        // The boss footprint spans clear across the base (a slab), so ∂Q crosses ∂P at four
-        // points — beyond the single-lens (2-crossing) scope. detect declines; boolean rejects.
+    fn fuse_a_spanning_slab_boss() {
+        // The boss footprint spans clear across the base (a slab overhanging both x sides), so
+        // ∂Q crosses ∂P at four points. Fuse welds it: the base top splits into two notch strips
+        // (y<0.4, y>0.6) and the boss underside into two cantilever pieces (x<0, x>1). Before this
+        // cell it rejected as vertex_on_face_plane. Volume 1 + 2.0·0.2·1.0 = 1.4 (share only z=1).
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -8866,11 +8911,14 @@ pub mod tests {
             Point3::from_array([-0.5, 0.4, 1.0]),
             Point3::from_array([1.5, 0.6, 2.0]),
         );
-        assert!(detect_overhang_contact(&m, base, slab).is_none());
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, base, slab),
-            tag::VERTEX_ON_FACE_PLANE,
-        );
+        let r = boolean(&mut m, BoolKind::Fuse, base, slab).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.4).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
     #[test]
