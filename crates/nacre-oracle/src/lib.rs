@@ -1060,6 +1060,46 @@ bbox_min 0 0 0
         );
     }
 
+    /// A corner-overhanging boss fuses onto a face (cell coplanar-contact-overhang-corner): the
+    /// boss footprint swallows a base-top corner, crossing two edges. OCCT scores the fuse and a
+    /// transversal Cut chained onto the (non-convex, L-cantilever) result.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn corner_overhang_fuse_then_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let occt_fuse = occt_boolean_of(&m, OcctBool::Fuse, base, boss).unwrap();
+        let overhung = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, overhung).unwrap().volume, occt_fuse.volume),
+            "corner fuse: {} vs {}",
+            mass_props(&m, overhung).unwrap().volume,
+            occt_fuse.volume
+        );
+        // Chain a transversal cut drilling through the L cantilever's outer corner (x>1, y>1).
+        let cutter = m.add_cuboid(
+            Point3::from_array([1.1, 1.1, 0.5]),
+            Point3::from_array([1.4, 1.4, 2.5]),
+        );
+        let occt_cut = occt_boolean_of(&m, OcctBool::Cut, overhung, cutter).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, overhung, cutter).unwrap();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
+            "corner then cut: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt_cut.volume
+        );
+    }
+
     /// Two face-to-face cubes fuse into a clean box (cell fuse-coplanar-merge merges the
     /// coplanar side faces and dissolves the interface corners), which then chains a Cut.
     /// OCCT scores both the fuse and the chained cut on the exported b-rep.
