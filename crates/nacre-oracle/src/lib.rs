@@ -515,6 +515,109 @@ bbox_min 0 0 0
         );
     }
 
+    /// A pad whose footprint overhangs one face edge (a boss cantilever). This is the first time
+    /// the `PadOnFace` pipe produces an overhang — it routes to the overhang Fuse sidecar. OCCT
+    /// scores the cantilevered boss.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn overhang_pad_matches_occt() {
+        use nacre_ops::{OpOutput, Operation, Profile2d, apply};
+        let mut model = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut model,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d {
+                    points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                        .iter()
+                        .map(|&p| nacre_math::Point2::from_array(p))
+                        .collect(),
+                },
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        // Footprint world x in [0.25,0.75], y in [-0.25,0.75] - overhangs the y=0 edge.
+        let boss = Profile2d {
+            points: [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::PadOnFace { solid, .. } = apply(
+            &mut model,
+            &Operation::PadOnFace {
+                face: faces[1],
+                profile: boss,
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let occt = occt_props_of(&model).unwrap();
+        let nacre = mass_props(&model, solid).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
+    /// A blind pocket whose footprint overhangs one face edge (an edge slot open to the side).
+    /// First overhang through the `PocketOnFace` pipe - routes to the overhang Cut sidecar. OCCT
+    /// scores the slotted solid.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn overhang_pocket_matches_occt() {
+        use nacre_ops::{OpOutput, Operation, Profile2d, apply};
+        let mut model = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut model,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d {
+                    points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                        .iter()
+                        .map(|&p| nacre_math::Point2::from_array(p))
+                        .collect(),
+                },
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let slot = Profile2d {
+            points: [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let OpOutput::PocketOnFace { solid, .. } = apply(
+            &mut model,
+            &Operation::PocketOnFace {
+                face: faces[1],
+                profile: slot,
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let occt = occt_props_of(&model).unwrap();
+        let nacre = mass_props(&model, solid).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
     // --- boolean oracle (M5) ---
 
     /// Two overlapping unit boxes A = [0,1]³, B = [0.5,1.5]³ (overlap [0.5,1]³ =

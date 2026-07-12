@@ -790,13 +790,11 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     })
 }
 
-/// Place `profile` on `frame` (CCW in the frame so its RH normal is `+n`) and require it strictly
-/// inside the face region (inside the outer ring, outside every hole, touching no boundary).
-/// Otherwise the "hole" is not a clean inner loop and the result is silently invalid — validate
-/// sees only topology, props integrates the ring, and only tessellate's `NoEar` catches it (cell
-/// imprint-containment; design §10). A profile reaching past the face is a boolean pad/pocket.
-fn placed_profile(
-    model: &Model,
+/// Place `profile` on `frame` (CCW in the frame so its RH normal is `+n`) and return its points on
+/// the face plane. **No containment check** — the profile may reach past the face boundary. Used by
+/// the boolean pad/pocket path (`extrude_and_boolean`), where an overhanging footprint routes to the
+/// overhang boolean sidecars; the boolean honestly rejects configurations it does not cover.
+fn placed_profile_unchecked(
     frame: &FaceFrame,
     profile: &Profile2d,
 ) -> Result<Vec<Point3>, OpError> {
@@ -807,10 +805,23 @@ fn placed_profile(
     if signed_area(&pts) < 0.0 {
         pts.reverse();
     }
-    let base_pts: Vec<Point3> = pts
+    Ok(pts
         .iter()
         .map(|p| frame.origin + frame.x * p[0] + frame.y * p[1])
-        .collect();
+        .collect())
+}
+
+/// [`placed_profile_unchecked`] plus the strict-containment requirement: inside the outer ring,
+/// outside every hole, touching no boundary. Otherwise the "hole" is not a clean inner loop and the
+/// result is silently invalid — validate sees only topology, props integrates the ring, and only
+/// tessellate's `NoEar` catches it (cell imprint-containment; design §10). Used by `imprint`, which
+/// needs a bounded inner loop; a profile reaching past the face is a boolean pad/pocket instead.
+fn placed_profile(
+    model: &Model,
+    frame: &FaceFrame,
+    profile: &Profile2d,
+) -> Result<Vec<Point3>, OpError> {
+    let base_pts = placed_profile_unchecked(frame, profile)?;
     let drop = planar_drop_axes(frame.n);
     let profile2: Vec<[f64; 2]> = base_pts.iter().map(|&p| proj2(p, drop)).collect();
     let outer2: Vec<[f64; 2]> = frame.outer_pts.iter().map(|&p| proj2(p, drop)).collect();
@@ -954,14 +965,15 @@ fn imprint(
 }
 
 /// A face-local feature built as **tool body + boolean** (roadmap §9 unification): the profile
-/// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid
-/// through the contained-coplanar path (empty seam → all `Origin::Constructed`, exactness-
-/// equivalent to direct construction). `Fuse` sweeps **outward** (a boss); `Cut` sweeps **inward**
-/// (a blind pocket). Returns the result solid and the feature's exposed cap — the boss top or the
-/// pocket floor, the outer-shell face on the prism's far-cap plane with outward normal `+n`.
-/// `Option::None` there ⇒ the far cap did not survive (a through-cut with no floor); callers map
-/// it to their own error. `NonPositiveDistance`/`DegenerateProfile`/`ProfileNotContainedInFace`
-/// propagate from the frame + containment check.
+/// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid.
+/// A **contained** footprint takes the contained-coplanar path (empty seam → all
+/// `Origin::Constructed`); one that **reaches past the face** routes to the overhang boolean
+/// sidecars (a boss cantilever / an edge slot; Discovered seam vertices). `Fuse` sweeps **outward**
+/// (a boss); `Cut` sweeps **inward** (a blind pocket). Returns the result solid and the feature's
+/// exposed cap — the boss top or the pocket floor, the outer-shell face on the prism's far-cap plane
+/// with outward normal `+n`. `Option::None` there ⇒ the far cap did not survive (a through-cut with
+/// no floor); callers map it to their own error. `NonPositiveDistance`/`DegenerateProfile` propagate
+/// from the frame; overhang configurations the boolean does not cover surface as `Boolean(_)`.
 fn extrude_and_boolean(
     model: &mut Model,
     face: Handle<Face>,
@@ -973,7 +985,8 @@ fn extrude_and_boolean(
         return Err(OpError::NonPositiveDistance);
     }
     let frame = face_frame(model, face)?;
-    let base_pts = placed_profile(model, &frame, profile)?; // CCW + strict containment + <3 pts reject
+    // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
+    let base_pts = placed_profile_unchecked(&frame, profile)?;
     let n = frame.n;
     // Cut carves inward, Fuse raises outward; either way the prism's near cap is flush on the face.
     let signed = if matches!(kind, BoolKind::Cut) {
@@ -8676,12 +8689,13 @@ pub mod tests {
     }
 
     #[test]
-    fn a_profile_reaching_past_the_face_is_rejected() {
-        // The frame origin is the top face centroid (0.5, 0.5). Each profile reaches past
-        // the [0,1]² face region, so all three face ops reject rather than build a
-        // silently-invalid inner loop (cell imprint-containment; n0 measured that apply was
-        // Ok, validate passed, props integrated garbage — including a negative volume — and
-        // only tessellate's NoEar caught it). Boundary contact ("touches") rejects too.
+    fn an_imprint_reaching_past_the_face_is_rejected() {
+        // The frame origin is the top face centroid (0.5, 0.5). Each profile reaches past the
+        // [0,1]² face region, so `imprint` rejects rather than build a silently-invalid inner loop
+        // (cell imprint-containment; n0 measured that apply was Ok, validate passed, props
+        // integrated garbage — including a negative volume — and only tessellate's NoEar caught it).
+        // Boundary contact ("touches") rejects too. `pad`/`pocket` no longer reject here — a
+        // profile past the face is a boolean overhang (see `pad_an_overhanging_boss` etc.).
         let crosses = Profile2d {
             points: vec![p2(-0.7, -0.2), p2(0.7, -0.2), p2(0.7, 0.2), p2(-0.7, 0.2)],
         };
@@ -8700,31 +8714,150 @@ pub mod tests {
             ("overhang", overhang),
             ("touches", touches),
         ] {
-            for kind in ["imprint", "pad", "pocket"] {
-                let (mut m, top) = cube_with_top();
-                let op = match kind {
-                    "imprint" => Operation::ImprintSketch {
-                        face: top,
-                        profile: profile.clone(),
-                    },
-                    "pad" => Operation::PadOnFace {
-                        face: top,
-                        profile: profile.clone(),
-                        dist: 0.3,
-                    },
-                    _ => Operation::PocketOnFace {
-                        face: top,
-                        profile: profile.clone(),
-                        dist: 0.3,
-                    },
-                };
-                assert_eq!(
-                    apply(&mut m, &op),
-                    Err(OpError::ProfileNotContainedInFace),
-                    "{name}/{kind}"
-                );
-            }
+            let (mut m, top) = cube_with_top();
+            assert_eq!(
+                apply(&mut m, &Operation::ImprintSketch { face: top, profile }),
+                Err(OpError::ProfileNotContainedInFace),
+                "{name}"
+            );
         }
+    }
+
+    // A single-edge overhang footprint on the cube top: world x∈[0.25,0.75], y∈[-0.25,0.75]
+    // (overhangs the y=0 edge), area 0.5. (Frame maps local [px,py] → world (0.5+py, 0.5−px).)
+    fn edge_overhang_profile() -> Profile2d {
+        Profile2d {
+            points: vec![
+                p2(-0.25, -0.25),
+                p2(0.75, -0.25),
+                p2(0.75, 0.25),
+                p2(-0.25, 0.25),
+            ],
+        }
+    }
+
+    // A spanning slab: world x∈[0.25,0.75], y∈[-0.25,1.25] (crosses both y edges), area 0.75.
+    fn spanning_slab_profile() -> Profile2d {
+        Profile2d {
+            points: vec![
+                p2(-0.75, -0.25),
+                p2(0.75, -0.25),
+                p2(0.75, 0.25),
+                p2(-0.75, 0.25),
+            ],
+        }
+    }
+
+    #[test]
+    fn pad_an_overhanging_boss() {
+        // The profile reaches past one face edge: part of the boss sits on the face, part
+        // cantilevers into the air. Relaxing the containment gate routes it to the overhang Fuse
+        // sidecar (Ok here proves the routing — a contained-only pad would reject). The boss lives
+        // wholly above z=1, so vol = cube 1 + footprint 0.5 · dist 1 = 1.5.
+        let (mut m, top) = cube_with_top();
+        let OpOutput::PadOnFace { solid, top_face } =
+            apply(&mut m, &pad_op(top, edge_overhang_profile(), 1.0)).unwrap()
+        else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.5).abs() < 1e-12);
+        assert!(m.reachable().faces.contains(&top_face)); // boss top cap recovered
+    }
+
+    #[test]
+    fn pad_a_spanning_slab_boss() {
+        // A slab crossing the whole face (overhangs two opposite edges). vol = 1 + 0.75 · 1 = 1.75.
+        let (mut m, top) = cube_with_top();
+        let out = apply(&mut m, &pad_op(top, spanning_slab_profile(), 1.0)).unwrap();
+        let OpOutput::PadOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.75).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pocket_an_edge_slot() {
+        // A blind pocket whose footprint overhangs one edge — an edge slot open to the side.
+        // Only the on-face part (world x[0.25,0.75]×y[0,0.75] = 0.375) carves: 1 − 0.375·0.5 = 0.8125.
+        let (mut m, top) = cube_with_top();
+        let OpOutput::PocketOnFace { solid, bottom_face } =
+            apply(&mut m, &pocket_op(top, edge_overhang_profile(), 0.5)).unwrap()
+        else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.8125).abs() < 1e-12);
+        assert!(m.reachable().faces.contains(&bottom_face)); // slot floor recovered
+    }
+
+    #[test]
+    fn pocket_a_slab_channel() {
+        // A blind channel crossing the whole face (breaches two opposite walls). On-face carve
+        // world x[0.25,0.75]×y[0,1] = 0.5: 1 − 0.5·0.5 = 0.75.
+        let (mut m, top) = cube_with_top();
+        let out = apply(&mut m, &pocket_op(top, spanning_slab_profile(), 0.5)).unwrap();
+        let OpOutput::PocketOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.75).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pad_overhang_off_the_face_is_rejected() {
+        // A footprint that does not touch the face at all: the boss is disjoint from the solid,
+        // an unrepresentable union. Honest reject (no panic), not a silent floating boss.
+        let (mut m, top) = cube_with_top();
+        let far = Profile2d {
+            points: vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)],
+        };
+        assert!(matches!(
+            apply(&mut m, &pad_op(top, far, 0.3)),
+            Err(OpError::Boolean(_))
+        ));
+    }
+
+    #[test]
+    fn pocket_through_overhang_is_rejected() {
+        // An overhang pocket deep enough to pierce the far side is not blind — no single floor.
+        // Honest reject via whichever path fires (the overhang detector declines, the seam path
+        // rejects the mixed contact), mirroring `pocket_through_the_solid_is_rejected`.
+        let (mut m, top) = cube_with_top();
+        let got = apply(&mut m, &pocket_op(top, edge_overhang_profile(), 1.5));
+        assert!(
+            matches!(got, Err(OpError::Boolean(_)) | Err(OpError::PocketNotBlind)),
+            "through overhang must reject honestly, got {got:?}"
+        );
+    }
+
+    #[test]
+    fn pad_non_convex_overhang_is_rejected() {
+        // A non-convex (L) overhang footprint: the overhang boolean sidecars gate on convexity, so
+        // this is out of scope and honestly rejected (contained non-convex still works — a
+        // deliberate asymmetry until the overhang convex gate is dropped).
+        let (mut m, top) = cube_with_top();
+        let l_over = Profile2d {
+            points: vec![
+                p2(-0.25, -0.25),
+                p2(0.75, -0.25),
+                p2(0.75, 0.25),
+                p2(0.25, 0.25),
+                p2(0.25, 0.5),
+                p2(-0.25, 0.5),
+            ],
+        };
+        assert!(matches!(
+            apply(&mut m, &pad_op(top, l_over, 1.0)),
+            Err(OpError::Boolean(_))
+        ));
     }
 
     #[test]
