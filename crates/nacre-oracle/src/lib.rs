@@ -1314,6 +1314,106 @@ bbox_min 0 0 0
         );
     }
 
+    /// A blind pocket carved by a non-convex (L-shaped) cutter — the contained-coplanar Cut now
+    /// admits non-convex operands. OCCT scores the L pocket.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn non_convex_profile_pocket_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 0.5]),
+        );
+        let l = Profile2d {
+            points: [
+                [-0.3, -0.3],
+                [0.3, -0.3],
+                [0.3, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.3],
+                [-0.3, 0.3],
+            ]
+            .iter()
+            .map(|&p| nacre_math::Point2::from_array(p))
+            .collect(),
+        };
+        let OpOutput::Extrude { solid: lp, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: l,
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let occt = occt_boolean_of(&m, OcctBool::Cut, base, lp).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, base, lp).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "non-convex profile pocket: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
+    /// A blind pocket carved into an already-pocketed (non-convex) cube. OCCT scores the second
+    /// pocket cut on the concave kept solid.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn pocket_into_non_convex_solid_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d {
+                    points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                        .iter()
+                        .map(|&p| nacre_math::Point2::from_array(p))
+                        .collect(),
+                },
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let OpOutput::PocketOnFace { solid: pc, .. } = apply(
+            &mut m,
+            &Operation::PocketOnFace {
+                face: faces[1],
+                profile: Profile2d {
+                    points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+                        .iter()
+                        .map(|&p| nacre_math::Point2::from_array(p))
+                        .collect(),
+                },
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let corner = m.add_cuboid(
+            Point3::from_array([0.05, 0.05, 0.5]),
+            Point3::from_array([0.2, 0.2, 1.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Cut, pc, corner).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, pc, corner).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "pocket into non-convex solid: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
     /// Two face-to-face cubes fuse into a clean box (cell fuse-coplanar-merge merges the
     /// coplanar side faces and dissolves the interface corners), which then chains a Cut.
     /// OCCT scores both the fuse and the chained cut on the exported b-rep.

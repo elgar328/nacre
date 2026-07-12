@@ -2899,6 +2899,13 @@ fn detect_contained_contact(
 /// pair whose footprint is strictly inside `a`'s face, and `b` lies wholly inside `a` (its walls
 /// cross none of `a`'s faces — a `b` that punched through would be a seam cut, not a pocket).
 /// For `Cut(a, b)`, `a` is kept and `b` is carved out, so `a` must be the containing solid.
+///
+/// **Neither solid need be convex.** The remaining gates are convexity-agnostic — `same.len() == 1`
+/// (exact coplanar test), `face_contains_face` (`profile_strictly_in_region`, arbitrary polygons),
+/// and the blind test (`point_in_solid`, exact ray cast for non-convex) — and the reconstruction
+/// (`contained_contact_result` re-emits faces; `assemble_fuse_cut` partitions by component). So a
+/// pocket carves cleanly into a non-convex `a` (a re-pocketed part) with a non-convex `b` (an
+/// L/star footprint). This makes `pocket = extrude + Cut` a drop-in for the direct `raise_region`.
 fn detect_pocket_contact(
     model: &Model,
     a: Handle<Solid>,
@@ -2906,11 +2913,6 @@ fn detect_pocket_contact(
 ) -> Option<ContainedContact> {
     let planes_a = collect_planes(model, a).ok()?;
     let planes_b = collect_planes(model, b).ok()?;
-    if !is_convex(model, &planes_a, &solid_vertex_handles(model, a))
-        || !is_convex(model, &planes_b, &solid_vertex_handles(model, b))
-    {
-        return None;
-    }
     let mut same: Vec<(usize, usize)> = Vec::new();
     for (i, pa) in planes_a.iter().enumerate() {
         for (j, pb) in planes_b.iter().enumerate() {
@@ -9616,6 +9618,58 @@ pub mod tests {
         assert!((vol - 0.875).abs() < 1e-12, "volume {vol}");
         let planes = collect_planes(&m, r).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    #[test]
+    fn cut_a_blind_pocket_into_a_non_convex_solid() {
+        // A blind pocket carved into an already-pocketed (non-convex) cube: a second contained
+        // top-flush prism at a corner away from the first pocket. The kept solid `a` is non-convex,
+        // which the pocket contact now admits (the gates are convexity-agnostic). Removed
+        // 0.15²·0.5 = 0.01125 on top of the first pocket's 0.08 → 1 − 0.08 − 0.01125 = 0.90875.
+        let (mut m, pc) = pocketed_cube();
+        let corner = m.add_cuboid(
+            Point3::from_array([0.05, 0.05, 0.5]),
+            Point3::from_array([0.2, 0.2, 1.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, pc, corner).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.90875).abs() < 1e-12, "volume {vol}");
+    }
+
+    #[test]
+    fn cut_a_non_convex_blind_pocket() {
+        // A blind pocket with a non-convex (L-shaped) footprint: the cutter prism is non-convex,
+        // which the pocket contact now admits. The L extrudes to z∈[0,0.5], top-flush on the base's
+        // z=0.5 face, blind. L area = 0.6² − 0.3² = 0.27, depth 0.5 → removed 0.135; base 3²·1.5 =
+        // 13.5 → 13.365.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 0.5]),
+        );
+        let l = Profile2d {
+            points: vec![
+                p2(-0.3, -0.3),
+                p2(0.3, -0.3),
+                p2(0.3, 0.0),
+                p2(0.0, 0.0),
+                p2(0.0, 0.3),
+                p2(-0.3, 0.3),
+            ],
+        };
+        let OpOutput::Extrude { solid: lp, .. } = apply(&mut m, &extrude_op(l, 0.5)).unwrap()
+        else {
+            unreachable!()
+        };
+        let r = boolean(&mut m, BoolKind::Cut, base, lp).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 13.365).abs() < 1e-12, "volume {vol}");
     }
 
     #[test]
