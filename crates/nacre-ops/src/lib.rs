@@ -619,10 +619,9 @@ pub(crate) fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
     if he.forward { a } else { b }
 }
 
-/// The result of splitting a planar face along a profile: the base profile
-/// geometry (on the face's plane) plus the rebuilt outer face carrying the
-/// profile as a hole. Shared by [`imprint`] and [`pad`]; each finishes by adding
-/// its own faces (a coplanar region, or boss walls + a cap) and calling
+/// The result of splitting a planar face along a profile: the rebuilt outer face
+/// carrying the profile as a hole, plus the profile's segment edges. Used by
+/// [`imprint`], which finishes by adding a coplanar region face and calling
 /// [`finish_split`].
 struct Split {
     solid_h: Handle<Solid>,
@@ -630,11 +629,7 @@ struct Split {
     /// The target face's surface and orientation (for a coplanar region face).
     surface_h: Handle<Surface>,
     orientation: Orientation,
-    /// Outward normal of the target face.
-    n: Vector3,
-    base_pv: Vec<Handle<Vertex>>,
-    base_pts: Vec<Point3>,
-    /// Profile segment edges `base_i → base_{i+1}` (CCW about `n`).
+    /// Profile segment edges `base_i → base_{i+1}` (CCW about the outward normal).
     base_pe: Vec<Handle<Edge>>,
     /// The original face rebuilt with the profile as an inner-loop hole.
     f_outer: Handle<Face>,
@@ -842,7 +837,7 @@ fn prepare_face_split(
 ) -> Result<Split, OpError> {
     let frame = face_frame(model, face)?;
     let base_pts = placed_profile(model, &frame, profile)?;
-    let (surface_h, orientation, n) = (frame.surface_h, frame.orientation, frame.n);
+    let (surface_h, orientation) = (frame.surface_h, frame.orientation);
 
     // Profile vertices and segment edges.
     let m = base_pts.len();
@@ -892,9 +887,6 @@ fn prepare_face_split(
         shell_h: frame.shell_h,
         surface_h,
         orientation,
-        n,
-        base_pv,
-        base_pts,
         base_pe,
         f_outer,
     })
@@ -961,51 +953,70 @@ fn imprint(
     Ok((new_solid, region_face))
 }
 
-/// Pad a boss on a planar `face`: raise the imprinted region **outward** by
-/// `dist` (walls + a cap), adding `profile_area · dist` of material. Returns
-/// `(new solid, top cap face)`.
+/// A face-local feature built as **tool body + boolean** (roadmap §9 unification): the profile
+/// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid
+/// through the contained-coplanar path (empty seam → all `Origin::Constructed`, exactness-
+/// equivalent to direct construction). `Fuse` sweeps **outward** (a boss); `Cut` sweeps **inward**
+/// (a blind pocket). Returns the result solid and the feature's exposed cap — the boss top or the
+/// pocket floor, the outer-shell face on the prism's far-cap plane with outward normal `+n`.
+/// `Option::None` there ⇒ the far cap did not survive (a through-cut with no floor); callers map
+/// it to their own error. `NonPositiveDistance`/`DegenerateProfile`/`ProfileNotContainedInFace`
+/// propagate from the frame + containment check.
+fn extrude_and_boolean(
+    model: &mut Model,
+    face: Handle<Face>,
+    profile: &Profile2d,
+    dist: f64,
+    kind: BoolKind,
+) -> Result<(Handle<Solid>, Option<Handle<Face>>), OpError> {
+    if dist <= 0.0 {
+        return Err(OpError::NonPositiveDistance);
+    }
+    let frame = face_frame(model, face)?;
+    let base_pts = placed_profile(model, &frame, profile)?; // CCW + strict containment + <3 pts reject
+    let n = frame.n;
+    // Cut carves inward, Fuse raises outward; either way the prism's near cap is flush on the face.
+    let signed = if matches!(kind, BoolKind::Cut) {
+        -dist
+    } else {
+        dist
+    };
+    let (prism, _) = build_prism(model, &base_pts, n * signed)?;
+    let result = boolean(model, kind, frame.solid_h, prism).map_err(|e| {
+        model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
+        OpError::Boolean(e)
+    })?;
+    // Exposed cap = the result face on the prism's far-cap plane (face plane offset by n·signed),
+    // its outward normal +n (the opening side for a pocket, the boss top for a boss).
+    let cap = find_face_on_plane(model, result, frame.origin + n * signed, n);
+    Ok((result, cap))
+}
+
+/// Pad a boss on a planar `face`: extrude the profile **outward** by `dist` and `Fuse` it onto the
+/// solid, adding `profile_area · dist` of material. Returns `(new solid, top cap face)`. A boss
+/// always yields its top cap, so the `None` guard is an unreachable internal-invariant defense.
 fn pad(
     model: &mut Model,
     face: Handle<Face>,
     profile: &Profile2d,
     dist: f64,
 ) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
-    if dist <= 0.0 {
-        return Err(OpError::NonPositiveDistance);
-    }
-    raise_region(model, face, profile, dist)
+    let (solid, top) = extrude_and_boolean(model, face, profile, dist, BoolKind::Fuse)?;
+    Ok((solid, top.ok_or(OpError::DegenerateGeometry)?))
 }
 
-/// Carve a blind pocket on a planar `face`, removing `profile_area · dist` of material. Built as
-/// **extrude + `Cut`** (roadmap §9 unification): the profile extrudes **inward** into a top-flush
-/// prism, and `Cut(solid, prism)` carves the blind pocket through the contained-coplanar path
-/// (all `Origin::Constructed`, exactness-equivalent to the old direct construction). Returns
-/// `(new solid, floor face)`. `ProfileNotContainedInFace` if the profile reaches past the face;
-/// `PocketNotBlind` if `dist` reaches through the solid (the prism is not blind → a through-cut
-/// with no floor). The old `raise_region` path now serves only `pad`.
+/// Carve a blind pocket on a planar `face`: extrude the profile **inward** by `dist` and `Cut` it
+/// from the solid, removing `profile_area · dist` of material. Returns `(new solid, floor face)`.
+/// `PocketNotBlind` if `dist` reaches through the solid (the far cap is not blind → a through-cut
+/// with no floor face).
 fn pocket(
     model: &mut Model,
     face: Handle<Face>,
     profile: &Profile2d,
     dist: f64,
 ) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
-    if dist <= 0.0 {
-        return Err(OpError::NonPositiveDistance);
-    }
-    let frame = face_frame(model, face)?;
-    let base_pts = placed_profile(model, &frame, profile)?; // CCW + strict containment
-    let (solid, n, origin) = (frame.solid_h, frame.n, frame.origin);
-    // Inward prism, its top cap flush on the face; `Cut` carves the pocket.
-    let (prism, _) = build_prism(model, &base_pts, n * -dist)?;
-    let result = boolean(model, BoolKind::Cut, solid, prism).map_err(|e| {
-        model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
-        OpError::Boolean(e)
-    })?;
-    // Floor = the result face on the prism's far-cap plane (face plane offset by −n·dist), its
-    // outward normal pointing back into the opening (+n). None ⇒ a through-cut, no blind floor.
-    let floor =
-        find_face_on_plane(model, result, origin + n * -dist, n).ok_or(OpError::PocketNotBlind)?;
-    Ok((result, floor))
+    let (solid, floor) = extrude_and_boolean(model, face, profile, dist, BoolKind::Cut)?;
+    Ok((solid, floor.ok_or(OpError::PocketNotBlind)?))
 }
 
 /// The outer-shell face of `solid` whose plane passes through `pt` (coplanar) and whose **oriented**
@@ -1031,115 +1042,6 @@ fn find_face_on_plane(
         };
         planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n_out) > 0.0
     })
-}
-
-/// Imprint `profile` on a planar `face`, then displace its region along the
-/// outward normal by `signed_dist` into a prism (walls + a cap) whose open base
-/// is the hole in the outer face. `signed_dist > 0` grows a boss (outward);
-/// `< 0` carves a pocket (inward — the walls flip to face inward and the cap
-/// becomes the floor, since it is built from `base + n·signed_dist`). Callers
-/// guarantee `signed_dist != 0`. Returns `(new solid, cap/floor face)`.
-fn raise_region(
-    model: &mut Model,
-    face: Handle<Face>,
-    profile: &Profile2d,
-    signed_dist: f64,
-) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
-    // `prepare` mutates the model; callers check `dist > 0` first so an early
-    // error leaves live_solids untouched (the op is atomic w.r.t. live).
-    let s = prepare_face_split(model, face, profile)?;
-    let n = s.base_pts.len();
-
-    // Displaced ring: the base profile moved along the normal by `n · signed_dist`.
-    let top_pts: Vec<Point3> = s.base_pts.iter().map(|p| *p + s.n * signed_dist).collect();
-    let top_pv: Vec<Handle<Vertex>> = top_pts
-        .iter()
-        .map(|p| {
-            model.vertices.push(Vertex {
-                point: *p,
-                origin: Origin::Constructed,
-            })
-        })
-        .collect();
-    let top_pe: Vec<Handle<Edge>> = (0..n)
-        .map(|i| {
-            push_line_edge(
-                model,
-                top_pv[i],
-                top_pts[i],
-                top_pv[(i + 1) % n],
-                top_pts[(i + 1) % n],
-            )
-        })
-        .collect::<Result<_, _>>()?;
-    let vert_e: Vec<Handle<Edge>> = (0..n)
-        .map(|i| push_line_edge(model, s.base_pv[i], s.base_pts[i], top_pv[i], top_pts[i]))
-        .collect::<Result<_, _>>()?;
-
-    // Side walls: quads (base_i, base_j, top_j, top_i) with the extrude side-quad
-    // winding. Their normal is `edge × (n·signed_dist)`, so it faces outward for a
-    // boss and inward for a pocket automatically. Each base edge pairs oppositely
-    // with the outer face's hole; each top edge with the cap; each vertical with a
-    // neighbouring wall.
-    let mut new_faces = Vec::with_capacity(n + 2);
-    new_faces.push(s.f_outer);
-    for i in 0..n {
-        let j = (i + 1) % n;
-        let surface = model.surfaces.push(Surface::Plane(
-            Plane::through_points(s.base_pts[i], s.base_pts[j], top_pts[i])
-                .ok_or(OpError::DegenerateGeometry)?,
-        ));
-        let outer = Loop {
-            half_edges: vec![
-                HalfEdge {
-                    edge: s.base_pe[i],
-                    forward: true,
-                },
-                HalfEdge {
-                    edge: vert_e[j],
-                    forward: true,
-                },
-                HalfEdge {
-                    edge: top_pe[i],
-                    forward: false,
-                },
-                HalfEdge {
-                    edge: vert_e[i],
-                    forward: false,
-                },
-            ],
-        };
-        new_faces.push(model.faces.push(Face {
-            surface,
-            outer,
-            inner: vec![],
-            orientation: Orientation::Forward,
-        }));
-    }
-
-    // Cap: outward normal +n (the boss top, or the pocket floor seen from the
-    // opening), the displaced ring forward.
-    let cap_surface = model.surfaces.push(Surface::Plane(
-        Plane::from_point_normal(top_pts[0], s.n).ok_or(OpError::DegenerateGeometry)?,
-    ));
-    let cap = model.faces.push(Face {
-        surface: cap_surface,
-        outer: Loop {
-            half_edges: top_pe
-                .iter()
-                .map(|&edge| HalfEdge {
-                    edge,
-                    forward: true,
-                })
-                .collect(),
-        },
-        inner: vec![],
-        orientation: Orientation::Forward,
-    });
-    new_faces.push(cap);
-
-    let new_solid = finish_split(model, s.solid_h, s.shell_h, face, &new_faces);
-    Ok((new_solid, cap))
 }
 
 // ---- boolean (M5-c3) ----
@@ -2959,7 +2861,7 @@ fn face_contains_face(model: &Model, big: Handle<Face>, small: Handle<Face>, n: 
 /// polygons) — and the reconstruction (`contained_contact_result` re-emits faces;
 /// `assemble_fuse_cut` partitions by component). So a boss fuses cleanly onto a non-convex `a`
 /// (an L-bracket top) with a non-convex `b` (an L/star footprint), mirroring the pocket path.
-/// This makes `pad = extrude + Fuse` a drop-in for the direct `raise_region`.
+/// This makes `pad = extrude + Fuse` a drop-in for the old direct construction.
 fn detect_contained_contact(
     model: &Model,
     a: Handle<Solid>,
@@ -3011,7 +2913,7 @@ fn detect_contained_contact(
 /// and the blind test (`point_in_solid`, exact ray cast for non-convex) — and the reconstruction
 /// (`contained_contact_result` re-emits faces; `assemble_fuse_cut` partitions by component). So a
 /// pocket carves cleanly into a non-convex `a` (a re-pocketed part) with a non-convex `b` (an
-/// L/star footprint). This makes `pocket = extrude + Cut` a drop-in for the direct `raise_region`.
+/// L/star footprint). This makes `pocket = extrude + Cut` a drop-in for the old direct construction.
 fn detect_pocket_contact(
     model: &Model,
     a: Handle<Solid>,
