@@ -1032,6 +1032,12 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **★ 회귀·격리.** `try_overhang`을 `[Crossing;2]`→**`Vec`(2k)** 완화. edge-slot Cut은 `try_overhang`을 공유하므로 **`cs.len()==2 && same p_seg`** 재검사로 single-wall 유지(격리). P 홀은 **포함하는 notch 조각에 배정**(다조각에서 모호 회피, 1조각이면 자동). 매칭 실패(비볼록이 is_convex를 빠져나감)는 `OVERHANG_ARCS`로 정직 거절.
 - **net.** `fuse_a_spanning_slab_boss`(부피 1.4·validate·watertight·공면-인접 0·연쇄), OCCT diff `spanning_slab_fuse_then_cut_matches_occt`(1.4 + 처마 관통 연쇄). single-edge·corner·edge-slot·boss/pocket/coincident 불변. **후속(비목표)**: P 홀 base 다조각, 코너·multi Cut, Common, non-axis-aligned·4-plane.
 
+**슬래브 채널 Cut — 다벽 오버행 파내기 (M5 셀 coplanar-contact-overhang-slab-cut).** 파내기(Cut) 일반화 첫 칸. edge-slot(1벽)을 **다벽**으로 — 프리즘이 base를 가로질러 **반대 두 벽**으로 나가는 채널 슬롯. edge-slot은 1벽 특수케이스로 통합. n0: 슬래브 Cut 픽스처(A `[0,1]³`, B `[-0.5,1.5]×[0.4,0.6]×[0.5,1]`)가 edge-slot과 동일하게 `vertex_on_face_plane` 거절(공면 top grazing 먼저).
+
+- **★ 세 부분 재구성.** ① **mouth(A top)**: `A_top − overlap` = Fuse의 `split_loop_all_arcs`+notch-piece stitch **그대로 재사용**(cantilever 없이). 슬래브는 2 스트립. ② **각 뚫린 벽 opening**: edge-slot 옆-notch `splice_notch([c,d,d,c])`를 벽마다. ③ **B 벽 클립**: `clip_face_by_plane`를 뚫린 벽 평면들로 fold. 감지는 top 크로싱을 접촉 엣지별로 묶어 **뚫린 벽=엣지**, 1벽 또는 2-평행벽(`n_out.dot<0`)만 허용.
+- **★ 실측으로 확정된 세 함정(계획 검토가 배선 전 차단).** ⓐ **mouth split엔 top 크로싱만** — crossings에 top(z=1)·floor(z=0.5) d가 섞여, 전체를 `split_loop_all_arcs(P)`에 주면 d가 P 루프에 오배치. `plane_side(contact)==0` 필터. ⓑ **clip 크로싱은 클립 평면 위로** — 슬래브 B-벽 바닥 엣지가 x=−0.5→1.5로 두 벽 floor 크로싱을 다 지나, x=0 클립에 x=1 크로싱 오삽입. `plane_side(keep_tri)==0` 필터. ⓒ **blind 게이트=모든 off-plane B 정점이 비-뚫린 A 면 전부 strict inside** — through-bottom·비뚫린 벽·코너를 한 조건으로 잡음(이전 "뚫린 벽 하나의 밖"은 through-bottom 놓침).
+- **net.** `cut_a_slab_channel`(부피 0.9·validate·watertight·공면-인접 0·연쇄), OCCT diff `slab_channel_cut_then_cut_matches_occt`(0.9 + 채널 밖 관통 연쇄). edge-slot·Fuse 전 계열·boss/pocket 불변. 거절 발화 `a_corner_slab_cut_is_out_of_scope`(인접 2벽). **후속(비목표)**: 코너 Cut(인접벽·모서리 엣지), through-slot(바닥 관통), >2벽, Common, non-axis-aligned·4-plane.
+
 **M5-d2 거절 가드 — 실측으로 확정된 세 가지 (거절 태그 훅 도입 후).** `assert_eq!(boolean(..), Err(Unsupported))`는 의도와 다른 가드가 발화해도 통과하므로, ops의 모든 `Unsupported` 생성 지점에 `reject(tag)`를 붙이고 테스트가 `assert_rejects(.., tag::…)`로 **어느 가드가 발화했는지**까지 단언하게 했다(`#[cfg(test)]` thread_local, 릴리스 영향 0). 이 계측이 드러낸 것:
 - **`strict` seam-arc 가드는 과잉 거절이었다 — 셀 3e-1에서 해소.** 자기교차가 아닌 **단순 계단형 호**(reflex turn 1회 이상)까지 접힌 호와 구별 못 해 거절했다. 그것은 **정렬 인공물**을 막는 가드였고, 셀 3d가 정렬을 없앴다.
 
