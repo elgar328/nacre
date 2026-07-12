@@ -428,6 +428,13 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 **어댑터 분리(옵션 보존):** 내부를 A로 두어도 nacre-step은 어댑터라 **필요 시 export 시점에 unseam해 B로 내보낼 수 있다**(내부 표현 ≠ 교환 표현). 지금은 A 출력(OCCT 상호운용 안전)이고, 특정 상호운용 요구가 생기면 B 출력을 어댑터에 추가. **tess 층의 남은 세부**(seam polyline 샘플 밀도·법선 비분리 규칙 구현)는 M3 tess 곡면 샘플링에서 확정.
 
+**패드/포켓 ↔ 불리언 통합 — feature = tool body + boolean (목표, 미착수).** M4 `PadOnFace`/`PocketOnFace`(`imprint`+`raise_region`, 직접 구성)와 M5 불리언 공면 경로(`detect_pocket_contact`·`detect_contained_contact`·overhang 사이드카)는 **부분 중복**이다: top-flush 포함 포켓/보스는 `PocketOnFace`로도 `Cut(솔리드, 프리즘)`으로도 나온다(`cut_a_blind_pocket_into_a_face`). 둘 다 있는 건 **마일스톤 순서의 산물** — M4가 M5보다 먼저라, 불리언이 없던 시절엔 재료 가감이 직접 구성뿐이었다. 목표 구조는 상용 CAD와 동형: **`pad` = 프로파일 압출 → `Fuse`, `pocket` = 압출 → `Cut`**, 패드/포켓은 불리언의 얇은 sugar. "프로파일이 면 안에 있어야 한다"는 제약이 사라지고(오버행 패드 자동 획득), M4 직접 기계(`imprint`/`raise_region`/`prepare_face_split`)를 제거해 코드 표면이 준다. 공면 복잡도는 없어지는 게 아니라 **불리언 하나로 집약**된다(독립-솔리드 불리언 때문에 어차피 필요).
+
+- **★ 구조적 공면 = O(1) 참조 인식(핵심).** 면 위 스케치를 압출한 tool body의 밑면은 대상 면의 **surface Handle을 공유**한다(`imprint`가 이미 원본 `surface_h`를 재사용). 통합 불리언은 **먼저 Handle 공유를 검사**(float 계산 0)해 공유 면을 seam으로 즉시 채택하고, **공유하지 않는 독립 솔리드만** `planes_coplanar` 기하 감지로 내려간다. 즉 "참조로 아는 공면은 공짜, 우연한 공면만 계산" — 상용 커널이 "coincident 면을 imprint로 공유 토폴로지로 승격"하는 것의 nacre판.
+- **★ 게이트(순서 강제).** (a) 불리언 공면 처리를 하나로 흡수·완성(지금 셀 사다리 — Cut 3갈래 통합, Common이 Cut의 detect 재사용) → (b) Handle-공유 O(1) fast path 추가 → (c) 그제서야 pad/pocket을 extrude+불리언 wrapper로 바꾸고 M4 직접 경로 제거. **역순 금지**: 불리언 공면이 robust해지기 전에 M4를 걷어내면 지금 되던 포켓/보스가 커버리지 구멍에 빠진다(M4 직접 경로는 그때까지 신뢰 가능한 fallback).
+- **보존 불변식.** M4 직접 경로는 교차를 아예 계산하지 않아 **전부 Constructed**(tolerance 0)다. (b)의 참조-fast-path는 그 순수성을 유지해야 한다 — 공유 면 seam은 Discovered로 승격하지 않고 Constructed로 남기고, **우연한 공면만** Discovered seam(+tol). 통합이 exactness를 후퇴시키면 안 된다.
+- **업계 정합.** 피처 레이어는 pad=tool body+boolean으로 통합돼 있고(SolidWorks/NX/Creo/Fusion), 커널 레이어는 그래도 coincidence 전담 로직(imprint+tolerance)을 보유한다 — 사이드카는 사라지는 게 아니라 **커널 불리언 안으로 들어간다**. nacre는 tolerance 대신 exact 술어로 그 자리를 채우는 소수파.
+
 ### (5d) exactness sweep — 전수조사 표 (진리를 정하는 자리에서 f64를 읽는 곳. 단일 진실원.)
 
 M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/cavity인가)이 좌표 f64를 읽는 자리를 전수 나열한다. 진리를 정하는 술어만 대상이다 — 부피·validate·OCCT는 net(사후 검산)이라 제외. **정점의 존재론적 tol(`vertex_tol`)은 제외** — Discovered 정점은 "정의 + tol"이 정상 표현이며(원칙상 합법, DNA), 은퇴 대상이 아니다. 은퇴 대상은 "판정이 tol/f64 캐시를 읽어 조용히 틀릴 수 있는 곳"뿐이다.
