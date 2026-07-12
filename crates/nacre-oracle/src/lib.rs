@@ -1183,6 +1183,45 @@ bbox_min 0 0 0
         );
     }
 
+    /// A corner slot Cut breaks out two adjacent walls (cell coplanar-contact-overhang-corner-cut).
+    /// OCCT scores the corner slot and a transversal Cut chained onto the (non-convex) result.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn corner_slot_cut_then_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let corner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let occt_slot = occt_boolean_of(&m, OcctBool::Cut, base, corner).unwrap();
+        let slotted = boolean(&mut m, BoolKind::Cut, base, corner).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, slotted).unwrap().volume, occt_slot.volume),
+            "corner slot: {} vs {}",
+            mass_props(&m, slotted).unwrap().volume,
+            occt_slot.volume
+        );
+        // Chain a transversal drill through the base at the opposite (0,0) corner.
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.05, 0.05, -0.5]),
+            Point3::from_array([0.25, 0.25, 1.5]),
+        );
+        let occt_cut = occt_boolean_of(&m, OcctBool::Cut, slotted, cutter).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, slotted, cutter).unwrap();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
+            "corner then cut: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt_cut.volume
+        );
+    }
+
     /// Two face-to-face cubes fuse into a clean box (cell fuse-coplanar-merge merges the
     /// coplanar side faces and dissolves the interface corners), which then chains a Cut.
     /// OCCT scores both the fuse and the chained cut on the exported b-rep.
