@@ -1262,6 +1262,58 @@ bbox_min 0 0 0
         );
     }
 
+    /// A `Common` of a top-flush overhang pair is the convex overlap R = a ∩ b (cell
+    /// coplanar-contact-overhang-common). The prism hangs past one base edge; OCCT scores R.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn edge_overhang_common_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.3, 0.5, 0.5]),
+            Point3::from_array([0.7, 1.5, 1.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Common, base, prism).unwrap();
+        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "edge overhang common: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
+    /// A corner overhang `Common`: the prism swallows the base's (1,1) corner, so R meets at a
+    /// corner column (cell coplanar-contact-overhang-common). OCCT cross-checks that cc topology.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn corner_overhang_common_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Common, base, prism).unwrap();
+        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "corner overhang common: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
     /// Two face-to-face cubes fuse into a clean box (cell fuse-coplanar-merge merges the
     /// coplanar side faces and dissolves the interface corners), which then chains a Cut.
     /// OCCT scores both the fuse and the chained cut on the exported b-rep.
