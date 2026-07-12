@@ -4061,7 +4061,81 @@ fn detect_overhang_cut_contact(
     })
 }
 
-/// Build the edge-slot result: mouth notch on `a`'s contact face, side notch on `a`'s crossed
+/// The mouth notch piece(s) for an overhang Cut: the contact face `p_face` minus its overlap with
+/// `q_face`, as one or more `LocalFace`s on plane `p_pos`. `top` holds the contact-plane crossings
+/// only (floor crossings would corrupt the split). Reuses the Fuse notch machinery
+/// (`split_loop_all_arcs` + `stitch_arcs`), assigning each P hole to the piece that contains it.
+fn mouth_notch_pieces(
+    model: &Model,
+    p_face: Handle<Face>,
+    q_face: Handle<Face>,
+    top: &[Crossing],
+    p_pos: usize,
+    drop: (usize, usize),
+) -> Result<Vec<LocalFace>, BoolError> {
+    let pt = |nd: Node| overhang_node_point(model, nd, top);
+    let ring_vh = |face: Handle<Face>| -> Vec<Handle<Vertex>> {
+        model
+            .faces
+            .get(face)
+            .outer
+            .half_edges
+            .iter()
+            .map(|&he| he_start(model, he))
+            .collect()
+    };
+    let p_vh = ring_vh(p_face);
+    let p_pts: Vec<Point3> = p_vh
+        .iter()
+        .map(|&vh| model.vertices.get(vh).point)
+        .collect();
+    let p2: Vec<[f64; 2]> = p_pts.iter().map(|&p| proj2(p, drop)).collect();
+    let p_inner: Vec<Vec<Node>> = model
+        .faces
+        .get(p_face)
+        .inner
+        .iter()
+        .map(|l| {
+            l.half_edges
+                .iter()
+                .map(|&he| Node::Orig(he_start(model, he)))
+                .collect()
+        })
+        .collect();
+    let q_vh = ring_vh(q_face);
+    let q_pts: Vec<Point3> = q_vh
+        .iter()
+        .map(|&vh| model.vertices.get(vh).point)
+        .collect();
+    let q2: Vec<[f64; 2]> = q_pts.iter().map(|&p| proj2(p, drop)).collect();
+    let p_arcs = split_loop_all_arcs(&p_vh, &p_pts, top, &q2, drop, |c| c.p_seg);
+    let q_arcs = split_loop_all_arcs(&q_vh, &q_pts, top, &p2, drop, |c| c.q_seg);
+    let match_arc = |arcs: &[LoopArc], ends: (usize, usize)| -> Option<Vec<Node>> {
+        arcs.iter()
+            .find(|a| !a.outside && unordered(a.ends.0, a.ends.1) == unordered(ends.0, ends.1))
+            .map(|a| a.nodes.clone())
+    };
+    let mut out = Vec::new();
+    for pa in p_arcs.iter().filter(|a| a.outside) {
+        let qi = match_arc(&q_arcs, pa.ends).ok_or_else(|| reject(tag::OVERHANG_ARCS))?;
+        let mouth = stitch_arcs(pa.nodes.clone(), qi);
+        let mouth2: Vec<[f64; 2]> = mouth.iter().map(|&nd| proj2(pt(nd), drop)).collect();
+        let inner: Vec<Vec<Node>> = p_inner
+            .iter()
+            .filter(|h| point_in_ring2(proj2(pt(h[0]), drop), &mouth2) == Some(true))
+            .cloned()
+            .collect();
+        out.push(LocalFace {
+            plane_idx: p_pos,
+            loop_nodes: mouth,
+            inner,
+            flip: false,
+        });
+    }
+    Ok(out)
+}
+
+/// Build the overhang Cut result: mouth notch on `a`'s contact face, a side notch on each crossed
 /// wall, and `b`'s walls clipped to inside `a` and flipped to bound the removed slot.
 fn overhang_cut_result(model: &mut Model, oc: &OverhangCut) -> Result<Handle<Solid>, BoolError> {
     let planes_a = collect_planes(model, oc.a)?;
@@ -4096,14 +4170,15 @@ fn overhang_cut_result(model: &mut Model, oc: &OverhangCut) -> Result<Handle<Sol
     let drop = planar_drop_axes(planes[p_pos].n_out);
     let contact_tri = planes[p_pos].tri;
 
-    // --- mouth: A's contact face minus the overlap, as notch piece(s) (top crossings only —
-    // floor crossings are off P's plane and would corrupt the split). Reuses the Fuse notch. ---
+    // --- mouth: A's contact face minus the overlap (top crossings only — floor crossings are off
+    // P's plane and would corrupt the split). ---
     let top: Vec<Crossing> = oc
         .crossings
         .iter()
         .filter(|c| plane_side(contact_tri, c.point) == 0)
         .cloned()
         .collect();
+    let mut faces = mouth_notch_pieces(model, oc.p_face, oc.q_face, &top, p_pos, drop)?;
     let p_vh: Vec<Handle<Vertex>> = model
         .faces
         .get(oc.p_face)
@@ -4112,60 +4187,6 @@ fn overhang_cut_result(model: &mut Model, oc: &OverhangCut) -> Result<Handle<Sol
         .iter()
         .map(|&he| he_start(model, he))
         .collect();
-    let p_pts: Vec<Point3> = p_vh
-        .iter()
-        .map(|&vh| model.vertices.get(vh).point)
-        .collect();
-    let p2: Vec<[f64; 2]> = p_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let p_inner: Vec<Vec<Node>> = model
-        .faces
-        .get(oc.p_face)
-        .inner
-        .iter()
-        .map(|l| {
-            l.half_edges
-                .iter()
-                .map(|&he| Node::Orig(he_start(model, he)))
-                .collect()
-        })
-        .collect();
-    let q_vh: Vec<Handle<Vertex>> = model
-        .faces
-        .get(oc.q_face)
-        .outer
-        .half_edges
-        .iter()
-        .map(|&he| he_start(model, he))
-        .collect();
-    let q_pts: Vec<Point3> = q_vh
-        .iter()
-        .map(|&vh| model.vertices.get(vh).point)
-        .collect();
-    let q2: Vec<[f64; 2]> = q_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let p_arcs = split_loop_all_arcs(&p_vh, &p_pts, &top, &q2, drop, |c| c.p_seg);
-    let q_arcs = split_loop_all_arcs(&q_vh, &q_pts, &top, &p2, drop, |c| c.q_seg);
-    let match_arc = |arcs: &[LoopArc], ends: (usize, usize)| -> Option<Vec<Node>> {
-        arcs.iter()
-            .find(|a| !a.outside && unordered(a.ends.0, a.ends.1) == unordered(ends.0, ends.1))
-            .map(|a| a.nodes.clone())
-    };
-    let mut faces = Vec::new();
-    for pa in p_arcs.iter().filter(|a| a.outside) {
-        let qi = match_arc(&q_arcs, pa.ends).ok_or_else(|| reject(tag::OVERHANG_ARCS))?;
-        let mouth = stitch_arcs(pa.nodes.clone(), qi);
-        let mouth2: Vec<[f64; 2]> = mouth.iter().map(|&nd| proj2(pt(nd), drop)).collect();
-        let inner: Vec<Vec<Node>> = p_inner
-            .iter()
-            .filter(|h| point_in_ring2(proj2(pt(h[0]), drop), &mouth2) == Some(true))
-            .cloned()
-            .collect();
-        faces.push(LocalFace {
-            plane_idx: p_pos,
-            loop_nodes: mouth,
-            inner,
-            flip: false,
-        });
-    }
 
     // --- each crossed wall: its loop with the top edge replaced by the slot's three inner sides.
     let mut a_faces = solid_local_faces(model, oc.a, 0, Some(oc.p_face), None);
