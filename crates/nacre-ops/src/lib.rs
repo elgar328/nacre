@@ -1121,6 +1121,13 @@ pub fn boolean(
             return overhang_cut_general_result(model, &oc);
         }
     }
+    // A prism top-flush on `a`'s face, footprint hanging past the boundary — `Common(a, b)` is the
+    // convex overlap `R = a ∩ b` (cell coplanar-contact-overhang-common). Two-crossing configs only.
+    if kind == BoolKind::Common {
+        if let Some(oc) = detect_overhang_common(model, a, b) {
+            return overhang_common_result(model, &oc);
+        }
+    }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
     // (it decided in/out with a 1e-9 tolerance) and cell 3g the convex `common` (its
     // `order_ccw` was the last `atan2` enumeration) — the seam path answers all three
@@ -4430,6 +4437,257 @@ fn overhang_cut_general_result(
             faces.push(LocalFace {
                 loop_nodes: clipped,
                 flip: true,
+                ..lf
+            });
+        }
+    }
+
+    assemble_fuse_cut(model, oc.a, oc.b, &planes, &seam, &faces)
+}
+
+// ---- coplanar-contact-overhang-common (M5): intersection of a top-flush overhang pair ----
+
+/// A general overhang `Common`: the same top-flush coplanar overhang geometry the Cut path
+/// detects, but `Common(a, b) = a ∩ b` keeps the convex overlap polytope `R` instead of carving it
+/// out. `R`'s faces are the contact overlap (P ∩ Q), `a`'s breached walls clipped to inside `b`, and
+/// `b`'s walls clipped to inside `a` — all with their original outward normals (`R` convex, so no
+/// flip). Restricted to two top crossings (one overlap-arc pair, assembled by a single stitch);
+/// more crossings need arc chaining and stay out of scope.
+/// `Some` iff `Common(a, b)` is a two-crossing overhang intersection. Reuses the kind-independent
+/// overhang geometry (`detect_overhang_cut_general`) and gates on exactly two contact-plane
+/// crossings, so the overlap has one `!outside` P-arc that a single `stitch_arcs` assembles (edge,
+/// corner, and L configs — the breached-wall count is irrelevant). Four+ crossings (a spanning
+/// slab) fall through to the standard `VERTEX_ON_FACE_PLANE` rejection.
+fn detect_overhang_common(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Option<OverhangCutG> {
+    let oc = detect_overhang_cut_general(model, a, b)?;
+    let planes_a = collect_planes(model, a).ok()?;
+    let pi = model
+        .shells
+        .get(model.solids.get(a).outer)
+        .faces
+        .iter()
+        .position(|&f| f == oc.p_face)?;
+    let contact_tri = planes_a[pi].tri;
+    let top = oc
+        .crossings
+        .iter()
+        .filter(|c| plane_side(contact_tri, c.point) == 0)
+        .count();
+    if top != 2 {
+        return None; // >1 overlap-arc pair (slab) — out of scope, honest fall-through
+    }
+    Some(oc)
+}
+
+/// A breached wall's face on the intersection `R = a ∩ b`, built exactly from the wall's own
+/// crossings by swallowed-corner count (`R` is convex, so every corner is a stored crossing or a
+/// shared original vertex — no clipping, which a chain of parallel `b` planes would round off).
+fn common_wall_face(wall: &WallG, crossings: &[Crossing]) -> Vec<Node> {
+    let cr = |i: usize| Node::Seam(crossings[i].triple);
+    match &wall.kind {
+        WallKind::Middle { c, d, .. } => vec![cr(c[0]), cr(c[1]), cr(d[1]), cr(d[0])],
+        WallKind::Corner {
+            c,
+            d,
+            cc,
+            corner_vh,
+        } => vec![cr(*c), Node::Orig(*corner_vh), cr(*cc), cr(*d)],
+        WallKind::Shorten(pairs) => vec![
+            Node::Orig(pairs[0].0),
+            Node::Orig(pairs[1].0),
+            cr(pairs[1].1),
+            cr(pairs[0].1),
+        ],
+    }
+}
+
+/// Order `nodes` to match wall `w_face`'s real outer-loop winding, so `assemble_fuse_cut` gives the
+/// face the wall's outward normal (no flip). Exact — only reorders the given nodes.
+fn orient_to_wall(
+    model: &Model,
+    w_face: Handle<Face>,
+    nodes: Vec<Node>,
+    n_out: Vector3,
+    crossings: &[Crossing],
+) -> Vec<Node> {
+    let drop = planar_drop_axes(n_out);
+    let sarea = |ns: &[Node]| -> f64 {
+        let ps: Vec<[f64; 2]> = ns
+            .iter()
+            .map(|&nd| proj2(overhang_node_point(model, nd, crossings), drop))
+            .collect();
+        let k = ps.len();
+        (0..k)
+            .map(|i| {
+                let j = (i + 1) % k;
+                ps[i][0] * ps[j][1] - ps[j][0] * ps[i][1]
+            })
+            .sum()
+    };
+    if sarea(&nodes).signum() == sarea(&face_orig_nodes(model, w_face)).signum() {
+        nodes
+    } else {
+        nodes.into_iter().rev().collect()
+    }
+}
+
+/// The overlap top piece for an overhang `Common`: the contact face `p_face` intersected with
+/// `q_face`, as one `LocalFace` on plane `p_pos`. The sibling of `mouth_notch_pieces`, but it stitches
+/// the **inside** arcs (P ∩ Q) rather than the outside ones. `top` holds the contact-plane crossings
+/// only. Two crossings ⇒ one `!outside` P-arc and one matching `!outside` Q-arc.
+fn overlap_top_piece(
+    model: &Model,
+    p_face: Handle<Face>,
+    q_face: Handle<Face>,
+    top: &[Crossing],
+    p_pos: usize,
+    drop: (usize, usize),
+) -> Result<LocalFace, BoolError> {
+    let ring_vh = |face: Handle<Face>| -> Vec<Handle<Vertex>> {
+        model
+            .faces
+            .get(face)
+            .outer
+            .half_edges
+            .iter()
+            .map(|&he| he_start(model, he))
+            .collect()
+    };
+    let p_vh = ring_vh(p_face);
+    let p_pts: Vec<Point3> = p_vh
+        .iter()
+        .map(|&vh| model.vertices.get(vh).point)
+        .collect();
+    let p2: Vec<[f64; 2]> = p_pts.iter().map(|&p| proj2(p, drop)).collect();
+    let q_vh = ring_vh(q_face);
+    let q_pts: Vec<Point3> = q_vh
+        .iter()
+        .map(|&vh| model.vertices.get(vh).point)
+        .collect();
+    let q2: Vec<[f64; 2]> = q_pts.iter().map(|&p| proj2(p, drop)).collect();
+    let p_arcs = split_loop_all_arcs(&p_vh, &p_pts, top, &q2, drop, |c| c.p_seg);
+    let q_arcs = split_loop_all_arcs(&q_vh, &q_pts, top, &p2, drop, |c| c.q_seg);
+    let match_arc = |arcs: &[LoopArc], ends: (usize, usize)| -> Option<Vec<Node>> {
+        arcs.iter()
+            .find(|a| !a.outside && unordered(a.ends.0, a.ends.1) == unordered(ends.0, ends.1))
+            .map(|a| a.nodes.clone())
+    };
+    let inside_p: Vec<&LoopArc> = p_arcs.iter().filter(|a| !a.outside).collect();
+    debug_assert_eq!(inside_p.len(), 1, "two crossings give one inside P-arc");
+    let pa = *inside_p.first().ok_or_else(|| reject(tag::OVERHANG_ARCS))?;
+    let qi = match_arc(&q_arcs, pa.ends).ok_or_else(|| reject(tag::OVERHANG_ARCS))?;
+    let overlap = stitch_arcs(pa.nodes.clone(), qi);
+    #[cfg(debug_assertions)]
+    {
+        let sarea = |ring: &[[f64; 2]]| -> f64 {
+            let k = ring.len();
+            (0..k)
+                .map(|i| {
+                    let j = (i + 1) % k;
+                    ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
+                })
+                .sum()
+        };
+        let o2: Vec<[f64; 2]> = overlap
+            .iter()
+            .map(|&nd| proj2(overhang_node_point(model, nd, top), drop))
+            .collect();
+        debug_assert!(
+            sarea(&o2).signum() == sarea(&p2).signum(),
+            "overlap top winding flipped"
+        );
+    }
+    Ok(LocalFace {
+        plane_idx: p_pos,
+        loop_nodes: overlap,
+        inner: Vec::new(),
+        flip: false,
+    })
+}
+
+/// Build the overhang `Common` result `R = a ∩ b`: the overlap top, `a`'s breached walls clipped to
+/// inside `b`, and `b`'s walls clipped to inside `a` — all keeping their original outward normals.
+fn overhang_common_result(
+    model: &mut Model,
+    oc: &OverhangCutG,
+) -> Result<Handle<Solid>, BoolError> {
+    let planes_a = collect_planes(model, oc.a)?;
+    let na = planes_a.len();
+    let planes_b = collect_planes(model, oc.b)?;
+    let mut planes = planes_a;
+    planes.extend(planes_b);
+    let seam: Vec<SeamVertex> = oc
+        .crossings
+        .iter()
+        .map(|c| SeamVertex {
+            point: c.point,
+            triple: c.triple,
+            tol: vertex_tol(
+                c.point,
+                &planes[c.triple[0]].plane,
+                &planes[c.triple[1]].plane,
+                &planes[c.triple[2]].plane,
+            ),
+        })
+        .collect();
+
+    let a_shell = model.solids.get(oc.a).outer;
+    let p_pos = model
+        .shells
+        .get(a_shell)
+        .faces
+        .iter()
+        .position(|&f| f == oc.p_face)
+        .expect("P on a");
+    let drop = planar_drop_axes(planes[p_pos].n_out);
+    let contact_tri = planes[p_pos].tri;
+
+    // overlap top: P ∩ Q (contact-plane crossings only — floor crossings are off P's plane).
+    let top: Vec<Crossing> = oc
+        .crossings
+        .iter()
+        .filter(|c| plane_side(contact_tri, c.point) == 0)
+        .cloned()
+        .collect();
+    let mut faces = vec![overlap_top_piece(
+        model, oc.p_face, oc.q_face, &top, p_pos, drop,
+    )?];
+
+    // a's breached walls, each ∩ b — built exactly from the wall's own crossings (no clipping;
+    // R is convex so every corner is a stored crossing or shared original), oriented to the wall's
+    // real winding so `assemble_fuse_cut` keeps its outward normal (no flip).
+    for wall in &oc.walls {
+        let w_face = model.shells.get(a_shell).faces[wall.w_pos];
+        let nodes = common_wall_face(wall, &oc.crossings);
+        let nodes = orient_to_wall(
+            model,
+            w_face,
+            nodes,
+            planes[wall.w_pos].n_out,
+            &oc.crossings,
+        );
+        faces.push(LocalFace {
+            plane_idx: wall.w_pos,
+            loop_nodes: nodes,
+            inner: Vec::new(),
+            flip: false,
+        });
+    }
+
+    // b's walls clipped to inside a (folded over a's breached walls only — a's top is excluded, so
+    // the z=1 top edge survives). No flip: R is the kept solid, so b's outward normal points out of R.
+    let breached_tris: Vec<[Point3; 3]> = oc.walls.iter().map(|w| planes[w.w_pos].tri).collect();
+    for lf in solid_local_faces(model, oc.b, na, Some(oc.q_face), None) {
+        let clipped = clip_bwall_inside_a(model, &lf.loop_nodes, &breached_tris, &oc.crossings)
+            .ok_or_else(|| reject(tag::OVERHANG_ARCS))?;
+        if clipped.len() >= 3 {
+            faces.push(LocalFace {
+                loop_nodes: clipped,
+                flip: false,
                 ..lf
             });
         }
@@ -9161,6 +9419,95 @@ pub mod tests {
         assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
         let planes = collect_planes(&m, r).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    /// The overhang-Common invariants: `R = a ∩ b` is a clean convex solid of the given volume
+    /// (`is_convex` catches a face-orientation bug the volume alone would pass), watertight, with no
+    /// coplanar-neighbour edge and no cavity.
+    fn assert_common_box(m: &Model, r: Handle<Solid>, vol: f64) {
+        let vs = nacre_validate::validate(m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let v = nacre_props::mass_props(m, r).unwrap().volume;
+        assert!((v - vol).abs() < 1e-12, "volume {v}");
+        let planes = collect_planes(m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(m, r, &planes));
+        assert!(is_convex(m, &planes, &solid_vertex_handles(m, r)));
+        assert!(m.solids.get(r).cavities.is_empty());
+    }
+
+    #[test]
+    fn common_an_edge_overhang() {
+        // A prism top-flush on the base hanging past its y=1 edge: Common keeps the convex overlap
+        // R = [0.3,0.7]×[0.5,1]×[0.5,1] (one breached wall, no swallowed corner). Volume 0.1.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.3, 0.5, 0.5]),
+            Point3::from_array([0.7, 1.5, 1.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        m.rebuild_adjacency();
+        assert_common_box(&m, r, 0.1);
+    }
+
+    #[test]
+    fn common_a_corner_overhang() {
+        // A prism swallowing the base's (1,1) corner: Common keeps R = [0.5,1]×[0.5,1]×[0.5,1] (two
+        // breached walls meeting at one corner column cc=(1,1,0.5)). Volume 0.125.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        m.rebuild_adjacency();
+        assert_common_box(&m, r, 0.125);
+    }
+
+    #[test]
+    fn common_an_l_step() {
+        // The L-step prism (spanning x, hanging past y=1): three breached walls sharing two corner
+        // columns cc0=(0,1,0.5), cc1=(1,1,0.5). Common keeps R = [0,1]×[0.5,1]×[0.5,1] (volume 0.25),
+        // proving the two-crossing gate is independent of breached-wall count.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([-0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        m.rebuild_adjacency();
+        assert_common_box(&m, r, 0.25);
+    }
+
+    #[test]
+    fn common_a_slab_overhang_is_out_of_scope() {
+        // A spanning slab crosses two opposite base edges — four contact crossings, two overlap-arc
+        // pairs. The two-crossing gate declines it; the boolean rejects via the standard fall-through.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 0.4, 0.5]),
+            Point3::from_array([1.5, 0.6, 1.0]),
+        );
+        assert!(detect_overhang_common(&m, base, slab).is_none());
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Common, base, slab),
+            tag::VERTEX_ON_FACE_PLANE,
+        );
     }
 
     #[test]
