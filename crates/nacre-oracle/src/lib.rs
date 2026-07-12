@@ -1564,6 +1564,57 @@ bbox_min 0 0 0
         );
     }
 
+    /// A boss cantilevers off the side face of a top-pocketed cube (a non-convex solid). The
+    /// overhang Fuse now admits a non-convex solid when the contact face is convex; OCCT scores the
+    /// cantilever on the concave part.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn overhang_boss_on_non_convex_solid_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d {
+                    points: vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)],
+                },
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let OpOutput::PocketOnFace { solid: pc, .. } = apply(
+            &mut m,
+            &Operation::PocketOnFace {
+                face: faces[1],
+                profile: Profile2d {
+                    points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
+                },
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        // Boss on the +x side face, overhanging the bottom edge.
+        let boss = m.add_cuboid(
+            Point3::from_array([1.0, 0.25, -0.25]),
+            Point3::from_array([1.5, 0.75, 0.75]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, pc, boss).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, pc, boss).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "overhang boss on non-convex solid: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
     /// A boss raised on the top of a non-convex (L-prism) solid. OCCT scores the boss fused onto
     /// the concave base.
     #[test]

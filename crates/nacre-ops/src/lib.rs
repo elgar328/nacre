@@ -3561,10 +3561,53 @@ fn try_overhang(
     Some(out)
 }
 
+/// A simple polygon is convex iff every turn winds the same way. Exact via `orient2d` on the
+/// projected loop; collinear turns (`0`) are skipped. `< 3` points ⇒ not a polygon.
+fn loop_is_convex_2d(pts: &[[f64; 2]]) -> bool {
+    let n = pts.len();
+    if n < 3 {
+        return false;
+    }
+    let mut sign = 0.0_f64;
+    for i in 0..n {
+        let o = orient2d(pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
+        if o != 0.0 {
+            if sign == 0.0 {
+                sign = o;
+            } else if (o > 0.0) != (sign > 0.0) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Whether `face`'s outer loop is a convex polygon, projected onto its plane by dropping `drop`.
+fn face_outer_is_convex(model: &Model, face: Handle<Face>, drop: (usize, usize)) -> bool {
+    let pts: Vec<[f64; 2]> = model
+        .faces
+        .get(face)
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| proj2(model.vertices.get(he_start(model, he)).point, drop))
+        .collect();
+    loop_is_convex_2d(&pts)
+}
+
 /// `Some` iff `a` and `b` form an overhang boss contact: exactly one opposite-normal coplanar
 /// face pair, neither footprint contained in the other (that is the boss cell), their footprints
 /// overlapping (∂P meets ∂Q at `2k` points — single-edge, swallowed corner, or a spanning slab),
 /// and no transversal piercing (a pure coplanar contact, not a seam cut).
+///
+/// **Neither solid need be convex** — only the two **contact-face footprints** must be convex (and
+/// hole-free). The Fuse reconstruction touches only the contact faces (arc-split, which assumes a
+/// convex footprint) and the breached walls (`resplit_overhang`, which is edge-local and
+/// convexity-agnostic); every other face is re-emitted verbatim. So a boss cantilevers onto a
+/// non-convex solid (a pocketed part, a boolean result) as long as the contact face is a convex
+/// polygon. A non-convex contact footprint would mislabel arcs (silent-wrong) and is rejected here.
+/// (Cut/Common keep the whole-solid gate: their `clip_bwall_inside_a` clips against breached
+/// half-spaces, which only equals "inside `a`" when `a` is convex.)
 fn detect_overhang_contact(
     model: &Model,
     a: Handle<Solid>,
@@ -3572,11 +3615,6 @@ fn detect_overhang_contact(
 ) -> Option<OverhangContact> {
     let planes_a = collect_planes(model, a).ok()?;
     let planes_b = collect_planes(model, b).ok()?;
-    if !is_convex(model, &planes_a, &solid_vertex_handles(model, a))
-        || !is_convex(model, &planes_b, &solid_vertex_handles(model, b))
-    {
-        return None;
-    }
     let mut opposite: Vec<(usize, usize)> = Vec::new();
     for (i, pa) in planes_a.iter().enumerate() {
         for (j, pb) in planes_b.iter().enumerate() {
@@ -3592,6 +3630,16 @@ fn detect_overhang_contact(
     let fa = model.shells.get(model.solids.get(a).outer).faces[ia];
     let fb = model.shells.get(model.solids.get(b).outer).faces[jb];
     let n = planes_a[ia].plane.normal();
+    // Only the two contact footprints must be convex and hole-free (not the whole solids) — the
+    // reconstruction is local to them plus the edge-locally-resplit walls (see doc above).
+    let drop = planar_drop_axes(planes_a[ia].n_out);
+    if !face_outer_is_convex(model, fa, drop)
+        || !face_outer_is_convex(model, fb, drop)
+        || !model.faces.get(fa).inner.is_empty()
+        || !model.faces.get(fb).inner.is_empty()
+    {
+        return None;
+    }
     if face_contains_face(model, fa, fb, n) || face_contains_face(model, fb, fa, n) {
         return None; // fully contained ⇒ the boss cell, not an overhang
     }
@@ -9820,6 +9868,82 @@ pub mod tests {
         assert!((vol - 1.4).abs() < 1e-12, "volume {vol}");
         let planes = collect_planes(&m, r).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    // Build a unit cube with a blind pocket in its top — a non-convex solid whose side faces stay
+    // convex. Returns `(model, pocketed solid)`.
+    fn top_pocketed_cube() -> (Model, Handle<Solid>) {
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
+        else {
+            unreachable!()
+        };
+        let OpOutput::PocketOnFace { solid, .. } =
+            apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap()
+        else {
+            unreachable!()
+        };
+        (m, solid)
+    }
+
+    #[test]
+    fn fuse_an_overhanging_boss_onto_a_non_convex_solid() {
+        // A boss cantilevers off the +x side face of a top-pocketed cube (non-convex solid),
+        // overhanging the bottom edge. The whole-solid gate used to block it; the contact face
+        // (+x side) is a convex square, so the footprint gate admits it and the Fuse reconstruction
+        // is local (the far pocket is verbatim-copied). Volume: pocketed 0.92 + boss 0.25 = 1.17.
+        let (mut m, pc) = top_pocketed_cube();
+        let boss = m.add_cuboid(
+            Point3::from_array([1.0, 0.25, -0.25]),
+            Point3::from_array([1.5, 0.75, 0.75]),
+        );
+        let r = boolean(&mut m, BoolKind::Fuse, pc, boss).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!((nacre_props::mass_props(&m, r).unwrap().volume - 1.17).abs() < 1e-12);
+    }
+
+    #[test]
+    fn overhang_boss_with_a_non_convex_footprint_is_rejected() {
+        // An L-shaped (non-convex) boss footprint overhanging a cube edge: the footprint gate
+        // rejects it (a non-convex contact loop would mislabel the notch/cantilever arcs). Honest
+        // reject — non-convex overhang footprints are a separate cell.
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let l_base: Vec<Point3> = [
+            [0.3, 0.3],
+            [1.2, 0.3],
+            [1.2, 0.5],
+            [0.6, 0.5],
+            [0.6, 0.7],
+            [0.3, 0.7],
+        ]
+        .iter()
+        .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
+        .collect();
+        let (l_tool, _) =
+            build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4])).unwrap();
+        assert!(matches!(
+            boolean(&mut m, BoolKind::Fuse, cube, l_tool),
+            Err(BoolError::Unsupported)
+        ));
+    }
+
+    #[test]
+    fn overhang_cut_on_a_non_convex_solid_is_rejected() {
+        // The Cut path keeps the whole-solid convexity gate (its `clip_bwall_inside_a` clips against
+        // breached half-spaces, sound only for a convex kept solid). An overhang slot on a
+        // non-convex solid is honestly rejected — this cell opens Fuse (boss) only.
+        let (mut m, pc) = top_pocketed_cube();
+        let slot = m.add_cuboid(
+            Point3::from_array([0.75, 0.25, -0.25]),
+            Point3::from_array([1.0, 0.75, 0.5]),
+        );
+        assert!(matches!(
+            boolean(&mut m, BoolKind::Cut, pc, slot),
+            Err(BoolError::Unsupported)
+        ));
     }
 
     #[test]
