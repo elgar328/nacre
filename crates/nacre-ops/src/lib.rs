@@ -3348,9 +3348,93 @@ fn splice_notch(
     out
 }
 
-/// With `p_solid`'s contact face as P and `q_solid`'s as Q, decide whether Q overhangs P
-/// across a single P edge, returning the two crossings. `None` if this ordering is not a
-/// single-edge overhang (the caller tries the other ordering too).
+/// Split a contact face's outer loop at the two crossings into `(outside_arc, inside_arc)`:
+/// `outside_arc` carries a vertex strictly outside the other footprint, `inside_arc` is the
+/// complementary arc (empty interior when nothing is swallowed — the single-edge case). Each arc
+/// runs crossing→…→crossing (endpoints are the shared crossing `Node::Seam`s). `seg` gives each
+/// crossing's edge index on this loop; same-edge crossings are inserted in parameter order so the
+/// arc stays simple.
+fn split_loop_at_crossings(
+    loop_vh: &[Handle<Vertex>],
+    loop_pts: &[Point3],
+    crossings: &[Crossing; 2],
+    other2d: &[[f64; 2]],
+    drop: (usize, usize),
+    seg: impl Fn(&Crossing) -> usize,
+) -> (Vec<Node>, Vec<Node>) {
+    let n = loop_vh.len();
+    let inside: Vec<bool> = loop_pts
+        .iter()
+        .map(|&p| point_in_ring2(proj2(p, drop), other2d) == Some(true))
+        .collect();
+    enum Aug {
+        V(usize),
+        C(usize),
+    }
+    let mut aug: Vec<Aug> = Vec::new();
+    for j in 0..n {
+        aug.push(Aug::V(j));
+        let ea = loop_pts[j];
+        let dir = loop_pts[(j + 1) % n] - ea;
+        let mut here: Vec<usize> = (0..2).filter(|&ci| seg(&crossings[ci]) == j).collect();
+        here.sort_by(|&x, &y| {
+            let px = (crossings[x].point - ea).dot(dir);
+            let py = (crossings[y].point - ea).dot(dir);
+            px.partial_cmp(&py).expect("finite params")
+        });
+        for ci in here {
+            aug.push(Aug::C(ci));
+        }
+    }
+    let m = aug.len();
+    let cpos: Vec<usize> = (0..m).filter(|&i| matches!(aug[i], Aug::C(_))).collect();
+    let arc = |from: usize, to: usize| -> (Vec<Node>, bool) {
+        let mut nodes = Vec::new();
+        let mut has_outside = false;
+        let mut i = from;
+        loop {
+            match aug[i] {
+                Aug::V(j) => {
+                    nodes.push(Node::Orig(loop_vh[j]));
+                    if !inside[j] {
+                        has_outside = true;
+                    }
+                }
+                Aug::C(ci) => nodes.push(Node::Seam(crossings[ci].triple)),
+            }
+            if i == to {
+                break;
+            }
+            i = (i + 1) % m;
+        }
+        (nodes, has_outside)
+    };
+    let (a1, o1) = arc(cpos[0], cpos[1]);
+    let (a2, _) = arc(cpos[1], cpos[0]);
+    if o1 { (a1, a2) } else { (a2, a1) }
+}
+
+/// Join two arcs sharing their two crossing endpoints into one closed loop. `outer` sets the
+/// winding; `inner` is oriented to run back from `outer`'s end to its start and only its interior
+/// is appended, giving `[outer, inner-interior]` (implicitly closed). An empty inner interior
+/// leaves `outer` unchanged.
+fn stitch_arcs(outer: Vec<Node>, inner: Vec<Node>) -> Vec<Node> {
+    let y = *outer.last().expect("outer arc");
+    let inner = if inner[0] == y {
+        inner
+    } else {
+        inner.into_iter().rev().collect()
+    };
+    let interior = &inner[1..inner.len() - 1];
+    let mut out = outer;
+    out.extend_from_slice(interior);
+    out
+}
+
+/// With `p_solid`'s contact face as P and `q_solid`'s as Q, decide whether their footprints form
+/// a single 2-crossing overlap lens (∂P and ∂Q meet at exactly two points — a single-edge
+/// overhang or a swallowed corner), returning the two crossings (each with its own P/Q edge).
+/// `None` if not exactly two crossings, or a boundary graze.
 #[allow(clippy::too_many_arguments)]
 fn try_overhang(
     model: &Model,
@@ -3392,21 +3476,20 @@ fn try_overhang(
             }
         }
     }
-    // Single-edge overhang: exactly two crossings, on one P edge and two distinct Q edges.
-    if crs.len() != 2 || crs[0].0 != crs[1].0 || crs[0].1 == crs[1].1 {
+    // Exactly two proper crossings — a single convex overlap lens (single-edge, or a corner of
+    // one footprint swallowed by the other). More crossings (a spanning slab) are out of scope.
+    if crs.len() != 2 {
         return None;
     }
-    let p_seg = crs[0].0;
-    // No P vertex inside Q (a swallowed corner would cross two P edges); no boundary grazes.
+    // No boundary graze on either side (a vertex exactly on the other's boundary is out of scope).
     for &pp in &p2 {
-        if point_in_ring2(pp, &q2) != Some(false) {
-            return None;
-        }
+        point_in_ring2(pp, &q2)?;
     }
     for &qq in &q2 {
-        point_in_ring2(qq, &p2)?; // a boundary graze (None) is out of this cell's scope
+        point_in_ring2(qq, &p2)?;
     }
     // Exact crossing points as three-plane meets; provenance triple in combined-plane indices.
+    // Each crossing records its own P/Q edge (they may differ per crossing for a corner).
     let mut out: Vec<Crossing> = Vec::new();
     for &(i, j) in &crs {
         let p_wall = wall_pos_on_edge(model, p_solid, p_face, p_ring[i].0, p_ring[(i + 1) % np].0)?;
@@ -3421,17 +3504,17 @@ fn try_overhang(
         out.push(Crossing {
             point,
             triple,
-            p_seg,
+            p_seg: i,
             q_seg: j,
         });
     }
     Some([out[0].clone(), out[1].clone()])
 }
 
-/// `Some` iff `a` and `b` form a single-edge overhang boss contact: exactly one opposite-normal
-/// coplanar face pair, neither footprint contained in the other (that is the boss cell), one
-/// footprint crossing a single edge of the other, and no transversal piercing (a pure coplanar
-/// contact, not a seam cut).
+/// `Some` iff `a` and `b` form a 2-crossing overhang boss contact: exactly one opposite-normal
+/// coplanar face pair, neither footprint contained in the other (that is the boss cell), their
+/// footprints overlapping in a single lens (∂P meets ∂Q at exactly two points — single-edge or a
+/// swallowed corner), and no transversal piercing (a pure coplanar contact, not a seam cut).
 fn detect_overhang_contact(
     model: &Model,
     a: Handle<Solid>,
@@ -3464,7 +3547,8 @@ fn detect_overhang_contact(
     }
     let na = planes_a.len();
     let nb = planes_b.len();
-    // P is the face whose single edge holds both crossings; try each solid as P.
+    // Either solid can serve as P (the union is symmetric — swapping P/Q swaps which face is the
+    // notch vs the cantilever but yields the same two faces); try `a` as P, then `b`.
     let cc = if let Some(cr) = try_overhang(model, a, &planes_a, ia, fa, b, &planes_b, fb, na) {
         OverhangContact {
             p_solid: a,
@@ -3544,19 +3628,17 @@ fn overhang_contact_result(
         .expect("Q contact on shell");
 
     let drop = planar_drop_axes(planes[p_pos].n_out);
-    // P outer loop as nodes + points.
+    // Both contact faces' outer loops (vertices + points), and P's holes.
     let p_face = model.faces.get(cc.p_face);
-    let p_nodes: Vec<Node> = p_face
+    let p_vh: Vec<Handle<Vertex>> = p_face
         .outer
         .half_edges
         .iter()
-        .map(|&he| Node::Orig(he_start(model, he)))
+        .map(|&he| he_start(model, he))
         .collect();
-    let p_pts: Vec<Point3> = p_face
-        .outer
-        .half_edges
+    let p_pts: Vec<Point3> = p_vh
         .iter()
-        .map(|&he| model.vertices.get(he_start(model, he)).point)
+        .map(|&vh| model.vertices.get(vh).point)
         .collect();
     let p_inner: Vec<Vec<Node>> = p_face
         .inner
@@ -3568,7 +3650,6 @@ fn overhang_contact_result(
                 .collect()
         })
         .collect();
-    // Q outer loop vertices + points + inside/outside P classification.
     let q_face = model.faces.get(cc.q_face);
     let q_vh: Vec<Handle<Vertex>> = q_face
         .outer
@@ -3580,85 +3661,42 @@ fn overhang_contact_result(
         .iter()
         .map(|&vh| model.vertices.get(vh).point)
         .collect();
-    let nq = q_vh.len();
     let p2: Vec<[f64; 2]> = p_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let q_inside: Vec<bool> = q_pts
-        .iter()
-        .map(|&p| point_in_ring2(proj2(p, drop), &p2) == Some(true))
-        .collect();
+    let q2: Vec<[f64; 2]> = q_pts.iter().map(|&p| proj2(p, drop)).collect();
 
-    // Split Q's loop at the two crossings into an outside arc (cantilever) and an inside arc
-    // (the overlap boundary spliced into the notch).
-    #[derive(Clone, Copy)]
-    enum Aug {
-        V(usize),
-        C(usize),
-    }
-    let mut aug: Vec<Aug> = Vec::new();
-    for j in 0..nq {
-        aug.push(Aug::V(j));
-        for (ci, c) in cc.crossings.iter().enumerate() {
-            if c.q_seg == j {
-                aug.push(Aug::C(ci));
-            }
-        }
-    }
-    let m = aug.len();
-    let cpos: Vec<usize> = (0..m).filter(|&i| matches!(aug[i], Aug::C(_))).collect();
-    let arc = |from: usize, to: usize| -> Vec<Aug> {
-        let mut v = Vec::new();
-        let mut i = from;
-        loop {
-            v.push(aug[i]);
-            if i == to {
-                break;
-            }
-            i = (i + 1) % m;
-        }
-        v
-    };
-    let to_nodes = |a: &[Aug]| -> (Vec<Node>, bool) {
-        let mut nodes = Vec::new();
-        let mut has_outside = false;
-        for e in a {
-            match *e {
-                Aug::V(j) => {
-                    nodes.push(Node::Orig(q_vh[j]));
-                    if !q_inside[j] {
-                        has_outside = true;
-                    }
-                }
-                Aug::C(ci) => nodes.push(Node::Seam(cc.crossings[ci].triple)),
-            }
-        }
-        (nodes, has_outside)
-    };
-    let (arc1, arc2) = (arc(cpos[0], cpos[1]), arc(cpos[1], cpos[0]));
-    let (n1, o1) = to_nodes(&arc1);
-    let (n2, _) = to_nodes(&arc2);
-    let (cant_nodes, inside_nodes) = if o1 { (n1, n2) } else { (n2, n1) };
-
-    // Notch = P's loop with the crossed edge replaced by the inward detour (Q's inside arc).
-    let pt = |nd: Node| overhang_node_point(model, nd, &cc.crossings);
-    let notch = splice_notch(&p_nodes, cc.crossings[0].p_seg, inside_nodes, &pt);
+    // Split each contact face at the two crossings into (outside, inside) arcs; the notch and
+    // cantilever are the symmetric stitches. Single-edge leaves `p_inside` empty, so the
+    // cantilever reduces to `q_outside` — the previous behavior.
+    let (p_outside, p_inside) =
+        split_loop_at_crossings(&p_vh, &p_pts, &cc.crossings, &q2, drop, |c| c.p_seg);
+    let (q_outside, q_inside) =
+        split_loop_at_crossings(&q_vh, &q_pts, &cc.crossings, &p2, drop, |c| c.q_seg);
+    let notch = stitch_arcs(p_outside, q_inside);
+    let cantilever = stitch_arcs(q_outside, p_inside);
     #[cfg(debug_assertions)]
     {
-        let sarea = |nodes: &[Node]| -> f64 {
-            let pts: Vec<[f64; 2]> = nodes
-                .iter()
-                .map(|&nd| proj2(overhang_node_point(model, nd, &cc.crossings), drop))
-                .collect();
-            let k = pts.len();
+        let sarea = |ring: &[[f64; 2]]| -> f64 {
+            let k = ring.len();
             (0..k)
                 .map(|i| {
                     let j = (i + 1) % k;
-                    pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]
+                    ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
                 })
                 .sum()
         };
+        let proj = |nodes: &[Node]| -> Vec<[f64; 2]> {
+            nodes
+                .iter()
+                .map(|&nd| proj2(overhang_node_point(model, nd, &cc.crossings), drop))
+                .collect()
+        };
         debug_assert!(
-            sarea(&notch).signum() == sarea(&p_nodes).signum(),
+            sarea(&proj(&notch)).signum() == sarea(&p2).signum(),
             "overhang notch winding flipped"
+        );
+        debug_assert!(
+            sarea(&proj(&cantilever)).signum() == sarea(&q2).signum(),
+            "overhang cantilever winding flipped"
         );
     }
 
@@ -3671,7 +3709,7 @@ fn overhang_contact_result(
         },
         LocalFace {
             plane_idx: na + q_pos,
-            loop_nodes: cant_nodes,
+            loop_nodes: cantilever,
             inner: Vec::new(),
             flip: false,
         },
@@ -3852,6 +3890,11 @@ fn detect_overhang_cut_contact(
     }
     let na = planes_a.len();
     let cs = try_overhang(model, a, &planes_a, pi, p_face, b, &planes_b, q_face, na)?;
+    // The edge-slot Cut needs a single-edge crossing (one crossed wall W). `try_overhang` also
+    // admits a swallowed corner (crossings on two P edges); that is a corner Cut — out of scope.
+    if cs[0].p_seg != cs[1].p_seg {
+        return None;
+    }
 
     // The a wall W holding the crossed edge e; the b cap opposite Q (the slot floor).
     let p_ring: Vec<Handle<Vertex>> = model
@@ -8785,9 +8828,12 @@ pub mod tests {
     }
 
     #[test]
-    fn a_corner_overhang_is_not_a_single_edge_overhang() {
-        // The boss footprint swallows a base-top corner, crossing two base edges — outside this
-        // cell's single-edge scope. detect_overhang_contact declines; boolean rejects honestly.
+    fn fuse_a_corner_overhanging_boss() {
+        // The boss footprint swallows a base-top corner, crossing two base edges (a 2-crossing
+        // lens with the corner inside). Fuse welds an L-shaped cantilever: the base top gains an
+        // L notch, the boss underside keeps its L remainder, and the swallowed corner (1,1) is
+        // the shared reflex vertex. Before this cell it rejected as vertex_on_face_plane.
+        // Volume 1 + 1·1·1 = 2 (the solids share only z=1).
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -8797,9 +8843,32 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 1.0]),
             Point3::from_array([1.5, 1.5, 2.0]),
         );
-        assert!(detect_overhang_contact(&m, base, corner).is_none());
+        let r = boolean(&mut m, BoolKind::Fuse, base, corner).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    #[test]
+    fn a_spanning_slab_is_not_a_2_crossing_overhang() {
+        // The boss footprint spans clear across the base (a slab), so ∂Q crosses ∂P at four
+        // points — beyond the single-lens (2-crossing) scope. detect declines; boolean rejects.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 0.4, 1.0]),
+            Point3::from_array([1.5, 0.6, 2.0]),
+        );
+        assert!(detect_overhang_contact(&m, base, slab).is_none());
         assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, base, corner),
+            || boolean(&mut m, BoolKind::Fuse, base, slab),
             tag::VERTEX_ON_FACE_PLANE,
         );
     }
@@ -8911,9 +8980,10 @@ pub mod tests {
     }
 
     #[test]
-    fn coincident_merge_rejects_offset_footprint() {
-        // Coplanar z=1 interface but B's footprint is offset ⇒ boundaries differ ⇒
-        // partial 2D overlap, out of scope.
+    fn coincident_merge_declines_offset_footprint() {
+        // Coplanar z=1 interface but B's footprint is offset ⇒ boundaries differ, so
+        // coincident_merge (which needs an exact ring match) must decline. The Fuse itself now
+        // succeeds as a corner overhang (see fuse_a_corner_overhanging_boss, same fixture).
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -8923,14 +8993,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 1.0]),
             Point3::from_array([1.5, 1.5, 2.0]),
         );
-        // Cell (5b) deleted `fuse_cut`, whose combined-plane coplanar check caught this;
-        // the seam path's per-operand check passes and `edge_crosses_face` finds A's top
-        // edge lying in B's z=1 plane, so the tag moves to `vertex_on_face_plane`. Still
-        // rejected, one plane shy of honest (§9 line 451): the cause is two coplanar faces.
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, a, b),
-            tag::VERTEX_ON_FACE_PLANE,
-        );
+        assert!(detect_coincident_interface(&m, a, b).is_none());
     }
 
     #[test]
@@ -8942,8 +9005,9 @@ pub mod tests {
         // Until cell (5b) this was `coplanar_pair`, from `fuse_cut`'s combined-plane check.
         // With that path gone, the seam path's per-operand check passes and `plane_side`
         // meets A's floor edge on B's z=0 plane first — `vertex_on_face_plane`. Still an
-        // honest rejection, less specific about why (§9 line 451). One of two fixtures that
-        // moved this way; `coincident_merge_rejects_offset_footprint` is the other.
+        // honest rejection, less specific about why (§9 line 451). This is same-normal (both
+        // floors at z=0), so it stays out of the opposite-normal overhang path; its former
+        // sibling fixture is now the corner overhang (fuse_a_corner_overhanging_boss).
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
