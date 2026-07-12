@@ -1400,8 +1400,8 @@ bbox_min 0 0 0
             unreachable!()
         };
         let corner = m.add_cuboid(
-            Point3::from_array([0.05, 0.05, 0.5]),
-            Point3::from_array([0.2, 0.2, 1.0]),
+            Point3::from_array([0.05, 0.1, 0.6]),
+            Point3::from_array([0.25, 0.2, 1.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Cut, pc, corner).unwrap();
         let r = boolean(&mut m, BoolKind::Cut, pc, corner).unwrap();

@@ -318,6 +318,11 @@ pub enum OpError {
     /// belong to a boolean pad/pocket (extrude + fuse/cut), not this path (cell
     /// imprint-containment).
     ProfileNotContainedInFace,
+    /// A pocket's depth reaches through the solid: the carved prism is not blind, so `Cut`
+    /// produced a through-hole with no floor face. `pocket` requires `dist` less than the
+    /// thickness at the face (the boolean pocket path honestly rejects instead of the old
+    /// direct path's silent invalid result).
+    PocketNotBlind,
     /// A boolean operation failed (design §8 M5).
     Boolean(BoolError),
 }
@@ -444,16 +449,36 @@ fn extrude(
     if profile.points.len() < 3 {
         return Err(OpError::DegenerateProfile);
     }
+    let base_pts: Vec<Point3> = profile.points.iter().map(|p| plane.point(*p)).collect();
+    build_prism(model, &base_pts, plane.normal() * dist)
+}
 
-    // Normalize to CCW so the synthesized normals point outward.
-    let mut pts = profile.points.clone();
-    if signed_area(&pts) < 0.0 {
-        pts.reverse();
+/// Sweep the ring `base_pts` along `sweep` into a prism solid (caps + side quads). The ring is
+/// normalized CCW **about `sweep`** so the synthesized normals point outward; this uses the
+/// polygon's area vector dotted with the sweep normal (frame-independent — `proj2`+`signed_area`
+/// would mis-sign when the sweep runs along a negative dominant axis, e.g. a pocket into a `+z`
+/// face sweeping `−z`). All vertices are `Origin::Constructed`. Returns the solid and its faces:
+/// `faces[0]` = base cap (at `base_pts`, normal `−ŝ`), `faces[1]` = far cap (at `base_pts + sweep`,
+/// normal `+ŝ`), then the side quads. Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
+fn build_prism(
+    model: &mut Model,
+    base_pts: &[Point3],
+    sweep: Vector3,
+) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
+    if base_pts.len() < 3 {
+        return Err(OpError::DegenerateProfile);
     }
-    let n = pts.len();
-    let normal = plane.normal();
-    let base_pts: Vec<Point3> = pts.iter().map(|p| plane.point(*p)).collect();
-    let top_pts: Vec<Point3> = base_pts.iter().map(|b| *b + normal * dist).collect();
+    let normal = sweep.normalize().ok_or(OpError::DegenerateGeometry)?;
+    let mut base_pts: Vec<Point3> = base_pts.to_vec();
+    let k = base_pts.len();
+    let area_vec = (0..k)
+        .map(|i| (base_pts[i] - Point3::origin()).cross(base_pts[(i + 1) % k] - Point3::origin()))
+        .fold(Vector3::from_array([0.0; 3]), |a, b| a + b);
+    if area_vec.dot(normal) < 0.0 {
+        base_pts.reverse();
+    }
+    let n = base_pts.len();
+    let top_pts: Vec<Point3> = base_pts.iter().map(|b| *b + sweep).collect();
 
     let bv: Vec<Handle<Vertex>> = base_pts
         .iter()
@@ -707,24 +732,32 @@ fn profile_strictly_in_region(
     true
 }
 
-fn prepare_face_split(
-    model: &mut Model,
-    face: Handle<Face>,
-    profile: &Profile2d,
-) -> Result<Split, OpError> {
-    if profile.points.len() < 3 {
-        return Err(OpError::DegenerateProfile);
-    }
+/// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
+/// centroid so a profile's `(0,0)` lands there), and its loops — the shared setup for placing a
+/// profile on a face (imprint / pad / pocket).
+struct FaceFrame {
+    solid_h: Handle<Solid>,
+    shell_h: Handle<Shell>,
+    surface_h: Handle<Surface>,
+    orientation: Orientation,
+    n: Vector3, // outward normal
+    x: Vector3,
+    y: Vector3,
+    origin: Point3, // face centroid
+    outer_pts: Vec<Point3>,
+    outer_loop: Loop,
+    inner_loops: Vec<Loop>,
+}
 
-    // Locate the live solid whose outer shell holds this face.
+/// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,
+/// `FaceNotInLiveSolid` if no live outer shell holds it.
+fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let (solid_h, shell_h) = model
         .live_solids
         .iter()
         .map(|&s| (s, model.solids.get(s).outer))
         .find(|&(_, sh)| model.shells.get(sh).faces.contains(&face))
         .ok_or(OpError::FaceNotInLiveSolid)?;
-
-    // Read the target face, then release the borrow before mutating.
     let f = model.faces.get(face);
     let surface_h = f.surface;
     let orientation = f.orientation;
@@ -734,9 +767,6 @@ fn prepare_face_split(
         Surface::Plane(p) => *p,
         Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
     };
-
-    // Outward normal and an in-plane right-handed frame (x × y = n), centred on
-    // the face so the profile's (0, 0) lands at the face centre.
     let sign = match orientation {
         Orientation::Forward => 1.0,
         Orientation::Reversed => -1.0,
@@ -750,23 +780,47 @@ fn prepare_face_split(
         .map(|he| model.vertices.get(he_start(model, *he)).point)
         .collect();
     let origin = Point3::centroid(&outer_pts).ok_or(OpError::DegenerateGeometry)?;
+    Ok(FaceFrame {
+        solid_h,
+        shell_h,
+        surface_h,
+        orientation,
+        n,
+        x,
+        y,
+        origin,
+        outer_pts,
+        outer_loop,
+        inner_loops,
+    })
+}
 
-    // Profile → CCW in the frame (positive signed area) so its RH normal is +n.
+/// Place `profile` on `frame` (CCW in the frame so its RH normal is `+n`) and require it strictly
+/// inside the face region (inside the outer ring, outside every hole, touching no boundary).
+/// Otherwise the "hole" is not a clean inner loop and the result is silently invalid — validate
+/// sees only topology, props integrates the ring, and only tessellate's `NoEar` catches it (cell
+/// imprint-containment; design §10). A profile reaching past the face is a boolean pad/pocket.
+fn placed_profile(
+    model: &Model,
+    frame: &FaceFrame,
+    profile: &Profile2d,
+) -> Result<Vec<Point3>, OpError> {
+    if profile.points.len() < 3 {
+        return Err(OpError::DegenerateProfile);
+    }
     let mut pts = profile.points.clone();
     if signed_area(&pts) < 0.0 {
         pts.reverse();
     }
-    let base_pts: Vec<Point3> = pts.iter().map(|p| origin + x * p[0] + y * p[1]).collect();
-
-    // Strict containment: the profile must lie inside the face region (inside the outer
-    // ring, outside every hole, touching no boundary). Otherwise the "hole" is not a clean
-    // inner loop and the result is silently invalid — validate sees only topology, props
-    // integrates the ring, and only tessellate's `NoEar` catches it (cell imprint-containment;
-    // measured in design.md §10). A profile reaching past the face is a boolean pad/pocket.
-    let drop = planar_drop_axes(n);
+    let base_pts: Vec<Point3> = pts
+        .iter()
+        .map(|p| frame.origin + frame.x * p[0] + frame.y * p[1])
+        .collect();
+    let drop = planar_drop_axes(frame.n);
     let profile2: Vec<[f64; 2]> = base_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let outer2: Vec<[f64; 2]> = outer_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let holes2: Vec<Vec<[f64; 2]>> = inner_loops
+    let outer2: Vec<[f64; 2]> = frame.outer_pts.iter().map(|&p| proj2(p, drop)).collect();
+    let holes2: Vec<Vec<[f64; 2]>> = frame
+        .inner_loops
         .iter()
         .map(|l| {
             l.half_edges
@@ -778,6 +832,17 @@ fn prepare_face_split(
     if !profile_strictly_in_region(&profile2, &outer2, &holes2) {
         return Err(OpError::ProfileNotContainedInFace);
     }
+    Ok(base_pts)
+}
+
+fn prepare_face_split(
+    model: &mut Model,
+    face: Handle<Face>,
+    profile: &Profile2d,
+) -> Result<Split, OpError> {
+    let frame = face_frame(model, face)?;
+    let base_pts = placed_profile(model, &frame, profile)?;
+    let (surface_h, orientation, n) = (frame.surface_h, frame.orientation, frame.n);
 
     // Profile vertices and segment edges.
     let m = base_pts.len();
@@ -817,14 +882,14 @@ fn prepare_face_split(
     };
     let f_outer = model.faces.push(Face {
         surface: surface_h,
-        outer: outer_loop,
+        outer: frame.outer_loop,
         inner: vec![hole_loop],
         orientation,
     });
 
     Ok(Split {
-        solid_h,
-        shell_h,
+        solid_h: frame.solid_h,
+        shell_h: frame.shell_h,
         surface_h,
         orientation,
         n,
@@ -911,12 +976,13 @@ fn pad(
     raise_region(model, face, profile, dist)
 }
 
-/// Carve a blind pocket on a planar `face`: raise the imprinted region
-/// **inward** by `dist` (walls + a floor), removing `profile_area · dist` of
-/// material. Geometrically this is [`pad`] with a negative displacement — the
-/// walls face inward and the cap becomes the pocket floor. Returns `(new solid,
-/// floor face)`. Precondition (unchecked): `dist` is less than the solid's
-/// thickness at the face, so the pocket does not punch through.
+/// Carve a blind pocket on a planar `face`, removing `profile_area · dist` of material. Built as
+/// **extrude + `Cut`** (roadmap §9 unification): the profile extrudes **inward** into a top-flush
+/// prism, and `Cut(solid, prism)` carves the blind pocket through the contained-coplanar path
+/// (all `Origin::Constructed`, exactness-equivalent to the old direct construction). Returns
+/// `(new solid, floor face)`. `ProfileNotContainedInFace` if the profile reaches past the face;
+/// `PocketNotBlind` if `dist` reaches through the solid (the prism is not blind → a through-cut
+/// with no floor). The old `raise_region` path now serves only `pad`.
 fn pocket(
     model: &mut Model,
     face: Handle<Face>,
@@ -926,7 +992,45 @@ fn pocket(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
-    raise_region(model, face, profile, -dist)
+    let frame = face_frame(model, face)?;
+    let base_pts = placed_profile(model, &frame, profile)?; // CCW + strict containment
+    let (solid, n, origin) = (frame.solid_h, frame.n, frame.origin);
+    // Inward prism, its top cap flush on the face; `Cut` carves the pocket.
+    let (prism, _) = build_prism(model, &base_pts, n * -dist)?;
+    let result = boolean(model, BoolKind::Cut, solid, prism).map_err(|e| {
+        model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
+        OpError::Boolean(e)
+    })?;
+    // Floor = the result face on the prism's far-cap plane (face plane offset by −n·dist), its
+    // outward normal pointing back into the opening (+n). None ⇒ a through-cut, no blind floor.
+    let floor =
+        find_face_on_plane(model, result, origin + n * -dist, n).ok_or(OpError::PocketNotBlind)?;
+    Ok((result, floor))
+}
+
+/// The outer-shell face of `solid` whose plane passes through `pt` (coplanar) and whose **oriented**
+/// outward normal agrees with `n_out` (`dot > 0`). Recovers a pocket floor from a boolean result:
+/// the oriented-normal filter distinguishes the floor (normal toward the opening) from a coincident
+/// face with the opposite normal. `None` if there is none (e.g. a through-pocket has no floor).
+fn find_face_on_plane(
+    model: &Model,
+    solid: Handle<Solid>,
+    pt: Point3,
+    n_out: Vector3,
+) -> Option<Handle<Face>> {
+    let target = Plane::from_point_normal(pt, n_out)?;
+    let shell = model.solids.get(solid).outer;
+    model.shells.get(shell).faces.iter().copied().find(|&fh| {
+        let f = model.faces.get(fh);
+        let Surface::Plane(plane) = model.surfaces.get(f.surface) else {
+            return false;
+        };
+        let sign = match f.orientation {
+            Orientation::Forward => 1.0,
+            Orientation::Reversed => -1.0,
+        };
+        planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n_out) > 0.0
+    })
 }
 
 /// Imprint `profile` on a planar `face`, then displace its region along the
@@ -7847,7 +7951,13 @@ pub mod tests {
     #[test]
     fn a_pocketed_cube_is_not_convex() {
         let (m, pc) = pocketed_cube();
-        assert!(!m.faces.get(solid_faces(&m, pc)[1]).inner.is_empty()); // the lid is holed
+        // Exactly one holed face — the lid (found by predicate; the boolean pocket path does not
+        // fix the shell's face order the way direct construction did).
+        let holed = solid_faces(&m, pc)
+            .iter()
+            .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
+            .count();
+        assert_eq!(holed, 1);
         let planes = collect_planes(&m, pc).unwrap();
         assert!(!is_convex(&m, &planes, &solid_vertex_handles(&m, pc)));
     }
@@ -8960,6 +9070,21 @@ pub mod tests {
         ));
     }
 
+    /// A pocket deep enough to pierce the far side is not blind. The extrude+Cut prism is
+    /// top-flush yet crosses the far face transversally, a mixed contact the boolean declines
+    /// (`Boolean(Unsupported)`); were the through-cut instead accepted, no floor would land on
+    /// the offset plane and the wrapper would reject it as `PocketNotBlind`. Either way the
+    /// kernel rejects honestly — no panic, no silently invalid solid (M4 left this unchecked).
+    #[test]
+    fn pocket_through_the_solid_is_rejected() {
+        let (mut m, top) = cube_with_top(); // 1.0-thick cube
+        let got = apply(&mut m, &pocket_op(top, small_square(), 1.5));
+        assert!(
+            matches!(got, Err(OpError::Boolean(_)) | Err(OpError::PocketNotBlind)),
+            "through-pocket must reject honestly, got {got:?}"
+        );
+    }
+
     #[test]
     fn pocket_step_exports() {
         let (mut m, top) = cube_with_top();
@@ -9623,20 +9748,20 @@ pub mod tests {
     #[test]
     fn cut_a_blind_pocket_into_a_non_convex_solid() {
         // A blind pocket carved into an already-pocketed (non-convex) cube: a second contained
-        // top-flush prism at a corner away from the first pocket. The kept solid `a` is non-convex,
+        // top-flush prism in a corner away from the first pocket. The kept solid `a` is non-convex,
         // which the pocket contact now admits (the gates are convexity-agnostic). Removed
-        // 0.15²·0.5 = 0.01125 on top of the first pocket's 0.08 → 1 − 0.08 − 0.01125 = 0.90875.
+        // 0.2·0.1·0.4 = 0.008 on top of the first pocket's 0.08 → 1 − 0.08 − 0.008 = 0.912.
         let (mut m, pc) = pocketed_cube();
         let corner = m.add_cuboid(
-            Point3::from_array([0.05, 0.05, 0.5]),
-            Point3::from_array([0.2, 0.2, 1.0]),
+            Point3::from_array([0.05, 0.1, 0.6]),
+            Point3::from_array([0.25, 0.2, 1.0]),
         );
         let r = boolean(&mut m, BoolKind::Cut, pc, corner).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 0.90875).abs() < 1e-12, "volume {vol}");
+        assert!((vol - 0.912).abs() < 1e-12, "volume {vol}");
     }
 
     #[test]
