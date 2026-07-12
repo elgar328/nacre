@@ -2953,6 +2953,13 @@ fn face_contains_face(model: &Model, big: Handle<Face>, small: Handle<Face>, n: 
 /// `Some` iff A and B meet at exactly one opposite-normal coplanar face pair whose footprints
 /// are strictly nested (one contained in the other) — the boss-on-a-face case that
 /// `detect_coincident_interface` (which needs identical boundaries) does not cover.
+///
+/// **Neither solid need be convex.** The gates are convexity-agnostic — `opposite.len() == 1`
+/// (exact coplanar test) and `face_contains_face` (`profile_strictly_in_region`, arbitrary
+/// polygons) — and the reconstruction (`contained_contact_result` re-emits faces;
+/// `assemble_fuse_cut` partitions by component). So a boss fuses cleanly onto a non-convex `a`
+/// (an L-bracket top) with a non-convex `b` (an L/star footprint), mirroring the pocket path.
+/// This makes `pad = extrude + Fuse` a drop-in for the direct `raise_region`.
 fn detect_contained_contact(
     model: &Model,
     a: Handle<Solid>,
@@ -2960,11 +2967,6 @@ fn detect_contained_contact(
 ) -> Option<ContainedContact> {
     let planes_a = collect_planes(model, a).ok()?;
     let planes_b = collect_planes(model, b).ok()?;
-    if !is_convex(model, &planes_a, &solid_vertex_handles(model, a))
-        || !is_convex(model, &planes_b, &solid_vertex_handles(model, b))
-    {
-        return None;
-    }
     let mut opposite: Vec<(usize, usize)> = Vec::new();
     for (i, pa) in planes_a.iter().enumerate() {
         for (j, pb) in planes_b.iter().enumerate() {
@@ -9397,6 +9399,71 @@ pub mod tests {
         // the bossed solid chains into a further boolean.
         let planes = collect_planes(&m, r).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    #[test]
+    fn fuse_a_boss_onto_a_non_convex_solid() {
+        // A contained boss on the top of an L-prism (non-convex kept `a`). The convexity gate
+        // used to decline this to the seam path, which rejected the seamless contact; the
+        // contained-coplanar Fuse now admits it. Volume 3 (L) + 0.4²·0.5 = 3.08.
+        let (mut m, l) = l_prism(); // L footprint area 3, height 1
+        let boss = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, 1.0]),
+            Point3::from_array([0.7, 0.7, 1.5]),
+        );
+        let r = boolean(&mut m, BoolKind::Fuse, l, boss).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 3.08).abs() < 1e-12, "volume {vol}");
+        // The boss top cap sits on the z = 1.5 plane, its outward normal +z.
+        assert!(
+            find_face_on_plane(
+                &m,
+                r,
+                Point3::from_array([0.5, 0.5, 1.5]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn fuse_a_non_convex_profile_boss() {
+        // An L-shaped boss (non-convex cutter `b`) on a cube top. The gate used to decline the
+        // non-convex prism; the contained-coplanar Fuse now carries the L footprint as a hole.
+        // Volume 1 (cube) + 0.12 (L area) · 0.4 = 1.048.
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let l_base: Vec<Point3> = [
+            [0.3, 0.3],
+            [0.7, 0.3],
+            [0.7, 0.5],
+            [0.5, 0.5],
+            [0.5, 0.7],
+            [0.3, 0.7],
+        ]
+        .iter()
+        .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
+        .collect();
+        let (boss, _) = build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4])).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, cube, boss).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.048).abs() < 1e-12, "volume {vol}");
+        // The L boss top cap sits on the z = 1.4 plane, its outward normal +z.
+        assert!(
+            find_face_on_plane(
+                &m,
+                r,
+                Point3::from_array([0.4, 0.4, 1.4]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .is_some()
+        );
     }
 
     #[test]

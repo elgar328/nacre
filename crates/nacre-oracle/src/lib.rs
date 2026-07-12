@@ -1414,6 +1414,98 @@ bbox_min 0 0 0
         );
     }
 
+    /// A boss raised by a non-convex (L-shaped) prism — the contained-coplanar Fuse now admits
+    /// non-convex operands. The base's top sits at z = 0, the L boss extrudes onto it flush.
+    /// OCCT scores the L boss.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn non_convex_profile_boss_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 0.0]),
+        );
+        let l = Profile2d {
+            points: [
+                [-0.3, -0.3],
+                [0.3, -0.3],
+                [0.3, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.3],
+                [-0.3, 0.3],
+            ]
+            .iter()
+            .map(|&p| nacre_math::Point2::from_array(p))
+            .collect(),
+        };
+        let OpOutput::Extrude { solid: lb, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: l,
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, base, lb).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, base, lb).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "non-convex profile boss: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
+    /// A boss raised on the top of a non-convex (L-prism) solid. OCCT scores the boss fused onto
+    /// the concave base.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn boss_onto_non_convex_solid_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        let mut m = Model::new();
+        let OpOutput::Extrude { solid: l, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d {
+                    points: [
+                        [0.0, 0.0],
+                        [2.0, 0.0],
+                        [2.0, 1.0],
+                        [1.0, 1.0],
+                        [1.0, 2.0],
+                        [0.0, 2.0],
+                    ]
+                    .iter()
+                    .map(|&p| nacre_math::Point2::from_array(p))
+                    .collect(),
+                },
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let boss = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, 1.0]),
+            Point3::from_array([0.7, 0.7, 1.5]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Fuse, l, boss).unwrap();
+        let r = boolean(&mut m, BoolKind::Fuse, l, boss).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "boss onto non-convex solid: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
     /// Two face-to-face cubes fuse into a clean box (cell fuse-coplanar-merge merges the
     /// coplanar side faces and dissolves the interface corners), which then chains a Cut.
     /// OCCT scores both the fuse and the chained cut on the exported b-rep.
