@@ -1140,6 +1140,49 @@ bbox_min 0 0 0
         );
     }
 
+    /// A spanning-slab Cut carves a channel breaking out two opposite walls (cell
+    /// coplanar-contact-overhang-slab-cut). OCCT scores the channel and a transversal Cut chained
+    /// onto the (non-convex) channelled solid.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_channel_cut_then_cut_matches_occt() {
+        use nacre_ops::{BoolKind, boolean};
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 0.4, 0.5]),
+            Point3::from_array([1.5, 0.6, 1.0]),
+        );
+        let occt_channel = occt_boolean_of(&m, OcctBool::Cut, base, slab).unwrap();
+        let channelled = boolean(&mut m, BoolKind::Cut, base, slab).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(
+                mass_props(&m, channelled).unwrap().volume,
+                occt_channel.volume
+            ),
+            "slab channel: {} vs {}",
+            mass_props(&m, channelled).unwrap().volume,
+            occt_channel.volume
+        );
+        // Chain a transversal drill through the base away from the channel (y > 0.6).
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.2, 0.75, -0.5]),
+            Point3::from_array([0.4, 0.95, 1.5]),
+        );
+        let occt_cut = occt_boolean_of(&m, OcctBool::Cut, channelled, cutter).unwrap();
+        let r = boolean(&mut m, BoolKind::Cut, channelled, cutter).unwrap();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
+            "channel then cut: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt_cut.volume
+        );
+    }
+
     /// Two face-to-face cubes fuse into a clean box (cell fuse-coplanar-merge merges the
     /// coplanar side faces and dissolves the interface corners), which then chains a Cut.
     /// OCCT scores both the fuse and the chained cut on the exported b-rep.
