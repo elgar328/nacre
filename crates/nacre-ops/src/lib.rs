@@ -3311,6 +3311,38 @@ fn overhang_node_point(model: &Model, node: Node, crossings: &[Crossing]) -> Poi
     }
 }
 
+/// Splice `detour` into `loop_nodes`, replacing the edge `loop[seg] → loop[seg+1]`. The two
+/// endpoints of `detour` are the crossings on that edge and its interior runs off it; the
+/// result keeps the loop's winding. `detour` is reversed if needed so it enters at the crossing
+/// nearer `loop[seg]` (ordered by parameter along the edge). `pt` maps a node to its 3D point.
+/// Shared by the overhang Fuse notch and the Cut's mouth/side notches.
+fn splice_notch(
+    loop_nodes: &[Node],
+    seg: usize,
+    detour: Vec<Node>,
+    pt: &impl Fn(Node) -> Point3,
+) -> Vec<Node> {
+    let n = loop_nodes.len();
+    let ea = pt(loop_nodes[seg]);
+    let dir = pt(loop_nodes[(seg + 1) % n]) - ea;
+    let param = |node: Node| (pt(node) - ea).dot(dir);
+    let detour = if param(detour[0]) <= param(*detour.last().expect("detour endpoints")) {
+        detour
+    } else {
+        let mut r = detour;
+        r.reverse();
+        r
+    };
+    let mut out = Vec::with_capacity(n + detour.len());
+    for (i, &node) in loop_nodes.iter().enumerate() {
+        out.push(node);
+        if i == seg {
+            out.extend(detour.iter().cloned());
+        }
+    }
+    out
+}
+
 /// With `p_solid`'s contact face as P and `q_solid`'s as Q, decide whether Q overhangs P
 /// across a single P edge, returning the two crossings. `None` if this ordering is not a
 /// single-edge overhang (the caller tries the other ordering too).
@@ -3521,7 +3553,6 @@ fn overhang_contact_result(
         .iter()
         .map(|&he| model.vertices.get(he_start(model, he)).point)
         .collect();
-    let np = p_nodes.len();
     let p_inner: Vec<Vec<Node>> = p_face
         .inner
         .iter()
@@ -3602,41 +3633,9 @@ fn overhang_contact_result(
     let (n2, _) = to_nodes(&arc2);
     let (cant_nodes, inside_nodes) = if o1 { (n1, n2) } else { (n2, n1) };
 
-    // Orient the inside arc to run from the crossing nearer P-edge's start to the farther one,
-    // so the detour splices into P's loop keeping its winding.
-    let ea = p_pts[cc.crossings[0].p_seg];
-    let eb = p_pts[(cc.crossings[0].p_seg + 1) % np];
-    let dir = eb - ea;
-    let ci_of = |node: Node| -> usize {
-        match node {
-            Node::Seam(t) => cc
-                .crossings
-                .iter()
-                .position(|c| c.triple == t)
-                .expect("crossing"),
-            Node::Orig(_) => unreachable!("inside-arc endpoints are crossings"),
-        }
-    };
-    let first_ci = ci_of(inside_nodes[0]);
-    let last_ci = ci_of(*inside_nodes.last().expect("inside arc"));
-    let param = |ci: usize| (cc.crossings[ci].point - ea).dot(dir);
-    let detour: Vec<Node> = if param(first_ci) <= param(last_ci) {
-        inside_nodes
-    } else {
-        let mut r = inside_nodes;
-        r.reverse();
-        r
-    };
-
-    // Notch = P's loop with the crossed edge replaced by the inward detour.
-    let p_seg = cc.crossings[0].p_seg;
-    let mut notch = Vec::with_capacity(np + detour.len());
-    for (i, &node) in p_nodes.iter().enumerate() {
-        notch.push(node);
-        if i == p_seg {
-            notch.extend(detour.iter().cloned());
-        }
-    }
+    // Notch = P's loop with the crossed edge replaced by the inward detour (Q's inside arc).
+    let pt = |nd: Node| overhang_node_point(model, nd, &cc.crossings);
+    let notch = splice_notch(&p_nodes, cc.crossings[0].p_seg, inside_nodes, &pt);
     #[cfg(debug_assertions)]
     {
         let sarea = |nodes: &[Node]| -> f64 {
