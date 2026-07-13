@@ -21,6 +21,9 @@ use num_traits::{CheckedAdd, CheckedMul, CheckedSub};
 use std::cell::RefCell;
 use std::f64::consts::PI;
 
+/// H2/H3 — explicit reference-based sharing (identity by `Handle`, not coord).
+pub mod share;
+
 /// Precision (bits) and rounding for the high-precision realization layer
 /// (astro-float). ~160 bits ≈ 48 decimal digits — far below CAD tolerance and
 /// dial-able if H4-amplification ever needs more (the ceiling twofloat lacked).
