@@ -167,3 +167,203 @@ impl Angle {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// The core §4 property in miniature: exact rational accumulation does not
+    /// drift, where the f64 control does. `(1/10)` summed ten times is exactly
+    /// `1`, but `0.1_f64` summed ten times is not `1.0`.
+    #[test]
+    fn rational_accumulation_is_exact_where_f64_drifts() {
+        let tenth = Rat::new(1, 10).unwrap();
+        let mut acc = Rat::from_int(0);
+        for _ in 0..10 {
+            acc = acc.checked_add(tenth).unwrap();
+        }
+        assert_eq!(acc, Rat::from_int(1));
+
+        let mut f = 0.0_f64;
+        for _ in 0..10 {
+            f += 0.1;
+        }
+        assert_ne!(f, 1.0); // 0.9999999999999999 — the drift Rat avoids
+    }
+
+    /// The §4 "thin film" example: `1.1 × 7` must be exactly `7.7`. In rationals
+    /// `11/10 × 7 = 77/10`; in f64 `1.1 * 7.0` is not `7.7`.
+    #[test]
+    fn one_point_one_times_seven_is_exact() {
+        let a = Rat::new(11, 10).unwrap();
+        let seven = Rat::from_int(7);
+        assert_eq!(a.checked_mul(seven).unwrap(), Rat::new(77, 10).unwrap());
+
+        assert_ne!(1.1_f64 * 7.0, 7.7); // f64 cannot represent 7.7 exactly
+    }
+
+    /// §4 measurement: with fixed-width i128, chained coprime-denominator
+    /// accumulation *does* overflow (the finite-precision cliff §4 handles by
+    /// downgrading). Summing `1/p` over successive primes forces the denominator
+    /// toward the primorial, which exceeds i128. This test pins two facts:
+    ///   (a) a modest sum (first 8 primes) stays exact — normal use is fine;
+    ///   (b) accumulation eventually overflows within the prime list — proving
+    ///       the downgrade trigger fires, and reporting *where* (onset index).
+    #[test]
+    fn coprime_accumulation_overflows_and_reports_onset() {
+        const PRIMES: [i128; 30] = [
+            2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83,
+            89, 97, 101, 103, 107, 109, 113,
+        ];
+
+        // (a) first 8 primes stay exact.
+        let mut acc = Rat::from_int(0);
+        for &p in &PRIMES[..8] {
+            acc = acc
+                .checked_add(Rat::new(1, p).unwrap())
+                .expect("first 8 primes must not overflow");
+        }
+
+        // (b) full accumulation eventually overflows; record the onset.
+        let mut acc = Rat::from_int(0);
+        let mut onset = None;
+        let mut last_bits = 0;
+        for (i, &p) in PRIMES.iter().enumerate() {
+            match acc.checked_add(Rat::new(1, p).unwrap()) {
+                Some(next) => {
+                    acc = next;
+                    last_bits = acc.bit_width();
+                }
+                None => {
+                    onset = Some((i, last_bits));
+                    break;
+                }
+            }
+        }
+        let (idx, bits) = onset.expect("i128 rational accumulation must overflow within 30 primes");
+        // Measurement record (run with `-- --nocapture`).
+        eprintln!(
+            "[§4] coprime 1/p accumulation overflows at prime index {idx} (p={}); \
+             denominator bit-width just before onset = {bits}",
+            PRIMES[idx]
+        );
+        // Onset is comfortably past normal use and near the i128 ceiling (~127 bits).
+        assert!(idx >= 8, "overflow onset {idx} should be past modest use");
+        assert!(
+            bits > 100,
+            "denominator should be near the i128 ceiling at onset, got {bits} bits"
+        );
+    }
+
+    /// §4 closure: a rational angle accumulates exactly, so a full turn lands back
+    /// on exactly `0` — while the f64 control drifts. `360/7` degrees added seven
+    /// times is exactly `360 → 0`; `360.0/7.0` summed seven times in f64 is not
+    /// `360.0`.
+    #[test]
+    fn rational_angle_closes_exactly_where_f64_drifts() {
+        let step = Rat::new(360, 7).unwrap();
+        let mut a = Angle::from_deg(Rat::from_int(0)).unwrap();
+        for _ in 0..7 {
+            a = a.checked_add(step).unwrap();
+        }
+        assert_eq!(a, Angle::from_deg(Rat::from_int(0)).unwrap());
+
+        let mut f = 0.0_f64;
+        for _ in 0..7 {
+            f += 360.0 / 7.0;
+        }
+        assert_ne!(f, 360.0); // f64 drifts off the full turn
+    }
+
+    /// Many small rational steps also close: `1/3` degree added 1080 times is
+    /// exactly one full turn → `0`.
+    #[test]
+    fn many_small_steps_close_to_zero() {
+        let step = Rat::new(1, 3).unwrap();
+        let mut a = Angle::from_deg(Rat::from_int(0)).unwrap();
+        for _ in 0..1080 {
+            a = a.checked_add(step).unwrap();
+        }
+        assert_eq!(a, Angle::from_deg(Rat::from_int(0)).unwrap());
+    }
+
+    /// The angle value stays exact, but its cos/sin *realization* is f64: `cos 90°`
+    /// is not exactly `0` (it is ~6e-17), showing the irrational-realization
+    /// boundary. `cos 0°`/`sin 0°` happen to be exact in f64.
+    #[test]
+    fn realization_is_f64_while_angle_stays_exact() {
+        let a = Angle::from_deg(Rat::from_int(90)).unwrap();
+        assert_eq!(a.deg(), Rat::from_int(90)); // angle exact
+        assert!(a.cos().abs() < 1e-15 && a.cos() != 0.0); // realized near 0, not exact
+
+        let z = Angle::from_deg(Rat::from_int(0)).unwrap();
+        assert_eq!(z.cos(), 1.0);
+        assert_eq!(z.sin(), 0.0);
+    }
+
+    /// A 90°-family angle yields exact rational cos/sin, so rotating a rational
+    /// point stays exact (tol 0): `(x, y)` rotated 90° is `(-y, x)`. A 45° angle
+    /// has no exact rational cos/sin (√2/2), so it returns `None` and would fall
+    /// to the f64/dd realization. Note the f64 path is *not* exact here:
+    /// `cos 90°` realizes to ~6e-17, not `0`.
+    #[test]
+    fn exact_cos_sin_only_for_quadrantal_angles() {
+        let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
+        let (c, s) = a90.try_exact_cos_sin().unwrap();
+        assert_eq!((c, s), (Rat::from_int(0), Rat::from_int(1)));
+
+        // Exact rotation of (3, 5) by 90° → (-5, 3), all rational (tol 0):
+        // x' = x·cos − y·sin,  y' = x·sin + y·cos.
+        let (x, y) = (Rat::from_int(3), Rat::from_int(5));
+        let xr = x
+            .checked_mul(c)
+            .unwrap()
+            .checked_sub(y.checked_mul(s).unwrap())
+            .unwrap();
+        let yr = x
+            .checked_mul(s)
+            .unwrap()
+            .checked_add(y.checked_mul(c).unwrap())
+            .unwrap();
+        assert_eq!((xr, yr), (Rat::from_int(-5), Rat::from_int(3)));
+
+        // 45° has no exact rational realization → None (falls to f64/dd).
+        let a45 = Angle::from_deg(Rat::from_int(45)).unwrap();
+        assert!(a45.try_exact_cos_sin().is_none());
+        assert_ne!(a90.cos(), 0.0); // the general f64 path is not exact at 90°
+    }
+
+    // Small ranges keep checked arithmetic inside i128, so these exercise the
+    // algebraic laws, not the overflow path (which its own test above pins).
+    prop_compose! {
+        fn small_rat()(num in -1000i128..=1000, den in 1i128..=1000) -> Rat {
+            Rat::new(num, den).unwrap()
+        }
+    }
+
+    proptest! {
+        /// Rational `+` and `×` are commutative (exact, no drift).
+        #[test]
+        fn add_and_mul_commute(a in small_rat(), b in small_rat()) {
+            prop_assert_eq!(a.checked_add(b), b.checked_add(a));
+            prop_assert_eq!(a.checked_mul(b), b.checked_mul(a));
+        }
+
+        /// `a + b + c` associates regardless of grouping.
+        #[test]
+        fn add_associates(a in small_rat(), b in small_rat(), c in small_rat()) {
+            let left = a.checked_add(b).and_then(|ab| ab.checked_add(c));
+            let right = b.checked_add(c).and_then(|bc| a.checked_add(bc));
+            prop_assert_eq!(left, right);
+        }
+
+        /// `from_deg` always normalizes into `[0, 360)`.
+        #[test]
+        fn from_deg_normalizes_into_range(deg in -3600i128..=3600) {
+            let a = Angle::from_deg(Rat::from_int(deg)).unwrap();
+            prop_assert!(a.deg() >= Rat::from_int(0));
+            prop_assert!(a.deg() < Rat::from_int(360));
+        }
+    }
+}
