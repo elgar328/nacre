@@ -382,6 +382,50 @@ mod tests {
         assert_ne!(a90.cos(), 0.0); // the general f64 path is not exact at 90°
     }
 
+    /// H1.5: the arbitrary-precision cos/sin realization must be far more accurate
+    /// than any f64/double-double — the accuracy gate astro-float passes and the
+    /// double-double `twofloat` failed (its trig degraded to ~1e-16 near zero-
+    /// crossings). Error at rational angles must beat `2^-100` (~1e-30).
+    #[test]
+    fn high_precision_trig_meets_gate() {
+        const GATE_EXP: i32 = -100; // 2^-100 ≈ 7.9e-31
+        // (deg, exact_cos, exact_sin | None where irrational, e.g. sin 60°)
+        let cases = [
+            (0i128, 1.0, Some(0.0)),
+            (60, 0.5, None),
+            (90, 0.0, Some(1.0)),
+            (120, -0.5, None),
+            (180, -1.0, Some(0.0)),
+            (270, 0.0, Some(-1.0)),
+        ];
+        let mut worst = i32::MIN;
+        for (deg, exact_cos, exact_sin) in cases {
+            let a = Angle::from_deg(Rat::from_int(deg)).unwrap();
+            let ec = hp_err_exp(&a.cos_hp(), exact_cos);
+            assert!(ec < GATE_EXP, "cos {deg}° error 2^{ec} exceeds gate");
+            worst = worst.max(ec);
+            if let Some(s) = exact_sin {
+                let es = hp_err_exp(&a.sin_hp(), s);
+                assert!(es < GATE_EXP, "sin {deg}° error 2^{es} exceeds gate");
+                worst = worst.max(es);
+            }
+        }
+        eprintln!(
+            "[H1.5] astro-float {HP_PREC}-bit worst cos/sin error at rational angles: 2^{worst}"
+        );
+    }
+
+    /// Error of a high-precision realization `a` against an exact f64 `b`, as a
+    /// power-of-two exponent (`i32::MIN` when exactly equal).
+    fn hp_err_exp(a: &BigFloat, b: f64) -> i32 {
+        let err = a.sub(&BigFloat::from_f64(b, HP_PREC), HP_PREC, HP_RM);
+        if err.is_zero() {
+            i32::MIN
+        } else {
+            err.exponent().unwrap_or(i32::MIN)
+        }
+    }
+
     // Small ranges keep checked arithmetic inside i128, so these exercise the
     // algebraic laws, not the overflow path (which its own test above pins).
     prop_compose! {
