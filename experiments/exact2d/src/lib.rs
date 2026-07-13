@@ -24,6 +24,9 @@ use std::f64::consts::PI;
 /// H2/H3 — explicit reference-based sharing (identity by `Handle`, not coord).
 pub mod share;
 
+/// H5 — operation log (`Document = Vec<Op>` + derived model; replay determinism).
+pub mod oplog;
+
 /// Precision (bits) and rounding for the high-precision realization layer
 /// (astro-float). ~160 bits ≈ 48 decimal digits — far below CAD tolerance and
 /// dial-able if H4-amplification ever needs more (the ceiling twofloat lacked).
