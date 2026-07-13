@@ -407,9 +407,11 @@ manifold는 솔리드별 판정이며, 두 솔리드가 경계 요소를 공유�
 - **이식 진행 (overhaul 브랜치).** main의 (5d) 완료를 병합한 뒤 3D 이식을 셀 단위로 진행한다.
   - **#1 ✅ 유리수 스칼라 토대** — 새 `nacre-scalar` 크레이트에 검증된 `Rat`+`Angle` 이식(§4 exact 값 엔진,
     tol 0; checked 오버플로=강등 트리거; 90°계열 exact). num-rational 의존, 커널 무배선(독립 토대).
-  - **#2 (다음)**: 값+tol `Scalar` 통합 + 좌표혼합 tol 공식 + astro-float 고정밀 삼각(H1.5, #44 회피) →
-    2D-프레임 `orient2d_judge`(§3).
-  - **#3**: 명시 공유(surface Handle, §5)+참조-공면. **#4**: TIP(§6) → 사이드카 은퇴.
+  - **#2 ✅ 2D-프레임 exact-sign 판정** — `nacre-scalar::frame`에 `orient2d_judge`(f64 필터→astro-float
+    200비트 상승→declare-0), `Pt2`(좌표혼합 tol `(|bx|+|by|)·da`), `Angle` HP 삼각(astro-float, #44 회피).
+    검증된 H1.5/H4 테스트 이식(soundness 10000 무붕괴·필터↔HP 일치). 값+tol은 Pt2가 구체 구현.
+  - **#2 후속 / #3 (다음)**: 통합 `Scalar{value,tol}`·PtChain 전파 tol(3D 체이닝)·declare-0 정책(§6
+    ask-user)은 배선/체이닝 셀. 명시 공유(surface Handle, §5)+참조-공면. **#4**: TIP(§6) → 사이드카 은퇴.
 
 ## 10. 비목표
 
