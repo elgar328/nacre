@@ -1,4 +1,5 @@
-//! Exact rational scalars — the overhaul's §4 value engine.
+//! Exact rational scalars — the overhaul's §4 value engine — **and the 2D-frame
+//! exact-sign judgment they enable** (the [`frame`] module).
 //!
 //! The truth layer for user-input dimensions and angles: a value the user typed
 //! is preserved *exactly*, so `1.1` stays `11/10` and `1.1 × 7` is exactly `7.7`
@@ -18,11 +19,11 @@
 //!   so those rotations of a rational point stay tol 0; and `cos_hp`/`sin_hp`
 //!   realize in arbitrary precision (astro-float) for the judgment path (§4/§6).
 //!
-//! Scope: the exact value engine (`Rat`, `Angle`, including the arbitrary-precision
-//! trig judgment realization). The 2D-frame `orient2d` judgment, the unified
-//! `Scalar { value, tol }` wrapper (§4), and the kernel wiring are later cells.
-//! Ported from the verified 2D experiment (`experiments/exact2d`, overhaul
-//! checkpoint 1).
+//! Scope (overhaul ports #1–#2): the exact value engine plus the 2D-frame sign
+//! judgment. Still deferred to later cells: the unified `Scalar { value, tol }`
+//! wrapper (§4), chained-rotation transport tol (3D axis changes), the declare-0
+//! → user-confirmation policy (§6), and the kernel wiring that makes geometry
+//! carry these. Ported from the verified 2D experiment (`experiments/exact2d`).
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedMul, CheckedSub};
@@ -41,6 +42,8 @@ thread_local! {
     /// Transcendental-constant cache (π, …) for the high-precision layer.
     static HP_CONSTS: RefCell<Consts> = RefCell::new(Consts::new().expect("astro-float consts"));
 }
+
+pub mod frame;
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
 /// so the caller sees the §4 downgrade trigger explicitly; on overflow the kernel
