@@ -1,0 +1,17 @@
+[package]
+name = "nacre-scalar"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Exact rational scalars (dimensions, angles) — the overhaul's §4 value engine"
+
+[dependencies]
+num-rational = "0.4"
+num-traits = "0.2"
+
+[dev-dependencies]
+proptest.workspace = true
+# NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
+# pre-commit hook is owned solely by nacre-store; this crate inherits it.
