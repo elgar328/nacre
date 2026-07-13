@@ -448,14 +448,14 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 | 1 | `is_convex` (ops) | 볼록성 → coincident 병합 분기 | **exact `plane_side` ((5d)-1 완료)** | 옛 tolerance가 정점 f64 비공면을 흡수. n0: 도달 피연산자 전부 Constructed 축정렬이라 이미 exact → tolerance 은퇴는 **무동작 청소**(Case A). Discovered 정점이 닿으면 #3로 넘어감 | 완료(작음) |
 | 2 | `coplanar` (geom/ops) | 두 면 공면 여부 → 인터페이스 탐지 | **exact rank-1 `planes_coplanar` ((5d)-2 완료)** | 옛 `1e-9` 절대-길이 tolerance는 scale-비불변(근접-공면 false-merge 위험). exact = 두 평면 계수 2×4의 rank-1(여섯 2×2 minor). n0: 유일 불일치는 float-박스 옆면의 같은-법선 공면쌍뿐 → 반대-법선 인터페이스 필터가 배제 → **동작 보존** | 완료(작음) |
 | 3 | `is_convex`의 **triple-sourcing** | Discovered 정점을 f64 캐시가 아니라 제 정의(triple)로 | **exact `three_plane_orient3d` ((5d)-3 완료)** | ★ 술어를 새로 안 지음 — `plane_orient(Q1,Q2,Q3,P)=sign(det4)·sign(det3)`는 이미 `three_plane_orient3d`(det3 인수가 술어에 내재, 순서 무관). 발화 픽스처 = **불리언 결과를 피연산자로 넣는 첫 사례**(볼록 `Common` 결과=Discovered 코너 6개 → 셋째 박스 스택). M5 동작 보존(축정렬 교점 f64-exact라 triple=캐시); 소득은 결정에서 캐시-읽기 제거 + ingestion 경화 + TIP 대비 | 완료(중) |
-| 4 | `point_in_solid` → 광선-free 분류기 | 점 내/외 (일반 경로) | exact ray casting | 광선 캐스팅은 exact지만 방향 선택·퇴화 처리가 무겁다. `plane_orient` 기반 **광선-free 분류기**로 통일하면 #3과 술어를 공유 | 미측정(중) |
+| 4 | `fan_triangles`의 zero-area 드롭 (ops) | 팬 삼각형 버릴지 (winding 경로) | **exact `orient2d` zero-area ((5d)-4 완료)** | winding 부호는 이미 exact(`ray_triangle_cross`=orient3d). 유일한 tol은 `fan_triangles`의 상대 `1e-12` 공선 드롭 — 대좌표 근접-공선 슬리버를 조용히 버려 교차를 놓칠 수 있었다. exact = 외적 세 성분(=세 좌표투영 `orient2d`)이 모두 0. n0: 전 코퍼스에서 nonzero-면적 발화 0건 → **Case A**. ~~광선-free 재설계~~ **기각**: 비볼록에 더 단순한 exact 광선-free 없음(GWN=f64), 방향 휴리스틱은 honest-reject라 exactness 이득 0. `ray_triangle_cross`의 정점 f64-좌표 읽기는 회전 시 TIP의 몫(이 셀 밖) | 완료(작음) |
 | 5 | cavity 분류 부호 (ops, (5c)) | 성분이 outer(+)인가 void(−)인가 | **f64 signed volume** | 거시적 부피라 견고(필터의 "clear sign"과 같은 결)하나 **위상 결정**이라 (5d) 대상. exact 대안 = 성분 containment를 indirect predicates로(대표점 vs 다른 성분). 진리는 씨임의 exact 술어가 정하고 이 부호는 파생 캐시 위 라벨 | 미측정(중) |
 | 6 | `interface_correspondence` (ops) | coincident-merge 정점 대응 (B링 → A링) | **exact 좌표 동일성 `ap==bp` ((5d)-3 완료)** | (5d)-2 완결성 grep이 발견 — coincident 경로의 두 번째 f64-읽기. 인터페이스 정점은 **Constructed라 triple 정의가 없다** → 정답은 좌표 동일성(대응 코너는 같은 점, bit-동일). 견고했으나(순수성 청소) scale-상대 tol 은퇴. 전 fixture Case A | 완료(작음) |
 | — | `vertex_tol` (Discovered 정점) | — | tol 보유 | **은퇴 안 함.** 존재론적 tol이며 판정 fudge가 아니다. TIP가 이 tol을 전파·판정에 반영하는 층(회전 도입 시) | 해당 없음 |
 
 **★ "평면 계수 exact화"만으로 #1이 열리지 않는다.** 축정렬 정수 입력의 Constructed 정점은 정규화 전에도 정확히 공면이었다 — (5d)-1의 계수 exact화는 **토대**(그 위에서 `plane_orient`·`coplanar`가 참 평면에 서게)일 뿐, is_convex의 과잉 거절을 실제로 없앤 것은 tolerance 은퇴다. is_convex의 남은 exact화(Discovered 경로)는 **#3 triple-sourcing**이 열고, 그건 발화 픽스처가 있어야 짓는다.
 
-**진행:** #1·#2·#3·#6 완료. 남은 #4(광선-free 분류기)·#5(cavity 증인점)는 "아는 것의 정리"라 뒤로((5d)-4+). §10 (5b-0)/(5c) 기록의 "전수조사 표" 참조는 모두 이 표를 가리킨다.
+**진행:** #1·#2·#3·#4·#6 완료. 남은 것은 **#5(cavity 증인점)** 하나. §10 (5b-0)/(5c) 기록의 "전수조사 표" 참조는 모두 이 표를 가리킨다.
 
 **M6 부호 판정·내외 분류 방식 — 세 마일스톤 중 유일한 미정 (M6 직전 확정).** M5는 방법 확정(indirect predicates), M7은 방법 미정이어도 무방(SSI 실패 시 `Unsupported`로 정직하게 거절하는 게 설계에 내장). 반면 **M6만 "확실히 되는 실용 영역"이라 문서가 약속했는데 정작 어떤 방법으로 판정할지가 비어 있다** — M5의 indirect predicates는 선·평면(다항식)에 특화라 이차곡면에 그대로 안 맞고, M7의 exact ray casting은 메시 경유 하이브리드용이라 M6엔 과하다.
 
@@ -969,6 +969,13 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **★ 발화 = 불리언 결과를 피연산자로 넣는 첫 사례.** is_convex는 coincident 게이트에서만 호출되고 Discovered 정점은 불리언 결과에만 있는데, 스위트 어디도 결과를 후속 피연산자로 안 썼다(연쇄 둘은 hollow라 문 앞 거절). n0 픽스처: 축정렬 정수 박스 둘의 `Common`=[1,2]³ → 8코너 중 **6개가 혼합-평면 교점이라 Discovered**(2개는 원래 코너 Constructed). 이를 셋째 박스에 스택 → coincident 병합이 Discovered-코너 솔리드에 is_convex 발화. **ingestion 클린**(부피 2.0, cavities 0, validate 통과) — 잠재 버그 없음.
 - **정직한 프레이밍 — "더 정확"이 아니라 "결정에서 캐시-읽기 제거".** M5에선 triple=캐시(축정렬 교점 f64-exact). 진짜 불일치는 exact-계수 평면이 f64-비표현 점에서 만나는 TIP-류라 M5 밖. 소득: **(a) sweep 원칙 집행(결정이 f64 캐시 안 읽음), (b) Discovered-operand 경로 첫 측정·경화, (c) TIP/회전 대비 정의-기반화.** #1·#2처럼 동작 보존(전 스위트 + 50 OCCT 불변).
 - **곁들이 #6 (별도 커밋).** `interface_correspondence`의 `1e-9×크기` scale-상대 정점 대응을 **exact 좌표 동일성 `ap==bp`**로. 계획의 "triple 동일성" 제안은 **부적용**(인터페이스 정점은 Constructed라 정의가 없다) — 대응 코너는 같은 점(bit-동일)이라 좌표 동일성이 정답. 견고했던 tol이라 순수성 청소, 전 fixture Case A. #3과 원인 분리 위해 별도 커밋(먼저 착지).
+
+**`fan_triangles` zero-area 드롭 exact화 (M5 셀 5d-4).** 표 #4. `point_in_solid`의 winding 부호는 **이미 exact**(`ray_triangle_cross`=orient3d 부호 정수합)이고, 이 경로에 남은 유일한 tol은 `fan_triangles`가 근사-영면적 팬 삼각형을 버리던 **상대 `1e-12`**뿐이었다. 이를 exact zero-area로 은퇴.
+
+- **★ 판정 = 세 좌표투영 `orient2d`가 모두 0.** 외적 `(t1−t0)×(t2−t0)`의 세 성분이 곧 세 좌표평면 투영의 `orient2d`라, 면적 0 ⟺ 셋 모두 exact 0. **축-독립**(nonzero 면적이면 외적이 nonzero → 최소 한 투영이 비퇴화 → 오탐 없음)이라 법선을 안 넣어 시그니처 불변. `orient2d`는 이미 in-scope, 새 술어 0.
+- **★ 정직한 스코프 — winding의 정점 f64-읽기는 안 건드림.** `ray_triangle_cross`는 정점 f64 좌표를 읽는다(Constructed·축정렬 Discovered면 exact, **회전 Discovered면 캐시≠진실**로 silent-wrong 가능 — #3과 같은 범주). 이건 회전 시 **TIP(오버홀)**의 몫이라 이 셀 밖. 즉 winding 경로를 통째로 닫은 게 아니라 **fan tol 하나**만 닫았다.
+- **★ 광선-free 재설계는 기각.** 표 #4의 옛 프레이밍("광선-free 분류기")은 과잉이다: 비볼록 평면 솔리드에 exact 광선 캐스팅보다 단순한 광선-free 방법이 없고(GWN은 초월수 solid angle 합=f64), 방향 휴리스틱은 grazing을 exact 검출(`orient3d==0`)해 소진 시 **정직히 `RAY_DEGENERATE` 거절**(조용히 틀림 아님)이라 바꿔도 exactness 이득 0·복잡도만↑. "고려·기각"으로 기록.
+- **정직한 동기 — 현 버그 아님, 회전 대비.** 상대 tol이 nonzero 삼각형을 드롭하려면 `|e1||e2|≥1e12`(엣지 ~1e6+)라 축정렬 소좌표 M5엔 안 생긴다 — n0 계측이 전 코퍼스(nacre-ops 215 + OCCT 오라클 70)에서 **nonzero-면적 발화 0건** 확인 → **Case A**(bit-동일). 진짜 슬리버는 회전/오버홀 기하에서 나오므로 이 셀은 **exactness 위생 + 회전 이식 대비**. 회귀 가드는 대좌표 슬리버 단위 테스트(옛 tol이면 드롭·새로는 keep). 곁들여 방향-독립 팬 삼각형을 `'dirs` 루프 밖으로 hoist(1회 계산·재사용).
 
 **hollow 입력 operand — seam이 void를 비껴가면 지원 (M5 셀 5c-in). `HOLLOW_OPERAND` 은퇴.** 커버리지 매트릭스의 빨강 하나. cavity는 이미 1급(결과-조립 5c·하류 validate/props/STEP이 `once(&outer).chain(cavities)`로 순회)이라, 갭은 **seam 프론트엔드가 outer 셸만 도는 것**뿐. `solid_shell_handles`(outer+cavities)로 다섯 자리를 all-shells로: `collect_planes`·`solid_vertex_handles`·`edge_incidence`·`solid_face_rings`·**면-재구성 루프**. void가 손 안 대고 결과로 실려 (5c) 성분 분할이 보존.
 
