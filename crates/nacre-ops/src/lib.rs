@@ -1464,69 +1464,68 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     (labels, n)
 }
 
-/// Area and area-weighted centroid of a planar loop (straight polygon), mirroring
-/// `nacre-props::polygon_area_centroid`: a signed triangle fan from the first vertex, exact
-/// for concave rings.
-fn loop_area_centroid(model: &Model, l: &Loop) -> (f64, Point3) {
-    let pts: Vec<Point3> = l
-        .half_edges
-        .iter()
-        .map(|&he| model.vertices.get(he_start(model, he)).point)
-        .collect();
-    let base = pts[0];
-    let mut area_vec = Vector3::zero();
-    for w in pts[1..].windows(2) {
-        area_vec += (w[0] - base).cross(w[1] - base);
+/// Whether a closed component shell (a set of oriented faces) is **outward**
+/// (material-enclosing, positive signed volume — an outer shell) versus
+/// **inward** (a void/cavity shell). The `assemble_fuse_cut` cavity-vs-outer
+/// label ((5d)#5 retired the f64 signed-volume flux this replaces), reading no
+/// coordinate arithmetic: only a lexicographic vertex ordering and one
+/// axis-aligned plane-coefficient sign.
+///
+/// At the component's lexicographically-minimal vertex `v*` (min x, then y, then
+/// z) the shell is a convex corner, and the material lies toward increasing
+/// coordinates. So an outward shell has a `−x`-facing boundary face at `v*` (its
+/// materialized outward normal `n_x < 0`), while a void's three walls all face
+/// into the void (`n_x ≥ 0` at its own `v*`). Hence: **outward iff some face
+/// incident to `v*` has materialized outward normal with `n_x < 0`**. Two
+/// antiparallel `x`-perpendicular faces cannot share a vertex, so this `∃`-test
+/// is equivalent to (and simpler than) picking the max-`|n_x|` face.
+///
+/// Exact for the axis-aligned M5 corpus: face normals are exactly `±eₓ/±e_y/±e_z`
+/// so `sign(n_x)` is the exact sign of the plane's `x`-coefficient (times the
+/// face orientation), and the `v*` search is exact coordinate ordering — both
+/// hold even for non-representable coordinates (e.g. a `0.3`-offset void face).
+/// Rotated shells break the "axis-aligned normal / unique x-perpendicular face"
+/// premises and are TIP's job (design §9 (5d)#5, honest scope).
+fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
+    // Lexicographically-minimal vertex over the component's outer loops.
+    let mut vstar: Option<Handle<Vertex>> = None;
+    let mut pstar = [f64::INFINITY; 3];
+    for &fh in faces {
+        for &he in &model.faces.get(fh).outer.half_edges {
+            let vh = he_start(model, he);
+            let p = model.vertices.get(vh).point.as_array();
+            if p < pstar {
+                pstar = p;
+                vstar = Some(vh);
+            }
+        }
     }
-    let unit = area_vec.normalize().unwrap_or(Vector3::zero());
-    let (mut weighted, mut weight) = (Vector3::zero(), 0.0);
-    for w in pts[1..].windows(2) {
-        let signed = (w[0] - base).cross(w[1] - base).dot(unit);
-        let c_rel = ((w[0] - base) + (w[1] - base)) * (1.0 / 3.0);
-        weighted += c_rel * signed;
-        weight += signed;
-    }
-    let area = 0.5 * area_vec.norm();
-    let centroid = if weight != 0.0 {
-        base + weighted * (1.0 / weight)
-    } else {
-        base
-    };
-    (area, centroid)
-}
-
-/// The signed volume flux `∮ (r − R)·n̂ dA` (three times the signed volume) over a set of
-/// faces forming one closed shell — **positive** for an outward, material-enclosing shell,
-/// **negative** for an inward void shell. That sign is exactly "solid region vs enclosed
-/// void": a genuinely-separate solid piece holds material inside (faces outward, positive),
-/// a void holds material outside (faces inward, negative). Planar faces only (M5). Mirrors
-/// `nacre-props::face_contribution`, reading the materialized `Face` so orientation/flip is
-/// already baked in.
-fn shell_signed_flux(model: &Model, faces: &[Handle<Face>]) -> f64 {
-    let f0 = model.faces.get(faces[0]);
-    let reference = model
-        .vertices
-        .get(he_start(model, f0.outer.half_edges[0]))
-        .point;
-    let mut flux = 0.0;
+    let Some(vstar) = vstar else { return false };
+    // Outward iff some face at v* faces −x (materialized outward normal n_x < 0).
+    // n_x's sign is the plane x-coefficient's sign times the orientation sign
+    // (no normalization — exact for axis-aligned faces).
     for &fh in faces {
         let face = model.faces.get(fh);
+        if !face
+            .outer
+            .half_edges
+            .iter()
+            .any(|&he| he_start(model, he) == vstar)
+        {
+            continue;
+        }
+        let Surface::Plane(plane) = model.surfaces.get(face.surface) else {
+            continue;
+        };
         let sign = match face.orientation {
             Orientation::Forward => 1.0,
             Orientation::Reversed => -1.0,
         };
-        let Surface::Plane(plane) = model.surfaces.get(face.surface) else {
-            continue;
-        };
-        let normal = plane.normal() * sign;
-        let (area, centroid) = loop_area_centroid(model, &face.outer);
-        flux += normal.dot(centroid - reference) * area;
-        for hole in &face.inner {
-            let (a, c) = loop_area_centroid(model, hole);
-            flux -= normal.dot(c - reference) * a;
+        if plane.coefficients()[0] * sign < 0.0 {
+            return true;
         }
     }
-    flux
+    false
 }
 
 /// The supporting planes of a solid's outer shell. `Unsupported` if any face is
@@ -2730,18 +2729,18 @@ fn assemble_fuse_cut(
         }));
     }
     // Partition the faces into connected components (by shared node). One component is the
-    // whole result; several mean either an enclosed void (a cavity — one component holds
-    // material outside it, signed flux negative) or a severed operand (two solids — two
-    // components each holding material inside, flux positive). The sign tells them apart:
-    // exactly one positive component is the outer shell, the rest are cavities; anything else
-    // is two solids one handle cannot answer (`Cut(rod, L)`), which stays `DISCONNECTED_RESULT`.
+    // whole result; several mean either an enclosed void (a cavity — an inward-oriented
+    // shell) or a severed operand (two solids — two outward, material-enclosing shells).
+    // `is_shell_outward` (exact extreme-vertex sign) tells them apart: exactly one outward
+    // component is the outer shell, the rest are cavities; anything else is two solids one
+    // handle cannot answer (`Cut(rod, L)`), which stays `DISCONNECTED_RESULT`.
     let (labels, n) = face_components(faces);
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
     }
     let positives: Vec<usize> = (0..n)
-        .filter(|&c| shell_signed_flux(model, &by_comp[c]) > 0.0)
+        .filter(|&c| is_shell_outward(model, &by_comp[c]))
         .collect();
     let [outer_c] = positives[..] else {
         return Err(reject(tag::DISCONNECTED_RESULT));
@@ -6744,21 +6743,6 @@ pub mod tests {
             assert_eq!(m.solids.get(r).cavities.len(), 1, "Fuse swap={swap}");
             assert_eq!(m.reachable().shells.len(), 2, "Fuse swap={swap}");
         }
-    }
-
-    /// The sign convention `assemble_fuse_cut` classifies components by (cell 5c): an outward,
-    /// material-enclosing shell has positive signed flux; an inward void shell (a cavity) has
-    /// negative. `reversed_shell` flips one into the other.
-    #[test]
-    fn shell_signed_flux_is_positive_outward_and_negative_inward() {
-        let mut m = Model::new();
-        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-        let outer = m.solids.get(cube).outer;
-        let out_faces = m.shells.get(outer).faces.clone();
-        assert!(shell_signed_flux(&m, &out_faces) > 0.0); // 3 · 8 = 24
-        let void = m.reversed_shell(outer);
-        let void_faces = m.shells.get(void).faces.clone();
-        assert!(shell_signed_flux(&m, &void_faces) < 0.0);
     }
 
     /// `detect_coincident_interface` counts only cross-solid opposite-normal coplanar
