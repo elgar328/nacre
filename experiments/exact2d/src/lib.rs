@@ -1021,4 +1021,162 @@ mod tests {
             "f64 filter must never disagree with high-precision judgment"
         );
     }
+
+    // ---- H4-amplification: does tol approach the 1e-9 judgment tolerance? ----
+
+    /// H4-amplification.
+    ///
+    /// (A) BUNDLED path (§4 — the path the kernel uses): a run of same-axis
+    /// rational rotations accumulates into one angle, realized **once**. The tol
+    /// is then `(|bx|+|by|)·da` — linear in coordinate scale, independent of how
+    /// many rotations were accumulated. Even at 1 km the f64 tol is ~6e-9, and
+    /// escalation to a modest astro-float precision (≪ our 160 bits) drives it far
+    /// below 1e-9. So amplification never threatens correctness (dial-able
+    /// precision); it only sets filter success rate.
+    ///
+    /// (B) INCREMENTAL (un-bundled) realization: the transport term `|R|·old`
+    /// uses the component-wise **absolute** matrix, whose row sum `|cos|+|sin| ≥ 1`
+    /// multiplies the tol every step → the bound grows **exponentially** in the
+    /// step count, even though the *true* error (transported by the norm-
+    /// preserving rotation `R`) grows only linearly. So the bound stays sound but
+    /// becomes uselessly loose. ⟹ §4 bundling is **essential, not an optimization**.
+    #[test]
+    fn h4_amplification() {
+        // (A) bundled: tol vs scale, N-independent.
+        let target = 1e-15;
+        let mut worst_prec = 0.0_f64;
+        for &s in &[1.0_f64, 1e3, 1e6] {
+            let si = s as i128;
+            let p = Pt2::rotated_about_origin(
+                (Rat::new(si, 1).unwrap(), Rat::new(si * 7, 10).unwrap()),
+                Angle::from_deg(Rat::from_int(37)).unwrap(),
+            );
+            let tol = p.tol.0;
+            let prec = if tol > target {
+                52.0 + (tol / target).log2()
+            } else {
+                52.0
+            };
+            worst_prec = worst_prec.max(prec);
+            eprintln!(
+                "[H4-amp bundled] scale={s:>8.0}mm  f64 tol={tol:.2e}  → escalate ~{prec:.0}b for <{target:e}"
+            );
+        }
+        eprintln!(
+            "[H4-amp] worst bundled precision need: ~{worst_prec:.0} bits (we use {HP_PREC})"
+        );
+
+        // (B) incremental un-bundled: exponential bound growth vs linear true error.
+        let mut p = PtChain::new((Rat::from_int(1000), Rat::from_int(700)));
+        let base_step = 1700.0 * DA_F64; // ≈ per-step new error (linear rate)
+        for n in 1..=30usize {
+            p.rotate(Angle::from_deg(Rat::from_int(37)).unwrap());
+            if [1, 10, 20, 30].contains(&n) {
+                let (xt, yt) = p.truth(256);
+                let ex = bf_mag(
+                    &BigFloat::from_f64(p.coord.0, 256)
+                        .sub(&xt, 256, HP_RM)
+                        .abs(),
+                );
+                let ey = bf_mag(
+                    &BigFloat::from_f64(p.coord.1, 256)
+                        .sub(&yt, 256, HP_RM)
+                        .abs(),
+                );
+                let actual = ex.max(ey);
+                eprintln!(
+                    "[H4-amp incr] N={n:>2}  bound tol={:.2e}  actual err={actual:.2e}  linear~{:.2e}",
+                    p.tol.0,
+                    f64::from(n as u32) * base_step
+                );
+            }
+        }
+
+        // (A) bundled worst combo is well within our escalation precision.
+        assert!(
+            worst_prec < HP_PREC as f64,
+            "astro-float {HP_PREC}b covers the worst bundled amplification combo"
+        );
+        // (B) the un-bundled bound blew up far past a linear rate (≫), confirming
+        // bundling is required. (30 steps of ×~1.4 ⇒ ~1e4× a linear bound.)
+        assert!(
+            p.tol.0 > 1000.0 * f64::from(30u32) * base_step,
+            "incremental un-bundled tol should blow up super-linearly"
+        );
+    }
+
+    // ---- H4-speed: per-judgment cost, escalation frequency, filter success ----
+
+    /// H4-speed. Times the two orient2d paths — the f64 filter (common) and the
+    /// astro-float escalation (rare) — and measures how often random geometry
+    /// needs escalation. Escalation is far slower but only fires for genuinely
+    /// near-degenerate configs, so the amortized cost tracks the fast filter.
+    #[test]
+    fn h4_speed() {
+        use std::time::Instant;
+        let mut st = 0x5EED_1234_ABCD_0001u64;
+        let rnd = |st: &mut u64| {
+            Pt2::rotated_about_origin(
+                (
+                    Rat::new(rng_i128(st, -100, 100), rng_i128(st, 1, 20)).unwrap(),
+                    Rat::new(rng_i128(st, -100, 100), rng_i128(st, 1, 20)).unwrap(),
+                ),
+                Angle::from_deg(Rat::new(rng_i128(st, 0, 360_000), rng_i128(st, 1, 997)).unwrap())
+                    .unwrap(),
+            )
+        };
+
+        // (1) filter path: random well-separated triples.
+        const N: usize = 5000;
+        let tris: Vec<(Pt2, Pt2, Pt2)> = (0..N)
+            .map(|_| (rnd(&mut st), rnd(&mut st), rnd(&mut st)))
+            .collect();
+        let mut escalations = 0usize;
+        for (a, b, c) in &tris {
+            let det = det_f64(a.coord, b.coord, c.coord);
+            let bound = det_bound(a.coord, a.tol, b.coord, b.tol, c.coord, c.tol);
+            if det.abs() <= bound {
+                escalations += 1;
+            }
+        }
+        let t = Instant::now();
+        for (a, b, c) in &tris {
+            std::hint::black_box(orient2d_judge(a, b, c));
+        }
+        let filter_ns = t.elapsed().as_nanos() as f64 / N as f64;
+
+        // (2) escalation path: exactly collinear triples (force astro-float).
+        const M: usize = 100;
+        let col: Vec<(Pt2, Pt2, Pt2)> = (0..M)
+            .map(|i| {
+                let k = i as i128 + 1;
+                // collinear points rotated 37° — still collinear, but the
+                // escalation now realizes real cos/sin (not the cos 0° fast path).
+                let p = |m: i128| {
+                    Pt2::rotated_about_origin(
+                        (Rat::new(m * k, 1).unwrap(), Rat::new(m * k, 1).unwrap()),
+                        Angle::from_deg(Rat::from_int(37)).unwrap(),
+                    )
+                };
+                (p(0), p(1), p(2))
+            })
+            .collect();
+        assert_eq!(
+            orient2d_judge(&col[0].0, &col[0].1, &col[0].2),
+            Orient::Zero,
+            "collinear must escalate to Zero"
+        );
+        let t2 = Instant::now();
+        for (a, b, c) in &col {
+            std::hint::black_box(orient2d_judge(a, b, c));
+        }
+        let esc_us = t2.elapsed().as_micros() as f64 / M as f64;
+
+        eprintln!(
+            "[H4-speed] filter path (random): {filter_ns:.0} ns/judgment; escalations {escalations}/{N}"
+        );
+        eprintln!(
+            "[H4-speed] escalation path (collinear): {esc_us:.0} µs/judgment (un-cached astro-float; a real kernel caches per-angle realizations)"
+        );
+    }
 }
