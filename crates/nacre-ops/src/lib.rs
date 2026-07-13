@@ -9117,6 +9117,87 @@ pub mod tests {
         assert!(reach.faces.contains(&top_face));
     }
 
+    /// §5 explicit sharing (overhaul #3): a prism built with a shared base-cap
+    /// surface reuses that `Surface` handle for its flush cap, and reconciles the
+    /// cap's face orientation so the materialized outward normal stays `−sweep`.
+    #[test]
+    fn build_prism_base_cap_reuses_shared_surface() {
+        let mut m = Model::new();
+        // A face-plane surface with outward normal +z (as a face on the base solid).
+        let sf = m.surfaces.push(Surface::Plane(
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
+                .unwrap(),
+        ));
+        let base_pts = [
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+        ];
+        let (_prism, faces) = build_prism(
+            &mut m,
+            &base_pts,
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            Some(sf),
+        )
+        .unwrap();
+        let cap = m.faces.get(faces[0]); // base cap is pushed first
+        // Shared handle (was a fresh push before overhaul #3).
+        assert_eq!(cap.surface, sf, "base cap reuses the shared surface handle");
+        // Orientation reconciled: materialized outward normal is −sweep (−z).
+        let Surface::Plane(p) = m.surfaces.get(cap.surface) else {
+            unreachable!()
+        };
+        let sign = match cap.orientation {
+            Orientation::Forward => 1.0,
+            Orientation::Reversed => -1.0,
+        };
+        let materialized = p.normal() * sign;
+        assert!(
+            (materialized - Vector3::from_array([0.0, 0.0, -1.0])).norm() < 1e-12,
+            "materialized cap normal stays −z, got {materialized:?}"
+        );
+    }
+
+    /// The handle branch of `shares_or_coplanar` is load-bearing: a shared
+    /// `Surface` handle reports coplanar even when the stored `plane` values are
+    /// *not* geometrically coplanar (so the fallback would not fire). This is the
+    /// path a referenced coplanar contact takes; on axis-aligned M5 it is redundant
+    /// with the geometric test, but the branch must work for rotated frames.
+    #[test]
+    fn shares_or_coplanar_uses_the_handle_branch() {
+        let mut m = Model::new();
+        let shared = m.surfaces.push(Surface::Plane(
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0]))
+                .unwrap(),
+        ));
+        let fh = m.faces.push(Face {
+            surface: shared,
+            outer: Loop { half_edges: vec![] },
+            inner: vec![],
+            orientation: Orientation::Forward,
+        });
+        let plane_x0 =
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0]))
+                .unwrap();
+        let plane_z0 =
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
+                .unwrap();
+        let mk = |plane| PlaneInfo {
+            surf: shared,
+            face: fh,
+            plane,
+            tri: [Point3::origin(); 3],
+            n_out: Vector3::from_array([0.0; 3]),
+            orient: Orientation::Forward,
+        };
+        let (pa, pb) = (mk(plane_x0), mk(plane_z0));
+        // The two planes are NOT geometrically coplanar → the fallback would fail.
+        assert!(!planes_coplanar(&pa.plane, &pb.plane));
+        // But the shared handle makes them coplanar-by-reference.
+        assert!(shares_or_coplanar(&pa, &pb));
+    }
+
     #[test]
     fn pad_rejects_nonplanar_face() {
         let mut m = Model::new();
