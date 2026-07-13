@@ -450,7 +450,7 @@ fn extrude(
         return Err(OpError::DegenerateProfile);
     }
     let base_pts: Vec<Point3> = profile.points.iter().map(|p| plane.point(*p)).collect();
-    build_prism(model, &base_pts, plane.normal() * dist)
+    build_prism(model, &base_pts, plane.normal() * dist, None)
 }
 
 /// Sweep the ring `base_pts` along `sweep` into a prism solid (caps + side quads). The ring is
@@ -464,6 +464,7 @@ fn build_prism(
     model: &mut Model,
     base_pts: &[Point3],
     sweep: Vector3,
+    base_cap_surface: Option<Handle<Surface>>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
     if base_pts.len() < 3 {
         return Err(OpError::DegenerateProfile);
@@ -524,9 +525,33 @@ fn build_prism(
     let mut faces = Vec::with_capacity(n + 2);
 
     // Base cap: outward normal −N, loop reversed (B_0 -> B_{n-1} -> ... -> B_1).
-    let base_surface = model.surfaces.push(Surface::Plane(
-        Plane::from_point_normal(base_pts[0], -normal).ok_or(OpError::DegenerateGeometry)?,
-    ));
+    // When padding/pocketing on a face, reuse that face's `Surface` handle (§5
+    // explicit sharing) so the flush contact is a shared-handle coplanar pair the
+    // boolean can recognize by `Handle` identity; otherwise push a fresh plane.
+    // The materialized outward normal must stay −N, so the face orientation is
+    // chosen from the shared surface's stored normal — `surface` and `orientation`
+    // travel together, and the reconstruction copies both.
+    let (base_surface, base_orient) = match base_cap_surface {
+        Some(h) => {
+            let n_h = match model.surfaces.get(h) {
+                Surface::Plane(p) => p.normal(),
+                Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
+            };
+            let orient = if n_h.dot(-normal) > 0.0 {
+                Orientation::Forward
+            } else {
+                Orientation::Reversed
+            };
+            (h, orient)
+        }
+        None => {
+            let s = model.surfaces.push(Surface::Plane(
+                Plane::from_point_normal(base_pts[0], -normal)
+                    .ok_or(OpError::DegenerateGeometry)?,
+            ));
+            (s, Orientation::Forward)
+        }
+    };
     let base_loop = Loop {
         half_edges: (0..n)
             .rev()
@@ -540,7 +565,7 @@ fn build_prism(
         surface: base_surface,
         outer: base_loop,
         inner: vec![],
-        orientation: Orientation::Forward,
+        orientation: base_orient,
     }));
 
     // Top cap: outward normal +N.
@@ -994,7 +1019,7 @@ fn extrude_and_boolean(
     } else {
         dist
     };
-    let (prism, _) = build_prism(model, &base_pts, n * signed)?;
+    let (prism, _) = build_prism(model, &base_pts, n * signed, Some(frame.surface_h))?;
     let result = boolean(model, kind, frame.solid_h, prism).map_err(|e| {
         model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
         OpError::Boolean(e)
@@ -9595,7 +9620,8 @@ pub mod tests {
         .iter()
         .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
         .collect();
-        let (boss, _) = build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4])).unwrap();
+        let (boss, _) =
+            build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
         let r = boolean(&mut m, BoolKind::Fuse, cube, boss).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
@@ -9988,7 +10014,7 @@ pub mod tests {
         .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
         .collect();
         let (l_tool, _) =
-            build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4])).unwrap();
+            build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
         assert!(matches!(
             boolean(&mut m, BoolKind::Fuse, cube, l_tool),
             Err(BoolError::Unsupported)
