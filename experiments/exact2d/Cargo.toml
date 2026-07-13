@@ -1,0 +1,19 @@
+# Isolated exact-2d experiment sandbox (overhaul checkpoint 1+).
+#
+# The empty [workspace] table makes this a standalone workspace root, so the
+# nacre root workspace (members = ["crates/*"]) never includes it — root build
+# and test are unaffected (docs/overhaul.md; plan "격리"). Depends only on
+# num-rational for now; the nacre-predicates path-dep is added at H4 (predicate
+# reuse), keeping H1 minimal.
+[workspace]
+
+[package]
+name = "exact2d"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+astro-float = "0.9.5"
+num-rational = "0.4"
+num-traits = "0.2"
