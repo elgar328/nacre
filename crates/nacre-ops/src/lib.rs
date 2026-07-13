@@ -1464,69 +1464,68 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     (labels, n)
 }
 
-/// Area and area-weighted centroid of a planar loop (straight polygon), mirroring
-/// `nacre-props::polygon_area_centroid`: a signed triangle fan from the first vertex, exact
-/// for concave rings.
-fn loop_area_centroid(model: &Model, l: &Loop) -> (f64, Point3) {
-    let pts: Vec<Point3> = l
-        .half_edges
-        .iter()
-        .map(|&he| model.vertices.get(he_start(model, he)).point)
-        .collect();
-    let base = pts[0];
-    let mut area_vec = Vector3::zero();
-    for w in pts[1..].windows(2) {
-        area_vec += (w[0] - base).cross(w[1] - base);
+/// Whether a closed component shell (a set of oriented faces) is **outward**
+/// (material-enclosing, positive signed volume — an outer shell) versus
+/// **inward** (a void/cavity shell). The `assemble_fuse_cut` cavity-vs-outer
+/// label ((5d)#5 retired the f64 signed-volume flux this replaces), reading no
+/// coordinate arithmetic: only a lexicographic vertex ordering and one
+/// axis-aligned plane-coefficient sign.
+///
+/// At the component's lexicographically-minimal vertex `v*` (min x, then y, then
+/// z) the shell is a convex corner, and the material lies toward increasing
+/// coordinates. So an outward shell has a `−x`-facing boundary face at `v*` (its
+/// materialized outward normal `n_x < 0`), while a void's three walls all face
+/// into the void (`n_x ≥ 0` at its own `v*`). Hence: **outward iff some face
+/// incident to `v*` has materialized outward normal with `n_x < 0`**. Two
+/// antiparallel `x`-perpendicular faces cannot share a vertex, so this `∃`-test
+/// is equivalent to (and simpler than) picking the max-`|n_x|` face.
+///
+/// Exact for the axis-aligned M5 corpus: face normals are exactly `±eₓ/±e_y/±e_z`
+/// so `sign(n_x)` is the exact sign of the plane's `x`-coefficient (times the
+/// face orientation), and the `v*` search is exact coordinate ordering — both
+/// hold even for non-representable coordinates (e.g. a `0.3`-offset void face).
+/// Rotated shells break the "axis-aligned normal / unique x-perpendicular face"
+/// premises and are TIP's job (design §9 (5d)#5, honest scope).
+fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
+    // Lexicographically-minimal vertex over the component's outer loops.
+    let mut vstar: Option<Handle<Vertex>> = None;
+    let mut pstar = [f64::INFINITY; 3];
+    for &fh in faces {
+        for &he in &model.faces.get(fh).outer.half_edges {
+            let vh = he_start(model, he);
+            let p = model.vertices.get(vh).point.as_array();
+            if p < pstar {
+                pstar = p;
+                vstar = Some(vh);
+            }
+        }
     }
-    let unit = area_vec.normalize().unwrap_or(Vector3::zero());
-    let (mut weighted, mut weight) = (Vector3::zero(), 0.0);
-    for w in pts[1..].windows(2) {
-        let signed = (w[0] - base).cross(w[1] - base).dot(unit);
-        let c_rel = ((w[0] - base) + (w[1] - base)) * (1.0 / 3.0);
-        weighted += c_rel * signed;
-        weight += signed;
-    }
-    let area = 0.5 * area_vec.norm();
-    let centroid = if weight != 0.0 {
-        base + weighted * (1.0 / weight)
-    } else {
-        base
-    };
-    (area, centroid)
-}
-
-/// The signed volume flux `∮ (r − R)·n̂ dA` (three times the signed volume) over a set of
-/// faces forming one closed shell — **positive** for an outward, material-enclosing shell,
-/// **negative** for an inward void shell. That sign is exactly "solid region vs enclosed
-/// void": a genuinely-separate solid piece holds material inside (faces outward, positive),
-/// a void holds material outside (faces inward, negative). Planar faces only (M5). Mirrors
-/// `nacre-props::face_contribution`, reading the materialized `Face` so orientation/flip is
-/// already baked in.
-fn shell_signed_flux(model: &Model, faces: &[Handle<Face>]) -> f64 {
-    let f0 = model.faces.get(faces[0]);
-    let reference = model
-        .vertices
-        .get(he_start(model, f0.outer.half_edges[0]))
-        .point;
-    let mut flux = 0.0;
+    let Some(vstar) = vstar else { return false };
+    // Outward iff some face at v* faces −x (materialized outward normal n_x < 0).
+    // n_x's sign is the plane x-coefficient's sign times the orientation sign
+    // (no normalization — exact for axis-aligned faces).
     for &fh in faces {
         let face = model.faces.get(fh);
+        if !face
+            .outer
+            .half_edges
+            .iter()
+            .any(|&he| he_start(model, he) == vstar)
+        {
+            continue;
+        }
+        let Surface::Plane(plane) = model.surfaces.get(face.surface) else {
+            continue;
+        };
         let sign = match face.orientation {
             Orientation::Forward => 1.0,
             Orientation::Reversed => -1.0,
         };
-        let Surface::Plane(plane) = model.surfaces.get(face.surface) else {
-            continue;
-        };
-        let normal = plane.normal() * sign;
-        let (area, centroid) = loop_area_centroid(model, &face.outer);
-        flux += normal.dot(centroid - reference) * area;
-        for hole in &face.inner {
-            let (a, c) = loop_area_centroid(model, hole);
-            flux -= normal.dot(c - reference) * a;
+        if plane.coefficients()[0] * sign < 0.0 {
+            return true;
         }
     }
-    flux
+    false
 }
 
 /// The supporting planes of a solid's outer shell. `Unsupported` if any face is
@@ -1767,18 +1766,21 @@ fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side
         .into_iter()
         .map(|fh| face_loops(model, fh))
         .collect();
+    // Fan triangles are direction-independent — build (and exactly-drop degenerate
+    // ones) once, then reuse across every ray direction.
+    let tris: Vec<[Point3; 3]> = faces
+        .iter()
+        .flat_map(|rings| rings.iter())
+        .flat_map(|ring| fan_triangles(ring, 0))
+        .collect();
     'dirs: for dir in RAY_DIRECTIONS {
         let d = Vector3::from_array(dir);
         let mut winding = 0i32;
-        for rings in &faces {
-            for ring in rings {
-                for tri in fan_triangles(ring, 0) {
-                    match ray_face_cross(p, d, tri) {
-                        RayCross::Cross(sign) => winding += sign as i32,
-                        RayCross::Miss => {}
-                        RayCross::Degenerate => continue 'dirs, // grazed — try another direction
-                    }
-                }
+        for tri in &tris {
+            match ray_face_cross(p, d, *tri) {
+                RayCross::Cross(sign) => winding += sign as i32,
+                RayCross::Miss => {}
+                RayCross::Degenerate => continue 'dirs, // grazed — try another direction
             }
         }
         return Ok(if winding != 0 {
@@ -1825,7 +1827,12 @@ pub(crate) fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
 /// The non-degenerate fan triangles `(pts[apex], pts[apex+s], pts[apex+s+1])` of a
 /// planar loop, fanned from vertex `apex` (indices mod `k`). A concave loop's
 /// spurious (reflex) triangles are kept — they cancel by orientation in the
-/// oriented crossing sum — but zero-area (collinear) triangles are dropped.
+/// oriented crossing sum — but **exactly zero-area (collinear)** triangles are
+/// dropped by an exact test ([`triangle_is_degenerate`]), not a tolerance: a
+/// zero-area triangle contributes nothing to the winding and would force a
+/// spurious `Degenerate` ray retry, whereas a tiny-but-nonzero triangle is kept
+/// and judged exactly by `ray_triangle_cross`. Retiring the old relative
+/// `1e-12` bound closes the one silent-wrong drop on the winding path ((5d)#4).
 /// Varying `apex` changes which internal diagonals appear, which the segment gate
 /// exploits to sidestep a diagonal that happens to be coplanar with a query edge.
 fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
@@ -1833,13 +1840,26 @@ fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
     let mut tris = Vec::new();
     for s in 1..k.saturating_sub(1) {
         let (t0, t1, t2) = (pts[apex], pts[(apex + s) % k], pts[(apex + s + 1) % k]);
-        let (e1, e2) = (t1 - t0, t2 - t0);
-        if e1.cross(e2).norm() <= 1e-12 * e1.norm() * e2.norm() {
-            continue; // degenerate (collinear) fan triangle
+        if triangle_is_degenerate(t0, t1, t2) {
+            continue; // exactly zero-area (collinear) fan triangle
         }
         tris.push([t0, t1, t2]);
     }
     tris
+}
+
+/// Whether three points are **exactly collinear** (zero-area triangle), decided
+/// by exact `orient2d` on all three coordinate-plane projections — these are the
+/// three components of `(t1−t0)×(t2−t0)`, so zero area ⟺ all three are `0`. No
+/// tolerance, no coordinate materialized. **Axis-independent**: a genuinely
+/// nonzero-area triangle has a nonzero cross vector, so at least one projection is
+/// non-degenerate and it is never falsely dropped (unlike a single fixed-axis
+/// projection, which would collapse for a face perpendicular to that axis).
+fn triangle_is_degenerate(t0: Point3, t1: Point3, t2: Point3) -> bool {
+    let (a, b, c) = (t0.as_array(), t1.as_array(), t2.as_array());
+    orient2d([a[1], a[2]], [b[1], b[2]], [c[1], c[2]]) == 0.0
+        && orient2d([a[2], a[0]], [b[2], b[0]], [c[2], c[0]]) == 0.0
+        && orient2d([a[0], a[1]], [b[0], b[1]], [c[0], c[1]]) == 0.0
 }
 
 /// Whether the boundaries of `a` and `b` actually cross — an edge of one pierces a face of
@@ -2709,18 +2729,18 @@ fn assemble_fuse_cut(
         }));
     }
     // Partition the faces into connected components (by shared node). One component is the
-    // whole result; several mean either an enclosed void (a cavity — one component holds
-    // material outside it, signed flux negative) or a severed operand (two solids — two
-    // components each holding material inside, flux positive). The sign tells them apart:
-    // exactly one positive component is the outer shell, the rest are cavities; anything else
-    // is two solids one handle cannot answer (`Cut(rod, L)`), which stays `DISCONNECTED_RESULT`.
+    // whole result; several mean either an enclosed void (a cavity — an inward-oriented
+    // shell) or a severed operand (two solids — two outward, material-enclosing shells).
+    // `is_shell_outward` (exact extreme-vertex sign) tells them apart: exactly one outward
+    // component is the outer shell, the rest are cavities; anything else is two solids one
+    // handle cannot answer (`Cut(rod, L)`), which stays `DISCONNECTED_RESULT`.
     let (labels, n) = face_components(faces);
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
     }
     let positives: Vec<usize> = (0..n)
-        .filter(|&c| shell_signed_flux(model, &by_comp[c]) > 0.0)
+        .filter(|&c| is_shell_outward(model, &by_comp[c]))
         .collect();
     let [outer_c] = positives[..] else {
         return Err(reject(tag::DISCONNECTED_RESULT));
@@ -5025,6 +5045,47 @@ pub mod tests {
         );
     }
 
+    /// (5d)#4: `fan_triangles` drops *exactly* the zero-area (collinear) triangles
+    /// and keeps the rest. A pentagon ring with three collinear points on one edge
+    /// has one collinear fan triangle from apex 0; it is dropped, the other two are
+    /// kept (and confirmed non-degenerate).
+    #[test]
+    fn fan_triangles_drops_only_exactly_collinear() {
+        let ring = [
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]), // collinear with its neighbours on y=0
+            Point3::from_array([2.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 0.0]),
+            Point3::from_array([0.0, 2.0, 0.0]),
+        ];
+        let tris = fan_triangles(&ring, 0);
+        // apex-0 fan: (0,1,2) is collinear → dropped; (0,2,3) and (0,3,4) kept.
+        assert_eq!(tris.len(), 2);
+        for t in &tris {
+            assert!(!triangle_is_degenerate(t[0], t[1], t[2]));
+        }
+    }
+
+    /// (5d)#4 regression: a tiny-but-*exactly-nonzero* sliver is kept, where the
+    /// retired relative `1e-12` bound would have silently dropped it (missing a ray
+    /// crossing → wrong winding). Large-magnitude integer coords make the cross
+    /// product tiny relative to the edge lengths: `cross.z = 2a − (2a+1) = −1`,
+    /// `|e1||e2| ≈ 2a²`. (A direct `fan_triangles` unit test — such slivers arise
+    /// in rotated geometry, not axis-aligned M5.)
+    #[test]
+    fn fan_triangles_keeps_tiny_nonzero_sliver() {
+        let a = 1_000_000.0;
+        let t0 = Point3::from_array([0.0, 0.0, 0.0]);
+        let t1 = Point3::from_array([a, 1.0, 0.0]);
+        let t2 = Point3::from_array([2.0 * a + 1.0, 2.0, 0.0]);
+        // exactly nonzero area ⇒ the exact test keeps it.
+        assert!(!triangle_is_degenerate(t0, t1, t2));
+        assert_eq!(fan_triangles(&[t0, t1, t2], 0).len(), 1);
+        // …yet the old relative tolerance would have dropped it:
+        let (e1, e2) = (t1 - t0, t2 - t0);
+        assert!(e1.cross(e2).norm() <= 1e-12 * e1.norm() * e2.norm());
+    }
+
     /// The L-prism with a `[0.1,0.9]³` box strictly inside its bottom bar
     /// (non-coplanar coordinates ⇒ no shared face planes). `V_L = 3`, `V_box =
     /// 0.512`.
@@ -6684,19 +6745,23 @@ pub mod tests {
         }
     }
 
-    /// The sign convention `assemble_fuse_cut` classifies components by (cell 5c): an outward,
-    /// material-enclosing shell has positive signed flux; an inward void shell (a cavity) has
-    /// negative. `reversed_shell` flips one into the other.
+    /// `is_shell_outward` — the exact sign `assemble_fuse_cut` labels components by
+    /// ((5d)#5, replacing the f64 signed-volume flux) — is true for an outward,
+    /// material-enclosing shell and false for an inward void shell. `reversed_shell`
+    /// flips one into the other, so the same faces read opposite orientations.
     #[test]
-    fn shell_signed_flux_is_positive_outward_and_negative_inward() {
+    fn is_shell_outward_true_for_outer_false_for_void() {
         let mut m = Model::new();
         let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
         let outer = m.solids.get(cube).outer;
         let out_faces = m.shells.get(outer).faces.clone();
-        assert!(shell_signed_flux(&m, &out_faces) > 0.0); // 3 · 8 = 24
+        assert!(is_shell_outward(&m, &out_faces), "outer shell is outward");
         let void = m.reversed_shell(outer);
         let void_faces = m.shells.get(void).faces.clone();
-        assert!(shell_signed_flux(&m, &void_faces) < 0.0);
+        assert!(
+            !is_shell_outward(&m, &void_faces),
+            "reversed shell is a void"
+        );
     }
 
     /// `detect_coincident_interface` counts only cross-solid opposite-normal coplanar
