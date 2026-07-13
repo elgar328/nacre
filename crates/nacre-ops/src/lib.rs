@@ -6745,6 +6745,25 @@ pub mod tests {
         }
     }
 
+    /// `is_shell_outward` — the exact sign `assemble_fuse_cut` labels components by
+    /// ((5d)#5, replacing the f64 signed-volume flux) — is true for an outward,
+    /// material-enclosing shell and false for an inward void shell. `reversed_shell`
+    /// flips one into the other, so the same faces read opposite orientations.
+    #[test]
+    fn is_shell_outward_true_for_outer_false_for_void() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let outer = m.solids.get(cube).outer;
+        let out_faces = m.shells.get(outer).faces.clone();
+        assert!(is_shell_outward(&m, &out_faces), "outer shell is outward");
+        let void = m.reversed_shell(outer);
+        let void_faces = m.shells.get(void).faces.clone();
+        assert!(
+            !is_shell_outward(&m, &void_faces),
+            "reversed shell is a void"
+        );
+    }
+
     /// `detect_coincident_interface` counts only cross-solid opposite-normal coplanar
     /// pairs, so imprinting a *different* face leaves the stack looking clean and routes
     /// into `coincident_merge` — the one path an imprinted operand can take. Measured
