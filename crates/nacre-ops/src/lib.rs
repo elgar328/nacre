@@ -1767,18 +1767,21 @@ fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side
         .into_iter()
         .map(|fh| face_loops(model, fh))
         .collect();
+    // Fan triangles are direction-independent — build (and exactly-drop degenerate
+    // ones) once, then reuse across every ray direction.
+    let tris: Vec<[Point3; 3]> = faces
+        .iter()
+        .flat_map(|rings| rings.iter())
+        .flat_map(|ring| fan_triangles(ring, 0))
+        .collect();
     'dirs: for dir in RAY_DIRECTIONS {
         let d = Vector3::from_array(dir);
         let mut winding = 0i32;
-        for rings in &faces {
-            for ring in rings {
-                for tri in fan_triangles(ring, 0) {
-                    match ray_face_cross(p, d, tri) {
-                        RayCross::Cross(sign) => winding += sign as i32,
-                        RayCross::Miss => {}
-                        RayCross::Degenerate => continue 'dirs, // grazed — try another direction
-                    }
-                }
+        for tri in &tris {
+            match ray_face_cross(p, d, *tri) {
+                RayCross::Cross(sign) => winding += sign as i32,
+                RayCross::Miss => {}
+                RayCross::Degenerate => continue 'dirs, // grazed — try another direction
             }
         }
         return Ok(if winding != 0 {
@@ -1825,7 +1828,12 @@ pub(crate) fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
 /// The non-degenerate fan triangles `(pts[apex], pts[apex+s], pts[apex+s+1])` of a
 /// planar loop, fanned from vertex `apex` (indices mod `k`). A concave loop's
 /// spurious (reflex) triangles are kept — they cancel by orientation in the
-/// oriented crossing sum — but zero-area (collinear) triangles are dropped.
+/// oriented crossing sum — but **exactly zero-area (collinear)** triangles are
+/// dropped by an exact test ([`triangle_is_degenerate`]), not a tolerance: a
+/// zero-area triangle contributes nothing to the winding and would force a
+/// spurious `Degenerate` ray retry, whereas a tiny-but-nonzero triangle is kept
+/// and judged exactly by `ray_triangle_cross`. Retiring the old relative
+/// `1e-12` bound closes the one silent-wrong drop on the winding path ((5d)#4).
 /// Varying `apex` changes which internal diagonals appear, which the segment gate
 /// exploits to sidestep a diagonal that happens to be coplanar with a query edge.
 fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
@@ -1833,13 +1841,26 @@ fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
     let mut tris = Vec::new();
     for s in 1..k.saturating_sub(1) {
         let (t0, t1, t2) = (pts[apex], pts[(apex + s) % k], pts[(apex + s + 1) % k]);
-        let (e1, e2) = (t1 - t0, t2 - t0);
-        if e1.cross(e2).norm() <= 1e-12 * e1.norm() * e2.norm() {
-            continue; // degenerate (collinear) fan triangle
+        if triangle_is_degenerate(t0, t1, t2) {
+            continue; // exactly zero-area (collinear) fan triangle
         }
         tris.push([t0, t1, t2]);
     }
     tris
+}
+
+/// Whether three points are **exactly collinear** (zero-area triangle), decided
+/// by exact `orient2d` on all three coordinate-plane projections — these are the
+/// three components of `(t1−t0)×(t2−t0)`, so zero area ⟺ all three are `0`. No
+/// tolerance, no coordinate materialized. **Axis-independent**: a genuinely
+/// nonzero-area triangle has a nonzero cross vector, so at least one projection is
+/// non-degenerate and it is never falsely dropped (unlike a single fixed-axis
+/// projection, which would collapse for a face perpendicular to that axis).
+fn triangle_is_degenerate(t0: Point3, t1: Point3, t2: Point3) -> bool {
+    let (a, b, c) = (t0.as_array(), t1.as_array(), t2.as_array());
+    orient2d([a[1], a[2]], [b[1], b[2]], [c[1], c[2]]) == 0.0
+        && orient2d([a[2], a[0]], [b[2], b[0]], [c[2], c[0]]) == 0.0
+        && orient2d([a[0], a[1]], [b[0], b[1]], [c[0], c[1]]) == 0.0
 }
 
 /// Whether the boundaries of `a` and `b` actually cross — an edge of one pierces a face of
