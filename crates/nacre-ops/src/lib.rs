@@ -5046,6 +5046,47 @@ pub mod tests {
         );
     }
 
+    /// (5d)#4: `fan_triangles` drops *exactly* the zero-area (collinear) triangles
+    /// and keeps the rest. A pentagon ring with three collinear points on one edge
+    /// has one collinear fan triangle from apex 0; it is dropped, the other two are
+    /// kept (and confirmed non-degenerate).
+    #[test]
+    fn fan_triangles_drops_only_exactly_collinear() {
+        let ring = [
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]), // collinear with its neighbours on y=0
+            Point3::from_array([2.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 0.0]),
+            Point3::from_array([0.0, 2.0, 0.0]),
+        ];
+        let tris = fan_triangles(&ring, 0);
+        // apex-0 fan: (0,1,2) is collinear → dropped; (0,2,3) and (0,3,4) kept.
+        assert_eq!(tris.len(), 2);
+        for t in &tris {
+            assert!(!triangle_is_degenerate(t[0], t[1], t[2]));
+        }
+    }
+
+    /// (5d)#4 regression: a tiny-but-*exactly-nonzero* sliver is kept, where the
+    /// retired relative `1e-12` bound would have silently dropped it (missing a ray
+    /// crossing → wrong winding). Large-magnitude integer coords make the cross
+    /// product tiny relative to the edge lengths: `cross.z = 2a − (2a+1) = −1`,
+    /// `|e1||e2| ≈ 2a²`. (A direct `fan_triangles` unit test — such slivers arise
+    /// in rotated geometry, not axis-aligned M5.)
+    #[test]
+    fn fan_triangles_keeps_tiny_nonzero_sliver() {
+        let a = 1_000_000.0;
+        let t0 = Point3::from_array([0.0, 0.0, 0.0]);
+        let t1 = Point3::from_array([a, 1.0, 0.0]);
+        let t2 = Point3::from_array([2.0 * a + 1.0, 2.0, 0.0]);
+        // exactly nonzero area ⇒ the exact test keeps it.
+        assert!(!triangle_is_degenerate(t0, t1, t2));
+        assert_eq!(fan_triangles(&[t0, t1, t2], 0).len(), 1);
+        // …yet the old relative tolerance would have dropped it:
+        let (e1, e2) = (t1 - t0, t2 - t0);
+        assert!(e1.cross(e2).norm() <= 1e-12 * e1.norm() * e2.norm());
+    }
+
     /// The L-prism with a `[0.1,0.9]³` box strictly inside its bottom bar
     /// (non-coplanar coordinates ⇒ no shared face planes). `V_L = 3`, `V_box =
     /// 0.512`.
