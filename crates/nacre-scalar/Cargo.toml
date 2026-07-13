@@ -10,6 +10,7 @@ description = "Exact rational scalars (dimensions, angles) — the overhaul's §
 [dependencies]
 num-rational = "0.4"
 num-traits = "0.2"
+astro-float = "0.9.5"
 
 [dev-dependencies]
 proptest.workspace = true

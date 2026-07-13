@@ -13,19 +13,34 @@
 //!   never lost.
 //! - [`Angle`] — rational degrees, normalized mod-360, with exact accumulation so
 //!   a full turn lands back on exactly `0` (no f64 drift — a sketch closes). The
-//!   `cos`/`sin` realization crosses into f64 (the irrational boundary), but the
+//!   `cos`/`sin` realization crosses into f64 (the irrational boundary); the
 //!   90°-family (`0/90/180/270°`) realizes to exact rationals `{0, ±1}` (Niven),
-//!   so those rotations of a rational point stay tol 0.
+//!   so those rotations of a rational point stay tol 0; and `cos_hp`/`sin_hp`
+//!   realize in arbitrary precision (astro-float) for the judgment path (§4/§6).
 //!
-//! Scope (overhaul port #1): this is the exact **value** engine only. The unified
-//! `Scalar { value, tol }` wrapper (§4), the arbitrary-precision trig judgment
-//! path (astro-float, H1.5), the 2D-frame `orient2d` pipeline, and the kernel
-//! wiring that makes points carry these are later cells. Ported from the verified
-//! 2D experiment (`experiments/exact2d`, overhaul checkpoint 1).
+//! Scope: the exact value engine (`Rat`, `Angle`, including the arbitrary-precision
+//! trig judgment realization). The 2D-frame `orient2d` judgment, the unified
+//! `Scalar { value, tol }` wrapper (§4), and the kernel wiring are later cells.
+//! Ported from the verified 2D experiment (`experiments/exact2d`, overhaul
+//! checkpoint 1).
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedMul, CheckedSub};
 use std::f64::consts::PI;
+
+use astro_float::{BigFloat, Consts, RoundingMode};
+use std::cell::RefCell;
+
+/// Precision (bits) and rounding for the high-precision realization layer
+/// (astro-float). ~160 bits ≈ 48 decimal digits — far below CAD tolerance and
+/// dial-able if amplification ever needs more (the ceiling twofloat lacked, H1.5).
+pub(crate) const HP_PREC: usize = 160;
+pub(crate) const HP_RM: RoundingMode = RoundingMode::ToEven;
+
+thread_local! {
+    /// Transcendental-constant cache (π, …) for the high-precision layer.
+    static HP_CONSTS: RefCell<Consts> = RefCell::new(Consts::new().expect("astro-float consts"));
+}
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
 /// so the caller sees the §4 downgrade trigger explicitly; on overflow the kernel
@@ -138,6 +153,36 @@ impl Angle {
     /// sin, realized in f64.
     pub fn sin(self) -> f64 {
         (self.0.to_f64() * PI / 180.0).sin()
+    }
+
+    /// `(cos, sin)` realized in arbitrary precision at `prec` bits — the judgment
+    /// path (§4/§6). astro-float replaces twofloat here (H1.5: twofloat's trig was
+    /// f64-level near zero-crossings). Higher `prec` gives ground truth; the
+    /// default [`HP_PREC`] gives the working judgment realization. (numer/denom
+    /// pass through f64, exact for the small values used here; a general large-
+    /// rational path would build from a string.)
+    pub(crate) fn cos_sin_at(self, prec: usize) -> (BigFloat, BigFloat) {
+        HP_CONSTS.with_borrow_mut(|cc| {
+            let pi = cc.pi(prec, HP_RM);
+            let d180 = BigFloat::from_f64(180.0, prec);
+            let n = BigFloat::from_f64(self.0.numer() as f64, prec);
+            let d = BigFloat::from_f64(self.0.denom() as f64, prec);
+            let rad = n
+                .div(&d, prec, HP_RM)
+                .mul(&pi, prec, HP_RM)
+                .div(&d180, prec, HP_RM);
+            (rad.cos(prec, HP_RM, cc), rad.sin(prec, HP_RM, cc))
+        })
+    }
+
+    /// cos realized at the default judgment precision ([`HP_PREC`]).
+    pub fn cos_hp(self) -> BigFloat {
+        self.cos_sin_at(HP_PREC).0
+    }
+
+    /// sin realized at the default judgment precision ([`HP_PREC`]).
+    pub fn sin_hp(self) -> BigFloat {
+        self.cos_sin_at(HP_PREC).1
     }
 
     /// Exact `(cos, sin)` as rationals — `Some` only for the quadrantal angles
