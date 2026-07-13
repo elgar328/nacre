@@ -2799,6 +2799,19 @@ struct Interface {
     remap: HashMap<Handle<Vertex>, Handle<Vertex>>,
 }
 
+/// Two faces lie on the same plane — by a **shared `Surface` handle** (§5 explicit
+/// sharing: O(1) `Handle` identity, exact, rotation-independent) or, as a fallback,
+/// by the geometric rank-1 `planes_coplanar` test. A referenced coplanar contact —
+/// a pad/pocket cap that reuses its face's surface — is caught by the handle path
+/// without any coordinate test. On the axis-aligned M5 corpus the handle path is
+/// redundant with `planes_coplanar` (same handle ⇒ same plane), so the geometric
+/// fallback is what keeps independently-built coplanar contacts working; the handle
+/// path's real payoff is rotated frames, where the geometric test would need the
+/// rotation-exact judgment.
+fn shares_or_coplanar(pa: &PlaneInfo, pb: &PlaneInfo) -> bool {
+    pa.surf == pb.surf || planes_coplanar(&pa.plane, &pb.plane)
+}
+
 /// `Some` iff A and B share exactly one fully-coincident, opposite-normal face
 /// pair (identical boundary) — the clean stack/glue case. `None` (fall through to
 /// the coplanar-rejecting paths) for anything else.
@@ -2819,7 +2832,7 @@ fn detect_coincident_interface(
     let mut opposite: Vec<(usize, usize)> = Vec::new();
     for (i, pa) in planes_a.iter().enumerate() {
         for (j, pb) in planes_b.iter().enumerate() {
-            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) < 0.0 {
+            if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) < 0.0 {
                 opposite.push((i, j));
             }
         }
@@ -2930,7 +2943,7 @@ fn detect_contained_contact(
     let mut opposite: Vec<(usize, usize)> = Vec::new();
     for (i, pa) in planes_a.iter().enumerate() {
         for (j, pb) in planes_b.iter().enumerate() {
-            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) < 0.0 {
+            if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) < 0.0 {
                 opposite.push((i, j));
             }
         }
@@ -2982,7 +2995,7 @@ fn detect_pocket_contact(
     let mut same: Vec<(usize, usize)> = Vec::new();
     for (i, pa) in planes_a.iter().enumerate() {
         for (j, pb) in planes_b.iter().enumerate() {
-            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) > 0.0 {
+            if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) > 0.0 {
                 same.push((i, j));
             }
         }
