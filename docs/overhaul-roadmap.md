@@ -82,7 +82,7 @@
 | 단계 | 내용 | 산출 | 판정? |
 |---|---|---|---|
 | 0 | **foundation** (완료·은행) | Rat/Angle·orient2d_judge·surface 공유 | — |
-| 0.4 | **★ 다중 솔리드 (독립·회전 무관)** | 부울이 `Vec<Solid>` 반환(축정렬 severing도 포함) + per-solid validate + `DISCONNECTED_RESULT` 은퇴. (5c) 성분 분할 재사용 → 작음. **회전 전에 main 병합 가능** | — |
+| 0.4 | **★ 다중 솔리드 (완료·독립)** | ✅ 부울이 `Vec<Solid>` 반환(축정렬 severing) + `DISCONNECTED_RESULT` 은퇴. (5c) 성분 분할 재사용. sever는 전역 validate 그대로 통과. **후속**: 경계-공유(edge-touch)·multi-outer-with-cavity·`Cut(A,A)` empty. design.md §10 기록 | — |
 | 0.5 | **★ 3D 실험** (`experiments/exact3d`, 격리) | 3D-특유 TIP 수학 선검증(#1 위험): orient3d 오차 한계·**회전된 3-평면 implicit point + indirect 술어 계수-tol**·3축 tol 전파·축변경. 2D 필터→상승 기계 재사용. **단계 2 전 필수** | 실험 |
 | 1 | **회전·이동 표현** | `Transform`(isometry = 유리수 이동 ∘ Angle 회전) 연산 → 변환 평면 기하(f64) + 정의(공유 `Store<Rotation>`, Origin 변이). 유리수 입력+강등+번들링. validate/tess/STEP 동작. **불리언 명시 거절**. 90°계열 exact | 없음 |
 | 2 | **TIP 코어** (3D 실험 검증분 이식) | 방향별 tol 벡터(⑤) + 회전이력 순회·tol 누적·캐시(⑦ 머신어리) + 필터→astro-float 상승(정의-기반) | 층만 |
@@ -137,17 +137,19 @@
 
 **★ 핵심: 생각보다 작다 — (5c) 성분 분할 기계를 재사용.** 지금도 부울은 결과를 연결 성분으로 나눈다
 (`assemble_fuse_cut`의 `face_components`+`is_shell_outward`). 현 로직은 "바깥향 성분 정확히 1개면 수용, 아니면
-`DISCONNECTED_RESULT` 거절". 다중 솔리드 = **거절 대신 각 성분을 솔리드로 반환**. 어려운 부분(성분 분할·cavity
-배정)은 **이미 완성**.
+`DISCONNECTED_RESULT` 거절". 다중 솔리드 = **거절 대신 각 성분을 솔리드로 반환**. 성분 분할은 이미 완성 —
+**단, cavity 배정은 outer 1개일 때만 완성**이었다: outward가 여럿이면서 cavity도 있으면 "어느 outer가 어느
+cavity를 소유하는가"에 shell-scoped 판정이 필요해 미해결 → `SEVERED_WITH_CAVITY` 정직 거절·defer(아래).
 
-- **`boolean(...) -> Result<Vec<Handle<Solid>>, BoolError>`** — 결과 솔리드 집합(결정적 순서=성분 발견 순; 빈
-  결과[Cut(A,A)]도 허용).
-- **`Solid { outer, cavities }` 불변** — 각 바깥향 성분이 제 cavity를 안은 솔리드; 그런 솔리드가 여럿.
-- **op-log/`OpOutput`이 Vec 기록**, replay 결정적 재현.
-- **다음 연산은 핸들로 지정**(사용자가 Vec에서 고름; 단일 결과=길이 1).
-- **validate per-solid** — 각 솔리드 독립 검사. 분리된 두 솔리드가 경계를 맞대도(각자 매니폴드) 전역 검사는
-  non-manifold로 오탐하나 per-solid는 통과(§11-B #8).
-- **`DISCONNECTED_RESULT` 은퇴.**
+- **`boolean(...) -> Result<Vec<Handle<Solid>>, BoolError>`** ✅ — 결과 솔리드 집합(결정적 순서 = 성분의 기하
+  canonical 정렬 `comp_key`; 빈 결과[Cut(A,A)]는 아직 `EmptyResult`·후속).
+- **`Solid { outer, cavities }` 불변** ✅ — sever는 각 성분이 cavity-free 솔리드(멀티-outer+cavity는 위 defer).
+- **op-log/`OpOutput { solids: Vec }`이 Vec 기록** ✅, replay 결정적 재현.
+- **다음 연산은 핸들로 지정** ✅(단일 결과=길이 1; `extrude_and_boolean`은 다중 수용 후 cap 보유 solid 반환).
+- **validate**: sever 조각은 서로 다른 엣지 handle이라 **전역 validate가 그대로 통과**(이 셀은 무변경). per-solid
+  validate는 **경계-공유(edge-touch) 다중 솔리드**에서만 필요 → §5 명시 공유와 함께 후속(§11-B #8).
+- **`DISCONNECTED_RESULT` 은퇴** ✅ → `SEVERED_WITH_CAVITY`(도달 가능·firing 테스트)·`NO_OUTWARD_SHELL`(도달
+  불가·방어 백스톱)로 대체.
 
 **철저히, 그러나 giant-refactor 아님**: Store/Handle/op-log 기초는 이미 튼튼 — 다중 솔리드는 자연스러운 일반화
 (하나→여럿). 억지 대형 리팩토링은 검증된 (5c) 기계를 흔들 위험. Vec 끝까지·per-solid validate·op-log 정합만
