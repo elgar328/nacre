@@ -1115,4 +1115,134 @@ mod tests {
             "bundling must be tighter than incremental (amplification)"
         );
     }
+
+    /// Aux — the go/no-go performance signal: how often does the f64 filter escalate,
+    /// and what does escalation cost? On generic (non-degenerate) configs the filter
+    /// resolves almost everything (cheap ~ns); escalation fires only near degeneracy
+    /// (~µs, rare). Also confirms the explicit judge never disagrees with the 512-bit
+    /// truth end to end (soundness). If escalation were frequent on generic geometry,
+    /// that would be the performance NO-GO — it is not.
+    #[test]
+    fn aux_escalation_frequency_and_speed() {
+        use std::time::Instant;
+        const GT: usize = 512;
+
+        // (1) generic random 4-point configs: escalation must be rare, judge sound.
+        let mut st = 0xAABB_1122_3344_5566u64;
+        let (mut esc_generic, mut wrong, mut tested) = (0usize, 0usize, 0usize);
+        const NG: usize = 4000;
+        for _ in 0..NG {
+            let p: Vec<Pt3> = (0..4).map(|_| rand_point(&mut st)).collect();
+            let det = det3_f64(p[0].coord, p[1].coord, p[2].coord, p[3].coord);
+            let bound = det3_bound(
+                [p[0].coord, p[1].coord, p[2].coord, p[3].coord],
+                [p[0].tol, p[1].tol, p[2].tol, p[3].tol],
+            );
+            if det.abs() <= bound {
+                esc_generic += 1;
+            }
+            // soundness end-to-end vs GT (generic configs are never truly degenerate).
+            let truth = det3_hp(&p[0], &p[1], &p[2], &p[3], GT);
+            if !truth.is_zero() {
+                let want = if truth.is_positive() {
+                    Orient::Positive
+                } else {
+                    Orient::Negative
+                };
+                let judged = orient3d_judge(&p[0], &p[1], &p[2], &p[3]);
+                if judged != Orient::Zero {
+                    tested += 1;
+                    if judged != want {
+                        wrong += 1;
+                    }
+                }
+            }
+        }
+
+        // (2) near-coplanar configs (shared rotation preserves coplanarity): escalation
+        // is frequent — the filter correctly defers the hard cases.
+        let mut esc_near = 0usize;
+        const NN: usize = 2000;
+        for _ in 0..NN {
+            let b = |st: &mut u64| {
+                [
+                    ri(rng_i128(st, -50, 50), 1),
+                    ri(rng_i128(st, -50, 50), 1),
+                    ri(rng_i128(st, -50, 50), 1),
+                ]
+            };
+            let p0 = b(&mut st);
+            let p1 = b(&mut st);
+            let p2 = b(&mut st);
+            // p3 = p0 + a(p1−p0) + c(p2−p0): exactly coplanar with p0,p1,p2.
+            let (aa, cc) = (rng_i128(&mut st, -3, 3), rng_i128(&mut st, -3, 3));
+            let mix = |i: usize| {
+                p0[i]
+                    .checked_add(
+                        (p1[i].checked_sub(p0[i]).unwrap())
+                            .checked_mul(ri(aa, 1))
+                            .unwrap(),
+                    )
+                    .unwrap()
+                    .checked_add(
+                        (p2[i].checked_sub(p0[i]).unwrap())
+                            .checked_mul(ri(cc, 1))
+                            .unwrap(),
+                    )
+                    .unwrap()
+            };
+            let p3 = [mix(0), mix(1), mix(2)];
+            let axis = axis_of(rng_i128(&mut st, 0, 2));
+            let ang = Angle::from_deg(ri(
+                rng_i128(&mut st, 0, 360_000),
+                rng_i128(&mut st, 1, 9973),
+            ))
+            .unwrap();
+            let rp = |p: [Rat; 3]| Pt3::at(p).rotate(axis, ang);
+            let (q0, q1, q2, q3) = (rp(p0), rp(p1), rp(p2), rp(p3));
+            let det = det3_f64(q0.coord, q1.coord, q2.coord, q3.coord);
+            let bound = det3_bound(
+                [q0.coord, q1.coord, q2.coord, q3.coord],
+                [q0.tol, q1.tol, q2.tol, q3.tol],
+            );
+            if det.abs() <= bound {
+                esc_near += 1;
+            }
+        }
+
+        // (3) timing: the f64 filter vs one astro-float escalation.
+        let p: Vec<Pt3> = (0..4).map(|_| rand_point(&mut st)).collect();
+        let t0 = Instant::now();
+        let mut acc = 0.0;
+        for _ in 0..100_000 {
+            acc += det3_f64(p[0].coord, p[1].coord, p[2].coord, p[3].coord)
+                - det3_bound(
+                    [p[0].coord, p[1].coord, p[2].coord, p[3].coord],
+                    [p[0].tol, p[1].tol, p[2].tol, p[3].tol],
+                );
+        }
+        let filter_ns = t0.elapsed().as_nanos() as f64 / 100_000.0;
+        let t1 = Instant::now();
+        for _ in 0..2_000 {
+            let _ = det3_hp(&p[0], &p[1], &p[2], &p[3], JUDGE_PREC);
+        }
+        let esc_us = t1.elapsed().as_nanos() as f64 / 2_000.0 / 1000.0;
+        std::hint::black_box(acc);
+
+        eprintln!(
+            "[aux] escalation: generic {esc_generic}/{NG} ({:.2}%), near-coplanar {esc_near}/{NN} ({:.1}%); \
+             wrong-sign {wrong}/{tested}; filter ~{filter_ns:.0}ns, escalation ~{esc_us:.0}µs",
+            100.0 * esc_generic as f64 / NG as f64,
+            100.0 * esc_near as f64 / NN as f64,
+        );
+        assert_eq!(wrong, 0, "explicit judge must match GT (soundness)");
+        assert!(
+            esc_generic * 20 < NG,
+            "escalation on generic geometry must be rare (< 5%)"
+        );
+        assert!(
+            esc_near > 0,
+            "near-coplanar corpus must exercise escalation"
+        );
+    }
 }
