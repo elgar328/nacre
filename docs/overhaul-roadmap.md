@@ -83,7 +83,7 @@
 |---|---|---|---|
 | 0 | **foundation** (완료·은행) | Rat/Angle·orient2d_judge·surface 공유 | — |
 | 0.4 | **★ 다중 솔리드 (완료·독립)** | ✅ 부울이 `Vec<Solid>` 반환(축정렬 severing) + `DISCONNECTED_RESULT` 은퇴. (5c) 성분 분할 재사용. sever는 전역 validate 그대로 통과. **후속**: 경계-공유(edge-touch)·multi-outer-with-cavity·`Cut(A,A)` empty. design.md §10 기록 | — |
-| 0.5 | **★ 3D 실험** (`experiments/exact3d`, 격리) | 3D-특유 TIP 수학 선검증(#1 위험): orient3d 오차 한계·**회전된 3-평면 implicit point + indirect 술어 계수-tol**·3축 tol 전파·축변경. 2D 필터→상승 기계 재사용. **단계 2 전 필수** | 실험 |
+| 0.5 | **★ 3D 실험 (완료·GO)** | ✅ `experiments/exact3d`(격리): H-a orient3d 바운드(위반0·tightness0.121)·H-b 계수-tol·H-c indirect implicit-point(이질적 provenance, wrong0)·H-d 3축 체인 전파·H-e 축변경 번들링·aux(일반 형상 상승0%). #1 위험 해소. FINDINGS=GO. 단계 2가 `Pt3`/`orient3d_judge` 이식 | 실험 |
 | 1 | **회전·이동 표현** | `Transform`(isometry = 유리수 이동 ∘ Angle 회전) 연산 → 변환 평면 기하(f64) + 정의(공유 `Store<Rotation>`, Origin 변이). 유리수 입력+강등+번들링. validate/tess/STEP 동작. **불리언 명시 거절**. 90°계열 exact | 없음 |
 | 2 | **TIP 코어** (3D 실험 검증분 이식) | 방향별 tol 벡터(⑤) + 회전이력 순회·tol 누적·캐시(⑦ 머신어리) + 필터→astro-float 상승(정의-기반) | 층만 |
 | 3 | **회전 불리언 (`M-rot-core`)** | 회전·이동 솔리드 seam·내외 판정이 TIP 소비 → sound(우연공면·횡단·포함). 거절 가드 은퇴. declare-0→기본 Reject. (다중 솔리드는 0.4에서 이미). **← main 병합** | 활성 |
@@ -191,7 +191,7 @@ cavity를 소유하는가"에 shell-scoped 판정이 필요해 미해결 → `SE
 
 설계 결정은 위에서 다 됐다. 아래는 **구현·검증에서 풀 리스크**와 **해소 지점**:
 
-1. **3D TIP 수학 미검증(최대)** — orient3d 오차 한계·회전된 3-평면 indirect 술어 계수-tol·3축 전파. → **0.5 3D 실험**.
+1. ~~**3D TIP 수학 미검증(최대)**~~ — **해소(0.5 GO)**: exact3d가 orient3d 바운드·계수-tol·indirect implicit-point·3축·축변경을 sound·타이트(일반 형상 상승0%) 실증. FINDINGS 참조.
 2. **회전 표현 shape** — `Origin` 회전 변이·부모 참조(다른 솔리드 핸들)·`Store<Rotation>` 구조·tol 슬롯. `Origin`이
    f64라 `Eq/Hash` 없는 제약. → **단계 1 n0**.
 3. **번들링·강등 커널 통합** — 강등 트리거 위치(값별/연산별·i128 임계)·연속 이동/동일축 회전 묶는 방식. → **단계 1 n0**.
