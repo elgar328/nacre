@@ -4830,6 +4830,18 @@ pub mod tests {
     use super::*;
     use proptest::prelude::*;
 
+    /// Test shim: a boolean whose result is exactly one solid. Most tests operate on a single
+    /// body; this asserts that and returns the lone handle, so call sites read as before while
+    /// `boolean` itself returns the full `Vec` (cell 0.4 multi-solid).
+    fn boolean_one(
+        model: &mut Model,
+        kind: BoolKind,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+    ) -> Result<Handle<Solid>, BoolError> {
+        boolean(model, kind, a, b)
+    }
+
     /// The single-ring successor `(i + 1) % n` — what every caller but a multi-ring `∂f`
     /// hands [`arrange::stitch_cycles`].
     fn ident_next(n: usize) -> Vec<usize> {
@@ -5018,7 +5030,7 @@ pub mod tests {
             Point3::from_array([0.3, 0.3, 0.5]),
             Point3::from_array([0.7, 0.7, 1.5]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5137,7 +5149,7 @@ pub mod tests {
     fn cut_non_convex_containment_makes_cavity() {
         // Cut(L − box) with box ⊂ L ⇒ a hollow L (outer L shell + box void).
         let (mut m, l, bx) = l_and_inner_box();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5150,7 +5162,7 @@ pub mod tests {
     fn fuse_non_convex_containment_is_container() {
         let (mut m, l, bx) = l_and_inner_box();
         let vol_l = nacre_props::mass_props(&m, l).unwrap().volume;
-        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_l).abs() < 1e-9);
@@ -5161,7 +5173,7 @@ pub mod tests {
     fn common_non_convex_containment_is_inner() {
         let (mut m, l, bx) = l_and_inner_box();
         let vol_bx = nacre_props::mass_props(&m, bx).unwrap().volume;
-        let r = boolean(&mut m, BoolKind::Common, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, l, bx).unwrap();
         assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_bx).abs() < 1e-9);
     }
 
@@ -5170,7 +5182,7 @@ pub mod tests {
         // Cut(box − L): the box is wholly inside L ⇒ nothing remains.
         let (mut m, l, bx) = l_and_inner_box();
         assert_eq!(
-            boolean(&mut m, BoolKind::Cut, bx, l),
+            boolean_one(&mut m, BoolKind::Cut, bx, l),
             Err(BoolError::EmptyResult)
         );
     }
@@ -5183,18 +5195,18 @@ pub mod tests {
         let (mut m, l) = l_prism();
         let vol_l = nacre_props::mass_props(&m, l).unwrap().volume;
         let d = m.add_cuboid(far(), far_max());
-        let r = boolean(&mut m, BoolKind::Cut, l, d).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, d).unwrap();
         assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_l).abs() < 1e-9);
         let (mut m, l) = l_prism();
         let d = m.add_cuboid(far(), far_max());
         assert_eq!(
-            boolean(&mut m, BoolKind::Fuse, l, d),
+            boolean_one(&mut m, BoolKind::Fuse, l, d),
             Err(BoolError::EmptyResult)
         );
         let (mut m, l) = l_prism();
         let d = m.add_cuboid(far(), far_max());
         assert_eq!(
-            boolean(&mut m, BoolKind::Common, l, d),
+            boolean_one(&mut m, BoolKind::Common, l, d),
             Err(BoolError::EmptyResult)
         );
     }
@@ -5222,7 +5234,7 @@ pub mod tests {
     fn cut_non_convex_overlap_corner_bite() {
         // Cut(L − box): the corner bite carves 0.175 off the L.
         let (mut m, l, bx) = l_and_corner_box();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5234,7 +5246,7 @@ pub mod tests {
     fn fuse_non_convex_overlap_corner_bite() {
         // Fuse(L ∪ box): the protruding box adds (0.924 − 0.224) to the L.
         let (mut m, l, bx) = l_and_corner_box();
-        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5248,7 +5260,7 @@ pub mod tests {
     #[test]
     fn common_non_convex_overlap_is_their_intersection() {
         let (mut m, l, bx) = l_and_corner_box();
-        let r = boolean(&mut m, BoolKind::Common, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5270,7 +5282,7 @@ pub mod tests {
             Point3::from_array([1.0, 1.0, -1.0]),
             Point3::from_array([2.0, 2.0, 4.0]),
         );
-        let r = boolean(&mut m, BoolKind::Common, cube, bar).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, cube, bar).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5316,7 +5328,7 @@ pub mod tests {
         // strongest classification test: only exact `point_in_solid` gets the volume
         // right, a convex half-space test would not.
         let (mut m, l, bx) = l_and_reflex_box();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5339,7 +5351,7 @@ pub mod tests {
     #[test]
     fn drill_through_the_l() {
         let (mut m, l, rod) = l_and_rod();
-        let r = boolean(&mut m, BoolKind::Cut, l, rod).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, rod).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "genus 1 is clean: {vs:?}");
@@ -5355,7 +5367,7 @@ pub mod tests {
     #[test]
     fn fuse_the_l_and_the_rod() {
         let (mut m, l, rod) = l_and_rod();
-        let r = boolean(&mut m, BoolKind::Fuse, l, rod).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, rod).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -5376,7 +5388,7 @@ pub mod tests {
     fn cut_rod_by_l_disconnects() {
         let (mut m, l, rod) = l_and_rod();
         assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, rod, l),
+            || boolean_one(&mut m, BoolKind::Cut, rod, l),
             tag::DISCONNECTED_RESULT,
         );
     }
@@ -6449,7 +6461,7 @@ pub mod tests {
             let (mut m, l, bx) = l_and_corner_box();
             let from_arrange = seam_endpoint_triples(&m, l, bx);
             assert_eq!(from_arrange.len(), 6);
-            boolean(&mut m, kind, l, bx).unwrap();
+            boolean_one(&mut m, kind, l, bx).unwrap();
             m.rebuild_adjacency();
             assert_eq!(from_arrange, discovered_triples(&m), "{kind:?}");
         }
@@ -6459,7 +6471,7 @@ pub mod tests {
         let (mut m, l, bx) = l_and_reflex_box();
         let from_arrange = seam_endpoint_triples(&m, l, bx);
         assert_eq!(from_arrange.len(), 8);
-        boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
@@ -6469,7 +6481,7 @@ pub mod tests {
         // alone could coincide; this cannot.
         let (mut m, l, bx) = l_and_popup_box();
         let from_arrange = seam_endpoint_triples(&m, l, bx);
-        boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
@@ -6478,7 +6490,7 @@ pub mod tests {
         let (mut m, l, stub) = l_and_dimple();
         let from_arrange = seam_endpoint_triples(&m, l, stub);
         assert_eq!(from_arrange.len(), 4);
-        boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
@@ -6487,7 +6499,7 @@ pub mod tests {
         // bar's two floor faces and its four nodes leave `reachable`.
         let (mut m, l, bar) = l_and_notch_bar();
         let from_arrange = seam_endpoint_triples(&m, l, bar);
-        boolean(&mut m, BoolKind::Cut, l, bar).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, l, bar).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
@@ -6495,7 +6507,7 @@ pub mod tests {
         let (mut m, l, stub) = l_and_ell_stub();
         let from_arrange = seam_endpoint_triples(&m, l, stub);
         assert_eq!(from_arrange.len(), 6);
-        boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
@@ -6503,7 +6515,7 @@ pub mod tests {
         // and its four rim nodes leave `reachable`.
         let (mut m, l, st) = l_and_staple();
         let from_arrange = seam_endpoint_triples(&m, l, st);
-        boolean(&mut m, BoolKind::Cut, l, st).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, l, st).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
@@ -6511,7 +6523,7 @@ pub mod tests {
         // both survive as faces or their eight rim nodes leave `reachable`.
         let (mut m, u, slab) = u_and_slab();
         let from_arrange = seam_endpoint_triples(&m, u, slab);
-        boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
 
@@ -6522,7 +6534,7 @@ pub mod tests {
         let (mut m, l, stub) = l_and_dimple();
         let from_arrange = seam_endpoint_triples(&m, stub, l);
         assert_eq!(from_arrange.len(), 4);
-        boolean(&mut m, BoolKind::Cut, stub, l).unwrap();
+        boolean_one(&mut m, BoolKind::Cut, stub, l).unwrap();
         m.rebuild_adjacency();
         assert_eq!(from_arrange, discovered_triples(&m));
     }
@@ -6545,7 +6557,7 @@ pub mod tests {
     fn cut_a_pocket_at_a_corner() {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(Point3::from_array([0.85; 3]), Point3::from_array([1.15; 3]));
-        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6565,7 +6577,7 @@ pub mod tests {
             Point3::from_array([0.85, 0.85, -0.15]),
             Point3::from_array([1.15, 1.15, 0.15]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6594,7 +6606,7 @@ pub mod tests {
             Point3::from_array([0.55, 0.55, 0.85]),
             Point3::from_array([1.15; 3]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6621,7 +6633,7 @@ pub mod tests {
             Point3::from_array([0.55, 0.55, 0.85]),
             Point3::from_array([1.15; 3]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, bx, pc).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, bx, pc).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6641,7 +6653,7 @@ pub mod tests {
             Point3::from_array([1.5, 1.5, 1.5]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, ic, bx),
+            || boolean_one(&mut m, BoolKind::Fuse, ic, bx),
             tag::COPLANAR_PAIR,
         );
     }
@@ -6683,7 +6695,7 @@ pub mod tests {
     #[test]
     fn cut_slab_by_pocket() {
         let (mut m, slab, pc) = pocket_and_slab(0.3);
-        let r = boolean(&mut m, BoolKind::Cut, slab, pc).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slab, pc).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6707,7 +6719,7 @@ pub mod tests {
     #[test]
     fn fuse_slab_and_pocket() {
         let (mut m, slab, pc) = pocket_and_slab(0.3);
-        let r = boolean(&mut m, BoolKind::Fuse, slab, pc).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, slab, pc).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6723,7 +6735,7 @@ pub mod tests {
     #[test]
     fn cut_pocket_by_slab() {
         let (mut m, slab, pc) = pocket_and_slab(0.3);
-        let r = boolean(&mut m, BoolKind::Cut, pc, slab).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, slab).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6753,7 +6765,7 @@ pub mod tests {
         for (swap, expect) in [(false, 1.488), (true, 0.668)] {
             let (mut m, slab, pc) = pocket_and_slab(0.7);
             let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
-            let r = boolean(&mut m, BoolKind::Cut, x, y).unwrap();
+            let r = boolean_one(&mut m, BoolKind::Cut, x, y).unwrap();
             m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "Cut swap={swap}: {vs:?}");
@@ -6768,7 +6780,7 @@ pub mod tests {
         for swap in [false, true] {
             let (mut m, slab, pc) = pocket_and_slab(0.7);
             let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
-            let r = boolean(&mut m, BoolKind::Fuse, x, y).unwrap();
+            let r = boolean_one(&mut m, BoolKind::Fuse, x, y).unwrap();
             m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "Fuse swap={swap}: {vs:?}");
@@ -6828,7 +6840,7 @@ pub mod tests {
             Point3::from_array([0.0, 0.0, 1.0]),
             Point3::from_array([1.0, 1.0, 2.0]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, solid, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, solid, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6850,7 +6862,7 @@ pub mod tests {
         //
         // `5.3 − 1.3`. Area 18: the clipped U's perimeter is 10, its caps 4 apiece.
         let (mut m, u, slab) = u_and_slab();
-        let r = boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6866,7 +6878,7 @@ pub mod tests {
         //
         // Area `28 + 18 − 2·2`: each island's 1.0 is buried on both sides of the interface.
         let (mut m, u, slab) = u_and_slab();
-        let r = boolean(&mut m, BoolKind::Fuse, u, slab).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, u, slab).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6887,7 +6899,7 @@ pub mod tests {
         // Area `28 − 2 + (4·0.5 + 1) + (4·0.8 + 1)`: the face gives up its two 1.0 holes and
         // the pockets hand back walls and floors.
         let (mut m, u, slab) = u_and_slab();
-        let r = boolean(&mut m, BoolKind::Cut, slab, u).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slab, u).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6922,7 +6934,7 @@ pub mod tests {
         //
         // Overlap = footprint 1.0 × z∈[0.2,1] = 0.8.
         let (mut m, l, bx) = l_and_popup_box();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -6936,7 +6948,7 @@ pub mod tests {
         // `validate` cannot see a self-intersecting face (it stays manifold, Euler
         // holds), so the volume is what pins the folded arc — with OCCT alongside.
         let (mut m, l, bx) = l_and_popup_box();
-        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7110,7 +7122,7 @@ pub mod tests {
         // the bar's own faces. So area alone would not have noticed the bite at all — the
         // volume and `validate` are what score it here.
         let (mut m, l, bar) = l_and_notch_bar();
-        let r = boolean(&mut m, BoolKind::Cut, l, bar).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bar).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7131,7 +7143,7 @@ pub mod tests {
         // Area `14 + 6.58 − 0.96`: the bar's own surface is `5.2·1.0 + 2·0.69`, and each
         // bite buries `0.24` on either side of the interface.
         let (mut m, l, bar) = l_and_notch_bar();
-        let r = boolean(&mut m, BoolKind::Fuse, l, bar).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bar).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7417,7 +7429,7 @@ pub mod tests {
         // half a unit deep. Area `14 − 0.1725 + 2.6·0.5 + 0.1725`: the lid gives up exactly
         // what the floor hands back, so only the walls move it.
         let (mut m, l, stub) = l_and_ell_stub();
-        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7661,7 +7673,7 @@ pub mod tests {
         //
         // `V_∩ = 0.5·0.5·0.65 + 0.27·0.55 = 0.311`, the two legs' parts inside the L.
         let (mut m, l, st) = l_and_staple();
-        let r = boolean(&mut m, BoolKind::Cut, l, st).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, st).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7678,7 +7690,7 @@ pub mod tests {
     fn fuse_l_staple() {
         // `3 + 0.7605 − 0.311`. The staple measures `1.17` in section, `0.65` deep.
         let (mut m, l, st) = l_and_staple();
-        let r = boolean(&mut m, BoolKind::Fuse, l, st).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, st).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7702,7 +7714,7 @@ pub mod tests {
         //
         // `0.7605 − 0.311`, and the three volumes close inclusion–exclusion exactly.
         let (mut m, l, st) = l_and_staple();
-        let r = boolean(&mut m, BoolKind::Cut, st, l).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, st, l).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7838,7 +7850,7 @@ pub mod tests {
         // its left; `flip` reverses it and the face becomes the box's downward-facing
         // floor. Nothing but `validate` and the signed mesh volume can see that go wrong.
         let (mut m, l, stub) = l_and_dimple();
-        let r = boolean(&mut m, BoolKind::Cut, stub, l).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, stub, l).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7853,7 +7865,7 @@ pub mod tests {
         // what this pins is that the answer does not depend on which solid is `a`: the
         // hole now lands on B, and 3.08 is 3.08.
         let (mut m, l, stub) = l_and_dimple();
-        let r = boolean(&mut m, BoolKind::Fuse, stub, l).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, stub, l).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7867,7 +7879,7 @@ pub mod tests {
         // a closed ring in the face interior. It is the face's inner loop, and the
         // result is a blind pocket: `3 − 0.4² × 0.5`.
         let (mut m, l, stub) = l_and_dimple();
-        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7893,7 +7905,7 @@ pub mod tests {
             Point3::from_array([1.0, -0.5, 0.5]),
             Point3::from_array([2.0, 1.5, 1.5]),
         );
-        let slotted = boolean(&mut m, BoolKind::Cut, bar, groove).unwrap();
+        let slotted = boolean_one(&mut m, BoolKind::Cut, bar, groove).unwrap();
         m.rebuild_adjacency();
         // The two z=1 strips are coplanar (share one Surface) but disjoint (no shared edge):
         // `has_coplanar_pair` sees the pair, the narrowed guard passes it.
@@ -7905,7 +7917,7 @@ pub mod tests {
             Point3::from_array([0.2, 0.2, 0.7]),
             Point3::from_array([0.5, 0.5, 1.5]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, slotted, pocket).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slotted, pocket).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -7925,7 +7937,7 @@ pub mod tests {
         // the hole reversed, swap it into a fresh shell and solid, and move the live
         // handle: the old face falls out of `reachable()`.
         let (mut m, l, stub) = l_and_dimple();
-        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
 
         let faces = m.shells.get(m.solids.get(r).outer).faces.clone();
@@ -7972,7 +7984,7 @@ pub mod tests {
         // The `Fuse` counterpart — a boss on the L — closing the inclusion–exclusion:
         // `V_L + V_stub − V_overlap`. Both put a hole in the same face of the L.
         let (mut m, l, stub) = l_and_dimple();
-        let r = boolean(&mut m, BoolKind::Fuse, l, stub).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, stub).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -8057,7 +8069,7 @@ pub mod tests {
             Point3::from_array([1.0, 1.0, 1.0]),
             Point3::from_array([3.0, 3.0, 3.0]),
         );
-        let c = boolean(&mut m, BoolKind::Common, a, b).unwrap(); // the box [1,2]³
+        let c = boolean_one(&mut m, BoolKind::Common, a, b).unwrap(); // the box [1,2]³
         m.rebuild_adjacency();
         let vhs = solid_vertex_handles(&m, c);
         // Six of the eight corners are mixed A/B-plane meets ⇒ Discovered; the
@@ -8086,13 +8098,13 @@ pub mod tests {
             Point3::from_array([1.0, 1.0, 1.0]),
             Point3::from_array([3.0, 3.0, 3.0]),
         );
-        let c = boolean(&mut m, BoolKind::Common, a, b).unwrap(); // [1,2]³
+        let c = boolean_one(&mut m, BoolKind::Common, a, b).unwrap(); // [1,2]³
         m.rebuild_adjacency();
         let d = m.add_cuboid(
             Point3::from_array([1.0, 1.0, 2.0]),
             Point3::from_array([2.0, 2.0, 3.0]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, c, d).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, c, d).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -8140,7 +8152,7 @@ pub mod tests {
             Point3::from_array([0.15, 0.15, 0.15]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, ipc, bx),
+            || boolean_one(&mut m, BoolKind::Cut, ipc, bx),
             tag::COPLANAR_PAIR,
         );
     }
@@ -8156,7 +8168,7 @@ pub mod tests {
                 Point3::from_array([0.05, 0.05, 0.05]),
                 Point3::from_array([0.15, 0.15, 0.15]),
             );
-            let r = boolean(&mut m, kind, pc, bx).unwrap();
+            let r = boolean_one(&mut m, kind, pc, bx).unwrap();
             m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{kind:?} {vs:?}");
@@ -8327,14 +8339,14 @@ pub mod tests {
         // A notch bitten out of one edge: the edge is crossed twice, so it threads the notch
         // rather than straddling. `10³ − 4·1.4·1.2` cut, `+2·4·1.4·1.2 − 6.72` fused.
         let (mut m, a, y) = cube_and_notch();
-        let cut = boolean(&mut m, BoolKind::Cut, a, y).unwrap();
+        let cut = boolean_one(&mut m, BoolKind::Cut, a, y).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let v = nacre_props::mass_props(&m, cut).unwrap().volume;
         assert!((v - 993.28).abs() < 1e-9, "notch cut {v}");
 
         let (mut m, a, y) = cube_and_notch();
-        let fuse = boolean(&mut m, BoolKind::Fuse, a, y).unwrap();
+        let fuse = boolean_one(&mut m, BoolKind::Fuse, a, y).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let v = nacre_props::mass_props(&m, fuse).unwrap().volume;
@@ -8349,7 +8361,7 @@ pub mod tests {
                 Point3::from_array([1.0, 1.0, -1.0]),
                 Point3::from_array([2.0, 2.0, 4.0]),
             );
-            let r = boolean(&mut m, kind, a, bar).unwrap();
+            let r = boolean_one(&mut m, kind, a, bar).unwrap();
             m.rebuild_adjacency();
             assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
             (m, r)
@@ -8375,7 +8387,7 @@ pub mod tests {
             Point3::from_array([2.0, 2.0, 4.0]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, bar, a),
+            || boolean_one(&mut m, BoolKind::Cut, bar, a),
             tag::DISCONNECTED_RESULT,
         );
     }
@@ -8588,7 +8600,7 @@ pub mod tests {
             Point3::from_array([0.4, 0.4, 0.6]),
             Point3::from_array([0.6, 0.6, 0.9]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -8607,11 +8619,11 @@ pub mod tests {
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
         assert_eq!(m.solids.get(hollow).cavities.len(), 1);
         m.rebuild_adjacency();
         let cutter = m.add_cuboid(Point3::from_array([2.5; 3]), Point3::from_array([3.5; 3]));
-        let r = boolean(&mut m, BoolKind::Cut, hollow, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, hollow, cutter).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -8629,14 +8641,14 @@ pub mod tests {
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
         assert_eq!(m.solids.get(hollow).cavities.len(), 1);
         m.rebuild_adjacency();
         let stub = m.add_cuboid(
             Point3::from_array([1.4, 1.4, -0.5]),
             Point3::from_array([1.6, 1.6, 1.5]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, hollow, stub).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, hollow, stub).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -8653,13 +8665,13 @@ pub mod tests {
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
         m.rebuild_adjacency();
         let tunnel = m.add_cuboid(
             Point3::from_array([1.4, 1.4, -0.5]),
             Point3::from_array([1.6, 1.6, 3.5]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, hollow, tunnel).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, hollow, tunnel).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -8674,14 +8686,14 @@ pub mod tests {
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
         m.rebuild_adjacency();
         let slab = m.add_cuboid(
             Point3::from_array([-0.5, 1.4, -0.5]),
             Point3::from_array([3.5, 1.6, 3.5]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, hollow, slab),
+            || boolean_one(&mut m, BoolKind::Cut, hollow, slab),
             tag::DISCONNECTED_RESULT,
         );
     }
@@ -8695,10 +8707,10 @@ pub mod tests {
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean(&mut m, BoolKind::Cut, big, inner).unwrap();
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
         m.rebuild_adjacency();
         let bore = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-        let r = boolean(&mut m, BoolKind::Cut, hollow, bore).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, hollow, bore).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -9508,7 +9520,7 @@ pub mod tests {
     fn cut_of_two_cubes() {
         // A − B where A = [0,1]³, B = [0.5,1.5]³ ⇒ 1 − 0.125 = 0.875.
         let (mut m, a, b) = two_boxes();
-        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9523,7 +9535,7 @@ pub mod tests {
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
         assert_eq!(
-            boolean(&mut m, BoolKind::Fuse, a, b),
+            boolean_one(&mut m, BoolKind::Fuse, a, b),
             Err(BoolError::EmptyResult)
         );
     }
@@ -9533,7 +9545,7 @@ pub mod tests {
         // A = [0,3]³ (27) with B = [1,2]³ (1) strictly inside ⇒ A − B is a
         // hollow solid: volume 26, an outer + one void shell (V16/E24/F12/S2).
         let (mut m, a, b) = nested_boxes();
-        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9557,7 +9569,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 2.5, 3.5]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -9570,7 +9582,7 @@ pub mod tests {
         // A ∪ B with B ⊂ A is just A (no cavity).
         let (mut m, a, b) = nested_boxes();
         let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
-        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -9586,11 +9598,11 @@ pub mod tests {
         let vol_outer = nacre_props::mass_props(&m, outer).unwrap().volume;
         // Cut(inner − outer): inner is wholly removed ⇒ empty.
         assert_eq!(
-            boolean(&mut m, BoolKind::Cut, inner, outer),
+            boolean_one(&mut m, BoolKind::Cut, inner, outer),
             Err(BoolError::EmptyResult)
         );
         // Fuse(inner ∪ outer) = outer.
-        let r = boolean(&mut m, BoolKind::Fuse, inner, outer).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, inner, outer).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -9605,7 +9617,7 @@ pub mod tests {
             let (mut m, outer, inner) = nested_boxes();
             let vol_inner = nacre_props::mass_props(&m, inner).unwrap().volume;
             let (x, y) = if swap { (inner, outer) } else { (outer, inner) };
-            let r = boolean(&mut m, BoolKind::Common, x, y).unwrap();
+            let r = boolean_one(&mut m, BoolKind::Common, x, y).unwrap();
             let vol = nacre_props::mass_props(&m, r).unwrap().volume;
             assert!((vol - vol_inner).abs() < 1e-9, "swap={swap} volume {vol}");
         }
@@ -9618,7 +9630,7 @@ pub mod tests {
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
         let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
-        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -9656,7 +9668,7 @@ pub mod tests {
             Point3::from_array([0.25, 0.25, 1.0]),
             Point3::from_array([0.75, 0.75, 2.0]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9678,7 +9690,7 @@ pub mod tests {
             Point3::from_array([0.3, 0.3, 1.0]),
             Point3::from_array([0.7, 0.7, 1.5]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, l, boss).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, boss).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9716,7 +9728,7 @@ pub mod tests {
         .collect();
         let (boss, _) =
             build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, cube, boss).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, cube, boss).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9750,7 +9762,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.25, 1.0]),
             Point3::from_array([1.5, 0.75, 2.0]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9778,7 +9790,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.25, 0.5]),
             Point3::from_array([1.5, 0.75, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9820,7 +9832,7 @@ pub mod tests {
             Point3::from_array([-0.5, 0.4, 0.5]),
             Point3::from_array([1.5, 0.6, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, base, slab).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, slab).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9846,7 +9858,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, base, corner).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, corner).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9873,7 +9885,7 @@ pub mod tests {
             Point3::from_array([-0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -9910,7 +9922,7 @@ pub mod tests {
             Point3::from_array([0.3, 0.5, 0.5]),
             Point3::from_array([0.7, 1.5, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, base, prism).unwrap();
         m.rebuild_adjacency();
         assert_common_box(&m, r, 0.1);
     }
@@ -9928,7 +9940,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, base, prism).unwrap();
         m.rebuild_adjacency();
         assert_common_box(&m, r, 0.125);
     }
@@ -9947,7 +9959,7 @@ pub mod tests {
             Point3::from_array([-0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, base, prism).unwrap();
         m.rebuild_adjacency();
         assert_common_box(&m, r, 0.25);
     }
@@ -9967,7 +9979,7 @@ pub mod tests {
         );
         assert!(detect_overhang_common(&m, base, slab).is_none());
         assert_rejects(
-            || boolean(&mut m, BoolKind::Common, base, slab),
+            || boolean_one(&mut m, BoolKind::Common, base, slab),
             tag::VERTEX_ON_FACE_PLANE,
         );
     }
@@ -10020,7 +10032,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 1.0]),
             Point3::from_array([1.5, 1.5, 2.0]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, base, corner).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, corner).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10045,7 +10057,7 @@ pub mod tests {
             Point3::from_array([-0.5, 0.4, 1.0]),
             Point3::from_array([1.5, 0.6, 2.0]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, base, slab).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, slab).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10082,7 +10094,7 @@ pub mod tests {
             Point3::from_array([1.0, 0.25, -0.25]),
             Point3::from_array([1.5, 0.75, 0.75]),
         );
-        let r = boolean(&mut m, BoolKind::Fuse, pc, boss).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, pc, boss).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10110,7 +10122,7 @@ pub mod tests {
         let (l_tool, _) =
             build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
         assert!(matches!(
-            boolean(&mut m, BoolKind::Fuse, cube, l_tool),
+            boolean_one(&mut m, BoolKind::Fuse, cube, l_tool),
             Err(BoolError::Unsupported)
         ));
     }
@@ -10126,7 +10138,7 @@ pub mod tests {
             Point3::from_array([1.0, 0.75, 0.5]),
         );
         assert!(matches!(
-            boolean(&mut m, BoolKind::Cut, pc, slot),
+            boolean_one(&mut m, BoolKind::Cut, pc, slot),
             Err(BoolError::Unsupported)
         ));
     }
@@ -10146,7 +10158,7 @@ pub mod tests {
             Point3::from_array([0.25, 0.25, 0.5]),
             Point3::from_array([0.75, 0.75, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10167,7 +10179,7 @@ pub mod tests {
             Point3::from_array([0.05, 0.1, 0.6]),
             Point3::from_array([0.25, 0.2, 1.0]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, pc, corner).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, corner).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10200,7 +10212,7 @@ pub mod tests {
         else {
             unreachable!()
         };
-        let r = boolean(&mut m, BoolKind::Cut, base, lp).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, lp).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10232,7 +10244,7 @@ pub mod tests {
         // (each a straight angle on a split vertical edge) are dissolved, fusing the split
         // edges — a canonical 6-face / 8-vertex / 12-edge box (cell fuse-coplanar-merge).
         let (mut m, a, b) = stacked_cubes();
-        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10254,7 +10266,7 @@ pub mod tests {
         // the merge/dissolve this rejected — first as COPLANAR_PAIR (the flat edges), then as
         // LOOP_ORIENT_MISMATCH (the straight-angle interface corners). A clean box cuts.
         let (mut m, a, b) = stacked_cubes();
-        let stack = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let stack = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
         // A cutter straddling z=1 (the fused interface) — the seam runs where the split
         // vertical edges used to be. Result: 2 − 0.5·0.5·1.0.
@@ -10262,7 +10274,7 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 1.5, 1.5]),
         );
-        let r = boolean(&mut m, BoolKind::Cut, stack, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, stack, cutter).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10274,7 +10286,7 @@ pub mod tests {
     fn common_stacked_cubes_is_empty() {
         let (mut m, a, b) = stacked_cubes();
         assert_eq!(
-            boolean(&mut m, BoolKind::Common, a, b),
+            boolean_one(&mut m, BoolKind::Common, a, b),
             Err(BoolError::EmptyResult)
         );
     }
@@ -10282,7 +10294,7 @@ pub mod tests {
     #[test]
     fn cut_stacked_cubes_is_a() {
         let (mut m, a, b) = stacked_cubes();
-        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -10328,7 +10340,7 @@ pub mod tests {
             Point3::from_array([1.5, 1.5, 1.0]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, a, b),
+            || boolean_one(&mut m, BoolKind::Fuse, a, b),
             tag::VERTEX_ON_FACE_PLANE,
         );
     }
@@ -10358,7 +10370,7 @@ pub mod tests {
             };
 
             let (mut m1, a1, b1) = build();
-            let rf = boolean(&mut m1, BoolKind::Fuse, a1, b1);
+            let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1);
             prop_assume!(rf.is_ok()); // skip rare coplanar/degenerate configs
             let rf = rf.unwrap();
             m1.rebuild_adjacency();
@@ -10367,7 +10379,7 @@ pub mod tests {
             prop_assert!((vf - (va + vb - ov)).abs() <= 1e-9 * (va + vb), "fuse {vf}");
 
             let (mut m2, a2, b2) = build();
-            let rc = boolean(&mut m2, BoolKind::Cut, a2, b2).unwrap();
+            let rc = boolean_one(&mut m2, BoolKind::Cut, a2, b2).unwrap();
             m2.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m2).is_empty());
             let vc = nacre_props::mass_props(&m2, rc).unwrap().volume;
@@ -10397,7 +10409,7 @@ pub mod tests {
             let (va, vb) = (dx * dy * h1, dx * dy * h2);
 
             let (mut m1, a1, b1) = build();
-            let rf = boolean(&mut m1, BoolKind::Fuse, a1, b1);
+            let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1);
             prop_assume!(rf.is_ok());
             let rf = rf.unwrap();
             m1.rebuild_adjacency();
@@ -10407,12 +10419,12 @@ pub mod tests {
 
             let (mut m2, a2, b2) = build();
             prop_assert_eq!(
-                boolean(&mut m2, BoolKind::Common, a2, b2),
+                boolean_one(&mut m2, BoolKind::Common, a2, b2),
                 Err(BoolError::EmptyResult)
             );
 
             let (mut m3, a3, b3) = build();
-            let rc = boolean(&mut m3, BoolKind::Cut, a3, b3).unwrap();
+            let rc = boolean_one(&mut m3, BoolKind::Cut, a3, b3).unwrap();
             let vc = nacre_props::mass_props(&m3, rc).unwrap().volume;
             prop_assert!((vc - va).abs() <= 1e-9 * va, "cut {vc}");
         }
@@ -10422,7 +10434,7 @@ pub mod tests {
     fn fuse_of_two_cubes() {
         // A = [0,1]³, B = [0.5,1.5]³ ⇒ A∪B volume 1+1−0.125 = 1.875.
         let (mut m, a, b) = two_boxes();
-        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10452,12 +10464,12 @@ pub mod tests {
 
         let mut m1 = Model::new();
         let (a1, b1) = (m1.add_cuboid(amin, amax), m1.add_cuboid(bmin, bmax));
-        let rf = boolean(&mut m1, BoolKind::Fuse, a1, b1).unwrap();
+        let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1).unwrap();
         let vf = nacre_props::mass_props(&m1, rf).unwrap().volume;
 
         let mut m2 = Model::new();
         let (a2, b2) = (m2.add_cuboid(amin, amax), m2.add_cuboid(bmin, bmax));
-        let rc = boolean(&mut m2, BoolKind::Common, a2, b2).unwrap();
+        let rc = boolean_one(&mut m2, BoolKind::Common, a2, b2).unwrap();
         let vc = nacre_props::mass_props(&m2, rc).unwrap().volume;
 
         assert!((vf + vc - va - vb).abs() < 1e-9, "{vf}+{vc} vs {va}+{vb}");
@@ -10468,7 +10480,7 @@ pub mod tests {
         let (mut m, a, b) = two_boxes();
         m.live_solids.retain(|&s| s != b); // as if superseded
         assert_eq!(
-            boolean(&mut m, BoolKind::Common, a, b),
+            boolean_one(&mut m, BoolKind::Common, a, b),
             Err(BoolError::InputNotLive)
         );
     }
@@ -10503,7 +10515,7 @@ pub mod tests {
         // pins the in/out sign convention end to end: a flipped parity would take
         // the complement and give a wrong (or non-closed) result.
         let (mut m, a, b) = two_boxes();
-        let r = boolean(&mut m, BoolKind::Common, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, a, b).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
@@ -10522,7 +10534,7 @@ pub mod tests {
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let c = m.add_cuboid(Point3::from_array([-5.0; 3]), Point3::from_array([5.0; 3]));
         let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
-        let r = boolean(&mut m, BoolKind::Common, a, c).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, a, c).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let reach = m.reachable();
@@ -10539,7 +10551,7 @@ pub mod tests {
         // Offset in all axes so no faces are coplanar with A.
         let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
         assert_eq!(
-            boolean(&mut m, BoolKind::Common, a, b),
+            boolean_one(&mut m, BoolKind::Common, a, b),
             Err(BoolError::EmptyResult)
         );
     }
@@ -10555,7 +10567,7 @@ pub mod tests {
             2.0,
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Common, a, cyl),
+            || boolean_one(&mut m, BoolKind::Common, a, cyl),
             tag::CYLINDER_FACE,
         );
     }
@@ -10587,7 +10599,7 @@ pub mod tests {
             Point3::from_array([1.5, 1.5, 0.5]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Common, lsolid, b),
+            || boolean_one(&mut m, BoolKind::Common, lsolid, b),
             tag::VERTEX_ON_FACE_PLANE,
         );
     }
@@ -10615,7 +10627,7 @@ pub mod tests {
             Point3::from_array([1.2, 1.2, 1.2]),
         );
         assert_rejects(
-            || boolean(&mut m, BoolKind::Common, solid, b),
+            || boolean_one(&mut m, BoolKind::Common, solid, b),
             tag::COPLANAR_PAIR,
         );
     }
@@ -10641,7 +10653,7 @@ pub mod tests {
             let mut m = Model::new();
             let a = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
             let b = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
-            let res = boolean(&mut m, BoolKind::Common, a, b);
+            let res = boolean_one(&mut m, BoolKind::Common, a, b);
             prop_assume!(res.is_ok()); // skip rare coplanar/degenerate configs
             let r = res.unwrap();
             m.rebuild_adjacency();
@@ -10672,7 +10684,7 @@ pub mod tests {
             let prism = *m.live_solids.first().unwrap();
             let vol_prism = nacre_props::mass_props(&m, prism).unwrap().volume;
             let c = m.add_cuboid(Point3::from_array([-10.0; 3]), Point3::from_array([10.0; 3]));
-            let res = boolean(&mut m, BoolKind::Common, prism, c);
+            let res = boolean_one(&mut m, BoolKind::Common, prism, c);
             prop_assume!(res.is_ok());
             let r = res.unwrap();
             m.rebuild_adjacency();

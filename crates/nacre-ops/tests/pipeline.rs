@@ -93,10 +93,20 @@ fn multi_op_log_composes_through_export() {
 // than in a commit message (cf. `a_doubly_crossed_edge_breaks_the_transition_oracle`).
 // ---------------------------------------------------------------------------
 
-use nacre_ops::{BoolKind, OpOutput, apply, boolean};
+use nacre_ops::{BoolError, BoolKind, OpOutput, apply, boolean};
 use nacre_store::Handle;
 use nacre_tess::{TessConfig, Tessellation, tessellate};
 use nacre_topo::{Face, Model, Shell, Solid};
+
+/// Test shim: a boolean whose result is exactly one solid (cell 0.4 multi-solid).
+fn boolean_one(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Handle<Solid>, BoolError> {
+    boolean(model, kind, a, b)
+}
 
 /// Σ |triangle area| — unsigned on purpose.
 fn mesh_area(t: &Tessellation) -> f64 {
@@ -284,7 +294,7 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
     );
-    let r = boolean(&mut m, kind, a, b).unwrap();
+    let r = boolean_one(&mut m, kind, a, b).unwrap();
     m.rebuild_adjacency();
     (m, r)
 }
@@ -314,7 +324,7 @@ fn island_cut() -> (Model, Handle<Solid>) {
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
     );
-    let r = boolean(&mut m, BoolKind::Cut, b, a).unwrap();
+    let r = boolean_one(&mut m, BoolKind::Cut, b, a).unwrap();
     m.rebuild_adjacency();
     (m, r)
 }
@@ -359,7 +369,7 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let (a, b) = (m.live_solids[0], m.live_solids[1]);
-    let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+    let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
     (m, r)
 }
@@ -404,7 +414,7 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let (a, b) = (m.live_solids[0], m.live_solids[1]);
-    let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+    let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
     (m, r)
 }
@@ -418,7 +428,7 @@ fn u_cut_by_slab() -> (Model, Handle<Solid>) {
         Point3::from_array([-0.5, 1.5, -0.5]),
         Point3::from_array([3.5, 2.5, 1.5]),
     );
-    let r = boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+    let r = boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
     m.rebuild_adjacency();
     (m, r)
 }
@@ -467,7 +477,7 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let (a, b) = (m.live_solids[0], m.live_solids[1]);
-    let r = boolean(&mut m, BoolKind::Cut, b, a).unwrap();
+    let r = boolean_one(&mut m, BoolKind::Cut, b, a).unwrap();
     m.rebuild_adjacency();
     (m, r)
 }
@@ -481,7 +491,7 @@ fn stacked_fuse() -> (Model, Handle<Solid>) {
         Point3::from_array([0.0, 0.0, 1.0]),
         Point3::from_array([1.0, 1.0, 2.0]),
     );
-    let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+    let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
     m.rebuild_adjacency();
     (m, r)
 }
@@ -570,7 +580,7 @@ fn a_sealed_cavity_meshes_watertight() {
         Point3::from_array([-0.2, -0.25, 0.7]),
         Point3::from_array([1.3, 1.2, 1.5]),
     );
-    let s = boolean(&mut m, BoolKind::Fuse, slab, pc).unwrap();
+    let s = boolean_one(&mut m, BoolKind::Fuse, slab, pc).unwrap();
     assert_eq!(m.solids.get(s).cavities.len(), 1);
     let g = mesh_vs_props(&m, s);
     assert_agrees(&g, "sealed cavity");
@@ -867,7 +877,7 @@ fn a_holed_operand_keeps_its_hole_through_a_cut() {
     ] {
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(Point3::from_array(box_lo), Point3::from_array(box_hi));
-        let s = boolean(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        let s = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
         m.rebuild_adjacency();
         let g = mesh_vs_props(&m, s);
         assert_agrees(&g, name);
@@ -887,7 +897,7 @@ fn a_flipped_face_keeps_its_hole() {
         Point3::from_array([-0.2, -0.25, 0.3]),
         Point3::from_array([1.3, 1.2, 1.5]),
     );
-    let s = boolean(&mut m, BoolKind::Cut, slab, pc).unwrap();
+    let s = boolean_one(&mut m, BoolKind::Cut, slab, pc).unwrap();
     m.rebuild_adjacency();
     let g = mesh_vs_props(&m, s);
     assert_agrees(&g, "slab cut by pocket");
@@ -930,7 +940,7 @@ fn a_drilled_solid_meshes_watertight() {
         Point3::from_array([0.3, 0.3, -0.5]),
         Point3::from_array([0.5, 0.6, 1.5]),
     );
-    let s = boolean(&mut m, BoolKind::Cut, a, rod).unwrap();
+    let s = boolean_one(&mut m, BoolKind::Cut, a, rod).unwrap();
     m.rebuild_adjacency();
 
     let g = mesh_vs_props(&m, s);
@@ -955,7 +965,7 @@ fn a_notched_cube_meshes() {
         Point3::from_array([3.0, -1.0, -1.0]),
         Point3::from_array([7.0, 1.4, 1.2]),
     );
-    let s = boolean(&mut m, BoolKind::Cut, a, notch).unwrap();
+    let s = boolean_one(&mut m, BoolKind::Cut, a, notch).unwrap();
     m.rebuild_adjacency();
     let g = mesh_vs_props(&m, s);
     assert_agrees(&g, "notched cube");

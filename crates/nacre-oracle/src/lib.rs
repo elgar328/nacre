@@ -254,8 +254,20 @@ mod tests {
     use super::*;
     use nacre_math::{Point3, Vector3};
     use nacre_ops::SketchPlane;
+    use nacre_ops::boolean;
+    use nacre_ops::{BoolError, BoolKind};
     use nacre_props::mass_props;
     use std::f64::consts::PI;
+
+    /// Test shim: a boolean whose result is exactly one solid (cell 0.4 multi-solid).
+    fn boolean_one(
+        model: &mut Model,
+        kind: BoolKind,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+    ) -> Result<Handle<Solid>, BoolError> {
+        boolean(model, kind, a, b)
+    }
 
     /// Combined relative-or-absolute float comparison, sized to DRAWEXE's output
     /// precision — it prints ~6 significant figures, so an exact value can land
@@ -668,7 +680,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn common_result_volume_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -680,7 +692,7 @@ bbox_min 0 0 0
         );
         // OCCT ground truth from the inputs (before nacre supersedes them).
         let occt = occt_boolean_of(&m, OcctBool::Common, a, b).unwrap();
-        let r = boolean(&mut m, BoolKind::Common, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, a, b).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -695,7 +707,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn fuse_cut_result_volume_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let boxes = || {
             let mut m = Model::new();
             let a = m.add_cuboid(
@@ -716,7 +728,7 @@ bbox_min 0 0 0
             };
             let (mut m, a, b) = boxes();
             let occt = occt_boolean_of(&m, occt_kind, a, b).unwrap();
-            let r = boolean(&mut m, kind, a, b).unwrap();
+            let r = boolean_one(&mut m, kind, a, b).unwrap();
             let nacre = mass_props(&m, r).unwrap();
             assert!(
                 approx(nacre.volume, occt.volume),
@@ -730,7 +742,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn containment_cut_cavity_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         // A = [0,3]³ with B = [1,2]³ strictly inside ⇒ A − B is a hollow solid
         // (an internal void). OCCT diffs the two cavity-free inputs; nacre builds
         // the cavity independently, so the volume agreement is non-self-referential.
@@ -739,7 +751,7 @@ bbox_min 0 0 0
         let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
         // Capture OCCT's answer before the boolean supersedes the inputs.
         let occt = occt_boolean_of(&m, OcctBool::Cut, a, b).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -788,7 +800,7 @@ bbox_min 0 0 0
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn nonconvex_containment_cut_matches_occt() {
         use nacre_math::Point2;
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
         // A concave L-prism with a box strictly inside its bottom bar — a
         // non-convex containment cut ⇒ the L with an internal box void. OCCT reads
         // both (concave) inputs and cuts them independently of nacre's
@@ -820,7 +832,7 @@ bbox_min 0 0 0
         };
         let bx = m.add_cuboid(Point3::from_array([0.1; 3]), Point3::from_array([0.9; 3]));
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -912,10 +924,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn nonconvex_overlap_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_corner_box();
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -929,10 +941,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn nonconvex_overlap_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_corner_box();
         let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -948,10 +960,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn nonconvex_overlap_common_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_corner_box();
         let occt = occt_boolean_of(&m, OcctBool::Common, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Common, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -973,7 +985,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn slotted_bar_pocket_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let bar = m.add_cuboid(
             Point3::from_array([0.0, 0.0, 0.0]),
@@ -983,14 +995,14 @@ bbox_min 0 0 0
             Point3::from_array([1.0, -0.5, 0.5]),
             Point3::from_array([2.0, 1.5, 1.5]),
         );
-        let slotted = boolean(&mut m, BoolKind::Cut, bar, groove).unwrap();
+        let slotted = boolean_one(&mut m, BoolKind::Cut, bar, groove).unwrap();
         m.rebuild_adjacency();
         let pocket = m.add_cuboid(
             Point3::from_array([0.2, 0.2, 0.7]),
             Point3::from_array([0.5, 0.5, 1.5]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Cut, slotted, pocket).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, slotted, pocket).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slotted, pocket).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1006,7 +1018,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn pocket_cut_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1017,7 +1029,7 @@ bbox_min 0 0 0
             Point3::from_array([0.75, 0.75, 1.0]),
         );
         let occt_pocket = occt_boolean_of(&m, OcctBool::Cut, base, prism).unwrap();
-        let pocketed = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        let pocketed = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, pocketed).unwrap().volume, occt_pocket.volume),
@@ -1032,7 +1044,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 1.5, 1.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, pocketed, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, pocketed, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pocketed, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "pocket then cut: {} vs {}",
@@ -1047,7 +1059,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn boss_fuse_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1058,7 +1070,7 @@ bbox_min 0 0 0
             Point3::from_array([0.75, 0.75, 2.0]),
         );
         let occt_fuse = occt_boolean_of(&m, OcctBool::Fuse, base, boss).unwrap();
-        let bossed = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        let bossed = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, bossed).unwrap().volume, occt_fuse.volume),
@@ -1072,7 +1084,7 @@ bbox_min 0 0 0
             Point3::from_array([0.6, 0.6, 2.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, bossed, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, bossed, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, bossed, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "boss then cut: {} vs {}",
@@ -1087,7 +1099,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn overhang_fuse_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1098,7 +1110,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 0.75, 2.0]),
         );
         let occt_fuse = occt_boolean_of(&m, OcctBool::Fuse, base, boss).unwrap();
-        let overhung = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        let overhung = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, overhung).unwrap().volume, occt_fuse.volume),
@@ -1113,7 +1125,7 @@ bbox_min 0 0 0
             Point3::from_array([1.4, 0.65, 2.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, overhung, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, overhung, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, overhung, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "overhang then cut: {} vs {}",
@@ -1128,7 +1140,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn edge_slot_cut_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1139,7 +1151,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 0.75, 1.0]),
         );
         let occt_slot = occt_boolean_of(&m, OcctBool::Cut, base, prism).unwrap();
-        let slotted = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        let slotted = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, slotted).unwrap().volume, occt_slot.volume),
@@ -1154,7 +1166,7 @@ bbox_min 0 0 0
             Point3::from_array([0.35, 0.95, 1.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, slotted, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, slotted, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slotted, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "slot then cut: {} vs {}",
@@ -1169,7 +1181,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn corner_overhang_fuse_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1180,7 +1192,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 1.5, 2.0]),
         );
         let occt_fuse = occt_boolean_of(&m, OcctBool::Fuse, base, boss).unwrap();
-        let overhung = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        let overhung = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, overhung).unwrap().volume, occt_fuse.volume),
@@ -1194,7 +1206,7 @@ bbox_min 0 0 0
             Point3::from_array([1.4, 1.4, 2.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, overhung, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, overhung, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, overhung, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "corner then cut: {} vs {}",
@@ -1209,7 +1221,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn spanning_slab_fuse_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1220,7 +1232,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 0.6, 2.0]),
         );
         let occt_fuse = occt_boolean_of(&m, OcctBool::Fuse, base, slab).unwrap();
-        let slabbed = boolean(&mut m, BoolKind::Fuse, base, slab).unwrap();
+        let slabbed = boolean_one(&mut m, BoolKind::Fuse, base, slab).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, slabbed).unwrap().volume, occt_fuse.volume),
@@ -1234,7 +1246,7 @@ bbox_min 0 0 0
             Point3::from_array([1.4, 0.55, 2.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, slabbed, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, slabbed, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slabbed, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "slab then cut: {} vs {}",
@@ -1249,7 +1261,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn slab_channel_cut_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1260,7 +1272,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 0.6, 1.0]),
         );
         let occt_channel = occt_boolean_of(&m, OcctBool::Cut, base, slab).unwrap();
-        let channelled = boolean(&mut m, BoolKind::Cut, base, slab).unwrap();
+        let channelled = boolean_one(&mut m, BoolKind::Cut, base, slab).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(
@@ -1277,7 +1289,7 @@ bbox_min 0 0 0
             Point3::from_array([0.4, 0.95, 1.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, channelled, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, channelled, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, channelled, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "channel then cut: {} vs {}",
@@ -1291,7 +1303,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn corner_slot_cut_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1302,7 +1314,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 1.5, 1.0]),
         );
         let occt_slot = occt_boolean_of(&m, OcctBool::Cut, base, corner).unwrap();
-        let slotted = boolean(&mut m, BoolKind::Cut, base, corner).unwrap();
+        let slotted = boolean_one(&mut m, BoolKind::Cut, base, corner).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, slotted).unwrap().volume, occt_slot.volume),
@@ -1316,7 +1328,7 @@ bbox_min 0 0 0
             Point3::from_array([0.25, 0.25, 1.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, slotted, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, slotted, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slotted, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "corner then cut: {} vs {}",
@@ -1331,7 +1343,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn l_step_cut_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1342,7 +1354,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 1.5, 1.0]),
         );
         let occt_step = occt_boolean_of(&m, OcctBool::Cut, base, prism).unwrap();
-        let stepped = boolean(&mut m, BoolKind::Cut, base, prism).unwrap();
+        let stepped = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, stepped).unwrap().volume, occt_step.volume),
@@ -1356,7 +1368,7 @@ bbox_min 0 0 0
             Point3::from_array([0.3, 0.3, 1.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, stepped, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, stepped, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, stepped, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "l step then cut: {} vs {}",
@@ -1370,7 +1382,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn edge_overhang_common_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1381,7 +1393,7 @@ bbox_min 0 0 0
             Point3::from_array([0.7, 1.5, 1.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Common, base, prism).unwrap();
-        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, base, prism).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt.volume),
@@ -1396,7 +1408,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn corner_overhang_common_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1407,7 +1419,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 1.5, 1.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Common, base, prism).unwrap();
-        let r = boolean(&mut m, BoolKind::Common, base, prism).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, base, prism).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt.volume),
@@ -1422,7 +1434,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn non_convex_profile_pocket_matches_occt() {
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([-1.0, -1.0, -1.0]),
@@ -1453,7 +1465,7 @@ bbox_min 0 0 0
             unreachable!()
         };
         let occt = occt_boolean_of(&m, OcctBool::Cut, base, lp).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, base, lp).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, lp).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt.volume),
@@ -1468,7 +1480,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn pocket_into_non_convex_solid_matches_occt() {
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
@@ -1507,7 +1519,7 @@ bbox_min 0 0 0
             Point3::from_array([0.25, 0.2, 1.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Cut, pc, corner).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, pc, corner).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, corner).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt.volume),
@@ -1523,7 +1535,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn non_convex_profile_boss_matches_occt() {
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([-1.0, -1.0, -1.0]),
@@ -1554,7 +1566,7 @@ bbox_min 0 0 0
             unreachable!()
         };
         let occt = occt_boolean_of(&m, OcctBool::Fuse, base, lb).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, base, lb).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, lb).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt.volume),
@@ -1570,7 +1582,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn overhang_boss_on_non_convex_solid_matches_occt() {
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -1605,7 +1617,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 0.75, 0.75]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Fuse, pc, boss).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, pc, boss).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, pc, boss).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt.volume),
@@ -1620,7 +1632,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn boss_onto_non_convex_solid_matches_occt() {
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let mut m = Model::new();
         let OpOutput::Extrude { solid: l, .. } = apply(
             &mut m,
@@ -1650,7 +1662,7 @@ bbox_min 0 0 0
             Point3::from_array([0.7, 0.7, 1.5]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Fuse, l, boss).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, l, boss).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, boss).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt.volume),
@@ -1666,7 +1678,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn stacked_fuse_then_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1677,7 +1689,7 @@ bbox_min 0 0 0
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         let occt_fuse = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
-        let stack = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let stack = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
         assert!(
             approx(mass_props(&m, stack).unwrap().volume, occt_fuse.volume),
@@ -1691,7 +1703,7 @@ bbox_min 0 0 0
             Point3::from_array([1.5, 1.5, 1.5]),
         );
         let occt_cut = occt_boolean_of(&m, OcctBool::Cut, stack, cutter).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, stack, cutter).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, stack, cutter).unwrap();
         assert!(
             approx(mass_props(&m, r).unwrap().volume, occt_cut.volume),
             "stacked fuse then cut: {} vs {}",
@@ -1706,7 +1718,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn notch_cube_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
         let y = m.add_cuboid(
@@ -1714,7 +1726,7 @@ bbox_min 0 0 0
             Point3::from_array([7.0, 1.4, 1.2]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Cut, a, y).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, a, y).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, y).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1733,7 +1745,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn notch_cube_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
         let y = m.add_cuboid(
@@ -1741,7 +1753,7 @@ bbox_min 0 0 0
             Point3::from_array([7.0, 1.4, 1.2]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Fuse, a, y).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, a, y).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, y).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1760,7 +1772,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn drilled_cube_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let bar = m.add_cuboid(
@@ -1768,7 +1780,7 @@ bbox_min 0 0 0
             Point3::from_array([2.0, 2.0, 4.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Cut, a, bar).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, a, bar).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, bar).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1787,7 +1799,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn drilled_cube_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let bar = m.add_cuboid(
@@ -1795,7 +1807,7 @@ bbox_min 0 0 0
             Point3::from_array([2.0, 2.0, 4.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Fuse, a, bar).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, a, bar).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, bar).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1817,10 +1829,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn reflex_bite_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_reflex_box();
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1838,10 +1850,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn folded_arc_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_popup_box();
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1855,10 +1867,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn folded_arc_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_popup_box();
         let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1882,10 +1894,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn blind_dimple_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_dimple();
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1906,10 +1918,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn blind_dimple_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_dimple();
         let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -1983,10 +1995,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn l_staple_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, st) = l_and_staple();
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, st).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, st).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, st).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2005,10 +2017,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn l_staple_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, st) = l_and_staple();
         let occt = occt_boolean_of(&m, OcctBool::Fuse, l, st).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, l, st).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, st).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2028,10 +2040,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn staple_cut_by_l_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, st) = l_and_staple();
         let occt = occt_boolean_of(&m, OcctBool::Cut, st, l).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, st, l).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, st, l).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2079,10 +2091,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn u_slab_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, u, slab) = u_and_slab();
         let occt = occt_boolean_of(&m, OcctBool::Cut, u, slab).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, u, slab).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2101,10 +2113,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn u_slab_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, u, slab) = u_and_slab();
         let occt = occt_boolean_of(&m, OcctBool::Fuse, u, slab).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, u, slab).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, u, slab).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2123,10 +2135,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn slab_cut_by_u_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, u, slab) = u_and_slab();
         let occt = occt_boolean_of(&m, OcctBool::Cut, slab, u).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, slab, u).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, slab, u).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2172,10 +2184,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn ell_dimple_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, stub) = l_and_ell_stub();
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, stub).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, stub).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2198,10 +2210,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn notch_bar_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bar) = l_and_notch_bar();
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, bar).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, bar).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bar).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2223,10 +2235,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn notch_bar_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bar) = l_and_notch_bar();
         let occt = occt_boolean_of(&m, OcctBool::Fuse, l, bar).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, l, bar).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bar).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2254,10 +2266,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn island_cut_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, bx) = l_and_dimple();
         let occt = occt_boolean_of(&m, OcctBool::Cut, bx, l).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, bx, l).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, bx, l).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2282,7 +2294,7 @@ bbox_min 0 0 0
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn pocketed_cut_in_the_void_matches_occt() {
         use nacre_math::Point2;
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
         let mut m = Model::new();
         let sq = |pts: [[f64; 2]; 4]| Profile2d {
             points: pts.iter().map(|&p| Point2::from_array(p)).collect(),
@@ -2314,7 +2326,7 @@ bbox_min 0 0 0
             Point3::from_array([0.6, 0.6, 0.9]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Cut, solid, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, solid, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, solid, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2329,7 +2341,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn stacked_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -2340,7 +2352,7 @@ bbox_min 0 0 0
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2391,7 +2403,7 @@ bbox_min 0 0 0
     /// matters here: nacre's own gates all read the same rings, so only an independent
     /// kernel makes the surviving hole's size a real claim.
     fn diff_holed(name: &str, kind: OcctBool, boxes: [[f64; 3]; 2], swap: bool) {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, pc) = pocketed_cube();
         let bx = m.add_cuboid(Point3::from_array(boxes[0]), Point3::from_array(boxes[1]));
         let (x, y) = if swap { (bx, pc) } else { (pc, bx) };
@@ -2401,7 +2413,7 @@ bbox_min 0 0 0
             OcctBool::Fuse => BoolKind::Fuse,
             OcctBool::Common => BoolKind::Common,
         };
-        let r = boolean(&mut m, bk, x, y).unwrap();
+        let r = boolean_one(&mut m, bk, x, y).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2560,7 +2572,7 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn imprinted_merge_matches_occt() {
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, boolean};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let prof = |pts: &[[f64; 2]]| Profile2d {
             points: pts
                 .iter()
@@ -2594,7 +2606,7 @@ bbox_min 0 0 0
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         let occt = occt_boolean_of(&m, OcctBool::Fuse, solid, bx).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, solid, bx).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, solid, bx).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2617,10 +2629,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn drilled_l_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, rod) = l_prism_and_box([0.3, 0.3, -0.5], [0.5, 0.6, 1.5]);
         let occt = occt_boolean_of(&m, OcctBool::Cut, l, rod).unwrap();
-        let r = boolean(&mut m, BoolKind::Cut, l, rod).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, rod).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
@@ -2641,10 +2653,10 @@ bbox_min 0 0 0
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn l_and_rod_fuse_matches_occt() {
-        use nacre_ops::{BoolKind, boolean};
+        use nacre_ops::BoolKind;
         let (mut m, l, rod) = l_prism_and_box([0.3, 0.3, -0.5], [0.5, 0.6, 1.5]);
         let occt = occt_boolean_of(&m, OcctBool::Fuse, l, rod).unwrap();
-        let r = boolean(&mut m, BoolKind::Fuse, l, rod).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, rod).unwrap();
         let nacre = mass_props(&m, r).unwrap();
         assert!(
             approx(nacre.volume, occt.volume),
