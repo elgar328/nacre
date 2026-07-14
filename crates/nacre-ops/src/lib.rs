@@ -200,10 +200,16 @@ pub(crate) mod tag {
     /// node can gain a third segment. This is the backstop for that day.
     pub const SEAM_BRANCH: &str = "seam_branch";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
-    /// The result would be two solids, and `boolean` returns one handle. Reachable since
-    /// cell 3e-3 let an edge thread the other solid: `Cut(rod, L)` leaves the rod's two
-    /// ends on either side of the bar.
-    pub const DISCONNECTED_RESULT: &str = "disconnected_result";
+    /// The result severs into two or more material solids *and* at least one enclosed void
+    /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
+    /// test we do not have yet (a re-scope of `point_in_solid`), so this is honestly rejected and
+    /// deferred to a follow-on cell. Reachable: `Cut` a hollow part with a cut that isolates the
+    /// void into one severed piece. Born with its firing test (`severed_with_cavity_is_rejected`).
+    pub const SEVERED_WITH_CAVITY: &str = "severed_with_cavity";
+    /// No material-enclosing (outward) shell among the result components — every component is
+    /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
+    /// with no firing test (cf. `FOURPLANE`).
+    pub const NO_OUTWARD_SHELL: &str = "no_outward_shell";
     /// An overhang overlap arc could not be paired with a complementary arc sharing its two
     /// crossings (a non-convex-cyclic arrangement `is_convex` did not screen out) — out of scope.
     pub const OVERHANG_ARCS: &str = "overhang_arcs";
@@ -351,8 +357,9 @@ pub enum OpOutput {
         solid: Handle<Solid>,
         bottom_face: Handle<Face>,
     },
-    /// The boolean result solid (supersedes both inputs).
-    Boolean { solid: Handle<Solid> },
+    /// The boolean result solids (supersede both inputs). Usually one; a boolean that severs the
+    /// body yields several (cell 0.4), and `Cut(A, A)` (deferred) would yield none.
+    Boolean { solids: Vec<Handle<Solid>> },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -388,8 +395,8 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
             Ok(OpOutput::PocketOnFace { solid, bottom_face })
         }
         Operation::Boolean { kind, a, b } => {
-            let solid = boolean(model, *kind, *a, *b).map_err(OpError::Boolean)?;
-            Ok(OpOutput::Boolean { solid })
+            let solids = boolean(model, *kind, *a, *b).map_err(OpError::Boolean)?;
+            Ok(OpOutput::Boolean { solids })
         }
     }
 }
@@ -1020,14 +1027,26 @@ fn extrude_and_boolean(
         dist
     };
     let (prism, _) = build_prism(model, &base_pts, n * signed, Some(frame.surface_h))?;
-    let result = boolean(model, kind, frame.solid_h, prism).map_err(|e| {
+    let solids = boolean(model, kind, frame.solid_h, prism).map_err(|e| {
         model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
         OpError::Boolean(e)
     })?;
     // Exposed cap = the result face on the prism's far-cap plane (face plane offset by n·signed),
-    // its outward normal +n (the opening side for a pocket, the boss top for a boss).
-    let cap = find_face_on_plane(model, result, frame.origin + n * signed, n);
-    Ok((result, cap))
+    // its outward normal +n (the opening side for a pocket, the boss top for a boss). A pad (Fuse)
+    // never severs; a pocket (Cut) that severs leaves several solids — scan them all for the cap
+    // and return the piece that carries it, leaving the others live. The committed model is a valid
+    // multi-solid either way, so there is no reject-after-commit (append-only has no rollback).
+    let cap_pt = frame.origin + n * signed;
+    let primary = *solids
+        .first()
+        .expect("a pad/pocket boolean yields at least one solid");
+    match solids
+        .iter()
+        .find_map(|&s| find_face_on_plane(model, s, cap_pt, n).map(|c| (s, c)))
+    {
+        Some((solid, cap)) => Ok((solid, Some(cap))),
+        None => Ok((primary, None)),
+    }
 }
 
 /// Pad a boss on a planar `face`: extrude the profile **outward** by `dist` and `Fuse` it onto the
@@ -1128,7 +1147,7 @@ pub fn boolean(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
@@ -1189,7 +1208,7 @@ fn general_boolean(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     // Exact containment reads a face's rings as three-plane triples, and an imprinted face
     // cannot give them: its hole rim's two neighbours are *coplanar* (the holed face and the
     // region face cut from it), so the rim's vertices have no triple and the line `P ∩ R` no
@@ -1235,7 +1254,9 @@ fn general_boolean(
         },
         "seam-free classification must be consistent per solid"
     );
-    contained_result(model, kind, a, b, &classof)
+    // Seam-free never severs: one solid contains the other, or they are disjoint (a single
+    // solid, or the deferred disjoint-Fuse `EmptyResult`). Always at most one solid here.
+    Ok(vec![contained_result(model, kind, a, b, &classof)?])
 }
 
 /// A solid's outer-shell faces, each as its combined-plane index and its rings in triple
@@ -1290,13 +1311,14 @@ fn pierced_faces(
 /// and (c) reconstructs faces from the arrangement. Multiple chords (3e-2), poke-through
 /// holes and through-drilling (3e-3), and holed operands (3f-5) are handled; non-convex
 /// `Common` is `COMMON_OVERLAP` (cell 3g). A result that falls into disconnected pieces is
-/// `DISCONNECTED_RESULT`.
+/// returned as several solids (cell 0.4); a sever that also leaves a cavity is
+/// `SEVERED_WITH_CAVITY`.
 fn overlap_fuse_cut(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     let mut planes = collect_planes(model, a)?;
     let na = planes.len();
     planes.extend(collect_planes(model, b)?);
@@ -1420,7 +1442,8 @@ fn overlap_fuse_cut(
         BoolKind::Common => (Side::Inside, Side::Inside, false),
     };
     if seam.is_empty() {
-        return contained_result(model, kind, a, b, &classof);
+        // No crossing after all — containment/disjoint, at most one solid.
+        return Ok(vec![contained_result(model, kind, a, b, &classof)?]);
     }
 
     // `edge_seam` is gone from this path: the arrangement carries each boundary
@@ -1487,6 +1510,21 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
         n = n.max(l + 1);
     }
     (labels, n)
+}
+
+/// A canonical, replay-stable sort key for a severed component: its outer-loop vertex
+/// coordinates, sorted lexicographically. Total order for disjoint components — distinct pieces
+/// occupy different space, so their coordinate multisets differ, and the lex-min vertex alone can
+/// tie (identity is by `Handle`, not coordinates, so two vertices may coincide). Coordinates are a
+/// derived cache used only to order multi-solid output; no judgment reads this (tol-irrelevant).
+fn comp_key(model: &Model, faces: &[Handle<Face>]) -> Vec<[f64; 3]> {
+    let mut pts: Vec<[f64; 3]> = faces
+        .iter()
+        .flat_map(|&fh| model.faces.get(fh).outer.half_edges.iter().copied())
+        .map(|he| model.vertices.get(he_start(model, he)).point.as_array())
+        .collect();
+    pts.sort_by(|a, b| a.partial_cmp(b).expect("finite vertex coordinates"));
+    pts
 }
 
 /// Whether a closed component shell (a set of oriented faces) is **outward**
@@ -2648,7 +2686,7 @@ fn assemble_fuse_cut(
     planes: &[PlaneInfo],
     seam: &[SeamVertex],
     faces: &[LocalFace],
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
     let mut node_handle = |model: &mut Model, node: Node| -> Handle<Vertex> {
@@ -2754,11 +2792,12 @@ fn assemble_fuse_cut(
         }));
     }
     // Partition the faces into connected components (by shared node). One component is the
-    // whole result; several mean either an enclosed void (a cavity — an inward-oriented
-    // shell) or a severed operand (two solids — two outward, material-enclosing shells).
-    // `is_shell_outward` (exact extreme-vertex sign) tells them apart: exactly one outward
-    // component is the outer shell, the rest are cavities; anything else is two solids one
-    // handle cannot answer (`Cut(rod, L)`), which stays `DISCONNECTED_RESULT`.
+    // whole result; several mean either an enclosed void (a cavity — an inward-oriented shell)
+    // or a severed operand (two or more outward, material-enclosing shells). `is_shell_outward`
+    // (exact extreme-vertex sign) tells them apart. One outward component ⇒ outer shell + the
+    // rest as its cavities. Several outward components ⇒ the result severed into that many
+    // solids (cell 0.4) — unless a cavity also survives, which needs a containment test we do
+    // not have yet, so that is `SEVERED_WITH_CAVITY`. No outward component is impossible.
     let (labels, n) = face_components(faces);
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
@@ -2767,25 +2806,60 @@ fn assemble_fuse_cut(
     let positives: Vec<usize> = (0..n)
         .filter(|&c| is_shell_outward(model, &by_comp[c]))
         .collect();
-    let [outer_c] = positives[..] else {
-        return Err(reject(tag::DISCONNECTED_RESULT));
-    };
     let shells: Vec<Handle<Shell>> = by_comp
-        .into_iter()
-        .map(|faces| model.shells.push(Shell { faces }))
+        .iter()
+        .map(|faces| {
+            model.shells.push(Shell {
+                faces: faces.clone(),
+            })
+        })
         .collect();
-    // A cavity shell's faces already point into the void (the material is outside it, so the
-    // material-on-correct-side reconstruction winds them inward) — measured, so no reversal.
-    let cavities = (0..n)
-        .filter(|&c| c != outer_c)
-        .map(|c| shells[c])
-        .collect();
-    let solid = model.push_solid(Solid {
-        outer: shells[outer_c],
-        cavities,
-    });
-    model.live_solids.retain(|&s| s != a && s != b);
-    Ok(solid)
+    match positives.len() {
+        0 => Err(reject(tag::NO_OUTWARD_SHELL)),
+        1 => {
+            let outer_c = positives[0];
+            // A cavity shell's faces already point into the void (the material is outside it, so
+            // the material-on-correct-side reconstruction winds them inward) — measured, no flip.
+            let cavities = (0..n)
+                .filter(|&c| c != outer_c)
+                .map(|c| shells[c])
+                .collect();
+            let solid = model.push_solid(Solid {
+                outer: shells[outer_c],
+                cavities,
+            });
+            model.live_solids.retain(|&s| s != a && s != b);
+            Ok(vec![solid])
+        }
+        _ => {
+            // Several material solids. Cavity ownership across multiple outer shells is unsolved.
+            if (0..n).any(|c| !positives.contains(&c)) {
+                return Err(reject(tag::SEVERED_WITH_CAVITY));
+            }
+            // Every component is its own cavity-free solid. Emit them in a canonical, replay-stable
+            // order keyed on geometry (a component's sorted vertex coordinates), so a downstream op
+            // can index the returned Vec deterministically. `comp_key` is total for disjoint
+            // components (distinct pieces occupy different space, so their coordinate sets differ).
+            let keys: Vec<Vec<[f64; 3]>> = by_comp.iter().map(|f| comp_key(model, f)).collect();
+            let mut order: Vec<usize> = (0..n).collect();
+            order.sort_by(|&x, &y| {
+                keys[x]
+                    .partial_cmp(&keys[y])
+                    .expect("finite vertex coordinates")
+            });
+            let solids: Vec<Handle<Solid>> = order
+                .into_iter()
+                .map(|c| {
+                    model.push_solid(Solid {
+                        outer: shells[c],
+                        cavities: Vec::new(),
+                    })
+                })
+                .collect();
+            model.live_solids.retain(|&s| s != a && s != b);
+            Ok(solids)
+        }
+    }
 }
 
 // ---- coincident-coplanar merge (M5-c5): matched-interface stack ----
@@ -3224,7 +3298,7 @@ fn coincident_merge(
     a: Handle<Solid>,
     b: Handle<Solid>,
     iface: &Interface,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     // `detect_coincident_interface` counts only *cross-solid, opposite-normal* coplanar
     // pairs, so an imprint on some other face — whose coplanar region face is
     // same-normal and within one solid — does not disqualify the stack. Such an operand
@@ -3274,7 +3348,7 @@ fn contained_contact_result(
     model: &mut Model,
     cc: &ContainedContact,
     cut: bool,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes_big = collect_planes(model, cc.big_solid)?;
     let na = planes_big.len();
     let planes_small = collect_planes(model, cc.small_solid)?;
@@ -3744,7 +3818,7 @@ fn detect_overhang_contact(
 fn overhang_contact_result(
     model: &mut Model,
     cc: &OverhangContact,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes_p = collect_planes(model, cc.p_solid)?;
     let na = planes_p.len();
     let planes_q = collect_planes(model, cc.q_solid)?;
@@ -4435,7 +4509,7 @@ fn substitute_corners(
 fn overhang_cut_general_result(
     model: &mut Model,
     oc: &OverhangCutG,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes_a = collect_planes(model, oc.a)?;
     let na = planes_a.len();
     let planes_b = collect_planes(model, oc.b)?;
@@ -4743,7 +4817,7 @@ fn overlap_top_piece(
 fn overhang_common_result(
     model: &mut Model,
     oc: &OverhangCutG,
-) -> Result<Handle<Solid>, BoolError> {
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes_a = collect_planes(model, oc.a)?;
     let na = planes_a.len();
     let planes_b = collect_planes(model, oc.b)?;
@@ -4839,7 +4913,14 @@ pub mod tests {
         a: Handle<Solid>,
         b: Handle<Solid>,
     ) -> Result<Handle<Solid>, BoolError> {
-        boolean(model, kind, a, b)
+        let solids = boolean(model, kind, a, b)?;
+        assert_eq!(
+            solids.len(),
+            1,
+            "boolean_one: expected one solid, got {}",
+            solids.len()
+        );
+        Ok(solids[0])
     }
 
     /// The single-ring successor `(i + 1) % n` — what every caller but a multi-ring `∂f`
@@ -5298,7 +5379,7 @@ pub mod tests {
     #[test]
     fn the_seam_path_answers_common_overlap() {
         let (mut m, a, b) = two_boxes();
-        let r = overlap_fuse_cut(&mut m, BoolKind::Common, a, b).unwrap();
+        let r = overlap_fuse_cut(&mut m, BoolKind::Common, a, b).unwrap()[0];
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let reach = m.reachable();
@@ -5377,20 +5458,25 @@ pub mod tests {
         assert_eq!(holed_faces(&m, r).len(), 2);
     }
 
-    /// The same two solids the other way round: the bar severs the rod, and `Cut` must
-    /// answer with two solids. It cannot — a `Solid` has one outer shell.
-    ///
-    /// Measured with the guard removed: `Ok`, volume `0.06`, and `validate` reporting
-    /// `NegativeGenus { v: 16, e: 24, f: 12, genus: -1 }` — two disjoint boxes in one
-    /// shell. `boolean` never runs `validate`, so nothing else would have said a word.
-    /// `pierced_multi` had been hiding this: severing A takes an edge of A through B.
+    /// The same two solids the other way round: the bar severs the rod, and `Cut` answers with
+    /// two solids (cell 0.4). Each severed stub is its own genus-0 box, so `validate` is clean —
+    /// the pieces share no vertices or edges. (Before cell 0.4 this was `DISCONNECTED_RESULT`:
+    /// one handle could not name two solids, and forcing both into one shell read as
+    /// `NegativeGenus { genus: -1 }`. `pierced_multi` had been hiding it: severing A takes an
+    /// edge of A through B.)
     #[test]
-    fn cut_rod_by_l_disconnects() {
+    fn cut_rod_by_l_severs_into_two() {
         let (mut m, l, rod) = l_and_rod();
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Cut, rod, l),
-            tag::DISCONNECTED_RESULT,
-        );
+        let solids = boolean(&mut m, BoolKind::Cut, rod, l).unwrap();
+        assert_eq!(solids.len(), 2);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol: f64 = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .sum();
+        assert!((vol - 0.06).abs() < 1e-9, "total volume {vol}");
     }
 
     /// A U-prism: a bottom bar `y∈[0,1]` with two prongs rising from it. The prong
@@ -8279,7 +8365,7 @@ pub mod tests {
         // design.md §9 line 447 asked for. Cell (5b) then deleted the convex path, so
         // `boolean` reaches the same code; this keeps the direct call as the §447 record.
         let (mut m, a, b) = two_boxes();
-        let r = overlap_fuse_cut(&mut m, BoolKind::Cut, a, b).unwrap();
+        let r = overlap_fuse_cut(&mut m, BoolKind::Cut, a, b).unwrap()[0];
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -8288,7 +8374,7 @@ pub mod tests {
         // The `Fuse` leg of the same corner overlap, which cell (5a) never measured on the
         // seam path — cell (5b) routes it here. `1 + 1 − 0.125`.
         let (mut m, a, b) = two_boxes();
-        let r = overlap_fuse_cut(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let r = overlap_fuse_cut(&mut m, BoolKind::Fuse, a, b).unwrap()[0];
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
@@ -8374,22 +8460,26 @@ pub mod tests {
     }
 
     /// An edge of one convex solid, threading the other, severs it. The bar runs through the
-    /// cube and out both ends, so `Cut(bar, cube)` leaves the bar in two pieces — two solids,
-    /// which one handle cannot answer. The convex path rejected this as `poke_through`; the
-    /// seam path names it for what it is. First convex firing of `disconnected_result`
-    /// (cell 3e-3's was the non-convex `Cut(rod, L)`).
+    /// cube and out both ends, so `Cut(bar, cube)` leaves the bar in two 1×1×1 stubs — two solids
+    /// (cell 0.4), each a clean genus-0 box (`validate` clean, pieces share nothing). The convex
+    /// path rejected this as `poke_through`; the seam path returns both pieces. (Before cell 0.4
+    /// this was `disconnected_result`; cell 3e-3's non-convex sibling was `Cut(rod, L)`.)
     #[test]
-    fn a_convex_cut_can_sever_its_operand() {
+    fn a_convex_cut_severs_its_operand() {
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let bar = m.add_cuboid(
             Point3::from_array([1.0, 1.0, -1.0]),
             Point3::from_array([2.0, 2.0, 4.0]),
         );
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Cut, bar, a),
-            tag::DISCONNECTED_RESULT,
-        );
+        let solids = boolean(&mut m, BoolKind::Cut, bar, a).unwrap();
+        assert_eq!(solids.len(), 2);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        for &s in &solids {
+            assert!((nacre_props::mass_props(&m, s).unwrap().volume - 1.0).abs() < 1e-9);
+        }
     }
 
     /// The two contacts, named. Both were `contact_degenerate` — "grazed a fan diagonal" — and
@@ -8680,9 +8770,10 @@ pub mod tests {
     }
 
     #[test]
-    fn a_slab_that_splits_a_hollow_box_disconnects() {
-        // A slab cut through the whole box (and its void) severs it into two solids —
-        // honestly rejected as `DISCONNECTED_RESULT`, not silently mis-assembled.
+    fn a_slab_splits_a_hollow_box_into_two() {
+        // A slab cut through the whole box (and its void) severs it into two solids (cell 0.4).
+        // The slab spans the full cross-section, so it opens the void — both pieces are
+        // cavity-free. (Before cell 0.4 this was rejected as `DISCONNECTED_RESULT`.)
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
@@ -8692,9 +8783,49 @@ pub mod tests {
             Point3::from_array([-0.5, 1.4, -0.5]),
             Point3::from_array([3.5, 1.6, 3.5]),
         );
+        let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
+        assert_eq!(solids.len(), 2);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        for &s in &solids {
+            assert_eq!(m.solids.get(s).cavities.len(), 0);
+        }
+        // Hollow 26 (= 27 − 1 void); the slab removes 1.6 of material (8 area × 0.2 thick).
+        let vol: f64 = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .sum();
+        assert!((vol - 24.4).abs() < 1e-9, "total volume {vol}");
+    }
+
+    /// A sever that also leaves a surviving cavity: a hollow box whose void sits to one side,
+    /// cut by a slab that severs it without touching the void. The x<2 piece keeps the void as a
+    /// cavity, the x>2 piece is solid — two outward shells *and* one inward. Which outer owns the
+    /// cavity needs a containment test we do not have yet, so it is honestly rejected
+    /// (`SEVERED_WITH_CAVITY`) rather than mis-assembled. This is the firing test the guard is
+    /// born with (design.md); n0 measured the two-outward-plus-one-inward component split.
+    #[test]
+    fn severed_with_cavity_is_rejected() {
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        // Void near the x-low side, clear of the x=2 cut.
+        let inner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 2.5, 2.5]),
+        );
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+        // A slab spanning full y,z, thin in x at x∈[2,2.2] — severs into x<2 (holds the void)
+        // and x>2 (solid).
+        let slab = m.add_cuboid(
+            Point3::from_array([2.0, -1.0, -1.0]),
+            Point3::from_array([2.2, 4.0, 4.0]),
+        );
         assert_rejects(
-            || boolean_one(&mut m, BoolKind::Cut, hollow, slab),
-            tag::DISCONNECTED_RESULT,
+            || boolean(&mut m, BoolKind::Cut, hollow, slab),
+            tag::SEVERED_WITH_CAVITY,
         );
     }
 

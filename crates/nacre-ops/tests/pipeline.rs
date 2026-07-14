@@ -105,7 +105,14 @@ fn boolean_one(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Handle<Solid>, BoolError> {
-    boolean(model, kind, a, b)
+    let solids = boolean(model, kind, a, b)?;
+    assert_eq!(
+        solids.len(),
+        1,
+        "boolean_one: expected one solid, got {}",
+        solids.len()
+    );
+    Ok(solids[0])
 }
 
 /// Σ |triangle area| — unsigned on purpose.
