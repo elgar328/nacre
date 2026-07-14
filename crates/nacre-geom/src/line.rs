@@ -41,6 +41,16 @@ impl Line {
         self.origin
     }
 
+    /// The line translated by `offset` — the origin shifts, the direction is
+    /// unchanged (a rigid translation does not rotate a line).
+    #[inline]
+    pub fn translated(self, offset: Vector3) -> Line {
+        Line {
+            origin: self.origin + offset,
+            direction: self.direction,
+        }
+    }
+
     /// The unit direction.
     #[inline]
     pub fn direction(&self) -> Vector3 {

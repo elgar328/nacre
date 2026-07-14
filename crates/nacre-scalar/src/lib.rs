@@ -216,6 +216,34 @@ impl Angle {
     }
 }
 
+/// A rigid-body isometry (§ Transform). The exact rational data is the
+/// **definition**; `offset_f64` realizes it to f64. 1a carries only a rational
+/// translation (exact — a rational-pure derivation); 1b adds a rotation (an `Angle`
+/// about an axis). Math-type independent — it operates on plain `[f64; 3]`,
+/// mirroring [`frame::Pt2`]'s `(f64, f64)` (so `nacre-scalar` never depends on
+/// `nacre-math`); the caller (`nacre-ops`) applies the offset to its `Point3`/`Plane`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Isometry {
+    /// Exact rational translation.
+    pub translate: [Rat; 3],
+}
+
+impl Isometry {
+    /// A pure translation by the rational vector `translate`.
+    pub fn translation(translate: [Rat; 3]) -> Self {
+        Isometry { translate }
+    }
+
+    /// The translation realized in f64.
+    pub fn offset_f64(&self) -> [f64; 3] {
+        [
+            self.translate[0].to_f64(),
+            self.translate[1].to_f64(),
+            self.translate[2].to_f64(),
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

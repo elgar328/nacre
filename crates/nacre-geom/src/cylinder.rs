@@ -65,6 +65,17 @@ impl Cylinder {
         self.axis
     }
 
+    /// The cylinder translated by `offset` — the axis shifts, the direction,
+    /// ref_dir, and radius are unchanged.
+    #[inline]
+    pub fn translated(self, offset: Vector3) -> Cylinder {
+        Cylinder {
+            axis: self.axis.translated(offset),
+            ref_dir: self.ref_dir,
+            radius: self.radius,
+        }
+    }
+
     /// The unit angle-0 direction (perpendicular to the axis).
     #[inline]
     pub fn ref_dir(&self) -> Vector3 {

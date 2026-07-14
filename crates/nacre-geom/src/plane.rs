@@ -63,6 +63,18 @@ impl Plane {
         self.origin
     }
 
+    /// The plane translated by `offset` — the origin shifts, the normal (and its
+    /// exact `raw`) are unchanged, so `raw` exactness is preserved (a rigid
+    /// translation does not rotate a plane).
+    #[inline]
+    pub fn translated(self, offset: Vector3) -> Plane {
+        Plane {
+            origin: self.origin + offset,
+            normal: self.normal,
+            raw: self.raw,
+        }
+    }
+
     /// The unit normal.
     #[inline]
     pub fn normal(&self) -> Vector3 {

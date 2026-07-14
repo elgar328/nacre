@@ -79,6 +79,18 @@ impl Circle {
         self.radius
     }
 
+    /// The circle translated by `offset` — the center shifts, the plane
+    /// (normal, ref_dir) and radius are unchanged.
+    #[inline]
+    pub fn translated(self, offset: Vector3) -> Circle {
+        Circle {
+            center: self.center + offset,
+            normal: self.normal,
+            ref_dir: self.ref_dir,
+            radius: self.radius,
+        }
+    }
+
     /// The second in-plane axis (angle 90°): `normal × ref_dir` (unit).
     #[inline]
     fn binormal(self) -> Vector3 {

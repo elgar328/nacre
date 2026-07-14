@@ -9,6 +9,7 @@
 
 use nacre_geom::{Curve, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_scalar::Isometry;
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,
@@ -107,6 +108,14 @@ pub enum Operation {
         kind: BoolKind,
         a: Handle<Solid>,
         b: Handle<Solid>,
+    },
+    /// Rigid-body transform: supersede `solid` by its image under `isometry`
+    /// (overhaul stage 1). 1a realizes a rational translation; 1b adds rotation.
+    /// The `Isometry` is the exact definition (op-log truth); the geometry is a
+    /// realized cache.
+    Transform {
+        solid: Handle<Solid>,
+        isometry: Isometry,
     },
 }
 
@@ -331,6 +340,8 @@ pub enum OpError {
     PocketNotBlind,
     /// A boolean operation failed (design §8 M5).
     Boolean(BoolError),
+    /// A `Transform` input solid is not live (a stale or non-live handle).
+    SolidNotLive,
 }
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
@@ -360,6 +371,8 @@ pub enum OpOutput {
     /// The boolean result solids (supersede both inputs). Usually one; a boolean that severs the
     /// body yields several (cell 0.4), and `Cut(A, A)` (deferred) would yield none.
     Boolean { solids: Vec<Handle<Solid>> },
+    /// The transformed solid (supersedes the input).
+    Transform { solid: Handle<Solid> },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -397,6 +410,10 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         Operation::Boolean { kind, a, b } => {
             let solids = boolean(model, *kind, *a, *b).map_err(OpError::Boolean)?;
             Ok(OpOutput::Boolean { solids })
+        }
+        Operation::Transform { solid, isometry } => {
+            let out = transform(model, *solid, isometry)?;
+            Ok(OpOutput::Transform { solid: out })
         }
     }
 }
@@ -1099,6 +1116,180 @@ fn find_face_on_plane(
         };
         planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n_out) > 0.0
     })
+}
+
+// ---- transform (overhaul stage 1) ----
+
+/// Supersede `solid` by its image under `isometry` (stage 1a: a rational
+/// translation). Clones the solid's cells with moved geometry ([`transform_solid`])
+/// and drops the input from `live_solids` — the op-log is the truth.
+fn transform(
+    model: &mut Model,
+    solid: Handle<Solid>,
+    isometry: &Isometry,
+) -> Result<Handle<Solid>, OpError> {
+    if !model.live_solids.contains(&solid) {
+        return Err(OpError::SolidNotLive);
+    }
+    let out = transform_solid(model, solid, isometry);
+    model.live_solids.retain(|&s| s != solid);
+    Ok(out)
+}
+
+/// A vertex/edge `Origin` with any `Discovered` `ThreePlane` definition remapped
+/// onto the moved surfaces. Constructed stays constructed; the `tol` is unchanged
+/// (a rigid move; stage 1 records tol but never judges on it). Fails loud if a
+/// definition names a surface that is not one of the solid's face surfaces
+/// (an invariant violation — a seam vertex is the meet of three of its faces).
+fn remap_origin(origin: Origin, surf_map: &HashMap<Handle<Surface>, Handle<Surface>>) -> Origin {
+    match origin {
+        Origin::Constructed => Origin::Constructed,
+        Origin::Discovered {
+            tol,
+            definition: VertexDef::ThreePlane(planes),
+        } => {
+            let mapped = planes.map(|s| {
+                *surf_map
+                    .get(&s)
+                    .expect("Discovered ThreePlane surface must be a face surface of the solid")
+            });
+            Origin::Discovered {
+                tol,
+                definition: VertexDef::ThreePlane(mapped),
+            }
+        }
+    }
+}
+
+/// Clone `solid` into a new solid with every cell's geometry moved by `isometry`,
+/// preserving topology, shared cells (surfaces/curves/vertices/edges are deduped),
+/// face orientations (a translation does not rotate normals), inner-loop holes,
+/// cavity shells, and each vertex/edge `Origin` (a `Discovered` definition's plane
+/// handles are remapped to the moved surfaces). Cells are pushed in a **deterministic
+/// traversal order** (shell → face → loop) with per-cell dedup maps, so the same
+/// op-log reproduces identical handles (replay determinism, DNA 3). Stage 1b's
+/// rotation reuses this by swapping the per-cell geometry transform.
+fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry) -> Handle<Solid> {
+    let offset = Vector3::from_array(isometry.offset_f64());
+    let src = model.solids.get(solid).clone();
+
+    // Deterministic order: outer shell then cavities; each shell's faces in order.
+    let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
+        .chain(src.cavities.iter().copied())
+        .collect();
+    let face_order: Vec<Handle<Face>> = shell_order
+        .iter()
+        .flat_map(|&sh| model.shells.get(sh).faces.clone())
+        .collect();
+
+    // Pass 1 — surfaces (dedup, moved): needed before vertex `Origin` remap.
+    let mut surf_map: HashMap<Handle<Surface>, Handle<Surface>> = HashMap::new();
+    for &fh in &face_order {
+        let s = model.faces.get(fh).surface;
+        if let std::collections::hash_map::Entry::Vacant(e) = surf_map.entry(s) {
+            let moved = model.surfaces.get(s).translated(offset);
+            e.insert(model.surfaces.push(moved));
+        }
+    }
+
+    // Edge order (deterministic dedup) — used by passes 2/3/4.
+    let mut edge_order: Vec<Handle<Edge>> = Vec::new();
+    let mut edge_seen: HashSet<Handle<Edge>> = HashSet::new();
+    for &fh in &face_order {
+        let face = model.faces.get(fh).clone();
+        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            for he in &lp.half_edges {
+                if edge_seen.insert(he.edge) {
+                    edge_order.push(he.edge);
+                }
+            }
+        }
+    }
+
+    // Pass 2 — curves (dedup, moved).
+    let mut curve_map: HashMap<Handle<Curve>, Handle<Curve>> = HashMap::new();
+    for &eh in &edge_order {
+        let c = model.edges.get(eh).curve;
+        if let std::collections::hash_map::Entry::Vacant(e) = curve_map.entry(c) {
+            let moved = model.curves.get(c).translated(offset);
+            e.insert(model.curves.push(moved));
+        }
+    }
+
+    // Pass 3 — vertices (dedup, moved point + Origin preserved/remapped).
+    let mut vert_order: Vec<Handle<Vertex>> = Vec::new();
+    let mut vert_seen: HashSet<Handle<Vertex>> = HashSet::new();
+    for &eh in &edge_order {
+        if let Some(bounds) = model.edges.get(eh).bounds {
+            for vh in bounds {
+                if vert_seen.insert(vh) {
+                    vert_order.push(vh);
+                }
+            }
+        }
+    }
+    let mut vert_map: HashMap<Handle<Vertex>, Handle<Vertex>> = HashMap::new();
+    for &vh in &vert_order {
+        let v = *model.vertices.get(vh);
+        let new_v = Vertex {
+            point: v.point + offset,
+            origin: remap_origin(v.origin, &surf_map),
+        };
+        vert_map.insert(vh, model.vertices.push(new_v));
+    }
+
+    // Pass 4 — edges (curve/vertex handles + Origin remapped).
+    let mut edge_map: HashMap<Handle<Edge>, Handle<Edge>> = HashMap::new();
+    for &eh in &edge_order {
+        let e = *model.edges.get(eh);
+        let new_e = Edge {
+            curve: curve_map[&e.curve],
+            bounds: e.bounds.map(|[a, b]| [vert_map[&a], vert_map[&b]]),
+            origin: remap_origin(e.origin, &surf_map),
+        };
+        edge_map.insert(eh, model.edges.push(new_e));
+    }
+
+    // Pass 5 — faces (loops rebuilt onto the new edges; orientation unchanged).
+    let map_loop = |lp: &Loop| Loop {
+        half_edges: lp
+            .half_edges
+            .iter()
+            .map(|he| HalfEdge {
+                edge: edge_map[&he.edge],
+                forward: he.forward,
+            })
+            .collect(),
+    };
+    let mut face_map: HashMap<Handle<Face>, Handle<Face>> = HashMap::new();
+    for &fh in &face_order {
+        let face = model.faces.get(fh).clone();
+        let new_f = Face {
+            surface: surf_map[&face.surface],
+            outer: map_loop(&face.outer),
+            inner: face.inner.iter().map(&map_loop).collect(),
+            orientation: face.orientation,
+        };
+        face_map.insert(fh, model.faces.push(new_f));
+    }
+
+    // Pass 6 — shells; Pass 7 — solid.
+    let mut shell_map: HashMap<Handle<Shell>, Handle<Shell>> = HashMap::new();
+    for &sh in &shell_order {
+        let faces: Vec<Handle<Face>> = model
+            .shells
+            .get(sh)
+            .faces
+            .iter()
+            .map(|fh| face_map[fh])
+            .collect();
+        shell_map.insert(sh, model.shells.push(Shell { faces }));
+    }
+    let new_solid = Solid {
+        outer: shell_map[&src.outer],
+        cavities: src.cavities.iter().map(|sh| shell_map[sh]).collect(),
+    };
+    model.push_solid(new_solid)
 }
 
 // ---- boolean (M5-c3) ----
@@ -9658,6 +9849,165 @@ pub mod tests {
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 0.875).abs() < 1e-12, "volume {vol}");
         assert_eq!(m.live_solids, vec![r]);
+    }
+
+    /// Lower corner of a solid's outer-shell vertex bounding box (for translation
+    /// tests: a rigid move shifts it by exactly the offset).
+    fn bbox_lo(m: &Model, s: Handle<Solid>) -> [f64; 3] {
+        let mut lo = [f64::INFINITY; 3];
+        let sh = m.solids.get(s).outer;
+        for &fh in &m.shells.get(sh).faces {
+            for he in &m.faces.get(fh).outer.half_edges {
+                if let Some(bd) = m.edges.get(he.edge).bounds {
+                    for vh in bd {
+                        let p = m.vertices.get(vh).point.as_array();
+                        for k in 0..3 {
+                            lo[k] = lo[k].min(p[k]);
+                        }
+                    }
+                }
+            }
+        }
+        lo
+    }
+
+    fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
+        let mut seen = std::collections::HashSet::new();
+        let mut n = 0;
+        let sh = m.solids.get(s).outer;
+        for &fh in &m.shells.get(sh).faces {
+            for he in &m.faces.get(fh).outer.half_edges {
+                if let Some(bd) = m.edges.get(he.edge).bounds {
+                    for vh in bd {
+                        if seen.insert(vh)
+                            && matches!(m.vertices.get(vh).origin, Origin::Discovered { .. })
+                        {
+                            n += 1;
+                        }
+                    }
+                }
+            }
+        }
+        n
+    }
+
+    fn test_iso() -> (nacre_scalar::Isometry, [f64; 3]) {
+        use nacre_scalar::Rat;
+        (
+            nacre_scalar::Isometry::translation([
+                Rat::new(7, 2).unwrap(),
+                Rat::from_int(-4),
+                Rat::from_int(11),
+            ]),
+            [3.5, -4.0, 11.0],
+        )
+    }
+
+    /// A rational translation supersedes a cuboid: rigid, so volume/area are
+    /// invariant and the bounding box shifts by exactly the offset; validate/tess/
+    /// STEP all accept the moved solid, and the input drops from `live_solids`.
+    #[test]
+    fn transform_translate_cuboid() {
+        let (iso, off) = test_iso();
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let before = nacre_props::mass_props(&m, c).unwrap();
+        let lo0 = bbox_lo(&m, c);
+
+        let c2 = transform(&mut m, c, &iso).unwrap();
+        m.rebuild_adjacency();
+
+        assert_eq!(m.live_solids, vec![c2], "input superseded");
+        assert!(nacre_validate::validate(&m).is_empty());
+        let after = nacre_props::mass_props(&m, c2).unwrap();
+        assert!(
+            (after.volume - before.volume).abs() < 1e-12,
+            "volume invariant"
+        );
+        assert!((after.area - before.area).abs() < 1e-12, "area invariant");
+        let lo1 = bbox_lo(&m, c2);
+        for k in 0..3 {
+            assert!(
+                (lo1[k] - (lo0[k] + off[k])).abs() < 1e-12,
+                "bbox shifted by offset"
+            );
+        }
+        assert!(nacre_tess::to_obj(&m).is_ok(), "moved solid tessellates");
+        assert!(
+            nacre_step::to_step(&m)
+                .unwrap()
+                .contains("MANIFOLD_SOLID_BREP"),
+            "moved solid exports to STEP"
+        );
+    }
+
+    /// Transforming a boolean *result* (which carries `Discovered` seam vertices)
+    /// preserves those vertices' `Origin` and remaps their `ThreePlane` definition
+    /// onto the moved surfaces — the count survives and validate stays clean, so the
+    /// definition was not silently downgraded to `Constructed`.
+    #[test]
+    fn transform_translate_preserves_discovered_definition() {
+        let (iso, _) = test_iso();
+        let (mut m, a, b) = two_boxes();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        let before = nacre_props::mass_props(&m, r).unwrap().volume;
+        let disc = count_discovered(&m, r);
+        assert!(
+            disc > 0,
+            "the Cut result must have Discovered seam vertices"
+        );
+
+        let r2 = transform(&mut m, r, &iso).unwrap();
+        m.rebuild_adjacency();
+
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert_eq!(
+            count_discovered(&m, r2),
+            disc,
+            "Discovered vertices preserved"
+        );
+        let after = nacre_props::mass_props(&m, r2).unwrap().volume;
+        assert!((after - before).abs() < 1e-12, "volume invariant");
+    }
+
+    /// Replay determinism (DNA 3): the same construction + transform reproduces the
+    /// same geometry and the same handle down to the index.
+    #[test]
+    fn transform_is_deterministic() {
+        let (iso, _) = test_iso();
+        let build = || {
+            let mut m = Model::new();
+            let c = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([2.0, 3.0, 4.0]),
+            );
+            let c2 = transform(&mut m, c, &iso).unwrap();
+            (bbox_lo(&m, c2), c2)
+        };
+        assert_eq!(build(), build(), "same ops → same geometry and handle");
+    }
+
+    /// The `Transform` op flows through `apply`, superseding via the op dispatch.
+    #[test]
+    fn transform_op_applies() {
+        let (iso, _) = test_iso();
+        let mut m = Model::new();
+        let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let out = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: c,
+                isometry: iso,
+            },
+        )
+        .unwrap();
+        match out {
+            OpOutput::Transform { solid } => assert_eq!(m.live_solids, vec![solid]),
+            other => panic!("expected Transform output, got {other:?}"),
+        }
     }
 
     #[test]

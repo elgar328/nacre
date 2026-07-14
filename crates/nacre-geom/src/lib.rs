@@ -32,7 +32,7 @@ pub use line::Line;
 pub use nurbs::{NurbsCurve, NurbsSurface};
 pub use plane::Plane;
 
-use nacre_math::Point3;
+use nacre_math::{Point3, Vector3};
 
 /// A surface — the exact truth of a face's geometry.
 ///
@@ -66,6 +66,15 @@ impl Surface {
     pub fn contains(&self, p: Point3, tol: f64) -> bool {
         self.distance(p) <= tol
     }
+
+    /// The surface translated by `offset` (a rigid translation).
+    #[inline]
+    pub fn translated(&self, offset: Vector3) -> Surface {
+        match self {
+            Surface::Plane(s) => Surface::Plane(s.translated(offset)),
+            Surface::Cylinder(s) => Surface::Cylinder(s.translated(offset)),
+        }
+    }
 }
 
 /// A curve — the exact truth of an edge's geometry.
@@ -89,6 +98,15 @@ impl Curve {
         match self {
             Curve::Line(c) => c.distance(p),
             Curve::Circle(c) => c.distance(p),
+        }
+    }
+
+    /// The curve translated by `offset` (a rigid translation).
+    #[inline]
+    pub fn translated(&self, offset: Vector3) -> Curve {
+        match self {
+            Curve::Line(c) => Curve::Line(c.translated(offset)),
+            Curve::Circle(c) => Curve::Circle(c.translated(offset)),
         }
     }
 
