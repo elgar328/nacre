@@ -116,11 +116,27 @@ fn plane_of(axis: Axis) -> (usize, usize) {
 }
 
 impl Pt3 {
-    /// A point at `base` with no rotation (coord = base, tol 0).
+    /// A point at `base`. The coordinate is `base` realized in f64, which carries the
+    /// rational→f64 rounding error (a division), so the initial tol is that error —
+    /// exactly 0 for an f64-representable base (e.g. a small integer), positive
+    /// otherwise. An axis a later chain never rotates keeps exactly this, which is why
+    /// a per-axis tol check needs it (a determinant/coefficient check hides it in the
+    /// rotated-plane mix).
     pub fn at(base: [Rat; 3]) -> Self {
+        let coord = [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()];
+        // Actual rounding = |coord − base| at high precision; 2× the power-of-two
+        // magnitude is a sound upper bound (0 when the base is exact).
+        let round_tol = |b: Rat, c: f64| {
+            let e = BigFloat::from_f64(c, 120).sub(&rat_to_big(b, 120), 120, HP_RM);
+            2.0 * bf_mag(&e.abs())
+        };
         Pt3 {
-            coord: [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
-            tol: [0.0; 3],
+            tol: [
+                round_tol(base[0], coord[0]),
+                round_tol(base[1], coord[1]),
+                round_tol(base[2], coord[2]),
+            ],
+            coord,
             base,
             chain: Vec::new(),
         }
@@ -993,6 +1009,110 @@ mod tests {
         assert!(
             escalated > 0,
             "corpus must exercise the escalation path (else vacuous)"
+        );
+    }
+
+    /// H-d — three-axis tol propagation across a rotation chain. A point carried
+    /// through several rotations about mixed axes accumulates its tol by
+    /// `new = |R|·old + mix` at each node (§TIP ⑦ traversal); the accumulated xyz tol
+    /// must still bound the real coordinate error vs the astro-float truth — on all
+    /// three axes, which a single-axis rotation never exercises.
+    #[test]
+    fn h_d_chain_tol_propagation() {
+        const GT: usize = 512;
+        const N: usize = 5_000;
+        let mut st = 0xD00D_3333_7777_4444u64;
+        let mut bad = 0usize;
+        let mut worst = 0.0_f64;
+        let mut axes_seen = [false; 3];
+        for _ in 0..N {
+            let mut p = Pt3::at(rand_base(&mut st));
+            let k = rng_i128(&mut st, 2, 5);
+            for _ in 0..k {
+                let ax = axis_of(rng_i128(&mut st, 0, 2));
+                match ax {
+                    Axis::X => axes_seen[0] = true,
+                    Axis::Y => axes_seen[1] = true,
+                    Axis::Z => axes_seen[2] = true,
+                }
+                let ang = Angle::from_deg(ri(
+                    rng_i128(&mut st, 0, 360_000),
+                    rng_i128(&mut st, 1, 9973),
+                ))
+                .unwrap();
+                p = p.rotate(ax, ang);
+            }
+            let hp = p.hp_coord(GT);
+            for (axis, hp_a) in hp.iter().enumerate() {
+                let err = abs_err(p.coord[axis], hp_a, GT);
+                if err > p.tol[axis] {
+                    bad += 1;
+                }
+                if p.tol[axis] > 0.0 {
+                    worst = worst.max(err / p.tol[axis]);
+                }
+            }
+        }
+        eprintln!(
+            "[H-d N={N}] chain-tol violations: {bad}; worst tightness: {worst:.3}; axes exercised: {axes_seen:?}"
+        );
+        assert_eq!(
+            bad, 0,
+            "chain-accumulated tol must bound the error on every axis"
+        );
+        assert!(
+            axes_seen == [true; 3],
+            "the corpus must rotate about all three axes"
+        );
+    }
+
+    /// H-e — axis-change and bundling. (a) A chain of 90°-family rotations stays
+    /// exact (tol 0, Niven), whatever the axes. (b) Same-axis rotation bundles: K
+    /// incremental steps of θ realize the same geometry as one step of Kθ, but the
+    /// incremental tol *amplifies* (each node transports the tol by `|c|+|s| ≥ 1`),
+    /// while the bundled tol stays flat — both sound, so bundling is mandatory (the
+    /// design's H4-amplification, here across a shared axis). A different-axis node
+    /// cannot be bundled (the composition is not one axis-angle), so its tol simply
+    /// accumulates — already covered sound by H-d.
+    #[test]
+    fn h_e_axis_change_and_bundling() {
+        const GT: usize = 512;
+        // (a) 90°-family chain across mixed axes → tol exactly 0 (exact realization).
+        let p = Pt3::at([ri(3, 1), ri(5, 1), ri(7, 1)])
+            .rotate(Axis::Z, Angle::from_deg(ri(90, 1)).unwrap())
+            .rotate(Axis::X, Angle::from_deg(ri(180, 1)).unwrap())
+            .rotate(Axis::Y, Angle::from_deg(ri(270, 1)).unwrap());
+        assert_eq!(p.tol, [0.0; 3], "90°-family chain must stay tol 0");
+
+        // (b) same-axis bundling: K incremental θ vs one Kθ about Z.
+        const K: i128 = 30;
+        let theta = ri(1, 7); // 1/7 degree, inexact
+        let base = [ri(11, 1), ri(-7, 1), ri(4, 1)];
+        let mut incr = Pt3::at(base);
+        for _ in 0..K {
+            incr = incr.rotate(Axis::Z, Angle::from_deg(theta).unwrap());
+        }
+        let bundled = Pt3::at(base).rotate(
+            Axis::Z,
+            Angle::from_deg(theta.checked_mul(Rat::from_int(K)).unwrap()).unwrap(),
+        );
+
+        // Both realize the same geometry, so both must bound the (shared) true error.
+        let hp = bundled.hp_coord(GT);
+        for (axis, hp_a) in hp.iter().enumerate() {
+            let err = abs_err(bundled.coord[axis], hp_a, GT);
+            assert!(err <= bundled.tol[axis], "bundled unsound on axis {axis}");
+            assert!(err <= incr.tol[axis], "incremental unsound on axis {axis}");
+        }
+        let incr_tol = incr.tol[0].max(incr.tol[1]);
+        let bund_tol = bundled.tol[0].max(bundled.tol[1]);
+        eprintln!(
+            "[H-e] bundled tol {bund_tol:.3e} vs incremental tol {incr_tol:.3e} (amplification {:.1}x over K={K})",
+            incr_tol / bund_tol
+        );
+        assert!(
+            bund_tol < incr_tol,
+            "bundling must be tighter than incremental (amplification)"
         );
     }
 }
