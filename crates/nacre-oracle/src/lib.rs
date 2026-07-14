@@ -681,6 +681,38 @@ bbox_min 0 0 0
         assert!(approx(fuse.volume, 2.0), "disjoint fuse {}", fuse.volume);
     }
 
+    /// A severing `Cut` returns two nacre solids; OCCT returns a COMPOUND of two solids for the
+    /// same inputs. Their aggregate volume and area agree — nacre's multi-solid output (cell 0.4)
+    /// matches OCCT. The bar threads the cube and out both ends, leaving two 1×1×1 stubs.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn sever_cut_matches_occt_compound() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let bar = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        // OCCT ground truth from the inputs, before nacre supersedes them.
+        let occt = occt_boolean_of(&m, OcctBool::Cut, bar, cube).unwrap();
+        let solids = boolean(&mut m, BoolKind::Cut, bar, cube).unwrap();
+        assert_eq!(solids.len(), 2, "nacre severs into two solids");
+        let vol: f64 = solids
+            .iter()
+            .map(|&s| mass_props(&m, s).unwrap().volume)
+            .sum();
+        let area: f64 = solids
+            .iter()
+            .map(|&s| mass_props(&m, s).unwrap().area)
+            .sum();
+        assert!(
+            approx(vol, occt.volume),
+            "volume {vol} vs occt {}",
+            occt.volume
+        );
+        assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
+    }
+
     /// nacre's own `Common` result diffed against OCCT: build two overlapping
     /// cubes, ask OCCT for the intersection volume, and compare it to
     /// `mass_props` of the solid nacre's half-space enumeration produced.
