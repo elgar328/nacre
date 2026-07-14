@@ -260,6 +260,7 @@ dependencies = [
  "nacre-math",
  "nacre-ops",
  "nacre-props",
+ "nacre-scalar",
  "nacre-step",
  "nacre-store",
  "nacre-topo",

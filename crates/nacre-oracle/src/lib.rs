@@ -713,6 +713,56 @@ bbox_min 0 0 0
         assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
     }
 
+    /// A `Transform`-translated solid composes correctly into a boolean (overhaul
+    /// stage 1a): translate a cube by a rational offset, then `Cut` an overlapping
+    /// cube from it. The moved geometry's boolean matches OCCT on the same inputs —
+    /// so the geometry-rewrite produced a boolean-valid solid, not just a
+    /// volume-invariant one.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn translated_solid_cut_matches_occt() {
+        use nacre_ops::{BoolKind, Operation, apply, boolean};
+        use nacre_scalar::{Isometry, Rat};
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        // Translate A by [3/10, 2/5, 1/2] ⇒ A' = [0.3,1.3]×[0.4,1.4]×[0.5,1.5].
+        let iso = Isometry::translation([
+            Rat::new(3, 10).unwrap(),
+            Rat::new(2, 5).unwrap(),
+            Rat::new(1, 2).unwrap(),
+        ]);
+        let out = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: a,
+                isometry: iso,
+            },
+        )
+        .unwrap();
+        let nacre_ops::OpOutput::Transform { solid: a2 } = out else {
+            panic!("expected Transform output");
+        };
+        // B overlaps A' at a corner.
+        let b = m.add_cuboid(Point3::from_array([0.8; 3]), Point3::from_array([1.8; 3]));
+        // OCCT ground truth on the moved inputs, before nacre supersedes them.
+        let occt = occt_boolean_of(&m, OcctBool::Cut, a2, b).unwrap();
+        let solids = boolean(&mut m, BoolKind::Cut, a2, b).unwrap();
+        let vol: f64 = solids
+            .iter()
+            .map(|&s| mass_props(&m, s).unwrap().volume)
+            .sum();
+        let area: f64 = solids
+            .iter()
+            .map(|&s| mass_props(&m, s).unwrap().area)
+            .sum();
+        assert!(
+            approx(vol, occt.volume),
+            "volume {vol} vs occt {}",
+            occt.volume
+        );
+        assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
+    }
+
     /// nacre's own `Common` result diffed against OCCT: build two overlapping
     /// cubes, ask OCCT for the intersection volume, and compare it to
     /// `mass_props` of the solid nacre's half-space enumeration produced.
