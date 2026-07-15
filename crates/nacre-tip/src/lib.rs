@@ -16,12 +16,15 @@
 //! surface and routes to [`nacre_scalar::frame3::indirect_orient3d_judge`] (stage
 //! 2c-ii). Two or more implicit points, a vertex translated after being rotated, and a
 //! plane with too few direct vertices all surface as a typed [`TipError`] (honest
-//! defer) rather than a silent wrong sign. Not yet wired into boolean (stage 3): the
-//! boolean still rejects non-90° rotated inputs, so a rotated seam is exercised
-//! synthetically.
+//! defer) rather than a silent wrong sign. [`cmp_coord`] is the two-implicit companion:
+//! it orders two `Discovered` seams along one axis from their plane definitions (stage
+//! cmp-ii). Not yet wired into boolean (stage 3): the boolean still rejects non-90°
+//! rotated inputs, so a rotated seam is exercised synthetically.
 
 use nacre_geom::Surface;
-use nacre_scalar::frame3::{Pt3, RotNode, indirect_orient3d_judge, orient3d_judge};
+use nacre_scalar::frame3::{
+    Pt3, RotNode, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
+};
 use nacre_scalar::{Orient, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Model, Origin, Rotation, Vertex, VertexDef};
@@ -43,6 +46,10 @@ pub enum TipError {
     /// vertices on its faces, so its plane cannot be reconstructed for the indirect
     /// predicate (stage 2c-ii).
     PlaneUnderdetermined,
+    /// A vertex passed to [`cmp_coord`] is not a `Discovered` seam. That two-implicit
+    /// compare needs two three-plane points; a seam-vs-explicit compare is a different
+    /// predicate (stage 3).
+    NotSeam,
 }
 
 /// The toleranced point ([`Pt3`]) of a kernel vertex, assembled from its root
@@ -185,6 +192,46 @@ fn indirect_dispatch(
     let pl = |k: usize| (&planes[k][0], &planes[k][1], &planes[k][2]);
     let o = indirect_orient3d_judge(pl(0), pl(1), pl(2), &q, &r, &s);
     Ok(if flip { flip_orient(o) } else { o })
+}
+
+/// Sound `cmp_coord`: the sign of `v1[axis] − v2[axis]` between two `Discovered` seam
+/// vertices (each an implicit three-plane point), judged from their plane definitions
+/// without materializing either coordinate. `Positive` = `v1[axis] > v2[axis]`,
+/// `Negative` = `<`, `Zero` = equal or below the declare-0 floor.
+///
+/// Both vertices must be `Discovered` seams ([`TipError::NotSeam`] otherwise): a
+/// seam-vs-explicit compare is a different (mixed) predicate, stage 3. The two-implicit
+/// companion of [`orient3d`]'s single-`Discovered` path; boolean wiring is stage 3.
+pub fn cmp_coord(
+    model: &Model,
+    v1: Handle<Vertex>,
+    v2: Handle<Vertex>,
+    axis: usize,
+) -> Result<Orient, TipError> {
+    let triple = |vh: Handle<Vertex>| -> Result<[[Pt3; 3]; 3], TipError> {
+        let surfs = seam_surfaces(model, vh).ok_or(TipError::NotSeam)?;
+        Ok([
+            plane_pts(model, surfs[0])?,
+            plane_pts(model, surfs[1])?,
+            plane_pts(model, surfs[2])?,
+        ])
+    };
+    let a = triple(v1)?;
+    let b = triple(v2)?;
+    Ok(indirect_cmp_coord_judge(
+        borrow_triple(&a),
+        borrow_triple(&b),
+        axis,
+    ))
+}
+
+/// Borrow an owned plane-triple as the `&Pt3` tuples the judge takes.
+fn borrow_triple(t: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
+    [
+        (&t[0][0], &t[0][1], &t[0][2]),
+        (&t[1][0], &t[1][1], &t[1][2]),
+        (&t[2][0], &t[2][1], &t[2][2]),
+    ]
 }
 
 /// The three defining surfaces of a `Discovered` (`ThreePlane`) vertex, else `None`.
@@ -613,6 +660,185 @@ mod tests {
         assert!(matches!(
             orient3d(&m, vd1, vd2, vs[1], vs[2]),
             Err(TipError::IndirectRequired)
+        ));
+    }
+
+    // ---- cmp_coord bridge (cmp-ii) ----
+
+    /// A second rotation (different axis + angle) for heterogeneous provenance.
+    fn rot37x() -> Isometry {
+        Isometry::rotation(SRot {
+            axis: Axis::X,
+            point: [R::from_int(0), R::from_int(0), R::from_int(0)],
+            angle: Angle::from_deg(R::from_int(37)).unwrap(),
+        })
+    }
+
+    fn neg_orient(o: Orient) -> Orient {
+        match o {
+            Orient::Positive => Orient::Negative,
+            Orient::Negative => Orient::Positive,
+            Orient::Zero => Orient::Zero,
+        }
+    }
+
+    /// A synthetic `Discovered` seam at every three-face corner of solid `s`, paired with
+    /// the corner's f64 coordinate (the cmp oracle).
+    fn synth_corners(
+        m: &mut Model,
+        s: Handle<nacre_topo::Solid>,
+    ) -> Vec<(Handle<Vertex>, [f64; 3])> {
+        let mut out = Vec::new();
+        for v in boundary_verts(m, s) {
+            let surfs = surfaces_at_vertex(m, s, v);
+            if surfs.len() != 3 {
+                continue;
+            }
+            let coord = m.vertices.get(v).point.as_array();
+            let vd = synth_discovered(m, v, [surfs[0], surfs[1], surfs[2]]);
+            out.push((vd, coord));
+        }
+        out
+    }
+
+    /// Core check: seam corners of two independently rotated cuboids (heterogeneous
+    /// provenance) order by the compared axis exactly as their f64 coordinates do on every
+    /// definite pair, are antisymmetric under a swap, and resolve some pairs to a definite
+    /// sign (not always `Zero`).
+    #[test]
+    fn cmp_matches_coord_on_rotated_corners() {
+        let mut m = Model::new();
+        let a0 = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let b0 = m.add_cuboid(
+            Point3::from_array([10.0, 10.0, 10.0]),
+            Point3::from_array([13.0, 11.0, 12.0]),
+        );
+        let a = transformed(&mut m, a0, &rot30z());
+        let b = transformed(&mut m, b0, &rot37x());
+        let ca = synth_corners(&mut m, a);
+        let cb = synth_corners(&mut m, b);
+        let (mut wrong, mut resolved, mut checked) = (0usize, 0usize, 0usize);
+        for &(vda, coorda) in &ca {
+            for &(vdb, coordb) in &cb {
+                for axis in 0..3 {
+                    let diff = coorda[axis] - coordb[axis];
+                    if diff.abs() < 1e-6 {
+                        continue; // near-tie: the f64 oracle is unreliable
+                    }
+                    checked += 1;
+                    let want = if diff > 0.0 {
+                        Orient::Positive
+                    } else {
+                        Orient::Negative
+                    };
+                    let got = cmp_coord(&m, vda, vdb, axis).unwrap();
+                    if got == want {
+                        resolved += 1;
+                    } else if got != Orient::Zero {
+                        wrong += 1;
+                    }
+                    // antisymmetry: cmp(a,b) = −cmp(b,a) (always, including Zero).
+                    assert_eq!(
+                        cmp_coord(&m, vdb, vda, axis).unwrap(),
+                        neg_orient(got),
+                        "swap must negate the ordering"
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            wrong, 0,
+            "cmp bridge must never disagree with the coord on a definite pair"
+        );
+        assert!(checked > 0, "no definite pair in the corpus");
+        assert!(
+            resolved > 0,
+            "bridge must resolve some definite orderings (not always Zero)"
+        );
+    }
+
+    /// An unrotated seam pair judged by this bridge agrees with the independent exact-plane
+    /// predicate (`nacre_geom::three_plane_cmp_coord`).
+    #[test]
+    fn cmp_unrotated_matches_exact_plane() {
+        use nacre_geom::intersect::three_plane_cmp_coord;
+        let mut m = Model::new();
+        let sa = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let sb = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 1.0]),
+            Point3::from_array([5.0, 6.0, 7.0]),
+        );
+        m.rebuild_adjacency();
+        let (va, surfa) = corner_with_surfaces(&m, sa);
+        let (vb, surfb) = corner_with_surfaces(&m, sb);
+        let plane = |h: Handle<Surface>| match m.surfaces.get(h) {
+            Surface::Plane(p) => *p,
+            _ => panic!("cuboid surfaces are planes"),
+        };
+        let pa = [plane(surfa[0]), plane(surfa[1]), plane(surfa[2])];
+        let pb = [plane(surfb[0]), plane(surfb[1]), plane(surfb[2])];
+        let vda = synth_discovered(&mut m, va, surfa);
+        let vdb = synth_discovered(&mut m, vb, surfb);
+        let mut checked = 0;
+        for axis in 0..3 {
+            let want = match three_plane_cmp_coord(
+                [&pa[0], &pa[1], &pa[2]],
+                [&pb[0], &pb[1], &pb[2]],
+                axis,
+            ) {
+                1 => Orient::Positive,
+                -1 => Orient::Negative,
+                _ => continue,
+            };
+            assert_eq!(cmp_coord(&m, vda, vdb, axis).unwrap(), want);
+            checked += 1;
+        }
+        assert!(checked > 0);
+    }
+
+    /// A non-`Discovered` vertex passed to `cmp_coord` defers (`NotSeam`).
+    #[test]
+    fn cmp_non_seam_is_deferred() {
+        let (mut m, s) = cuboid();
+        let (v0, surfs) = corner_with_surfaces(&m, s);
+        let vd = synth_discovered(&mut m, v0, surfs);
+        let plain = boundary_verts(&m, s)[0]; // a Constructed corner, not a seam
+        assert!(matches!(
+            cmp_coord(&m, vd, plain, 0),
+            Err(TipError::NotSeam)
+        ));
+        assert!(matches!(
+            cmp_coord(&m, plain, vd, 0),
+            Err(TipError::NotSeam)
+        ));
+    }
+
+    /// A seam whose surface cannot be reconstructed defers (`PlaneUnderdetermined`).
+    #[test]
+    fn cmp_underdetermined_plane_is_deferred() {
+        use nacre_geom::{Plane, Surface as GSurface};
+        let (mut m, s) = cuboid();
+        let (v0, surfs) = corner_with_surfaces(&m, s);
+        let vs = boundary_verts(&m, s);
+        let dummy = m.surfaces.push(GSurface::Plane(
+            Plane::through_points(
+                Point3::from_array([0.0, 0.0, 0.0]),
+                Point3::from_array([1.0, 0.0, 0.0]),
+                Point3::from_array([0.0, 1.0, 0.0]),
+            )
+            .unwrap(),
+        ));
+        let vd1 = synth_discovered(&mut m, v0, surfs);
+        let vd2 = synth_discovered(&mut m, vs[0], [dummy, dummy, dummy]);
+        assert!(matches!(
+            cmp_coord(&m, vd1, vd2, 0),
+            Err(TipError::PlaneUnderdetermined)
         ));
     }
 }
