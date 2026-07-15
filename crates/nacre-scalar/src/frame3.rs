@@ -706,6 +706,47 @@ pub fn indirect_cmp_coord_judge(
     cmp_hp(hp(a), hp(b), axis, JUDGE_PREC)
 }
 
+/// A definite `bool` sign (`true` = positive) as an [`Orient`].
+fn orient_of(pos: bool) -> Orient {
+    if pos {
+        Orient::Positive
+    } else {
+        Orient::Negative
+    }
+}
+
+/// The sign of `det[n_a; n_b; n_c]`, the determinant of the three planes' normals — the
+/// toleranced twin of `nacre_geom`'s `plane_pair_dir_sign` (`sign((n_a × n_b) · n_c)`),
+/// which decides how the line `a ∩ b` runs relative to plane `c`. This is exactly the
+/// Cramer `D` of the three planes ([`cramer_iv`] / [`cramer_hp`]); the interval filter
+/// resolves the easy cases, an ambiguous one escalates, and a below-floor `D` is
+/// [`Orient::Zero`] (the planes' normals are coincident — degenerate).
+///
+/// **Winding-dependent** (unlike [`orient3d_judge`] / [`indirect_cmp_coord_judge`], which
+/// are normal-orientation invariant): each plane's normal is `(p1−p0)×(p2−p0)`, so the
+/// result follows each triple's point order. The caller must pass the three points in a
+/// consistent order (the ops wrapper passes each face's outward-oriented `tri`).
+pub fn dir_sign_judge(
+    a: (&Pt3, &Pt3, &Pt3),
+    b: (&Pt3, &Pt3, &Pt3),
+    c: (&Pt3, &Pt3, &Pt3),
+) -> Orient {
+    let (d, _) = cramer_iv([
+        plane_iv(a.0, a.1, a.2),
+        plane_iv(b.0, b.1, b.2),
+        plane_iv(c.0, c.1, c.2),
+    ]);
+    if let Some(pos) = d.sign() {
+        return orient_of(pos);
+    }
+    let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, JUDGE_PREC);
+    let (dh, _, mag_d, _) = cramer_hp([ph(a), ph(b), ph(c)], JUDGE_PREC);
+    match sign_with_floor(&dh, mag_d, JUDGE_PREC) {
+        Some(pos) => orient_of(pos),
+        None => Orient::Zero,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1480,6 +1521,222 @@ mod tests {
             wrong, 0,
             "cmp judge must never disagree with GT (soundness)"
         );
+        assert!(escalated > 0, "corpus must exercise the escalation path");
+        assert!(
+            filter_resolved > 0,
+            "corpus must exercise the fast filter path"
+        );
+    }
+
+    // ---- dir_sign_judge (3a-iii) ----
+
+    fn rat_cross(a: [Rat; 3], b: [Rat; 3]) -> [Rat; 3] {
+        let m = |x: Rat, y: Rat| x.checked_mul(y).unwrap();
+        let s = |x: Rat, y: Rat| x.checked_sub(y).unwrap();
+        [
+            s(m(a[1], b[2]), m(a[2], b[1])),
+            s(m(a[2], b[0]), m(a[0], b[2])),
+            s(m(a[0], b[1]), m(a[1], b[0])),
+        ]
+    }
+
+    fn smul(k: Rat, a: [Rat; 3]) -> [Rat; 3] {
+        [
+            a[0].checked_mul(k).unwrap(),
+            a[1].checked_mul(k).unwrap(),
+            a[2].checked_mul(k).unwrap(),
+        ]
+    }
+
+    /// Three base points defining a plane whose normal is parallel to `n` — `p0` and two
+    /// in-plane edges `n × e1`, `n × e2` (single crosses, small magnitude).
+    fn plane_norm(n: [Rat; 3], p0: [Rat; 3]) -> [[Rat; 3]; 3] {
+        let e1 = [ri(1, 1), ri(2, 1), ri(3, 1)];
+        let e2 = [ri(2, 1), ri(3, 1), ri(1, 1)];
+        [p0, add3(p0, rat_cross(n, e1)), add3(p0, rat_cross(n, e2))]
+    }
+
+    fn rot_plane(b: [[Rat; 3]; 3], ax: Axis, ang: Angle, piv: [Rat; 3]) -> [Pt3; 3] {
+        b.map(|p| Pt3::at(p).rotate_about(ax, ang, piv))
+    }
+
+    fn t3(p: &[Pt3; 3]) -> (&Pt3, &Pt3, &Pt3) {
+        (&p[0], &p[1], &p[2])
+    }
+
+    /// The three points are far from collinear (`sin²` of the corner angle above a
+    /// threshold) — a well-formed plane. A degenerate plane (tiny normal) is not the
+    /// near-coplanar-*normals* regime under test, so the corpus skips it.
+    fn well_conditioned(p: &[Pt3; 3]) -> bool {
+        let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let (e1, e2) = (sub(p[1].coord, p[0].coord), sub(p[2].coord, p[0].coord));
+        let n = [
+            e1[1] * e2[2] - e1[2] * e2[1],
+            e1[2] * e2[0] - e1[0] * e2[2],
+            e1[0] * e2[1] - e1[1] * e2[0],
+        ];
+        dot(n, n) > 1e-6 * dot(e1, e1) * dot(e2, e2)
+    }
+
+    /// The sign of `D` (det of the three normals) at `prec` bits, floored to declare-0.
+    fn dir_d_sign_at(
+        a: (&Pt3, &Pt3, &Pt3),
+        b: (&Pt3, &Pt3, &Pt3),
+        c: (&Pt3, &Pt3, &Pt3),
+        prec: usize,
+    ) -> Option<bool> {
+        let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+        let (dh, _, mag_d, _) = cramer_hp([ph(a), ph(b), ph(c)], prec);
+        sign_with_floor(&dh, mag_d, prec)
+    }
+
+    /// The **GT-stable** `dir_sign` truth: `Some` only when `prec` and `prec + 128` agree
+    /// on a definite sign — otherwise the config is degenerate beyond what the ground
+    /// truth itself resolves, so it is `None` (skip), not a spurious "wrong". (Mirrors
+    /// exact3d's `indirect_truth` stability check.)
+    fn dir_sign_truth(
+        a: (&Pt3, &Pt3, &Pt3),
+        b: (&Pt3, &Pt3, &Pt3),
+        c: (&Pt3, &Pt3, &Pt3),
+        prec: usize,
+    ) -> Option<Orient> {
+        match (
+            dir_d_sign_at(a, b, c, prec),
+            dir_d_sign_at(a, b, c, prec + 128),
+        ) {
+            (Some(x), Some(y)) if x == y => Some(orient_of(x)),
+            _ => None,
+        }
+    }
+
+    /// Sanity: the three axis-perpendicular planes have normals `+x, −y, +z`, so their
+    /// determinant is `−1`; a swap flips it, and three coplanar normals give `Zero`.
+    #[test]
+    fn dir_sign_judge_sanity() {
+        let ap = axis_planes([0, 0, 0]);
+        assert_eq!(
+            dir_sign_judge(t3(&ap[0]), t3(&ap[1]), t3(&ap[2])),
+            Orient::Negative,
+            "det[+x, -y, +z] = -1"
+        );
+        assert_eq!(
+            dir_sign_judge(t3(&ap[0]), t3(&ap[2]), t3(&ap[1])),
+            Orient::Positive,
+            "one swap flips the sign"
+        );
+        // Three normals in the plane z = 0 → coplanar → D = 0 → Zero.
+        let mk = |n: [i128; 3]| {
+            plane_norm([ri(n[0], 1), ri(n[1], 1), ri(n[2], 1)], [ri(0, 1); 3]).map(Pt3::at)
+        };
+        let (a, b, c) = (mk([1, 0, 0]), mk([0, 1, 0]), mk([1, 1, 0]));
+        assert_eq!(
+            dir_sign_judge(t3(&a), t3(&b), t3(&c)),
+            Orient::Zero,
+            "coplanar normals → D = 0"
+        );
+    }
+
+    /// `dir_sign` is a determinant of normals, invariant under a shared rotation
+    /// (`det(R·n) = det(R)·det(n) = det(n)`).
+    #[test]
+    fn dir_sign_rotation_invariant() {
+        let mut st = 0x0D12_5157_ABCD_0007u64;
+        for _ in 0..40 {
+            let mk = |st: &mut u64| plane_norm(rand_base(st), rand_base(st));
+            let (ba, bb, bc) = (mk(&mut st), mk(&mut st), mk(&mut st));
+            let un = |b: [[Rat; 3]; 3]| b.map(Pt3::at);
+            let (ua, ub, uc) = (un(ba), un(bb), un(bc));
+            let s = dir_sign_judge(t3(&ua), t3(&ub), t3(&uc));
+            if s == Orient::Zero {
+                continue;
+            }
+            let ax = axis_of(rng(&mut st, 0, 2));
+            let ang = deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 9973));
+            let piv = rand_base(&mut st);
+            let (ra, rb, rc) = (
+                rot_plane(ba, ax, ang, piv),
+                rot_plane(bb, ax, ang, piv),
+                rot_plane(bc, ax, ang, piv),
+            );
+            assert_eq!(
+                dir_sign_judge(t3(&ra), t3(&rb), t3(&rc)),
+                s,
+                "rotation-invariant"
+            );
+        }
+    }
+
+    /// H-i — dir_sign soundness over a **near-coplanar-normals** corpus (which H-c/H-g do
+    /// not stress: they force `M ≈ 0`, not `D ≈ 0`). Three plane normals `n0, n1,
+    /// n2 = α·n0 + β·n1 + ε·(n0×n1)` (ε tiny → `D ≈ ε` → escalation), shared rotation. The
+    /// judge must never disagree with a GT-stable 512-bit `D` sign; both paths exercised.
+    #[test]
+    #[ignore = "slow astro-float ground truth (run with --ignored)"]
+    fn h_i_dir_sign_soundness() {
+        const GT: usize = 512;
+        let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
+            (0usize, 0, 0, 0, 0, 0);
+        let mut st = 0x0D18_5160_C0C0_2323u64;
+        let rand_n = |st: &mut u64| {
+            [
+                ri(rng(st, -20, 20), 1),
+                ri(rng(st, -20, 20), 1),
+                ri(rng(st, -20, 20), 1),
+            ]
+        };
+        for _ in 0..2000 {
+            let n0 = rand_n(&mut st);
+            let n1 = rand_n(&mut st);
+            let (alpha, beta) = (ri(rng(&mut st, -5, 5), 1), ri(rng(&mut st, -5, 5), 1));
+            let eps = match rng(&mut st, 0, 2) {
+                0 => ri(0, 1),
+                1 => ri(1, rng(&mut st, 5_000, 200_000)),
+                _ => ri(1, rng(&mut st, 1_000_000_000, 1_000_000_000_000_000)),
+            };
+            // n2 = α·n0 + β·n1 + ε·(n0×n1) — near-coplanar with n0, n1.
+            let n2 = add3(
+                add3(smul(alpha, n0), smul(beta, n1)),
+                smul(eps, rat_cross(n0, n1)),
+            );
+            let ax = axis_of(rng(&mut st, 0, 2));
+            let ang = deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 9973));
+            let piv = rand_base(&mut st);
+            let mk =
+                |n: [Rat; 3], st: &mut u64| rot_plane(plane_norm(n, rand_base(st)), ax, ang, piv);
+            let pa = mk(n0, &mut st);
+            let pb = mk(n1, &mut st);
+            let pc = mk(n2, &mut st);
+            if !(well_conditioned(&pa) && well_conditioned(&pb) && well_conditioned(&pc)) {
+                continue; // a degenerate plane is not the regime under test
+            }
+            let judged = dir_sign_judge(t3(&pa), t3(&pb), t3(&pc));
+            let (d, _) = cramer_iv([
+                plane_iv(&pa[0], &pa[1], &pa[2]),
+                plane_iv(&pb[0], &pb[1], &pb[2]),
+                plane_iv(&pc[0], &pc[1], &pc[2]),
+            ]);
+            if d.sign().is_none() {
+                escalated += 1;
+            } else {
+                filter_resolved += 1;
+            }
+            match dir_sign_truth(t3(&pa), t3(&pb), t3(&pc), GT) {
+                None => skipped += 1,
+                Some(truth) => {
+                    tested += 1;
+                    if judged == Orient::Zero {
+                        declined += 1;
+                    } else if judged != truth {
+                        wrong += 1;
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[H-i] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        );
+        assert_eq!(wrong, 0, "dir_sign must never disagree with GT (soundness)");
         assert!(escalated > 0, "corpus must exercise the escalation path");
         assert!(
             filter_resolved > 0,

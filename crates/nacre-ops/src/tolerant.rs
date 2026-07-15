@@ -11,15 +11,19 @@
 //! ([`solid_is_rotated`](crate::solid_is_rotated)) — the axis-aligned hot path is unchanged
 //! and never builds a `Pt3`.
 //!
-//! [`t_orient3d`] (order_along, 3a-i), [`t_cmp_coord`] (loop_winding) and [`t_plane_side`]
-//! (straddle, 3a-ii) are here; the live arrangement still calls the geom predicates until
-//! stage 3b wires these in.
+//! [`t_orient3d`] (order_along, 3a-i), [`t_cmp_coord`] (loop_winding), [`t_plane_side`]
+//! (straddle, 3a-ii) and [`t_plane_pair_dir_sign`] (dir_sign, 3a-iii) are the four
+//! toleranced predicates the arrangement needs; the live arrangement still calls the geom
+//! predicates until stage 3b wires these in.
 
 use crate::PlaneInfo;
-use nacre_geom::intersect::{plane_side, three_plane_cmp_coord, three_plane_orient3d};
+use crate::arrange::orient_sign;
+use nacre_geom::intersect::{
+    plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d,
+};
 use nacre_math::Point3;
 use nacre_scalar::frame3::{
-    Pt3, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
+    Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
 };
 use nacre_scalar::{Orient, Rat};
 use nacre_store::Handle;
@@ -159,6 +163,37 @@ pub(crate) fn t_plane_side(
     let pp = nacre_tip::vertex_pt3(model, p).expect("an original vertex is a direct point");
     let d = plane_def(planes, plane_idx);
     to_i8(orient3d_judge(&pp, &d[0], &d[1], &d[2]))
+}
+
+/// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — the toleranced twin
+/// of [`plane_pair_dir_sign`] (how the line `p ∩ a` runs relative to plane `b`), matching
+/// its shape (index-based drop-in, `+1`/`-1`/`0`).
+///
+/// `!rotated` → the geom predicate. `rotated` → the frame3 `D` (det of the *outward*
+/// `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal convention by the
+/// per-plane [`orient_sign`]: `det(stored) = orient_sign(p)·orient_sign(a)·orient_sign(b)·
+/// det(outward)`. `orient_sign` is an f64 dot of two parallel unit vectors (`|·| ≈ 1`),
+/// robust under rotation.
+#[allow(dead_code)]
+pub(crate) fn t_plane_pair_dir_sign(
+    planes: &[PlaneInfo],
+    p: usize,
+    a: usize,
+    b: usize,
+    rotated: bool,
+) -> i8 {
+    if !rotated {
+        return plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
+    }
+    let (dp, da, db) = (
+        plane_def(planes, p),
+        plane_def(planes, a),
+        plane_def(planes, b),
+    );
+    orient_sign(planes, p)
+        * orient_sign(planes, a)
+        * orient_sign(planes, b)
+        * to_i8(dir_sign_judge(borrow3(&dp), borrow3(&da), borrow3(&db)))
 }
 
 #[cfg(test)]
@@ -498,5 +533,55 @@ mod tests {
             }
         }
         assert!(exercised, "no mixed predicate exercised");
+    }
+
+    /// `plane_pair_dir_sign` is a determinant of normals → rigid-rotation invariant: the
+    /// frame3 path (`orient_sign` · `D`) over a rotated cuboid agrees with the geom path
+    /// over the same cuboid unrotated, on every definite ordered triple.
+    #[test]
+    fn t_dir_sign_rotation_invariant() {
+        let (mut m, s) = cuboid();
+        let pu = collect_planes(&m, s).unwrap();
+        let r = rotated(&mut m, s);
+        let pr = collect_planes(&m, r).unwrap();
+        let n = pu.len();
+        let mut checked = 0usize;
+        for p in 0..n {
+            for a in 0..n {
+                for b in 0..n {
+                    if p == a || p == b || a == b {
+                        continue;
+                    }
+                    let su = t_plane_pair_dir_sign(&pu, p, a, b, false);
+                    if su == 0 {
+                        continue; // coplanar normals — skip
+                    }
+                    let sr = t_plane_pair_dir_sign(&pr, p, a, b, true);
+                    assert_eq!(su, sr, "dir_sign rotation-invariant at ({p},{a},{b})");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "no definite triple in the corpus");
+    }
+
+    /// `rotated = false` forwards to `plane_pair_dir_sign` bit-for-bit.
+    #[test]
+    fn t_dir_sign_unrotated_forwards_geom() {
+        let (m, s) = cuboid();
+        let planes = collect_planes(&m, s).unwrap();
+        let n = planes.len();
+        for p in 0..n {
+            for a in 0..n {
+                for b in 0..n {
+                    if p == a || p == b || a == b {
+                        continue;
+                    }
+                    let want =
+                        plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
+                    assert_eq!(t_plane_pair_dir_sign(&planes, p, a, b, false), want);
+                }
+            }
+        }
     }
 }

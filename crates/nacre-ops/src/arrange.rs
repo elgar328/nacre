@@ -229,8 +229,10 @@ fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> 
 }
 
 /// `+1` when a plane's stored normal already points out of its solid, `-1` when the
-/// face is `Reversed` and the two oppose.
-fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
+/// face is `Reversed` and the two oppose. `pub(crate)` so the toleranced `dir_sign`
+/// wrapper ([`crate::tolerant`]) can bridge the frame3 `D` (over each face's outward
+/// `tri`) to `plane_pair_dir_sign`'s stored-normal convention.
+pub(crate) fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
     let dot = planes[i].plane.normal().dot(planes[i].n_out);
     debug_assert!(
         dot.abs() > 0.5,
