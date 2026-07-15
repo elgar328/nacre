@@ -18,6 +18,7 @@
 | **H-c** | indirect orient3d (3-평면 implicit point, 이질적 provenance + near-coplanar) | GT-stable 3264개 중 **wrong-sign 0**, 상승 1414회(definite-hard 해상 + 퇴화 declare-0) |
 | **H-d** | 3축 tol 전파(회전 체인 순회 누적, §⑦) | 5000 체인(길이 2–5, x·y·z 전부), **위반 0**, tightness **0.500** |
 | **H-e** | 축변경·번들링 | 90°계열 체인 **tol 0**(exact); 동일축 30스텝 incremental이 bundled 대비 tol **30.8× 증폭**(둘 다 sound → 번들 필수) |
+| **H-f** | **임의 유리수 피벗**(축이 원점 밖 통과 — 커널 `Rotation.point`) | 5000 체인(피벗 origin·on-point·ordinary·far 혼합, exact/inexact 각), **위반 0**, tightness **0.500** |
 | **aux** | 상승 빈도·속도·경로독립 | 일반 형상 상승 **0%**, near-coplanar **100%**, wrong-sign 0; 필터 **~300ns** vs 상승 **~1.2ms** |
 
 ## 핵심 결과
@@ -46,6 +47,12 @@
 - **base→f64 반올림 tol**: `Pt3::at`가 tol 0으로 두면, 체인이 안 건드린 축이 base 반올림 오차를 tol 없이 남긴다
   (per-axis 검사에서 노출; det/계수 검사에선 숨겨짐). 실제 반올림(정확 base면 0)을 초기 tol로 실었다.
 - **`sign_with_floor` 상수**: soundness 우선(선형-합)이라 넉넉히 잡아도 declare-0율만 늘 뿐 틀리지 않는다.
+- **★ 임의 피벗(단계 2 이식 중 발견·H-f)**: 원점-전용 코퍼스(H-a..H-e)는 커널의 유리수 피벗(`Rotation.point`)을
+  못 봤다. 원점 밖 축 회전은 `coord−pivot` 뺄셈·`pivot+…` 재가산·피벗 자체 Rat→f64 반올림을 더한다 — **exact(90°
+  계열) 각이어도, 점이 피벗 위에 있어도** 발생. `Pt3::rotate_about`에 피벗-상대 실현 + `piv` 항(`(|ci|+|cj|+|px|+
+  |py|)·DA`, 원점이면 정확히 0이라 H-d/H-e 비트-불변) 추가로 해소(위반 0·tightness 0.500 = 원점과 동급). 부차 발견:
+  exact/inexact 혼합 코퍼스는 **tol 0 축**에 512bit GT **실현 노이즈**(먼 피벗이 ~1e-147로 증폭)를 노출 → 실제 f64
+  오차는 결코 1e-100 미만이 아니므로 **GT 노이즈 floor(1e-100)**로 분리(H-d는 tol 항상>0이라 불필요했음).
 
 ## 파라미터
 
@@ -69,7 +76,7 @@ explicit orient3d 쌍둥이 = H-a; **`indirect_cmp_coord`**(두 implicit point �
 ## 재현
 
 ```
-cd experiments/exact3d && cargo test            # 7개 전부 green(위반 0)
+cd experiments/exact3d && cargo test            # 8개 전부 green(위반 0)
 cd experiments/exact3d && cargo test -- --nocapture   # tightness·상승 빈도·속도 수치
 ```
 루트에서 `cargo test`는 exact3d를 건드리지 않는다(중첩 워크스페이스 격리).

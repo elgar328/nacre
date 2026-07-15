@@ -85,11 +85,15 @@ pub enum Axis {
     Z,
 }
 
-/// One rotation in a point's definition: turn about `axis` by the rational `angle`.
+/// One rotation in a point's definition: turn about `axis` (through the rational
+/// pivot `point`) by the rational `angle`. `point = [0,0,0]` is the origin-pivot case
+/// the 2D-style experiment used; the kernel's `Rotation` carries an arbitrary rational
+/// pivot, so the port must track it (pivot-relative realization + its rounding).
 #[derive(Clone, Copy, Debug)]
 pub struct RotNode {
     pub axis: Axis,
     pub angle: Angle,
+    pub point: [Rat; 3],
 }
 
 /// A rational base point carried through a chain of axis rotations (§TIP ⑦ rotation
@@ -147,25 +151,50 @@ impl Pt3 {
     /// otherwise the two in-plane coords gain the coordinate-mixing realization error
     /// `(|u|+|v|)·da`, and every existing tol is transported by the component-wise
     /// absolute rotation `|R|` (§TIP: `new tol = |R|·old + mix`).
-    pub fn rotate(mut self, axis: Axis, angle: Angle) -> Self {
+    pub fn rotate(self, axis: Axis, angle: Angle) -> Self {
+        let z = Rat::from_int(0);
+        self.rotate_about(axis, angle, [z; 3])
+    }
+
+    /// [`rotate`] about an axis through an arbitrary rational pivot `point`. The two
+    /// in-plane coords are taken relative to the pivot (`u = coord − p`), rotated, and
+    /// shifted back. Origin pivot (`point = 0`) reproduces [`rotate`] bit-for-bit
+    /// (subtracting `0.0` is exact). A non-origin pivot adds its own f64 rounding
+    /// (the `coord − p` and `p + …` arithmetic), which the tol must cover even for an
+    /// exact (90°-family) angle — the one soundness question the origin-only corpus
+    /// never asked.
+    pub fn rotate_about(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = plane_of(axis);
-        let (u, v) = (self.coord[i], self.coord[j]);
+        let (px, py) = (point[i].to_f64(), point[j].to_f64());
+        let (ci, cj) = (self.coord[i], self.coord[j]); // pre-rotation magnitudes for tol
+        let (u, v) = (ci - px, cj - py);
         // cos/sin — exact (rational) for the 90°-family, else f64 (with realization tol).
         let (c, s, exact) = match angle.try_exact_cos_sin() {
             Some((cr, sr)) => (cr.to_f64(), sr.to_f64(), true),
             None => (angle.cos(), angle.sin(), false),
         };
-        self.coord[i] = u * c - v * s;
-        self.coord[j] = u * s + v * c;
-        let mix = if exact {
+        self.coord[i] = px + u * c - v * s;
+        self.coord[j] = py + u * s + v * c;
+        // Rotation-realization error (coordinate-mixing), 0 for an exact angle.
+        let rot = if exact {
             0.0
         } else {
             (u.abs() + v.abs()) * DA_F64
         };
+        // Pivot arithmetic — the `coord − p` subtraction, the `p + …` re-add, and the
+        // pivot's own Rat→f64 rounding. Exactly 0 for an origin pivot (subtracting/
+        // adding 0.0 is exact); otherwise ~ulp of every magnitude involved (present
+        // even when the angle is exact, and even for a point sitting on the pivot).
+        let piv = if px != 0.0 || py != 0.0 {
+            (ci.abs() + cj.abs() + px.abs() + py.abs()) * DA_F64
+        } else {
+            0.0
+        };
+        let mix = rot + piv;
         let (ti, tj) = (self.tol[i], self.tol[j]);
         self.tol[i] = c.abs() * ti + s.abs() * tj + mix;
         self.tol[j] = s.abs() * ti + c.abs() * tj + mix;
-        self.chain.push(RotNode { axis, angle });
+        self.chain.push(RotNode { axis, angle, point });
         self
     }
 
@@ -180,14 +209,25 @@ impl Pt3 {
         for node in &self.chain {
             let (i, j) = plane_of(node.axis);
             let (c, s) = cos_sin_hp(node.angle, prec);
-            let u = p[i].clone();
-            let v = p[j].clone();
-            p[i] = u
-                .mul(&c, prec, HP_RM)
-                .sub(&v.mul(&s, prec, HP_RM), prec, HP_RM);
-            p[j] = u
-                .mul(&s, prec, HP_RM)
-                .add(&v.mul(&c, prec, HP_RM), prec, HP_RM);
+            let (px, py) = (
+                rat_to_big(node.point[i], prec),
+                rat_to_big(node.point[j], prec),
+            );
+            // pivot-relative: u = p − pivot, rotate, shift back (exact at `prec` bits).
+            let u = p[i].sub(&px, prec, HP_RM);
+            let v = p[j].sub(&py, prec, HP_RM);
+            p[i] = px.add(
+                &u.mul(&c, prec, HP_RM)
+                    .sub(&v.mul(&s, prec, HP_RM), prec, HP_RM),
+                prec,
+                HP_RM,
+            );
+            p[j] = py.add(
+                &u.mul(&s, prec, HP_RM)
+                    .add(&v.mul(&c, prec, HP_RM), prec, HP_RM),
+                prec,
+                HP_RM,
+            );
         }
         p
     }
@@ -1063,6 +1103,74 @@ mod tests {
         assert!(
             axes_seen == [true; 3],
             "the corpus must rotate about all three axes"
+        );
+    }
+
+    /// H-f — pivot soundness. The origin-only corpus (H-a..H-e) never exercised the
+    /// kernel's arbitrary rational pivots. A rotation about an axis through a non-origin
+    /// point adds f64 rounding (`coord − pivot`, the `pivot + …` re-add, and the pivot's
+    /// own Rat→f64) that the tol must cover — even for an exact (90°-family) angle, and
+    /// even for a point sitting on the pivot. Random chains with mixed pivots (origin,
+    /// on-point, ordinary, far) and mixed angles (exact / inexact) must never violate.
+    #[test]
+    fn h_f_pivot_soundness() {
+        const GT: usize = 512;
+        const N: usize = 5_000;
+        let mut st = 0x9111_2222_3333_4444u64;
+        let mut bad = 0usize;
+        let mut worst = 0.0_f64;
+        let (mut exact_seen, mut far_seen) = (false, false);
+        for _ in 0..N {
+            let base = rand_base(&mut st);
+            let mut p = Pt3::at(base);
+            let k = rng_i128(&mut st, 2, 5);
+            for _ in 0..k {
+                let ax = axis_of(rng_i128(&mut st, 0, 2));
+                let pivot = match rng_i128(&mut st, 0, 3) {
+                    0 => [Rat::from_int(0); 3], // origin (must reproduce rotate())
+                    1 => base,                  // point sits on the pivot (fixed point)
+                    2 => rand_base(&mut st),    // ordinary
+                    _ => {
+                        far_seen = true;
+                        let f = |st: &mut u64| ri(rng_i128(st, -10_000, 10_000) * 1_000, 1);
+                        [f(&mut st), f(&mut st), f(&mut st)] // far pivot
+                    }
+                };
+                let ang = if rng_i128(&mut st, 0, 3) == 0 {
+                    exact_seen = true;
+                    Angle::from_deg(ri(90 * rng_i128(&mut st, 0, 3), 1)).unwrap() // 0/90/180/270
+                } else {
+                    Angle::from_deg(ri(
+                        rng_i128(&mut st, 0, 360_000),
+                        rng_i128(&mut st, 1, 9973),
+                    ))
+                    .unwrap()
+                };
+                p = p.rotate_about(ax, ang, pivot);
+            }
+            let hp = p.hp_coord(GT);
+            for (axis, hp_a) in hp.iter().enumerate() {
+                let err = abs_err(p.coord[axis], hp_a, GT);
+                // Ground-truth realization noise floor: the 512-bit astro-float truth
+                // carries ~2^-GT·(chain magnitude) noise (a far pivot amplifies it to
+                // ~1e-147). A *real* f64 error is never below ~1e-16·|coord|, so any
+                // `err` under 1e-100 is pure GT noise — floor it. (Only matters for the
+                // tol-0 exact cases the origin-only corpus never mixed with far pivots.)
+                if err > p.tol[axis] && err > 1e-100 {
+                    bad += 1;
+                }
+                if p.tol[axis] > 0.0 {
+                    worst = worst.max(err / p.tol[axis]);
+                }
+            }
+        }
+        eprintln!(
+            "[H-f N={N}] pivot-tol violations: {bad}; worst tightness: {worst:.3}; exact_seen={exact_seen} far_seen={far_seen}"
+        );
+        assert_eq!(bad, 0, "pivot-aware tol must bound the error on every axis");
+        assert!(
+            exact_seen && far_seen,
+            "corpus must include exact and far-pivot rotations"
         );
     }
 
