@@ -327,6 +327,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nacre-tip"
+version = "0.0.0"
+dependencies = [
+ "nacre-math",
+ "nacre-ops",
+ "nacre-predicates",
+ "nacre-scalar",
+ "nacre-store",
+ "nacre-topo",
+ "proptest",
+]
+
+[[package]]
 name = "nacre-topo"
 version = "0.0.0"
 dependencies = [

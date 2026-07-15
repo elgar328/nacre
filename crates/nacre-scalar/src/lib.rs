@@ -90,6 +90,45 @@ impl Rat {
         *self.0.numer() as f64 / *self.0.denom() as f64
     }
 
+    /// The **exact** rational value of an f64 (`mantissa · 2^exp`). `None` for a
+    /// non-finite input or when the exact numerator/denominator overflows i128
+    /// (subnormals, extreme exponents — the §4 downgrade trigger). Round-trips:
+    /// `to_f64(try_from_f64(x).unwrap()) == x` for finite f64 in the normal CAD range.
+    /// The bridge from an f64 coordinate cache to an exact `[Rat]` definition.
+    pub fn try_from_f64(x: f64) -> Option<Self> {
+        if x == 0.0 {
+            return Some(Rat::from_int(0));
+        }
+        if !x.is_finite() {
+            return None;
+        }
+        let bits = x.to_bits();
+        let neg = bits >> 63 == 1;
+        let exp_field = ((bits >> 52) & 0x7ff) as i32;
+        let frac = bits & 0x000f_ffff_ffff_ffff;
+        // value = mantissa · 2^exp (implicit leading 1 for a normal; bias 1023, and the
+        // 52-bit fraction shifts the exponent by another 52).
+        let (mantissa, exp) = if exp_field == 0 {
+            (frac, -1074) // subnormal
+        } else {
+            (frac | 0x0010_0000_0000_0000, exp_field - 1075)
+        };
+        let m = mantissa as i128;
+        let (numer, denom) = if exp >= 0 {
+            if exp > 126 {
+                return None;
+            }
+            (m.checked_mul(1i128 << exp)?, 1i128)
+        } else {
+            let k = (-exp) as u32;
+            if k > 126 {
+                return None;
+            }
+            (m, 1i128 << k)
+        };
+        Rat::new(if neg { -numer } else { numer }, denom)
+    }
+
     /// Reduced numerator (denominator is always positive after reduction).
     pub fn numer(self) -> i128 {
         *self.0.numer()
@@ -357,6 +396,25 @@ impl Isometry {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// `try_from_f64` is the exact rational of the f64: it round-trips (`to_f64` gives
+    /// back the same bits) for finite values in range, handles 0/integers/dyadic
+    /// fractions exactly, and returns `None` for non-finite or overflowing inputs.
+    #[test]
+    fn try_from_f64_is_exact_and_round_trips() {
+        assert_eq!(Rat::try_from_f64(0.0), Some(Rat::from_int(0)));
+        assert_eq!(Rat::try_from_f64(6.0), Some(Rat::from_int(6)));
+        assert_eq!(Rat::try_from_f64(-2.0), Some(Rat::from_int(-2)));
+        assert_eq!(Rat::try_from_f64(0.5), Rat::new(1, 2));
+        assert_eq!(Rat::try_from_f64(-0.75), Rat::new(-3, 4));
+        assert_eq!(Rat::try_from_f64(f64::NAN), None);
+        assert_eq!(Rat::try_from_f64(f64::INFINITY), None);
+        assert_eq!(Rat::try_from_f64(1e300), None); // exponent overflows i128
+        // round-trip over a spread of normal-range values (incl. non-dyadic f64s).
+        for &x in &[0.1, 1.0 / 3.0, 2.0, 1000.0, -6.1, 4_503.7, 1e-6, 1e6] {
+            assert_eq!(Rat::try_from_f64(x).unwrap().to_f64(), x, "round-trip {x}");
+        }
+    }
 
     /// The core §4 property in miniature: exact rational accumulation does not
     /// drift, where the f64 control does. `(1/10)` summed ten times is exactly
