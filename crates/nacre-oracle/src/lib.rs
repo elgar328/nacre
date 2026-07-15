@@ -763,6 +763,89 @@ bbox_min 0 0 0
         assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
     }
 
+    /// A `Transform`-rotated solid is a well-formed b-rep (overhaul stage 1b):
+    /// rotate a cuboid 30° about Z through a rational axis point, then export just
+    /// that solid and ask OCCT for its volume/area. A rigid rotation leaves both
+    /// invariant, so OCCT must agree with nacre's `mass_props` — proving the
+    /// rotation rewrite produced a valid solid, not merely a volume-preserving
+    /// vertex shuffle. The same check on a rotated `Cut` result exercises the
+    /// `Discovered`-vertex rotation path. Single-solid export (`to_step_solid`)
+    /// avoids summing the superseded input still resident in the arena.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rotated_solid_props_match_occt() {
+        use nacre_ops::{Operation, apply};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let rot30 = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+
+        // (a) rotate a plain cuboid.
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let out = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: c,
+                isometry: rot30,
+            },
+        )
+        .unwrap();
+        let nacre_ops::OpOutput::Transform { solid: c2 } = out else {
+            panic!("expected Transform output");
+        };
+        let occt = occt_props(&nacre_step::to_step_solid(&m, c2).unwrap()).unwrap();
+        let nacre = mass_props(&m, c2).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "volume {} vs occt {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs occt {}",
+            nacre.area,
+            occt.area
+        );
+
+        // (b) rotate a Cut result (Discovered seam vertices → Rotated).
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+        let cut = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        let out = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: cut,
+                isometry: rot30,
+            },
+        )
+        .unwrap();
+        let nacre_ops::OpOutput::Transform { solid: cut2 } = out else {
+            panic!("expected Transform output");
+        };
+        let occt = occt_props(&nacre_step::to_step_solid(&m, cut2).unwrap()).unwrap();
+        let nacre = mass_props(&m, cut2).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "cut volume {} vs occt {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "cut area {} vs occt {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// nacre's own `Common` result diffed against OCCT: build two overlapping
     /// cubes, ask OCCT for the intersection volume, and compare it to
     /// `mass_props` of the solid nacre's half-space enumeration produced.
