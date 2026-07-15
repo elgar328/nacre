@@ -44,6 +44,7 @@ thread_local! {
 }
 
 pub mod frame;
+pub mod frame3;
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
 /// so the caller sees the §4 downgrade trigger explicitly; on overflow the kernel
@@ -242,7 +243,7 @@ pub enum Axis {
 impl Axis {
     /// The two in-plane coordinate indices (the third is the fixed rotation axis).
     /// The order gives a right-handed (CCW-about-the-axis) rotation.
-    fn plane(self) -> (usize, usize) {
+    pub(crate) fn plane(self) -> (usize, usize) {
         match self {
             Axis::X => (1, 2), // rotate y,z
             Axis::Y => (2, 0), // rotate z,x

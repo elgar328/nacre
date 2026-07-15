@@ -20,7 +20,7 @@ use astro_float::BigFloat;
 /// f64 trig-realization error bound used by the directional tol formula — a
 /// conservative multiple of ulp covering cos/sin rounding, the deg→rad
 /// conversion, and the combining arithmetic.
-const DA_F64: f64 = 16.0 * f64::EPSILON;
+pub(crate) const DA_F64: f64 = 16.0 * f64::EPSILON;
 
 /// Precision (bits) the orient2d judge escalates to before declaring 0.
 const JUDGE_PREC: usize = 200;
@@ -76,7 +76,7 @@ impl Pt2 {
 }
 
 /// A rational as an arbitrary-precision float (exact for the small values here).
-fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
+pub(crate) fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
     BigFloat::from_f64(r.numer() as f64, prec).div(
         &BigFloat::from_f64(r.denom() as f64, prec),
         prec,
@@ -85,7 +85,7 @@ fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
 }
 
 /// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero).
-fn bf_mag(bf: &BigFloat) -> f64 {
+pub(crate) fn bf_mag(bf: &BigFloat) -> f64 {
     if bf.is_zero() {
         0.0
     } else {
