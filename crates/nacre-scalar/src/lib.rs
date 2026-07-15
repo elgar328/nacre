@@ -46,6 +46,10 @@ thread_local! {
 pub mod frame;
 pub mod frame3;
 
+/// The shared orientation-judgment result (§TIP) — used by both the 2D
+/// ([`frame`]) and 3D ([`frame3`]) judges and their downstream consumers.
+pub use frame::Orient;
+
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
 /// so the caller sees the §4 downgrade trigger explicitly; on overflow the kernel
 /// switches that value's cache to f64/double-double and tags its `Origin` with

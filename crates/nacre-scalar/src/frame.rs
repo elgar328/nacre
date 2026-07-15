@@ -23,7 +23,7 @@ use astro_float::BigFloat;
 pub(crate) const DA_F64: f64 = 16.0 * f64::EPSILON;
 
 /// Precision (bits) the orient2d judge escalates to before declaring 0.
-const JUDGE_PREC: usize = 200;
+pub(crate) const JUDGE_PREC: usize = 200;
 
 /// A rational base point rotated about the origin by a rational `angle`. The
 /// `base` + `angle` are the exact **definition** (never lost); `coord` is the f64
