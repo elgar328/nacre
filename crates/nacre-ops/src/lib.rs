@@ -1163,9 +1163,11 @@ fn remap_origin(origin: Origin, surf_map: &HashMap<Handle<Surface>, Handle<Surfa
                 definition: VertexDef::ThreePlane(mapped),
             }
         }
-        // Already-rotated input (a re-transform): keep the rotation definition — its
-        // `base`/`rotation` name arena ancestors, unaffected by this move. (Chaining
-        // rotations into the forest is the deferred bundling cell's job.)
+        // Reached only for an *exact* move of an already-rotated solid — a translation
+        // or a 90°-family rotation, which take the no-node path. Keep the rotation
+        // definition: its `base`/`rotation` name arena ancestors unaffected by a
+        // translation. (An *inexact* re-rotation instead records a chain node and is
+        // handled in `transform_solid` pass 3, not here.)
         Origin::Rotated { .. } => origin,
     }
 }
@@ -1236,19 +1238,34 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     let offset = Vector3::from_array(isometry.offset_f64());
     let src = model.solids.get(solid).clone();
 
-    // A non-exact rotation records one shared forest node (§TIP ⑦); every rotated
-    // vertex names it. Exact isometries (translation, 90°-family) record nothing.
-    let rot_node: Option<Handle<Rotation>> = (!isometry.is_exact()).then(|| {
-        let r = isometry
-            .rotate
-            .expect("a non-exact isometry has a rotation");
-        model.rotations.push(Rotation {
+    // Forest node for this transform (§TIP ⑦), one shared node named by every rotated
+    // vertex. The input's shared leaf (None if the input is not rotated) decides B0 vs B1:
+    //   A.  translation → no node (remap path).
+    //   B0. fresh rotation (input not rotated): exact (90°-family) → no node (remap,
+    //       preserving 1b); inexact → a root node (`parent = None`).
+    //   B1. re-rotation (input already rotated): **always chain** a node (`parent =
+    //       input leaf`) — record every rotation, even an exact one, because an inexact
+    //       ancestor makes the composite inexact and stage-2 tol must transport through
+    //       it; the forest stays complete. (Same-axis *bundling* — accumulating the
+    //       angle into one node — is a later cell; this cell always chains.)
+    let input_leaf = solid_rotation(model, solid);
+    let rot_node: Option<Handle<Rotation>> = match (isometry.rotate, input_leaf) {
+        (None, _) => None,
+        (Some(r), None) => (!isometry.is_exact()).then(|| {
+            model.rotations.push(Rotation {
+                axis: r.axis,
+                point: r.point,
+                angle: r.angle,
+                parent: None,
+            })
+        }),
+        (Some(r), Some(parent)) => Some(model.rotations.push(Rotation {
             axis: r.axis,
             point: r.point,
             angle: r.angle,
-            parent: None,
-        })
-    });
+            parent: Some(parent),
+        })),
+    };
 
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
@@ -1310,10 +1327,20 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
         let v = *model.vertices.get(vh);
         let new_v = Vertex {
             point: Point3::from_array(isometry.apply_point(v.point.as_array())),
-            // A non-exact rotation marks every vertex `Rotated` (base = the pre-move
-            // vertex, kept in the arena); an exact move preserves the Origin (1a).
+            // A recorded rotation marks the vertex `Rotated`; `base` is the **root** —
+            // the non-`Rotated` (Constructed/Discovered) ancestor whose exact definition
+            // the rotation chain turns. A fresh rotation's input is itself the root; a
+            // re-rotation chases one hop to the input's own root (the invariant keeps
+            // `base` pointing at a root, never at another `Rotated` vertex, so stage-2
+            // recompute never applies the same rotation twice). No node → remap (1a/1b).
             origin: match rot_node {
-                Some(rotation) => Origin::Rotated { base: vh, rotation },
+                Some(rotation) => {
+                    let base = match v.origin {
+                        Origin::Rotated { base, .. } => base,
+                        _ => vh,
+                    };
+                    Origin::Rotated { base, rotation }
+                }
                 None => remap_origin(v.origin, &surf_map),
             },
         };
@@ -1388,6 +1415,38 @@ fn solid_is_rotated(model: &Model, solid: Handle<Solid>) -> bool {
         }
     }
     false
+}
+
+/// The shared rotation-forest leaf that every boundary vertex of a rotated `solid`
+/// names (`None` if the solid is not rotated) — the input side of the re-rotation
+/// decision in [`transform_solid`]. A `Transform` rotates a solid uniformly and
+/// `boolean` rejects rotated inputs, so all boundary vertices share one leaf; that
+/// invariant is `debug_assert`ed here (fail-loud if a future change ever produces a
+/// solid with mixed rotation provenance).
+fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<Rotation>> {
+    let sh = model.solids.get(solid).outer;
+    let mut seen: Option<Option<Handle<Rotation>>> = None;
+    for &fh in &model.shells.get(sh).faces {
+        for he in &model.faces.get(fh).outer.half_edges {
+            let Some(bounds) = model.edges.get(he.edge).bounds else {
+                continue;
+            };
+            for &vh in &bounds {
+                let leaf = match model.vertices.get(vh).origin {
+                    Origin::Rotated { rotation, .. } => Some(rotation),
+                    _ => None,
+                };
+                match seen {
+                    None => seen = Some(leaf),
+                    Some(established) => debug_assert_eq!(
+                        established, leaf,
+                        "a solid's boundary vertices must share one rotation node (uniform rotation)"
+                    ),
+                }
+            }
+        }
+    }
+    seen.flatten()
 }
 
 // ---- boolean (M5-c3) ----
@@ -10323,6 +10382,254 @@ pub mod tests {
         };
         assert_eq!(m.live_solids, vec![solid]);
         assert!(solid_is_rotated(&m, solid));
+    }
+
+    fn boundary_verts(m: &Model, s: Handle<Solid>) -> Vec<Handle<Vertex>> {
+        let mut seen = std::collections::HashSet::new();
+        let mut vs = Vec::new();
+        let sh = m.solids.get(s).outer;
+        for &fh in &m.shells.get(sh).faces {
+            for he in &m.faces.get(fh).outer.half_edges {
+                if let Some(bd) = m.edges.get(he.edge).bounds {
+                    for vh in bd {
+                        if seen.insert(vh) {
+                            vs.push(vh);
+                        }
+                    }
+                }
+            }
+        }
+        vs
+    }
+
+    fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
+        use nacre_scalar::{Angle, Isometry, Rat, Rotation as SRot};
+        Isometry::rotation(SRot {
+            axis,
+            point: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+        })
+    }
+
+    /// Chain: (leaf, base_is_rotated, node_count, axes-root-to-leaf) for the first
+    /// Rotated boundary vertex of `s`.
+    fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(bool, usize, Vec<nacre_scalar::Axis>)> {
+        let vh = *boundary_verts(m, s).first()?;
+        let Origin::Rotated { base, rotation } = m.vertices.get(vh).origin else {
+            return None;
+        };
+        let base_is_rotated = matches!(m.vertices.get(base).origin, Origin::Rotated { .. });
+        let mut axes = Vec::new();
+        let mut cur = Some(rotation);
+        while let Some(h) = cur {
+            let n = m.rotations.get(h);
+            axes.push(n.axis);
+            cur = n.parent;
+        }
+        axes.reverse();
+        Some((base_is_rotated, axes.len(), axes))
+    }
+
+    fn translate_iso(off: [i128; 3]) -> nacre_scalar::Isometry {
+        use nacre_scalar::{Isometry, Rat};
+        Isometry::translation([
+            Rat::from_int(off[0]),
+            Rat::from_int(off[1]),
+            Rat::from_int(off[2]),
+        ])
+    }
+
+    /// Re-rotating about the same axis chains a second forest node onto the first
+    /// (this cell does not bundle): the leaf's parent is the earlier rotation, `base`
+    /// stays the Constructed root, and the solid remains a rigid (volume/area-invariant)
+    /// `Rotated` solid that validate/tess/STEP accept and boolean still rejects.
+    #[test]
+    fn rerotate_same_axis_chains() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let before = nacre_props::mass_props(&m, c).unwrap();
+        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        let c2 = transform(&mut m, c1, &rot_iso(Axis::Z, 20)).unwrap();
+        m.rebuild_adjacency();
+
+        assert_eq!(
+            forest_probe(&m, c2),
+            Some((false, 2, vec![Axis::Z, Axis::Z])),
+            "two Z nodes chained, base = the Constructed root"
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+        let after = nacre_props::mass_props(&m, c2).unwrap();
+        assert!(
+            (after.volume - before.volume).abs() < 1e-9,
+            "volume invariant"
+        );
+        assert!((after.area - before.area).abs() < 1e-9, "area invariant");
+        assert!(nacre_tess::to_obj(&m).is_ok());
+        assert!(
+            nacre_step::to_step(&m)
+                .unwrap()
+                .contains("MANIFOLD_SOLID_BREP")
+        );
+        assert!(solid_is_rotated(&m, c2), "re-rotated solid stays Rotated");
+        let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, c2, d),
+            tag::ROTATED_UNSUPPORTED,
+        );
+    }
+
+    /// Re-rotating about a different axis chains a node whose parent is the first
+    /// rotation (root → Z → X), `base` still the root.
+    #[test]
+    fn rerotate_different_axis_chains() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let before = nacre_props::mass_props(&m, c).unwrap().volume;
+        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        let c2 = transform(&mut m, c1, &rot_iso(Axis::X, 45)).unwrap();
+        m.rebuild_adjacency();
+
+        assert_eq!(
+            forest_probe(&m, c2),
+            Some((false, 2, vec![Axis::Z, Axis::X])),
+            "chain root→Z→X, base = root"
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+        let after = nacre_props::mass_props(&m, c2).unwrap().volume;
+        assert!((after - before).abs() < 1e-9, "volume invariant");
+    }
+
+    /// An **exact** (90°-family) rotation applied to an already-rotated solid is still
+    /// recorded as a chain node — the composite is inexact (an ancestor is), so the
+    /// forest must stay complete (1b silently dropped it). The solid stays Rotated and
+    /// boolean-rejected.
+    #[test]
+    fn rerotate_exact_after_inexact_records_node() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        let c2 = transform(&mut m, c1, &rot_iso(Axis::X, 90)).unwrap();
+        m.rebuild_adjacency();
+
+        assert_eq!(
+            forest_probe(&m, c2),
+            Some((false, 2, vec![Axis::Z, Axis::X])),
+            "the exact 90°X is recorded as a chain node, not dropped"
+        );
+        assert!(
+            solid_is_rotated(&m, c2),
+            "composite is inexact → still Rotated"
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
+
+    /// A translation between two same-axis rotations forces a chain (this cell never
+    /// bundles anyway): the forest records both rotations, `base` stays the root, and
+    /// the result is rigid and valid — sound with no adjacency guard (each rotation is
+    /// its own node).
+    #[test]
+    fn rerotate_across_translation_chains() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let before = nacre_props::mass_props(&m, c).unwrap().volume;
+        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        let c2 = transform(&mut m, c1, &translate_iso([5, -3, 2])).unwrap();
+        m.rebuild_adjacency();
+        let c3 = transform(&mut m, c2, &rot_iso(Axis::Z, 20)).unwrap();
+        m.rebuild_adjacency();
+
+        assert_eq!(
+            forest_probe(&m, c3),
+            Some((false, 2, vec![Axis::Z, Axis::Z])),
+            "both rotations recorded; the intervening translation is not in the forest"
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+        let after = nacre_props::mass_props(&m, c3).unwrap().volume;
+        assert!((after - before).abs() < 1e-9, "volume invariant");
+    }
+
+    /// A three-axis chain records three nodes root→Z→X→Y.
+    #[test]
+    fn rerotate_deep_chain() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        let c2 = transform(&mut m, c1, &rot_iso(Axis::X, 45)).unwrap();
+        m.rebuild_adjacency();
+        let c3 = transform(&mut m, c2, &rot_iso(Axis::Y, 20)).unwrap();
+        m.rebuild_adjacency();
+
+        assert_eq!(
+            forest_probe(&m, c3),
+            Some((false, 3, vec![Axis::Z, Axis::X, Axis::Y])),
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
+
+    /// A fresh rotation of a Constructed solid is unchanged from 1b (B0): an inexact
+    /// angle records a single root node; a 90°-family angle stays Constructed (no node,
+    /// boolean allowed). Guards that the B0/B1 split preserves fresh-rotation behavior.
+    #[test]
+    fn fresh_rotation_of_constructed_unchanged() {
+        use nacre_scalar::Axis;
+        // inexact → one root node, base = the cuboid's Constructed vertices.
+        let mut m = Model::new();
+        let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(forest_probe(&m, c1), Some((false, 1, vec![Axis::Z])));
+
+        // exact 90° → Constructed (no node), boolean allowed.
+        let mut m = Model::new();
+        let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 90)).unwrap();
+        m.rebuild_adjacency();
+        assert!(!solid_is_rotated(&m, c1), "fresh 90° stays Constructed");
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert_eq!(forest_probe(&m, c1), None, "no rotation node");
+    }
+
+    /// Replay determinism (DNA 3): a re-rotation sequence reproduces the same forest
+    /// and handles.
+    #[test]
+    fn rerotate_is_deterministic() {
+        use nacre_scalar::Axis;
+        let build = || {
+            let mut m = Model::new();
+            let c = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([2.0, 3.0, 4.0]),
+            );
+            let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
+            let c2 = transform(&mut m, c1, &rot_iso(Axis::X, 45)).unwrap();
+            (bbox_lo(&m, c2), c2)
+        };
+        assert_eq!(build(), build(), "same ops → same geometry and handle");
     }
 
     #[test]
