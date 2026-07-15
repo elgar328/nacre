@@ -216,22 +216,74 @@ impl Angle {
     }
 }
 
-/// A rigid-body isometry (§ Transform). The exact rational data is the
-/// **definition**; `offset_f64` realizes it to f64. 1a carries only a rational
-/// translation (exact — a rational-pure derivation); 1b adds a rotation (an `Angle`
-/// about an axis). Math-type independent — it operates on plain `[f64; 3]`,
-/// mirroring [`frame::Pt2`]'s `(f64, f64)` (so `nacre-scalar` never depends on
-/// `nacre-math`); the caller (`nacre-ops`) applies the offset to its `Point3`/`Plane`.
+/// A coordinate axis — the fixed axis of an axis-aligned rotation (overhaul stage
+/// 1b restricts to `X`/`Y`/`Z`, the form `exact3d` validated; arbitrary rational
+/// axes via Rodrigues are a later extension).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+impl Axis {
+    /// The two in-plane coordinate indices (the third is the fixed rotation axis).
+    /// The order gives a right-handed (CCW-about-the-axis) rotation.
+    fn plane(self) -> (usize, usize) {
+        match self {
+            Axis::X => (1, 2), // rotate y,z
+            Axis::Y => (2, 0), // rotate z,x
+            Axis::Z => (0, 1), // rotate x,y
+        }
+    }
+}
+
+/// An axis-aligned rigid rotation: turn about `axis` (the line through the rational
+/// `point`) by the rational `angle`. Exact for the 90°-family (`try_exact_cos_sin`);
+/// otherwise the realized coordinate is irrational (cos/sin) and carries tol.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rotation {
+    pub axis: Axis,
+    pub point: [Rat; 3],
+    pub angle: Angle,
+}
+
+/// A rigid-body isometry (§ Transform): a rotation (optional) then a translation.
+/// The exact rational data is the **definition**; the `apply_*`/`offset_f64`
+/// realizers give the f64 cache. Math-type independent — operates on plain
+/// `[f64; 3]`, mirroring [`frame::Pt2`]'s `(f64, f64)` (so `nacre-scalar` never
+/// depends on `nacre-math`); the caller (`nacre-ops`) applies it to `Point3`/`Plane`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Isometry {
-    /// Exact rational translation.
+    /// Applied first: an axis-aligned rotation, or `None` (pure translation).
+    pub rotate: Option<Rotation>,
+    /// Applied second: an exact rational translation.
     pub translate: [Rat; 3],
 }
 
 impl Isometry {
     /// A pure translation by the rational vector `translate`.
     pub fn translation(translate: [Rat; 3]) -> Self {
-        Isometry { translate }
+        Isometry {
+            rotate: None,
+            translate,
+        }
+    }
+
+    /// A pure rotation (no translation).
+    pub fn rotation(rotate: Rotation) -> Self {
+        Isometry {
+            rotate: Some(rotate),
+            translate: [Rat::from_int(0); 3],
+        }
+    }
+
+    /// A rotation followed by a translation.
+    pub fn rigid(rotate: Rotation, translate: [Rat; 3]) -> Self {
+        Isometry {
+            rotate: Some(rotate),
+            translate,
+        }
     }
 
     /// The translation realized in f64.
@@ -241,6 +293,45 @@ impl Isometry {
             self.translate[1].to_f64(),
             self.translate[2].to_f64(),
         ]
+    }
+
+    /// Whether the isometry realizes exactly: no rotation, or a 90°-family rotation
+    /// (`try_exact_cos_sin` gives rational cos/sin, so an f64-representable point
+    /// stays exact — tol 0). A non-90° rotation realizes to irrational f64 (tol > 0).
+    pub fn is_exact(&self) -> bool {
+        match self.rotate {
+            None => true,
+            Some(r) => r.angle.try_exact_cos_sin().is_some(),
+        }
+    }
+
+    /// Apply the full isometry (rotate about the axis point, then translate) to a
+    /// point realized in f64.
+    pub fn apply_point(&self, p: [f64; 3]) -> [f64; 3] {
+        let mut q = p;
+        if let Some(r) = self.rotate {
+            let (i, j) = r.axis.plane();
+            let (px, py) = (r.point[i].to_f64(), r.point[j].to_f64());
+            let (c, s) = (r.angle.cos(), r.angle.sin());
+            let (dx, dy) = (p[i] - px, p[j] - py);
+            q[i] = px + dx * c - dy * s;
+            q[j] = py + dx * s + dy * c;
+        }
+        let off = self.offset_f64();
+        [q[0] + off[0], q[1] + off[1], q[2] + off[2]]
+    }
+
+    /// Apply only the rotation (no axis point, no translation) to a direction.
+    pub fn apply_dir(&self, d: [f64; 3]) -> [f64; 3] {
+        let mut q = d;
+        if let Some(r) = self.rotate {
+            let (i, j) = r.axis.plane();
+            let (c, s) = (r.angle.cos(), r.angle.sin());
+            let (dx, dy) = (d[i], d[j]);
+            q[i] = dx * c - dy * s;
+            q[j] = dx * s + dy * c;
+        }
+        q
     }
 }
 

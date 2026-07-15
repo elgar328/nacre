@@ -18,6 +18,7 @@ pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
 
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point3, Vector3};
+use nacre_scalar::{Angle, Axis, Rat};
 use nacre_store::{Handle, Store};
 use std::collections::HashSet;
 
@@ -36,6 +37,21 @@ pub enum VertexDef {
     ThreePlane([Handle<Surface>; 3]),
 }
 
+/// A node in the rotation-history forest (design §TIP ⑦): one axis-aligned rigid
+/// rotation applied to a solid (overhaul stage 1b), with a parent link for chained
+/// rotations (v1 records a single rotation, `parent = None`; bundling adds chains).
+/// Stored in [`Model::rotations`]; a rotated vertex's [`Origin::Rotated`] names its
+/// leaf node. The tol a rotation contributes is application-point-dependent, so it is
+/// **not** stored here — stage-2 judgment computes it by traversing to the root
+/// (`axis`/`point` give the axis line, `angle` the rotation).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rotation {
+    pub axis: Axis,
+    pub point: [Rat; 3],
+    pub angle: Angle,
+    pub parent: Option<Handle<Rotation>>,
+}
+
 /// Provenance of a vertex or edge (design §4, overview 절대원칙 4).
 ///
 /// `Constructed` elements know their identity by construction and carry no
@@ -43,14 +59,23 @@ pub enum VertexDef {
 /// [`VertexDef`] that defines them (the truth) and the *measured* accuracy the
 /// relaxation/closed-form achieved (`tol` — the point is a within-`tol` cache of
 /// the definition). In M1–M4 every element is `Constructed`; M5's
-/// `PolyhedralBoolean` is the first `Discovered` producer.
+/// `PolyhedralBoolean` is the first `Discovered` producer. `Rotated` (overhaul stage
+/// 1b) names a vertex that is another vertex (`base`) turned by a rotation node — its
+/// point is a cache; the tol is judgment-time (§TIP ⑦), so no tol slot here.
 ///
 /// Holds an `f64`, so `PartialEq` only — no `Eq`/`Hash` (identity is by
 /// `Handle`, never by value).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Origin {
     Constructed,
-    Discovered { tol: f64, definition: VertexDef },
+    Discovered {
+        tol: f64,
+        definition: VertexDef,
+    },
+    Rotated {
+        base: Handle<Vertex>,
+        rotation: Handle<Rotation>,
+    },
 }
 
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped
@@ -79,6 +104,9 @@ pub struct Model {
     // exact geometry (truth)
     pub surfaces: Store<Surface>,
     pub curves: Store<Curve>,
+    /// The rotation-history forest (§TIP ⑦): rotation definitions named by
+    /// `Origin::Rotated` vertices. Not geometry — a definition store.
+    pub rotations: Store<Rotation>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,
     pub edges: Store<Edge>,

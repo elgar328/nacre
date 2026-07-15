@@ -11,6 +11,8 @@ description = "b-rep topology (Vertex/Edge/Face/Loop/HalfEdge/Shell/Solid, half-
 nacre-store = { path = "../nacre-store", version = "0.0.0" }
 nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
+# The rotation definition (Axis/Angle) stored in a vertex's Origin (overhaul stage 1b).
+nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 
 [dev-dependencies]
 proptest.workspace = true

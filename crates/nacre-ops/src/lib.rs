@@ -7,12 +7,13 @@
 //! semantics). Ops are applied by [`apply`] and folded by [`replay`]; every
 //! result is a **closed** solid, so `nacre-validate` applies fully.
 
-use nacre_geom::{Curve, Line, Plane, Surface};
+use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::Isometry;
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Rotation, Shell, Solid, Vertex,
+    VertexDef,
 };
 
 mod arrange;
@@ -219,6 +220,10 @@ pub(crate) mod tag {
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
     /// with no firing test (cf. `FOURPLANE`).
     pub const NO_OUTWARD_SHELL: &str = "no_outward_shell";
+    /// A boolean input is a rotated solid (overhaul stage 1b). Rotated planar geometry
+    /// is representable but its predicates are not yet sound (no TIP until stage 3), so
+    /// the boolean honestly rejects until then. Fired by a `Transform`-rotated operand.
+    pub const ROTATED_UNSUPPORTED: &str = "rotated_unsupported";
     /// An overhang overlap arc could not be paired with a complementary arc sharing its two
     /// crossings (a non-convex-cyclic arrangement `is_convex` did not screen out) — out of scope.
     pub const OVERHANG_ARCS: &str = "overhang_arcs";
@@ -1158,6 +1163,64 @@ fn remap_origin(origin: Origin, surf_map: &HashMap<Handle<Surface>, Handle<Surfa
                 definition: VertexDef::ThreePlane(mapped),
             }
         }
+        // Already-rotated input (a re-transform): keep the rotation definition — its
+        // `base`/`rotation` name arena ancestors, unaffected by this move. (Chaining
+        // rotations into the forest is the deferred bundling cell's job.)
+        Origin::Rotated { .. } => origin,
+    }
+}
+
+/// A surface moved by `isometry`. A pure translation uses `translated` (the normal —
+/// and its exact `raw` — is unchanged). A rotation rebuilds from the moved
+/// origin/normal via the constructor (rotation makes `raw` irrational, as expected —
+/// the plane then carries tol, judged by TIP later).
+fn transform_surface(s: &Surface, iso: &Isometry, offset: Vector3) -> Surface {
+    if iso.rotate.is_none() {
+        return s.translated(offset);
+    }
+    let p = |q: Point3| Point3::from_array(iso.apply_point(q.as_array()));
+    let d = |v: Vector3| Vector3::from_array(iso.apply_dir(v.as_array()));
+    match s {
+        Surface::Plane(pl) => Surface::Plane(
+            Plane::from_point_normal(p(pl.origin()), d(pl.normal()))
+                .expect("rotation preserves a nonzero normal"),
+        ),
+        Surface::Cylinder(cy) => {
+            let ax = cy.axis();
+            Surface::Cylinder(
+                Cylinder::from_axis(
+                    p(ax.origin()),
+                    d(ax.direction()),
+                    d(cy.ref_dir()),
+                    cy.radius(),
+                )
+                .expect("rotation preserves a valid cylinder"),
+            )
+        }
+    }
+}
+
+/// A curve moved by `isometry` (see [`transform_surface`]).
+fn transform_curve(c: &Curve, iso: &Isometry, offset: Vector3) -> Curve {
+    if iso.rotate.is_none() {
+        return c.translated(offset);
+    }
+    let p = |q: Point3| Point3::from_array(iso.apply_point(q.as_array()));
+    let d = |v: Vector3| Vector3::from_array(iso.apply_dir(v.as_array()));
+    match c {
+        Curve::Line(l) => Curve::Line(
+            Line::from_point_direction(p(l.origin()), d(l.direction()))
+                .expect("rotation preserves a nonzero direction"),
+        ),
+        Curve::Circle(ci) => Curve::Circle(
+            Circle::from_center_normal(
+                p(ci.center()),
+                d(ci.normal()),
+                d(ci.ref_dir()),
+                ci.radius(),
+            )
+            .expect("rotation preserves a valid circle"),
+        ),
     }
 }
 
@@ -1173,6 +1236,20 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     let offset = Vector3::from_array(isometry.offset_f64());
     let src = model.solids.get(solid).clone();
 
+    // A non-exact rotation records one shared forest node (§TIP ⑦); every rotated
+    // vertex names it. Exact isometries (translation, 90°-family) record nothing.
+    let rot_node: Option<Handle<Rotation>> = (!isometry.is_exact()).then(|| {
+        let r = isometry
+            .rotate
+            .expect("a non-exact isometry has a rotation");
+        model.rotations.push(Rotation {
+            axis: r.axis,
+            point: r.point,
+            angle: r.angle,
+            parent: None,
+        })
+    });
+
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
@@ -1187,7 +1264,7 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     for &fh in &face_order {
         let s = model.faces.get(fh).surface;
         if let std::collections::hash_map::Entry::Vacant(e) = surf_map.entry(s) {
-            let moved = model.surfaces.get(s).translated(offset);
+            let moved = transform_surface(model.surfaces.get(s), isometry, offset);
             e.insert(model.surfaces.push(moved));
         }
     }
@@ -1211,7 +1288,7 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     for &eh in &edge_order {
         let c = model.edges.get(eh).curve;
         if let std::collections::hash_map::Entry::Vacant(e) = curve_map.entry(c) {
-            let moved = model.curves.get(c).translated(offset);
+            let moved = transform_curve(model.curves.get(c), isometry, offset);
             e.insert(model.curves.push(moved));
         }
     }
@@ -1232,8 +1309,13 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     for &vh in &vert_order {
         let v = *model.vertices.get(vh);
         let new_v = Vertex {
-            point: v.point + offset,
-            origin: remap_origin(v.origin, &surf_map),
+            point: Point3::from_array(isometry.apply_point(v.point.as_array())),
+            // A non-exact rotation marks every vertex `Rotated` (base = the pre-move
+            // vertex, kept in the arena); an exact move preserves the Origin (1a).
+            origin: match rot_node {
+                Some(rotation) => Origin::Rotated { base: vh, rotation },
+                None => remap_origin(v.origin, &surf_map),
+            },
         };
         vert_map.insert(vh, model.vertices.push(new_v));
     }
@@ -1292,6 +1374,22 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     model.push_solid(new_solid)
 }
 
+/// Whether `solid` was produced by a non-exact rotation — its vertices carry
+/// `Origin::Rotated`. A `Transform` rotates a whole solid uniformly and `boolean`
+/// rejects rotated inputs, so a solid is all-or-nothing rotated: one vertex decides
+/// (O(1)). (90°-family rotations stay exact/`Constructed`, so this is false for them.)
+fn solid_is_rotated(model: &Model, solid: Handle<Solid>) -> bool {
+    let sh = model.solids.get(solid).outer;
+    for &fh in &model.shells.get(sh).faces {
+        for he in &model.faces.get(fh).outer.half_edges {
+            if let Some(bounds) = model.edges.get(he.edge).bounds {
+                return matches!(model.vertices.get(bounds[0]).origin, Origin::Rotated { .. });
+            }
+        }
+    }
+    false
+}
+
 // ---- boolean (M5-c3) ----
 
 use nacre_geom::intersect::{
@@ -1341,6 +1439,11 @@ pub fn boolean(
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
+    }
+    // A rotated operand has tol-carrying planar geometry whose predicates are not yet
+    // sound (no TIP until stage 3) — honestly reject (overhaul stage 1b).
+    if solid_is_rotated(model, a) || solid_is_rotated(model, b) {
+        return Err(reject(tag::ROTATED_UNSUPPORTED));
     }
     // Cavitied operands are supported (cells (5c-in), (5c-in-2)): the seam front-end and
     // reconstruction walk all shells (outer + cavities) via `solid_shell_handles`, so a
@@ -1888,6 +1991,9 @@ fn is_convex(model: &Model, planes: &[PlaneInfo], vhs: &[Handle<Vertex>]) -> boo
                     _ => plane_side(pi.tri, v.point),
                 },
                 Origin::Constructed => plane_side(pi.tri, v.point),
+                // Unreachable in practice — `boolean` rejects rotated inputs
+                // (ROTATED_UNSUPPORTED) before reaching here; fall back defensively.
+                Origin::Rotated { .. } => plane_side(pi.tri, v.point),
             };
             side <= 0
         })
@@ -10008,6 +10114,215 @@ pub mod tests {
             OpOutput::Transform { solid } => assert_eq!(m.live_solids, vec![solid]),
             other => panic!("expected Transform output, got {other:?}"),
         }
+    }
+
+    /// A genuinely tilted rigid rotation: 30° about Z through the rational axis
+    /// point (1,1,0). Non-90° and non-axis-aligned, so it exercises the Rotated
+    /// origin and the boolean reject guard (unlike the 90° family, which stays exact).
+    fn rot30() -> nacre_scalar::Isometry {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        })
+    }
+
+    /// Distinct outer-shell vertex points of a solid (dedup by handle).
+    fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
+        let mut seen = std::collections::HashSet::new();
+        let mut pts = Vec::new();
+        let sh = m.solids.get(s).outer;
+        for &fh in &m.shells.get(sh).faces {
+            for he in &m.faces.get(fh).outer.half_edges {
+                if let Some(bd) = m.edges.get(he.edge).bounds {
+                    for vh in bd {
+                        if seen.insert(vh) {
+                            pts.push(m.vertices.get(vh).point.as_array());
+                        }
+                    }
+                }
+            }
+        }
+        pts
+    }
+
+    /// A non-90° rotation genuinely tilts the solid: rigid (volume/area invariant),
+    /// validate/tess/STEP clean, a known corner lands at its exact rotated image, the
+    /// vertices carry `Origin::Rotated` (`solid_is_rotated`), and boolean now rejects
+    /// the solid (`ROTATED_UNSUPPORTED` — the TIP judge is not in yet, either operand).
+    #[test]
+    fn transform_rotate_cuboid_tilts_and_blocks_boolean() {
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let before = nacre_props::mass_props(&m, c).unwrap();
+        let c2 = transform(&mut m, c, &rot30()).unwrap();
+        m.rebuild_adjacency();
+
+        assert_eq!(m.live_solids, vec![c2], "input superseded");
+        assert!(nacre_validate::validate(&m).is_empty());
+        let after = nacre_props::mass_props(&m, c2).unwrap();
+        assert!(
+            (after.volume - before.volume).abs() < 1e-9,
+            "volume invariant"
+        );
+        assert!((after.area - before.area).abs() < 1e-9, "area invariant");
+        assert!(nacre_tess::to_obj(&m).is_ok(), "rotated solid tessellates");
+        assert!(
+            nacre_step::to_step(&m)
+                .unwrap()
+                .contains("MANIFOLD_SOLID_BREP"),
+            "rotated solid exports to STEP"
+        );
+
+        assert!(solid_is_rotated(&m, c2), "vertices carry Origin::Rotated");
+
+        // Corner (0,0,0) rotates about pivot (1,1) by 30°: dx=dy=-1, so
+        // x' = 1 - cos30 + sin30, y' = 1 - sin30 - cos30, z' = 0.
+        let (c30, s30) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+        let want = [1.0 - c30 + s30, 1.0 - s30 - c30, 0.0];
+        let pts = outer_points(&m, c2);
+        assert!(
+            pts.iter()
+                .any(|p| p.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-9)),
+            "corner (0,0,0) rotated to its exact image {want:?}; got {pts:?}"
+        );
+
+        // Boolean rejects a rotated operand in either position (all-or-nothing).
+        let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, c2, d),
+            tag::ROTATED_UNSUPPORTED,
+        );
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, d, c2),
+            tag::ROTATED_UNSUPPORTED,
+        );
+    }
+
+    /// A 90° rotation about Z is axis-aligned and exact: the solid stays
+    /// `Constructed` (`solid_is_rotated` false), volume is exact, and boolean is
+    /// still allowed — a following cut succeeds and validates.
+    #[test]
+    fn transform_rotate_90_is_exact_and_allows_boolean() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let rot90 = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
+        });
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let c2 = transform(&mut m, c, &rot90).unwrap();
+        m.rebuild_adjacency();
+
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!(!solid_is_rotated(&m, c2), "90° stays exact (Constructed)");
+        assert_eq!(
+            nacre_props::mass_props(&m, c2).unwrap().volume,
+            24.0,
+            "exact volume"
+        );
+
+        // c rotated 90° about origin occupies x∈[-3,0], y∈[0,2], z∈[0,4].
+        // Cut with d = [-1,0.5,1]-[0.5,1.5,2]: overlap volume 1 → 24 − 1 = 23.
+        let d = m.add_cuboid(
+            Point3::from_array([-1.0, 0.5, 1.0]),
+            Point3::from_array([0.5, 1.5, 2.0]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, c2, d).expect("exact rotation → boolean allowed");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+        assert!((vol - 23.0).abs() < 1e-9, "cut volume {vol}");
+    }
+
+    /// Rotating a boolean *result* marks its `Discovered` seam vertices `Rotated`
+    /// over the pre-rotation vertex as base: validate stays clean, volume is
+    /// invariant, and at least one Rotated base is a Discovered vertex (the seam
+    /// definition is preserved through the rotation, not downgraded).
+    #[test]
+    fn transform_rotate_boolean_result_keeps_discovered_base() {
+        let (mut m, a, b) = two_boxes();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        assert!(
+            count_discovered(&m, r) > 0,
+            "Cut result has Discovered seams"
+        );
+        let before = nacre_props::mass_props(&m, r).unwrap().volume;
+
+        let r2 = transform(&mut m, r, &rot30()).unwrap();
+        m.rebuild_adjacency();
+
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!(
+            solid_is_rotated(&m, r2),
+            "rotated result carries Rotated origin"
+        );
+        let after = nacre_props::mass_props(&m, r2).unwrap().volume;
+        assert!((after - before).abs() < 1e-9, "volume invariant");
+
+        let sh = m.solids.get(r2).outer;
+        let mut found_disc_base = false;
+        for &fh in &m.shells.get(sh).faces {
+            for he in &m.faces.get(fh).outer.half_edges {
+                if let Some(bd) = m.edges.get(he.edge).bounds {
+                    for vh in bd {
+                        if let Origin::Rotated { base, .. } = m.vertices.get(vh).origin {
+                            if matches!(m.vertices.get(base).origin, Origin::Discovered { .. }) {
+                                found_disc_base = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            found_disc_base,
+            "a Rotated vertex's base is its Discovered seam vertex"
+        );
+    }
+
+    /// Replay determinism (DNA 3): the same construction + rotation reproduces the
+    /// same geometry and the same handle.
+    #[test]
+    fn transform_rotate_is_deterministic() {
+        let build = || {
+            let mut m = Model::new();
+            let c = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([2.0, 3.0, 4.0]),
+            );
+            let c2 = transform(&mut m, c, &rot30()).unwrap();
+            (bbox_lo(&m, c2), c2)
+        };
+        assert_eq!(build(), build(), "same ops → same geometry and handle");
+    }
+
+    /// A rotation `Transform` flows through `apply` and marks the result Rotated.
+    #[test]
+    fn transform_rotate_op_applies() {
+        let mut m = Model::new();
+        let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let out = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: c,
+                isometry: rot30(),
+            },
+        )
+        .unwrap();
+        let OpOutput::Transform { solid } = out else {
+            panic!("expected Transform output, got {out:?}");
+        };
+        assert_eq!(m.live_solids, vec![solid]);
+        assert!(solid_is_rotated(&m, solid));
     }
 
     #[test]
