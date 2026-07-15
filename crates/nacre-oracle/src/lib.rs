@@ -846,6 +846,62 @@ bbox_min 0 0 0
         );
     }
 
+    /// A **re-rotated** solid (overhaul stage 1c) is still a valid b-rep: rotate a
+    /// cuboid 30° about Z, then 45° about X, so its vertices carry a two-node rotation
+    /// chain. A rigid re-rotation leaves volume/area invariant, so OCCT must agree with
+    /// nacre's `mass_props` — confirming the re-rotation multi-pass clone (chained
+    /// forest, base=root) produced a well-formed solid, not just an invariant-preserving
+    /// vertex shuffle. Single-solid export avoids summing the superseded intermediates.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rerotated_solid_props_match_occt() {
+        use nacre_ops::{Operation, apply};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let rot = |axis, deg: i128| {
+            Isometry::rotation(Rotation {
+                axis,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+            })
+        };
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let step = |m: &mut Model, s, iso| {
+            let out = apply(
+                m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: iso,
+                },
+            )
+            .unwrap();
+            let nacre_ops::OpOutput::Transform { solid } = out else {
+                panic!("expected Transform output");
+            };
+            solid
+        };
+        let c1 = step(&mut m, c, rot(Axis::Z, 30));
+        let c2 = step(&mut m, c1, rot(Axis::X, 45));
+
+        let occt = occt_props(&nacre_step::to_step_solid(&m, c2).unwrap()).unwrap();
+        let nacre = mass_props(&m, c2).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "volume {} vs occt {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs occt {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// nacre's own `Common` result diffed against OCCT: build two overlapping
     /// cubes, ask OCCT for the intersection volume, and compare it to
     /// `mass_props` of the solid nacre's half-space enumeration produced.
