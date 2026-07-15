@@ -1487,9 +1487,6 @@ pub(crate) struct PlaneInfo {
     /// same order as `tri` — `Some` only when the solid is rotated (overhaul stage 3;
     /// `collect_planes` builds it once). `None` on the axis-aligned path, where `tri`'s
     /// f64 coordinates are already exact and the geom predicates are used directly.
-    // `#[allow(dead_code)]`: written here in 3a-i, first read when `tolerant::t_orient3d`
-    // is wired into `order_along` in stage 3b.
-    #[allow(dead_code)]
     pub(crate) tri_pt3: Option<[Pt3; 3]>,
 }
 

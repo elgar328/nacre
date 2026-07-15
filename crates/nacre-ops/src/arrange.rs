@@ -14,12 +14,11 @@
 // build rightly sees it as unreachable.
 #![cfg_attr(not(test), allow(dead_code))]
 
+use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
 use crate::{
     BoolError, PlaneInfo, edge_incidence, face_half_edges, reject, solid_shell_handles, tag,
 };
-use nacre_geom::intersect::{
-    plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d, three_planes,
-};
+use nacre_geom::intersect::{plane_side, three_planes};
 use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Loop, Model, Orientation, Solid, Vertex};
@@ -210,7 +209,7 @@ pub(crate) fn seam_segments_on(
 /// `V_j`, `+1` if it follows, `0` if they coincide.
 ///
 /// With `V_k = P ∩ Q ∩ R_k` and `d = n_P × n_Q`, we want `sign((V_i − V_j)·d)`. Since
-/// `V_j ∈ R_j`, [`three_plane_orient3d`] gives `sign((V_i − V_j)·N_j)` for `N_j` the
+/// `V_j ∈ R_j`, [`three_plane_orient3d`](nacre_geom::intersect::three_plane_orient3d) gives `sign((V_i − V_j)·N_j)` for `N_j` the
 /// right-hand normal of `R_j.tri`; multiplying by `sign(d·N_j)` recovers the order.
 /// Both factors are exact predicates, so the comparator is a true total order.
 ///
@@ -218,14 +217,7 @@ pub(crate) fn seam_segments_on(
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
 /// two planes. No new predicate is needed for that.
 fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> i8 {
-    three_plane_orient3d(
-        &planes[p].plane,
-        &planes[q].plane,
-        &planes[i].plane,
-        planes[j].tri[0],
-        planes[j].tri[1],
-        planes[j].tri[2],
-    ) * dir_sign(planes, p, q, j)
+    t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
 }
 
 /// `+1` when a plane's stored normal already points out of its solid, `-1` when the
@@ -540,7 +532,7 @@ pub(crate) fn run_classes(
 ///     ⇒  turn = s_a · s_b · sign(det[n_P, n_A, n_B]) · orient_sign(P)
 /// ```
 ///
-/// and `sign(det[…])` is [`plane_pair_dir_sign`], already exact. It is never `0`: node `i`
+/// and `sign(det[…])` is [`plane_pair_dir_sign`](nacre_geom::intersect::plane_pair_dir_sign), already exact. It is never `0`: node `i`
 /// lies on all three planes, and a point exists there only if their normals are independent.
 ///
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
@@ -557,7 +549,7 @@ pub(crate) fn turn_at(
     let (b, _, _) = ring_edge(p, ring, i)?; // plane of the edge leaving `i`
     let sa = edge_sign(planes, p, ring, prev)?;
     let sb = edge_sign(planes, p, ring, i)?;
-    let det = plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
+    let det = t_plane_pair_dir_sign(planes, p, a, b);
     if det == 0 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
@@ -623,14 +615,7 @@ fn loop_triples(l: &Loop, p: usize, inc: &EdgePlanes) -> Result<Vec<[usize; 3]>,
 
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
 fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
-    three_plane_orient3d(
-        &planes[t[0]].plane,
-        &planes[t[1]].plane,
-        &planes[t[2]].plane,
-        planes[q].tri[0],
-        planes[q].tri[1],
-        planes[q].tri[2],
-    )
+    t_orient3d(planes, t[0], t[1], t[2], q)
 }
 
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
@@ -695,11 +680,7 @@ pub(crate) fn point_on_ring(
         // lie in `span(n_P, n_R)` and `v = {P, E0, E1}` would not have been a point.
         let s = *v
             .iter()
-            .find(|&&x| {
-                x != p
-                    && plane_pair_dir_sign(&planes[p].plane, &planes[r].plane, &planes[x].plane)
-                        != 0
-            })
+            .find(|&&x| x != p && t_plane_pair_dir_sign(planes, p, r, x) != 0)
             .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
         let (a, b) = (
             order_along(planes, p, r, s, si),
@@ -805,7 +786,7 @@ pub(crate) fn every_ray(
             for i in 0..ring.len() {
                 let (r, si, sj) = ring_edge(p, ring, i)?;
                 // Parallel: distinct lines, because no ring node lies on `P ∩ Q_a`.
-                if plane_pair_dir_sign(&planes[p].plane, &planes[qa].plane, &planes[r].plane) == 0 {
+                if t_plane_pair_dir_sign(planes, p, qa, r) == 0 {
                     continue;
                 }
                 // `X = {P, Q_a, R}` strictly inside the edge?
@@ -835,7 +816,7 @@ pub(crate) fn every_ray(
 /// The turn at a convex-hull vertex is the winding, and the lexicographically smallest node
 /// is one: it is an extreme point of the node set, which is planar, so it is a vertex of the
 /// ring's hull. Finding it is the **only** thing here that needs two implicit points in one
-/// decision, and [`three_plane_cmp_coord`] is that predicate.
+/// decision, and [`three_plane_cmp_coord`](nacre_geom::intersect::three_plane_cmp_coord) is that predicate.
 ///
 /// A shortcut dies here, and is recorded so it is not walked twice: a *supporting edge* —
 /// one whose plane `Q_j` has every other node on one side — would give a hull vertex from
@@ -854,17 +835,10 @@ pub(crate) fn loop_winding(
     if ring.len() < 3 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
-    let tri = |t: [usize; 3]| {
-        [
-            &planes[t[0]].plane,
-            &planes[t[1]].plane,
-            &planes[t[2]].plane,
-        ]
-    };
     let mut lo = 0usize;
     for i in 1..ring.len() {
         let ord = (0..3)
-            .map(|axis| three_plane_cmp_coord(tri(ring[i]), tri(ring[lo]), axis))
+            .map(|axis| t_cmp_coord(planes, ring[i], ring[lo], axis))
             .find(|&c| c != 0);
         match ord {
             Some(-1) => lo = i,
@@ -1053,7 +1027,7 @@ pub(crate) fn seam_paths_on(
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
 ///
-/// [`plane_pair_dir_sign`] gives the sign against `R`'s *stored* normal, exactly.
+/// [`plane_pair_dir_sign`](nacre_geom::intersect::plane_pair_dir_sign) gives the sign against `R`'s *stored* normal, exactly.
 /// That normal is parallel to `N_R` but may oppose it on a `Reversed` face, so we
 /// correct with their dot — two parallel unit vectors, `|·| ≈ 1`, nowhere near the
 /// sign boundary.
@@ -1064,8 +1038,7 @@ pub(crate) fn seam_paths_on(
 /// invariant to break, an `orient`-based order would reverse silently. Assert the
 /// agreement; do not depend on it.
 fn dir_sign(planes: &[PlaneInfo], p: usize, q: usize, r: usize) -> i8 {
-    plane_pair_dir_sign(&planes[p].plane, &planes[q].plane, &planes[r].plane)
-        * orient_sign(planes, r)
+    t_plane_pair_dir_sign(planes, p, q, r) * orient_sign(planes, r)
 }
 
 fn triple(a: usize, b: usize, c: usize) -> [usize; 3] {

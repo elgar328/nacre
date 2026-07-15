@@ -3,18 +3,21 @@
 //!
 //! A rotated face's plane coefficients and `tri` coordinates are rounded irrationals, so
 //! the axis-aligned geom predicates (`nacre_geom::intersect`) are exact only w.r.t. the
-//! *rounded* geometry. When the boolean's operands are rotated, these wrappers rebuild
-//! each plane from the three exact `Pt3` its face carries ([`PlaneInfo::tri_pt3`], or —
-//! for the axis-aligned operand of a *mixed*-rotation boolean, whose `tri_pt3` is `None` —
-//! exactly from its `tri` coordinates, see [`plane_def`]) and decide the sign with the
-//! `nacre-scalar::frame3` judges instead. The routing is a per-boolean `rotated` flag
-//! ([`solid_is_rotated`](crate::solid_is_rotated)) — the axis-aligned hot path is unchanged
-//! and never builds a `Pt3`.
+//! *rounded* geometry. When a predicate's planes are rotated, these wrappers rebuild each
+//! plane from the three exact `Pt3` its face carries ([`PlaneInfo::tri_pt3`], or — for the
+//! axis-aligned operand of a *mixed*-rotation boolean, whose `tri_pt3` is `None` — exactly
+//! from its `tri` coordinates, see [`plane_def`]) and decide the sign with the
+//! `nacre-scalar::frame3` judges instead.
 //!
-//! [`t_orient3d`] (order_along, 3a-i), [`t_cmp_coord`] (loop_winding), [`t_plane_side`]
-//! (straddle, 3a-ii) and [`t_plane_pair_dir_sign`] (dir_sign, 3a-iii) are the four
-//! toleranced predicates the arrangement needs; the live arrangement still calls the geom
-//! predicates until stage 3b wires these in.
+//! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper asks
+//! [`any_rotated`] of just the planes it touches: all-axis-aligned → the exact geom hot path
+//! (never builds a `Pt3`); any rotated → the frame3 judge. So a mixed-rotation boolean keeps
+//! the axis-aligned operand's own predicates on the fast path, finer than a per-boolean flag.
+//!
+//! [`t_orient3d`] (order_along, side_of), [`t_cmp_coord`] (loop_winding) and
+//! [`t_plane_pair_dir_sign`] (dir_sign, turn_at, point_on_ring, every_ray) are wired into the
+//! live arrangement (stage 3b-i). [`t_plane_side`] (straddle) needs a vertex handle + `model`
+//! threaded into `edge_crosses_face`, so it stays unwired until 3b-ii.
 
 use crate::PlaneInfo;
 use crate::arrange::orient_sign;
@@ -27,7 +30,21 @@ use nacre_scalar::frame3::{
 };
 use nacre_scalar::{Orient, Rat};
 use nacre_store::Handle;
-use nacre_topo::{Model, Vertex};
+use nacre_topo::{Model, Origin, Vertex};
+
+/// Whether any of the named planes is rotated — the per-predicate routing signal.
+///
+/// A plane carries [`PlaneInfo::tri_pt3`] `Some` exactly when it came from a rotated solid
+/// (`collect_planes` fills it via [`solid_is_rotated`](crate::solid_is_rotated), whose truth
+/// is owned by the classifier: `transform` marks a vertex `Origin::Rotated` only when
+/// `Isometry::is_exact` is false, i.e. the realization is irrational). A predicate must
+/// escalate to frame3 if **any** — not all — of its planes is irrational: a single rounded
+/// coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact on the
+/// geom path. Widening what counts as exact (e.g. more angle families) is a classifier-layer
+/// change; this consumer only reads the flag.
+fn any_rotated(planes: &[PlaneInfo], idx: &[usize]) -> bool {
+    idx.iter().any(|&k| planes[k].tri_pt3.is_some())
+}
 
 /// The three exact `Pt3` defining plane `k`. A rotated plane carries them cached in
 /// [`PlaneInfo::tri_pt3`] (clone — a shallow copy of the rotation chain, no forest walk);
@@ -76,18 +93,10 @@ fn borrow_triple(d: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
 ///   the definitions — never materializing `V` or reading the rounded `tri`.
 ///
 /// Winding-invariant, so the three points defining each plane may be in any order.
-// `#[allow(dead_code)]`: the wrapper lands in 3a-i (unit-tested); `order_along` calls it
-// (retiring this allow) in stage 3b.
-#[allow(dead_code)]
-pub(crate) fn t_orient3d(
-    planes: &[PlaneInfo],
-    p: usize,
-    q: usize,
-    r: usize,
-    j: usize,
-    rotated: bool,
-) -> i8 {
-    if !rotated {
+///
+/// Routes on [`any_rotated`] of `p, q, r, j`: all-axis-aligned → geom, any rotated → frame3.
+pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: usize) -> i8 {
+    if !any_rotated(planes, &[p, q, r, j]) {
         return three_plane_orient3d(
             &planes[p].plane,
             &planes[q].plane,
@@ -117,16 +126,9 @@ pub(crate) fn t_orient3d(
 /// `b = ∩(planes b…)` — the toleranced twin of [`three_plane_cmp_coord`] (loop_winding),
 /// matching its shape (`+1` = `a[axis] > b[axis]`). `!rotated` → the geom predicate on the
 /// stored coefficients; `rotated` → each triple's three planes as exact `Pt3` →
-/// [`indirect_cmp_coord_judge`].
-#[allow(dead_code)]
-pub(crate) fn t_cmp_coord(
-    planes: &[PlaneInfo],
-    a: [usize; 3],
-    b: [usize; 3],
-    axis: usize,
-    rotated: bool,
-) -> i8 {
-    if !rotated {
+/// [`indirect_cmp_coord_judge`]. Routes on [`any_rotated`] of the six planes in `a` and `b`.
+pub(crate) fn t_cmp_coord(planes: &[PlaneInfo], a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
+    if !any_rotated(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]) {
         let tri = |t: [usize; 3]| {
             [
                 &planes[t[0]].plane,
@@ -149,14 +151,21 @@ pub(crate) fn t_cmp_coord(
 /// of [`plane_side`] (an all-explicit `orient3d(p, tri0, tri1, tri2)`). `!rotated` → the
 /// geom predicate on `p`'s coordinate; `rotated` → `p` and the plane's three points as
 /// exact `Pt3` → [`orient3d_judge`] (the direct toleranced orient3d).
+///
+/// Routes on the plane *or* the vertex being rotated: unlike the plane-only predicates, an
+/// axis-aligned plane may still be tested against a rotated (irrational) vertex, so `p`'s
+/// `Origin::Rotated` also forces frame3.
+// `#[allow(dead_code)]`: unwired until 3b-ii threads a vertex handle + `model` into
+// `edge_crosses_face`; the other three wrappers are live from 3b-i.
 #[allow(dead_code)]
 pub(crate) fn t_plane_side(
     model: &Model,
     planes: &[PlaneInfo],
     plane_idx: usize,
     p: Handle<Vertex>,
-    rotated: bool,
 ) -> i8 {
+    let rotated = any_rotated(planes, &[plane_idx])
+        || matches!(model.vertices.get(p).origin, Origin::Rotated { .. });
     if !rotated {
         return plane_side(planes[plane_idx].tri, model.vertices.get(p).point);
     }
@@ -173,16 +182,9 @@ pub(crate) fn t_plane_side(
 /// `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal convention by the
 /// per-plane [`orient_sign`]: `det(stored) = orient_sign(p)·orient_sign(a)·orient_sign(b)·
 /// det(outward)`. `orient_sign` is an f64 dot of two parallel unit vectors (`|·| ≈ 1`),
-/// robust under rotation.
-#[allow(dead_code)]
-pub(crate) fn t_plane_pair_dir_sign(
-    planes: &[PlaneInfo],
-    p: usize,
-    a: usize,
-    b: usize,
-    rotated: bool,
-) -> i8 {
-    if !rotated {
+/// robust under rotation. Routes on [`any_rotated`] of `p, a, b`.
+pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneInfo], p: usize, a: usize, b: usize) -> i8 {
+    if !any_rotated(planes, &[p, a, b]) {
         return plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
     }
     let (dp, da, db) = (
@@ -269,11 +271,11 @@ mod tests {
                         if j == p || j == q || j == rr {
                             continue;
                         }
-                        let su = t_orient3d(&pu, p, q, rr, j, false);
+                        let su = t_orient3d(&pu, p, q, rr, j);
                         if su == 0 {
                             continue; // indefinite — skip
                         }
-                        let sr = t_orient3d(&pr, p, q, rr, j, true);
+                        let sr = t_orient3d(&pr, p, q, rr, j);
                         assert_eq!(su, sr, "rotation-invariant at ({p},{q},{rr},{j})");
                         checked += 1;
                     }
@@ -330,7 +332,7 @@ mod tests {
                             planes[j].tri[1],
                             planes[j].tri[2],
                         );
-                        assert_eq!(t_orient3d(&planes, p, q, rr, j, false), want);
+                        assert_eq!(t_orient3d(&planes, p, q, rr, j), want);
                     }
                 }
             }
@@ -385,11 +387,11 @@ mod tests {
         let mut checked = 0usize;
         for pi in 0..pu.len() {
             for vk in 0..vu.len() {
-                let su = t_plane_side(&m, &pu, pi, vu[vk], false);
+                let su = t_plane_side(&m, &pu, pi, vu[vk]);
                 if su == 0 {
                     continue; // vertex on the plane — skip
                 }
-                let sr = t_plane_side(&m, &pr, pi, vr[vk], true);
+                let sr = t_plane_side(&m, &pr, pi, vr[vk]);
                 assert_eq!(
                     su, sr,
                     "plane_side rotation-invariant at plane {pi}, vert {vk}"
@@ -409,7 +411,7 @@ mod tests {
         for pi in 0..planes.len() {
             for &v in &vs {
                 let want = plane_side(planes[pi].tri, m.vertices.get(v).point);
-                assert_eq!(t_plane_side(&m, &planes, pi, v, false), want);
+                assert_eq!(t_plane_side(&m, &planes, pi, v), want);
             }
         }
     }
@@ -445,13 +447,13 @@ mod tests {
                     }
                     checked += 1;
                     let want = if diff > 0.0 { 1 } else { -1 };
-                    let got = t_cmp_coord(&planes, a, b, axis, true);
+                    let got = t_cmp_coord(&planes, a, b, axis);
                     assert!(got == want || got == 0, "cmp {got} vs coord {want}");
                     if got == want {
                         resolved += 1;
                     }
                     assert_eq!(
-                        t_cmp_coord(&planes, b, a, axis, true),
+                        t_cmp_coord(&planes, b, a, axis),
                         -got,
                         "cmp is antisymmetric"
                     );
@@ -480,7 +482,7 @@ mod tests {
                         ]
                     };
                     let want = three_plane_cmp_coord(tri(a), tri(b), axis);
-                    assert_eq!(t_cmp_coord(&planes, a, b, axis, false), want);
+                    assert_eq!(t_cmp_coord(&planes, a, b, axis), want);
                 }
             }
         }
@@ -526,7 +528,7 @@ mod tests {
             for q in (p + 1)..na {
                 for r in (q + 1)..na {
                     if normals_independent(&planes, p, q, r) {
-                        let _ = t_orient3d(&planes, p, q, r, na, true); // j = first B plane
+                        let _ = t_orient3d(&planes, p, q, r, na); // j = first B plane
                         exercised = true;
                     }
                 }
@@ -552,11 +554,11 @@ mod tests {
                     if p == a || p == b || a == b {
                         continue;
                     }
-                    let su = t_plane_pair_dir_sign(&pu, p, a, b, false);
+                    let su = t_plane_pair_dir_sign(&pu, p, a, b);
                     if su == 0 {
                         continue; // coplanar normals — skip
                     }
-                    let sr = t_plane_pair_dir_sign(&pr, p, a, b, true);
+                    let sr = t_plane_pair_dir_sign(&pr, p, a, b);
                     assert_eq!(su, sr, "dir_sign rotation-invariant at ({p},{a},{b})");
                     checked += 1;
                 }
@@ -579,7 +581,7 @@ mod tests {
                     }
                     let want =
                         plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
-                    assert_eq!(t_plane_pair_dir_sign(&planes, p, a, b, false), want);
+                    assert_eq!(t_plane_pair_dir_sign(&planes, p, a, b), want);
                 }
             }
         }
