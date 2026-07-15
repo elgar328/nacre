@@ -405,9 +405,11 @@ fn combine(dsign: Option<bool>, msign: Option<bool>) -> Option<Orient> {
     }
 }
 
-/// The interval f64 filter for `orient3d(V, q, r, s)`, `V = ∩(planes)`. `None` if
-/// either `D` or `M` straddles 0 (escalate). Coefficient-direct (no division).
-fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> Option<Orient> {
+/// The interval Cramer parts of an implicit point `V = ∩(planes)`: `D = det(normals)`
+/// and the numerator vector `Dvec` (column `j` replaced by `h = −d`), so `V[j] =
+/// Dvec[j]/D` (no division taken here). Shared by [`indirect_filter`] (orient3d) and
+/// [`cmp_filter`] (cmp_coord).
+fn cramer_iv(planes: [[Iv; 4]; 3]) -> (Iv, [Iv; 3]) {
     let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
     let h = |k: usize| Iv::new(0.0, 0.0).sub(planes[k][3]); // n·X = h, h = −d
     let (n0, n1, n2) = (n(0), n(1), n(2));
@@ -431,6 +433,13 @@ fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> 
             [n2[0], n2[1], col_h[2]],
         ]),
     ];
+    (d, dvec)
+}
+
+/// The interval f64 filter for `orient3d(V, q, r, s)`, `V = ∩(planes)`. `None` if
+/// either `D` or `M` straddles 0 (escalate). Coefficient-direct (no division).
+fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> Option<Orient> {
+    let (d, dvec) = cramer_iv(planes);
     // row1 = Dvec − D·s ; cross = (q−s)×(r−s) ; M = row1·cross.
     let row1 = [
         dvec[0].sub(d.mul(s[0])),
@@ -451,17 +460,11 @@ fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> 
     combine(d.sign(), m.sign())
 }
 
-/// The same `sign(D)·sign(M)` realized at `prec` bits (astro-float) — ground truth /
-/// escalation. Returns `(D, M, mag_d, mag_m)`: the two determinants and the f64
-/// magnitudes of their term sums, so the caller can floor a below-precision result to
-/// declare-0 ([`sign_with_floor`]).
-fn indirect_hp(
-    planes: [[BigFloat; 4]; 3],
-    q: [BigFloat; 3],
-    r: [BigFloat; 3],
-    s: [BigFloat; 3],
-    prec: usize,
-) -> (BigFloat, BigFloat, f64, f64) {
+/// The astro-float Cramer parts of `V = ∩(planes)` at `prec` bits: `(D, Dvec, mag_d,
+/// mag_dvec)` — the determinant, its numerator vector, and the cancellation-free
+/// magnitude bounds of each (for the declare-0 floors). Shared by [`indirect_hp`]
+/// (orient3d, which ignores `mag_dvec`) and [`cmp_hp`] (cmp_coord).
+fn cramer_hp(planes: [[BigFloat; 4]; 3], prec: usize) -> (BigFloat, [BigFloat; 3], f64, [f64; 3]) {
     let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
     let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
     let add = |x: &BigFloat, y: &BigFloat| x.add(y, prec, HP_RM);
@@ -498,23 +501,43 @@ fn indirect_hp(
     let d = det3(&nrows);
     let mag_d = det3_mag(&nrows);
     let hc = [hh(0), hh(1), hh(2)];
-    let dvec = [
-        det3(&[
+    let cols = [
+        [
             [hc[0].clone(), n0[1].clone(), n0[2].clone()],
             [hc[1].clone(), n1[1].clone(), n1[2].clone()],
             [hc[2].clone(), n2[1].clone(), n2[2].clone()],
-        ]),
-        det3(&[
+        ],
+        [
             [n0[0].clone(), hc[0].clone(), n0[2].clone()],
             [n1[0].clone(), hc[1].clone(), n1[2].clone()],
             [n2[0].clone(), hc[2].clone(), n2[2].clone()],
-        ]),
-        det3(&[
+        ],
+        [
             [n0[0].clone(), n0[1].clone(), hc[0].clone()],
             [n1[0].clone(), n1[1].clone(), hc[1].clone()],
             [n2[0].clone(), n2[1].clone(), hc[2].clone()],
-        ]),
+        ],
     ];
+    let dvec = [det3(&cols[0]), det3(&cols[1]), det3(&cols[2])];
+    let mag_dvec = [det3_mag(&cols[0]), det3_mag(&cols[1]), det3_mag(&cols[2])];
+    (d, dvec, mag_d, mag_dvec)
+}
+
+/// The same `sign(D)·sign(M)` realized at `prec` bits (astro-float) — ground truth /
+/// escalation. Returns `(D, M, mag_d, mag_m)`: the two determinants and the f64
+/// magnitudes of their term sums, so the caller can floor a below-precision result to
+/// declare-0 ([`sign_with_floor`]).
+fn indirect_hp(
+    planes: [[BigFloat; 4]; 3],
+    q: [BigFloat; 3],
+    r: [BigFloat; 3],
+    s: [BigFloat; 3],
+    prec: usize,
+) -> (BigFloat, BigFloat, f64, f64) {
+    let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
+    let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
+    let add = |x: &BigFloat, y: &BigFloat| x.add(y, prec, HP_RM);
+    let (d, dvec, mag_d, _mag_dvec) = cramer_hp(planes, prec);
     let row1 = [
         sub(&dvec[0], &mul(&d, &s[0])),
         sub(&dvec[1], &mul(&d, &s[1])),
@@ -594,6 +617,93 @@ pub fn indirect_orient3d_judge(
         sign_with_floor(&m, mag_m, JUDGE_PREC),
     )
     .unwrap_or(Orient::Zero)
+}
+
+// ---- indirect cmp_coord: order two implicit points along one axis ----
+//
+// Each implicit point's axis coordinate is `Dvec[axis]/D` (Cramer), so
+// `sign(a[axis] − b[axis]) = sign(Dvec_a[axis]·D_b − Dvec_b[axis]·D_a)·sign(D_a)·
+// sign(D_b)` — three exact signs, no division, matching `nacre_predicates::
+// indirect_cmp_coord`. Interval filter → astro-float escalation, like orient3d. The
+// result is invariant to each triple's plane-normal orientation: flipping a triple's
+// normals negates both its `D` and `Dvec[axis]` (so the point is unchanged) and negates
+// `M`, leaving `sign(M)·sign(D)` fixed — so a caller may define each plane by any three
+// non-collinear points on it (the bridge relies on this).
+
+/// Combine the three definite signs of `M·D_a·D_b` (`true` = positive) into an
+/// ordering: `Positive` (`a[axis] > b[axis]`) iff an even number are negative; `None`
+/// if any sign is indefinite.
+fn cmp_combine(sm: Option<bool>, sda: Option<bool>, sdb: Option<bool>) -> Option<Orient> {
+    match (sm, sda, sdb) {
+        (Some(m), Some(a), Some(b)) => {
+            let negatives = [m, a, b].iter().filter(|&&s| !s).count();
+            Some(if negatives % 2 == 0 {
+                Orient::Positive
+            } else {
+                Orient::Negative
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The interval f64 filter for `cmp_coord(a, b, axis)` — the sign of `a[axis] −
+/// b[axis]` between two implicit points. `None` if any of `M`, `D_a`, `D_b` straddles 0.
+fn cmp_filter(a: [[Iv; 4]; 3], b: [[Iv; 4]; 3], axis: usize) -> Option<Orient> {
+    let (da, dva) = cramer_iv(a);
+    let (db, dvb) = cramer_iv(b);
+    let m = dva[axis].mul(db).sub(dvb[axis].mul(da));
+    cmp_combine(m.sign(), da.sign(), db.sign())
+}
+
+/// The astro-float escalation for `cmp_coord`: the same three signs at `prec` bits,
+/// each floored to declare-0 ([`sign_with_floor`]); `Orient::Zero` if any is below its
+/// floor (the two coordinates are equal or too close to separate).
+fn cmp_hp(a: [[BigFloat; 4]; 3], b: [[BigFloat; 4]; 3], axis: usize, prec: usize) -> Orient {
+    let (da, dva, mag_da, mag_dva) = cramer_hp(a, prec);
+    let (db, dvb, mag_db, mag_dvb) = cramer_hp(b, prec);
+    let m = dva[axis]
+        .mul(&db, prec, HP_RM)
+        .sub(&dvb[axis].mul(&da, prec, HP_RM), prec, HP_RM);
+    // Sound bound on |M|'s two term magnitudes (cancellation-free Dvec bound × |D|).
+    let mag_m = mag_dva[axis] * bf_mag(&db) + mag_dvb[axis] * bf_mag(&da);
+    cmp_combine(
+        sign_with_floor(&m, mag_m, prec),
+        sign_with_floor(&da, mag_da, prec),
+        sign_with_floor(&db, mag_db, prec),
+    )
+    .unwrap_or(Orient::Zero)
+}
+
+/// TIP indirect `cmp_coord`: the sign of `a[axis] − b[axis]` where `a`, `b` are the
+/// implicit points at which each three-plane triple meets — each plane through three
+/// rotated points. Interval filter → astro-float escalation. `Positive` = `a[axis] >
+/// b[axis]`, `Negative` = `<`, `Zero` = equal **or** below the declare-0 floor (unlike
+/// the exact `nacre_predicates::indirect_cmp_coord`, whose `0` means exactly equal). The
+/// two-implicit companion of [`indirect_orient3d_judge`]; boolean wiring is stage 3.
+pub fn indirect_cmp_coord_judge(
+    a: [(&Pt3, &Pt3, &Pt3); 3],
+    b: [(&Pt3, &Pt3, &Pt3); 3],
+    axis: usize,
+) -> Orient {
+    let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+        [
+            plane_iv(t[0].0, t[0].1, t[0].2),
+            plane_iv(t[1].0, t[1].1, t[1].2),
+            plane_iv(t[2].0, t[2].1, t[2].2),
+        ]
+    };
+    if let Some(o) = cmp_filter(iv(a), iv(b), axis) {
+        return o;
+    }
+    let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+        [
+            plane_hp(t[0].0, t[0].1, t[0].2, JUDGE_PREC),
+            plane_hp(t[1].0, t[1].1, t[1].2, JUDGE_PREC),
+            plane_hp(t[2].0, t[2].1, t[2].2, JUDGE_PREC),
+        ]
+    };
+    cmp_hp(hp(a), hp(b), axis, JUDGE_PREC)
 }
 
 #[cfg(test)]
@@ -1147,5 +1257,233 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- indirect cmp_coord (cmp-i) ----
+
+    fn add3(a: [Rat; 3], b: [Rat; 3]) -> [Rat; 3] {
+        [
+            a[0].checked_add(b[0]).unwrap(),
+            a[1].checked_add(b[1]).unwrap(),
+            a[2].checked_add(b[2]).unwrap(),
+        ]
+    }
+
+    /// Borrow an owned plane-triple as the `&Pt3` tuples the judge takes.
+    fn tr(t: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
+        [
+            (&t[0][0], &t[0][1], &t[0][2]),
+            (&t[1][0], &t[1][1], &t[1][2]),
+            (&t[2][0], &t[2][1], &t[2][2]),
+        ]
+    }
+
+    /// Three planes meeting at `v` (each through `v` + two small offsets), all rotated by
+    /// `(ax, ang, piv)` — an implicit point at `rotate(v)` with heterogeneous provenance.
+    fn triple_pts(v: [Rat; 3], st: &mut u64, ax: Axis, ang: Angle, piv: [Rat; 3]) -> [[Pt3; 3]; 3] {
+        let plane = |st: &mut u64| {
+            let off = |st: &mut u64| {
+                [
+                    ri(rng(st, -20, 20), rng(st, 1, 5)),
+                    ri(rng(st, -20, 20), rng(st, 1, 5)),
+                    ri(rng(st, -20, 20), rng(st, 1, 5)),
+                ]
+            };
+            let (o1, o2) = (off(st), off(st));
+            [
+                Pt3::at(v).rotate_about(ax, ang, piv),
+                Pt3::at(add3(v, o1)).rotate_about(ax, ang, piv),
+                Pt3::at(add3(v, o2)).rotate_about(ax, ang, piv),
+            ]
+        };
+        [plane(st), plane(st), plane(st)]
+    }
+
+    /// A random rotated three-plane triple (own random center, axis, inexact angle,
+    /// pivot) — heterogeneous provenance. Sequences the RNG draws so each `&mut st`
+    /// borrow ends before the next.
+    fn rand_triple(st: &mut u64) -> [[Pt3; 3]; 3] {
+        let v = rand_base(st);
+        let ax = axis_of(rng(st, 0, 2));
+        let angle = deg(rng(st, 0, 360_000), rng(st, 1, 9973));
+        let piv = rand_base(st);
+        triple_pts(v, st, ax, angle, piv)
+    }
+
+    /// The three axis-perpendicular planes through integer point `p` (meet exactly at `p`,
+    /// tol 0) — an exact axis-aligned implicit point for the sanity oracle.
+    fn axis_planes(p: [i128; 3]) -> [[Pt3; 3]; 3] {
+        let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
+        let [x, y, z] = p;
+        [
+            [pt(x, y, z), pt(x, y + 1, z), pt(x, y, z + 1)], // ⊥ x
+            [pt(x, y, z), pt(x + 1, y, z), pt(x, y, z + 1)], // ⊥ y
+            [pt(x, y, z), pt(x + 1, y, z), pt(x, y + 1, z)], // ⊥ z
+        ]
+    }
+
+    /// The high-precision cmp truth (`None` when the coordinates are equal or below the
+    /// GT floor — a genuine tie).
+    fn cmp_truth(
+        a: [(&Pt3, &Pt3, &Pt3); 3],
+        b: [(&Pt3, &Pt3, &Pt3); 3],
+        axis: usize,
+        prec: usize,
+    ) -> Option<Orient> {
+        let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+            [
+                plane_hp(t[0].0, t[0].1, t[0].2, prec),
+                plane_hp(t[1].0, t[1].1, t[1].2, prec),
+                plane_hp(t[2].0, t[2].1, t[2].2, prec),
+            ]
+        };
+        match cmp_hp(hp(a), hp(b), axis, prec) {
+            Orient::Zero => None,
+            o => Some(o),
+        }
+    }
+
+    /// `cmp_combine` maps the parity of negative signs to the ordering.
+    #[test]
+    fn cmp_combine_counts_negatives() {
+        assert_eq!(
+            cmp_combine(Some(true), Some(true), Some(true)),
+            Some(Orient::Positive)
+        );
+        assert_eq!(
+            cmp_combine(Some(false), Some(true), Some(true)),
+            Some(Orient::Negative)
+        );
+        assert_eq!(
+            cmp_combine(Some(false), Some(false), Some(true)),
+            Some(Orient::Positive)
+        );
+        assert_eq!(cmp_combine(None, Some(true), Some(true)), None);
+    }
+
+    /// Sanity: two exact axis-aligned implicit points order by the compared axis; a swap
+    /// flips it; an equal coordinate is `Zero`.
+    #[test]
+    fn cmp_sanity_axis_aligned() {
+        let a = axis_planes([1, 2, 3]);
+        let b = axis_planes([1, 5, 3]);
+        // y: 2 < 5 → a below b → Negative; swap → Positive.
+        assert_eq!(
+            indirect_cmp_coord_judge(tr(&a), tr(&b), 1),
+            Orient::Negative
+        );
+        assert_eq!(
+            indirect_cmp_coord_judge(tr(&b), tr(&a), 1),
+            Orient::Positive
+        );
+        // x and z equal → Zero.
+        assert_eq!(indirect_cmp_coord_judge(tr(&a), tr(&b), 0), Orient::Zero);
+        assert_eq!(indirect_cmp_coord_judge(tr(&a), tr(&b), 2), Orient::Zero);
+    }
+
+    /// Fast port check: the cmp judge matches a moderate-precision truth on generic
+    /// rotated configs (catches a transcription bug; full soundness is `#[ignore]`d H-g).
+    #[test]
+    fn cmp_port_check() {
+        const GT: usize = 384;
+        let mut st = 0xC301_7A5E_2266_9911u64;
+        for _ in 0..16 {
+            let a = rand_triple(&mut st);
+            let b = rand_triple(&mut st);
+            let axis = rng(&mut st, 0, 2) as usize;
+            let judged = indirect_cmp_coord_judge(tr(&a), tr(&b), axis);
+            if let Some(truth) = cmp_truth(tr(&a), tr(&b), axis, GT) {
+                assert!(
+                    judged == truth || judged == Orient::Zero,
+                    "cmp judge {judged:?} disagrees with truth {truth:?}"
+                );
+            }
+        }
+    }
+
+    /// H-g — indirect cmp_coord soundness over heterogeneous provenance (corpus A) and a
+    /// near-tie corpus (corpus B: two points sharing an axis coordinate up to ε, rotated
+    /// about that same axis so the near-tie survives). The judge must never disagree with
+    /// a GT-stable 512-bit truth; both the fast filter and the escalation are exercised.
+    #[test]
+    #[ignore = "slow astro-float ground truth (run with --ignored)"]
+    fn h_g_indirect_cmp_coord_soundness() {
+        const GT: usize = 512;
+        let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
+            (0usize, 0, 0, 0, 0, 0);
+        let mut check = |a: &[[Pt3; 3]; 3], b: &[[Pt3; 3]; 3], axis: usize| {
+            let (ta, tb) = (tr(a), tr(b));
+            let judged = indirect_cmp_coord_judge(ta, tb, axis);
+            let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+                [
+                    plane_iv(t[0].0, t[0].1, t[0].2),
+                    plane_iv(t[1].0, t[1].1, t[1].2),
+                    plane_iv(t[2].0, t[2].1, t[2].2),
+                ]
+            };
+            if cmp_filter(iv(ta), iv(tb), axis).is_none() {
+                escalated += 1;
+            } else {
+                filter_resolved += 1;
+            }
+            match cmp_truth(ta, tb, axis, GT) {
+                None => skipped += 1,
+                Some(truth) => {
+                    tested += 1;
+                    if judged == Orient::Zero {
+                        declined += 1;
+                    } else if judged != truth {
+                        wrong += 1;
+                    }
+                }
+            }
+        };
+
+        // Corpus A — heterogeneous provenance (each triple its own rotation and pivot).
+        let mut st = 0x6A11_C0DE_5151_2323u64;
+        for _ in 0..2000 {
+            let a = rand_triple(&mut st);
+            let b = rand_triple(&mut st);
+            check(&a, &b, rng(&mut st, 0, 2) as usize);
+        }
+
+        // Corpus B — near-tie in z, shared Z-rotation (a Z-rotation leaves z unchanged, so
+        // the pre-rotation z near-equality survives → M near 0 → escalation forced).
+        for _ in 0..2000 {
+            let z0 = rng(&mut st, -200, 200);
+            let eps = match rng(&mut st, 0, 2) {
+                0 => ri(0, 1),
+                1 => ri(1, rng(&mut st, 5_000, 200_000)),
+                _ => ri(1, rng(&mut st, 1_000_000_000, 1_000_000_000_000_000)),
+            };
+            let va = [
+                ri(rng(&mut st, -200, 200), 1),
+                ri(rng(&mut st, -200, 200), 1),
+                ri(z0, 1),
+            ];
+            let vb = [
+                ri(rng(&mut st, -200, 200), 1),
+                ri(rng(&mut st, -200, 200), 1),
+                ri(z0, 1).checked_add(eps).unwrap(),
+            ];
+            let angle = deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 9973));
+            let piv = rand_base(&mut st);
+            let a = triple_pts(va, &mut st, Axis::Z, angle, piv);
+            let b = triple_pts(vb, &mut st, Axis::Z, angle, piv);
+            check(&a, &b, 2);
+        }
+
+        eprintln!(
+            "[H-g] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        );
+        assert_eq!(
+            wrong, 0,
+            "cmp judge must never disagree with GT (soundness)"
+        );
+        assert!(escalated > 0, "corpus must exercise the escalation path");
+        assert!(
+            filter_resolved > 0,
+            "corpus must exercise the fast filter path"
+        );
     }
 }
