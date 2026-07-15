@@ -214,6 +214,19 @@ impl Angle {
             None
         }
     }
+
+    /// `(cos, sin)` realized in f64 — **exact** (`0.0`/`±1.0`) for the 90°-family,
+    /// plain [`cos`](Self::cos)/[`sin`](Self::sin) otherwise. The single source of
+    /// truth for realizing a rotation angle into f64: every path that turns a point or
+    /// direction by an angle must go through here, so the quadrantal case never
+    /// re-introduces the `cos(90°)≈6e-17` spurious cross-term (an axis-aligned rotation
+    /// then lands its coordinates exactly on the grid — a 90°-family rotation is tol 0).
+    pub fn cos_sin_f64(self) -> (f64, f64) {
+        match self.try_exact_cos_sin() {
+            Some((cr, sr)) => (cr.to_f64(), sr.to_f64()),
+            None => (self.cos(), self.sin()),
+        }
+    }
 }
 
 /// A coordinate axis — the fixed axis of an axis-aligned rotation (overhaul stage
@@ -312,7 +325,7 @@ impl Isometry {
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
             let (px, py) = (r.point[i].to_f64(), r.point[j].to_f64());
-            let (c, s) = (r.angle.cos(), r.angle.sin());
+            let (c, s) = r.angle.cos_sin_f64();
             let (dx, dy) = (p[i] - px, p[j] - py);
             q[i] = px + dx * c - dy * s;
             q[j] = py + dx * s + dy * c;
@@ -326,7 +339,7 @@ impl Isometry {
         let mut q = d;
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
-            let (c, s) = (r.angle.cos(), r.angle.sin());
+            let (c, s) = r.angle.cos_sin_f64();
             let (dx, dy) = (d[i], d[j]);
             q[i] = dx * c - dy * s;
             q[j] = dx * s + dy * c;
@@ -499,6 +512,54 @@ mod tests {
         let a45 = Angle::from_deg(Rat::from_int(45)).unwrap();
         assert!(a45.try_exact_cos_sin().is_none());
         assert_ne!(a90.cos(), 0.0); // the general f64 path is not exact at 90°
+    }
+
+    /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0` (unlike `cos()`/`sin()`
+    /// which realize ~6e-17 at 90°), and falls through to `cos()`/`sin()` otherwise.
+    #[test]
+    fn cos_sin_f64_is_exact_for_quadrantal() {
+        let deg = |d| Angle::from_deg(Rat::from_int(d)).unwrap();
+        assert_eq!(deg(0).cos_sin_f64(), (1.0, 0.0));
+        assert_eq!(deg(90).cos_sin_f64(), (0.0, 1.0));
+        assert_eq!(deg(180).cos_sin_f64(), (-1.0, 0.0));
+        assert_eq!(deg(270).cos_sin_f64(), (0.0, -1.0));
+        // non-quadrantal: identical to the plain f64 realization.
+        let a45 = deg(45);
+        assert_eq!(a45.cos_sin_f64(), (a45.cos(), a45.sin()));
+    }
+
+    /// `apply_point`/`apply_dir` realize a 90°-family rotation bit-exactly: no ~6e-17
+    /// spurious cross-term. (3,5,z) about Z by 90° → exactly (-5,3,z); a rational-pivot
+    /// rotation is exact too; a non-quadrantal angle is unchanged from the f64 path.
+    #[test]
+    fn apply_point_exact_for_quadrantal() {
+        let iso = |d| {
+            Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(d)).unwrap(),
+            })
+        };
+        assert_eq!(iso(90).apply_point([3.0, 5.0, 7.0]), [-5.0, 3.0, 7.0]);
+        assert_eq!(iso(180).apply_point([3.0, 5.0, 7.0]), [-3.0, -5.0, 7.0]);
+        assert_eq!(iso(270).apply_point([3.0, 5.0, 7.0]), [5.0, -3.0, 7.0]);
+        assert_eq!(iso(90).apply_dir([0.0, 1.0, 0.0]), [-1.0, 0.0, 0.0]);
+
+        // Non-origin pivot (2,2): 90° maps (3,5)→pivot+R(1,3)=(2-3, 2+1)=(-1,3).
+        let piv = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(2), Rat::from_int(2), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
+        });
+        assert_eq!(piv.apply_point([3.0, 5.0, 0.0]), [-1.0, 3.0, 0.0]);
+
+        // Non-quadrantal: unchanged from the plain cos/sin realization.
+        let a = Angle::from_deg(Rat::from_int(37)).unwrap();
+        let (c, s) = (a.cos(), a.sin());
+        assert_eq!(
+            iso(37).apply_point([3.0, 5.0, 0.0]),
+            [3.0 * c - 5.0 * s, 3.0 * s + 5.0 * c, 0.0]
+        );
     }
 
     /// H1.5: the arbitrary-precision cos/sin realization must be far more accurate

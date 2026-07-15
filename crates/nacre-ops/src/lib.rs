@@ -10439,6 +10439,69 @@ pub mod tests {
         ])
     }
 
+    fn rigid_iso(axis: nacre_scalar::Axis, deg: i128, off: [i128; 3]) -> nacre_scalar::Isometry {
+        use nacre_scalar::{Angle, Isometry, Rat, Rotation as SRot};
+        Isometry::rigid(
+            SRot {
+                axis,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+            },
+            [
+                Rat::from_int(off[0]),
+                Rat::from_int(off[1]),
+                Rat::from_int(off[2]),
+            ],
+        )
+    }
+
+    /// A boolean produces `Discovered` seam vertices with tol 0 (exact axis-aligned
+    /// intersections). Before exact quadrantal realization, rotating them exactly 90°
+    /// left an ~8e-17 f64 residual that exceeded tol 0 → `VertexOffSurface`. Now the
+    /// rotation is exact, so the residual stays 0 and validate is clean — both for a
+    /// pure 90° rotation and for a rigid 90°+translation (the offset cancels in
+    /// vertex−plane, so it does not reintroduce a residual).
+    #[test]
+    fn boolean_result_rotated_90_validates() {
+        use nacre_scalar::Axis;
+        for iso in [rot_iso(Axis::Z, 90), rigid_iso(Axis::Z, 90, [5, -3, 2])] {
+            let (mut m, a, b) = two_boxes();
+            let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+            let before = nacre_props::mass_props(&m, r).unwrap().volume;
+            let r2 = transform(&mut m, r, &iso).unwrap();
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(
+                vs.is_empty(),
+                "exact 90° realization → validate clean: {vs:?}"
+            );
+            let after = nacre_props::mass_props(&m, r2).unwrap().volume;
+            assert!((after - before).abs() < 1e-12, "volume invariant");
+        }
+    }
+
+    /// A 90°-family rotation lands a cuboid's vertices exactly on the axis-aligned grid
+    /// (no ~6e-17 spurious offset): the corner (2,3,4) rotated 90° about Z maps to
+    /// exactly (-3,2,4).
+    #[test]
+    fn rotate_90_lands_vertices_exactly() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        let c2 = transform(&mut m, c, &rot_iso(Axis::Z, 90)).unwrap();
+        m.rebuild_adjacency();
+        let pts = outer_points(&m, c2);
+        // (2,3,4) about Z by 90°: (x,y)→(-y,x) → (-3,2,4). Bit-exact.
+        assert!(
+            pts.iter().any(|p| *p == [-3.0, 2.0, 4.0]),
+            "corner lands exactly on the grid; got {pts:?}"
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
+
     /// Re-rotating about the same axis chains a second forest node onto the first
     /// (this cell does not bundle): the leaf's parent is the earlier rotation, `base`
     /// stays the Constructed root, and the solid remains a rigid (volume/area-invariant)
