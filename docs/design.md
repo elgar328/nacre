@@ -1213,3 +1213,19 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **net.** `nacre-ops`: `t_plane_side_rotation_invariant`·`t_cmp_coord_matches_coord`(좌표 오라클·resolved>0·antisym)·
   둘 다 `_unrotated_forwards_geom`·`mixed_rotation_handled`(혼합서 None plane 즉석 빌드·panic 없음). **미배선**·
   `#[allow(dead_code)]`(3b까지). 후속: 3a-iii(t_dir_sign·frame3 D부호 노출)·3b(배선).
+
+**toleranced dir_sign (frame3 dir_sign_judge + ops 래퍼) — 3a 라우팅 층 완성 (오버홀 3a-iii).** 4번째 술어
+`plane_pair_dir_sign`(법선 det·`sign((n_a×n_b)·n_c)`·`order_along`의 `dir_sign`/`turn_at`이 씀) 라우팅.
+- **★ frame3 `dir_sign_judge`**(pub): 세 평면 법선 det 부호=cramer `D`(`cramer_iv`/`cramer_hp` 재사용·D만·M 불요).
+  **winding 의존적**(법선=`(p1−p0)×(p2−p0)`이라 점 순서가 방향 정함·호출자가 일관 순서).
+- **★ ops `t_plane_pair_dir_sign`**: `!rotated`→geom. `rotated`→각 면 **outward tri**의 frame3 `D`를
+  `plane_pair_dir_sign`의 **저장-법선 규약**으로 다리 — `det(stored)=orient_sign(p)·orient_sign(a)·orient_sign(b)·
+  det(outward)`(`orient_sign` pub(crate)화·평행 단위벡터 dot이라 회전에 robust). 회전 불변 테스트가 이 규약 검증(통과).
+- **★ H-i(신규·`#[ignore]`)**: dir_sign soundness를 **법선 near-coplanar 코퍼스**(D≈0·H-a/H-c/H-g 미겨냥 regime)에서
+  512-bit stable GT와 wrong-sign **0/1325**(escalated·filter_resolved 양경로). **코퍼스는 퇴화 평면(tiny normal) skip**
+  — near-coplanar-*normals* regime이 아니고 boolean 입력도 아님(발견: 그렇지 않으면 false-positive wrong). 판정 자체는
+  단일 정밀도(다른 judge와 동일)로 sound.
+- **net.** `frame3`: `dir_sign_judge_sanity`·`dir_sign_rotation_invariant`·H-i(`#[ignore]`). `nacre-ops`:
+  `t_dir_sign_rotation_invariant`(orient_sign 규약 검증)·`t_dir_sign_unrotated_forwards_geom`. **★ 3a(라우팅 층) 완성**
+  — 4술어(orient3d·cmp_coord·plane_side·dir_sign) 전부 toleranced 래퍼. **미배선**·`#[allow(dead_code)]`(3b까지). 후속:
+  3b(arrange 배선·`rotated` 스레딩·가드 유지).
