@@ -1229,3 +1229,28 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
   `t_dir_sign_rotation_invariant`(orient_sign 규약 검증)·`t_dir_sign_unrotated_forwards_geom`. **★ 3a(라우팅 층) 완성**
   — 4술어(orient3d·cmp_coord·plane_side·dir_sign) 전부 toleranced 래퍼. **미배선**·`#[allow(dead_code)]`(3b까지). 후속:
   3b(arrange 배선·`rotated` 스레딩·가드 유지).
+
+**arrange 술어 배선 — index-based 3종·첫 라이브 배선 (오버홀 3b-i).** 3a 래퍼 중 평면-인덱스 기반 3종을 라이브
+arrange.rs 호출로 교체 — 회전 boolean으로 가는 첫 라이브 코드 변경. `t_plane_side`(straddle)는 정점 핸들+`model`
+스레딩이 필요해 3b-ii로 분리·가드 유지(3d 은퇴).
+- **★ per-predicate 파생 라우팅 — `rotated` 스레딩 폐기**: 3a 계획의 "`rotated` flag 스레딩" 대신, 래퍼가 관련 평면의
+  `tri_pt3.is_some()`(단일 헬퍼 `any_rotated(planes, &[idx])`)로 **호출마다 자동 분기**하게 리팩터(`rotated: bool`
+  파라미터 제거). 그래서 arrange는 시그니처 변경·flag 배관 없이 **호출만 교체**. per-predicate라 혼합 부울(A 회전·B
+  축정렬)에서 축정렬-only 술어는 geom(빠름) 유지 — per-boolean flag보다 정밀. **왜 `all`이 아니라 `any`**: 관련 평면
+  중 하나라도 무리수 좌표면 그 f64 근사가 orient3d/cmp를 뒤집을 수 있어 frame3 필요. "무리수 여부"는 소비자가 아니라
+  **분류기 소유**(`solid_is_rotated`←`Origin::Rotated`←`Isometry::is_exact`) — 90°-계열은 exact `Constructed`라
+  `tri_pt3=None`→geom 자동. 향후 exact 케이스 확대는 분류기 층만의 최적화이고 이 헬퍼는 플래그만 읽어 무변경.
+- **★ arrange 7 호출부 교체**: `order_along`·`side_of`(`t_orient3d`)·`loop_winding`(`t_cmp_coord`·죽은 로컬 `tri`
+  클로저 제거·`ring`이 이미 `[usize;3]`)·`dir_sign`·`turn_at`·`point_on_ring`·`every_ray`(`t_plane_pair_dir_sign`).
+  미사용된 geom import 3종 제거·인트라-닥 링크는 전체 경로화(import 제거 시 `unresolved link` vs 유지 시 `unused_imports`
+  catch-22 회피). `PlaneInfo.tri_pt3` 필드 allow도 제거(배선으로 라이브 read).
+- **★ 지연 의무 — 순서 판정 자리의 declare-0(3d)**: frame3는 `Orient::Zero`(declare-0)를 낼 수 있는데, 이를 조용히
+  비-0으로 읽으면 silent-wrong. 7자리 감사: **(A)** `order_along`(전순서 가정)·**(B)** `loop_winding` lex 비교(부분
+  declare-0→잘못된 lex-min `lo`→hull 아닌 정점 winding)는 3d 가드 은퇴 시 정직한 거절로 매핑해야 함. **(C)** `side_of`·
+  `point_on_ring`·`every_ray`는 0이 설계된 출력. **(D)** `turn_at`은 이미 `det==0` 자기 거절. 이 셀은 가드가 회전을
+  막아 라이브 무영향·의무만 기록.
+- **net.** `nacre-ops`: 4 래퍼 `rotated` 파라미터 제거·`any_rotated`·기존 tolerant 테스트 10종 인자만 갱신(모든 `true`
+  호출이 회전 평면 집합·`false`가 all-None이라 파생이 bit-identical 보존)·`t_plane_side`는 3b-ii까지 `#[allow(dead_code)]`
+  유지. **검증**: unrotated 부울 전 스위트 무회귀(전 평면 `tri_pt3=None`→geom 파생→bit-identical)·`cargo doc` 무경고.
+  **n2(OCCT) 없음**(3d)·가드 유지(frame3 라이브 미실행). 후속: 3b-ii(`t_plane_side`·`edge_crosses_face` 핸들+model
+  스레딩)·seam-gen 술어(4-plane guard·is_convex)·3c.
