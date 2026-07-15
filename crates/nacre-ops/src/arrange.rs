@@ -14,11 +14,11 @@
 // build rightly sees it as unreachable.
 #![cfg_attr(not(test), allow(dead_code))]
 
-use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
+use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign, t_plane_side};
 use crate::{
     BoolError, PlaneInfo, edge_incidence, face_half_edges, reject, solid_shell_handles, tag,
 };
-use nacre_geom::intersect::{plane_side, three_planes};
+use nacre_geom::intersect::three_planes;
 use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Loop, Model, Orientation, Solid, Vertex};
@@ -146,11 +146,7 @@ pub(crate) fn seam_segments_on(
                     let (bounds, pair) = inc[&he.edge];
                     let [pa, pb] = pair;
                     let r = if pa == own { pb } else { pa };
-                    let (v0, v1) = (
-                        model.vertices.get(bounds[0]).point,
-                        model.vertices.get(bounds[1]).point,
-                    );
-                    if edge_crosses_face(planes, pair, v0, v1, into, rings)? {
+                    if edge_crosses_face(model, planes, pair, bounds[0], bounds[1], into, rings)? {
                         third.push((r, on_f.then_some(he.edge)));
                     }
                 }
@@ -709,8 +705,8 @@ pub(crate) fn face_rings(
     Ok(out)
 }
 
-/// Does the edge on planes `[e0, e1]`, running `p0 → p1`, pierce the **material** of face `g`
-/// (plane `q`, `rings` outer-first)?
+/// Does the edge on planes `[e0, e1]`, between vertices `v0 → v1`, pierce the **material** of
+/// face `g` (plane `q`, `rings` outer-first)?
 ///
 /// **The piercing point is a three-plane point.** The edge lies on `E0` and `E1`, the face on
 /// `Q`, so the point is `{E0, E1, Q}` — the same species the seam machinery already builds,
@@ -720,23 +716,30 @@ pub(crate) fn face_rings(
 /// diagonal of **every** apex. Design §9 guessed the fix would be a real triangulation, or a
 /// choice of apex. It is neither: no triangulation is free of diagonals.
 ///
-/// **One coordinate is read, and it is exact.** Whether `p0` and `p1` straddle `Q` is
-/// [`plane_side`], an exact `orient3d` on the stored points. Everything after is combinatorial:
-/// straddling means the segment meets `Q` exactly once, so the crossing is inside the edge by
-/// construction, and containment is a ray cast along a line the planes already give.
+/// **The straddle is one toleranced sign.** Whether `v0` and `v1` straddle `Q` is
+/// [`t_plane_side`](crate::tolerant::t_plane_side) — the axis-aligned case an exact
+/// [`plane_side`](nacre_geom::intersect::plane_side) on the vertex coordinate, the rotated case
+/// the `frame3` judge on the vertex's exact definition; a `declare-0` (endpoint on/near `Q`)
+/// falls into `vertex_on_face_plane`. Everything after is combinatorial: straddling means the
+/// segment meets `Q` exactly once, so the crossing is inside the edge by construction, and
+/// containment is a ray cast along a line the planes already give.
 ///
 /// **Contacts are named, not lumped.** An endpoint on `Q` — or the whole edge lying in it — is
 /// `vertex_on_face_plane`. A crossing exactly on `∂g` is `point_on_ring`. Neither is a graze:
 /// they are the two ways an edge can touch a face without properly piercing it.
 pub(crate) fn edge_crosses_face(
+    model: &Model,
     planes: &[PlaneInfo],
     [e0, e1]: [usize; 2],
-    p0: Point3,
-    p1: Point3,
+    v0: Handle<Vertex>,
+    v1: Handle<Vertex>,
     q: usize,
     rings: &[Vec<[usize; 3]>],
 ) -> Result<bool, BoolError> {
-    let (s0, s1) = (plane_side(planes[q].tri, p0), plane_side(planes[q].tri, p1));
+    let (s0, s1) = (
+        t_plane_side(model, planes, q, v0),
+        t_plane_side(model, planes, q, v1),
+    );
     if s0 == 0 || s1 == 0 {
         return Err(reject(tag::VERTEX_ON_FACE_PLANE));
     }

@@ -14,10 +14,10 @@
 //! (never builds a `Pt3`); any rotated → the frame3 judge. So a mixed-rotation boolean keeps
 //! the axis-aligned operand's own predicates on the fast path, finer than a per-boolean flag.
 //!
-//! [`t_orient3d`] (order_along, side_of), [`t_cmp_coord`] (loop_winding) and
-//! [`t_plane_pair_dir_sign`] (dir_sign, turn_at, point_on_ring, every_ray) are wired into the
-//! live arrangement (stage 3b-i). [`t_plane_side`] (straddle) needs a vertex handle + `model`
-//! threaded into `edge_crosses_face`, so it stays unwired until 3b-ii.
+//! All four are wired into the live arrangement: [`t_orient3d`] (order_along, side_of),
+//! [`t_cmp_coord`] (loop_winding) and [`t_plane_pair_dir_sign`] (dir_sign, turn_at,
+//! point_on_ring, every_ray) in stage 3b-i; [`t_plane_side`] (edge_crosses_face straddle,
+//! with a vertex handle + `model` threaded down) in 3b-ii.
 
 use crate::PlaneInfo;
 use crate::arrange::orient_sign;
@@ -155,9 +155,11 @@ pub(crate) fn t_cmp_coord(planes: &[PlaneInfo], a: [usize; 3], b: [usize; 3], ax
 /// Routes on the plane *or* the vertex being rotated: unlike the plane-only predicates, an
 /// axis-aligned plane may still be tested against a rotated (irrational) vertex, so `p`'s
 /// `Origin::Rotated` also forces frame3.
-// `#[allow(dead_code)]`: unwired until 3b-ii threads a vertex handle + `model` into
-// `edge_crosses_face`; the other three wrappers are live from 3b-i.
-#[allow(dead_code)]
+///
+/// `p` is an edge endpoint — an original (`Constructed`/`Rotated`) vertex. The rotated path's
+/// `vertex_pt3` errors on a `Discovered` (three-plane) definition; a rotated boolean whose
+/// operand is a prior boolean result carries such corners, so 3c must route those endpoints
+/// through the indirect `orient3d` (nacre-tip dispatch) before the rotation guard retires.
 pub(crate) fn t_plane_side(
     model: &Model,
     planes: &[PlaneInfo],

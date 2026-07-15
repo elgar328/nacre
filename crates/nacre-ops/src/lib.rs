@@ -1650,15 +1650,16 @@ fn solid_face_rings(
 /// plane would already have been rejected as a `coplanar_pair`. So each hit is a distinct
 /// seam vertex.
 fn pierced_faces(
+    model: &Model,
     planes: &[PlaneInfo],
     pair: [usize; 2],
-    p0: Point3,
-    p1: Point3,
+    v0: Handle<Vertex>,
+    v1: Handle<Vertex>,
     rings: &FaceRings,
 ) -> Result<Vec<usize>, BoolError> {
     let mut hits = Vec::new();
     for (q, r) in rings {
-        if arrange::edge_crosses_face(planes, pair, p0, p1, *q, r)? {
+        if arrange::edge_crosses_face(model, planes, pair, v0, v1, *q, r)? {
             hits.push(*q);
         }
     }
@@ -1721,9 +1722,8 @@ fn overlap_fuse_cut(
     for (edges, other) in [(&edges_a, &rings_b), (&edges_b, &rings_a)] {
         for &(_, bounds, inc) in edges {
             let [v0, v1] = bounds;
-            let (p0, p1) = (model.vertices.get(v0).point, model.vertices.get(v1).point);
             let (s0, s1) = (classof[&v0], classof[&v1]);
-            let hits = pierced_faces(&planes, inc, p0, p1, other)?;
+            let hits = pierced_faces(model, &planes, inc, v0, v1, other)?;
             let straddles = s0 != s1;
             if straddles && hits.is_empty() {
                 return Err(reject(tag::NO_ENTRY_FACE)); // an unfired backstop, now
@@ -2332,11 +2332,7 @@ fn boundaries_intersect(
         let inc_f = arrange::edge_planes(model, face_solid, surf_ix)?;
         let rings = solid_face_rings(model, face_solid, surf_ix, &inc_f)?;
         for (_, bounds, pair) in edge_incidence(model, edge_solid, surf_ix)? {
-            let (p0, p1) = (
-                model.vertices.get(bounds[0]).point,
-                model.vertices.get(bounds[1]).point,
-            );
-            if !pierced_faces(planes, pair, p0, p1, &rings)?.is_empty() {
+            if !pierced_faces(model, planes, pair, bounds[0], bounds[1], &rings)?.is_empty() {
                 return Ok(true); // a genuine seam
             }
         }
@@ -8661,11 +8657,7 @@ pub mod tests {
         let rings = solid_face_rings(m, y, surf_ix, &inc_y)?;
         let mut hits = 0;
         for (_, bounds, inc) in edge_incidence(m, x, surf_ix)? {
-            let (p0, p1) = (
-                m.vertices.get(bounds[0]).point,
-                m.vertices.get(bounds[1]).point,
-            );
-            hits += pierced_faces(planes, inc, p0, p1, &rings)?.len();
+            hits += pierced_faces(m, planes, inc, bounds[0], bounds[1], &rings)?.len();
         }
         Ok(hits)
     }
@@ -8741,11 +8733,10 @@ pub mod tests {
                 })
             })
             .expect("B's edge through (0.5, 0.5)");
-        let (p0, p1) = (
-            m.vertices.get(bounds[0]).point,
-            m.vertices.get(bounds[1]).point,
+        assert!(
+            arrange::edge_crosses_face(&m, &planes, along_x, bounds[0], bounds[1], q, &rings)
+                .unwrap()
         );
-        assert!(arrange::edge_crosses_face(&planes, along_x, p0, p1, q, &rings).unwrap());
 
         // And the whole boolean runs on it through the seam path — the measurement
         // design.md §9 line 447 asked for. Cell (5b) then deleted the convex path, so
@@ -8794,7 +8785,10 @@ pub mod tests {
                 continue;
             }
             vertical += 1;
-            assert!(!arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings).unwrap());
+            assert!(
+                !arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings)
+                    .unwrap()
+            );
         }
         assert_eq!(vertical, 4);
     }
@@ -8910,11 +8904,7 @@ pub mod tests {
                         .any(|&v| m.vertices.get(v).point.as_array()[2] < 0.0)
                 })
                 .expect("the vertical edge");
-            let (p0, p1) = (
-                m.vertices.get(bounds[0]).point,
-                m.vertices.get(bounds[1]).point,
-            );
-            (planes, q, rings, inc, p0, p1)
+            (planes, q, rings, inc, bounds)
         };
 
         // (a) The whole edge lies in the other face's plane. Both endpoint signs are zero.
@@ -8932,21 +8922,17 @@ pub mod tests {
                         .all(|&v| m.vertices.get(v).point.as_array()[2] == 0.0)
                 })
                 .expect("an edge of the L's bottom");
-            let (p0, p1) = (
-                m.vertices.get(bounds[0]).point,
-                m.vertices.get(bounds[1]).point,
-            );
             assert_rejects(
-                || arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings),
+                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
                 tag::VERTEX_ON_FACE_PLANE,
             );
         }
 
         // (b) The piercing point is a ring node.
         {
-            let (planes, q, rings, inc, p0, p1) = pierce(at_vertex, [1.0, 1.0]);
+            let (planes, q, rings, inc, bounds) = pierce(at_vertex, [1.0, 1.0]);
             assert_rejects(
-                || arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings),
+                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
                 tag::POINT_ON_RING,
             );
             let mut x = [inc[0], inc[1], q];
@@ -8959,9 +8945,9 @@ pub mod tests {
 
         // (c) The piercing point is inside a ring edge. `point_in_ring` names this one itself.
         {
-            let (planes, q, rings, inc, p0, p1) = pierce(at_edge, [1.5, 0.0]);
+            let (planes, q, rings, inc, bounds) = pierce(at_edge, [1.5, 0.0]);
             assert_rejects(
-                || arrange::edge_crosses_face(&planes, inc, p0, p1, q, &rings),
+                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
                 tag::POINT_ON_RING,
             );
         }
