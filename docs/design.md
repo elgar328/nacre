@@ -1201,3 +1201,15 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 - **★ `PlaneInfo.tri_pt3: Option<[Pt3;3]>`**: 회전 시 `collect_planes`가 면 tri 정점(`outer_tri`가 핸들도 반환→`tip::vertex_pt3`)을 세 Pt3로 **한 번 캐시**(O(N²) order_along가 매 호출 forest 순회 안 하도록). unrotated면 `None`(무비용·exact 경로). `PlaneInfo`는 derive 없는 plain 구조체라 Pt3(Clone) 필드가 Copy 안 깸.
 - **★ `tolerant::t_orient3d(planes, p,q,r,j, rotated) -> i8`**: `order_along` 시그니처와 동일(3b drop-in). `!rotated`→기존 `three_plane_orient3d`(핫패스 무변경). `rotated`→`tri_pt3` 세 Pt3로 `frame3::indirect_orient3d_judge`. 라우팅=boolean당 `solid_is_rotated` flag(매 호출 tol 계산 없음). winding 불변.
 - **net.** `nacre-ops`: `t_orient3d_rotation_invariant`(**회전 불변 오라클**: 회전 큐브의 frame3 경로 == 같은 큐브 unrotated geom 경로·definite 전부·조립+라우팅 검증·술어 soundness는 frame3 H-c 계승·astro-float GT 불요)·`plane_def_from_face`(tri_pt3 조립·좌표 일치·tol>0)·`t_orient3d_unrotated_forwards_geom`(geom bit-일치). **미배선**(order_along 라이브 무변경·가드 유지)·`t_orient3d`/`tri_pt3`는 3b까지 `#[allow(dead_code)]`. **n2(OCCT) 없음**(3d)·기존 boolean 무회귀. ops→nacre-tip dep(lib 그래프 무순환·tip의 ops는 dev-only). 후속: 3a-ii(cmp/dir_sign/plane_side 래퍼)·3b(배선).
+
+**toleranced t_cmp_coord + t_plane_side (오버홀 3a-ii).** 라우팅 층의 나머지 술어 2종(기존 frame3 judge 재사용).
+- **★ `t_cmp_coord`**(loop_winding·두 implicit point 축좌표): `!rotated`→`three_plane_cmp_coord`·`rotated`→각 트리플
+  세 Pt3로 `indirect_cmp_coord_judge`. cmp는 좌표라 **회전 불변 아님** → 테스트는 좌표 오라클(cmp-ii 동형).
+- **★ `t_plane_side`**(straddle·정점 vs 면): `!rotated`→`plane_side`·`rotated`→정점 Pt3+면 세 Pt3로 `orient3d_judge`
+  (직접 judge). orient3d 부호라 **회전 불변** → 테스트는 회전 불변 오라클(3a-i 동형).
+- **★ 혼합 회전 버그 수정(래퍼-측)**: 3a-i가 `tri_pt3`를 솔리드별로 채워, 혼합 부울(A 회전·B 축정렬)의 B-plane은
+  `None`이라 rotated 경로가 panic할 수 있었음. **`plane_def`가 Some→clone(값싼 chain 복사·forest 순회 없음)·None→
+  tri 좌표로 즉석 exact 빌드**(축정렬 좌표는 exact f64·tol 0). collect_planes 시그니처 churn 없이 수정(호출부 ~40 무변경).
+- **net.** `nacre-ops`: `t_plane_side_rotation_invariant`·`t_cmp_coord_matches_coord`(좌표 오라클·resolved>0·antisym)·
+  둘 다 `_unrotated_forwards_geom`·`mixed_rotation_handled`(혼합서 None plane 즉석 빌드·panic 없음). **미배선**·
+  `#[allow(dead_code)]`(3b까지). 후속: 3a-iii(t_dir_sign·frame3 D부호 노출)·3b(배선).
