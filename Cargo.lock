@@ -330,6 +330,7 @@ dependencies = [
 name = "nacre-tip"
 version = "0.0.0"
 dependencies = [
+ "nacre-geom",
  "nacre-math",
  "nacre-ops",
  "nacre-predicates",

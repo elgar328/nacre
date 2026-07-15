@@ -13,6 +13,10 @@ nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-store = { path = "../nacre-store", version = "0.0.0" }
+# `nacre-geom` is used only to name the `Handle<Surface>` type (topo does not
+# re-export `Surface`); its variant/coefficients are never inspected in lib code.
+# Tests also use it as an independent oracle (`three_plane_orient3d`).
+nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 
 [dev-dependencies]
 nacre-ops = { path = "../nacre-ops", version = "0.0.0" }
