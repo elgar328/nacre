@@ -248,6 +248,7 @@ dependencies = [
  "nacre-step",
  "nacre-store",
  "nacre-tess",
+ "nacre-tip",
  "nacre-topo",
  "nacre-validate",
  "proptest",

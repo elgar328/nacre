@@ -10,6 +10,7 @@
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::Isometry;
+use nacre_scalar::frame3::Pt3;
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Rotation, Shell, Solid, Vertex,
@@ -17,6 +18,7 @@ use nacre_topo::{
 };
 
 mod arrange;
+mod tolerant;
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// `x_axis`/`y_axis` are assumed unit and orthogonal (the constructors ensure
@@ -1481,6 +1483,14 @@ pub(crate) struct PlaneInfo {
     /// source of "outward" for both the in/out sign test and face ordering.
     pub(crate) n_out: Vector3,
     pub(crate) orient: Orientation,
+    /// The three `tri` points as **toleranced `Pt3`** (exact rotation definition), in the
+    /// same order as `tri` — `Some` only when the solid is rotated (overhaul stage 3;
+    /// `collect_planes` builds it once). `None` on the axis-aligned path, where `tri`'s
+    /// f64 coordinates are already exact and the geom predicates are used directly.
+    // `#[allow(dead_code)]`: written here in 3a-i, first read when `tolerant::t_orient3d`
+    // is wired into `order_along` in stage 3b.
+    #[allow(dead_code)]
+    pub(crate) tri_pt3: Option<[Pt3; 3]>,
 }
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
@@ -1950,6 +1960,10 @@ pub(crate) fn collect_planes(
     model: &Model,
     solid: Handle<Solid>,
 ) -> Result<Vec<PlaneInfo>, BoolError> {
+    // A rotated operand's face coordinates are rounded, so each plane also carries its
+    // exact `Pt3` definition (overhaul stage 3). Decided once per solid — the axis-aligned
+    // path keeps `tri_pt3 = None` and pays nothing.
+    let rotated = solid_is_rotated(model, solid);
     let mut out = Vec::new();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
@@ -1958,11 +1972,20 @@ pub(crate) fn collect_planes(
                 Surface::Plane(p) => *p,
                 Surface::Cylinder(_) => return Err(reject(tag::CYLINDER_FACE)),
             };
-            let tri = outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
+            let (tri, tri_verts) =
+                outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
             let n_out = (tri[1] - tri[0])
                 .cross(tri[2] - tri[0])
                 .normalize()
                 .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
+            let tri_pt3 = if rotated {
+                let pt3 = |vh| {
+                    nacre_tip::vertex_pt3(model, vh).map_err(|_| reject(tag::ROTATED_UNSUPPORTED))
+                };
+                Some([pt3(tri_verts[0])?, pt3(tri_verts[1])?, pt3(tri_verts[2])?])
+            } else {
+                None
+            };
             out.push(PlaneInfo {
                 surf: face.surface,
                 face: fh,
@@ -1970,6 +1993,7 @@ pub(crate) fn collect_planes(
                 tri,
                 n_out,
                 orient: face.orientation,
+                tri_pt3,
             });
         }
     }
@@ -1986,14 +2010,20 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
         .collect()
 }
 
-/// Three non-collinear points of a face's outer loop, ordered so their right-hand
-/// normal points **out** of the solid.
-fn outer_tri(model: &Model, face: &Face) -> Option<[Point3; 3]> {
-    let pts: Vec<Point3> = face
+/// Three non-collinear points of a face's outer loop — with the **vertex handle** each
+/// point came from — ordered so their right-hand normal points **out** of the solid.
+/// The handles let the toleranced predicates rebuild each point as a `Pt3` (overhaul
+/// stage 3); the coordinates alone drive the axis-aligned path.
+fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Handle<Vertex>; 3])> {
+    let verts: Vec<Handle<Vertex>> = face
         .outer
         .half_edges
         .iter()
-        .map(|&he| model.vertices.get(he_start(model, he)).point)
+        .map(|&he| he_start(model, he))
+        .collect();
+    let pts: Vec<Point3> = verts
+        .iter()
+        .map(|&vh| model.vertices.get(vh).point)
         .collect();
     let n = pts.len();
     // The turn at one corner does not know which way the ring winds. Every b-rep loop is
@@ -2003,14 +2033,17 @@ fn outer_tri(model: &Model, face: &Face) -> Option<[Point3; 3]> {
     let newell = (0..n).fold(Vector3::zero(), |acc, i| {
         acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
     });
-    let [a, b, c] = (0..n).find_map(|i| {
+    let i = (0..n).find(|&i| {
         let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
-        ((b - a).cross(c - a).norm() > 0.0).then_some([a, b, c])
+        (b - a).cross(c - a).norm() > 0.0
     })?;
+    let (i0, i1, i2) = (i, (i + 1) % n, (i + 2) % n);
+    let (a, b, c) = (pts[i0], pts[i1], pts[i2]);
+    // Same b/c swap for coords and handles, so `tri[k]` and `tri_verts[k]` stay aligned.
     Some(if (b - a).cross(c - a).dot(newell) < 0.0 {
-        [a, c, b]
+        ([a, c, b], [verts[i0], verts[i2], verts[i1]])
     } else {
-        [a, b, c]
+        ([a, b, c], [verts[i0], verts[i1], verts[i2]])
     })
 }
 
@@ -9689,6 +9722,7 @@ pub mod tests {
             tri: [Point3::origin(); 3],
             n_out: Vector3::from_array([0.0; 3]),
             orient: Orientation::Forward,
+            tri_pt3: None,
         };
         let (pa, pb) = (mk(plane_x0), mk(plane_z0));
         // The two planes are NOT geometrically coplanar → the fallback would fail.
