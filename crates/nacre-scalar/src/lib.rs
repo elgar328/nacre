@@ -1,5 +1,5 @@
 //! Exact rational scalars — the overhaul's §4 value engine — **and the 2D-frame
-//! exact-sign judgment they enable** (the [`frame`] module).
+//! exact-sign judgment they enable** (the [`frame2`] module).
 //!
 //! The truth layer for user-input dimensions and angles: a value the user typed
 //! is preserved *exactly*, so `1.1` stays `11/10` and `1.1 × 7` is exactly `7.7`
@@ -43,12 +43,12 @@ thread_local! {
     static HP_CONSTS: RefCell<Consts> = RefCell::new(Consts::new().expect("astro-float consts"));
 }
 
-pub mod frame;
+pub mod frame2;
 pub mod frame3;
 
 /// The shared orientation-judgment result (§TIP) — used by both the 2D
 /// ([`frame`]) and 3D ([`frame3`]) judges and their downstream consumers.
-pub use frame::Orient;
+pub use frame2::Orient;
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
 /// so the caller sees the §4 downgrade trigger explicitly; on overflow the kernel
@@ -308,7 +308,7 @@ pub struct Rotation {
 /// A rigid-body isometry (§ Transform): a rotation (optional) then a translation.
 /// The exact rational data is the **definition**; the `apply_*`/`offset_f64`
 /// realizers give the f64 cache. Math-type independent — operates on plain
-/// `[f64; 3]`, mirroring [`frame::Pt2`]'s `(f64, f64)` (so `nacre-scalar` never
+/// `[f64; 3]`, mirroring [`frame2::Pt2`]'s `(f64, f64)` (so `nacre-scalar` never
 /// depends on `nacre-math`); the caller (`nacre-ops`) applies it to `Point3`/`Plane`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Isometry {

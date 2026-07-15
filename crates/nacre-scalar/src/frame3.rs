@@ -1,5 +1,5 @@
 //! The 3D toleranced point + its `orient3d` judgment (overhaul §TIP, stage 2). The
-//! 3D analogue of [`crate::frame`] (`Pt2` / `orient2d_judge`).
+//! 3D analogue of [`crate::frame2`] (`Pt2` / `orient2d_judge`).
 //!
 //! A rotated point cannot be held exactly (cos/sin are irrational), but its f64
 //! realization carries a **direction-wise xyz tol** (§TIP ⑤) that soundly bounds
@@ -17,7 +17,7 @@
 //! H-d/H-f (chain + arbitrary-pivot tol) — the bound never under-estimates the true
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
-use crate::frame::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
+use crate::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
 use crate::{Angle, Axis, HP_RM, Orient, Rat};
 use astro_float::BigFloat;
 
@@ -189,7 +189,7 @@ fn prod_err(va: f64, ta: f64, vb: f64, tb: f64, vc: f64, tc: f64) -> f64 {
 /// each entry `(a−d)[k]` carries tol `tol_a[k] + tol_d[k]`. The bound sums the six
 /// product radii (input-tol propagation, triangle-inequality worst case) plus a term
 /// for the f64 rounding of the determinant's own arithmetic. The 3D analogue of
-/// [`crate::frame`]'s 2D `det_bound`. Validated in exact3d (H-a).
+/// [`crate::frame2`]'s 2D `det_bound`. Validated in exact3d (H-a).
 fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
     let r = rows(p[0], p[1], p[2], p[3]);
     let td = t[3]; // apex tol adds to every edge on subtraction
@@ -268,7 +268,7 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
     let dh = det3_hp(pa, pb, pc, pd, JUDGE_PREC);
     let scale = scale4(a, b, c, d);
     let floor = 16.0 * scale * scale * scale * 2f64.powi(-(JUDGE_PREC as i32));
-    // Sign via is_positive (astro-float#44 workaround — see crate::frame).
+    // Sign via is_positive (astro-float#44 workaround — see crate::frame2).
     if dh.is_zero() || bf_mag(&dh) <= floor {
         Orient::Zero
     } else if dh.is_positive() {
