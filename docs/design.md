@@ -1254,3 +1254,27 @@ arrange.rs 호출로 교체 — 회전 boolean으로 가는 첫 라이브 코드
   유지. **검증**: unrotated 부울 전 스위트 무회귀(전 평면 `tri_pt3=None`→geom 파생→bit-identical)·`cargo doc` 무경고.
   **n2(OCCT) 없음**(3d)·가드 유지(frame3 라이브 미실행). 후속: 3b-ii(`t_plane_side`·`edge_crosses_face` 핸들+model
   스레딩)·seam-gen 술어(4-plane guard·is_convex)·3c.
+
+**t_plane_side 배선 — arrangement 4번째·마지막 술어 (오버홀 3b-ii).** 남은 arrangement 술어 `t_plane_side`(straddle)를
+`edge_crosses_face`에 배선. 이로써 arrangement 4술어 전부 배선 완료. `edge_crosses_face`의 링 포함(`point_on_ring`/
+`point_in_ring`→`every_ray`)은 이미 3b-i로 toleranced였고, 유일한 f64 잔여였던 straddle(`plane_side(planes[q].tri,
+p0/p1)`)만 남았었다.
+- **★ 정점 핸들+model 스레딩**: `t_plane_side`가 정점 좌표(geom)와 정의(frame3·`vertex_pt3`) 둘 다 필요해
+  `edge_crosses_face`(arrange.rs)·`pierced_faces`(lib.rs) 시그니처를 `p0/p1: Point3`→`v0/v1: Handle<Vertex>`+`model`로.
+  **모든 호출부**(seam_segments_on·overlap_fuse_cut·boundaries_intersect·테스트 5)가 이미 `bounds`+model 보유·p0/p1을
+  거기서 계산 중이라 핸들 전달로 그 계산이 사라짐(호출부 단순화).
+- **★ 왜 인덱스 재구성(`t_orient3d`, 스레딩 불요)이 아닌가**: 끝점을 세-평면 meet `{e0,e1,r}`로 보면 straddle이
+  인덱스 전용이 되지만, **Constructed 원본 정점은 세-평면 정의가 없다**(진실=좌표·§4)·세 번째 평면 `r`이 인접 면
+  순회·정점당 3+면이라 비유일. 정점 truth 존중하는 `t_plane_side`(Constructed=좌표·Rotated=`vertex_pt3`·
+  Discovered=[3c]indirect)가 올바른 접근·스레딩 정당.
+- **★ declare-0 자기 보호**: straddle `s0==0||s1==0→VERTEX_ON_FACE_PLANE`. frame3 spurious declare-0도 정직한
+  거절로 흡수(turn_at 동형)·별도 3d 정책 불요.
+- **★ 정직한 한계(3c)**: `t_plane_side` rotated 경로 `vertex_pt3`는 `Discovered⇒IndirectRequired`라 **Discovered
+  끝점이면 패닉**(boolean 결과를 회전 피연산자로 넣으면 그런 코너·design.md 위). 3b-ii는 가드가 회전 차단→geom
+  경로라 안전·3c가 Discovered 끝점을 indirect orient3d로 라우팅해야 3d 가드 은퇴 시 패닉 면함(is_convex/
+  point_in_solid과 같은 정점-origin 계층). 4-plane 동시성 가드도 orient3d+`planes_coplanar` 함께라 3c.
+- **net.** `arrange.rs`: `edge_crosses_face`(model+핸들·straddle→`t_plane_side`·doc 산문/링크 갱신)·`plane_side`
+  import 제거(미사용·`plane_side` 링크 전체경로화)·`three_planes` 유지. `lib.rs`: `pierced_faces`(model+핸들)·3 호출부·
+  테스트(`pierce` 헬퍼가 `bounds` 반환). `tolerant.rs`: `t_plane_side` allow 제거·모듈 doc(4종 배선). **검증**: unrotated
+  무회귀(228+통합 bit-identical)·`cargo doc` 무경고. **n2(OCCT) 없음**(3d)·가드 유지. 후속: 3c(point_in_solid·
+  is_convex·t_plane_side Discovered·4-plane 가드·공면 감지기 — 정점-origin 계층·규모 큼).
