@@ -1468,3 +1468,19 @@ memoize**라 부호 판정·escalation 카운트 불변(정확성 무관).
   seam 25–30%)+부하 불균형(재구성에 무거운 단일 면, 이상 cap ~3.4×). feature on/off 양쪽 전 스위트 green·stress silent 0·
   OCCT green·**1스레드 vs N스레드 결과 동일**(thread-order 독립 결정론 테스트).
 - **후속**: seam 축적 병렬화(판정만·dedup 순차)·4-plane 가드·컴포넌트 outward(잔여 순차 병목). 후속: 3d-iv(main 병합).
+
+**멀티코어 ② seam 축적 병렬화 — Amdahl 잔여 제거.** ①이 classify/reconstruct를 병렬화한 뒤 **seam 단계가 병렬 런타임의
+~50%**를 차지하는 단일 최대 순차 병목이 됨(n=32: 병렬 114ms ≈ classify 15 + **seam 57** + reconstruct 33). seam은 엣지마다
+`pierced_faces`(엣지-면 교차)+4-plane 동시성 가드(`t_orient3d`)를 돌리고 seam 정점을 first-appearance 인덱스로 dedup — 앞의 판정
+둘은 **엣지별 독립·읽기 전용**, dedup만 순서 의존. B/A와 **동일 패턴**으로 분리: 엣지를 순서 고정으로 flatten(`edges_a`→`edges_b`)해
+`par_iter`로 per-edge 판정 → 후보 `(정렬 triple, point, e0, e1, entry)` 반환 → **인덱스 순서로 순차 dedup**(`seam_ix` Vacant면
+`vertex_tol` 계산·`seam.push`).
+- **★ bit-identity 세부**: `three_planes`(교차점)는 Cramer라 평면 인자 순서에 f64 반올림이 민감 → 병렬 경로가 순차와 **정확히
+  같은 `(e0,e1,entry)` 순서**로 계산하고, 정렬 `triple`은 **오직 dedup 키**로만 사용. `vertex_tol`도 순차 dedup에서 원순서·신규
+  triple만(현 코드와 byte-identical). reject 태그(`LAST_REJECT` cfg(test))는 인덱스-최초 실패 엣지를 메인서 재스캔 복원.
+- **★ 결과**: rotated ngon(Fuse/Cut/Common) 벽시계 **②로 ~2.2×→~3.3–3.8×**(14코어·면수↑일수록 큼). ①만 대비 추가 ~1.7×.
+  기존 `parallel_boolean_is_thread_order_independent`가 seam 병렬까지 커버(1 vs N 스레드 동일)·feature on/off 전 green·stress
+  silent 0·OCCT green.
+- **★ 남은 천장(정직)**: ~10× Amdahl 상한에 못 미치는 건 (a) 재구성의 무거운 단일 면(로드밸런스·within-face 그레인 필요)·
+  (b) per-판정 astro-float 비용(병렬이 나눌 뿐 못 줄임). **CPU 병렬은 여기까지가 큰 조각** — 다음 큰 도약은 알고리즘(공간
+  broad-phase culling으로 판정 개수 O(E×F)→~O(E+F)·구조적-0 단락). 후속: within-face 그레인·알고리즘 트랙·3d-iv(main 병합).
