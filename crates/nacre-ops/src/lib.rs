@@ -1506,11 +1506,14 @@ pub fn boolean(
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
-    // A rotated operand has tol-carrying planar geometry whose predicates are not yet
-    // sound (no TIP until stage 3) — honestly reject (overhaul stage 1b).
-    if solid_is_rotated(model, a) || solid_is_rotated(model, b) {
-        return Err(reject(tag::ROTATED_UNSUPPORTED));
-    }
+    // A rotated operand's predicates are now TIP-exact (overhaul 3a–3c-vi): the arrangement,
+    // seam, in/out, and outer/cavity tests all decide on the vertices' exact rotation
+    // definitions, so a rotated *transverse* boolean is sound (cell 3d-i retired the guard).
+    // A rotated *coplanar* contact is out of scope (the coplanar milestone) but never silently
+    // wrong: the exact `planes_coplanar` detectors miss it, and `general_boolean` then either
+    // solves it or honestly rejects (`edge_crosses_face` declare-0 → `VERTEX_ON_FACE_PLANE`,
+    // or a downstream degeneracy) — the vertex-on-plane TIP predicate catches what the rounded
+    // coefficients cannot.
     // Cavitied operands are supported (cells (5c-in), (5c-in-2)): the seam front-end and
     // reconstruction walk all shells (outer + cavities) via `solid_shell_handles`, so a
     // void the cut misses is carried through, and a cut reaching into a void reconstructs
@@ -6400,6 +6403,135 @@ pub mod tests {
         assert!((vol - 0.06).abs() < 1e-9, "total volume {vol}");
     }
 
+    // --- Rotated booleans go live (overhaul 3d-i, `ROTATED_UNSUPPORTED` retired) ---
+    // A boolean commutes with a rigid motion, so rotating both operands by the same
+    // irrational-angle isometry must give the rigid image of the unrotated result — identical
+    // volume, solid count, and cavity count, and still valid. These are the first live proof
+    // that the TIP-wired machinery (arrangement, seam, in/out, outer/cavity — 3a–3c-vi) is
+    // sound end-to-end on rotated (rounded-irrational) geometry.
+
+    #[test]
+    fn rotated_corner_bite_cut_is_rotation_invariant() {
+        let (mut m, l, bx) = l_and_corner_box();
+        let l = transform(&mut m, l, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let bx = transform(&mut m, bx, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.224)).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn rotated_corner_bite_fuse_is_rotation_invariant() {
+        let (mut m, l, bx) = l_and_corner_box();
+        let l = transform(&mut m, l, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let bx = transform(&mut m, bx, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 + 0.924 - 0.224)).abs() < 1e-9, "volume {vol}");
+    }
+
+    /// The sever — the case that exercises the rotated `is_shell_outward` twin
+    /// (`component_is_outward_tol`, 3c-vi): both severed pieces must read outward, so the
+    /// result is two solids, not one solid with the other misjudged as a cavity.
+    #[test]
+    fn rotated_sever_cut_severs_into_two() {
+        let (mut m, l, rod) = l_and_rod();
+        let l = transform(&mut m, l, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let rod = transform(&mut m, rod, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let solids = boolean(&mut m, BoolKind::Cut, rod, l).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(solids.len(), 2, "rotated sever still yields two solids");
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol: f64 = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .sum();
+        assert!((vol - 0.06).abs() < 1e-9, "total volume {vol}");
+    }
+
+    #[test]
+    fn rotated_containment_cut_makes_cavity() {
+        let (mut m, a, b) = l_and_inner_box();
+        let a = transform(&mut m, a, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let b = transform(&mut m, b, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert_eq!(
+            m.solids.get(r).cavities.len(),
+            1,
+            "the inner box becomes a cavity"
+        );
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - (3.0 - 0.512)).abs() < 1e-9, "volume {vol}");
+    }
+
+    /// A rotated coplanar contact is out of scope (the coplanar milestone), but retiring the
+    /// guard must not make it *silently* wrong. When an X rotation tilts the contact plane its
+    /// rounded coefficients are no longer exactly proportional, so the exact `planes_coplanar`
+    /// detectors miss it and it reaches `general_boolean`. The DNA invariant: the result is
+    /// either an honest reject, or a valid solid of the *correct* volume — never a
+    /// plausible-but-invalid solid. (Measured: the boss fuse is solved exactly; the pocket cut
+    /// honestly rejects.)
+    #[test]
+    fn rotated_coplanar_contact_is_never_silently_wrong() {
+        use nacre_scalar::Axis;
+        let tilt = |m: &mut Model, s: Handle<Solid>| -> Handle<Solid> {
+            let r = transform(m, s, &rot_iso(Axis::X, 30)).unwrap();
+            m.rebuild_adjacency();
+            r
+        };
+        // boss fuse (correct fused volume 1.25 if solved).
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let boss = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, 1.0]),
+            Point3::from_array([0.75, 0.75, 2.0]),
+        );
+        let (base, boss) = (tilt(&mut m, base), tilt(&mut m, boss));
+        if let Ok(r) = boolean_one(&mut m, BoolKind::Fuse, base, boss) {
+            m.rebuild_adjacency();
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "solved boss is valid"
+            );
+            let v = nacre_props::mass_props(&m, r).unwrap().volume;
+            assert!((v - 1.25).abs() < 1e-9, "solved boss fuse is correct: {v}");
+        }
+        // pocket cut (correct carved volume 0.875 if solved).
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let prism = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, 0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let (base, prism) = (tilt(&mut m, base), tilt(&mut m, prism));
+        if let Ok(r) = boolean_one(&mut m, BoolKind::Cut, base, prism) {
+            m.rebuild_adjacency();
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "solved pocket is valid"
+            );
+            let v = nacre_props::mass_props(&m, r).unwrap().volume;
+            assert!(
+                (v - 0.875).abs() < 1e-9,
+                "solved pocket cut is correct: {v}"
+            );
+        }
+    }
+
     /// A U-prism: a bottom bar `y∈[0,1]` with two prongs rising from it. The prong
     /// tops sit at *different* heights (y=2.3 and y=2.0) on purpose — level tops
     /// would be coplanar faces and `has_coplanar_pair` would reject before the seam
@@ -10900,10 +11032,11 @@ pub mod tests {
 
     /// A non-90° rotation genuinely tilts the solid: rigid (volume/area invariant),
     /// validate/tess/STEP clean, a known corner lands at its exact rotated image, the
-    /// vertices carry `Origin::Rotated` (`solid_is_rotated`), and boolean now rejects
-    /// the solid (`ROTATED_UNSUPPORTED` — the TIP judge is not in yet, either operand).
+    /// vertices carry `Origin::Rotated` (`solid_is_rotated`), and a boolean against it now
+    /// runs (a *mixed*-rotation cut: rotated `c2` minus an axis-aligned `d` it contains, so
+    /// `d` becomes a cavity — overhaul 3d-i retired the `ROTATED_UNSUPPORTED` entry guard).
     #[test]
-    fn transform_rotate_cuboid_tilts_and_blocks_boolean() {
+    fn transform_rotate_cuboid_tilts_and_cuts() {
         let mut m = Model::new();
         let c = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -10942,16 +11075,22 @@ pub mod tests {
             "corner (0,0,0) rotated to its exact image {want:?}; got {pts:?}"
         );
 
-        // Boolean rejects a rotated operand in either position (all-or-nothing).
+        // A mixed-rotation cut now runs: the axis-aligned `d` sits inside the rotated `c2`, so
+        // `Cut(c2, d)` leaves `c2` with `d` carved out as a cavity (volume 24 − 1 = 23).
         let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, c2, d),
-            tag::ROTATED_UNSUPPORTED,
+        let r = boolean_one(&mut m, BoolKind::Cut, c2, d).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "mixed cut is valid"
         );
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, d, c2),
-            tag::ROTATED_UNSUPPORTED,
+        assert_eq!(
+            m.solids.get(r).cavities.len(),
+            1,
+            "the contained box is a cavity"
         );
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 23.0).abs() < 1e-9, "volume {vol}");
     }
 
     /// A 90° rotation about Z is axis-aligned and exact: the solid stays
@@ -11197,7 +11336,7 @@ pub mod tests {
     /// Re-rotating about the same axis chains a second forest node onto the first
     /// (this cell does not bundle): the leaf's parent is the earlier rotation, `base`
     /// stays the Constructed root, and the solid remains a rigid (volume/area-invariant)
-    /// `Rotated` solid that validate/tess/STEP accept and boolean still rejects.
+    /// `Rotated` solid that validate/tess/STEP accept and a boolean now runs against.
     #[test]
     fn rerotate_same_axis_chains() {
         use nacre_scalar::Axis;
@@ -11231,10 +11370,14 @@ pub mod tests {
                 .contains("MANIFOLD_SOLID_BREP")
         );
         assert!(solid_is_rotated(&m, c2), "re-rotated solid stays Rotated");
+        // A boolean against the chain-rotated solid runs (guard retired, 3d-i): the axis-aligned
+        // `d` inside the re-rotated `c2` is carved out, and the result is a valid solid.
         let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, c2, d),
-            tag::ROTATED_UNSUPPORTED,
+        boolean_one(&mut m, BoolKind::Cut, c2, d).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "chain-rotated cut is valid"
         );
     }
 
