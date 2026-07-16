@@ -4041,25 +4041,40 @@ fn coplanar_reconstruct(
         .map(|(j, be)| (be.v[0], q_ring[j]))
         .collect();
 
-    // Keep the arcs of ∂Q that lie inside P — the seam that actually cuts P. Classify by an
-    // interior b-vertex (all of an arc's interior lies on one side). An interior-free arc
-    // (adjacent crossings) has no such witness — out of scope here.
-    let mut opens: Vec<&Vec<Node>> = Vec::new();
-    for arc in arcs {
-        let interior = &arc[1..arc.len() - 1];
-        let Some(&node) = interior.first() else {
-            return Err(reject(tag::OVERHANG_ARCS)); // interior-free arc, later cell
-        };
-        let Node::Orig(vh) = node else {
-            return Err(reject(tag::OVERHANG_ARCS));
-        };
-        let tri = *b_vtriple
-            .get(&vh)
-            .ok_or_else(|| reject(tag::MISSING_SEAM))?;
-        if arrange::point_in_ring(planes, pi, tri, &p_ring)? {
-            opens.push(arc);
+    // Keep the arcs of ∂Q that lie inside P — the seam that actually cuts P. A vertex-bearing arc
+    // is classified by an interior b-vertex (its whole interior lies on one side). An interior-free
+    // arc (two crossings adjacent on one edge) has no such witness, but the arcs alternate
+    // inside/outside P at every crossing, so it takes the class opposite its neighbour.
+    let mut inside: Vec<Option<bool>> = vec![None; arcs.len()];
+    for (k, arc) in arcs.iter().enumerate() {
+        if arc.len() > 2 {
+            if let Node::Orig(vh) = arc[1] {
+                let tri = *b_vtriple
+                    .get(&vh)
+                    .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+                inside[k] = Some(arrange::point_in_ring(planes, pi, tri, &p_ring)?);
+            }
         }
     }
+    if !arcs.is_empty() {
+        let seed = inside
+            .iter()
+            .position(|x| x.is_some())
+            .ok_or_else(|| reject(tag::OVERHANG_ARCS))?; // no vertex-bearing arc to anchor
+        for step in 1..=arcs.len() {
+            let k = (seed + step) % arcs.len();
+            let prev = inside[(k + arcs.len() - 1) % arcs.len()].expect("propagated in walk order");
+            match inside[k] {
+                None => inside[k] = Some(!prev),
+                Some(v) if v == prev => return Err(reject(tag::SEAM_COUNT_MISMATCH)), // must alternate
+                Some(_) => {}
+            }
+        }
+    }
+    let opens: Vec<&Vec<Node>> = (0..arcs.len())
+        .filter(|&k| inside[k] == Some(true))
+        .map(|k| &arcs[k])
+        .collect();
 
     // ∂P vertices and their kept flag: a vertex is kept iff its inside-Q status matches the
     // survival selector. A vertex exactly on ∂Q is a flush touch — out of scope (later cell).
@@ -4754,8 +4769,68 @@ fn coplanar_result(
     if face_contains_face(model, q_face, p_face, n) {
         return Err(reject(tag::OVERHANG_ARCS)); // P ⊂ Q — symmetric contained, later branch
     }
-    // Overlapping footprints (∂P × ∂Q crossing) — the overhang branch, B4 part 2b.
-    Err(reject(tag::OVERHANG_ARCS))
+
+    // Overlapping footprints (∂P × ∂Q crossing) — the overhang branch. Scope B4p2b: the boss
+    // Fuse (opposite normals, two-sided, walls in open space). Cut/Common overhang, where b
+    // breaks transversally through a's material, compose with the general engine at C2.
+    if kind != BoolKind::Fuse || same_normal {
+        return Err(reject(tag::OVERHANG_ARCS));
+    }
+    let mut surf_ix = HashMap::new();
+    for (i, p) in planes.iter().enumerate() {
+        surf_ix.insert(p.face, i);
+    }
+    let canon = plane_classes(&planes);
+    let pi_c = canon[pi_idx];
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    let a_bnd = contact_boundary(model, p_face, pi_c, &inc_a, &canon)?;
+    let b_bnd = contact_boundary(model, q_face, pi_c, &inc_b, &canon)?;
+    let crossings = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_bnd)?;
+    if crossings.is_empty() {
+        return Err(reject(tag::OVERHANG_ARCS)); // disjoint — no overhang
+    }
+    // Both contact faces reconstructed (mixed-node), keeping each's outside-other cells; no flip
+    // (opposite normals already point out of the fused solid).
+    let arcs_p = coplanar_seam_arcs(&planes, pi_c, &b_bnd, &crossings);
+    let cx_q = coplanar_boundary_crossings(&planes, pi_c, &b_bnd, &a_bnd)?;
+    let arcs_q = coplanar_seam_arcs(&planes, pi_c, &a_bnd, &cx_q);
+    let mut faces = coplanar_reconstruct(
+        &planes, pi_c, pi_idx, &a_bnd, &b_bnd, &crossings, &arcs_p, false, false,
+    )?;
+    faces.extend(coplanar_reconstruct(
+        &planes, pi_c, qj_idx, &b_bnd, &a_bnd, &cx_q, &arcs_q, false, false,
+    )?);
+    // Both solids' walls, split at the crossings that ride their edges (no T-junction).
+    let cross_r: Vec<Crossing> = crossings
+        .iter()
+        .map(|c| Crossing {
+            point: c.point,
+            triple: c.triple,
+            p_seg: 0,
+            q_seg: 0,
+        })
+        .collect();
+    let mut a_walls = solid_local_faces(model, a, 0, Some(p_face), None);
+    let mut b_walls = solid_local_faces(model, b, na, Some(q_face), None);
+    resplit_overhang(model, &mut a_walls, &planes, &cross_r);
+    resplit_overhang(model, &mut b_walls, &planes, &cross_r);
+    faces.extend(a_walls);
+    faces.extend(b_walls);
+    let seam: Vec<SeamVertex> = crossings
+        .iter()
+        .map(|c| SeamVertex {
+            point: c.point,
+            triple: c.triple,
+            tol: vertex_tol(
+                c.point,
+                &planes[c.triple[0]].plane,
+                &planes[c.triple[1]].plane,
+                &planes[c.triple[2]].plane,
+            ),
+        })
+        .collect();
+    assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
 }
 
 // ---- coplanar-contact-overhang (M5): single-edge overhang boss Fuse ----
@@ -13545,6 +13620,26 @@ pub mod tests {
             assert!(nacre_validate::validate(&m).is_empty());
             assert!((nacre_props::mass_props(&m, r[0]).unwrap().volume - 1.25).abs() < 1e-12);
         }
+    }
+
+    // B4 part 2b: the overhang boss (crossing) through the one entry — first crossing-based real
+    // solid. P notch + Q cantilever (mixed-node) + walls resplit at the crossings. Volume 1.5.
+    #[test]
+    fn coplanar_result_reproduces_overhang_boss() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([1.5, 0.75, 2.0]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!((nacre_props::mass_props(&m, r[0]).unwrap().volume - 1.5).abs() < 1e-12);
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
     }
 
     // A3 (C2 de-risk): point_in_ring parity classifies against a NON-CONVEX footprint with no

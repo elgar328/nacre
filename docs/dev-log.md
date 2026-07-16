@@ -982,3 +982,12 @@ b캡 → `assemble_fuse_cut`, 보스 부피 OCCT 등가.
 분기). contained 분기 = Q를 P의 홀로(same_normal이면 CW 뒤집기)·b-면 flip(Cut)·빈 seam→all-Constructed. 골든이 포켓
 (Cut, 0.875)·보스(Fuse, 1.25)를 이 하나로 통과. **아키텍처 원칙 확정**: bespoke 자리에 끼워넣지 않음 — 통합 진입점 하나를
 D0가 배선, D1/D2가 bespoke 삭제. 다음(B4p2b): crossing 분기(overhang 실솔리드) 추가.
+
+**(B4·part2b) crossing 분기 = overhang 보스 실솔리드.** `coplanar_result`의 crossing 분기(Fuse/opposite 보스 스코프): 양면
+`coplanar_reconstruct`(P-notch keep P∖Q + Q-cantilever keep Q∖P, 혼합-노드) + 양 솔리드 벽 `resplit_overhang`(교차 삽입) +
+seam 등록(`SeamVertex` from 교차) → `assemble_fuse_cut`. **interior-free arc 해결(B4 핵심 버그)**: Q-측은 ∂P가 base의
+한 엣지에 두 교차를 가져 그 사이 arc가 내부-정점 없음 → `coplanar_reconstruct`가 arc 분류를 **교대(alternation)** 로 일반화
+(정점 있는 arc는 point_in_ring, interior-free는 이웃 반대·불일치 시 SEAM_COUNT_MISMATCH). 골든
+`coplanar_result_reproduces_overhang_boss`: `fuse_an_overhanging_boss` 형상(base 큐브 + 모서리 넘는 보스) → 부피 1.5·
+validate empty·no-coplanar-edge. **첫 교차-기반 실솔리드 통합 성공.** Cut/Common overhang(b가 a 관통)은 일반 엔진 합성 =
+C2. pi_c(canonical)로 arrangement, plane_idx(실면)로 출력.
