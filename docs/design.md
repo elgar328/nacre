@@ -1297,4 +1297,19 @@ Fuse/Cut의 라이브 임계 사이트 셋** 확정(point_in_solid·4-plane 가�
 - **net.** `frame3`: `dir_orient3d_judge`(pub)·`det3_big`(추출)·`det3_mag`·`dir_orient3d_judge_sanity`·
   `h_dir_orient3d_soundness`(`#[ignore]`). **exact3d/기존 frame3 무회귀**(det3_big 추출 bit-identical·H-a/b/c/g/i
   ignored 7건 green). **미배선("층만")**·boolean·point_in_solid 무변경. §TIP② 소진 유지(한 열 exact인 Iv 프레임
-  적용). 후속: 3c-ii(point_in_solid 배선 — 4×dir_orient3d + 1×orient3d·declare-0→Degenerate→광선 재시도 흡수).
+  적용). 후속: 3c-ii(ray_triangle_cross 조립)·3c-iii(point_in_solid 배선).
+
+**toleranced ray_triangle_cross 조립 (오버홀 3c-ii).** 3c-i 방향 술어로 `point_in_solid`이 매 면-삼각형마다 부르는
+**광선-삼각형 교차 판정**의 toleranced 버전을 ops에 조립·검증(unwired). 전체 배선(핸들 스레딩·퇴화 드롭·라우팅)은 3c-iii.
+- **★ 부호 환원**(위험 지점): `ray_triangle_cross`(predicates)의 5 orient3d를 3 `orient3d_ray`(광선-선 edge:
+  `orient3d(p,p+d,·,·)`)·1 `orient3d_judge`(s0)·1 `dir_orient3d_judge`(sd)로. declare-0→`Degenerate`(광선 재시도 흡수).
+- **★ frame3 `orient3d_ray(base,dir,x,y) = sign(orient3d(base, base+dir, x, y))`**(신규 pub): `p+d`가 base+chain Pt3로
+  표현 불가한 것을 열-축소로 **`dir_orient3d_judge(dir, y, x, base)`**(순수 인자 순열·부정 불요·마지막 두 인자 swap이
+  부호 흡수)로 환원. 호출부가 f64 원본과 **인자 대 인자 일치**해 실수 최소.
+- **★ 건전성 상속·조립만 검증**: 술어(dir_orient3d H-corpus·orient3d_judge H-a/c)가 sound, 조립 로직은 route-무관 →
+  **unrotated 정수좌표 bit-identical**(부호 환원 검증)이면 회전에서도 sound(충분성 논거·3b/3c-i 동형).
+- **net.** `frame3`: `orient3d_ray`(pub)·`orient3d_ray_matches_materialized`(unrotated서 materialized orient3d와 일치).
+  `nacre-ops`: `ray_triangle_cross_tol`(private·`#[allow(dead_code)]`·3c-iii 배선 시 제거)·`ray_triangle_cross_tol_
+  matches_f64_unrotated`(정수좌표 bit-identical·6 RAY_DIRECTIONS)·`ray_triangle_cross_tol_is_rotation_equivariant`
+  (90° 회전 전체를 돌려 불변·Pt3 chain exercise). **미배선("층만")**·`point_in_solid`·boolean 무변경·가드 유지·기존
+  전 테스트 무회귀. 후속: 3c-iii(배선).
