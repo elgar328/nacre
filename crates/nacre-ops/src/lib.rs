@@ -2285,6 +2285,87 @@ fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side
     Err(reject(tag::RAY_DEGENERATE)) // every direction grazed the boundary (adversarial)
 }
 
+/// Rotation-sound twin of [`point_in_solid`]: forward-ray winding decided on the vertices'
+/// exact `Pt3` definitions (via [`ray_triangle_cross_tol`]), so it is sound when the
+/// coordinates are rounded irrationals. `p` is the query point as an exact `Pt3` (a rotated
+/// vertex, or any definition). The solid's face vertices must be **direct**
+/// (`Constructed`/`Rotated`); a `Discovered` face vertex (a boolean result fed back as a
+/// rotated operand) is honestly rejected `ROTATED_UNSUPPORTED` — indirect classification is a
+/// later cell (fresh-rotated scope).
+///
+/// A `Degenerate` from a triangle is disambiguated in place: a genuinely collinear (zero-area)
+/// fan triangle contributes nothing and is skipped ([`pt3_base_collinear`], exact); anything
+/// else is a real graze, and the ray is retried. `winding != 0` is ray-direction-independent
+/// for a closed surface, so the fixed `RAY_DIRECTIONS` classify correctly in any rotated frame.
+///
+/// A parallel of `point_in_solid` (not a shared generic): the f64 path stays untouched, so its
+/// bit-for-bit behaviour is unchanged by construction.
+#[allow(dead_code)] // wired via the router in cell 3c-iv
+fn point_in_solid_tol(model: &Model, p: &Pt3, solid: Handle<Solid>) -> Result<Side, BoolError> {
+    use nacre_scalar::Rat;
+    // The exact-definition fan triangles, built once and reused across ray directions.
+    let mut tris: Vec<[Pt3; 3]> = Vec::new();
+    for fh in solid_faces(model, solid) {
+        for ring in face_loop_verts(model, fh) {
+            let pts: Vec<Pt3> = ring
+                .iter()
+                .map(|&vh| nacre_tip::vertex_pt3(model, vh))
+                .collect::<Result<_, _>>()
+                .map_err(|_| reject(tag::ROTATED_UNSUPPORTED))?;
+            for s in 1..pts.len().saturating_sub(1) {
+                tris.push([pts[0].clone(), pts[s].clone(), pts[s + 1].clone()]);
+            }
+        }
+    }
+    'dirs: for dir in RAY_DIRECTIONS {
+        let d = dir.map(|v| Rat::from_int(v as i128));
+        let mut winding = 0i32;
+        for tri in &tris {
+            match ray_triangle_cross_tol(p, d, &tri[0], &tri[1], &tri[2]) {
+                RayCross::Cross(sign) => winding += sign as i32,
+                RayCross::Miss => {}
+                // Exactly collinear (zero-area) → contributes nothing, like the f64 path's
+                // up-front degenerate drop; a real graze retries another direction.
+                RayCross::Degenerate if pt3_base_collinear(&tri[0], &tri[1], &tri[2]) => {}
+                RayCross::Degenerate => continue 'dirs,
+            }
+        }
+        return Ok(if winding != 0 {
+            Side::Inside
+        } else {
+            Side::Outside
+        });
+    }
+    Err(reject(tag::RAY_DEGENERATE))
+}
+
+/// Whether three `Pt3` are **exactly collinear** (zero-area triangle), decided on their
+/// pre-rotation rational `base` coordinates. A rigid rotation preserves collinearity, and three
+/// vertices of one solid share a rotation chain, so their bases are comparable; all three
+/// coordinate-plane projections of `(b−a)×(c−a)` must vanish (exact `Rat`, no tolerance). An
+/// i128 overflow returns `false` (treat as non-collinear): a genuinely-collinear triangle then
+/// stays and is at worst rejected `RAY_DEGENERATE`, never falsely skipped (which would drop a
+/// real crossing — silent-wrong). Unrotated vertices carry `base == coord`, matching the f64
+/// `triangle_is_degenerate`.
+fn pt3_base_collinear(a: &Pt3, b: &Pt3, c: &Pt3) -> bool {
+    use nacre_scalar::Rat;
+    let (a, b, c) = (&a.base, &b.base, &c.base);
+    let proj_zero = |i: usize, j: usize| -> Option<bool> {
+        let det = b[i]
+            .checked_sub(a[i])?
+            .checked_mul(c[j].checked_sub(a[j])?)?
+            .checked_sub(
+                b[j].checked_sub(a[j])?
+                    .checked_mul(c[i].checked_sub(a[i])?)?,
+            )?;
+        Some(det == Rat::from_int(0))
+    };
+    matches!(
+        (proj_zero(1, 2), proj_zero(2, 0), proj_zero(0, 1)),
+        (Some(true), Some(true), Some(true))
+    )
+}
+
 /// Every face of a solid's boundary — outer shell then each cavity shell.
 fn solid_faces(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Face>> {
     let s = model.solids.get(solid);
@@ -2312,6 +2393,22 @@ pub(crate) fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
             lp.half_edges
                 .iter()
                 .map(|&he| model.vertices.get(he_start(model, he)).point)
+                .collect()
+        })
+        .collect()
+}
+
+/// [`face_loops`] as vertex **handles** (outer loop then each hole) — the toleranced
+/// classifier builds each vertex's exact `Pt3` from these, where `face_loops` reads f64 points.
+#[allow(dead_code)] // used by point_in_solid_tol, wired in cell 3c-iv
+fn face_loop_verts(model: &Model, fh: Handle<Face>) -> Vec<Vec<Handle<Vertex>>> {
+    let face = model.faces.get(fh);
+    std::iter::once(&face.outer)
+        .chain(face.inner.iter())
+        .map(|lp| {
+            lp.half_edges
+                .iter()
+                .map(|&he| he_start(model, he))
                 .collect()
         })
         .collect()
@@ -5574,6 +5671,99 @@ pub mod tests {
             point_in_solid(&m, Point3::from_array([3.0, 1.0, 1.0]), s).unwrap(),
             Side::Outside
         );
+    }
+
+    /// `point_in_solid_tol` on a rotated solid + a query rotated by the **same** rigid motion
+    /// agrees with the exact f64 `point_in_solid` on the unrotated solid (in/out is
+    /// rotation-invariant). Covers a convex cube and the concave L-prism — including the reflex
+    /// notch point `(1.5, 1.5)` a convex hull would misclassify.
+    #[test]
+    fn point_in_solid_tol_is_rotation_invariant() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation as SRot};
+        let ang = Angle::from_deg(Rat::from_int(30)).unwrap();
+        let piv = [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)];
+        let rot = |m: &mut Model, s: Handle<Solid>| -> Handle<Solid> {
+            let iso = Isometry::rotation(SRot {
+                axis: Axis::Z,
+                point: piv,
+                angle: ang,
+            });
+            let out = apply(
+                m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: iso,
+                },
+            )
+            .unwrap();
+            m.rebuild_adjacency();
+            match out {
+                crate::OpOutput::Transform { solid } => solid,
+                _ => panic!("expected Transform"),
+            }
+        };
+        let rq = |x: f64, y: f64, z: f64| {
+            let r = |v: f64| Rat::try_from_f64(v).unwrap();
+            Pt3::at([r(x), r(y), r(z)]).rotate_about(Axis::Z, ang, piv)
+        };
+        // Convex cube [0,2]³.
+        let mut mc = Model::new();
+        let cube = mc.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let rc = rot(&mut mc, cube);
+        for (x, y, z, want) in [
+            (1.0, 1.0, 1.0, Side::Inside),
+            (0.5, 0.5, 0.5, Side::Inside),
+            (1.0, 1.0, 1.9, Side::Inside),
+            (3.0, 1.0, 1.0, Side::Outside),
+            (-1.0, 1.0, 1.0, Side::Outside),
+        ] {
+            assert_eq!(
+                point_in_solid_tol(&mc, &rq(x, y, z), rc).unwrap(),
+                want,
+                "cube ({x},{y},{z})"
+            );
+        }
+        // Concave L-prism: notch (x,y)∈[1,2]² is outside though inside the convex hull.
+        let (mut ml, lp) = l_prism();
+        let rl = rot(&mut ml, lp);
+        for (x, y, z, want) in [
+            (0.5, 0.5, 0.5, Side::Inside),
+            (1.5, 0.5, 0.5, Side::Inside),
+            (0.5, 1.5, 0.5, Side::Inside),
+            (1.5, 1.5, 0.5, Side::Outside),
+            (3.0, 0.5, 0.5, Side::Outside),
+        ] {
+            assert_eq!(
+                point_in_solid_tol(&ml, &rq(x, y, z), rl).unwrap(),
+                want,
+                "L-prism ({x},{y},{z})"
+            );
+        }
+    }
+
+    /// `pt3_base_collinear` is exact on the pre-rotation rational bases: three genuinely
+    /// collinear points stay collinear under rotation (→ skipped), and a real sliver (one point
+    /// off the line) is never falsely called collinear (→ its crossing is kept, no silent-wrong).
+    #[test]
+    fn pt3_base_collinear_exact() {
+        use nacre_scalar::{Angle, Axis, Rat};
+        let ang = Angle::from_deg(Rat::from_int(37)).unwrap();
+        let piv = [Rat::from_int(2), Rat::from_int(-1), Rat::from_int(0)];
+        let rp = |x: i128, y: i128, z: i128| {
+            Pt3::at([Rat::from_int(x), Rat::from_int(y), Rat::from_int(z)]).rotate_about(
+                Axis::Z,
+                ang,
+                piv,
+            )
+        };
+        // (0,0,0), (2,4,6), (1,2,3): all on the line t·(1,2,3) → collinear.
+        assert!(pt3_base_collinear(&rp(0, 0, 0), &rp(2, 4, 6), &rp(1, 2, 3)));
+        // (1,2,4) is off that line (z), a real nonzero-area triangle → not collinear.
+        assert!(!pt3_base_collinear(
+            &rp(0, 0, 0),
+            &rp(2, 4, 6),
+            &rp(1, 2, 4)
+        ));
     }
 
     /// The toleranced `ray_triangle_cross_tol` reproduces the exact f64 `ray_face_cross`
