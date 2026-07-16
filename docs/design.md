@@ -1312,4 +1312,25 @@ Fuse/Cut의 라이브 임계 사이트 셋** 확정(point_in_solid·4-plane 가�
   `nacre-ops`: `ray_triangle_cross_tol`(private·`#[allow(dead_code)]`·3c-iii 배선 시 제거)·`ray_triangle_cross_tol_
   matches_f64_unrotated`(정수좌표 bit-identical·6 RAY_DIRECTIONS)·`ray_triangle_cross_tol_is_rotation_equivariant`
   (90° 회전 전체를 돌려 불변·Pt3 chain exercise). **미배선("층만")**·`point_in_solid`·boolean 무변경·가드 유지·기존
-  전 테스트 무회귀. 후속: 3c-iii(배선).
+  전 테스트 무회귀. 후속: 3c-iii(분류기)·3c-iv(배선).
+
+**point_in_solid_tol — 회전 내외 분류기 (오버홀 3c-iii).** `ray_triangle_cross_tol`로 회전 하 정점 내외 분류기를
+ops에 짓고 회전-불변 검증(unwired·배선은 3c-iv). `point_in_solid`(2213·Point3·f64) 미러 — 면 삼각분할해 forward-ray
+winding.
+- **★ `point_in_solid_tol(model, p: &Pt3, solid)`**: 좌표→정점 exact 정의(Pt3), `ray_face_cross`→`ray_triangle_cross_tol`,
+  `RAY_DIRECTIONS`→[Rat;3]. 면 정점 핸들은 신규 `face_loop_verts`(`face_loops` 미러·`he_start`)→`vertex_pt3`(`Discovered`
+  면 정점이면 `ROTATED_UNSUPPORTED` 정직 거절·신선 회전 한정). winding≠0은 광선 방향 무관(닫힌 곡면)이라 고정 방향으로도
+  회전 프레임서 정확. **두 피연산자 모두(서로 다른 R) 회전까지 지원**(각 Pt3가 참 world 위치·orient3d 프레임 무관).
+- **★ 퇴화 in-loop 처리(사전 드롭 없이)**: `Degenerate` 뜰 때만 **`pt3_base_collinear`**로 판단 — 진짜 collinear면 skip
+  (넓이 0·기여 0), 아니면 graze라 다음 광선 재시도. f64판의 `fan_triangles`+`triangle_is_degenerate` 사전 드롭보다 별도
+  pass·헬퍼 없이 같은 결과.
+- **★ `pt3_base_collinear`가 soundness-critical**: 회전 f64 넓이는 near-collinear를 0으로 반올림해 진짜 삼각형을 거짓
+  skip→교차 누락→오분류(silent-wrong)((5d)#4 동류). 회전이 collinearity 보존·same-solid=same-chain이라 **`Pt3.base`
+  (회전 전 유리수) 3-투영 rational orient2d가 전부 0일 때만** collinear. i128 overflow→not-collinear(최악은 정직한
+  `RAY_DEGENERATE`·거짓 skip 없음). unrotated면 base=coord라 현행과 동치.
+- **★ 왜 제네릭화 아닌 병렬 함수**: winding 루프 공유하려면 라이브 `point_in_solid`(f64)를 건드려야 해 bit-identical
+  무회귀가 위태 → 병렬 함수로 두어 f64 경로 정의상 무변경(안전>DRY).
+- **net.** `nacre-ops`: `point_in_solid_tol`·`face_loop_verts`·`pt3_base_collinear`(private·`#[allow(dead_code)]`·3c-iv
+  배선 시 제거)·`point_in_solid_tol_is_rotation_invariant`(회전 큐브+오목 L-prism[reflex notch 점 포함] 분류=unrotated
+  `point_in_solid` 정답)·`pt3_base_collinear_exact`(회전 collinear→skip·sliver→retry). **미배선("층만")**·`point_in_solid`·
+  boolean 무변경·가드 유지·기존 전 테스트 무회귀. 후속: 3c-iv(라우터 + 4 호출부).
