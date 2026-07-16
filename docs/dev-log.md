@@ -954,3 +954,11 @@ occupancy 표(π-면은 재료가 한쪽에만 있을 때 생존)에서 유도: 
 Common/opp=`Empty`(coincident 스택→EmptyResult). b-면 flip = Cut일 때만. 홀 뒤집기 규칙 = same_normal(포켓 뒤집음·보스 안 뒤집음).
 골든 `coplanar_survival_table_matches_the_bespoke_paths`가 6행을 6개 bespoke 경로에 묶음. 다음(B1·part2): contained 결과 빌더
 (Q를 P의 홀로) + `assemble_fuse_cut` 배선 + 포켓/보스 픽스처 OCCT 등가(첫 실솔리드 통합).
+
+**(B1·part2 + B2 보스) contained 등가 빌더.** `coplanar_contained_result(model, cc, kind)` = 생존 표로 구동되는 contained
+결과 빌더. `same_normal`(두 접촉면 법선 dot>0)로 홀 뒤집기 결정, `coplanar_survival`로 `MinusQ`(Q=홀)/`Whole`/flip 결정,
+빈 seam(전부 Node::Orig)으로 `assemble_fuse_cut` → **all-Constructed 순수성 보존**. 구조는 `contained_contact_result`와
+동형이나 `cut` 대신 (kind,same_normal) 표로 구동(통합 경로의 씨앗, D2에서 bespoke 대체). 골든
+`coplanar_contained_result_reproduces_pocket_and_boss`: detector로 cc 얻어 빌더 실행 → 포켓(Cut/same, 0.875)·보스
+(Fuse/opp, 1.25) 부피 일치·validate empty·all-Constructed·no-coplanar-edge. **첫 실솔리드 통합 성공.** Common contained
+(InterQ/Empty)는 이 셀 스코프 밖(정직 거절). 다음: B3(coincident) → B4(볼록 overhang, 혼합 seam 실배선).
