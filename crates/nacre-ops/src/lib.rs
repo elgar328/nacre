@@ -6532,6 +6532,136 @@ pub mod tests {
         }
     }
 
+    /// Adversarial rotation stress (overhaul 3d-iii): many fixtures × kinds × rotations
+    /// (single-axis, and Euler chains reaching arbitrary orientation) confirm the DNA
+    /// invariant — a rotated boolean is *never silently wrong*: its result either equals the
+    /// unrotated one (a boolean commutes with a rigid motion, so volume/solid-count/cavity-count
+    /// are invariant) or is an honest reject. `#[ignore]`: each rotated boolean escalates its
+    /// TIP predicates to astro-float and costs ~0.5–2.5 s, so this runs on demand, not per commit
+    /// (the invariance regression guard is the fast `rotated_*` tests above).
+    #[test]
+    #[ignore = "slow: rotated booleans ~2s each (run with --ignored)"]
+    fn rotation_invariance_stress() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        #[derive(PartialEq, Debug)]
+        enum Out {
+            Rej,
+            Ok(f64, usize, usize),
+        }
+        let rot = |axis: Axis, deg: i128, piv: [i128; 3]| {
+            Isometry::rotation(Rotation {
+                axis,
+                point: [
+                    Rat::from_int(piv[0]),
+                    Rat::from_int(piv[1]),
+                    Rat::from_int(piv[2]),
+                ],
+                angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+            })
+        };
+        let run = |build: &dyn Fn() -> (Model, Handle<Solid>, Handle<Solid>),
+                   kind: BoolKind,
+                   isos: &[Isometry]|
+         -> Out {
+            let (mut m, mut a, mut b) = build();
+            for iso in isos {
+                a = transform(&mut m, a, iso).unwrap();
+                m.rebuild_adjacency();
+                b = transform(&mut m, b, iso).unwrap();
+                m.rebuild_adjacency();
+            }
+            match boolean(&mut m, kind, a, b) {
+                Ok(solids) => {
+                    m.rebuild_adjacency();
+                    assert!(
+                        nacre_validate::validate(&m).is_empty(),
+                        "INVALID rotated result"
+                    );
+                    let vol: f64 = solids
+                        .iter()
+                        .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                        .sum();
+                    let cav: usize = solids.iter().map(|&s| m.solids.get(s).cavities.len()).sum();
+                    Out::Ok(vol, solids.len(), cav)
+                }
+                Err(_) => Out::Rej,
+            }
+        };
+        let vclose =
+            |x: f64, y: f64| (x - y).abs() <= 1e-6 || (x - y).abs() <= 1e-4 * x.abs().max(y.abs());
+        let matches = |base: &Out, r: &Out| match (base, r) {
+            (Out::Rej, Out::Rej) => true,
+            (Out::Ok(v1, s1, c1), Out::Ok(v2, s2, c2)) => vclose(*v1, *v2) && s1 == s2 && c1 == c2,
+            _ => false,
+        };
+        let cube = |lo: [f64; 3], hi: [f64; 3]| {
+            move || {
+                let mut m = Model::new();
+                let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+                let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+                (m, a, b)
+            }
+        };
+        type Build = Box<dyn Fn() -> (Model, Handle<Solid>, Handle<Solid>)>;
+        let fixtures: Vec<(&str, Build)> = vec![
+            ("corner", Box::new(l_and_corner_box)),
+            (
+                "rod",
+                Box::new(|| {
+                    let (m, l, r) = l_and_rod();
+                    (m, r, l) // sever = Cut(rod, l): a=rod, b=l
+                }),
+            ),
+            ("inner", Box::new(l_and_inner_box)),
+            ("cube_corner", Box::new(cube([0.5; 3], [1.5; 3]))),
+        ];
+        let isos_list: Vec<(&str, Vec<Isometry>)> = vec![
+            ("Z43", vec![rot(Axis::Z, 43, [1, 1, 0])]),
+            ("X67", vec![rot(Axis::X, 67, [2, -1, 0])]),
+            (
+                "Z50>X37",
+                vec![rot(Axis::Z, 50, [1, 1, 0]), rot(Axis::X, 37, [0, 0, 1])],
+            ),
+            // A three-axis Euler chain reaches an arbitrary orientation (axes are X/Y/Z only).
+            (
+                "Z30>X30>Y73",
+                vec![
+                    rot(Axis::Z, 30, [1, 1, 0]),
+                    rot(Axis::X, 30, [0, 0, 0]),
+                    rot(Axis::Y, 73, [0, 2, 0]),
+                ],
+            ),
+        ];
+        let (mut success, mut reject, mut silent, mut skipped) = (0, 0, 0, 0);
+        for (fname, build) in &fixtures {
+            for kind in [BoolKind::Cut, BoolKind::Fuse, BoolKind::Common] {
+                let base = run(build.as_ref(), kind, &[]);
+                for (rname, isos) in &isos_list {
+                    if matches!(base, Out::Rej) {
+                        skipped += 1;
+                        continue;
+                    }
+                    let r = run(build.as_ref(), kind, isos);
+                    if matches!(r, Out::Rej) {
+                        reject += 1; // an honest reject is acceptable, not a counterexample
+                    } else if matches(&base, &r) {
+                        success += 1;
+                    } else {
+                        silent += 1;
+                        eprintln!("SILENT-WRONG {fname} {kind:?} {rname} base={base:?} rot={r:?}");
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "ROTATION STRESS: success={success} honest_reject={reject} SILENT_WRONG={silent} skipped(base_rej)={skipped}"
+        );
+        assert_eq!(
+            silent, 0,
+            "a rotated boolean was silently wrong (valid but != unrotated)"
+        );
+    }
+
     /// A U-prism: a bottom bar `y∈[0,1]` with two prongs rising from it. The prong
     /// tops sit at *different* heights (y=2.3 and y=2.0) on purpose — level tops
     /// would be coplanar faces and `has_coplanar_pair` would reject before the seam
