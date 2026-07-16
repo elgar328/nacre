@@ -1484,3 +1484,17 @@ memoize**라 부호 판정·escalation 카운트 불변(정확성 무관).
 - **★ 남은 천장(정직)**: ~10× Amdahl 상한에 못 미치는 건 (a) 재구성의 무거운 단일 면(로드밸런스·within-face 그레인 필요)·
   (b) per-판정 astro-float 비용(병렬이 나눌 뿐 못 줄임). **CPU 병렬은 여기까지가 큰 조각** — 다음 큰 도약은 알고리즘(공간
   broad-phase culling으로 판정 개수 O(E×F)→~O(E+F)·구조적-0 단락). 후속: within-face 그레인·알고리즘 트랙·3d-iv(main 병합).
+
+**구조적-0 단락 ✗ — 프로파일 no-go (음성 결과·향후 재시도 방지용 기록).** 회전 부울 escalation 비용을 줄이려는 후보:
+`dir_sign_judge`(세 평면 법선 행렬식)가 **평행 평면쌍**(det 구조적 0)으로 매번 astro-float escalate하는 걸, 회전 전 유리수 법선
+cross==0으로 O(1) 검출해 즉시 0 반환하려 했다(90°-계열 exact-cos-sin과 같은 "정확 구조→수치 생략" 철학의 판정-층 적용). **n0
+프로파일이 no-go로 확정**:
+- escalation의 **91–99%가 dir_sign**(지배 확인)이나, **회전/곡면-근사 좌표의 i128 오버플로**로 exact 유리수 cross가 계산 불가 —
+  ngon(=`r·cos()` f64→Rat, 분모 거대)은 dir_sign escalation의 **58–66%가 오버플로**.
+- **f64→Rat 근사가 정확 평행을 깨뜨림**: 짝수 ngon의 마주보는 facet도 근사라 정확히 평행이 아님 → 대수적 "구조적 0"이 아니라 진짜
+  near-degeneracy → 검출 불가(same-op 평행 검출 0%). box(정수 법선)만 33% 잡히나 box escalation은 이미 적음.
+- **staged-precision(64-bit 먼저)도 무력**: 구조적 0은 모든 정밀도에서 floor 아래(미결정)라 결국 최종 정밀도까지 가야 declare-0 →
+  nonzero escalation만 도우나 소수. 조기 declare-0은 결과를 바꿔 순수 성능 아님.
+- **결론**: 회전/곡면-근사 형상의 escalation은 이 대수 트릭들로 **줄일 수 없음**(곡면-근사에선 구조적 0이 "정확 구조"가 아니라
+  near-degeneracy). **CPU 병렬(hp 캐싱 28× + rayon ①② ~3.8×)이 실질 최대 이득**이었다. 향후 큰 도약은 판정 개수를 줄이는 공간
+  culling(대규모·M6/M7)뿐.
