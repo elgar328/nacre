@@ -1964,9 +1964,8 @@ fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 /// result vertex whose exact rotation provenance `assemble_fuse_cut` drops — every exact
 /// definition it needs lives in `planes` and in the loop adjacency. Reads no `Model`. `Err`
 /// on a non-simple/degenerate component (coincident nodes, a straight angle, or a non-manifold
-/// edge) — an honest reject, never a silent wrong label. Wired into `assemble_fuse_cut` in
-/// cell 3c-vi-b.
-#[allow(dead_code)] // wired into assemble_fuse_cut in cell 3c-vi-b
+/// edge) — an honest reject, never a silent wrong label. Routed from `assemble_fuse_cut`'s
+/// per-component outward test by [`any_rotated`](crate::tolerant) (cell 3c-vi-b).
 fn component_is_outward_tol(planes: &[PlaneInfo], comp: &[&LocalFace]) -> Result<bool, BoolError> {
     use nacre_scalar::{Orient, Rat};
 
@@ -3474,9 +3473,26 @@ fn assemble_fuse_cut(
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
     }
-    let positives: Vec<usize> = (0..n)
-        .filter(|&c| is_shell_outward(model, &by_comp[c]))
-        .collect();
+    // Outward/void label per component, routed by rotation (overhaul 3c-vi): a component with
+    // any rotated plane is decided on exact `Pt3` definitions (`component_is_outward_tol` over
+    // its pre-assembly `LocalFace`s), else the axis-aligned f64 `is_shell_outward` — unchanged,
+    // so an unrotated result is bit-identical. `positives` stays in ascending `c` order.
+    let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
+    for (i, lf) in faces.iter().enumerate() {
+        by_comp_lf[labels[i]].push(lf);
+    }
+    let mut positives: Vec<usize> = Vec::new();
+    for c in 0..n {
+        let idxs: Vec<usize> = by_comp_lf[c].iter().map(|lf| lf.plane_idx).collect();
+        let outward = if crate::tolerant::any_rotated(planes, &idxs) {
+            component_is_outward_tol(planes, &by_comp_lf[c])?
+        } else {
+            is_shell_outward(model, &by_comp[c])
+        };
+        if outward {
+            positives.push(c);
+        }
+    }
     let shells: Vec<Handle<Shell>> = by_comp
         .iter()
         .map(|faces| {

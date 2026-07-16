@@ -42,7 +42,7 @@ use nacre_topo::{Model, Origin, Vertex};
 /// coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact on the
 /// geom path. Widening what counts as exact (e.g. more angle families) is a classifier-layer
 /// change; this consumer only reads the flag.
-fn any_rotated(planes: &[PlaneInfo], idx: &[usize]) -> bool {
+pub(crate) fn any_rotated(planes: &[PlaneInfo], idx: &[usize]) -> bool {
     idx.iter().any(|&k| planes[k].tri_pt3.is_some())
 }
 
