@@ -1446,3 +1446,25 @@ memoize**라 부호 판정·escalation 카운트 불변(정확성 무관).
   OCCT 7 여전히 green. Euler 체인이 최대 개선(체인 재계산이 1회로).
 - **후속(추가 성능)**: 단계적 정밀도(상승 시 64bit→애매하면 200bit)·`plane_def` 참조화(판정당 clone 제거)·memoize 참조
   반환(BigFloat clone 제거). 후속: 3d-iv(main 병합).
+
+**회전 부울 멀티코어화 — rayon 데이터 병렬 (판정만 병렬·변이는 순차).** 싱글코어 hp 캐싱 종료 후, 부울의 **읽기 전용·독립**
+판정 단계를 rayon으로 데이터 병렬화. n0 프로파일(박스 12면~ngon 68면, warm)이 비용을 귀속: **면 재구성**(`reconstruct_face_paths`,
+총시간 47–57%·비싼 escalation 집중)과 **정점 분류**(`vertex_in_solid`, 박스 8%→n32 25%)가 지배하며 둘 다 `&Model`만 읽고 owned
+결과 반환. `&mut Model` 변이·handle 배정은 `assemble_fuse_cut`·seam 인덱스 삽입에 격리(총 <0.1%).
+- **★ 원칙 — 판정만 병렬, 변이·순서는 단일 스레드 고정.** 두 단계를 `par_iter().map(...).collect::<Vec<_>>()`로 평가하되
+  결과를 **인덱스 순서**로 순차 소비(`faces.extend`/`classof.insert`). `assemble_fuse_cut`이 vertex handle을 `faces` 순
+  first-appearance로 배정하므로(§2 재생 결정론의 급소=`Store::push` 순서=handle 정체성), rayon `IndexedParallelIterator`의
+  순서 보존이 **bit-identical** 재생을 지킨다. f64/BigFloat를 병렬 reduce하지 않음(각 항목 내부 계산은 순차) → 부호 재정렬
+  nondeterminism 원천 배제.
+- **★ `Pt3.hp` 셀 = feature-cfg 별칭.** `parallel`(default)이면 `Arc<OnceLock>`(Send+Sync·워커 간 캐시 공유로 hot 정의점
+  200-bit 실현을 스레드 간 1회 dedup), 아니면 기존 `Rc<OnceCell>`(원자 오버헤드 0). 소비부 `hp_coord`(`get_or_init`)는 양쪽
+  동일 시그니처라 불변. `HP_CONSTS`(thread_local π 캐시)는 이미 워커별 독립이라 안전(`pi(prec)` 캐시-상태 무관 결정론).
+- **★ 이식성 — rayon은 optional·`parallel` feature(default-on) 뒤.** `--no-default-features`면 rayon 미링크·순수 싱글스레드
+  (wasm·임베더 스레드 제어·결정론 감사)·`Rc<OnceCell>` 경로. honest-stop 시 코드 되돌림 없이 feature-off가 곧 기존 성능.
+- **★ reject 태그 결정론.** `reconstruct`/`vertex_in_solid`의 `Result` reject는 **인덱스-최초** 에러를 표면화(순차 `?`와 동형).
+  `LAST_REJECT`(cfg(test) thread_local)는 워커 스레드에 기록되므로, 병렬 에러 시 인덱스-최초 실패 항목을 **메인 스레드에서
+  재스캔**해 태그 복원(release는 `reject`가 무기록이라 무비용).
+- **★ 결과**: rotated ngon Fuse **n=8 1.85×·n=16 1.97×·n=32 2.13×**(14코어). 선형 아님은 정직하게 예측대로 — Amdahl(순차
+  seam 25–30%)+부하 불균형(재구성에 무거운 단일 면, 이상 cap ~3.4×). feature on/off 양쪽 전 스위트 green·stress silent 0·
+  OCCT green·**1스레드 vs N스레드 결과 동일**(thread-order 독립 결정론 테스트).
+- **후속**: seam 축적 병렬화(판정만·dedup 순차)·4-plane 가드·컴포넌트 outward(잔여 순차 병목). 후속: 3d-iv(main 병합).
