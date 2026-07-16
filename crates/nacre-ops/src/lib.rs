@@ -4366,14 +4366,14 @@ struct LoopArc {
 /// `seg` gives each crossing's edge index on this loop; same-edge crossings are inserted in
 /// parameter order so each arc stays simple.
 fn split_loop_all_arcs(
-    loop_vh: &[Handle<Vertex>],
+    loop_nodes: &[Node],
     loop_pts: &[Point3],
     crossings: &[Crossing],
     other2d: &[[f64; 2]],
     drop: (usize, usize),
     seg: impl Fn(&Crossing) -> usize,
 ) -> Vec<LoopArc> {
-    let n = loop_vh.len();
+    let n = loop_nodes.len();
     let inside: Vec<bool> = loop_pts
         .iter()
         .map(|&p| point_in_ring2(proj2(p, drop), other2d) == Some(true))
@@ -4415,7 +4415,7 @@ fn split_loop_all_arcs(
         loop {
             match aug[i] {
                 Aug::V(j) => {
-                    nodes.push(Node::Orig(loop_vh[j]));
+                    nodes.push(loop_nodes[j]);
                     if !inside[j] {
                         outside = true;
                     }
@@ -4736,8 +4736,10 @@ fn overhang_contact_result(
     // Split both contact faces at the crossings into arcs. Each notch piece is a P-outside arc
     // stitched to the Q-inside arc sharing its two crossings; each cantilever piece a Q-outside
     // arc stitched to the P-inside arc sharing its ends. (Single-edge/corner = one piece each.)
-    let p_arcs = split_loop_all_arcs(&p_vh, &p_pts, &cc.crossings, &q2, drop, |c| c.p_seg);
-    let q_arcs = split_loop_all_arcs(&q_vh, &q_pts, &cc.crossings, &p2, drop, |c| c.q_seg);
+    let p_nodes: Vec<Node> = p_vh.iter().map(|&vh| Node::Orig(vh)).collect();
+    let q_nodes: Vec<Node> = q_vh.iter().map(|&vh| Node::Orig(vh)).collect();
+    let p_arcs = split_loop_all_arcs(&p_nodes, &p_pts, &cc.crossings, &q2, drop, |c| c.p_seg);
+    let q_arcs = split_loop_all_arcs(&q_nodes, &q_pts, &cc.crossings, &p2, drop, |c| c.q_seg);
     let match_arc = |arcs: &[LoopArc], ends: (usize, usize)| -> Option<Vec<Node>> {
         arcs.iter()
             .find(|a| !a.outside && unordered(a.ends.0, a.ends.1) == unordered(ends.0, ends.1))
@@ -5171,8 +5173,10 @@ fn mouth_notch_pieces(
         .map(|&vh| model.vertices.get(vh).point)
         .collect();
     let q2: Vec<[f64; 2]> = q_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let p_arcs = split_loop_all_arcs(&p_vh, &p_pts, top, &q2, drop, |c| c.p_seg);
-    let q_arcs = split_loop_all_arcs(&q_vh, &q_pts, top, &p2, drop, |c| c.q_seg);
+    let p_nodes: Vec<Node> = p_vh.iter().map(|&vh| Node::Orig(vh)).collect();
+    let q_nodes: Vec<Node> = q_vh.iter().map(|&vh| Node::Orig(vh)).collect();
+    let p_arcs = split_loop_all_arcs(&p_nodes, &p_pts, top, &q2, drop, |c| c.p_seg);
+    let q_arcs = split_loop_all_arcs(&q_nodes, &q_pts, top, &p2, drop, |c| c.q_seg);
     let match_arc = |arcs: &[LoopArc], ends: (usize, usize)| -> Option<Vec<Node>> {
         arcs.iter()
             .find(|a| !a.outside && unordered(a.ends.0, a.ends.1) == unordered(ends.0, ends.1))
@@ -5742,8 +5746,10 @@ fn overlap_top_piece(
         .map(|&vh| model.vertices.get(vh).point)
         .collect();
     let q2: Vec<[f64; 2]> = q_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let p_arcs = split_loop_all_arcs(&p_vh, &p_pts, top, &q2, drop, |c| c.p_seg);
-    let q_arcs = split_loop_all_arcs(&q_vh, &q_pts, top, &p2, drop, |c| c.q_seg);
+    let p_nodes: Vec<Node> = p_vh.iter().map(|&vh| Node::Orig(vh)).collect();
+    let q_nodes: Vec<Node> = q_vh.iter().map(|&vh| Node::Orig(vh)).collect();
+    let p_arcs = split_loop_all_arcs(&p_nodes, &p_pts, top, &q2, drop, |c| c.p_seg);
+    let q_arcs = split_loop_all_arcs(&q_nodes, &q_pts, top, &p2, drop, |c| c.q_seg);
     let match_arc = |arcs: &[LoopArc], ends: (usize, usize)| -> Option<Vec<Node>> {
         arcs.iter()
             .find(|a| !a.outside && unordered(a.ends.0, a.ends.1) == unordered(ends.0, ends.1))
