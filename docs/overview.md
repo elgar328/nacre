@@ -53,3 +53,4 @@ M1 뼈대(Store/Handle, Plane/Line, 정육면체, validate, OBJ덤프·STEP출�
 - 워크스페이스 구조. 크레이트는 마일스톤 따라 `cargo new`로 추가(지금 9개 다 만들지 말 것).
 - 커밋은 작게, 의미 단위로.
 - 기하 코드 버그는 눈으로 잡는다 — 애매하면 OBJ 덤프해서 확인.
+- **셀별 진행 기록은 `docs/dev-log.md`에 append한다** — 설계 규칙·불변은 `design.md`, 오른 사다리·반증된 예측 등 셀 단위 로그는 dev-log로 분리(design.md 재비대 방지).

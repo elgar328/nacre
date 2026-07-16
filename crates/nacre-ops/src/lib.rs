@@ -881,7 +881,7 @@ fn placed_profile_unchecked(
 /// [`placed_profile_unchecked`] plus the strict-containment requirement: inside the outer ring,
 /// outside every hole, touching no boundary. Otherwise the "hole" is not a clean inner loop and the
 /// result is silently invalid — validate sees only topology, props integrates the ring, and only
-/// tessellate's `NoEar` catches it (cell imprint-containment; design §10). Used by `imprint`, which
+/// tessellate's `NoEar` catches it (cell imprint-containment; dev-log.md). Used by `imprint`, which
 /// needs a bounded inner loop; a profile reaching past the face is a boolean pad/pocket instead.
 fn placed_profile(
     model: &Model,
