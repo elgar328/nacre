@@ -1349,3 +1349,23 @@ winding.
 - **net.** `nacre-ops`: `vertex_in_solid`·1602/1706 교체·두 allow 제거·`vertex_in_solid_routes_by_rotation`(축정렬→
   `point_in_solid`·회전→`point_in_solid_tol` dispatch 확인). **가드 유지**(라이브는 항상 unrotated 분기→bit-identical·
   tol 분기 미실행까지 3d)·기존 boolean 무회귀·**n2(OCCT) 없음**(3d). 후속: 3c-v(4-plane 가드·is_shell_outward).
+
+**seam 4-plane 동시성 가드 배선 (오버홀 3c-v).** seam 정점 생성(`general_boolean`)의 **4-plane 동시성 가드**를 회전
+toleranced로 배선. 가드는 seam 정점(평면 e0·e1·entry의 meet)이 *다른* 4번째 평면 위에 있는 퇴화(4-plane meet)를 잡아
+`FOURPLANE` 거절 — 회전 시 평면 계수·`tri`가 반올림 무리수라 f64 `three_plane_orient3d`가 오판→놓친 거절→틀린 seam
+(silent-wrong) 가능.
+- **★ 한 표현식 교체**: `three_plane_orient3d(&planes[e0/e1/entry].plane, pm.tri[0..2]) == 0` →
+  `crate::tolerant::t_orient3d(&planes, e0, e1, entry, m) == 0`(3b-i 인덱스 래퍼 재사용·스레딩 불요·`pm`=`planes[m]`이라
+  `pm.tri`=`planes[m].tri`, unrotated 경로 bit-identical). 신규 코드·테스트 없음.
+- **★ `planes_coplanar` 트윈-스킵(가드 앞 gate)은 무변경·이 셀서 sound**: 진짜 트윈(같은 Surface 공유 두 면)은
+  `t_orient3d`에 도달조차 못 함 → 가드는 **구별되는 평면만** 판정. 트윈 exact의 근거는 **계수 출처** — `collect_planes`가
+  평면을 `*model.surfaces.get(face.surface)`에서 읽지(면별 `tri` 재계산 아님) → 같은 Surface 공유 면은 회전 무관
+  **byte-identical 계수** → `planes_coplanar`(rank≤1 비례성)에 정확히 비례(tolerance 무관). fuzzy는 *다른*-Surface
+  near-coplanar 회전 쌍뿐 → 공면-접촉 밀레스톤(`planes_coplanar` toleranced화)으로 이연(신선 primitive 횡단엔 부재).
+- **★ 새 테스트 없음(정당)**: 가드의 `t_orient3d`는 **매 seam 정점 × 다른 모든 평면마다 실행**(`for (m, pm) in
+  planes.iter().enumerate()`)되므로 seam 경로를 밟는 **기존 boolean 테스트 전부가 가드 코드를 exercise** — bit-identical
+  이라 결과 불변→무회귀가 wiring 검증. 회전 건전성은 `t_orient3d` 자체가 이미 tested(3a-iii H-c·3b-i forwards-geom).
+  FOURPLANE **거절 자체는 미발화 백스톱**(§637)이나 가드 코드 경로는 실행됨.
+- **net.** `nacre-ops`: 가드 한 줄 교체(import 없음·fully-qualify). `three_plane_orient3d`는 다른 호출부(2068)서 유지.
+  `comp_key`(f64 coord 정렬 tie-break·회전에도 결정적)·`is_shell_outward`는 이 셀 아님. 후속: 3c-vi(`is_shell_outward`
+  회전-aware·구조적 — lex-min 정점 exact·outward 판정 회전-불변).
