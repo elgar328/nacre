@@ -1433,3 +1433,16 @@ exact화. **★ 신규 술어 0개** — 둘 다 이미 배선·검증된 프리
 - **왜 silent-wrong이 없나 (스트레스가 확증)**: fresh-primitive 입력은 정확 유리수 좌표라 base 프레임 exact·모든 위상 판정이
   평면-트리플 정의(TIP)로 결정(f64 캐시/tol arbiter 아님) → near-degenerate도 exact 부호 또는 declare-0(정직). 후속:
   3d-iv(main 병합).
+
+**회전 부울 고정밀 좌표 캐싱 — §TIP⑦ cache 구현.** 3d-iii 프로파일이 회전 부울 병목을 확정: 부울당 판정 ~10,000회 중
+~9%(≈900)가 astro-float 상승, 상승 1회 ≈2.4ms(3축 Euler는 7ms)로 상승이 전체 시간의 거의 전부. **낭비의 정체**: 판정마다
+`plane_def`가 면 정의점(`tri_pt3`)을 clone해, 같은 점의 `hp_coord`(회전 체인을 200-bit cos/sin으로 재계산)를 부울당
+수십 번 중복 계산. **해법**(§4 진실/캐시 분리를 hp에 적용): `Pt3`에 `hp: Rc<OnceCell<[BigFloat;3]>>` 추가 — 정의점의
+astro-float 실현을 **부울당 1회만** 계산해 clone끼리 **셀 공유**로 재사용(lazy·JUDGE_PREC 전용). `rotate_about`은 정의를
+바꾸므로 셀 리셋(불변식: hp 유효 ⟺ 마지막 리셋 후 base+chain 불변; base/chain 외부 변형 없음 grep 확인). **순수-함수
+memoize**라 부호 판정·escalation 카운트 불변(정확성 무관).
+- **★ 결과**: per-boolean **corner 2265→132ms(17×)·sever 2477→110ms(22×)·Euler3 6458→174ms(37×)**; stress 코퍼스
+  151→5.4s(28×). escalation 카운트 before=after(923/1021/224/920 동일)로 정확성 확증. 전 스위트 534·stress silent 0·
+  OCCT 7 여전히 green. Euler 체인이 최대 개선(체인 재계산이 1회로).
+- **후속(추가 성능)**: 단계적 정밀도(상승 시 64bit→애매하면 200bit)·`plane_def` 참조화(판정당 clone 제거)·memoize 참조
+  반환(BigFloat clone 제거). 후속: 3d-iv(main 병합).
