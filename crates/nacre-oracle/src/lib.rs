@@ -846,6 +846,148 @@ bbox_min 0 0 0
         );
     }
 
+    // --- Rotated booleans vs OCCT (overhaul 3d-ii) ---
+    // A boolean commutes with a rigid motion, so a rotated boolean is the rotated image of the
+    // unrotated one — and OCCT, given the rotated STEP, is an *independent* ground truth for its
+    // volume and area. 3d-i checked rotation-invariance (self-consistency); this cross-checks the
+    // rotated seam/reconstruction against a mature kernel, catching a same-volume-wrong-topology
+    // bug that invariance alone could miss.
+
+    /// An axis-aligned rotation about the line through `(1,1,0)` by `deg` degrees (a non-90°
+    /// degree makes cos/sin irrational, so the realization is `Origin::Rotated`).
+    fn rot_about(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
+        use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+        Isometry::rotation(Rotation {
+            axis,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+        })
+    }
+
+    /// Rotate both operands by every isometry in `isos` (a chain), then assert nacre's boolean
+    /// matches OCCT on total volume and area. OCCT ground truth is taken *before* the nacre
+    /// boolean supersedes the rotated inputs. Returns the result solids for further assertions.
+    fn rotated_boolean_matches_occt(
+        m: &mut Model,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+        kind: BoolKind,
+        isos: &[nacre_scalar::Isometry],
+    ) -> Vec<Handle<Solid>> {
+        use nacre_ops::{OpOutput, Operation, apply};
+        let rot = |m: &mut Model, mut s: Handle<Solid>| -> Handle<Solid> {
+            for iso in isos {
+                let out = apply(
+                    m,
+                    &Operation::Transform {
+                        solid: s,
+                        isometry: *iso,
+                    },
+                )
+                .unwrap();
+                let OpOutput::Transform { solid } = out else {
+                    panic!("expected Transform output");
+                };
+                s = solid;
+                m.rebuild_adjacency();
+            }
+            s
+        };
+        let a2 = rot(m, a);
+        let b2 = rot(m, b);
+        let occt_kind = match kind {
+            BoolKind::Fuse => OcctBool::Fuse,
+            BoolKind::Cut => OcctBool::Cut,
+            BoolKind::Common => OcctBool::Common,
+        };
+        // OCCT ground truth on the rotated inputs, before nacre supersedes them.
+        let occt = occt_boolean_of(m, occt_kind, a2, b2).unwrap();
+        let solids = boolean(m, kind, a2, b2).unwrap();
+        let vol: f64 = solids
+            .iter()
+            .map(|&s| mass_props(m, s).unwrap().volume)
+            .sum();
+        let area: f64 = solids.iter().map(|&s| mass_props(m, s).unwrap().area).sum();
+        assert!(
+            approx(vol, occt.volume),
+            "volume {vol} vs occt {}",
+            occt.volume
+        );
+        assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
+        solids
+    }
+
+    /// A fully-tilted (Z then X rotation, every face normal irrational) corner-overlap `Cut`
+    /// matches OCCT — the strongest cross-check of the rotated arrangement/seam.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rotated_overlap_cut_matches_occt() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+        let isos = [rot_about(Axis::Z, 30), rot_about(Axis::X, 30)];
+        rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Cut, &isos);
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rotated_overlap_fuse_matches_occt() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+        rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Fuse, &[rot_about(Axis::Z, 30)]);
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rotated_overlap_common_matches_occt() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+        rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Common, &[rot_about(Axis::Z, 30)]);
+    }
+
+    /// The sever — a bar cut clean through a cube into two solids (OCCT COMPOUND) — under a full
+    /// tilt. This is where a rotated `is_shell_outward` (3c-vi) bug would hide: both severed
+    /// pieces must read outward, so OCCT's total volume/area confirms two material solids, not one
+    /// with the other misjudged as a cavity.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rotated_sever_cut_matches_occt() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let bar = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        let isos = [rot_about(Axis::Z, 30), rot_about(Axis::X, 30)];
+        let solids = rotated_boolean_matches_occt(&mut m, bar, cube, BoolKind::Cut, &isos);
+        assert_eq!(solids.len(), 2, "rotated sever yields two solids");
+    }
+
+    /// A rotated `Cut` of a strictly-contained box leaves a cavity (OCCT BREP_WITH_VOIDS): the
+    /// volume nets the void, and nacre records exactly one cavity.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rotated_containment_cut_makes_cavity_matches_occt() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let solids =
+            rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Cut, &[rot_about(Axis::Z, 30)]);
+        assert_eq!(solids.len(), 1, "one solid");
+        assert_eq!(
+            m.solids.get(solids[0]).cavities.len(),
+            1,
+            "the contained box is a cavity"
+        );
+    }
+
     /// A **re-rotated** solid (overhaul stage 1c) is still a valid b-rep: rotate a
     /// cuboid 30° about Z, then 45° about X, so its vertices carry a two-node rotation
     /// chain. A rigid re-rotation leaves volume/area invariant, so OCCT must agree with
