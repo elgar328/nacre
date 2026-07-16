@@ -212,7 +212,7 @@ pub(crate) fn seam_segments_on(
 /// The pair `(P, Q)` is a parameter, not the seam pair: sub-unit 3d orders two seam
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
 /// two planes. No new predicate is needed for that.
-fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> i8 {
+pub(crate) fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> i8 {
     t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
 }
 

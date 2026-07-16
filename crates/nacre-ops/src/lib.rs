@@ -4916,6 +4916,137 @@ fn clip_points_by_plane(poly: &[Point3], tri: [Point3; 3]) -> Vec<Point3> {
     out
 }
 
+/// The planar cross-section of solid `a` cut by the plane at combined index `w_idx`, as a set of
+/// closed `Node::Seam` loops. Each section vertex is the exact three-plane point where an `a`-edge
+/// (shared by faces `A_f`,`A_g`) crosses `W`, provenance triple `{W,A_f,A_g}`. Decisions are exact/
+/// toleranced only ([`t_plane_side`](crate::tolerant::t_plane_side) straddle, [`order_along`]
+/// ordering) — no coordinate arbiter. A line crossing a face's ring meets it an even number of
+/// times, so ordered same-face section vertices pair even-odd into material chords; each vertex
+/// lies on exactly two faces (manifold) so it has degree 2, and the section is a union of simple
+/// closed loops assembled by alternating chords. Honest-reject on degeneracy: an `a`-edge endpoint
+/// *on* `W` (`VERTEX_ON_FACE_PLANE`), an odd per-face crossing count / non-degree-2 vertex
+/// (`ARRANGEMENT_DEGENERATE`), `three_planes` failure (`THREE_PLANES`). Scope: cavity-free `a`
+/// (outer shell) — a cavitied `a` is rejected upstream.
+// Wired into the non-convex overhang clip in the next cell; used by tests now.
+#[cfg_attr(not(test), allow(dead_code))]
+fn section_of_solid(
+    model: &Model,
+    a: Handle<Solid>,
+    w_idx: usize,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+) -> Result<Vec<Vec<Node>>, BoolError> {
+    // A section vertex: its sorted dedup triple + the two a-faces it links (for connectivity).
+    struct Sv {
+        triple: [usize; 3],
+        faces: [usize; 2],
+    }
+    // Deterministic edge order (Store index) so any downstream first-appearance is replay-stable.
+    type SectionEdge = (Handle<Edge>, [Handle<Vertex>; 2], [usize; 2]);
+    let inc = arrange::edge_planes(model, a, surf_ix)?;
+    let mut edges: Vec<SectionEdge> = inc.iter().map(|(&e, &(b, f))| (e, b, f)).collect();
+    edges.sort_by_key(|(e, _, _)| e.index());
+
+    let mut svs: Vec<Sv> = Vec::new();
+    for (_e, bounds, faces) in edges {
+        let [v0, v1] = bounds;
+        let s0 = crate::tolerant::t_plane_side(model, planes, w_idx, v0);
+        let s1 = crate::tolerant::t_plane_side(model, planes, w_idx, v1);
+        if s0 == 0 || s1 == 0 {
+            return Err(reject(tag::VERTEX_ON_FACE_PLANE));
+        }
+        if s0 == s1 {
+            continue; // edge does not straddle W
+        }
+        let [af, ag] = faces;
+        three_planes(&planes[w_idx].plane, &planes[af].plane, &planes[ag].plane)
+            .ok_or_else(|| reject(tag::THREE_PLANES))?;
+        let mut triple = [w_idx, af, ag];
+        triple.sort_unstable();
+        svs.push(Sv {
+            triple,
+            faces: [af, ag],
+        });
+    }
+    if svs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Per section vertex, its chord partner on each of its two faces. Group vertices by face,
+    // order along W∩A_f (each vertex's ordering key is its *other* face plane), pair even-odd.
+    let mut neighbor: Vec<Vec<(usize, usize)>> = vec![Vec::new(); svs.len()]; // (face, partner)
+    let mut faces_seen: Vec<usize> = svs.iter().flat_map(|s| s.faces).collect();
+    faces_seen.sort_unstable();
+    faces_seen.dedup();
+    for &f in &faces_seen {
+        // vertices on face f, with their "other" plane R for order_along
+        let mut on_f: Vec<usize> = (0..svs.len())
+            .filter(|&i| svs[i].faces.contains(&f))
+            .collect();
+        let other = |i: usize| -> usize {
+            let [x, y] = svs[i].faces;
+            if x == f { y } else { x }
+        };
+        on_f.sort_by(
+            |&i, &j| match arrange::order_along(planes, w_idx, f, other(i), other(j)) {
+                -1 => std::cmp::Ordering::Less,
+                1 => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            },
+        );
+        if on_f.len() % 2 != 0 {
+            return Err(reject(tag::ARRANGEMENT_DEGENERATE)); // odd crossings = degeneracy
+        }
+        for pair in on_f.chunks_exact(2) {
+            let (u, w) = (pair[0], pair[1]);
+            neighbor[u].push((f, w));
+            neighbor[w].push((f, u));
+        }
+    }
+    // Every section vertex must have degree 2 (one chord per face).
+    if neighbor.iter().any(|n| n.len() != 2) {
+        return Err(reject(tag::ARRANGEMENT_DEGENERATE));
+    }
+
+    // Assemble closed loops: alternate chords (arrive on a face, leave on the other).
+    let mut visited = vec![false; svs.len()];
+    let mut loops: Vec<Vec<Node>> = Vec::new();
+    for start in 0..svs.len() {
+        if visited[start] {
+            continue;
+        }
+        let mut loop_nodes = Vec::new();
+        let mut cur = start;
+        let mut take_face = svs[start].faces[0];
+        for _ in 0..=svs.len() {
+            visited[cur] = true;
+            loop_nodes.push(Node::Seam(svs[cur].triple));
+            let next = neighbor[cur]
+                .iter()
+                .find(|(f, _)| *f == take_face)
+                .map(|(_, p)| *p)
+                .ok_or_else(|| reject(tag::ARRANGEMENT_DEGENERATE))?;
+            take_face = other_face(&svs[next].faces, take_face)?;
+            cur = next;
+            if cur == start {
+                break;
+            }
+        }
+        loops.push(loop_nodes);
+    }
+    Ok(loops)
+}
+
+/// The face of `faces` that is not `used` (the continuing chord's face at a section vertex).
+#[cfg_attr(not(test), allow(dead_code))]
+fn other_face(faces: &[usize; 2], used: usize) -> Result<usize, BoolError> {
+    match *faces {
+        [x, y] if x == used => Ok(y),
+        [x, y] if y == used => Ok(x),
+        _ => Err(reject(tag::ARRANGEMENT_DEGENERATE)),
+    }
+}
+
 /// Clip a `b` wall to inside `a` by folding [`clip_points_by_plane`] over every breached wall's
 /// plane, then map each surviving point back to a node — an original `b` vertex (`Node::Orig`) or
 /// a canonical crossing (`Node::Seam`), by exact point match. `None` if a survivor matches
@@ -12444,6 +12575,96 @@ pub mod tests {
             unreachable!()
         };
         (m, solid)
+    }
+
+    // n0: cross-section of a solid by a wall plane (the new `section_of_solid` primitive).
+    type SectionSetup = (
+        Vec<PlaneInfo>,
+        usize,
+        std::collections::HashMap<Handle<Face>, usize>,
+    );
+    fn section_setup(m: &Model, a: Handle<Solid>, b: Handle<Solid>) -> SectionSetup {
+        let planes_a = collect_planes(m, a).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(m, b).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, pi) in planes.iter().enumerate() {
+            surf_ix.insert(pi.face, i);
+        }
+        // W = b's -x face (n_out ≈ [-1,0,0]) at x = 0.5.
+        let w = (na..planes.len())
+            .find(|&i| {
+                let n = planes[i].n_out.as_array();
+                n[0] < -0.5 && (planes[i].tri[0].as_array()[0] - 0.5).abs() < 1e-9
+            })
+            .expect("b's -x wall at x=0.5");
+        (planes, w, surf_ix)
+    }
+
+    fn section_pts(loops: &[Vec<Node>], planes: &[PlaneInfo]) -> Vec<[f64; 3]> {
+        loops
+            .iter()
+            .flat_map(|l| l.iter())
+            .map(|&nd| match nd {
+                Node::Seam(t) => three_planes(
+                    &planes[t[0]].plane,
+                    &planes[t[1]].plane,
+                    &planes[t[2]].plane,
+                )
+                .unwrap()
+                .as_array(),
+                _ => panic!("section is all Seam nodes"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn section_of_a_cube_is_a_quad() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, -1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, w, surf_ix) = section_setup(&m, a, b);
+        let loops = section_of_solid(&m, a, w, &planes, &surf_ix).unwrap();
+        assert_eq!(loops.len(), 1, "one section loop");
+        assert_eq!(loops[0].len(), 4, "a cube slice is a quad");
+        let mut yz: Vec<[f64; 2]> = section_pts(&loops, &planes)
+            .iter()
+            .inspect(|p| assert!((p[0] - 0.5).abs() < 1e-9, "vertex on W"))
+            .map(|p| [p[1], p[2]])
+            .collect();
+        yz.sort_by(|u, v| {
+            u[0].partial_cmp(&v[0])
+                .unwrap()
+                .then(u[1].partial_cmp(&v[1]).unwrap())
+        });
+        assert_eq!(yz, vec![[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]);
+    }
+
+    #[test]
+    fn section_of_a_pocketed_cube_is_non_convex() {
+        // A top-pocketed cube sliced through the pocket: section is the outer square with the
+        // pocket's square bite where the slice passes through the pocket walls.
+        let (mut m, a) = top_pocketed_cube();
+        // small_square pocket is inset; slice at x=0.5 crosses it. Give b a -x wall at x=0.5.
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, -1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, w, surf_ix) = section_setup(&m, a, b);
+        let loops = section_of_solid(&m, a, w, &planes, &surf_ix).unwrap();
+        // The pocketed-cube cross-section at x=0.5 is a single non-convex loop (outer square
+        // dented by the pocket) — more than 4 vertices, one loop, all on W.
+        assert_eq!(loops.len(), 1, "one outer section loop");
+        assert!(loops[0].len() > 4, "non-convex slice has >4 vertices");
+        for p in section_pts(&loops, &planes) {
+            assert!((p[0] - 0.5).abs() < 1e-9, "vertex on W");
+        }
     }
 
     #[test]
