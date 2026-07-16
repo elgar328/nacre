@@ -1943,6 +1943,143 @@ fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
     false
 }
 
+/// Rotation-sound twin of [`is_shell_outward`]: whether a result component's shell is
+/// **outward** (material, an outer shell) versus **inward** (a void/cavity shell), decided on
+/// the faces' exact `Pt3` definitions through `frame3`, so it is sound when the coordinates
+/// are rounded irrationals (rotation). Same algorithm as the f64 [`is_shell_outward`] — the
+/// lexicographically-minimal vertex `v*` is a convex extreme corner and the shell is outward
+/// iff some face there has an outward normal with `n_x < 0` — but both numeric steps become
+/// exact TIP predicates:
+///
+/// - **`v*`** by [`t_cmp_coord`](crate::tolerant) over each node's three-plane triple, the same
+///   lex-min scan as [`loop_winding`](crate::arrange::loop_winding). A node's triple is its
+///   own face plane plus the neighbour planes of its two loop edges (the
+///   [`loop_triples`](crate::arrange) construction), whose meet *is* that vertex — so an
+///   original corner is as implicit a point as a seam node, no mixed compare needed.
+/// - **`sign(n_x)`** by [`dir_orient3d_judge`]`([1,0,0], tri…)` on the face's exact plane
+///   definition ([`plane_def`](crate::tolerant), mixed-rotation safe): the x-component of the
+///   RH normal, flipped by `lf.flip` to the result face's materialized outward normal.
+///
+/// Operates on the **pre-assembly** `LocalFace`s (not the result faces), so it never reads a
+/// result vertex whose exact rotation provenance `assemble_fuse_cut` drops — every exact
+/// definition it needs lives in `planes` and in the loop adjacency. Reads no `Model`. `Err`
+/// on a non-simple/degenerate component (coincident nodes, a straight angle, or a non-manifold
+/// edge) — an honest reject, never a silent wrong label. Wired into `assemble_fuse_cut` in
+/// cell 3c-vi-b.
+#[allow(dead_code)] // wired into assemble_fuse_cut in cell 3c-vi-b
+fn component_is_outward_tol(planes: &[PlaneInfo], comp: &[&LocalFace]) -> Result<bool, BoolError> {
+    use nacre_scalar::{Orient, Rat};
+
+    // Node lacks `Ord`; this is a canonical, hashable id for the unordered edge key.
+    fn rank(n: Node) -> (u8, usize, usize, usize) {
+        match n {
+            Node::Orig(h) => (0, h.index() as usize, 0, 0),
+            Node::Seam([a, b, c]) => (1, a, b, c),
+        }
+    }
+    let ekey = |a: Node, b: Node| {
+        let (ra, rb) = (rank(a), rank(b));
+        if ra <= rb { (ra, rb) } else { (rb, ra) }
+    };
+
+    // Edge -> the planes carrying it, over every loop (outer + inner): a hole-rim edge is the
+    // outer edge of its wall and an inner edge of the holed face, so building over both loops
+    // gives it both planes. A manifold edge yields exactly two.
+    type EKey = ((u8, usize, usize, usize), (u8, usize, usize, usize));
+    let mut edge_planes: HashMap<EKey, Vec<usize>> = HashMap::new();
+    for lf in comp {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            let k = ring.len();
+            for t in 0..k {
+                edge_planes
+                    .entry(ekey(ring[t], ring[(t + 1) % k]))
+                    .or_default()
+                    .push(lf.plane_idx);
+            }
+        }
+    }
+    let other_plane = |a: Node, b: Node, own: usize| -> Result<usize, BoolError> {
+        let ps = edge_planes
+            .get(&ekey(a, b))
+            .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+        let mut others = ps.iter().copied().filter(|&x| x != own);
+        let o = others
+            .next()
+            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+        if others.any(|x| x != o) {
+            return Err(reject(tag::NON_MANIFOLD_EDGE)); // edge shared by >2 distinct planes
+        }
+        Ok(o)
+    };
+
+    // Each unique outer node -> its three-plane triple (meet = that vertex). Any incident face
+    // yields a valid triple (all its planes pass through the vertex); first occurrence wins.
+    let mut triple_of: HashMap<Node, [usize; 3]> = HashMap::new();
+    for lf in comp {
+        let ring = &lf.loop_nodes;
+        let k = ring.len();
+        for t in 0..k {
+            let node = ring[t];
+            if triple_of.contains_key(&node) {
+                continue;
+            }
+            let prev = other_plane(ring[(t + k - 1) % k], node, lf.plane_idx)?;
+            let next = other_plane(node, ring[(t + 1) % k], lf.plane_idx)?;
+            if prev == next {
+                return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // a straight angle
+            }
+            let mut tri = [lf.plane_idx, prev, next];
+            tri.sort_unstable();
+            triple_of.insert(node, tri);
+        }
+    }
+
+    // Lexicographically-minimal vertex over the unique outer nodes (`loop_winding`'s scan;
+    // `t_cmp_coord` is exact for the rotated triples). Sort candidates for replay determinism.
+    let mut nodes: Vec<Node> = triple_of.keys().copied().collect();
+    nodes.sort_by_key(|&n| rank(n));
+    let Some((&first, rest)) = nodes.split_first() else {
+        return Ok(false); // empty component
+    };
+    let mut lo = first;
+    for &node in rest {
+        let ord = (0..3)
+            .map(|axis| {
+                crate::tolerant::t_cmp_coord(planes, triple_of[&node], triple_of[&lo], axis)
+            })
+            .find(|&c| c != 0);
+        match ord {
+            Some(c) if c < 0 => lo = node,
+            Some(_) => {}
+            None => return Err(reject(tag::LOOP_ORIENT_MISMATCH)), // two distinct nodes coincide
+        }
+    }
+
+    // Outward iff some outer face at v* has a result outward normal with n_x < 0. n_x's sign is
+    // the RH-normal x-component (`dir_orient3d_judge` on the exact plane def), flipped by `flip`.
+    for lf in comp {
+        if !lf.loop_nodes.contains(&lo) {
+            continue;
+        }
+        let tri = crate::tolerant::plane_def(planes, lf.plane_idx);
+        let ex = [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)];
+        let nx = dir_orient3d_judge(ex, &tri[0], &tri[1], &tri[2]);
+        let nx = if lf.flip {
+            match nx {
+                Orient::Positive => Orient::Negative,
+                Orient::Negative => Orient::Positive,
+                Orient::Zero => Orient::Zero,
+            }
+        } else {
+            nx
+        };
+        if nx == Orient::Negative {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// The supporting planes of a solid's outer shell. `Unsupported` if any face is
 /// non-planar or lacks three non-collinear loop points.
 pub(crate) fn collect_planes(
@@ -7666,6 +7803,142 @@ pub mod tests {
             !is_shell_outward(&m, &void_faces),
             "reversed shell is a void"
         );
+    }
+
+    /// Build the `LocalFace`s of a solid's outer shell, one per `PlaneInfo` (whose order
+    /// matches the shell's faces), with `Node::Orig` loops — the pre-assembly form
+    /// `component_is_outward_tol` consumes. `flip` reverses the materialized outward normal.
+    fn shell_local_faces(model: &Model, planes: &[PlaneInfo], flip: bool) -> Vec<LocalFace> {
+        planes
+            .iter()
+            .enumerate()
+            .map(|(i, pi)| {
+                let loops = face_loop_verts(model, pi.face);
+                let node_ring = |r: &[Handle<Vertex>]| r.iter().map(|&v| Node::Orig(v)).collect();
+                LocalFace {
+                    plane_idx: i,
+                    loop_nodes: node_ring(&loops[0]),
+                    inner: loops[1..].iter().map(|r| node_ring(r)).collect(),
+                    flip,
+                }
+            })
+            .collect()
+    }
+
+    /// On an axis-aligned solid the exact `component_is_outward_tol` reproduces the f64
+    /// `is_shell_outward` label — true for the outer shell, false when every face is flipped
+    /// (a void) — so wiring it will not move any label on the unrotated corpus.
+    #[test]
+    fn outward_tol_matches_f64_on_axis_aligned() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let planes = collect_planes(&m, cube).unwrap();
+        let outer = shell_local_faces(&m, &planes, false);
+        let refs: Vec<&LocalFace> = outer.iter().collect();
+        assert!(component_is_outward_tol(&planes, &refs).unwrap());
+        let void = shell_local_faces(&m, &planes, true);
+        let vrefs: Vec<&LocalFace> = void.iter().collect();
+        assert!(!component_is_outward_tol(&planes, &vrefs).unwrap());
+    }
+
+    /// The outward/void label is rigid-rotation invariant: the exact path over a cube rotated
+    /// by an irrational (30°) angle agrees with the same cube unrotated — outer is outward,
+    /// the flipped shell is a void — even though the rotated coordinates are rounded
+    /// irrationals that the f64 x-coefficient test could misjudge.
+    #[test]
+    fn outward_tol_is_rotation_invariant() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation as SRot};
+        let label = |m: &Model, s: Handle<Solid>, flip: bool| {
+            let planes = collect_planes(m, s).unwrap();
+            let lf = shell_local_faces(m, &planes, flip);
+            let refs: Vec<&LocalFace> = lf.iter().collect();
+            component_is_outward_tol(&planes, &refs).unwrap()
+        };
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let (out_u, void_u) = (label(&m, cube, false), label(&m, cube, true));
+        assert!(out_u && !void_u, "unrotated: outer outward, flipped void");
+        let iso = Isometry::rotation(SRot {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        let OpOutput::Transform { solid: rc } = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: cube,
+                isometry: iso,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert_eq!(
+            label(&m, rc, false),
+            out_u,
+            "outward invariant under rotation"
+        );
+        assert_eq!(label(&m, rc, true), void_u, "void invariant under rotation");
+    }
+
+    /// A component whose planes mix rotated (`tri_pt3 = Some`) and axis-aligned
+    /// (`tri_pt3 = None`) faces — the shape of a mixed-rotation boolean — must not panic:
+    /// `plane_def` rebuilds a `None` plane's exact `Pt3` from its `tri`, and the label stays
+    /// correct. Locks the `plane_def` path against a `tri_pt3.expect()` regression.
+    #[test]
+    fn outward_tol_handles_mixed_rotation() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let mut planes = collect_planes(&m, cube).unwrap();
+        // Force one face's exact def present (Some) while the rest stay None: `any_rotated` now
+        // routes the whole component through the frame3 path, exercising plane_def on both.
+        let tri = planes[0].tri;
+        let rat = |x: f64| nacre_scalar::Rat::try_from_f64(x).unwrap();
+        planes[0].tri_pt3 = Some(tri.map(|p| {
+            let a = p.as_array();
+            Pt3::at([rat(a[0]), rat(a[1]), rat(a[2])])
+        }));
+        assert!(
+            planes.iter().any(|p| p.tri_pt3.is_some())
+                && planes.iter().any(|p| p.tri_pt3.is_none())
+        );
+        let outer = shell_local_faces(&m, &planes, false);
+        let refs: Vec<&LocalFace> = outer.iter().collect();
+        assert!(component_is_outward_tol(&planes, &refs).unwrap());
+    }
+
+    /// A concave (L-prism) shell — a reflex vertex at `(1,1)` — labels outward before and
+    /// after an irrational rotation. `v*` is the convex min corner, not the reflex one, so the
+    /// `∃ n_x < 0` test still holds; this guards the non-convex extreme case.
+    #[test]
+    fn outward_tol_on_concave_l_prism() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation as SRot};
+        let label = |m: &Model, s: Handle<Solid>| {
+            let planes = collect_planes(m, s).unwrap();
+            let lf = shell_local_faces(m, &planes, false);
+            let refs: Vec<&LocalFace> = lf.iter().collect();
+            component_is_outward_tol(&planes, &refs).unwrap()
+        };
+        let (mut m, s) = l_prism();
+        assert!(label(&m, s), "unrotated L outer is outward");
+        let iso = Isometry::rotation(SRot {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        let OpOutput::Transform { solid: r } = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: s,
+                isometry: iso,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(label(&m, r), "rotated L outer is outward");
     }
 
     /// `detect_coincident_interface` counts only cross-solid opposite-normal coplanar

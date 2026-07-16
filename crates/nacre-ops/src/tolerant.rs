@@ -50,7 +50,7 @@ fn any_rotated(planes: &[PlaneInfo], idx: &[usize]) -> bool {
 /// [`PlaneInfo::tri_pt3`] (clone — a shallow copy of the rotation chain, no forest walk);
 /// an axis-aligned plane (`None`, e.g. the unrotated operand of a *mixed*-rotation
 /// boolean) is built exactly from its `tri` coordinates, which are already exact f64.
-fn plane_def(planes: &[PlaneInfo], k: usize) -> [Pt3; 3] {
+pub(crate) fn plane_def(planes: &[PlaneInfo], k: usize) -> [Pt3; 3] {
     match &planes[k].tri_pt3 {
         Some(t) => t.clone(),
         None => planes[k].tri.map(pt3_from_exact),
