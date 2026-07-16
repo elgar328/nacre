@@ -947,3 +947,10 @@ C1(flush-edge)·C2(비볼록)→D0(디스패치 일반화)·D1–D2(은퇴)→E0
 `point_in_ring_on_a_non_convex_footprint`: L자 접촉면에서 arm 코너(안)·notch 코너(밖)를 half-space 가정 없이 정확 분류 —
 옛 `clip_bwall_inside_a`가 결여한 soundness를 primitive 층에서 확인. **범위 조정**: 생존 표 평가기(op×법선→selector,
 dissolve/whole·Fuse-opposite 2측)는 실제 ops 배선과 결합돼 B1로 이관.
+
+**(B1·part1) 공면-면 생존 표.** `coplanar_survival(kind, same_normal) -> (PSurvive, b_flip)` — A3에서 이관한 생존 평가기.
+occupancy 표(π-면은 재료가 한쪽에만 있을 때 생존)에서 유도: Cut/same=`MinusQ`(포켓 mouth)·Cut/opp=`Whole`(b가 위, 겹침
+없음)·Fuse/opp=`MinusQ`(보스: Q가 홀, 캔틸레버는 b-측)·Fuse/same=`Whole`(합집합, ∂Q 내부)·Common/same=`InterQ`(겹침 뚜껑)·
+Common/opp=`Empty`(coincident 스택→EmptyResult). b-면 flip = Cut일 때만. 홀 뒤집기 규칙 = same_normal(포켓 뒤집음·보스 안 뒤집음).
+골든 `coplanar_survival_table_matches_the_bespoke_paths`가 6행을 6개 bespoke 경로에 묶음. 다음(B1·part2): contained 결과 빌더
+(Q를 P의 홀로) + `assemble_fuse_cut` 배선 + 포켓/보스 픽스처 OCCT 등가(첫 실솔리드 통합).

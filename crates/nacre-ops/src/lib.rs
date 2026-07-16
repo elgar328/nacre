@@ -3968,6 +3968,45 @@ fn boundary_ring_triples(bnd: &[BndEdge], pi: usize) -> Vec<[usize; 3]> {
         .collect()
 }
 
+/// What survives on the `a`-side contact face `P` under a coplanar boolean, as a function of the
+/// cells' inside-`Q` membership.
+///
+/// Derived from the occupancy table (plan §생존 규칙): a π-face survives where the result's
+/// material lies on exactly one side of π. `Whole` keeps all of `P` (∂Q is internal and
+/// dissolves — no hole); `MinusQ` keeps `P∖Q` (`Q` a hole for a contained footprint, a notch for
+/// a crossing one); `InterQ` keeps `P∩Q`; `Empty` keeps nothing. The complementary `inQ∖P` piece
+/// (a boss/cantilever bottom, `Fuse`/opposite) is produced by the symmetric `b`-side pass.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum PSurvive {
+    Whole,
+    MinusQ,
+    InterQ,
+    Empty,
+}
+
+/// The `a`-side survival selector (`[`PSurvive`]`) and whether `b`'s non-contact faces flip.
+/// `same_normal` is whether the two contact faces share an outward-normal direction.
+///
+/// Verified against the six bespoke paths: Cut/same=`MinusQ` (blind pocket mouth),
+/// Fuse/opposite=`MinusQ` (boss: `P` gains `Q` as a hole; the cantilever is the `b`-side),
+/// Cut/opposite=`Whole` (`b` sits above, no overlap), Fuse/same=`Whole` (union — `∂Q` internal),
+/// Common/same=`InterQ` (overlap cap), Common/opposite=`Empty` (coincident stack → `EmptyResult`).
+#[cfg_attr(not(test), allow(dead_code))]
+fn coplanar_survival(kind: BoolKind, same_normal: bool) -> (PSurvive, bool) {
+    use BoolKind::*;
+    use PSurvive::*;
+    let survive = match (kind, same_normal) {
+        (Cut, true) => MinusQ,
+        (Cut, false) => Whole,
+        (Fuse, false) => MinusQ,
+        (Fuse, true) => Whole,
+        (Common, true) => InterQ,
+        (Common, false) => Empty,
+    };
+    (survive, kind == Cut) // b's faces flip only for a Cut (they bound the removed region)
+}
+
 /// Reconstruct one coplanar contact face `P` (of `a`, plane class `pi`, materialized on plane
 /// `plane_idx`) subdivided by `b`'s footprint `Q`, keeping the cells whose material survives.
 ///
@@ -13299,6 +13338,19 @@ pub mod tests {
                 [1.0, 2.0, 1.0],
             ])
         );
+    }
+
+    // B1: the coplanar-face survival table, tied to the six bespoke paths it must reproduce.
+    #[test]
+    fn coplanar_survival_table_matches_the_bespoke_paths() {
+        use PSurvive::*;
+        // (kind, same_normal) -> (P-side survival, b faces flip)
+        assert_eq!(coplanar_survival(BoolKind::Cut, true), (MinusQ, true)); // blind pocket mouth
+        assert_eq!(coplanar_survival(BoolKind::Cut, false), (Whole, true)); // b above, no overlap
+        assert_eq!(coplanar_survival(BoolKind::Fuse, false), (MinusQ, false)); // boss: Q is a hole
+        assert_eq!(coplanar_survival(BoolKind::Fuse, true), (Whole, false)); // union, ∂Q internal
+        assert_eq!(coplanar_survival(BoolKind::Common, true), (InterQ, false)); // overlap cap
+        assert_eq!(coplanar_survival(BoolKind::Common, false), (Empty, false)); // coincident → empty
     }
 
     // A3 (C2 de-risk): point_in_ring parity classifies against a NON-CONVEX footprint with no
