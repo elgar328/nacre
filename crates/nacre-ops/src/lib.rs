@@ -3725,6 +3725,50 @@ fn shares_or_coplanar(pa: &PlaneInfo, pb: &PlaneInfo) -> bool {
     pa.surf == pb.surf || planes_coplanar(&pa.plane, &pb.plane)
 }
 
+/// Union-find root of `x` in `parent` (with path compression). Roots are the smallest index
+/// of their class, so the result is deterministic (replay, DNA §absolute-3).
+// Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
+#[cfg_attr(not(test), allow(dead_code))]
+fn uf_find(parent: &mut [usize], x: usize) -> usize {
+    let mut r = x;
+    while parent[r] != r {
+        r = parent[r];
+    }
+    let mut c = x;
+    while parent[c] != r {
+        let next = parent[c];
+        parent[c] = r;
+        c = next;
+    }
+    r
+}
+
+/// Canonicalize the combined plane table by coplanarity: two planes that are the same plane
+/// (shared `Surface` handle, or exact rank-1 [`planes_coplanar`]) are merged into one class, so
+/// a wall of `a` coplanar with a wall of `b` names a **single line** in a shared plane π. This is
+/// the one thing the seam engine cannot do (it rejects `order_along(R,R)==0` as `FOURPLANE`);
+/// canonicalizing turns that self-comparison into a real order. Returns `canon` where `canon[i]`
+/// is the class root (the smallest index in the class). Every decision is exact
+/// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
+// Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
+#[cfg_attr(not(test), allow(dead_code))]
+fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
+    let n = planes.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if shares_or_coplanar(&planes[i], &planes[j]) {
+                let (ri, rj) = (uf_find(&mut parent, i), uf_find(&mut parent, j));
+                if ri != rj {
+                    // Attach the larger root under the smaller so a class's root is its min index.
+                    parent[ri.max(rj)] = ri.min(rj);
+                }
+            }
+        }
+    }
+    (0..n).map(|i| uf_find(&mut parent, i)).collect()
+}
+
 /// `Some` iff A and B share exactly one fully-coincident, opposite-normal face
 /// pair (identical boundary) — the clean stack/glue case. `None` (fall through to
 /// the coplanar-rejecting paths) for anything else.
@@ -12671,6 +12715,47 @@ pub mod tests {
         for p in section_pts(&loops, &planes) {
             assert!((p[0] - 0.5).abs() < 1e-9, "vertex on W");
         }
+    }
+
+    // A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.
+    #[test]
+    fn plane_classes_merge_a_shared_wall() {
+        // Two unit cubes side by side share the plane x=1 (a's +x wall, b's -x wall — the same
+        // plane, opposite normals). `plane_classes` must merge those two into one line class and
+        // keep the far walls (a's x=0, b's x=2) distinct.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, a).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, b).unwrap());
+        // Find a plane by outward-normal x-sign and its x coordinate, within an index range.
+        let find = |rng: std::ops::Range<usize>, nx: f64, x: f64| -> usize {
+            rng.clone()
+                .find(|&i| {
+                    let n = planes[i].n_out.as_array();
+                    n[0] * nx > 0.5 && (planes[i].tri[0].as_array()[0] - x).abs() < 1e-9
+                })
+                .expect("plane")
+        };
+        let a_xp = find(0..na, 1.0, 1.0); // a's +x wall at x=1
+        let b_xm = find(na..planes.len(), -1.0, 1.0); // b's -x wall at x=1
+        let a_xm = find(0..na, -1.0, 0.0); // a's -x wall at x=0
+        let b_xp = find(na..planes.len(), 1.0, 2.0); // b's +x wall at x=2
+        let canon = plane_classes(&planes);
+        assert_eq!(canon[a_xp], canon[b_xm], "shared x=1 wall is one class");
+        assert_ne!(canon[a_xm], canon[b_xp], "far walls stay distinct");
+        assert_ne!(canon[a_xp], canon[a_xm], "x=1 and x=0 are different lines");
+        // Every b face but its +x wall is coplanar with an a face, so 12 planes fold to 7 classes.
+        let distinct: std::collections::HashSet<usize> = canon.iter().copied().collect();
+        assert_eq!(distinct.len(), na + 1, "only b's far wall is a new class");
+        // The class root is the smallest index in the class (deterministic canon).
+        assert_eq!(canon[a_xp], a_xp.min(b_xm));
     }
 
     #[test]

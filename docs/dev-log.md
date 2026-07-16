@@ -903,3 +903,22 @@ cross==0으로 O(1) 검출해 즉시 0 반환하려 했다(90°-계열 exact-cos
   culling(대규모·M6/M7)뿐.
 
 **문서 정리 (dev-log 분리).** "pad/pocket ↔ 불리언 통합"이 이미 완료였음을 조사로 확인(커밋 `9357752`·`a9f3ce1`·`aed6174` — pad=extrude+Fuse·pocket=extrude+Cut·`raise_region` 폐기·컨테인먼트 게이트 제거)하고 stale 문서(design.md "미착수"·op doc "imprint then raise")를 정정. 그리고 이 dev-log.md 셀 기록(≈900줄, design.md의 60%)을 `docs/dev-log.md`로 분리 — 설계(규칙·불변)와 진행 로그를 갈라 design.md를 ~600줄로 축소. 이후 셀 기록은 이 파일에 append.
+
+---
+
+## 통합 공면 처리기 (unified coplanar handler) — 마일스톤급 사다리
+
+배경: M5 공면 접촉이 bespoke detector 6개로 누적됐고(볼록성/footprint 게이트에 묶임), "비볼록 오버행 Cut" 한 조각을 더
+붙이려다 접근 한계 확인 — bespoke 클립(`clip_bwall_inside_a`·`try_overhang`·`split_loop_all_arcs`)이 전부 proper-crossing
+전용(Greiner-Hormann류)이라 축정렬 공유/공선 변에서 graze로 거절. **적대 검증의 반전**: 근본은 primitive 부재가 아니라,
+일반 seam 엔진의 셀-추출기(`stitch_cycles`+`reconstruct_face_paths`+`point_in_ring`)가 이미 좌표-free·비볼록·다중루프를
+처리하고 **딱 하나 — 공유 선**만 거절(`order_along(R,R)==0`→`FOURPLANE`, `t_plane_side==0`→`VERTEX_ON_FACE_PLANE`)한다는
+것. 그 공유 선만 1급화하면 됨. 신규 코드 3종(π-seam 수집기·평면-클래스 정규화·생존 평가기)으로 6경로 흡수·볼록성 게이트
+제거·flush-edge 1급화. 플랜: `nacre-coplanar-contact-overhang-linear-glade.md`. 사다리 A1–A3(primitive)→B1–B4(등가)→
+C1(flush-edge)·C2(비볼록)→D0(디스패치 일반화)·D1–D2(은퇴)→E0(design.md 기록)·E1(완결성).
+
+**(A1) 평면-클래스 정규화.** `plane_classes(planes)` = `shares_or_coplanar`(surf Handle 동일 or exact rank-1
+`planes_coplanar`) 위 union-find. 공면인 a-wall·b-wall을 한 선 클래스로 접어, 유일한 `FOURPLANE` 자기비교를 진짜
+`order_along`으로 전환(공유 선 1급화). **root=클래스 최소 인덱스**(결정성=replay, DNA §절대원칙③). 좌표 결정 0.
+프로덕션 배선은 D0까지 dead(`#[cfg_attr(not(test), allow(dead_code))]`). 골든 `plane_classes_merge_a_shared_wall`:
+나란한 두 큐브(x=1 공유)의 12평면이 7클래스로 접히고 far wall은 distinct·root=min 확인.
