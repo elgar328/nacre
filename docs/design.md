@@ -1333,4 +1333,19 @@ winding.
 - **net.** `nacre-ops`: `point_in_solid_tol`·`face_loop_verts`·`pt3_base_collinear`(private·`#[allow(dead_code)]`·3c-iv
   배선 시 제거)·`point_in_solid_tol_is_rotation_invariant`(회전 큐브+오목 L-prism[reflex notch 점 포함] 분류=unrotated
   `point_in_solid` 정답)·`pt3_base_collinear_exact`(회전 collinear→skip·sliver→retry). **미배선("층만")**·`point_in_solid`·
-  boolean 무변경·가드 유지·기존 전 테스트 무회귀. 후속: 3c-iv(라우터 + 4 호출부).
+  boolean 무변경·가드 유지·기존 전 테스트 무회귀. 후속: 3c-iv(라우터 배선).
+
+**vertex_in_solid 라우터 — point_in_solid_tol 배선 (오버홀 3c-iv).** 회전 인식 라우터로 일반 부울의 내외 분류를
+라이브에 연결(내외 분류의 첫 라이브 회전 경로).
+- **★ `vertex_in_solid(model, vh, solid)`**(신규 private): `solid_is_rotated(solid) || 정점 vh Origin::Rotated`면 tol
+  (`vertex_pt3(vh)`[Discovered→`ROTATED_UNSUPPORTED` 정직 거절]→`point_in_solid_tol`), 아니면 **현행 `point_in_solid`
+  (정점 coord)** — bit-identical. 두 항 다 필요: 대상 솔리드 회전(면 무리수) 또는 질의 정점 회전(혼합 부울·좌표 무리수)
+  이면 tol.
+- **★ 일반 부울 2 호출부만 배선**: 1602(seam-free contained 분류)·1706(overlap_fuse_cut 분류)→`vertex_in_solid`. **공면
+  감지기 point_in_solid(3617/4330)은 배선 안 함** — 그 감지기는 `is_convex`·`n_out.dot`(f64)도 써서 point_in_solid만
+  바꾸면 반쪽 배선 → 감지기 전체와 함께 공면-접촉 밀레스톤으로(횡단 부울은 coplanar-pair 게이트서 early-None이라 비임계).
+- **★ dead_code allow 제거**: `point_in_solid_tol`·`face_loop_verts`가 라우터→라이브 호출부로 정적 reachable(회전 분기
+  미실행이어도)이라 allow 불요(3b-i `tri_pt3` 선례).
+- **net.** `nacre-ops`: `vertex_in_solid`·1602/1706 교체·두 allow 제거·`vertex_in_solid_routes_by_rotation`(축정렬→
+  `point_in_solid`·회전→`point_in_solid_tol` dispatch 확인). **가드 유지**(라이브는 항상 unrotated 분기→bit-identical·
+  tol 분기 미실행까지 3d)·기존 boolean 무회귀·**n2(OCCT) 없음**(3d). 후속: 3c-v(4-plane 가드·is_shell_outward).
