@@ -1389,3 +1389,22 @@ exact화. **★ 신규 술어 0개** — 둘 다 이미 배선·검증된 프리
   (라이브 planes 전부 tri_pt3=None→f64 분기·positives 오름차순 c 순서 불변)·전 코퍼스 무회귀. **★ 이로써 횡단 임계 f64
   자리 전부 종료** → 3d(가드 은퇴·회전 부울 end-to-end·OCCT diff·main 병합)가 회전 부울을 처음 라이브 구동. 기각:
   provenance 보존(chained 라우팅 파급)·exact signed-volume(합 부호 인프라 없음, (5d)#5 근거). 후속: 3d.
+
+**회전 부울 첫 라이브 — ROTATED_UNSUPPORTED 진입 가드 은퇴 (오버홀 3d-i).** 3a~3c-vi로 회전 횡단 부울의 모든 임계 f64
+술어가 TIP-exact가 됐으므로, `boolean()` 진입부의 blanket 가드(`solid_is_rotated(a)||solid_is_rotated(b)`)를 제거해
+완성된 기계를 회전 입력으로 처음 라이브 구동. 유일한 프로덕션 변경은 가드 3줄 삭제. `ROTATED_UNSUPPORTED` 태그·
+`solid_is_rotated`는 잔존(`Discovered` 회전 정점[결과 재투입] 거절에서 계속 사용).
+- **★ n0 실측 — 전부 DNA-safe(silent-wrong 0)**: (1) **횡단**(같은-iso 회전) 4종 전부 정확·회전-불변 — corner-bite
+  Cut 2.776/Fuse 3.700·**sever 2솔리드 Σ0.06**(3c-vi `component_is_outward_tol`이 회전에서 처음 라이브·양 조각 outward
+  정확 판정)·containment cavity 1개 2.488, 모두 부피 1e-9 일치·validate clean. (2) **mixed**(한쪽만 회전)도 열림·
+  `plane_def`가 None/Some 처리 — 회전 c2 안의 축정렬 d Cut → cavity 1개·vol 23 정확. (3) **회전 공면-접촉**(공면
+  밀레스톤 스코프)은 **solved-or-honest-reject**: Z축 회전은 z-접촉면 법선이 정확히 ±Z 유지→감지기가 exact로 잡아 정상
+  처리; X축 회전(접촉면 기울임)은 감지기가 놓쳐 general_boolean 도달→boss Fuse는 정확히 풀리고(vol 1.25) pocket Cut은
+  정직 거절(Unsupported). **어느 경우도 그럴듯한-오답 없음** — 반올림 계수가 놓치는 공면을 정점-on-평면 TIP 술어
+  (`edge_crosses_face`의 `t_plane_side` declare-0)가 base 프레임 exact로 잡기 때문.
+- **★ 테스트**: 회전-불변 4종(corner Cut/Fuse·sever·containment)·공면-회전 no-silent-wrong 1종(boss/pocket X축:
+  `Err` 또는 정확-clean만 허용). 기존 `transform_rotate_cuboid_tilts_and_blocks_boolean`·`rerotate_same_axis_chains`의
+  `ROTATED_UNSUPPORTED` 거절 단언 3곳은 무효화 → **mixed Cut 성공+validate**로 전환(이름 "blocks_boolean" 제거·mixed
+  커버리지 보존). 비회전 전 코퍼스 무회귀(가드는 회전에만 발화했으므로 bit-identical).
+- **스코프·후속**: fresh-primitive 회전만. near-degenerate/다른-iso 우연공면·회전 결과 재투입(`Discovered`)은 이후.
+  **3d-ii** OCCT diff(회전 두 피연산자 `occt_boolean_of`·`#[ignore]`)·**3d-iii** 적대적 회전 코퍼스·**3d-iv** main 병합.
