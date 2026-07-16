@@ -20,6 +20,8 @@
 use crate::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
 use crate::{Angle, Axis, HP_RM, Orient, Rat};
 use astro_float::BigFloat;
+use std::cell::OnceCell;
+use std::rc::Rc;
 
 /// One rotation in a point's definition: turn about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle`. `point = [0,0,0]` is the
@@ -43,6 +45,14 @@ pub struct Pt3 {
     pub chain: Vec<RotNode>,
     pub coord: [f64; 3],
     pub tol: [f64; 3],
+    /// Memoized `hp_coord(JUDGE_PREC)` — the astro-float realization of the chain, computed
+    /// once per definition and shared across clones (`Rc`). A judge escalates the *same*
+    /// definition-point dozens of times per boolean (`plane_def` clones `tri_pt3` per call);
+    /// without this each escalation replays the rotation's cos/sin at 200 bits, which dominates
+    /// the rotated-boolean cost. `base`/`chain` never change after construction except through
+    /// [`rotate_about`], which resets this cell, so the cached value always matches the
+    /// definition (a pure, path-independent function).
+    hp: Rc<OnceCell<[BigFloat; 3]>>,
 }
 
 impl Pt3 {
@@ -77,6 +87,7 @@ impl Pt3 {
             base,
             chain: Vec::new(),
             tol,
+            hp: Rc::new(OnceCell::new()),
         }
     }
 
@@ -122,13 +133,26 @@ impl Pt3 {
         self.tol[i] = c.abs() * ti + s.abs() * tj + mix;
         self.tol[j] = s.abs() * ti + c.abs() * tj + mix;
         self.chain.push(RotNode { axis, angle, point });
+        // The definition changed — invalidate the memoized hp of the old definition. A fresh
+        // (unshared) cell, so clones made before this rotation keep their own cached value.
+        self.hp = Rc::new(OnceCell::new());
         self
     }
 
     /// The coordinate realized at `prec` bits from the **definition** (base rotated
     /// through the chain, each node about its pivot) — path-independent ground truth /
-    /// escalation realization.
+    /// escalation realization. At [`JUDGE_PREC`] (every escalation) the result is memoized in
+    /// [`Pt3::hp`] and shared across clones of the same definition, so a definition-point pays
+    /// the astro-float cos/sin once per boolean rather than once per predicate.
     pub fn hp_coord(&self, prec: usize) -> [BigFloat; 3] {
+        if prec == JUDGE_PREC {
+            return self.hp.get_or_init(|| self.compute_hp(prec)).clone();
+        }
+        self.compute_hp(prec)
+    }
+
+    /// The uncached realization (the body of [`hp_coord`]).
+    fn compute_hp(&self, prec: usize) -> [BigFloat; 3] {
         let mut p = [
             rat_to_big(self.base[0], prec),
             rat_to_big(self.base[1], prec),
