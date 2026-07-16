@@ -1599,7 +1599,7 @@ fn general_boolean(
     let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
     for (verts_solid, other) in [(a, b), (b, a)] {
         for vh in solid_vertex_handles(model, verts_solid) {
-            let side = point_in_solid(model, model.vertices.get(vh).point, other)?;
+            let side = vertex_in_solid(model, vh, other)?;
             classof.insert(vh, side);
         }
     }
@@ -1703,7 +1703,7 @@ fn overlap_fuse_cut(
     let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
     for (verts_solid, other) in [(a, b), (b, a)] {
         for &vh in &solid_vertex_handles(model, verts_solid) {
-            let side = point_in_solid(model, model.vertices.get(vh).point, other)?;
+            let side = vertex_in_solid(model, vh, other)?;
             classof.insert(vh, side);
         }
     }
@@ -2285,6 +2285,27 @@ fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side
     Err(reject(tag::RAY_DEGENERATE)) // every direction grazed the boundary (adversarial)
 }
 
+/// Classify vertex `vh` in/out of `solid`, routed by rotation: the exact f64 [`point_in_solid`]
+/// when the geometry is axis-aligned (unchanged hot path), else the toleranced
+/// [`point_in_solid_tol`] on the vertex's exact `Pt3`. Either the solid's faces being rotated
+/// (irrational plane geometry) *or* the query vertex being rotated (irrational coordinate, e.g.
+/// a mixed-rotation boolean) forces the toleranced route. A `Discovered` query vertex on that
+/// route is honestly rejected `ROTATED_UNSUPPORTED` (indirect classification is a later cell).
+fn vertex_in_solid(
+    model: &Model,
+    vh: Handle<Vertex>,
+    solid: Handle<Solid>,
+) -> Result<Side, BoolError> {
+    if solid_is_rotated(model, solid)
+        || matches!(model.vertices.get(vh).origin, Origin::Rotated { .. })
+    {
+        let p = nacre_tip::vertex_pt3(model, vh).map_err(|_| reject(tag::ROTATED_UNSUPPORTED))?;
+        point_in_solid_tol(model, &p, solid)
+    } else {
+        point_in_solid(model, model.vertices.get(vh).point, solid)
+    }
+}
+
 /// Rotation-sound twin of [`point_in_solid`]: forward-ray winding decided on the vertices'
 /// exact `Pt3` definitions (via [`ray_triangle_cross_tol`]), so it is sound when the
 /// coordinates are rounded irrationals. `p` is the query point as an exact `Pt3` (a rotated
@@ -2300,7 +2321,6 @@ fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side
 ///
 /// A parallel of `point_in_solid` (not a shared generic): the f64 path stays untouched, so its
 /// bit-for-bit behaviour is unchanged by construction.
-#[allow(dead_code)] // wired via the router in cell 3c-iv
 fn point_in_solid_tol(model: &Model, p: &Pt3, solid: Handle<Solid>) -> Result<Side, BoolError> {
     use nacre_scalar::Rat;
     // The exact-definition fan triangles, built once and reused across ray directions.
@@ -2400,7 +2420,6 @@ pub(crate) fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
 
 /// [`face_loops`] as vertex **handles** (outer loop then each hole) — the toleranced
 /// classifier builds each vertex's exact `Pt3` from these, where `face_loops` reads f64 points.
-#[allow(dead_code)] // used by point_in_solid_tol, wired in cell 3c-iv
 fn face_loop_verts(model: &Model, fh: Handle<Face>) -> Vec<Vec<Handle<Vertex>>> {
     let face = model.faces.get(fh);
     std::iter::once(&face.outer)
@@ -5764,6 +5783,48 @@ pub mod tests {
             &rp(2, 4, 6),
             &rp(1, 2, 4)
         ));
+    }
+
+    /// `vertex_in_solid` dispatches by rotation: an axis-aligned target forwards to the exact
+    /// f64 `point_in_solid`, a rotated target to `point_in_solid_tol` on the vertex's `Pt3`.
+    /// (Value correctness is `point_in_solid_tol`'s own rotation-invariance test; here the query
+    /// is a far-away vertex — outside either target — so the two classifiers must agree.)
+    #[test]
+    fn vertex_in_solid_routes_by_rotation() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation as SRot};
+        let mut m = Model::new();
+        let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+        let a = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
+        let vh = solid_vertex_handles(&m, a)[0];
+        // Axis-aligned target → the router forwards to the exact f64 `point_in_solid`.
+        assert_eq!(
+            vertex_in_solid(&m, vh, b).unwrap(),
+            point_in_solid(&m, m.vertices.get(vh).point, b).unwrap()
+        );
+        // Rotate the target → the router must dispatch to `point_in_solid_tol`.
+        let iso = Isometry::rotation(SRot {
+            axis: Axis::Z,
+            point: [Rat::from_int(2), Rat::from_int(2), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        let br = match apply(
+            &mut m,
+            &Operation::Transform {
+                solid: b,
+                isometry: iso,
+            },
+        )
+        .unwrap()
+        {
+            crate::OpOutput::Transform { solid } => solid,
+            _ => panic!("expected Transform"),
+        };
+        m.rebuild_adjacency();
+        let p = nacre_tip::vertex_pt3(&m, vh).unwrap();
+        assert_eq!(
+            vertex_in_solid(&m, vh, br).unwrap(),
+            point_in_solid_tol(&m, &p, br).unwrap()
+        );
     }
 
     /// The toleranced `ray_triangle_cross_tol` reproduces the exact f64 `ray_face_cross`
