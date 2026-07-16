@@ -220,6 +220,19 @@ fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
     input_tol + 16.0 * f64::EPSILON * mag
 }
 
+/// 3×3 determinant of `BigFloat` rows at `prec` bits (astro-float). The row-space
+/// analogue of [`det3_iv`]; both [`det3_hp`] (edge rows) and [`dir_orient3d_judge`]
+/// (a direction row) build their rows and call this.
+fn det3_big(r: [[BigFloat; 3]; 3], prec: usize) -> BigFloat {
+    let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
+    let m0 = mul(&r[1][1], &r[2][2]).sub(&mul(&r[1][2], &r[2][1]), prec, HP_RM);
+    let m1 = mul(&r[1][0], &r[2][2]).sub(&mul(&r[1][2], &r[2][0]), prec, HP_RM);
+    let m2 = mul(&r[1][0], &r[2][1]).sub(&mul(&r[1][1], &r[2][0]), prec, HP_RM);
+    mul(&r[0][0], &m0)
+        .sub(&mul(&r[0][1], &m1), prec, HP_RM)
+        .add(&mul(&r[0][2], &m2), prec, HP_RM)
+}
+
 /// `orient3d` determinant realized at `prec` bits (astro-float) from the point
 /// definitions — path-independent ground truth / escalation realization.
 fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> BigFloat {
@@ -230,18 +243,14 @@ fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> BigFloat {
         pd.hp_coord(prec),
     );
     let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
-    let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
-    let r = [
-        [sub(&a[0], &d[0]), sub(&a[1], &d[1]), sub(&a[2], &d[2])],
-        [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
-        [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
-    ];
-    let m0 = mul(&r[1][1], &r[2][2]).sub(&mul(&r[1][2], &r[2][1]), prec, HP_RM);
-    let m1 = mul(&r[1][0], &r[2][2]).sub(&mul(&r[1][2], &r[2][0]), prec, HP_RM);
-    let m2 = mul(&r[1][0], &r[2][1]).sub(&mul(&r[1][1], &r[2][0]), prec, HP_RM);
-    mul(&r[0][0], &m0)
-        .sub(&mul(&r[0][1], &m1), prec, HP_RM)
-        .add(&mul(&r[0][2], &m2), prec, HP_RM)
+    det3_big(
+        [
+            [sub(&a[0], &d[0]), sub(&a[1], &d[1]), sub(&a[2], &d[2])],
+            [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
+            [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
+        ],
+        prec,
+    )
 }
 
 /// The magnitude scale of four points (for the declare-0 floor).
@@ -276,6 +285,76 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
     } else {
         Orient::Negative
     }
+}
+
+/// TIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
+/// orientation of the ray direction `d` against the edge fan `(base→x, base→y)`. The
+/// **direction analogue** of [`orient3d_judge`]: `point_in_solid`'s ray-triangle test asks
+/// `orient3d(p, p+d, ·, ·)`, but `p+d` (a rotated point plus a rational offset) has no exact
+/// `base+chain` `Pt3` (`R⁻¹d` is irrational). Every such determinant reduces to this form,
+/// where `d` enters as one **exact** (rad-0) column and only `x, y, base` carry rotation tol.
+/// Interval filter → astro-float escalation, exactly like the indirect judges; a below-floor
+/// determinant is [`Orient::Zero`] (declare-0, absorbed by the caller's ray retry).
+///
+/// `d` is realized through an unrotated [`Pt3`] purely to reuse `pt_iv`/`hp_coord` for its
+/// coord/tol/hp — the row is `d` itself, never `d − base`.
+pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
+    let dp = Pt3::at(d);
+    let (bi, xi, yi, di) = (pt_iv(base), pt_iv(x), pt_iv(y), pt_iv(&dp));
+    let sub_iv = |u: [Iv; 3], v: [Iv; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
+    if let Some(pos) = det3_iv([di, sub_iv(xi, bi), sub_iv(yi, bi)]).sign() {
+        return orient_of(pos);
+    }
+    // Escalate: the same determinant at JUDGE_PREC from the exact definitions.
+    let (bh, xh, yh, dh) = (
+        base.hp_coord(JUDGE_PREC),
+        x.hp_coord(JUDGE_PREC),
+        y.hp_coord(JUDGE_PREC),
+        dp.hp_coord(JUDGE_PREC),
+    );
+    let sub_hp = |u: &BigFloat, v: &BigFloat| u.sub(v, JUDGE_PREC, HP_RM);
+    let rows = [
+        [dh[0].clone(), dh[1].clone(), dh[2].clone()],
+        [
+            sub_hp(&xh[0], &bh[0]),
+            sub_hp(&xh[1], &bh[1]),
+            sub_hp(&xh[2], &bh[2]),
+        ],
+        [
+            sub_hp(&yh[0], &bh[0]),
+            sub_hp(&yh[1], &bh[1]),
+            sub_hp(&yh[2], &bh[2]),
+        ],
+    ];
+    let det = det3_big(rows, JUDGE_PREC);
+    // Declare-0 floor: the six |triple products| of the f64 rows (term-magnitude, as the
+    // indirect judges — `d` exact, edge rows from the f64 coords).
+    let sub_f = |u: [f64; 3], v: [f64; 3]| [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+    let mag = det3_mag([
+        dp.coord,
+        sub_f(x.coord, base.coord),
+        sub_f(y.coord, base.coord),
+    ]);
+    match sign_with_floor(&det, mag, JUDGE_PREC) {
+        Some(pos) => orient_of(pos),
+        None => Orient::Zero,
+    }
+}
+
+/// Sum of the six `|triple products|` of a 3×3 f64 matrix's rows — the term-magnitude
+/// scale for [`dir_orient3d_judge`]'s declare-0 floor (cf. [`det3_bound`]'s `mag`).
+fn det3_mag(r: [[f64; 3]; 3]) -> f64 {
+    [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ]
+    .iter()
+    .map(|c| (r[0][c[0]] * r[1][c[1]] * r[2][c[2]]).abs())
+    .sum()
 }
 
 // ---- indirect orient3d: three rotated planes meet at an implicit point ----
@@ -1737,6 +1816,156 @@ mod tests {
             "[H-i] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
         );
         assert_eq!(wrong, 0, "dir_sign must never disagree with GT (soundness)");
+        assert!(escalated > 0, "corpus must exercise the escalation path");
+        assert!(
+            filter_resolved > 0,
+            "corpus must exercise the fast filter path"
+        );
+    }
+
+    /// The `dir_orient3d` determinant `det[d, x−base, y−base]` at `prec` bits, floored to
+    /// declare-0 — the GT / escalation realization (mirrors the judge's hp path).
+    fn dir_orient_at(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Option<bool> {
+        let dp = Pt3::at(d);
+        let sub = |u: &BigFloat, v: &BigFloat| u.sub(v, prec, HP_RM);
+        let (bh, xh, yh, dh) = (
+            base.hp_coord(prec),
+            x.hp_coord(prec),
+            y.hp_coord(prec),
+            dp.hp_coord(prec),
+        );
+        let det = det3_big(
+            [
+                [dh[0].clone(), dh[1].clone(), dh[2].clone()],
+                [
+                    sub(&xh[0], &bh[0]),
+                    sub(&xh[1], &bh[1]),
+                    sub(&xh[2], &bh[2]),
+                ],
+                [
+                    sub(&yh[0], &bh[0]),
+                    sub(&yh[1], &bh[1]),
+                    sub(&yh[2], &bh[2]),
+                ],
+            ],
+            prec,
+        );
+        let subf = |u: [f64; 3], v: [f64; 3]| [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+        let mag = det3_mag([
+            dp.coord,
+            subf(x.coord, base.coord),
+            subf(y.coord, base.coord),
+        ]);
+        sign_with_floor(&det, mag, prec)
+    }
+
+    /// GT-stable truth: `Some` only when `prec` and `prec + 128` agree (else too degenerate
+    /// for the ground truth itself — skip, not a spurious "wrong"). Mirrors `dir_sign_truth`.
+    fn dir_orient_truth(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Option<Orient> {
+        match (
+            dir_orient_at(d, base, x, y, prec),
+            dir_orient_at(d, base, x, y, prec + 128),
+        ) {
+            (Some(a), Some(b)) if a == b => Some(orient_of(a)),
+            _ => None,
+        }
+    }
+
+    /// Sanity: `det[d, x−base, y−base] = d·((x−base)×(y−base))`. With `base=0, x=e_x, y=e_y`
+    /// the edge normal is `+e_z`, so `d=+e_z → Positive`, `−e_z → Negative`, in-plane →
+    /// `Zero`; swapping the edge pair flips the sign.
+    #[test]
+    fn dir_orient3d_judge_sanity() {
+        let o = Pt3::at([ri(0, 1); 3]);
+        let x = Pt3::at([ri(1, 1), ri(0, 1), ri(0, 1)]);
+        let y = Pt3::at([ri(0, 1), ri(1, 1), ri(0, 1)]);
+        let e = |a: i128, b: i128, c: i128| [ri(a, 1), ri(b, 1), ri(c, 1)];
+        assert_eq!(dir_orient3d_judge(e(0, 0, 1), &o, &x, &y), Orient::Positive);
+        assert_eq!(
+            dir_orient3d_judge(e(0, 0, -1), &o, &x, &y),
+            Orient::Negative
+        );
+        assert_eq!(
+            dir_orient3d_judge(e(1, 0, 0), &o, &x, &y),
+            Orient::Zero,
+            "d in the edge plane → det 0"
+        );
+        assert_eq!(
+            dir_orient3d_judge(e(0, 0, 1), &o, &y, &x),
+            Orient::Negative,
+            "swapping x,y flips the sign"
+        );
+    }
+
+    /// Soundness — `dir_orient3d` over a rotated corpus, oracle = a GT-stable 512-bit
+    /// determinant (NOT rotation-invariance: `d` is fixed while the points rotate, so the
+    /// sign is not preserved). Two regimes: random directions, and **near-grazing** (`d`
+    /// almost in the edge plane, `det ≈ 0`) to force escalation. The judge must never claim
+    /// a sign opposite to the GT; both the fast filter and astro-float paths are exercised.
+    #[test]
+    #[ignore = "slow astro-float ground truth (run with --ignored)"]
+    fn h_dir_orient3d_soundness() {
+        const GT: usize = 512;
+        let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
+            (0usize, 0, 0, 0, 0, 0);
+        let mut st = 0x0D1A_5170_BEEF_4242u64;
+        for _ in 0..1500 {
+            let (bb, xb, yb) = (rand_base(&mut st), rand_base(&mut st), rand_base(&mut st));
+            let grazing = rng(&mut st, 0, 1) == 1;
+            let ax = axis_of(rng(&mut st, 0, 2));
+            let ang = deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 9973));
+            let piv = rand_base(&mut st);
+            let rp = |b: [Rat; 3]| Pt3::at(b).rotate_about(ax, ang, piv);
+            let (base, x, y) = (rp(bb), rp(xb), rp(yb));
+            let tri = [base.clone(), x.clone(), y.clone()];
+            if !well_conditioned(&tri) {
+                continue; // a degenerate edge fan is not the regime under test
+            }
+            // Two direction regimes. Random: any integer `d`. near-grazing: a large integer
+            // multiple of the **rotated** in-plane edge `x−base` (built from the f64 coords),
+            // so `d` is nearly ⊥ the rotated normal → `det ≈ 0` → the fast filter fails and
+            // the astro-float path decides. Built after rotation, since the rotated normal is
+            // what `d` must graze.
+            let d = if !grazing {
+                [
+                    ri(rng(&mut st, -19, 19), 1),
+                    ri(rng(&mut st, -19, 19), 1),
+                    ri(rng(&mut st, -19, 19), 1),
+                ]
+            } else {
+                let big = rng(&mut st, 100_000_000, 9_000_000_000) as f64;
+                let comp = |k: usize| ri((big * (x.coord[k] - base.coord[k])).round() as i128, 1);
+                [comp(0), comp(1), comp(2)]
+            };
+            let judged = dir_orient3d_judge(d, &base, &x, &y);
+            // Recompute the Iv filter to tally which path resolved (mirrors the judge).
+            let dp = Pt3::at(d);
+            let (bi, xi, yi, di) = (pt_iv(&base), pt_iv(&x), pt_iv(&y), pt_iv(&dp));
+            let subi = |u: [Iv; 3], v: [Iv; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
+            if det3_iv([di, subi(xi, bi), subi(yi, bi)]).sign().is_none() {
+                escalated += 1;
+            } else {
+                filter_resolved += 1;
+            }
+            match dir_orient_truth(d, &base, &x, &y, GT) {
+                None => skipped += 1,
+                Some(truth) => {
+                    tested += 1;
+                    if judged == Orient::Zero {
+                        declined += 1;
+                    } else if judged != truth {
+                        wrong += 1;
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[dir_orient3d] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        );
+        assert_eq!(
+            wrong, 0,
+            "dir_orient3d must never disagree with GT (soundness)"
+        );
         assert!(escalated > 0, "corpus must exercise the escalation path");
         assert!(
             filter_resolved > 0,
