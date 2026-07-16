@@ -1694,6 +1694,17 @@ type ReconItem<'a> = (
     &'a arrange::EdgePlanes,
 );
 
+/// One seam work item for the parallel seam sweep in [`overlap_fuse_cut`]: an edge (its two
+/// bound vertices + two incident plane indices) tested against the *other* solid's face
+/// rings. Flattened in the sequential loop's order so the first-appearance dedup is stable.
+type SeamItem<'a> = ([Handle<Vertex>; 2], [usize; 2], &'a FaceRings);
+
+/// A candidate seam vertex produced per edge, before dedup: `(sorted triple as the dedup
+/// key, intersection point, e0, e1, entry)`. The point is computed in the original
+/// `(e0,e1,entry)` order (`three_planes` is order-sensitive); the sorted triple is *only*
+/// the dedup key. `tol` is computed later, per new triple, in that same original order.
+type SeamCands = Vec<([usize; 3], Point3, usize, usize, usize)>;
+
 /// returned as several solids (cell 0.4); a sever that also leaves a cavity is
 /// `SEVERED_WITH_CAVITY`.
 fn overlap_fuse_cut(
@@ -1769,10 +1780,25 @@ fn overlap_fuse_cut(
     // Each solid's faces as triple rings, once. `edge_crosses_face` reads them per edge.
     let rings_a = solid_face_rings(model, a, &surf_ix, &inc_a)?;
     let rings_b = solid_face_rings(model, b, &surf_ix, &inc_b)?;
-    let mut seam: Vec<SeamVertex> = Vec::new();
-    let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
-    for (edges, other) in [(&edges_a, &rings_b), (&edges_b, &rings_a)] {
-        for &(_, bounds, inc) in edges {
+    // Each edge's crossing test + 4-plane guard is an independent, read-only predicate
+    // evaluation, so evaluate edges in parallel; the seam dedup (first-appearance index =
+    // seam-vertex identity) stays sequential in index order, keeping the result
+    // bit-identical regardless of thread count.
+    let (seam, seam_ix): (Vec<SeamVertex>, HashMap<[usize; 3], usize>) = {
+        // Flatten in the sequential loop's order — `edges_a` (other = `rings_b`) first,
+        // then `edges_b` (other = `rings_a`) — so the first-appearance dedup below
+        // reproduces the same seam indices.
+        let mut items: Vec<SeamItem> = Vec::new();
+        for (edges, other) in [(&edges_a, &rings_b), (&edges_b, &rings_a)] {
+            for &(_, bounds, inc) in edges {
+                items.push((bounds, inc, other));
+            }
+        }
+        // Per edge: `pierced_faces` + straddle/tunnel parity + per-hit `three_planes` and the
+        // 4-plane guard. Returns candidate seam vertices; the sorted `triple` is only the
+        // dedup key, and `point` is built in the original `(e0,e1,entry)` order because
+        // `three_planes` (Cramer) is order-sensitive.
+        let per_edge = |&(bounds, inc, other): &SeamItem| -> Result<SeamCands, BoolError> {
             let [v0, v1] = bounds;
             let (s0, s1) = (classof[&v0], classof[&v1]);
             let hits = pierced_faces(model, &planes, inc, v0, v1, other)?;
@@ -1796,6 +1822,7 @@ fn overlap_fuse_cut(
                 return Err(reject(tag::TUNNEL));
             }
             let [e0, e1] = inc;
+            let mut cands: SeamCands = Vec::new();
             for entry in hits {
                 let point =
                     three_planes(&planes[e0].plane, &planes[e1].plane, &planes[entry].plane)
@@ -1824,6 +1851,33 @@ fn overlap_fuse_cut(
                 }
                 let mut triple = [e0, e1, entry];
                 triple.sort_unstable();
+                cands.push((triple, point, e0, e1, entry));
+            }
+            Ok(cands)
+        };
+        #[cfg(feature = "parallel")]
+        let per_item: Vec<Result<SeamCands, BoolError>> = items.par_iter().map(per_edge).collect();
+        #[cfg(not(feature = "parallel"))]
+        let per_item: Vec<Result<SeamCands, BoolError>> = items.iter().map(per_edge).collect();
+
+        // Sequential first-appearance dedup in index order (bit-identical to the serial
+        // sweep). `tol` is computed here, only for a new triple, in the original
+        // `(e0,e1,entry)` order — exactly as the sequential code did.
+        let mut seam: Vec<SeamVertex> = Vec::new();
+        let mut seam_ix: HashMap<[usize; 3], usize> = HashMap::new();
+        for r in per_item {
+            let cands = match r {
+                Ok(c) => c,
+                Err(e) => {
+                    // Restore the reject tag on this thread (a worker set it on its own
+                    // `LAST_REJECT`): re-scan in index order until the first failure re-runs
+                    // `reject` here (cfg(test) only; inert in release).
+                    #[cfg(all(test, feature = "parallel"))]
+                    let _ = items.iter().find(|it| per_edge(it).is_err());
+                    return Err(e);
+                }
+            };
+            for (triple, point, e0, e1, entry) in cands {
                 if let std::collections::hash_map::Entry::Vacant(slot) = seam_ix.entry(triple) {
                     let tol = vertex_tol(
                         point,
@@ -1836,7 +1890,8 @@ fn overlap_fuse_cut(
                 }
             }
         }
-    }
+        (seam, seam_ix)
+    };
 
     let (keep_a, keep_b, flip_b) = match kind {
         BoolKind::Fuse => (Side::Outside, Side::Outside, false),
