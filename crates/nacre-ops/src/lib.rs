@@ -10,7 +10,7 @@
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::Isometry;
-use nacre_scalar::frame3::Pt3;
+use nacre_scalar::frame3::{Pt3, dir_orient3d_judge, orient3d_judge, orient3d_ray};
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Rotation, Shell, Solid, Vertex,
@@ -2181,6 +2181,50 @@ struct LocalFace {
     /// (`arrange::orient_seam_loop`). Only the non-convex path ever fills this.
     inner: Vec<Vec<Node>>,
     flip: bool,
+}
+
+/// Toleranced twin of [`nacre_predicates::ray_triangle_cross`]: the same forward-ray /
+/// triangle crossing, but decided on the vertices' exact rotation definitions (`Pt3`) through
+/// `frame3`, so it is sound when the coordinates are rounded irrationals (rotation). The five
+/// `orient3d` signs of the f64 predicate become three [`orient3d_ray`] (the ray-line edge
+/// tests `orient3d(p, p+d, ·, ·)`), one [`orient3d_judge`] (`s0`, `p` vs the triangle plane),
+/// and one [`dir_orient3d_judge`] (`sd`, the direction vs the plane). A `declare-0`
+/// (`Orient::Zero`) maps to `Degenerate`, which the caller's next-ray retry absorbs — the same
+/// escape the f64 predicate uses for a grazed edge/vertex. Logic mirrors the f64 original
+/// arm-for-arm; the argument order matches it exactly via [`orient3d_ray`].
+#[allow(dead_code)] // wired into point_in_solid in cell 3c-iii
+fn ray_triangle_cross_tol(
+    p: &Pt3,
+    d: [nacre_scalar::Rat; 3],
+    v0: &Pt3,
+    v1: &Pt3,
+    v2: &Pt3,
+) -> RayCross {
+    use nacre_scalar::Orient;
+    let (e0, e1, e2) = (
+        orient3d_ray(p, d, v1, v2),
+        orient3d_ray(p, d, v2, v0),
+        orient3d_ray(p, d, v0, v1),
+    );
+    if e0 == Orient::Zero || e1 == Orient::Zero || e2 == Orient::Zero {
+        return RayCross::Degenerate; // ray line through an edge/vertex
+    }
+    if e0 != e1 || e1 != e2 {
+        return RayCross::Miss; // ray line misses the triangle
+    }
+    let s0 = orient3d_judge(v0, v1, v2, p);
+    if s0 == Orient::Zero {
+        return RayCross::Degenerate; // p on the triangle's plane
+    }
+    let sd = dir_orient3d_judge(d, v0, v1, v2);
+    if sd == Orient::Zero {
+        return RayCross::Degenerate; // ray parallel to the plane
+    }
+    if s0 == sd {
+        RayCross::Cross(if sd == Orient::Positive { 1 } else { -1 }) // forward, oriented by sd
+    } else {
+        RayCross::Miss // crossing behind p
+    }
 }
 
 /// Deterministic generic ray directions (small coprime integers, none
@@ -5530,6 +5574,105 @@ pub mod tests {
             point_in_solid(&m, Point3::from_array([3.0, 1.0, 1.0]), s).unwrap(),
             Side::Outside
         );
+    }
+
+    /// The toleranced `ray_triangle_cross_tol` reproduces the exact f64 `ray_face_cross`
+    /// bit-for-bit on unrotated integer coords — validating the five-`orient3d`→
+    /// `orient3d_ray`/`orient3d_judge`/`dir_orient3d_judge` sign reduction. Integer coords keep
+    /// every nonzero determinant ≥ 1, far above the declare-0 floor, so the toleranced predicate
+    /// declares 0 only on TRUE zeros, matching Shewchuk exactly (Cross / Miss / Degenerate and
+    /// the Cross sign).
+    #[test]
+    fn ray_triangle_cross_tol_matches_f64_unrotated() {
+        use nacre_scalar::Rat;
+        let mut st = 0x9E37_79B9_7F4A_7C15u64;
+        let mut g = || {
+            st = st
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((st >> 40) % 21) as i128 - 10
+        };
+        let f = |q: [i128; 3]| Point3::from_array([q[0] as f64, q[1] as f64, q[2] as f64]);
+        let pt = |q: [i128; 3]| {
+            Pt3::at([
+                Rat::from_int(q[0]),
+                Rat::from_int(q[1]),
+                Rat::from_int(q[2]),
+            ])
+        };
+        let mut cases = 0usize;
+        for _ in 0..300 {
+            let (p, a, b, c) = (
+                [g(), g(), g()],
+                [g(), g(), g()],
+                [g(), g(), g()],
+                [g(), g(), g()],
+            );
+            for dir in RAY_DIRECTIONS {
+                let want = ray_face_cross(f(p), Vector3::from_array(dir), [f(a), f(b), f(c)]);
+                let dr = [
+                    Rat::from_int(dir[0] as i128),
+                    Rat::from_int(dir[1] as i128),
+                    Rat::from_int(dir[2] as i128),
+                ];
+                let got = ray_triangle_cross_tol(&pt(p), dr, &pt(a), &pt(b), &pt(c));
+                assert_eq!(got, want, "p={p:?} a={a:?} b={b:?} c={c:?} dir={dir:?}");
+                cases += 1;
+            }
+        }
+        assert!(cases > 0);
+    }
+
+    /// Rotating the whole config — points about a pivot, direction about the origin — by an
+    /// exact 90° about Z (a rigid rotation, `det +1`) leaves the crossing and its sign
+    /// invariant, and exercises the `Pt3` rotation chain. 90°-Z sends `(x,y,z) → (−y,x,z)`, so
+    /// the direction `d → (−d1, d0, d2)`. (90° keeps every coordinate exact, so this checks the
+    /// helper on rotated `Pt3` inputs; the `tol > 0` soundness is `dir_orient3d`'s corpus.)
+    #[test]
+    fn ray_triangle_cross_tol_is_rotation_equivariant() {
+        use nacre_scalar::{Angle, Axis, Rat};
+        let mut st = 0x1234_5678_9ABC_DEF0u64;
+        let mut g = || {
+            st = st
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((st >> 40) % 15) as i128 - 7
+        };
+        let piv = [Rat::from_int(1), Rat::from_int(-2), Rat::from_int(0)];
+        let ang = Angle::from_deg(Rat::from_int(90)).unwrap();
+        let rat = |q: [i128; 3]| {
+            [
+                Rat::from_int(q[0]),
+                Rat::from_int(q[1]),
+                Rat::from_int(q[2]),
+            ]
+        };
+        let un = |q: [i128; 3]| Pt3::at(rat(q));
+        let rot = |q: [i128; 3]| Pt3::at(rat(q)).rotate_about(Axis::Z, ang, piv);
+        let mut cases = 0usize;
+        for _ in 0..200 {
+            let (p, a, b, c) = (
+                [g(), g(), g()],
+                [g(), g(), g()],
+                [g(), g(), g()],
+                [g(), g(), g()],
+            );
+            let d = [g(), g(), g()];
+            if d == [0i128, 0, 0] {
+                continue;
+            }
+            let plain = ray_triangle_cross_tol(&un(p), rat(d), &un(a), &un(b), &un(c));
+            let rotated = ray_triangle_cross_tol(
+                &rot(p),
+                rat([-d[1], d[0], d[2]]),
+                &rot(a),
+                &rot(b),
+                &rot(c),
+            );
+            assert_eq!(plain, rotated, "rotation-equivariant: p={p:?} d={d:?}");
+            cases += 1;
+        }
+        assert!(cases > 0);
     }
 
     #[test]

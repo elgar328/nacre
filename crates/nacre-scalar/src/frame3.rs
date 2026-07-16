@@ -341,6 +341,18 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
     }
 }
 
+/// TIP `orient3d(base, base+dir, x, y)` — an `orient3d` whose 2nd point is the ideal point
+/// in direction `dir` (a ray from `base`). This is exactly the shape `ray_triangle_cross`'s
+/// edge tests take (`orient3d(p, p+d, ·, ·)`), so a caller mirrors the f64 predicate
+/// argument-for-argument instead of hand-reducing the direction column.
+///
+/// The determinant `det[base−y, (base+dir)−y, x−y]` column-reduces (`R1−R0 = dir`) and, after
+/// the two swaps that move `dir` to the front, is `dir·((x−y)×(base−y))` — i.e. a plain
+/// [`dir_orient3d_judge`] with the points permuted, no sign fix needed.
+pub fn orient3d_ray(base: &Pt3, dir: [Rat; 3], x: &Pt3, y: &Pt3) -> Orient {
+    dir_orient3d_judge(dir, y, x, base)
+}
+
 /// Sum of the six `|triple products|` of a 3×3 f64 matrix's rows — the term-magnitude
 /// scale for [`dir_orient3d_judge`]'s declare-0 floor (cf. [`det3_bound`]'s `mag`).
 fn det3_mag(r: [[f64; 3]; 3]) -> f64 {
@@ -1895,6 +1907,35 @@ mod tests {
             Orient::Negative,
             "swapping x,y flips the sign"
         );
+    }
+
+    /// `orient3d_ray(base, dir, x, y)` is exactly `orient3d(base, base+dir, x, y)`: on
+    /// unrotated points (where `base+dir` *is* an exact `Pt3`) it must equal `orient3d_judge`
+    /// with the ideal point materialized — the argument-for-argument reduction the ops
+    /// ray-triangle caller relies on.
+    #[test]
+    fn orient3d_ray_matches_materialized() {
+        let mut st = 0x0D1B_7A44_0F0F_9001u64;
+        let at = |b: [Rat; 3]| Pt3::at(b);
+        for _ in 0..200 {
+            let (bb, xb, yb) = (rand_base(&mut st), rand_base(&mut st), rand_base(&mut st));
+            let dir = [
+                ri(rng(&mut st, -9, 9), 1),
+                ri(rng(&mut st, -9, 9), 1),
+                ri(rng(&mut st, -9, 9), 1),
+            ];
+            let q = [
+                bb[0].checked_add(dir[0]).unwrap(),
+                bb[1].checked_add(dir[1]).unwrap(),
+                bb[2].checked_add(dir[2]).unwrap(),
+            ];
+            let (base, x, y) = (at(bb), at(xb), at(yb));
+            assert_eq!(
+                orient3d_ray(&base, dir, &x, &y),
+                orient3d_judge(&base, &at(q), &x, &y),
+                "orient3d_ray == orient3d(base, base+dir, x, y)"
+            );
+        }
     }
 
     /// Soundness — `dir_orient3d` over a rotated corpus, oracle = a GT-stable 512-bit
