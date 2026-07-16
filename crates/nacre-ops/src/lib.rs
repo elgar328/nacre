@@ -1766,15 +1766,7 @@ fn overlap_fuse_cut(
                     {
                         continue;
                     }
-                    if three_plane_orient3d(
-                        &planes[e0].plane,
-                        &planes[e1].plane,
-                        &planes[entry].plane,
-                        pm.tri[0],
-                        pm.tri[1],
-                        pm.tri[2],
-                    ) == 0
-                    {
+                    if crate::tolerant::t_orient3d(&planes, e0, e1, entry, m) == 0 {
                         return Err(reject(tag::FOURPLANE)); // seam vertex on a 4th plane
                     }
                 }
