@@ -922,3 +922,11 @@ C1(flush-edge)·C2(비볼록)→D0(디스패치 일반화)·D1–D2(은퇴)→E0
 `order_along`으로 전환(공유 선 1급화). **root=클래스 최소 인덱스**(결정성=replay, DNA §절대원칙③). 좌표 결정 0.
 프로덕션 배선은 D0까지 dead(`#[cfg_attr(not(test), allow(dead_code))]`). 골든 `plane_classes_merge_a_shared_wall`:
 나란한 두 큐브(x=1 공유)의 12평면이 7클래스로 접히고 far wall은 distinct·root=min 확인.
+
+**(A2·part1) exact 코플레인 경계 overlay.** `coplanar_boundary_crossings` = `try_overhang`의 exact 버전. 두 접촉면 경계
+∂P(a)·∂Q(b)를 공유 평면 π에서 겹쳐, a-edge(선 π∩W)와 b-edge(선 π∩U)의 proper 교차 `{π,W,U}`를 찾는다. within-segment
+판정은 `proj2`/`orient2d`(try_overhang)이 아니라 **`arrange::order_along`의 두 endpoint 순서**(v_i·c·v_{i+1})로 — 좌표 결정 0.
+π·wall은 `plane_classes`(A1)로 canonical화해 a/b 양측 triple 일치. 헬퍼 `contact_boundary`(면 경계 edge→carrying wall class).
+교차가 footprint **꼭짓점**에 앉으면(`order==0`) flush-edge/T-junction 전조라 정직 거절(C1에서 지원). 골든
+`coplanar_crossings_of_two_overlapping_squares`: [0,2]²·[1,3]² 겹침 → 정확히 (1,2,1)·(2,1,1) 2교차. 다음(A2·part2):
+교차→SeamSegment(Orig+Seam 혼합)·`stitch_cycles` 셀 열거.

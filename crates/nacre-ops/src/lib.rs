@@ -3769,6 +3769,125 @@ fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
     (0..n).map(|i| uf_find(&mut parent, i)).collect()
 }
 
+/// One boundary edge of a coplanar contact face: its edge handle, its two vertices in loop
+/// order, and the *wall* plane class it lies on (the neighbour ≠ the contact plane π).
+#[cfg_attr(not(test), allow(dead_code))]
+struct BndEdge {
+    e: Handle<Edge>,
+    v: [Handle<Vertex>; 2],
+    wall: usize, // canonical plane class of the wall carrying this edge
+}
+
+/// The outer-loop boundary edges of a coplanar contact face `cf` (canonical plane class `pi`),
+/// each tagged with the canonical class of its carrying wall. Order follows the loop, so a
+/// vertex's two incident walls are the walls of the edge before and the edge at it.
+#[cfg_attr(not(test), allow(dead_code))]
+fn contact_boundary(
+    model: &Model,
+    cf: Handle<Face>,
+    pi: usize,
+    inc: &arrange::EdgePlanes,
+    canon: &[usize],
+) -> Result<Vec<BndEdge>, BoolError> {
+    let mut out = Vec::new();
+    for &he in &model.faces.get(cf).outer.half_edges {
+        let (bounds, pair) = inc[&he.edge];
+        let (ca, cb) = (canon[pair[0]], canon[pair[1]]);
+        let wall = if ca == pi {
+            cb
+        } else if cb == pi {
+            ca
+        } else {
+            // Every contact-face edge has the contact plane as one incidence.
+            return Err(reject(tag::ARRANGEMENT_DEGENERATE));
+        };
+        let start = he_start(model, he);
+        let v = if bounds[0] == start {
+            bounds
+        } else {
+            [bounds[1], bounds[0]]
+        };
+        out.push(BndEdge {
+            e: he.edge,
+            v,
+            wall,
+        });
+    }
+    Ok(out)
+}
+
+/// A proper crossing of the two coplanar footprint boundaries ∂P (from `a`) and ∂Q (from `b`)
+/// in the shared plane π: the exact three-plane point `{π, W, U}` where an `a`-edge (on line
+/// π∩W) crosses a `b`-edge (on line π∩U), each strictly within its segment.
+#[cfg_attr(not(test), allow(dead_code))]
+struct CoCross {
+    point: Point3,
+    triple: [usize; 3], // sorted {pi, wall_a, wall_b}
+    a_edge: Handle<Edge>,
+    b_edge: Handle<Edge>,
+}
+
+/// Proper crossings of the two coplanar footprint boundaries, the exact analog of
+/// [`try_overhang`]'s `proj2`/`orient2d` sweep: containment along each edge is decided by
+/// [`order_along`](arrange::order_along) on plane triples, never a coordinate. A crossing that
+/// lands on a footprint *vertex* (`order` returns `0`) is a flush-edge / T-junction precursor —
+/// honestly rejected here, supported in the flush-edge cell. Parallel or shared (flush) walls
+/// meet in no point (`three_planes` `None`) and contribute no transversal crossing.
+#[cfg_attr(not(test), allow(dead_code))]
+fn coplanar_boundary_crossings(
+    planes: &[PlaneInfo],
+    pi: usize,
+    a: &[BndEdge],
+    b: &[BndEdge],
+) -> Result<Vec<CoCross>, BoolError> {
+    let (na, nb) = (a.len(), b.len());
+    // Position of the crossing within an edge from its two endpoint orders: `1` strictly
+    // between (same nonzero sign both ways), `-1` outside, `0` on an endpoint (graze).
+    let between = |s0: i8, s1: i8| -> i8 {
+        if s0 == 0 || s1 == 0 {
+            0
+        } else if s0 == s1 {
+            1
+        } else {
+            -1
+        }
+    };
+    let mut out = Vec::new();
+    for i in 0..na {
+        let (w, wp, wn) = (a[i].wall, a[(i + na - 1) % na].wall, a[(i + 1) % na].wall);
+        for (j, edge_b) in b.iter().enumerate() {
+            let u = edge_b.wall;
+            let Some(point) = three_planes(&planes[pi].plane, &planes[w].plane, &planes[u].plane)
+            else {
+                continue; // parallel or shared wall — no transversal crossing
+            };
+            let (up, un) = (b[(j + nb - 1) % nb].wall, b[(j + 1) % nb].wall);
+            let a_pos = between(
+                arrange::order_along(planes, pi, w, wp, u),
+                arrange::order_along(planes, pi, w, u, wn),
+            );
+            let b_pos = between(
+                arrange::order_along(planes, pi, u, up, w),
+                arrange::order_along(planes, pi, u, w, un),
+            );
+            if a_pos == 0 || b_pos == 0 {
+                return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // flush-edge precursor
+            }
+            if a_pos == 1 && b_pos == 1 {
+                let mut triple = [pi, w, u];
+                triple.sort_unstable();
+                out.push(CoCross {
+                    point,
+                    triple,
+                    a_edge: a[i].e,
+                    b_edge: edge_b.e,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// `Some` iff A and B share exactly one fully-coincident, opposite-normal face
 /// pair (identical boundary) — the clean stack/glue case. `None` (fall through to
 /// the coplanar-rejecting paths) for anything else.
@@ -12756,6 +12875,83 @@ pub mod tests {
         assert_eq!(distinct.len(), na + 1, "only b's far wall is a new class");
         // The class root is the smallest index in the class (deterministic canon).
         assert_eq!(canon[a_xp], a_xp.min(b_xm));
+    }
+
+    // A2: exact coplanar boundary overlay — proper crossings of two footprints in a shared plane.
+    #[test]
+    fn coplanar_crossings_of_two_overlapping_squares() {
+        // a's top (z=1, +z) and b's bottom (z=1, -z) are coplanar; footprints [0,2]² and [1,3]²
+        // overlap, boundaries crossing properly at exactly (1,2,1) and (2,1,1).
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 1.0]),
+            Point3::from_array([3.0, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, a).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, b).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, pinf) in planes.iter().enumerate() {
+            surf_ix.insert(pinf.face, i);
+        }
+        let canon = plane_classes(&planes);
+        let find = |rng: std::ops::Range<usize>, nz: f64| -> usize {
+            rng.clone()
+                .find(|&i| {
+                    let n = planes[i].n_out.as_array();
+                    n[2] * nz > 0.5 && (planes[i].tri[0].as_array()[2] - 1.0).abs() < 1e-9
+                })
+                .expect("contact face at z=1")
+        };
+        let a_top = find(0..na, 1.0);
+        let b_bot = find(na..planes.len(), -1.0);
+        let pi = canon[a_top];
+        assert_eq!(pi, canon[b_bot], "contact faces are one plane class");
+        let inc_a = arrange::edge_planes(&m, a, &surf_ix).unwrap();
+        let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
+        let a_bnd = contact_boundary(&m, planes[a_top].face, pi, &inc_a, &canon).unwrap();
+        let b_bnd = contact_boundary(&m, planes[b_bot].face, pi, &inc_b, &canon).unwrap();
+        assert_eq!(a_bnd.len(), 4, "square footprint has 4 boundary edges");
+        assert_eq!(b_bnd.len(), 4);
+        assert!(
+            a_bnd.iter().all(|e| e.v[0] != e.v[1]),
+            "each edge has two distinct endpoints"
+        );
+        let cx = coplanar_boundary_crossings(&planes, pi, &a_bnd, &b_bnd).unwrap();
+        for c in &cx {
+            assert!(c.triple.contains(&pi), "crossing triple carries π");
+            assert!(a_bnd.iter().any(|e| e.e == c.a_edge), "a_edge is on ∂P");
+            assert!(b_bnd.iter().any(|e| e.e == c.b_edge), "b_edge is on ∂Q");
+        }
+        let mut pts: Vec<[f64; 3]> = cx.iter().map(|c| c.point.as_array()).collect();
+        pts.sort_by(|u, v| {
+            u[0].partial_cmp(&v[0])
+                .unwrap()
+                .then(u[1].partial_cmp(&v[1]).unwrap())
+        });
+        assert_eq!(pts.len(), 2, "two proper crossings, got {pts:?}");
+        assert!(
+            pts[0]
+                .iter()
+                .zip([1.0, 2.0, 1.0])
+                .all(|(p, q)| (p - q).abs() < 1e-9),
+            "{:?}",
+            pts[0]
+        );
+        assert!(
+            pts[1]
+                .iter()
+                .zip([2.0, 1.0, 1.0])
+                .all(|(p, q)| (p - q).abs() < 1e-9),
+            "{:?}",
+            pts[1]
+        );
     }
 
     #[test]
