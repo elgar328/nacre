@@ -1408,3 +1408,14 @@ exact화. **★ 신규 술어 0개** — 둘 다 이미 배선·검증된 프리
   커버리지 보존). 비회전 전 코퍼스 무회귀(가드는 회전에만 발화했으므로 bit-identical).
 - **스코프·후속**: fresh-primitive 회전만. near-degenerate/다른-iso 우연공면·회전 결과 재투입(`Discovered`)은 이후.
   **3d-ii** OCCT diff(회전 두 피연산자 `occt_boolean_of`·`#[ignore]`)·**3d-iii** 적대적 회전 코퍼스·**3d-iv** main 병합.
+
+**회전 부울 OCCT 외부 확증 (오버홀 3d-ii).** 3d-i의 회전-불변은 "회전 전후 자기 일관성"이라 같은-부피-다른-위상 버그를
+놓칠 여지가 있다. 이 셀은 회전 두 피연산자의 부울을 **OpenCASCADE(OCCT)와 diff**해 독립 커널로 부피·면적을 검산. nacre가
+회전 STEP을 export→OCCT가 `bcut/bfuse/bcommon`(rigid라 회전 STEP서 정답)→`approx`(≤1e-6 abs/1e-4 rel) 대조. 프로덕션
+변경 0(테스트 전용·`#[ignore]`·기본 스위트 무영향, `-- --ignored`로 실행).
+- **★ 5 테스트 전부 통과**(DRAWEXE 로컬 실행): overlap Cut(**Z→X 연쇄 full-tilt**·모든 면 무리수)·Fuse·Common(Z30°),
+  **sever Cut(full-tilt)** → 2 솔리드 Σvol/area = OCCT COMPOUND(3c-vi 회전 `is_shell_outward` outward 판정을 외부 truth로
+  확증·같은-부피-다른-위상 버그가 숨을 곳), containment Cut → cavity 1개 = OCCT BREP_WITH_VOIDS. `rotated_boolean_matches_occt`
+  헬퍼(iso 연쇄 양쪽 적용·OCCT baseline·boolean·Σvol/area approx·결과 반환)로 축약.
+- **의의**: 회전 부울이 성숙 커널과 부피·면적 일치 → 3d-i 라이브가 "회전 불변"만이 아니라 **실제 옳은 결과**임을 외부
+  검증. 후속: 3d-iii(적대적 스트레스)·3d-iv(main 병합).
