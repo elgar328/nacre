@@ -95,15 +95,21 @@ pub enum Operation {
         face: Handle<Face>,
         profile: Profile2d,
     },
-    /// Pad a boss: imprint `profile` on a planar `face`, then raise the region
-    /// outward by `dist` (walls + a top cap). Adds material (design §6, M4).
+    /// Pad a boss: extrude `profile` on a planar `face` into a tool prism (height
+    /// `dist`) and `Fuse` it onto the solid — boolean sugar over [`Operation::Boolean`],
+    /// not a direct face-split. No "profile inside the face" constraint: an overhanging
+    /// footprint is handled by the boolean's coplanar-contact / overhang path. Adds
+    /// material (design §6).
     PadOnFace {
         face: Handle<Face>,
         profile: Profile2d,
         dist: f64,
     },
-    /// Carve a blind pocket: imprint `profile` on a planar `face`, then sink the
-    /// region inward by `dist` (walls + a floor). Removes material (design §6, M4).
+    /// Carve a blind pocket: extrude `profile` on a planar `face` into a tool prism
+    /// (depth `dist`) and `Cut` it from the solid — boolean sugar over
+    /// [`Operation::Boolean`], not a direct face-split. No "profile inside the face"
+    /// constraint (overhang footprints route through the boolean). A cut that would
+    /// punch through is rejected as not-blind. Removes material (design §6).
     PocketOnFace {
         face: Handle<Face>,
         profile: Profile2d,
