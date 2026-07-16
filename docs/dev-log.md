@@ -937,3 +937,13 @@ C1(flush-edge)·C2(비볼록)→D0(디스패치 일반화)·D1–D2(은퇴)→E0
 순수성). 골든 확장: [0,2]²·[1,3]² → 2 arc, inside-P arc(내부 (1,1) 하나)·outside arc(외부 3코너). arc의 inside/outside P 분류와
 `boundary_runs`/`run_classes`/`stitch_cycles` 셀 열거는 A3(태깅)로 분리. 주의: b-edge당 교차 정렬은 현재 `order_along`만 —
 한 edge에 2+교차 시 walk 방향(`edge_sign`) 정렬은 그런 픽스처 등장 시 보강.
+
+**(A3) 코플레인 재구성 + exact 태깅 + 비볼록 de-risk.** `coplanar_reconstruct` = `reconstruct_face_paths`의 셀-추출 코어
+(`boundary_runs`→`run_classes`→`stitch_cycles`)를 코플레인에 이식. 치환: (1) 포함 판정 = exact `arrange::point_in_ring`
+(classof 아님·좌표 0), (2) P를 자르는 seam = ∂Q의 inside-P arc(`coplanar_seam_arcs` 산출을 `point_in_ring`으로 필터),
+(3) arc 노드는 실제 Orig(내부 b-정점)+Seam(교차) 방출(reconstruct는 전부 Seam). `keep_inside_q`로 P∩Q vs P∖Q 선택.
+`boundary_ring_triples`(정점→{π,W_prev,W} 헬퍼). 스코프: 단일 outer 링·홀 없음(홀/섬·interior-free arc는 후속 셀). 골든:
+두 사각형 → keep P∖Q=6노드 L(정확 좌표)·keep P∩Q=4노드. **비볼록 de-risk**(C2 선검증)
+`point_in_ring_on_a_non_convex_footprint`: L자 접촉면에서 arm 코너(안)·notch 코너(밖)를 half-space 가정 없이 정확 분류 —
+옛 `clip_bwall_inside_a`가 결여한 soundness를 primitive 층에서 확인. **범위 조정**: 생존 표 평가기(op×법선→selector,
+dissolve/whole·Fuse-opposite 2측)는 실제 ops 배선과 결합돼 B1로 이관.

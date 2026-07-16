@@ -3954,6 +3954,178 @@ fn coplanar_seam_arcs(
     arcs
 }
 
+/// Each boundary vertex of a contact face as a plane triple `{π, W_prev, W}` — the meet of the
+/// two walls at the vertex (the start of edge `i`, shared with edge `i-1`), on canonical plane π.
+#[cfg_attr(not(test), allow(dead_code))]
+fn boundary_ring_triples(bnd: &[BndEdge], pi: usize) -> Vec<[usize; 3]> {
+    let n = bnd.len();
+    (0..n)
+        .map(|i| {
+            let mut t = [pi, bnd[(i + n - 1) % n].wall, bnd[i].wall];
+            t.sort_unstable();
+            t
+        })
+        .collect()
+}
+
+/// Reconstruct one coplanar contact face `P` (of `a`, plane class `pi`, materialized on plane
+/// `plane_idx`) subdivided by `b`'s footprint `Q`, keeping the cells whose material survives.
+///
+/// Reuses the seam engine's cell-extraction core ([`arrange::boundary_runs`] /
+/// [`arrange::run_classes`] / [`arrange::stitch_cycles`]) but with the coplanar substitutions the
+/// plan names: containment is exact [`arrange::point_in_ring`] (no `classof`, no coordinate); the
+/// seam that cuts `P` is the pieces of `∂Q` lying inside `P` (`inside_arcs`), whose interior nodes
+/// are `b`'s original vertices (`Node::Orig`) and whose endpoints are the crossings (`Node::Seam`)
+/// — the mixed-node seam. `keep_inside_q` selects `P∩Q` vs `P∖Q`; `flip` sets the face normal.
+///
+/// Scope: a single outer ring, no holes (the primitive-layer fixtures). Holes/islands and the
+/// no-interior arc (adjacent crossings on one edge) are later cells.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn coplanar_reconstruct(
+    planes: &[PlaneInfo],
+    pi: usize,
+    plane_idx: usize,
+    a_bnd: &[BndEdge],
+    b_bnd: &[BndEdge],
+    crossings: &[CoCross],
+    arcs: &[Vec<Node>],
+    keep_inside_q: bool,
+    flip: bool,
+) -> Result<Vec<LocalFace>, BoolError> {
+    let p_ring = boundary_ring_triples(a_bnd, pi);
+    let q_ring = boundary_ring_triples(b_bnd, pi);
+    // b-vertex → its triple, to classify an arc's interior corners against P.
+    let b_vtriple: HashMap<Handle<Vertex>, [usize; 3]> = b_bnd
+        .iter()
+        .enumerate()
+        .map(|(j, be)| (be.v[0], q_ring[j]))
+        .collect();
+
+    // Keep the arcs of ∂Q that lie inside P — the seam that actually cuts P. Classify by an
+    // interior b-vertex (all of an arc's interior lies on one side). An interior-free arc
+    // (adjacent crossings) has no such witness — out of scope here.
+    let mut opens: Vec<&Vec<Node>> = Vec::new();
+    for arc in arcs {
+        let interior = &arc[1..arc.len() - 1];
+        let Some(&node) = interior.first() else {
+            return Err(reject(tag::OVERHANG_ARCS)); // interior-free arc, later cell
+        };
+        let Node::Orig(vh) = node else {
+            return Err(reject(tag::OVERHANG_ARCS));
+        };
+        let tri = *b_vtriple
+            .get(&vh)
+            .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+        if arrange::point_in_ring(planes, pi, tri, &p_ring)? {
+            opens.push(arc);
+        }
+    }
+
+    // ∂P vertices and their kept flag: a vertex is kept iff its inside-Q status matches the
+    // survival selector. A vertex exactly on ∂Q is a flush touch — out of scope (later cell).
+    let verts: Vec<Handle<Vertex>> = a_bnd.iter().map(|e| e.v[0]).collect();
+    let n = verts.len();
+    let mut kept = vec![false; n];
+    for i in 0..n {
+        if arrange::point_on_ring(planes, pi, p_ring[i], &q_ring)? {
+            return Err(reject(tag::VERTEX_ON_FACE_PLANE));
+        }
+        let inside_q = arrange::point_in_ring(planes, pi, p_ring[i], &q_ring)?;
+        kept[i] = inside_q == keep_inside_q;
+    }
+
+    // Crossings grouped by the ∂P edge each rides, as triples (boundary_runs orders them).
+    let mut by_edge: Vec<Vec<[usize; 3]>> = vec![Vec::new(); n];
+    for c in crossings {
+        let i = a_bnd
+            .iter()
+            .position(|e| e.e == c.a_edge)
+            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
+        by_edge[i].push(c.triple);
+    }
+
+    if opens.is_empty() {
+        // No seam cuts P: it is wholly kept or wholly dropped by its (uniform) vertex class.
+        return Ok(Vec::from_iter(kept[0].then(|| LocalFace {
+            plane_idx,
+            loop_nodes: verts.iter().map(|&v| Node::Orig(v)).collect(),
+            inner: Vec::new(),
+            flip,
+        })));
+    }
+
+    let br = arrange::boundary_runs(planes, pi, &p_ring, &by_edge)?;
+    let (crossings_t, runs) = (br.crossings, br.runs);
+    let n_x = crossings_t.len();
+    let run_kept = arrange::run_classes(&runs, &kept, &[runs.len()])?;
+    let cross_ix: HashMap<[usize; 3], usize> = crossings_t
+        .iter()
+        .enumerate()
+        .map(|(j, &t)| (t, j))
+        .collect();
+    let next: Vec<usize> = (0..n_x).map(|i| (i + 1) % n_x).collect();
+    let prev: Vec<usize> = (0..n_x).map(|i| (i + n_x - 1) % n_x).collect();
+    let is_kd = |c: usize| run_kept[prev[c]];
+
+    // Each inside arc oriented kd → dk, its ends found by crossing triple.
+    let mut kd = Vec::with_capacity(opens.len());
+    let mut dk = Vec::with_capacity(opens.len());
+    let mut arc_nodes: Vec<Vec<Node>> = Vec::with_capacity(opens.len());
+    for arc in &opens {
+        let end_tri = |nd: &Node| match nd {
+            Node::Seam(t) => cross_ix
+                .get(t)
+                .copied()
+                .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH)),
+            Node::Orig(_) => Err(reject(tag::SEAM_COUNT_MISMATCH)),
+        };
+        let (h, t) = (end_tri(&arc[0])?, end_tri(arc.last().expect("arc"))?);
+        let forward = is_kd(h);
+        if forward == is_kd(t) {
+            return Err(reject(tag::SEAM_COUNT_MISMATCH));
+        }
+        let ordered: Vec<Node> = if forward {
+            (*arc).clone()
+        } else {
+            arc.iter().rev().copied().collect()
+        };
+        let (kd_c, dk_c) = if forward { (h, t) } else { (t, h) };
+        kd.push(prev[kd_c]);
+        dk.push(prev[dk_c]);
+        arc_nodes.push(ordered);
+    }
+
+    let cycles = arrange::stitch_cycles(&run_kept, &kd, &dk, &next)?;
+    let mut faces = Vec::new();
+    for cycle in cycles {
+        let mut loop_nodes: Vec<Node> = Vec::new();
+        for w in 0..cycle.len() {
+            let (pre, this) = (cycle[(w + cycle.len() - 1) % cycle.len()], cycle[w]);
+            let mut i = next[dk[pre]];
+            loop {
+                for &v in &runs[i] {
+                    loop_nodes.push(Node::Orig(verts[v]));
+                }
+                if i == kd[this] {
+                    break;
+                }
+                i = next[i];
+            }
+            // Splice the arc, dropping its endpoint crossings' duplicate (they are the run's
+            // bounding crossings already implied) — keep the full arc nodes.
+            loop_nodes.extend(arc_nodes[this].iter().copied());
+        }
+        faces.push(LocalFace {
+            plane_idx,
+            loop_nodes,
+            inner: Vec::new(),
+            flip,
+        });
+    }
+    Ok(faces)
+}
+
 /// `Some` iff A and B share exactly one fully-coincident, opposite-normal face
 /// pair (identical boundary) — the clean stack/glue case. `None` (fall through to
 /// the coplanar-rejecting paths) for anything else.
@@ -13056,6 +13228,153 @@ pub mod tests {
             "outside arc holds only corners beyond P"
         );
         assert_eq!(inside_arc.len() + outside_arc.len(), 8);
+
+        // A3: reconstruct P subdivided by Q. Keep P∖Q (an L-shaped cell of 6 mixed nodes) and
+        // keep P∩Q (the [1,2]² overlap, 4 nodes). Every decision is point_in_ring (no coordinate).
+        let plane_idx = a_top;
+        let pt = |nd: &Node| -> [f64; 3] {
+            match nd {
+                Node::Orig(vh) => m.vertices.get(*vh).point.as_array(),
+                Node::Seam(t) => three_planes(
+                    &planes[t[0]].plane,
+                    &planes[t[1]].plane,
+                    &planes[t[2]].plane,
+                )
+                .unwrap()
+                .as_array(),
+            }
+        };
+        let set = |f: &LocalFace| -> std::collections::BTreeSet<[i64; 3]> {
+            f.loop_nodes
+                .iter()
+                .map(|nd| {
+                    let p = pt(nd);
+                    [
+                        (p[0] * 8.0).round() as i64,
+                        (p[1] * 8.0).round() as i64,
+                        (p[2] * 8.0).round() as i64,
+                    ]
+                })
+                .collect()
+        };
+        let key = |xs: &[[f64; 3]]| -> std::collections::BTreeSet<[i64; 3]> {
+            xs.iter()
+                .map(|p| {
+                    [
+                        (p[0] * 8.0).round() as i64,
+                        (p[1] * 8.0).round() as i64,
+                        (p[2] * 8.0).round() as i64,
+                    ]
+                })
+                .collect()
+        };
+        let out = coplanar_reconstruct(
+            &planes, pi, plane_idx, &a_bnd, &b_bnd, &cx, &arcs, false, false,
+        )
+        .unwrap();
+        assert_eq!(out.len(), 1, "P∖Q is one cell");
+        assert_eq!(out[0].loop_nodes.len(), 6, "L-shape has 6 boundary nodes");
+        assert_eq!(
+            set(&out[0]),
+            key(&[
+                [0.0, 0.0, 1.0],
+                [2.0, 0.0, 1.0],
+                [2.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 2.0, 1.0],
+                [0.0, 2.0, 1.0],
+            ])
+        );
+        let inter = coplanar_reconstruct(
+            &planes, pi, plane_idx, &a_bnd, &b_bnd, &cx, &arcs, true, false,
+        )
+        .unwrap();
+        assert_eq!(inter.len(), 1, "P∩Q is one cell");
+        assert_eq!(
+            set(&inter[0]),
+            key(&[
+                [1.0, 1.0, 1.0],
+                [2.0, 1.0, 1.0],
+                [2.0, 2.0, 1.0],
+                [1.0, 2.0, 1.0],
+            ])
+        );
+    }
+
+    // A3 (C2 de-risk): point_in_ring parity classifies against a NON-CONVEX footprint with no
+    // half-space / convexity assumption — the soundness `clip_bwall_inside_a` lacked.
+    #[test]
+    fn point_in_ring_on_a_non_convex_footprint() {
+        // An L: [0,3]×[0,1] ∪ [0,1]×[0,3] at z=1. A corner in the notch (x>1 and y>1) is OUTSIDE
+        // the ring; a corner in an arm is inside.
+        let mut m = Model::new();
+        let l: Vec<Point3> = [
+            [0.0, 0.0],
+            [3.0, 0.0],
+            [3.0, 1.0],
+            [1.0, 1.0],
+            [1.0, 3.0],
+            [0.0, 3.0],
+        ]
+        .iter()
+        .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
+        .collect();
+        let (a, _) = build_prism(&mut m, &l, Vector3::from_array([0.0, 0.0, -1.0]), None).unwrap();
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, a).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, b).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, pinf) in planes.iter().enumerate() {
+            surf_ix.insert(pinf.face, i);
+        }
+        let canon = plane_classes(&planes);
+        let find = |rng: std::ops::Range<usize>, nz: f64| -> usize {
+            rng.clone()
+                .find(|&i| {
+                    let n = planes[i].n_out.as_array();
+                    n[2] * nz > 0.5 && (planes[i].tri[0].as_array()[2] - 1.0).abs() < 1e-9
+                })
+                .expect("z=1 face")
+        };
+        let a_top = find(0..na, 1.0);
+        let b_bot = find(na..planes.len(), -1.0);
+        let pi = canon[a_top];
+        let inc_a = arrange::edge_planes(&m, a, &surf_ix).unwrap();
+        let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
+        let a_bnd = contact_boundary(&m, planes[a_top].face, pi, &inc_a, &canon).unwrap();
+        let b_bnd = contact_boundary(&m, planes[b_bot].face, pi, &inc_b, &canon).unwrap();
+        let l_ring = boundary_ring_triples(&a_bnd, pi);
+        let q_ring = boundary_ring_triples(&b_bnd, pi);
+        assert_eq!(l_ring.len(), 6, "L has 6 vertices");
+        let corner = |x: f64, y: f64| -> [usize; 3] {
+            *q_ring
+                .iter()
+                .find(|&&t| {
+                    let p = three_planes(
+                        &planes[t[0]].plane,
+                        &planes[t[1]].plane,
+                        &planes[t[2]].plane,
+                    )
+                    .unwrap()
+                    .as_array();
+                    (p[0] - x).abs() < 1e-9 && (p[1] - y).abs() < 1e-9
+                })
+                .expect("b corner")
+        };
+        assert!(
+            arrange::point_in_ring(&planes, pi, corner(0.5, 0.5), &l_ring).unwrap(),
+            "arm corner is inside the L"
+        );
+        assert!(
+            !arrange::point_in_ring(&planes, pi, corner(2.0, 2.0), &l_ring).unwrap(),
+            "notch corner is outside the L"
+        );
     }
 
     #[test]
