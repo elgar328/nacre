@@ -18,6 +18,17 @@ nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 # boolean predicates (overhaul stage 3). tip's dep on nacre-ops is dev-only (a separate
 # target), so the lib dependency graph stays acyclic.
 nacre-tip = { path = "../nacre-tip", version = "0.0.0" }
+# Data-parallel evaluation of the read-only boolean predicate phases (face
+# reconstruction, vertex classification). Optional + behind the default-on `parallel`
+# feature so a pure single-threaded / wasm build (`--no-default-features`) links no rayon.
+rayon = { workspace = true, optional = true }
+
+[features]
+# Parallelize the independent read-only predicate phases of the boolean via rayon, and
+# switch `Pt3`'s hp cache to `Arc<OnceLock>` (through `nacre-scalar/parallel`). On by
+# default; `--no-default-features` gives the serial, rayon-free, `Rc<OnceCell>` build.
+default = ["parallel"]
+parallel = ["dep:rayon", "nacre-scalar/parallel"]
 
 [dev-dependencies]
 proptest.workspace = true

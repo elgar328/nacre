@@ -20,8 +20,18 @@
 use crate::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
 use crate::{Angle, Axis, HP_RM, Orient, Rat};
 use astro_float::BigFloat;
-use std::cell::OnceCell;
-use std::rc::Rc;
+#[cfg(feature = "parallel")]
+use std::sync::{Arc as HpRc, OnceLock as HpOnce};
+#[cfg(not(feature = "parallel"))]
+use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
+
+/// Shared, lazily-initialized cell for the memoized high-precision realization.
+/// Under `parallel` it is `Arc<OnceLock>` — `Send + Sync`, so a `Pt3` crosses rayon
+/// worker threads and the cache is shared (a hot definition-point's 200-bit realization
+/// is computed once and reused across workers, not per thread). Otherwise it is
+/// `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has the identical
+/// signature on both, so the consumer ([`Pt3::hp_coord`]) is unchanged by the choice.
+type HpCell = HpRc<HpOnce<[BigFloat; 3]>>;
 
 /// One rotation in a point's definition: turn about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle`. `point = [0,0,0]` is the
@@ -51,8 +61,9 @@ pub struct Pt3 {
     /// without this each escalation replays the rotation's cos/sin at 200 bits, which dominates
     /// the rotated-boolean cost. `base`/`chain` never change after construction except through
     /// [`rotate_about`], which resets this cell, so the cached value always matches the
-    /// definition (a pure, path-independent function).
-    hp: Rc<OnceCell<[BigFloat; 3]>>,
+    /// definition (a pure, path-independent function). See [`HpCell`] for the
+    /// `Arc<OnceLock>` (parallel) vs `Rc<OnceCell>` (serial) choice.
+    hp: HpCell,
 }
 
 impl Pt3 {
@@ -87,7 +98,7 @@ impl Pt3 {
             base,
             chain: Vec::new(),
             tol,
-            hp: Rc::new(OnceCell::new()),
+            hp: HpCell::default(),
         }
     }
 
@@ -135,7 +146,7 @@ impl Pt3 {
         self.chain.push(RotNode { axis, angle, point });
         // The definition changed — invalidate the memoized hp of the old definition. A fresh
         // (unshared) cell, so clones made before this rotation keep their own cached value.
-        self.hp = Rc::new(OnceCell::new());
+        self.hp = HpCell::default();
         self
     }
 

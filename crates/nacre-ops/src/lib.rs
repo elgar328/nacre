@@ -16,6 +16,11 @@ use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Rotation, Shell, Solid, Vertex,
     VertexDef,
 };
+// Data-parallel evaluation of the read-only predicate phases (boolean face reconstruction
+// and vertex classification). Only present under the default `parallel` feature; the
+// serial build maps with plain iterators. See `overlap_fuse_cut`.
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 mod arrange;
 mod tolerant;
@@ -1675,6 +1680,20 @@ fn pierced_faces(
 /// and (c) reconstructs faces from the arrangement. Multiple chords (3e-2), poke-through
 /// holes and through-drilling (3e-3), and holed operands (3f-5) are handled; non-convex
 /// `Common` is `COMMON_OVERLAP` (cell 3g). A result that falls into disconnected pieces is
+/// One face-reconstruction work item for the parallel sweep in [`overlap_fuse_cut`]:
+/// `(face, other solid, its plane index, side to keep, flip, own/other edge-plane maps)`.
+/// Flattening the (side, shell, face) loops into a `Vec<ReconItem>` lets the reconstruction
+/// map in index order, which `assemble_fuse_cut`'s handle assignment depends on.
+type ReconItem<'a> = (
+    Handle<Face>,
+    Handle<Solid>,
+    usize,
+    Side,
+    bool,
+    &'a arrange::EdgePlanes,
+    &'a arrange::EdgePlanes,
+);
+
 /// returned as several solids (cell 0.4); a sever that also leaves a cavity is
 /// `SEVERED_WITH_CAVITY`.
 fn overlap_fuse_cut(
@@ -1702,14 +1721,44 @@ fn overlap_fuse_cut(
         surf_ix.insert(pi.face, i);
     }
 
-    // Classify every original vertex vs the other solid (exact forward-ray winding).
-    let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
-    for (verts_solid, other) in [(a, b), (b, a)] {
-        for &vh in &solid_vertex_handles(model, verts_solid) {
-            let side = vertex_in_solid(model, vh, other)?;
-            classof.insert(vh, side);
+    // Classify every original vertex vs the other solid (exact forward-ray winding). Each
+    // vertex is an independent read-only classification, so evaluate them in parallel and
+    // fold into `classof` sequentially — keyed by `Handle<Vertex>`, insertion order is
+    // irrelevant. Collect in index order so the index-first reject matches the sequential
+    // loop's first `?` (and, under parallel + cfg(test), replay it to restore the tag).
+    let classof: HashMap<Handle<Vertex>, Side> = {
+        let items: Vec<(Handle<Vertex>, Handle<Solid>)> = [(a, b), (b, a)]
+            .into_iter()
+            .flat_map(|(verts_solid, other)| {
+                solid_vertex_handles(model, verts_solid)
+                    .into_iter()
+                    .map(move |vh| (vh, other))
+            })
+            .collect();
+        let classify =
+            |&(vh, other): &(Handle<Vertex>, Handle<Solid>)| vertex_in_solid(model, vh, other);
+        #[cfg(feature = "parallel")]
+        let res: Vec<Result<Side, BoolError>> = items.par_iter().map(classify).collect();
+        #[cfg(not(feature = "parallel"))]
+        let res: Vec<Result<Side, BoolError>> = items.iter().map(classify).collect();
+        let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
+        for (item, r) in items.iter().zip(res) {
+            match r {
+                Ok(side) => {
+                    classof.insert(item.0, side);
+                }
+                Err(e) => {
+                    // Restore the reject tag on this thread: a parallel worker set it on
+                    // its own `LAST_REJECT`. Re-scan in index order until the first failure
+                    // re-runs `reject` here (cfg(test) only; inert in release).
+                    #[cfg(all(test, feature = "parallel"))]
+                    let _ = items.iter().find(|it| classify(it).is_err());
+                    return Err(e);
+                }
+            }
         }
-    }
+        classof
+    };
 
     // Seam vertices: an edge straddling the other boundary pierces exactly one of
     // its faces (that face's plane is the seam vertex's third plane).
@@ -1805,21 +1854,60 @@ fn overlap_fuse_cut(
     // crossing on the edge it was produced on (`SeamSegment::on_edge`), so nothing has
     // to key a splice by `Handle<Edge>` — the map that could hold only one crossing per
     // edge no longer exists here.
-    let mut faces: Vec<LocalFace> = Vec::new();
-    for (solid, other, inc_f, inc_o, keep, flip) in [
-        (a, b, &inc_a, &inc_b, keep_a, false),
-        (b, a, &inc_b, &inc_a, keep_b, flip_b),
-    ] {
-        for sh in solid_shell_handles(model, solid) {
-            for &fh in &model.shells.get(sh).faces {
-                let pidx = surf_ix[&fh];
-                faces.extend(reconstruct_face_paths(
-                    model, fh, other, pidx, keep, flip, &classof, &seam, &seam_ix, &planes,
-                    &surf_ix, inc_f, inc_o,
-                )?);
+    // Reconstruct each (side, shell, face) independently. `reconstruct_face_paths` is a
+    // pure read of `model` + the frozen seam/classification and returns owned `LocalFace`s,
+    // so faces reconstruct in parallel. Results are collected in the SAME order as the
+    // sequential sweep and appended in that order — `assemble_fuse_cut` assigns vertex
+    // handles by first appearance across `faces`, and replay determinism (bit-identical
+    // model) rests on that order, which rayon's indexed `collect` preserves.
+    let faces: Vec<LocalFace> = {
+        let mut items: Vec<ReconItem> = Vec::new();
+        for (solid, other, inc_f, inc_o, keep, flip) in [
+            (a, b, &inc_a, &inc_b, keep_a, false),
+            (b, a, &inc_b, &inc_a, keep_b, flip_b),
+        ] {
+            for sh in solid_shell_handles(model, solid) {
+                for &fh in &model.shells.get(sh).faces {
+                    items.push((fh, other, surf_ix[&fh], keep, flip, inc_f, inc_o));
+                }
             }
         }
-    }
+        let recon = |&(fh, other, pidx, keep, flip, inc_f, inc_o): &ReconItem| {
+            reconstruct_face_paths(
+                model, fh, other, pidx, keep, flip, &classof, &seam, &seam_ix, &planes, &surf_ix,
+                inc_f, inc_o,
+            )
+        };
+        // Per-item work is heavy (n0: 90µs–33ms/face), so plain `par_iter` maximizes
+        // parallelism — no `with_min_len` floor, which would cap parallelism when faces
+        // are few (a 12-face box → few chunks) while the rayon task overhead is negligible
+        // against ms-scale faces.
+        #[cfg(feature = "parallel")]
+        let per_item: Vec<Result<Vec<LocalFace>, BoolError>> =
+            items.par_iter().map(recon).collect();
+        #[cfg(not(feature = "parallel"))]
+        let per_item: Vec<Result<Vec<LocalFace>, BoolError>> = items.iter().map(recon).collect();
+
+        // Surface the index-first error (deterministic reject tag, matching the sequential
+        // sweep's first `?`). Under parallel + cfg(test) that tag was written on a worker
+        // thread's `LAST_REJECT`; replay the one failing item here on the main thread so
+        // `assert_rejects` still sees it (inert in release — `reject` records nothing there).
+        let mut faces: Vec<LocalFace> = Vec::new();
+        for r in per_item {
+            match r {
+                Ok(lfs) => faces.extend(lfs),
+                Err(e) => {
+                    // Restore the reject tag on this thread (a worker set it on its own
+                    // `LAST_REJECT`): re-scan in index order until the first failure re-runs
+                    // `reject` here (cfg(test) only; inert in release).
+                    #[cfg(all(test, feature = "parallel"))]
+                    let _ = items.iter().find(|it| recon(it).is_err());
+                    return Err(e);
+                }
+            }
+        }
+        faces
+    };
     // Output faces, not surviving input faces: one input face may split into several.
     if faces.len() < 4 {
         return Err(BoolError::EmptyResult);
@@ -6660,6 +6748,89 @@ pub mod tests {
             silent, 0,
             "a rotated boolean was silently wrong (valid but != unrotated)"
         );
+    }
+
+    /// A signature that changes if `Store::push` order (hence handle identity) changes:
+    /// vertex points in handle order — exactly what `assemble_fuse_cut` assigns by first
+    /// appearance across `faces` — plus edge/face/solid counts and sorted volumes.
+    #[cfg(feature = "parallel")]
+    fn model_sig(m: &Model, solids: &[Handle<Solid>]) -> String {
+        use std::fmt::Write;
+        let mut s = String::new();
+        let _ = write!(s, "S{}", solids.len());
+        for (_, v) in m.vertices.iter() {
+            let p = v.point.as_array();
+            let _ = write!(
+                s,
+                "|{:x},{:x},{:x}",
+                p[0].to_bits(),
+                p[1].to_bits(),
+                p[2].to_bits()
+            );
+        }
+        let _ = write!(s, "|E{}F{}", m.edges.len(), m.faces.len());
+        let mut vols: Vec<u64> = solids
+            .iter()
+            .map(|&sh| nacre_props::mass_props(m, sh).unwrap().volume.to_bits())
+            .collect();
+        vols.sort_unstable();
+        let _ = write!(s, "|V{vols:?}");
+        s
+    }
+
+    /// The parallel boolean must be bit-identical regardless of rayon thread count — replay
+    /// determinism (DNA) requires thread-order independence. A rotated multi-face Fuse
+    /// exercises the parallel reconstruction/classification; its result under a 1-thread
+    /// pool (par_iter code, index order) must equal the default many-thread result, run
+    /// repeatedly so scheduling jitter would show.
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_boolean_is_thread_order_independent() {
+        use nacre_scalar::{Axis, Isometry, Rat};
+        let build = || {
+            let ngon = |n: usize, r: f64, cx: f64, cy: f64| Profile2d {
+                points: (0..n)
+                    .map(|i| {
+                        let ang = std::f64::consts::TAU * (i as f64) / (n as f64);
+                        p2(cx + r * ang.cos(), cy + r * ang.sin())
+                    })
+                    .collect(),
+            };
+            let mut m = replay(&[
+                extrude_op(ngon(16, 2.0, 0.0, 0.0), 3.0),
+                extrude_op(ngon(16, 2.0, 2.5, 0.5), 3.0),
+            ])
+            .unwrap();
+            let a = m.live_solids[0];
+            let b = m.live_solids[1];
+            let up = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)]);
+            let b = transform(&mut m, b, &up).unwrap();
+            m.rebuild_adjacency();
+            let tilt = rot_iso(Axis::X, 30);
+            let a = transform(&mut m, a, &tilt).unwrap();
+            m.rebuild_adjacency();
+            let b = transform(&mut m, b, &tilt).unwrap();
+            m.rebuild_adjacency();
+            (m, a, b)
+        };
+        let run = || {
+            let (mut m, a, b) = build();
+            let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+            m.rebuild_adjacency();
+            model_sig(&m, &solids)
+        };
+        let pool1 = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let reference = pool1.install(run);
+        for _ in 0..8 {
+            assert_eq!(
+                run(),
+                reference,
+                "parallel boolean result depends on thread order"
+            );
+        }
     }
 
     /// A U-prism: a bottom bar `y∈[0,1]` with two prongs rising from it. The prong
