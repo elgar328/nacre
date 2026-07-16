@@ -1369,3 +1369,23 @@ toleranced로 배선. 가드는 seam 정점(평면 e0·e1·entry의 meet)이 *�
 - **net.** `nacre-ops`: 가드 한 줄 교체(import 없음·fully-qualify). `three_plane_orient3d`는 다른 호출부(2068)서 유지.
   `comp_key`(f64 coord 정렬 tie-break·회전에도 결정적)·`is_shell_outward`는 이 셀 아님. 후속: 3c-vi(`is_shell_outward`
   회전-aware·구조적 — lex-min 정점 exact·outward 판정 회전-불변).
+
+**is_shell_outward 회전-exact — 마지막 횡단 f64 자리 종료 (오버홀 3c-vi).** `assemble_fuse_cut`이 결과의 각 연결
+컴포넌트를 outer(material·+)/cavity(void·−)로 가르는 `is_shell_outward`((5d)#5의 extreme-vertex 부호)는 **마지막 횡단
+임계 f64 자리**였다. 그 답이 곧 위상 라벨이라 회전 시 틀리면 silent-wrong(sever 조각을 cavity로 오판). 두 수치 단계가
+회전 하 깨진다: **lex-min v\* 탐색**(f64 좌표 배열 비교)·**outward 판정**(`plane.coefficients()[0]*orient_sign` — 축정렬
+법선 가정). **알고리즘은 회전에도 정확**(v\*=min-x 극점·`∃ 인접면 n_x<0`이 outward/void를 가름)이라 두 수치 단계만
+exact화. **★ 신규 술어 0개** — 둘 다 이미 배선·검증된 프리미티브로 환원.
+- **★ 조립(3c-vi-a)**: `component_is_outward_tol(planes, comp: &[&LocalFace])`(회전-exact 트윈·`model` 무접촉).
+  **outward** = `(flip?−1:1)·dir_orient3d_judge([1,0,0], tri_pt3…)`(3c-i·결과 면 outward 법선의 x-성분 부호 = RH-법선
+  x-성분×flip; `plane_def`로 혼합-회전 안전). **lex-min** = 각 노드를 `loop_triples`(arrange) 동형 트리플[own+두 loop-edge
+  타평면·meet=그 정점·원본/seam 통일]로 표현→`t_cmp_coord`(3b-i) 축별 argmin(`loop_winding` 형태). 비단순/직선각/
+  non-manifold→정직 거절. **★ 조립-전 `LocalFace`에서 작동** — 조립이 결과 정점의 회전 provenance를 버리는(Orig→
+  Constructed·Seam→Discovered{반올림 계수}) 문제를 구조적 우회(정확 정보는 `planes`+`comp`에). 4테스트(축정렬 f64 등가·
+  회전 불변·혼합-회전 무패닉·비볼록 L-prism)·unwired.
+- **★ 배선(3c-vi-b)**: `assemble_fuse_cut` positives 계산을 **컴포넌트별 `any_rotated` 인라인 라우팅**(회전→
+  `component_is_outward_tol`·축정렬→`is_shell_outward` 무변경)으로. 라우터 추출 안 함(단일-site·dispatch 테스트가
+  inverted-routing 못 잡음[tol이 축정렬도 정확]→3c-v식 무테스트). `any_rotated` pub(crate). 비회전 bit-identical
+  (라이브 planes 전부 tri_pt3=None→f64 분기·positives 오름차순 c 순서 불변)·전 코퍼스 무회귀. **★ 이로써 횡단 임계 f64
+  자리 전부 종료** → 3d(가드 은퇴·회전 부울 end-to-end·OCCT diff·main 병합)가 회전 부울을 처음 라이브 구동. 기각:
+  provenance 보존(chained 라우팅 파급)·exact signed-volume(합 부호 인프라 없음, (5d)#5 근거). 후속: 3d.
