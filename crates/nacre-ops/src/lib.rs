@@ -4674,79 +4674,88 @@ fn contained_contact_result(
     assemble_fuse_cut(model, cc.big_solid, cc.small_solid, &planes, &[], &faces)
 }
 
-/// The unified coplanar builder for a **contained** contact (`Q ⊂ P`, no `∂P × ∂Q` crossing),
-/// driven by the survival table [`coplanar_survival`]. The big face `P` survives as `P∖Q` (`Q`
-/// a hole, reversed to CW about `P`'s normal iff the faces share a normal) or `Whole`; `b`'s
-/// faces flip for a `Cut`. Seam is empty — every node is `Node::Orig`, so the result is all
-/// `Constructed` (no tolerance), the purity `contained_contact_result` also keeps.
+/// The **one** unified coplanar handler (the entry `D0` will wire into dispatch, replacing the six
+/// bespoke paths). It finds the single coplanar contact pair, reads the survival table
+/// [`coplanar_survival`] from the op and the faces' relative normal, and dispatches **internally**
+/// on the footprint relationship — contained (`Q ⊂ P`, no crossing) here; overlapping/crossing and
+/// `P ⊂ Q` are the later branches. Not per-case public builders: one entry, internal branches.
 ///
-/// This is the survival-table form of `contained_contact_result`; the equivalence cells prove
-/// they agree before dispatch is rerouted (D0). `Common` on a contained pair (`InterQ`/`Empty`)
-/// is out of this cell's scope.
+/// Contained builds `P` as `P∖Q` (`Q` a hole, reversed to CW about `P`'s normal iff the faces share
+/// a normal) or `Whole`, `b`'s faces flipped for a `Cut`. Seam is empty — every node `Node::Orig`,
+/// so the result is all `Constructed` (the purity the bespoke paths also keep).
 #[cfg_attr(not(test), allow(dead_code))]
-fn coplanar_contained_result(
+fn coplanar_result(
     model: &mut Model,
-    cc: &ContainedContact,
     kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let planes_big = collect_planes(model, cc.big_solid)?;
-    let na = planes_big.len();
-    let planes_small = collect_planes(model, cc.small_solid)?;
-    let n_big = planes_big
-        .iter()
-        .find(|p| p.face == cc.big_face)
-        .expect("big contact face")
-        .n_out;
-    let n_small = planes_small
-        .iter()
-        .find(|p| p.face == cc.small_face)
-        .expect("small contact face")
-        .n_out;
-    let same_normal = n_big.dot(n_small) > 0.0;
-    let (survive, b_flip) = coplanar_survival(kind, same_normal);
-    let mut planes = planes_big;
-    planes.extend(planes_small);
+    let planes_a = collect_planes(model, a)?;
+    let na = planes_a.len();
+    let planes_b = collect_planes(model, b)?;
+    let mut planes = planes_a;
+    planes.extend(planes_b);
 
-    let mut faces = solid_local_faces(model, cc.big_solid, 0, Some(cc.big_face), None);
-    let big_shell = model.solids.get(cc.big_solid).outer;
-    let big_pos = model
-        .shells
-        .get(big_shell)
-        .faces
-        .iter()
-        .position(|&f| f == cc.big_face)
-        .expect("contact face is on big's shell");
-    let ring_nodes = |l: &Loop| -> Vec<Node> {
-        l.half_edges
-            .iter()
-            .map(|&he| Node::Orig(he_start(model, he)))
-            .collect()
-    };
-    let big_f = model.faces.get(cc.big_face);
-    let mut inner: Vec<Vec<Node>> = big_f.inner.iter().map(&ring_nodes).collect();
-    match survive {
-        PSurvive::MinusQ => {
-            let mut hole = ring_nodes(&model.faces.get(cc.small_face).outer);
-            if same_normal {
-                hole.reverse(); // same normals: reverse to CW about P's normal
+    // The single coplanar cross-operand contact pair.
+    let mut pair = None;
+    for i in 0..na {
+        for j in na..planes.len() {
+            if shares_or_coplanar(&planes[i], &planes[j]) {
+                if pair.is_some() {
+                    return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // >1 pair — out of scope
+                }
+                pair = Some((i, j));
             }
-            inner.push(hole);
         }
-        PSurvive::Whole => {} // Q is internal — no hole
-        PSurvive::InterQ | PSurvive::Empty => return Err(reject(tag::VERTEX_ON_FACE_PLANE)),
     }
-    faces.push(LocalFace {
-        plane_idx: big_pos,
-        loop_nodes: ring_nodes(&big_f.outer),
-        inner,
-        flip: false,
-    });
-    faces.extend(
-        solid_local_faces(model, cc.small_solid, na, Some(cc.small_face), None)
-            .into_iter()
-            .map(|lf| LocalFace { flip: b_flip, ..lf }),
-    );
-    assemble_fuse_cut(model, cc.big_solid, cc.small_solid, &planes, &[], &faces)
+    let Some((pi_idx, qj_idx)) = pair else {
+        return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // no coplanar contact
+    };
+    let same_normal = planes[pi_idx].n_out.dot(planes[qj_idx].n_out) > 0.0;
+    let (survive, b_flip) = coplanar_survival(kind, same_normal);
+    let (p_face, q_face) = (planes[pi_idx].face, planes[qj_idx].face);
+    let n = planes[pi_idx].plane.normal();
+
+    // Contained: a's contact face P strictly contains b's footprint Q (no ∂P × ∂Q crossing).
+    if face_contains_face(model, p_face, q_face, n) {
+        let ring_nodes = |l: &Loop| -> Vec<Node> {
+            l.half_edges
+                .iter()
+                .map(|&he| Node::Orig(he_start(model, he)))
+                .collect()
+        };
+        let mut faces = solid_local_faces(model, a, 0, Some(p_face), None);
+        let p_f = model.faces.get(p_face);
+        let mut inner: Vec<Vec<Node>> = p_f.inner.iter().map(&ring_nodes).collect();
+        match survive {
+            PSurvive::MinusQ => {
+                let mut hole = ring_nodes(&model.faces.get(q_face).outer);
+                if same_normal {
+                    hole.reverse(); // same normals: reverse to CW about P's normal
+                }
+                inner.push(hole);
+            }
+            PSurvive::Whole => {} // Q internal — no hole
+            PSurvive::InterQ | PSurvive::Empty => return Err(reject(tag::VERTEX_ON_FACE_PLANE)),
+        }
+        faces.push(LocalFace {
+            plane_idx: pi_idx, // a's contact face keeps its combined index (= shell position)
+            loop_nodes: ring_nodes(&p_f.outer),
+            inner,
+            flip: false,
+        });
+        faces.extend(
+            solid_local_faces(model, b, na, Some(q_face), None)
+                .into_iter()
+                .map(|lf| LocalFace { flip: b_flip, ..lf }),
+        );
+        return assemble_fuse_cut(model, a, b, &planes, &[], &faces);
+    }
+    if face_contains_face(model, q_face, p_face, n) {
+        return Err(reject(tag::OVERHANG_ARCS)); // P ⊂ Q — symmetric contained, later branch
+    }
+    // Overlapping footprints (∂P × ∂Q crossing) — the overhang branch, B4 part 2b.
+    Err(reject(tag::OVERHANG_ARCS))
 }
 
 // ---- coplanar-contact-overhang (M5): single-edge overhang boss Fuse ----
@@ -13508,8 +13517,7 @@ pub mod tests {
                 Point3::from_array([0.25, 0.25, 0.5]),
                 Point3::from_array([0.75, 0.75, 1.0]),
             );
-            let cc = detect_pocket_contact(&m, base, prism).expect("pocket contact");
-            let r = coplanar_contained_result(&mut m, &cc, BoolKind::Cut).unwrap();
+            let r = coplanar_result(&mut m, BoolKind::Cut, base, prism).unwrap();
             assert_eq!(r.len(), 1);
             m.rebuild_adjacency();
             assert!(nacre_validate::validate(&m).is_empty());
@@ -13531,8 +13539,7 @@ pub mod tests {
                 Point3::from_array([0.25, 0.25, 1.0]),
                 Point3::from_array([0.75, 0.75, 2.0]),
             );
-            let cc = detect_contained_contact(&m, base, boss).expect("boss contact");
-            let r = coplanar_contained_result(&mut m, &cc, BoolKind::Fuse).unwrap();
+            let r = coplanar_result(&mut m, BoolKind::Fuse, base, boss).unwrap();
             assert_eq!(r.len(), 1);
             m.rebuild_adjacency();
             assert!(nacre_validate::validate(&m).is_empty());

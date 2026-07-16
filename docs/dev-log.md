@@ -975,3 +975,10 @@ notch(6노드 L, A3서 검증), **Q-측 keep Q∖P = cantilever(6노드 L)** —
 `overhang_contact_result`가 `split_loop_all_arcs`(proj2)로 하던 P-notch/Q-cantilever를 exact `coplanar_reconstruct`로
 대체 검증. 남음(B4·part2): 전체 솔리드 조립 — P-notch + Q-cantilever + a벽(불변) + b벽(`resplit_overhang`로 교차 삽입) +
 b캡 → `assemble_fuse_cut`, 보스 부피 OCCT 등가.
+
+**(B4·part2a) 통합 진입점 `coplanar_result`로 수렴.** 사용자 지적(케이스별 빌더 파편화 경계)을 반영: `coplanar_contained_result`
+(별도 빌더)를 폐기하고, **하나의 진입점 `coplanar_result(model, kind, a, b)`** 로 통합. 진입점이 (1) 단일 공면 접촉쌍 감지,
+(2) `coplanar_survival`로 (survive, b_flip) 결정, (3) footprint 관계로 **내부 분기**(contained=Q⊂P 지금 / P⊂Q·crossing은 후속
+분기). contained 분기 = Q를 P의 홀로(same_normal이면 CW 뒤집기)·b-면 flip(Cut)·빈 seam→all-Constructed. 골든이 포켓
+(Cut, 0.875)·보스(Fuse, 1.25)를 이 하나로 통과. **아키텍처 원칙 확정**: bespoke 자리에 끼워넣지 않음 — 통합 진입점 하나를
+D0가 배선, D1/D2가 bespoke 삭제. 다음(B4p2b): crossing 분기(overhang 실솔리드) 추가.
