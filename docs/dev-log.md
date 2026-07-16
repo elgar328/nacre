@@ -930,3 +930,10 @@ C1(flush-edge)·C2(비볼록)→D0(디스패치 일반화)·D1–D2(은퇴)→E0
 교차가 footprint **꼭짓점**에 앉으면(`order==0`) flush-edge/T-junction 전조라 정직 거절(C1에서 지원). 골든
 `coplanar_crossings_of_two_overlapping_squares`: [0,2]²·[1,3]² 겹침 → 정확히 (1,2,1)·(2,1,1) 2교차. 다음(A2·part2):
 교차→SeamSegment(Orig+Seam 혼합)·`stitch_cycles` 셀 열거.
+
+**(A2·part2) 혼합-노드 seam arc 구성.** `coplanar_seam_arcs` = ∂Q(b 접촉면 경계)를 loop 순회하며 각 b-edge에 그 위 교차를
+`order_along`으로 정렬 삽입한 뒤, 교차에서 잘라 arc(crossing→내부 b-정점→crossing)로 분해. **내부 노드 = b 원본 정점
+(`Node::Orig`, Constructed)·끝점만 `Node::Seam`(교차)** — dual-node 급소: 교차 없는 곳은 b 정점 identity 보존(all-Constructed
+순수성). 골든 확장: [0,2]²·[1,3]² → 2 arc, inside-P arc(내부 (1,1) 하나)·outside arc(외부 3코너). arc의 inside/outside P 분류와
+`boundary_runs`/`run_classes`/`stitch_cycles` 셀 열거는 A3(태깅)로 분리. 주의: b-edge당 교차 정렬은 현재 `order_along`만 —
+한 edge에 2+교차 시 walk 방향(`edge_sign`) 정렬은 그런 픽스처 등장 시 보강.

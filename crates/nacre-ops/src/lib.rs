@@ -3888,6 +3888,72 @@ fn coplanar_boundary_crossings(
     Ok(out)
 }
 
+/// The `b` footprint boundary ∂Q spliced with its coplanar crossings and split into arcs.
+///
+/// Walk ∂Q in loop order, inserting each crossing on the b-edge it rides (ordered along that
+/// edge), then cut the cyclic sequence at the crossings. Each arc runs crossing → interior
+/// b-vertices → crossing. Interior nodes are the `b` solid's **original** vertices
+/// (`Node::Orig`, Constructed); only the crossing endpoints are `Node::Seam` — the mixed-node
+/// coplanar seam that keeps b-vertex identity (all-Constructed purity where there is no
+/// crossing). Returns the arcs; empty when there are no crossings (∂Q is then a closed inner
+/// loop handled elsewhere). Classifying an arc inside/outside `P` is the tagging cell's job.
+#[cfg_attr(not(test), allow(dead_code))]
+fn coplanar_seam_arcs(
+    planes: &[PlaneInfo],
+    pi: usize,
+    b: &[BndEdge],
+    crossings: &[CoCross],
+) -> Vec<Vec<Node>> {
+    if crossings.is_empty() {
+        return Vec::new();
+    }
+    // The third plane of a crossing on line π∩`u` — its `a`-wall, the key that orders it there.
+    let other_wall = |c: &CoCross, u: usize| -> usize {
+        c.triple
+            .iter()
+            .copied()
+            .find(|&x| x != pi && x != u)
+            .expect("crossing triple is {pi, W, U}")
+    };
+    // ∂Q as a cyclic node sequence: each edge's start vertex, then the crossings on that edge.
+    let mut seq: Vec<Node> = Vec::new();
+    for be in b {
+        seq.push(Node::Orig(be.v[0]));
+        let mut on: Vec<&CoCross> = crossings.iter().filter(|c| c.b_edge == be.e).collect();
+        on.sort_by(|c0, c1| {
+            let (w0, w1) = (other_wall(c0, be.wall), other_wall(c1, be.wall));
+            match arrange::order_along(planes, pi, be.wall, w0, w1) {
+                -1 => std::cmp::Ordering::Less,
+                1 => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+        for c in on {
+            seq.push(Node::Seam(c.triple));
+        }
+    }
+    // Cut at the crossings into arcs (crossing → interior → next crossing).
+    let n = seq.len();
+    let cpos: Vec<usize> = (0..n)
+        .filter(|&i| matches!(seq[i], Node::Seam(_)))
+        .collect();
+    let mut arcs = Vec::with_capacity(cpos.len());
+    for k in 0..cpos.len() {
+        let (from, to) = (cpos[k], cpos[(k + 1) % cpos.len()]);
+        let mut arc = Vec::new();
+        let mut i = from;
+        loop {
+            arc.push(seq[i]);
+            if i == to {
+                break;
+            }
+            i = (i + 1) % n;
+        }
+        arcs.push(arc);
+    }
+    arcs
+}
+
 /// `Some` iff A and B share exactly one fully-coincident, opposite-normal face
 /// pair (identical boundary) — the clean stack/glue case. `None` (fall through to
 /// the coplanar-rejecting paths) for anything else.
@@ -12952,6 +13018,44 @@ pub mod tests {
             "{:?}",
             pts[1]
         );
+
+        // A2 part2: ∂Q split at the crossings into mixed-node arcs. Two crossings give two arcs,
+        // each running Seam → Orig… → Seam. One arc's interior b-vertex (1,1) is inside P=[0,2]²
+        // (the piece of ∂Q that cuts P); the other holds the three outside corners.
+        let arcs = coplanar_seam_arcs(&planes, pi, &b_bnd, &cx);
+        assert_eq!(arcs.len(), 2, "two crossings split ∂Q into two arcs");
+        for arc in &arcs {
+            assert!(
+                matches!(arc.first(), Some(Node::Seam(_)))
+                    && matches!(arc.last(), Some(Node::Seam(_))),
+                "an arc runs crossing → crossing"
+            );
+            assert!(
+                arc[1..arc.len() - 1]
+                    .iter()
+                    .all(|n| matches!(n, Node::Orig(_))),
+                "interior nodes are b's original vertices (Constructed)"
+            );
+        }
+        // The inside-P arc is the one whose single interior vertex is (1,1); it has exactly one.
+        let inside_arc = arcs
+            .iter()
+            .find(|a| {
+                a.len() == 3
+                    && matches!(a[1], Node::Orig(vh)
+                        if m.vertices.get(vh).point.as_array() == [1.0, 1.0, 1.0])
+            })
+            .expect("an arc with the single interior corner (1,1)");
+        let outside_arc = arcs
+            .iter()
+            .find(|a| a.len() == 5)
+            .expect("the 3-corner arc");
+        assert!(
+            outside_arc[1..4].iter().all(|n| matches!(n, Node::Orig(vh)
+                if { let p = m.vertices.get(*vh).point.as_array(); p[0] > 2.0 || p[1] > 2.0 })),
+            "outside arc holds only corners beyond P"
+        );
+        assert_eq!(inside_arc.len() + outside_arc.len(), 8);
     }
 
     #[test]
