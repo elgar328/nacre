@@ -1419,3 +1419,17 @@ exact화. **★ 신규 술어 0개** — 둘 다 이미 배선·검증된 프리
   헬퍼(iso 연쇄 양쪽 적용·OCCT baseline·boolean·Σvol/area approx·결과 반환)로 축약.
 - **의의**: 회전 부울이 성숙 커널과 부피·면적 일치 → 3d-i 라이브가 "회전 불변"만이 아니라 **실제 옳은 결과**임을 외부
   검증. 후속: 3d-iii(적대적 스트레스)·3d-iv(main 병합).
+
+**적대적 회전 스트레스 코퍼스 (오버홀 3d-iii).** 3d-i/ii의 좁은 표본을 넘어 회전 부울을 대량으로 굴려 **silent-wrong 0**을
+실증. 오라클 = 회전-불변(부울은 rigid motion과 교환 → 두 피연산자 같은 iso 회전 시 부피/솔리드수/cavity수 불변). 각 케이스:
+`rotated`가 unrotated `baseline`과 일치(vol 상대밴드·counts) **또는** 정직 거절 — **그럴듯한 틀린 Ok(silent-wrong)만 실패**.
+- **★ 실측 (48 케이스: corner/sever/containment/convex × Cut/Fuse/Common × Z43·X67·Z50→X37·Z30→X30→Y73[3축 Euler
+  임의방향]) — success 48·honest_reject 0·SILENT_WRONG 0**. DNA no-silent-wrong 경험적 확증. `rotation_invariance_stress`
+  (`#[ignore]`·`Outcome{Rejected|Ok{vol,solids,cavities}}` 비교 헬퍼).
+- **★ 성능 발견 (중요)**: 회전 부울은 **느리다** — seam 부울 ~2.2–2.6s·2축 연쇄 ~4.3–4.9s·seam-free containment ~0.5s
+  (비회전 ms 대비 ~1000×). 원인: TIP 술어가 회전 tol 하 interval filter를 자주 실패해 **astro-float(BigFloat prec 200)로
+  상승**. correctness 아닌 성능 이슈라 스트레스는 `#[ignore]`(per-commit 회귀 가드는 3d-i의 빠른 `rotated_*` 몇 개). **후속
+  최적화 후보**: interval filter tol 타이트닝(과보수적 tol이 불필요 상승 유발)·escalation 결과 캐시.
+- **왜 silent-wrong이 없나 (스트레스가 확증)**: fresh-primitive 입력은 정확 유리수 좌표라 base 프레임 exact·모든 위상 판정이
+  평면-트리플 정의(TIP)로 결정(f64 캐시/tol arbiter 아님) → near-degenerate도 exact 부호 또는 declare-0(정직). 후속:
+  3d-iv(main 병합).
