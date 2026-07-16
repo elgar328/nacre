@@ -13428,6 +13428,52 @@ pub mod tests {
         assert_eq!(coplanar_survival(BoolKind::Common, false), (Empty, false)); // coincident → empty
     }
 
+    // B3: the survival table governs the coincident stack (P ≡ Q, opposite normals). Verified
+    // against the (still-bespoke) coincident_merge results — the classification gate before D2
+    // retires it. The unified coincident builder (side-face dissolving) lands with C1.
+    #[test]
+    fn coincident_stack_outcomes_match_the_survival_table() {
+        assert_eq!(coplanar_survival(BoolKind::Fuse, false).0, PSurvive::MinusQ); // ∅ ⇒ drop both
+        assert_eq!(coplanar_survival(BoolKind::Cut, false).0, PSurvive::Whole); // A kept
+        assert_eq!(
+            coplanar_survival(BoolKind::Common, false).0,
+            PSurvive::Empty
+        );
+        let stack = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.0, 0.0, 1.0]),
+                Point3::from_array([1.0, 1.0, 2.0]),
+            );
+            (m, a, b)
+        };
+        {
+            let (mut m, a, b) = stack();
+            let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+            assert!((nacre_props::mass_props(&m, r).unwrap().volume - 2.0).abs() < 1e-12);
+            let planes = collect_planes(&m, r).unwrap();
+            assert!(
+                !solid_has_coplanar_neighbour_edge(&m, r, &planes),
+                "side faces dissolved"
+            );
+        }
+        {
+            let (mut m, a, b) = stack();
+            let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+            assert!((nacre_props::mass_props(&m, r).unwrap().volume - 1.0).abs() < 1e-12);
+        }
+        {
+            let (mut m, a, b) = stack();
+            assert!(matches!(
+                boolean(&mut m, BoolKind::Common, a, b),
+                Err(BoolError::EmptyResult)
+            ));
+        }
+    }
+
     // B1/B2: the survival-table builder reproduces the bespoke contained pocket and boss — same
     // volume, watertight, all-Constructed (empty seam), no spurious coplanar edge.
     #[test]

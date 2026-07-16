@@ -962,3 +962,9 @@ Common/opp=`Empty`(coincident 스택→EmptyResult). b-면 flip = Cut일 때만.
 `coplanar_contained_result_reproduces_pocket_and_boss`: detector로 cc 얻어 빌더 실행 → 포켓(Cut/same, 0.875)·보스
 (Fuse/opp, 1.25) 부피 일치·validate empty·all-Constructed·no-coplanar-edge. **첫 실솔리드 통합 성공.** Common contained
 (InterQ/Empty)는 이 셀 스코프 밖(정직 거절). 다음: B3(coincident) → B4(볼록 overhang, 혼합 seam 실배선).
+
+**(B3) coincident 분류 게이트.** coincident 스택(P≡Q, opposite 법선)의 생존 표 예측을 실제 결과에 묶음: Fuse/opp=MinusQ
+(P∖P=∅→두 면 drop→병합, vol 2)·Cut/opp=Whole(A 유지, vol 1)·Common/opp=Empty(EmptyResult). 골든
+`coincident_stack_outcomes_match_the_survival_table`. **정직한 순서 조정**: coincident의 dissolving(옆벽 splice+인터페이스
+정점 remap, `merge_coincident_fuse_faces`)은 flush-edge(C1)와 **공유하는 급소**라, 통합 coincident 빌더는 dissolving 구현
+셀(C1)과 함께 확정. coincident_merge는 D2까지 유지되므로 지금 재현 불요 — 분류가 표와 일치함만 게이트.
