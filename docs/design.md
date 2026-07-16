@@ -1195,7 +1195,7 @@ run은 정점을 **0개** 가질 수 있다. 그것이 "한 엣지가 두 번 �
 
 **nacre-tip cmp_coord 브리지 — 두 Discovered seam 축좌표 비교 (오버홀 단계 cmp-ii).** cmp-i 술어를 커널에 연결(2c-ii가 orient3d에 한 것과 대칭). `cmp_coord(model, v1, v2, axis)`: 두 정점 모두 Discovered seam이면 각 `ThreePlane`을 `plane_pts`(2c-ii 재사용)로 세 회전 정점 트리플로 재구성→`indirect_cmp_coord_judge`. 반환 `Orient`(Positive=`v1[axis]>v2[axis]`). **winding 무관**(cmp-i 대수 확인)이라 아무 세 점으로 평면 정의해도 sound. 회전 평면 계수가 무리수라 정점 재구성이 핵심(2c-ii와 동일).
 - **honest defer**: 비-Discovered 정점→`NotSeam`·surf 정점 부족→`PlaneUnderdetermined`.
-- **net.** `nacre-tip`: `cmp_matches_coord_on_rotated_corners`(**독립 변환된 두 큐브** 코너쌍=heterogeneous provenance·여러 축·definite에서 f64 좌표 부호와 wrong-sign 0·`resolved>0`[항상-Zero 버그 방지]·swap antisymmetric)·`cmp_unrotated_matches_exact_plane`(독립 exact-plane `three_plane_cmp_coord`와 교차검증)·`cmp_non_seam_is_deferred`·`cmp_underdetermined_plane_is_deferred`. **n2(OCCT) 없음**·boolean 미배선("층만"·회전 seam 합성 테스트). **★ TIP 판정층 완성**: stage-3 탐색으로 확정 — boolean은 모든 점(seam·원본 정점)을 평면-트리플로 통일해 정렬이 전부 single-implicit orient3d(`order_along`→2c-ii)·two-implicit cmp(`loop_winding`→cmp-ii)뿐이라 **혼합 cmp는 없음**(cmp-iii 불필요). 술어(orient3d 직접+간접·cmp_coord·D부호) 모두 frame3/tip에 있음. 후속: stage 3(배선).
+- **net.** `nacre-tip`: `cmp_matches_coord_on_rotated_corners`(**독립 변환된 두 큐브** 코너쌍=heterogeneous provenance·여러 축·definite에서 f64 좌표 부호와 wrong-sign 0·`resolved>0`[항상-Zero 버그 방지]·swap antisymmetric)·`cmp_unrotated_matches_exact_plane`(독립 exact-plane `three_plane_cmp_coord`와 교차검증)·`cmp_non_seam_is_deferred`·`cmp_underdetermined_plane_is_deferred`. **n2(OCCT) 없음**·boolean 미배선("층만"·회전 seam 합성 테스트). **★ TIP 판정층 완성**: stage-3 탐색으로 확정 — boolean은 모든 점(seam·원본 정점)을 평면-트리플로 통일해 정렬이 전부 single-implicit orient3d(`order_along`→2c-ii)·two-implicit cmp(`loop_winding`→cmp-ii)뿐이라 **혼합 cmp는 없음**(cmp-iii 불필요). 술어(orient3d 직접+간접·cmp_coord·D부호) 모두 frame3/tip에 있음. 후속: stage 3(배선). **(정정 — 3c-i: 이 "완성"은 arrangement/seam 정렬에 한정됐다.** `point_in_solid`의 **ray casting**은 이 탐색 밖이었고, `orient3d(p, p+d, ·, ·)`의 방향 항이 새 술어 `dir_orient3d`를 요구했다 — §TIP② 새 수학이 아니라 한 열 exact인 기존 Iv 프레임의 적용이라 §TIP② 소진 상태는 유지. 아래 3c-i.)
 
 **stage 3 착수 — toleranced t_orient3d + PlaneInfo Pt3 정의 (오버홀 3a-i).** 회전 boolean 배선의 첫 웨지. **핵심 통찰**(탐색): arrangement(arrange.rs)가 이미 평면-트리플 위 순수 sign-predicate라, 술어에 먹이는 `PlaneInfo.tri`(회전 시 반올림 f64)만 정확 정의로 바꾸면 통째로 rotation-sound. **분해**: 3a(라우팅 층·미배선)→3b(arrange 교체·가드 유지)→3c(point_in_solid toleranced·shell·validate)→3d(가드 은퇴+OCCT·main 병합). 소프트니스 가드는 **부분 은퇴 불가**라 3d가 최종 게이트.
 - **★ `PlaneInfo.tri_pt3: Option<[Pt3;3]>`**: 회전 시 `collect_planes`가 면 tri 정점(`outer_tri`가 핸들도 반환→`tip::vertex_pt3`)을 세 Pt3로 **한 번 캐시**(O(N²) order_along가 매 호출 forest 순회 안 하도록). unrotated면 `None`(무비용·exact 경로). `PlaneInfo`는 derive 없는 plain 구조체라 Pt3(Clone) 필드가 Copy 안 깸.
@@ -1278,3 +1278,23 @@ p0/p1)`)만 남았었다.
   테스트(`pierce` 헬퍼가 `bounds` 반환). `tolerant.rs`: `t_plane_side` allow 제거·모듈 doc(4종 배선). **검증**: unrotated
   무회귀(228+통합 bit-identical)·`cargo doc` 무경고. **n2(OCCT) 없음**(3d)·가드 유지. 후속: 3c(point_in_solid·
   is_convex·t_plane_side Discovered·4-plane 가드·공면 감지기 — 정점-origin 계층·규모 큼).
+
+**frame3 `dir_orient3d_judge` — 방향 orient3d (오버홀 3c-i).** 3c는 정점-origin/분류 계층. 탐색으로 **횡단 회전
+Fuse/Cut의 라이브 임계 사이트 셋** 확정(point_in_solid·4-plane 가드·is_shell_outward). headline `point_in_solid`
+(내외 분류)을 회전 sound화하려면 ray-삼각형 판정을 반올림 좌표가 아니라 정점 exact 정의·frame3 위에서 해야 하는데,
+그 5개 orient3d가 **단 하나의 새 술어**로 환원된다.
+- **★ `dir_orient3d_judge(d, base, x, y)`**(frame3 신규 pub): `sign(det[d, x−base, y−base]) = sign(d·((x−base)×
+  (y−base)))`. **유도**: ray-삼각형은 `orient3d(p, p+d, ·, ·)`를 묻는데 `p+d`(회전점+rational 방향)는 base+chain
+  Pt3로 표현 불가(`R⁻¹d` 무리수) — 그러나 각 판정이 방향 행렬식으로 환원되고 `d`가 **한 열 exact(rad-0)**로 들어간다.
+- **★ Iv-직접-열 구현(구성상 sound)**: `det3_iv([d행, x−base, y−base])` 필터(`Iv::sub`가 차분 반올림 추적)→straddle
+  시 `det3_big`(hp)+`sign_with_floor`. **`p+d`를 안 만들어** f64 덧셈 반올림 함정 회피. `det3_hp`에서 **임의-벡터
+  `det3_big`를 추출**(bit-identical)해 공유. mag는 f64 행 6-곱-절대합(`det3_mag`).
+- **★ 검증 — 오라클은 고정밀 GT(회전-불변 아님)**: `d`가 고정이라 점만 돌리면 부호가 바뀌므로 회전-불변 불가 →
+  GT-stable 512 vs 640-bit det 부호. 코퍼스 두 영역(랜덤 + **near-grazing**: 회전 후 in-plane edge의 큰 유리수 근사로
+  `d`가 회전 normal에 거의 ⊥ → det≈0 → escalation). **wrong-sign 0/1499·escalated 603·filter_resolved 897**(양 경로)·
+  sanity(축정렬 known 부호·edge swap 반전·in-plane→Zero). **rotate-together sanity 생략**: `d`가 `[Rat;3]`라 일반
+  회전 `R·d`가 무리수(90°만 유리수)라 어색 — GT 코퍼스가 실제 사용(고정 유리수 d + 회전 점)을 직접 검증해 대체.
+- **net.** `frame3`: `dir_orient3d_judge`(pub)·`det3_big`(추출)·`det3_mag`·`dir_orient3d_judge_sanity`·
+  `h_dir_orient3d_soundness`(`#[ignore]`). **exact3d/기존 frame3 무회귀**(det3_big 추출 bit-identical·H-a/b/c/g/i
+  ignored 7건 green). **미배선("층만")**·boolean·point_in_solid 무변경. §TIP② 소진 유지(한 열 exact인 Iv 프레임
+  적용). 후속: 3c-ii(point_in_solid 배선 — 4×dir_orient3d + 1×orient3d·declare-0→Degenerate→광선 재시도 흡수).
