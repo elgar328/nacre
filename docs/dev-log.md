@@ -968,3 +968,10 @@ Common/opp=`Empty`(coincident 스택→EmptyResult). b-면 flip = Cut일 때만.
 `coincident_stack_outcomes_match_the_survival_table`. **정직한 순서 조정**: coincident의 dissolving(옆벽 splice+인터페이스
 정점 remap, `merge_coincident_fuse_faces`)은 flush-edge(C1)와 **공유하는 급소**라, 통합 coincident 빌더는 dissolving 구현
 셀(C1)과 함께 확정. coincident_merge는 D2까지 유지되므로 지금 재현 불요 — 분류가 표와 일치함만 게이트.
+
+**(B4·part1) 대칭 양면 overhang 재구성.** overhang(교차 있음, 겹침·비포함)의 두 접촉면을 `coplanar_reconstruct`로 양면
+재구성 — 역할 스왑으로 동일 함수 재사용. two-boxes([0,2]²×[0,1] top +z / [1,3]²×[1,2] bottom −z, 보스): P-측 keep P∖Q =
+notch(6노드 L, A3서 검증), **Q-측 keep Q∖P = cantilever(6노드 L)** — b 원본 코너 + 교차 2 + P코너 (2,2), 혼합-노드.
+`overhang_contact_result`가 `split_loop_all_arcs`(proj2)로 하던 P-notch/Q-cantilever를 exact `coplanar_reconstruct`로
+대체 검증. 남음(B4·part2): 전체 솔리드 조립 — P-notch + Q-cantilever + a벽(불변) + b벽(`resplit_overhang`로 교차 삽입) +
+b캡 → `assemble_fuse_cut`, 보스 부피 OCCT 등가.

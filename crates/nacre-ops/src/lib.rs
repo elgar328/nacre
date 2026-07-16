@@ -13413,6 +13413,28 @@ pub mod tests {
                 [1.0, 2.0, 1.0],
             ])
         );
+
+        // B4: the symmetric Q-side reconstruction (roles swapped) — b's cantilever. Keep Q∖P →
+        // the L-shaped cantilever bottom (b corners beyond P, the two crossings, and P's (2,2)).
+        let cx_q = coplanar_boundary_crossings(&planes, pi, &b_bnd, &a_bnd).unwrap();
+        let arcs_q = coplanar_seam_arcs(&planes, pi, &a_bnd, &cx_q); // ∂P as the seam on Q
+        let cant = coplanar_reconstruct(
+            &planes, pi, b_bot, &b_bnd, &a_bnd, &cx_q, &arcs_q, false, false,
+        )
+        .unwrap();
+        assert_eq!(cant.len(), 1, "Q∖P is one cell");
+        assert_eq!(cant[0].loop_nodes.len(), 6, "cantilever is an L");
+        assert_eq!(
+            set(&cant[0]),
+            key(&[
+                [3.0, 1.0, 1.0],
+                [3.0, 3.0, 1.0],
+                [1.0, 3.0, 1.0],
+                [1.0, 2.0, 1.0],
+                [2.0, 2.0, 1.0],
+                [2.0, 1.0, 1.0],
+            ])
+        );
     }
 
     // B1: the coplanar-face survival table, tied to the six bespoke paths it must reproduce.
