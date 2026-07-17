@@ -1110,3 +1110,9 @@ slot(x[0.75,1]y[-0.25,0.2]z[0.1,0.4], y=0 벽만 breakout, through-bottom·disjo
 triple로 자동 용접, Shorten(완전덮힘=양 코너 삼킴→코너 기둥만 남음)도 point_in_ring/R2로 자연 처리. **bespoke
 `WallKind::{Middle,Corner,Shorten}` 3분기가 통일 규칙 하나로 흡수됨**(라운드-2 개선C의 폴백 미사용 — R2 견고).
 263 ops green. 다음(추천): through-bottom(C2c) → common(C2d) → C1 플랜모드.
+
+**(C2c 재현) through-bottom — 새 코드 0으로 균일 규칙이 흡수.** top-flush 슬롯이 전높이로 x=1 벽 + 바닥(z=0)을
+동시에 뚫는 형상(prism z[-0.5,1])을 `coplanar_result` 직접 호출로 재현 → 부피 0.75·watertight. **바닥면은 그냥
+`clip_face_to_section`으로 클립되는 한 면이 더 늘 뿐**(전높이라 clean split), x=1 breakout은 자체 클립. 통합의 증명:
+케이스가 늘어도(출구 면 수) 코드가 안 는다. 공개 reject 테스트 플립 + 디스패치 broadening은 D0로 defer(볼록이라
+현 디스패치는 bespoke→reject 유지). 다음: common(C2d).

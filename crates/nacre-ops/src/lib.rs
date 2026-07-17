@@ -14435,6 +14435,35 @@ pub mod tests {
         assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
     }
 
+    // C2c: through-bottom — a top-flush slot spanning the full height so it breaks out both the x=1
+    // wall AND the bottom (z=0). The uniform rule needs no new code: the bottom face is one more
+    // face clipped to a∖b (a full-height split), the x=1 breakout its own clip. Volume 0.75.
+    // (Reproduced via coplanar_result directly; the public reject test flips at D0's dispatch.)
+    #[test]
+    fn coplanar_result_reproduces_through_bottom_slot_cut() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, -0.5]),
+            Point3::from_array([1.5, 0.75, 1.0]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Cut, base, prism).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!(
+            (nacre_props::mass_props(&m, r[0]).unwrap().volume - 0.75).abs() < 1e-12,
+            "volume {}",
+            nacre_props::mass_props(&m, r[0]).unwrap().volume
+        );
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
     // C2b-4: the deliverable — a non-convex overhang Cut. A slot cut from a top-pocketed cube,
     // flush on the +x wall, breaking out the bottom, its top coplanar-disjoint with the pocket
     // floor. Exercises pair-selection (x=1 genuine, z=0.5 spurious), the face-plane branch (slot
