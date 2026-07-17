@@ -1102,3 +1102,11 @@ slot(x[0.75,1]y[-0.25,0.2]z[0.1,0.4], y=0 벽만 breakout, through-bottom·disjo
 포켓을 가로지르면(예 y=0.5 ∈ 포켓 y[0.3,0.7]) `section_of_solid`가 **다중-loop(outer+hole)** → `SECTION_MULTI_LOOP`
 정직 거절(후속 다중-loop 셀). 딜리버러블·이 골든 모두 슬롯 면이 포켓을 피해 단일-loop. 다음(추천 순서): 코너/L
 (C2b-2, R2 활용) → through-bottom(C2c) → common(C2d) → C1은 플랜모드 재검토.
+
+**(C2b-2) 코너/L 재현 — 네 벽 구성이 한 규칙으로, R2 폴백 불요.** `cut_a_corner_slot`(0.875, 삼킴 1·코너 기둥)·
+`cut_an_l_step`(0.75, 3벽·Shorten 삼킴 2)을 `coplanar_result` 직접 호출로 재현(볼록이라 공개 경로는 bespoke; 등가
+게이트로 직접). **플랜의 최대 우려(코너 기둥 stitch·`{W_prev,W_next,floor}`)가 기존 R0/R1/R2 + section 규칙으로
+바로 통과** — 삼킨 코너(F 정점이 접촉 chord 위→R2 covered→P∖Q서 drop), 인접 breach 벽이 공유 기둥에서 canon
+triple로 자동 용접, Shorten(완전덮힘=양 코너 삼킴→코너 기둥만 남음)도 point_in_ring/R2로 자연 처리. **bespoke
+`WallKind::{Middle,Corner,Shorten}` 3분기가 통일 규칙 하나로 흡수됨**(라운드-2 개선C의 폴백 미사용 — R2 견고).
+263 ops green. 다음(추천): through-bottom(C2c) → common(C2d) → C1 플랜모드.

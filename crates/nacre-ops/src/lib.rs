@@ -14378,6 +14378,63 @@ pub mod tests {
         assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
     }
 
+    // C2b-2: a corner slot — the cutter swallows the base's (1,1) top corner, crossing two ADJACENT
+    // edges (x=1, y=1). The mouth is an L (swallowed corner via point_in_ring), and the two breach
+    // walls meet at the shared corner column {x=1, y=1, floor}. Exercises R2 (swallowed corner) and
+    // the corner-column weld. Volume 0.875.
+    #[test]
+    fn coplanar_result_reproduces_corner_slot_cut() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let corner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Cut, base, corner).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!(
+            (nacre_props::mass_props(&m, r[0]).unwrap().volume - 0.875).abs() < 1e-12,
+            "volume {}",
+            nacre_props::mass_props(&m, r[0]).unwrap().volume
+        );
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
+    // C2b-2: an L-step — the cutter spans across x (breaks out x=0 and x=1) and fully covers the
+    // y=1 wall (both its top corners swallowed, so it shrinks to a rectangle at the corner columns
+    // — the `Shorten` config). Three breach walls at once. Volume 0.75.
+    #[test]
+    fn coplanar_result_reproduces_l_step_cut() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([-0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Cut, base, prism).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!(
+            (nacre_props::mass_props(&m, r[0]).unwrap().volume - 0.75).abs() < 1e-12,
+            "volume {}",
+            nacre_props::mass_props(&m, r[0]).unwrap().volume
+        );
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
     // C2b-4: the deliverable — a non-convex overhang Cut. A slot cut from a top-pocketed cube,
     // flush on the +x wall, breaking out the bottom, its top coplanar-disjoint with the pocket
     // floor. Exercises pair-selection (x=1 genuine, z=0.5 spurious), the face-plane branch (slot
