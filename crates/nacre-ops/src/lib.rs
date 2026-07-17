@@ -3541,9 +3541,9 @@ fn assemble_fuse_cut(
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
-    let mut node_handle = |model: &mut Model, node: Node| -> Handle<Vertex> {
+    let mut node_handle = |model: &mut Model, node: Node| -> Result<Handle<Vertex>, BoolError> {
         if let Some(&h) = vh.get(&node) {
-            return h;
+            return Ok(h);
         }
         let handle = match node {
             Node::Orig(orig) => {
@@ -3554,7 +3554,13 @@ fn assemble_fuse_cut(
                 })
             }
             Node::Seam(triple) => {
-                let sv = seam.iter().find(|s| s.triple == triple).expect("seam node");
+                // A face references a seam node whose triple was not welded into `seam` — a
+                // reconstruction dropped a crossing. Reject (never panic): an unmodeled flush
+                // topology must decline honestly, not abort the kernel (DNA).
+                let sv = seam
+                    .iter()
+                    .find(|s| s.triple == triple)
+                    .ok_or_else(|| reject(tag::MISSING_SEAM))?;
                 let def = VertexDef::ThreePlane([
                     planes[triple[0]].surf,
                     planes[triple[1]].surf,
@@ -3570,13 +3576,13 @@ fn assemble_fuse_cut(
             }
         };
         vh.insert(node, handle);
-        handle
+        Ok(handle)
     };
     // Materialize all vertex handles first. Outer then inner, rings in order: `vh`'s
     // first-appearance order fixes the vertex handles, and replay depends on it.
     for lf in faces {
         for &node in lf.loop_nodes.iter().chain(lf.inner.iter().flatten()) {
-            node_handle(model, node);
+            node_handle(model, node)?;
         }
     }
 
