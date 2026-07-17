@@ -300,6 +300,11 @@ pub(crate) mod tag {
     /// multi-loop section is honestly rejected until the multi-loop cell lands, so the
     /// single-loop assumption is never silently reached.
     pub const SECTION_MULTI_LOOP: &str = "section_multi_loop";
+    /// Canonicalizing a section's vertex triples through the plane classes folded two *distinct*
+    /// section vertices onto one triple (e.g. `{α,β,cutter_top}` and `{α,β,base_top}` when both
+    /// caps fold to the contact class π). Merging them would silently drop a point, so it is
+    /// rejected instead of collapsed (DNA: never silently wrong).
+    pub const SECTION_TRIPLE_COLLISION: &str = "section_triple_collision";
 }
 
 #[cfg(test)]
@@ -3836,8 +3841,20 @@ fn contact_boundary(
 /// Scope: a single closed loop, no holes. A multi-loop section (a slot piercing a cavity → outer +
 /// hole rings) is rejected up front (`SECTION_MULTI_LOOP`), never silently flattened — the one
 /// genuine silent-wrong risk of the section approach (plan §C2 급소).
+///
+/// R0 (section-Q canonicalization): `section_of_solid` emits **raw** combined-plane indices, but the
+/// rest of the coplanar machinery runs in **canon** classes; without folding the section's triples
+/// through `canon` the shared degree-3 corners would not weld with the mouth / other walls (their
+/// third plane — a cutter cap — differs raw vs canon). So each section vertex triple is remapped
+/// through `canon` and re-sorted here, and its node identity becomes the canon triple. If the fold
+/// merges two *distinct* section vertices onto one triple, that is rejected (`SECTION_TRIPLE_COLLISION`),
+/// never silently collapsed. `pi` is the section plane's **canon** class.
 #[cfg_attr(not(test), allow(dead_code))]
-fn section_boundary(loops: &[Vec<Node>], pi: usize) -> Result<Vec<BndEdge>, BoolError> {
+fn section_boundary(
+    loops: &[Vec<Node>],
+    pi: usize,
+    canon: &[usize],
+) -> Result<Vec<BndEdge>, BoolError> {
     if loops.len() != 1 {
         return Err(reject(tag::SECTION_MULTI_LOOP)); // outer + hole rings: later cell
     }
@@ -3846,12 +3863,27 @@ fn section_boundary(loops: &[Vec<Node>], pi: usize) -> Result<Vec<BndEdge>, Bool
     if n < 3 {
         return Err(reject(tag::ARRANGEMENT_DEGENERATE));
     }
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let (v0, v1) = (ring[i], ring[(i + 1) % n]);
-        let (Node::Seam(t0), Node::Seam(t1)) = (v0, v1) else {
+    // Canonicalize each section vertex triple through the plane classes (R0), sorted.
+    let mut cv: Vec<[usize; 3]> = Vec::with_capacity(n);
+    for &nd in ring {
+        let Node::Seam(t) = nd else {
             return Err(reject(tag::ARRANGEMENT_DEGENERATE)); // section nodes are all Seam
         };
+        let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
+        c.sort_unstable();
+        cv.push(c);
+    }
+    // A fold that maps two distinct section vertices to the same triple would silently merge them.
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if cv[i] == cv[j] {
+                return Err(reject(tag::SECTION_TRIPLE_COLLISION));
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let (t0, t1) = (cv[i], cv[(i + 1) % n]);
         // The chord rides the single plane its two endpoints share besides the section plane.
         let mut shared = t0.iter().copied().filter(|&p| p != pi && t1.contains(&p));
         let wall = shared
@@ -3862,7 +3894,7 @@ fn section_boundary(loops: &[Vec<Node>], pi: usize) -> Result<Vec<BndEdge>, Bool
         }
         out.push(BndEdge {
             seg: i,
-            v: [v0, v1],
+            v: [Node::Seam(t0), Node::Seam(t1)],
             wall,
         });
     }
@@ -13364,7 +13396,7 @@ pub mod tests {
         assert_eq!(loops.len(), 1, "one section loop");
         assert_eq!(loops[0].len(), 4, "the block's slice is a quad");
 
-        let q_bnd = section_boundary(&loops, beta).unwrap();
+        let q_bnd = section_boundary(&loops, canon[beta], &canon).unwrap();
         assert_eq!(q_bnd.len(), 4, "four section chords");
         let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
         let p_bnd = contact_boundary(&m, planes[beta].face, beta, &inc_b, &canon).unwrap();
@@ -13421,11 +13453,31 @@ pub mod tests {
                 Node::Seam([0, 5, 6]),
             ],
         ];
+        let canon: Vec<usize> = (0..7).collect();
         LAST_REJECT.with(|c| c.take());
-        assert!(section_boundary(&two_loops, 0).is_err());
+        assert!(section_boundary(&two_loops, 0, &canon).is_err());
         assert_eq!(
             LAST_REJECT.with(|c| c.take()),
             Some(tag::SECTION_MULTI_LOOP)
+        );
+    }
+
+    // R0: canonicalizing section triples must never silently merge two distinct section vertices —
+    // if the plane-class fold maps two ring vertices onto one triple, reject.
+    #[test]
+    fn section_boundary_rejects_a_canon_triple_collision() {
+        // Two vertices {0,1,2} and {0,1,3}; canon folds plane 3 → 2, so both become {0,1,2}.
+        let ring = vec![vec![
+            Node::Seam([0, 1, 2]),
+            Node::Seam([0, 1, 3]),
+            Node::Seam([0, 2, 3]),
+        ]];
+        let canon: Vec<usize> = vec![0, 1, 2, 2];
+        LAST_REJECT.with(|c| c.take());
+        assert!(section_boundary(&ring, 0, &canon).is_err());
+        assert_eq!(
+            LAST_REJECT.with(|c| c.take()),
+            Some(tag::SECTION_TRIPLE_COLLISION)
         );
     }
 

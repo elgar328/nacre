@@ -1037,3 +1037,12 @@ side-chord 끝점 graze를 놓친 오류**. **결정(사용자 ①)**: 일반 C1
 코너**(fan 아님) → **타깃은 C1 불필요, scoped flush로 ship 가능**. + x=1 접촉면은 slot에 대해 `section_of_solid`
 퇴화(slot 정점이 x=1 위) 확인 → footprint 직접(mouth/section 분리 확정). 프로브를 premise-guard로 유지(255 green).
 다음: C2b-0(π-chord 프리미티브) → C2b-1(Cut 분기 신설).
+
+**(C2b·R0) section-Q 정규화 + triple-collision reject — cross-face 용접의 숨은 필수.** `section_of_solid`은 raw
+결합 인덱스(커터 cap raw ≠ π class)를 triple에 내는데 나머지 코플레인 기계는 canon에서 돈다 → 그대로면 mouth·
+breach벽·b-벽의 공유 degree-3 코너 triple이 셋째 슬롯서 어긋나 `assemble_fuse_cut` 용접이 **조용히 실패**(cross-face
+테스트 전엔 안 보임). `section_boundary(loops, pi, canon)`로 시그니처 확장: 각 section 꼭짓점 triple을 canon으로
+remap·재정렬하고 node identity를 canon triple로, chord wall도 canon 일치. **improvement A(silent-wrong 방어)**:
+fold가 서로 다른 두 section 꼭짓점을 한 triple로 뭉개면(`{α,β,cutter_top}`·`{α,β,base_top}` 둘 다 π로 접힘) →
+`SECTION_TRIPLE_COLLISION` named reject, 절대 조용히 병합 안 함(DNA). 골든: `_rejects_a_canon_triple_collision`(fold로
+두 꼭짓점 충돌 → reject). C2a 골든은 canon 항등이라 무동작(256 green). R0는 C2b-0/1의 토대(pi=canon[section plane]).
