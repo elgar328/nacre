@@ -1060,3 +1060,14 @@ C2b-2(코너/L)가 아니라 **C2b-1(edge-slot)부터 필요** — b-벽(keep P�
 골든 `coplanar_reconstruct_clips_a_b_wall_with_a_pi_chord`: 커터 -y벽을 base 단면(π-chord z=1)에 클립 keep P∩Q flip →
 면적 0.25 + z=1 위 노드 정확히 2(유지된 top edge). 기존 5+6 호출부는 `None` 전달(무동작, 257 green). 다음: C2b-1
 (Cut 분기 신설, edge-slot 실솔리드).
+
+**(C2b-1) Cut-overhang 분기 신설 — 첫 실솔리드 조립.** `coplanar_result`에 Cut/same-normal 분기 추가(옛
+"kind!=Fuse||same_normal → reject" 앞). **균일 per-face 규칙**: 접촉면 a-면 = mouth(P∖footprint, proper crossing,
+contact=None) + 그 외 모든 a-면 = `clip_face_to_section`(a∖b, keep_inside=false) + 모든 b-면(접촉면 제외) =
+`clip_face_to_section`(b∩a, keep_inside=true, flip=b_flip) + b 접촉면 vanish. 신규 헬퍼 `clip_face_to_section`: 면 F를
+상대 솔리드의 F-평면 단면에 클립(section→section_boundary→crossings(contact=Some(π))→arcs→reconstruct); **단면 빈
+경우**(F 평면이 상대 못 만남)는 F가 상대 밖 → P∖Q면 whole·P∩Q면 drop(`!keep_inside`). 모든 crossing을 triple로
+dedup(결정적 first-appearance)해 seam으로 `assemble_fuse_cut`. 코너 기둥(예 `(1,0.25,1)`)이 mouth·breach벽·b-벽
+세 재구성에서 동일 canon triple `{x1,z1,cutter-y}`로 방출돼 자동 용접(R0). 골든 `_reproduces_edge_slot_cut`(0.875,
+벽 1개 Middle)·`_reproduces_slab_channel_cut`(0.9, 대향 2벽). validate empty·no-coplanar-edge. **scoped flush(R0/R1/R2)로
+첫 cut-overhang이 통합 경로로 조립됨** — resplit 아님, splice 헬퍼 안 씀. 다음: C2b-1.5 스파이크(복합 타깃 측정).

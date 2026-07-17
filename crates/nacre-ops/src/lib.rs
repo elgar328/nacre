@@ -3906,6 +3906,58 @@ fn section_boundary(
     Ok(out)
 }
 
+/// Clip one face `f` of `owner` (combined-plane index `f_idx`) to the part surviving a coplanar
+/// Cut, against the `other` solid's cross-section at `f`'s plane. Returns the resulting face(s) and
+/// the crossings they mint (for the shared seam). `keep_inside` selects `f ∩ other` (b's slot
+/// walls) vs `f ∖ other` (a's breached walls); `flip` sets the normal; `contact` is the contact
+/// plane class (scoped flush R1/R2). A face whose plane misses `other` (empty section) lies wholly
+/// outside it — kept whole for `f ∖ other`, dropped for `f ∩ other`.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn clip_face_to_section(
+    model: &Model,
+    f_face: Handle<Face>,
+    f_idx: usize,
+    other: Handle<Solid>,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    canon: &[usize],
+    inc_owner: &arrange::EdgePlanes,
+    keep_inside: bool,
+    flip: bool,
+    contact: usize,
+) -> Result<(Vec<LocalFace>, Vec<CoCross>), BoolError> {
+    let pi = canon[f_idx];
+    let loops = section_of_solid(model, other, f_idx, planes, surf_ix)?;
+    if loops.is_empty() {
+        // `f`'s plane misses `other` → `f` lies wholly outside it.
+        let lf = (!keep_inside).then(|| LocalFace {
+            plane_idx: f_idx,
+            loop_nodes: face_orig_nodes(model, f_face),
+            inner: Vec::new(),
+            flip,
+        });
+        return Ok((Vec::from_iter(lf), Vec::new()));
+    }
+    let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
+    let q_bnd = section_boundary(&loops, pi, canon)?;
+    let cx = coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, Some(contact))?;
+    let arcs = coplanar_seam_arcs(planes, pi, &q_bnd, &cx);
+    let faces = coplanar_reconstruct(
+        planes,
+        pi,
+        f_idx,
+        &f_bnd,
+        &q_bnd,
+        &cx,
+        &arcs,
+        keep_inside,
+        flip,
+        Some(contact),
+    )?;
+    Ok((faces, cx))
+}
+
 /// A proper crossing of the two coplanar footprint boundaries ∂P (from `a`) and ∂Q (from `b`)
 /// in the shared plane π: the exact three-plane point `{π, W, U}` where an `a`-edge (on line
 /// π∩W) crosses a `b`-edge (on line π∩U), each strictly within its segment.
@@ -4905,6 +4957,98 @@ fn coplanar_result(
     }
     if face_contains_face(model, q_face, p_face, n) {
         return Err(reject(tag::OVERHANG_ARCS)); // P ⊂ Q — symmetric contained, later branch
+    }
+
+    // Cut overhang (same-normal, overlapping footprints): the cutter `b` breaks into `a`'s
+    // material. Uniform rule — the contact face `a` becomes a mouth (P∖Q, footprint), every other
+    // `a` face is clipped to `a∖b` (its breached walls gain openings), every `b` face is clipped to
+    // `b∩a` and flipped (the slot surfaces), and `b`'s contact face vanishes. The scoped
+    // contact-plane flush (R1/R2) welds the wall corners; `assemble_fuse_cut` welds the seam by
+    // triple identity. (C2b-1: single/parallel breach, no swallowed corner; corner columns later.)
+    if kind == BoolKind::Cut && same_normal {
+        let mut surf_ix = HashMap::new();
+        for (i, p) in planes.iter().enumerate() {
+            surf_ix.insert(p.face, i);
+        }
+        let canon = plane_classes(&planes);
+        let pi_c = canon[pi_idx];
+        let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+        let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+
+        // Mouth: a's contact face minus b's footprint (proper crossings on π, no section).
+        let a_bnd = contact_boundary(model, p_face, pi_c, &inc_a, &canon)?;
+        let b_fp = contact_boundary(model, q_face, pi_c, &inc_b, &canon)?;
+        let mouth_cx = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_fp, None)?;
+        if mouth_cx.is_empty() {
+            return Err(reject(tag::OVERHANG_ARCS)); // disjoint footprints — not an overhang
+        }
+        let mouth_arcs = coplanar_seam_arcs(&planes, pi_c, &b_fp, &mouth_cx);
+        let mut faces = coplanar_reconstruct(
+            &planes,
+            pi_c,
+            pi_idx,
+            &a_bnd,
+            &b_fp,
+            &mouth_cx,
+            &mouth_arcs,
+            false,
+            false,
+            None,
+        )?;
+        let mut all_cx = mouth_cx;
+
+        // a's other faces → a∖b (breached walls gain openings; the rest stay whole).
+        let a_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(a).outer).faces.clone();
+        for (pos, &fh) in a_faces.iter().enumerate() {
+            if fh == p_face {
+                continue;
+            }
+            let (fs, cx) = clip_face_to_section(
+                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, false, false, pi_c,
+            )?;
+            faces.extend(fs);
+            all_cx.extend(cx);
+        }
+        // b's faces (contact face vanishes) → b∩a, flipped (the slot surfaces).
+        let b_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(b).outer).faces.clone();
+        for (pos, &fh) in b_faces.iter().enumerate() {
+            if fh == q_face {
+                continue;
+            }
+            let (fs, cx) = clip_face_to_section(
+                model,
+                fh,
+                na + pos,
+                a,
+                &planes,
+                &surf_ix,
+                &canon,
+                &inc_b,
+                true,
+                b_flip,
+                pi_c,
+            )?;
+            faces.extend(fs);
+            all_cx.extend(cx);
+        }
+
+        // Weld all crossings (dedup by triple, deterministic first-appearance order) into the seam.
+        let mut seen = HashSet::new();
+        let seam: Vec<SeamVertex> = all_cx
+            .iter()
+            .filter(|c| seen.insert(c.triple))
+            .map(|c| SeamVertex {
+                point: c.point,
+                triple: c.triple,
+                tol: vertex_tol(
+                    c.point,
+                    &planes[c.triple[0]].plane,
+                    &planes[c.triple[1]].plane,
+                    &planes[c.triple[2]].plane,
+                ),
+            })
+            .collect();
+        return assemble_fuse_cut(model, a, b, &planes, &seam, &faces);
     }
 
     // Overlapping footprints (∂P × ∂Q crossing) — the overhang branch. Scope B4p2b: the boss
@@ -14090,6 +14234,62 @@ pub mod tests {
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
         assert!((nacre_props::mass_props(&m, r[0]).unwrap().volume - 1.5).abs() < 1e-12);
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
+    // C2b-1: the first cut-overhang assembled as a real solid through the unified handler. A prism
+    // top-flush on the base but hanging past its x=1 edge; Cut carves an edge-slot breaking out the
+    // x=1 wall. Mouth (P∖Q notch) + breached x=1 wall (section-clip, R1 attachment) + prism walls/
+    // floor (section-clip ∩ base, flipped, R2 top corners) + prism top vanishes. Volume 0.875.
+    #[test]
+    fn coplanar_result_reproduces_edge_slot_cut() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 0.5]),
+            Point3::from_array([1.5, 0.75, 1.0]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Cut, base, prism).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!(
+            (nacre_props::mass_props(&m, r[0]).unwrap().volume - 0.875).abs() < 1e-12,
+            "volume {}",
+            nacre_props::mass_props(&m, r[0]).unwrap().volume
+        );
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
+    // C2b-1: a slab channel — the cutter spans clear across the base in x, breaking out BOTH x
+    // walls (two independent Middle notches, no shared corner). Volume 0.9.
+    #[test]
+    fn coplanar_result_reproduces_slab_channel_cut() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 0.4, 0.5]),
+            Point3::from_array([1.5, 0.6, 1.0]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Cut, base, slab).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!(
+            (nacre_props::mass_props(&m, r[0]).unwrap().volume - 0.9).abs() < 1e-12,
+            "volume {}",
+            nacre_props::mass_props(&m, r[0]).unwrap().volume
+        );
         let planes = collect_planes(&m, r[0]).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
     }
