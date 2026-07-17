@@ -3966,6 +3966,12 @@ fn clip_face_to_section(
     keep_inside: bool,
     flip: bool,
     contact: usize,
+    // On-region survival for the coincident-overlap sub-case (the unified driver, M5-U). `None`
+    // keeps today's behaviour (`keep_inside` ∖/∩) — the current callers; the driver passes
+    // `Some(coplanar_survival(..))` to select Whole / MinusQ (∖) / InterQ (∩) / Empty on the
+    // shared coplanar patch. Inert for the current callers: their coincident sub-case is unreached
+    // (single contact → no second overlapping face).
+    on_survival: Option<PSurvive>,
 ) -> Result<(Vec<LocalFace>, Vec<CoCross>), BoolError> {
     let pi = canon[f_idx];
     // Keep `f` verbatim, preserving its hole rings (a whole face with a pocket mouth keeps that
@@ -3988,7 +3994,7 @@ fn clip_face_to_section(
     // Reconstruct `f` (boundary `f_bnd`) subdivided by a coplanar footprint `q_bnd` — shared by the
     // coplanar-overlap regime (`q_bnd` = a coincident face) and the transversal regime (`q_bnd` = a
     // section), which differ only in where `q_bnd` comes from.
-    let reconstruct = |f_bnd: &[BndEdge], q_bnd: &[BndEdge]| {
+    let reconstruct = |f_bnd: &[BndEdge], q_bnd: &[BndEdge], keep_in: bool| {
         let cx = coplanar_boundary_crossings(planes, pi, f_bnd, q_bnd, Some(contact))?;
         let arcs = coplanar_seam_arcs(planes, pi, q_bnd, &cx);
         let faces = coplanar_reconstruct(
@@ -3999,7 +4005,7 @@ fn clip_face_to_section(
             q_bnd,
             &cx,
             &arcs,
-            keep_inside,
+            keep_in,
             flip,
             Some(contact),
         )?;
@@ -4017,7 +4023,13 @@ fn clip_face_to_section(
         )? {
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-            return reconstruct(&f_bnd, &q_bnd);
+            return match on_survival {
+                None => reconstruct(&f_bnd, &q_bnd, keep_inside), // today (unreached by current callers)
+                Some(PSurvive::Whole) => Ok((vec![whole()], Vec::new())),
+                Some(PSurvive::Empty) => Ok((Vec::new(), Vec::new())),
+                Some(PSurvive::MinusQ) => reconstruct(&f_bnd, &q_bnd, false), // P∖Q (a notch/mouth)
+                Some(PSurvive::InterQ) => reconstruct(&f_bnd, &q_bnd, true),  // P∩Q
+            };
         }
         // (b) Disjoint-coplanar (footprints apart): the centroid is strictly inside/outside `other`,
         // so decide the whole face by it (no section).
@@ -4041,7 +4053,7 @@ fn clip_face_to_section(
     }
     let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
     let q_bnd = section_boundary(&loops, pi, canon)?;
-    reconstruct(&f_bnd, &q_bnd)
+    reconstruct(&f_bnd, &q_bnd, keep_inside)
 }
 
 /// The single face of `other` on plane class `pi` whose footprint overlaps face `f_face`'s (a
@@ -5338,7 +5350,7 @@ fn coplanar_result(
             }
             let (fs, cx) = clip_face_to_section(
                 model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, &inc_b, &b_classes,
-                keep_inter, false, pi_c,
+                keep_inter, false, pi_c, None,
             )?;
             faces.extend(fs);
             all_cx.extend(cx);
@@ -5363,6 +5375,7 @@ fn coplanar_result(
                 true,
                 b_flip,
                 pi_c,
+                None,
             )?;
             faces.extend(fs);
             all_cx.extend(cx);
@@ -13365,6 +13378,7 @@ pub mod tests {
                 keep_inside,
                 false,
                 pi,
+                None,
             )
             .unwrap()
             .0
@@ -13412,6 +13426,92 @@ pub mod tests {
             coplanar_survival(BoolKind::Common, true).0,
             PSurvive::InterQ
         );
+    }
+
+    // M5-U0: `clip_face_to_section`'s new `on_survival` selector picks the coincident-overlap
+    // region per the survival table — the unified driver's on± rule. Same base_top / prism_top
+    // overlap; `Some(MinusQ)`→P∖Q(0.75), `Some(InterQ)`→P∩Q(0.25), `Some(Whole)`→whole face(1.0),
+    // `Some(Empty)`→nothing. (The current callers pass `None` = today's `keep_inside`; this proves
+    // the new Some-path before the driver wires it.)
+    #[test]
+    fn clip_face_to_section_on_survival_selects_the_region() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 0.5]),
+            Point3::from_array([1.5, 0.75, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, base).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, prism).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, p) in planes.iter().enumerate() {
+            surf_ix.insert(p.face, i);
+        }
+        let canon = plane_classes(&planes);
+        let base_top = (0..na)
+            .find(|&i| planes[i].n_out.as_array()[2] > 0.5 && planes[i].tri[0].as_array()[2] > 0.5)
+            .unwrap();
+        let pi = canon[base_top];
+        let inc_base = arrange::edge_planes(&m, base, &surf_ix).unwrap();
+        let inc_prism = arrange::edge_planes(&m, prism, &surf_ix).unwrap();
+        let prism_classes: HashSet<usize> = (na..planes.len()).map(|i| canon[i]).collect();
+        let clip = |s: Option<PSurvive>| -> Vec<LocalFace> {
+            clip_face_to_section(
+                &m,
+                planes[base_top].face,
+                base_top,
+                prism,
+                &planes,
+                &surf_ix,
+                &canon,
+                &inc_base,
+                &inc_prism,
+                &prism_classes,
+                false,
+                false,
+                pi,
+                s,
+            )
+            .unwrap()
+            .0
+        };
+        let area = |lf: &LocalFace| -> f64 {
+            let xy = |nd: &Node| -> [f64; 2] {
+                let p = match *nd {
+                    Node::Orig(vh) => m.vertices.get(vh).point,
+                    Node::Seam(t) => three_planes(
+                        &planes[t[0]].plane,
+                        &planes[t[1]].plane,
+                        &planes[t[2]].plane,
+                    )
+                    .unwrap(),
+                }
+                .as_array();
+                [p[0], p[1]]
+            };
+            let r: Vec<[f64; 2]> = lf.loop_nodes.iter().map(xy).collect();
+            let k = r.len();
+            0.5 * (0..k)
+                .map(|i| r[i][0] * r[(i + 1) % k][1] - r[(i + 1) % k][0] * r[i][1])
+                .sum::<f64>()
+                .abs()
+        };
+        let minus = clip(Some(PSurvive::MinusQ));
+        assert_eq!(minus.len(), 1);
+        assert!((area(&minus[0]) - 0.75).abs() < 1e-12, "MinusQ 0.75");
+        let inter = clip(Some(PSurvive::InterQ));
+        assert_eq!(inter.len(), 1);
+        assert!((area(&inter[0]) - 0.25).abs() < 1e-12, "InterQ 0.25");
+        let whole = clip(Some(PSurvive::Whole));
+        assert_eq!(whole.len(), 1);
+        assert!((area(&whole[0]) - 1.0).abs() < 1e-12, "Whole 1.0");
+        assert!(clip(Some(PSurvive::Empty)).is_empty(), "Empty drops");
     }
 
     // B4-R1b (corner-collinear reconstruct): a flush contact face whose ∂Q shares a *full edge*
