@@ -5098,6 +5098,235 @@ fn coplanar_contact_count(
     Ok(count)
 }
 
+/// One face `f` of `owner` classified and emitted for the unified per-face coplanar Boolean
+/// (M5-U, Requicha). Returns the surviving `LocalFace`(s) plus any crossings they mint. Regimes:
+/// **transversal / disjoint-coplanar** → the in/out rule via [`clip_face_to_section`]
+/// (`keep_inside`/`flip` per op); **coincident-overlap** → the on-region rule via
+/// [`coplanar_survival`], emitted once from the canonical (`owner_is_a`) side. Scope U1: the
+/// **contained family** — a coincident-overlap resolves to a hole (a-side `MinusQ`, no crossing),
+/// whole (`Whole`), or vanish (b-side / `Empty`); the overhang notch (a-side `MinusQ` with a
+/// crossing) and the b-side cantilever out-region are later cells (U2/U3).
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn classify_and_emit(
+    model: &Model,
+    f_face: Handle<Face>,
+    f_idx: usize,
+    owner_is_a: bool,
+    other: Handle<Solid>,
+    kind: BoolKind,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    canon: &[usize],
+    inc_owner: &arrange::EdgePlanes,
+    inc_other: &arrange::EdgePlanes,
+    other_classes: &HashSet<usize>,
+) -> Result<(Vec<LocalFace>, Vec<CoCross>), BoolError> {
+    let pi = canon[f_idx];
+    // In/out rule (owner side): keep_inside(A)=Common, keep_inside(B)=!Fuse; flip only b for a Cut.
+    let keep_inside = if owner_is_a {
+        kind == BoolKind::Common
+    } else {
+        kind != BoolKind::Fuse
+    };
+    let flip = !owner_is_a && kind == BoolKind::Cut;
+    let ring = |l: &Loop| -> Vec<Node> {
+        l.half_edges
+            .iter()
+            .map(|&he| Node::Orig(he_start(model, he)))
+            .collect()
+    };
+    let whole_lf = || -> LocalFace {
+        let f = model.faces.get(f_face);
+        LocalFace {
+            plane_idx: f_idx,
+            loop_nodes: ring(&f.outer),
+            inner: f.inner.iter().map(ring).collect(),
+            flip,
+        }
+    };
+    let clip = |on_survival| {
+        clip_face_to_section(
+            model,
+            f_face,
+            f_idx,
+            other,
+            planes,
+            surf_ix,
+            canon,
+            inc_owner,
+            inc_other,
+            other_classes,
+            keep_inside,
+            flip,
+            pi,
+            on_survival,
+        )
+    };
+    // Transversal (not coplanar with `other`): whole if `f` does not breach `other`'s section, else
+    // clip. The whole-face fast-path (driver-only — inside `classify_and_emit`, not the shared
+    // `clip_face_to_section`) avoids the graze `reconstruct` would hit where `f`'s boundary is flush
+    // with the section's on a non-contact plane (a contained wall's top). A breaching face (vertices
+    // on both sides, or the section poking into `f`) still clips (U2).
+    if !other_classes.contains(&pi) {
+        let loops = section_of_solid(model, other, f_idx, planes, surf_ix)?;
+        if loops.is_empty() {
+            // `f`'s plane misses `other` ⇒ `f` wholly outside.
+            let lf = (!keep_inside).then(whole_lf);
+            return Ok((Vec::from_iter(lf), Vec::new()));
+        }
+        let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
+        let q_bnd = section_boundary(&loops, pi, canon)?;
+        let p_ring = boundary_ring_triples(&f_bnd, pi);
+        let q_ring = boundary_ring_triples(&q_bnd, pi);
+        let (mut has_in, mut has_out) = (false, false);
+        for v in &p_ring {
+            if arrange::point_on_ring(planes, pi, *v, &q_ring)? {
+                continue;
+            }
+            if arrange::point_in_ring(planes, pi, *v, &q_ring)? {
+                has_in = true;
+            } else {
+                has_out = true;
+            }
+        }
+        let mut sect_in_f = false;
+        for v in &q_ring {
+            if !arrange::point_on_ring(planes, pi, *v, &p_ring)?
+                && arrange::point_in_ring(planes, pi, *v, &p_ring)?
+            {
+                sect_in_f = true;
+                break;
+            }
+        }
+        if !sect_in_f && !has_out {
+            let lf = keep_inside.then(whole_lf); // f ∩ other = whole
+            return Ok((Vec::from_iter(lf), Vec::new()));
+        }
+        if !sect_in_f && !has_in {
+            let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
+            return Ok((Vec::from_iter(lf), Vec::new()));
+        }
+        return clip(None); // breaches → section clip (U2)
+    }
+    // Coplanar with `other`: overlap → on-region; disjoint → centroid whole (clip's branch b).
+    let Some(cf) = coincident_overlap_face(
+        model, f_face, other, pi, planes, surf_ix, canon, inc_owner, inc_other,
+    )?
+    else {
+        return clip(None);
+    };
+    let same_normal = planes[f_idx].n_out.dot(planes[surf_ix[&cf]].n_out) > 0.0;
+    // b-side: the shared on-region belongs to a; b keeps only its out-region. Contained ⇒ no out ⇒
+    // vanish. (The overhang cantilever out-region is U3.)
+    if !owner_is_a {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    // a-side (canonical): the survival table decides the on-region.
+    match coplanar_survival(kind, same_normal).0 {
+        PSurvive::Whole => Ok((vec![whole_lf()], Vec::new())),
+        PSurvive::Empty => Ok((Vec::new(), Vec::new())),
+        PSurvive::InterQ => clip(Some(PSurvive::InterQ)),
+        PSurvive::MinusQ => {
+            // Contained (no ∂P×∂Q crossing) ⇒ Q is a hole; a crossing ⇒ a notch (U2).
+            let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
+            let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
+            if coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, None)?.is_empty() {
+                let f = model.faces.get(f_face);
+                let mut hole = ring(&model.faces.get(cf).outer);
+                if same_normal {
+                    hole.reverse(); // same normals: CW about f's normal
+                }
+                let mut inner: Vec<Vec<Node>> = f.inner.iter().map(ring).collect();
+                inner.push(hole);
+                Ok((
+                    vec![LocalFace {
+                        plane_idx: f_idx,
+                        loop_nodes: ring(&f.outer),
+                        inner,
+                        flip,
+                    }],
+                    Vec::new(),
+                ))
+            } else {
+                clip(Some(PSurvive::MinusQ))
+            }
+        }
+    }
+}
+
+/// The unified per-face coplanar Boolean driver (M5-U). Loops every face of both solids through
+/// [`classify_and_emit`] (A then B, shell Store order) and assembles. Unwired (shadow-verified
+/// against `coplanar_result` before D0). Scope U1: reproduces the contained family.
+#[cfg_attr(not(test), allow(dead_code))]
+fn coplanar_result_unified(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let planes_a = collect_planes(model, a)?;
+    let na = planes_a.len();
+    let planes_b = collect_planes(model, b)?;
+    let mut planes = planes_a;
+    planes.extend(planes_b);
+    let mut surf_ix = HashMap::new();
+    for (i, p) in planes.iter().enumerate() {
+        surf_ix.insert(p.face, i);
+    }
+    let canon = plane_classes(&planes);
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    let a_classes: HashSet<usize> = (0..na).map(|i| canon[i]).collect();
+    let b_classes: HashSet<usize> = (na..planes.len()).map(|i| canon[i]).collect();
+
+    let mut faces = Vec::new();
+    let mut all_cx = Vec::new();
+    let a_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(a).outer).faces.clone();
+    for (pos, &fh) in a_faces.iter().enumerate() {
+        let (lf, cx) = classify_and_emit(
+            model, fh, pos, true, b, kind, &planes, &surf_ix, &canon, &inc_a, &inc_b, &b_classes,
+        )?;
+        faces.extend(lf);
+        all_cx.extend(cx);
+    }
+    let b_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(b).outer).faces.clone();
+    for (pos, &fh) in b_faces.iter().enumerate() {
+        let (lf, cx) = classify_and_emit(
+            model,
+            fh,
+            na + pos,
+            false,
+            a,
+            kind,
+            &planes,
+            &surf_ix,
+            &canon,
+            &inc_b,
+            &inc_a,
+            &a_classes,
+        )?;
+        faces.extend(lf);
+        all_cx.extend(cx);
+    }
+    let mut seen = HashSet::new();
+    let seam: Vec<SeamVertex> = all_cx
+        .iter()
+        .filter(|c| seen.insert(c.triple))
+        .map(|c| SeamVertex {
+            point: c.point,
+            triple: c.triple,
+            tol: vertex_tol(
+                c.point,
+                &planes[c.triple[0]].plane,
+                &planes[c.triple[1]].plane,
+                &planes[c.triple[2]].plane,
+            ),
+        })
+        .collect();
+    assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
+}
+
 /// Whether two faces of one solid share a boundary edge (adjacent faces). Used by the flush
 /// pocket branch to confirm the two contact faces meet at an edge (so their notches share a
 /// well-defined corner column) — a topological test, no geometry.
@@ -14084,6 +14313,40 @@ pub mod tests {
             assert!(nacre_validate::validate(&m).is_empty());
             assert!((nacre_props::mass_props(&m, r[0]).unwrap().volume - 1.25).abs() < 1e-12);
         }
+    }
+
+    // M5-U1: the unified per-face driver `coplanar_result_unified` reproduces the contained family
+    // (pocket 0.875, boss 1.25, through-tunnel 0.84) — same volumes, watertight, all-Constructed
+    // (empty seam ⇒ purity), no coplanar-neighbour edge. Direct call (unwired); this proves the
+    // driver on the contained regime before it is dispatched (D0).
+    #[test]
+    fn unified_reproduces_contained() {
+        let check = |kind: BoolKind, bmin: [f64; 3], bmax: [f64; 3], vol: f64| {
+            let mut m = Model::new();
+            let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let tool = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+            let r = coplanar_result_unified(&mut m, kind, base, tool).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{vs:?}");
+            let got = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((got - vol).abs() < 1e-12, "volume {got} != {vol}");
+            assert!(
+                solid_vertex_handles(&m, r[0])
+                    .iter()
+                    .all(|&v| matches!(m.vertices.get(v).origin, Origin::Constructed)),
+                "contained ⇒ all Constructed (empty seam)"
+            );
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+        };
+        // Pocket (Cut/same): a hole in the top. 1 − 0.5·0.5·0.5.
+        check(BoolKind::Cut, [0.25, 0.25, 0.5], [0.75, 0.75, 1.0], 0.875);
+        // Boss (Fuse/opposite): a hole in the top, boss walls added. 1 + 0.5·0.5·1.
+        check(BoolKind::Fuse, [0.25, 0.25, 1.0], [0.75, 0.75, 2.0], 1.25);
+        // Through-tunnel (Cut, two parallel contained contacts): a hole top AND bottom. 1 − 0.4·0.4.
+        check(BoolKind::Cut, [0.3, 0.3, 0.0], [0.7, 0.7, 1.0], 0.84);
     }
 
     // B4 part 2b: the overhang boss (crossing) through the one entry — first crossing-based real
