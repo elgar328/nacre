@@ -1800,14 +1800,6 @@ fn overlap_fuse_cut(
     // Each solid's faces as triple rings, once. `edge_crosses_face` reads them per edge.
     let rings_a = solid_face_rings(model, a, &surf_ix, &inc_a)?;
     let rings_b = solid_face_rings(model, b, &surf_ix, &inc_b)?;
-    // Canonicalize seam-vertex triples through the plane classes (U1), so they weld with the
-    // coplanar handler's canon triples once per-face delegation (U2) lets coplanar planes reach
-    // this loop. Inert today, and measured to be so: `canon` is NOT the identity — it folds a
-    // solid's own coplanar twin faces (e.g. two slot faces sharing a plane) — but those folded
-    // planes never appear as a seam's {e0,e1,entry}, so every minted triple below comes out
-    // byte-identical to the raw indices. Cross-solid coplanar pairs (the ones that would shift a
-    // seam name) are still rejected at the door above until U2 delegates them here.
-    let canon = plane_classes(&planes);
     // Each edge's crossing test + 4-plane guard is an independent, read-only predicate
     // evaluation, so evaluate edges in parallel; the seam dedup (first-appearance index =
     // seam-vertex identity) stays sequential in index order, keeping the result
@@ -1877,16 +1869,8 @@ fn overlap_fuse_cut(
                         return Err(reject(tag::FOURPLANE)); // seam vertex on a 4th plane
                     }
                 }
-                let mut triple = [canon[e0], canon[e1], canon[entry]];
+                let mut triple = [e0, e1, entry];
                 triple.sort_unstable();
-                // A canon fold collapsing two of the three planes onto one (a shared line) would
-                // make a degenerate triple — reject rather than silently mis-weld. Inert today:
-                // measured across the suite, `canon` never changes a minted triple here (the
-                // same-solid coplanar twins it folds — e.g. two slot faces — never serve as a
-                // seam's {e0,e1,entry}), so every triple is byte-identical to the raw `[e0,e1,entry]`.
-                if triple[0] == triple[1] || triple[1] == triple[2] {
-                    return Err(reject(tag::SECTION_TRIPLE_COLLISION));
-                }
                 cands.push((triple, point, e0, e1, entry));
             }
             Ok(cands)

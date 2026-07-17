@@ -1161,3 +1161,11 @@ triple이 모두 **raw와 바이트 동일** = **위상 이름 0개 변경**(TNP
 필요 — seam이 byte-동일인 지금은 seam(canon)·ring(raw) 일치라 defer. 최저위험 첫 셀(merge-first). **교훈(TNP 경계):**
 "묶을 게 없어 항등"이라는 편의 가정을 실측 없이 기록하면 미래 독자가 seam=canon/ring=raw 잠재 불일치를 놓친다 —
 inertness는 반드시 **측정으로** 못박는다. 다음: U2 per-face 위임 n0(전용 측정).
+
+**(B0) U1 revert — U2 하이브리드 기각 → (B) 통일 섹셔닝 채택으로 U1 목적 소멸.** U2(per-face 병합)를 여러 검토 라운드
+끝에 기각(스코프 내 새 능력 0 + 공면/관통 경계 용접 은밀 누수 위험 + battle-tested 전역 seam 수술 비용)하고, 대신 **(B)
+통일 섹셔닝**(공면 부울은 `coplanar_result`가 자족, 일반 엔진 불변) 채택. U1은 U2의 seam 병합 enabler였으므로 (B)에선
+일반 엔진이 공면을 안 흘려 canon화가 **죽은 목적**(hot path `plane_classes` 낭비 + 주석이 안 일어날 병합 서술 = 오해). →
+`overlap_fuse_cut`의 mint를 raw `[e0,e1,entry]`로 복원 + `let canon`·`SECTION_TRIPLE_COLLISION` 가드 제거. revert도 **무동작**
+(U1이 seam 이름을 안 바꿨으니 되돌려도 동일): 558 workspace green(양 feature)·267 ops·clippy 양 구성. (B) 사다리 시작
+셀. 다음: B1(다중-loop 단면) n0 — 라우팅 상태 + 다중-링 재작성 실현성 측정.
