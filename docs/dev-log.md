@@ -1189,3 +1189,13 @@ hole 방출을 다중-링 재작성)에서 A3식 골든으로 개발·검증 가
 (`vertex_on_face_plane` = 진짜 section 정점 퇴화 4067/4308 + genuine>1 4929 + no-contact 4932), 태그만 보고 원인을 단정
 말 것 — panic 계측으로 **어느 사이트인지** 확정. **정정된 그림:** B1(multi-loop)만 ray_degenerate로 막힘(hollop 솔리드 hard);
 B2(multi-coplanar)는 도달 가능(genuine>1 완화). "모두 section 퇴화"는 과한 일반화였다. 다음: B2 구현(genuine>1 → 순회).
+
+**(B2 part1) 다중-접촉 contained — coplanar_result가 접촉 여러 개를 한 번에 조립.** 단일-접촉 contained 브랜치(genuine.first()
++ 한 구멍)를 **다중-접촉 contained**로 일반화: `genuine` pair 전부가 contained(q⊂p)면, **a-면마다 그 q footprint들을 구멍으로
+누적**(`holes_by_pi: pi→Vec<hole>`, 한 a-면이 여러 접촉을 호스트 — ⊓ 두 다리→bar-top 한 면에 구멍 2개), b의 접촉 면들
+(`q_planes`)은 소거, b 나머지 면은 flip=(kind==Cut)로 추가 → 한 `assemble_fuse_cut`. `b_flip=(kind==Cut)`가 상수라 접촉들이
+cross-talk 없이 합성, 각 pair의 구멍/무구멍은 자기 `coplanar_survival`. 골든 `coplanar_result_two_leg_boss_fuse`: ⊓(slab−notch,
+두 다리) Fuse bar → **vol 3.4·watertight·no-coplanar-edge**(직접 호출). 단일-접촉 경로(포켓·보스)는 genuine.len()==1로 같은
+브랜치 → **267 무회귀**. 게이트: clippy 양 구성·전 스위트 양 feature green. **★ 남은 part2 = dispatch 라우팅** — ⊓ Fuse는
+detector가 `opposite.len()==1`을 요구해 아직 boolean_one로 라우팅 안 됨(coplanar_result 직접만 동작). 다중-접촉 라우팅(narrow
+detector or 보수적 가드+라우터)이 end-to-end 배송의 남은 조각. non-contained 다중 접촉은 여전히 정직 거절(later cell).

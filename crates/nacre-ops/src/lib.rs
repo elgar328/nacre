@@ -4925,52 +4925,75 @@ fn coplanar_result(
             }
         }
     }
-    if genuine.len() > 1 {
-        return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // >1 real contact — later cell
-    }
-    let Some((pi_idx, qj_idx)) = genuine.first().copied() else {
+    if genuine.is_empty() {
         return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // no coplanar contact
-    };
-    let same_normal = planes[pi_idx].n_out.dot(planes[qj_idx].n_out) > 0.0;
-    let (survive, b_flip) = coplanar_survival(kind, same_normal);
-    let (p_face, q_face) = (planes[pi_idx].face, planes[qj_idx].face);
-    let n = planes[pi_idx].plane.normal();
+    }
 
-    // Contained: a's contact face P strictly contains b's footprint Q (no ∂P × ∂Q crossing).
-    if face_contains_face(model, p_face, q_face, n) {
+    // Contained (B2, any contact count): every genuine pair has b's footprint Q strictly inside
+    // a's contact face P (no ∂P × ∂Q crossing). Each a-contact face gains its Q footprints as
+    // holes; b's contact faces vanish; b's remaining faces are added (flipped for a Cut). One
+    // a-face may host several contacts (a ⊓ tool's two legs → two holes in one bar-top face), so
+    // holes accumulate per a-face plane index. `b_flip = (kind == Cut)` is uniform, so multiple
+    // contacts compose without cross-talk; each pair's hole/no-hole is its own `coplanar_survival`.
+    if genuine.iter().all(|&(i, j)| {
+        face_contains_face(
+            model,
+            planes[i].face,
+            planes[j].face,
+            planes[i].plane.normal(),
+        )
+    }) {
         let ring_nodes = |l: &Loop| -> Vec<Node> {
             l.half_edges
                 .iter()
                 .map(|&he| Node::Orig(he_start(model, he)))
                 .collect()
         };
-        let mut faces = solid_local_faces(model, a, 0, Some(p_face), None);
-        let p_f = model.faces.get(p_face);
-        let mut inner: Vec<Vec<Node>> = p_f.inner.iter().map(&ring_nodes).collect();
-        match survive {
-            PSurvive::MinusQ => {
-                let mut hole = ring_nodes(&model.faces.get(q_face).outer);
-                if same_normal {
-                    hole.reverse(); // same normals: reverse to CW about P's normal
+        let mut holes_by_pi: HashMap<usize, Vec<Vec<Node>>> = HashMap::new();
+        let mut q_planes: HashSet<usize> = HashSet::new();
+        for &(i, j) in &genuine {
+            let same_normal = planes[i].n_out.dot(planes[j].n_out) > 0.0;
+            match coplanar_survival(kind, same_normal).0 {
+                PSurvive::MinusQ => {
+                    let mut hole = ring_nodes(&model.faces.get(planes[j].face).outer);
+                    if same_normal {
+                        hole.reverse(); // same normals: reverse to CW about P's normal
+                    }
+                    holes_by_pi.entry(i).or_default().push(hole);
                 }
-                inner.push(hole);
+                PSurvive::Whole => {} // Q internal — no hole (union)
+                PSurvive::InterQ | PSurvive::Empty => {
+                    return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // Common contained — later cell
+                }
             }
-            PSurvive::Whole => {} // Q internal — no hole
-            PSurvive::InterQ | PSurvive::Empty => return Err(reject(tag::VERTEX_ON_FACE_PLANE)),
+            q_planes.insert(j);
         }
-        faces.push(LocalFace {
-            plane_idx: pi_idx, // a's contact face keeps its combined index (= shell position)
-            loop_nodes: ring_nodes(&p_f.outer),
-            inner,
-            flip: false,
-        });
+        let b_flip = kind == BoolKind::Cut;
+        // a's faces, each contact face's inner loops gaining its Q holes.
+        let mut faces = solid_local_faces(model, a, 0, None, None);
+        for lf in faces.iter_mut() {
+            if let Some(hs) = holes_by_pi.get(&lf.plane_idx) {
+                lf.inner.extend(hs.iter().cloned());
+            }
+        }
+        // b's non-contact faces (contact faces — plane index in `q_planes` — vanish).
         faces.extend(
-            solid_local_faces(model, b, na, Some(q_face), None)
+            solid_local_faces(model, b, na, None, None)
                 .into_iter()
+                .filter(|lf| !q_planes.contains(&lf.plane_idx))
                 .map(|lf| LocalFace { flip: b_flip, ..lf }),
         );
         return assemble_fuse_cut(model, a, b, &planes, &[], &faces);
     }
+
+    if genuine.len() > 1 {
+        return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // >1 non-contained contact — later cell
+    }
+    let (pi_idx, qj_idx) = genuine[0];
+    let same_normal = planes[pi_idx].n_out.dot(planes[qj_idx].n_out) > 0.0;
+    let (_, b_flip) = coplanar_survival(kind, same_normal);
+    let (p_face, q_face) = (planes[pi_idx].face, planes[qj_idx].face);
+    let n = planes[pi_idx].plane.normal();
     if face_contains_face(model, q_face, p_face, n) {
         return Err(reject(tag::OVERHANG_ARCS)); // P ⊂ Q — symmetric contained, later branch
     }
@@ -13370,6 +13393,37 @@ pub mod tests {
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
         assert!((nacre_props::mass_props(&m, r[0]).unwrap().volume - 1.5).abs() < 1e-12);
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
+    // B2: two simultaneous coplanar contacts. A ⊓ tool (a slab with a bottom-middle notch → two
+    // legs) fused onto a bar makes TWO contacts on the bar's single top face (genuine.len() = 2);
+    // that one a-face gains two holes, each filled by a leg. Union volume = bar 3.0 + tool 0.4 = 3.4.
+    #[test]
+    fn coplanar_result_two_leg_boss_fuse() {
+        let mut m = Model::new();
+        let bar = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        let slab = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([2.5, 0.75, 1.5]),
+        );
+        let notch = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 1.0]),
+            Point3::from_array([2.0, 1.0, 1.2]),
+        );
+        let tool = boolean_one(&mut m, BoolKind::Cut, slab, notch).unwrap();
+        m.rebuild_adjacency();
+        let r = coplanar_result(&mut m, BoolKind::Fuse, bar, tool).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+        assert!((vol - 3.4).abs() < 1e-12, "volume {vol}");
         let planes = collect_planes(&m, r[0]).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
     }
