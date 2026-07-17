@@ -4342,6 +4342,17 @@ fn coplanar_reconstruct(
         .enumerate()
         .map(|(j, be)| (be.v[0], q_ring[j]))
         .collect();
+    // Corner Orig merge (B4-R1b-part2a): a `∂Q` vertex indexed by its plane triple. An attachment
+    // crossing that coincides with a `b` vertex has the *same* triple as that vertex, so at emit
+    // time a `Node::Seam(triple)` endpoint is replaced by this `Node::Orig` — the notch corner
+    // becomes the shared `b`-vertex handle and welds with `b`'s walls. Only a matching triple fires
+    // (a genuine proper crossing has no `b`-vertex with that triple → kept `Seam`), so section /
+    // transversal reconstructs are unchanged.
+    let orig_by_triple: HashMap<[usize; 3], Node> = b_bnd
+        .iter()
+        .enumerate()
+        .map(|(j, be)| (q_ring[j], be.v[0]))
+        .collect();
 
     // Keep the arcs of ∂Q that lie inside P — the seam that actually cuts P. A vertex-bearing arc
     // is classified by an interior node (its whole interior lies on one side). An interior-free
@@ -4476,6 +4487,16 @@ fn coplanar_reconstruct(
         } else {
             arc.iter().rev().copied().collect()
         };
+        // Corner Orig merge: substitute a `Seam` node that coincides with a `b` vertex by that
+        // `Node::Orig` (weld). Applied only to the emitted nodes — `h`/`t`/`kd`/`dk`/`cross_ix`
+        // above stay on the `Seam` triples the stitch math needs.
+        let ordered: Vec<Node> = ordered
+            .into_iter()
+            .map(|nd| match nd {
+                Node::Seam(tr) => orig_by_triple.get(&tr).copied().unwrap_or(nd),
+                Node::Orig(_) => nd,
+            })
+            .collect();
         let (kd_c, dk_c) = if forward { (h, t) } else { (t, h) };
         kd.push(prev[kd_c]);
         dk.push(prev[dk_c]);
@@ -13370,6 +13391,37 @@ pub mod tests {
         assert!(
             (area - 0.84).abs() < 1e-12,
             "notched top area 0.84, got {area}"
+        );
+
+        // ★ part2a: the two shared corners (0.3,0,1)/(0.7,0,1) are cutter *original* vertices, so
+        // the notch must reference them as `Node::Orig` (not a minted `Seam`) — that is what lets
+        // them weld with the cutter walls (same handle). Every attachment here coincides with a
+        // cutter vertex, so the whole notch loop is all-`Orig` (no residual seam).
+        for &corner in &[[0.3, 0.0], [0.7, 0.0]] {
+            let nd = faces[0]
+                .loop_nodes
+                .iter()
+                .find(|nd| {
+                    let p = node_xy(nd);
+                    (p[0] - corner[0]).abs() < 1e-9 && (p[1] - corner[1]).abs() < 1e-9
+                })
+                .expect("corner node present");
+            assert!(
+                matches!(nd, Node::Orig(_)),
+                "corner {corner:?} must be Node::Orig (cutter vertex), got a Seam"
+            );
+        }
+        assert!(
+            faces[0]
+                .loop_nodes
+                .iter()
+                .all(|nd| matches!(nd, Node::Orig(_))),
+            "the flush notch is all-Orig (pure, no residual seam)"
+        );
+        let k = faces[0].loop_nodes.len();
+        assert!(
+            (0..k).all(|i| faces[0].loop_nodes[i] != faces[0].loop_nodes[(i + 1) % k]),
+            "no adjacent duplicate node (zero-length edge)"
         );
     }
 
