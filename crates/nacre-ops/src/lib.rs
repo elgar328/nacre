@@ -4350,10 +4350,32 @@ fn coplanar_reconstruct(
     let mut inside: Vec<Option<bool>> = vec![None; arcs.len()];
     for (k, arc) in arcs.iter().enumerate() {
         if arc.len() > 2 {
-            let tri = *b_vtriple
-                .get(&arc[1])
-                .ok_or_else(|| reject(tag::MISSING_SEAM))?;
-            inside[k] = Some(arrange::point_in_ring(planes, pi, tri, &p_ring)?);
+            // Interior triples of the arc (the endpoints are the bounding crossings).
+            let interior: Vec<[usize; 3]> = arc[1..arc.len() - 1]
+                .iter()
+                .map(|nd| {
+                    b_vtriple
+                        .get(nd)
+                        .copied()
+                        .ok_or_else(|| reject(tag::MISSING_SEAM))
+                })
+                .collect::<Result<_, _>>()?;
+            // A ∂Q arc whose whole interior lies **on** ∂P is the shared collinear boundary (a
+            // flush edge — cutter and part meet along the same line), not a seam cutting P:
+            // classify it outside. Otherwise a single interior node fixes the side. An interior
+            // node landing on ∂P without the whole arc being collinear is a genuine degeneracy —
+            // `point_in_ring` rejects it honestly (`point_on_ring` there).
+            let all_on_ring = interior
+                .iter()
+                .map(|t| arrange::point_on_ring(planes, pi, *t, &p_ring))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .all(|b| b);
+            inside[k] = Some(if all_on_ring {
+                false
+            } else {
+                arrange::point_in_ring(planes, pi, interior[0], &p_ring)?
+            });
         }
     }
     if !arcs.is_empty() {
@@ -13248,6 +13270,106 @@ pub mod tests {
         assert_eq!(
             coplanar_survival(BoolKind::Common, true).0,
             PSurvive::InterQ
+        );
+    }
+
+    // B4-R1b (corner-collinear reconstruct): a flush contact face whose ∂Q shares a *full edge*
+    // with ∂P (the cutter footprint sits on the part's boundary edge). base top [0,1]² minus cutter
+    // top [0.3,0.7]×[0,0.4], flush on the y=0 edge. ∂Q's y=0 bottom edge is collinear with base
+    // top's y=0 edge — a shared boundary, not a seam that cuts P. R1-n0 measured the reject: that
+    // collinear arc's interior node is the shared corner (0.3,0,1), on ∂P, so `point_in_ring` hit
+    // POINT_ON_RING. The fix classifies a wholly-on-∂P arc as outside, so the notch opens correctly:
+    // P∖Q area 0.84 (= 1 − 0.4·0.4). The contact plane passed is the *neighbouring* flush wall (y=0),
+    // where the attachment lives. (Direct reconstruct; the multi-contact routing + weld is a later
+    // cell.)
+    #[test]
+    fn coplanar_reconstruct_handles_a_flush_shared_edge() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.3, 0.0, 0.5]),
+            Point3::from_array([0.7, 0.4, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, base).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, cutter).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, p) in planes.iter().enumerate() {
+            surf_ix.insert(p.face, i);
+        }
+        let canon = plane_classes(&planes);
+        let find = |rng: std::ops::Range<usize>, n: [f64; 3], c: usize, v: f64| -> usize {
+            rng.clone()
+                .find(|&i| {
+                    let nn = planes[i].n_out.as_array();
+                    nn[0] * n[0] + nn[1] * n[1] + nn[2] * n[2] > 0.5
+                        && (planes[i].tri[0].as_array()[c] - v).abs() < 1e-9
+                })
+                .expect("plane")
+        };
+        let base_top = find(0..na, [0.0, 0.0, 1.0], 2, 1.0);
+        let cutter_top = find(na..planes.len(), [0.0, 0.0, 1.0], 2, 1.0);
+        let y0 = canon[find(0..na, [0.0, -1.0, 0.0], 1, 0.0)]; // the neighbouring flush wall
+        let pi = canon[base_top];
+        let inc_a = arrange::edge_planes(&m, base, &surf_ix).unwrap();
+        let inc_b = arrange::edge_planes(&m, cutter, &surf_ix).unwrap();
+
+        let f_bnd = contact_boundary(&m, planes[base_top].face, pi, &inc_a, &canon).unwrap();
+        let q_bnd = contact_boundary(&m, planes[cutter_top].face, pi, &inc_b, &canon).unwrap();
+        let cx = coplanar_boundary_crossings(&planes, pi, &f_bnd, &q_bnd, Some(y0)).unwrap();
+        assert_eq!(
+            cx.len(),
+            2,
+            "two attachment crossings on the shared y=0 edge"
+        );
+        let arcs = coplanar_seam_arcs(&planes, pi, &q_bnd, &cx);
+        let faces = coplanar_reconstruct(
+            &planes,
+            pi,
+            base_top,
+            &f_bnd,
+            &q_bnd,
+            &cx,
+            &arcs,
+            false,
+            false,
+            Some(y0),
+        )
+        .expect("flush notch reconstructs, no POINT_ON_RING reject");
+        assert_eq!(faces.len(), 1, "one notched face");
+        assert!(
+            faces[0].inner.is_empty(),
+            "the notch opens to the edge — no hole"
+        );
+
+        let node_xy = |nd: &Node| -> [f64; 2] {
+            let p = match *nd {
+                Node::Orig(vh) => m.vertices.get(vh).point,
+                Node::Seam(t) => three_planes(
+                    &planes[t[0]].plane,
+                    &planes[t[1]].plane,
+                    &planes[t[2]].plane,
+                )
+                .unwrap(),
+            }
+            .as_array();
+            [p[0], p[1]]
+        };
+        let ring: Vec<[f64; 2]> = faces[0].loop_nodes.iter().map(node_xy).collect();
+        let k = ring.len();
+        let area = 0.5
+            * (0..k)
+                .map(|i| ring[i][0] * ring[(i + 1) % k][1] - ring[(i + 1) % k][0] * ring[i][1])
+                .sum::<f64>()
+                .abs();
+        assert!(
+            (area - 0.84).abs() < 1e-12,
+            "notched top area 0.84, got {area}"
         );
     }
 
