@@ -1554,11 +1554,22 @@ pub fn boolean(
     // RESULT is now built by the unified `coplanar_result` (D0). The convexity-agnostic detectors
     // (contained/pocket) route non-convex contacts too; the convex-gated overhang-Cut detector
     // declines non-convex, so a separate non-convex early dispatch keeps routing those.
-    if kind == BoolKind::Fuse
-        && (detect_contained_contact(model, a, b).is_some()
-            || detect_overhang_contact(model, a, b).is_some())
-    {
-        return coplanar_result(model, kind, a, b);
+    if kind == BoolKind::Fuse {
+        if detect_contained_contact(model, a, b).is_some()
+            || detect_overhang_contact(model, a, b).is_some()
+        {
+            return coplanar_result(model, kind, a, b);
+        }
+        // Multiple coplanar contacts (a ⊓-style two-leg boss) slip past the single-contact
+        // detectors (they require exactly one pair). Route ONLY genuine multi-contact (count > 1)
+        // to the unified handler — narrow on purpose so a single-contact case the detectors
+        // deliberately decline (e.g. a non-convex-footprint boss) is not incidentally flipped. The
+        // handler still declines (→ `general_boolean`) any multi-contact it cannot cover.
+        if coplanar_contact_count(model, a, b)? > 1 {
+            if let Ok(r) = coplanar_result(model, kind, a, b) {
+                return Ok(r);
+            }
+        }
     }
     if kind == BoolKind::Cut {
         if detect_pocket_contact(model, a, b).is_some()
@@ -4880,6 +4891,47 @@ fn footprints_overlap(
     let q_bnd = contact_boundary(model, q_face, pi, inc_b, canon)?;
     let cx = coplanar_boundary_crossings(planes, pi, &p_bnd, &q_bnd, None)?;
     Ok(!cx.is_empty())
+}
+
+/// Count the genuine coplanar contact pairs between `a` and `b`: plane-coplanar face pairs whose
+/// footprints actually overlap (the same predicate [`coplanar_result`] uses to pick its contacts).
+/// Used by the dispatch to route ONLY multi-contact cases (count > 1) to the unified handler,
+/// leaving single-contact cases to their detector gates. Mirrors `coplanar_result`'s setup.
+fn coplanar_contact_count(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<usize, BoolError> {
+    let mut planes = collect_planes(model, a)?;
+    let na = planes.len();
+    planes.extend(collect_planes(model, b)?);
+    let mut surf_ix = HashMap::new();
+    for (i, p) in planes.iter().enumerate() {
+        surf_ix.insert(p.face, i);
+    }
+    let canon = plane_classes(&planes);
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    let mut count = 0;
+    for i in 0..na {
+        for j in na..planes.len() {
+            if shares_or_coplanar(&planes[i], &planes[j])
+                && footprints_overlap(
+                    model,
+                    &planes,
+                    canon[i],
+                    planes[i].face,
+                    planes[j].face,
+                    &inc_a,
+                    &inc_b,
+                    &canon,
+                )?
+            {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
 }
 
 fn coplanar_result(
@@ -13401,7 +13453,7 @@ pub mod tests {
     // legs) fused onto a bar makes TWO contacts on the bar's single top face (genuine.len() = 2);
     // that one a-face gains two holes, each filled by a leg. Union volume = bar 3.0 + tool 0.4 = 3.4.
     #[test]
-    fn coplanar_result_two_leg_boss_fuse() {
+    fn two_leg_boss_fuse() {
         let mut m = Model::new();
         let bar = m.add_cuboid(
             Point3::from_array([0.0, 0.0, 0.0]),
@@ -13417,15 +13469,16 @@ pub mod tests {
         );
         let tool = boolean_one(&mut m, BoolKind::Cut, slab, notch).unwrap();
         m.rebuild_adjacency();
-        let r = coplanar_result(&mut m, BoolKind::Fuse, bar, tool).unwrap();
-        assert_eq!(r.len(), 1);
+        // End-to-end via the public dispatch: the two-contact boss routes past the single-contact
+        // detectors into the unified handler through the multi-coplanar Fuse fallback.
+        let r = boolean_one(&mut m, BoolKind::Fuse, bar, tool).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 3.4).abs() < 1e-12, "volume {vol}");
-        let planes = collect_planes(&m, r[0]).unwrap();
-        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
     // C2b-1: the first cut-overhang assembled as a real solid through the unified handler. A prism

@@ -1199,3 +1199,13 @@ cross-talk 없이 합성, 각 pair의 구멍/무구멍은 자기 `coplanar_survi
 브랜치 → **267 무회귀**. 게이트: clippy 양 구성·전 스위트 양 feature green. **★ 남은 part2 = dispatch 라우팅** — ⊓ Fuse는
 detector가 `opposite.len()==1`을 요구해 아직 boolean_one로 라우팅 안 됨(coplanar_result 직접만 동작). 다중-접촉 라우팅(narrow
 detector or 보수적 가드+라우터)이 end-to-end 배송의 남은 조각. non-contained 다중 접촉은 여전히 정직 거절(later cell).
+
+**(B2 part2) dispatch 라우팅 — 다중-접촉을 boolean_one로 end-to-end.** Fuse 분기에 단일-접촉 detector 뒤로 폴백 추가:
+`coplanar_contact_count(a,b) > 1`(coplanar_result와 동일한 genuine 계산 = shares_or_coplanar + footprints_overlap 카운트)이면
+coplanar_result를 **try**(Ok면 사용, Err면 general_boolean으로 fall-through — 비볼록 Cut 분기의 안전 패턴 동일). **★ 라우팅을
+`count>1`로 좁힌 이유(회귀 방지):** 처음엔 `cross_coplanar`(접촉 존재)만으로 넓게 try했더니 **`overhang_boss_with_a_non_convex_
+footprint_is_rejected`가 우발 flip**(단일-접촉 비볼록 footprint 보스를 coplanar_result가 수용 — detector가 의도적으로 거절하던 것).
+D0 silent-wrong 위험의 실증 — 넓은 라우터가 detector 게이트 보호를 우회. → **count>1 게이트로 다중-접촉만** 태워 단일-접촉은
+기존 detector 판정 유지(비볼록 footprint 보스는 count=1이라 거절 유지, 그 flip은 별도 OCCT-확정 셀). 골든을 `two_leg_boss_fuse`로
+개명·**boolean_one(공개 API) end-to-end**로 강화 → vol 3.4·watertight·no-coplanar-edge. 게이트: clippy 양 구성·전 스위트 양
+feature·silent-wrong 0 green(268 ops). **B2 완료(사용자 요구 ① 첫 케이스 end-to-end 배송).** 다음: B3(회전) 또는 B1 블로커.
