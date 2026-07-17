@@ -5046,16 +5046,19 @@ fn coplanar_result(
         return Err(reject(tag::OVERHANG_ARCS)); // P ⊂ Q — symmetric contained, later branch
     }
 
-    // Cut overhang (same-normal, overlapping footprints): the cutter `b` breaks into `a`'s
-    // material. Uniform rule — the contact face `a` becomes a mouth (P∖Q, footprint), every other
-    // `a` face is clipped to `a∖b` (its breached walls gain openings), every `b` face is clipped to
-    // `b∩a` and flipped (the slot surfaces), and `b`'s contact face vanishes. The scoped
-    // contact-plane flush (R1/R2) welds the wall corners; `assemble_fuse_cut` welds the seam by
-    // triple identity. (C2b-1: single/parallel breach, no swallowed corner; corner columns later.)
-    if kind == BoolKind::Cut && same_normal {
+    // Cut/Common overhang (same-normal, overlapping footprints): `b` breaks into `a`'s material.
+    // Uniform rule — the contact face keeps `P∖Q` (Cut, a mouth) or `P∩Q` (Common, the overlap
+    // cap); every `a` face is clipped to `a∖b` (Cut) or `a∩b` (Common); every `b` face is clipped
+    // to `b∩a`, flipped for Cut (slot surfaces) or not for Common (the overlap `R` keeps its
+    // normals); `b`'s contact face vanishes. The scoped contact-plane flush (R1/R2) welds the wall
+    // corners; `assemble_fuse_cut` welds the seam by triple identity. (Single/parallel/adjacent
+    // breach; the far side of the overlap for Common. Multi-loop sections rejected.)
+    if matches!(kind, BoolKind::Cut | BoolKind::Common) && same_normal {
         let pi_c = canon[pi_idx];
+        let keep_inter = kind == BoolKind::Common; // keep the ∩ side (Common) vs the ∖ side (Cut)
 
-        // Mouth: a's contact face minus b's footprint (proper crossings on π, no section).
+        // Contact face: a's contact reconstructed against b's footprint (proper crossings, no
+        // section) — P∖Q (Cut mouth) or P∩Q (Common cap).
         let a_bnd = contact_boundary(model, p_face, pi_c, &inc_a, &canon)?;
         let b_fp = contact_boundary(model, q_face, pi_c, &inc_b, &canon)?;
         let mouth_cx = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_fp, None)?;
@@ -5071,7 +5074,7 @@ fn coplanar_result(
             &b_fp,
             &mouth_cx,
             &mouth_arcs,
-            false,
+            keep_inter,
             false,
             None,
         )?;
@@ -5079,20 +5082,20 @@ fn coplanar_result(
         let a_classes: HashSet<usize> = (0..na).map(|i| canon[i]).collect();
         let b_classes: HashSet<usize> = (na..planes.len()).map(|i| canon[i]).collect();
 
-        // a's other faces → a∖b (breached walls gain openings; the rest stay whole).
+        // a's other faces → a∖b (Cut, breach openings) or a∩b (Common); no flip.
         let a_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(a).outer).faces.clone();
         for (pos, &fh) in a_faces.iter().enumerate() {
             if fh == p_face {
                 continue;
             }
             let (fs, cx) = clip_face_to_section(
-                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, &b_classes, false, false,
-                pi_c,
+                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, &b_classes, keep_inter,
+                false, pi_c,
             )?;
             faces.extend(fs);
             all_cx.extend(cx);
         }
-        // b's faces (contact face vanishes) → b∩a, flipped (the slot surfaces).
+        // b's faces (contact face vanishes) → b∩a, flipped for Cut (slot surfaces), not for Common.
         let b_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(b).outer).faces.clone();
         for (pos, &fh) in b_faces.iter().enumerate() {
             if fh == q_face {
@@ -14433,6 +14436,47 @@ pub mod tests {
         );
         let planes = collect_planes(&m, r[0]).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
+    // C2d: overhang Common — the 6th bespoke path. A prism top-flush on the base hanging past its
+    // y=1 edge; Common keeps the overlap R = [0.3,0.7]×[0.5,1]×[0.5,1]. The unified branch keeps the
+    // ∩ side everywhere (cap P∩Q, a∩b, b∩a, no flip). Volume 0.1.
+    #[test]
+    fn coplanar_result_reproduces_common_edge_overhang() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.3, 0.5, 0.5]),
+            Point3::from_array([0.7, 1.5, 1.0]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Common, base, prism).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        assert_common_box(&m, r[0], 0.1);
+    }
+
+    // C2d: overhang Common — corner (swallowed corner, R = 0.5³ = 0.125) and L-step (spans x,
+    // overhangs y; R is a full-width box 1×0.5×0.5 = 0.25).
+    #[test]
+    fn coplanar_result_reproduces_common_corner_and_l() {
+        for (bmin, bmax, vol) in [
+            ([0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.125),
+            ([-0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.25),
+        ] {
+            let mut m = Model::new();
+            let base = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0, 1.0, 1.0]),
+            );
+            let prism = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+            let r = coplanar_result(&mut m, BoolKind::Common, base, prism).unwrap();
+            assert_eq!(r.len(), 1);
+            m.rebuild_adjacency();
+            assert_common_box(&m, r[0], vol);
+        }
     }
 
     // C2c: through-bottom — a top-flush slot spanning the full height so it breaks out both the x=1

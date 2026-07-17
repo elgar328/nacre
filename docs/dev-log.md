@@ -1116,3 +1116,11 @@ triple로 자동 용접, Shorten(완전덮힘=양 코너 삼킴→코너 기둥�
 `clip_face_to_section`으로 클립되는 한 면이 더 늘 뿐**(전높이라 clean split), x=1 breakout은 자체 클립. 통합의 증명:
 케이스가 늘어도(출구 면 수) 코드가 안 는다. 공개 reject 테스트 플립 + 디스패치 broadening은 D0로 defer(볼록이라
 현 디스패치는 bespoke→reject 유지). 다음: common(C2d).
+
+**(C2d) overhang Common — 6번째 bespoke가 통합 분기로.** Cut/same-normal overhang 분기를 **Cut|Common**으로
+파라미터화(`keep_inter = kind==Common`): 접촉면 P∖Q(Cut)/P∩Q(Common), a-면 a∖b/a∩b, b-면 b∩a(Cut flip·Common
+no-flip). Common은 결과가 별도 작은 솔리드 R=a∩b. `clip_face_to_section`의 empty-section 규칙(`!keep_inside`)이
+Common(keep_inside=true)에선 "F가 상대 밖→drop"으로 자동 정합. 골든(직접 호출): `_common_edge_overhang`(0.1)·
+`_common_corner_and_l`(코너 0.125·L 0.25) — `assert_common_box`(convex·watertight·no-cavity·no-coplanar-edge). Cut
+5경로 무회귀(265 green). **bespoke 6종의 마지막(overhang Common)까지 통합 규칙이 흡수** — D1 은퇴 전제 충족.
+다음: C1(flush-edge/dissolve/coincident)은 플랜모드 재검토(가장 큰 미지 덩어리).
