@@ -1180,3 +1180,12 @@ ray-cast가 section-clip **도달 전** 퇴화), **(b) boolean_one dispatch = `v
 미티브 레벨**(section_boundary 3878 `loops[0]` + coplanar_reconstruct 4349 `&[runs.len()]`·4309/4326 단일 q_ring·4389-4413
 hole 방출을 다중-링 재작성)에서 A3식 골든으로 개발·검증 가능. end-to-end 부울 골든은 ray-퇴화·라우팅이 별도로 풀려야
 가능하므로 B1 스코프 밖. throwaway 제거(프리미티브 reject는 기존 단위 테스트가 이미 가드).
+
+**(B2-n0 + 통합 발견) 남은 M5 케이스는 헤드라인 전에 section-기계 퇴화에 먼저 걸린다 — "guard 하나 완화"가 아님.**
+B2 프로브: ⊓ 툴(두 다리, 사이 틈 면이 접촉 평면 z=1에 얹힘)을 bar에 Fuse → 두 곳 공면 접촉(genuine=2 기대). 측정:
+coplanar_result 직접·dispatch **둘 다 `vertex_on_face_plane`**(genuine>1 아님!). 원인 = 두 다리 사이 **틈 면이 접촉 평면
+위**라 section 기계가 그 정점을 거절. **통합 패턴(B1-n0 + B2-n0):** 남은 케이스(multi-loop·multi-coplanar…)가 각자
+헤드라인 이슈(다중-loop·genuine>1) **전에** coplanar_result의 section 기계 퇴화(`vertex_on_face_plane`·`ray_degenerate`)에
+**먼저** 걸린다. `coplanar_result`는 **단일·깨끗한 공면 접촉용**으로 지어져, 이 어려운 케이스엔 fragile. 즉 남은 M5 케이스는
+"guard 하나 완화"가 아니라 **각자 section 기계를 on-plane-정점 퇴화에 대해 로버스트화**하는 실작업 — 플랜이 가정한
+"싼 증분"보다 훨씬 크다. → 마일스톤 스코프 재평가 필요(사용자 보고).
