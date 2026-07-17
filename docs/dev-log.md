@@ -1221,3 +1221,14 @@ vol=1.08 정확·watertight·no-coplanar-edge`** — 즉 **구조적 회전 공�
 1.08 + near-edge 1.4802). **프로덕션 코드 변경 0**(능력은 이미 존재, 미검증이었을 뿐). 게이트: clippy 양 구성·전 스위트 양
 feature green. **연기(별도, DNA):** f64 `face_contains_face`→toleranced triple `point_in_ring` 배선(9곳+ 광범위, adversarial-margin
 하드닝) — 현실 안전이라 미룸. **B3 완료(사용자 요구 ① 두 번째 케이스, 구조적 스코프).**
+
+**(B4-n0) flush-edge 진단 — 단일 사이트 아님, 여러 곳에 걸친 실질 기능(코드가 "later cell"로 예고).** ★ **사용자 지시(메모리):
+robustness — flush 입력을 반드시 처리(정직 거절 불충분).** throwaway 진단으로 층별 측정: **(1) op 층 = 블로커 아님** — flush
+profile(엣지를 면 경계에)이 `ProfileNotContainedInFace` 안 나고 **통과**(내 profile_strictly_in_region 가설 반증; face-frame 투영
+rounding으로 "살짝 안쪽"). **(2) 부울 층 = 여러 사이트.** 임시로 `coplanar_boundary_crossings` 4078 attach를 flush로 확장
+(`a_pos==1&&b_pos==0` 수용)해도 **여전히 VOFP** → env-panic으로 확인: **4078이 아니라 하류**가 걸림. 하류 = `coplanar_reconstruct`
+4326(∂P 정점이 ∂Q 위 = "flush touch — out of scope, later cell") + 4320 `FLUSH_VERTEX_COINCIDENT`(정점이 Q 코너=4-평면 fan) +
+가능성 있는 section 벽. **결론:** flush = **collinear-overlap/degree-3를 코플레인 기계 전반(crossing enum 4078 + reconstruct
+4326 + section)에 1급화**하는 실질 다중-사이트 셀 — quick win 아님. 코드 주석들이 이미 "later cell"로 표시(설계가 예고).
+**B4 = 실질 구현 셀(4078 경계-벽 attach + 4326 ∂P-on-∂Q flush 수용 + section 벽 처리, 정답=overhang 등가 부피).** temp 전부
+revert(기존 `flush_edge_pocket_is_honestly_rejected` 가드 유지). 진단 완료 — 구현은 다음 단계.
