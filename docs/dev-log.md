@@ -1004,3 +1004,16 @@ C2. pi_c(canonical)로 arrangement, plane_idx(실면)로 출력.
 `coplanar_result`가 이 두 함수를 이미 호출)이라 시그니처 변경을 호출부·테스트와 함께 갱신. 다음(C2a·part2): `section_boundary`
 (section loop → BndEdge, R=a-face·`Node::Seam`) 추가 + **다중-loop hard reject 최우선 배치**(단일-loop 가정 도달 불가) +
 실 section을 `coplanar_reconstruct`에 먹이는 골든.
+
+**(C2a·part2) 실 section 투입 — `section_boundary` + crossing-triple arc 절단.** part1의 무동작 경계 추상화 위에
+`section_boundary(loops, pi)`를 추가: `section_of_solid`의 loop(`Node::Seam({β,A_f,A_g})`)을 `Vec<BndEdge>`로 변환 —
+연속 두 노드가 β 외에 공유하는 유일 a-면이 그 chord의 `wall`, 끝점은 그대로 `Node::Seam`. **silent-wrong 유일 위험인
+다중-loop 단면(outer+hole)을 최우선 hard reject**(`SECTION_MULTI_LOOP`) — 단일-loop 가정에 절대 조용히 도달 못 함.
+**급소(part1이 못 잡은 것)**: `coplanar_seam_arcs`가 "모든 `Node::Seam`" 위치에서 arc를 잘랐는데, 접촉면 Q는 코너가
+`Node::Orig`라 crossing만 Seam이라 우연히 맞았을 뿐 — **section Q는 코너도 Seam**이라 코너마다 잘려 전 arc가
+interior-free→`OVERHANG_ARCS`. 수정: crossing **triple 집합**(`xset`)으로 절단(node kind 아님). 접촉면 Q에선 Seam=crossing
+이라 **무동작**(B-phase 254 green 유지). 골든 `section_boundary_clips_a_wall_to_inside_a_solid`: a=4×4×2 블록을 z=1로
+단면 → b의 top 면(1..6×1..3, +x로 삐져나옴)을 그 단면에 클립(keep inside) → 생존 [1,4]×[1,3] 면적 6(코너 2개는 b 원본
+Orig, 2개는 a의 x=4 벽 위 crossing Seam). interior-free arc 교대 분류까지 실 section으로 통과. `_rejects_a_multi_loop_section`
+가 2-loop 입력 거절 고정. **section-Q 일반화 완성** — 접촉면·단면이 한 `coplanar_reconstruct`를 구동. 다음(C2b): Cut-overhang
+분기에 벽 section-클립 배선 + 면-평면 분기(planes_coplanar+centroid) + 비볼록 overhang Cut 수용 + 조기 부분 디스패치.

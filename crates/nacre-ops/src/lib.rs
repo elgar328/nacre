@@ -295,6 +295,11 @@ pub(crate) mod tag {
     /// convex path only.
     ///
     pub const MISSING_SEAM: &str = "missing_seam";
+    /// A solid's planar section returned more than one loop (an outer ring plus a hole, e.g. a
+    /// slot piercing a cavity). The section-clip reconstruction assumes a single loop; a
+    /// multi-loop section is honestly rejected until the multi-loop cell lands, so the
+    /// single-loop assumption is never silently reached.
+    pub const SECTION_MULTI_LOOP: &str = "section_multi_loop";
 }
 
 #[cfg(test)]
@@ -3821,6 +3826,49 @@ fn contact_boundary(
     Ok(out)
 }
 
+/// The boundary of a solid's planar section (from [`section_of_solid`]) as `BndEdge`s on the
+/// section plane `pi`, so a section footprint can drive [`coplanar_reconstruct`] exactly like a
+/// contact-face footprint. Each section node is a `Node::Seam` three-plane point `{pi, A_f, A_g}`;
+/// the chord between two consecutive nodes rides the one a-face they share besides `pi`, which
+/// becomes the chord's carrying `wall`. `pi` is the section plane's index in `planes` (the same one
+/// passed to `section_of_solid`), so the wall indices agree with the rest of the machinery.
+///
+/// Scope: a single closed loop, no holes. A multi-loop section (a slot piercing a cavity → outer +
+/// hole rings) is rejected up front (`SECTION_MULTI_LOOP`), never silently flattened — the one
+/// genuine silent-wrong risk of the section approach (plan §C2 급소).
+#[cfg_attr(not(test), allow(dead_code))]
+fn section_boundary(loops: &[Vec<Node>], pi: usize) -> Result<Vec<BndEdge>, BoolError> {
+    if loops.len() != 1 {
+        return Err(reject(tag::SECTION_MULTI_LOOP)); // outer + hole rings: later cell
+    }
+    let ring = &loops[0];
+    let n = ring.len();
+    if n < 3 {
+        return Err(reject(tag::ARRANGEMENT_DEGENERATE));
+    }
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let (v0, v1) = (ring[i], ring[(i + 1) % n]);
+        let (Node::Seam(t0), Node::Seam(t1)) = (v0, v1) else {
+            return Err(reject(tag::ARRANGEMENT_DEGENERATE)); // section nodes are all Seam
+        };
+        // The chord rides the single plane its two endpoints share besides the section plane.
+        let mut shared = t0.iter().copied().filter(|&p| p != pi && t1.contains(&p));
+        let wall = shared
+            .next()
+            .ok_or_else(|| reject(tag::ARRANGEMENT_DEGENERATE))?;
+        if shared.next().is_some() {
+            return Err(reject(tag::ARRANGEMENT_DEGENERATE)); // two shared walls = coincident ends
+        }
+        out.push(BndEdge {
+            seg: i,
+            v: [v0, v1],
+            wall,
+        });
+    }
+    Ok(out)
+}
+
 /// A proper crossing of the two coplanar footprint boundaries ∂P (from `a`) and ∂Q (from `b`)
 /// in the shared plane π: the exact three-plane point `{π, W, U}` where an `a`-edge (on line
 /// π∩W) crosses a `b`-edge (on line π∩U), each strictly within its segment.
@@ -3937,10 +3985,14 @@ fn coplanar_seam_arcs(
             seq.push(Node::Seam(c.triple));
         }
     }
-    // Cut at the crossings into arcs (crossing → interior → next crossing).
+    // Cut at the crossings into arcs (crossing → interior → next crossing). Cut points are the
+    // crossing triples specifically, not every `Node::Seam`: a **contact-face** ∂Q has `Node::Orig`
+    // interior vertices (only crossings are `Seam`), but a **section** ∂Q has `Node::Seam` corners
+    // too, so we identify the crossings by their triples rather than by node kind.
+    let xset: HashSet<[usize; 3]> = crossings.iter().map(|c| c.triple).collect();
     let n = seq.len();
     let cpos: Vec<usize> = (0..n)
-        .filter(|&i| matches!(seq[i], Node::Seam(_)))
+        .filter(|&i| matches!(seq[i], Node::Seam(t) if xset.contains(&t)))
         .collect();
     let mut arcs = Vec::with_capacity(cpos.len());
     for k in 0..cpos.len() {
@@ -13270,6 +13322,111 @@ pub mod tests {
         for p in section_pts(&loops, &planes) {
             assert!((p[0] - 0.5).abs() < 1e-9, "vertex on W");
         }
+    }
+
+    // C2a: a real `section_of_solid` loop, turned into a boundary by `section_boundary`, drives
+    // `coplanar_reconstruct` exactly like a contact footprint — the section-Q clip that C2b needs.
+    #[test]
+    fn section_boundary_clips_a_wall_to_inside_a_solid() {
+        // `a` is a 4×4×2 block; `b`'s top face (z=1) is a 5×2 rectangle [1,6]×[1,3] that pokes out
+        // of `a` on the +x side. Section `a` at z=1 → the full 4×4 square, and clip `b`'s top face
+        // (keep inside the section): the survivor is [1,4]×[1,3], area 6, two of its corners the
+        // original `b` vertices and two the crossings on `a`'s x=4 wall.
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Point3::from_array([6.0, 3.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, a).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, b).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, p) in planes.iter().enumerate() {
+            surf_ix.insert(p.face, i);
+        }
+        // β = b's +z (top) wall at z=1.
+        let beta = (na..planes.len())
+            .find(|&i| {
+                let n = planes[i].n_out.as_array();
+                n[2] > 0.5 && (planes[i].tri[0].as_array()[2] - 1.0).abs() < 1e-9
+            })
+            .expect("b's +z wall at z=1");
+        let canon = plane_classes(&planes);
+        assert_eq!(canon[beta], beta, "the section plane folds with nothing");
+
+        let loops = section_of_solid(&m, a, beta, &planes, &surf_ix).unwrap();
+        assert_eq!(loops.len(), 1, "one section loop");
+        assert_eq!(loops[0].len(), 4, "the block's slice is a quad");
+
+        let q_bnd = section_boundary(&loops, beta).unwrap();
+        assert_eq!(q_bnd.len(), 4, "four section chords");
+        let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
+        let p_bnd = contact_boundary(&m, planes[beta].face, beta, &inc_b, &canon).unwrap();
+        let crossings = coplanar_boundary_crossings(&planes, beta, &p_bnd, &q_bnd).unwrap();
+        assert_eq!(crossings.len(), 2, "b's top edges cross a's x=4 wall twice");
+        let arcs = coplanar_seam_arcs(&planes, beta, &q_bnd, &crossings);
+        let faces = coplanar_reconstruct(
+            &planes, beta, beta, &p_bnd, &q_bnd, &crossings, &arcs, true, false,
+        )
+        .unwrap();
+        assert_eq!(faces.len(), 1, "one clipped cell");
+
+        // Node points → projected (x,y) → shoelace area on plane z=1.
+        let node_xy = |nd: &Node| -> [f64; 2] {
+            let p = match *nd {
+                Node::Orig(vh) => m.vertices.get(vh).point,
+                Node::Seam(t) => three_planes(
+                    &planes[t[0]].plane,
+                    &planes[t[1]].plane,
+                    &planes[t[2]].plane,
+                )
+                .unwrap(),
+            }
+            .as_array();
+            [p[0], p[1]]
+        };
+        let ring: Vec<[f64; 2]> = faces[0].loop_nodes.iter().map(node_xy).collect();
+        let n = ring.len();
+        let area = 0.5
+            * (0..n)
+                .map(|i| {
+                    let (u, v) = (ring[i], ring[(i + 1) % n]);
+                    u[0] * v[1] - v[0] * u[1]
+                })
+                .sum::<f64>()
+                .abs();
+        assert_eq!(faces[0].loop_nodes.len(), 4, "survivor is a quad");
+        assert!((area - 6.0).abs() < 1e-9, "clipped area is 6, got {area}");
+    }
+
+    // C2a: the one silent-wrong risk of the section approach — a multi-loop section (outer + hole)
+    // must be rejected up front, never flattened to its first ring.
+    #[test]
+    fn section_boundary_rejects_a_multi_loop_section() {
+        let two_loops = vec![
+            vec![
+                Node::Seam([0, 1, 2]),
+                Node::Seam([0, 1, 3]),
+                Node::Seam([0, 2, 3]),
+            ],
+            vec![
+                Node::Seam([0, 4, 5]),
+                Node::Seam([0, 4, 6]),
+                Node::Seam([0, 5, 6]),
+            ],
+        ];
+        LAST_REJECT.with(|c| c.take());
+        assert!(section_boundary(&two_loops, 0).is_err());
+        assert_eq!(
+            LAST_REJECT.with(|c| c.take()),
+            Some(tag::SECTION_MULTI_LOOP)
+        );
     }
 
     // A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.
