@@ -1572,6 +1572,15 @@ pub fn boolean(
         if let Some(oc) = detect_overhang_cut_general(model, a, b) {
             return overhang_cut_general_result(model, &oc);
         }
+        // Non-convex overhang Cut: the bespoke path above is convex-gated, so route the non-convex
+        // case to the unified coplanar handler (early partial dispatch — the convex cases stay on
+        // bespoke). It honestly rejects (falls through) when there is no coplanar contact it covers.
+        let planes_a = collect_planes(model, a)?;
+        if !is_convex(model, &planes_a, &solid_vertex_handles(model, a)) {
+            if let Ok(r) = coplanar_result(model, kind, a, b) {
+                return Ok(r);
+            }
+        }
     }
     // A prism top-flush on `a`'s face, footprint hanging past the boundary — `Common(a, b)` is the
     // convex overlap `R = a ∩ b` (cell coplanar-contact-overhang-common). Two-crossing configs only.
@@ -3923,20 +3932,50 @@ fn clip_face_to_section(
     surf_ix: &HashMap<Handle<Face>, usize>,
     canon: &[usize],
     inc_owner: &arrange::EdgePlanes,
+    other_classes: &HashSet<usize>,
     keep_inside: bool,
     flip: bool,
     contact: usize,
 ) -> Result<(Vec<LocalFace>, Vec<CoCross>), BoolError> {
     let pi = canon[f_idx];
+    // Keep `f` verbatim, preserving its hole rings (a whole face with a pocket mouth keeps that
+    // hole — dropping it would unseal the pocket).
+    let whole = || -> LocalFace {
+        let ring = |l: &Loop| -> Vec<Node> {
+            l.half_edges
+                .iter()
+                .map(|&he| Node::Orig(he_start(model, he)))
+                .collect()
+        };
+        let f = model.faces.get(f_face);
+        LocalFace {
+            plane_idx: f_idx,
+            loop_nodes: ring(&f.outer),
+            inner: f.inner.iter().map(ring).collect(),
+            flip,
+        }
+    };
+    // Face-plane branch: `f` is coplanar with a face of `other` (its plane class is one of
+    // `other`'s). The contact face is handled elsewhere, so this is a *disjoint*-coplanar face
+    // (e.g. a slot top sharing the plane of a far pocket floor); `section_of_solid` there
+    // degenerates (`other`'s vertices lie on `f`'s plane). Decide by the face centroid — strictly
+    // inside/outside `other` since the footprints are disjoint — instead of a section.
+    if other_classes.contains(&pi) {
+        let ring = face_ring(model, model.faces.get(f_face));
+        let k = ring.len() as f64;
+        let sum = ring.iter().fold([0.0; 3], |a, &(_, p)| {
+            let q = p.as_array();
+            [a[0] + q[0], a[1] + q[1], a[2] + q[2]]
+        });
+        let ctr = Point3::from_array([sum[0] / k, sum[1] / k, sum[2] / k]);
+        let inside = point_in_solid(model, ctr, other)? == Side::Inside;
+        let lf = (inside == keep_inside).then(whole);
+        return Ok((Vec::from_iter(lf), Vec::new()));
+    }
     let loops = section_of_solid(model, other, f_idx, planes, surf_ix)?;
     if loops.is_empty() {
         // `f`'s plane misses `other` → `f` lies wholly outside it.
-        let lf = (!keep_inside).then(|| LocalFace {
-            plane_idx: f_idx,
-            loop_nodes: face_orig_nodes(model, f_face),
-            inner: Vec::new(),
-            flip,
-        });
+        let lf = (!keep_inside).then(whole);
         return Ok((Vec::from_iter(lf), Vec::new()));
     }
     let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
@@ -4888,6 +4927,32 @@ fn contained_contact_result(
 /// a normal) or `Whole`, `b`'s faces flipped for a `Cut`. Seam is empty — every node `Node::Orig`,
 /// so the result is all `Constructed` (the purity the bespoke paths also keep).
 #[cfg_attr(not(test), allow(dead_code))]
+/// Whether two plane-coplanar faces `p`/`q` (on shared class `pi`) have **overlapping footprints**
+/// — a genuine contact — rather than merely sharing the plane while lying apart. Overlap iff one
+/// footprint contains the other or their boundaries cross; disjoint coplanar footprints (no
+/// containment, no crossing) are not a contact.
+#[allow(clippy::too_many_arguments)]
+fn footprints_overlap(
+    model: &Model,
+    planes: &[PlaneInfo],
+    pi: usize,
+    p_face: Handle<Face>,
+    q_face: Handle<Face>,
+    inc_a: &arrange::EdgePlanes,
+    inc_b: &arrange::EdgePlanes,
+    canon: &[usize],
+) -> Result<bool, BoolError> {
+    let n = planes[pi].plane.normal();
+    if face_contains_face(model, p_face, q_face, n) || face_contains_face(model, q_face, p_face, n)
+    {
+        return Ok(true);
+    }
+    let p_bnd = contact_boundary(model, p_face, pi, inc_a, canon)?;
+    let q_bnd = contact_boundary(model, q_face, pi, inc_b, canon)?;
+    let cx = coplanar_boundary_crossings(planes, pi, &p_bnd, &q_bnd, None)?;
+    Ok(!cx.is_empty())
+}
+
 fn coplanar_result(
     model: &mut Model,
     kind: BoolKind,
@@ -4900,19 +4965,41 @@ fn coplanar_result(
     let mut planes = planes_a;
     planes.extend(planes_b);
 
-    // The single coplanar cross-operand contact pair.
-    let mut pair = None;
+    let mut surf_ix = HashMap::new();
+    for (i, p) in planes.iter().enumerate() {
+        surf_ix.insert(p.face, i);
+    }
+    let canon = plane_classes(&planes);
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+
+    // The genuine coplanar contact pair(s): a plane-coplanar face pair whose footprints actually
+    // overlap (or share a boundary). A pair whose footprints are disjoint (e.g. a slot top happening
+    // to share the plane of a far pocket floor) is not a contact — those faces are handled by the
+    // per-face branch. Scope: exactly one genuine contact (multiple real contacts are a later cell).
+    let mut genuine = Vec::new();
     for i in 0..na {
         for j in na..planes.len() {
-            if shares_or_coplanar(&planes[i], &planes[j]) {
-                if pair.is_some() {
-                    return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // >1 pair — out of scope
-                }
-                pair = Some((i, j));
+            if shares_or_coplanar(&planes[i], &planes[j])
+                && footprints_overlap(
+                    model,
+                    &planes,
+                    canon[i],
+                    planes[i].face,
+                    planes[j].face,
+                    &inc_a,
+                    &inc_b,
+                    &canon,
+                )?
+            {
+                genuine.push((i, j));
             }
         }
     }
-    let Some((pi_idx, qj_idx)) = pair else {
+    if genuine.len() > 1 {
+        return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // >1 real contact — later cell
+    }
+    let Some((pi_idx, qj_idx)) = genuine.first().copied() else {
         return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // no coplanar contact
     };
     let same_normal = planes[pi_idx].n_out.dot(planes[qj_idx].n_out) > 0.0;
@@ -4966,14 +5053,7 @@ fn coplanar_result(
     // contact-plane flush (R1/R2) welds the wall corners; `assemble_fuse_cut` welds the seam by
     // triple identity. (C2b-1: single/parallel breach, no swallowed corner; corner columns later.)
     if kind == BoolKind::Cut && same_normal {
-        let mut surf_ix = HashMap::new();
-        for (i, p) in planes.iter().enumerate() {
-            surf_ix.insert(p.face, i);
-        }
-        let canon = plane_classes(&planes);
         let pi_c = canon[pi_idx];
-        let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
-        let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
 
         // Mouth: a's contact face minus b's footprint (proper crossings on π, no section).
         let a_bnd = contact_boundary(model, p_face, pi_c, &inc_a, &canon)?;
@@ -4996,6 +5076,8 @@ fn coplanar_result(
             None,
         )?;
         let mut all_cx = mouth_cx;
+        let a_classes: HashSet<usize> = (0..na).map(|i| canon[i]).collect();
+        let b_classes: HashSet<usize> = (na..planes.len()).map(|i| canon[i]).collect();
 
         // a's other faces → a∖b (breached walls gain openings; the rest stay whole).
         let a_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(a).outer).faces.clone();
@@ -5004,7 +5086,8 @@ fn coplanar_result(
                 continue;
             }
             let (fs, cx) = clip_face_to_section(
-                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, false, false, pi_c,
+                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, &b_classes, false, false,
+                pi_c,
             )?;
             faces.extend(fs);
             all_cx.extend(cx);
@@ -5024,6 +5107,7 @@ fn coplanar_result(
                 &surf_ix,
                 &canon,
                 &inc_b,
+                &a_classes,
                 true,
                 b_flip,
                 pi_c,
@@ -14294,6 +14378,29 @@ pub mod tests {
         assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
     }
 
+    // C2b-4: the deliverable — a non-convex overhang Cut. A slot cut from a top-pocketed cube,
+    // flush on the +x wall, breaking out the bottom, its top coplanar-disjoint with the pocket
+    // floor. Exercises pair-selection (x=1 genuine, z=0.5 spurious), the face-plane branch (slot
+    // top / pocket floor kept whole by centroid), and through-bottom (uniform). Removed = the slot
+    // ∩ cube = 0.25·0.5·0.5 = 0.0625 from the pocketed 0.92 → 0.8575.
+    #[test]
+    fn coplanar_result_cuts_a_non_convex_overhang_slot() {
+        let (mut m, pc) = top_pocketed_cube();
+        let slot = m.add_cuboid(
+            Point3::from_array([0.75, 0.25, -0.25]),
+            Point3::from_array([1.0, 0.75, 0.5]),
+        );
+        let r = coplanar_result(&mut m, BoolKind::Cut, pc, slot).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+        assert!((vol - 0.8575).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
     // A3 (C2 de-risk): point_in_ring parity classifies against a NON-CONVEX footprint with no
     // half-space / convexity assumption — the soundness `clip_bwall_inside_a` lacked.
     #[test]
@@ -14415,19 +14522,25 @@ pub mod tests {
     }
 
     #[test]
-    fn overhang_cut_on_a_non_convex_solid_is_rejected() {
-        // The Cut path keeps the whole-solid convexity gate (its `clip_bwall_inside_a` clips against
-        // breached half-spaces, sound only for a convex kept solid). An overhang slot on a
-        // non-convex solid is honestly rejected — this cell opens Fuse (boss) only.
+    fn overhang_cut_on_a_non_convex_solid() {
+        // The unified coplanar handler carves an overhang slot on a NON-convex solid — the case the
+        // bespoke convex-gated path declined. A slot cut from a top-pocketed cube, flush on the +x
+        // wall, breaking out the bottom, its top coplanar-disjoint with the pocket floor. The
+        // non-convex case routes to coplanar_result (early partial dispatch). Removed = slot ∩ cube
+        // = 0.0625 from the pocketed 0.92 → 0.8575.
         let (mut m, pc) = top_pocketed_cube();
         let slot = m.add_cuboid(
             Point3::from_array([0.75, 0.25, -0.25]),
             Point3::from_array([1.0, 0.75, 0.5]),
         );
-        assert!(matches!(
-            boolean_one(&mut m, BoolKind::Cut, pc, slot),
-            Err(BoolError::Unsupported)
-        ));
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, slot).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.8575).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
     #[test]

@@ -3041,4 +3041,68 @@ bbox_min 0 0 0
             occt.area
         );
     }
+
+    /// The non-convex overhang Cut deliverable (unified coplanar handler): a slot cut from a
+    /// top-pocketed cube, flush on the +x wall, breaking out the bottom, its top coplanar-disjoint
+    /// with the pocket floor. OCCT confirms the accepted volume (hand estimate 0.8575).
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn non_convex_overhang_cut_matches_occt() {
+        use nacre_ops::{OpOutput, Operation, Profile2d, apply};
+        let sq = |pts: &[[f64; 2]]| Profile2d {
+            points: pts
+                .iter()
+                .map(|&p| nacre_math::Point2::from_array(p))
+                .collect(),
+        };
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: sq(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let OpOutput::PocketOnFace { solid: pc, .. } = apply(
+            &mut m,
+            &Operation::PocketOnFace {
+                face: faces[1],
+                profile: sq(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
+                dist: 0.5,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let slot = m.add_cuboid(
+            Point3::from_array([0.75, 0.25, -0.25]),
+            Point3::from_array([1.0, 0.75, 0.5]),
+        );
+        // OCCT ground truth from the inputs, before nacre supersedes them.
+        let occt = occt_boolean_of(&m, OcctBool::Cut, pc, slot).unwrap();
+        let solids = boolean(&mut m, BoolKind::Cut, pc, slot).unwrap();
+        assert_eq!(solids.len(), 1);
+        let nacre = mass_props(&m, solids[0]).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "volume {} vs occt {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.volume, 0.8575),
+            "volume {} vs hand 0.8575",
+            nacre.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "area {} vs occt {}",
+            nacre.area,
+            occt.area
+        );
+    }
 }

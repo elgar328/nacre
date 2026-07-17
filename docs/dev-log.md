@@ -1081,3 +1081,17 @@ vs slot 0.75-1) → **풋프린트-겹침 pair 선택 필수**(현 pair!=1 하�
 유지(flip). n0′이 코너 용접·C1-독립 이미 확인. **결론: C2b-4는 C1 불요, pair-선택 + 면-평면 분기(+through-bottom
 균일)만으로 도달** — lean 사다리 순서 측정으로 확정. 스파이크 제거(측정 완료). 다음: pair-선택 셀 → through-bottom
 + 면-평면 분기 → C2b-4.
+
+**(C2b-4 + 조기 디스패치) 원 요청 완료 — 비볼록 overhang Cut 수용.** `coplanar_result`에 세 조각 배선으로 복합
+타깃 조립: (1) **pair-선택** — 평면 레벨 `shares_or_coplanar` pair를 `footprints_overlap`(포함 OR 교차 = genuine 접촉)로
+필터, x=1(genuine)만 선택·z=0.5(disjoint) 배제(pair!=1 하드거절을 genuine!=1로 교체). (2) **면-평면 분기**
+(`clip_face_to_section`) — F 평면이 상대 면과 coplanar(canon 클래스 상대에 존재)면 section 대신 **면 centroid
+`point_in_solid`** 로 whole/drop(z=0.5 단면 퇴화 회피; slot-top Inside→whole flip·pocket floor outside a∖b→whole).
+(3) **through-bottom** = 별도 코드 0, 균일 `clip_face_to_section`(a-바닥 ∖ b, 접촉면 x=1 flush를 R1/R2가 처리).
+**버그 수정**: whole-face 유지 시 `face_orig_nodes`(outer만)라 **포켓 구멍(inner loop) 유실→4 경계 엣지 non-manifold**
+→ inner loop 보존(`whole` 클로저). **조기 부분 디스패치**: `boolean`의 Cut 분기에서 bespoke `detect_overhang_cut_general`
+(볼록 게이트) 뒤, **비볼록(`!is_convex(a)`)** 이면 `coplanar_result`로 라우팅(볼록은 bespoke 유지·회귀 0). 공개 테스트
+`overhang_cut_on_a_non_convex_solid_is_rejected` → **`_solid`(수용)로 flip**: 부피 0.8575·validate empty·no-coplanar-edge.
+**OCCT 확정**(`non_convex_overhang_cut_matches_occt`, --ignored): nacre 부피=OCCT 부피=손 0.8575·면적 일치. 전체 260 ops
+green(볼록 through-bottom 여전히 거절·볼록 overhang cut bespoke 유지). **사용자 원 요청 달성.** 남음: C2b-3 비볼록
+confidence 골든(near-free)·R2/코너·C2c-전체·C2d·C1은 D1 은퇴 번들.
