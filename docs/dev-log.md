@@ -1169,3 +1169,14 @@ inertness는 반드시 **측정으로** 못박는다. 다음: U2 per-face 위임
 `overlap_fuse_cut`의 mint를 raw `[e0,e1,entry]`로 복원 + `let canon`·`SECTION_TRIPLE_COLLISION` 가드 제거. revert도 **무동작**
 (U1이 seam 이름을 안 바꿨으니 되돌려도 동일): 558 workspace green(양 feature)·267 ops·clippy 양 구성. (B) 사다리 시작
 셀. 다음: B1(다중-loop 단면) n0 — 라우팅 상태 + 다중-링 재작성 실현성 측정.
+
+**(B1-n0) 다중-loop 단면 측정 — end-to-end 부울로는 도달 못 함, 프리미티브 레벨 셀로 확정.** throwaway 프로브: hollow
+base(cavity [1,2]³ in [0,3]³) + top-flush overhang 슬롯(breach-벽 y=1.4가 cavity를 가름 → base 단면이 annulus).
+측정 결과: **(a) coplanar_result 직접 = `ray_degenerate`**(SECTION_MULTI_LOOP 아님! — hollow 솔리드에서 point_in_solid
+ray-cast가 section-clip **도달 전** 퇴화), **(b) boolean_one dispatch = `vertex_on_face_plane`**(coplanar_result로 **라우팅조차
+안 됨** — 일반 엔진 door 거절). 결론: "slot이 cavity 관통"이라는 사용자 케이스는 multi-loop **말고도** ray-퇴화·라우팅을
+함께 풀어야 실제로 열림(케이스가 헤드라인 변경 이상을 요구하는 패턴 반복). **한편 multi-loop 거절 자체는 `section_boundary`
+레벨에 깨끗이 고정**(`section_boundary_rejects_a_multi_loop_section` 단위 테스트가 합성 2-loop로 직접 검증) → B1은 **프리
+미티브 레벨**(section_boundary 3878 `loops[0]` + coplanar_reconstruct 4349 `&[runs.len()]`·4309/4326 단일 q_ring·4389-4413
+hole 방출을 다중-링 재작성)에서 A3식 골든으로 개발·검증 가능. end-to-end 부울 골든은 ray-퇴화·라우팅이 별도로 풀려야
+가능하므로 B1 스코프 밖. throwaway 제거(프리미티브 reject는 기존 단위 테스트가 이미 가드).
