@@ -1242,3 +1242,15 @@ revert(기존 `flush_edge_pocket_is_honestly_rejected` 가드 유지). 진단 �
 구현 시도에서 블로커를 4078(Explore)→4326→5593(section)→**5055** 로 **네 번 오판**. VOFP 태그가 6곳 재사용이라 태그만으론 못
 가리고 매번 env-panic으로 사이트 확정해야 했다 — 세션 깊이/피로로 추론 신뢰도 저하의 신호. **전부 revert로 main 깨끗**(구현 0,
 기존 정직-거절 가드 유지). **B4 구현은 pair-selection에서 flush-벽 overlap 제외 설계부터** 새로·조심스럽게(silent-wrong 위험).
+
+**(B4 문헌 조사 → per-face 재설계 확정) pair-selection이 근본 문제, per-face in/out/on 분류가 정답.** 사용자 지시로 논문 조사
+(Requicha boundary-evaluation·Cherchi 2205.14151·ScienceDirect·CGAL): 공면 면은 **접촉 쌍 선택 없이 면마다 in/out/on± 분류**
+(on+=같은 법선·on−=반대) → A−B=A_out_B⊕(B_in_A)⁻¹⊕**A_on−B** 등. flush 벽=그냥 on 면(특수 처리 0). **nacre survival table이
+이미 이 규칙**; 문제는 pair-selection(genuine 하나 고르고 >1 거절) bespoke 지름길. **혼합 면**(일부 공면+일부 관통)도 불가능
+아님 — 면당 **한 2D arrangement**(section-chord+공면 경계 다 모아)의 일반 케이스, `coplanar_reconstruct` 입력 일반화로 처리.
+**★ R0 구체 형태(clip_face_to_section 정독):** 새 분류기 아님 — **`clip_face_to_section` face-plane 분기(3964) 일반화**. 현재
+공면=disjoint 가정(centroid whole); R0=footprint **겹침**이면 **on-영역(survival)+나머지(in/out) 분할**(section 분기 3982-3998과
+구조 동일, `q_bnd`=coincident 면 footprint). **★ 왜 section 퇴화 회피:** 공면 면은 2D(coplanar_reconstruct)로 분류 — 상대가 그
+평면에 면이 있어 section_of_solid 퇴화(flush 벽서 내가 막힌 그 VOFP)를 원천 회피. 사다리 R0(격리 골든)→R1(flush에만 새 경로·
+기존 불변·DNA 가드)→R2(등가 이관)→R3(pair-selection 은퇴). 안전판=R1까지로 flush 충족. 스코프: pair-selection만(B1 section
+퇴화는 별도 상속). 플랜에 전체 기록. 다음: R0 착수(bounded — 한 분기 일반화, primitive-first 골든으로 위험 가둠).
