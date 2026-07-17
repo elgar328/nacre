@@ -1232,3 +1232,13 @@ rounding으로 "살짝 안쪽"). **(2) 부울 층 = 여러 사이트.** 임시�
 4326 + section)에 1급화**하는 실질 다중-사이트 셀 — quick win 아님. 코드 주석들이 이미 "later cell"로 표시(설계가 예고).
 **B4 = 실질 구현 셀(4078 경계-벽 attach + 4326 ∂P-on-∂Q flush 수용 + section 벽 처리, 정답=overhang 등가 부피).** temp 전부
 revert(기존 `flush_edge_pocket_is_honestly_rejected` 가드 유지). 진단 완료 — 구현은 다음 단계.
+
+**(B4 구현 시도 → 정정) 진짜 첫 블로커는 5055(genuine>1), 4078 아님 — 블로커 4회 오판(세션-깊이 신호).** 실제 구현 착수해
+`flush_edge_pocket_is_honestly_rejected` 픽스처(base [0,1]³ − cutter [0.3,0.7]×[0,0.4]×[0.5,1])를 env-panic 계측으로 층층이
+추적한 결과: **위 진단의 "4078·4326·section"은 이 픽스처가 도달조차 안 하는 곳**이었다. **진짜 거절 = `coplanar_result` 5055
+`genuine.len()>1`** — cutter의 **y=0 옆벽이 base y=0 면과 공면·풋프린트 겹침**이라 `footprints_overlap`이 **z=1 top 접촉 외에
+두 번째 genuine 접촉**으로 셈 → genuine=2 → 5055 거절. 즉 flush는 **pair-selection과 얽힘**: flush 벽 overlap(경계-공유 collinear)
+을 진짜 별도 접촉과 구별해야 함(footprints_overlap이 "재료가 만나는 접촉" vs "둘 다 같은 쪽 경계벽"을 안 가름). **★ 교훈:** 이번
+구현 시도에서 블로커를 4078(Explore)→4326→5593(section)→**5055** 로 **네 번 오판**. VOFP 태그가 6곳 재사용이라 태그만으론 못
+가리고 매번 env-panic으로 사이트 확정해야 했다 — 세션 깊이/피로로 추론 신뢰도 저하의 신호. **전부 revert로 main 깨끗**(구현 0,
+기존 정직-거절 가드 유지). **B4 구현은 pair-selection에서 flush-벽 overlap 제외 설계부터** 새로·조심스럽게(silent-wrong 위험).
