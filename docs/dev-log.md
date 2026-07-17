@@ -1095,3 +1095,10 @@ vs slot 0.75-1) → **풋프린트-겹침 pair 선택 필수**(현 pair!=1 하�
 **OCCT 확정**(`non_convex_overhang_cut_matches_occt`, --ignored): nacre 부피=OCCT 부피=손 0.8575·면적 일치. 전체 260 ops
 green(볼록 through-bottom 여전히 거절·볼록 overhang cut bespoke 유지). **사용자 원 요청 달성.** 남음: C2b-3 비볼록
 confidence 골든(near-free)·R2/코너·C2c-전체·C2d·C1은 D1 은퇴 번들.
+
+**(C2b-3) 비볼록 confidence 골든 — 비볼록 변수 격리.** 포켓과 완전히 떨어진 코너에 blind side-flush overhang
+slot(x[0.75,1]y[-0.25,0.2]z[0.1,0.4], y=0 벽만 breakout, through-bottom·disjoint 없음) → `boolean_one` 공개 경로로
+수용, 부피 0.905·watertight. 새 코드 0(A3서 비볼록 point_in_ring 선검증). **스코프 경계 실측**: 슬롯 면 평면이
+포켓을 가로지르면(예 y=0.5 ∈ 포켓 y[0.3,0.7]) `section_of_solid`가 **다중-loop(outer+hole)** → `SECTION_MULTI_LOOP`
+정직 거절(후속 다중-loop 셀). 딜리버러블·이 골든 모두 슬롯 면이 포켓을 피해 단일-loop. 다음(추천 순서): 코너/L
+(C2b-2, R2 활용) → through-bottom(C2c) → common(C2d) → C1은 플랜모드 재검토.

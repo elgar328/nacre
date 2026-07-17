@@ -14543,6 +14543,28 @@ pub mod tests {
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
+    // C2b-3: a confidence golden isolating the non-convexity variable — a *blind* side-flush
+    // overhang slot on the pocketed cube, in a corner far from the pocket, breaking out only the
+    // y=0 wall (no through-bottom, no disjoint-coplanar; the slot's planes avoid the pocket so no
+    // section is multi-loop). Just the non-convex kept solid + one breach. No new mechanism (A3
+    // pre-verified non-convex point_in_ring). Removed = 0.25·0.2·0.3 = 0.015 from 0.92 → 0.905.
+    #[test]
+    fn overhang_cut_on_a_non_convex_solid_blind() {
+        let (mut m, pc) = top_pocketed_cube();
+        let slot = m.add_cuboid(
+            Point3::from_array([0.75, -0.25, 0.1]),
+            Point3::from_array([1.0, 0.2, 0.4]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, slot).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.905).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
     #[test]
     fn cut_a_blind_pocket_into_a_face() {
         // A prism inside the base with its top flush on the base's top (same-normal coplanar
