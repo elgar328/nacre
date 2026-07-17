@@ -13429,6 +13429,97 @@ pub mod tests {
         );
     }
 
+    // C2b n0': the through-bottom corner of the deliverable target must resolve to ONE shared
+    // 3-plane triple across the two faces that meet the cutter there — a plain trihedral corner,
+    // not a fan. If the two sections disagree (or need rotational ordering), the scoped-flush
+    // premise fails and C2b-4 would depend on the general turn_at resolver (C1). This throwaway
+    // probe falsifies that C1-dependence BEFORE any Cut-branch code is written.
+    #[test]
+    fn probe_target_through_bottom_corner_is_a_plain_trihedral() {
+        // Deliverable target: a slot cut from top_pocketed_cube, flush on the +x wall (x=1),
+        // breaking out the bottom (z=0). The corner (1, 0.25, 0) is where the cube's +x wall, the
+        // cube's bottom, and the slot's -y wall meet.
+        let (mut m, cube) = top_pocketed_cube();
+        let slot = m.add_cuboid(
+            Point3::from_array([0.75, 0.25, -0.25]),
+            Point3::from_array([1.0, 0.75, 0.5]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, cube).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, slot).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, p) in planes.iter().enumerate() {
+            surf_ix.insert(p.face, i);
+        }
+        let canon = plane_classes(&planes);
+        let find = |rng: std::ops::Range<usize>, n: [f64; 3], coord: usize, val: f64| -> usize {
+            rng.clone()
+                .find(|&i| {
+                    let nn = planes[i].n_out.as_array();
+                    nn[0] * n[0] + nn[1] * n[1] + nn[2] * n[2] > 0.5
+                        && (planes[i].tri[0].as_array()[coord] - val).abs() < 1e-9
+                })
+                .expect("plane")
+        };
+        let cube_x1 = find(0..na, [1.0, 0.0, 0.0], 0, 1.0); // cube +x wall (contact)
+        let cube_z0 = find(0..na, [0.0, 0.0, -1.0], 2, 0.0); // cube bottom
+        let slot_x1 = find(na..planes.len(), [1.0, 0.0, 0.0], 0, 1.0); // slot +x (contact)
+        let slot_y025 = find(na..planes.len(), [0.0, -1.0, 0.0], 1, 0.25); // slot -y wall
+
+        // x=1 is the contact plane: cube and slot +x walls fold into one class.
+        assert_eq!(
+            canon[cube_x1], canon[slot_x1],
+            "x=1 is the shared contact plane"
+        );
+
+        // The corner (1, 0.25, 0) as a canonicalized sorted triple, from each section that produces
+        // it. Section of the SLOT at the cube bottom (z=0); section of the CUBE at the slot -y wall.
+        let corner = [1.0, 0.25, 0.0];
+        let corner_triple = |sect_solid: Handle<Solid>, w_idx: usize| -> [usize; 3] {
+            let loops = section_of_solid(&m, sect_solid, w_idx, &planes, &surf_ix).unwrap();
+            for l in &loops {
+                for &nd in l {
+                    let Node::Seam(t) = nd else { continue };
+                    let p = three_planes(
+                        &planes[t[0]].plane,
+                        &planes[t[1]].plane,
+                        &planes[t[2]].plane,
+                    )
+                    .unwrap()
+                    .as_array();
+                    if (0..3).all(|k| (p[k] - corner[k]).abs() < 1e-9) {
+                        let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
+                        c.sort_unstable();
+                        return c;
+                    }
+                }
+            }
+            panic!("corner (1,0.25,0) not found in section");
+        };
+        let from_bottom = corner_triple(slot, cube_z0); // slot ∩ {z=0}
+        let from_ywall = corner_triple(cube, slot_y025); // cube ∩ {y=0.25}
+        eprintln!("PROBE corner from bottom-section: {from_bottom:?}");
+        eprintln!("PROBE corner from ywall-section:  {from_ywall:?}");
+        assert_eq!(
+            from_bottom, from_ywall,
+            "the through-bottom corner must be ONE shared 3-plane triple (no fan → no C1)"
+        );
+        // Sanity: the shared triple is exactly {x=1, z=0, y=0.25} in canon classes.
+        let mut expect = [canon[cube_x1], canon[cube_z0], canon[slot_y025]];
+        expect.sort_unstable();
+        assert_eq!(from_bottom, expect, "triple is {{x=1, z=0, y=0.25}}");
+
+        // And the x=1 contact face itself cannot be sectioned (slot vertices lie ON x=1) — it must
+        // use the footprint directly, confirming the mouth/section split.
+        LAST_REJECT.with(|c| c.take());
+        assert!(
+            section_of_solid(&m, slot, cube_x1, &planes, &surf_ix).is_err(),
+            "x=1 is degenerate for the slot (contact plane) → footprint, not section"
+        );
+    }
+
     // A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.
     #[test]
     fn plane_classes_merge_a_shared_wall() {

@@ -1028,3 +1028,12 @@ side-chord 끝점 graze를 놓친 오류**. **결정(사용자 ①)**: 일반 C1
 한 모서리와 접촉면 위에서 공선(flush overlap)** " 이라는 특정 degree-3 패턴만 reconstruct/section-clip이 정식 노드로
 받아들이는 **스코프 좁힌 접촉면-flush 처리**를 추가. 균일 section 규칙 유지·bespoke 아님·원 요청(비볼록 cut) 도달, 완전
 일반화는 후속 C1로. mouth(접촉면 P∖footprint)는 proper crossing이라 이미 정상 — graze는 breach 벽에서만.
+
+**(C2b·n0′) 딜리버러블 타깃의 through-bottom 코너 = 평범한 삼면(C1 불요) — 최대 전략 리스크 반증.** 라운드-3
+전략 검토가 지목한 "가장 싼 반증": 분기 코드 짓기 전에, 타깃(`top_pocketed_cube` + slot `[0.75,0.25,-0.25]→
+[1.0,0.75,0.5]`)의 코너 `(1,0.25,0)`이 scoped flush로 용접되는지 C1(turn_at)이 필요한지 측정. 프로브: 그 코너를
+**두 단면**(slot∩{z=0} = a-바닥 section, cube∩{y=0.25} = slot -y벽 section)에서 각각 계산 → 둘 다 canon 후
+**동일 triple `[0,2,13]` = {x=1, z=0, y=0.25}**. 즉 세 면(cube +x벽·cube 바닥·slot -y벽)이 만나는 **평범한 삼면
+코너**(fan 아님) → **타깃은 C1 불필요, scoped flush로 ship 가능**. + x=1 접촉면은 slot에 대해 `section_of_solid`
+퇴화(slot 정점이 x=1 위) 확인 → footprint 직접(mouth/section 분리 확정). 프로브를 premise-guard로 유지(255 green).
+다음: C2b-0(π-chord 프리미티브) → C2b-1(Cut 분기 신설).
