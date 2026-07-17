@@ -348,6 +348,23 @@ pub struct HybridBoolean;     // M7: 일반 곡면 — 출처태그 메시 → �
 
 OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 채점자(§7)뿐이다. 사다리의 각 단은 자기 커버리지 안에서 완전해야 하며, 밖은 조용히 틀리는 대신 에러로 거절한다.
 
+### 6.1 M5 불리언 — 두 메커니즘을 regime로 라우팅 (합성 아님)
+
+M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접촉 유무"로 배타 라우팅**한다(한 부울에 하나만 돈다).
+
+- **일반 seam 엔진**(`general_boolean`, ray-cast `classof`): 공면 접촉이 **없는** 순수 transversal 전용. 공면은 door에서 정직 거절(`COPLANAR_PAIR`/`VERTEX_ON_FACE_PLANE`) — 평면 위 정점은 `classof`(3D winding)가 미정의라서다.
+- **통합 공면 처리기**(`coplanar_result`): 공면 접촉이 **있는 모든 경우**를 통째로 만든다(벽·바닥·관통까지 self-contained; 두 엔진 합성 아님 — 합성은 on-plane `classof` 블로커로 불가). **일반 규칙(케이스가 늘어도 코드가 안 는다):** 각 면 F를 상대 solid의 **F-평면 단면(`section_of_solid`)** 에 대해 `coplanar_reconstruct`로 클립(`clip_face_to_section`). a-면=`a∖b`(Cut)/`a∩b`(Common)·b-면=`b∩a`(flip은 Cut만)·접촉면=상대 footprint 직접(mouth). 접촉면(π)은 단면이 퇴화하므로 footprint를, 벽/바닥만 단면을 쓴다.
+
+**생존 규칙(접촉면 keep/flip = 연산 × 상대법선):** Fuse/opp=`inP⊕inQ`, Fuse/same=`inP∨inQ`, Cut/opp=`inP`, Cut/same=`inP∧¬inQ`, Common/opp=∅, Common/same=`inP∧inQ`. 볼록성 항이 없어 비볼록·다중루프를 half-space 가정 없이 `point_in_ring` parity로 정확 처리.
+
+**pair 선택:** 평면-coplanar 면쌍 중 **풋프린트가 실제로 겹치는(포함 또는 경계 교차)** 쌍만 genuine 접촉(`footprints_overlap`) — 우연히 같은 평면에 있으나 떨어진 쌍(예: slot top ∥ 먼 포켓 바닥)은 배제. **면-평면 분기:** 면이 상대 면과 coplanar면 단면이 퇴화 → 단면 대신 **면 centroid `point_in_solid`**(disjoint라 strict)로 whole/drop.
+
+**스코프 접촉면-flush(공변 — 접촉면 위 두 모서리가 한 선에 포개짐, cut-overhang의 본질):** ① **R0** — `section_of_solid`의 raw triple을 `plane_classes` canon으로 remap(안 하면 mouth·breach벽·b-벽의 공유 코너가 어긋나 조용히 non-manifold), fold 충돌은 `SECTION_TRIPLE_COLLISION` 거절. ② **R1** — 접촉면 위 attachment graze(section 코너가 벽 모서리 strictly 내부)를 거절 대신 F-edge-split crossing으로. ③ **R2** — 접촉면 chord 위 ∂P 정점을 covered로(삼킨/유지 코너), chord 끝점 4-평면은 `FLUSH_VERTEX_COINCIDENT` 거절. 이 셋으로 벽 네 구성(Middle/slab/Corner/Shorten)이 한 규칙으로, 코너 기둥이 canon-triple로 자동 용접.
+
+**★ glue vs clip 경계(정직):** 위는 전부 **clip**(겹치는 풋프린트를 오림). **coincident**(동일 풋프린트 스택)는 **glue**(맞닿은 면 둘 제거 + 옆벽 splice + 인터페이스 정점 remap) — 구조가 달라 통합 안 함, `coincident_merge`로 별도 유지. **정직 거절(후속):** 회전 공면(toleranced declare-0), 다중-loop 단면(슬롯이 cavity 관통), 임의 fan degree-≥3 flush-shared-boundary(`turn_at` 미구현), 다중 genuine 접촉, P⊂Q 대칭. 전부 named 태그 — silent-wrong 0(DNA).
+
+**은퇴:** clip bespoke 5경로의 **detector는 "진짜 공면 접촉인가(blind·not-pierces·convex)" gate로 유지**(transversal을 `general_boolean`으로 걸러 silent-wrong 방지)하되 결과는 `coplanar_result`가 만든다 — builder+헬퍼(proj2/clip/splice 계열)는 삭제.
+
 ## 7. 검증·오라클 인프라 (`nacre-validate`, `nacre-oracle`)
 
 1일차부터 CI에 들어가는 것들:
