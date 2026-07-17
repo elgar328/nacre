@@ -1124,3 +1124,16 @@ Common(keep_inside=true)에선 "F가 상대 밖→drop"으로 자동 정합. 골
 `_common_corner_and_l`(코너 0.125·L 0.25) — `assert_common_box`(convex·watertight·no-cavity·no-coplanar-edge). Cut
 5경로 무회귀(265 green). **bespoke 6종의 마지막(overhang Common)까지 통합 규칙이 흡수** — D1 은퇴 전제 충족.
 다음: C1(flush-edge/dissolve/coincident)은 플랜모드 재검토(가장 큰 미지 덩어리).
+
+**(D0+D1) clip bespoke 5경로 은퇴 — 통합 처리기로 라우팅, 빌더 삭제(−951줄).** Strategy B(Plan 적대검증):
+detector는 "진짜 공면 접촉인가(blind·not-pierces·footprint-convex)" **gate로 유지**하고, fire하면 bespoke builder
+대신 `coplanar_result` 호출. transversal/관통은 detector가 declined → `general_boolean`(가드 보존, coplanar_result에
+가드 새로 안 넣어도 silent-wrong 없음). **D0 = shadow-compare**: 스왑 후 전 스위트(266 ops)가 이제 coplanar_result
+경유로 green = 등가 검증(builder 삭제 전). **D1**: 죽은 4 builder(`contained_contact_result`·`overhang_contact/cut_
+general/common_result`) + 고아 헬퍼 15개(`try_overhang`... 아닌 `clip_bwall_inside_a`·`clip_points_by_plane`·
+`mouth_notch_pieces`·`splice_notch/corner`·`split_loop_all_arcs`·`stitch_arcs`·`substitute_corners`·`face_orig_nodes`·
+`segment_plane_point`·`point_strictly_on_segment`·`common_wall_face`·`orient_to_wall`·`overlap_top_piece`) + `LoopArc`
+삭제 = **f64 proj2 결정자 계열 일소**. detector 5개는 gate로 유지(구조체 필드 일부 dead → `#[allow(dead_code)]`,
+detector가 아직 내부 검증에 일부 필드 사용). **coincident는 유지**(glue≠clip, 별도 경계). 순 **−951줄**(977 del/26 ins),
+558 workspace green, OCCT 딜리버러블 확정. **연기**: full detector 삭제(Option<()>화)·turn_at flush-edge·일반
+dissolve·공개 through-bottom/slab accept-flip(detector gate 완화)·P⊂Q·다중접촉. 남음: E(design.md 문서).
