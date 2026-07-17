@@ -1017,3 +1017,14 @@ interior-free→`OVERHANG_ARCS`. 수정: crossing **triple 집합**(`xset`)으�
 Orig, 2개는 a의 x=4 벽 위 crossing Seam). interior-free arc 교대 분류까지 실 section으로 통과. `_rejects_a_multi_loop_section`
 가 2-loop 입력 거절 고정. **section-Q 일반화 완성** — 접촉면·단면이 한 `coplanar_reconstruct`를 구동. 다음(C2b): Cut-overhang
 분기에 벽 section-클립 배선 + 면-평면 분기(planes_coplanar+centroid) + 비볼록 overhang Cut 수용 + 조기 부분 디스패치.
+
+**(C2b·n0) cut-overhang은 접촉면 degree-3 flush에 반드시 의존 — 플랜 C1-독립 가정 반증.** 실측(프로브): edge-slot에서
+`section_of_solid(cutter, α)`(α=base의 breach 벽 x=1)은 사각형인데 **두 top 꼭짓점이 접촉면 π(z=1)에 정확히 얹힘** —
+그 벽을 P∖Q로 클립하면 `coplanar_boundary_crossings`가 `vertex_on_face_plane`(flush precursor)로 거절. 원인: 커터 옆벽의
+단면 chord가 접촉면까지 올라와 그 끝점이 base 벽 top 모서리(π 위)에 landing = mouth·breach벽·b벽이 만나는 **degree-3
+코너 기둥**. 이는 **모든 cut-overhang의 본질**(boss/B4는 벽이 재료 반대쪽 열린 공간이라 단면 자체가 없어 회피했을 뿐).
+플랜이 적은 "C2b는 C1 불요(공선 top-chord는 three_planes(α,π,π) 퇴화로 skip → degree-2 유지)"는 **top-chord만 보고
+side-chord 끝점 graze를 놓친 오류**. **결정(사용자 ①)**: 일반 C1(turn_at 회전순 fan 해소) 전체 대신, "**단면 chord가 F의
+한 모서리와 접촉면 위에서 공선(flush overlap)** " 이라는 특정 degree-3 패턴만 reconstruct/section-clip이 정식 노드로
+받아들이는 **스코프 좁힌 접촉면-flush 처리**를 추가. 균일 section 규칙 유지·bespoke 아님·원 요청(비볼록 cut) 도달, 완전
+일반화는 후속 C1로. mouth(접촉면 P∖footprint)는 proper crossing이라 이미 정상 — graze는 breach 벽에서만.
