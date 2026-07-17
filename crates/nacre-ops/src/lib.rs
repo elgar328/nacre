@@ -5013,6 +5013,24 @@ fn footprints_overlap(
     }
     let p_bnd = contact_boundary(model, p_face, pi, inc_a, canon)?;
     let q_bnd = contact_boundary(model, q_face, pi, inc_b, canon)?;
+    let p_ring = boundary_ring_triples(&p_bnd, pi);
+    let q_ring = boundary_ring_triples(&q_bnd, pi);
+    // Interior overlap (graze-aware, B4-R1b-part2b): a boundary vertex of one footprint strictly
+    // inside the other. This catches a **flush** contact — the two footprints share a boundary edge,
+    // so the crossing sweep below would graze-reject, but the interior overlap is genuine. The
+    // `point_on_ring` pre-check keeps `point_in_ring` from rejecting a vertex that lies on the other
+    // boundary (a shared corner). A vertex strictly inside ⇒ the footprints overlap in area.
+    for (ring, other) in [(&p_ring, &q_ring), (&q_ring, &p_ring)] {
+        for &v in ring {
+            if !arrange::point_on_ring(planes, pi, v, other)?
+                && arrange::point_in_ring(planes, pi, v, other)?
+            {
+                return Ok(true);
+            }
+        }
+    }
+    // No interior vertex: a proper (non-graze) crossing is a plus-style overlap; a pure graze
+    // (abutting, no interior) still rejects as before — the current honest decline for non-overlap.
     let cx = coplanar_boundary_crossings(planes, pi, &p_bnd, &q_bnd, None)?;
     Ok(!cx.is_empty())
 }
@@ -5056,6 +5074,17 @@ fn coplanar_contact_count(
         }
     }
     Ok(count)
+}
+
+/// Whether two faces of one solid share a boundary edge (adjacent faces). Used by the flush
+/// pocket branch to confirm the two contact faces meet at an edge (so their notches share a
+/// well-defined corner column) — a topological test, no geometry.
+#[cfg_attr(not(test), allow(dead_code))]
+fn faces_share_edge(model: &Model, f0: Handle<Face>, f1: Handle<Face>) -> bool {
+    let e0: HashSet<Handle<Edge>> = face_half_edges(model.faces.get(f0))
+        .map(|he| he.edge)
+        .collect();
+    face_half_edges(model.faces.get(f1)).any(|he| e0.contains(&he.edge))
 }
 
 fn coplanar_result(
@@ -5160,6 +5189,80 @@ fn coplanar_result(
                 .map(|lf| LocalFace { flip: b_flip, ..lf }),
         );
         return assemble_fuse_cut(model, a, b, &planes, &[], &faces);
+    }
+
+    // Flush pocket (B4-R1b-part2b): two same-normal genuine contacts on distinct, **adjacent**
+    // contact planes with `b` blind-contained in `a` (a Cut pocket whose walls sit flush on two
+    // adjacent part faces — e.g. a slot in the top-front edge). Each contact face becomes a NOTCH
+    // (`P∖Q`, `Q` sharing `P`'s boundary edge) instead of a hole; `b`'s walls stay whole+flip. The
+    // corner where the two notches and a `b` wall meet is a shared `b` vertex — part2a merges it to
+    // `Node::Orig`, so every face is all-`Constructed` and welds with an empty seam. Any condition
+    // failing falls through to the honest reject below.
+    if kind == BoolKind::Cut && genuine.len() == 2 {
+        let (i0, j0) = genuine[0];
+        let (i1, j1) = genuine[1];
+        let same_normal = |i: usize, j: usize| planes[i].n_out.dot(planes[j].n_out) > 0.0;
+        let distinct = canon[i0] != canon[i1];
+        let adjacent = faces_share_edge(model, planes[i0].face, planes[i1].face);
+        let contact_tris = [planes[i0].tri, planes[i1].tri];
+        let mut blind = true;
+        for &vh in &solid_vertex_handles(model, b) {
+            let p = model.vertices.get(vh).point;
+            if contact_tris.iter().all(|t| plane_side(*t, p) != 0)
+                && point_in_solid(model, p, a)? != Side::Inside
+            {
+                blind = false;
+                break;
+            }
+        }
+        if same_normal(i0, j0) && same_normal(i1, j1) && distinct && adjacent && blind {
+            // Each contact face `P∖Q`, reconstructed against `Q`, with `contact` = the **other**
+            // contact plane (where the shared boundary edge / attachment lives).
+            let mut faces: Vec<LocalFace> = Vec::new();
+            for &(ia, jb, other) in &[(i0, j0, canon[i1]), (i1, j1, canon[i0])] {
+                let pi_c = canon[ia];
+                let a_bnd = contact_boundary(model, planes[ia].face, pi_c, &inc_a, &canon)?;
+                let b_fp = contact_boundary(model, planes[jb].face, pi_c, &inc_b, &canon)?;
+                let cx = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_fp, Some(other))?;
+                let arcs = coplanar_seam_arcs(&planes, pi_c, &b_fp, &cx);
+                faces.extend(coplanar_reconstruct(
+                    &planes,
+                    pi_c,
+                    ia,
+                    &a_bnd,
+                    &b_fp,
+                    &cx,
+                    &arcs,
+                    false,
+                    false,
+                    Some(other),
+                )?);
+            }
+            // `a`'s non-contact faces whole.
+            faces.extend(
+                solid_local_faces(model, a, 0, None, None)
+                    .into_iter()
+                    .filter(|lf| lf.plane_idx != i0 && lf.plane_idx != i1),
+            );
+            // `b`'s walls whole + flipped (blind ⇒ each wall is entirely `b∩a`); the two contact
+            // faces vanish.
+            faces.extend(
+                solid_local_faces(model, b, na, None, None)
+                    .into_iter()
+                    .filter(|lf| lf.plane_idx != j0 && lf.plane_idx != j1)
+                    .map(|lf| LocalFace { flip: true, ..lf }),
+            );
+            debug_assert!(
+                faces.iter().all(|lf| lf
+                    .loop_nodes
+                    .iter()
+                    .chain(lf.inner.iter().flatten())
+                    .all(|nd| matches!(nd, Node::Orig(_)))),
+                "flush pocket is all-Orig after the corner merge"
+            );
+            // All-`Orig` ⇒ empty seam (a residual `Seam` would `MISSING_SEAM`-reject in assembly).
+            return assemble_fuse_cut(model, a, b, &planes, &[], &faces);
+        }
     }
 
     if genuine.len() > 1 {
@@ -14072,12 +14175,13 @@ pub mod tests {
         }
     }
 
-    // M5-c: flush-edge is honestly rejected (DNA guard — measured `vertex_on_face_plane`). A pocket
-    // whose footprint edge is EXACTLY on the base face's boundary edge (shared boundary, degree-3)
-    // is out of scope until the flush-edge cell (turn_at / reference-sharing); it must never be
-    // silently accepted. This guard fails loudly if a future change makes flush silently pass.
+    // B4-R1b-part2b: a flush-edge pocket is now cut correctly (was honestly rejected). The cutter
+    // sits flush on TWO adjacent base faces (top z=1 and front y=0), sharing the top-front boundary
+    // edge — the degree-3 corner (0.3,0,1) is a cutter vertex welded to all three faces (part2a).
+    // base − cutter = 1 − 0.4·0.4·0.5 = 0.92. The assembled solid must be watertight with no
+    // spurious coplanar-neighbour edge (the real weld guard, beyond volume).
     #[test]
-    fn flush_edge_pocket_is_honestly_rejected() {
+    fn flush_edge_pocket_cuts_two_adjacent_faces() {
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -14088,10 +14192,15 @@ pub mod tests {
             Point3::from_array([0.3, 0.0, 0.5]),
             Point3::from_array([0.7, 0.4, 1.0]),
         );
-        assert!(
-            coplanar_result(&mut m, BoolKind::Cut, base, cutter).is_err(),
-            "flush-edge must be honestly rejected, not silently accepted"
-        );
+        let r = coplanar_result(&mut m, BoolKind::Cut, base, cutter).unwrap();
+        assert_eq!(r.len(), 1);
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+        assert!((vol - 0.92).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r[0]).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
     }
 
     // C2c: through-bottom — a top-flush slot spanning the full height so it breaks out both the x=1
