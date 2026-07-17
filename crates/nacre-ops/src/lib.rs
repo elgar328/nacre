@@ -12391,6 +12391,55 @@ pub mod tests {
         assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
+    /// B3: a **structural** coplanar contact on a ROTATED face is handled correctly. A cube tilted
+    /// 30° about X, then a pad on its rotated top face: `PadOnFace` reuses the face surface, so the
+    /// contact is recognized by the rotation-robust shared-`Handle` branch of `shares_or_coplanar`
+    /// (an independently-built coplanar pair — rounded coefficients — would be missed; that
+    /// accidental case stays honestly rejected, guarded by `rotated_coplanar_contact_is_never_
+    /// silently_wrong`). Rotation is rigid, so the volume is invariant. n0 measured the near-edge
+    /// case (footprint 0.01 from the boundary) is also exact — the f64 containment only risks a
+    /// mis-round at rounding-scale (~1e-15) margins, not realistic input.
+    #[test]
+    fn rotated_structural_pad_is_supported() {
+        use nacre_scalar::Axis;
+        let boss = |profile: Profile2d, want: f64| {
+            let mut m = Model::new();
+            let OpOutput::Extrude { solid, .. } =
+                apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
+            else {
+                unreachable!()
+            };
+            let rotated = transform(&mut m, solid, &rot_iso(Axis::X, 30)).unwrap();
+            m.rebuild_adjacency();
+            // extrude face order: base, top, sides → index 1 is the (now rotated) top.
+            let top = m.shells.get(m.solids.get(rotated).outer).faces[1];
+            let OpOutput::PadOnFace { solid: sol, .. } =
+                apply(&mut m, &pad_op(top, profile, 0.5)).unwrap()
+            else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{vs:?}");
+            let vol = nacre_props::mass_props(&m, sol).unwrap().volume;
+            assert!((vol - want).abs() < 1e-9, "volume {vol} want {want}");
+            let planes = collect_planes(&m, sol).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, sol, &planes));
+        };
+        // Clean: boss 0.4×0.4×0.5 = 0.08 → 1.08.
+        boss(small_square(), 1.08);
+        // Near-edge (footprint 0.01 from the face boundary): boss 0.98²×0.5 = 0.4802 → 1.4802.
+        let near_edge = Profile2d {
+            points: vec![
+                p2(-0.49, -0.49),
+                p2(0.49, -0.49),
+                p2(0.49, 0.49),
+                p2(-0.49, 0.49),
+            ],
+        };
+        boss(near_edge, 1.4802);
+    }
+
     #[test]
     fn an_edge_slot_through_the_bottom_is_out_of_scope() {
         // The prism pokes out the base's bottom too — its walls cross a second base face (the

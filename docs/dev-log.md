@@ -1209,3 +1209,15 @@ D0 silent-wrong 위험의 실증 — 넓은 라우터가 detector 게이트 보�
 기존 detector 판정 유지(비볼록 footprint 보스는 count=1이라 거절 유지, 그 flip은 별도 OCCT-확정 셀). 골든을 `two_leg_boss_fuse`로
 개명·**boolean_one(공개 API) end-to-end**로 강화 → vol 3.4·watertight·no-coplanar-edge. 게이트: clippy 양 구성·전 스위트 양
 feature·silent-wrong 0 green(268 ops). **B2 완료(사용자 요구 ① 첫 케이스 end-to-end 배송).** 다음: B3(회전) 또는 B1 블로커.
+
+**(B3) 회전 공면 — 구조적 접촉은 이미 동작, 골든으로 고정(프로덕션 코드 0).** n0(진단-먼저): 큐브를 30° 회전
+(`transform(rot_iso)`, Origin::Rotated) 후 그 회전면에 **구조적** pad(`PadOnFace`, surface Handle 공유). 측정 결과 **`Ok
+vol=1.08 정확·watertight·no-coplanar-edge`** — 즉 **구조적 회전 공면은 이미 올바르게 처리됨**(공유-Handle 분기가
+`shares_or_coplanar`에서 회전-robust 인식 → coplanar_result가 rounded 회전좌표서도 clean 케이스 정확 처리). **경계-근처 프로브**
+(footprint 0.01 거리): 여전히 `vol=1.4802 정확` — f64 containment 오판은 margin이 rounding-scale(~1e-15)일 때만 가능, 현실
+입력 안전(발생 시 downstream validate가 잡을 여지). **★ 핵심 구분:** 구조적(공유-Handle, exact 의도)만 인식; **accidental
+회전**(독립 구성 두 공면, rounded 계수 non-비례)은 인식 불가 → 계속 정직 거절(원칙적 ε-snap 천장, 새 tol 없이 불가 —
+`rotated_coplanar_contact_is_never_silently_wrong` 가드가 커버). 딜리버러블 = 골든 `rotated_structural_pad_is_supported`(clean
+1.08 + near-edge 1.4802). **프로덕션 코드 변경 0**(능력은 이미 존재, 미검증이었을 뿐). 게이트: clippy 양 구성·전 스위트 양
+feature green. **연기(별도, DNA):** f64 `face_contains_face`→toleranced triple `point_in_ring` 배선(9곳+ 광범위, adversarial-margin
+하드닝) — 현실 안전이라 미룸. **B3 완료(사용자 요구 ① 두 번째 케이스, 구조적 스코프).**
