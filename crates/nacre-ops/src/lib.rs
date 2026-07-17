@@ -13528,6 +13528,28 @@ pub mod tests {
         }
     }
 
+    // M5-c: flush-edge is honestly rejected (DNA guard — measured `vertex_on_face_plane`). A pocket
+    // whose footprint edge is EXACTLY on the base face's boundary edge (shared boundary, degree-3)
+    // is out of scope until the flush-edge cell (turn_at / reference-sharing); it must never be
+    // silently accepted. This guard fails loudly if a future change makes flush silently pass.
+    #[test]
+    fn flush_edge_pocket_is_honestly_rejected() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        // footprint x[0.3,0.7] y[0,0.4] at z=1: the y=0 edge coincides with the base top's y=0 edge.
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.3, 0.0, 0.5]),
+            Point3::from_array([0.7, 0.4, 1.0]),
+        );
+        assert!(
+            coplanar_result(&mut m, BoolKind::Cut, base, cutter).is_err(),
+            "flush-edge must be honestly rejected, not silently accepted"
+        );
+    }
+
     // C2c: through-bottom — a top-flush slot spanning the full height so it breaks out both the x=1
     // wall AND the bottom (z=0). The uniform rule needs no new code: the bottom face is one more
     // face clipped to a∖b (a full-height split), the x=1 breakout its own clip. Volume 0.75.

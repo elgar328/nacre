@@ -1137,3 +1137,10 @@ general/common_result`) + 고아 헬퍼 15개(`try_overhang`... 아닌 `clip_bwa
 detector가 아직 내부 검증에 일부 필드 사용). **coincident는 유지**(glue≠clip, 별도 경계). 순 **−951줄**(977 del/26 ins),
 558 workspace green, OCCT 딜리버러블 확정. **연기**: full detector 삭제(Option<()>화)·turn_at flush-edge·일반
 dissolve·공개 through-bottom/slab accept-flip(detector gate 완화)·P⊂Q·다중접촉. 남음: E(design.md 문서).
+
+**(M5-c n0) flush-edge 실현가능성 측정 — 정직 거절 확인(DNA 안전).** per-face 병합 seam 병합 측정(Explore: R0가
+이미 푼 싼 수정)에 이어, 남은 M5 케이스 중 최고 高가치·高위험인 **flush-edge를 배선 전 프로브**: 풋프린트의 한 변이
+base 면 경계 모서리에 정확히 얹힌(공유 경계, degree-3) 포켓 Cut → **`vertex_on_face_plane` 정직 거절**(조용히 수용
+안 함, DNA 안전). 즉 flush는 현재 caught 상태. 해결 경로(구성-시점 참조 공유 vs boolean-시점 turn_at)는 flush 구현
+셀(플랜상 고위험·마지막)의 몫. 프로브를 **DNA 가드**(`flush_edge_pocket_is_honestly_rejected`)로 유지 — 미래 변경이
+flush를 조용히 통과시키면 loud 실패. M5-c 순서: 저위험 케이스(다중-loop·다중접촉) 먼저 → 회전 → flush(최후).
