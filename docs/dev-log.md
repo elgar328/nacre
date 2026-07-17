@@ -1254,3 +1254,28 @@ revert(기존 `flush_edge_pocket_is_honestly_rejected` 가드 유지). 진단 �
 평면에 면이 있어 section_of_solid 퇴화(flush 벽서 내가 막힌 그 VOFP)를 원천 회피. 사다리 R0(격리 골든)→R1(flush에만 새 경로·
 기존 불변·DNA 가드)→R2(등가 이관)→R3(pair-selection 은퇴). 안전판=R1까지로 flush 충족. 스코프: pair-selection만(B1 section
 퇴화는 별도 상속). 플랜에 전체 기록. 다음: R0 착수(bounded — 한 분기 일반화, primitive-first 골든으로 위험 가둠).
+
+**(R0-n0 측정) flush 거절 사이트 확정 — footprints_overlap throw(4965), genuine>1(5041) 아님. dev-log 5번째 오판.**
+배선 전 throwaway로 하위 함수 직접 호출 계측(env-panic 아닌 관찰). **(1) flush 거절 사이트:** base[0,1]³−cutter[0.3,0.7]×[0,0.4]×[0.5,1]의
+genuine 루프를 복제하니, 두 공면 쌍(z=1 canon=1·y=0 canon=2) **둘 다 face_contains_face 양방향 false**(dev-log가 우려한 "face-frame
+rounding으로 살짝 안쪽→contained" 반증 — 실제론 contained 아님) + **footprints_overlap=Err(vertex_on_face_plane)**. 즉 첫 공면 쌍
+(z=1)에서 `coplanar_boundary_crossings(…,None)`가 cutter x=0.3 벽 끝점의 base_top y=0 모서리 graze로 throw → genuine 루프 `?`(4965)에서
+거절, **5041 genuine>1에 도달조차 안 함**. `coplanar_result(Cut)=>Unsupported(vertex_on_face_plane)`. **★ dev-log의 "진짜 블로커=5055
+genuine>1"은 5번째 오판**(Plan 에이전트 정적 트레이스가 옳음) — 측정-먼저가 또 잡음. 파생: `footprints_overlap`/genuine 루프/
+`coplanar_contact_count`가 flush서 throw → R1 첫 작업=graze-aware genuine(내부 겹침 有→Ok(true), 순수 graze→정직 거절). **(2) R0
+mechanism:** `section_of_solid(prism @ base_top 평면)`=Err(VOFP, 공면 퇴화 확인→contact_boundary 필요) + `contact_boundary
+crossings(base_top[0,1]²,prism_top[0.5,1.5]×[0.25,0.75])`=**Ok(2 crossings), throw 없음** → R0 proper-crossing 경로 sound. **(3)
+degree-3 코너:** flush 공유 코너 (0.3,0,1)=meet{z1,y0,x0.3} → canon [1,2,10] 단일 정렬 triple, point 정확 → **plain trihedral(fan
+아님)**, R1 weld triple-identity 가능(de-risk). 결론: R0(proper-crossing 격리 primitive) 착수, R1 graze-aware는 다음 세션. throwaway 제거.
+
+**(R0) face-plane 분기 일반화 — 겹침-공면 면 분할(배선 안 함·회귀 0).** `clip_face_to_section` face-plane 분기를 3-regime으로:
+(a) 겹침-공면(신규)·(b) disjoint-공면(centroid, 기존)·(c) 관통(section, 기존). 신규 (a): `coincident_overlap_face`가 `other`의
+class-pi 면 중 F와 겹치는 단일 면 cf를 shell 순서로 탐색(결정성; footprints_overlap Err(graze)→skip=centroid 보존, R1이 graze
+담당; ≥2 겹침→`COPLANAR_OVERLAP_MULTI` 정직 거절), cf의 `contact_boundary`를 q_bnd로 `coplanar_reconstruct`(section_of_solid VOFP
+퇴화 회피). q_bnd 끝점=cf 원본 정점(Node::Orig)→순수성 보존. crossings→arcs→reconstruct 꼬리는 (a)/(c) 공유 closure로 DRY.
+`clip_face_to_section`에 `inc_other` param 추가(2 호출부: a-면→&inc_b, b-면→&inc_a). **격리성:** 기존 호출부는 genuine==1이라
+face-plane 분기가 disjoint만 봄→(a) dead→회귀 0. **골든** `clip_face_to_section_splits_an_overlapping_coplanar_face`(직접 호출):
+base_top[0,1]² vs prism_top[0.5,1.5]×[0.25,0.75], 2 proper crossing @(1,0.25)/(1,0.75). ∖/∩ 상보성 `0.75+0.25==1.0`(silent-wrong
+최강 검사) + ∩ 조각 4-노드 quad + inner empty + 결정성 2회 + on± 매핑(Cut/same→MinusQ·Common/same→InterQ). **★ R0의 계산은
+`cut_an_edge_slot` contact 재구성과 동일 — plumbing만 신규(최대 de-risk).** 게이트: fmt·clippy -D warnings(default+no-default)·전
+스위트 양 feature green(default 270·no-default 269)·기존 공면 골든 동일 부피. 다음: R1(graze-aware genuine + per-face + flush flip), 다음 세션.

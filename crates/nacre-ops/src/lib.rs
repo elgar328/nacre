@@ -310,6 +310,11 @@ pub(crate) mod tag {
     /// but a vertex *at* a chord endpoint is an ambiguous fan — honestly rejected until the general
     /// T-junction resolver (C1) lands.
     pub const FLUSH_VERTEX_COINCIDENT: &str = "flush_vertex_coincident";
+    /// A face is coplanar-overlapping with *two or more* faces of the other solid on one plane
+    /// class (a non-convex `other` seating twice on one plane). The per-face classifier (B4-R0)
+    /// splits against a single coincident face; multiple overlaps are out of scope until a later
+    /// cell, honestly rejected rather than picking one arbitrarily.
+    pub const COPLANAR_OVERLAP_MULTI: &str = "coplanar_overlap_multi";
 }
 
 #[cfg(test)]
@@ -3917,11 +3922,18 @@ fn section_boundary(
 }
 
 /// Clip one face `f` of `owner` (combined-plane index `f_idx`) to the part surviving a coplanar
-/// Cut, against the `other` solid's cross-section at `f`'s plane. Returns the resulting face(s) and
-/// the crossings they mint (for the shared seam). `keep_inside` selects `f ∩ other` (b's slot
-/// walls) vs `f ∖ other` (a's breached walls); `flip` sets the normal; `contact` is the contact
-/// plane class (scoped flush R1/R2). A face whose plane misses `other` (empty section) lies wholly
-/// outside it — kept whole for `f ∖ other`, dropped for `f ∩ other`.
+/// Cut, against the `other` solid at `f`'s plane. Returns the resulting face(s) and the crossings
+/// they mint (for the shared seam). `keep_inside` selects `f ∩ other` (b's slot walls) vs
+/// `f ∖ other` (a's breached walls); `flip` sets the normal; `contact` is the contact plane class
+/// (scoped flush R1/R2). `inc_owner`/`inc_other` are the two solids' edge-incidences.
+///
+/// Three regimes by `f`'s relation to `other`: (a) `f` coplanar and **overlapping** a face of
+/// `other` (B4-R0) — `section_of_solid` degenerates there (`other`'s vertices lie on `f`'s plane),
+/// so split against that coincident face's `contact_boundary` via [`coplanar_reconstruct`], exactly
+/// as the overhang main branch reconstructs a contact face; (b) `f` coplanar but **disjoint** —
+/// decide the whole face by its centroid; (c) `f` **transversal** — clip against `other`'s section.
+/// A plane missing `other` (empty section) lies wholly outside — kept for `f ∖ other`, dropped for
+/// `f ∩ other`.
 #[cfg_attr(not(test), allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
 fn clip_face_to_section(
@@ -3933,6 +3945,7 @@ fn clip_face_to_section(
     surf_ix: &HashMap<Handle<Face>, usize>,
     canon: &[usize],
     inc_owner: &arrange::EdgePlanes,
+    inc_other: &arrange::EdgePlanes,
     other_classes: &HashSet<usize>,
     keep_inside: bool,
     flip: bool,
@@ -3956,12 +3969,42 @@ fn clip_face_to_section(
             flip,
         }
     };
+    // Reconstruct `f` (boundary `f_bnd`) subdivided by a coplanar footprint `q_bnd` — shared by the
+    // coplanar-overlap regime (`q_bnd` = a coincident face) and the transversal regime (`q_bnd` = a
+    // section), which differ only in where `q_bnd` comes from.
+    let reconstruct = |f_bnd: &[BndEdge], q_bnd: &[BndEdge]| {
+        let cx = coplanar_boundary_crossings(planes, pi, f_bnd, q_bnd, Some(contact))?;
+        let arcs = coplanar_seam_arcs(planes, pi, q_bnd, &cx);
+        let faces = coplanar_reconstruct(
+            planes,
+            pi,
+            f_idx,
+            f_bnd,
+            q_bnd,
+            &cx,
+            &arcs,
+            keep_inside,
+            flip,
+            Some(contact),
+        )?;
+        Ok::<_, BoolError>((faces, cx))
+    };
     // Face-plane branch: `f` is coplanar with a face of `other` (its plane class is one of
-    // `other`'s). The contact face is handled elsewhere, so this is a *disjoint*-coplanar face
-    // (e.g. a slot top sharing the plane of a far pocket floor); `section_of_solid` there
-    // degenerates (`other`'s vertices lie on `f`'s plane). Decide by the face centroid — strictly
-    // inside/outside `other` since the footprints are disjoint — instead of a section.
+    // `other`'s). Two sub-cases:
     if other_classes.contains(&pi) {
+        // (a) Overlapping a coincident face `cf`: split `f` against `cf`'s footprint. `section_of_
+        // solid` would degenerate here (`cf`'s vertices lie on `f`'s plane → `VERTEX_ON_FACE_PLANE`),
+        // so `cf`'s `contact_boundary` is the seam, classified in 2D — the same reconstruct the
+        // overhang main branch runs for a contact face (B4-R0).
+        if let Some(cf) = coincident_overlap_face(
+            model, f_face, other, pi, planes, surf_ix, canon, inc_owner, inc_other,
+        )? {
+            let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
+            let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
+            return reconstruct(&f_bnd, &q_bnd);
+        }
+        // (b) Disjoint-coplanar (footprints apart): the centroid is strictly inside/outside `other`,
+        // so decide the whole face by it (no section).
         let ring = face_ring(model, model.faces.get(f_face));
         let k = ring.len() as f64;
         let sum = ring.iter().fold([0.0; 3], |a, &(_, p)| {
@@ -3973,6 +4016,7 @@ fn clip_face_to_section(
         let lf = (inside == keep_inside).then(whole);
         return Ok((Vec::from_iter(lf), Vec::new()));
     }
+    // (c) Transversal: clip against `other`'s cross-section at `f`'s plane.
     let loops = section_of_solid(model, other, f_idx, planes, surf_ix)?;
     if loops.is_empty() {
         // `f`'s plane misses `other` → `f` lies wholly outside it.
@@ -3981,21 +4025,52 @@ fn clip_face_to_section(
     }
     let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
     let q_bnd = section_boundary(&loops, pi, canon)?;
-    let cx = coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, Some(contact))?;
-    let arcs = coplanar_seam_arcs(planes, pi, &q_bnd, &cx);
-    let faces = coplanar_reconstruct(
-        planes,
-        pi,
-        f_idx,
-        &f_bnd,
-        &q_bnd,
-        &cx,
-        &arcs,
-        keep_inside,
-        flip,
-        Some(contact),
-    )?;
-    Ok((faces, cx))
+    reconstruct(&f_bnd, &q_bnd)
+}
+
+/// The single face of `other` on plane class `pi` whose footprint overlaps face `f_face`'s (a
+/// coplanar contact), or `None` if none does — a disjoint-coplanar `f` (the centroid path). `≥2`
+/// overlapping faces (a non-convex `other` seating twice on one plane) is out of scope until a
+/// later cell, honestly rejected rather than picking one arbitrarily. Iterates `other`'s shell
+/// faces in Store order (deterministic — replay-stable). A grazing candidate (footprints share a
+/// boundary but do not properly cross, so [`footprints_overlap`] graze-rejects) is **skipped**,
+/// preserving the disjoint/centroid behaviour for the existing wired callers — the graze-aware
+/// genuine predicate is a later cell (B4-R1); R0 serves only clean proper-crossing overlaps.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn coincident_overlap_face(
+    model: &Model,
+    f_face: Handle<Face>,
+    other: Handle<Solid>,
+    pi: usize,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    canon: &[usize],
+    inc_owner: &arrange::EdgePlanes,
+    inc_other: &arrange::EdgePlanes,
+) -> Result<Option<Handle<Face>>, BoolError> {
+    let mut found = None;
+    for sh in solid_shell_handles(model, other) {
+        for &cf in &model.shells.get(sh).faces {
+            let Some(&ix) = surf_ix.get(&cf) else {
+                continue;
+            };
+            if canon[ix] != pi {
+                continue;
+            }
+            // A graze (Err) is treated as non-overlap here → the disjoint/centroid path is preserved
+            // (R1 owns graze). `Ok(true)` is a genuine proper-crossing/containment overlap.
+            if footprints_overlap(model, planes, pi, f_face, cf, inc_owner, inc_other, canon)
+                .unwrap_or(false)
+            {
+                if found.is_some() {
+                    return Err(reject(tag::COPLANAR_OVERLAP_MULTI));
+                }
+                found = Some(cf);
+            }
+        }
+    }
+    Ok(found)
 }
 
 /// A proper crossing of the two coplanar footprint boundaries ∂P (from `a`) and ∂Q (from `b`)
@@ -5093,8 +5168,8 @@ fn coplanar_result(
                 continue;
             }
             let (fs, cx) = clip_face_to_section(
-                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, &b_classes, keep_inter,
-                false, pi_c,
+                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, &inc_b, &b_classes,
+                keep_inter, false, pi_c,
             )?;
             faces.extend(fs);
             all_cx.extend(cx);
@@ -5114,6 +5189,7 @@ fn coplanar_result(
                 &surf_ix,
                 &canon,
                 &inc_b,
+                &inc_a,
                 &a_classes,
                 true,
                 b_flip,
@@ -13034,6 +13110,138 @@ pub mod tests {
         assert!(
             ring.iter().filter(|p| (p[1] - 1.0).abs() < 1e-9).count() == 2,
             "exactly two nodes on the contact plane z=1 (the kept top edge)"
+        );
+    }
+
+    // B4-R0: the generalized face-plane branch of `clip_face_to_section` splits a coplanar face that
+    // *overlaps* a face of `other` (not just disjoint). Isolated direct call (dispatch unwired): base
+    // top [0,1]² vs prism top [0.5,1.5]×[0.25,0.75] — footprints overlap on the shared plane z=1,
+    // their boundaries crossing at (1,0.25)/(1,0.75). `section_of_solid` degenerates here (prism's top
+    // lies on the plane), so the branch splits against the coincident face's `contact_boundary`. The
+    // complementary ∖/∩ areas (0.75 + 0.25 = 1.0) pin the geometry: the same computation the overhang
+    // main branch runs for a contact face, reached now through the per-face clip.
+    #[test]
+    fn clip_face_to_section_splits_an_overlapping_coplanar_face() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 0.5]),
+            Point3::from_array([1.5, 0.75, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let planes_a = collect_planes(&m, base).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, prism).unwrap());
+        let mut surf_ix = std::collections::HashMap::new();
+        for (i, p) in planes.iter().enumerate() {
+            surf_ix.insert(p.face, i);
+        }
+        let canon = plane_classes(&planes);
+        let find = |rng: std::ops::Range<usize>, n: [f64; 3], c: usize, v: f64| -> usize {
+            rng.clone()
+                .find(|&i| {
+                    let nn = planes[i].n_out.as_array();
+                    nn[0] * n[0] + nn[1] * n[1] + nn[2] * n[2] > 0.5
+                        && (planes[i].tri[0].as_array()[c] - v).abs() < 1e-9
+                })
+                .expect("plane")
+        };
+        let base_top = find(0..na, [0.0, 0.0, 1.0], 2, 1.0);
+        let pi = canon[base_top];
+        let inc_base = arrange::edge_planes(&m, base, &surf_ix).unwrap();
+        let inc_prism = arrange::edge_planes(&m, prism, &surf_ix).unwrap();
+        let prism_classes: HashSet<usize> = (na..planes.len()).map(|i| canon[i]).collect();
+
+        // Shoelace of a returned face's outer loop, projected to the z=1 plane (x,y).
+        let area_of = |lf: &LocalFace| -> f64 {
+            let xy = |nd: &Node| -> [f64; 2] {
+                let p = match *nd {
+                    Node::Orig(vh) => m.vertices.get(vh).point,
+                    Node::Seam(t) => three_planes(
+                        &planes[t[0]].plane,
+                        &planes[t[1]].plane,
+                        &planes[t[2]].plane,
+                    )
+                    .unwrap(),
+                }
+                .as_array();
+                [p[0], p[1]]
+            };
+            let ring: Vec<[f64; 2]> = lf.loop_nodes.iter().map(&xy).collect();
+            let k = ring.len();
+            0.5 * (0..k)
+                .map(|i| {
+                    let (u, v) = (ring[i], ring[(i + 1) % k]);
+                    u[0] * v[1] - v[0] * u[1]
+                })
+                .sum::<f64>()
+                .abs()
+        };
+        let clip = |keep_inside: bool| -> Vec<LocalFace> {
+            clip_face_to_section(
+                &m,
+                planes[base_top].face,
+                base_top,
+                prism,
+                &planes,
+                &surf_ix,
+                &canon,
+                &inc_base,
+                &inc_prism,
+                &prism_classes,
+                keep_inside,
+                false,
+                pi,
+            )
+            .unwrap()
+            .0
+        };
+
+        // P∖Q = base top minus the [0.5,1]×[0.25,0.75] overlap: one notched face, no holes, area 0.75.
+        let minus = clip(false);
+        assert_eq!(minus.len(), 1, "P∖Q is one cell");
+        assert!(minus[0].inner.is_empty(), "a notch has no hole ring");
+        let a_minus = area_of(&minus[0]);
+        assert!(
+            (a_minus - 0.75).abs() < 1e-12,
+            "P∖Q area 0.75, got {a_minus}"
+        );
+
+        // P∩Q = the overlap rectangle: area 0.25.
+        let inter = clip(true);
+        assert_eq!(inter.len(), 1, "P∩Q is one cell");
+        assert!(inter[0].inner.is_empty());
+        let a_inter = area_of(&inter[0]);
+        assert!(
+            (a_inter - 0.25).abs() < 1e-12,
+            "P∩Q area 0.25, got {a_inter}"
+        );
+
+        // Complementarity (the strongest silent-wrong catch): the two pieces tile the whole face.
+        assert!(
+            (a_minus + a_inter - 1.0).abs() < 1e-12,
+            "∖ and ∩ tile the face"
+        );
+
+        // The ∩ piece is exactly the overlap rectangle — four nodes, two on the x=1 breach edge.
+        assert_eq!(inter[0].loop_nodes.len(), 4, "P∩Q is a quad");
+
+        // Determinism: identical output across runs (no HashMap-order dependence).
+        assert!(
+            (area_of(&clip(false)[0]) - a_minus).abs() < 1e-12,
+            "deterministic"
+        );
+
+        // on± mapping (B4 survival table drives keep_inside): a Cut against a same-normal contact
+        // keeps P∖Q (`MinusQ`), a Common keeps P∩Q (`InterQ`) — the two complementary pieces above.
+        assert_eq!(coplanar_survival(BoolKind::Cut, true).0, PSurvive::MinusQ);
+        assert_eq!(
+            coplanar_survival(BoolKind::Common, true).0,
+            PSurvive::InterQ
         );
     }
 
