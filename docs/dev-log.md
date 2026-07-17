@@ -1071,3 +1071,13 @@ dedup(결정적 first-appearance)해 seam으로 `assemble_fuse_cut`. 코너 기�
 세 재구성에서 동일 canon triple `{x1,z1,cutter-y}`로 방출돼 자동 용접(R0). 골든 `_reproduces_edge_slot_cut`(0.875,
 벽 1개 Middle)·`_reproduces_slab_channel_cut`(0.9, 대향 2벽). validate empty·no-coplanar-edge. **scoped flush(R0/R1/R2)로
 첫 cut-overhang이 통합 경로로 조립됨** — resplit 아님, splice 헬퍼 안 씀. 다음: C2b-1.5 스파이크(복합 타깃 측정).
+
+**(C2b-1.5 스파이크·측정) 복합 타깃 특성 확정 — 나머지 순서를 사실로 고정.** throwaway 프로브로 딜리버러블
+타깃(`top_pocketed_cube` + slot) 측정 → 플랜의 C2b-4 설계 **전부 확증**: (1) 공면 **pair 2개** — a[2] base x=1 ↔ b[16]
+slot x=1(genuine, 풋프린트 겹침) + a[6] 포켓바닥 z=0.5 ↔ b[12] slot top z=0.5(**spurious, disjoint**: 포켓 x≈0.3-0.7
+vs slot 0.75-1) → **풋프린트-겹침 pair 선택 필수**(현 pair!=1 하드거절 교체). (2) **z=0.5 단면이 양 operand 모두 퇴화**
+(`section_of(slot,z=0.5)`·`section_of(cube,z=0.5)` 둘 다 VERTEX_ON_FACE_PLANE — slot top·포켓 바닥이 그 평면 위) →
+무조건 section-클립 불가, **면-평면 분기(centroid) 필수**. (3) slot-top centroid (0.875,0.5,0.5) = **Inside** → whole
+유지(flip). n0′이 코너 용접·C1-독립 이미 확인. **결론: C2b-4는 C1 불요, pair-선택 + 면-평면 분기(+through-bottom
+균일)만으로 도달** — lean 사다리 순서 측정으로 확정. 스파이크 제거(측정 완료). 다음: pair-선택 셀 → through-bottom
++ 면-평면 분기 → C2b-4.
