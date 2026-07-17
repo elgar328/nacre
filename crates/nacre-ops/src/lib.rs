@@ -1582,6 +1582,16 @@ pub fn boolean(
         {
             return coplanar_result(model, kind, a, b);
         }
+        // Multiple coplanar contacts (the symmetric of the Fuse route above): a flush pocket on two
+        // adjacent faces, or a ⊓/through cutter making several blind pockets, slips past the
+        // single-contact detectors (they need exactly one pair). Route genuine multi-contact
+        // (count > 1) to the unified handler; it declines (→ `general_boolean`, unchanged) anything
+        // it cannot cover.
+        if coplanar_contact_count(model, a, b)? > 1 {
+            if let Ok(r) = coplanar_result(model, kind, a, b) {
+                return Ok(r);
+            }
+        }
         // Non-convex overhang Cut: the overhang-cut detector above is convex-gated, so route the
         // non-convex case to the unified handler too (it honestly declines — falls through to
         // `general_boolean` — when there is no coplanar contact it covers).
@@ -5140,6 +5150,13 @@ fn coplanar_result(
     // a-face may host several contacts (a ⊓ tool's two legs → two holes in one bar-top face), so
     // holes accumulate per a-face plane index. `b_flip = (kind == Cut)` is uniform, so multiple
     // contacts compose without cross-talk; each pair's hole/no-hole is its own `coplanar_survival`.
+    // Multi-contact on parallel faces makes a through-tunnel (a hole in each), reached publicly via
+    // the part2c count>1 route. **Implicit blind assumption:** this branch has no blind check (unlike
+    // `detect_pocket_contact`), so it trusts that a strictly-contained footprint on 2+ coplanar faces
+    // is blind. On a **convex** `a` that holds — a box reaching a second face breaks strict
+    // containment, and same-plane/parallel contained contacts are blind by construction. A
+    // *non-convex* `a` whose cutter is contained on some faces but breaches a non-coplanar one would
+    // be built wrong here; that path is only reachable via the non-convex dispatch (1589), unchanged.
     if genuine.iter().all(|&(i, j)| {
         face_contains_face(
             model,
@@ -14201,6 +14218,54 @@ pub mod tests {
         assert!((vol - 0.92).abs() < 1e-12, "volume {vol}");
         let planes = collect_planes(&m, r[0]).unwrap();
         assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+    }
+
+    // B4-R1b-part2c: the same flush pocket through the PUBLIC `boolean` entry point. The Cut
+    // dispatch's multi-contact route (mirroring Fuse) sends the two-contact flush to the unified
+    // handler; a real user calling `boolean(Cut, ..)` now gets 0.92, not a reject.
+    #[test]
+    fn flush_edge_pocket_cut_via_public_dispatch() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.3, 0.0, 0.5]),
+            Point3::from_array([0.7, 0.4, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, base, cutter).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.92).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
+    }
+
+    // B4-R1b-part2c: a through-tunnel Cut — a cutter spanning the bar's full height (top z=1 and
+    // bottom z=0 both flush, footprint strictly inside), so it makes TWO coplanar contacts on two
+    // *parallel* faces. Not the flush pattern (parallel, not adjacent) → the contained branch fires
+    // (both strictly contained), dropping the footprint as a hole in top AND bottom = a tunnel. The
+    // count>1 route reaches it; it was a public COPLANAR_PAIR reject before part2c. bar − tunnel =
+    // 1 − 0.4·0.4·1 = 0.84.
+    #[test]
+    fn through_tunnel_cut_via_public_dispatch() {
+        let mut m = Model::new();
+        let bar = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, 0.0]),
+            Point3::from_array([0.7, 0.7, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, bar, cutter).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.84).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
     // C2c: through-bottom — a top-flush slot spanning the full height so it breaks out both the x=1

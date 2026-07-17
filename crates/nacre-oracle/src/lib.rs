@@ -679,6 +679,22 @@ bbox_min 0 0 0
         assert!(approx(cut.volume, 0.92), "flush cut {}", cut.volume);
     }
 
+    /// A through-tunnel Cut (B4-R1b-part2c): a cutter spanning the bar's full height (top and bottom
+    /// both flush) makes two parallel coplanar contacts, cut into a tunnel via the contained branch.
+    /// OCCT confirms bar − tunnel = 0.84 independently.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn through_tunnel_cut_matches_occt() {
+        let mut m = Model::new();
+        let bar = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, 0.0]),
+            Point3::from_array([0.7, 0.7, 1.0]),
+        );
+        let cut = occt_boolean_of(&m, OcctBool::Cut, bar, cutter).unwrap();
+        assert!(approx(cut.volume, 0.84), "tunnel cut {}", cut.volume);
+    }
+
     /// Disjoint boxes fuse to a compound whose total volume is the sum — a sanity
     /// check that the harness handles a non-overlapping (compound) result.
     #[test]
