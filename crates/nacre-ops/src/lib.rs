@@ -3772,10 +3772,15 @@ fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
 /// One boundary edge of a coplanar contact face: its edge handle, its two vertices in loop
 /// order, and the *wall* plane class it lies on (the neighbour ≠ the contact plane π).
 #[cfg_attr(not(test), allow(dead_code))]
+/// One boundary edge of a coplanar footprint in the shared plane, as the crossing/ordering
+/// machinery sees it: a segment on the line `π ∩ wall` between two endpoint `Node`s, keyed by its
+/// `seg` index within the boundary. A **contact-face** boundary carries `wall` = a wall class and
+/// `Node::Orig` endpoints; a **section** boundary (`section_of_solid`) carries `wall` = an a-face
+/// class and `Node::Seam` endpoints — both are the same object here (section-Q generalization).
 struct BndEdge {
-    e: Handle<Edge>,
-    v: [Handle<Vertex>; 2],
-    wall: usize, // canonical plane class of the wall carrying this edge
+    seg: usize, // index within the boundary (was `Handle<Edge>`; a section chord has no edge)
+    v: [Node; 2], // endpoints, in loop order (Orig for a contact face, Seam for a section)
+    wall: usize, // canonical plane class of the line `π ∩ wall` carrying this edge
 }
 
 /// The outer-loop boundary edges of a coplanar contact face `cf` (canonical plane class `pi`),
@@ -3790,7 +3795,7 @@ fn contact_boundary(
     canon: &[usize],
 ) -> Result<Vec<BndEdge>, BoolError> {
     let mut out = Vec::new();
-    for &he in &model.faces.get(cf).outer.half_edges {
+    for (seg, &he) in model.faces.get(cf).outer.half_edges.iter().enumerate() {
         let (bounds, pair) = inc[&he.edge];
         let (ca, cb) = (canon[pair[0]], canon[pair[1]]);
         let wall = if ca == pi {
@@ -3802,14 +3807,14 @@ fn contact_boundary(
             return Err(reject(tag::ARRANGEMENT_DEGENERATE));
         };
         let start = he_start(model, he);
-        let v = if bounds[0] == start {
+        let [v0, v1] = if bounds[0] == start {
             bounds
         } else {
             [bounds[1], bounds[0]]
         };
         out.push(BndEdge {
-            e: he.edge,
-            v,
+            seg,
+            v: [Node::Orig(v0), Node::Orig(v1)],
             wall,
         });
     }
@@ -3823,8 +3828,8 @@ fn contact_boundary(
 struct CoCross {
     point: Point3,
     triple: [usize; 3], // sorted {pi, wall_a, wall_b}
-    a_edge: Handle<Edge>,
-    b_edge: Handle<Edge>,
+    a_seg: usize,       // index of the crossed a-boundary edge (was `Handle<Edge>`)
+    b_seg: usize,       // index of the crossed b-boundary edge
 }
 
 /// Proper crossings of the two coplanar footprint boundaries, the exact analog of
@@ -3879,8 +3884,8 @@ fn coplanar_boundary_crossings(
                 out.push(CoCross {
                     point,
                     triple,
-                    a_edge: a[i].e,
-                    b_edge: edge_b.e,
+                    a_seg: a[i].seg,
+                    b_seg: edge_b.seg,
                 });
             }
         }
@@ -3918,8 +3923,8 @@ fn coplanar_seam_arcs(
     // ∂Q as a cyclic node sequence: each edge's start vertex, then the crossings on that edge.
     let mut seq: Vec<Node> = Vec::new();
     for be in b {
-        seq.push(Node::Orig(be.v[0]));
-        let mut on: Vec<&CoCross> = crossings.iter().filter(|c| c.b_edge == be.e).collect();
+        seq.push(be.v[0]);
+        let mut on: Vec<&CoCross> = crossings.iter().filter(|c| c.b_seg == be.seg).collect();
         on.sort_by(|c0, c1| {
             let (w0, w1) = (other_wall(c0, be.wall), other_wall(c1, be.wall));
             match arrange::order_along(planes, pi, be.wall, w0, w1) {
@@ -4034,26 +4039,25 @@ fn coplanar_reconstruct(
 ) -> Result<Vec<LocalFace>, BoolError> {
     let p_ring = boundary_ring_triples(a_bnd, pi);
     let q_ring = boundary_ring_triples(b_bnd, pi);
-    // b-vertex → its triple, to classify an arc's interior corners against P.
-    let b_vtriple: HashMap<Handle<Vertex>, [usize; 3]> = b_bnd
+    // ∂Q node → its plane triple, to classify an arc's interior against P. Keyed by `Node`, so it
+    // covers both a contact-face vertex (`Node::Orig`) and a section chord end (`Node::Seam`).
+    let b_vtriple: HashMap<Node, [usize; 3]> = b_bnd
         .iter()
         .enumerate()
         .map(|(j, be)| (be.v[0], q_ring[j]))
         .collect();
 
     // Keep the arcs of ∂Q that lie inside P — the seam that actually cuts P. A vertex-bearing arc
-    // is classified by an interior b-vertex (its whole interior lies on one side). An interior-free
+    // is classified by an interior node (its whole interior lies on one side). An interior-free
     // arc (two crossings adjacent on one edge) has no such witness, but the arcs alternate
     // inside/outside P at every crossing, so it takes the class opposite its neighbour.
     let mut inside: Vec<Option<bool>> = vec![None; arcs.len()];
     for (k, arc) in arcs.iter().enumerate() {
         if arc.len() > 2 {
-            if let Node::Orig(vh) = arc[1] {
-                let tri = *b_vtriple
-                    .get(&vh)
-                    .ok_or_else(|| reject(tag::MISSING_SEAM))?;
-                inside[k] = Some(arrange::point_in_ring(planes, pi, tri, &p_ring)?);
-            }
+            let tri = *b_vtriple
+                .get(&arc[1])
+                .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+            inside[k] = Some(arrange::point_in_ring(planes, pi, tri, &p_ring)?);
         }
     }
     if !arcs.is_empty() {
@@ -4078,7 +4082,7 @@ fn coplanar_reconstruct(
 
     // ∂P vertices and their kept flag: a vertex is kept iff its inside-Q status matches the
     // survival selector. A vertex exactly on ∂Q is a flush touch — out of scope (later cell).
-    let verts: Vec<Handle<Vertex>> = a_bnd.iter().map(|e| e.v[0]).collect();
+    let verts: Vec<Node> = a_bnd.iter().map(|e| e.v[0]).collect();
     let n = verts.len();
     let mut kept = vec![false; n];
     for i in 0..n {
@@ -4089,21 +4093,17 @@ fn coplanar_reconstruct(
         kept[i] = inside_q == keep_inside_q;
     }
 
-    // Crossings grouped by the ∂P edge each rides, as triples (boundary_runs orders them).
+    // Crossings grouped by the ∂P edge each rides (by `a_seg` = the edge's index), as triples.
     let mut by_edge: Vec<Vec<[usize; 3]>> = vec![Vec::new(); n];
     for c in crossings {
-        let i = a_bnd
-            .iter()
-            .position(|e| e.e == c.a_edge)
-            .ok_or_else(|| reject(tag::SEAM_COUNT_MISMATCH))?;
-        by_edge[i].push(c.triple);
+        by_edge[c.a_seg].push(c.triple);
     }
 
     if opens.is_empty() {
         // No seam cuts P: it is wholly kept or wholly dropped by its (uniform) vertex class.
         return Ok(Vec::from_iter(kept[0].then(|| LocalFace {
             plane_idx,
-            loop_nodes: verts.iter().map(|&v| Node::Orig(v)).collect(),
+            loop_nodes: verts.clone(),
             inner: Vec::new(),
             flip,
         })));
@@ -4159,7 +4159,7 @@ fn coplanar_reconstruct(
             let mut i = next[dk[pre]];
             loop {
                 for &v in &runs[i] {
-                    loop_nodes.push(Node::Orig(verts[v]));
+                    loop_nodes.push(verts[v]);
                 }
                 if i == kd[this] {
                     break;
@@ -13362,8 +13362,8 @@ pub mod tests {
         let cx = coplanar_boundary_crossings(&planes, pi, &a_bnd, &b_bnd).unwrap();
         for c in &cx {
             assert!(c.triple.contains(&pi), "crossing triple carries π");
-            assert!(a_bnd.iter().any(|e| e.e == c.a_edge), "a_edge is on ∂P");
-            assert!(b_bnd.iter().any(|e| e.e == c.b_edge), "b_edge is on ∂Q");
+            assert!(a_bnd.iter().any(|e| e.seg == c.a_seg), "a_seg is on ∂P");
+            assert!(b_bnd.iter().any(|e| e.seg == c.b_seg), "b_seg is on ∂Q");
         }
         let mut pts: Vec<[f64; 3]> = cx.iter().map(|c| c.point.as_array()).collect();
         pts.sort_by(|u, v| {

@@ -991,3 +991,16 @@ seam 등록(`SeamVertex` from 교차) → `assemble_fuse_cut`. **interior-free a
 `coplanar_result_reproduces_overhang_boss`: `fuse_an_overhanging_boss` 형상(base 큐브 + 모서리 넘는 보스) → 부피 1.5·
 validate empty·no-coplanar-edge. **첫 교차-기반 실솔리드 통합 성공.** Cut/Common overhang(b가 a 관통)은 일반 엔진 합성 =
 C2. pi_c(canonical)로 arrangement, plane_idx(실면)로 출력.
+
+**(C2a·part1) 경계 추상화 무동작 치환 — section-Q 일반화의 de-risk.** section-Q(면 F를 상대 solid의 F-평면 단면에 대해
+클립)의 enabler로, `coplanar_reconstruct`가 두 종류 경계 입력(접촉면 footprint · `section_of_solid` 단면 chord)을 **같은
+객체**로 받도록 `BndEdge`/`CoCross`를 일반화. `BndEdge`를 `{e: Handle<Edge>, v: [Handle<Vertex>;2], wall}` →
+`{seg: usize, v: [Node;2], wall}` 로(끝점을 `Node`로 승격 — 접촉면은 `Node::Orig`, 단면은 `Node::Seam`; 엣지를 경계 내
+인덱스 `seg`로 참조), `CoCross`의 `a_edge/b_edge: Handle<Edge>` → `a_seg/b_seg: usize`. 전파: `contact_boundary`(seg 부여),
+`coplanar_boundary_crossings`, `coplanar_seam_arcs`, `coplanar_reconstruct`(`b_vtriple: HashMap<Node,[usize;3]>` Orig+Seam
+공통 키잉·`verts: Vec<Node>`·`by_edge[c.a_seg]`·region walk `loop_nodes.push(verts[v])`). **de-risk 규율(셀 3d 무동작 치환
+선례)**: 실제 `section_of_solid` 투입 전, 접촉면 경계를 "퇴화 단면"으로 먹여 **동작 0 변화**를 B-phase 등가 테스트 전부
+(포켓·보스·overhang-보스 실솔리드 + 코플레인 9개)로 고정 — full ops 252 passed. **순수 additive 아님**(작동 중인 B-phase
+`coplanar_result`가 이 두 함수를 이미 호출)이라 시그니처 변경을 호출부·테스트와 함께 갱신. 다음(C2a·part2): `section_boundary`
+(section loop → BndEdge, R=a-face·`Node::Seam`) 추가 + **다중-loop hard reject 최우선 배치**(단일-loop 가정 도달 불가) +
+실 section을 `coplanar_reconstruct`에 먹이는 골든.
