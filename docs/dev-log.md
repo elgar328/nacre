@@ -1046,3 +1046,17 @@ remap·재정렬하고 node identity를 canon triple로, chord wall도 canon 일
 fold가 서로 다른 두 section 꼭짓점을 한 triple로 뭉개면(`{α,β,cutter_top}`·`{α,β,base_top}` 둘 다 π로 접힘) →
 `SECTION_TRIPLE_COLLISION` named reject, 절대 조용히 병합 안 함(DNA). 골든: `_rejects_a_canon_triple_collision`(fold로
 두 꼭짓점 충돌 → reject). C2a 골든은 canon 항등이라 무동작(256 green). R0는 C2b-0/1의 토대(pi=canon[section plane]).
+
+**(C2b·R1+R2 + C2b-0) scoped 접촉면-flush 메커니즘 — 프리미티브 검증.** cut-overhang의 "접촉면 위 두 모서리 겹침
+(공변)"을 splice 없이 코어 재사용으로 처리하는 두 완화. **R1**(`coplanar_boundary_crossings(.., contact: Option<usize>)`):
+graze 시 (a) `a_pos==1 && b_pos==0 && w==contact` = section 코너가 F 접촉 모서리 strictly 내부 → **attachment CoCross**
+방출(F-edge-split-only, 삼면 코너 기둥), (b) `a_pos==0 && u==contact` = F 자기 정점이 Q 접촉 chord 위 → **skip**(R2가
+분류). + `coplanar_seam_arcs` dedup(attachment는 section 코너와 동일 → 재삽입 skip, xset 멤버라 cut은 됨). **잠복 버그
+발견·수정**: graze-reject가 `b_pos==0`이면 **F 모서리 밖(`a_pos==-1`)** 인데도 거절 — 두 모서리에 **모두 걸릴 때만**
+(a_pos<0||b_pos<0 → skip) graze 처리(볼록엔 이 패턴 없어 잠복). **R2**(`coplanar_reconstruct(.., contact)`): ∂P 정점이
+Q 접촉 chord 위면 `point_on_ring` reject 대신 **covered(inside_q≡true)** → kept=keep_inside_q(keep P∩Q=유지·P∖Q=삼킴,
+한 규칙이 양쪽). chord **끝점**(4-평면)은 `FLUSH_VERTEX_COINCIDENT` 정직 reject(→ C1). **리뷰 under-scope 정정**: R2는
+C2b-2(코너/L)가 아니라 **C2b-1(edge-slot)부터 필요** — b-벽(keep P∩Q)의 top 코너가 접촉 chord 위라 R2 없이 거절.
+골든 `coplanar_reconstruct_clips_a_b_wall_with_a_pi_chord`: 커터 -y벽을 base 단면(π-chord z=1)에 클립 keep P∩Q flip →
+면적 0.25 + z=1 위 노드 정확히 2(유지된 top edge). 기존 5+6 호출부는 `None` 전달(무동작, 257 green). 다음: C2b-1
+(Cut 분기 신설, edge-slot 실솔리드).
