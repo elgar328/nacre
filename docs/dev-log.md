@@ -1144,3 +1144,20 @@ base 면 경계 모서리에 정확히 얹힌(공유 경계, degree-3) 포켓 Cu
 안 함, DNA 안전). 즉 flush는 현재 caught 상태. 해결 경로(구성-시점 참조 공유 vs boolean-시점 turn_at)는 flush 구현
 셀(플랜상 고위험·마지막)의 몫. 프로브를 **DNA 가드**(`flush_edge_pocket_is_honestly_rejected`)로 유지 — 미래 변경이
 flush를 조용히 통과시키면 loud 실패. M5-c 순서: 저위험 케이스(다중-loop·다중접촉) 먼저 → 회전 → flush(최후).
+
+**(U1) 일반 엔진 seam triple canon화 — 무동작 치환(per-face 병합 enabler).** `overlap_fuse_cut`이 seam 정점 triple을
+raw 결합 인덱스(`[e0,e1,entry].sort()`)로 mint하던 것을 `plane_classes(&planes)`(공면 클래스 union-find)로 통과시켜
+canon triple(`[canon[e0],canon[e1],canon[entry]]`)로 mint. 이로써 U2(per-face 위임) 후 공면 평면이 이 루프에 도달할 때
+접촉 rim crossing이 `coplanar_result`의 canon seam과 **triple identity로 자동 용접**된다. **오늘은 완전 inert — 단 "항등"이
+아니라 "seam 이름 불변"으로, 측정으로 정정**: 처음엔 "공면 door가 다 거절해 canon = 항등"이라 적었으나 debug_assert
+프로브가 `a_slotted_bar_chains_through_a_cut`에서 **발화** → canon이 실제로 평면을 묶는다(항등 아님) — 같은 솔리드의
+**공면 쌍둥이 면**(슬롯이 만든 두 면)을 한 클래스로 접기 때문(door는 cross-solid 공면만 거절, same-solid 쌍둥이는 통과).
+**그러나** 두 번째 프로브(mint서 canon-triple vs raw-triple 동일성)가 **전 스위트 통과** → 그 묶인 평면은 **어떤 seam의
+{e0,e1,entry}에도 안 나온다**(seam은 edge×face 관통점이라, 서로 떨어진 same-plane 쌍둥이는 그 역할을 안 함) → minted
+triple이 모두 **raw와 바이트 동일** = **위상 이름 0개 변경**(TNP 무발생). triple(내용 기반 안정 이름) 체계 그대로, 핸들로
+되돌린 것 아님. canon fold가 세 평면 중 둘을 한 선으로 접으면 `SECTION_TRIPLE_COLLISION` 정직 거절(mis-weld 방어, DNA;
+오늘 미발화). 게이트 = 558 workspace green(양 feature)·267 ops·clippy 양 구성·silent-wrong 스트레스·validate empty **+ 위
+2단 debug_assert 측정으로 seam 이름 불변 증명**. ring triple(rings_a/b) canon화는 U2가 실제 cross-solid 공면을 흘릴 때
+필요 — seam이 byte-동일인 지금은 seam(canon)·ring(raw) 일치라 defer. 최저위험 첫 셀(merge-first). **교훈(TNP 경계):**
+"묶을 게 없어 항등"이라는 편의 가정을 실측 없이 기록하면 미래 독자가 seam=canon/ring=raw 잠재 불일치를 놓친다 —
+inertness는 반드시 **측정으로** 못박는다. 다음: U2 per-face 위임 n0(전용 측정).
