@@ -6920,6 +6920,205 @@ pub mod tests {
         );
     }
 
+    /// The exact index-plane classifier [`arrange::point_in_solid_idx`] on hand-known answers.
+    /// The query is always a *vertex* (it must carry plane identity), classified against the
+    /// other solid — exactly the live use (`a`'s vertices vs `b`). Not an f64 cross-check: the
+    /// answers are computed by hand, so this is an independent oracle.
+    #[test]
+    fn point_in_solid_idx_matches_known_answers() {
+        let check = |amin: [f64; 3],
+                     amax: [f64; 3],
+                     bmin: [f64; 3],
+                     bmax: [f64; 3],
+                     inside: &dyn Fn([f64; 3]) -> bool| {
+            let mut m = Model::new();
+            let qa = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
+            let ob = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+            m.rebuild_adjacency();
+            let mut planes = collect_planes(&m, qa).unwrap();
+            planes.extend(collect_planes(&m, ob).unwrap());
+            let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+            for (i, pi) in planes.iter().enumerate() {
+                surf_ix.insert(pi.face, i);
+            }
+            let inc_a = arrange::edge_planes(&m, qa, &surf_ix).unwrap();
+            let inc_b = arrange::edge_planes(&m, ob, &surf_ix).unwrap();
+            for vh in solid_vertex_handles(&m, qa) {
+                let p = m.vertices.get(vh).point.as_array();
+                let want = if inside(p) {
+                    Side::Inside
+                } else {
+                    Side::Outside
+                };
+                let got =
+                    arrange::point_in_solid_idx(&m, vh, &inc_a, ob, &inc_b, &planes, &surf_ix)
+                        .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
+                assert_eq!(got, want, "vertex {p:?} vs B[{bmin:?}..{bmax:?}]");
+            }
+        };
+        // Overlap: A[0,2]³ vs B[1,3]³ — a corner is inside iff every coord (∈{0,2}) is in (1,3),
+        // i.e. only (2,2,2).
+        check([0.; 3], [2.; 3], [1.; 3], [3.; 3], &|p| {
+            p.iter().all(|&c| c > 1.0 && c < 3.0)
+        });
+        // Containment: B[-1,3]³ ⊃ A[0,2]³ — every corner Inside.
+        check([0.; 3], [2.; 3], [-1.; 3], [3.; 3], &|_| true);
+        // Disjoint: B[5,6]³ — every corner Outside.
+        check([0.; 3], [2.; 3], [5.; 3], [6.; 3], &|_| false);
+        // Coplanar-disjoint (shares the z=0/z=1 planes, footprints apart): A[0,1]³ vs
+        // B[1,2]×[3,4]×[0,1]. A's corners lie *on* B's z-planes yet off its footprint — all
+        // Outside, and crucially decided (not NO_CLEAR_RAY). This is the 4078 query species.
+        check([0.; 3], [1.; 3], [1., 3., 0.], [2., 4., 1.], &|_| false);
+    }
+
+    /// The classifier on a genuinely **non-convex** `other` (an L-prism, whose notch a
+    /// convex all-half-spaces test gets wrong) and a **holed** `other` (a hollow box, whose
+    /// void must read Outside via the outer+cavity shell sum). These are the cases boxes cannot
+    /// exercise — the whole reason classification is winding-parity, not per-face plane-side.
+    #[test]
+    fn point_in_solid_idx_on_non_convex_and_cavity() {
+        let classify_all =
+            |m: &Model, qs: Handle<Solid>, os: Handle<Solid>, want: &dyn Fn([f64; 3]) -> bool| {
+                let mut planes = collect_planes(m, qs).unwrap();
+                planes.extend(collect_planes(m, os).unwrap());
+                let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+                for (i, pi) in planes.iter().enumerate() {
+                    surf_ix.insert(pi.face, i);
+                }
+                let inc_q = arrange::edge_planes(m, qs, &surf_ix).unwrap();
+                let inc_o = arrange::edge_planes(m, os, &surf_ix).unwrap();
+                for vh in solid_vertex_handles(m, qs) {
+                    let p = m.vertices.get(vh).point.as_array();
+                    let got =
+                        arrange::point_in_solid_idx(m, vh, &inc_q, os, &inc_o, &planes, &surf_ix)
+                            .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
+                    assert_eq!(got == Side::Inside, want(p), "at {p:?}");
+                }
+            };
+
+        // Non-convex: L-prism (bottom bar x∈[0,2]×y∈[0,1] + left column x∈[0,1]×y∈[0,2],
+        // z∈[0,1]; notch x>1∧y>1 is empty). Query cube corners at {0.5,1.5}²×{0.25,0.75} —
+        // the (1.5,1.5) corners sit in the notch (Outside), the rest inside the L.
+        {
+            let (mut m, lp) = l_prism();
+            let q = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.25]),
+                Point3::from_array([1.5, 1.5, 0.75]),
+            );
+            m.rebuild_adjacency();
+            classify_all(&m, q, lp, &|p| !(p[0] > 1.0 && p[1] > 1.0));
+        }
+
+        // Cavity: hollow box, outer [0,4]³ with a concentric void [1,3]³. Query cube corners at
+        // {0.5,1.5}³ — (1.5,1.5,1.5) is in the void (Outside), the rest in the material wall.
+        {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.; 3]), Point3::from_array([4.; 3]));
+            let b = m.add_cuboid(Point3::from_array([1.; 3]), Point3::from_array([3.; 3]));
+            let void = m.reversed_shell(m.solids.get(b).outer);
+            let a_outer = m.solids.get(a).outer;
+            let hollow = m.push_solid(Solid {
+                outer: a_outer,
+                cavities: vec![void],
+            });
+            let q = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+            m.rebuild_adjacency();
+            // Inside the wall iff not strictly inside the void (all coords in (1,3)).
+            classify_all(&m, q, hollow, &|p| !p.iter().all(|&c| c > 1.0 && c < 3.0));
+        }
+    }
+
+    /// Go/no-go for the classifier-unification track (plan R7): on grid-aligned, shared-
+    /// coordinate two-box configs — where the exact ray, constrained to the query's own axis
+    /// planes, is most prone to grazing — does `point_in_solid_idx` ever reject
+    /// (`NO_CLEAR_RAY`) a strictly-in/out vertex that the off-axis f64 ray classifies? A strict
+    /// vertex's axis rays cross the other box's faces at footprint-interior points, never its
+    /// edges, so the answer should be *zero* regressions. Also checks each answer against the
+    /// hand-computed box membership, and cross-checks f64 agreement.
+    #[test]
+    fn point_in_solid_idx_no_reject_regression_on_aligned() {
+        // (A box, B box) sharing coordinates in the adversarial grid.
+        type BoxPair = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
+        let configs: &[BoxPair] = &[
+            ([0.; 3], [2.; 3], [1.; 3], [3.; 3]),           // corner overlap
+            ([0.; 3], [2.; 3], [1., 1., 1.], [2., 2., 2.]), // B is A's octant (shares corner)
+            ([0.; 3], [2.; 3], [-1.; 3], [3.; 3]),          // B ⊃ A
+            ([0.; 3], [2.; 3], [0.5, 0.5, 0.5], [1.5, 1.5, 1.5]), // B ⊂ A
+            ([0.; 3], [2.; 3], [1., 0., 0.], [3., 2., 2.]), // face-flush slab (shares x=... none; y,z flush)
+            ([0.; 3], [2.; 3], [5.; 3], [6.; 3]),           // disjoint
+            ([0.; 3], [1.; 3], [0., 0., 1.], [1., 1., 2.]), // stacked on shared z=1 face
+            ([0.; 3], [3.; 3], [1., 1., -1.], [2., 2., 4.]), // thin bar piercing through
+        ];
+        // Strict membership of `p` in axis box [lo,hi]: Some(true/false), None on its boundary.
+        let strict = |p: [f64; 3], lo: [f64; 3], hi: [f64; 3]| -> Option<bool> {
+            let mut on = false;
+            for k in 0..3 {
+                if p[k] < lo[k] || p[k] > hi[k] {
+                    return Some(false); // a coord beyond the slab ⇒ strictly outside
+                }
+                if p[k] == lo[k] || p[k] == hi[k] {
+                    on = true;
+                }
+            }
+            if on { None } else { Some(true) }
+        };
+        let (mut compared, mut regress, mut disagree_f64) = (0u32, 0u32, 0u32);
+        for &(amin, amax, bmin, bmax) in configs {
+            let mut m = Model::new();
+            let sa = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
+            let sb = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
+            m.rebuild_adjacency();
+            let mut planes = collect_planes(&m, sa).unwrap();
+            planes.extend(collect_planes(&m, sb).unwrap());
+            let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+            for (i, pi) in planes.iter().enumerate() {
+                surf_ix.insert(pi.face, i);
+            }
+            let inc_a = arrange::edge_planes(&m, sa, &surf_ix).unwrap();
+            let inc_b = arrange::edge_planes(&m, sb, &surf_ix).unwrap();
+            for (qs, os, inc_q, inc_o, olo, ohi) in [
+                (sa, sb, &inc_a, &inc_b, bmin, bmax),
+                (sb, sa, &inc_b, &inc_a, amin, amax),
+            ] {
+                for vh in solid_vertex_handles(&m, qs) {
+                    let p = m.vertices.get(vh).point.as_array();
+                    let Some(want) = strict(p, olo, ohi) else {
+                        continue; // on the other box's boundary — honest-reject territory, skip
+                    };
+                    let idx =
+                        arrange::point_in_solid_idx(&m, vh, inc_q, os, inc_o, &planes, &surf_ix);
+                    match idx {
+                        Ok(s) => {
+                            compared += 1;
+                            let inside = s == Side::Inside;
+                            assert_eq!(
+                                inside, want,
+                                "idx wrong at {p:?} vs box [{olo:?}..{ohi:?}]"
+                            );
+                            // f64 cross-check (secondary): agree where it also decides.
+                            if let Ok(f) = point_in_solid(&m, m.vertices.get(vh).point, os) {
+                                if (f == Side::Inside) != want {
+                                    disagree_f64 += 1;
+                                }
+                            }
+                        }
+                        Err(_) => regress += 1, // NO_CLEAR_RAY on a strict vertex = R7 regression
+                    }
+                }
+            }
+        }
+        assert!(compared > 0, "measured nothing");
+        assert_eq!(
+            regress, 0,
+            "R7: idx rejected {regress} strict vertices f64 would classify"
+        );
+        assert_eq!(
+            disagree_f64, 0,
+            "f64 disagreed on {disagree_f64} strict vertices"
+        );
+        eprintln!("go/no-go: compared={compared} regress=0 — R7 benign on aligned grid");
+    }
+
     /// (5d)#4: `fan_triangles` drops *exactly* the zero-area (collinear) triangles
     /// and keeps the rest. A pentagon ring with three collinear points on one edge
     /// has one collinear fan triangle from apex 0; it is dropped, the other two are

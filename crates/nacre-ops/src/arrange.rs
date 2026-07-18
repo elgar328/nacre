@@ -817,6 +817,140 @@ pub(crate) fn every_ray(
     Ok(out)
 }
 
+/// The distinct plane indices a vertex sits on — the planes of every face incident to it.
+///
+/// Read off `inc` (the vertex's own solid's [`EdgePlanes`]): each incident edge names the two
+/// face planes it bounds, so their union over the vertex's edges is its plane set. Sorted, so
+/// the ray order in [`point_in_solid_idx`] is deterministic (replay-stable). A manifold vertex
+/// meets ≥3 faces → ≥3 planes, enough for a ray line plus a locator. The indices are `surf_ix`'s,
+/// so they compose with `other`'s face planes in the one shared `planes` array.
+pub(crate) fn vertex_plane_indices(vh: Handle<Vertex>, inc: &EdgePlanes) -> Vec<usize> {
+    let mut out: Vec<usize> = Vec::new();
+    for (bounds, pair) in inc.values() {
+        if bounds.contains(&vh) {
+            for &p in pair {
+                if !out.contains(&p) {
+                    out.push(p);
+                }
+            }
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
+/// Classify vertex `vh` in/out of `other`, entirely on the exact index-plane substrate — the
+/// 3D lift of [`point_in_ring`]. Non-convex containment is a winding-parity ray, but the ray
+/// **line `L = A ∩ B` is built from two of the query vertex's own planes** (never an arbitrary
+/// direction), so each crossing with a face on plane `q` is the three-plane point `{A,B,q}`,
+/// judged inside/ahead by [`every_ray`]/[`order_along`] — no coordinate read, no f64.
+///
+/// `inc_v` is the query vertex's solid's [`EdgePlanes`] (to read `V`'s planes); `inc_o` is
+/// `other`'s (its face rings). Both index into the shared `planes`/`surf_ix`. Faces of **every**
+/// shell (outer + cavities) are summed, so a point in a void reads `Outside`.
+///
+/// A ray whose line grazes a node/edge, or leaves an in-face containment undecidable, is
+/// abandoned for the vertex's next plane pair; if every pair is blocked the answer is honestly
+/// `NO_CLEAR_RAY` — the degeneracy a later SoS layer resolves, and the same honest reject the
+/// f64 ray gives via `RAY_DEGENERATE`. `V` lying on a face plane of `other` (a boundary-ish
+/// query, its crossing at the ray origin) inside that face is one such abandon; off the face
+/// (a disjoint-coplanar query) it is simply not a crossing.
+pub(crate) fn point_in_solid_idx(
+    model: &Model,
+    vh: Handle<Vertex>,
+    inc_v: &EdgePlanes,
+    other: Handle<Solid>,
+    inc_o: &EdgePlanes,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+) -> Result<crate::Side, BoolError> {
+    let vplanes = vertex_plane_indices(vh, inc_v);
+    // `other`'s faces as (plane index, triple rings), across every shell.
+    let mut faces: Vec<(usize, Vec<Vec<[usize; 3]>>)> = Vec::new();
+    for sh in solid_shell_handles(model, other) {
+        for &g in &model.shells.get(sh).faces {
+            let q = surf_ix[&g];
+            faces.push((q, face_rings(model, g, q, inc_o)?));
+        }
+    }
+    // One ray attempt along `L = a ∩ b`, located by `V = {a,b,c}`. `Ok(Some(inside))` is a clean
+    // count; `Ok(None)` means the line grazed and the caller should try the next plane pair.
+    let attempt = |a: usize, b: usize, c: usize| -> Result<Option<bool>, BoolError> {
+        let mut count = 0usize;
+        for (q, rings) in &faces {
+            let q = *q;
+            // `L` parallel to (or lying in) plane `q` → no transversal crossing.
+            if t_plane_pair_dir_sign(planes, a, b, q) == 0 {
+                continue;
+            }
+            let x = triple(a, b, q);
+            // `x` on `g`'s boundary anywhere → the line is non-generic here; abandon (never guess).
+            for ring in rings {
+                if point_on_ring(planes, q, x, ring)? {
+                    return Ok(None);
+                }
+            }
+            // Strictly inside `g`'s material (inside outer, outside every hole). An undecidable
+            // in-face ray (`every_ray` finds no clear direction) abandons the whole line.
+            let inside_outer = match every_ray(planes, q, x, &rings[0])?.first().copied() {
+                Some(v) => v,
+                None => return Ok(None),
+            };
+            let mut in_g = inside_outer;
+            if in_g {
+                for hole in &rings[1..] {
+                    match every_ray(planes, q, x, hole)?.first().copied() {
+                        Some(true) => {
+                            in_g = false;
+                            break;
+                        }
+                        Some(false) => {}
+                        None => return Ok(None),
+                    }
+                }
+            }
+            let fwd = order_along(planes, a, b, c, q);
+            if fwd == 0 {
+                // The crossing is the ray origin `V` itself (`V` lies on plane `q`). Inside `g`'s
+                // material ⇒ `V` is on `other`'s boundary surface ⇒ undecidable → abandon. Off
+                // the face (the disjoint-coplanar query) ⇒ not a crossing → skip.
+                if in_g {
+                    return Ok(None);
+                }
+                continue;
+            }
+            // Count crossings on one side of the line (either half-line gives the same parity for
+            // a closed surface); `fwd == 1` fixes that side.
+            if fwd == 1 && in_g {
+                count += 1;
+            }
+        }
+        Ok(Some(count % 2 == 1))
+    };
+    // Try every plane pair of `V` as the ray line until one is clear. Deterministic (sorted).
+    for i in 0..vplanes.len() {
+        for j in (i + 1)..vplanes.len() {
+            let (a, b) = (vplanes[i], vplanes[j]);
+            // Locator `c`: a plane of `V` off the line `a ∩ b`, so `{a,b,c}` is the point `V`.
+            // (If `a ∥ b` no `c` makes a line either — the search fails and we move on.)
+            let Some(&c) = vplanes
+                .iter()
+                .find(|&&x| x != a && x != b && t_plane_pair_dir_sign(planes, a, b, x) != 0)
+            else {
+                continue;
+            };
+            if let Some(inside) = attempt(a, b, c)? {
+                return Ok(if inside {
+                    crate::Side::Inside
+                } else {
+                    crate::Side::Outside
+                });
+            }
+        }
+    }
+    Err(reject(tag::NO_CLEAR_RAY))
+}
+
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///
