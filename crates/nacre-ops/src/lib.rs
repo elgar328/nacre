@@ -1668,11 +1668,15 @@ fn general_boolean(
         // keep/flip table (cell 3g opened `Common`).
         return overlap_fuse_cut(model, kind, a, b);
     }
-    // Seam-free: each solid's vertices all fall on one side of the other.
+    // Seam-free: each solid's vertices all fall on one side of the other. (Boundaries do not
+    // cross, so every vertex is strictly in/out — the exact classifier never grazes here.)
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    let canon = plane_classes(&planes);
     let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
-    for (verts_solid, other) in [(a, b), (b, a)] {
+    for (verts_solid, other, inc_v, inc_o) in [(a, b, &inc_a, &inc_b), (b, a, &inc_b, &inc_a)] {
         for vh in solid_vertex_handles(model, verts_solid) {
-            let side = vertex_in_solid(model, vh, other)?;
+            let side = vertex_in_solid(model, vh, inc_v, other, inc_o, &planes, &surf_ix, &canon)?;
             classof.insert(vh, side);
         }
     }
@@ -1796,6 +1800,12 @@ fn overlap_fuse_cut(
     for (i, pi) in planes.iter().enumerate() {
         surf_ix.insert(pi.face, i);
     }
+    // Edge→plane maps and the coplanar-class map, built before `classof` so the exact vertex
+    // classifier can read each query vertex's own planes and collapse coplanar faces (also reused
+    // below for the seam sweep).
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    let canon = plane_classes(&planes);
 
     // Classify every original vertex vs the other solid (exact forward-ray winding). Each
     // vertex is an independent read-only classification, so evaluate them in parallel and
@@ -1811,8 +1821,15 @@ fn overlap_fuse_cut(
                     .map(move |vh| (vh, other))
             })
             .collect();
-        let classify =
-            |&(vh, other): &(Handle<Vertex>, Handle<Solid>)| vertex_in_solid(model, vh, other);
+        let classify = |&(vh, other): &(Handle<Vertex>, Handle<Solid>)| {
+            // `other == b` ⇔ the query vertex is `a`'s; pick that vertex's own edge-plane map.
+            let (inc_v, inc_o) = if other == b {
+                (&inc_a, &inc_b)
+            } else {
+                (&inc_b, &inc_a)
+            };
+            vertex_in_solid(model, vh, inc_v, other, inc_o, &planes, &surf_ix, &canon)
+        };
         #[cfg(feature = "parallel")]
         let res: Vec<Result<Side, BoolError>> = items.par_iter().map(classify).collect();
         #[cfg(not(feature = "parallel"))]
@@ -1840,8 +1857,6 @@ fn overlap_fuse_cut(
     // its faces (that face's plane is the seam vertex's third plane).
     let edges_a = edge_incidence(model, a, &surf_ix)?;
     let edges_b = edge_incidence(model, b, &surf_ix)?;
-    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
-    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
     // Each solid's faces as triple rings, once. `edge_crosses_face` reads them per edge.
     let rings_a = solid_face_rings(model, a, &surf_ix, &inc_a)?;
     let rings_b = solid_face_rings(model, b, &surf_ix, &inc_b)?;
@@ -2626,6 +2641,10 @@ fn plane_index_setup(
 /// deferred). **Precondition:** `p` is not on the solid's boundary — the caller's
 /// edge-face gate guarantees `p` is not coplanar with any face plane, so the
 /// per-face `s0 = 0` case never arises here.
+// Only the test oracle (`point_in_solid_classifies_*` and the `point_in_solid_idx` cross-checks)
+// calls this now — `vertex_in_solid`'s axis route moved to `point_in_solid_idx` (Cell 3). The f64
+// substrate is retired in Cell 4.
+#[cfg_attr(not(test), allow(dead_code))]
 fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side, BoolError> {
     let faces: Vec<Vec<Vec<Point3>>> = solid_faces(model, solid)
         .into_iter()
@@ -2657,24 +2676,31 @@ fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side
     Err(reject(tag::RAY_DEGENERATE)) // every direction grazed the boundary (adversarial)
 }
 
-/// Classify vertex `vh` in/out of `solid`, routed by rotation: the exact f64 [`point_in_solid`]
-/// when the geometry is axis-aligned (unchanged hot path), else the toleranced
-/// [`point_in_solid_tol`] on the vertex's exact `Pt3`. Either the solid's faces being rotated
+/// Classify vertex `vh` in/out of `other`, routed by rotation: the exact index-plane
+/// [`arrange::point_in_solid_idx`] when the geometry is axis-aligned, else the toleranced
+/// [`point_in_solid_tol`] on the vertex's exact `Pt3`. Either `other`'s faces being rotated
 /// (irrational plane geometry) *or* the query vertex being rotated (irrational coordinate, e.g.
 /// a mixed-rotation boolean) forces the toleranced route. A `Discovered` query vertex on that
 /// route is honestly rejected `ROTATED_UNSUPPORTED` (indirect classification is a later cell).
+/// The `inc_v`/`inc_o`/`planes`/`surf_ix`/`canon` per-op table is consumed only by the axis route.
+#[allow(clippy::too_many_arguments)]
 fn vertex_in_solid(
     model: &Model,
     vh: Handle<Vertex>,
-    solid: Handle<Solid>,
+    inc_v: &arrange::EdgePlanes,
+    other: Handle<Solid>,
+    inc_o: &arrange::EdgePlanes,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    canon: &[usize],
 ) -> Result<Side, BoolError> {
-    if solid_is_rotated(model, solid)
+    if solid_is_rotated(model, other)
         || matches!(model.vertices.get(vh).origin, Origin::Rotated { .. })
     {
         let p = nacre_tip::vertex_pt3(model, vh).map_err(|_| reject(tag::ROTATED_UNSUPPORTED))?;
-        point_in_solid_tol(model, &p, solid)
+        point_in_solid_tol(model, &p, other)
     } else {
-        point_in_solid(model, model.vertices.get(vh).point, solid)
+        arrange::point_in_solid_idx(model, vh, inc_v, other, inc_o, planes, surf_ix, canon)
     }
 }
 
@@ -6832,9 +6858,11 @@ pub mod tests {
         let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
         let a = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
         let vh = solid_vertex_handles(&m, a)[0];
-        // Axis-aligned target → the router forwards to the exact f64 `point_in_solid`.
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        // Axis-aligned target → the router forwards to `point_in_solid_idx`, which agrees with the
+        // exact f64 `point_in_solid` here (a far-away vertex, unambiguously outside).
         assert_eq!(
-            vertex_in_solid(&m, vh, b).unwrap(),
+            vertex_in_solid(&m, vh, &inc_a, b, &inc_b, &planes, &surf_ix, &canon).unwrap(),
             point_in_solid(&m, m.vertices.get(vh).point, b).unwrap()
         );
         // Rotate the target → the router must dispatch to `point_in_solid_tol`.
@@ -6857,8 +6885,14 @@ pub mod tests {
         };
         m.rebuild_adjacency();
         let p = nacre_tip::vertex_pt3(&m, vh).unwrap();
+        // Rotated target → the router ignores the index table and uses `point_in_solid_tol`.
+        let (planes_r, surf_ix_r, inc_a_r, inc_b_r, canon_r) =
+            plane_index_setup(&m, a, br).unwrap();
         assert_eq!(
-            vertex_in_solid(&m, vh, br).unwrap(),
+            vertex_in_solid(
+                &m, vh, &inc_a_r, br, &inc_b_r, &planes_r, &surf_ix_r, &canon_r
+            )
+            .unwrap(),
             point_in_solid_tol(&m, &p, br).unwrap()
         );
     }
