@@ -2590,6 +2590,7 @@ type PlaneSetup = (
     HashMap<Handle<Face>, usize>,
     arrange::EdgePlanes,
     arrange::EdgePlanes,
+    Vec<usize>,
 );
 
 fn plane_index_setup(
@@ -2605,7 +2606,10 @@ fn plane_index_setup(
     }
     let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
     let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
-    Ok((planes, surf_ix, inc_a, inc_b))
+    // Coplanar planes → one class, so `point_in_solid_idx` never forms a `det=0` triple from two
+    // coplanar faces meeting a vertex (the cantilever-step degeneracy).
+    let canon = plane_classes(&planes);
+    Ok((planes, surf_ix, inc_a, inc_b, canon))
 }
 
 /// Exact point-in-polyhedron for a general (non-convex, possibly hollow) planar
@@ -4090,8 +4094,10 @@ fn clip_face_to_section(
         let inside = f_verts
             .iter()
             .find_map(|&vh| {
-                arrange::point_in_solid_idx(model, vh, inc_owner, other, inc_other, planes, surf_ix)
-                    .ok()
+                arrange::point_in_solid_idx(
+                    model, vh, inc_owner, other, inc_other, planes, surf_ix, canon,
+                )
+                .ok()
             })
             .ok_or_else(|| reject(tag::NO_CLEAR_RAY))?
             == Side::Inside;
@@ -4840,11 +4846,12 @@ fn detect_pocket_contact(
     // contact vertices sit on the plane and are skipped. (boundaries_intersect is unusable
     // here — the flush contact itself reads as a boundary touch.)
     let contact_tri = planes_a[i].tri;
-    let (planes, surf_ix, inc_a, inc_b) = plane_index_setup(model, a, b).ok()?;
+    let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b).ok()?;
     for &vh in &solid_vertex_handles(model, b) {
         // `b`'s vertex, classified against `a` on the exact index-plane substrate.
         if plane_side(contact_tri, model.vertices.get(vh).point) != 0
-            && arrange::point_in_solid_idx(model, vh, &inc_b, a, &inc_a, &planes, &surf_ix).ok()?
+            && arrange::point_in_solid_idx(model, vh, &inc_b, a, &inc_a, &planes, &surf_ix, &canon)
+                .ok()?
                 != Side::Inside
         {
             return None;
@@ -4898,14 +4905,14 @@ fn detect_contained_common(
         };
     // Genuine partial: some vertex of the small solid, off the contact plane, is strictly outside
     // the big. A blind small (all inside) is full containment — declined (half-space path owns it).
-    let (planes, surf_ix, inc_small, inc_big) =
+    let (planes, surf_ix, inc_small, inc_big, canon) =
         plane_index_setup(model, small_solid, big_solid).ok()?;
     let mut pokes_out = false;
     for &vh in &solid_vertex_handles(model, small_solid) {
         // `small`'s vertex, classified against `big` on the exact index-plane substrate.
         if plane_side(contact_tri, model.vertices.get(vh).point) != 0
             && arrange::point_in_solid_idx(
-                model, vh, &inc_small, big_solid, &inc_big, &planes, &surf_ix,
+                model, vh, &inc_small, big_solid, &inc_big, &planes, &surf_ix, &canon,
             )
             .ok()?
                 == Side::Outside
@@ -5973,7 +5980,8 @@ fn detect_overhang_contact(
     // Pure coplanar contact: every vertex off the shared plane is strictly outside the other
     // solid. A vertex inside the other would be a transversal seam cut, not an overhang boss.
     let tri = planes_a[ia].tri;
-    let (planes, surf_ix, inc_p, inc_q) = plane_index_setup(model, cc.p_solid, cc.q_solid).ok()?;
+    let (planes, surf_ix, inc_p, inc_q, canon) =
+        plane_index_setup(model, cc.p_solid, cc.q_solid).ok()?;
     for (s, other, inc_s, inc_o) in [
         (cc.p_solid, cc.q_solid, &inc_p, &inc_q),
         (cc.q_solid, cc.p_solid, &inc_q, &inc_p),
@@ -5981,8 +5989,10 @@ fn detect_overhang_contact(
         for &vh in &solid_vertex_handles(model, s) {
             // `s`'s vertex, classified against `other` on the exact index-plane substrate.
             if plane_side(tri, model.vertices.get(vh).point) != 0
-                && arrange::point_in_solid_idx(model, vh, inc_s, other, inc_o, &planes, &surf_ix)
-                    .ok()?
+                && arrange::point_in_solid_idx(
+                    model, vh, inc_s, other, inc_o, &planes, &surf_ix, &canon,
+                )
+                .ok()?
                     != Side::Outside
             {
                 return None;
@@ -7001,6 +7011,7 @@ pub mod tests {
             }
             let inc_a = arrange::edge_planes(&m, qa, &surf_ix).unwrap();
             let inc_b = arrange::edge_planes(&m, ob, &surf_ix).unwrap();
+            let canon = plane_classes(&planes);
             for vh in solid_vertex_handles(&m, qa) {
                 let p = m.vertices.get(vh).point.as_array();
                 let want = if inside(p) {
@@ -7008,9 +7019,10 @@ pub mod tests {
                 } else {
                     Side::Outside
                 };
-                let got =
-                    arrange::point_in_solid_idx(&m, vh, &inc_a, ob, &inc_b, &planes, &surf_ix)
-                        .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
+                let got = arrange::point_in_solid_idx(
+                    &m, vh, &inc_a, ob, &inc_b, &planes, &surf_ix, &canon,
+                )
+                .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
                 assert_eq!(got, want, "vertex {p:?} vs B[{bmin:?}..{bmax:?}]");
             }
         };
@@ -7045,11 +7057,13 @@ pub mod tests {
                 }
                 let inc_q = arrange::edge_planes(m, qs, &surf_ix).unwrap();
                 let inc_o = arrange::edge_planes(m, os, &surf_ix).unwrap();
+                let canon = plane_classes(&planes);
                 for vh in solid_vertex_handles(m, qs) {
                     let p = m.vertices.get(vh).point.as_array();
-                    let got =
-                        arrange::point_in_solid_idx(m, vh, &inc_q, os, &inc_o, &planes, &surf_ix)
-                            .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
+                    let got = arrange::point_in_solid_idx(
+                        m, vh, &inc_q, os, &inc_o, &planes, &surf_ix, &canon,
+                    )
+                    .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
                     assert_eq!(got == Side::Inside, want(p), "at {p:?}");
                 }
             };
@@ -7084,6 +7098,56 @@ pub mod tests {
             // Inside the wall iff not strictly inside the void (all coords in (1,3)).
             classify_all(&m, q, hollow, &|p| !p.iter().all(|&c| c > 1.0 && c < 3.0));
         }
+    }
+
+    /// canon-awareness (Cell 2.9): `Fuse(base, boss)` leaves two coplanar faces on z=1 (base-top
+    /// `+z`, boss-bottom `−z` — a cantilever step, not mergeable). Their shared incident vertices
+    /// give `det=0` triples that panic the predicate without canon. With canon those planes
+    /// collapse to one class, so the classifier runs **panic-free**, agrees with the f64 ray where
+    /// both decide, and honestly rejects (never panics) a degenerate step vertex.
+    #[test]
+    fn point_in_solid_idx_canon_handles_coplanar_step() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([1.5, 0.75, 2.0]),
+        );
+        let overhung = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        let probe = m.add_cuboid(
+            Point3::from_array([1.1, 0.35, 0.5]),
+            Point3::from_array([1.4, 0.65, 2.5]),
+        );
+        m.rebuild_adjacency();
+        let mut planes = collect_planes(&m, probe).unwrap();
+        planes.extend(collect_planes(&m, overhung).unwrap());
+        let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+        for (i, pi) in planes.iter().enumerate() {
+            surf_ix.insert(pi.face, i);
+        }
+        let inc_p = arrange::edge_planes(&m, probe, &surf_ix).unwrap();
+        let inc_o = arrange::edge_planes(&m, overhung, &surf_ix).unwrap();
+        let canon = plane_classes(&planes);
+        // Both directions: probe-vertex vs overhung (overhung's coplanar-step ring nodes are the
+        // ones that panicked), and overhung-vertex vs probe (a degenerate step vertex as query).
+        // Running to completion is the panic-free assertion; agreement is checked where idx decides.
+        let mut no_ray = 0;
+        for (qs, os, iq, io) in [
+            (probe, overhung, &inc_p, &inc_o),
+            (overhung, probe, &inc_o, &inc_p),
+        ] {
+            for vh in solid_vertex_handles(&m, qs) {
+                match arrange::point_in_solid_idx(&m, vh, iq, os, io, &planes, &surf_ix, &canon) {
+                    Ok(s) => {
+                        if let Ok(f) = point_in_solid(&m, m.vertices.get(vh).point, os) {
+                            assert_eq!(s, f, "idx vs f64 mismatch classifying vs the step solid");
+                        }
+                    }
+                    Err(_) => no_ray += 1, // honest NO_CLEAR_RAY on a degenerate step vertex
+                }
+            }
+        }
+        eprintln!("canon step: {no_ray} honest NO_CLEAR_RAY (degenerate step vertices)");
     }
 
     /// Go/no-go for the classifier-unification track (plan R7): on grid-aligned, shared-
@@ -7134,6 +7198,7 @@ pub mod tests {
             }
             let inc_a = arrange::edge_planes(&m, sa, &surf_ix).unwrap();
             let inc_b = arrange::edge_planes(&m, sb, &surf_ix).unwrap();
+            let canon = plane_classes(&planes);
             for (qs, os, inc_q, inc_o, olo, ohi) in [
                 (sa, sb, &inc_a, &inc_b, bmin, bmax),
                 (sb, sa, &inc_b, &inc_a, amin, amax),
@@ -7143,8 +7208,9 @@ pub mod tests {
                     let Some(want) = strict(p, olo, ohi) else {
                         continue; // on the other box's boundary — honest-reject territory, skip
                     };
-                    let idx =
-                        arrange::point_in_solid_idx(&m, vh, inc_q, os, inc_o, &planes, &surf_ix);
+                    let idx = arrange::point_in_solid_idx(
+                        &m, vh, inc_q, os, inc_o, &planes, &surf_ix, &canon,
+                    );
                     match idx {
                         Ok(s) => {
                             compared += 1;

@@ -855,6 +855,9 @@ pub(crate) fn vertex_plane_indices(vh: Handle<Vertex>, inc: &EdgePlanes) -> Vec<
 /// f64 ray gives via `RAY_DEGENERATE`. `V` lying on a face plane of `other` (a boundary-ish
 /// query, its crossing at the ray origin) inside that face is one such abandon; off the face
 /// (a disjoint-coplanar query) it is simply not a crossing.
+// The per-op plane table (`planes`/`surf_ix`/`canon`) plus both edge-plane maps are all genuine
+// inputs a classification needs; they travel together from one `plane_index_setup`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn point_in_solid_idx(
     model: &Model,
     vh: Handle<Vertex>,
@@ -863,14 +866,45 @@ pub(crate) fn point_in_solid_idx(
     inc_o: &EdgePlanes,
     planes: &[PlaneInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
+    canon: &[usize],
 ) -> Result<crate::Side, BoolError> {
-    let vplanes = vertex_plane_indices(vh, inc_v);
-    // `other`'s faces as (plane index, triple rings), across every shell.
+    // Collapse coplanar planes to their `canon` class before building any triple — mirrors the
+    // coplanar engine (`plane_classes`). Two coplanar faces meeting a vertex (a cantilever step:
+    // base-top `+z` / boss-bottom `−z` on one plane) would otherwise form a `det=0` triple; in
+    // canon space they are one plane. A ring node whose planes collapse below three distinct
+    // classes is a redundant collinear vertex and is dropped (the polygon is unchanged). A query
+    // vertex that collapses below three classes cannot supply a ray locator → honest
+    // `NO_CLEAR_RAY` (the degenerate cantilever-step vertex a later SoS layer resolves).
+    let mut vplanes: Vec<usize> = vertex_plane_indices(vh, inc_v)
+        .into_iter()
+        .map(|p| canon[p])
+        .collect();
+    vplanes.sort_unstable();
+    vplanes.dedup();
+    // `other`'s faces as (canon plane index, canon triple rings), across every shell.
     let mut faces: Vec<(usize, Vec<Vec<[usize; 3]>>)> = Vec::new();
     for sh in solid_shell_handles(model, other) {
         for &g in &model.shells.get(sh).faces {
-            let q = surf_ix[&g];
-            faces.push((q, face_rings(model, g, q, inc_o)?));
+            let raw = face_rings(model, g, surf_ix[&g], inc_o)?;
+            let mut rings: Vec<Vec<[usize; 3]>> = Vec::with_capacity(raw.len());
+            for ring in &raw {
+                let mut cr: Vec<[usize; 3]> = Vec::with_capacity(ring.len());
+                for t in ring {
+                    let mut ct = [canon[t[0]], canon[t[1]], canon[t[2]]];
+                    ct.sort_unstable();
+                    if ct[0] == ct[1] || ct[1] == ct[2] {
+                        continue; // two planes collapsed → collinear-in-canon → redundant vertex
+                    }
+                    cr.push(ct);
+                }
+                rings.push(cr);
+            }
+            // A face whose outer boundary collapsed below a triangle is fully coplanar-bounded
+            // (no real crossing) — skip it rather than error the whole classification.
+            if rings.first().is_none_or(|r| r.len() < 3) {
+                continue;
+            }
+            faces.push((canon[surf_ix[&g]], rings));
         }
     }
     // One ray attempt along `L = a ∩ b`, located by `V = {a,b,c}`. `Ok(Some(inside))` is a clean
