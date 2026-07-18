@@ -4012,9 +4012,13 @@ fn clip_face_to_section(
         // solid` would degenerate here (`cf`'s vertices lie on `f`'s plane → `VERTEX_ON_FACE_PLANE`),
         // so `cf`'s `contact_boundary` is the seam, classified in 2D — the same reconstruct the
         // overhang main branch runs for a contact face (B4-R0).
-        if let Some(cf) = coincident_overlap_face(
+        let cfs = coincident_overlap_faces(
             model, f_face, other, pi, planes, surf_ix, canon, inc_owner, inc_other,
-        )? {
+        )?;
+        if cfs.len() > 1 {
+            return Err(reject(tag::COPLANAR_OVERLAP_MULTI)); // several coincident faces: a later cell
+        }
+        if let Some(&cf) = cfs.first() {
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
             return match on_survival {
@@ -4050,17 +4054,17 @@ fn clip_face_to_section(
     reconstruct(&f_bnd, &q_bnd, keep_inside)
 }
 
-/// The single face of `other` on plane class `pi` whose footprint overlaps face `f_face`'s (a
-/// coplanar contact), or `None` if none does — a disjoint-coplanar `f` (the centroid path). `≥2`
-/// overlapping faces (a non-convex `other` seating twice on one plane) is out of scope until a
-/// later cell, honestly rejected rather than picking one arbitrarily. Iterates `other`'s shell
-/// faces in Store order (deterministic — replay-stable). A grazing candidate (footprints share a
-/// boundary but do not properly cross, so [`footprints_overlap`] graze-rejects) is **skipped**,
-/// preserving the disjoint/centroid behaviour for the existing wired callers — the graze-aware
-/// genuine predicate is a later cell (B4-R1); R0 serves only clean proper-crossing overlaps.
+/// Every face of `other` on plane class `pi` whose footprint overlaps face `f_face`'s (a coplanar
+/// contact); empty if none does — a disjoint-coplanar `f` (the centroid path). Usually one, but a
+/// non-convex `other` can seat several faces on one plane (a ⊓ tool's two legs on a bar top): the
+/// caller decides whether it covers the multi-contact case or honestly declines. Iterates `other`'s
+/// shell faces in Store order (deterministic — replay-stable). A grazing candidate (footprints
+/// share a boundary but do not properly cross, so [`footprints_overlap`] graze-rejects) is
+/// **skipped**, preserving the disjoint/centroid behaviour for the existing wired callers — the
+/// graze-aware genuine predicate is a later cell (B4-R1); R0 serves only clean overlaps.
 #[cfg_attr(not(test), allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
-fn coincident_overlap_face(
+fn coincident_overlap_faces(
     model: &Model,
     f_face: Handle<Face>,
     other: Handle<Solid>,
@@ -4070,8 +4074,8 @@ fn coincident_overlap_face(
     canon: &[usize],
     inc_owner: &arrange::EdgePlanes,
     inc_other: &arrange::EdgePlanes,
-) -> Result<Option<Handle<Face>>, BoolError> {
-    let mut found = None;
+) -> Result<Vec<Handle<Face>>, BoolError> {
+    let mut found = Vec::new();
     for sh in solid_shell_handles(model, other) {
         for &cf in &model.shells.get(sh).faces {
             let Some(&ix) = surf_ix.get(&cf) else {
@@ -4085,10 +4089,7 @@ fn coincident_overlap_face(
             if footprints_overlap(model, planes, pi, f_face, cf, inc_owner, inc_other, canon)
                 .unwrap_or(false)
             {
-                if found.is_some() {
-                    return Err(reject(tag::COPLANAR_OVERLAP_MULTI));
-                }
-                found = Some(cf);
+                found.push(cf);
             }
         }
     }
@@ -5284,11 +5285,49 @@ fn classify_and_emit(
         return clip(None); // breaches or spans across → section clip (U2)
     }
     // Coplanar with `other`: overlap → on-region; disjoint → centroid whole (clip's branch b).
-    let Some(cf) = coincident_overlap_face(
+    let cfs = coincident_overlap_faces(
         model, f_face, other, pi, planes, surf_ix, canon, inc_owner, inc_other,
-    )?
-    else {
-        return clip(None);
+    )?;
+    let cf = match cfs.as_slice() {
+        [] => return clip(None),
+        [cf] => *cf, // single contact: the body below is unchanged
+        _ => {
+            // Several faces of `other` seat on this plane (a bar top hosting a ⊓ tool's two legs).
+            // Covered: the a-side contained-hole family — each `cf` a blind (crossing-free) MinusQ
+            // hole. b-side, or any non-MinusQ / crossing `cf`, is a later cell → honest reject.
+            if !owner_is_a {
+                return Err(reject(tag::COPLANAR_OVERLAP_MULTI));
+            }
+            let f = model.faces.get(f_face);
+            let mut inner: Vec<Vec<Node>> = f.inner.iter().map(ring).collect();
+            let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
+            for &cf in &cfs {
+                let same_normal = planes[f_idx].n_out.dot(planes[surf_ix[&cf]].n_out) > 0.0;
+                if coplanar_survival(kind, same_normal).0 != PSurvive::MinusQ {
+                    return Err(reject(tag::COPLANAR_OVERLAP_MULTI));
+                }
+                let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
+                if !coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?
+                    .is_empty()
+                {
+                    return Err(reject(tag::COPLANAR_OVERLAP_MULTI));
+                }
+                let mut hole = ring(&model.faces.get(cf).outer);
+                if same_normal {
+                    hole.reverse();
+                }
+                inner.push(hole);
+            }
+            return Ok((
+                vec![LocalFace {
+                    plane_idx: f_idx,
+                    loop_nodes: ring(&f.outer),
+                    inner,
+                    flip,
+                }],
+                Vec::new(),
+            ));
+        }
     };
     let same_normal = planes[f_idx].n_out.dot(planes[surf_ix[&cf]].n_out) > 0.0;
     // b-side: the shared on-region belongs to a (canonical). b keeps only its out-region b∖a, and
@@ -14878,12 +14917,10 @@ pub mod tests {
         // boss, 1.048 L-profile boss) and the reject probes (non-convex footprint, pierce) all
         // match or both-reject — the driver already covers them. Only two remain, each a distinct
         // root cause; each D0-prep-2+ fix cell removes an entry, and D0 requires this empty.
-        let expected: &[(&str, &str)] = &[
-            // ⊓ tool: two of its faces lie on the bar-top plane, so `coincident_overlap_face`
-            // finds ≥2 overlaps and rejects. The driver has no multi-contact-per-face path yet
-            // (D0-prep-2b). `nonconvex_boss_1_17` was closed by the multi-loop disjoint fast-path.
-            ("two_leg", "uncovered:coplanar_overlap_multi"),
-        ];
+        // Empty: the driver matches v1 on every coplanar golden — D0 (the atomic cutover of
+        // coplanar_result's body to coplanar_result_unified) is safe. Any future divergence
+        // re-populates this and fails the gate.
+        let expected: &[(&str, &str)] = &[];
         let actual: Vec<(&str, &str)> =
             gaps.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
         assert_eq!(actual, expected, "driver-vs-v1 coplanar parity gaps");
