@@ -1565,14 +1565,14 @@ pub fn boolean(
     // Coplanar contact (contained boss/pocket, overhang boss/cut/common): the bespoke detectors
     // stay as the "is this a genuine coplanar contact (blind / not-pierces / footprint-convex)?"
     // GATES — they filter out transversal cases (which fall through to `general_boolean`) — but the
-    // RESULT is now built by the unified `coplanar_result` (D0). The convexity-agnostic detectors
+    // RESULT is now built by the unified `coplanar_result_unified` (D0). The convexity-agnostic detectors
     // (contained/pocket) route non-convex contacts too; the convex-gated overhang-Cut detector
     // declines non-convex, so a separate non-convex early dispatch keeps routing those.
     if kind == BoolKind::Fuse {
         if detect_contained_contact(model, a, b).is_some()
             || detect_overhang_contact(model, a, b).is_some()
         {
-            return coplanar_result(model, kind, a, b);
+            return coplanar_result_unified(model, kind, a, b);
         }
         // Multiple coplanar contacts (a ⊓-style two-leg boss) slip past the single-contact
         // detectors (they require exactly one pair). Route ONLY genuine multi-contact (count > 1)
@@ -1580,7 +1580,7 @@ pub fn boolean(
         // deliberately decline (e.g. a non-convex-footprint boss) is not incidentally flipped. The
         // handler still declines (→ `general_boolean`) any multi-contact it cannot cover.
         if coplanar_contact_count(model, a, b)? > 1 {
-            if let Ok(r) = coplanar_result(model, kind, a, b) {
+            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
                 return Ok(r);
             }
         }
@@ -1589,7 +1589,7 @@ pub fn boolean(
         if detect_pocket_contact(model, a, b).is_some()
             || detect_overhang_cut_general(model, a, b).is_some()
         {
-            return coplanar_result(model, kind, a, b);
+            return coplanar_result_unified(model, kind, a, b);
         }
         // Multiple coplanar contacts (the symmetric of the Fuse route above): a flush pocket on two
         // adjacent faces, or a ⊓/through cutter making several blind pockets, slips past the
@@ -1597,7 +1597,7 @@ pub fn boolean(
         // (count > 1) to the unified handler; it declines (→ `general_boolean`, unchanged) anything
         // it cannot cover.
         if coplanar_contact_count(model, a, b)? > 1 {
-            if let Ok(r) = coplanar_result(model, kind, a, b) {
+            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
                 return Ok(r);
             }
         }
@@ -1606,13 +1606,13 @@ pub fn boolean(
         // `general_boolean` — when there is no coplanar contact it covers).
         let planes_a = collect_planes(model, a)?;
         if !is_convex(model, &planes_a, &solid_vertex_handles(model, a)) {
-            if let Ok(r) = coplanar_result(model, kind, a, b) {
+            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
                 return Ok(r);
             }
         }
     }
     if kind == BoolKind::Common && detect_overhang_common(model, a, b).is_some() {
-        return coplanar_result(model, kind, a, b);
+        return coplanar_result_unified(model, kind, a, b);
     }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
     // (it decided in/out with a 1e-9 tolerance) and cell 3g the convex `common` (its
@@ -5442,10 +5442,13 @@ fn classify_and_emit(
     }
 }
 
-/// The unified per-face coplanar Boolean driver (M5-U). Loops every face of both solids through
-/// [`classify_and_emit`] (A then B, shell Store order) and assembles. Unwired (shadow-verified
-/// against `coplanar_result` before D0). Scope U1: reproduces the contained family.
-#[cfg_attr(not(test), allow(dead_code))]
+/// The unified per-face coplanar Boolean driver (M5-U) — the **live** coplanar-contact result path
+/// (D0). Loops every face of both solids through [`classify_and_emit`] (A then B, shell Store order),
+/// dedups the crossings, resplits the walls (Fuse), and assembles. The `boolean` dispatch routes every
+/// coplanar contact here (contained / overhang / boss / flush, convex and non-convex); out-of-scope
+/// configurations (a same-normal overlap needing the 2D merge, a multi-loop cavity section, …) are
+/// honestly rejected. The old branch-per-case `coplanar_result` is kept test-only as the parity oracle
+/// (`driver_matches_v1_on_coplanar_goldens`).
 fn coplanar_result_unified(
     model: &mut Model,
     kind: BoolKind,
@@ -5555,6 +5558,11 @@ fn faces_share_edge(model: &Model, f0: Handle<Face>, f1: Handle<Face>) -> bool {
     face_half_edges(model.faces.get(f1)).any(|he| e0.contains(&he.edge))
 }
 
+/// The original branch-per-case coplanar Boolean (contained / flush / overhang / boss). Since D0 the
+/// `boolean` dispatch builds every coplanar result with [`coplanar_result_unified`]; this is retained
+/// test-only as the parity oracle the harness (`driver_matches_v1_on_coplanar_goldens`) checks the
+/// driver against, until D1/D2 retire it.
+#[cfg_attr(not(test), allow(dead_code))]
 fn coplanar_result(
     model: &mut Model,
     kind: BoolKind,
