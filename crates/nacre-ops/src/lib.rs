@@ -5229,34 +5229,53 @@ fn classify_and_emit(
         let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
         let p_ring = boundary_ring_triples(&f_bnd, pi);
         // Multi-loop section: `f`'s plane cuts `other` through a cavity → outer + hole rings (an
-        // annulus). In scope only when `f` is disjoint from *every* loop — no wall vertex strictly
-        // inside a loop, no loop vertex strictly inside the wall, no proper crossing — which is
-        // exactly `f` lying wholly outside `other`'s footprint (the empty-section outcome). Any
-        // touch is a genuine cavity breach → honest `SECTION_MULTI_LOOP` (a later cell). A single
-        // loop keeps the existing path below unchanged.
+        // annulus). Classify `f` by its winding depth in the section — a pure parity count, NOT an
+        // outer/hole distinction (so it is robust to sibling-outer sections too): 0 loops contain it
+        // ⇒ wholly outside `other` (∖ = whole); exactly 1 ⇒ inside the material (inside outer, outside
+        // every hole) (∩ = whole); ≥2 ⇒ inside a void (a wall floating in the cavity) → honest
+        // `SECTION_MULTI_LOOP` (a later cell). A loop `f` properly crosses, or a loop vertex strictly
+        // inside `f` (a hole poking through `f` → an annular face), is a genuine breach → reject; with
+        // those excluded each loop contains `f` wholly or not at all. The emission rule is
+        // owner-agnostic — `keep_inside`/`flip` already encode a/b and op — so it is the single-loop
+        // membership rule (below, 5285/5296) applied per material region. A single loop keeps the
+        // existing path below unchanged.
         if loops.len() > 1 {
+            let mut contain = 0usize;
             for lp in &loops {
                 let l_bnd = section_boundary(std::slice::from_ref(lp), pi, canon)?;
                 let l_ring = boundary_ring_triples(&l_bnd, pi);
-                for v in &p_ring {
-                    if !arrange::point_on_ring(planes, pi, *v, &l_ring)?
-                        && arrange::point_in_ring(planes, pi, *v, &l_ring)?
-                    {
-                        return Err(reject(tag::SECTION_MULTI_LOOP));
-                    }
+                if rings_properly_cross(planes, pi, &p_ring, &l_ring)? {
+                    return Err(reject(tag::SECTION_MULTI_LOOP));
                 }
                 for v in &l_ring {
                     if !arrange::point_on_ring(planes, pi, *v, &p_ring)?
                         && arrange::point_in_ring(planes, pi, *v, &p_ring)?
                     {
-                        return Err(reject(tag::SECTION_MULTI_LOOP));
+                        return Err(reject(tag::SECTION_MULTI_LOOP)); // a loop pokes into `f`
                     }
                 }
-                if rings_properly_cross(planes, pi, &p_ring, &l_ring)? {
-                    return Err(reject(tag::SECTION_MULTI_LOOP));
+                // Disjoint boundaries ⇒ `f` is uniformly inside or outside this loop; decide from any
+                // wall vertex off the loop's boundary. None off-boundary (footprint coincident with the
+                // loop) is a degeneracy we do not classify → honest reject, never a silent default.
+                let mut inside_lp: Option<bool> = None;
+                for v in &p_ring {
+                    if arrange::point_on_ring(planes, pi, *v, &l_ring)? {
+                        continue;
+                    }
+                    inside_lp = Some(arrange::point_in_ring(planes, pi, *v, &l_ring)?);
+                    break;
+                }
+                match inside_lp {
+                    Some(true) => contain += 1,
+                    Some(false) => {}
+                    None => return Err(reject(tag::SECTION_MULTI_LOOP)),
                 }
             }
-            let lf = (!keep_inside).then(whole_lf); // wholly outside `other` ⇒ ∖ = whole
+            let lf = match contain {
+                0 => (!keep_inside).then(whole_lf), // wholly outside material ⇒ ∖ = whole
+                1 => keep_inside.then(whole_lf),    // inside outer, outside all holes ⇒ ∩ = whole
+                _ => return Err(reject(tag::SECTION_MULTI_LOOP)), // inside a void ⇒ later cell
+            };
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
         let q_bnd = section_boundary(&loops, pi, canon)?;
@@ -14585,6 +14604,35 @@ pub mod tests {
         check(BoolKind::Cut, [0.3, 0.3, 0.0], [0.7, 0.7, 1.0], 0.84);
     }
 
+    // D0-prep-4a shadow: the driver reproduces a blind pocket cut into an already-pocketed
+    // (non-convex) cube. The corner cutter's FLOOR (z=0.6) sections the cube through the existing
+    // pocket cavity → an annular section (outer minus the pocket hole), yet the floor footprint sits
+    // in the material interior (inside outer, outside the hole). The multi-loop block classifies it
+    // by winding depth (contain==1) → whole floor, matching v1's 0.912. No all-Constructed assertion:
+    // `pocketed_cube()` is op-built (extrude + pocket boolean), so its inputs may already carry
+    // non-Constructed origins — validity + volume + the parity harness carry the purity check.
+    #[test]
+    fn unified_reproduces_blind_pocket_nonconvex() {
+        let run = || {
+            let (mut m, pc) = pocketed_cube();
+            let corner = m.add_cuboid(
+                Point3::from_array([0.05, 0.1, 0.6]),
+                Point3::from_array([0.25, 0.2, 1.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Cut, pc, corner).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{vs:?}");
+            let got = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((got - 0.912).abs() < 1e-12, "volume {got}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+            (got, solid_vertex_handles(&m, r[0]).len())
+        };
+        assert_eq!(run(), run(), "deterministic");
+    }
+
     // U2 shadow: the unified driver reproduces the overhang same-normal family (branch 3) — a tool
     // top-flush on the base whose footprint breaches one or more side walls. Cut carves a slot;
     // Common keeps the overlap box. Unlike the contained family these mint genuine crossings, so
@@ -15001,18 +15049,11 @@ pub mod tests {
         // boss, 1.048 L-profile boss) and the reject probes (non-convex footprint, pierce) all
         // match or both-reject — the driver already covers them. Only two remain, each a distinct
         // root cause; each D0-prep-2+ fix cell removes an entry, and D0 requires this empty.
-        // Two gaps found by the D0 dry-run (the hand-list had missed these coplanar-routed public
-        // tests). Each is a follow-up fix cell before the D0 retry:
-        //  - blind_pocket_nonconvex: a `b` wall sits inside the owner's annular section *material*
-        //    (inside the outer loop, outside the pocket hole). D0-prep-2a's multi-loop block only
-        //    handled walls wholly *outside* → this rejects; needs the material-interior whole case.
+        // One gap remains before the D0 retry (the rotated pad, D0-prep-4, and blind_pocket_nonconvex,
+        // D0-prep-4a, are now covered by the driver):
         //  - same_ground_overlap: v1 rejects (VERTEX_ON_FACE_PLANE via general_boolean); the driver
         //    unions the overlap. A capability gain to confirm with OCCT, then flip the reject test.
-        // (The third dry-run failure, the rotated pad, is deferred behind a rotated-gate at D0.)
-        let expected: &[(&str, &str)] = &[
-            ("blind_pocket_nonconvex", "uncovered:section_multi_loop"),
-            ("same_ground_overlap", "divergence"),
-        ];
+        let expected: &[(&str, &str)] = &[("same_ground_overlap", "divergence")];
         let actual: Vec<(&str, &str)> =
             gaps.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
         assert_eq!(actual, expected, "driver-vs-v1 coplanar parity gaps");
