@@ -2579,6 +2579,35 @@ const RAY_DIRECTIONS: [[f64; 3]; 6] = [
     [13.0, 17.0, 19.0],
 ];
 
+/// The minimal per-op plane table two solids share for [`arrange::point_in_solid_idx`]: the
+/// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
+/// [`arrange::EdgePlanes`]. Detectors that classify vertices exactly but lack
+/// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
+/// Indices into the returned `planes`/`surf_ix` are shared, so a vertex of `a` and a face of
+/// `b` compose in one space.
+type PlaneSetup = (
+    Vec<PlaneInfo>,
+    HashMap<Handle<Face>, usize>,
+    arrange::EdgePlanes,
+    arrange::EdgePlanes,
+);
+
+fn plane_index_setup(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<PlaneSetup, BoolError> {
+    let mut planes = collect_planes(model, a)?;
+    planes.extend(collect_planes(model, b)?);
+    let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+    for (i, pi) in planes.iter().enumerate() {
+        surf_ix.insert(pi.face, i);
+    }
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    Ok((planes, surf_ix, inc_a, inc_b))
+}
+
 /// Exact point-in-polyhedron for a general (non-convex, possibly hollow) planar
 /// solid, by **forward-ray winding** (design §8 M5-d): cast a ray from `p` and
 /// sum the oriented crossings ([`ray_face_cross`]) over every face of every shell
@@ -4800,9 +4829,13 @@ fn detect_pocket_contact(
     // contact vertices sit on the plane and are skipped. (boundaries_intersect is unusable
     // here — the flush contact itself reads as a boundary touch.)
     let contact_tri = planes_a[i].tri;
+    let (planes, surf_ix, inc_a, inc_b) = plane_index_setup(model, a, b).ok()?;
     for &vh in &solid_vertex_handles(model, b) {
-        let p = model.vertices.get(vh).point;
-        if plane_side(contact_tri, p) != 0 && point_in_solid(model, p, a).ok()? != Side::Inside {
+        // `b`'s vertex, classified against `a` on the exact index-plane substrate.
+        if plane_side(contact_tri, model.vertices.get(vh).point) != 0
+            && arrange::point_in_solid_idx(model, vh, &inc_b, a, &inc_a, &planes, &surf_ix).ok()?
+                != Side::Inside
+        {
             return None;
         }
     }
@@ -4854,11 +4887,17 @@ fn detect_contained_common(
         };
     // Genuine partial: some vertex of the small solid, off the contact plane, is strictly outside
     // the big. A blind small (all inside) is full containment — declined (half-space path owns it).
+    let (planes, surf_ix, inc_small, inc_big) =
+        plane_index_setup(model, small_solid, big_solid).ok()?;
     let mut pokes_out = false;
     for &vh in &solid_vertex_handles(model, small_solid) {
-        let p = model.vertices.get(vh).point;
-        if plane_side(contact_tri, p) != 0
-            && point_in_solid(model, p, big_solid).ok()? == Side::Outside
+        // `small`'s vertex, classified against `big` on the exact index-plane substrate.
+        if plane_side(contact_tri, model.vertices.get(vh).point) != 0
+            && arrange::point_in_solid_idx(
+                model, vh, &inc_small, big_solid, &inc_big, &planes, &surf_ix,
+            )
+            .ok()?
+                == Side::Outside
         {
             pokes_out = true;
             break;
@@ -5923,10 +5962,18 @@ fn detect_overhang_contact(
     // Pure coplanar contact: every vertex off the shared plane is strictly outside the other
     // solid. A vertex inside the other would be a transversal seam cut, not an overhang boss.
     let tri = planes_a[ia].tri;
-    for (s, other) in [(cc.p_solid, cc.q_solid), (cc.q_solid, cc.p_solid)] {
+    let (planes, surf_ix, inc_p, inc_q) = plane_index_setup(model, cc.p_solid, cc.q_solid).ok()?;
+    for (s, other, inc_s, inc_o) in [
+        (cc.p_solid, cc.q_solid, &inc_p, &inc_q),
+        (cc.q_solid, cc.p_solid, &inc_q, &inc_p),
+    ] {
         for &vh in &solid_vertex_handles(model, s) {
-            let p = model.vertices.get(vh).point;
-            if plane_side(tri, p) != 0 && point_in_solid(model, p, other).ok()? != Side::Outside {
+            // `s`'s vertex, classified against `other` on the exact index-plane substrate.
+            if plane_side(tri, model.vertices.get(vh).point) != 0
+                && arrange::point_in_solid_idx(model, vh, inc_s, other, inc_o, &planes, &surf_ix)
+                    .ok()?
+                    != Side::Outside
+            {
                 return None;
             }
         }
