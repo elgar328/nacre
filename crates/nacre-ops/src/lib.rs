@@ -1494,8 +1494,8 @@ fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<Rotation
 // ---- boolean (M5-c3) ----
 
 use nacre_geom::intersect::{
-    RayCross, orient2d, plane_plane, plane_side, planes_coplanar, ray_face_cross,
-    three_plane_orient3d, three_planes,
+    RayCross, orient2d, plane_plane, plane_side, planes_coplanar, three_plane_orient3d,
+    three_planes,
 };
 #[cfg(test)]
 use std::collections::BTreeSet;
@@ -2627,55 +2627,6 @@ fn plane_index_setup(
     Ok((planes, surf_ix, inc_a, inc_b, canon))
 }
 
-/// Exact point-in-polyhedron for a general (non-convex, possibly hollow) planar
-/// solid, by **forward-ray winding** (design §8 M5-d): cast a ray from `p` and
-/// sum the oriented crossings ([`ray_face_cross`]) over every face of every shell
-/// (outer + cavities), each face fanned from its first vertex `(v0, vi, vi+1)`.
-/// The sum is the winding number about `p` — nonzero ⇒ inside the material. A
-/// concave face's spurious fan triangles cancel by orientation, so no ear-clip is
-/// needed; every decision is an exact `orient3d` sign (no tolerance).
-///
-/// Degeneracies (the ray grazing an edge/vertex) retry the next
-/// [`RAY_DIRECTIONS`]; exhausting the list yields `Unsupported` (astronomically
-/// unlikely without adversarial alignment — a symbolic-perturbation upgrade is
-/// deferred). **Precondition:** `p` is not on the solid's boundary — the caller's
-/// edge-face gate guarantees `p` is not coplanar with any face plane, so the
-/// per-face `s0 = 0` case never arises here.
-// Only the test oracle (`point_in_solid_classifies_*` and the `point_in_solid_idx` cross-checks)
-// calls this now — `vertex_in_solid`'s axis route moved to `point_in_solid_idx` (Cell 3). The f64
-// substrate is retired in Cell 4.
-#[cfg_attr(not(test), allow(dead_code))]
-fn point_in_solid(model: &Model, p: Point3, solid: Handle<Solid>) -> Result<Side, BoolError> {
-    let faces: Vec<Vec<Vec<Point3>>> = solid_faces(model, solid)
-        .into_iter()
-        .map(|fh| face_loops(model, fh))
-        .collect();
-    // Fan triangles are direction-independent — build (and exactly-drop degenerate
-    // ones) once, then reuse across every ray direction.
-    let tris: Vec<[Point3; 3]> = faces
-        .iter()
-        .flat_map(|rings| rings.iter())
-        .flat_map(|ring| fan_triangles(ring, 0))
-        .collect();
-    'dirs: for dir in RAY_DIRECTIONS {
-        let d = Vector3::from_array(dir);
-        let mut winding = 0i32;
-        for tri in &tris {
-            match ray_face_cross(p, d, *tri) {
-                RayCross::Cross(sign) => winding += sign as i32,
-                RayCross::Miss => {}
-                RayCross::Degenerate => continue 'dirs, // grazed — try another direction
-            }
-        }
-        return Ok(if winding != 0 {
-            Side::Inside
-        } else {
-            Side::Outside
-        });
-    }
-    Err(reject(tag::RAY_DEGENERATE)) // every direction grazed the boundary (adversarial)
-}
-
 /// Classify vertex `vh` in/out of `other`, routed by rotation: the exact index-plane
 /// [`arrange::point_in_solid_idx`] when the geometry is axis-aligned, else the toleranced
 /// [`point_in_solid_tol`] on the vertex's exact `Pt3`. Either `other`'s faces being rotated
@@ -2763,8 +2714,8 @@ fn point_in_solid_tol(model: &Model, p: &Pt3, solid: Handle<Solid>) -> Result<Si
 /// coordinate-plane projections of `(b−a)×(c−a)` must vanish (exact `Rat`, no tolerance). An
 /// i128 overflow returns `false` (treat as non-collinear): a genuinely-collinear triangle then
 /// stays and is at worst rejected `RAY_DEGENERATE`, never falsely skipped (which would drop a
-/// real crossing — silent-wrong). Unrotated vertices carry `base == coord`, matching the f64
-/// `triangle_is_degenerate`.
+/// real crossing — silent-wrong). Unrotated vertices carry `base == coord`, so this is the exact
+/// zero-area (collinear) test on the vertices' rotation definitions.
 fn pt3_base_collinear(a: &Pt3, b: &Pt3, c: &Pt3) -> bool {
     use nacre_scalar::Rat;
     let (a, b, c) = (&a.base, &b.base, &c.base);
@@ -2793,31 +2744,8 @@ fn solid_faces(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Face>> {
         .collect()
 }
 
-/// A planar face's rings of vertex points: the outer loop, then each hole.
-///
-/// Fanning only the outer ring would fill the holes in, and every winding-number
-/// classifier below would call a point over the hole "material". A hole ring runs
-/// CW about the face's outward normal — not by convention but by manifoldness,
-/// since each of its edges is used once here and once, oppositely, on the outer
-/// loop of the adjacent wall face (`validate` enforces it as `NonOpposedEdge`).
-/// So the hole's fan triangles are oriented against the outer ring's and its
-/// signed crossings subtract. No ear-clipping, no tolerance — the same
-/// orientation-cancellation the concave-outer fan already relies on.
-pub(crate) fn face_loops(model: &Model, fh: Handle<Face>) -> Vec<Vec<Point3>> {
-    let face = model.faces.get(fh);
-    std::iter::once(&face.outer)
-        .chain(face.inner.iter())
-        .map(|lp| {
-            lp.half_edges
-                .iter()
-                .map(|&he| model.vertices.get(he_start(model, he)).point)
-                .collect()
-        })
-        .collect()
-}
-
-/// [`face_loops`] as vertex **handles** (outer loop then each hole) — the toleranced
-/// classifier builds each vertex's exact `Pt3` from these, where `face_loops` reads f64 points.
+/// A face's loops as vertex **handles** (outer loop then each hole) — the toleranced classifier
+/// builds each vertex's exact `Pt3` from these.
 fn face_loop_verts(model: &Model, fh: Handle<Face>) -> Vec<Vec<Handle<Vertex>>> {
     let face = model.faces.get(fh);
     std::iter::once(&face.outer)
@@ -2829,44 +2757,6 @@ fn face_loop_verts(model: &Model, fh: Handle<Face>) -> Vec<Vec<Handle<Vertex>>> 
                 .collect()
         })
         .collect()
-}
-
-/// The non-degenerate fan triangles `(pts[apex], pts[apex+s], pts[apex+s+1])` of a
-/// planar loop, fanned from vertex `apex` (indices mod `k`). A concave loop's
-/// spurious (reflex) triangles are kept — they cancel by orientation in the
-/// oriented crossing sum — but **exactly zero-area (collinear)** triangles are
-/// dropped by an exact test ([`triangle_is_degenerate`]), not a tolerance: a
-/// zero-area triangle contributes nothing to the winding and would force a
-/// spurious `Degenerate` ray retry, whereas a tiny-but-nonzero triangle is kept
-/// and judged exactly by `ray_triangle_cross`. Retiring the old relative
-/// `1e-12` bound closes the one silent-wrong drop on the winding path ((5d)#4).
-/// Varying `apex` changes which internal diagonals appear, which the segment gate
-/// exploits to sidestep a diagonal that happens to be coplanar with a query edge.
-fn fan_triangles(pts: &[Point3], apex: usize) -> Vec<[Point3; 3]> {
-    let k = pts.len();
-    let mut tris = Vec::new();
-    for s in 1..k.saturating_sub(1) {
-        let (t0, t1, t2) = (pts[apex], pts[(apex + s) % k], pts[(apex + s + 1) % k]);
-        if triangle_is_degenerate(t0, t1, t2) {
-            continue; // exactly zero-area (collinear) fan triangle
-        }
-        tris.push([t0, t1, t2]);
-    }
-    tris
-}
-
-/// Whether three points are **exactly collinear** (zero-area triangle), decided
-/// by exact `orient2d` on all three coordinate-plane projections — these are the
-/// three components of `(t1−t0)×(t2−t0)`, so zero area ⟺ all three are `0`. No
-/// tolerance, no coordinate materialized. **Axis-independent**: a genuinely
-/// nonzero-area triangle has a nonzero cross vector, so at least one projection is
-/// non-degenerate and it is never falsely dropped (unlike a single fixed-axis
-/// projection, which would collapse for a face perpendicular to that axis).
-fn triangle_is_degenerate(t0: Point3, t1: Point3, t2: Point3) -> bool {
-    let (a, b, c) = (t0.as_array(), t1.as_array(), t2.as_array());
-    orient2d([a[1], a[2]], [b[1], b[2]], [c[1], c[2]]) == 0.0
-        && orient2d([a[2], a[0]], [b[2], b[0]], [c[2], c[0]]) == 0.0
-        && orient2d([a[0], a[1]], [b[0], b[1]], [c[0], c[1]]) == 0.0
 }
 
 /// Whether the boundaries of `a` and `b` actually cross — an edge of one pierces a face of
@@ -6723,37 +6613,6 @@ pub mod tests {
         assert!((vol - (3.0 - 0.08)).abs() < 1e-9, "volume {vol}");
     }
 
-    #[test]
-    fn point_in_solid_classifies_concave_prism() {
-        let (m, s) = l_prism();
-        let side = |x, y, z| point_in_solid(&m, Point3::from_array([x, y, z]), s).unwrap();
-        // Interior of the arm, near the reflex corner, and the left bar.
-        assert_eq!(side(0.5, 0.5, 0.5), Side::Inside);
-        assert_eq!(side(0.9, 0.9, 0.5), Side::Inside);
-        assert_eq!(side(0.5, 1.5, 0.5), Side::Inside);
-        // The notch is OUTSIDE the L though inside its bounding box — the concave
-        // case a convex all-half-spaces test gets wrong.
-        assert_eq!(side(1.5, 1.5, 0.5), Side::Outside);
-        // Clearly outside (beside, below, above).
-        assert_eq!(side(3.0, 3.0, 0.5), Side::Outside);
-        assert_eq!(side(0.5, 0.5, -1.0), Side::Outside);
-        assert_eq!(side(0.5, 0.5, 2.0), Side::Outside);
-    }
-
-    #[test]
-    fn point_in_solid_classifies_cube() {
-        let mut m = Model::new();
-        let s = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-        assert_eq!(
-            point_in_solid(&m, Point3::from_array([1.0, 1.0, 1.0]), s).unwrap(),
-            Side::Inside
-        );
-        assert_eq!(
-            point_in_solid(&m, Point3::from_array([3.0, 1.0, 1.0]), s).unwrap(),
-            Side::Outside
-        );
-    }
-
     /// `point_in_solid_tol` on a rotated solid + a query rotated by the **same** rigid motion
     /// agrees with the exact f64 `point_in_solid` on the unrotated solid (in/out is
     /// rotation-invariant). Covers a convex cube and the concave L-prism — including the reflex
@@ -6863,7 +6722,7 @@ pub mod tests {
         // exact f64 `point_in_solid` here (a far-away vertex, unambiguously outside).
         assert_eq!(
             vertex_in_solid(&m, vh, &inc_a, b, &inc_b, &planes, &surf_ix, &canon).unwrap(),
-            point_in_solid(&m, m.vertices.get(vh).point, b).unwrap()
+            Side::Outside // the far vertex (of a = [10,11]³) is outside b = [0,4]³
         );
         // Rotate the target → the router must dispatch to `point_in_solid_tol`.
         let iso = Isometry::rotation(SRot {
@@ -6905,6 +6764,7 @@ pub mod tests {
     /// the Cross sign).
     #[test]
     fn ray_triangle_cross_tol_matches_f64_unrotated() {
+        use nacre_geom::intersect::ray_face_cross; // f64 reference for the toleranced twin
         use nacre_scalar::Rat;
         let mut st = 0x9E37_79B9_7F4A_7C15u64;
         let mut g = || {
@@ -6994,32 +6854,6 @@ pub mod tests {
             cases += 1;
         }
         assert!(cases > 0);
-    }
-
-    #[test]
-    fn point_in_solid_handles_cavity() {
-        // 4-cube with a concentric 2-cube void [1,3]³: a point in the material
-        // wall is Inside, a point in the empty void is Outside (the winding sums
-        // outer + cavity shells).
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
-        let b_outer = m.solids.get(b).outer;
-        let void = m.reversed_shell(b_outer);
-        let a_outer = m.solids.get(a).outer;
-        let hollow = m.push_solid(Solid {
-            outer: a_outer,
-            cavities: vec![void],
-        });
-        m.live_solids.retain(|&x| x == hollow);
-        assert_eq!(
-            point_in_solid(&m, Point3::from_array([0.5, 0.5, 0.5]), hollow).unwrap(),
-            Side::Inside // in the wall
-        );
-        assert_eq!(
-            point_in_solid(&m, Point3::from_array([2.0, 2.0, 2.0]), hollow).unwrap(),
-            Side::Outside // in the void
-        );
     }
 
     /// The exact index-plane classifier [`arrange::point_in_solid_idx`] on hand-known answers.
@@ -7162,35 +6996,47 @@ pub mod tests {
         let inc_p = arrange::edge_planes(&m, probe, &surf_ix).unwrap();
         let inc_o = arrange::edge_planes(&m, overhung, &surf_ix).unwrap();
         let canon = plane_classes(&planes);
-        // Both directions: probe-vertex vs overhung (overhung's coplanar-step ring nodes are the
-        // ones that panicked), and overhung-vertex vs probe (a degenerate step vertex as query).
-        // Running to completion is the panic-free assertion; agreement is checked where idx decides.
-        let mut no_ray = 0;
-        for (qs, os, iq, io) in [
-            (probe, overhung, &inc_p, &inc_o),
-            (overhung, probe, &inc_o, &inc_p),
-        ] {
-            for vh in solid_vertex_handles(&m, qs) {
-                match arrange::point_in_solid_idx(&m, vh, iq, os, io, &planes, &surf_ix, &canon) {
-                    Ok(s) => {
-                        if let Ok(f) = point_in_solid(&m, m.vertices.get(vh).point, os) {
-                            assert_eq!(s, f, "idx vs f64 mismatch classifying vs the step solid");
-                        }
-                    }
-                    Err(_) => no_ray += 1, // honest NO_CLEAR_RAY on a degenerate step vertex
-                }
-            }
+        // Hand-known membership (no f64 needed): overhung = base[0,1]³ ∪ boss[.5,.25,1]-[1.5,.75,2];
+        // probe is a box. idx must classify every vertex (both directions) panic-free and match.
+        let in_overhung = |p: [f64; 3]| {
+            let inb = |lo: [f64; 3], hi: [f64; 3]| (0..3).all(|k| p[k] >= lo[k] && p[k] <= hi[k]);
+            inb([0.0; 3], [1.0; 3]) || inb([0.5, 0.25, 1.0], [1.5, 0.75, 2.0])
+        };
+        let in_probe = |p: [f64; 3]| {
+            p[0] >= 1.1 && p[0] <= 1.4 && p[1] >= 0.35 && p[1] <= 0.65 && p[2] >= 0.5 && p[2] <= 2.5
+        };
+        for vh in solid_vertex_handles(&m, probe) {
+            let p = m.vertices.get(vh).point.as_array();
+            let got = arrange::point_in_solid_idx(
+                &m, vh, &inc_p, overhung, &inc_o, &planes, &surf_ix, &canon,
+            )
+            .unwrap_or_else(|e| panic!("probe vertex {p:?} vs overhung: {e:?}"));
+            assert_eq!(
+                got == Side::Inside,
+                in_overhung(p),
+                "probe vertex {p:?} vs overhung"
+            );
         }
-        eprintln!("canon step: {no_ray} honest NO_CLEAR_RAY (degenerate step vertices)");
+        for vh in solid_vertex_handles(&m, overhung) {
+            let p = m.vertices.get(vh).point.as_array();
+            let got = arrange::point_in_solid_idx(
+                &m, vh, &inc_o, probe, &inc_p, &planes, &surf_ix, &canon,
+            )
+            .unwrap_or_else(|e| panic!("overhung vertex {p:?} vs probe: {e:?}"));
+            assert_eq!(
+                got == Side::Inside,
+                in_probe(p),
+                "overhung vertex {p:?} vs probe"
+            );
+        }
     }
 
     /// Go/no-go for the classifier-unification track (plan R7): on grid-aligned, shared-
     /// coordinate two-box configs — where the exact ray, constrained to the query's own axis
     /// planes, is most prone to grazing — does `point_in_solid_idx` ever reject
-    /// (`NO_CLEAR_RAY`) a strictly-in/out vertex that the off-axis f64 ray classifies? A strict
-    /// vertex's axis rays cross the other box's faces at footprint-interior points, never its
-    /// edges, so the answer should be *zero* regressions. Also checks each answer against the
-    /// hand-computed box membership, and cross-checks f64 agreement.
+    /// (`NO_CLEAR_RAY`) a strictly-in/out vertex? A strict vertex's axis rays cross the other
+    /// box's faces at footprint-interior points, never its edges, so the answer should be *zero*
+    /// regressions. Each answer is also checked against the hand-computed box membership.
     #[test]
     fn point_in_solid_idx_no_reject_regression_on_aligned() {
         // (A box, B box) sharing coordinates in the adversarial grid.
@@ -7218,7 +7064,7 @@ pub mod tests {
             }
             if on { None } else { Some(true) }
         };
-        let (mut compared, mut regress, mut disagree_f64) = (0u32, 0u32, 0u32);
+        let (mut compared, mut regress) = (0u32, 0u32);
         for &(amin, amax, bmin, bmax) in configs {
             let mut m = Model::new();
             let sa = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
@@ -7253,12 +7099,6 @@ pub mod tests {
                                 inside, want,
                                 "idx wrong at {p:?} vs box [{olo:?}..{ohi:?}]"
                             );
-                            // f64 cross-check (secondary): agree where it also decides.
-                            if let Ok(f) = point_in_solid(&m, m.vertices.get(vh).point, os) {
-                                if (f == Side::Inside) != want {
-                                    disagree_f64 += 1;
-                                }
-                            }
                         }
                         Err(_) => regress += 1, // NO_CLEAR_RAY on a strict vertex = R7 regression
                     }
@@ -7270,52 +7110,7 @@ pub mod tests {
             regress, 0,
             "R7: idx rejected {regress} strict vertices f64 would classify"
         );
-        assert_eq!(
-            disagree_f64, 0,
-            "f64 disagreed on {disagree_f64} strict vertices"
-        );
         eprintln!("go/no-go: compared={compared} regress=0 — R7 benign on aligned grid");
-    }
-
-    /// (5d)#4: `fan_triangles` drops *exactly* the zero-area (collinear) triangles
-    /// and keeps the rest. A pentagon ring with three collinear points on one edge
-    /// has one collinear fan triangle from apex 0; it is dropped, the other two are
-    /// kept (and confirmed non-degenerate).
-    #[test]
-    fn fan_triangles_drops_only_exactly_collinear() {
-        let ring = [
-            Point3::from_array([0.0, 0.0, 0.0]),
-            Point3::from_array([1.0, 0.0, 0.0]), // collinear with its neighbours on y=0
-            Point3::from_array([2.0, 0.0, 0.0]),
-            Point3::from_array([2.0, 2.0, 0.0]),
-            Point3::from_array([0.0, 2.0, 0.0]),
-        ];
-        let tris = fan_triangles(&ring, 0);
-        // apex-0 fan: (0,1,2) is collinear → dropped; (0,2,3) and (0,3,4) kept.
-        assert_eq!(tris.len(), 2);
-        for t in &tris {
-            assert!(!triangle_is_degenerate(t[0], t[1], t[2]));
-        }
-    }
-
-    /// (5d)#4 regression: a tiny-but-*exactly-nonzero* sliver is kept, where the
-    /// retired relative `1e-12` bound would have silently dropped it (missing a ray
-    /// crossing → wrong winding). Large-magnitude integer coords make the cross
-    /// product tiny relative to the edge lengths: `cross.z = 2a − (2a+1) = −1`,
-    /// `|e1||e2| ≈ 2a²`. (A direct `fan_triangles` unit test — such slivers arise
-    /// in rotated geometry, not axis-aligned M5.)
-    #[test]
-    fn fan_triangles_keeps_tiny_nonzero_sliver() {
-        let a = 1_000_000.0;
-        let t0 = Point3::from_array([0.0, 0.0, 0.0]);
-        let t1 = Point3::from_array([a, 1.0, 0.0]);
-        let t2 = Point3::from_array([2.0 * a + 1.0, 2.0, 0.0]);
-        // exactly nonzero area ⇒ the exact test keeps it.
-        assert!(!triangle_is_degenerate(t0, t1, t2));
-        assert_eq!(fan_triangles(&[t0, t1, t2], 0).len(), 1);
-        // …yet the old relative tolerance would have dropped it:
-        let (e1, e2) = (t1 - t0, t2 - t0);
-        assert!(e1.cross(e2).norm() <= 1e-12 * e1.norm() * e2.norm());
     }
 
     /// The L-prism with a `[0.1,0.9]³` box strictly inside its bottom bar
@@ -8544,8 +8339,7 @@ pub mod tests {
             .half_edges
             .iter()
             .map(|&he| {
-                point_in_solid(&m, m.vertices.get(he_start(&m, he)).point, l).unwrap()
-                    == Side::Inside
+                classify_in(&m, he_start(&m, he), solid_of_face(&m, wall), l) == Side::Inside
             })
             .collect();
         assert_eq!(kept_vert, vec![false; 4]);
@@ -8710,19 +8504,41 @@ pub mod tests {
         );
     }
 
+    /// The live solid whose boundary contains face `f` — the exact classifier needs the query
+    /// vertex's own solid to read its planes (test helper).
+    fn solid_of_face(m: &Model, f: Handle<Face>) -> Handle<Solid> {
+        m.live_solids
+            .iter()
+            .copied()
+            .find(|&s| solid_faces(m, s).contains(&f))
+            .expect("face belongs to a live solid")
+    }
+
+    /// Classify vertex `vh` (of `vh_solid`) in/out of `target` on the exact index-plane
+    /// substrate — the test replacement for the retired f64 `point_in_solid`.
+    fn classify_in(
+        m: &Model,
+        vh: Handle<Vertex>,
+        vh_solid: Handle<Solid>,
+        target: Handle<Solid>,
+    ) -> Side {
+        let (planes, surf_ix, inc_v, inc_o, canon) =
+            plane_index_setup(m, vh_solid, target).unwrap();
+        arrange::point_in_solid_idx(m, vh, &inc_v, target, &inc_o, &planes, &surf_ix, &canon)
+            .unwrap()
+    }
+
     /// `reconstruct_face_paths`'s kept/dropped alternation edges on `f`'s outer loop, as
     /// indices into `f.outer.half_edges`.
     ///
     /// Independent of `keep`: flipping it flips every `kept[i]`, and this only
     /// compares neighbours. So no `BoolKind` need be chosen here.
     fn transitions_on(m: &Model, f: Handle<Face>, other: Handle<Solid>) -> Vec<usize> {
+        let f_solid = solid_of_face(m, f);
         let hes = &m.faces.get(f).outer.half_edges;
         let inside: Vec<bool> = hes
             .iter()
-            .map(|&he| {
-                let v = m.vertices.get(he_start(m, he)).point;
-                point_in_solid(m, v, other).unwrap() == Side::Inside
-            })
+            .map(|&he| classify_in(m, he_start(m, he), f_solid, other) == Side::Inside)
             .collect();
         (0..inside.len())
             .filter(|&i| inside[i] != inside[(i + 1) % inside.len()])
@@ -9758,8 +9574,7 @@ pub mod tests {
         let inside: Vec<bool> = hes
             .iter()
             .map(|&he| {
-                point_in_solid(&m, m.vertices.get(he_start(&m, he)).point, bar).unwrap()
-                    == Side::Inside
+                classify_in(&m, he_start(&m, he), solid_of_face(&m, top), bar) == Side::Inside
             })
             .collect();
         assert_eq!(inside, [false, false, true, false, true, false]);
@@ -10436,8 +10251,10 @@ pub mod tests {
         assert_eq!(nodes.len(), 4);
 
         for &he in &m.faces.get(top).outer.half_edges {
-            let v = m.vertices.get(he_start(&m, he)).point;
-            assert_eq!(point_in_solid(&m, v, stub).unwrap(), Side::Outside);
+            assert_eq!(
+                classify_in(&m, he_start(&m, he), solid_of_face(&m, top), stub),
+                Side::Outside
+            );
         }
     }
 
@@ -11232,20 +11049,6 @@ pub mod tests {
         // `cut_a_pocket_at_a_corner`; it cannot be faked here, because dropping a node
         // from `bnd` leaves two nodes sharing only the lid's plane and `ring_edge`
         // rightly refuses to invent an edge between them.
-    }
-
-    #[test]
-    fn point_in_solid_sees_through_a_pocket() {
-        // Fanning the lid's outer ring alone fills the pocket mouth in, and a ray
-        // leaving the void through it counts a crossing that is not there. Worse, the
-        // error is not even uniform: rays that exit sideways through a pocket wall
-        // miss the lid entirely, so neighbouring points disagree.
-        let (m, pc) = pocketed_cube();
-        assert!((nacre_props::mass_props(&m, pc).unwrap().volume - 0.92).abs() < 1e-9);
-        let at = |p: [f64; 3]| point_in_solid(&m, Point3::from_array(p), pc).unwrap();
-        assert_eq!(at([0.5, 0.5, 0.75]), Side::Outside); // in the void
-        assert_eq!(at([0.1, 0.1, 0.75]), Side::Inside); // in the wall around it
-        assert_eq!(at([0.5, 0.5, 0.25]), Side::Inside); // under the pocket floor
     }
 
     #[test]
