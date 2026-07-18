@@ -14881,6 +14881,26 @@ pub mod tests {
                 cuboid([0.5, 0.25, 0.5], [1.5, 0.75, 2.0]),
                 Fuse,
             ),
+            // Previously missed by the hand-enumerated list (found by the D0 dry-run): a blind
+            // pocket cut into a pocketed (non-convex) cube, and two boxes overlapping while sharing
+            // their z=0/z=1 coplanar faces (2 contacts → count>1 route).
+            (
+                "blind_pocket_nonconvex",
+                Box::new(|| {
+                    let (mut m, pc) = pocketed_cube();
+                    let corner = m.add_cuboid(
+                        Point3::from_array([0.05, 0.1, 0.6]),
+                        Point3::from_array([0.25, 0.2, 1.0]),
+                    );
+                    (m, pc, corner)
+                }),
+                Cut,
+            ),
+            (
+                "same_ground_overlap",
+                cuboid([0.5, 0.5, 0.0], [1.5, 1.5, 1.0]),
+                Fuse,
+            ),
         ];
 
         // Quiet the default panic hook so a caught driver panic does not print a backtrace.
@@ -14917,10 +14937,18 @@ pub mod tests {
         // boss, 1.048 L-profile boss) and the reject probes (non-convex footprint, pierce) all
         // match or both-reject — the driver already covers them. Only two remain, each a distinct
         // root cause; each D0-prep-2+ fix cell removes an entry, and D0 requires this empty.
-        // Empty: the driver matches v1 on every coplanar golden — D0 (the atomic cutover of
-        // coplanar_result's body to coplanar_result_unified) is safe. Any future divergence
-        // re-populates this and fails the gate.
-        let expected: &[(&str, &str)] = &[];
+        // Two gaps found by the D0 dry-run (the hand-list had missed these coplanar-routed public
+        // tests). Each is a follow-up fix cell before the D0 retry:
+        //  - blind_pocket_nonconvex: a `b` wall sits inside the owner's annular section *material*
+        //    (inside the outer loop, outside the pocket hole). D0-prep-2a's multi-loop block only
+        //    handled walls wholly *outside* → this rejects; needs the material-interior whole case.
+        //  - same_ground_overlap: v1 rejects (VERTEX_ON_FACE_PLANE via general_boolean); the driver
+        //    unions the overlap. A capability gain to confirm with OCCT, then flip the reject test.
+        // (The third dry-run failure, the rotated pad, is deferred behind a rotated-gate at D0.)
+        let expected: &[(&str, &str)] = &[
+            ("blind_pocket_nonconvex", "uncovered:section_multi_loop"),
+            ("same_ground_overlap", "divergence"),
+        ];
         let actual: Vec<(&str, &str)> =
             gaps.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
         assert_eq!(actual, expected, "driver-vs-v1 coplanar parity gaps");
