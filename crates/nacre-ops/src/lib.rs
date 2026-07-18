@@ -318,6 +318,12 @@ pub(crate) mod tag {
     /// The unified driver found no shared plane class between the two solids — it was invoked on a
     /// pair with no coplanar contact at all (should be gated out upstream).
     pub const NO_COPLANAR_CONTACT: &str = "no_coplanar_contact";
+    /// A `Whole`-survival contact face whose footprint OVERLAPS the other's (∂P × ∂Q cross) rather
+    /// than nesting. `Whole` assumes ∂Q is internal (a union with the other face contained, or the
+    /// other solid stacked entirely above); overlapping footprints need the general 2D coplanar
+    /// union/merge (a later cell), so they are honestly rejected. v1 gates the same case via
+    /// `face_contains_face`.
+    pub const COPLANAR_MERGE: &str = "coplanar_merge";
 }
 
 #[cfg(test)]
@@ -5311,6 +5317,14 @@ fn classify_and_emit(
         // edge interiors, no shared endpoint / collinear) distinguishes a genuine breach from a
         // contact-line graze — an attachment (a section corner on `f`'s contact edge) is not one,
         // so an overhang boss wall stays whole and is resplit later rather than being section-clipped.
+        //
+        // LATENT (T-overlap, later cell): a partial "T" overlap — the section covers half of `f` but
+        // meets its boundary only at the section-edge endpoints — is not a *proper* crossing, so this
+        // takes the whole branch and leaves the interior half unclipped. That only arises when two
+        // solids interpenetrate while sharing a coplanar cap whose footprints OVERLAP; the a-side
+        // `Whole` gate (COPLANAR_MERGE) rejects those first, so no current input reaches this defect.
+        // A non-convex arrangement where a cap nests yet a wall T-overlaps would — a general-2D-merge
+        // cell. Safe today only because the driver sees a fixed golden set (no random coplanar input).
         if !sect_in_f && !has_in && !rings_properly_cross(planes, pi, &p_ring, &q_ring)? {
             let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
             return Ok((Vec::from_iter(lf), Vec::new()));
@@ -5380,7 +5394,21 @@ fn classify_and_emit(
     }
     // a-side (canonical): the survival table decides the on-region.
     match coplanar_survival(kind, same_normal).0 {
-        PSurvive::Whole => Ok((vec![whole_lf()], Vec::new())),
+        PSurvive::Whole => {
+            // `Whole` assumes ∂Q is internal (a union with the other contact face contained, or the
+            // other solid stacked above with no in-plane straddle). Overlapping footprints (∂P × ∂Q
+            // cross) violate that — the general 2D coplanar merge is a later cell, so reject honestly
+            // (v1 gates the same via `face_contains_face`). An empty crossing (∂Q nested / disjoint)
+            // keeps the whole face; that clean branch is reached only by future stacked-nested inputs.
+            let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
+            let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
+            if coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?.is_empty()
+            {
+                Ok((vec![whole_lf()], Vec::new()))
+            } else {
+                Err(reject(tag::COPLANAR_MERGE))
+            }
+        }
         PSurvive::Empty => Ok((Vec::new(), Vec::new())),
         PSurvive::InterQ => clip(Some(PSurvive::InterQ)),
         PSurvive::MinusQ => {
@@ -14798,6 +14826,27 @@ pub mod tests {
         assert_eq!(run(), run(), "deterministic");
     }
 
+    // D0-prep-4b: two boxes that overlap in volume AND share the z=0 / z=1 planes with OVERLAPPING
+    // footprints. The correct Fuse union is an L-footprint prism (1.75), which needs the general 2D
+    // coplanar merge (a later cell). Before the gate the driver silently returned Ok with a garbage
+    // solid (vol ≈ 1.9167, non-manifold): the a-side `Whole` survival arm emitted the shared caps
+    // whole without a crossing check, and the transversal side walls fell through to whole. The gate
+    // makes the a-side `Whole` arm honestly reject when ∂P × ∂Q cross — mirroring v1's
+    // `face_contains_face` guard. a's floor is an A face, so the reject propagates before assembly.
+    #[test]
+    fn unified_rejects_same_ground_overlap() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        assert_rejects(
+            || coplanar_result_unified(&mut m, BoolKind::Fuse, a, b),
+            tag::COPLANAR_MERGE,
+        );
+    }
+
     // D0-prep-1: the driver-vs-v1 parity harness. Runs every coplanar_result golden input through
     // BOTH `coplanar_result` (v1, the live path) and `coplanar_result_unified` (the driver) on
     // fresh models and compares by the four-quadrant table (both-Ok → volume+validate; v1-Ok/
@@ -15045,15 +15094,13 @@ pub mod tests {
         }
         std::panic::set_hook(prev);
 
-        // Measured gaps (D0-prep-1). The other non-convex candidates (0.8575 slot, 3.08 L-prism
-        // boss, 1.048 L-profile boss) and the reject probes (non-convex footprint, pierce) all
-        // match or both-reject — the driver already covers them. Only two remain, each a distinct
-        // root cause; each D0-prep-2+ fix cell removes an entry, and D0 requires this empty.
-        // One gap remains before the D0 retry (the rotated pad, D0-prep-4, and blind_pocket_nonconvex,
-        // D0-prep-4a, are now covered by the driver):
-        //  - same_ground_overlap: v1 rejects (VERTEX_ON_FACE_PLANE via general_boolean); the driver
-        //    unions the overlap. A capability gain to confirm with OCCT, then flip the reject test.
-        let expected: &[(&str, &str)] = &[("same_ground_overlap", "divergence")];
+        // No gaps: the driver matches v1 (both-Ok, equal volume + valid) on every supported golden
+        // and both-rejects every out-of-scope case. The three D0 dry-run blockers are all resolved —
+        // the rotated pad (D0-prep-4, rings_properly_cross made toleranced), blind_pocket_nonconvex
+        // (D0-prep-4a, material-interior annular walls), and same_ground_overlap (D0-prep-4b: the
+        // driver silently returned a garbage non-manifold "union"; the a-side `Whole` gate now rejects
+        // it as COPLANAR_MERGE, so it is both-Err like v1). An empty list is the D0 cutover gate.
+        let expected: &[(&str, &str)] = &[];
         let actual: Vec<(&str, &str)> =
             gaps.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
         assert_eq!(actual, expected, "driver-vs-v1 coplanar parity gaps");
