@@ -5101,6 +5101,47 @@ fn coplanar_contact_count(
     Ok(count)
 }
 
+/// Whether any edge of ring `p` **properly** crosses any edge of ring `q` — both rings coplanar on
+/// `pi`, given as vertex plane-triples. A proper crossing is two edges meeting in their interiors
+/// (all four `orient2d` nonzero, both straddling): the rings overlap in area rather than merely
+/// grazing along a shared line. Contact-plane-independent — an attachment (a `q` corner sitting on
+/// a `p` edge, or a collinear shared edge) is **not** proper. The driver's fast-path uses it to
+/// tell a wall the section genuinely breaches (clip) from one it only grazes on the contact line
+/// (whole). A vertex whose three planes fail to meet is treated as a crossing (conservative: clip).
+fn rings_properly_cross(
+    planes: &[PlaneInfo],
+    pi: usize,
+    p: &[[usize; 3]],
+    q: &[[usize; 3]],
+) -> bool {
+    let drop = planar_drop_axes(planes[pi].n_out);
+    let pts = |ring: &[[usize; 3]]| -> Option<Vec<[f64; 2]>> {
+        ring.iter()
+            .map(|t| {
+                three_planes(
+                    &planes[t[0]].plane,
+                    &planes[t[1]].plane,
+                    &planes[t[2]].plane,
+                )
+                .map(|pt| proj2(pt, drop))
+            })
+            .collect()
+    };
+    let (Some(pp), Some(qq)) = (pts(p), pts(q)) else {
+        return true; // degenerate meet — cannot rule out a breach, so clip
+    };
+    for i in 0..pp.len() {
+        let (a0, a1) = (pp[i], pp[(i + 1) % pp.len()]);
+        for j in 0..qq.len() {
+            let (b0, b1) = (qq[j], qq[(j + 1) % qq.len()]);
+            if proper_cross_2d(a0, a1, b0, b1) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// One face `f` of `owner` classified and emitted for the unified per-face coplanar Boolean
 /// (M5-U, Requicha). Returns the surviving `LocalFace`(s) plus any crossings they mint. Regimes:
 /// **transversal / disjoint-coplanar** → the in/out rule via [`clip_face_to_section`]
@@ -5208,15 +5249,13 @@ fn classify_and_emit(
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
         // No `f` corner inside the section and no section corner inside `f`: `f` is either wholly
-        // outside `other` (a boss wall touching only at the contact-plane edge → whole) or the
-        // section spans clear *across* `f` (l_step's fully-covered wall — every corner rides an
-        // edge, yet the section still cuts `f`). A proper crossing (both interiors) distinguishes
-        // them; `contact_class` filters the contact-plane graze so a boss wall does not reject.
-        if !sect_in_f
-            && !has_in
-            && coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, Some(contact_class))?
-                .is_empty()
-        {
+        // outside `other` (a boss wall meeting the section only along the contact-plane edge →
+        // whole) or the section spans clear *across* `f` (l_step's fully-covered wall — every
+        // corner rides an edge, yet the section still cuts `f`). A **proper** ring crossing (both
+        // edge interiors, no shared endpoint / collinear) distinguishes a genuine breach from a
+        // contact-line graze — an attachment (a section corner on `f`'s contact edge) is not one,
+        // so an overhang boss wall stays whole and is resplit later rather than being section-clipped.
+        if !sect_in_f && !has_in && !rings_properly_cross(planes, pi, &p_ring, &q_ring) {
             let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
@@ -5230,9 +5269,18 @@ fn classify_and_emit(
         return clip(None);
     };
     let same_normal = planes[f_idx].n_out.dot(planes[surf_ix[&cf]].n_out) > 0.0;
-    // b-side: the shared on-region belongs to a; b keeps only its out-region. Contained ⇒ no out ⇒
-    // vanish. (The overhang cantilever out-region is U3.)
+    // b-side: the shared on-region belongs to a (canonical). b keeps only its out-region b∖a, and
+    // only when the op keeps b's exterior — Fuse (the cantilever). Cut/Common drop it (b's exterior
+    // is absent from the result). A crossing means an overhang cantilever; no crossing means b⊂a
+    // (contained boss) whose b∖a is empty ⇒ vanish (avoid reconstruct's empty-crossing whole).
     if !owner_is_a {
+        if kind == BoolKind::Fuse {
+            let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
+            let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
+            if !coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, None)?.is_empty() {
+                return clip(Some(PSurvive::MinusQ)); // b∖a cantilever, flip=false
+            }
+        }
         return Ok((Vec::new(), Vec::new()));
     }
     // a-side (canonical): the survival table decides the on-region.
@@ -5343,10 +5391,13 @@ fn coplanar_result_unified(
         faces.extend(lf);
         all_cx.extend(cx);
     }
+    // Dedup crossings by triple once (first appearance = replay-stable). The same triple appears
+    // from both contact clips (a notch + b cantilever); resplit MUST see the deduped set, else it
+    // splices a duplicate node into a wall edge (zero-length edge → non-manifold).
     let mut seen = HashSet::new();
-    let seam: Vec<SeamVertex> = all_cx
+    let deduped: Vec<&CoCross> = all_cx.iter().filter(|c| seen.insert(c.triple)).collect();
+    let seam: Vec<SeamVertex> = deduped
         .iter()
-        .filter(|c| seen.insert(c.triple))
         .map(|c| SeamVertex {
             point: c.point,
             triple: c.triple,
@@ -5358,6 +5409,22 @@ fn coplanar_result_unified(
             ),
         })
         .collect();
+    // Fuse (boss): the base/boss walls graze the contact plane but do not breach it, so the
+    // fast-path keeps them whole — their edges lack the crossing vertices the notch/cantilever
+    // carry. Splice each crossing onto the wall edge it rides so the weld is manifold. No-op for a
+    // contained boss (no crossings) and idempotent on the contact faces (crossings already nodes).
+    if kind == BoolKind::Fuse {
+        let cross_r: Vec<Crossing> = deduped
+            .iter()
+            .map(|c| Crossing {
+                point: c.point,
+                triple: c.triple,
+                p_seg: 0,
+                q_seg: 0,
+            })
+            .collect();
+        resplit_overhang(model, &mut faces, &planes, &cross_r);
+    }
     assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
 }
 
@@ -14422,6 +14489,46 @@ pub mod tests {
         check(BoolKind::Common, [0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.125);
         // Common l-step: overlap box [0,1]×[0.5,1]×[0.5,1] (band wall in the intersection).
         check(BoolKind::Common, [-0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.25);
+    }
+
+    // U3 shadow: the unified driver reproduces the boss opposite-normal Fuse family (branch 4) — a
+    // tool sitting top-flush on the base and overhanging an edge/corner. The base top gains a notch
+    // (a∖b), the boss underside a cantilever (b∖a, the new b-side branch), and the whole walls are
+    // resplit at the crossings. Seam vertices are Discovered → assert watertight/volume, NOT
+    // all-Constructed; a second run pins determinism.
+    #[test]
+    fn unified_reproduces_overhang_boss() {
+        let check = |tmin: [f64; 3], tmax: [f64; 3], vol: f64| {
+            let run = || {
+                let mut m = Model::new();
+                let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+                let boss = m.add_cuboid(Point3::from_array(tmin), Point3::from_array(tmax));
+                let r = coplanar_result_unified(&mut m, BoolKind::Fuse, base, boss).unwrap();
+                assert_eq!(r.len(), 1, "one solid");
+                m.rebuild_adjacency();
+                let vs = nacre_validate::validate(&m);
+                assert!(vs.is_empty(), "{vs:?}");
+                let got = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+                assert!((got - vol).abs() < 1e-12, "volume {got} != {vol}");
+                let planes = collect_planes(&m, r[0]).unwrap();
+                assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+                (got, solid_vertex_handles(&m, r[0]).len())
+            };
+            assert_eq!(run(), run(), "deterministic");
+        };
+        // Edge boss: overhangs the x=1 edge (2 crossings). 1 + 1·0.5·1.
+        check([0.5, 0.25, 1.0], [1.5, 0.75, 2.0], 1.5);
+        // Corner boss: swallows the (1,1) corner (2 crossings, reflex vertex). 1 + 1³.
+        check([0.5, 0.5, 1.0], [1.5, 1.5, 2.0], 2.0);
+        // Spanning slab boss: spans x, overhangs both x sides (4 crossings, 2-piece notch +
+        // 2-piece cantilever). 1 + 2·0.2·1.
+        check([-0.5, 0.4, 1.0], [1.5, 0.6, 2.0], 1.4);
+        // NOTE: the non-convex owner (boss on the +x side of a top-pocketed cube, vol 1.17) is
+        // deferred. The driver clips every transversal wall, so a boss wall whose plane cuts the
+        // cube through its pocket sections into an annulus → `SECTION_MULTI_LOOP` (honestly
+        // rejected until E2), even though the wall is exterior and belongs whole. branch 4 dodges
+        // this by never sectioning walls (solid_local_faces). Needs a tag-aware exterior-wall
+        // short-circuit (or E2 multi-loop section) before the driver can reproduce it.
     }
 
     // B4 part 2b: the overhang boss (crossing) through the one entry — first crossing-based real
