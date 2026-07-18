@@ -14616,6 +14616,250 @@ pub mod tests {
         assert_eq!(run(), run(), "deterministic");
     }
 
+    // D0-prep-1: the driver-vs-v1 parity harness. Runs every coplanar_result golden input through
+    // BOTH `coplanar_result` (v1, the live path) and `coplanar_result_unified` (the driver) on
+    // fresh models and compares by the four-quadrant table (both-Ok → volume+validate; v1-Ok/
+    // driver-Err → uncovered gap; v1-Err/driver-Ok → divergence; both-Err → parity). The driver is
+    // wrapped in catch_unwind so a panic on one fixture becomes a `panic:` gap rather than aborting
+    // the sweep. This test IS the D0 cutover gate: when EXPECTED_GAPS is empty the driver matches
+    // v1 on every golden and the atomic flip is safe. It ratchets down as each fix cell lands.
+    //
+    // Input list mirrors the audit: the 12 `coplanar_result(&mut` direct callers plus the
+    // dispatch-routed coplanar goldens (1.17/3.08/1.048/two_leg/corner_boss/spanning), and two
+    // v1-reject probes (non-convex footprint, pierce) to exercise the divergence quadrant.
+    #[test]
+    fn driver_matches_v1_on_coplanar_goldens() {
+        type Build = Box<dyn Fn() -> (Model, Handle<Solid>, Handle<Solid>)>;
+        // Ok((volume, valid)) or Err(reject-tag).
+        fn outcome(
+            r: Result<Vec<Handle<Solid>>, BoolError>,
+            m: &mut Model,
+        ) -> Result<(f64, bool), String> {
+            match r {
+                Ok(solids) => {
+                    m.rebuild_adjacency();
+                    let valid = nacre_validate::validate(m).is_empty();
+                    let vol: f64 = solids
+                        .iter()
+                        .map(|&s| nacre_props::mass_props(m, s).unwrap().volume)
+                        .sum();
+                    Ok((vol, valid))
+                }
+                Err(_) => Err(LAST_REJECT
+                    .with(|c| c.get())
+                    .unwrap_or("unknown")
+                    .to_string()),
+            }
+        }
+        let cuboid = |tmin: [f64; 3], tmax: [f64; 3]| -> Build {
+            Box::new(move || {
+                let mut m = Model::new();
+                let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+                let b = m.add_cuboid(Point3::from_array(tmin), Point3::from_array(tmax));
+                (m, a, b)
+            })
+        };
+        let l_boss = |l2: Vec<[f64; 2]>| -> Build {
+            Box::new(move || {
+                let mut m = Model::new();
+                let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+                let prof: Vec<Point3> = l2
+                    .iter()
+                    .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
+                    .collect();
+                let (boss, _) =
+                    build_prism(&mut m, &prof, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
+                (m, cube, boss)
+            })
+        };
+        use BoolKind::*;
+        let cases: Vec<(&str, Build, BoolKind)> = vec![
+            // --- convex success goldens (both-Ok expected) ---
+            ("pocket", cuboid([0.25, 0.25, 0.5], [0.75, 0.75, 1.0]), Cut),
+            ("boss", cuboid([0.25, 0.25, 1.0], [0.75, 0.75, 2.0]), Fuse),
+            ("tunnel", cuboid([0.3, 0.3, 0.0], [0.7, 0.7, 1.0]), Cut),
+            (
+                "overhang_boss",
+                cuboid([0.5, 0.25, 1.0], [1.5, 0.75, 2.0]),
+                Fuse,
+            ),
+            (
+                "corner_boss",
+                cuboid([0.5, 0.5, 1.0], [1.5, 1.5, 2.0]),
+                Fuse,
+            ),
+            (
+                "spanning_boss",
+                cuboid([-0.5, 0.4, 1.0], [1.5, 0.6, 2.0]),
+                Fuse,
+            ),
+            ("edge_slot", cuboid([0.5, 0.25, 0.5], [1.5, 0.75, 1.0]), Cut),
+            (
+                "slab_channel",
+                cuboid([-0.5, 0.4, 0.5], [1.5, 0.6, 1.0]),
+                Cut,
+            ),
+            ("corner_slot", cuboid([0.5, 0.5, 0.5], [1.5, 1.5, 1.0]), Cut),
+            ("l_step", cuboid([-0.5, 0.5, 0.5], [1.5, 1.5, 1.0]), Cut),
+            (
+                "common_edge",
+                cuboid([0.3, 0.5, 0.5], [0.7, 1.5, 1.0]),
+                Common,
+            ),
+            (
+                "common_corner",
+                cuboid([0.5, 0.5, 0.5], [1.5, 1.5, 1.0]),
+                Common,
+            ),
+            (
+                "common_l",
+                cuboid([-0.5, 0.5, 0.5], [1.5, 1.5, 1.0]),
+                Common,
+            ),
+            ("flush", cuboid([0.3, 0.0, 0.5], [0.7, 0.4, 1.0]), Cut),
+            (
+                "through_bottom",
+                cuboid([0.5, 0.25, -0.5], [1.5, 0.75, 1.0]),
+                Cut,
+            ),
+            // --- multi-contact / non-convex (gap candidates) ---
+            (
+                "two_leg",
+                Box::new(|| {
+                    let mut m = Model::new();
+                    let bar = m.add_cuboid(
+                        Point3::from_array([0.0, 0.0, 0.0]),
+                        Point3::from_array([3.0, 1.0, 1.0]),
+                    );
+                    let slab = m.add_cuboid(
+                        Point3::from_array([0.5, 0.25, 1.0]),
+                        Point3::from_array([2.5, 0.75, 1.5]),
+                    );
+                    let notch = m.add_cuboid(
+                        Point3::from_array([1.0, 0.0, 1.0]),
+                        Point3::from_array([2.0, 1.0, 1.2]),
+                    );
+                    let tool = boolean_one(&mut m, BoolKind::Cut, slab, notch).unwrap();
+                    m.rebuild_adjacency();
+                    (m, bar, tool)
+                }),
+                Fuse,
+            ),
+            (
+                "nonconvex_boss_1_17",
+                Box::new(|| {
+                    let (mut m, pc) = top_pocketed_cube();
+                    let boss = m.add_cuboid(
+                        Point3::from_array([1.0, 0.25, -0.25]),
+                        Point3::from_array([1.5, 0.75, 0.75]),
+                    );
+                    (m, pc, boss)
+                }),
+                Fuse,
+            ),
+            (
+                "nonconvex_slot_0_8575",
+                Box::new(|| {
+                    let (mut m, pc) = top_pocketed_cube();
+                    let slot = m.add_cuboid(
+                        Point3::from_array([0.75, 0.25, -0.25]),
+                        Point3::from_array([1.0, 0.75, 0.5]),
+                    );
+                    (m, pc, slot)
+                }),
+                Cut,
+            ),
+            (
+                "nonconvex_owner_boss_3_08",
+                Box::new(|| {
+                    let (mut m, l) = l_prism();
+                    let boss = m.add_cuboid(
+                        Point3::from_array([0.3, 0.3, 1.0]),
+                        Point3::from_array([0.7, 0.7, 1.5]),
+                    );
+                    (m, l, boss)
+                }),
+                Fuse,
+            ),
+            (
+                "nonconvex_profile_boss_1_048",
+                l_boss(vec![
+                    [0.3, 0.3],
+                    [0.7, 0.3],
+                    [0.7, 0.5],
+                    [0.5, 0.5],
+                    [0.5, 0.7],
+                    [0.3, 0.7],
+                ]),
+                Fuse,
+            ),
+            // --- v1-reject probes (divergence quadrant) ---
+            (
+                "nonconvex_footprint_boss_reject",
+                l_boss(vec![
+                    [0.3, 0.3],
+                    [1.2, 0.3],
+                    [1.2, 0.5],
+                    [0.6, 0.5],
+                    [0.6, 0.7],
+                    [0.3, 0.7],
+                ]),
+                Fuse,
+            ),
+            (
+                "pierce_boss_reject",
+                cuboid([0.5, 0.25, 0.5], [1.5, 0.75, 2.0]),
+                Fuse,
+            ),
+        ];
+
+        // Quiet the default panic hook so a caught driver panic does not print a backtrace.
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let mut gaps: Vec<(String, String)> = Vec::new();
+        for (name, build, kind) in &cases {
+            let (mut mv, a, b) = build();
+            let v1 = outcome(coplanar_result(&mut mv, *kind, a, b), &mut mv);
+            let driver = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let (mut md, a, b) = build();
+                let r = coplanar_result_unified(&mut md, *kind, a, b);
+                outcome(r, &mut md)
+            })) {
+                Ok(o) => o,
+                Err(_) => Err("panic".to_string()),
+            };
+            match (&v1, &driver) {
+                (Ok((vv, vok)), Ok((dv, dok))) => {
+                    if (vv - dv).abs() > 1e-9 {
+                        gaps.push((name.to_string(), format!("vol:{vv}vs{dv}")));
+                    } else if !vok || !dok {
+                        gaps.push((name.to_string(), "invalid".to_string()));
+                    }
+                }
+                (Ok(_), Err(tag)) => gaps.push((name.to_string(), format!("uncovered:{tag}"))),
+                (Err(_), Ok(_)) => gaps.push((name.to_string(), "divergence".to_string())),
+                (Err(_), Err(_)) => {}
+            }
+        }
+        std::panic::set_hook(prev);
+
+        // Measured gaps (D0-prep-1). The other non-convex candidates (0.8575 slot, 3.08 L-prism
+        // boss, 1.048 L-profile boss) and the reject probes (non-convex footprint, pierce) all
+        // match or both-reject — the driver already covers them. Only two remain, each a distinct
+        // root cause; each D0-prep-2+ fix cell removes an entry, and D0 requires this empty.
+        let expected: &[(&str, &str)] = &[
+            // ⊓ tool: two of its faces lie on the bar-top plane, so `coincident_overlap_face`
+            // finds ≥2 overlaps and rejects. The driver has no multi-contact-per-face path yet.
+            ("two_leg", "uncovered:coplanar_overlap_multi"),
+            // The boss's z-wall plane cuts the owner cube through its pocket → the section is an
+            // annulus (outer+hole) → `section_boundary` rejects the multi-loop.
+            ("nonconvex_boss_1_17", "uncovered:section_multi_loop"),
+        ];
+        let actual: Vec<(&str, &str)> =
+            gaps.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+        assert_eq!(actual, expected, "driver-vs-v1 coplanar parity gaps");
+    }
+
     // B4 part 2b: the overhang boss (crossing) through the one entry — first crossing-based real
     // solid. P notch + Q cantilever (mixed-node) + walls resplit at the crossings. Volume 1.5.
     #[test]
