@@ -342,7 +342,11 @@ pub(crate) fn stitch_cycles(
 
 /// The two planes an ordered ring's edge `i → i+1` shares beyond `P`, plus the two nodes'
 /// third planes — everything [`order_along`] needs to say which way that edge runs.
-fn ring_edge(p: usize, ring: &[[usize; 3]], i: usize) -> Result<(usize, usize, usize), BoolError> {
+pub(crate) fn ring_edge(
+    p: usize,
+    ring: &[[usize; 3]],
+    i: usize,
+) -> Result<(usize, usize, usize), BoolError> {
     let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
     let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
     if shared.len() != 2 || !shared.contains(&p) {

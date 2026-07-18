@@ -5105,33 +5105,47 @@ fn rings_properly_cross(
     pi: usize,
     p: &[[usize; 3]],
     q: &[[usize; 3]],
-) -> bool {
-    let drop = planar_drop_axes(planes[pi].n_out);
-    let pts = |ring: &[[usize; 3]]| -> Option<Vec<[f64; 2]>> {
-        ring.iter()
-            .map(|t| {
-                three_planes(
-                    &planes[t[0]].plane,
-                    &planes[t[1]].plane,
-                    &planes[t[2]].plane,
-                )
-                .map(|pt| proj2(pt, drop))
-            })
-            .collect()
+) -> Result<bool, BoolError> {
+    // Two ring edges on π properly cross iff their carrier lines meet at a point strictly inside
+    // both edges. Each edge `i → i+1` runs along `π ∩ W`; its meet with `π ∩ W'` orders inside
+    // that edge exactly when the two endpoint orders straddle it. This mirrors the proper-crossing
+    // test in `coplanar_boundary_crossings` (a_pos==1 && b_pos==1) — same `order_along` (toleranced,
+    // so rotation-sound: rounded rotated coefficients no longer decide it), so it stays exact on
+    // axis-aligned input and sound on rotated input. `between` is `+1` strictly between, `0` on an
+    // endpoint (graze, not proper), `-1` outside.
+    let between = |s0: i8, s1: i8| -> i8 {
+        if s0 == 0 || s1 == 0 {
+            0
+        } else if s0 == s1 {
+            1
+        } else {
+            -1
+        }
     };
-    let (Some(pp), Some(qq)) = (pts(p), pts(q)) else {
-        return true; // degenerate meet — cannot rule out a breach, so clip
-    };
-    for i in 0..pp.len() {
-        let (a0, a1) = (pp[i], pp[(i + 1) % pp.len()]);
-        for j in 0..qq.len() {
-            let (b0, b1) = (qq[j], qq[(j + 1) % qq.len()]);
-            if proper_cross_2d(a0, a1, b0, b1) {
-                return true;
+    for i in 0..p.len() {
+        let (wa, ri_a, rj_a) = arrange::ring_edge(pi, p, i)?;
+        for j in 0..q.len() {
+            let (wb, ri_b, rj_b) = arrange::ring_edge(pi, q, j)?;
+            if wa == wb {
+                continue; // same wall = same line, no transversal crossing
+            }
+            if three_planes(&planes[pi].plane, &planes[wa].plane, &planes[wb].plane).is_none() {
+                continue; // parallel walls — their edges' lines never meet
+            }
+            let a_pos = between(
+                arrange::order_along(planes, pi, wa, ri_a, wb),
+                arrange::order_along(planes, pi, wa, wb, rj_a),
+            );
+            let b_pos = between(
+                arrange::order_along(planes, pi, wb, ri_b, wa),
+                arrange::order_along(planes, pi, wb, wa, rj_b),
+            );
+            if a_pos == 1 && b_pos == 1 {
+                return Ok(true); // meet strictly inside both edges
             }
         }
     }
-    false
+    Ok(false)
 }
 
 /// One face `f` of `owner` classified and emitted for the unified per-face coplanar Boolean
@@ -5238,7 +5252,7 @@ fn classify_and_emit(
                         return Err(reject(tag::SECTION_MULTI_LOOP));
                     }
                 }
-                if rings_properly_cross(planes, pi, &p_ring, &l_ring) {
+                if rings_properly_cross(planes, pi, &p_ring, &l_ring)? {
                     return Err(reject(tag::SECTION_MULTI_LOOP));
                 }
             }
@@ -5278,7 +5292,7 @@ fn classify_and_emit(
         // edge interiors, no shared endpoint / collinear) distinguishes a genuine breach from a
         // contact-line graze — an attachment (a section corner on `f`'s contact edge) is not one,
         // so an overhang boss wall stays whole and is resplit later rather than being section-clipped.
-        if !sect_in_f && !has_in && !rings_properly_cross(planes, pi, &p_ring, &q_ring) {
+        if !sect_in_f && !has_in && !rings_properly_cross(planes, pi, &p_ring, &q_ring)? {
             let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
@@ -14650,6 +14664,56 @@ pub mod tests {
         // rejected until E2), even though the wall is exterior and belongs whole. branch 4 dodges
         // this by never sectioning walls (solid_local_faces). Needs a tag-aware exterior-wall
         // short-circuit (or E2 multi-loop section) before the driver can reproduce it.
+    }
+
+    // D0-prep-4: the driver's only rotation-unsound predicate was `rings_properly_cross`
+    // (it projected the ring triples to f64 2D and ran `orient2d` — rounded rotated plane
+    // coefficients flip its near-degenerate sign). This reconstructs the exact input the
+    // `rotated_structural_pad` pad-op feeds the coplanar dispatch — a contained structural boss
+    // on a 30°-rotated base (extrude → transform → `build_prism` on the top face frame) — and
+    // calls the driver directly. A rigid rotation must not change the fused volume: the
+    // axis-aligned boss and its rotated twin both yield 1.08 (base 1 + boss 0.4²·0.5 = 0.08).
+    // Before the toleranced rewrite the rotated case diverges (a boss wall mis-clipped).
+    #[test]
+    fn unified_handles_rotated_structural_pad() {
+        use nacre_scalar::Axis;
+        let run = |rotate: bool, profile: Profile2d| -> f64 {
+            let mut m = Model::new();
+            let OpOutput::Extrude { solid, .. } =
+                apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
+            else {
+                unreachable!()
+            };
+            let base = if rotate {
+                transform(&mut m, solid, &rot_iso(Axis::X, 30)).unwrap()
+            } else {
+                solid
+            };
+            m.rebuild_adjacency();
+            // extrude face order: base, top, sides → index 1 is the (now rotated) top.
+            let top = m.shells.get(m.solids.get(base).outer).faces[1];
+            let frame = face_frame(&m, top).unwrap();
+            let base_pts = placed_profile_unchecked(&frame, &profile).unwrap();
+            let (prism, _) =
+                build_prism(&mut m, &base_pts, frame.n * 0.5, Some(frame.surface_h)).unwrap();
+            m.rebuild_adjacency();
+            let r = coplanar_result_unified(&mut m, BoolKind::Fuse, base, prism).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{vs:?}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+            nacre_props::mass_props(&m, r[0]).unwrap().volume
+        };
+        // Contained boss 0.4×0.4×0.5 = 0.08 → 1.08, axis-aligned and rotated alike (rigid).
+        let unrot = run(false, small_square());
+        let rot = run(true, small_square());
+        assert!((unrot - 1.08).abs() < 1e-9, "unrotated {unrot}");
+        assert!(
+            (rot - unrot).abs() < 1e-9,
+            "rotated {rot} != unrotated {unrot}"
+        );
     }
 
     // U4 shadow: the unified driver reproduces the flush pocket (branch 2) — a Cut whose cutter
