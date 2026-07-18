@@ -3968,7 +3968,7 @@ fn clip_face_to_section(
     other_classes: &HashSet<usize>,
     keep_inside: bool,
     flip: bool,
-    contact: usize,
+    contact: &[usize],
     // On-region survival for the coincident-overlap sub-case (the unified driver, M5-U). `None`
     // keeps today's behaviour (`keep_inside` ∖/∩) — the current callers; the driver passes
     // `Some(coplanar_survival(..))` to select Whole / MinusQ (∖) / InterQ (∩) / Empty on the
@@ -3998,19 +3998,10 @@ fn clip_face_to_section(
     // coplanar-overlap regime (`q_bnd` = a coincident face) and the transversal regime (`q_bnd` = a
     // section), which differ only in where `q_bnd` comes from.
     let reconstruct = |f_bnd: &[BndEdge], q_bnd: &[BndEdge], keep_in: bool| {
-        let cx = coplanar_boundary_crossings(planes, pi, f_bnd, q_bnd, Some(contact))?;
+        let cx = coplanar_boundary_crossings(planes, pi, f_bnd, q_bnd, contact)?;
         let arcs = coplanar_seam_arcs(planes, pi, q_bnd, &cx);
         let faces = coplanar_reconstruct(
-            planes,
-            pi,
-            f_idx,
-            f_bnd,
-            q_bnd,
-            &cx,
-            &arcs,
-            keep_in,
-            flip,
-            Some(contact),
+            planes, pi, f_idx, f_bnd, q_bnd, &cx, &arcs, keep_in, flip, contact,
         )?;
         Ok::<_, BoolError>((faces, cx))
     };
@@ -4135,7 +4126,7 @@ fn coplanar_boundary_crossings(
     pi: usize,
     a: &[BndEdge],
     b: &[BndEdge],
-    contact: Option<usize>,
+    contact: &[usize],
 ) -> Result<Vec<CoCross>, BoolError> {
     let (na, nb) = (a.len(), b.len());
     // Position of the crossing within an edge from its two endpoint orders: `1` strictly
@@ -4175,11 +4166,11 @@ fn coplanar_boundary_crossings(
             }
             // R1 attachment: a `b` chord's endpoint (b_pos==0) strictly inside an `a` contact edge
             // (a_pos==1, w==contact) — the seam attaches to `a`'s contact edge there.
-            let attach = contact == Some(w) && a_pos == 1 && b_pos == 0;
+            let attach = contact.contains(&w) && a_pos == 1 && b_pos == 0;
             // R1 skip: `a`'s own vertex (a_pos==0) lying on a `b` contact chord (u==contact) is not
             // a crossing — it is an `a` boundary vertex classified downstream by R2
             // (`point_on_ring`). Neither emit nor reject; just skip.
-            let a_on_contact = a_pos == 0 && contact == Some(u);
+            let a_on_contact = a_pos == 0 && contact.contains(&u);
             if (a_pos == 0 || b_pos == 0) && !attach && !a_on_contact {
                 return Err(reject(tag::VERTEX_ON_FACE_PLANE)); // graze outside the R1/R2 pattern
             }
@@ -4356,7 +4347,7 @@ fn coplanar_reconstruct(
     arcs: &[Vec<Node>],
     keep_inside_q: bool,
     flip: bool,
-    contact: Option<usize>,
+    contact: &[usize],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let p_ring = boundary_ring_triples(a_bnd, pi);
     let q_ring = boundary_ring_triples(b_bnd, pi);
@@ -4446,7 +4437,7 @@ fn coplanar_reconstruct(
             // where the seam meets the contact edge. Accept it strictly on the chord (its triple
             // carries the contact class but is not itself a section corner). A vertex *at* a section
             // corner is a four-plane fan — honestly rejected (FLUSH_VERTEX_COINCIDENT, → C1).
-            let on_contact = contact.is_some_and(|c| p_ring[i].contains(&c));
+            let on_contact = p_ring[i].iter().any(|c| contact.contains(c));
             let at_corner = q_ring.contains(&p_ring[i]);
             if at_corner {
                 return Err(reject(tag::FLUSH_VERTEX_COINCIDENT));
@@ -5056,7 +5047,7 @@ fn footprints_overlap(
     }
     // No interior vertex: a proper (non-graze) crossing is a plus-style overlap; a pure graze
     // (abutting, no interior) still rejects as before — the current honest decline for non-overlap.
-    let cx = coplanar_boundary_crossings(planes, pi, &p_bnd, &q_bnd, None)?;
+    let cx = coplanar_boundary_crossings(planes, pi, &p_bnd, &q_bnd, &[])?;
     Ok(!cx.is_empty())
 }
 
@@ -5165,7 +5156,7 @@ fn classify_and_emit(
     inc_owner: &arrange::EdgePlanes,
     inc_other: &arrange::EdgePlanes,
     other_classes: &HashSet<usize>,
-    contact_class: usize,
+    contact_classes: &[usize],
 ) -> Result<(Vec<LocalFace>, Vec<CoCross>), BoolError> {
     let pi = canon[f_idx];
     // In/out rule (owner side): keep_inside(A)=Common, keep_inside(B)=!Fuse; flip only b for a Cut.
@@ -5204,7 +5195,7 @@ fn classify_and_emit(
             other_classes,
             keep_inside,
             flip,
-            contact_class,
+            contact_classes,
             on_survival,
         )
     };
@@ -5277,7 +5268,8 @@ fn classify_and_emit(
         if kind == BoolKind::Fuse {
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-            if !coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, None)?.is_empty() {
+            if !coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?.is_empty()
+            {
                 return clip(Some(PSurvive::MinusQ)); // b∖a cantilever, flip=false
             }
         }
@@ -5289,10 +5281,13 @@ fn classify_and_emit(
         PSurvive::Empty => Ok((Vec::new(), Vec::new())),
         PSurvive::InterQ => clip(Some(PSurvive::InterQ)),
         PSurvive::MinusQ => {
-            // Contained (no ∂P×∂Q crossing) ⇒ Q is a hole; a crossing ⇒ a notch (U2).
+            // Contained (no ∂P×∂Q crossing) ⇒ Q is a hole; a crossing (overhang notch, or a flush
+            // attachment on another shared plane) ⇒ reconstruct. The contact set lets a flush edge
+            // on a *different* contact plane register as an attachment rather than reject.
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-            if coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, None)?.is_empty() {
+            if coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?.is_empty()
+            {
                 let f = model.faces.get(f_face);
                 let mut hole = ring(&model.faces.get(cf).outer);
                 if same_normal {
@@ -5340,33 +5335,23 @@ fn coplanar_result_unified(
     let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
     let a_classes: HashSet<usize> = (0..na).map(|i| canon[i]).collect();
     let b_classes: HashSet<usize> = (na..planes.len()).map(|i| canon[i]).collect();
-    // The shared contact plane class fed to each face's clip as its graze attachment target.
-    // Valid while every contact-consuming face grazes a single shared class (U0–U3, overhang);
-    // U4 (flush, ≥2 contact planes) replaces this with the full shared set. Deterministic pick.
-    let contact_class = a_classes
-        .intersection(&b_classes)
-        .copied()
-        .min()
-        .ok_or_else(|| reject(tag::NO_COPLANAR_CONTACT))?;
+    // The shared contact plane classes fed to each face's clip as its graze attachment targets.
+    // A flush contact touches two shared planes at once (a slot on the top-front edge shares z=1
+    // and y=0); each contact face's notch attaches its flush edge on the *other* shared plane, so
+    // the whole set is passed. Sorted for replay stability (only ever used for `contains`).
+    let mut shared: Vec<usize> = a_classes.intersection(&b_classes).copied().collect();
+    shared.sort_unstable();
+    if shared.is_empty() {
+        return Err(reject(tag::NO_COPLANAR_CONTACT));
+    }
 
     let mut faces = Vec::new();
     let mut all_cx = Vec::new();
     let a_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(a).outer).faces.clone();
     for (pos, &fh) in a_faces.iter().enumerate() {
         let (lf, cx) = classify_and_emit(
-            model,
-            fh,
-            pos,
-            true,
-            b,
-            kind,
-            &planes,
-            &surf_ix,
-            &canon,
-            &inc_a,
-            &inc_b,
-            &b_classes,
-            contact_class,
+            model, fh, pos, true, b, kind, &planes, &surf_ix, &canon, &inc_a, &inc_b, &b_classes,
+            &shared,
         )?;
         faces.extend(lf);
         all_cx.extend(cx);
@@ -5386,7 +5371,7 @@ fn coplanar_result_unified(
             &inc_b,
             &inc_a,
             &a_classes,
-            contact_class,
+            &shared,
         )?;
         faces.extend(lf);
         all_cx.extend(cx);
@@ -5582,7 +5567,7 @@ fn coplanar_result(
                 let pi_c = canon[ia];
                 let a_bnd = contact_boundary(model, planes[ia].face, pi_c, &inc_a, &canon)?;
                 let b_fp = contact_boundary(model, planes[jb].face, pi_c, &inc_b, &canon)?;
-                let cx = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_fp, Some(other))?;
+                let cx = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_fp, &[other])?;
                 let arcs = coplanar_seam_arcs(&planes, pi_c, &b_fp, &cx);
                 faces.extend(coplanar_reconstruct(
                     &planes,
@@ -5594,7 +5579,7 @@ fn coplanar_result(
                     &arcs,
                     false,
                     false,
-                    Some(other),
+                    &[other],
                 )?);
             }
             // `a`'s non-contact faces whole.
@@ -5651,7 +5636,7 @@ fn coplanar_result(
         // section) — P∖Q (Cut mouth) or P∩Q (Common cap).
         let a_bnd = contact_boundary(model, p_face, pi_c, &inc_a, &canon)?;
         let b_fp = contact_boundary(model, q_face, pi_c, &inc_b, &canon)?;
-        let mouth_cx = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_fp, None)?;
+        let mouth_cx = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_fp, &[])?;
         if mouth_cx.is_empty() {
             return Err(reject(tag::OVERHANG_ARCS)); // disjoint footprints — not an overhang
         }
@@ -5666,7 +5651,7 @@ fn coplanar_result(
             &mouth_arcs,
             keep_inter,
             false,
-            None,
+            &[],
         )?;
         let mut all_cx = mouth_cx;
         let a_classes: HashSet<usize> = (0..na).map(|i| canon[i]).collect();
@@ -5679,8 +5664,20 @@ fn coplanar_result(
                 continue;
             }
             let (fs, cx) = clip_face_to_section(
-                model, fh, pos, b, &planes, &surf_ix, &canon, &inc_a, &inc_b, &b_classes,
-                keep_inter, false, pi_c, None,
+                model,
+                fh,
+                pos,
+                b,
+                &planes,
+                &surf_ix,
+                &canon,
+                &inc_a,
+                &inc_b,
+                &b_classes,
+                keep_inter,
+                false,
+                &[pi_c],
+                None,
             )?;
             faces.extend(fs);
             all_cx.extend(cx);
@@ -5704,7 +5701,7 @@ fn coplanar_result(
                 &a_classes,
                 true,
                 b_flip,
-                pi_c,
+                &[pi_c],
                 None,
             )?;
             faces.extend(fs);
@@ -5746,20 +5743,38 @@ fn coplanar_result(
     let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
     let a_bnd = contact_boundary(model, p_face, pi_c, &inc_a, &canon)?;
     let b_bnd = contact_boundary(model, q_face, pi_c, &inc_b, &canon)?;
-    let crossings = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_bnd, None)?;
+    let crossings = coplanar_boundary_crossings(&planes, pi_c, &a_bnd, &b_bnd, &[])?;
     if crossings.is_empty() {
         return Err(reject(tag::OVERHANG_ARCS)); // disjoint — no overhang
     }
     // Both contact faces reconstructed (mixed-node), keeping each's outside-other cells; no flip
     // (opposite normals already point out of the fused solid).
     let arcs_p = coplanar_seam_arcs(&planes, pi_c, &b_bnd, &crossings);
-    let cx_q = coplanar_boundary_crossings(&planes, pi_c, &b_bnd, &a_bnd, None)?;
+    let cx_q = coplanar_boundary_crossings(&planes, pi_c, &b_bnd, &a_bnd, &[])?;
     let arcs_q = coplanar_seam_arcs(&planes, pi_c, &a_bnd, &cx_q);
     let mut faces = coplanar_reconstruct(
-        &planes, pi_c, pi_idx, &a_bnd, &b_bnd, &crossings, &arcs_p, false, false, None,
+        &planes,
+        pi_c,
+        pi_idx,
+        &a_bnd,
+        &b_bnd,
+        &crossings,
+        &arcs_p,
+        false,
+        false,
+        &[],
     )?;
     faces.extend(coplanar_reconstruct(
-        &planes, pi_c, qj_idx, &b_bnd, &a_bnd, &cx_q, &arcs_q, false, false, None,
+        &planes,
+        pi_c,
+        qj_idx,
+        &b_bnd,
+        &a_bnd,
+        &cx_q,
+        &arcs_q,
+        false,
+        false,
+        &[],
     )?);
     // Both solids' walls, split at the crossings that ride their edges (no T-junction).
     let cross_r: Vec<Crossing> = crossings
@@ -13445,11 +13460,20 @@ pub mod tests {
         assert_eq!(q_bnd.len(), 4, "four section chords");
         let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
         let p_bnd = contact_boundary(&m, planes[beta].face, beta, &inc_b, &canon).unwrap();
-        let crossings = coplanar_boundary_crossings(&planes, beta, &p_bnd, &q_bnd, None).unwrap();
+        let crossings = coplanar_boundary_crossings(&planes, beta, &p_bnd, &q_bnd, &[]).unwrap();
         assert_eq!(crossings.len(), 2, "b's top edges cross a's x=4 wall twice");
         let arcs = coplanar_seam_arcs(&planes, beta, &q_bnd, &crossings);
         let faces = coplanar_reconstruct(
-            &planes, beta, beta, &p_bnd, &q_bnd, &crossings, &arcs, true, false, None,
+            &planes,
+            beta,
+            beta,
+            &p_bnd,
+            &q_bnd,
+            &crossings,
+            &arcs,
+            true,
+            false,
+            &[],
         )
         .unwrap();
         assert_eq!(faces.len(), 1, "one clipped cell");
@@ -13572,7 +13596,7 @@ pub mod tests {
         let f_bnd = contact_boundary(&m, planes[cutter_y025].face, pi, &inc_c, &canon).unwrap();
         let sect = section_of_solid(&m, base, cutter_y025, &planes, &surf_ix).unwrap();
         let q_bnd = section_boundary(&sect, pi, &canon).unwrap();
-        let cx = coplanar_boundary_crossings(&planes, pi, &f_bnd, &q_bnd, Some(contact)).unwrap();
+        let cx = coplanar_boundary_crossings(&planes, pi, &f_bnd, &q_bnd, &[contact]).unwrap();
         let arcs = coplanar_seam_arcs(&planes, pi, &q_bnd, &cx);
         // keep P∩Q (inside the base), flipped (a Cut slot wall).
         let faces = coplanar_reconstruct(
@@ -13585,7 +13609,7 @@ pub mod tests {
             &arcs,
             true,
             true,
-            Some(contact),
+            &[contact],
         )
         .unwrap();
         assert_eq!(faces.len(), 1, "one clipped wall cell");
@@ -13707,7 +13731,7 @@ pub mod tests {
                 &prism_classes,
                 keep_inside,
                 false,
-                pi,
+                &[pi],
                 None,
             )
             .unwrap()
@@ -13805,7 +13829,7 @@ pub mod tests {
                 &prism_classes,
                 false,
                 false,
-                pi,
+                &[pi],
                 s,
             )
             .unwrap()
@@ -13892,7 +13916,7 @@ pub mod tests {
 
         let f_bnd = contact_boundary(&m, planes[base_top].face, pi, &inc_a, &canon).unwrap();
         let q_bnd = contact_boundary(&m, planes[cutter_top].face, pi, &inc_b, &canon).unwrap();
-        let cx = coplanar_boundary_crossings(&planes, pi, &f_bnd, &q_bnd, Some(y0)).unwrap();
+        let cx = coplanar_boundary_crossings(&planes, pi, &f_bnd, &q_bnd, &[y0]).unwrap();
         assert_eq!(
             cx.len(),
             2,
@@ -13909,7 +13933,7 @@ pub mod tests {
             &arcs,
             false,
             false,
-            Some(y0),
+            &[y0],
         )
         .expect("flush notch reconstructs, no POINT_ON_RING reject");
         assert_eq!(faces.len(), 1, "one notched face");
@@ -14153,7 +14177,7 @@ pub mod tests {
             a_bnd.iter().all(|e| e.v[0] != e.v[1]),
             "each edge has two distinct endpoints"
         );
-        let cx = coplanar_boundary_crossings(&planes, pi, &a_bnd, &b_bnd, None).unwrap();
+        let cx = coplanar_boundary_crossings(&planes, pi, &a_bnd, &b_bnd, &[]).unwrap();
         for c in &cx {
             assert!(c.triple.contains(&pi), "crossing triple carries π");
             assert!(a_bnd.iter().any(|e| e.seg == c.a_seg), "a_seg is on ∂P");
@@ -14261,7 +14285,16 @@ pub mod tests {
                 .collect()
         };
         let out = coplanar_reconstruct(
-            &planes, pi, plane_idx, &a_bnd, &b_bnd, &cx, &arcs, false, false, None,
+            &planes,
+            pi,
+            plane_idx,
+            &a_bnd,
+            &b_bnd,
+            &cx,
+            &arcs,
+            false,
+            false,
+            &[],
         )
         .unwrap();
         assert_eq!(out.len(), 1, "P∖Q is one cell");
@@ -14278,7 +14311,16 @@ pub mod tests {
             ])
         );
         let inter = coplanar_reconstruct(
-            &planes, pi, plane_idx, &a_bnd, &b_bnd, &cx, &arcs, true, false, None,
+            &planes,
+            pi,
+            plane_idx,
+            &a_bnd,
+            &b_bnd,
+            &cx,
+            &arcs,
+            true,
+            false,
+            &[],
         )
         .unwrap();
         assert_eq!(inter.len(), 1, "P∩Q is one cell");
@@ -14294,10 +14336,19 @@ pub mod tests {
 
         // B4: the symmetric Q-side reconstruction (roles swapped) — b's cantilever. Keep Q∖P →
         // the L-shaped cantilever bottom (b corners beyond P, the two crossings, and P's (2,2)).
-        let cx_q = coplanar_boundary_crossings(&planes, pi, &b_bnd, &a_bnd, None).unwrap();
+        let cx_q = coplanar_boundary_crossings(&planes, pi, &b_bnd, &a_bnd, &[]).unwrap();
         let arcs_q = coplanar_seam_arcs(&planes, pi, &a_bnd, &cx_q); // ∂P as the seam on Q
         let cant = coplanar_reconstruct(
-            &planes, pi, b_bot, &b_bnd, &a_bnd, &cx_q, &arcs_q, false, false, None,
+            &planes,
+            pi,
+            b_bot,
+            &b_bnd,
+            &a_bnd,
+            &cx_q,
+            &arcs_q,
+            false,
+            false,
+            &[],
         )
         .unwrap();
         assert_eq!(cant.len(), 1, "Q∖P is one cell");
@@ -14529,6 +14580,40 @@ pub mod tests {
         // rejected until E2), even though the wall is exterior and belongs whole. branch 4 dodges
         // this by never sectioning walls (solid_local_faces). Needs a tag-aware exterior-wall
         // short-circuit (or E2 multi-loop section) before the driver can reproduce it.
+    }
+
+    // U4 shadow: the unified driver reproduces the flush pocket (branch 2) — a Cut whose cutter
+    // sits flush on TWO adjacent base faces (top z=1 and front y=0) at once. This is what the
+    // `contact` set widening is for: each contact face's notch attaches its flush edge on the
+    // *other* shared plane, so the driver passes the whole shared set {z=1,y=0}. The corner column
+    // is a shared cutter vertex (Orig), so the result is all-Constructed with no residual seam.
+    #[test]
+    fn unified_reproduces_flush() {
+        let run = || {
+            let mut m = Model::new();
+            let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let cutter = m.add_cuboid(
+                Point3::from_array([0.3, 0.0, 0.5]),
+                Point3::from_array([0.7, 0.4, 1.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Cut, base, cutter).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{vs:?}");
+            let got = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((got - 0.92).abs() < 1e-12, "volume {got}");
+            assert!(
+                solid_vertex_handles(&m, r[0])
+                    .iter()
+                    .all(|&v| matches!(m.vertices.get(v).origin, Origin::Constructed)),
+                "flush pocket ⇒ all Constructed (corner-merged, no residual seam)"
+            );
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+            (got, solid_vertex_handles(&m, r[0]).len())
+        };
+        assert_eq!(run(), run(), "deterministic");
     }
 
     // B4 part 2b: the overhang boss (crossing) through the one entry — first crossing-based real
