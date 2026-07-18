@@ -1805,6 +1805,32 @@ bbox_min 0 0 0
         );
     }
 
+    /// A `Common` whose small box is contained in the base's top face (same-normal coplanar cap) yet
+    /// pokes out the bottom (E0). OCCT cross-checks the contained-InterQ-island result (vol 0.25).
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn contained_common_matches_occt() {
+        use nacre_ops::BoolKind;
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let box_ = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, -0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Common, base, box_).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, base, box_).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            approx(mass_props(&m, r).unwrap().volume, occt.volume),
+            "contained common: {} vs {}",
+            mass_props(&m, r).unwrap().volume,
+            occt.volume
+        );
+    }
+
     /// A corner overhang `Common`: the prism swallows the base's (1,1) corner, so R meets at a
     /// corner column (cell coplanar-contact-overhang-common). OCCT cross-checks that cc topology.
     #[test]

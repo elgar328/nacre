@@ -1611,8 +1611,18 @@ pub fn boolean(
             }
         }
     }
-    if kind == BoolKind::Common && detect_overhang_common(model, a, b).is_some() {
-        return coplanar_result_unified(model, kind, a, b);
+    if kind == BoolKind::Common {
+        if detect_overhang_common(model, a, b).is_some() {
+            return coplanar_result_unified(model, kind, a, b);
+        }
+        // A same-normal contained contact with a partial 3D overlap (the small solid pokes out): the
+        // driver builds the intersection (contained InterQ island). Guarded — anything the detector
+        // over-accepts that the driver cannot build falls through to `general_boolean` (unchanged).
+        if detect_contained_common(model, a, b).is_some() {
+            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
+                return Ok(r);
+            }
+        }
     }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
     // (it decided in/out with a 1e-9 tolerance) and cell 3g the convex `common` (its
@@ -4466,6 +4476,36 @@ fn coplanar_reconstruct(
     }
 
     if opens.is_empty() {
+        // A ∂Q strictly inside ∂P with no crossing is an ISLAND: P∩Q = Q (a disk). The uniform-class
+        // `kept[0].then(whole_P)` below assumes ∂Q does not cut P, so it would drop the face entirely
+        // (every ∂P vertex is outside Q ⇒ `kept = false`). Emit Q's footprint instead. Only the keep-
+        // inside side (Common's InterQ, and a transversal `f ∩ other` whose section nests) is handled;
+        // P∖Q of a contained Q (a hole) is reached via the `MinusQ` hole-push, not here. `P ⊂ Q` and
+        // disjoint ∂Q still fall through to `kept[0]`.
+        let mut q_inside_p = keep_inside_q && crossings.is_empty() && !q_ring.is_empty();
+        for t in &q_ring {
+            if !q_inside_p {
+                break;
+            }
+            q_inside_p = !arrange::point_on_ring(planes, pi, *t, &p_ring)?
+                && arrange::point_in_ring(planes, pi, *t, &p_ring)?;
+        }
+        if q_inside_p {
+            let mut q_loop: Vec<Node> = b_bnd.iter().map(|e| e.v[0]).collect();
+            // Orient Q to match P's winding about π (both bound the same survivor face). `loop_winding`
+            // reads no coordinate — exact and rotation-sound, unlike an f64 signed area.
+            if arrange::loop_winding(planes, pi, &q_ring)?
+                != arrange::loop_winding(planes, pi, &p_ring)?
+            {
+                q_loop.reverse();
+            }
+            return Ok(vec![LocalFace {
+                plane_idx,
+                loop_nodes: q_loop,
+                inner: Vec::new(),
+                flip,
+            }]);
+        }
         // No seam cuts P: it is wholly kept or wholly dropped by its (uniform) vertex class.
         return Ok(Vec::from_iter(kept[0].then(|| LocalFace {
             plane_idx,
@@ -4771,6 +4811,67 @@ fn detect_pocket_contact(
         big_face: fa,
         small_solid: b,
         small_face: fb,
+    })
+}
+
+/// `Some` iff `Common(a, b)` meets at exactly one **same-normal** coplanar pair with one footprint
+/// contained in the other, and the smaller solid **genuinely pokes out** of the larger (a partial
+/// intersection). This is the inverse of [`detect_pocket_contact`]'s blind test: a *blind* small
+/// (wholly inside the big) is full containment, which `general_boolean`'s half-space path already
+/// owns — declined here. Containment is checked both ways (`Common` is commutative). The overlap is
+/// the small solid clipped to the big; the unified driver builds it (contained InterQ island), so
+/// this is only a routing gate — anything it over-accepts the driver honestly declines.
+fn detect_contained_common(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Option<ContainedContact> {
+    let planes_a = collect_planes(model, a).ok()?;
+    let planes_b = collect_planes(model, b).ok()?;
+    let mut same: Vec<(usize, usize)> = Vec::new();
+    for (i, pa) in planes_a.iter().enumerate() {
+        for (j, pb) in planes_b.iter().enumerate() {
+            if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) > 0.0 {
+                same.push((i, j));
+            }
+        }
+    }
+    if same.len() != 1 {
+        return None;
+    }
+    let (i, j) = same[0];
+    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
+    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
+    let n = planes_a[i].plane.normal();
+    // The big face contains the small footprint — either order (commutative).
+    let (big_solid, big_face, small_solid, small_face, contact_tri) =
+        if face_contains_face(model, fa, fb, n) {
+            (a, fa, b, fb, planes_a[i].tri)
+        } else if face_contains_face(model, fb, fa, n) {
+            (b, fb, a, fa, planes_b[j].tri)
+        } else {
+            return None;
+        };
+    // Genuine partial: some vertex of the small solid, off the contact plane, is strictly outside
+    // the big. A blind small (all inside) is full containment — declined (half-space path owns it).
+    let mut pokes_out = false;
+    for &vh in &solid_vertex_handles(model, small_solid) {
+        let p = model.vertices.get(vh).point;
+        if plane_side(contact_tri, p) != 0
+            && point_in_solid(model, p, big_solid).ok()? == Side::Outside
+        {
+            pokes_out = true;
+            break;
+        }
+    }
+    if !pokes_out {
+        return None;
+    }
+    Some(ContainedContact {
+        big_solid,
+        big_face,
+        small_solid,
+        small_face,
     })
 }
 
@@ -12910,6 +13011,28 @@ pub mod tests {
     }
 
     #[test]
+    fn common_a_contained_box_opens() {
+        // E0: a small box contained in the base's top face (same-normal coplanar cap) but poking out
+        // the bottom. Common keeps the intersection box [0.25,0.75]²×[0,1] = 0.25. Runs both argument
+        // orders — Common is commutative, and the detector/driver must build either the same.
+        for swap in [false, true] {
+            let mut m = Model::new();
+            let base = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0, 1.0, 1.0]),
+            );
+            let box_ = m.add_cuboid(
+                Point3::from_array([0.25, 0.25, -0.5]),
+                Point3::from_array([0.75, 0.75, 1.0]),
+            );
+            let (x, y) = if swap { (box_, base) } else { (base, box_) };
+            let r = boolean_one(&mut m, BoolKind::Common, x, y).unwrap();
+            m.rebuild_adjacency();
+            assert_common_box(&m, r, 0.25);
+        }
+    }
+
+    #[test]
     fn common_a_corner_overhang() {
         // A prism swallowing the base's (1,1) corner: Common keeps R = [0.5,1]×[0.5,1]×[0.5,1] (two
         // breached walls meeting at one corner column cc=(1,1,0.5)). Volume 0.125.
@@ -14270,6 +14393,37 @@ pub mod tests {
         // breaches the x=1 wall AND the z=0 floor. detect_overhang_cut_general declines it publicly
         // (out of scope), but the driver builds it directly. 1 − 0.5·0.5·1.
         check(BoolKind::Cut, [0.5, 0.25, -0.5], [1.5, 0.75, 1.0], 0.75);
+    }
+
+    // E0 shadow: Common where a small box is CONTAINED in the base's top face (same-normal coplanar
+    // cap) yet pokes out the bottom — a genuine partial intersection. The overlap is the box
+    // [0.25,0.75]²×[0,1] (vol 0.25). Both the base-top (coplanar-contact InterQ path) and the
+    // base-bottom (transversal contained-section path) funnel into coplanar_reconstruct's island
+    // branch and must emit the [0.25,0.75]² cap, not drop it. Run BOTH argument orders — Common is
+    // commutative, so an order-fragile fix (emitting the wrong footprint) is caught here.
+    #[test]
+    fn unified_reproduces_common_contained() {
+        let run = |swap: bool| {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.25, 0.25, -0.5]),
+                Point3::from_array([0.75, 0.75, 1.0]),
+            );
+            let (x, y) = if swap { (b, a) } else { (a, b) };
+            let r = coplanar_result_unified(&mut m, BoolKind::Common, x, y).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{vs:?}");
+            let got = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((got - 0.25).abs() < 1e-12, "volume {got} (swap={swap})");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+            (got, solid_vertex_handles(&m, r[0]).len())
+        };
+        assert_eq!(run(false), run(false), "deterministic");
+        assert_eq!(run(false), run(true), "Common is commutative");
     }
 
     // U3 shadow: the unified driver reproduces the boss opposite-normal Fuse family (branch 4) — a
