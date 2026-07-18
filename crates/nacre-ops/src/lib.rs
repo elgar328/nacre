@@ -5212,8 +5212,39 @@ fn classify_and_emit(
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
         let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
-        let q_bnd = section_boundary(&loops, pi, canon)?;
         let p_ring = boundary_ring_triples(&f_bnd, pi);
+        // Multi-loop section: `f`'s plane cuts `other` through a cavity → outer + hole rings (an
+        // annulus). In scope only when `f` is disjoint from *every* loop — no wall vertex strictly
+        // inside a loop, no loop vertex strictly inside the wall, no proper crossing — which is
+        // exactly `f` lying wholly outside `other`'s footprint (the empty-section outcome). Any
+        // touch is a genuine cavity breach → honest `SECTION_MULTI_LOOP` (a later cell). A single
+        // loop keeps the existing path below unchanged.
+        if loops.len() > 1 {
+            for lp in &loops {
+                let l_bnd = section_boundary(std::slice::from_ref(lp), pi, canon)?;
+                let l_ring = boundary_ring_triples(&l_bnd, pi);
+                for v in &p_ring {
+                    if !arrange::point_on_ring(planes, pi, *v, &l_ring)?
+                        && arrange::point_in_ring(planes, pi, *v, &l_ring)?
+                    {
+                        return Err(reject(tag::SECTION_MULTI_LOOP));
+                    }
+                }
+                for v in &l_ring {
+                    if !arrange::point_on_ring(planes, pi, *v, &p_ring)?
+                        && arrange::point_in_ring(planes, pi, *v, &p_ring)?
+                    {
+                        return Err(reject(tag::SECTION_MULTI_LOOP));
+                    }
+                }
+                if rings_properly_cross(planes, pi, &p_ring, &l_ring) {
+                    return Err(reject(tag::SECTION_MULTI_LOOP));
+                }
+            }
+            let lf = (!keep_inside).then(whole_lf); // wholly outside `other` ⇒ ∖ = whole
+            return Ok((Vec::from_iter(lf), Vec::new()));
+        }
+        let q_bnd = section_boundary(&loops, pi, canon)?;
         let q_ring = boundary_ring_triples(&q_bnd, pi);
         let (mut has_in, mut has_out) = (false, false);
         for v in &p_ring {
@@ -14849,11 +14880,9 @@ pub mod tests {
         // root cause; each D0-prep-2+ fix cell removes an entry, and D0 requires this empty.
         let expected: &[(&str, &str)] = &[
             // ⊓ tool: two of its faces lie on the bar-top plane, so `coincident_overlap_face`
-            // finds ≥2 overlaps and rejects. The driver has no multi-contact-per-face path yet.
+            // finds ≥2 overlaps and rejects. The driver has no multi-contact-per-face path yet
+            // (D0-prep-2b). `nonconvex_boss_1_17` was closed by the multi-loop disjoint fast-path.
             ("two_leg", "uncovered:coplanar_overlap_multi"),
-            // The boss's z-wall plane cuts the owner cube through its pocket → the section is an
-            // annulus (outer+hole) → `section_boundary` rejects the multi-loop.
-            ("nonconvex_boss_1_17", "uncovered:section_multi_loop"),
         ];
         let actual: Vec<(&str, &str)> =
             gaps.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
