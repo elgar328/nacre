@@ -315,6 +315,9 @@ pub(crate) mod tag {
     /// splits against a single coincident face; multiple overlaps are out of scope until a later
     /// cell, honestly rejected rather than picking one arbitrarily.
     pub const COPLANAR_OVERLAP_MULTI: &str = "coplanar_overlap_multi";
+    /// The unified driver found no shared plane class between the two solids — it was invoked on a
+    /// pair with no coplanar contact at all (should be gated out upstream).
+    pub const NO_COPLANAR_CONTACT: &str = "no_coplanar_contact";
 }
 
 #[cfg(test)]
@@ -5121,6 +5124,7 @@ fn classify_and_emit(
     inc_owner: &arrange::EdgePlanes,
     inc_other: &arrange::EdgePlanes,
     other_classes: &HashSet<usize>,
+    contact_class: usize,
 ) -> Result<(Vec<LocalFace>, Vec<CoCross>), BoolError> {
     let pi = canon[f_idx];
     // In/out rule (owner side): keep_inside(A)=Common, keep_inside(B)=!Fuse; flip only b for a Cut.
@@ -5159,7 +5163,7 @@ fn classify_and_emit(
             other_classes,
             keep_inside,
             flip,
-            pi,
+            contact_class,
             on_survival,
         )
     };
@@ -5203,11 +5207,20 @@ fn classify_and_emit(
             let lf = keep_inside.then(whole_lf); // f ∩ other = whole
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
-        if !sect_in_f && !has_in {
+        // No `f` corner inside the section and no section corner inside `f`: `f` is either wholly
+        // outside `other` (a boss wall touching only at the contact-plane edge → whole) or the
+        // section spans clear *across* `f` (l_step's fully-covered wall — every corner rides an
+        // edge, yet the section still cuts `f`). A proper crossing (both interiors) distinguishes
+        // them; `contact_class` filters the contact-plane graze so a boss wall does not reject.
+        if !sect_in_f
+            && !has_in
+            && coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, Some(contact_class))?
+                .is_empty()
+        {
             let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
-        return clip(None); // breaches → section clip (U2)
+        return clip(None); // breaches or spans across → section clip (U2)
     }
     // Coplanar with `other`: overlap → on-region; disjoint → centroid whole (clip's branch b).
     let Some(cf) = coincident_overlap_face(
@@ -5279,13 +5292,33 @@ fn coplanar_result_unified(
     let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
     let a_classes: HashSet<usize> = (0..na).map(|i| canon[i]).collect();
     let b_classes: HashSet<usize> = (na..planes.len()).map(|i| canon[i]).collect();
+    // The shared contact plane class fed to each face's clip as its graze attachment target.
+    // Valid while every contact-consuming face grazes a single shared class (U0–U3, overhang);
+    // U4 (flush, ≥2 contact planes) replaces this with the full shared set. Deterministic pick.
+    let contact_class = a_classes
+        .intersection(&b_classes)
+        .copied()
+        .min()
+        .ok_or_else(|| reject(tag::NO_COPLANAR_CONTACT))?;
 
     let mut faces = Vec::new();
     let mut all_cx = Vec::new();
     let a_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(a).outer).faces.clone();
     for (pos, &fh) in a_faces.iter().enumerate() {
         let (lf, cx) = classify_and_emit(
-            model, fh, pos, true, b, kind, &planes, &surf_ix, &canon, &inc_a, &inc_b, &b_classes,
+            model,
+            fh,
+            pos,
+            true,
+            b,
+            kind,
+            &planes,
+            &surf_ix,
+            &canon,
+            &inc_a,
+            &inc_b,
+            &b_classes,
+            contact_class,
         )?;
         faces.extend(lf);
         all_cx.extend(cx);
@@ -5305,6 +5338,7 @@ fn coplanar_result_unified(
             &inc_b,
             &inc_a,
             &a_classes,
+            contact_class,
         )?;
         faces.extend(lf);
         all_cx.extend(cx);
@@ -14347,6 +14381,47 @@ pub mod tests {
         check(BoolKind::Fuse, [0.25, 0.25, 1.0], [0.75, 0.75, 2.0], 1.25);
         // Through-tunnel (Cut, two parallel contained contacts): a hole top AND bottom. 1 − 0.4·0.4.
         check(BoolKind::Cut, [0.3, 0.3, 0.0], [0.7, 0.7, 1.0], 0.84);
+    }
+
+    // U2 shadow: the unified driver reproduces the overhang same-normal family (branch 3) — a tool
+    // top-flush on the base whose footprint breaches one or more side walls. Cut carves a slot;
+    // Common keeps the overlap box. Unlike the contained family these mint genuine crossings, so
+    // the seam has `Node::Seam` vertices — assert watertight/volume, NOT all-Constructed. A second
+    // run pins determinism (same volume and vertex count).
+    #[test]
+    fn unified_reproduces_overhang() {
+        let check = |kind: BoolKind, tmin: [f64; 3], tmax: [f64; 3], vol: f64| {
+            let run = || {
+                let mut m = Model::new();
+                let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+                let tool = m.add_cuboid(Point3::from_array(tmin), Point3::from_array(tmax));
+                let r = coplanar_result_unified(&mut m, kind, base, tool).unwrap();
+                assert_eq!(r.len(), 1, "one solid");
+                m.rebuild_adjacency();
+                let vs = nacre_validate::validate(&m);
+                assert!(vs.is_empty(), "{vs:?}");
+                let got = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+                assert!((got - vol).abs() < 1e-12, "volume {got} != {vol}");
+                let planes = collect_planes(&m, r[0]).unwrap();
+                assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+                (got, solid_vertex_handles(&m, r[0]).len())
+            };
+            assert_eq!(run(), run(), "deterministic");
+        };
+        // Cut edge-slot: one breached wall (x=1). 1 − 0.5·0.5·0.5.
+        check(BoolKind::Cut, [0.5, 0.25, 0.5], [1.5, 0.75, 1.0], 0.875);
+        // Cut slab-channel: spans x, breaches both x walls. 1 − 1·0.2·0.5.
+        check(BoolKind::Cut, [-0.5, 0.4, 0.5], [1.5, 0.6, 1.0], 0.9);
+        // Cut corner-slot: swallows the (1,1) corner, breaches x=1 and y=1. 1 − 0.5³.
+        check(BoolKind::Cut, [0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.875);
+        // Cut l-step: spans x, y=1 fully covered (no crossing) → band wall shrinks. 1 − 1·0.5·0.5.
+        check(BoolKind::Cut, [-0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.75);
+        // Common edge-overhang: overlap box [0.3,0.7]×[0.5,1]×[0.5,1].
+        check(BoolKind::Common, [0.3, 0.5, 0.5], [0.7, 1.5, 1.0], 0.1);
+        // Common corner-overhang: overlap box [0.5,1]×[0.5,1]×[0.5,1].
+        check(BoolKind::Common, [0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.125);
+        // Common l-step: overlap box [0,1]×[0.5,1]×[0.5,1] (band wall in the intersection).
+        check(BoolKind::Common, [-0.5, 0.5, 0.5], [1.5, 1.5, 1.0], 0.25);
     }
 
     // B4 part 2b: the overhang boss (crossing) through the one entry — first crossing-based real
