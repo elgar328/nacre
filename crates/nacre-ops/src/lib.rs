@@ -4074,16 +4074,27 @@ fn clip_face_to_section(
                 Some(PSurvive::InterQ) => reconstruct(&f_bnd, &q_bnd, true),  // P∩Q
             };
         }
-        // (b) Disjoint-coplanar (footprints apart): the centroid is strictly inside/outside `other`,
-        // so decide the whole face by it (no section).
-        let ring = face_ring(model, model.faces.get(f_face));
-        let k = ring.len() as f64;
-        let sum = ring.iter().fold([0.0; 3], |a, &(_, p)| {
-            let q = p.as_array();
-            [a[0] + q[0], a[1] + q[1], a[2] + q[2]]
-        });
-        let ctr = Point3::from_array([sum[0] / k, sum[1] / k, sum[2] / k]);
-        let inside = point_in_solid(model, ctr, other)? == Side::Inside;
+        // (b) Disjoint-coplanar (footprints apart): `f` is uniformly inside/outside `other`, so
+        // decide the whole face by any of its vertices — each carries plane identity (unlike an
+        // f64 centroid) and classifies on the exact index-plane substrate. Try them in turn: a
+        // vertex incidentally on another feature of `other` rejects, so fall through to the next;
+        // only all-reject is honest failure (the old centroid `?` also propagated a reject).
+        let f_verts: Vec<Handle<Vertex>> = model
+            .faces
+            .get(f_face)
+            .outer
+            .half_edges
+            .iter()
+            .map(|&he| he_start(model, he))
+            .collect();
+        let inside = f_verts
+            .iter()
+            .find_map(|&vh| {
+                arrange::point_in_solid_idx(model, vh, inc_owner, other, inc_other, planes, surf_ix)
+                    .ok()
+            })
+            .ok_or_else(|| reject(tag::NO_CLEAR_RAY))?
+            == Side::Inside;
         let lf = (inside == keep_inside).then(whole);
         return Ok((Vec::from_iter(lf), Vec::new()));
     }
