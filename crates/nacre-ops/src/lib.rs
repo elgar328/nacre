@@ -1574,6 +1574,14 @@ pub fn boolean(
     {
         return coplanar_result_unified(model, kind, a, b);
     }
+    // Single-shared-plane Fuse (mixed coplanar + transversal): two solids sharing one same-normal
+    // plane with partially-overlapping footprints, the taller exiting through the other's far face.
+    // The unified driver builds it (E1 union cap + transversal exit); route it guarded.
+    if kind == BoolKind::Fuse && detect_single_shared_plane(model, a, b)? {
+        if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
+            return Ok(r);
+        }
+    }
     if kind == BoolKind::Cut {
         if detect_pocket_contact(model, a, b).is_some()
             || detect_overhang_cut_general(model, a, b).is_some()
@@ -5198,6 +5206,65 @@ fn coplanar_contact_count(
         }
     }
     Ok(count)
+}
+
+/// `true` for the single-shared-plane config: exactly ONE coplanar contact pair, **same-normal**,
+/// whose footprints **properly overlap** (a partial overlap, not containment). Two boxes of
+/// different heights sharing one plane are the canonical case — the shared cap is an E1-style 2D
+/// merge and the taller solid exits transversally through the other's far face.
+///
+/// Same-normal + proper-crossing are both required to route safely: an opposite-normal single pair
+/// is the overhang boss (its own detector), and a **contained** footprint gives the E1 `Whole` arm
+/// no `∂P×∂Q` crossing, so it would emit the wrong (P-whole) cap — containment has no proper
+/// crossing here, so it is excluded and stays honestly rejected (a later cell). The dispatch routes
+/// this **guarded**, so anything the driver cannot build falls through to `general_boolean`.
+fn detect_single_shared_plane(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<bool, BoolError> {
+    let planes_a = collect_planes(model, a)?;
+    let na = planes_a.len();
+    let mut planes = planes_a;
+    planes.extend(collect_planes(model, b)?);
+    let mut surf_ix = HashMap::new();
+    for (i, p) in planes.iter().enumerate() {
+        surf_ix.insert(p.face, i);
+    }
+    let canon = plane_classes(&planes);
+    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for i in 0..na {
+        for j in na..planes.len() {
+            if shares_or_coplanar(&planes[i], &planes[j])
+                && footprints_overlap(
+                    model,
+                    &planes,
+                    canon[i],
+                    planes[i].face,
+                    planes[j].face,
+                    &inc_a,
+                    &inc_b,
+                    &canon,
+                )?
+            {
+                pairs.push((i, j));
+            }
+        }
+    }
+    if pairs.len() != 1 {
+        return Ok(false); // 0 = no contact; ≥2 = the multi-contact route's job
+    }
+    let (i, j) = pairs[0];
+    if planes[i].n_out.dot(planes[j].n_out) <= 0.0 {
+        return Ok(false); // opposite-normal = the overhang detector's job
+    }
+    let pi = canon[i];
+    let a_bnd = contact_boundary(model, planes[i].face, pi, &inc_a, &canon)?;
+    let b_bnd = contact_boundary(model, planes[j].face, pi, &inc_b, &canon)?;
+    // Proper crossing ⇒ partial overlap; empty ⇒ containment (excluded, stays rejected).
+    Ok(!coplanar_boundary_crossings(&planes, pi, &a_bnd, &b_bnd, &[])?.is_empty())
 }
 
 /// Whether any edge of ring `p` **properly** crosses any edge of ring `q` — both rings coplanar on
@@ -14912,6 +14979,57 @@ pub mod tests {
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 0.25).abs() < 1e-12, "public common volume {vol}");
+    }
+
+    // Single-shared-plane: two boxes of different heights sharing only z=0 with overlapping
+    // footprints (b=[0.5,1.5]²×[0,2] pokes through a's top z=1). The union is a stepped prism, vol
+    // 2.75 (z0–1 = L-octagon 1.75, z1–2 = b tower 1.0). This mixes a coplanar 2D-merge cap (z=0, the
+    // E1 union arm) with a transversal exit (b through a's top z=1); every face lands in an existing
+    // regime, so it just needs the dispatch route (measured: the driver builds it directly).
+    #[test]
+    fn single_shared_plane_unions() {
+        let run = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.0]),
+                Point3::from_array([1.5, 1.5, 2.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Fuse, a, b).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+            let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((vol - 2.75).abs() < 1e-12, "volume {vol}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+
+            // Chainability: a transversal Cut through the tower top removes [0.7,0.9]²×[1.5,2] = 0.02.
+            let cutter = m.add_cuboid(
+                Point3::from_array([0.7, 0.7, 1.5]),
+                Point3::from_array([0.9, 0.9, 2.5]),
+            );
+            let r2 = boolean_one(&mut m, BoolKind::Cut, r[0], cutter).unwrap();
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty(), "chained valid");
+            let vol2 = nacre_props::mass_props(&m, r2).unwrap().volume;
+            assert!((vol2 - 2.73).abs() < 1e-12, "chained volume {vol2}");
+            (vol, vol2)
+        };
+        assert_eq!(run(), run(), "deterministic");
+
+        // Public `boolean` dispatch reaches it via the new single-shared-plane route.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 2.75).abs() < 1e-12, "public volume {vol}");
     }
 
     // E1: two boxes overlapping in volume AND sharing the z=0 / z=1 planes with OVERLAPPING

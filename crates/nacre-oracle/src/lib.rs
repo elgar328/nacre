@@ -706,6 +706,27 @@ bbox_min 0 0 0
         );
     }
 
+    /// Single-shared-plane Fuse: A=[0,1]³ and B=[0.5,1.5]²×[0,2] share only z=0 with overlapping
+    /// footprints; B is taller and pokes through A's top. The union is a stepped prism: z0–1 footprint
+    /// 1.75 + z1–2 tower 1.0 = 2.75. OCCT confirms it independently — the oracle for nacre's mixed
+    /// coplanar-cap + transversal-exit route.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn single_shared_plane_fuse_matches_occt() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let fuse = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
+        assert!(
+            approx(fuse.volume, 2.75),
+            "single-shared fuse {}",
+            fuse.volume
+        );
+    }
+
     /// A flush-edge pocket (B4-R1b): the cutter sits flush on two adjacent base faces (top z=1 and
     /// front y=0), so its walls are coplanar with the part's walls along the shared boundary edge.
     /// OCCT confirms base − cutter = 0.92 independently — the oracle for nacre's flush handler.
