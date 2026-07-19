@@ -5689,6 +5689,15 @@ fn coplanar_result_unified(
             .collect();
         resplit_overhang(model, &mut faces, &planes, &cross_r);
     }
+    // Mandatory post-op cleaning (mirrors `coincident_merge`): merge coplanar same-normal hole-free
+    // neighbours and dissolve straight-angle vertices so the result stays manifold and re-entrant.
+    // A no-op for today's single-face union caps and single-piece walls, but the general 2D merge
+    // (non-convex footprints, chained results) can split a wall into coplanar pieces that must fuse.
+    let faces = if kind == BoolKind::Fuse {
+        unify_coplanar_faces(model, faces, &planes, &canon)
+    } else {
+        faces
+    };
     assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
 }
 
