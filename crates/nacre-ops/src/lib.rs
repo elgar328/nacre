@@ -3965,7 +3965,7 @@ fn clip_face_to_section(
         let cx = coplanar_boundary_crossings(planes, pi, f_bnd, q_bnd, contact)?;
         let arcs = coplanar_seam_arcs(planes, pi, q_bnd, &cx);
         let faces = coplanar_reconstruct(
-            planes, pi, f_idx, f_bnd, q_bnd, &cx, &arcs, keep_in, flip, contact,
+            planes, pi, f_idx, f_bnd, q_bnd, &cx, &arcs, keep_in, flip, contact, false,
         )?;
         Ok::<_, BoolError>((faces, cx))
     };
@@ -4326,6 +4326,7 @@ fn coplanar_reconstruct(
     keep_inside_q: bool,
     flip: bool,
     contact: &[usize],
+    union: bool,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let p_ring = boundary_ring_triples(a_bnd, pi);
     let q_ring = boundary_ring_triples(b_bnd, pi);
@@ -4398,8 +4399,14 @@ fn coplanar_reconstruct(
             }
         }
     }
+    // Which ∂Q arcs stitch into the result. A clip (P∖Q / P∩Q) keeps the arcs INSIDE P — the seam
+    // that cuts P. A `union` (P∪Q, the general 2D coplanar merge) keeps the arcs OUTSIDE P — the
+    // bulge of Q beyond P. The kept-∂P runs (`keep_inside_q=false`) and the crossings are identical
+    // either way; only the arc side differs, and the stitch below is agnostic to which (the kd/dk
+    // endpoints are the same crossing pair, and `forward` self-corrects the arc direction).
+    let want = Some(!union);
     let opens: Vec<&Vec<Node>> = (0..arcs.len())
-        .filter(|&k| inside[k] == Some(true))
+        .filter(|&k| inside[k] == want)
         .map(|k| &arcs[k])
         .collect();
 
@@ -5422,18 +5429,31 @@ fn classify_and_emit(
         // contact-line graze — an attachment (a section corner on `f`'s contact edge) is not one,
         // so an overhang boss wall stays whole and is resplit later rather than being section-clipped.
         //
-        // LATENT (T-overlap, later cell): a partial "T" overlap — the section covers half of `f` but
-        // meets its boundary only at the section-edge endpoints — is not a *proper* crossing, so this
-        // takes the whole branch and leaves the interior half unclipped. That only arises when two
-        // solids interpenetrate while sharing a coplanar cap whose footprints OVERLAP; the a-side
-        // `Whole` gate (COPLANAR_MERGE) rejects those first, so no current input reaches this defect.
-        // A non-convex arrangement where a cap nests yet a wall T-overlaps would — a general-2D-merge
-        // cell. Safe today only because the driver sees a fixed golden set (no random coplanar input).
+        // T-overlap (E1 same_ground): a partial "T" overlap — the section covers half of `f` but
+        // meets its boundary only at the section-edge endpoints (attachments on `f`'s contact edges)
+        // — is not a *proper* crossing, so the graze test above passes. It still cuts `f` and must be
+        // clipped (the interpenetrating walls of two solids sharing an overlapping coplanar cap). A
+        // genuine graze (boss wall meeting the section only along its own contact edge) has no ∂f ×
+        // section crossing → stays whole. `coplanar_boundary_crossings` can itself reject on a graze
+        // degeneracy; an error counts as "no clean crossing" → whole, so this is strictly non-
+        // regressive: only a clean non-empty crossing diverts a former whole into a clip.
         if !sect_in_f && !has_in && !rings_properly_cross(planes, pi, &p_ring, &q_ring)? {
-            let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
-            return Ok((Vec::from_iter(lf), Vec::new()));
+            // A section chord that genuinely cuts `f` enters and exits through two *different* edges
+            // of `f` — its crossings ride distinct `f`-edges (`a_seg`). A graze (a boss wall meeting
+            // the section only along one contact edge of `f`) has all its crossings on a single edge,
+            // or one/none. So "distinct `a_seg` ≥ 2" ⇒ the section cuts `f` (a T-overlap: E1's
+            // interpenetrating walls) ⇒ clip; else `f` is wholly outside `other` ⇒ whole. Exact (edge
+            // indices, no coordinate); an error counts as graze so this is strictly non-regressive.
+            let t_overlap =
+                coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)
+                    .map(|cs| cs.iter().map(|c| c.a_seg).collect::<HashSet<usize>>().len() >= 2)
+                    .unwrap_or(false);
+            if !t_overlap {
+                let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
+                return Ok((Vec::from_iter(lf), Vec::new()));
+            }
         }
-        return clip(None); // breaches or spans across → section clip (U2)
+        return clip(None); // breaches, spans across, or T-overlaps → section clip
     }
     // Coplanar with `other`: overlap → on-region; disjoint → centroid whole (clip's branch b).
     let cfs = coincident_overlap_faces(
@@ -5486,7 +5506,10 @@ fn classify_and_emit(
     // is absent from the result). A crossing means an overhang cantilever; no crossing means b⊂a
     // (contained boss) whose b∖a is empty ⇒ vanish (avoid reconstruct's empty-crossing whole).
     if !owner_is_a {
-        if kind == BoolKind::Fuse {
+        // Opposite-normal only: the overhang cantilever (b∖a). A same-normal b-cap (same_ground
+        // union) is fully covered by the a-side `Whole` union merge below — the b-side emits nothing
+        // (Empty) so the shared union cap is not double-counted.
+        if kind == BoolKind::Fuse && !same_normal {
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
             if !coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?.is_empty()
@@ -5500,15 +5523,33 @@ fn classify_and_emit(
     match coplanar_survival(kind, same_normal).0 {
         PSurvive::Whole => {
             // `Whole` assumes ∂Q is internal (a union with the other contact face contained, or the
-            // other solid stacked above with no in-plane straddle). Overlapping footprints (∂P × ∂Q
-            // cross) violate that — the general 2D coplanar merge is a later cell, so reject honestly
-            // (v1 gates the same via `face_contains_face`). An empty crossing (∂Q nested / disjoint)
-            // keeps the whole face; that clean branch is reached only by future stacked-nested inputs.
+            // other solid stacked above with no in-plane straddle). An empty crossing (∂Q nested /
+            // disjoint) keeps the whole face. Overlapping footprints (∂P × ∂Q cross) are the general
+            // 2D coplanar merge (E1 same_ground): for a same-normal Fuse cap, emit P∪Q as one cell by
+            // selecting the union cell from the 2D arrangement (∂Q's arcs OUTSIDE P). Return the
+            // crossings so the interpenetrating walls weld to the same seam vertices. Any other
+            // `Whole` case with crossings (Cut/opposite) is a later cell → honest reject.
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-            if coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?.is_empty()
-            {
+            let cx = coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?;
+            if cx.is_empty() {
                 Ok((vec![whole_lf()], Vec::new()))
+            } else if kind == BoolKind::Fuse && same_normal {
+                let arcs = coplanar_seam_arcs(planes, pi, &q_bnd, &cx);
+                let faces = coplanar_reconstruct(
+                    planes,
+                    pi,
+                    f_idx,
+                    &f_bnd,
+                    &q_bnd,
+                    &cx,
+                    &arcs,
+                    false,
+                    flip,
+                    contact_classes,
+                    true,
+                )?;
+                Ok((faces, cx))
             } else {
                 Err(reject(tag::COPLANAR_MERGE))
             }
@@ -13526,6 +13567,7 @@ pub mod tests {
             true,
             false,
             &[],
+            false,
         )
         .unwrap();
         assert_eq!(faces.len(), 1, "one clipped cell");
@@ -13662,6 +13704,7 @@ pub mod tests {
             true,
             true,
             &[contact],
+            false,
         )
         .unwrap();
         assert_eq!(faces.len(), 1, "one clipped wall cell");
@@ -13986,6 +14029,7 @@ pub mod tests {
             false,
             false,
             &[y0],
+            false,
         )
         .expect("flush notch reconstructs, no POINT_ON_RING reject");
         assert_eq!(faces.len(), 1, "one notched face");
@@ -14347,6 +14391,7 @@ pub mod tests {
             false,
             false,
             &[],
+            false,
         )
         .unwrap();
         assert_eq!(out.len(), 1, "P∖Q is one cell");
@@ -14362,6 +14407,42 @@ pub mod tests {
                 [0.0, 2.0, 1.0],
             ])
         );
+        // E1: `union=true` keeps ∂Q's arcs OUTSIDE P instead of inside → P∪Q, the general 2D
+        // coplanar merge. Same crossings, same kept-∂P runs, only the arc side flips. The union
+        // of [0,2]² and [1,3]² is an 8-node L-octagon (6 Orig corners + 2 Seam crossings).
+        let uni = coplanar_reconstruct(
+            &planes,
+            pi,
+            plane_idx,
+            &a_bnd,
+            &b_bnd,
+            &cx,
+            &arcs,
+            false,
+            false,
+            &[],
+            true,
+        )
+        .unwrap();
+        assert_eq!(uni.len(), 1, "P∪Q is one cell");
+        assert_eq!(
+            uni[0].loop_nodes.len(),
+            8,
+            "union L-octagon has 8 boundary nodes"
+        );
+        assert_eq!(
+            set(&uni[0]),
+            key(&[
+                [0.0, 0.0, 1.0],
+                [2.0, 0.0, 1.0],
+                [2.0, 1.0, 1.0],
+                [3.0, 1.0, 1.0],
+                [3.0, 3.0, 1.0],
+                [1.0, 3.0, 1.0],
+                [1.0, 2.0, 1.0],
+                [0.0, 2.0, 1.0],
+            ])
+        );
         let inter = coplanar_reconstruct(
             &planes,
             pi,
@@ -14373,6 +14454,7 @@ pub mod tests {
             true,
             false,
             &[],
+            false,
         )
         .unwrap();
         assert_eq!(inter.len(), 1, "P∩Q is one cell");
@@ -14401,6 +14483,7 @@ pub mod tests {
             false,
             false,
             &[],
+            false,
         )
         .unwrap();
         assert_eq!(cant.len(), 1, "Q∖P is one cell");
@@ -14740,25 +14823,48 @@ pub mod tests {
         assert_eq!(run(), run(), "deterministic");
     }
 
-    // D0-prep-4b: two boxes that overlap in volume AND share the z=0 / z=1 planes with OVERLAPPING
-    // footprints. The correct Fuse union is an L-footprint prism (1.75), which needs the general 2D
-    // coplanar merge (a later cell). Before the gate the driver silently returned Ok with a garbage
-    // solid (vol ≈ 1.9167, non-manifold): the a-side `Whole` survival arm emitted the shared caps
-    // whole without a crossing check, and the transversal side walls fell through to whole. The gate
-    // makes the a-side `Whole` arm honestly reject when ∂P × ∂Q cross — mirroring v1's
-    // `face_contains_face` guard. a's floor is an A face, so the reject propagates before assembly.
+    // E1: two boxes overlapping in volume AND sharing the z=0 / z=1 planes with OVERLAPPING
+    // footprints. The Fuse union is an L-footprint prism (1.75) — the general 2D coplanar merge.
+    // The two shared caps become the union L-octagon (∂P∪∂Q, `union=true` reconstruct), and the four
+    // interpenetrating walls are section-clipped (T-overlap → clip). Result: 2 caps + 8 walls,
+    // watertight, vol 1.75. (Before E1 the driver rejected COPLANAR_MERGE at the a-side `Whole` arm.)
     #[test]
-    fn unified_rejects_same_ground_overlap() {
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 0.0]),
-            Point3::from_array([1.5, 1.5, 1.0]),
-        );
-        assert_rejects(
-            || coplanar_result_unified(&mut m, BoolKind::Fuse, a, b),
-            tag::COPLANAR_MERGE,
-        );
+    fn unified_unions_same_ground_overlap() {
+        let run = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.0]),
+                Point3::from_array([1.5, 1.5, 1.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Fuse, a, b).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{vs:?}");
+            let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((vol - 1.75).abs() < 1e-12, "volume {vol}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+
+            // Chainability: the L-prism (which carries Discovered seam vertices at the crossings)
+            // feeds into a second boolean. A transversal Cut that pokes through the top cap removes
+            // [0.4,0.6]²×[0.5,1] = 0.02 ⇒ 1.73.
+            let cutter = m.add_cuboid(
+                Point3::from_array([0.4, 0.4, 0.5]),
+                Point3::from_array([0.6, 0.6, 1.5]),
+            );
+            let r2 = boolean_one(&mut m, BoolKind::Cut, r[0], cutter).unwrap();
+            m.rebuild_adjacency();
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "chained result valid"
+            );
+            let vol2 = nacre_props::mass_props(&m, r2).unwrap().volume;
+            assert!((vol2 - 1.73).abs() < 1e-12, "chained volume {vol2}");
+            (vol, vol2)
+        };
+        assert_eq!(run(), run(), "deterministic");
     }
 
     // B2: two simultaneous coplanar contacts. A ⊓ tool (a slab with a bottom-middle notch → two
@@ -15376,17 +15482,12 @@ pub mod tests {
     }
 
     #[test]
-    fn same_ground_overlap_is_unsupported() {
-        // Two boxes sharing the z=0 ground with overlapping footprints: only
-        // same-normal coplanar contact + 3D overlap ⇒ needs the general 2D
-        // coplanar path (next unit) ⇒ Unsupported.
-        //
-        // Until cell (5b) this was `coplanar_pair`, from `fuse_cut`'s combined-plane check.
-        // With that path gone, the seam path's per-operand check passes and `plane_side`
-        // meets A's floor edge on B's z=0 plane first — `vertex_on_face_plane`. Still an
-        // honest rejection, less specific about why (§9 line 451). This is same-normal (both
-        // floors at z=0), so it stays out of the opposite-normal overhang path; its former
-        // sibling fixture is now the corner overhang (fuse_a_corner_overhanging_boss).
+    fn same_ground_overlap_unions() {
+        // E1 via the public `boolean` dispatch: two boxes sharing the z=0 / z=1 planes with
+        // overlapping footprints. Two coplanar contacts ⇒ the guarded multi-contact Fuse route
+        // (`coplanar_contact_count > 1`) reaches `coplanar_result_unified`, which now emits the
+        // L-footprint union (1.75) instead of declining. (Before E1 this rejected
+        // `vertex_on_face_plane` after the driver fell through to the general seam path.)
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -15396,10 +15497,14 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, 0.0]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Fuse, a, b),
-            tag::VERTEX_ON_FACE_PLANE,
-        );
+        let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.75).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
     proptest! {

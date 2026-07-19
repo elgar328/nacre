@@ -663,6 +663,27 @@ bbox_min 0 0 0
         assert!(approx(common.volume, 0.125), "common {}", common.volume);
     }
 
+    /// E1 same_ground union: A = [0,1]³ and B = [0.5,1.5]²×[0,1] overlap in volume and share the
+    /// z=0 / z=1 planes with overlapping footprints. The union is an L-footprint prism: area
+    /// (1 + 1 − 0.25) × height 1 = 1.75. OCCT confirms it independently — the oracle for nacre's
+    /// general 2D coplanar merge (the driver's union-cell reconstruct + interpenetrating-wall clip).
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn same_ground_union_matches_occt() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let fuse = occt_boolean_of(&m, OcctBool::Fuse, a, b).unwrap();
+        assert!(
+            approx(fuse.volume, 1.75),
+            "same_ground fuse {}",
+            fuse.volume
+        );
+    }
+
     /// A flush-edge pocket (B4-R1b): the cutter sits flush on two adjacent base faces (top z=1 and
     /// front y=0), so its walls are coplanar with the part's walls along the shared boundary edge.
     /// OCCT confirms base − cutter = 0.92 independently — the oracle for nacre's flush handler.
