@@ -146,9 +146,7 @@ pub(crate) fn seam_segments_on(
                     let (bounds, pair) = inc[&he.edge];
                     let [pa, pb] = pair;
                     let r = if pa == own { pb } else { pa };
-                    if edge_crosses_face(
-                        model, planes, pair, bounds[0], bounds[1], into, rings, inc,
-                    )? {
+                    if edge_crosses_face(model, planes, pair, bounds[0], bounds[1], into, rings)? {
                         third.push((r, on_f.then_some(he.edge)));
                     }
                 }
@@ -215,14 +213,7 @@ pub(crate) fn seam_segments_on(
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
 /// two planes. No new predicate is needed for that.
 pub(crate) fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> i8 {
-    // When `V_i` and `V_j` coincide (the `t_orient3d` factor is 0), SoS breaks the tie to a
-    // definite order on the same four planes as `side_of` would (`sos_orient3d`'s `orient_sign(j)`
-    // and `dir_sign`'s square to +1). The `dir_sign` ±1 factor is preserved either way.
-    let o = match t_orient3d(planes, p, q, i, j) {
-        0 => sos_orient3d(planes, [p, q, i], j),
-        s => s,
-    };
-    o * dir_sign(planes, p, q, j)
+    t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
 }
 
 /// `+1` when a plane's stored normal already points out of its solid, `-1` when the
@@ -622,103 +613,9 @@ fn loop_triples(l: &Loop, p: usize, inc: &EdgePlanes) -> Result<Vec<[usize; 3]>,
     Ok(out)
 }
 
-/// Simulation of Simplicity for the four-plane concurrency `orient3d(V, tri_j) == 0`, where
-/// `V = ∩(planes tri[0], tri[1], tri[2])` lies exactly on plane `j`. Returns a definite,
-/// consistent `±1` (never 0): the sign of `orient3d(V, tri_j)` under an infinitesimal
-/// *offset* perturbation `d_k → d_k + ε_k`, `ε_k = ε^(2^rank(k))` keyed by ascending plane
-/// index (Edelsbrunner–Mücke 1990).
-///
-/// Offset-only perturbation leaves the normals — hence `D = det[n_a,n_b,n_c]` — fixed, so
-/// `f = n_j·V + d_j` is *linear* in the εs: `f = Σ ε_k·c_k`, with `c_j = +1` and, for
-/// `k ∈ {a,b,c}`, `c_k = −sign(D)·sign(det[normals with row k → n_j])`. Distinct exponents ⇒
-/// the dominant (largest-ε) term is the first nonzero `c_k` in ascending-index order; `c_j = +1`
-/// is a guaranteed backstop so the walk always terminates. Finally `sign(orient3d(V, tri_j)) =
-/// orient_sign(j)·sign(f)` converts `f`'s stored-normal convention to the triangle-normal
-/// convention `t_orient3d` returns, so this is a drop-in for a `t_orient3d == 0`.
-///
-/// Shared by [`side_of`] and [`order_along`] so their tie-break agrees on the same four planes
-/// (both reduce to this determinant). Replay-stable: the rank is the ascending order of the four
-/// `usize` plane indices, a deterministic function of `collect_planes`' Vec-order construction
-/// (no HashMap iteration) — only the *relative* order matters, so it equals a global-index SoS.
-///
-/// Returns `0` when `j` is one of `tri` (the point is on `j` *definitionally*, not by an
-/// accidental concurrency): no offset perturbation can move `V` off a plane that defines it, so
-/// that `0` is genuine, not a tie to break — the caller keeps its on-plane behavior.
-pub(crate) fn sos_orient3d(planes: &[PlaneInfo], tri: [usize; 3], j: usize) -> i8 {
-    let [a, b, c] = tri;
-    if j == a || j == b || j == c {
-        return 0; // definitional coincidence — not a perturbable degeneracy
-    }
-    debug_assert!(
-        a != b && a != c && b != c,
-        "a node's three planes are distinct"
-    );
-    let d = t_plane_pair_dir_sign(planes, a, b, c); // sign(D) ≠ 0 (V is a defined point)
-    let coeff = |k: usize| -> i8 {
-        if k == j {
-            1
-        } else if k == a {
-            -d * t_plane_pair_dir_sign(planes, j, b, c)
-        } else if k == b {
-            -d * t_plane_pair_dir_sign(planes, a, j, c)
-        } else {
-            -d * t_plane_pair_dir_sign(planes, a, b, j)
-        }
-    };
-    let mut four = [a, b, c, j];
-    four.sort_unstable();
-    let s = four
-        .iter()
-        .map(|&k| coeff(k))
-        .find(|&x| x != 0)
-        .expect("c_j = +1 is a nonzero backstop");
-    orient_sign(planes, j) * s
-}
-
-/// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it — which
-/// [`sos_orient3d`] then breaks to a definite, consistent side (SoS), so this never returns 0.
+/// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
 fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
-    match t_orient3d(planes, t[0], t[1], t[2], q) {
-        0 => sos_orient3d(planes, t, q),
-        s => s,
-    }
-}
-
-/// The lexicographically-smallest non-degenerate triple among a vertex's incident planes `ps`
-/// (sorted ascending). It is a **canonical, edge-independent** name for the vertex `∩(triple)`:
-/// any three independent planes through the vertex meet exactly there, so which three we pick does
-/// not change a non-degenerate side — but it *does* fix the SoS tiebreak on the degenerate case, so
-/// naming the vertex the same way everywhere is what keeps its resolved side consistent across the
-/// several edges that share it. `None` when every triple is degenerate (all incident planes share a
-/// line) — a genuinely un-nameable vertex.
-fn first_nondegenerate_triple(planes: &[PlaneInfo], ps: &[usize]) -> Option<[usize; 3]> {
-    let n = ps.len();
-    for i in 0..n {
-        for j in (i + 1)..n {
-            for k in (j + 1)..n {
-                if t_plane_pair_dir_sign(planes, ps[i], ps[j], ps[k]) != 0 {
-                    return Some([ps[i], ps[j], ps[k]]);
-                }
-            }
-        }
-    }
-    None
-}
-
-/// SoS-resolve which side of plane `q` an edge endpoint `v` lies on, when `v` is *on* `q` (a
-/// four-plane concurrency). Name `v` by its canonical triple (edge-independent, so every edge that
-/// meets `v` on `q` agrees) and ask the SoS-resolved [`side_of`]. Honest `VERTEX_ON_FACE_PLANE`
-/// when `v` has no non-degenerate triple — SoS cannot place a vertex whose faces all share a line.
-fn sos_endpoint_side(
-    planes: &[PlaneInfo],
-    v: Handle<Vertex>,
-    q: usize,
-    inc: &EdgePlanes,
-) -> Result<i8, BoolError> {
-    let ps = vertex_plane_indices(v, inc);
-    let t =
-        first_nondegenerate_triple(planes, &ps).ok_or_else(|| reject(tag::VERTEX_ON_FACE_PLANE))?;
-    Ok(side_of(planes, t, q))
+    t_orient3d(planes, t[0], t[1], t[2], q)
 }
 
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
@@ -826,18 +723,14 @@ pub(crate) fn face_rings(
 /// **The straddle is one toleranced sign.** Whether `v0` and `v1` straddle `Q` is
 /// [`t_plane_side`](crate::tolerant::t_plane_side) — the axis-aligned case an exact
 /// [`plane_side`](nacre_geom::intersect::plane_side) on the vertex coordinate, the rotated case
-/// the `frame3` judge on the vertex's exact definition. A `declare-0` for **one** endpoint (it lies
-/// on `Q`) is a four-plane concurrency [`sos_endpoint_side`] resolves to a definite side (SoS);
-/// **both** endpoints on `Q` means the whole edge lies in `Q` — a coplanar overlap, out of scope,
-/// and an honest `vertex_on_face_plane`. Everything after is combinatorial: straddling means the
+/// the `frame3` judge on the vertex's exact definition; a `declare-0` (endpoint on/near `Q`)
+/// falls into `vertex_on_face_plane`. Everything after is combinatorial: straddling means the
 /// segment meets `Q` exactly once, so the crossing is inside the edge by construction, and
 /// containment is a ray cast along a line the planes already give.
 ///
-/// **Contacts are named, not lumped.** The whole edge lying in `Q` is `vertex_on_face_plane`; a
-/// crossing exactly on `∂g` is `point_on_ring`. Neither is a graze: they are the two ways an edge
-/// can touch a face without properly piercing it (a single on-`Q` endpoint is no longer one of
-/// them — SoS places it).
-#[allow(clippy::too_many_arguments)]
+/// **Contacts are named, not lumped.** An endpoint on `Q` — or the whole edge lying in it — is
+/// `vertex_on_face_plane`. A crossing exactly on `∂g` is `point_on_ring`. Neither is a graze:
+/// they are the two ways an edge can touch a face without properly piercing it.
 pub(crate) fn edge_crosses_face(
     model: &Model,
     planes: &[PlaneInfo],
@@ -846,18 +739,13 @@ pub(crate) fn edge_crosses_face(
     v1: Handle<Vertex>,
     q: usize,
     rings: &[Vec<[usize; 3]>],
-    inc: &EdgePlanes,
 ) -> Result<bool, BoolError> {
-    let mut s0 = t_plane_side(model, planes, q, v0);
-    let mut s1 = t_plane_side(model, planes, q, v1);
-    // An endpoint exactly on `Q` is a four-plane concurrency; SoS breaks it to a definite side.
-    // Both endpoints on `Q` means the whole edge lies in `Q` — a coplanar overlap, not a crossing,
-    // and out of the general engine's scope; that stays an honest reject.
-    match (s0 == 0, s1 == 0) {
-        (true, true) => return Err(reject(tag::VERTEX_ON_FACE_PLANE)),
-        (true, false) => s0 = sos_endpoint_side(planes, v0, q, inc)?,
-        (false, true) => s1 = sos_endpoint_side(planes, v1, q, inc)?,
-        (false, false) => {}
+    let (s0, s1) = (
+        t_plane_side(model, planes, q, v0),
+        t_plane_side(model, planes, q, v1),
+    );
+    if s0 == 0 || s1 == 0 {
+        return Err(reject(tag::VERTEX_ON_FACE_PLANE));
     }
     if s0 == s1 {
         return Ok(false); // the segment never reaches `Q`

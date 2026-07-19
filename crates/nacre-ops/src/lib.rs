@@ -1733,11 +1733,10 @@ fn pierced_faces(
     v0: Handle<Vertex>,
     v1: Handle<Vertex>,
     rings: &FaceRings,
-    inc: &arrange::EdgePlanes,
 ) -> Result<Vec<usize>, BoolError> {
     let mut hits = Vec::new();
     for (q, r) in rings {
-        if arrange::edge_crosses_face(model, planes, pair, v0, v1, *q, r, inc)? {
+        if arrange::edge_crosses_face(model, planes, pair, v0, v1, *q, r)? {
             hits.push(*q);
         }
     }
@@ -1767,12 +1766,7 @@ type ReconItem<'a> = (
 /// One seam work item for the parallel seam sweep in [`overlap_fuse_cut`]: an edge (its two
 /// bound vertices + two incident plane indices) tested against the *other* solid's face
 /// rings. Flattened in the sequential loop's order so the first-appearance dedup is stable.
-type SeamItem<'a> = (
-    [Handle<Vertex>; 2],
-    [usize; 2],
-    &'a FaceRings,
-    &'a arrange::EdgePlanes,
-);
+type SeamItem<'a> = ([Handle<Vertex>; 2], [usize; 2], &'a FaceRings);
 
 /// A candidate seam vertex produced per edge, before dedup: `(sorted triple as the dedup
 /// key, intersection point, e0, e1, entry)`. The point is computed in the original
@@ -1875,20 +1869,19 @@ fn overlap_fuse_cut(
         // then `edges_b` (other = `rings_a`) — so the first-appearance dedup below
         // reproduces the same seam indices.
         let mut items: Vec<SeamItem> = Vec::new();
-        for (edges, other, edge_ep) in [(&edges_a, &rings_b, &inc_a), (&edges_b, &rings_a, &inc_b)]
-        {
+        for (edges, other) in [(&edges_a, &rings_b), (&edges_b, &rings_a)] {
             for &(_, bounds, inc) in edges {
-                items.push((bounds, inc, other, edge_ep));
+                items.push((bounds, inc, other));
             }
         }
         // Per edge: `pierced_faces` + straddle/tunnel parity + per-hit `three_planes` and the
         // 4-plane guard. Returns candidate seam vertices; the sorted `triple` is only the
         // dedup key, and `point` is built in the original `(e0,e1,entry)` order because
         // `three_planes` (Cramer) is order-sensitive.
-        let per_edge = |&(bounds, inc, other, edge_ep): &SeamItem| -> Result<SeamCands, BoolError> {
+        let per_edge = |&(bounds, inc, other): &SeamItem| -> Result<SeamCands, BoolError> {
             let [v0, v1] = bounds;
             let (s0, s1) = (classof[&v0], classof[&v1]);
-            let hits = pierced_faces(model, &planes, inc, v0, v1, other, edge_ep)?;
+            let hits = pierced_faces(model, &planes, inc, v0, v1, other)?;
             let straddles = s0 != s1;
             if straddles && hits.is_empty() {
                 return Err(reject(tag::NO_ENTRY_FACE)); // an unfired backstop, now
@@ -2786,12 +2779,8 @@ fn boundaries_intersect(
     for (edge_solid, face_solid) in [(a, b), (b, a)] {
         let inc_f = arrange::edge_planes(model, face_solid, surf_ix)?;
         let rings = solid_face_rings(model, face_solid, surf_ix, &inc_f)?;
-        // The edge solid's own EdgePlanes — `edge_crosses_face` needs it to name an on-plane
-        // endpoint by its plane triple (SoS).
-        let inc_e = arrange::edge_planes(model, edge_solid, surf_ix)?;
         for (_, bounds, pair) in edge_incidence(model, edge_solid, surf_ix)? {
-            if !pierced_faces(model, planes, pair, bounds[0], bounds[1], &rings, &inc_e)?.is_empty()
-            {
+            if !pierced_faces(model, planes, pair, bounds[0], bounds[1], &rings)?.is_empty() {
                 return Ok(true); // a genuine seam
             }
         }
@@ -10710,10 +10699,9 @@ pub mod tests {
     ) -> Result<usize, BoolError> {
         let inc_y = arrange::edge_planes(m, y, surf_ix)?;
         let rings = solid_face_rings(m, y, surf_ix, &inc_y)?;
-        let inc_x = arrange::edge_planes(m, x, surf_ix)?;
         let mut hits = 0;
         for (_, bounds, inc) in edge_incidence(m, x, surf_ix)? {
-            hits += pierced_faces(m, planes, inc, bounds[0], bounds[1], &rings, &inc_x)?.len();
+            hits += pierced_faces(m, planes, inc, bounds[0], bounds[1], &rings)?.len();
         }
         Ok(hits)
     }
@@ -10779,8 +10767,8 @@ pub mod tests {
         let q = surf_ix[&x_face];
         let inc_a = arrange::edge_planes(&m, a, &surf_ix).unwrap();
         let rings = arrange::face_rings(&m, x_face, q, &inc_a).unwrap();
-        let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
-        let (bounds, along_x) = *inc_b
+        let (bounds, along_x) = *arrange::edge_planes(&m, b, &surf_ix)
+            .unwrap()
             .values()
             .find(|(bd, _)| {
                 bd.iter().all(|&v| {
@@ -10790,10 +10778,8 @@ pub mod tests {
             })
             .expect("B's edge through (0.5, 0.5)");
         assert!(
-            arrange::edge_crosses_face(
-                &m, &planes, along_x, bounds[0], bounds[1], q, &rings, &inc_b
-            )
-            .unwrap()
+            arrange::edge_crosses_face(&m, &planes, along_x, bounds[0], bounds[1], q, &rings)
+                .unwrap()
         );
 
         // And the whole boolean runs on it through the seam path — the measurement
@@ -10827,7 +10813,6 @@ pub mod tests {
         );
         let (planes, surf_ix) = combined(&m, pc, rod);
         let inc_pc = arrange::edge_planes(&m, pc, &surf_ix).unwrap();
-        let inc_rod = arrange::edge_planes(&m, rod, &surf_ix).unwrap();
         let lid = solid_faces(&m, pc)
             .into_iter()
             .find(|&f| !m.faces.get(f).inner.is_empty())
@@ -10845,10 +10830,8 @@ pub mod tests {
             }
             vertical += 1;
             assert!(
-                !arrange::edge_crosses_face(
-                    &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_rod
-                )
-                .unwrap()
+                !arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings)
+                    .unwrap()
             );
         }
         assert_eq!(vertical, 4);
@@ -10923,14 +10906,14 @@ pub mod tests {
         }
     }
 
-    /// SoS (`sos_orient3d`) resolves an edge that touches a face's boundary. Two of these three
-    /// once honestly rejected (`point_on_ring` / `no_clear_ray`, when the piercing point landed on
-    /// a ring node or edge); SoS now breaks the four-plane concurrency to a definite, consistent
-    /// side. Here the touching box sits in the L's notch (outside the material), so the resolved
-    /// answer is `Ok(false)` — the edge does not cross the face. The whole-edge-in-plane case (a)
-    /// is a `t_plane_side` straddle, untouched by SoS, and still names `VERTEX_ON_FACE_PLANE`.
+    /// The two contacts, named. Both were `contact_degenerate` — "grazed a fan diagonal" — and
+    /// neither ever was a graze.
+    ///
+    /// The vertex case is why `point_on_ring` is asked **before** `point_in_ring`: when the
+    /// piercing point is a ring node, both of its rays carry that node, every candidate is
+    /// skipped, and `point_in_ring` alone comes back `no_clear_ray`. Measured below.
     #[test]
-    fn sos_resolves_an_edge_touching_a_face() {
+    fn an_edge_touching_a_face_is_a_contact_not_a_graze() {
         let (mut m, l) = l_prism();
         // Its floor lies in the L's own bottom plane.
         let flat = m.add_cuboid(
@@ -10953,8 +10936,8 @@ pub mod tests {
             let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
             let q = surf_ix[&bottom];
             let rings = arrange::face_rings(&m, bottom, q, &inc_l).unwrap();
-            let inc_other = arrange::edge_planes(&m, other, &surf_ix).unwrap();
-            let (bounds, inc) = *inc_other
+            let (bounds, inc) = *arrange::edge_planes(&m, other, &surf_ix)
+                .unwrap()
                 .values()
                 .find(|(bd, _)| {
                     bd.iter().all(|&v| {
@@ -10965,7 +10948,7 @@ pub mod tests {
                         .any(|&v| m.vertices.get(v).point.as_array()[2] < 0.0)
                 })
                 .expect("the vertical edge");
-            (planes, q, rings, inc, bounds, inc_other)
+            (planes, q, rings, inc, bounds)
         };
 
         // (a) The whole edge lies in the other face's plane. Both endpoint signs are zero.
@@ -10975,8 +10958,8 @@ pub mod tests {
             let floor = face_facing(&m, flat, &planes, &surf_ix, [0.0, 0.0, -1.0]);
             let q = surf_ix[&floor];
             let rings = arrange::face_rings(&m, floor, q, &inc_flat).unwrap();
-            let inc_l_edges = arrange::edge_planes(&m, l, &surf_ix).unwrap();
-            let (bounds, inc) = *inc_l_edges
+            let (bounds, inc) = *arrange::edge_planes(&m, l, &surf_ix)
+                .unwrap()
                 .values()
                 .find(|(bd, _)| {
                     bd.iter()
@@ -10984,173 +10967,34 @@ pub mod tests {
                 })
                 .expect("an edge of the L's bottom");
             assert_rejects(
-                || {
-                    arrange::edge_crosses_face(
-                        &m,
-                        &planes,
-                        inc,
-                        bounds[0],
-                        bounds[1],
-                        q,
-                        &rings,
-                        &inc_l_edges,
-                    )
-                },
+                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
                 tag::VERTEX_ON_FACE_PLANE,
             );
         }
 
-        // (b) The piercing point is the L's reflex ring node (1,1). SoS resolves it to the notch
-        // side (outside the material): the edge does not cross, and the node is outside the ring.
+        // (b) The piercing point is a ring node.
         {
-            let (planes, q, rings, inc, bounds, inc_other) = pierce(at_vertex, [1.0, 1.0]);
-            assert_eq!(
-                arrange::edge_crosses_face(
-                    &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_other
-                ),
-                Ok(false)
+            let (planes, q, rings, inc, bounds) = pierce(at_vertex, [1.0, 1.0]);
+            assert_rejects(
+                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
+                tag::POINT_ON_RING,
             );
             let mut x = [inc[0], inc[1], q];
             x.sort_unstable();
-            assert_eq!(arrange::point_in_ring(&planes, q, x, &rings[0]), Ok(false));
-        }
-
-        // (c) The piercing point is inside a ring edge; SoS resolves it to outside the material.
-        {
-            let (planes, q, rings, inc, bounds, inc_other) = pierce(at_edge, [1.5, 0.0]);
-            assert_eq!(
-                arrange::edge_crosses_face(
-                    &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_other
-                ),
-                Ok(false)
+            assert_rejects(
+                || arrange::point_in_ring(&planes, q, x, &rings[0]),
+                tag::NO_CLEAR_RAY, // the tag the pre-check exists to prevent
             );
         }
-    }
 
-    #[test]
-    fn sos_resolves_a_one_endpoint_straddle() {
-        // A box whose four vertical edges each have their LOWER endpoint exactly on the L's bottom
-        // plane (z=0), upper endpoint at z>0, footprint strictly inside the L material. Exactly one
-        // endpoint on q ⇒ the straddle's SoS fires (increment 2). The edge enters the material
-        // through the face's interior, so the resolved answer is `Ok(true)` — it crosses. Before
-        // increment 2 this was `Err(VERTEX_ON_FACE_PLANE)`.
-        let (mut m, l) = l_prism();
-        let box_ = m.add_cuboid(
-            Point3::from_array([0.3, 0.3, 0.0]),
-            Point3::from_array([0.5, 0.5, 0.5]),
-        );
-        let (planes, surf_ix) = combined(&m, l, box_);
-        let inc_l = arrange::edge_planes(&m, l, &surf_ix).unwrap();
-        let inc_box = arrange::edge_planes(&m, box_, &surf_ix).unwrap();
-        let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-        let q = surf_ix[&bottom];
-        let rings = arrange::face_rings(&m, bottom, q, &inc_l).unwrap();
-        let mut verticals = 0;
-        for (_, bounds, inc) in edge_incidence(&m, box_, &surf_ix).unwrap() {
-            let zs: Vec<f64> = bounds
-                .iter()
-                .map(|&v| m.vertices.get(v).point.as_array()[2])
-                .collect();
-            if zs.contains(&0.0) && zs.iter().any(|&z| z > 0.0) {
-                verticals += 1;
-                assert_eq!(
-                    arrange::edge_crosses_face(
-                        &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_box
-                    ),
-                    Ok(true),
-                    "the edge enters the L through its bottom face"
-                );
-            }
+        // (c) The piercing point is inside a ring edge. `point_in_ring` names this one itself.
+        {
+            let (planes, q, rings, inc, bounds) = pierce(at_edge, [1.5, 0.0]);
+            assert_rejects(
+                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
+                tag::POINT_ON_RING,
+            );
         }
-        assert_eq!(verticals, 4);
-    }
-
-    #[test]
-    fn sos_orient3d_breaks_a_four_plane_concurrency() {
-        // V = ∩(x=0, y=0, z=0) = origin lies on j: x+y+z=0 — a four-plane concurrency. Offset SoS
-        // perturbs by ascending index; the dominant term is plane a (x=0, index 0): c_a = −1, and
-        // orient_sign(j) = +1, so the tie breaks to −1. Pins the sign convention — a dropped
-        // orient_sign(j) or wrong sign(D) would flip it. (Answer is unique per index order, so this
-        // also fixes the perturbation *direction*, not merely "nonzero".)
-        let mut m = Model::new();
-        let mk = |m: &mut Model, n: [f64; 3], tri: [[f64; 3]; 3]| -> PlaneInfo {
-            let normal = Vector3::from_array(n);
-            let plane = Plane::from_point_normal(Point3::from_array(tri[0]), normal).unwrap();
-            let surf = m.surfaces.push(Surface::Plane(plane));
-            let face = m.faces.push(Face {
-                surface: surf,
-                outer: Loop { half_edges: vec![] },
-                inner: vec![],
-                orientation: Orientation::Forward,
-            });
-            let t = tri.map(Point3::from_array);
-            let n_out = (t[1] - t[0]).cross(t[2] - t[0]).normalize().unwrap();
-            PlaneInfo {
-                surf,
-                face,
-                plane,
-                tri: t,
-                n_out,
-                orient: Orientation::Forward,
-                tri_pt3: None,
-            }
-        };
-        let planes = vec![
-            mk(
-                &mut m,
-                [1., 0., 0.],
-                [[0., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
-            ), // x = 0
-            mk(
-                &mut m,
-                [0., 1., 0.],
-                [[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]],
-            ), // y = 0
-            mk(
-                &mut m,
-                [0., 0., 1.],
-                [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
-            ), // z = 0
-            mk(
-                &mut m,
-                [1., 1., 1.],
-                [[1., -1., 0.], [0., 1., -1.], [-1., 0., 1.]],
-            ), // x+y+z = 0
-        ];
-        assert_eq!(arrange::sos_orient3d(&planes, [0, 1, 2], 3), -1);
-        // A definitional coincidence (j is one of the triple) is not perturbable → genuine 0.
-        assert_eq!(arrange::sos_orient3d(&planes, [0, 1, 3], 3), 0);
-    }
-
-    #[test]
-    fn sos_enables_an_edge_touch_cut() {
-        // An edge-on-face-boundary Cut that once rejected (POINT_ON_RING). The cutter's bottom-face
-        // edge lies in the L's boundary; SoS resolves the arrangement and the Cut completes,
-        // removing the 0.2×0.2×0.5 overlap: 3 − 0.02 = 2.98.
-        let (mut m, l) = l_prism();
-        let cutter = m.add_cuboid(
-            Point3::from_array([1.5, 0.0, -0.5]),
-            Point3::from_array([1.7, 0.2, 0.5]),
-        );
-        let r = boolean(&mut m, BoolKind::Cut, l, cutter).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        assert_eq!(r.len(), 1);
-        let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
-        assert!((vol - 2.98).abs() < 1e-9, "volume {vol}");
-    }
-
-    #[test]
-    fn sos_leaves_a_pure_vertex_touch_honestly_rejected() {
-        // A box corner on the L's reflex vertex is a pure (measure-zero) vertex-touch — genuinely
-        // degenerate. SoS resolves the underlying predicates, but the whole boolean still honestly
-        // rejects rather than fabricating a solid: SoS removes 0s, it does not invent contacts.
-        let (mut m, l) = l_prism();
-        let box_ = m.add_cuboid(
-            Point3::from_array([1.0, 1.0, -0.5]),
-            Point3::from_array([1.2, 1.2, 0.5]),
-        );
-        assert!(boolean(&mut m, BoolKind::Cut, l, box_).is_err());
     }
 
     /// The pocketed cube's planes, its lid, that lid's plane index, and its edge index.
