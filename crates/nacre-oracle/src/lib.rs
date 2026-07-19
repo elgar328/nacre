@@ -727,6 +727,48 @@ bbox_min 0 0 0
         );
     }
 
+    /// Single-shared-plane Cut/Common (same config as the Fuse oracle above). b's tower above z=1 is
+    /// irrelevant to A−B and A∩B, so A−B = L-prism 0.75, A∩B = the overlap box 0.25 (same as
+    /// same_ground). OCCT confirms both independently — the oracle for nacre's tower-drop.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn single_shared_plane_cut_common_matches_occt() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let cut = occt_boolean_of(&m, OcctBool::Cut, a, b).unwrap();
+        let common = occt_boolean_of(&m, OcctBool::Common, a, b).unwrap();
+        assert!(approx(cut.volume, 0.75), "single-shared cut {}", cut.volume);
+        assert!(
+            approx(common.volume, 0.25),
+            "single-shared common {}",
+            common.volume
+        );
+    }
+
+    /// Spanning-slab single-shared variant: base=[0,1]³, slab=[-0.5,1.5]×[0.4,0.6]×[0.5,1] shares the
+    /// base top (z=1, same-normal) and overhangs two opposite x edges (four crossings). OCCT confirms
+    /// all three: Fuse 1.1, Cut 0.9, Common 0.1 — the oracle for the broader single-shared route.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn slab_overhang_matches_occt() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 0.4, 0.5]),
+            Point3::from_array([1.5, 0.6, 1.0]),
+        );
+        let fuse = occt_boolean_of(&m, OcctBool::Fuse, base, slab).unwrap();
+        let cut = occt_boolean_of(&m, OcctBool::Cut, base, slab).unwrap();
+        let common = occt_boolean_of(&m, OcctBool::Common, base, slab).unwrap();
+        assert!(approx(fuse.volume, 1.1), "slab fuse {}", fuse.volume);
+        assert!(approx(cut.volume, 0.9), "slab cut {}", cut.volume);
+        assert!(approx(common.volume, 0.1), "slab common {}", common.volume);
+    }
+
     /// A flush-edge pocket (B4-R1b): the cutter sits flush on two adjacent base faces (top z=1 and
     /// front y=0), so its walls are coplanar with the part's walls along the shared boundary edge.
     /// OCCT confirms base − cutter = 0.92 independently — the oracle for nacre's flush handler.

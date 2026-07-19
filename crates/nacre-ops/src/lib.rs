@@ -1574,14 +1574,6 @@ pub fn boolean(
     {
         return coplanar_result_unified(model, kind, a, b);
     }
-    // Single-shared-plane Fuse (mixed coplanar + transversal): two solids sharing one same-normal
-    // plane with partially-overlapping footprints, the taller exiting through the other's far face.
-    // The unified driver builds it (E1 union cap + transversal exit); route it guarded.
-    if kind == BoolKind::Fuse && detect_single_shared_plane(model, a, b)? {
-        if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-            return Ok(r);
-        }
-    }
     if kind == BoolKind::Cut {
         if detect_pocket_contact(model, a, b).is_some()
             || detect_overhang_cut_general(model, a, b).is_some()
@@ -1609,6 +1601,16 @@ pub fn boolean(
             if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
                 return Ok(r);
             }
+        }
+    }
+    // Single-shared-plane (mixed coplanar-cap + transversal-exit): one same-normal coplanar pair,
+    // partial overlap (count == 1), the taller solid exiting through the other's far face. The
+    // unified driver builds it (E1 union/MinusQ/InterQ cap + transversal exit + tower drop) for all
+    // three kinds. Kind-agnostic guarded route; containment (no crossing) is excluded and stays
+    // rejected. Mutually exclusive with the multi-contact route below (count == 1 vs > 1).
+    if detect_single_shared_plane(model, a, b)? {
+        if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
+            return Ok(r);
         }
     }
     // Genuine multi-contact (2+ coplanar pairs) slips past the single-contact detectors (they need
@@ -13367,9 +13369,11 @@ pub mod tests {
     }
 
     #[test]
-    fn common_a_slab_overhang_is_out_of_scope() {
-        // A spanning slab crosses two opposite base edges — four contact crossings, two overlap-arc
-        // pairs. The two-crossing gate declines it; the boolean rejects via the standard fall-through.
+    fn common_a_slab_overhang_spans() {
+        // A spanning slab shares the base top (z=1, same-normal) and overhangs two opposite x edges —
+        // a single-shared-plane variant (one same-normal coplanar pair, partial overlap, four
+        // crossings). Once out-of-scope (rejected vertex_on_face_plane), the single-shared route now
+        // routes it: A∩B = [0,1]×[0.4,0.6]×[0.5,1] = 0.1. (Fuse = 1.1, Cut = 0.9 also build, measured.)
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -13380,10 +13384,13 @@ pub mod tests {
             Point3::from_array([1.5, 0.6, 1.0]),
         );
         assert!(detect_overhang_common(&m, base, slab).is_none());
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Common, base, slab),
-            tag::VERTEX_ON_FACE_PLANE,
-        );
+        let r = boolean_one(&mut m, BoolKind::Common, base, slab).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.1).abs() < 1e-12, "volume {vol}");
+        let planes = collect_planes(&m, r).unwrap();
+        assert!(!solid_has_coplanar_neighbour_edge(&m, r, &planes));
     }
 
     #[test]
@@ -14979,6 +14986,89 @@ pub mod tests {
         assert!(nacre_validate::validate(&m).is_empty());
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 0.25).abs() < 1e-12, "public common volume {vol}");
+    }
+
+    // Single-shared-plane family (Cut/Common): b taller (=[0.5,1.5]²×[0,2]) sharing only z=0 with a.
+    // b's extra height (the tower above z=1) is irrelevant to A−B and A∩B (b∩a is the column
+    // [0.5,1]²×[0,1]), so the results equal same_ground Cut/Common: A−B = L-prism 0.75, A∩B = the
+    // overlap box 0.25. The driver drops the tower cleanly (b-top misses a → whole-drop; b's
+    // through-walls section-clip to a's z∈[0,1]). Reached via the kind-agnostic single-shared route.
+    #[test]
+    fn single_shared_plane_cuts() {
+        let run = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.0]),
+                Point3::from_array([1.5, 1.5, 2.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Cut, a, b).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+            let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+
+            // Chainability: a transversal Cut through the L-prism top removes [0.1,0.3]²×[0.5,1].
+            let cutter = m.add_cuboid(
+                Point3::from_array([0.1, 0.1, 0.5]),
+                Point3::from_array([0.3, 0.3, 1.5]),
+            );
+            let r2 = boolean_one(&mut m, BoolKind::Cut, r[0], cutter).unwrap();
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty(), "chained valid");
+            let vol2 = nacre_props::mass_props(&m, r2).unwrap().volume;
+            assert!((vol2 - 0.73).abs() < 1e-12, "chained volume {vol2}");
+            (vol, vol2)
+        };
+        assert_eq!(run(), run(), "deterministic");
+
+        // Public dispatch reaches it via the kind-agnostic single-shared route.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!((nacre_props::mass_props(&m, r).unwrap().volume - 0.75).abs() < 1e-12);
+    }
+
+    #[test]
+    fn single_shared_plane_intersects() {
+        let run = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.0]),
+                Point3::from_array([1.5, 1.5, 2.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Common, a, b).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+            let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((vol - 0.25).abs() < 1e-12, "volume {vol}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+            vol
+        };
+        assert_eq!(run(), run(), "deterministic");
+
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Common, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!((nacre_props::mass_props(&m, r).unwrap().volume - 0.25).abs() < 1e-12);
     }
 
     // Single-shared-plane: two boxes of different heights sharing only z=0 with overlapping
