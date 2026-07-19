@@ -1733,10 +1733,11 @@ fn pierced_faces(
     v0: Handle<Vertex>,
     v1: Handle<Vertex>,
     rings: &FaceRings,
+    inc: &arrange::EdgePlanes,
 ) -> Result<Vec<usize>, BoolError> {
     let mut hits = Vec::new();
     for (q, r) in rings {
-        if arrange::edge_crosses_face(model, planes, pair, v0, v1, *q, r)? {
+        if arrange::edge_crosses_face(model, planes, pair, v0, v1, *q, r, inc)? {
             hits.push(*q);
         }
     }
@@ -1766,7 +1767,12 @@ type ReconItem<'a> = (
 /// One seam work item for the parallel seam sweep in [`overlap_fuse_cut`]: an edge (its two
 /// bound vertices + two incident plane indices) tested against the *other* solid's face
 /// rings. Flattened in the sequential loop's order so the first-appearance dedup is stable.
-type SeamItem<'a> = ([Handle<Vertex>; 2], [usize; 2], &'a FaceRings);
+type SeamItem<'a> = (
+    [Handle<Vertex>; 2],
+    [usize; 2],
+    &'a FaceRings,
+    &'a arrange::EdgePlanes,
+);
 
 /// A candidate seam vertex produced per edge, before dedup: `(sorted triple as the dedup
 /// key, intersection point, e0, e1, entry)`. The point is computed in the original
@@ -1869,19 +1875,20 @@ fn overlap_fuse_cut(
         // then `edges_b` (other = `rings_a`) — so the first-appearance dedup below
         // reproduces the same seam indices.
         let mut items: Vec<SeamItem> = Vec::new();
-        for (edges, other) in [(&edges_a, &rings_b), (&edges_b, &rings_a)] {
+        for (edges, other, edge_ep) in [(&edges_a, &rings_b, &inc_a), (&edges_b, &rings_a, &inc_b)]
+        {
             for &(_, bounds, inc) in edges {
-                items.push((bounds, inc, other));
+                items.push((bounds, inc, other, edge_ep));
             }
         }
         // Per edge: `pierced_faces` + straddle/tunnel parity + per-hit `three_planes` and the
         // 4-plane guard. Returns candidate seam vertices; the sorted `triple` is only the
         // dedup key, and `point` is built in the original `(e0,e1,entry)` order because
         // `three_planes` (Cramer) is order-sensitive.
-        let per_edge = |&(bounds, inc, other): &SeamItem| -> Result<SeamCands, BoolError> {
+        let per_edge = |&(bounds, inc, other, edge_ep): &SeamItem| -> Result<SeamCands, BoolError> {
             let [v0, v1] = bounds;
             let (s0, s1) = (classof[&v0], classof[&v1]);
-            let hits = pierced_faces(model, &planes, inc, v0, v1, other)?;
+            let hits = pierced_faces(model, &planes, inc, v0, v1, other, edge_ep)?;
             let straddles = s0 != s1;
             if straddles && hits.is_empty() {
                 return Err(reject(tag::NO_ENTRY_FACE)); // an unfired backstop, now
@@ -2779,8 +2786,12 @@ fn boundaries_intersect(
     for (edge_solid, face_solid) in [(a, b), (b, a)] {
         let inc_f = arrange::edge_planes(model, face_solid, surf_ix)?;
         let rings = solid_face_rings(model, face_solid, surf_ix, &inc_f)?;
+        // The edge solid's own EdgePlanes — `edge_crosses_face` needs it to name an on-plane
+        // endpoint by its plane triple (SoS).
+        let inc_e = arrange::edge_planes(model, edge_solid, surf_ix)?;
         for (_, bounds, pair) in edge_incidence(model, edge_solid, surf_ix)? {
-            if !pierced_faces(model, planes, pair, bounds[0], bounds[1], &rings)?.is_empty() {
+            if !pierced_faces(model, planes, pair, bounds[0], bounds[1], &rings, &inc_e)?.is_empty()
+            {
                 return Ok(true); // a genuine seam
             }
         }
@@ -10699,9 +10710,10 @@ pub mod tests {
     ) -> Result<usize, BoolError> {
         let inc_y = arrange::edge_planes(m, y, surf_ix)?;
         let rings = solid_face_rings(m, y, surf_ix, &inc_y)?;
+        let inc_x = arrange::edge_planes(m, x, surf_ix)?;
         let mut hits = 0;
         for (_, bounds, inc) in edge_incidence(m, x, surf_ix)? {
-            hits += pierced_faces(m, planes, inc, bounds[0], bounds[1], &rings)?.len();
+            hits += pierced_faces(m, planes, inc, bounds[0], bounds[1], &rings, &inc_x)?.len();
         }
         Ok(hits)
     }
@@ -10767,8 +10779,8 @@ pub mod tests {
         let q = surf_ix[&x_face];
         let inc_a = arrange::edge_planes(&m, a, &surf_ix).unwrap();
         let rings = arrange::face_rings(&m, x_face, q, &inc_a).unwrap();
-        let (bounds, along_x) = *arrange::edge_planes(&m, b, &surf_ix)
-            .unwrap()
+        let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
+        let (bounds, along_x) = *inc_b
             .values()
             .find(|(bd, _)| {
                 bd.iter().all(|&v| {
@@ -10778,8 +10790,10 @@ pub mod tests {
             })
             .expect("B's edge through (0.5, 0.5)");
         assert!(
-            arrange::edge_crosses_face(&m, &planes, along_x, bounds[0], bounds[1], q, &rings)
-                .unwrap()
+            arrange::edge_crosses_face(
+                &m, &planes, along_x, bounds[0], bounds[1], q, &rings, &inc_b
+            )
+            .unwrap()
         );
 
         // And the whole boolean runs on it through the seam path — the measurement
@@ -10813,6 +10827,7 @@ pub mod tests {
         );
         let (planes, surf_ix) = combined(&m, pc, rod);
         let inc_pc = arrange::edge_planes(&m, pc, &surf_ix).unwrap();
+        let inc_rod = arrange::edge_planes(&m, rod, &surf_ix).unwrap();
         let lid = solid_faces(&m, pc)
             .into_iter()
             .find(|&f| !m.faces.get(f).inner.is_empty())
@@ -10830,8 +10845,10 @@ pub mod tests {
             }
             vertical += 1;
             assert!(
-                !arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings)
-                    .unwrap()
+                !arrange::edge_crosses_face(
+                    &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_rod
+                )
+                .unwrap()
             );
         }
         assert_eq!(vertical, 4);
@@ -10936,8 +10953,8 @@ pub mod tests {
             let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
             let q = surf_ix[&bottom];
             let rings = arrange::face_rings(&m, bottom, q, &inc_l).unwrap();
-            let (bounds, inc) = *arrange::edge_planes(&m, other, &surf_ix)
-                .unwrap()
+            let inc_other = arrange::edge_planes(&m, other, &surf_ix).unwrap();
+            let (bounds, inc) = *inc_other
                 .values()
                 .find(|(bd, _)| {
                     bd.iter().all(|&v| {
@@ -10948,7 +10965,7 @@ pub mod tests {
                         .any(|&v| m.vertices.get(v).point.as_array()[2] < 0.0)
                 })
                 .expect("the vertical edge");
-            (planes, q, rings, inc, bounds)
+            (planes, q, rings, inc, bounds, inc_other)
         };
 
         // (a) The whole edge lies in the other face's plane. Both endpoint signs are zero.
@@ -10958,8 +10975,8 @@ pub mod tests {
             let floor = face_facing(&m, flat, &planes, &surf_ix, [0.0, 0.0, -1.0]);
             let q = surf_ix[&floor];
             let rings = arrange::face_rings(&m, floor, q, &inc_flat).unwrap();
-            let (bounds, inc) = *arrange::edge_planes(&m, l, &surf_ix)
-                .unwrap()
+            let inc_l_edges = arrange::edge_planes(&m, l, &surf_ix).unwrap();
+            let (bounds, inc) = *inc_l_edges
                 .values()
                 .find(|(bd, _)| {
                     bd.iter()
@@ -10967,7 +10984,18 @@ pub mod tests {
                 })
                 .expect("an edge of the L's bottom");
             assert_rejects(
-                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
+                || {
+                    arrange::edge_crosses_face(
+                        &m,
+                        &planes,
+                        inc,
+                        bounds[0],
+                        bounds[1],
+                        q,
+                        &rings,
+                        &inc_l_edges,
+                    )
+                },
                 tag::VERTEX_ON_FACE_PLANE,
             );
         }
@@ -10975,9 +11003,11 @@ pub mod tests {
         // (b) The piercing point is the L's reflex ring node (1,1). SoS resolves it to the notch
         // side (outside the material): the edge does not cross, and the node is outside the ring.
         {
-            let (planes, q, rings, inc, bounds) = pierce(at_vertex, [1.0, 1.0]);
+            let (planes, q, rings, inc, bounds, inc_other) = pierce(at_vertex, [1.0, 1.0]);
             assert_eq!(
-                arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
+                arrange::edge_crosses_face(
+                    &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_other
+                ),
                 Ok(false)
             );
             let mut x = [inc[0], inc[1], q];
@@ -10987,12 +11017,52 @@ pub mod tests {
 
         // (c) The piercing point is inside a ring edge; SoS resolves it to outside the material.
         {
-            let (planes, q, rings, inc, bounds) = pierce(at_edge, [1.5, 0.0]);
+            let (planes, q, rings, inc, bounds, inc_other) = pierce(at_edge, [1.5, 0.0]);
             assert_eq!(
-                arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
+                arrange::edge_crosses_face(
+                    &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_other
+                ),
                 Ok(false)
             );
         }
+    }
+
+    #[test]
+    fn sos_resolves_a_one_endpoint_straddle() {
+        // A box whose four vertical edges each have their LOWER endpoint exactly on the L's bottom
+        // plane (z=0), upper endpoint at z>0, footprint strictly inside the L material. Exactly one
+        // endpoint on q ⇒ the straddle's SoS fires (increment 2). The edge enters the material
+        // through the face's interior, so the resolved answer is `Ok(true)` — it crosses. Before
+        // increment 2 this was `Err(VERTEX_ON_FACE_PLANE)`.
+        let (mut m, l) = l_prism();
+        let box_ = m.add_cuboid(
+            Point3::from_array([0.3, 0.3, 0.0]),
+            Point3::from_array([0.5, 0.5, 0.5]),
+        );
+        let (planes, surf_ix) = combined(&m, l, box_);
+        let inc_l = arrange::edge_planes(&m, l, &surf_ix).unwrap();
+        let inc_box = arrange::edge_planes(&m, box_, &surf_ix).unwrap();
+        let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
+        let q = surf_ix[&bottom];
+        let rings = arrange::face_rings(&m, bottom, q, &inc_l).unwrap();
+        let mut verticals = 0;
+        for (_, bounds, inc) in edge_incidence(&m, box_, &surf_ix).unwrap() {
+            let zs: Vec<f64> = bounds
+                .iter()
+                .map(|&v| m.vertices.get(v).point.as_array()[2])
+                .collect();
+            if zs.contains(&0.0) && zs.iter().any(|&z| z > 0.0) {
+                verticals += 1;
+                assert_eq!(
+                    arrange::edge_crosses_face(
+                        &m, &planes, inc, bounds[0], bounds[1], q, &rings, &inc_box
+                    ),
+                    Ok(true),
+                    "the edge enters the L through its bottom face"
+                );
+            }
+        }
+        assert_eq!(verticals, 4);
     }
 
     #[test]

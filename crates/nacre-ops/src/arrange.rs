@@ -146,7 +146,9 @@ pub(crate) fn seam_segments_on(
                     let (bounds, pair) = inc[&he.edge];
                     let [pa, pb] = pair;
                     let r = if pa == own { pb } else { pa };
-                    if edge_crosses_face(model, planes, pair, bounds[0], bounds[1], into, rings)? {
+                    if edge_crosses_face(
+                        model, planes, pair, bounds[0], bounds[1], into, rings, inc,
+                    )? {
                         third.push((r, on_f.then_some(he.edge)));
                     }
                 }
@@ -682,6 +684,43 @@ fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
     }
 }
 
+/// The lexicographically-smallest non-degenerate triple among a vertex's incident planes `ps`
+/// (sorted ascending). It is a **canonical, edge-independent** name for the vertex `∩(triple)`:
+/// any three independent planes through the vertex meet exactly there, so which three we pick does
+/// not change a non-degenerate side — but it *does* fix the SoS tiebreak on the degenerate case, so
+/// naming the vertex the same way everywhere is what keeps its resolved side consistent across the
+/// several edges that share it. `None` when every triple is degenerate (all incident planes share a
+/// line) — a genuinely un-nameable vertex.
+fn first_nondegenerate_triple(planes: &[PlaneInfo], ps: &[usize]) -> Option<[usize; 3]> {
+    let n = ps.len();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            for k in (j + 1)..n {
+                if t_plane_pair_dir_sign(planes, ps[i], ps[j], ps[k]) != 0 {
+                    return Some([ps[i], ps[j], ps[k]]);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// SoS-resolve which side of plane `q` an edge endpoint `v` lies on, when `v` is *on* `q` (a
+/// four-plane concurrency). Name `v` by its canonical triple (edge-independent, so every edge that
+/// meets `v` on `q` agrees) and ask the SoS-resolved [`side_of`]. Honest `VERTEX_ON_FACE_PLANE`
+/// when `v` has no non-degenerate triple — SoS cannot place a vertex whose faces all share a line.
+fn sos_endpoint_side(
+    planes: &[PlaneInfo],
+    v: Handle<Vertex>,
+    q: usize,
+    inc: &EdgePlanes,
+) -> Result<i8, BoolError> {
+    let ps = vertex_plane_indices(v, inc);
+    let t =
+        first_nondegenerate_triple(planes, &ps).ok_or_else(|| reject(tag::VERTEX_ON_FACE_PLANE))?;
+    Ok(side_of(planes, t, q))
+}
+
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
 ///
 /// **A ray, cast along a line we already have.** Every ring edge lies on `P ∩ R`, and `v`
@@ -787,14 +826,18 @@ pub(crate) fn face_rings(
 /// **The straddle is one toleranced sign.** Whether `v0` and `v1` straddle `Q` is
 /// [`t_plane_side`](crate::tolerant::t_plane_side) — the axis-aligned case an exact
 /// [`plane_side`](nacre_geom::intersect::plane_side) on the vertex coordinate, the rotated case
-/// the `frame3` judge on the vertex's exact definition; a `declare-0` (endpoint on/near `Q`)
-/// falls into `vertex_on_face_plane`. Everything after is combinatorial: straddling means the
+/// the `frame3` judge on the vertex's exact definition. A `declare-0` for **one** endpoint (it lies
+/// on `Q`) is a four-plane concurrency [`sos_endpoint_side`] resolves to a definite side (SoS);
+/// **both** endpoints on `Q` means the whole edge lies in `Q` — a coplanar overlap, out of scope,
+/// and an honest `vertex_on_face_plane`. Everything after is combinatorial: straddling means the
 /// segment meets `Q` exactly once, so the crossing is inside the edge by construction, and
 /// containment is a ray cast along a line the planes already give.
 ///
-/// **Contacts are named, not lumped.** An endpoint on `Q` — or the whole edge lying in it — is
-/// `vertex_on_face_plane`. A crossing exactly on `∂g` is `point_on_ring`. Neither is a graze:
-/// they are the two ways an edge can touch a face without properly piercing it.
+/// **Contacts are named, not lumped.** The whole edge lying in `Q` is `vertex_on_face_plane`; a
+/// crossing exactly on `∂g` is `point_on_ring`. Neither is a graze: they are the two ways an edge
+/// can touch a face without properly piercing it (a single on-`Q` endpoint is no longer one of
+/// them — SoS places it).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn edge_crosses_face(
     model: &Model,
     planes: &[PlaneInfo],
@@ -803,13 +846,18 @@ pub(crate) fn edge_crosses_face(
     v1: Handle<Vertex>,
     q: usize,
     rings: &[Vec<[usize; 3]>],
+    inc: &EdgePlanes,
 ) -> Result<bool, BoolError> {
-    let (s0, s1) = (
-        t_plane_side(model, planes, q, v0),
-        t_plane_side(model, planes, q, v1),
-    );
-    if s0 == 0 || s1 == 0 {
-        return Err(reject(tag::VERTEX_ON_FACE_PLANE));
+    let mut s0 = t_plane_side(model, planes, q, v0);
+    let mut s1 = t_plane_side(model, planes, q, v1);
+    // An endpoint exactly on `Q` is a four-plane concurrency; SoS breaks it to a definite side.
+    // Both endpoints on `Q` means the whole edge lies in `Q` — a coplanar overlap, not a crossing,
+    // and out of the general engine's scope; that stays an honest reject.
+    match (s0 == 0, s1 == 0) {
+        (true, true) => return Err(reject(tag::VERTEX_ON_FACE_PLANE)),
+        (true, false) => s0 = sos_endpoint_side(planes, v0, q, inc)?,
+        (false, true) => s1 = sos_endpoint_side(planes, v1, q, inc)?,
+        (false, false) => {}
     }
     if s0 == s1 {
         return Ok(false); // the segment never reaches `Q`
