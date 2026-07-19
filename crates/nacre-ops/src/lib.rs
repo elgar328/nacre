@@ -1623,6 +1623,14 @@ pub fn boolean(
                 return Ok(r);
             }
         }
+        // Multiple coplanar contacts (symmetric to the Fuse/Cut routes): two boxes sharing both caps
+        // with overlapping footprints (same_ground) intersect to the overlap box. Route genuine
+        // multi-contact (count > 1) to the unified handler; it declines (→ general_boolean) otherwise.
+        if coplanar_contact_count(model, a, b)? > 1 {
+            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
+                return Ok(r);
+            }
+        }
     }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
     // (it decided in/out with a 1e-9 tolerance) and cell 3g the convex `common` (its
@@ -14830,6 +14838,98 @@ pub mod tests {
             (got, solid_vertex_handles(&m, r[0]).len())
         };
         assert_eq!(run(), run(), "deterministic");
+    }
+
+    // E1 family (Cut): A−B of the same_ground config removes the overlap column [0.5,1]²×[0,1] from
+    // A, leaving an L-footprint prism, vol 0.75. The shared caps become P∖Q (the L cap, MinusQ arm),
+    // b's caps drop (Empty), and the interpenetrating walls section-clip (b's inner walls flip to the
+    // notch surface). Same machinery as E1's Fuse — reached via the Cut `count > 1` route.
+    #[test]
+    fn unified_cuts_same_ground_overlap() {
+        let run = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.0]),
+                Point3::from_array([1.5, 1.5, 1.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Cut, a, b).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+            let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+
+            // Chainability: a transversal Cut poking through the L-prism's top removes
+            // [0.1,0.3]²×[0.5,1] = 0.02 ⇒ 0.73.
+            let cutter = m.add_cuboid(
+                Point3::from_array([0.1, 0.1, 0.5]),
+                Point3::from_array([0.3, 0.3, 1.5]),
+            );
+            let r2 = boolean_one(&mut m, BoolKind::Cut, r[0], cutter).unwrap();
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty(), "chained valid");
+            let vol2 = nacre_props::mass_props(&m, r2).unwrap().volume;
+            assert!((vol2 - 0.73).abs() < 1e-12, "chained volume {vol2}");
+            (vol, vol2)
+        };
+        assert_eq!(run(), run(), "deterministic");
+
+        // Public `boolean` dispatch reaches it via the existing Cut `count > 1` route.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.75).abs() < 1e-12, "public cut volume {vol}");
+    }
+
+    // E1 family (Common): A∩B of the same_ground config is the overlap box [0.5,1]²×[0,1], vol 0.25.
+    // The shared caps become P∩Q (InterQ arm), b's caps drop (Empty), and the four bounding walls
+    // (two from a, two from b) clip to the overlap and weld at the crossings. Needs the Common
+    // `count > 1` dispatch route (added this cell — the driver already builds it).
+    #[test]
+    fn unified_intersects_same_ground_overlap() {
+        let run = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.0]),
+                Point3::from_array([1.5, 1.5, 1.0]),
+            );
+            let r = coplanar_result_unified(&mut m, BoolKind::Common, a, b).unwrap();
+            assert_eq!(r.len(), 1, "one solid");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+            let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+            assert!((vol - 0.25).abs() < 1e-12, "volume {vol}");
+            let planes = collect_planes(&m, r[0]).unwrap();
+            assert!(!solid_has_coplanar_neighbour_edge(&m, r[0], &planes));
+            (vol, r[0])
+        };
+        let (v1, _) = run();
+        let (v2, _) = run();
+        assert_eq!(v1, v2, "deterministic");
+
+        // Public `boolean` dispatch reaches it via the new Common `count > 1` route.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Common, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.25).abs() < 1e-12, "public common volume {vol}");
     }
 
     // E1: two boxes overlapping in volume AND sharing the z=0 / z=1 planes with OVERLAPPING

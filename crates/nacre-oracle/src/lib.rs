@@ -684,6 +684,28 @@ bbox_min 0 0 0
         );
     }
 
+    /// E1 family Cut/Common of the same_ground config (A=[0,1]³, B=[0.5,1.5]²×[0,1]). A−B removes the
+    /// overlap column [0.5,1]²×[0,1] ⇒ L-prism 0.75; A∩B is that overlap box ⇒ 0.25. OCCT confirms
+    /// both independently — the oracle for nacre's same_ground MinusQ/InterQ caps + wall clip.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn same_ground_cut_common_matches_occt() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let cut = occt_boolean_of(&m, OcctBool::Cut, a, b).unwrap();
+        let common = occt_boolean_of(&m, OcctBool::Common, a, b).unwrap();
+        assert!(approx(cut.volume, 0.75), "same_ground cut {}", cut.volume);
+        assert!(
+            approx(common.volume, 0.25),
+            "same_ground common {}",
+            common.volume
+        );
+    }
+
     /// A flush-edge pocket (B4-R1b): the cutter sits flush on two adjacent base faces (top z=1 and
     /// front y=0), so its walls are coplanar with the part's walls along the shared boundary edge.
     /// OCCT confirms base − cutter = 0.92 independently — the oracle for nacre's flush handler.
