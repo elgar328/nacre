@@ -1568,38 +1568,17 @@ pub fn boolean(
     // RESULT is now built by the unified `coplanar_result_unified` (D0). The convexity-agnostic detectors
     // (contained/pocket) route non-convex contacts too; the convex-gated overhang-Cut detector
     // declines non-convex, so a separate non-convex early dispatch keeps routing those.
-    if kind == BoolKind::Fuse {
-        if detect_contained_contact(model, a, b).is_some()
-            || detect_overhang_contact(model, a, b).is_some()
-        {
-            return coplanar_result_unified(model, kind, a, b);
-        }
-        // Multiple coplanar contacts (a ⊓-style two-leg boss) slip past the single-contact
-        // detectors (they require exactly one pair). Route ONLY genuine multi-contact (count > 1)
-        // to the unified handler — narrow on purpose so a single-contact case the detectors
-        // deliberately decline (e.g. a non-convex-footprint boss) is not incidentally flipped. The
-        // handler still declines (→ `general_boolean`) any multi-contact it cannot cover.
-        if coplanar_contact_count(model, a, b)? > 1 {
-            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-                return Ok(r);
-            }
-        }
+    if kind == BoolKind::Fuse
+        && (detect_contained_contact(model, a, b).is_some()
+            || detect_overhang_contact(model, a, b).is_some())
+    {
+        return coplanar_result_unified(model, kind, a, b);
     }
     if kind == BoolKind::Cut {
         if detect_pocket_contact(model, a, b).is_some()
             || detect_overhang_cut_general(model, a, b).is_some()
         {
             return coplanar_result_unified(model, kind, a, b);
-        }
-        // Multiple coplanar contacts (the symmetric of the Fuse route above): a flush pocket on two
-        // adjacent faces, or a ⊓/through cutter making several blind pockets, slips past the
-        // single-contact detectors (they need exactly one pair). Route genuine multi-contact
-        // (count > 1) to the unified handler; it declines (→ `general_boolean`, unchanged) anything
-        // it cannot cover.
-        if coplanar_contact_count(model, a, b)? > 1 {
-            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-                return Ok(r);
-            }
         }
         // Non-convex overhang Cut: the overhang-cut detector above is convex-gated, so route the
         // non-convex case to the unified handler too (it honestly declines — falls through to
@@ -1623,13 +1602,16 @@ pub fn boolean(
                 return Ok(r);
             }
         }
-        // Multiple coplanar contacts (symmetric to the Fuse/Cut routes): two boxes sharing both caps
-        // with overlapping footprints (same_ground) intersect to the overlap box. Route genuine
-        // multi-contact (count > 1) to the unified handler; it declines (→ general_boolean) otherwise.
-        if coplanar_contact_count(model, a, b)? > 1 {
-            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-                return Ok(r);
-            }
+    }
+    // Genuine multi-contact (2+ coplanar pairs) slips past the single-contact detectors (they need
+    // exactly one pair): a ⊓ two-leg boss, a flush pocket on two adjacent faces, or same_ground (two
+    // boxes sharing both caps with overlapping footprints). ONE kind-agnostic route for Fuse/Cut/
+    // Common — narrow on purpose (a single-contact case the detectors deliberately decline is not
+    // incidentally flipped), and the handler still declines (→ `general_boolean`) any multi-contact
+    // it cannot cover.
+    if coplanar_contact_count(model, a, b)? > 1 {
+        if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
+            return Ok(r);
         }
     }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
