@@ -213,7 +213,14 @@ pub(crate) fn seam_segments_on(
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
 /// two planes. No new predicate is needed for that.
 pub(crate) fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> i8 {
-    t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
+    // When `V_i` and `V_j` coincide (the `t_orient3d` factor is 0), SoS breaks the tie to a
+    // definite order on the same four planes as `side_of` would (`sos_orient3d`'s `orient_sign(j)`
+    // and `dir_sign`'s square to +1). The `dir_sign` ±1 factor is preserved either way.
+    let o = match t_orient3d(planes, p, q, i, j) {
+        0 => sos_orient3d(planes, [p, q, i], j),
+        s => s,
+    };
+    o * dir_sign(planes, p, q, j)
 }
 
 /// `+1` when a plane's stored normal already points out of its solid, `-1` when the
@@ -613,9 +620,66 @@ fn loop_triples(l: &Loop, p: usize, inc: &EdgePlanes) -> Result<Vec<[usize; 3]>,
     Ok(out)
 }
 
-/// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
+/// Simulation of Simplicity for the four-plane concurrency `orient3d(V, tri_j) == 0`, where
+/// `V = ∩(planes tri[0], tri[1], tri[2])` lies exactly on plane `j`. Returns a definite,
+/// consistent `±1` (never 0): the sign of `orient3d(V, tri_j)` under an infinitesimal
+/// *offset* perturbation `d_k → d_k + ε_k`, `ε_k = ε^(2^rank(k))` keyed by ascending plane
+/// index (Edelsbrunner–Mücke 1990).
+///
+/// Offset-only perturbation leaves the normals — hence `D = det[n_a,n_b,n_c]` — fixed, so
+/// `f = n_j·V + d_j` is *linear* in the εs: `f = Σ ε_k·c_k`, with `c_j = +1` and, for
+/// `k ∈ {a,b,c}`, `c_k = −sign(D)·sign(det[normals with row k → n_j])`. Distinct exponents ⇒
+/// the dominant (largest-ε) term is the first nonzero `c_k` in ascending-index order; `c_j = +1`
+/// is a guaranteed backstop so the walk always terminates. Finally `sign(orient3d(V, tri_j)) =
+/// orient_sign(j)·sign(f)` converts `f`'s stored-normal convention to the triangle-normal
+/// convention `t_orient3d` returns, so this is a drop-in for a `t_orient3d == 0`.
+///
+/// Shared by [`side_of`] and [`order_along`] so their tie-break agrees on the same four planes
+/// (both reduce to this determinant). Replay-stable: the rank is the ascending order of the four
+/// `usize` plane indices, a deterministic function of `collect_planes`' Vec-order construction
+/// (no HashMap iteration) — only the *relative* order matters, so it equals a global-index SoS.
+///
+/// Returns `0` when `j` is one of `tri` (the point is on `j` *definitionally*, not by an
+/// accidental concurrency): no offset perturbation can move `V` off a plane that defines it, so
+/// that `0` is genuine, not a tie to break — the caller keeps its on-plane behavior.
+pub(crate) fn sos_orient3d(planes: &[PlaneInfo], tri: [usize; 3], j: usize) -> i8 {
+    let [a, b, c] = tri;
+    if j == a || j == b || j == c {
+        return 0; // definitional coincidence — not a perturbable degeneracy
+    }
+    debug_assert!(
+        a != b && a != c && b != c,
+        "a node's three planes are distinct"
+    );
+    let d = t_plane_pair_dir_sign(planes, a, b, c); // sign(D) ≠ 0 (V is a defined point)
+    let coeff = |k: usize| -> i8 {
+        if k == j {
+            1
+        } else if k == a {
+            -d * t_plane_pair_dir_sign(planes, j, b, c)
+        } else if k == b {
+            -d * t_plane_pair_dir_sign(planes, a, j, c)
+        } else {
+            -d * t_plane_pair_dir_sign(planes, a, b, j)
+        }
+    };
+    let mut four = [a, b, c, j];
+    four.sort_unstable();
+    let s = four
+        .iter()
+        .map(|&k| coeff(k))
+        .find(|&x| x != 0)
+        .expect("c_j = +1 is a nonzero backstop");
+    orient_sign(planes, j) * s
+}
+
+/// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it — which
+/// [`sos_orient3d`] then breaks to a definite, consistent side (SoS), so this never returns 0.
 fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
-    t_orient3d(planes, t[0], t[1], t[2], q)
+    match t_orient3d(planes, t[0], t[1], t[2], q) {
+        0 => sos_orient3d(planes, t, q),
+        s => s,
+    }
 }
 
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?

@@ -10906,14 +10906,14 @@ pub mod tests {
         }
     }
 
-    /// The two contacts, named. Both were `contact_degenerate` — "grazed a fan diagonal" — and
-    /// neither ever was a graze.
-    ///
-    /// The vertex case is why `point_on_ring` is asked **before** `point_in_ring`: when the
-    /// piercing point is a ring node, both of its rays carry that node, every candidate is
-    /// skipped, and `point_in_ring` alone comes back `no_clear_ray`. Measured below.
+    /// SoS (`sos_orient3d`) resolves an edge that touches a face's boundary. Two of these three
+    /// once honestly rejected (`point_on_ring` / `no_clear_ray`, when the piercing point landed on
+    /// a ring node or edge); SoS now breaks the four-plane concurrency to a definite, consistent
+    /// side. Here the touching box sits in the L's notch (outside the material), so the resolved
+    /// answer is `Ok(false)` — the edge does not cross the face. The whole-edge-in-plane case (a)
+    /// is a `t_plane_side` straddle, untouched by SoS, and still names `VERTEX_ON_FACE_PLANE`.
     #[test]
-    fn an_edge_touching_a_face_is_a_contact_not_a_graze() {
+    fn sos_resolves_an_edge_touching_a_face() {
         let (mut m, l) = l_prism();
         // Its floor lies in the L's own bottom plane.
         let flat = m.add_cuboid(
@@ -10972,29 +10972,115 @@ pub mod tests {
             );
         }
 
-        // (b) The piercing point is a ring node.
+        // (b) The piercing point is the L's reflex ring node (1,1). SoS resolves it to the notch
+        // side (outside the material): the edge does not cross, and the node is outside the ring.
         {
             let (planes, q, rings, inc, bounds) = pierce(at_vertex, [1.0, 1.0]);
-            assert_rejects(
-                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
-                tag::POINT_ON_RING,
+            assert_eq!(
+                arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
+                Ok(false)
             );
             let mut x = [inc[0], inc[1], q];
             x.sort_unstable();
-            assert_rejects(
-                || arrange::point_in_ring(&planes, q, x, &rings[0]),
-                tag::NO_CLEAR_RAY, // the tag the pre-check exists to prevent
-            );
+            assert_eq!(arrange::point_in_ring(&planes, q, x, &rings[0]), Ok(false));
         }
 
-        // (c) The piercing point is inside a ring edge. `point_in_ring` names this one itself.
+        // (c) The piercing point is inside a ring edge; SoS resolves it to outside the material.
         {
             let (planes, q, rings, inc, bounds) = pierce(at_edge, [1.5, 0.0]);
-            assert_rejects(
-                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
-                tag::POINT_ON_RING,
+            assert_eq!(
+                arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
+                Ok(false)
             );
         }
+    }
+
+    #[test]
+    fn sos_orient3d_breaks_a_four_plane_concurrency() {
+        // V = ∩(x=0, y=0, z=0) = origin lies on j: x+y+z=0 — a four-plane concurrency. Offset SoS
+        // perturbs by ascending index; the dominant term is plane a (x=0, index 0): c_a = −1, and
+        // orient_sign(j) = +1, so the tie breaks to −1. Pins the sign convention — a dropped
+        // orient_sign(j) or wrong sign(D) would flip it. (Answer is unique per index order, so this
+        // also fixes the perturbation *direction*, not merely "nonzero".)
+        let mut m = Model::new();
+        let mk = |m: &mut Model, n: [f64; 3], tri: [[f64; 3]; 3]| -> PlaneInfo {
+            let normal = Vector3::from_array(n);
+            let plane = Plane::from_point_normal(Point3::from_array(tri[0]), normal).unwrap();
+            let surf = m.surfaces.push(Surface::Plane(plane));
+            let face = m.faces.push(Face {
+                surface: surf,
+                outer: Loop { half_edges: vec![] },
+                inner: vec![],
+                orientation: Orientation::Forward,
+            });
+            let t = tri.map(Point3::from_array);
+            let n_out = (t[1] - t[0]).cross(t[2] - t[0]).normalize().unwrap();
+            PlaneInfo {
+                surf,
+                face,
+                plane,
+                tri: t,
+                n_out,
+                orient: Orientation::Forward,
+                tri_pt3: None,
+            }
+        };
+        let planes = vec![
+            mk(
+                &mut m,
+                [1., 0., 0.],
+                [[0., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            ), // x = 0
+            mk(
+                &mut m,
+                [0., 1., 0.],
+                [[0., 0., 0.], [0., 0., 1.], [1., 0., 0.]],
+            ), // y = 0
+            mk(
+                &mut m,
+                [0., 0., 1.],
+                [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
+            ), // z = 0
+            mk(
+                &mut m,
+                [1., 1., 1.],
+                [[1., -1., 0.], [0., 1., -1.], [-1., 0., 1.]],
+            ), // x+y+z = 0
+        ];
+        assert_eq!(arrange::sos_orient3d(&planes, [0, 1, 2], 3), -1);
+        // A definitional coincidence (j is one of the triple) is not perturbable → genuine 0.
+        assert_eq!(arrange::sos_orient3d(&planes, [0, 1, 3], 3), 0);
+    }
+
+    #[test]
+    fn sos_enables_an_edge_touch_cut() {
+        // An edge-on-face-boundary Cut that once rejected (POINT_ON_RING). The cutter's bottom-face
+        // edge lies in the L's boundary; SoS resolves the arrangement and the Cut completes,
+        // removing the 0.2×0.2×0.5 overlap: 3 − 0.02 = 2.98.
+        let (mut m, l) = l_prism();
+        let cutter = m.add_cuboid(
+            Point3::from_array([1.5, 0.0, -0.5]),
+            Point3::from_array([1.7, 0.2, 0.5]),
+        );
+        let r = boolean(&mut m, BoolKind::Cut, l, cutter).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert_eq!(r.len(), 1);
+        let vol = nacre_props::mass_props(&m, r[0]).unwrap().volume;
+        assert!((vol - 2.98).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn sos_leaves_a_pure_vertex_touch_honestly_rejected() {
+        // A box corner on the L's reflex vertex is a pure (measure-zero) vertex-touch — genuinely
+        // degenerate. SoS resolves the underlying predicates, but the whole boolean still honestly
+        // rejects rather than fabricating a solid: SoS removes 0s, it does not invent contacts.
+        let (mut m, l) = l_prism();
+        let box_ = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -0.5]),
+            Point3::from_array([1.2, 1.2, 0.5]),
+        );
+        assert!(boolean(&mut m, BoolKind::Cut, l, box_).is_err());
     }
 
     /// The pocketed cube's planes, its lid, that lid's plane index, and its edge index.
