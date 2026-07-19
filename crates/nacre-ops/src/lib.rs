@@ -2520,7 +2520,7 @@ struct SeamVertex {
 
 /// A node in a reconstructed face loop. `Eq`/`Hash` give identity dedup so an
 /// A-piece and a B-piece that meet at a seam node share one result vertex/edge.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Node {
     Orig(Handle<Vertex>),
     Seam([usize; 3]), // sorted triple (key into the seam map)
@@ -3741,8 +3741,7 @@ fn shares_or_coplanar(pa: &PlaneInfo, pb: &PlaneInfo) -> bool {
 
 /// Union-find root of `x` in `parent` (with path compression). Roots are the smallest index
 /// of their class, so the result is deterministic (replay, DNA §absolute-3).
-// Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
-#[cfg_attr(not(test), allow(dead_code))]
+/// Union-find root with path compression. Drives component grouping in [`unify_coplanar_faces`].
 fn uf_find(parent: &mut [usize], x: usize) -> usize {
     let mut r = x;
     while parent[r] != r {
@@ -4885,34 +4884,38 @@ fn solid_local_faces(
     out
 }
 
-/// The vertex handle of an original-face node (coincident-merge loops carry no seam nodes).
-fn node_vh(n: Node) -> Handle<Vertex> {
-    match n {
-        Node::Orig(v) => v,
-        Node::Seam(_) => unreachable!("coincident-merge faces are all Node::Orig"),
+/// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.
+fn norm_edge(a: Node, b: Node) -> (Node, Node) {
+    fn rank(n: Node) -> (u8, usize, usize, usize) {
+        match n {
+            Node::Orig(v) => (0, v.index() as usize, 0, 0),
+            Node::Seam(t) => (1, t[0], t[1], t[2]),
+        }
     }
+    if rank(a) <= rank(b) { (a, b) } else { (b, a) }
 }
 
-/// Splice A's and B's coplanar side faces, which share the interface edge at `lf_a`'s
-/// position `ia` (`a[ia] → a[ia+1]`), into one loop: walk A from the edge's far end all the
-/// way round to its near end, then insert B's complementary path. The shared interface edge
-/// is dropped; its two endpoints remain as (collinear, for a right prism) boundary points.
-fn splice_side_faces(
-    lf_a: &LocalFace,
-    lf_b: &LocalFace,
-    ia: usize,
-    dissolve: &HashSet<Handle<Vertex>>,
-) -> LocalFace {
-    let (a, b) = (&lf_a.loop_nodes, &lf_b.loop_nodes);
-    let (m, n) = (a.len(), b.len());
-    let x = node_vh(a[ia]);
-    let y = node_vh(a[(ia + 1) % m]);
+/// Splice loop `b` into loop `a` across their shared edge `{u, v}` (present in `a` as `u→v`
+/// or `v→u`, and in `b` with the opposite orientation), dropping that edge — the loop-join
+/// core of the coplanar merge. Node identity throughout, agnostic to `Orig`/`Seam` away from
+/// the shared edge. The shared edge's two endpoints remain as (collinear, for a flat merge)
+/// boundary points; [`unify_coplanar_faces`] dissolves them globally afterwards.
+fn splice_along(a: &[Node], b: &[Node], u: Node, v: Node) -> Vec<Node> {
+    let m = a.len();
+    let ia = (0..m)
+        .find(|&i| {
+            let (p, q) = (a[i], a[(i + 1) % m]);
+            (p == u && q == v) || (p == v && q == u)
+        })
+        .expect("shared edge lies on A's loop");
+    let (x, y) = (a[ia], a[(ia + 1) % m]);
+    let n = b.len();
     // B traverses the shared edge the opposite way: `b[ib] = Y`, `b[ib+1] = X`.
     let ib = (0..n)
-        .find(|&j| node_vh(b[j]) == y && node_vh(b[(j + 1) % n]) == x)
-        .expect("B's side face shares the interface edge, opposite orientation");
+        .find(|&j| b[j] == y && b[(j + 1) % n] == x)
+        .expect("B's face shares the edge, opposite orientation");
     let mut nodes = Vec::with_capacity(m + n - 2);
-    // A from Y (ia+1) forward all the way to X (ia): the whole A loop, less the dropped edge.
+    // A from Y (ia+1) all the way to X (ia): the whole A loop, less the dropped edge.
     for t in 0..m {
         nodes.push(a[(ia + 1 + t) % m]);
     }
@@ -4920,117 +4923,137 @@ fn splice_side_faces(
     for t in 2..n {
         nodes.push(b[(ib + t) % n]);
     }
-    // Drop the straight-angle interface vertices: each is flanked by its A and B far
-    // corners, so removing it fuses the split vertical edge into one (cell fuse-coplanar-merge).
-    nodes.retain(|nd| !dissolve.contains(&node_vh(*nd)));
-    LocalFace {
-        plane_idx: lf_a.plane_idx,
-        loop_nodes: nodes,
-        inner: Vec::new(),
-        flip: false,
-    }
+    nodes
 }
 
-/// For a coincident Fuse, merge each interface edge's two incident side faces (one from A,
-/// one from B) into a single face **when they are coplanar** — the flat-edge defeature that
-/// lets the fused solid chain (cell fuse-coplanar-merge). A non-coplanar pair is a genuine
-/// dihedral (a slanted operand) and stays separate; a holed side face stays separate; cap
-/// faces (no interface edge) pass through. `faces_a`/`faces_b` already skip the interface
-/// faces, with B's interface vertices remapped to A's handles.
-fn merge_coincident_fuse_faces(
+/// Merge coplanar, same-normal, hole-free faces that share an original edge into one face,
+/// then dissolve straight-angle (globally degree-2, exactly collinear) original vertices — a
+/// T-junction-free defeature. Generalizes the coincident Fuse merge off the interface ring to
+/// any plane class via an edge→faces map: two faces meeting flat across an original edge fuse,
+/// and the now-redundant edge and its straight-angle vertices disappear.
+///
+/// Reused, not reinvented: `plane_classes` (`canon`) decides coplanarity, `n_out.dot > 0` the
+/// shared-normal guard — a real dihedral, or an opposite-normal cantilever step, is kept — and
+/// `pt3_base_collinear` the exact straight-angle test. `assemble_fuse_cut` downstream is
+/// unchanged. Detection is deterministic (faces in index order, edges in loop order) for replay.
+///
+/// Deferred, each a safe no-op: holed faces (`inner`), seam-shared edges (detection needs `Orig`
+/// endpoints), opposite-normal coplanar pairs, and non-disk components (a `debug_assert` guards
+/// the disk assumption). The one caller today is the coincident Fuse; a future coplanar-contact
+/// path is the second.
+fn unify_coplanar_faces(
     model: &Model,
-    iface: &Interface,
-    faces_a: Vec<LocalFace>,
-    faces_b: Vec<LocalFace>,
+    faces: Vec<LocalFace>,
     planes: &[PlaneInfo],
+    canon: &[usize],
 ) -> Vec<LocalFace> {
-    let ring: Vec<Handle<Vertex>> = model
-        .faces
-        .get(iface.fa)
-        .outer
-        .half_edges
-        .iter()
-        .map(|&he| he_start(model, he))
-        .collect();
-    let iface_edges: HashSet<(usize, usize)> = (0..ring.len())
-        .map(|i| {
-            unordered(
-                ring[i].index() as usize,
-                ring[(i + 1) % ring.len()].index() as usize,
-            )
-        })
-        .collect();
-    // A side face has exactly one interface edge; return its key and the position of the
-    // edge's start node in the loop. A cap face has none.
-    let side_edge = |lf: &LocalFace| -> Option<((usize, usize), usize)> {
+    let n = faces.len();
+    // 1. Edge (unordered node pair) → the faces carrying it, over outer loops. Built in face
+    //    order, so each value is ascending face indices.
+    let mut edge_faces: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
         let k = lf.loop_nodes.len();
-        (0..k).find_map(|i| {
-            let u = node_vh(lf.loop_nodes[i]).index() as usize;
-            let w = node_vh(lf.loop_nodes[(i + 1) % k]).index() as usize;
-            let key = unordered(u, w);
-            iface_edges.contains(&key).then_some((key, i))
-        })
-    };
-    let edge_to_face = |faces: &[LocalFace]| -> HashMap<(usize, usize), usize> {
-        faces
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, lf)| side_edge(lf).map(|(key, _)| (key, idx)))
-            .collect()
-    };
-    let a_side = edge_to_face(&faces_a);
-    let b_side = edge_to_face(&faces_b);
-    // An interface edge merges when both incident side faces are coplanar and hole-free.
-    let merged: HashSet<(usize, usize)> = iface_edges
-        .iter()
-        .filter(|key| match (a_side.get(key), b_side.get(key)) {
-            (Some(&ia), Some(&ib)) => {
-                let (la, lb) = (&faces_a[ia], &faces_b[ib]);
-                la.inner.is_empty()
-                    && lb.inner.is_empty()
-                    && planes_coplanar(&planes[la.plane_idx].plane, &planes[lb.plane_idx].plane)
-            }
-            _ => false,
-        })
-        .copied()
-        .collect();
-    // An interface vertex whose *both* incident interface edges merge is a straight angle:
-    // its A and B vertical edges are the same line `P_i ∩ P_{i-1}`. Dissolve it (drop from
-    // the merged loops) so the split vertical edge fuses into one — a clean box.
-    let nr = ring.len();
-    let dissolve: HashSet<Handle<Vertex>> = (0..nr)
-        .filter(|&i| {
-            let prev = unordered(
-                ring[(i + nr - 1) % nr].index() as usize,
-                ring[i].index() as usize,
-            );
-            let next = unordered(
-                ring[i].index() as usize,
-                ring[(i + 1) % nr].index() as usize,
-            );
-            merged.contains(&prev) && merged.contains(&next)
-        })
-        .map(|i| ring[i])
-        .collect();
-
-    let mut b_taken = vec![false; faces_b.len()];
-    let mut out = Vec::new();
-    for lf_a in faces_a {
-        let Some((key, ia)) = side_edge(&lf_a) else {
-            out.push(lf_a); // cap
-            continue;
-        };
-        if merged.contains(&key) {
-            let ib = b_side[&key];
-            b_taken[ib] = true;
-            out.push(splice_side_faces(&lf_a, &faces_b[ib], ia, &dissolve));
-        } else {
-            out.push(lf_a); // real dihedral, or holed: keep separate
+        for i in 0..k {
+            let e = norm_edge(lf.loop_nodes[i], lf.loop_nodes[(i + 1) % k]);
+            edge_faces.entry(e).or_default().push(fi);
         }
     }
-    for (ib, lf_b) in faces_b.into_iter().enumerate() {
-        if !b_taken[ib] {
-            out.push(lf_b);
+    // 2. Mergeable edges (deterministic order): shared by exactly two faces that are coplanar,
+    //    same-normal, hole-free, with both endpoints `Orig`. Union the incident faces.
+    let mut mergeable: Vec<(Node, Node)> = Vec::new();
+    let mut comp: Vec<usize> = (0..n).collect();
+    for (fi, lf) in faces.iter().enumerate() {
+        let k = lf.loop_nodes.len();
+        for i in 0..k {
+            let (u, v) = (lf.loop_nodes[i], lf.loop_nodes[(i + 1) % k]);
+            let fs = &edge_faces[&norm_edge(u, v)];
+            if fs.len() != 2 || fs[0] != fi {
+                continue; // process each edge once, from its lower-index face
+            }
+            if !matches!(u, Node::Orig(_)) || !matches!(v, Node::Orig(_)) {
+                continue; // seam-shared edge — deferred
+            }
+            let (li, lj) = (&faces[fs[0]], &faces[fs[1]]);
+            if canon[li.plane_idx] != canon[lj.plane_idx] {
+                continue; // not coplanar
+            }
+            if planes[li.plane_idx].n_out.dot(planes[lj.plane_idx].n_out) <= 0.0 {
+                continue; // opposite normal — a genuine fold/step, keep
+            }
+            if !li.inner.is_empty() || !lj.inner.is_empty() {
+                continue; // holed — deferred
+            }
+            mergeable.push((u, v));
+            let (ri, rj) = (uf_find(&mut comp, fs[0]), uf_find(&mut comp, fs[1]));
+            if ri != rj {
+                comp[ri] = rj;
+            }
+        }
+    }
+    if mergeable.is_empty() {
+        return faces; // nothing coplanar-adjacent
+    }
+    // 3. Fold each component into one loop by splicing across its mergeable edges.
+    let mut active: Vec<Option<LocalFace>> = faces.into_iter().map(Some).collect();
+    let mut slot: Vec<usize> = (0..n).collect(); // orig face → active slot currently holding it
+    for (u, v) in mergeable {
+        let fs = &edge_faces[&norm_edge(u, v)];
+        let (si, sj) = (uf_find(&mut slot, fs[0]), uf_find(&mut slot, fs[1]));
+        if si == sj {
+            continue; // already one face (joined via another edge of this component)
+        }
+        let lf_b = active[sj].take().expect("active slot");
+        let lf_a = active[si].as_ref().expect("active slot");
+        let loop_nodes = splice_along(&lf_a.loop_nodes, &lf_b.loop_nodes, u, v);
+        debug_assert!(
+            loop_nodes.len() >= 3,
+            "coplanar merge across a non-disk component"
+        );
+        active[si] = Some(LocalFace {
+            plane_idx: lf_a.plane_idx,
+            loop_nodes,
+            inner: Vec::new(),
+            flip: false,
+        });
+        slot[sj] = si;
+    }
+    let mut out: Vec<LocalFace> = active.into_iter().flatten().collect();
+    // 4. Dissolve straight-angle Orig vertices: globally degree-2 (one edge line through them)
+    //    and exactly collinear. Drop from every incident loop at once, so a vertex that is a
+    //    real corner on any face survives (no T-junction).
+    let mut nbrs: HashMap<Node, HashSet<Node>> = HashMap::new();
+    for lf in &out {
+        let k = lf.loop_nodes.len();
+        for i in 0..k {
+            let (a, b) = (lf.loop_nodes[i], lf.loop_nodes[(i + 1) % k]);
+            nbrs.entry(a).or_default().insert(b);
+            nbrs.entry(b).or_default().insert(a);
+        }
+    }
+    let mut drop: HashSet<Node> = HashSet::new();
+    for (&node, ns) in &nbrs {
+        let Node::Orig(v) = node else { continue };
+        if ns.len() != 2 {
+            continue;
+        }
+        let mut it = ns.iter();
+        let (Node::Orig(a), Node::Orig(b)) = (*it.next().unwrap(), *it.next().unwrap()) else {
+            continue; // a seam neighbour — leave the vertex (deferred)
+        };
+        let (Ok(pa), Ok(pv), Ok(pb)) = (
+            nacre_tip::vertex_pt3(model, a),
+            nacre_tip::vertex_pt3(model, v),
+            nacre_tip::vertex_pt3(model, b),
+        ) else {
+            continue;
+        };
+        if pt3_base_collinear(&pa, &pv, &pb) {
+            drop.insert(node);
+        }
+    }
+    if !drop.is_empty() {
+        for lf in &mut out {
+            lf.loop_nodes.retain(|nd| !drop.contains(nd));
         }
     }
     out
@@ -5070,9 +5093,16 @@ fn coincident_merge(
             let planes_b = collect_planes(model, b)?;
             let mut planes = planes_a;
             planes.extend(planes_b);
-            let faces_a = solid_local_faces(model, a, 0, Some(iface.fa), None);
-            let faces_b = solid_local_faces(model, b, na, Some(iface.fb), Some(&iface.remap));
-            let faces = merge_coincident_fuse_faces(model, iface, faces_a, faces_b, &planes);
+            let mut faces = solid_local_faces(model, a, 0, Some(iface.fa), None);
+            faces.extend(solid_local_faces(
+                model,
+                b,
+                na,
+                Some(iface.fb),
+                Some(&iface.remap),
+            ));
+            let canon = plane_classes(&planes);
+            let faces = unify_coplanar_faces(model, faces, &planes, &canon);
             assemble_fuse_cut(model, a, b, &planes, &[], &faces)
         }
     }
@@ -15112,6 +15142,201 @@ pub mod tests {
         assert!(vs.is_empty(), "{vs:?}");
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 1.75).abs() < 1e-12, "volume {vol}");
+    }
+
+    // ---- `unify_coplanar_faces`: the general (interface-free) coplanar merge, on hand-built
+    // `LocalFace` lists the coincident goldens above never reach — chains, opposite normals,
+    // holes, seam edges, and the asymmetric T-junction the global dissolve exists to prevent. ----
+
+    fn mk_vert(m: &mut Model, x: f64, y: f64, z: f64) -> Handle<Vertex> {
+        m.vertices.push(Vertex {
+            point: Point3::from_array([x, y, z]),
+            origin: Origin::Constructed,
+        })
+    }
+
+    /// A `PlaneInfo` whose only field `unify_coplanar_faces` reads is `n_out`; the rest is a
+    /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
+    fn mk_plane(m: &mut Model, n: [f64; 3]) -> PlaneInfo {
+        let normal = Vector3::from_array(n);
+        let plane = Plane::from_point_normal(Point3::origin(), normal).unwrap();
+        let surf = m.surfaces.push(Surface::Plane(plane));
+        let face = m.faces.push(Face {
+            surface: surf,
+            outer: Loop { half_edges: vec![] },
+            inner: vec![],
+            orientation: Orientation::Forward,
+        });
+        PlaneInfo {
+            surf,
+            face,
+            plane,
+            tri: [Point3::origin(); 3],
+            n_out: normal,
+            orient: Orientation::Forward,
+            tri_pt3: None,
+        }
+    }
+
+    fn oloop(vs: &[Handle<Vertex>]) -> Vec<Node> {
+        vs.iter().map(|&v| Node::Orig(v)).collect()
+    }
+
+    fn face(plane_idx: usize, nodes: Vec<Node>, inner: Vec<Vec<Node>>) -> LocalFace {
+        LocalFace {
+            plane_idx,
+            loop_nodes: nodes,
+            inner,
+            flip: false,
+        }
+    }
+
+    #[test]
+    fn unify_merges_a_coplanar_chain() {
+        // Three unit squares on z=0 (+z), tiled in x, each sharing a vertical edge with the
+        // next. One plane class, one normal ⇒ all fuse into a single face; the four
+        // straight-angle mid-edge vertices dissolve, leaving one 4-corner rectangle.
+        let mut m = Model::new();
+        let p = vec![mk_plane(&mut m, [0.0, 0.0, 1.0])];
+        let canon = vec![0];
+        let g = |m: &mut Model, x, y| mk_vert(m, x, y, 0.0);
+        let (c00, c10, c20, c30) = (
+            g(&mut m, 0., 0.),
+            g(&mut m, 1., 0.),
+            g(&mut m, 2., 0.),
+            g(&mut m, 3., 0.),
+        );
+        let (c31, c21, c11, c01) = (
+            g(&mut m, 3., 1.),
+            g(&mut m, 2., 1.),
+            g(&mut m, 1., 1.),
+            g(&mut m, 0., 1.),
+        );
+        let faces = vec![
+            face(0, oloop(&[c00, c10, c11, c01]), vec![]),
+            face(0, oloop(&[c10, c20, c21, c11]), vec![]),
+            face(0, oloop(&[c20, c30, c31, c21]), vec![]),
+        ];
+        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
+        let l = &out[0].loop_nodes;
+        assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
+        for c in [c00, c30, c31, c01] {
+            assert!(l.contains(&Node::Orig(c)), "corner kept");
+        }
+        for c in [c10, c20, c11, c21] {
+            assert!(!l.contains(&Node::Orig(c)), "mid vertex dropped");
+        }
+    }
+
+    #[test]
+    fn unify_keeps_opposite_normal_coplanar() {
+        // Two coplanar faces sharing an edge but with opposite outward normals — a genuine
+        // fold / cantilever step (cell canon-step), not redundant. The shared-normal guard
+        // (`n_out.dot > 0`) keeps them separate.
+        let mut m = Model::new();
+        let p = vec![
+            mk_plane(&mut m, [0., 0., 1.]),
+            mk_plane(&mut m, [0., 0., -1.]),
+        ];
+        let canon = vec![0, 0]; // same plane class, opposite normal
+        let a = mk_vert(&mut m, 0., 0., 0.);
+        let b = mk_vert(&mut m, 1., 0., 0.);
+        let c = mk_vert(&mut m, 1., 1., 0.);
+        let d = mk_vert(&mut m, 0., 1., 0.);
+        let h = mk_vert(&mut m, 0., -1., 0.);
+        let e = mk_vert(&mut m, 1., -1., 0.);
+        let faces = vec![
+            face(0, oloop(&[a, b, c, d]), vec![]),
+            face(1, oloop(&[b, a, h, e]), vec![]),
+        ];
+        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        assert_eq!(out.len(), 2, "opposite-normal pair stays separate");
+    }
+
+    #[test]
+    fn unify_keeps_holed_faces() {
+        // A holed face is left separate (merging holes is deferred).
+        let mut m = Model::new();
+        let p = vec![mk_plane(&mut m, [0., 0., 1.])];
+        let canon = vec![0];
+        let g = |m: &mut Model, x, y| mk_vert(m, x, y, 0.0);
+        let (a, b, c, d) = (
+            g(&mut m, 0., 0.),
+            g(&mut m, 1., 0.),
+            g(&mut m, 1., 1.),
+            g(&mut m, 0., 1.),
+        );
+        let (e, f) = (g(&mut m, 2., 0.), g(&mut m, 2., 1.));
+        let (h0, h1, h2) = (
+            g(&mut m, 0.2, 0.2),
+            g(&mut m, 0.4, 0.2),
+            g(&mut m, 0.3, 0.4),
+        );
+        let faces = vec![
+            face(0, oloop(&[a, b, c, d]), vec![oloop(&[h0, h1, h2])]),
+            face(0, oloop(&[b, e, f, c]), vec![]),
+        ];
+        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        assert_eq!(out.len(), 2, "a holed face is not merged");
+    }
+
+    #[test]
+    fn unify_skips_seam_shared_edges() {
+        // Two coplanar same-normal faces sharing an edge whose endpoints are seam nodes.
+        // Detection requires `Orig` endpoints (splice reads original vertices), so the pair is
+        // left separate — and, crucially, `splice_along`'s `Orig`-only path is never entered
+        // (no panic).
+        let mut m = Model::new();
+        let p = vec![mk_plane(&mut m, [0., 0., 1.])];
+        let canon = vec![0];
+        let a = Node::Orig(mk_vert(&mut m, 0., 0., 0.));
+        let b = Node::Orig(mk_vert(&mut m, 1., 1., 0.));
+        let (s1, s2) = (Node::Seam([1, 2, 3]), Node::Seam([2, 3, 4]));
+        let faces = vec![
+            face(0, vec![s1, s2, a], vec![]),
+            face(0, vec![s2, s1, b], vec![]),
+        ];
+        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        assert_eq!(out.len(), 2, "seam-shared edge is not merged");
+    }
+
+    #[test]
+    fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
+        // F0,F1 on z=0 merge; their shared-edge endpoint (1,0,0) is a straight angle on the
+        // merged face but a real corner on a perpendicular face G (plane y=0). Global degree 3
+        // ⇒ it is NOT dissolved — a per-face local rule would have, opening a T-junction. Its
+        // twin (1,1,0), on the merged face only, IS dissolved.
+        let mut m = Model::new();
+        let p = vec![
+            mk_plane(&mut m, [0., 0., 1.]),
+            mk_plane(&mut m, [0., -1., 0.]),
+        ];
+        let canon = vec![0, 1];
+        let v000 = mk_vert(&mut m, 0., 0., 0.);
+        let v100 = mk_vert(&mut m, 1., 0., 0.);
+        let v200 = mk_vert(&mut m, 2., 0., 0.);
+        let v210 = mk_vert(&mut m, 2., 1., 0.);
+        let v110 = mk_vert(&mut m, 1., 1., 0.);
+        let v010 = mk_vert(&mut m, 0., 1., 0.);
+        let v201 = mk_vert(&mut m, 2., 0., 1.);
+        let v101 = mk_vert(&mut m, 1., 0., 1.);
+        let faces = vec![
+            face(0, oloop(&[v000, v100, v110, v010]), vec![]),
+            face(0, oloop(&[v100, v200, v210, v110]), vec![]),
+            face(1, oloop(&[v200, v100, v101, v201]), vec![]), // perpendicular, not coplanar
+        ];
+        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
+        let merged = out.iter().find(|lf| lf.plane_idx == 0).unwrap();
+        assert!(
+            merged.loop_nodes.contains(&Node::Orig(v100)),
+            "corner-elsewhere vertex kept (no T-junction)"
+        );
+        assert!(
+            !merged.loop_nodes.contains(&Node::Orig(v110)),
+            "pure straight-angle vertex dropped"
+        );
     }
 
     #[test]
