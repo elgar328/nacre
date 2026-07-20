@@ -3872,9 +3872,13 @@ fn contact_boundary(
 /// becomes the chord's carrying `wall`. `pi` is the section plane's index in `planes` (the same one
 /// passed to `section_of_solid`), so the wall indices agree with the rest of the machinery.
 ///
-/// Scope: a single closed loop, no holes. A multi-loop section (a slot piercing a cavity → outer +
-/// hole rings) is rejected up front (`SECTION_MULTI_LOOP`), never silently flattened — the one
-/// genuine silent-wrong risk of the section approach (plan §C2 급소).
+/// Scope: **components are carried, not refused** — the edges come back concatenated with
+/// `ring_lens` naming each, `seg` running across the whole list, and no edge joining one
+/// component's last vertex to the next component's first (`section_boundary_keeps_a_multi_loop_
+/// section_separate`). This docstring previously claimed a multi-loop section was "rejected up
+/// front (`SECTION_MULTI_LOOP`)"; the ring-aware generalization made that false, and the tag is now
+/// raised by `classify_and_emit`, not here. Silent flattening remains the thing to avoid — carrying
+/// the components is how, rather than rejecting them.
 ///
 /// R0 (section-Q canonicalization): `section_of_solid` emits **raw** combined-plane indices, but the
 /// rest of the coplanar machinery runs in **canon** classes; without folding the section's triples

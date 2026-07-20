@@ -55,13 +55,15 @@ per-op(Fuse/Cut/Common), 두 solid A·B의 **모든 면**에 대해:
 | seam 곡선 조립(arc/loop) | `seam_paths_on`·`seam_segments_on` | arrange 1124·112 |
 | 직선 위 점 순서 | `order_along` | arrange 215 |
 | 평면 위 점-in-polygon | `point_in_ring`/`point_on_ring`/`every_ray` | arrange 642·664·772 |
-| 셀 추출(kept/dropped run→cycle) | `boundary_runs`/`run_classes`/`stitch_cycles` | arrange 402·491·268 |
+| 링 세분(kept/dropped run→cycle) | `boundary_runs`/`run_classes`/`stitch_cycles` | arrange 402·491·268 |
 | 3D in/out(winding-parity) anchor | `point_in_solid_idx` | arrange 861 |
 | 고리 감김·방향 | `loop_winding`/`turn_at`/`orient_seam_loop` | arrange 1005·540·1051 |
 | 공면 겹침 경계 | `coplanar_boundary_crossings` | lib 4102 |
 | op별 keep/flip 규칙 | keep 테이블 | lib 1976 |
 | **조립(정점 weld·cavity·multi-solid)** | **`assemble_fuse_cut`** | lib 3512 |
 | 회전 건전성 | `tolerant` 층(`t_*`) | tolerant.rs |
+
+**⚠ 위 표의 "링 세분"을 "셀 추출기"로 읽지 말 것(2026-07-20 정정).** 원래 이 칸은 "셀 추출"이라 적혀 있었고 그건 **차원을 하나 과장**한다. `stitch_cycles`는 **한 링을 arc로 세분**할 뿐 임의 평면 그래프의 면을 열거하지 않으며, 성공 조건도 각 arc가 `kd`/`dk` 끝을 하나씩 가질 것을 요구한다. **평면 arrangement의 셀 추출기는 레포에 없다** — DCEL(정점 둘레 모서리의 순환 순서 + twin)이 필요하고, `turn_at`(arrange 540)은 *지명된 두* 모서리의 좌/우 부호만 주지 k>2의 전순환 순서를 주지 않는다.
 
 **제거(통합 후):** kind별 detector들(`detect_*`)·`coplanar_result_unified`/`classify_and_emit` 생존표 분기·`overlap_fuse_cut`/`general_boolean` 이중 경로 + dispatch case-routing.
 **유지:** Requicha in/out/on± keep **규칙**(작고 고정, 균일 적용). 즉 "생존표 소거"가 아니라 "**detector 소거 + 규칙 균일화**."
@@ -70,7 +72,8 @@ per-op(Fuse/Cut/Common), 두 solid A·B의 **모든 면**에 대해:
 
 ## 6. scope 축소 통찰 (2개)
 
-- **글로벌 arrangement 그래프 불필요.** 현 transversal 엔진(`reconstruct_face_paths`)이 이미 **per-face 분해 + weld-by-triple 조립**(글로벌 상태 0, 병렬)으로 정확한 결과를 낸다. winding 엔진도 같은 per-face 패턴 — 조립이 글로벌 봉합. (문헌의 전역 arrangement 구조 불요.)
+- **글로벌 arrangement 그래프 불필요 — ⚠ 단, *횡단 엔진에 한해서다*(2026-07-20 정정).** 현 transversal 엔진(`reconstruct_face_paths`)이 이미 **per-face 분해 + weld-by-triple 조립**(글로벌 상태 0, 병렬)으로 정확한 결과를 낸다. **왜 거기서 통하는지가 중요하다:** 결과 면이 *실제 모델 면의 부분집합*이고 경계가 *공유된 seam 곡선*이라 이웃 면들의 정점 집합 일치가 **구성상 보장**된다.
+  **이 문장을 평면 단위 arrangement의 근거로 쓰면 안 된다.** 거기서는 평면 `p`와 `q`가 공유선 `p∩q`를 **각자 독립적으로** 분할하고, 일치를 강제하는 장치가 없다 — 어긋나면 `assemble_fuse_cut`의 "모서리 정확히 2회" 가드에서 죽는다. **실측(2026-07-20):** 기존 경계 정점만으로 비교하면 same_ground에서 **30쌍 중 12쌍이 불일치**하며, 원인은 **선분 교차점을 만들지 않은 것**이다(테스트 `a_per_plane_arrangement_must_mint_crossing_points`). 즉 평면 arrangement는 **교차점을 스스로 만들어야** 하고, 그 뒤에도 일치 여부는 **아직 미결**이다(교차 술어 필요).
 - **임의-점 in/out 분류기 불필요.** `point_in_solid_idx`는 ≥3평면 점 전용(cell 중심 분류 불가)이나, **propagation**(원본 정점 anchor + seam flip)이 이를 우회 — 새 술어 species 안 만듦.
 
 ∴ 이건 **from-scratch 일반 arrangement가 아니라, 기존 per-face 코드(횡단 `reconstruct_face_paths` + 공면 `coplanar_reconstruct`)의 통합·일반화.**
@@ -108,6 +111,8 @@ per-op(Fuse/Cut/Common), 두 solid A·B의 **모든 면**에 대해:
 - **M-C**(완료) — **통합 드라이버 `winding_boolean`**: 글로벌 detector 없이 per-face dispatch로 **기존 작업기 재사용**(횡단→`reconstruct_face_paths`, 조립→`assemble_fuse_cut`; seam 빌드는 `build_seam`로 추출·공유). **첫 end-to-end** — 순수 횡단(corner·tunnel·sever)에서 `winding_boolean == boolean`(부피·manifold·면수·결정성) 검증. 공면 arm·containment는 정직거절(후속). **발견:** `reconstruct_face_paths`의 분류=M-A propagation이라 순수 횡단선 현 엔진=winding(§6대로 재작성 아닌 재사용); M-A/M-B propagation은 프런티어에서 실사용.
 - **F2**(완료, M-D/M-E를 대체) — **detector 붕괴를 프로덕션에서 직접 달성.** 격리 드라이버를 커토버하는 대신, `boolean`의 detector 게이트 7종을 **exact 질문 하나**(`coplanar_contact_count >= 1`)로 붕괴하고 전 골든+OCCT로 검증(= 권위 있는 병렬 검증). detector 12종·고아 타입 **~775줄 삭제**, 좁은 게이트가 막던 **케이스 3건 신규 성공**(비볼록 오버행 1.096·edge-slot-through-bottom 0.75·corner-cut-through-bottom 0.75), 넓어진 라우팅이 드러낸 열린-셸 1건은 **조립 닫힘 가드**(모서리 정확히 2회)로 정직 거절 복귀.
   - **∴ 로드맵 수정:** M-E("`coplanar_result_unified`·`overlap_fuse_cut` 은퇴")는 **폐기**한다 — SoS Cell 4 실측이 "seam 하나로 통일"을 반증했고(구조적 공면성), F2가 실제 목표였던 **detector 소거**를 이미 달성했다. 두 작업기(seam/coplanar)의 공존은 구조적 필연이며 제거 대상이 아니다.
+  - **⚠ 위 "구조적 필연" 판정은 오류였다(2026-07-20 정정).** SoS Cell 4가 반증한 것은 **"seam 하나로 통일"** 이지 **"통합 자체"** 가 아니다. §4는 애초에 seam-only가 아니라 **기여 소스 둘(횡단 seam 곡선 + 공면 겹침 경계)을 한 세분 입력으로 모으는 것**을 말했고(37-40번 줄), 그 1차 작업은 **수행된 적이 없다.** 다른 명제의 반증을 근거로 로드맵을 은퇴시킨 것이며, 이후 그 자리를 **케이스별 갭 메꾸기**가 채웠다 — 11·13번 줄이 금지한 바로 그 일이다. **사용자가 이 드리프트를 지적해 방향을 되돌렸다.**
+  - **현 방향(2026-07-20, 사용자 결정):** 평면 클래스마다 **진짜 2D arrangement(cell complex + winding 라벨)** 를 만든다. 구엔진은 차등 검증 오라클로 남기고 커토버는 전 스위트+OCCT 동등일 때만. **근거가 선 것:** 라벨 의미론은 실행 테스트로 확인됐다(아래). **아직 안 선 것:** 평면 간 일관성(교차 술어 필요)·각도 순환 순서 술어(레포에 없음, DNA 질문).
 - **남은 작업** — 엔진 대체가 아니라 **커버리지 확장**: 공면 arm의 containment(seam 없음)·cavity 접촉(현재 outer shell만 순회)·회전 접촉. 격리 winding 드라이버(M-A~M-C)는 순수 횡단 end-to-end로 검증된 상태로 남으며, 향후 필요 시 이 확장의 실험대로 쓴다.
 
 각 마일스톤: isolated → 병렬 검증 → 배선, 매 단계 측정-먼저·honest-reject·전 게이트(fmt·clippy·스위트·OCCT). 막히면 현 엔진 보존.
