@@ -13489,6 +13489,140 @@ pub mod tests {
     /// those are exactly the points on the shared line. `section_of_solid` rejecting (it declines a
     /// plane it has vertices on) contributes nothing rather than failing: a plane class with no
     /// section still has its faces.
+    /// One boundary segment of a plane class, named entirely in plane classes. It rides `wall`, so
+    /// it lies on the line `p ∩ wall`; on that line a point is named by its *third* plane alone
+    /// (`order_along`'s convention, arrange.rs:204-214), and the segment's two ends are named by
+    /// `end[0]` / `end[1]`.
+    #[derive(Clone, Copy, Debug)]
+    struct Chord {
+        wall: usize,
+        end: [usize; 2],
+    }
+
+    /// Every boundary segment a per-plane-class arrangement would take as input on class `p`: the
+    /// outer loops of both solids' faces seated on `p`, plus both solids' sections cut by `p`.
+    ///
+    /// A contact face's vertex is `{p, prev_wall, wall}`, so an edge's two ends are named by its
+    /// neighbouring walls — derived from the loop rather than from an index correspondence with
+    /// `contact_boundary`, which keeps this independent of that function's ordering. A section
+    /// chord already carries `Node::Seam` triples, so its ends are read off directly.
+    #[allow(clippy::too_many_arguments)]
+    fn chords_on_class(
+        m: &Model,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Face>, usize>,
+        inc_a: &arrange::EdgePlanes,
+        inc_b: &arrange::EdgePlanes,
+        canon: &[usize],
+        p: usize,
+    ) -> Vec<Chord> {
+        let mut out = Vec::new();
+        // A ring of vertex triples on plane `p` → its chords. Consecutive triples share the wall
+        // the edge between them rides; that wall is the plane both triples name besides `p`.
+        let mut ring_chords = |ring: &[[usize; 3]]| {
+            let n = ring.len();
+            if n < 3 {
+                return;
+            }
+            let third = |t: [usize; 3], w: usize| -> Option<usize> {
+                let mut it = t.iter().copied().filter(|&x| x != p && x != w);
+                let v = it.next()?;
+                it.next().is_none().then_some(v)
+            };
+            for i in 0..n {
+                let (t0, t1) = (ring[i], ring[(i + 1) % n]);
+                // The edge rides the single plane its two endpoints share besides `p`.
+                let shared: Vec<usize> = t0
+                    .iter()
+                    .copied()
+                    .filter(|&x| x != p && t1.contains(&x))
+                    .collect();
+                let [Some(wall), Some(e0), Some(e1)] = [
+                    (shared.len() == 1).then(|| shared[0]),
+                    shared.first().and_then(|&w| third(t0, w)),
+                    shared.first().and_then(|&w| third(t1, w)),
+                ] else {
+                    continue; // degenerate naming — contributes nothing rather than mis-ordering
+                };
+                out.push(Chord {
+                    wall,
+                    end: [e0, e1],
+                });
+            }
+        };
+        let canonize = |t: [usize; 3]| {
+            let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
+            c.sort_unstable();
+            c
+        };
+        for (solid, inc) in [(a, inc_a), (b, inc_b)] {
+            for sh in solid_shell_handles(m, solid) {
+                for &fh in &m.shells.get(sh).faces {
+                    let fi = surf_ix[&fh];
+                    if canon[fi] != p {
+                        continue;
+                    }
+                    if let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) {
+                        let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
+                        ring_chords(&ring);
+                    }
+                }
+            }
+            if let Ok(loops) = section_of_solid(m, solid, p, planes, surf_ix) {
+                for l in loops {
+                    let ring: Vec<[usize; 3]> = l
+                        .into_iter()
+                        .filter_map(|n| match n {
+                            Node::Seam(t) => Some(canonize(t)),
+                            Node::Orig(_) => None,
+                        })
+                        .collect();
+                    ring_chords(&ring);
+                }
+            }
+        }
+        out
+    }
+
+    /// The arrangement vertices class `p` **mints**: for every pair of chords riding different
+    /// walls, the three-plane point `{p, w1, w2}` when it falls strictly inside both chords.
+    ///
+    /// `order_along(planes, p, w, x, e)` orders two points of the line `p ∩ w`, each named by its
+    /// third plane — so `x` is strictly between the chord's ends exactly when the two comparisons
+    /// come back non-zero and opposite. **Strict is an invariant, not a choice:** admitting an
+    /// endpoint mints a point that already exists, and a zero-length result edge panics at
+    /// `Line::through_points(..).expect("distinct")` (lib.rs:3576) — an abort, not a reject.
+    ///
+    /// Walls whose normals are coplanar with `p`'s meet it in no point; `t_plane_pair_dir_sign`
+    /// returns 0 there and the pair contributes nothing (that is the collinear-overlap case, E5).
+    fn minted_crossings(planes: &[PlaneInfo], p: usize, chords: &[Chord]) -> HashSet<[usize; 3]> {
+        let strictly_inside = |c: &Chord, x: usize| -> bool {
+            let (s0, s1) = (
+                arrange::order_along(planes, p, c.wall, x, c.end[0]),
+                arrange::order_along(planes, p, c.wall, x, c.end[1]),
+            );
+            s0 != 0 && s1 != 0 && s0 != s1
+        };
+        let mut out = HashSet::new();
+        for (i, c1) in chords.iter().enumerate() {
+            for c2 in &chords[i + 1..] {
+                if c1.wall == c2.wall
+                    || tolerant::t_plane_pair_dir_sign(planes, p, c1.wall, c2.wall) == 0
+                {
+                    continue;
+                }
+                if strictly_inside(c1, c2.wall) && strictly_inside(c2, c1.wall) {
+                    let mut t = [p, c1.wall, c2.wall];
+                    t.sort_unstable();
+                    out.insert(t);
+                }
+            }
+        }
+        out
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn triples_on_shared_line(
         m: &Model,
@@ -13617,6 +13751,54 @@ pub mod tests {
                  {from_p:?} vs {from_q:?}"
             );
         }
+    }
+
+    /// **Lock on the crossing generator, against an answer known by hand.** Nothing downstream of
+    /// `minted_crossings` is worth reading until this passes.
+    ///
+    /// On `same_ground`'s shared plane `z=0`, the two footprints are the squares `[0,1]²` (A) and
+    /// `[0.5,1.5]²` (B). Their boundaries cross at exactly two points — `(1, 0.5, 0)` and
+    /// `(0.5, 1, 0)` — and nowhere else: the other footprint edges either miss or meet only outside
+    /// each other's extent. So the generator must mint **exactly 2** here. Any other number means
+    /// the extent test or the wall naming is wrong, not that the geometry is surprising.
+    #[test]
+    fn the_crossing_generator_mints_the_two_crossings_same_ground_has() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+
+        // The shared ground plane: the class both solids seat a face on, whose faces are the
+        // z=0 caps. Identify it as the class hosting faces of both solids.
+        let ground = (0..planes.len())
+            .map(|i| canon[i])
+            .find(|&c| {
+                let owners =
+                    |s: Handle<Solid>| {
+                        solid_shell_handles(&m, s).into_iter().any(|sh| {
+                            m.shells.get(sh).faces.iter().any(|fh| {
+                                canon[surf_ix[fh]] == c && planes[surf_ix[fh]].n_out[2] < 0.0
+                            })
+                        })
+                    };
+                owners(a) && owners(b)
+            })
+            .expect("same_ground has a class both solids seat a downward face on");
+
+        let chords = chords_on_class(&m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, ground);
+        let minted = minted_crossings(&planes, ground, &chords);
+        assert_eq!(
+            minted.len(),
+            2,
+            "expected the two square-footprint crossings, got {minted:?} from {} chords",
+            chords.len()
+        );
     }
 
     /// **E1 — `coplanar_survival` is a consequence of one rule, not six independent facts.**
