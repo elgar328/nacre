@@ -104,7 +104,7 @@ per-op(Fuse/Cut/Common), 두 solid A·B의 **모든 면**에 대해:
 ## 9. 증분 로드맵 (cold-start 금지)
 
 - **M-A** — per-face **propagation-winding 분류** 프리미티브(원본 정점 anchor + seam flip → sub-face in/out-B), isolated + test-only, `run_classes` 재사용. 순수 횡단서 구엔진과 일치.
-- **M-B** — 횡단+공면 **통합 세분**(F의 B-기여를 한 입력으로) + on± 분류. E1/E2 혼합·§7 on-boundary 처리.
+- **M-B**(완료) — **unified per-face 분류**: 글로벌 detector 없이 로컬 `other_classes.contains(&pi)`로 공면-vs-횡단 dispatch + 공면 on±(`coincident_overlap_faces`+`coplanar_survival`). classification-only(방출=M-C). **실측 발견:** dispatch·on±은 정확하나 same_ground **벽**의 완전 분류는 M-A 횡단엔진의 **공면-인접 프런티어**(on-boundary 정점 `no_clear_ray` + 공유-캡 위 seam `vertex_on_face_plane`) — 부분-anchor 전파 + 공면-aware seam이 필요, 별도 후속.
 - **M-C** — uniform keep 규칙(Requicha 선택) + `LocalFace` 방출.
 - **M-D** — `assemble_fuse_cut` 배선 + **병렬 검증**(전 골든 diff: same_ground·single-shared·transversal…; containment 등 현 실패 케이스도 실측).
 - **M-E** — **커토버**: detector·생존표·`coplanar_result_unified`·`overlap_fuse_cut` 은퇴, design.md 최종 갱신.
