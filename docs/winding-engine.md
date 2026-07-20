@@ -105,7 +105,7 @@ per-op(Fuse/Cut/Common), 두 solid A·B의 **모든 면**에 대해:
 
 - **M-A** — per-face **propagation-winding 분류** 프리미티브(원본 정점 anchor + seam flip → sub-face in/out-B), isolated + test-only, `run_classes` 재사용. 순수 횡단서 구엔진과 일치.
 - **M-B**(완료) — **unified per-face 분류**: 글로벌 detector 없이 로컬 `other_classes.contains(&pi)`로 공면-vs-횡단 dispatch + 공면 on±(`coincident_overlap_faces`+`coplanar_survival`). classification-only(방출=M-C). **실측 발견:** dispatch·on±은 정확하나 same_ground **벽**의 완전 분류는 M-A 횡단엔진의 **공면-인접 프런티어**(on-boundary 정점 `no_clear_ray` + 공유-캡 위 seam `vertex_on_face_plane`) — 부분-anchor 전파 + 공면-aware seam이 필요, 별도 후속.
-- **M-C** — uniform keep 규칙(Requicha 선택) + `LocalFace` 방출.
+- **M-C**(완료) — **통합 드라이버 `winding_boolean`**: 글로벌 detector 없이 per-face dispatch로 **기존 작업기 재사용**(횡단→`reconstruct_face_paths`, 조립→`assemble_fuse_cut`; seam 빌드는 `build_seam`로 추출·공유). **첫 end-to-end** — 순수 횡단(corner·tunnel·sever)에서 `winding_boolean == boolean`(부피·manifold·면수·결정성) 검증. 공면 arm·containment는 정직거절(후속). **발견:** `reconstruct_face_paths`의 분류=M-A propagation이라 순수 횡단선 현 엔진=winding(§6대로 재작성 아닌 재사용); M-A/M-B propagation은 프런티어에서 실사용.
 - **M-D** — `assemble_fuse_cut` 배선 + **병렬 검증**(전 골든 diff: same_ground·single-shared·transversal…; containment 등 현 실패 케이스도 실측).
 - **M-E** — **커토버**: detector·생존표·`coplanar_result_unified`·`overlap_fuse_cut` 은퇴, design.md 최종 갱신.
 

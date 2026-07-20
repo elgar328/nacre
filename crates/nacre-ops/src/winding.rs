@@ -113,6 +113,85 @@ fn solid_plane_classes(
         .collect()
 }
 
+/// 양 solid의 모든 원본 정점을 상대 solid에 대해 `vertex_in_solid`로 분류(현 `overlap_fuse_cut`
+/// 1816-1855의 순차판; classof는 handle 키라 삽입 순서 무관). winding 드라이버가
+/// `reconstruct_face_paths`에 넘길 `classof`. 정점이 상대 경계 위(공면-인접)면 `vertex_in_solid`가
+/// 거절되어 전파 — 그 케이스가 프런티어(M-A/M-B propagation이 실사용될 곳).
+#[allow(clippy::too_many_arguments)]
+fn winding_classof(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    inc_a: &arrange::EdgePlanes,
+    inc_b: &arrange::EdgePlanes,
+    canon: &[usize],
+) -> Result<HashMap<Handle<Vertex>, Side>, BoolError> {
+    let mut classof: HashMap<Handle<Vertex>, Side> = HashMap::new();
+    for (verts_solid, other, inc_v, inc_o) in [(a, b, inc_a, inc_b), (b, a, inc_b, inc_a)] {
+        for vh in solid_vertex_handles(model, verts_solid) {
+            let side = vertex_in_solid(model, vh, inc_v, other, inc_o, planes, surf_ix, canon)?;
+            classof.insert(vh, side);
+        }
+    }
+    Ok(classof)
+}
+
+/// **통합 winding 드라이버(M-C)** — 글로벌 detector 없이 per-face dispatch로 **기존 작업기를 재사용**
+/// 해 `a`⋈`b`(kind)를 계산한다. `overlap_fuse_cut`의 setup·조립을 미러(reuse)하되, 면당 로컬 체크
+/// `other_classes.contains(&pi)`로 공면-vs-횡단을 가른다: **횡단**→`reconstruct_face_paths`(재사용,
+/// 이 함수의 분류가 곧 M-A propagation), **공면**→정직 거절(on± 방출 arm은 프런티어 후 배선).
+///
+/// 스코프: **순수 횡단(seam 비어있지 않음)** 만. containment(seam 없음, `contained_result`)·공면·
+/// mixed는 후속. dead·미배선(커토버 전까지 프로덕션 미사용) — 순수 횡단에선 `boolean`과 결과 동일.
+fn winding_boolean(
+    model: &mut Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    kind: BoolKind,
+) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b)?;
+    let classof = winding_classof(model, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon)?;
+    let (seam, seam_ix) = build_seam(model, a, b, &planes, &surf_ix, &inc_a, &inc_b, &classof)?;
+    if seam.is_empty() {
+        return Err(reject(tag::WINDING_NO_SEAM)); // containment/disjoint — next milestone
+    }
+    let (keep_a, keep_b, flip_b) = match kind {
+        BoolKind::Fuse => (Side::Outside, Side::Outside, false),
+        BoolKind::Cut => (Side::Outside, Side::Inside, true),
+        BoolKind::Common => (Side::Inside, Side::Inside, false),
+    };
+    // Per-face, per-side: dispatch coplanar-vs-transversal LOCALLY (no global detector). Order
+    // mirrors `overlap_fuse_cut` (a-side then b-side, shell/face order) so assembly's first-
+    // appearance handle numbering is deterministic and matches the current engine.
+    let mut faces: Vec<LocalFace> = Vec::new();
+    for (solid, other, inc_f, inc_o, keep, flip) in [
+        (a, b, &inc_a, &inc_b, keep_a, false),
+        (b, a, &inc_b, &inc_a, keep_b, flip_b),
+    ] {
+        let other_classes = solid_plane_classes(model, other, &surf_ix, &canon);
+        for sh in solid_shell_handles(model, solid) {
+            for fh in model.shells.get(sh).faces.clone() {
+                let pidx = surf_ix[&fh];
+                if other_classes.contains(&canon[pidx]) {
+                    // Coplanar face: on± emission is a later milestone (frontier).
+                    return Err(reject(tag::COPLANAR_PAIR));
+                }
+                let lfs = reconstruct_face_paths(
+                    model, fh, other, pidx, keep, flip, &classof, &seam, &seam_ix, &planes,
+                    &surf_ix, inc_f, inc_o,
+                )?;
+                faces.extend(lfs);
+            }
+        }
+    }
+    if faces.len() < 4 {
+        return Err(BoolError::EmptyResult);
+    }
+    assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
+}
+
 /// 솔리드 `qs`의 모든 정점을 `other`에 대해 `point_in_solid_idx`로 분류한 결과(정점 순서대로).
 /// `Err`는 그 정점이 exact 인덱스-substrate로 판정 불가함을 뜻한다 — winding 엔진에서 **B 경계
 /// 위(on)** 정점(공유평면 위 코너 등)이 여기 걸린다. propagation의 anchor는 `Ok`인 정점만 쓰고,
@@ -489,5 +568,146 @@ mod tests {
             };
             assert_eq!(*s.as_ref().unwrap(), want, "{p:?}");
         }
+    }
+
+    // ---- M-C: unified driver end-to-end vs the current engine (pure transversal) ----
+
+    fn face_count(m: &Model, s: Handle<Solid>) -> usize {
+        solid_shell_handles(m, s)
+            .iter()
+            .map(|&sh| m.shells.get(sh).faces.len())
+            .sum()
+    }
+
+    fn total_volume(m: &Model, solids: &[Handle<Solid>]) -> f64 {
+        solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(m, s).unwrap().volume)
+            .sum()
+    }
+
+    /// Run `kind` through BOTH engines on identical fresh models and assert they agree:
+    /// same solid count, winding result manifold, same total volume, same total face count.
+    /// Returns the winding volume for the caller to check against the analytic value.
+    fn assert_winding_matches(
+        build: impl Fn() -> (Model, Handle<Solid>, Handle<Solid>),
+        kind: BoolKind,
+    ) -> f64 {
+        let (mut mc, ac, bc) = build();
+        let cur = boolean(&mut mc, kind, ac, bc).expect("current engine failed");
+        let (mut mw, aw, bw) = build();
+        let win = winding_boolean(&mut mw, aw, bw, kind).expect("winding engine failed");
+        assert_eq!(win.len(), cur.len(), "{kind:?}: solid count");
+        assert!(
+            nacre_validate::validate(&mw).is_empty(),
+            "{kind:?}: winding result not manifold"
+        );
+        let (vw, vc) = (total_volume(&mw, &win), total_volume(&mc, &cur));
+        assert!(
+            (vw - vc).abs() < 1e-9,
+            "{kind:?}: vol winding {vw} vs current {vc}"
+        );
+        let (fw, fc): (usize, usize) = (
+            win.iter().map(|&s| face_count(&mw, s)).sum(),
+            cur.iter().map(|&s| face_count(&mc, s)).sum(),
+        );
+        assert_eq!(fw, fc, "{kind:?}: face count winding {fw} vs current {fc}");
+        vw
+    }
+
+    fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
+        m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
+    }
+
+    // corner overlap (a=[0,1]³, b=[0.5,1.5]³, no shared plane): single-region cuts, one solid out.
+    // winding_boolean == boolean for all three ops (same workers, same inputs).
+    #[test]
+    fn winding_matches_boolean_corner_overlap() {
+        let build = || {
+            let mut m = Model::new();
+            let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+            let b = cuboid(&mut m, [0.5; 3], [1.5; 3]);
+            m.rebuild_adjacency();
+            (m, a, b)
+        };
+        for (kind, want) in [
+            (BoolKind::Fuse, 1.875),
+            (BoolKind::Cut, 0.875),
+            (BoolKind::Common, 0.125),
+        ] {
+            let vw = assert_winding_matches(build, kind);
+            assert!(
+                (vw - want).abs() < 1e-9,
+                "{kind:?}: winding vol {vw} != {want}"
+            );
+        }
+        // determinism: two winding runs give the same volume.
+        let (mut m1, a1, b1) = build();
+        let (mut m2, a2, b2) = build();
+        let r1 = winding_boolean(&mut m1, a1, b1, BoolKind::Cut).unwrap();
+        let r2 = winding_boolean(&mut m2, a2, b2, BoolKind::Cut).unwrap();
+        assert_eq!(
+            total_volume(&m1, &r1),
+            total_volume(&m2, &r2),
+            "deterministic"
+        );
+    }
+
+    // Through-tunnel: b pierces a along x (protrudes both ends), interior y,z. Cut bores a
+    // rectangular tunnel through a (out-in-out seam parity). Exercises multi-crossing + cavity/
+    // through-hole assembly reuse. No shared plane → pure transversal.
+    #[test]
+    fn winding_matches_boolean_tunnel() {
+        let build = || {
+            let mut m = Model::new();
+            let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+            let b = cuboid(&mut m, [-0.5, 0.25, 0.25], [1.5, 0.75, 0.75]);
+            m.rebuild_adjacency();
+            (m, a, b)
+        };
+        // a∖(tunnel): 1 − 1·0.5·0.5 = 0.75.
+        let vw = assert_winding_matches(build, BoolKind::Cut);
+        assert!((vw - 0.75).abs() < 1e-9, "tunnel Cut vol {vw}");
+    }
+
+    // Sever: b (spans y,z fully, x∈[1,2]) slices bar a=[0,3]×[0,1]² into two pieces. Cut →
+    // TWO solids. Exercises assemble's multi-solid separation. No shared plane → pure transversal.
+    #[test]
+    fn winding_matches_boolean_sever() {
+        let build = || {
+            let mut m = Model::new();
+            let a = cuboid(&mut m, [0.0, 0.0, 0.0], [3.0, 1.0, 1.0]);
+            let b = cuboid(&mut m, [1.0, -0.5, -0.5], [2.0, 1.5, 1.5]);
+            m.rebuild_adjacency();
+            (m, a, b)
+        };
+        // two pieces x∈[0,1] and x∈[2,3], each 1·1·1 = 1 → total 2.
+        let vw = assert_winding_matches(build, BoolKind::Cut);
+        assert!((vw - 2.0).abs() < 1e-9, "sever Cut vol {vw}");
+    }
+
+    // Coplanar case (same_ground): the driver dispatches the shared caps to the coplanar arm, but
+    // that arm is not yet wired (frontier) — and the coplanar-adjacent walls fail classof anyway.
+    // Either way winding_boolean honestly rejects. Locks "coplanar not yet end-to-end".
+    #[test]
+    fn winding_rejects_coplanar_same_ground() {
+        let mut m = Model::new();
+        let a = cuboid(&mut m, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let b = cuboid(&mut m, [0.5, 0.5, 0.0], [1.5, 1.5, 1.0]);
+        m.rebuild_adjacency();
+        assert!(winding_boolean(&mut m, a, b, BoolKind::Fuse).is_err());
+    }
+
+    // No seam (disjoint boxes, share nothing): containment/disjoint is not yet wired into the
+    // unified driver. Locks the `WINDING_NO_SEAM` honest-reject.
+    #[test]
+    fn winding_rejects_no_seam_disjoint() {
+        let mut m = Model::new();
+        let a = cuboid(&mut m, [0.0; 3], [1.0; 3]);
+        let b = cuboid(&mut m, [5.0; 3], [6.0; 3]);
+        m.rebuild_adjacency();
+        LAST_REJECT.with(|c| c.take());
+        assert!(winding_boolean(&mut m, a, b, BoolKind::Fuse).is_err());
+        assert_eq!(LAST_REJECT.with(|c| c.get()), Some(tag::WINDING_NO_SEAM));
     }
 }
