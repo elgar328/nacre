@@ -13499,6 +13499,18 @@ pub mod tests {
         end: [usize; 2],
     }
 
+    /// What the chord builder had to drop. Both are ways a class ends up with *less* boundary than
+    /// it really has, and downstream neither is distinguishable from "the section was never
+    /// computed" unless it is counted here.
+    #[derive(Default, Debug, Clone, Copy)]
+    struct ChordStats {
+        /// A ring edge whose two endpoint triples do not share exactly one plane besides `p` —
+        /// what a canonized four-plane vertex looks like. Produces no chord.
+        skipped_naming: usize,
+        /// A canonized triple with a repeated index (`[c, w, w]`), which is not a point.
+        degenerate_triples: usize,
+    }
+
     /// Every boundary segment a per-plane-class arrangement would take as input on class `p`: the
     /// outer loops of both solids' faces seated on `p`, plus both solids' sections cut by `p`.
     ///
@@ -13517,11 +13529,12 @@ pub mod tests {
         inc_b: &arrange::EdgePlanes,
         canon: &[usize],
         p: usize,
-    ) -> Vec<Chord> {
+    ) -> (Vec<Chord>, ChordStats) {
         let mut out = Vec::new();
+        let mut stats = ChordStats::default();
         // A ring of vertex triples on plane `p` → its chords. Consecutive triples share the wall
         // the edge between them rides; that wall is the plane both triples name besides `p`.
-        let mut ring_chords = |ring: &[[usize; 3]]| {
+        let mut ring_chords = |ring: &[[usize; 3]], skipped: &mut usize| {
             let n = ring.len();
             if n < 3 {
                 return;
@@ -13544,7 +13557,11 @@ pub mod tests {
                     shared.first().and_then(|&w| third(t0, w)),
                     shared.first().and_then(|&w| third(t1, w)),
                 ] else {
-                    continue; // degenerate naming — contributes nothing rather than mis-ordering
+                    // Degenerate naming — no chord rather than a mis-ordered one. **Counted**, not
+                    // silent: an edge that produces nothing here is indistinguishable downstream
+                    // from a section that was never computed, and the two mean different things.
+                    *skipped += 1;
+                    continue;
                 };
                 out.push(Chord {
                     wall,
@@ -13552,9 +13569,15 @@ pub mod tests {
                 });
             }
         };
-        let canonize = |t: [usize; 3]| {
+        // Canonizing after `loop_triples`' raw straight-angle check can still fold two planes of one
+        // class together, leaving `[c, w, w]` — not a point. Counted so it cannot masquerade as
+        // absent input.
+        let canonize = |t: [usize; 3], degen: &mut usize| {
             let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
             c.sort_unstable();
+            if c[0] == c[1] || c[1] == c[2] {
+                *degen += 1;
+            }
             c
         };
         for (solid, inc) in [(a, inc_a), (b, inc_b)] {
@@ -13565,8 +13588,22 @@ pub mod tests {
                         continue;
                     }
                     if let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) {
-                        let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
-                        ring_chords(&ring);
+                        let ring: Vec<[usize; 3]> = ts
+                            .into_iter()
+                            .map(|t| canonize(t, &mut stats.degenerate_triples))
+                            .collect();
+                        ring_chords(&ring, &mut stats.skipped_naming);
+                    }
+                    // Hole rims bound the face just as the outer loop does; leaving them out empties
+                    // the chord set by every hole edge and reads downstream as absent input.
+                    if let Ok(rings) = arrange::hole_rings(m, fh, fi, inc) {
+                        for r in rings {
+                            let ring: Vec<[usize; 3]> = r
+                                .into_iter()
+                                .map(|t| canonize(t, &mut stats.degenerate_triples))
+                                .collect();
+                            ring_chords(&ring, &mut stats.skipped_naming);
+                        }
                     }
                 }
             }
@@ -13575,15 +13612,15 @@ pub mod tests {
                     let ring: Vec<[usize; 3]> = l
                         .into_iter()
                         .filter_map(|n| match n {
-                            Node::Seam(t) => Some(canonize(t)),
+                            Node::Seam(t) => Some(canonize(t, &mut stats.degenerate_triples)),
                             Node::Orig(_) => None,
                         })
                         .collect();
-                    ring_chords(&ring);
+                    ring_chords(&ring, &mut stats.skipped_naming);
                 }
             }
         }
-        out
+        (out, stats)
     }
 
     /// The arrangement vertices class `p` **mints**: for every pair of chords riding different
@@ -13791,7 +13828,8 @@ pub mod tests {
             })
             .expect("same_ground has a class both solids seat a downward face on");
 
-        let chords = chords_on_class(&m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, ground);
+        let (chords, _) =
+            chords_on_class(&m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, ground);
         let minted = minted_crossings(&planes, ground, &chords);
         assert_eq!(
             minted.len(),
@@ -13819,7 +13857,16 @@ pub mod tests {
         /// from undecidable noise, this is the case that matters most: one class puts a vertex on
         /// the shared line where the other class's boundary passes through with no vertex at all.
         /// That is a T-junction, the thing `resplit_overhang` exists to repair in today's engine.
-        on_boundary: usize,
+        /// On the boundary, and the lacking class had **both sections computed** — the only
+        /// sub-population that can speak about minting rather than about absent input.
+        on_boundary_complete: usize,
+        /// On the boundary, but the lacking class's section producer declined. Same confound that
+        /// accounted for 42/42 of the inside-disagreements; measured here rather than modelled.
+        on_boundary_missing_section: usize,
+        /// Boundary a class could not build: four-plane naming skips and canon-degenerate triples.
+        /// Both look like absent input downstream, so they are surfaced, not folded in.
+        chord_skips: usize,
+        chord_degenerate: usize,
         /// Containment genuinely undecidable and not on any boundary. Counted, never read as
         /// "outside" — reading a reject as a negative is a mistake this work already made once.
         undecided: usize,
@@ -13835,22 +13882,27 @@ pub mod tests {
             c
         };
         // Mint once per class, then read each pair off the results.
-        let minted: HashMap<usize, HashSet<[usize; 3]>> = classes
+        let minted: HashMap<usize, (HashSet<[usize; 3]>, ChordStats)> = classes
             .iter()
             .map(|&p| {
-                let ch = chords_on_class(m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, p);
-                (p, minted_crossings(&planes, p, &ch))
+                let (ch, st) =
+                    chords_on_class(m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, p);
+                (p, (minted_crossings(&planes, p, &ch), st))
             })
             .collect();
 
         let mut t = SweepTally::default();
+        for (_, st) in minted.values() {
+            t.chord_skips += st.skipped_naming;
+            t.chord_degenerate += st.degenerate_triples;
+        }
         for (i, &p) in classes.iter().enumerate() {
             for &q in &classes[i + 1..] {
                 let side = |x: usize, y: usize| -> HashSet<[usize; 3]> {
                     let mut s = triples_on_shared_line(
                         m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, x, y,
                     );
-                    s.extend(minted[&x].iter().filter(|t| t.contains(&y)).copied());
+                    s.extend(minted[&x].0.iter().filter(|t| t.contains(&y)).copied());
                     s
                 };
                 let (from_p, from_q) = (side(p, q), side(q, p));
@@ -13865,16 +13917,17 @@ pub mod tests {
                 // For each point one side lacks, ask whether it lies inside a face of the class
                 // that lacks it — only there could an emitted face have referenced it.
                 for (lacking, missing) in [(q, &from_p - &from_q), (p, &from_q - &from_p)] {
+                    // A class whose section producer declined never had the input, so nothing it
+                    // "disagrees" about speaks to minting. Computed once per side and applied to
+                    // BOTH verdicts below — applying it only to the inside branch is what let the
+                    // previous increment call 626 boundary cases a general T-junction finding.
+                    let complete = section_of_solid(m, a, lacking, &planes, &surf_ix).is_ok()
+                        && section_of_solid(m, b, lacking, &planes, &surf_ix).is_ok();
                     for tri in missing {
                         match inside_a_host_face(
                             m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, lacking, tri,
                         ) {
                             Ok(true) => {
-                                // Attribute it: a class whose section producer declined never had
-                                // the input, so its "disagreement" says nothing about minting.
-                                let complete = section_of_solid(m, a, lacking, &planes, &surf_ix)
-                                    .is_ok()
-                                    && section_of_solid(m, b, lacking, &planes, &surf_ix).is_ok();
                                 if complete {
                                     t.inside_unexplained += 1;
                                 } else {
@@ -13883,13 +13936,15 @@ pub mod tests {
                             }
                             Ok(false) => t.outside += 1,
                             Err(_) => {
-                                if on_a_host_ring(
+                                if !on_a_host_ring(
                                     m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, lacking,
                                     tri,
                                 ) {
-                                    t.on_boundary += 1;
-                                } else {
                                     t.undecided += 1;
+                                } else if complete {
+                                    t.on_boundary_complete += 1;
+                                } else {
+                                    t.on_boundary_missing_section += 1;
                                 }
                             }
                         }
@@ -13928,9 +13983,19 @@ pub mod tests {
                     let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) else {
                         continue;
                     };
-                    let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
-                    if arrange::point_on_ring(planes, c, t, &ring) == Ok(true) {
-                        return true;
+                    let mut rings: Vec<Vec<[usize; 3]>> =
+                        vec![ts.into_iter().map(canonize).collect()];
+                    // Hole rims bound the face too — a point on a hole rim is on the boundary.
+                    if let Ok(hs) = arrange::hole_rings(m, fh, fi, inc) {
+                        rings.extend(
+                            hs.into_iter()
+                                .map(|r| r.into_iter().map(canonize).collect()),
+                        );
+                    }
+                    for ring in &rings {
+                        if arrange::point_on_ring(planes, c, t, ring) == Ok(true) {
+                            return true;
+                        }
                     }
                 }
             }
@@ -13972,7 +14037,21 @@ pub mod tests {
                     };
                     let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
                     match arrange::point_in_ring(planes, c, t, &ring) {
-                        Ok(true) => return Ok(true),
+                        Ok(true) => {
+                            // Inside the outer loop, but a point inside a hole is outside the face.
+                            let in_hole = arrange::hole_rings(m, fh, fi, inc)
+                                .map(|hs| {
+                                    hs.into_iter().any(|r| {
+                                        let h: Vec<[usize; 3]> =
+                                            r.into_iter().map(canonize).collect();
+                                        arrange::point_in_ring(planes, c, t, &h) == Ok(true)
+                                    })
+                                })
+                                .unwrap_or(false);
+                            if !in_hole {
+                                return Ok(true);
+                            }
+                        }
                         Ok(false) => {}
                         Err(e) => rejected = Some(e),
                     }
@@ -13999,25 +14078,30 @@ pub mod tests {
     /// any lie *inside* a host face of the class that lacks it?** Only those could have been
     /// referenced by an emitted face.
     ///
-    /// **Measured 2026-07-20 over 14 fixtures / 767 intersecting class pairs:**
-    /// `agreed 420 · outside 20 · inside_missing_section 42 · inside_unexplained 0 ·
-    /// on_boundary 626 · undecided 0`.
+    /// **Measured over 14 fixtures / 767 intersecting class pairs:** `agreed 420 · outside 20 ·
+    /// inside_missing_section 42 · inside_unexplained 0 · on_boundary_complete 0 ·
+    /// on_boundary_missing_section 626 · chord_skips 0 · chord_degenerate 0 · undecided 0`.
     ///
-    /// Two results, and the second is the one that matters:
-    /// 1. **Per-plane minting is not refuted.** All 42 inside-disagreements are on classes whose
-    ///    section producer declined — they never had the input. Zero survive with both sections in
-    ///    hand. The per-line shared table stays unbuilt: still unevidenced.
-    /// 2. **★ The dominant category is the T-junction, 626 of them.** Every one of these is a point
-    ///    lying *on* the lacking class's face boundary, with no vertex there. Minting crossings
-    ///    per plane is necessary but **not sufficient**: a class must also split its own boundary
-    ///    at points its neighbours introduce. That is exactly what `resplit_overhang` (lib.rs:5884)
-    ///    does today under an overhang-shaped name, and this measurement is the evidence that the
-    ///    need is **general**, not case-specific.
+    /// **One cause accounts for every disagreement: `section_of_solid` declining the class.**
+    /// 42 of 42 inside-disagreements, and **626 of 626** on-boundary ones. Not a single
+    /// disagreement of either kind occurs on a class that had both sections in hand.
     ///
-    /// **Open, and deliberately not guessed:** whether each of the 626 is a true T-junction (the
-    /// boundary genuinely passes through with no vertex) or a *naming* collision (the same point
-    /// carried by a 4-plane vertex the loop names `{q, prev, next}`). Both break the weld, by
-    /// different mechanisms needing different fixes, and separating them is the next increment.
+    /// **★ This corrects the first reading of this sweep.** The `complete` test was originally
+    /// applied only to the inside branch, so the 626 arrived unattributed and were written up as
+    /// "T-junctions are a general requirement, and `resplit_overhang` is the evidence." That claim
+    /// is **not supported**: with the same test applied to the boundary branch, the population that
+    /// could have spoken about minting is **empty**. The lesson is the one this work keeps
+    /// relearning — a confound must be *removed*, not modelled beside the thing it confounds.
+    ///
+    /// **What it leaves standing:** per-plane minting is not refuted (the per-line shared table
+    /// stays unbuilt, still unevidenced), and `section_of_solid`'s `VERTEX_ON_FACE_PLANE`
+    /// (lib.rs:5964-5967) is the sole measured blocker — it abandons an entire section for one
+    /// incident vertex, which in an arrangement is not a degeneracy but a 0-dimensional input.
+    ///
+    /// **Untested here:** hole rims are now gathered (`arrange::hole_rings`) by all three probes,
+    /// but the numbers are unchanged — this two-solid corpus has no holed face participating on a
+    /// shared class. That fix is insurance, not something this sweep validated. Rotated inputs are
+    /// absent from the corpus and so outside every verdict above.
     ///
     /// Swept over every two-solid fixture rather than one, because non-convex L/U/staple is where
     /// `SECTION_MULTI_LOOP` concentrated and where an inside-disagreement would show up if it
@@ -14079,7 +14163,10 @@ pub mod tests {
                     total.outside += t.outside;
                     total.inside_missing_section += t.inside_missing_section;
                     total.inside_unexplained += t.inside_unexplained;
-                    total.on_boundary += t.on_boundary;
+                    total.on_boundary_complete += t.on_boundary_complete;
+                    total.on_boundary_missing_section += t.on_boundary_missing_section;
+                    total.chord_skips += t.chord_skips;
+                    total.chord_degenerate += t.chord_degenerate;
                     total.undecided += t.undecided;
                 }
                 // A fixture the setup declines contributes nothing — but silence would read as
@@ -14101,11 +14188,21 @@ pub mod tests {
             "no inside-disagreement was attributed to a declined section — the sweep may no longer \
              be exercising the case it was built for. Totals: {total:?}"
         );
+        // Currently zero, and that is the finding. It becomes non-zero exactly when
+        // `section_of_solid` stops declining these classes — at which point real disagreements
+        // become visible for the first time and the architecture question genuinely reopens. So
+        // this firing is a prompt to re-measure, not a regression.
+        assert_eq!(
+            total.on_boundary_complete, 0,
+            "an on-boundary disagreement appeared on a class with BOTH sections computed — the \
+             section confound no longer explains everything, and the minting question is now \
+             live. Re-measure before trusting the old verdict. Totals: {total:?}"
+        );
         // The T-junction population is the increment's finding; if it ever vanishes, the conclusion
         // drawn from it needs re-deriving rather than inheriting.
         assert!(
-            total.on_boundary > 0,
-            "no on-boundary disagreements — the T-junction finding no longer reproduces: {total:?}"
+            total.on_boundary_complete + total.on_boundary_missing_section > 0,
+            "no on-boundary disagreements at all — the population this measures is gone: {total:?}"
         );
         assert_eq!(
             total.undecided, 0,
