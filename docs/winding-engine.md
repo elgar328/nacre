@@ -106,7 +106,8 @@ per-op(Fuse/Cut/Common), 두 solid A·B의 **모든 면**에 대해:
 - **M-A** — per-face **propagation-winding 분류** 프리미티브(원본 정점 anchor + seam flip → sub-face in/out-B), isolated + test-only, `run_classes` 재사용. 순수 횡단서 구엔진과 일치.
 - **M-B**(완료) — **unified per-face 분류**: 글로벌 detector 없이 로컬 `other_classes.contains(&pi)`로 공면-vs-횡단 dispatch + 공면 on±(`coincident_overlap_faces`+`coplanar_survival`). classification-only(방출=M-C). **실측 발견:** dispatch·on±은 정확하나 same_ground **벽**의 완전 분류는 M-A 횡단엔진의 **공면-인접 프런티어**(on-boundary 정점 `no_clear_ray` + 공유-캡 위 seam `vertex_on_face_plane`) — 부분-anchor 전파 + 공면-aware seam이 필요, 별도 후속.
 - **M-C**(완료) — **통합 드라이버 `winding_boolean`**: 글로벌 detector 없이 per-face dispatch로 **기존 작업기 재사용**(횡단→`reconstruct_face_paths`, 조립→`assemble_fuse_cut`; seam 빌드는 `build_seam`로 추출·공유). **첫 end-to-end** — 순수 횡단(corner·tunnel·sever)에서 `winding_boolean == boolean`(부피·manifold·면수·결정성) 검증. 공면 arm·containment는 정직거절(후속). **발견:** `reconstruct_face_paths`의 분류=M-A propagation이라 순수 횡단선 현 엔진=winding(§6대로 재작성 아닌 재사용); M-A/M-B propagation은 프런티어에서 실사용.
-- **M-D** — `assemble_fuse_cut` 배선 + **병렬 검증**(전 골든 diff: same_ground·single-shared·transversal…; containment 등 현 실패 케이스도 실측).
-- **M-E** — **커토버**: detector·생존표·`coplanar_result_unified`·`overlap_fuse_cut` 은퇴, design.md 최종 갱신.
+- **F2**(완료, M-D/M-E를 대체) — **detector 붕괴를 프로덕션에서 직접 달성.** 격리 드라이버를 커토버하는 대신, `boolean`의 detector 게이트 7종을 **exact 질문 하나**(`coplanar_contact_count >= 1`)로 붕괴하고 전 골든+OCCT로 검증(= 권위 있는 병렬 검증). detector 12종·고아 타입 **~775줄 삭제**, 좁은 게이트가 막던 **케이스 3건 신규 성공**(비볼록 오버행 1.096·edge-slot-through-bottom 0.75·corner-cut-through-bottom 0.75), 넓어진 라우팅이 드러낸 열린-셸 1건은 **조립 닫힘 가드**(모서리 정확히 2회)로 정직 거절 복귀.
+  - **∴ 로드맵 수정:** M-E("`coplanar_result_unified`·`overlap_fuse_cut` 은퇴")는 **폐기**한다 — SoS Cell 4 실측이 "seam 하나로 통일"을 반증했고(구조적 공면성), F2가 실제 목표였던 **detector 소거**를 이미 달성했다. 두 작업기(seam/coplanar)의 공존은 구조적 필연이며 제거 대상이 아니다.
+- **남은 작업** — 엔진 대체가 아니라 **커버리지 확장**: 공면 arm의 containment(seam 없음)·cavity 접촉(현재 outer shell만 순회)·회전 접촉. 격리 winding 드라이버(M-A~M-C)는 순수 횡단 end-to-end로 검증된 상태로 남으며, 향후 필요 시 이 확장의 실험대로 쓴다.
 
 각 마일스톤: isolated → 병렬 검증 → 배선, 매 단계 측정-먼저·honest-reject·전 게이트(fmt·clippy·스위트·OCCT). 막히면 현 엔진 보존.

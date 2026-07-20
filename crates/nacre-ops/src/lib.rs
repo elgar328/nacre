@@ -1535,12 +1535,19 @@ pub(crate) struct PlaneInfo {
 }
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
-/// **Coverage:** planar solids in general position — all three kinds go through one
-/// exact seam path (`general_boolean`), the convex fast paths (`fuse_cut` cell (5b),
-/// `common` cell 3g) retired. Anything else is rejected with [`BoolError`]. Transactional:
-/// each variant computes its result in local structures and pushes only after
-/// every degeneracy check passes, so a rejected boolean leaves the model
-/// untouched.
+/// **Coverage:** planar solids — all three kinds go through one exact seam path
+/// (`general_boolean`) for transversal contact, and one coplanar path
+/// (`coplanar_result_unified`) when the operands share a contact plane. Anything else is
+/// rejected with [`BoolError`]. Transactional: each variant computes its result in local
+/// structures and pushes only after every degeneracy check passes, so a rejected boolean
+/// leaves the model untouched.
+///
+/// **Dispatch (F2 collapse):** two routes, chosen by one exact question — *is there a genuine
+/// coplanar contact?* ([`coplanar_contact_count`]). The seven bespoke detectors that used to
+/// gate this (contained / pocket / overhang boss·cut·common / single-shared-plane /
+/// multi-contact) all funnelled into the same builder, so they were pure routing; collapsing
+/// them to the count both retired ~775 lines and opened cases their narrow gates declined
+/// (a non-convex overhang footprint, a slot or corner cut punching through the far face).
 pub fn boolean(
     model: &mut Model,
     kind: BoolKind,
@@ -1566,64 +1573,20 @@ pub fn boolean(
     if let Some(iface) = detect_coincident_interface(model, a, b) {
         return coincident_merge(model, kind, a, b, &iface);
     }
-    // Coplanar contact (contained boss/pocket, overhang boss/cut/common): the bespoke detectors
-    // stay as the "is this a genuine coplanar contact (blind / not-pierces / footprint-convex)?"
-    // GATES — they filter out transversal cases (which fall through to `general_boolean`) — but the
-    // RESULT is now built by the unified `coplanar_result_unified` (D0). The convexity-agnostic detectors
-    // (contained/pocket) route non-convex contacts too; the convex-gated overhang-Cut detector
-    // declines non-convex, so a separate non-convex early dispatch keeps routing those.
-    if kind == BoolKind::Fuse
-        && (detect_contained_contact(model, a, b).is_some()
-            || detect_overhang_contact(model, a, b).is_some())
-    {
-        return coplanar_result_unified(model, kind, a, b);
-    }
-    if kind == BoolKind::Cut {
-        if detect_pocket_contact(model, a, b).is_some()
-            || detect_overhang_cut_general(model, a, b).is_some()
-        {
-            return coplanar_result_unified(model, kind, a, b);
-        }
-        // Non-convex overhang Cut: the overhang-cut detector above is convex-gated, so route the
-        // non-convex case to the unified handler too (it honestly declines — falls through to
-        // `general_boolean` — when there is no coplanar contact it covers).
-        let planes_a = collect_planes(model, a)?;
-        if !is_convex(model, &planes_a, &solid_vertex_handles(model, a)) {
-            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-                return Ok(r);
-            }
-        }
-    }
-    if kind == BoolKind::Common {
-        if detect_overhang_common(model, a, b).is_some() {
-            return coplanar_result_unified(model, kind, a, b);
-        }
-        // A same-normal contained contact with a partial 3D overlap (the small solid pokes out): the
-        // driver builds the intersection (contained InterQ island). Guarded — anything the detector
-        // over-accepts that the driver cannot build falls through to `general_boolean` (unchanged).
-        if detect_contained_common(model, a, b).is_some() {
-            if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-                return Ok(r);
-            }
-        }
-    }
-    // Single-shared-plane (mixed coplanar-cap + transversal-exit): one same-normal coplanar pair,
-    // partial overlap (count == 1), the taller solid exiting through the other's far face. The
-    // unified driver builds it (E1 union/MinusQ/InterQ cap + transversal exit + tower drop) for all
-    // three kinds. Kind-agnostic guarded route; containment (no crossing) is excluded and stays
-    // rejected. Mutually exclusive with the multi-contact route below (count == 1 vs > 1).
-    if detect_single_shared_plane(model, a, b)? {
-        if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-            return Ok(r);
-        }
-    }
-    // Genuine multi-contact (2+ coplanar pairs) slips past the single-contact detectors (they need
-    // exactly one pair): a ⊓ two-leg boss, a flush pocket on two adjacent faces, or same_ground (two
-    // boxes sharing both caps with overlapping footprints). ONE kind-agnostic route for Fuse/Cut/
-    // Common — narrow on purpose (a single-contact case the detectors deliberately decline is not
-    // incidentally flipped), and the handler still declines (→ `general_boolean`) any multi-contact
-    // it cannot cover.
-    if coplanar_contact_count(model, a, b)? > 1 {
+    // Coplanar contact — ONE kind-agnostic route (F2 detector collapse). Every bespoke detector
+    // (contained / pocket / overhang boss·cut·common / single-shared-plane / multi-contact) funnelled
+    // into the same `coplanar_result_unified`, so they were pure ROUTING: the result builder was
+    // already unified. The routing question they each answered — "is there a genuine coplanar
+    // contact?" — is answered directly by `coplanar_contact_count` (plane-coplanar face pairs whose
+    // footprints actually overlap), which the multi-contact gate already used with `> 1`. Relaxing
+    // that to `>= 1` subsumes all of them.
+    //
+    // Guarded (`if let Ok`): anything the coplanar arm cannot build falls through to
+    // `general_boolean` exactly as before, so the collapse cannot lose coverage by rejection — it
+    // is strictly more permissive than the gates it replaces (three of which returned
+    // unconditionally). What it CAN do is offer the coplanar arm a case the detectors deliberately
+    // withheld; the golden volumes and the OCCT oracle are what pin that down.
+    if coplanar_contact_count(model, a, b)? >= 1 {
         if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
             return Ok(r);
         }
@@ -3654,6 +3617,26 @@ fn assemble_fuse_cut(
             orientation,
         }));
     }
+    // Closed-shell guard: a 2-manifold b-rep uses every edge exactly twice (once from each of the
+    // two faces that share it). A reconstruction that emits a face set with a dangling edge (use
+    // count 1) or a pinched one (>2) is not a solid — `validate` would call it `NonManifoldEdge`,
+    // but `boolean` never runs `validate` on its own output, so without this the caller receives a
+    // silently invalid solid. Honest-reject instead ("honest-reject > silent-wrong", overview §1).
+    // Counted on the welded `Handle<Edge>`s, so it is exact and coordinate-free.
+    {
+        let mut uses: HashMap<Handle<Edge>, usize> = HashMap::new();
+        for &fh in &face_handles {
+            let f = model.faces.get(fh);
+            for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                for he in &l.half_edges {
+                    *uses.entry(he.edge).or_default() += 1;
+                }
+            }
+        }
+        if uses.values().any(|&n| n != 2) {
+            return Err(reject(tag::NON_MANIFOLD_EDGE));
+        }
+    }
     // Partition the faces into connected components (by shared node). One component is the
     // whole result; several mean either an enclosed void (a cavity — an inward-oriented shell)
     // or a severed operand (two or more outward, material-enclosing shells). `is_shell_outward`
@@ -4703,184 +4686,6 @@ fn face_contains_face(model: &Model, big: Handle<Face>, small: Handle<Face>, n: 
     profile_strictly_in_region(&small_2d, &outer_2d, &holes_2d)
 }
 
-/// `Some` iff A and B meet at exactly one opposite-normal coplanar face pair whose footprints
-/// are strictly nested (one contained in the other) — the boss-on-a-face case that
-/// `detect_coincident_interface` (which needs identical boundaries) does not cover.
-///
-/// **Neither solid need be convex.** The gates are convexity-agnostic — `opposite.len() == 1`
-/// (exact coplanar test) and `face_contains_face` (`profile_strictly_in_region`, arbitrary
-/// polygons) — and the reconstruction (`contained_contact_result` re-emits faces;
-/// `assemble_fuse_cut` partitions by component). So a boss fuses cleanly onto a non-convex `a`
-/// (an L-bracket top) with a non-convex `b` (an L/star footprint), mirroring the pocket path.
-/// This makes `pad = extrude + Fuse` a drop-in for the old direct construction.
-fn detect_contained_contact(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Option<ContainedContact> {
-    let planes_a = collect_planes(model, a).ok()?;
-    let planes_b = collect_planes(model, b).ok()?;
-    let mut opposite: Vec<(usize, usize)> = Vec::new();
-    for (i, pa) in planes_a.iter().enumerate() {
-        for (j, pb) in planes_b.iter().enumerate() {
-            if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) < 0.0 {
-                opposite.push((i, j));
-            }
-        }
-    }
-    if opposite.len() != 1 {
-        return None;
-    }
-    let (i, j) = opposite[0];
-    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
-    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
-    let n = planes_a[i].plane.normal();
-    if face_contains_face(model, fa, fb, n) {
-        Some(ContainedContact {
-            big_solid: a,
-            big_face: fa,
-            small_solid: b,
-            small_face: fb,
-        })
-    } else if face_contains_face(model, fb, fa, n) {
-        Some(ContainedContact {
-            big_solid: b,
-            big_face: fb,
-            small_solid: a,
-            small_face: fa,
-        })
-    } else {
-        None
-    }
-}
-
-/// `Some` iff `b` is a blind pocket in `a`: they meet at exactly one **same-normal** coplanar
-/// pair whose footprint is strictly inside `a`'s face, and `b` lies wholly inside `a` (its walls
-/// cross none of `a`'s faces — a `b` that punched through would be a seam cut, not a pocket).
-/// For `Cut(a, b)`, `a` is kept and `b` is carved out, so `a` must be the containing solid.
-///
-/// **Neither solid need be convex.** The remaining gates are convexity-agnostic — `same.len() == 1`
-/// (exact coplanar test), `face_contains_face` (`profile_strictly_in_region`, arbitrary polygons),
-/// and the blind test (`point_in_solid`, exact ray cast for non-convex) — and the reconstruction
-/// (`contained_contact_result` re-emits faces; `assemble_fuse_cut` partitions by component). So a
-/// pocket carves cleanly into a non-convex `a` (a re-pocketed part) with a non-convex `b` (an
-/// L/star footprint). This makes `pocket = extrude + Cut` a drop-in for the old direct construction.
-fn detect_pocket_contact(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Option<ContainedContact> {
-    let planes_a = collect_planes(model, a).ok()?;
-    let planes_b = collect_planes(model, b).ok()?;
-    let mut same: Vec<(usize, usize)> = Vec::new();
-    for (i, pa) in planes_a.iter().enumerate() {
-        for (j, pb) in planes_b.iter().enumerate() {
-            if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) > 0.0 {
-                same.push((i, j));
-            }
-        }
-    }
-    if same.len() != 1 {
-        return None;
-    }
-    let (i, j) = same[0];
-    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
-    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
-    let n = planes_a[i].plane.normal();
-    if !face_contains_face(model, fa, fb, n) {
-        return None; // `a`'s face must contain `b`'s footprint (a is the kept solid)
-    }
-    // `b` must be blind — every vertex off the contact plane lies strictly inside `a`. A
-    // through-`b` has vertices below `a` (a transversal seam cut, not a pocket); the flush
-    // contact vertices sit on the plane and are skipped. (boundaries_intersect is unusable
-    // here — the flush contact itself reads as a boundary touch.)
-    let contact_tri = planes_a[i].tri;
-    let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b).ok()?;
-    for &vh in &solid_vertex_handles(model, b) {
-        // `b`'s vertex, classified against `a` on the exact index-plane substrate.
-        if plane_side(contact_tri, model.vertices.get(vh).point) != 0
-            && arrange::point_in_solid_idx(model, vh, &inc_b, a, &inc_a, &planes, &surf_ix, &canon)
-                .ok()?
-                != Side::Inside
-        {
-            return None;
-        }
-    }
-    Some(ContainedContact {
-        big_solid: a,
-        big_face: fa,
-        small_solid: b,
-        small_face: fb,
-    })
-}
-
-/// `Some` iff `Common(a, b)` meets at exactly one **same-normal** coplanar pair with one footprint
-/// contained in the other, and the smaller solid **genuinely pokes out** of the larger (a partial
-/// intersection). This is the inverse of [`detect_pocket_contact`]'s blind test: a *blind* small
-/// (wholly inside the big) is full containment, which `general_boolean`'s half-space path already
-/// owns — declined here. Containment is checked both ways (`Common` is commutative). The overlap is
-/// the small solid clipped to the big; the unified driver builds it (contained InterQ island), so
-/// this is only a routing gate — anything it over-accepts the driver honestly declines.
-fn detect_contained_common(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Option<ContainedContact> {
-    let planes_a = collect_planes(model, a).ok()?;
-    let planes_b = collect_planes(model, b).ok()?;
-    let mut same: Vec<(usize, usize)> = Vec::new();
-    for (i, pa) in planes_a.iter().enumerate() {
-        for (j, pb) in planes_b.iter().enumerate() {
-            if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) > 0.0 {
-                same.push((i, j));
-            }
-        }
-    }
-    if same.len() != 1 {
-        return None;
-    }
-    let (i, j) = same[0];
-    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
-    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
-    let n = planes_a[i].plane.normal();
-    // The big face contains the small footprint — either order (commutative).
-    let (big_solid, big_face, small_solid, small_face, contact_tri) =
-        if face_contains_face(model, fa, fb, n) {
-            (a, fa, b, fb, planes_a[i].tri)
-        } else if face_contains_face(model, fb, fa, n) {
-            (b, fb, a, fa, planes_b[j].tri)
-        } else {
-            return None;
-        };
-    // Genuine partial: some vertex of the small solid, off the contact plane, is strictly outside
-    // the big. A blind small (all inside) is full containment — declined (half-space path owns it).
-    let (planes, surf_ix, inc_small, inc_big, canon) =
-        plane_index_setup(model, small_solid, big_solid).ok()?;
-    let mut pokes_out = false;
-    for &vh in &solid_vertex_handles(model, small_solid) {
-        // `small`'s vertex, classified against `big` on the exact index-plane substrate.
-        if plane_side(contact_tri, model.vertices.get(vh).point) != 0
-            && arrange::point_in_solid_idx(
-                model, vh, &inc_small, big_solid, &inc_big, &planes, &surf_ix, &canon,
-            )
-            .ok()?
-                == Side::Outside
-        {
-            pokes_out = true;
-            break;
-        }
-    }
-    if !pokes_out {
-        return None;
-    }
-    Some(ContainedContact {
-        big_solid,
-        big_face,
-        small_solid,
-        small_face,
-    })
-}
-
 /// A solid's faces as `LocalFace`s (`Node::Orig`, `flip:false`), with
 /// `plane_idx` offset by `plane_offset`, optionally skipping one face and
 /// remapping vertices (for B's interface vertices → A's handle).
@@ -5235,65 +5040,6 @@ fn coplanar_contact_count(
         }
     }
     Ok(count)
-}
-
-/// `true` for the single-shared-plane config: exactly ONE coplanar contact pair, **same-normal**,
-/// whose footprints **properly overlap** (a partial overlap, not containment). Two boxes of
-/// different heights sharing one plane are the canonical case — the shared cap is an E1-style 2D
-/// merge and the taller solid exits transversally through the other's far face.
-///
-/// Same-normal + proper-crossing are both required to route safely: an opposite-normal single pair
-/// is the overhang boss (its own detector), and a **contained** footprint gives the E1 `Whole` arm
-/// no `∂P×∂Q` crossing, so it would emit the wrong (P-whole) cap — containment has no proper
-/// crossing here, so it is excluded and stays honestly rejected (a later cell). The dispatch routes
-/// this **guarded**, so anything the driver cannot build falls through to `general_boolean`.
-fn detect_single_shared_plane(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<bool, BoolError> {
-    let planes_a = collect_planes(model, a)?;
-    let na = planes_a.len();
-    let mut planes = planes_a;
-    planes.extend(collect_planes(model, b)?);
-    let mut surf_ix = HashMap::new();
-    for (i, p) in planes.iter().enumerate() {
-        surf_ix.insert(p.face, i);
-    }
-    let canon = plane_classes(&planes);
-    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
-    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
-    let mut pairs: Vec<(usize, usize)> = Vec::new();
-    for i in 0..na {
-        for j in na..planes.len() {
-            if shares_or_coplanar(&planes[i], &planes[j])
-                && footprints_overlap(
-                    model,
-                    &planes,
-                    canon[i],
-                    planes[i].face,
-                    planes[j].face,
-                    &inc_a,
-                    &inc_b,
-                    &canon,
-                )?
-            {
-                pairs.push((i, j));
-            }
-        }
-    }
-    if pairs.len() != 1 {
-        return Ok(false); // 0 = no contact; ≥2 = the multi-contact route's job
-    }
-    let (i, j) = pairs[0];
-    if planes[i].n_out.dot(planes[j].n_out) <= 0.0 {
-        return Ok(false); // opposite-normal = the overhang detector's job
-    }
-    let pi = canon[i];
-    let a_bnd = contact_boundary(model, planes[i].face, pi, &inc_a, &canon)?;
-    let b_bnd = contact_boundary(model, planes[j].face, pi, &inc_b, &canon)?;
-    // Proper crossing ⇒ partial overlap; empty ⇒ containment (excluded, stays rejected).
-    Ok(!coplanar_boundary_crossings(&planes, pi, &a_bnd, &b_bnd, &[])?.is_empty())
 }
 
 /// Whether any edge of ring `p` **properly** crosses any edge of ring `q` — both rings coplanar on
@@ -5769,8 +5515,6 @@ fn coplanar_result_unified(
             .map(|c| Crossing {
                 point: c.point,
                 triple: c.triple,
-                p_seg: 0,
-                q_seg: 0,
             })
             .collect();
         resplit_overhang(model, &mut faces, &planes, &cross_r);
@@ -5796,8 +5540,6 @@ fn coplanar_result_unified(
 struct Crossing {
     point: Point3,
     triple: [usize; 3], // sorted combined-plane indices (planes_p ++ planes_q)
-    p_seg: usize,       // P outer-loop edge index (the single crossed edge — same for both)
-    q_seg: usize,       // Q outer-loop edge index (distinct per crossing)
 }
 
 /// An overhang boss contact (cells coplanar-contact-overhang / -corner / -multi). Two convex
@@ -5814,53 +5556,6 @@ struct OverhangContact {
     crossings: Vec<Crossing>,
 }
 
-/// Strict proper 2D crossing: the two closed segments cross in their interiors (no shared
-/// endpoint, no collinear touch). All four orientations nonzero and both straddle.
-fn proper_cross_2d(p0: [f64; 2], p1: [f64; 2], q0: [f64; 2], q1: [f64; 2]) -> bool {
-    let (o1, o2) = (orient2d(p0, p1, q0), orient2d(p0, p1, q1));
-    let (o3, o4) = (orient2d(q0, q1, p0), orient2d(q0, q1, p1));
-    o1 != 0.0
-        && o2 != 0.0
-        && o3 != 0.0
-        && o4 != 0.0
-        && (o1 > 0.0) != (o2 > 0.0)
-        && (o3 > 0.0) != (o4 > 0.0)
-}
-
-/// The outer-shell position of the face (other than `contact`) whose outer loop carries the
-/// edge with endpoints `va`,`vb`. Adjacency-free (walks the shell directly): `boolean` never
-/// builds the model's adjacency cache on its inputs (see `edge_incidence`).
-fn wall_pos_on_edge(
-    model: &Model,
-    solid: Handle<Solid>,
-    contact: Handle<Face>,
-    va: Handle<Vertex>,
-    vb: Handle<Vertex>,
-) -> Option<usize> {
-    let shell = model.solids.get(solid).outer;
-    for (pos, &fh) in model.shells.get(shell).faces.iter().enumerate() {
-        if fh == contact {
-            continue;
-        }
-        let ring: Vec<Handle<Vertex>> = model
-            .faces
-            .get(fh)
-            .outer
-            .half_edges
-            .iter()
-            .map(|&he| he_start(model, he))
-            .collect();
-        let k = ring.len();
-        if (0..k).any(|i| {
-            let (u, w) = (ring[i], ring[(i + 1) % k]);
-            (u == va && w == vb) || (u == vb && w == va)
-        }) {
-            return Some(pos);
-        }
-    }
-    None
-}
-
 /// The 3D point of a reconstructed node: an original vertex, or a crossing's stored point.
 fn overhang_node_point(model: &Model, node: Node, crossings: &[Crossing]) -> Point3 {
     match node {
@@ -5873,215 +5568,6 @@ fn overhang_node_point(model: &Model, node: Node, crossings: &[Crossing]) -> Poi
                 .point
         }
     }
-}
-
-/// With `p_solid`'s contact face as P and `q_solid`'s as Q, find the proper crossings of their
-/// footprint boundaries (∂P × ∂Q) — a general convex-convex overlap. Returns the `2k` crossings
-/// (each with its own P/Q edge), or `None` on an odd/zero count or a boundary graze.
-#[allow(clippy::too_many_arguments)]
-fn try_overhang(
-    model: &Model,
-    p_solid: Handle<Solid>,
-    planes_p: &[PlaneInfo],
-    p_pos: usize,
-    p_face: Handle<Face>,
-    q_solid: Handle<Solid>,
-    planes_q: &[PlaneInfo],
-    q_face: Handle<Face>,
-    na_p: usize,
-) -> Option<Vec<Crossing>> {
-    let drop = planar_drop_axes(planes_p[p_pos].n_out);
-    let ring = |face: Handle<Face>| -> Vec<(Handle<Vertex>, Point3)> {
-        model
-            .faces
-            .get(face)
-            .outer
-            .half_edges
-            .iter()
-            .map(|&he| {
-                let vh = he_start(model, he);
-                (vh, model.vertices.get(vh).point)
-            })
-            .collect()
-    };
-    let p_ring = ring(p_face);
-    let q_ring = ring(q_face);
-    let p2: Vec<[f64; 2]> = p_ring.iter().map(|&(_, p)| proj2(p, drop)).collect();
-    let q2: Vec<[f64; 2]> = q_ring.iter().map(|&(_, p)| proj2(p, drop)).collect();
-    let (np, nq) = (p2.len(), q2.len());
-
-    // Proper crossings of the two footprint boundaries.
-    let mut crs: Vec<(usize, usize)> = Vec::new();
-    for i in 0..np {
-        for j in 0..nq {
-            if proper_cross_2d(p2[i], p2[(i + 1) % np], q2[j], q2[(j + 1) % nq]) {
-                crs.push((i, j));
-            }
-        }
-    }
-    // An even number 2k (≥2) of proper crossings — a general convex-convex overlap (k lens
-    // pieces). Odd/zero means a degenerate or non-crossing case, out of scope.
-    if crs.len() < 2 || crs.len() % 2 != 0 {
-        return None;
-    }
-    // No boundary graze on either side (a vertex exactly on the other's boundary is out of scope).
-    for &pp in &p2 {
-        point_in_ring2(pp, &q2)?;
-    }
-    for &qq in &q2 {
-        point_in_ring2(qq, &p2)?;
-    }
-    // Exact crossing points as three-plane meets; provenance triple in combined-plane indices.
-    // Each crossing records its own P/Q edge (they may differ per crossing for a corner).
-    let mut out: Vec<Crossing> = Vec::new();
-    for &(i, j) in &crs {
-        let p_wall = wall_pos_on_edge(model, p_solid, p_face, p_ring[i].0, p_ring[(i + 1) % np].0)?;
-        let q_wall = wall_pos_on_edge(model, q_solid, q_face, q_ring[j].0, q_ring[(j + 1) % nq].0)?;
-        let point = three_planes(
-            &planes_p[p_pos].plane,
-            &planes_p[p_wall].plane,
-            &planes_q[q_wall].plane,
-        )?;
-        let mut triple = [p_pos, p_wall, na_p + q_wall];
-        triple.sort_unstable();
-        out.push(Crossing {
-            point,
-            triple,
-            p_seg: i,
-            q_seg: j,
-        });
-    }
-    Some(out)
-}
-
-/// A simple polygon is convex iff every turn winds the same way. Exact via `orient2d` on the
-/// projected loop; collinear turns (`0`) are skipped. `< 3` points ⇒ not a polygon.
-fn loop_is_convex_2d(pts: &[[f64; 2]]) -> bool {
-    let n = pts.len();
-    if n < 3 {
-        return false;
-    }
-    let mut sign = 0.0_f64;
-    for i in 0..n {
-        let o = orient2d(pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
-        if o != 0.0 {
-            if sign == 0.0 {
-                sign = o;
-            } else if (o > 0.0) != (sign > 0.0) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// Whether `face`'s outer loop is a convex polygon, projected onto its plane by dropping `drop`.
-fn face_outer_is_convex(model: &Model, face: Handle<Face>, drop: (usize, usize)) -> bool {
-    let pts: Vec<[f64; 2]> = model
-        .faces
-        .get(face)
-        .outer
-        .half_edges
-        .iter()
-        .map(|&he| proj2(model.vertices.get(he_start(model, he)).point, drop))
-        .collect();
-    loop_is_convex_2d(&pts)
-}
-
-/// `Some` iff `a` and `b` form an overhang boss contact: exactly one opposite-normal coplanar
-/// face pair, neither footprint contained in the other (that is the boss cell), their footprints
-/// overlapping (∂P meets ∂Q at `2k` points — single-edge, swallowed corner, or a spanning slab),
-/// and no transversal piercing (a pure coplanar contact, not a seam cut).
-///
-/// **Neither solid need be convex** — only the two **contact-face footprints** must be convex (and
-/// hole-free). The Fuse reconstruction touches only the contact faces (arc-split, which assumes a
-/// convex footprint) and the breached walls (`resplit_overhang`, which is edge-local and
-/// convexity-agnostic); every other face is re-emitted verbatim. So a boss cantilevers onto a
-/// non-convex solid (a pocketed part, a boolean result) as long as the contact face is a convex
-/// polygon. A non-convex contact footprint would mislabel arcs (silent-wrong) and is rejected here.
-/// (Cut/Common keep the whole-solid gate: their `clip_bwall_inside_a` clips against breached
-/// half-spaces, which only equals "inside `a`" when `a` is convex.)
-fn detect_overhang_contact(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Option<OverhangContact> {
-    let planes_a = collect_planes(model, a).ok()?;
-    let planes_b = collect_planes(model, b).ok()?;
-    let mut opposite: Vec<(usize, usize)> = Vec::new();
-    for (i, pa) in planes_a.iter().enumerate() {
-        for (j, pb) in planes_b.iter().enumerate() {
-            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) < 0.0 {
-                opposite.push((i, j));
-            }
-        }
-    }
-    if opposite.len() != 1 {
-        return None;
-    }
-    let (ia, jb) = opposite[0];
-    let fa = model.shells.get(model.solids.get(a).outer).faces[ia];
-    let fb = model.shells.get(model.solids.get(b).outer).faces[jb];
-    let n = planes_a[ia].plane.normal();
-    // Only the two contact footprints must be convex and hole-free (not the whole solids) — the
-    // reconstruction is local to them plus the edge-locally-resplit walls (see doc above).
-    let drop = planar_drop_axes(planes_a[ia].n_out);
-    if !face_outer_is_convex(model, fa, drop)
-        || !face_outer_is_convex(model, fb, drop)
-        || !model.faces.get(fa).inner.is_empty()
-        || !model.faces.get(fb).inner.is_empty()
-    {
-        return None;
-    }
-    if face_contains_face(model, fa, fb, n) || face_contains_face(model, fb, fa, n) {
-        return None; // fully contained ⇒ the boss cell, not an overhang
-    }
-    let na = planes_a.len();
-    let nb = planes_b.len();
-    // Either solid can serve as P (the union is symmetric — swapping P/Q swaps which face is the
-    // notch vs the cantilever but yields the same two faces); try `a` as P, then `b`.
-    let cc = if let Some(cr) = try_overhang(model, a, &planes_a, ia, fa, b, &planes_b, fb, na) {
-        OverhangContact {
-            p_solid: a,
-            p_face: fa,
-            q_solid: b,
-            q_face: fb,
-            crossings: cr,
-        }
-    } else if let Some(cr) = try_overhang(model, b, &planes_b, jb, fb, a, &planes_a, fa, nb) {
-        OverhangContact {
-            p_solid: b,
-            p_face: fb,
-            q_solid: a,
-            q_face: fa,
-            crossings: cr,
-        }
-    } else {
-        return None;
-    };
-    // Pure coplanar contact: every vertex off the shared plane is strictly outside the other
-    // solid. A vertex inside the other would be a transversal seam cut, not an overhang boss.
-    let tri = planes_a[ia].tri;
-    let (planes, surf_ix, inc_p, inc_q, canon) =
-        plane_index_setup(model, cc.p_solid, cc.q_solid).ok()?;
-    for (s, other, inc_s, inc_o) in [
-        (cc.p_solid, cc.q_solid, &inc_p, &inc_q),
-        (cc.q_solid, cc.p_solid, &inc_q, &inc_p),
-    ] {
-        for &vh in &solid_vertex_handles(model, s) {
-            // `s`'s vertex, classified against `other` on the exact index-plane substrate.
-            if plane_side(tri, model.vertices.get(vh).point) != 0
-                && arrange::point_in_solid_idx(
-                    model, vh, inc_s, other, inc_o, &planes, &surf_ix, &canon,
-                )
-                .ok()?
-                    != Side::Outside
-            {
-                return None;
-            }
-        }
-    }
-    Some(cc)
 }
 
 /// Insert each crossing that lies strictly interior to a wall's outer-loop edge, so the shared
@@ -6262,301 +5748,6 @@ fn other_face(faces: &[usize; 2], used: usize) -> Result<usize, BoolError> {
         [x, y] if y == used => Ok(x),
         _ => Err(reject(tag::ARRANGEMENT_DEGENERATE)),
     }
-}
-
-// ---- coplanar-contact-overhang-cut-general (M5): one general N-wall overhang Cut ----
-
-/// A general overhang Cut: prism `b` sits top-flush on `a`'s face (same-normal coplanar) but its
-/// footprint hangs past `a`'s face boundary, breaking out through one or more walls. This one path
-/// subsumes the edge-slot (1 wall), spanning-channel (2 opposite walls), and corner (2 adjacent
-/// walls) cases, and opens 3+/L/U configurations. Each breached wall's side opening is classified
-/// by how many of its top-edge corners `b` swallows (0/1/2); adjacent breached walls share a
-/// corner column `three_planes(W_i, W_j, b-bottom)`.
-#[allow(dead_code)] // detector is now a gate; fields built for the retired builder
-struct OverhangCutG {
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-    p_face: Handle<Face>,     // a's contact face (→ mouth notch pieces)
-    q_face: Handle<Face>,     // b's contact face (dropped)
-    walls: Vec<WallG>,        // one per breached a wall
-    crossings: Vec<Crossing>, // top c's, then corner columns cc, then floor d's
-}
-
-/// One breached `a` wall of a general overhang Cut: its plane index and the shape of its side
-/// opening, keyed by the number of swallowed top-edge corners. All indices point into
-/// `OverhangCutG::crossings`.
-#[allow(dead_code)]
-struct WallG {
-    w_pos: usize,
-    kind: WallKind,
-}
-
-/// A breached wall's opening, by swallowed top-corner count. `Middle` (0): the opening touches only
-/// the top edge's interior — two top crossings `c` and two floor crossings `d` (`d[k]` paired to
-/// `c[k]` by shared `b` wall). `Corner` (1): the opening bites one corner — one `c`, one `d`, and
-/// the swallowed corner's shared column `cc`. `Shorten` (2): `b` covers the whole top edge — the
-/// wall shrinks to a rectangle capped at both corners' columns (no `c`/`d`).
-#[allow(dead_code)]
-enum WallKind {
-    Middle {
-        c: [usize; 2],
-        d: [usize; 2],
-        p_seg: usize,
-    },
-    Corner {
-        c: usize,
-        d: usize,
-        cc: usize,
-        corner_vh: Handle<Vertex>,
-    },
-    Shorten([(Handle<Vertex>, usize); 2]),
-}
-
-/// `Some` iff `Cut(a, b)` is a general overhang slot: one same-normal coplanar pair whose
-/// footprints are not nested, `b`'s footprint hanging past `a`'s face boundary through one or more
-/// walls, and `b` blind on every non-breached `a` face. Absorbs the edge-slot, slab, and corner
-/// detections.
-fn detect_overhang_cut_general(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Option<OverhangCutG> {
-    let planes_a = collect_planes(model, a).ok()?;
-    let planes_b = collect_planes(model, b).ok()?;
-    if !is_convex(model, &planes_a, &solid_vertex_handles(model, a))
-        || !is_convex(model, &planes_b, &solid_vertex_handles(model, b))
-    {
-        return None;
-    }
-    let mut same: Vec<(usize, usize)> = Vec::new();
-    for (i, pa) in planes_a.iter().enumerate() {
-        for (j, pb) in planes_b.iter().enumerate() {
-            if planes_coplanar(&pa.plane, &pb.plane) && pa.n_out.dot(pb.n_out) > 0.0 {
-                same.push((i, j));
-            }
-        }
-    }
-    if same.len() != 1 {
-        return None;
-    }
-    let (pi, qj) = same[0];
-    let p_face = model.shells.get(model.solids.get(a).outer).faces[pi];
-    let q_face = model.shells.get(model.solids.get(b).outer).faces[qj];
-    let n = planes_a[pi].plane.normal();
-    if face_contains_face(model, p_face, q_face, n) || face_contains_face(model, q_face, p_face, n)
-    {
-        return None; // contained ⇒ the blind-pocket cell
-    }
-    let na = planes_a.len();
-    let cs = try_overhang(model, a, &planes_a, pi, p_face, b, &planes_b, q_face, na)?;
-    let qn = planes_b[qj].n_out;
-    let floors: Vec<usize> = (0..planes_b.len())
-        .filter(|&j| planes_b[j].n_out.dot(qn) < 0.0)
-        .collect();
-    let [floor] = floors[..] else {
-        return None; // not a single opposite cap ⇒ out of scope
-    };
-    let p_ring: Vec<Handle<Vertex>> = model
-        .faces
-        .get(p_face)
-        .outer
-        .half_edges
-        .iter()
-        .map(|&he| he_start(model, he))
-        .collect();
-    let np = p_ring.len();
-    let q_ring: Vec<Handle<Vertex>> = model
-        .faces
-        .get(q_face)
-        .outer
-        .half_edges
-        .iter()
-        .map(|&he| he_start(model, he))
-        .collect();
-    let nq = q_ring.len();
-    let drop = planar_drop_axes(planes_a[pi].n_out);
-    let q2: Vec<[f64; 2]> = q_ring
-        .iter()
-        .map(|&vh| proj2(model.vertices.get(vh).point, drop))
-        .collect();
-
-    // Which a-face corners `b` swallows (strictly inside its footprint).
-    let swallowed: Vec<bool> = p_ring
-        .iter()
-        .map(|&vh| point_in_ring2(proj2(model.vertices.get(vh).point, drop), &q2) == Some(true))
-        .collect();
-    let wall_of = |i: usize| wall_pos_on_edge(model, a, p_face, p_ring[i], p_ring[(i + 1) % np]);
-
-    // crossings: top c's first (indices 0..cs.len()), then the corner columns, then the floor d's.
-    let mut crossings: Vec<Crossing> = cs.clone();
-
-    // A shared corner column per swallowed corner: the meet of its two incident (both breached)
-    // walls and the b floor. A simple loop ⇒ each corner has exactly two incident walls.
-    let mut cc_of: HashMap<Handle<Vertex>, usize> = HashMap::new();
-    for j in 0..np {
-        if !swallowed[j] {
-            continue;
-        }
-        let w_prev = wall_of((j + np - 1) % np)?;
-        let w_next = wall_of(j)?;
-        let point = three_planes(
-            &planes_a[w_prev].plane,
-            &planes_a[w_next].plane,
-            &planes_b[floor].plane,
-        )?;
-        let mut triple = [w_prev, w_next, na + floor];
-        triple.sort_unstable();
-        let idx = crossings.len();
-        crossings.push(Crossing {
-            point,
-            triple,
-            p_seg: j,
-            q_seg: 0,
-        });
-        cc_of.insert(p_ring[j], idx);
-    }
-
-    // A floor crossing per top crossing (its wall ∩ the b wall it came from ∩ the b floor).
-    let mut d_of: Vec<usize> = Vec::with_capacity(cs.len());
-    for c in &cs {
-        let w = wall_of(c.p_seg)?;
-        let ywall = wall_pos_on_edge(
-            model,
-            b,
-            q_face,
-            q_ring[c.q_seg],
-            q_ring[(c.q_seg + 1) % nq],
-        )?;
-        let point = three_planes(
-            &planes_a[w].plane,
-            &planes_b[ywall].plane,
-            &planes_b[floor].plane,
-        )?;
-        let mut triple = [w, na + ywall, na + floor];
-        triple.sort_unstable();
-        d_of.push(crossings.len());
-        crossings.push(Crossing {
-            point,
-            triple,
-            p_seg: c.p_seg,
-            q_seg: c.q_seg,
-        });
-    }
-
-    // Classify each breached wall. An a-top edge is breached iff `b` overlaps it: it has a crossing
-    // or a swallowed endpoint. Invariant on a convex box: (crossings on the edge) == 2 − (swallowed
-    // endpoints), so n∈{0,1,2} partitions Middle/Corner/Shorten.
-    let mut walls: Vec<WallG> = Vec::new();
-    for i in 0..np {
-        let (sw_lo, sw_hi) = (swallowed[i], swallowed[(i + 1) % np]);
-        let on: Vec<usize> = (0..cs.len()).filter(|&k| cs[k].p_seg == i).collect();
-        if !sw_lo && !sw_hi && on.is_empty() {
-            continue; // untouched
-        }
-        let ncorner = sw_lo as usize + sw_hi as usize;
-        if on.len() != 2 - ncorner {
-            return None; // degenerate / out of scope
-        }
-        let w_pos = wall_of(i)?;
-        let kind = match ncorner {
-            0 => {
-                let [c0, c1] = on[..] else { return None };
-                WallKind::Middle {
-                    c: [c0, c1],
-                    d: [d_of[c0], d_of[c1]],
-                    p_seg: i,
-                }
-            }
-            1 => {
-                let [c] = on[..] else { return None };
-                let corner_vh = if sw_lo {
-                    p_ring[i]
-                } else {
-                    p_ring[(i + 1) % np]
-                };
-                let cc = *cc_of.get(&corner_vh)?;
-                WallKind::Corner {
-                    c,
-                    d: d_of[c],
-                    cc,
-                    corner_vh,
-                }
-            }
-            _ => {
-                let (vlo, vhi) = (p_ring[i], p_ring[(i + 1) % np]);
-                WallKind::Shorten([(vlo, *cc_of.get(&vlo)?), (vhi, *cc_of.get(&vhi)?)])
-            }
-        };
-        walls.push(WallG { w_pos, kind });
-    }
-    if walls.is_empty() {
-        return None;
-    }
-
-    // Blind everywhere but the breached walls: every off-plane b vertex is strictly inside every
-    // non-breached a face. Catches a through-bottom, a full-face cover, or a non-axis breakout.
-    let breached: Vec<usize> = walls.iter().map(|w| w.w_pos).collect();
-    let tri = planes_a[pi].tri;
-    for &vh in &solid_vertex_handles(model, b) {
-        let p = model.vertices.get(vh).point;
-        if plane_side(tri, p) == 0 {
-            continue;
-        }
-        for (fi, pf) in planes_a.iter().enumerate() {
-            if breached.contains(&fi) {
-                continue;
-            }
-            if plane_side(pf.tri, p) >= 0 {
-                return None;
-            }
-        }
-    }
-    Some(OverhangCutG {
-        a,
-        b,
-        p_face,
-        q_face,
-        walls,
-        crossings,
-    })
-}
-
-// ---- coplanar-contact-overhang-common (M5): intersection of a top-flush overhang pair ----
-
-/// A general overhang `Common`: the same top-flush coplanar overhang geometry the Cut path
-/// detects, but `Common(a, b) = a ∩ b` keeps the convex overlap polytope `R` instead of carving it
-/// out. `R`'s faces are the contact overlap (P ∩ Q), `a`'s breached walls clipped to inside `b`, and
-/// `b`'s walls clipped to inside `a` — all with their original outward normals (`R` convex, so no
-/// flip). Restricted to two top crossings (one overlap-arc pair, assembled by a single stitch);
-/// more crossings need arc chaining and stay out of scope.
-/// `Some` iff `Common(a, b)` is a two-crossing overhang intersection. Reuses the kind-independent
-/// overhang geometry (`detect_overhang_cut_general`) and gates on exactly two contact-plane
-/// crossings, so the overlap has one `!outside` P-arc that a single `stitch_arcs` assembles (edge,
-/// corner, and L configs — the breached-wall count is irrelevant). Four+ crossings (a spanning
-/// slab) fall through to the standard `VERTEX_ON_FACE_PLANE` rejection.
-fn detect_overhang_common(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Option<OverhangCutG> {
-    let oc = detect_overhang_cut_general(model, a, b)?;
-    let planes_a = collect_planes(model, a).ok()?;
-    let pi = model
-        .shells
-        .get(model.solids.get(a).outer)
-        .faces
-        .iter()
-        .position(|&f| f == oc.p_face)?;
-    let contact_tri = planes_a[pi].tri;
-    let top = oc
-        .crossings
-        .iter()
-        .filter(|c| plane_side(contact_tri, c.point) == 0)
-        .count();
-    if top != 2 {
-        return None; // >1 overlap-arc pair (slab) — out of scope, honest fall-through
-    }
-    Some(oc)
 }
 
 #[cfg(test)]
@@ -13210,9 +12401,11 @@ pub mod tests {
     }
 
     #[test]
-    fn an_edge_slot_through_the_bottom_is_out_of_scope() {
-        // The prism pokes out the base's bottom too — its walls cross a second base face (the
-        // blind gate fails there), so it is out of scope. detect_overhang_cut_general must decline.
+    fn an_edge_slot_through_the_bottom() {
+        // The prism pokes out the base's bottom too, so the old convex/blind overhang-cut gate
+        // declined it and the seam path could not build it either (honest reject). The F2 dispatch
+        // collapse hands it to the unified coplanar driver, which carves the slot exactly:
+        // base 1.0 − (x∈[0.5,1] · y∈[0.25,0.75] · z∈[0,1]) = 1 − 0.25 = 0.75.
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -13222,7 +12415,12 @@ pub mod tests {
             Point3::from_array([0.5, 0.25, -0.5]),
             Point3::from_array([1.5, 0.75, 1.0]),
         );
-        assert!(detect_overhang_cut_general(&m, base, prism).is_none());
+        let r = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
     }
 
     #[test]
@@ -13410,7 +12608,6 @@ pub mod tests {
             Point3::from_array([-0.5, 0.4, 0.5]),
             Point3::from_array([1.5, 0.6, 1.0]),
         );
-        assert!(detect_overhang_common(&m, base, slab).is_none());
         let r = boolean_one(&mut m, BoolKind::Common, base, slab).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
@@ -13421,9 +12618,10 @@ pub mod tests {
     }
 
     #[test]
-    fn a_corner_cut_through_the_bottom_is_out_of_scope() {
-        // The corner prism also pokes out the base's bottom (blind gate fails on the bottom face),
-        // a through-slot beyond this cell. detect_overhang_cut_general must decline it.
+    fn a_corner_cut_through_the_bottom() {
+        // The corner prism pokes out the base's bottom, so the old blind gate declined it. The F2
+        // collapse routes it to the unified driver: base 1.0 − corner column (x,y ∈ [0.5,1], full
+        // height) = 1 − 0.25 = 0.75.
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -13433,13 +12631,20 @@ pub mod tests {
             Point3::from_array([0.5, 0.5, -0.5]),
             Point3::from_array([1.5, 1.5, 1.0]),
         );
-        assert!(detect_overhang_cut_general(&m, base, through).is_none());
+        let r = boolean_one(&mut m, BoolKind::Cut, base, through).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
     }
 
     #[test]
     fn a_boss_that_pierces_the_base_is_not_an_overhang() {
-        // The boss dips below the base's top (its walls cross the base) — a transversal seam
-        // cut, not a coplanar overhang. detect_overhang_contact must decline it.
+        // The boss dips below the base's top (its walls cross the base) — a transversal seam cut,
+        // not a coplanar overhang. The old overhang detector declined it and the seam path built
+        // it; after the F2 collapse the coplanar arm declines it and the same seam path still
+        // does. Union = 1.0 + boss 0.75 − overlap 0.125 = 1.625.
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -13449,7 +12654,12 @@ pub mod tests {
             Point3::from_array([0.5, 0.25, 0.5]),
             Point3::from_array([1.5, 0.75, 2.0]),
         );
-        assert!(detect_overhang_contact(&m, base, through).is_none());
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, through).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.625).abs() < 1e-12, "volume {vol}");
     }
 
     #[test]
@@ -15368,10 +14578,11 @@ pub mod tests {
     }
 
     #[test]
-    fn overhang_boss_with_a_non_convex_footprint_is_rejected() {
-        // An L-shaped (non-convex) boss footprint overhanging a cube edge: the footprint gate
-        // rejects it (a non-convex contact loop would mislabel the notch/cantilever arcs). Honest
-        // reject — non-convex overhang footprints are a separate cell.
+    fn overhang_boss_with_a_non_convex_footprint() {
+        // An L-shaped (non-convex) boss footprint overhanging a cube edge. The old convexity-gated
+        // overhang detector declined this, so it used to be an honest reject; the F2 dispatch
+        // collapse hands it to the unified coplanar driver, which builds it exactly. Volume =
+        // cube 1.0 + L-prism (area 0.9·0.2 + 0.3·0.2 = 0.24) · height 0.4 = 1.096.
         let mut m = Model::new();
         let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let l_base: Vec<Point3> = [
@@ -15387,10 +14598,12 @@ pub mod tests {
         .collect();
         let (l_tool, _) =
             build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
-        assert!(matches!(
-            boolean_one(&mut m, BoolKind::Fuse, cube, l_tool),
-            Err(BoolError::Unsupported)
-        ));
+        let r = boolean_one(&mut m, BoolKind::Fuse, cube, l_tool).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.096).abs() < 1e-12, "volume {vol}");
     }
 
     #[test]
@@ -15517,8 +14730,11 @@ pub mod tests {
     #[test]
     fn a_pocket_that_punches_through_is_not_a_pocket_contact() {
         // The prism's top is flush, but it pokes out the base's bottom — its walls cross the
-        // base's bottom face, so it is a seam cut, not a blind pocket. detect_pocket_contact
-        // must decline it (leaving it to the seam path) rather than build a floor outside the base.
+        // base's bottom face, so it is a seam cut, not a blind pocket. The old blind gate declined
+        // it; after the F2 collapse the coplanar arm accepts the routing but builds an OPEN shell
+        // (a floor outside the base leaves dangling edges), and the closed-shell guard in
+        // `assemble_fuse_cut` turns that into an honest reject. The seam path cannot build it
+        // either, so the op stays `Unsupported` — never a silently invalid solid.
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -15528,7 +14744,10 @@ pub mod tests {
             Point3::from_array([0.25, 0.25, -0.5]),
             Point3::from_array([0.75, 0.75, 1.0]),
         );
-        assert!(detect_pocket_contact(&m, base, through).is_none());
+        assert_eq!(
+            boolean_one(&mut m, BoolKind::Cut, base, through),
+            Err(BoolError::Unsupported)
+        );
     }
 
     #[test]
