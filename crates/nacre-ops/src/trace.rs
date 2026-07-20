@@ -391,6 +391,64 @@ fn trace_on_class(
     out
 }
 
+/// A coincident-merged arrangement edge on a plane class. When the cut plane is a solid's **cap
+/// plane**, every side wall traces the same edge twice — once as the cap's boundary (`Seated`) and
+/// once as the wall's top edge (`Transversal`) — because the cap's rim *is* the wall's top edge.
+/// These are one geometric edge, and the arrangement (and its DCEL) needs them as one: two
+/// coincident `(fp, s)` edges at a vertex would collapse in `angular_order`'s zero bucket.
+///
+/// The merge keeps the geometry (`wall`, `end`) as one and **preserves every contribution** rather
+/// than deciding a single `kind`: which label rule a coincident edge follows (a cap-rim edge flips
+/// only the below-bit, seated-style) is verified in the label brick, not guessed here.
+#[derive(Clone, Debug)]
+pub(crate) struct MergedSeg {
+    pub wall: usize,
+    /// Read by the next brick (crossings + split); kept here so the merged edge carries its
+    /// geometry, not just its contributions.
+    #[cfg_attr(test, allow(dead_code))]
+    pub end: [[usize; 3]; 2],
+    /// Every `(solid, kind)` that produced this one geometric edge. Length 1 when nothing was
+    /// coincident.
+    pub merged: Vec<(SolidSide, SegKind)>,
+}
+
+/// Merge segments that are the **same geometric edge** — same `wall` and same endpoint-triple set
+/// (direction-independent) — into one `MergedSeg`, collecting their contributions. Partial overlap
+/// (same `wall`, *different* extent — the E5 case) is left alone: those are different edges.
+fn merge_coincident(segs: &[Seg]) -> Vec<MergedSeg> {
+    // Key an edge by (wall, sorted endpoint pair). Endpoints are canon triples, so the sorted pair
+    // is a direction-independent identity.
+    let key = |s: &Seg| -> (usize, [[usize; 3]; 2]) {
+        let (mut a, mut b) = (s.end[0], s.end[1]);
+        if a > b {
+            std::mem::swap(&mut a, &mut b);
+        }
+        (s.wall, [a, b])
+    };
+    let mut order: Vec<(usize, [[usize; 3]; 2])> = Vec::new();
+    let mut groups: HashMap<(usize, [[usize; 3]; 2]), MergedSeg> = HashMap::new();
+    for s in segs {
+        let k = key(s);
+        groups
+            .entry(k)
+            .or_insert_with(|| {
+                order.push(k);
+                MergedSeg {
+                    wall: s.wall,
+                    end: s.end,
+                    merged: Vec::new(),
+                }
+            })
+            .merged
+            .push((s.solid, s.kind));
+    }
+    // Deterministic order: first appearance.
+    order
+        .into_iter()
+        .map(|k| groups.remove(&k).unwrap())
+        .collect()
+}
+
 /// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
 /// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
 /// given as `(fp, s)`. The signed turn between edges i and j is `turn_at`'s atom
@@ -809,6 +867,132 @@ mod tests {
         assert!(
             [0, 1, 2, 3].contains(&lo) && [0, 1, 2, 3].contains(&hi),
             "oblique is flanked by axis edges (transitivity placed it): {cyc:?}"
+        );
+    }
+
+    /// On a cap plane, the cap rim and each side wall's top edge are one geometric edge traced
+    /// twice (seated + transversal). Merge collapses coincident edges by (wall, endpoint set) while
+    /// preserving contributions. Two footprint cases pin the count by hand.
+    #[test]
+    fn coincident_cap_edges_merge_by_footprint() {
+        // (a) Same footprint: stacked cubes share the z=1 plane AND the same [0,1]² rim. Each of
+        // the 4 rim edges is produced 4× (a-seated, a-wall, b-seated, b-wall) → 4 merged edges.
+        {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0, 1.0, 1.0]),
+            );
+            let b = m.add_cuboid(
+                Point3::from_array([0.0, 0.0, 1.0]),
+                Point3::from_array([1.0, 1.0, 2.0]),
+            );
+            m.rebuild_adjacency();
+            let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+            let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+            let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+            let merged = merge_coincident(&tr.segs);
+            assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
+            for e in &merged {
+                assert_eq!(
+                    e.merged.len(),
+                    4,
+                    "a·b × seated·transversal: {:?}",
+                    e.merged
+                );
+            }
+        }
+        // (b) Different footprint: a cross. a's cap [0,3]×[1,2] and b's cap [1,2]×[0,3] are
+        // different rims, so no a↔b coincidence: a's 4 pairs → 4, b's 4 pairs → 4 = 8.
+        {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0, 1.0, 0.0]),
+                Point3::from_array([3.0, 2.0, 1.0]),
+            );
+            let b = m.add_cuboid(
+                Point3::from_array([1.0, 0.0, 0.0]),
+                Point3::from_array([2.0, 3.0, 1.0]),
+            );
+            m.rebuild_adjacency();
+            let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+            let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+            let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+            let merged = merge_coincident(&tr.segs);
+            assert_eq!(
+                merged.len(),
+                8,
+                "4 per box, no a↔b coincidence: {merged:#?}"
+            );
+            for e in &merged {
+                assert_eq!(
+                    e.merged.len(),
+                    2,
+                    "one solid × seated·transversal: {:?}",
+                    e.merged
+                );
+            }
+        }
+    }
+
+    /// The z=1 class both solids seat a cap on.
+    fn shared_cap_class(
+        m: &Model,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+        surf_ix: &HashMap<Handle<Face>, usize>,
+        planes: &[PlaneInfo],
+        canon: &[usize],
+    ) -> usize {
+        (0..planes.len())
+            .map(|i| canon[i])
+            .find(|&c| {
+                let seats =
+                    |s: Handle<Solid>| {
+                        solid_shell_handles(m, s).into_iter().any(|sh| {
+                            m.shells.get(sh).faces.iter().any(|fh| {
+                                canon[surf_ix[fh]] == c && face_on_z1(*fh, surf_ix, planes)
+                            })
+                        })
+                    };
+                seats(a) && seats(b)
+            })
+            .expect("a shared z=1 cap class")
+    }
+
+    /// Partial overlap (E5) is NOT merged — different endpoints mean different edges. a and b share
+    /// the y=1 plane; a's y=1 chord is x∈[0,2], b's is x∈[1,3] — overlapping on x∈[1,2] but not
+    /// coincident. They must stay separate.
+    #[test]
+    fn partial_overlap_is_not_merged() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
+        // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
+        // seated≡transversal coincidence).
+        let merged = merge_coincident(&tr.segs);
+        // The shared y=1 wall class (a face at y=1).
+        let y1 = canon[planes
+            .iter()
+            .position(|p| p.tri.iter().all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12))
+            .expect("a y=1 face")];
+        // a's chord x∈[0,2] and b's chord x∈[1,3] ride y=1 but have different endpoints, so they
+        // stay as two distinct MergedSegs. A merge that ignored extent would collapse them to one.
+        let on_y1 = merged.iter().filter(|e| e.wall == y1).count();
+        assert!(
+            on_y1 >= 2,
+            "a's and b's y=1 chords stay distinct (partial overlap not merged): {on_y1}"
         );
     }
 
