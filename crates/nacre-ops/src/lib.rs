@@ -3816,6 +3816,20 @@ struct BndEdge {
 /// The outer-loop boundary edges of a coplanar contact face `cf` (canonical plane class `pi`),
 /// each tagged with the canonical class of its carrying wall. Order follows the loop, so a
 /// vertex's two incident walls are the walls of the edge before and the edge at it.
+///
+/// **Single ring — a holed face is reduced to its outer loop, and that is a known hazard.** One
+/// cyclic list cannot describe a face with holes, so `cf.inner` is dropped here. The same face
+/// therefore keeps its holes on the whole-face path ([`whole_lf`]) and loses them on any
+/// reconstruct path, and [`footprints_overlap`] — hence the dispatch — sees a footprint larger than
+/// the face really is.
+///
+/// Measured (suite, `--nocapture`): a holed face reaches here **6 times**, all from the
+/// blind-pocket-into-a-non-convex-solid family, where the dropped hole happens not to meet the
+/// other footprint, so those results are right. That is luck of the configuration, not a
+/// guarantee: a hole that *did* meet it would be silently wrong. A blanket reject was tried and
+/// breaks those two goldens, and this function cannot tell the difference on its own — it never
+/// sees the other footprint. The real fix is to carry the holes (multi-ring `BndEdge`), which is
+/// the next increment; until then this comment is the warning.
 #[cfg_attr(not(test), allow(dead_code))]
 fn contact_boundary(
     model: &Model,
@@ -3979,10 +3993,29 @@ fn clip_face_to_section(
     // coplanar-overlap regime (`q_bnd` = a coincident face) and the transversal regime (`q_bnd` = a
     // section), which differ only in where `q_bnd` comes from.
     let reconstruct = |f_bnd: &[BndEdge], q_bnd: &[BndEdge], keep_in: bool| {
-        let cx = coplanar_boundary_crossings(planes, pi, f_bnd, q_bnd, contact)?;
-        let arcs = coplanar_seam_arcs(planes, pi, q_bnd, &cx);
+        let cx = coplanar_boundary_crossings(
+            planes,
+            pi,
+            f_bnd,
+            &[f_bnd.len()],
+            q_bnd,
+            &[q_bnd.len()],
+            contact,
+        )?;
+        let arcs = coplanar_seam_arcs(planes, pi, q_bnd, &[q_bnd.len()], &cx);
         let faces = coplanar_reconstruct(
-            planes, pi, f_idx, f_bnd, q_bnd, &cx, &arcs, keep_in, flip, contact, false,
+            planes,
+            pi,
+            f_idx,
+            f_bnd,
+            q_bnd,
+            &[q_bnd.len()],
+            &cx,
+            &arcs,
+            keep_in,
+            flip,
+            contact,
+            false,
         )?;
         Ok::<_, BoolError>((faces, cx))
     };
@@ -4120,10 +4153,17 @@ fn coplanar_boundary_crossings(
     planes: &[PlaneInfo],
     pi: usize,
     a: &[BndEdge],
+    a_rings: &[usize],
     b: &[BndEdge],
+    b_rings: &[usize],
     contact: &[usize],
 ) -> Result<Vec<CoCross>, BoolError> {
-    let (na, nb) = (a.len(), b.len());
+    // Neighbour lookups wrap inside a ring, not off the end of the whole list, so a boundary made
+    // of several components does not fabricate an edge joining one ring's last edge to the next
+    // ring's first. Built once; for a single ring these are `(i±1) % n` exactly as before.
+    let (prev_a, next_a) = ring_neighbours(a_rings);
+    let (prev_b, next_b) = ring_neighbours(b_rings);
+    let na = a.len();
     // Position of the crossing within an edge from its two endpoint orders: `1` strictly
     // between (same nonzero sign both ways), `-1` outside, `0` on an endpoint (graze).
     let between = |s0: i8, s1: i8| -> i8 {
@@ -4137,14 +4177,14 @@ fn coplanar_boundary_crossings(
     };
     let mut out = Vec::new();
     for i in 0..na {
-        let (w, wp, wn) = (a[i].wall, a[(i + na - 1) % na].wall, a[(i + 1) % na].wall);
+        let (w, wp, wn) = (a[i].wall, a[prev_a[i]].wall, a[next_a[i]].wall);
         for (j, edge_b) in b.iter().enumerate() {
             let u = edge_b.wall;
             let Some(point) = three_planes(&planes[pi].plane, &planes[w].plane, &planes[u].plane)
             else {
                 continue; // parallel or shared wall — no transversal crossing
             };
-            let (up, un) = (b[(j + nb - 1) % nb].wall, b[(j + 1) % nb].wall);
+            let (up, un) = (b[prev_b[j]].wall, b[next_b[j]].wall);
             let a_pos = between(
                 arrange::order_along(planes, pi, w, wp, u),
                 arrange::order_along(planes, pi, w, u, wn),
@@ -4201,6 +4241,7 @@ fn coplanar_seam_arcs(
     planes: &[PlaneInfo],
     pi: usize,
     b: &[BndEdge],
+    b_rings: &[usize],
     crossings: &[CoCross],
 ) -> Vec<Vec<Node>> {
     if crossings.is_empty() {
@@ -4214,69 +4255,147 @@ fn coplanar_seam_arcs(
             .find(|&x| x != pi && x != u)
             .expect("crossing triple is {pi, W, U}")
     };
-    // ∂Q as a cyclic node sequence: each edge's start vertex, then the crossings on that edge.
-    let mut seq: Vec<Node> = Vec::new();
-    for be in b {
-        seq.push(be.v[0]);
-        let mut on: Vec<&CoCross> = crossings.iter().filter(|c| c.b_seg == be.seg).collect();
-        on.sort_by(|c0, c1| {
-            let (w0, w1) = (other_wall(c0, be.wall), other_wall(c1, be.wall));
-            match arrange::order_along(planes, pi, be.wall, w0, w1) {
-                -1 => std::cmp::Ordering::Less,
-                1 => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
-            }
-        });
-        for c in on {
-            // R1 dedup: an attachment crossing (contact-plane overlap) coincides with a section
-            // corner = this chord's own endpoint, already in `seq` as `be.v`. Re-inserting it would
-            // duplicate the node; skip it. It still cuts arcs there (its triple is in `xset`, and
-            // the corner it equals is a `Node::Seam` cut point).
-            let cn = Node::Seam(c.triple);
-            if cn == be.v[0] || cn == be.v[1] {
-                continue;
-            }
-            seq.push(cn);
-        }
-    }
-    // Cut at the crossings into arcs (crossing → interior → next crossing). Cut points are the
-    // crossing triples specifically, not every `Node::Seam`: a **contact-face** ∂Q has `Node::Orig`
-    // interior vertices (only crossings are `Seam`), but a **section** ∂Q has `Node::Seam` corners
-    // too, so we identify the crossings by their triples rather than by node kind.
+    // ∂Q as a cyclic node sequence per component: each edge's start vertex, then the crossings on
+    // that edge. Cutting is done inside a component — splicing one ring's tail to the next ring's
+    // head would mint an arc that runs through empty space, and nothing downstream would notice.
     let xset: HashSet<[usize; 3]> = crossings.iter().map(|c| c.triple).collect();
-    let n = seq.len();
-    let cpos: Vec<usize> = (0..n)
-        .filter(|&i| matches!(seq[i], Node::Seam(t) if xset.contains(&t)))
-        .collect();
-    let mut arcs = Vec::with_capacity(cpos.len());
-    for k in 0..cpos.len() {
-        let (from, to) = (cpos[k], cpos[(k + 1) % cpos.len()]);
-        let mut arc = Vec::new();
-        let mut i = from;
-        loop {
-            arc.push(seq[i]);
-            if i == to {
-                break;
+    let mut arcs: Vec<Vec<Node>> = Vec::new();
+    let mut base = 0;
+    for &ring_len in b_rings {
+        let ring = &b[base..base + ring_len];
+        base += ring_len;
+        let mut seq: Vec<Node> = Vec::new();
+        for be in ring {
+            seq.push(be.v[0]);
+            let mut on: Vec<&CoCross> = crossings.iter().filter(|c| c.b_seg == be.seg).collect();
+            on.sort_by(|c0, c1| {
+                let (w0, w1) = (other_wall(c0, be.wall), other_wall(c1, be.wall));
+                match arrange::order_along(planes, pi, be.wall, w0, w1) {
+                    -1 => std::cmp::Ordering::Less,
+                    1 => std::cmp::Ordering::Greater,
+                    _ => std::cmp::Ordering::Equal,
+                }
+            });
+            for c in on {
+                // R1 dedup: an attachment crossing (contact-plane overlap) coincides with a section
+                // corner = this chord's own endpoint, already in `seq` as `be.v`. Re-inserting it would
+                // duplicate the node; skip it. It still cuts arcs there (its triple is in `xset`, and
+                // the corner it equals is a `Node::Seam` cut point).
+                let cn = Node::Seam(c.triple);
+                if cn == be.v[0] || cn == be.v[1] {
+                    continue;
+                }
+                seq.push(cn);
             }
-            i = (i + 1) % n;
         }
-        arcs.push(arc);
+        // Cut at the crossings into arcs (crossing → interior → next crossing). Cut points are the
+        // crossing triples specifically, not every `Node::Seam`: a **contact-face** ∂Q has
+        // `Node::Orig` interior vertices (only crossings are `Seam`), but a **section** ∂Q has
+        // `Node::Seam` corners too, so we identify the crossings by their triples rather than by
+        // node kind. A component the seam never crosses contributes no arcs — it is a closed loop,
+        // the same thing the `crossings.is_empty()` early return says for the whole boundary.
+        let n = seq.len();
+        let cpos: Vec<usize> = (0..n)
+            .filter(|&i| matches!(seq[i], Node::Seam(t) if xset.contains(&t)))
+            .collect();
+        for k in 0..cpos.len() {
+            let (from, to) = (cpos[k], cpos[(k + 1) % cpos.len()]);
+            let mut arc = Vec::new();
+            let mut i = from;
+            loop {
+                arc.push(seq[i]);
+                if i == to {
+                    break;
+                }
+                i = (i + 1) % n;
+            }
+            arcs.push(arc);
+        }
     }
     arcs
 }
 
+/// Whether `t` lies on the boundary of **any** component of a multi-ring footprint.
+#[cfg_attr(not(test), allow(dead_code))]
+fn on_any_ring(
+    planes: &[PlaneInfo],
+    pi: usize,
+    t: [usize; 3],
+    triples: &[[usize; 3]],
+    ring_lens: &[usize],
+) -> Result<bool, BoolError> {
+    let mut base = 0;
+    for &len in ring_lens {
+        if arrange::point_on_ring(planes, pi, t, &triples[base..base + len])? {
+            return Ok(true);
+        }
+        base += len;
+    }
+    Ok(false)
+}
+
+/// Whether `t` is inside a multi-ring footprint: **odd** number of components containing it. That
+/// is the same parity rule [`classify_and_emit`] already uses to combine per-loop containment, and
+/// it reads a nested pair (outer ring plus the hole it encloses) as "outside" without needing to
+/// know which ring is which. A single ring reduces to plain [`arrange::point_in_ring`].
+#[cfg_attr(not(test), allow(dead_code))]
+fn in_rings(
+    planes: &[PlaneInfo],
+    pi: usize,
+    t: [usize; 3],
+    triples: &[[usize; 3]],
+    ring_lens: &[usize],
+) -> Result<bool, BoolError> {
+    let mut inside = 0usize;
+    let mut base = 0;
+    for &len in ring_lens {
+        if arrange::point_in_ring(planes, pi, t, &triples[base..base + len])? {
+            inside += 1;
+        }
+        base += len;
+    }
+    Ok(inside % 2 == 1)
+}
+
+/// Cyclic predecessor and successor for a boundary made of the components `ring_lens` names, as
+/// flat indices. Wrapping stays inside a ring, so walking never steps from one component into
+/// another; a single ring gives plain `(i±1) % n`.
+#[cfg_attr(not(test), allow(dead_code))]
+fn ring_neighbours(ring_lens: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    let n: usize = ring_lens.iter().sum();
+    let (mut prev, mut next) = (vec![0; n], vec![0; n]);
+    let mut base = 0;
+    for &len in ring_lens {
+        for i in 0..len {
+            prev[base + i] = base + (i + len - 1) % len;
+            next[base + i] = base + (i + 1) % len;
+        }
+        base += len;
+    }
+    (prev, next)
+}
+
 /// Each boundary vertex of a contact face as a plane triple `{π, W_prev, W}` — the meet of the
 /// two walls at the vertex (the start of edge `i`, shared with edge `i-1`), on canonical plane π.
+///
+/// `ring_lens` names the boundary's components in order, as [`arrange::run_classes`] already
+/// expects (`arrange`), so "previous edge" wraps **within** a ring rather than off the end of the
+/// whole list. A single-ring boundary passes `&[bnd.len()]` and the expression reduces to the
+/// plain cyclic one. The triples come back concatenated in the same order as `bnd`, so a caller
+/// that needs one ring at a time can slice with the same `ring_lens`.
 #[cfg_attr(not(test), allow(dead_code))]
-fn boundary_ring_triples(bnd: &[BndEdge], pi: usize) -> Vec<[usize; 3]> {
-    let n = bnd.len();
-    (0..n)
-        .map(|i| {
-            let mut t = [pi, bnd[(i + n - 1) % n].wall, bnd[i].wall];
+fn boundary_ring_triples(bnd: &[BndEdge], ring_lens: &[usize], pi: usize) -> Vec<[usize; 3]> {
+    let mut out = Vec::with_capacity(bnd.len());
+    let mut base = 0;
+    for &len in ring_lens {
+        for i in 0..len {
+            let mut t = [pi, bnd[base + (i + len - 1) % len].wall, bnd[base + i].wall];
             t.sort_unstable();
-            t
-        })
-        .collect()
+            out.push(t);
+        }
+        base += len;
+    }
+    out
 }
 
 /// What survives on the `a`-side contact face `P` under a coplanar boolean, as a function of the
@@ -4343,6 +4462,7 @@ fn coplanar_reconstruct(
     plane_idx: usize,
     a_bnd: &[BndEdge],
     b_bnd: &[BndEdge],
+    b_rings: &[usize],
     crossings: &[CoCross],
     arcs: &[Vec<Node>],
     keep_inside_q: bool,
@@ -4350,8 +4470,8 @@ fn coplanar_reconstruct(
     contact: &[usize],
     union: bool,
 ) -> Result<Vec<LocalFace>, BoolError> {
-    let p_ring = boundary_ring_triples(a_bnd, pi);
-    let q_ring = boundary_ring_triples(b_bnd, pi);
+    let p_ring = boundary_ring_triples(a_bnd, &[a_bnd.len()], pi);
+    let q_ring = boundary_ring_triples(b_bnd, b_rings, pi);
     // ∂Q node → its plane triple, to classify an arc's interior against P. Keyed by `Node`, so it
     // covers both a contact-face vertex (`Node::Orig`) and a section chord end (`Node::Seam`).
     let b_vtriple: HashMap<Node, [usize; 3]> = b_bnd
@@ -4438,7 +4558,7 @@ fn coplanar_reconstruct(
     let n = verts.len();
     let mut kept = vec![false; n];
     for i in 0..n {
-        if arrange::point_on_ring(planes, pi, p_ring[i], &q_ring)? {
+        if on_any_ring(planes, pi, p_ring[i], &q_ring, b_rings)? {
             // R2: a ∂P vertex lying on Q's **contact chord** (the collinear-edge overlap on the
             // contact plane) is covered by Q, not a flush reject — the cut-overhang's wall corner
             // where the seam meets the contact edge. Accept it strictly on the chord (its triple
@@ -4455,7 +4575,7 @@ fn coplanar_reconstruct(
             }
             return Err(reject(tag::VERTEX_ON_FACE_PLANE));
         }
-        let inside_q = arrange::point_in_ring(planes, pi, p_ring[i], &q_ring)?;
+        let inside_q = in_rings(planes, pi, p_ring[i], &q_ring, b_rings)?;
         kept[i] = inside_q == keep_inside_q;
     }
 
@@ -5022,8 +5142,8 @@ fn footprints_overlap(
     }
     let p_bnd = contact_boundary(model, p_face, pi, inc_a, canon)?;
     let q_bnd = contact_boundary(model, q_face, pi, inc_b, canon)?;
-    let p_ring = boundary_ring_triples(&p_bnd, pi);
-    let q_ring = boundary_ring_triples(&q_bnd, pi);
+    let p_ring = boundary_ring_triples(&p_bnd, &[p_bnd.len()], pi);
+    let q_ring = boundary_ring_triples(&q_bnd, &[q_bnd.len()], pi);
     // Interior overlap (graze-aware, B4-R1b-part2b): a boundary vertex of one footprint strictly
     // inside the other. This catches a **flush** contact — the two footprints share a boundary edge,
     // so the crossing sweep below would graze-reject, but the interior overlap is genuine. The
@@ -5040,7 +5160,15 @@ fn footprints_overlap(
     }
     // No interior vertex: a proper (non-graze) crossing is a plus-style overlap; a pure graze
     // (abutting, no interior) still rejects as before — the current honest decline for non-overlap.
-    let cx = coplanar_boundary_crossings(planes, pi, &p_bnd, &q_bnd, &[])?;
+    let cx = coplanar_boundary_crossings(
+        planes,
+        pi,
+        &p_bnd,
+        &[p_bnd.len()],
+        &q_bnd,
+        &[q_bnd.len()],
+        &[],
+    )?;
     Ok(!cx.is_empty())
 }
 
@@ -5246,7 +5374,7 @@ fn classify_and_emit(
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
         let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
-        let p_ring = boundary_ring_triples(&f_bnd, pi);
+        let p_ring = boundary_ring_triples(&f_bnd, &[f_bnd.len()], pi);
         // Multi-loop section: `f`'s plane cuts `other` through a cavity → outer + hole rings (an
         // annulus). Classify `f` by its winding depth in the section — a pure parity count, NOT an
         // outer/hole distinction (so it is robust to sibling-outer sections too): 0 loops contain it
@@ -5262,7 +5390,7 @@ fn classify_and_emit(
             let mut contain = 0usize;
             for lp in &loops {
                 let l_bnd = section_boundary(std::slice::from_ref(lp), pi, canon)?;
-                let l_ring = boundary_ring_triples(&l_bnd, pi);
+                let l_ring = boundary_ring_triples(&l_bnd, &[l_bnd.len()], pi);
                 if rings_properly_cross(planes, pi, &p_ring, &l_ring)? {
                     return Err(reject(tag::SECTION_MULTI_LOOP));
                 }
@@ -5298,7 +5426,7 @@ fn classify_and_emit(
             return Ok((Vec::from_iter(lf), Vec::new()));
         }
         let q_bnd = section_boundary(&loops, pi, canon)?;
-        let q_ring = boundary_ring_triples(&q_bnd, pi);
+        let q_ring = boundary_ring_triples(&q_bnd, &[q_bnd.len()], pi);
         let (mut has_in, mut has_out) = (false, false);
         for v in &p_ring {
             if arrange::point_on_ring(planes, pi, *v, &q_ring)? {
@@ -5346,10 +5474,17 @@ fn classify_and_emit(
             // or one/none. So "distinct `a_seg` ≥ 2" ⇒ the section cuts `f` (a T-overlap: E1's
             // interpenetrating walls) ⇒ clip; else `f` is wholly outside `other` ⇒ whole. Exact (edge
             // indices, no coordinate); an error counts as graze so this is strictly non-regressive.
-            let t_overlap =
-                coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)
-                    .map(|cs| cs.iter().map(|c| c.a_seg).collect::<HashSet<usize>>().len() >= 2)
-                    .unwrap_or(false);
+            let t_overlap = coplanar_boundary_crossings(
+                planes,
+                pi,
+                &f_bnd,
+                &[f_bnd.len()],
+                &q_bnd,
+                &[q_bnd.len()],
+                contact_classes,
+            )
+            .map(|cs| cs.iter().map(|c| c.a_seg).collect::<HashSet<usize>>().len() >= 2)
+            .unwrap_or(false);
             if !t_overlap {
                 let lf = (!keep_inside).then(whole_lf); // f ∖ other = whole
                 return Ok((Vec::from_iter(lf), Vec::new()));
@@ -5380,8 +5515,16 @@ fn classify_and_emit(
                     return Err(reject(tag::COPLANAR_OVERLAP_MULTI));
                 }
                 let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-                if !coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?
-                    .is_empty()
+                if !coplanar_boundary_crossings(
+                    planes,
+                    pi,
+                    &f_bnd,
+                    &[f_bnd.len()],
+                    &q_bnd,
+                    &[q_bnd.len()],
+                    contact_classes,
+                )?
+                .is_empty()
                 {
                     return Err(reject(tag::COPLANAR_OVERLAP_MULTI));
                 }
@@ -5414,7 +5557,16 @@ fn classify_and_emit(
         if kind == BoolKind::Fuse && !same_normal {
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-            if !coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?.is_empty()
+            if !coplanar_boundary_crossings(
+                planes,
+                pi,
+                &f_bnd,
+                &[f_bnd.len()],
+                &q_bnd,
+                &[q_bnd.len()],
+                contact_classes,
+            )?
+            .is_empty()
             {
                 return clip(Some(PSurvive::MinusQ)); // b∖a cantilever, flip=false
             }
@@ -5440,7 +5592,15 @@ fn classify_and_emit(
             // is owed and emitting the whole face would be silently wrong, so that stays rejected.
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-            let cx = coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?;
+            let cx = coplanar_boundary_crossings(
+                planes,
+                pi,
+                &f_bnd,
+                &[f_bnd.len()],
+                &q_bnd,
+                &[q_bnd.len()],
+                contact_classes,
+            )?;
             // ∂Q nested or disjoint, or a Cut whose tool never crosses the plane: nothing in-plane
             // can change what survives, so the face comes through whole.
             if cx.is_empty()
@@ -5449,13 +5609,14 @@ fn classify_and_emit(
             {
                 Ok((vec![whole_lf()], Vec::new()))
             } else if kind == BoolKind::Fuse && same_normal {
-                let arcs = coplanar_seam_arcs(planes, pi, &q_bnd, &cx);
+                let arcs = coplanar_seam_arcs(planes, pi, &q_bnd, &[q_bnd.len()], &cx);
                 let faces = coplanar_reconstruct(
                     planes,
                     pi,
                     f_idx,
                     &f_bnd,
                     &q_bnd,
+                    &[q_bnd.len()],
                     &cx,
                     &arcs,
                     false,
@@ -5476,7 +5637,16 @@ fn classify_and_emit(
             // on a *different* contact plane register as an attachment rather than reject.
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
-            if coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?.is_empty()
+            if coplanar_boundary_crossings(
+                planes,
+                pi,
+                &f_bnd,
+                &[f_bnd.len()],
+                &q_bnd,
+                &[q_bnd.len()],
+                contact_classes,
+            )?
+            .is_empty()
             {
                 let f = model.faces.get(f_face);
                 let mut hole = ring(&model.faces.get(cf).outer);
@@ -13171,15 +13341,25 @@ pub mod tests {
         assert_eq!(q_bnd.len(), 4, "four section chords");
         let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
         let p_bnd = contact_boundary(&m, planes[beta].face, beta, &inc_b, &canon).unwrap();
-        let crossings = coplanar_boundary_crossings(&planes, beta, &p_bnd, &q_bnd, &[]).unwrap();
+        let crossings = coplanar_boundary_crossings(
+            &planes,
+            beta,
+            &p_bnd,
+            &[p_bnd.len()],
+            &q_bnd,
+            &[q_bnd.len()],
+            &[],
+        )
+        .unwrap();
         assert_eq!(crossings.len(), 2, "b's top edges cross a's x=4 wall twice");
-        let arcs = coplanar_seam_arcs(&planes, beta, &q_bnd, &crossings);
+        let arcs = coplanar_seam_arcs(&planes, beta, &q_bnd, &[q_bnd.len()], &crossings);
         let faces = coplanar_reconstruct(
             &planes,
             beta,
             beta,
             &p_bnd,
             &q_bnd,
+            &[q_bnd.len()],
             &crossings,
             &arcs,
             true,
@@ -13308,8 +13488,17 @@ pub mod tests {
         let f_bnd = contact_boundary(&m, planes[cutter_y025].face, pi, &inc_c, &canon).unwrap();
         let sect = section_of_solid(&m, base, cutter_y025, &planes, &surf_ix).unwrap();
         let q_bnd = section_boundary(&sect, pi, &canon).unwrap();
-        let cx = coplanar_boundary_crossings(&planes, pi, &f_bnd, &q_bnd, &[contact]).unwrap();
-        let arcs = coplanar_seam_arcs(&planes, pi, &q_bnd, &cx);
+        let cx = coplanar_boundary_crossings(
+            &planes,
+            pi,
+            &f_bnd,
+            &[f_bnd.len()],
+            &q_bnd,
+            &[q_bnd.len()],
+            &[contact],
+        )
+        .unwrap();
+        let arcs = coplanar_seam_arcs(&planes, pi, &q_bnd, &[q_bnd.len()], &cx);
         // keep P∩Q (inside the base), flipped (a Cut slot wall).
         let faces = coplanar_reconstruct(
             &planes,
@@ -13317,6 +13506,7 @@ pub mod tests {
             cutter_y025,
             &f_bnd,
             &q_bnd,
+            &[q_bnd.len()],
             &cx,
             &arcs,
             true,
@@ -13629,19 +13819,29 @@ pub mod tests {
 
         let f_bnd = contact_boundary(&m, planes[base_top].face, pi, &inc_a, &canon).unwrap();
         let q_bnd = contact_boundary(&m, planes[cutter_top].face, pi, &inc_b, &canon).unwrap();
-        let cx = coplanar_boundary_crossings(&planes, pi, &f_bnd, &q_bnd, &[y0]).unwrap();
+        let cx = coplanar_boundary_crossings(
+            &planes,
+            pi,
+            &f_bnd,
+            &[f_bnd.len()],
+            &q_bnd,
+            &[q_bnd.len()],
+            &[y0],
+        )
+        .unwrap();
         assert_eq!(
             cx.len(),
             2,
             "two attachment crossings on the shared y=0 edge"
         );
-        let arcs = coplanar_seam_arcs(&planes, pi, &q_bnd, &cx);
+        let arcs = coplanar_seam_arcs(&planes, pi, &q_bnd, &[q_bnd.len()], &cx);
         let faces = coplanar_reconstruct(
             &planes,
             pi,
             base_top,
             &f_bnd,
             &q_bnd,
+            &[q_bnd.len()],
             &cx,
             &arcs,
             false,
@@ -13891,7 +14091,16 @@ pub mod tests {
             a_bnd.iter().all(|e| e.v[0] != e.v[1]),
             "each edge has two distinct endpoints"
         );
-        let cx = coplanar_boundary_crossings(&planes, pi, &a_bnd, &b_bnd, &[]).unwrap();
+        let cx = coplanar_boundary_crossings(
+            &planes,
+            pi,
+            &a_bnd,
+            &[a_bnd.len()],
+            &b_bnd,
+            &[b_bnd.len()],
+            &[],
+        )
+        .unwrap();
         for c in &cx {
             assert!(c.triple.contains(&pi), "crossing triple carries π");
             assert!(a_bnd.iter().any(|e| e.seg == c.a_seg), "a_seg is on ∂P");
@@ -13924,7 +14133,7 @@ pub mod tests {
         // A2 part2: ∂Q split at the crossings into mixed-node arcs. Two crossings give two arcs,
         // each running Seam → Orig… → Seam. One arc's interior b-vertex (1,1) is inside P=[0,2]²
         // (the piece of ∂Q that cuts P); the other holds the three outside corners.
-        let arcs = coplanar_seam_arcs(&planes, pi, &b_bnd, &cx);
+        let arcs = coplanar_seam_arcs(&planes, pi, &b_bnd, &[b_bnd.len()], &cx);
         assert_eq!(arcs.len(), 2, "two crossings split ∂Q into two arcs");
         for arc in &arcs {
             assert!(
@@ -14004,6 +14213,7 @@ pub mod tests {
             plane_idx,
             &a_bnd,
             &b_bnd,
+            &[b_bnd.len()],
             &cx,
             &arcs,
             false,
@@ -14034,6 +14244,7 @@ pub mod tests {
             plane_idx,
             &a_bnd,
             &b_bnd,
+            &[b_bnd.len()],
             &cx,
             &arcs,
             false,
@@ -14067,6 +14278,7 @@ pub mod tests {
             plane_idx,
             &a_bnd,
             &b_bnd,
+            &[b_bnd.len()],
             &cx,
             &arcs,
             true,
@@ -14088,14 +14300,24 @@ pub mod tests {
 
         // B4: the symmetric Q-side reconstruction (roles swapped) — b's cantilever. Keep Q∖P →
         // the L-shaped cantilever bottom (b corners beyond P, the two crossings, and P's (2,2)).
-        let cx_q = coplanar_boundary_crossings(&planes, pi, &b_bnd, &a_bnd, &[]).unwrap();
-        let arcs_q = coplanar_seam_arcs(&planes, pi, &a_bnd, &cx_q); // ∂P as the seam on Q
+        let cx_q = coplanar_boundary_crossings(
+            &planes,
+            pi,
+            &b_bnd,
+            &[b_bnd.len()],
+            &a_bnd,
+            &[a_bnd.len()],
+            &[],
+        )
+        .unwrap();
+        let arcs_q = coplanar_seam_arcs(&planes, pi, &a_bnd, &[a_bnd.len()], &cx_q); // ∂P as the seam on Q
         let cant = coplanar_reconstruct(
             &planes,
             pi,
             b_bot,
             &b_bnd,
             &a_bnd,
+            &[a_bnd.len()],
             &cx_q,
             &arcs_q,
             false,
@@ -14839,8 +15061,8 @@ pub mod tests {
         let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
         let a_bnd = contact_boundary(&m, planes[a_top].face, pi, &inc_a, &canon).unwrap();
         let b_bnd = contact_boundary(&m, planes[b_bot].face, pi, &inc_b, &canon).unwrap();
-        let l_ring = boundary_ring_triples(&a_bnd, pi);
-        let q_ring = boundary_ring_triples(&b_bnd, pi);
+        let l_ring = boundary_ring_triples(&a_bnd, &[a_bnd.len()], pi);
+        let q_ring = boundary_ring_triples(&b_bnd, &[b_bnd.len()], pi);
         assert_eq!(l_ring.len(), 6, "L has 6 vertices");
         let corner = |x: f64, y: f64| -> [usize; 3] {
             *q_ring
