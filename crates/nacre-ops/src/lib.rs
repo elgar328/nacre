@@ -3888,26 +3888,30 @@ fn section_boundary(
     loops: &[Vec<Node>],
     pi: usize,
     canon: &[usize],
-) -> Result<Vec<BndEdge>, BoolError> {
-    if loops.len() != 1 {
-        return Err(reject(tag::SECTION_MULTI_LOOP)); // outer + hole rings: later cell
+) -> Result<(Vec<BndEdge>, Vec<usize>), BoolError> {
+    // Canonicalize every section vertex triple through the plane classes (R0), sorted, keeping the
+    // components separate. `ring_lens` carries the component structure alongside; `seg` stays a
+    // flat running index across all of them, because `by_edge[c.b_seg]` indexes the concatenation.
+    let mut cv: Vec<[usize; 3]> = Vec::new();
+    let mut ring_lens: Vec<usize> = Vec::with_capacity(loops.len());
+    for ring in loops {
+        if ring.len() < 3 {
+            return Err(reject(tag::ARRANGEMENT_DEGENERATE));
+        }
+        for &nd in ring {
+            let Node::Seam(t) = nd else {
+                return Err(reject(tag::ARRANGEMENT_DEGENERATE)); // section nodes are all Seam
+            };
+            let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
+            c.sort_unstable();
+            cv.push(c);
+        }
+        ring_lens.push(ring.len());
     }
-    let ring = &loops[0];
-    let n = ring.len();
-    if n < 3 {
-        return Err(reject(tag::ARRANGEMENT_DEGENERATE));
-    }
-    // Canonicalize each section vertex triple through the plane classes (R0), sorted.
-    let mut cv: Vec<[usize; 3]> = Vec::with_capacity(n);
-    for &nd in ring {
-        let Node::Seam(t) = nd else {
-            return Err(reject(tag::ARRANGEMENT_DEGENERATE)); // section nodes are all Seam
-        };
-        let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
-        c.sort_unstable();
-        cv.push(c);
-    }
+    let n = cv.len();
     // A fold that maps two distinct section vertices to the same triple would silently merge them.
+    // Checked across *all* components: two rings sharing a vertex triple would weld into one
+    // another at assembly just as surely as two vertices of a single ring.
     for i in 0..n {
         for j in (i + 1)..n {
             if cv[i] == cv[j] {
@@ -3915,9 +3919,10 @@ fn section_boundary(
             }
         }
     }
+    let (_, next_of) = ring_neighbours(&ring_lens);
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
-        let (t0, t1) = (cv[i], cv[(i + 1) % n]);
+        let (t0, t1) = (cv[i], cv[next_of[i]]);
         // The chord rides the single plane its two endpoints share besides the section plane.
         let mut shared = t0.iter().copied().filter(|&p| p != pi && t1.contains(&p));
         let wall = shared
@@ -3932,7 +3937,7 @@ fn section_boundary(
             wall,
         });
     }
-    Ok(out)
+    Ok((out, ring_lens))
 }
 
 /// Clip one face `f` of `owner` (combined-plane index `f_idx`) to the part surviving a coplanar
@@ -3992,30 +3997,19 @@ fn clip_face_to_section(
     // Reconstruct `f` (boundary `f_bnd`) subdivided by a coplanar footprint `q_bnd` — shared by the
     // coplanar-overlap regime (`q_bnd` = a coincident face) and the transversal regime (`q_bnd` = a
     // section), which differ only in where `q_bnd` comes from.
-    let reconstruct = |f_bnd: &[BndEdge], q_bnd: &[BndEdge], keep_in: bool| {
+    let reconstruct = |f_bnd: &[BndEdge], q_bnd: &[BndEdge], q_rings: &[usize], keep_in: bool| {
         let cx = coplanar_boundary_crossings(
             planes,
             pi,
             f_bnd,
             &[f_bnd.len()],
             q_bnd,
-            &[q_bnd.len()],
+            q_rings,
             contact,
         )?;
-        let arcs = coplanar_seam_arcs(planes, pi, q_bnd, &[q_bnd.len()], &cx);
+        let arcs = coplanar_seam_arcs(planes, pi, q_bnd, q_rings, &cx);
         let faces = coplanar_reconstruct(
-            planes,
-            pi,
-            f_idx,
-            f_bnd,
-            q_bnd,
-            &[q_bnd.len()],
-            &cx,
-            &arcs,
-            keep_in,
-            flip,
-            contact,
-            false,
+            planes, pi, f_idx, f_bnd, q_bnd, q_rings, &cx, &arcs, keep_in, flip, contact, false,
         )?;
         Ok::<_, BoolError>((faces, cx))
     };
@@ -4036,11 +4030,11 @@ fn clip_face_to_section(
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
             return match on_survival {
-                None => reconstruct(&f_bnd, &q_bnd, keep_inside), // today (unreached by current callers)
+                None => reconstruct(&f_bnd, &q_bnd, &[q_bnd.len()], keep_inside), // today (unreached)
                 Some(PSurvive::Whole) => Ok((vec![whole()], Vec::new())),
                 Some(PSurvive::Empty) => Ok((Vec::new(), Vec::new())),
-                Some(PSurvive::MinusQ) => reconstruct(&f_bnd, &q_bnd, false), // P∖Q (a notch/mouth)
-                Some(PSurvive::InterQ) => reconstruct(&f_bnd, &q_bnd, true),  // P∩Q
+                Some(PSurvive::MinusQ) => reconstruct(&f_bnd, &q_bnd, &[q_bnd.len()], false), // P∖Q
+                Some(PSurvive::InterQ) => reconstruct(&f_bnd, &q_bnd, &[q_bnd.len()], true),  // P∩Q
             };
         }
         // (b) Disjoint-coplanar (footprints apart): `f` is uniformly inside/outside `other`, so
@@ -4077,8 +4071,8 @@ fn clip_face_to_section(
         return Ok((Vec::from_iter(lf), Vec::new()));
     }
     let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
-    let q_bnd = section_boundary(&loops, pi, canon)?;
-    reconstruct(&f_bnd, &q_bnd, keep_inside)
+    let (q_bnd, q_rings) = section_boundary(&loops, pi, canon)?;
+    reconstruct(&f_bnd, &q_bnd, &q_rings, keep_inside)
 }
 
 /// Every face of `other` on plane class `pi` whose footprint overlaps face `f_face`'s (a coplanar
@@ -4355,6 +4349,12 @@ fn in_rings(
         base += len;
     }
     Ok(inside % 2 == 1)
+}
+
+/// Flat index where component `r` starts, given the component lengths.
+#[cfg_attr(not(test), allow(dead_code))]
+fn ring_base(ring_lens: &[usize], r: usize) -> usize {
+    ring_lens[..r].iter().sum()
 }
 
 /// Cyclic predecessor and successor for a boundary made of the components `ring_lens` names, as
@@ -5375,22 +5375,24 @@ fn classify_and_emit(
         }
         let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
         let p_ring = boundary_ring_triples(&f_bnd, &[f_bnd.len()], pi);
-        // Multi-loop section: `f`'s plane cuts `other` through a cavity → outer + hole rings (an
-        // annulus). Classify `f` by its winding depth in the section — a pure parity count, NOT an
-        // outer/hole distinction (so it is robust to sibling-outer sections too): 0 loops contain it
-        // ⇒ wholly outside `other` (∖ = whole); exactly 1 ⇒ inside the material (inside outer, outside
-        // every hole) (∩ = whole); ≥2 ⇒ inside a void (a wall floating in the cavity) → honest
-        // `SECTION_MULTI_LOOP` (a later cell). A loop `f` properly crosses, or a loop vertex strictly
-        // inside `f` (a hole poking through `f` → an annular face), is a genuine breach → reject; with
-        // those excluded each loop contains `f` wholly or not at all. The emission rule is
-        // owner-agnostic — `keep_inside`/`flip` already encode a/b and op — so it is the single-loop
-        // membership rule (below, 5285/5296) applied per material region. A single loop keeps the
-        // existing path below unchanged.
+        // A section of several components: classify `f` by its winding depth — a pure parity count
+        // over the loops, not an outer/hole distinction, so it is robust to sibling-outer sections.
+        // Even depth ⇒ outside `other`'s material (0 loops, or inside an outer *and* its hole — a
+        // wall floating in the cavity); odd ⇒ inside it. Valid only while every loop is wholly
+        // disjoint from `∂f`, so two shapes leave this fast path:
+        //
+        //   * a loop *properly crossing* `∂f` → still rejected. A crossing sends the reconstruct
+        //     down the stitch path, which emits every cell with no inner loops, so a surviving
+        //     piece that owes a hole would come back solid and silently wrong.
+        //   * a loop nested strictly *inside* `f` → handed to the clip below, which reaches the
+        //     reconstruct's crossing-free branch and can emit it as a hole. That used to be a
+        //     reject only because the clip could not take a multi-loop section.
         if loops.len() > 1 {
             let mut contain = 0usize;
+            let mut nested_in_f = false;
             for lp in &loops {
-                let l_bnd = section_boundary(std::slice::from_ref(lp), pi, canon)?;
-                let l_ring = boundary_ring_triples(&l_bnd, &[l_bnd.len()], pi);
+                let (l_bnd, l_rings) = section_boundary(std::slice::from_ref(lp), pi, canon)?;
+                let l_ring = boundary_ring_triples(&l_bnd, &l_rings, pi);
                 if rings_properly_cross(planes, pi, &p_ring, &l_ring)? {
                     return Err(reject(tag::SECTION_MULTI_LOOP));
                 }
@@ -5398,8 +5400,12 @@ fn classify_and_emit(
                     if !arrange::point_on_ring(planes, pi, *v, &p_ring)?
                         && arrange::point_in_ring(planes, pi, *v, &p_ring)?
                     {
-                        return Err(reject(tag::SECTION_MULTI_LOOP)); // a loop pokes into `f`
+                        nested_in_f = true;
+                        break;
                     }
+                }
+                if nested_in_f {
+                    break;
                 }
                 // Disjoint boundaries ⇒ `f` is uniformly inside or outside this loop; decide from any
                 // wall vertex off the loop's boundary. None off-boundary (footprint coincident with the
@@ -5418,21 +5424,25 @@ fn classify_and_emit(
                     None => return Err(reject(tag::SECTION_MULTI_LOOP)),
                 }
             }
-            let lf = match contain {
-                0 => (!keep_inside).then(whole_lf), // wholly outside material ⇒ ∖ = whole
-                1 => keep_inside.then(whole_lf),    // inside outer, outside all holes ⇒ ∩ = whole
-                _ => return Err(reject(tag::SECTION_MULTI_LOOP)), // inside a void ⇒ later cell
-            };
-            return Ok((Vec::from_iter(lf), Vec::new()));
+            if !nested_in_f {
+                let inside_material = contain % 2 == 1;
+                let lf = (inside_material == keep_inside).then(whole_lf);
+                return Ok((Vec::from_iter(lf), Vec::new()));
+            }
         }
-        let q_bnd = section_boundary(&loops, pi, canon)?;
-        let q_ring = boundary_ring_triples(&q_bnd, &[q_bnd.len()], pi);
+        let (q_bnd, q_rings) = section_boundary(&loops, pi, canon)?;
+        let q_ring = boundary_ring_triples(&q_bnd, &q_rings, pi);
+        // The section may have arrived in several components, so containment against it goes
+        // through the ring-aware helpers: "on any component" for the boundary test, parity across
+        // components for the inside test. Walking the concatenation as one ring would step from
+        // one component's last vertex to the next component's first and reject the pair as a
+        // non-edge (`LOOP_ORIENT_MISMATCH`).
         let (mut has_in, mut has_out) = (false, false);
         for v in &p_ring {
-            if arrange::point_on_ring(planes, pi, *v, &q_ring)? {
+            if on_any_ring(planes, pi, *v, &q_ring, &q_rings)? {
                 continue;
             }
-            if arrange::point_in_ring(planes, pi, *v, &q_ring)? {
+            if in_rings(planes, pi, *v, &q_ring, &q_rings)? {
                 has_in = true;
             } else {
                 has_out = true;
@@ -5467,7 +5477,18 @@ fn classify_and_emit(
         // section crossing → stays whole. `coplanar_boundary_crossings` can itself reject on a graze
         // degeneracy; an error counts as "no clean crossing" → whole, so this is strictly non-
         // regressive: only a clean non-empty crossing diverts a former whole into a clip.
-        if !sect_in_f && !has_in && !rings_properly_cross(planes, pi, &p_ring, &q_ring)? {
+        let mut crosses = false;
+        {
+            let mut base = 0;
+            for &len in &q_rings {
+                if rings_properly_cross(planes, pi, &p_ring, &q_ring[base..base + len])? {
+                    crosses = true;
+                    break;
+                }
+                base += len;
+            }
+        }
+        if !sect_in_f && !has_in && !crosses {
             // A section chord that genuinely cuts `f` enters and exits through two *different* edges
             // of `f` — its crossings ride distinct `f`-edges (`a_seg`). A graze (a boss wall meeting
             // the section only along one contact edge of `f`) has all its crossings on a single edge,
@@ -13337,7 +13358,7 @@ pub mod tests {
         assert_eq!(loops.len(), 1, "one section loop");
         assert_eq!(loops[0].len(), 4, "the block's slice is a quad");
 
-        let q_bnd = section_boundary(&loops, canon[beta], &canon).unwrap();
+        let (q_bnd, q_bnd_rings) = section_boundary(&loops, canon[beta], &canon).unwrap();
         assert_eq!(q_bnd.len(), 4, "four section chords");
         let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
         let p_bnd = contact_boundary(&m, planes[beta].face, beta, &inc_b, &canon).unwrap();
@@ -13398,10 +13419,12 @@ pub mod tests {
         assert!((area - 6.0).abs() < 1e-9, "clipped area is 6, got {area}");
     }
 
-    // C2a: the one silent-wrong risk of the section approach — a multi-loop section (outer + hole)
-    // must be rejected up front, never flattened to its first ring.
+    // C2a's original worry — that a multi-loop section (outer + hole) would be flattened to its
+    // first ring — is answered by carrying the components instead of dropping them: the edges come
+    // back concatenated with `ring_lens` naming each, `seg` running across the whole list, and no
+    // edge joining one component's last vertex to the next component's first.
     #[test]
-    fn section_boundary_rejects_a_multi_loop_section() {
+    fn section_boundary_keeps_a_multi_loop_section_separate() {
         let two_loops = vec![
             vec![
                 Node::Seam([0, 1, 2]),
@@ -13415,12 +13438,19 @@ pub mod tests {
             ],
         ];
         let canon: Vec<usize> = (0..7).collect();
-        LAST_REJECT.with(|c| c.take());
-        assert!(section_boundary(&two_loops, 0, &canon).is_err());
-        assert_eq!(
-            LAST_REJECT.with(|c| c.take()),
-            Some(tag::SECTION_MULTI_LOOP)
-        );
+        let (bnd, rings) = section_boundary(&two_loops, 0, &canon).unwrap();
+        assert_eq!(rings, vec![3, 3], "two components, three edges each");
+        assert_eq!(bnd.len(), 6);
+        // `seg` runs across components — `by_edge` indexes the concatenation.
+        assert!(bnd.iter().enumerate().all(|(i, e)| e.seg == i));
+        // Every edge closes within its own component.
+        for (i, e) in bnd.iter().enumerate() {
+            let ring = if i < 3 { &two_loops[0] } else { &two_loops[1] };
+            assert!(
+                ring.contains(&e.v[0]) && ring.contains(&e.v[1]),
+                "edge {i} left its component"
+            );
+        }
     }
 
     // R0: canonicalizing section triples must never silently merge two distinct section vertices —
@@ -13487,7 +13517,7 @@ pub mod tests {
         let inc_c = arrange::edge_planes(&m, cutter, &surf_ix).unwrap();
         let f_bnd = contact_boundary(&m, planes[cutter_y025].face, pi, &inc_c, &canon).unwrap();
         let sect = section_of_solid(&m, base, cutter_y025, &planes, &surf_ix).unwrap();
-        let q_bnd = section_boundary(&sect, pi, &canon).unwrap();
+        let (q_bnd, q_bnd_rings) = section_boundary(&sect, pi, &canon).unwrap();
         let cx = coplanar_boundary_crossings(
             &planes,
             pi,
