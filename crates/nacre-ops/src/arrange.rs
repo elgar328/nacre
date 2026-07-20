@@ -614,7 +614,7 @@ fn loop_triples(l: &Loop, p: usize, inc: &EdgePlanes) -> Result<Vec<[usize; 3]>,
 }
 
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
-fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
+pub(crate) fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
     t_orient3d(planes, t[0], t[1], t[2], q)
 }
 
