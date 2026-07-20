@@ -350,6 +350,8 @@ OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 �
 
 ### 6.1 M5 불리언 — 두 메커니즘을 regime로 라우팅 (합성 아님)
 
+> **★ 방향 전환(2026-07-20, 사용자 결정 — 이 절은 이행기 서술).** 아래 "공면 접촉 유무로 배타 라우팅"(detector + 공면 생존표)은 케이스가 늘수록 **경우의 수가 폭발**한다(same_ground·single-shared·containment로 실증). 그래서 design.md가 **M7**(하이브리드, §426 exact ray casting)에 두던 **arrangement/winding 통합 분류 방식을 M5 평면으로 앞당긴다** — 평면은 메시·SSI 불요라 M7 분류법을 exact plane-triple에 그대로 적용. **M5의 목표 = winding 기반 단일 arrangement 엔진**(면당 세분 → sub-face를 in/out/on 분류 → op별 Requicha keep 균일 적용; 글로벌 detector·이중 경로 소거, Requicha 규칙은 유지). 상세 설계·증분 로드맵·feasibility 실측 = **`docs/winding-engine.md`**. 아래 배타-라우팅 서술은 그 통합이 완료될 때까지의 현행 구조이며, 커토버(M-E) 시 폐기된다.
+
 M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접촉 유무"로 배타 라우팅**한다(한 부울에 하나만 돈다).
 
 - **일반 seam 엔진**(`general_boolean`, ray-cast `classof`): 공면 접촉이 **없는** 순수 transversal 전용. 공면은 door에서 정직 거절(`COPLANAR_PAIR`/`VERTEX_ON_FACE_PLANE`) — 평면 위 정점은 `classof`(3D winding)가 미정의라서다.
