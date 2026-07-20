@@ -13801,6 +13801,325 @@ pub mod tests {
         );
     }
 
+    /// One fixture's verdict: how the two sides of every intersecting class pair compare on their
+    /// shared line, once crossings are minted.
+    #[derive(Default, Debug)]
+    struct SweepTally {
+        pairs: usize,
+        agreed: usize,
+        outside: usize, // disagreement, but the missing point is outside every host face
+        /// Inside a host face, but the lacking class's section producer declined — it never had
+        /// the input, so this is a `section_of_solid` limitation, not a minting disagreement.
+        inside_missing_section: usize,
+        /// Inside a host face with both sections computed. **This is the one that would refute
+        /// per-plane minting**, and the assertion below pins it at zero.
+        inside_unexplained: usize,
+        /// **The dominant category, and the increment's real finding.** `point_in_ring` declines
+        /// because the point lies *on* the host face's boundary — neither strictly in nor out. Far
+        /// from undecidable noise, this is the case that matters most: one class puts a vertex on
+        /// the shared line where the other class's boundary passes through with no vertex at all.
+        /// That is a T-junction, the thing `resplit_overhang` exists to repair in today's engine.
+        on_boundary: usize,
+        /// Containment genuinely undecidable and not on any boundary. Counted, never read as
+        /// "outside" — reading a reject as a negative is a mistake this work already made once.
+        undecided: usize,
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn sweep_case(m: &Model, a: Handle<Solid>, b: Handle<Solid>) -> Result<SweepTally, BoolError> {
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(m, a, b)?;
+        let classes: Vec<usize> = {
+            let mut c: Vec<usize> = canon.to_vec();
+            c.sort_unstable();
+            c.dedup();
+            c
+        };
+        // Mint once per class, then read each pair off the results.
+        let minted: HashMap<usize, HashSet<[usize; 3]>> = classes
+            .iter()
+            .map(|&p| {
+                let ch = chords_on_class(m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, p);
+                (p, minted_crossings(&planes, p, &ch))
+            })
+            .collect();
+
+        let mut t = SweepTally::default();
+        for (i, &p) in classes.iter().enumerate() {
+            for &q in &classes[i + 1..] {
+                let side = |x: usize, y: usize| -> HashSet<[usize; 3]> {
+                    let mut s = triples_on_shared_line(
+                        m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, x, y,
+                    );
+                    s.extend(minted[&x].iter().filter(|t| t.contains(&y)).copied());
+                    s
+                };
+                let (from_p, from_q) = (side(p, q), side(q, p));
+                if from_p.is_empty() && from_q.is_empty() {
+                    continue;
+                }
+                t.pairs += 1;
+                if from_p == from_q {
+                    t.agreed += 1;
+                    continue;
+                }
+                // For each point one side lacks, ask whether it lies inside a face of the class
+                // that lacks it — only there could an emitted face have referenced it.
+                for (lacking, missing) in [(q, &from_p - &from_q), (p, &from_q - &from_p)] {
+                    for tri in missing {
+                        match inside_a_host_face(
+                            m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, lacking, tri,
+                        ) {
+                            Ok(true) => {
+                                // Attribute it: a class whose section producer declined never had
+                                // the input, so its "disagreement" says nothing about minting.
+                                let complete = section_of_solid(m, a, lacking, &planes, &surf_ix)
+                                    .is_ok()
+                                    && section_of_solid(m, b, lacking, &planes, &surf_ix).is_ok();
+                                if complete {
+                                    t.inside_unexplained += 1;
+                                } else {
+                                    t.inside_missing_section += 1;
+                                }
+                            }
+                            Ok(false) => t.outside += 1,
+                            Err(_) => {
+                                if on_a_host_ring(
+                                    m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, lacking,
+                                    tri,
+                                ) {
+                                    t.on_boundary += 1;
+                                } else {
+                                    t.undecided += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(t)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn on_a_host_ring(
+        m: &Model,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Face>, usize>,
+        inc_a: &arrange::EdgePlanes,
+        inc_b: &arrange::EdgePlanes,
+        canon: &[usize],
+        c: usize,
+        t: [usize; 3],
+    ) -> bool {
+        let canonize = |x: [usize; 3]| {
+            let mut v = [canon[x[0]], canon[x[1]], canon[x[2]]];
+            v.sort_unstable();
+            v
+        };
+        for (solid, inc) in [(a, inc_a), (b, inc_b)] {
+            for sh in solid_shell_handles(m, solid) {
+                for &fh in &m.shells.get(sh).faces {
+                    let fi = surf_ix[&fh];
+                    if canon[fi] != c {
+                        continue;
+                    }
+                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) else {
+                        continue;
+                    };
+                    let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
+                    if arrange::point_on_ring(planes, c, t, &ring) == Ok(true) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Is the three-plane point `t` inside any face either solid seats on class `c`? Rejections are
+    /// reported separately rather than folded into "outside" — reading a reject as a negative is a
+    /// mistake this line of work has already made once.
+    #[allow(clippy::too_many_arguments)]
+    fn inside_a_host_face(
+        m: &Model,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Face>, usize>,
+        inc_a: &arrange::EdgePlanes,
+        inc_b: &arrange::EdgePlanes,
+        canon: &[usize],
+        c: usize,
+        t: [usize; 3],
+    ) -> Result<bool, BoolError> {
+        let canonize = |x: [usize; 3]| {
+            let mut v = [canon[x[0]], canon[x[1]], canon[x[2]]];
+            v.sort_unstable();
+            v
+        };
+        let mut rejected = None;
+        for (solid, inc) in [(a, inc_a), (b, inc_b)] {
+            for sh in solid_shell_handles(m, solid) {
+                for &fh in &m.shells.get(sh).faces {
+                    let fi = surf_ix[&fh];
+                    if canon[fi] != c {
+                        continue;
+                    }
+                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) else {
+                        continue;
+                    };
+                    let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
+                    match arrange::point_in_ring(planes, c, t, &ring) {
+                        Ok(true) => return Ok(true),
+                        Ok(false) => {}
+                        Err(e) => rejected = Some(e),
+                    }
+                }
+            }
+        }
+        match rejected {
+            Some(e) => Err(e),
+            None => Ok(false),
+        }
+    }
+
+    /// **E2 — the proposition the closure guard actually enforces, swept over the fixture corpus.**
+    ///
+    /// A per-plane-class arrangement can only weld into a closed shell if two classes agree about
+    /// their shared line *where faces are emitted*. `assemble_fuse_cut` turns only the vertices an
+    /// emitted face references into edges (lib.rs:3554-3559) before demanding each be used twice
+    /// (3627-3645), so a minted point nothing references is invisible to it. Raw set equality is
+    /// therefore the wrong bar — strictly stronger, and **false even after minting**: a section
+    /// chord runs past its host face's footprint, so e.g. `{z=0, x=1, y=1.5}` belongs to class
+    /// `x=1` and not to `z=0`, harmlessly, because it is outside A's `x=1` face.
+    ///
+    /// So this measures the restricted question: **of the disagreements that survive minting, does
+    /// any lie *inside* a host face of the class that lacks it?** Only those could have been
+    /// referenced by an emitted face.
+    ///
+    /// **Measured 2026-07-20 over 14 fixtures / 767 intersecting class pairs:**
+    /// `agreed 420 · outside 20 · inside_missing_section 42 · inside_unexplained 0 ·
+    /// on_boundary 626 · undecided 0`.
+    ///
+    /// Two results, and the second is the one that matters:
+    /// 1. **Per-plane minting is not refuted.** All 42 inside-disagreements are on classes whose
+    ///    section producer declined — they never had the input. Zero survive with both sections in
+    ///    hand. The per-line shared table stays unbuilt: still unevidenced.
+    /// 2. **★ The dominant category is the T-junction, 626 of them.** Every one of these is a point
+    ///    lying *on* the lacking class's face boundary, with no vertex there. Minting crossings
+    ///    per plane is necessary but **not sufficient**: a class must also split its own boundary
+    ///    at points its neighbours introduce. That is exactly what `resplit_overhang` (lib.rs:5884)
+    ///    does today under an overhang-shaped name, and this measurement is the evidence that the
+    ///    need is **general**, not case-specific.
+    ///
+    /// **Open, and deliberately not guessed:** whether each of the 626 is a true T-junction (the
+    /// boundary genuinely passes through with no vertex) or a *naming* collision (the same point
+    /// carried by a 4-plane vertex the loop names `{q, prev, next}`). Both break the weld, by
+    /// different mechanisms needing different fixes, and separating them is the next increment.
+    ///
+    /// Swept over every two-solid fixture rather than one, because non-convex L/U/staple is where
+    /// `SECTION_MULTI_LOOP` concentrated and where an inside-disagreement would show up if it
+    /// exists — `l_and_staple` is itself the counterexample behind lib.rs:3410-3414.
+    ///
+    /// **Not covered:** rotated inputs (the corpus has essentially none), so this says nothing
+    /// about them. Recorded as unmeasured rather than assumed.
+    #[test]
+    fn e2_disagreements_that_survive_minting_lie_outside_the_faces_that_lack_them() {
+        let mut same_ground = Model::new();
+        let sg_a = same_ground.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let sg_b = same_ground.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+
+        let l_inner = l_and_inner_box();
+        let l_corner = l_and_corner_box();
+        let l_reflex = l_and_reflex_box();
+        let u_slab = u_and_slab();
+        let notch = cube_and_notch();
+        let rod = l_and_rod();
+        let popup = l_and_popup_box();
+        let notch_bar = l_and_notch_bar();
+        let ell_stub = l_and_ell_stub();
+        let staple = l_and_staple();
+        let dimple = l_and_dimple();
+        let two = two_boxes();
+        let nested = nested_boxes();
+
+        let cases: Vec<(&str, &Model, Handle<Solid>, Handle<Solid>)> = vec![
+            ("same_ground", &same_ground, sg_a, sg_b),
+            ("l_and_inner_box", &l_inner.0, l_inner.1, l_inner.2),
+            ("l_and_corner_box", &l_corner.0, l_corner.1, l_corner.2),
+            ("l_and_reflex_box", &l_reflex.0, l_reflex.1, l_reflex.2),
+            ("u_and_slab", &u_slab.0, u_slab.1, u_slab.2),
+            ("cube_and_notch", &notch.0, notch.1, notch.2),
+            ("l_and_rod", &rod.0, rod.1, rod.2),
+            ("l_and_popup_box", &popup.0, popup.1, popup.2),
+            ("l_and_notch_bar", &notch_bar.0, notch_bar.1, notch_bar.2),
+            ("l_and_ell_stub", &ell_stub.0, ell_stub.1, ell_stub.2),
+            ("l_and_staple", &staple.0, staple.1, staple.2),
+            ("l_and_dimple", &dimple.0, dimple.1, dimple.2),
+            ("two_boxes", &two.0, two.1, two.2),
+            ("nested_boxes", &nested.0, nested.1, nested.2),
+        ];
+
+        let (mut swept, mut skipped, mut total) = (0usize, Vec::new(), SweepTally::default());
+        for (name, m, a, b) in &cases {
+            match sweep_case(m, *a, *b) {
+                Ok(t) => {
+                    eprintln!("{name}: {t:?}");
+                    swept += 1;
+                    total.pairs += t.pairs;
+                    total.agreed += t.agreed;
+                    total.outside += t.outside;
+                    total.inside_missing_section += t.inside_missing_section;
+                    total.inside_unexplained += t.inside_unexplained;
+                    total.on_boundary += t.on_boundary;
+                    total.undecided += t.undecided;
+                }
+                // A fixture the setup declines contributes nothing — but silence would read as
+                // agreement, so name it.
+                Err(e) => skipped.push((*name, e)),
+            }
+        }
+        eprintln!(
+            "swept {swept}/{}  skipped {skipped:?}  total {total:?}",
+            cases.len()
+        );
+        assert!(swept >= 10, "sweep shrank to {swept} fixtures: {skipped:?}");
+        // Measured 2026-07-20: 42 inside-disagreements, **all 42** on classes whose section
+        // producer declined. None with both sections in hand. So the restricted proposition stands
+        // and the per-line table stays unbuilt; what the sweep actually indicts is
+        // `section_of_solid`'s `VERTEX_ON_FACE_PLANE`, which is now B's measured blocker.
+        assert!(
+            total.inside_missing_section > 0,
+            "no inside-disagreement was attributed to a declined section — the sweep may no longer \
+             be exercising the case it was built for. Totals: {total:?}"
+        );
+        // The T-junction population is the increment's finding; if it ever vanishes, the conclusion
+        // drawn from it needs re-deriving rather than inheriting.
+        assert!(
+            total.on_boundary > 0,
+            "no on-boundary disagreements — the T-junction finding no longer reproduces: {total:?}"
+        );
+        assert_eq!(
+            total.undecided, 0,
+            "a disagreement was neither in, out, nor on a boundary; the classification has a gap \
+             it is silently absorbing: {total:?}"
+        );
+        assert_eq!(
+            total.inside_unexplained, 0,
+            "a disagreement survived minting INSIDE a host face with BOTH sections computed — that \
+             refutes per-plane minting, and the per-line table becomes evidenced rather than \
+             guessed. Totals: {total:?}"
+        );
+    }
+
     /// **E1 — `coplanar_survival` is a consequence of one rule, not six independent facts.**
     ///
     /// The rule is already written down at [`coplanar_survival`]'s derivation: *a π-face survives
