@@ -4328,8 +4328,13 @@ fn coplanar_survival(kind: BoolKind, same_normal: bool) -> (PSurvive, bool) {
 /// are `b`'s original vertices (`Node::Orig`) and whose endpoints are the crossings (`Node::Seam`)
 /// — the mixed-node seam. `keep_inside_q` selects `P∩Q` vs `P∖Q`; `flip` sets the face normal.
 ///
-/// Scope: a single outer ring, no holes (the primitive-layer fixtures). Holes/islands and the
-/// no-interior arc (adjacent crossings on one edge) are later cells.
+/// Scope: a single outer ring per footprint. A crossing-free `Q` nested in `P` is emitted either
+/// as an island (`P∩Q`) or as a hole in `P` (`P∖Q` — what a tool punching through this face
+/// leaves), but `∂Q` arriving in several components, and the general nesting forest the seam
+/// worker builds with `nest_loops`/`classify_nesting`, are later cells: `BndEdge` is one flat
+/// cyclic list and `coplanar_seam_arcs` yields nothing when there are no crossings, so there is
+/// no closed-loop supply to nest. The no-interior arc (adjacent crossings on one edge) is also
+/// still open.
 #[cfg_attr(not(test), allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
 fn coplanar_reconstruct(
@@ -4467,7 +4472,7 @@ fn coplanar_reconstruct(
         // inside side (Common's InterQ, and a transversal `f ∩ other` whose section nests) is handled;
         // P∖Q of a contained Q (a hole) is reached via the `MinusQ` hole-push, not here. `P ⊂ Q` and
         // disjoint ∂Q still fall through to `kept[0]`.
-        let mut q_inside_p = keep_inside_q && crossings.is_empty() && !q_ring.is_empty();
+        let mut q_inside_p = crossings.is_empty() && !q_ring.is_empty();
         for t in &q_ring {
             if !q_inside_p {
                 break;
@@ -4475,7 +4480,27 @@ fn coplanar_reconstruct(
             q_inside_p = !arrange::point_on_ring(planes, pi, *t, &p_ring)?
                 && arrange::point_in_ring(planes, pi, *t, &p_ring)?;
         }
-        if q_inside_p {
+        // The other side of that containment: keeping P∖Q makes Q a HOLE in P. A tool punching
+        // through this face — the exit face of a bore — lands here, and emitting the whole face
+        // would leave the bore's walls with nothing to close against (the closed-shell guard in
+        // `assemble_fuse_cut` catches that, so it was an honest reject rather than a wrong answer).
+        // A hole winds against its outer ring (`check_loop_class`: outer `+1`, hole `-1`), which is
+        // the island branch's orientation test inverted — `loop_winding` decides it exactly.
+        if q_inside_p && !keep_inside_q {
+            let mut hole: Vec<Node> = b_bnd.iter().map(|e| e.v[0]).collect();
+            if arrange::loop_winding(planes, pi, &q_ring)?
+                == arrange::loop_winding(planes, pi, &p_ring)?
+            {
+                hole.reverse();
+            }
+            return Ok(vec![LocalFace {
+                plane_idx,
+                loop_nodes: verts.clone(),
+                inner: vec![hole],
+                flip,
+            }]);
+        }
+        if q_inside_p && keep_inside_q {
             let mut q_loop: Vec<Node> = b_bnd.iter().map(|e| e.v[0]).collect();
             // Orient Q to match P's winding about π (both bound the same survivor face). `loop_winding`
             // reads no coordinate — exact and rotation-sound, unlike an f64 signed area.
@@ -15011,13 +15036,16 @@ pub mod tests {
     }
 
     #[test]
-    fn a_pocket_that_punches_through_is_not_a_pocket_contact() {
-        // The prism's top is flush, but it pokes out the base's bottom — its walls cross the
-        // base's bottom face, so it is a seam cut, not a blind pocket. The old blind gate declined
-        // it; after the F2 collapse the coplanar arm accepts the routing but builds an OPEN shell
-        // (a floor outside the base leaves dangling edges), and the closed-shell guard in
-        // `assemble_fuse_cut` turns that into an honest reject. The seam path cannot build it
-        // either, so the op stays `Unsupported` — never a silently invalid solid.
+    fn a_pocket_that_punches_through_drills_a_bore() {
+        // A top-flush tool that pokes out the base's bottom: the pocket becomes a through hole.
+        // The exit face has to come out annular, and until the coplanar reconstruct learned to
+        // emit a hole it came out whole instead, leaving the bore's walls nothing to close
+        // against — an open shell the assembly guard rejected. (Honest reject, never a wrong
+        // answer; the previous cell pinned it as such.)
+        //
+        // Area is the assertion that matters here: volume alone cannot tell a bore from a shape
+        // that merely displaces the same material. 0.75 (top) + 0.75 (bottom) + 4 (sides) +
+        // 2.0 (the bore's four inner walls) = 7.5, against 6.0 for the cube.
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -15027,9 +15055,61 @@ pub mod tests {
             Point3::from_array([0.25, 0.25, -0.5]),
             Point3::from_array([0.75, 0.75, 1.0]),
         );
+        let r = boolean_one(&mut m, BoolKind::Cut, base, through).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let p = nacre_props::mass_props(&m, r).unwrap();
+        assert!((p.volume - 0.75).abs() < 1e-12, "volume {}", p.volume);
+        assert!((p.area - 7.5).abs() < 1e-12, "area {}", p.area);
+        // A bore, not a void: no cavity shell, and both caps carry the hole (the top from the
+        // coincident contact, the bottom from the section the tool cuts through it).
+        let s = m.solids.get(r);
+        assert!(s.cavities.is_empty(), "a through hole is not a cavity");
+        let faces = &m.shells.get(s.outer).faces;
+        assert_eq!(faces.len(), 10, "6 base faces + the bore's 4 walls");
         assert_eq!(
-            boolean_one(&mut m, BoolKind::Cut, base, through),
-            Err(BoolError::Unsupported)
+            faces
+                .iter()
+                .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
+                .count(),
+            2,
+            "both caps are annular"
+        );
+    }
+
+    #[test]
+    fn a_boss_that_punches_through_keeps_the_stub() {
+        // The Fuse twin, and the same emission path: the tool's a-side face keeps `P∖Q`, so the
+        // base's bottom needs the same hole for the stub below it to join on. Volume
+        // 1 + 0.5·0.5·0.5 = 1.125; area 1.0 (top, the flush tool cap dissolves into it) + 0.75
+        // (bottom) + 4 (sides) + 1.0 (stub walls) + 0.25 (stub floor) = 7.0.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let through = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, -0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, through).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let p = nacre_props::mass_props(&m, r).unwrap();
+        assert!((p.volume - 1.125).abs() < 1e-12, "volume {}", p.volume);
+        assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
+        let s = m.solids.get(r);
+        assert_eq!(
+            m.shells
+                .get(s.outer)
+                .faces
+                .iter()
+                .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
+                .count(),
+            1,
+            "only the bottom is annular — the flush top merges away"
         );
     }
 

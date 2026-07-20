@@ -663,6 +663,34 @@ bbox_min 0 0 0
         assert!(approx(common.volume, 0.125), "common {}", common.volume);
     }
 
+    /// A top-flush tool punching clean through the base — the pocket becomes a bore. Cut leaves
+    /// 1 − 0.5·0.5·1 = 0.75, and Fuse keeps the stub that pokes out below for 1.125.
+    ///
+    /// **Area is the point.** The claim being checked is topological — that the exit face came out
+    /// annular so the bore's walls have something to close against — and volume cannot see that.
+    /// Cut: 0.75 + 0.75 + 4 + 2.0 (bore walls) = 7.5, against 6.0 for the untouched cube. Fuse:
+    /// 1.0 + 0.75 + 4 + 1.0 + 0.25 = 7.0. Both used to be rejected outright.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn punch_through_bore_matches_occt() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let through = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, -0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let cut = occt_boolean_of(&m, OcctBool::Cut, base, through).unwrap();
+        assert!(approx(cut.volume, 0.75), "bore cut volume {}", cut.volume);
+        assert!(approx(cut.area, 7.5), "bore cut area {}", cut.area);
+        let fuse = occt_boolean_of(&m, OcctBool::Fuse, base, through).unwrap();
+        assert!(
+            approx(fuse.volume, 1.125),
+            "stub fuse volume {}",
+            fuse.volume
+        );
+        assert!(approx(fuse.area, 7.0), "stub fuse area {}", fuse.area);
+    }
+
     /// The Cut twin of the corner-overhang boss: base [0,1]³ and a boss [0.5,1.5]²×[1,2] seated on
     /// z=1 with an overhanging footprint. The boss lies entirely above the shared plane, so the cut
     /// removes nothing and the base survives whole — volume 1.0. nacre used to reject this
