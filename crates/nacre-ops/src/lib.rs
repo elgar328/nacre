@@ -13358,7 +13358,7 @@ pub mod tests {
         assert_eq!(loops.len(), 1, "one section loop");
         assert_eq!(loops[0].len(), 4, "the block's slice is a quad");
 
-        let (q_bnd, q_bnd_rings) = section_boundary(&loops, canon[beta], &canon).unwrap();
+        let (q_bnd, _) = section_boundary(&loops, canon[beta], &canon).unwrap();
         assert_eq!(q_bnd.len(), 4, "four section chords");
         let inc_b = arrange::edge_planes(&m, b, &surf_ix).unwrap();
         let p_bnd = contact_boundary(&m, planes[beta].face, beta, &inc_b, &canon).unwrap();
@@ -13417,6 +13417,32 @@ pub mod tests {
                 .abs();
         assert_eq!(faces[0].loop_nodes.len(), 4, "survivor is a quad");
         assert!((area - 6.0).abs() < 1e-9, "clipped area is 6, got {area}");
+    }
+
+    // The ring-aware helpers carry the component structure that `BndEdge`'s flat layout cannot,
+    // and every one of them reduces to its single-ring form when handed `&[n]`. Exercised directly
+    // with several components, because the integration path cannot yet reach every shape and a
+    // `+base` offset that is dropped costs nothing when `base` is always zero.
+    #[test]
+    fn ring_neighbours_wraps_inside_each_component() {
+        let (prev, next) = ring_neighbours(&[3, 2]);
+        // Component 0 = 0,1,2 and component 1 = 3,4 — neither steps into the other.
+        assert_eq!(next, vec![1, 2, 0, 4, 3]);
+        assert_eq!(prev, vec![2, 0, 1, 4, 3]);
+        // A single component is the plain cyclic successor.
+        let (p1, n1) = ring_neighbours(&[4]);
+        assert_eq!(n1, vec![1, 2, 3, 0]);
+        assert_eq!(p1, vec![3, 0, 1, 2]);
+    }
+
+    // (`in_rings`'s parity is a six-line count over the same `point_in_ring` the single-ring path
+    // already uses; what needed pinning here is the offset arithmetic above, which is where a
+    // dropped `+base` hides — it costs nothing while every boundary has one component.)
+    #[test]
+    fn ring_base_names_each_components_start() {
+        assert_eq!(ring_base(&[3, 2, 4], 0), 0);
+        assert_eq!(ring_base(&[3, 2, 4], 1), 3);
+        assert_eq!(ring_base(&[3, 2, 4], 2), 5);
     }
 
     // C2a's original worry — that a multi-loop section (outer + hole) would be flattened to its
@@ -13517,7 +13543,7 @@ pub mod tests {
         let inc_c = arrange::edge_planes(&m, cutter, &surf_ix).unwrap();
         let f_bnd = contact_boundary(&m, planes[cutter_y025].face, pi, &inc_c, &canon).unwrap();
         let sect = section_of_solid(&m, base, cutter_y025, &planes, &surf_ix).unwrap();
-        let (q_bnd, q_bnd_rings) = section_boundary(&sect, pi, &canon).unwrap();
+        let (q_bnd, _) = section_boundary(&sect, pi, &canon).unwrap();
         let cx = coplanar_boundary_crossings(
             &planes,
             pi,
