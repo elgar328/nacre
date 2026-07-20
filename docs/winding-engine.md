@@ -65,6 +65,8 @@ per-op(Fuse/Cut/Common), 두 solid A·B의 **모든 면**에 대해:
 
 **⚠ 위 표의 "링 세분"을 "셀 추출기"로 읽지 말 것(2026-07-20 정정).** 원래 이 칸은 "셀 추출"이라 적혀 있었고 그건 **차원을 하나 과장**한다. `stitch_cycles`는 **한 링을 arc로 세분**할 뿐 임의 평면 그래프의 면을 열거하지 않으며, 성공 조건도 각 arc가 `kd`/`dk` 끝을 하나씩 가질 것을 요구한다. **평면 arrangement의 셀 추출기는 레포에 없다** — DCEL(정점 둘레 모서리의 순환 순서 + twin)이 필요하고, `turn_at`(arrange 540)은 *지명된 두* 모서리의 좌/우 부호만 주지 k>2의 전순환 순서를 주지 않는다.
 
+**★ 정정의 정정(2026-07-21, 스파이크로 확인).** 위에서 각도 순환 순서(k>2)를 "DNA 질문/사망 조건"처럼 읽었는데(§115도), 그건 **"레포에 함수가 없음"을 "기판에서 불가능"과 혼동**한 것이다. `turn_at`의 원자(`s_i·s_j·t_plane_pair_dir_sign(W,fp_i,fp_j)·orient_sign(W)`, arrange 524-556)가 이미 두 모서리 방향의 exact 교차 부호를 준다. 그 부호는 **열린 반평면(각도폭 < π)에서 전순서**(교과서 Graham-scan: `sign(d_u×d_v)=sign(θ_v−θ_u)`)이므로, 참조 `r`로 반평면을 나눈 뒤 각 반평면을 교차 부호로 정렬하면 **k개 모서리의 전순환 순서가 나온다**. 유일한 미묘함(0/π 극)은 same-fp 반대 방향으로, `order_along`으로 해결 — **신규 술어 0.** `trace.rs`의 `angular_order` + 스파이크 테스트(degree-5 정점, 사선 포함)가 좌표 없이 낸 순서를 atan2 오라클과 대조해 확인했다. **∴ DCEL은 구성 가능하고, 사망 조건이 아니다.** (일반 degree-k·회전·다른-fp 평행선은 다음 DCEL 증분에서.)
+
 **제거(통합 후):** kind별 detector들(`detect_*`)·`coplanar_result_unified`/`classify_and_emit` 생존표 분기·`overlap_fuse_cut`/`general_boolean` 이중 경로 + dispatch case-routing.
 **유지:** Requicha in/out/on± keep **규칙**(작고 고정, 균일 적용). 즉 "생존표 소거"가 아니라 "**detector 소거 + 규칙 균일화**."
 

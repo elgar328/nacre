@@ -391,6 +391,60 @@ fn trace_on_class(
     out
 }
 
+/// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
+/// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
+/// given as `(fp, s)`. The signed turn between edges i and j is `turn_at`'s atom
+/// `s_i·s_j·t_plane_pair_dir_sign(w, fp_i, fp_j)·orient_sign(w)` (arrange.rs:524-556).
+///
+/// The turn sign is transitive only *within an open half-plane* (span < π), where it reproduces
+/// the angle order exactly — the textbook Graham-scan fact. So: bucket every edge by its turn
+/// against a reference `r = edges[0]` into the two open half-planes, plus the `0`/`π` pole where
+/// the turn is 0 (collinear with `r`). The pole splits by same-`fp` opposite direction: same fp,
+/// opposite `s` is angle π; otherwise angle 0. Each open bucket is then a real sort. Returned
+/// indices are the CCW order starting at `r`.
+///
+/// **This brick proves the predicate is buildable on the exact substrate — it does not yet handle
+/// the general case:** two *different* fp's whose lines are parallel (a `0`-turn that is not
+/// same-fp) fall into the angle-0 bucket unresolved, and collinear same-direction overlap (E5) is
+/// out of scope. The corpus's arrangement vertices are degree ≥ 3 with distinct fp's per real
+/// direction, which is what the spike exercises.
+fn angular_order(planes: &[PlaneInfo], w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
+    let os = arrange::orient_sign(planes, w);
+    let cross = |i: usize, j: usize| -> i8 {
+        edges[i].1
+            * edges[j].1
+            * tolerant::t_plane_pair_dir_sign(planes, w, edges[i].0, edges[j].0)
+            * os
+    };
+    let (mut zero, mut pos, mut pole, mut neg) = (vec![], vec![], vec![], vec![]);
+    for i in 0..edges.len() {
+        match cross(0, i) {
+            c if c > 0 => pos.push(i),
+            c if c < 0 => neg.push(i),
+            // Collinear with the reference: angle 0 (same ray) or π (opposite ray).
+            _ if edges[i].0 == edges[0].0 && edges[i].1 != edges[0].1 => pole.push(i),
+            _ => zero.push(i),
+        }
+    }
+    // Within an open half-plane, `a` precedes `b` (smaller angle) iff `d_a × d_b > 0`.
+    let by_turn = |v: &mut Vec<usize>| {
+        v.sort_by(|&a, &b| {
+            if cross(a, b) > 0 {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        })
+    };
+    by_turn(&mut pos);
+    by_turn(&mut neg);
+    let mut out = zero;
+    out.extend(pos);
+    out.extend(pole);
+    out.extend(neg);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -657,6 +711,104 @@ mod tests {
             horiz_z0[0],
             (rp([0.0, 1.0, 0.0]), rp([3.0, 1.0, 0.0])),
             "spans x∈[0,3]"
+        );
+    }
+
+    /// ★ Spike: a coordinate-free exact cyclic order of edges around an arrangement vertex is
+    /// buildable — the "DNA question" winding-engine.md:66/115 flagged as a possible death
+    /// condition for B. A degree-5 vertex with directions +x, +y, −x, −y and one **oblique**
+    /// (the oblique is non-optional: without it every open half-plane bucket holds one element and
+    /// transitivity never fires). `angular_order` returns the CCW order reading no coordinate; we
+    /// check it against the CCW order computed *with* coordinates (atan2), which is the oracle.
+    #[test]
+    fn angular_order_around_a_vertex_is_coordinate_free_and_ccw() {
+        // A pentagon prism giving y-, x-, and diagonal-normal side faces plus z caps.
+        let profile = Profile2d {
+            points: vec![
+                Point2::from_array([0.0, 0.0]), // (0,0)-(3,0): y=0
+                Point2::from_array([3.0, 0.0]), // (3,0)-(3,3): x=3
+                Point2::from_array([3.0, 3.0]), // (3,3)-(2,3): y=3
+                Point2::from_array([2.0, 3.0]), // (2,3)-(0,1): diagonal y=x+1
+                Point2::from_array([0.0, 1.0]), // (0,1)-(0,0): x=0
+            ],
+        };
+        let m = replay(&[Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile,
+            dist: 1.0,
+        }])
+        .unwrap();
+        let a = m.live_solids[0];
+        let planes = collect_planes(&m, a).unwrap();
+
+        // Find a face by its outward normal direction (z cap, y-wall, x-wall, diagonal wall).
+        let axis = |i: usize| {
+            let n = planes[i].plane.normal();
+            [n[0], n[1], n[2]]
+        };
+        let find = |f: &dyn Fn([f64; 3]) -> bool| (0..planes.len()).find(|&i| f(axis(i)));
+        let w = find(&|n| n[0].abs() < 1e-9 && n[1].abs() < 1e-9).expect("z cap"); // z-normal
+        let fpy = find(&|n| n[0].abs() < 1e-9 && n[2].abs() < 1e-9).expect("y wall"); // y-normal
+        let fpx = find(&|n| n[1].abs() < 1e-9 && n[2].abs() < 1e-9).expect("x wall"); // x-normal
+        let fpd = find(&|n| {
+            n[2].abs() < 1e-9 && n[0].abs() > 1e-6 && (n[0].abs() - n[1].abs()).abs() < 1e-6
+        })
+        .expect("diagonal wall");
+
+        // The direction an edge (fp, s) actually runs, WITH coordinates — the oracle only.
+        let n_w = planes[w].plane.normal();
+        let dir = |fp: usize, s: i8| {
+            let d = n_w.cross(planes[fp].plane.normal());
+            [d[0] * s as f64, d[1] * s as f64, d[2] * s as f64]
+        };
+        // Five edges: both directions on the y-wall and x-wall lines, one on the diagonal.
+        let edges = [(fpy, 1i8), (fpy, -1), (fpx, 1), (fpx, -1), (fpd, 1)];
+
+        let order = angular_order(&planes, w, &edges);
+        assert_eq!(
+            order.len(),
+            edges.len(),
+            "every edge placed exactly once: {order:?}"
+        );
+        assert_eq!(order[0], 0, "order starts at the reference edge");
+
+        // Oracle: the angular order of the actual directions (atan2), starting from edge 0.
+        let ang = |e: (usize, i8)| {
+            let d = dir(e.0, e.1);
+            d[1].atan2(d[0])
+        };
+        let a0 = ang(edges[0]);
+        let mut want: Vec<usize> = (0..edges.len()).collect();
+        want.sort_by(|&i, &j| {
+            let (ci, cj) = (
+                (ang(edges[i]) - a0).rem_euclid(std::f64::consts::TAU),
+                (ang(edges[j]) - a0).rem_euclid(std::f64::consts::TAU),
+            );
+            ci.partial_cmp(&cj).unwrap()
+        });
+        // The order is a consistent cyclic order — CW or CCW depending on orient_sign(w)'s
+        // convention; both are correct rotations. So it matches the oracle, or the oracle with its
+        // tail reversed (the same cycle traversed the other way, reference fixed).
+        let mut rev_tail = order.clone();
+        rev_tail[1..].reverse();
+        assert!(
+            order == want || rev_tail == want,
+            "coordinate-free order is the atan2 cycle (either direction): got {order:?}, want {want:?}"
+        );
+
+        // ★ Transitivity fired: the oblique lands strictly between the +x and +y axis directions in
+        // the cyclic order — a bucket-sort no-op could not place it. Checked as a cyclic adjacency
+        // so it holds regardless of traversal direction.
+        let cyc = if order == want { &order } else { &rev_tail };
+        let pos = |e: usize| cyc.iter().position(|&x| x == e).unwrap();
+        // edges: 0=(y,+) 1=(y,-) 2=(x,+) 3=(x,-) 4=(diag,+). The oblique (4) is 45°, between the
+        // two axis directions flanking it. Identify its neighbours are axis edges, not each other.
+        let obl = pos(4);
+        let lo = cyc[(obl + cyc.len() - 1) % cyc.len()];
+        let hi = cyc[(obl + 1) % cyc.len()];
+        assert!(
+            [0, 1, 2, 3].contains(&lo) && [0, 1, 2, 3].contains(&hi),
+            "oblique is flanked by axis edges (transitivity placed it): {cyc:?}"
         );
     }
 
