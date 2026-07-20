@@ -449,6 +449,127 @@ fn merge_coincident(segs: &[Seg]) -> Vec<MergedSeg> {
         .collect()
 }
 
+/// The third plane naming a `MergedSeg`'s endpoint on its line `wc ∩ wall`: the canon-triple
+/// element that is neither `wc` nor the wall. `None` on a degenerate `[wc, wall, wall]` triple.
+fn endpoint_third(end: [usize; 3], wc: usize, wall: usize) -> Option<usize> {
+    let mut r = None;
+    for x in end {
+        if x != wc && x != wall && r.replace(x).is_some() {
+            return None; // two off-planes: degenerate naming
+        }
+    }
+    r
+}
+
+/// Split the segments on plane class `wc` at their mutual crossings, returning the arrangement's
+/// 1-skeleton: segments cut so no crossing lies in an edge's interior. A crossing of two segments
+/// riding `wall1`/`wall2` is the plane triple `{wc, wall1, wall2}` — no new point species.
+///
+/// `Err` (honest reject) on: a degenerate endpoint name, or two crossings coincident on one
+/// segment (a four-plane concurrency the DCEL cannot yet represent — `FOURPLANE`, following
+/// `ordered_on_edge`). The bool is **`overlap`**: whether any same-`wall` partial overlap (E5) was
+/// detected — those segments are not split against each other, so the arrangement is *incomplete*
+/// and a caller must not conclude from it.
+fn split_at_crossings(
+    planes: &[PlaneInfo],
+    wc: usize,
+    segs: &[MergedSeg],
+) -> Result<(Vec<MergedSeg>, bool), BoolError> {
+    // `r` is strictly inside segment `s` (between its two endpoint thirds along the line).
+    let strictly_inside = |s: &MergedSeg, r: usize| -> Option<bool> {
+        let (r0, r1) = (
+            endpoint_third(s.end[0], wc, s.wall)?,
+            endpoint_third(s.end[1], wc, s.wall)?,
+        );
+        let (a, b) = (
+            arrange::order_along(planes, wc, s.wall, r, r0),
+            arrange::order_along(planes, wc, s.wall, r, r1),
+        );
+        Some(a != 0 && b != 0 && a != b)
+    };
+    // E5: two segments on the same wall whose extents partially overlap (an endpoint of one lies
+    // strictly inside the other). Detected, not resolved.
+    let mut overlap = false;
+    for (i, s1) in segs.iter().enumerate() {
+        for s2 in &segs[i + 1..] {
+            if s1.wall != s2.wall {
+                continue;
+            }
+            for (a, b) in [(s1, s2), (s2, s1)] {
+                for e in b.end {
+                    if let Some(r) = endpoint_third(e, wc, a.wall) {
+                        if strictly_inside(a, r) == Some(true) {
+                            overlap = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    for (i, s) in segs.iter().enumerate() {
+        // Per-segment: collect the crossings strictly interior to `s` (re-test, do not rely on a
+        // deduped global set — a crossing may split several segments of different extent).
+        let mut interior: Vec<usize> = Vec::new();
+        for (j, o) in segs.iter().enumerate() {
+            if i == j || o.wall == s.wall {
+                continue;
+            }
+            if tolerant::t_plane_pair_dir_sign(planes, wc, s.wall, o.wall) == 0 {
+                continue; // walls meet wc in no point (parallel)
+            }
+            // The crossing of `s` and `o` is named by `o.wall` along `s`'s line.
+            if strictly_inside(s, o.wall) == Some(true)
+                && strictly_inside(o, s.wall) == Some(true)
+                && !interior.contains(&o.wall)
+            {
+                interior.push(o.wall);
+            }
+        }
+        let (r0, r1) = (
+            endpoint_third(s.end[0], wc, s.wall).ok_or_else(|| reject(tag::THREE_PLANES))?,
+            endpoint_third(s.end[1], wc, s.wall).ok_or_else(|| reject(tag::THREE_PLANES))?,
+        );
+        if interior.is_empty() {
+            out.push(s.clone());
+            continue;
+        }
+        // Sort interior crossings along the line; two coinciding is a four-plane concurrency.
+        interior.sort_by(
+            |&a, &b| match arrange::order_along(planes, wc, s.wall, a, b) {
+                -1 => std::cmp::Ordering::Less,
+                1 => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            },
+        );
+        for w in interior.windows(2) {
+            if arrange::order_along(planes, wc, s.wall, w[0], w[1]) == 0 {
+                return Err(reject(tag::FOURPLANE));
+            }
+        }
+        // Emit sub-segments over the R-sequence [r0, interior…, r1], inheriting wall/merged.
+        let seq: Vec<usize> = std::iter::once(r0)
+            .chain(interior.iter().copied())
+            .chain(std::iter::once(r1))
+            .collect();
+        // `wc`, `s.wall`, and each R are already canon classes; the endpoint triple is just sorted.
+        let sorted = |r: usize| {
+            let mut t = [wc, s.wall, r];
+            t.sort_unstable();
+            t
+        };
+        for w in seq.windows(2) {
+            out.push(MergedSeg {
+                wall: s.wall,
+                end: [sorted(w[0]), sorted(w[1])],
+                merged: s.merged.clone(),
+            });
+        }
+    }
+    Ok((out, overlap))
+}
+
 /// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
 /// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
 /// given as `(fp, s)`. The signed turn between edges i and j is `turn_at`'s atom
@@ -933,6 +1054,113 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Split at crossings: a cross fixture makes four strict interior crossings; the chords cut
+    /// into the right pieces, ending at the right triples, and the crossing vertex is a clean
+    /// degree-4 the DCEL can order.
+    #[test]
+    fn split_cuts_the_cross_into_the_right_pieces() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 1.0, 0.0]),
+            Point3::from_array([3.0, 2.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let merged = merge_coincident(&tr.segs);
+        assert_eq!(merged.len(), 8, "8 merged edges before split");
+
+        let (split, overlap) = split_at_crossings(&planes, wc, &merged).unwrap();
+        assert!(!overlap, "cross has no same-wall partial overlap");
+        // 4 chords crossed twice → 3 pieces each = 12; 4 outer walls uncrossed = 4; total 16.
+        assert_eq!(split.len(), 16, "16 sub-segments: {}", split.len());
+
+        // a's y=1 chord splits into exactly 3, ending at x=0,1,2,3 — checked by coordinate.
+        let seg_pts = |s: &MergedSeg| {
+            let mut u = pt(s.end[0], &planes);
+            let mut v = pt(s.end[1], &planes);
+            if u[0] > v[0] {
+                std::mem::swap(&mut u, &mut v);
+            }
+            (
+                [(u[0] * 1e6).round() as i64, (u[1] * 1e6).round() as i64],
+                [(v[0] * 1e6).round() as i64, (v[1] * 1e6).round() as i64],
+            )
+        };
+        // a's y=1 chord pieces: horizontal (both y=1), z=1, spanning consecutive x's.
+        let y1: Vec<_> = split
+            .iter()
+            .filter(|s| {
+                let (u, v) = seg_pts(s);
+                u[1] == 1_000_000 && v[1] == 1_000_000 // both endpoints at y=1
+                    && s.merged.iter().any(|(sd, _)| *sd == SolidSide::A)
+            })
+            .map(&seg_pts)
+            .collect();
+        assert_eq!(y1.len(), 3, "a's y=1 chord → 3 pieces: {y1:?}");
+        let mut xs: Vec<[i64; 2]> = y1.iter().map(|(u, v)| [u[0], v[0]]).collect();
+        xs.sort();
+        assert_eq!(
+            xs,
+            vec![
+                [0, 1_000_000],
+                [1_000_000, 2_000_000],
+                [2_000_000, 3_000_000]
+            ],
+            "pieces are [0,1][1,2][2,3], adjacent and endpoint-exact"
+        );
+
+        // The crossing vertex (1,1,1) is a clean degree-4 the DCEL can order: 4 incident pieces,
+        // and their (wall, far-R) pairs — i.e. (fp, direction) — are all distinct (no coincidence
+        // that angular_order's zero bucket would collapse). This is what the merge earned.
+        let is_v = |t: [usize; 3]| {
+            let p = pt(t, &planes);
+            (p[0] - 1.0).abs() < 1e-9 && (p[1] - 1.0).abs() < 1e-9 && (p[2] - 1.0).abs() < 1e-9
+        };
+        let incident: Vec<&MergedSeg> = split
+            .iter()
+            .filter(|s| is_v(s.end[0]) || is_v(s.end[1]))
+            .collect();
+        assert_eq!(incident.len(), 4, "degree-4 at (1,1,1): {}", incident.len());
+        let mut keys = std::collections::HashSet::new();
+        for s in &incident {
+            let far = if is_v(s.end[0]) { s.end[1] } else { s.end[0] };
+            keys.insert((s.wall, endpoint_third(far, wc, s.wall).unwrap()));
+        }
+        assert_eq!(keys.len(), 4, "no coincident (fp,direction) — DCEL-ready");
+    }
+
+    /// Same-wall partial overlap (E5) is detected (not resolved): a=[0,2], b=[1,3] share y=1, their
+    /// chords overlap on x∈[1,2]. `overlap` must be true — a vacuous "false" would mean the
+    /// detector is blind.
+    #[test]
+    fn partial_overlap_is_detected() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let merged = merge_coincident(&tr.segs);
+        let (_, overlap) = split_at_crossings(&planes, wc, &merged).unwrap();
+        assert!(
+            overlap,
+            "a's x∈[0,2] and b's x∈[1,3] on y=1 overlap — must be flagged"
+        );
     }
 
     /// The z=1 class both solids seat a cap on.
