@@ -24,6 +24,7 @@ use rayon::prelude::*;
 
 mod arrange;
 mod tolerant;
+mod winding;
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// `x_axis`/`y_axis` are assumed unit and orthogonal (the constructors ensure
