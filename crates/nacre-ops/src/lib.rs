@@ -13479,6 +13479,202 @@ pub mod tests {
         }
     }
 
+    /// Every three-plane point plane class `p` puts on the line `p ∩ q`, gathered the way a
+    /// per-plane-class arrangement would: both solids' faces seated on `p`, plus both solids'
+    /// sections cut by `p`. Triples are canonicalized, then kept only if they name `q` as well —
+    /// those are exactly the points on the shared line. `section_of_solid` rejecting (it declines a
+    /// plane it has vertices on) contributes nothing rather than failing: a plane class with no
+    /// section still has its faces.
+    #[allow(clippy::too_many_arguments)]
+    fn triples_on_shared_line(
+        m: &Model,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+        planes: &[PlaneInfo],
+        surf_ix: &HashMap<Handle<Face>, usize>,
+        inc_a: &arrange::EdgePlanes,
+        inc_b: &arrange::EdgePlanes,
+        canon: &[usize],
+        p: usize,
+        q: usize,
+    ) -> HashSet<[usize; 3]> {
+        let canonize = |t: [usize; 3]| {
+            let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
+            c.sort_unstable();
+            c
+        };
+        let mut out = HashSet::new();
+        for (solid, inc) in [(a, inc_a), (b, inc_b)] {
+            // Faces seated on `p`.
+            for sh in solid_shell_handles(m, solid) {
+                for &fh in &m.shells.get(sh).faces {
+                    let fi = surf_ix[&fh];
+                    if canon[fi] != p {
+                        continue;
+                    }
+                    if let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) {
+                        out.extend(ts.into_iter().map(canonize));
+                    }
+                }
+            }
+            // The other solid's section cut by `p`, taken at a representative index of the class.
+            if let Ok(loops) = section_of_solid(m, solid, p, planes, surf_ix) {
+                for l in loops {
+                    for n in l {
+                        if let Node::Seam(t) = n {
+                            out.insert(canonize(t));
+                        }
+                    }
+                }
+            }
+        }
+        out.retain(|t| t.contains(&q));
+        out
+    }
+
+    /// **E2, first result: a per-plane arrangement must MINT crossing points — unioning the existing
+    /// boundary vertices is provably not enough.** `assemble_fuse_cut` welds by `Node` identity and
+    /// demands every welded edge be used exactly twice, so two plane classes `p`, `q` must induce the
+    /// *same* point set on their shared line `p ∩ q` or a per-plane engine can never close a shell.
+    ///
+    /// Measured on `same_ground` (two boxes sharing z=0/z=1, overlapping footprints): built from
+    /// existing boundary vertices only, **12 of 30 intersecting class pairs disagree**. The cause is
+    /// specific and instructive — take `(x=1) ∩ (z=0)`. The point `(1, 0.5, 0)`:
+    /// - class `x=1` **sees** it, as a corner of `b`'s section (`{z=0, x=1, y=0.5}`);
+    /// - class `z=0` **misses** it, because there the two footprints are squares whose *edges cross*
+    ///   there, and no boundary vertex of either square sits at the crossing.
+    ///
+    /// So this asymmetry is not a defect of the plane classes; it is the arrangement's own job left
+    /// undone. Segment-segment crossings are what an arrangement *produces*, and this test compares
+    /// the *inputs*. (Contributing to the gap: `section_of_solid` declines both contact planes —
+    /// measured 18 rejects, 0 successes on classes `z=0`/`z=1` — so those classes get footprints from
+    /// coincident faces only. Real, but secondary to the missing crossings.)
+    ///
+    /// **What remains open:** whether the sets agree *once crossings are minted*. That needs the
+    /// segment-crossing predicate (roadmap E4), so it cannot be settled here — recorded rather than
+    /// guessed. This test locks the requirement that produced that conclusion.
+    #[test]
+    fn a_per_plane_arrangement_must_mint_crossing_points() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.0]),
+            Point3::from_array([1.5, 1.5, 1.0]),
+        );
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+
+        let classes: Vec<usize> = {
+            let mut c: Vec<usize> = canon.to_vec();
+            c.sort_unstable();
+            c.dedup();
+            c
+        };
+        let mut compared = 0usize;
+        let mut disagreed = Vec::new();
+        for (i, &p) in classes.iter().enumerate() {
+            for &q in &classes[i + 1..] {
+                let from_p = triples_on_shared_line(
+                    &m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, p, q,
+                );
+                let from_q = triples_on_shared_line(
+                    &m, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon, q, p,
+                );
+                // Only pairs that actually meet say anything.
+                if from_p.is_empty() && from_q.is_empty() {
+                    continue;
+                }
+                compared += 1;
+                if from_p != from_q {
+                    disagreed.push((p, q, from_p, from_q));
+                }
+            }
+        }
+        assert!(
+            compared > 0,
+            "no intersecting plane-class pairs were compared"
+        );
+        // The claim under test is the *negative* one: existing boundary vertices alone do not agree,
+        // so minting crossings is a hard requirement rather than an optimization. Pinning the exact
+        // count would pin the fixture's arithmetic, not the requirement.
+        assert!(
+            !disagreed.is_empty(),
+            "boundary vertices alone agreed on all {compared} pairs — the premise that an \
+             arrangement must mint crossing points no longer holds here; re-derive it"
+        );
+        // And the disagreement is one-sided: the side that misses points is the one whose footprints
+        // meet at an edge crossing rather than at a vertex, never a side inventing extra points.
+        for (p, q, from_p, from_q) in &disagreed {
+            assert!(
+                from_p.is_subset(from_q) || from_q.is_subset(from_p),
+                "classes {p}/{q} disagree by mutual exclusion, not by a missing crossing: \
+                 {from_p:?} vs {from_q:?}"
+            );
+        }
+    }
+
+    /// **E1 — `coplanar_survival` is a consequence of one rule, not six independent facts.**
+    ///
+    /// The rule is already written down at [`coplanar_survival`]'s derivation: *a π-face survives
+    /// where the result's material lies on exactly one side of π*. Make that executable. Label a
+    /// point of π by the pair `(material above, material below)`; each solid contributes its own
+    /// pair, combined by the operation's own set algebra; the face survives iff the two bits differ.
+    ///
+    /// Take `P`'s outward normal as `+n`, so `A` occupies *below* π inside `P`'s footprint, and `B`
+    /// occupies below when the normals agree and above when they oppose. Outside a footprint that
+    /// solid contributes nothing. Two cells decide the a-side answer — `P∖Q` and `P∩Q` — and which
+    /// of them survive names the `PSurvive` variant.
+    ///
+    /// This is the labelling semantics a per-plane arrangement needs, checked before any arrangement
+    /// exists. It reproduces all six rows with **no case analysis**: one set operation and one
+    /// inequality. (Note the reverse does not hold — the table cannot serve as the oracle for the
+    /// general engine, since it is defined only for a single overlapping face pair.)
+    #[test]
+    fn e1_the_occupancy_rule_reproduces_the_whole_survival_table() {
+        // (above, below) occupancy of one solid at a point of π.
+        type Occ = (bool, bool);
+        const NONE: Occ = (false, false);
+
+        let combine = |kind: BoolKind, x: Occ, y: Occ| -> Occ {
+            let f = |u: bool, v: bool| match kind {
+                BoolKind::Fuse => u || v,
+                BoolKind::Cut => u && !v,
+                BoolKind::Common => u && v,
+            };
+            (f(x.0, y.0), f(x.1, y.1))
+        };
+        // "Material on exactly one side of π" — the derivation sentence, verbatim.
+        let survives = |o: Occ| o.0 != o.1;
+
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            for same_normal in [true, false] {
+                let a_in_p: Occ = (false, true); // P's outward normal is +n ⇒ A lies below
+                let b_in_q: Occ = if same_normal {
+                    (false, true)
+                } else {
+                    (true, false)
+                };
+
+                let minus_q = survives(combine(kind, a_in_p, NONE)); // inside P, outside Q
+                let inter_q = survives(combine(kind, a_in_p, b_in_q)); // inside both
+
+                let derived = match (minus_q, inter_q) {
+                    (true, true) => PSurvive::Whole,
+                    (true, false) => PSurvive::MinusQ,
+                    (false, true) => PSurvive::InterQ,
+                    (false, false) => PSurvive::Empty,
+                };
+                let (tabled, _) = coplanar_survival(kind, same_normal);
+                assert_eq!(
+                    derived, tabled,
+                    "occupancy rule and table disagree for {kind:?}/same_normal={same_normal}"
+                );
+            }
+        }
+    }
+
     // R0: canonicalizing section triples must never silently merge two distinct section vertices —
     // if the plane-class fold maps two ring vertices onto one triple, reject.
     #[test]
