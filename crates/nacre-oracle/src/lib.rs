@@ -663,6 +663,35 @@ bbox_min 0 0 0
         assert!(approx(common.volume, 0.125), "common {}", common.volume);
     }
 
+    /// A coplanar contact on a **cavitied** operand: a hollow box ([0,3]³ minus a [1,2]³ void,
+    /// volume 26) with a top-flush boss on z=3 ([0.5,0.75]²×[3,4], volume 0.0625). The union keeps
+    /// the void ⇒ 26.0625. This is the independent check on the all-shell fix: the coplanar driver
+    /// used to emit outer-shell faces only, so the void vanished and the fuse read 27.0625 — the
+    /// un-hollowed cube plus the boss — with a clean `validate`, since what remained was still a
+    /// closed shell. Hand arithmetic and nacre agreeing would have proved nothing there; OCCT is a
+    /// second kernel. (`hollow_solid_step_volume_matches_occt` already pins that a void survives the
+    /// STEP round trip, so a failure here is about the boolean, not the transport.)
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn coplanar_boss_on_a_hollow_part_matches_occt() {
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 3.0]),
+            Point3::from_array([0.75, 0.75, 4.0]),
+        );
+        m.rebuild_adjacency();
+        let fuse = occt_boolean_of(&m, OcctBool::Fuse, hollow, boss).unwrap();
+        assert!(
+            approx(fuse.volume, 26.0625),
+            "hollow + coplanar boss fuse {}",
+            fuse.volume
+        );
+    }
+
     /// E1 same_ground union: A = [0,1]³ and B = [0.5,1.5]²×[0,1] overlap in volume and share the
     /// z=0 / z=1 planes with overlapping footprints. The union is an L-footprint prism: area
     /// (1 + 1 − 0.25) × height 1 = 1.75. OCCT confirms it independently — the oracle for nacre's

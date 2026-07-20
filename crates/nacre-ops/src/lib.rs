@@ -4590,21 +4590,24 @@ fn detect_coincident_interface(
         return None;
     }
     // Opposite-normal coplanar face pairs (same-normal coplanar side faces are
-    // the expected coplanar-adjacent result and are ignored).
-    let mut opposite: Vec<(usize, usize)> = Vec::new();
-    for (i, pa) in planes_a.iter().enumerate() {
-        for (j, pb) in planes_b.iter().enumerate() {
+    // the expected coplanar-adjacent result and are ignored). Carry each plane's own face handle:
+    // `collect_planes` walks *all* shells, so a plane index is not an index into the outer shell's
+    // face list — for a cavitied operand a cavity plane's index runs past that list's end. No input
+    // reaches here with one today (the `is_convex` gate above rejects a hollow solid: its outer
+    // vertices sit on the positive side of every cavity plane), so this is not a live bug and has
+    // no firing test; naming the face directly means the index spaces can never disagree.
+    let mut opposite: Vec<(Handle<Face>, Handle<Face>)> = Vec::new();
+    for pa in planes_a.iter() {
+        for pb in planes_b.iter() {
             if shares_or_coplanar(pa, pb) && pa.n_out.dot(pb.n_out) < 0.0 {
-                opposite.push((i, j));
+                opposite.push((pa.face, pb.face));
             }
         }
     }
     if opposite.len() != 1 {
         return None; // 0 ⇒ not a stack; ≥2 ⇒ multiple interfaces (out of scope)
     }
-    let (i, j) = opposite[0];
-    let fa = model.shells.get(model.solids.get(a).outer).faces[i];
-    let fb = model.shells.get(model.solids.get(b).outer).faces[j];
+    let (fa, fb) = opposite[0];
     let ring_a = face_ring(model, model.faces.get(fa));
     let ring_b = face_ring(model, model.faces.get(fb));
     let remap = interface_correspondence(&ring_a, &ring_b)?;
@@ -4689,6 +4692,14 @@ fn face_contains_face(model: &Model, big: Handle<Face>, small: Handle<Face>, n: 
 /// A solid's faces as `LocalFace`s (`Node::Orig`, `flip:false`), with
 /// `plane_idx` offset by `plane_offset`, optionally skipping one face and
 /// remapping vertices (for B's interface vertices → A's handle).
+///
+/// **Outer shell only, and a cavitied operand cannot reach here.** `plane_offset + pos` is a
+/// position in the outer face list, while `collect_planes` walks all shells — the two agree only
+/// while cavities are absent. That holds because the sole caller ([`coincident_merge`]) runs behind
+/// [`detect_coincident_interface`]'s `is_convex` gate, which a hollow solid always fails (its outer
+/// vertices lie on the positive side of every cavity plane). So there is no firing test for the
+/// cavity case; if that gate is ever relaxed this must walk `solid_shell_handles` and index by
+/// face handle, as [`coplanar_result_unified`] now does — otherwise the void is silently dropped.
 fn solid_local_faces(
     model: &Model,
     solid: Handle<Solid>,
@@ -5456,23 +5467,48 @@ fn coplanar_result_unified(
         return Err(reject(tag::NO_COPLANAR_CONTACT));
     }
 
+    // Every face of both solids, **all shells** — outer *and* cavities. A cavitied operand's void
+    // walls are ordinary faces of the result: skipping them silently drops the void (the result
+    // reads as the un-hollowed solid, and `validate` still passes because what remains is a closed
+    // shell). The seam front-end learned this in cell (5c-in) — `solid_face_rings` walks all shells
+    // for exactly this reason — and this path had never received the same patch.
+    //
+    // The plane index comes from `surf_ix`, not from the loop position: `collect_planes` walks all
+    // shells, so a positional index only lined up while the iteration was outer-only. Mirrors
+    // `overlap_fuse_cut`'s sweep. Order (a then b, outer shell then cavities) matches
+    // `collect_planes`, so assembly's first-appearance vertex numbering — and replay — is stable.
+    let solid_faces_all = |model: &Model, s: Handle<Solid>| -> Vec<Handle<Face>> {
+        solid_shell_handles(model, s)
+            .into_iter()
+            .flat_map(|sh| model.shells.get(sh).faces.clone())
+            .collect()
+    };
     let mut faces = Vec::new();
     let mut all_cx = Vec::new();
-    let a_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(a).outer).faces.clone();
-    for (pos, &fh) in a_faces.iter().enumerate() {
+    for &fh in &solid_faces_all(model, a) {
         let (lf, cx) = classify_and_emit(
-            model, fh, pos, true, b, kind, &planes, &surf_ix, &canon, &inc_a, &inc_b, &b_classes,
+            model,
+            fh,
+            surf_ix[&fh],
+            true,
+            b,
+            kind,
+            &planes,
+            &surf_ix,
+            &canon,
+            &inc_a,
+            &inc_b,
+            &b_classes,
             &shared,
         )?;
         faces.extend(lf);
         all_cx.extend(cx);
     }
-    let b_faces: Vec<Handle<Face>> = model.shells.get(model.solids.get(b).outer).faces.clone();
-    for (pos, &fh) in b_faces.iter().enumerate() {
+    for &fh in &solid_faces_all(model, b) {
         let (lf, cx) = classify_and_emit(
             model,
             fh,
-            na + pos,
+            surf_ix[&fh],
             false,
             a,
             kind,
@@ -10556,6 +10592,105 @@ pub mod tests {
             || boolean(&mut m, BoolKind::Cut, hollow, slab),
             tag::SEVERED_WITH_CAVITY,
         );
+    }
+
+    // A hollow operand in a COPLANAR contact — the combination nothing covered until now. The
+    // cavity goldens above all take the seam path (transversal cuts) and every coplanar golden uses
+    // solid operands, so the intersection of the two was a blind spot, and the coplanar driver had
+    // never received the all-shell patch the seam front-end got in cell (5c-in). It emitted only
+    // outer-shell faces, so the void vanished: the fuse read 27.0625 — the *un-hollowed* cube plus
+    // the boss — with `cavities: 0` and a clean `validate`, because what remained was still a
+    // closed shell. Silent-wrong, invisible to every guard. Now the driver walks all shells.
+    #[test]
+    fn a_hollow_part_takes_a_coplanar_boss() {
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        // Top-flush boss on z=3: a genuine coplanar contact, clear of the void's planes.
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 3.0]),
+            Point3::from_array([0.75, 0.75, 4.0]),
+        );
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Fuse, hollow, boss).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        // 27 − 1 void + 0.25·0.25·1 boss.
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 26.0625).abs() < 1e-9, "volume {vol}");
+        assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
+    }
+
+    #[test]
+    fn a_hollow_part_takes_a_coplanar_pocket() {
+        // The Cut twin of the boss case: a top-flush pocket sunk into a hollow part. Same blind
+        // spot, same silent-wrong before the fix (26.96875 with the void gone).
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        let tool = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 2.5]),
+            Point3::from_array([0.75, 0.75, 3.0]),
+        );
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, hollow, tool).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        // 27 − 1 void − 0.25·0.25·0.5 pocket.
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 25.96875).abs() < 1e-9, "volume {vol}");
+        assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
+    }
+
+    #[test]
+    fn a_coplanar_boss_over_a_void_plane_is_rejected() {
+        // The boss straddles the void's x=1 and y=1 planes (it spans [0.9,1.1]²), so classifying
+        // the void's walls against it is no longer the clean whole-face case. Measured: honestly
+        // rejected, before and after the all-shell fix — the fix does not widen this one. Pinned so
+        // that a future change either keeps the reject or turns it into a correct 26.04, never into
+        // a silent answer.
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        let boss = m.add_cuboid(
+            Point3::from_array([0.9, 0.9, 3.0]),
+            Point3::from_array([1.1, 1.1, 4.0]),
+        );
+        m.rebuild_adjacency();
+        assert_eq!(
+            boolean_one(&mut m, BoolKind::Fuse, hollow, boss),
+            Err(BoolError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn a_hollow_operand_never_reaches_the_coincident_merge_path() {
+        // Pins the gate the `solid_local_faces` / `detect_coincident_interface` comments rely on: a
+        // cavitied solid is never convex (its outer vertices sit on the positive side of every
+        // cavity plane), so it cannot reach the coincident-merge path, whose face walk is
+        // outer-shell only. If this ever starts returning `Some`, that walk needs the all-shell
+        // treatment `coplanar_result_unified` received.
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        // A slab seated exactly on the hollow part's top face — an opposite-normal coplanar pair,
+        // i.e. what the detector looks for. It still declines, on convexity.
+        let slab = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 3.0]),
+            Point3::from_array([3.0, 3.0, 4.0]),
+        );
+        m.rebuild_adjacency();
+        assert!(detect_coincident_interface(&m, hollow, slab).is_none());
     }
 
     #[test]
