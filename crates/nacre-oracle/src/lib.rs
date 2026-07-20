@@ -663,6 +663,24 @@ bbox_min 0 0 0
         assert!(approx(common.volume, 0.125), "common {}", common.volume);
     }
 
+    /// The Cut twin of the corner-overhang boss: base [0,1]³ and a boss [0.5,1.5]²×[1,2] seated on
+    /// z=1 with an overhanging footprint. The boss lies entirely above the shared plane, so the cut
+    /// removes nothing and the base survives whole — volume 1.0. nacre used to reject this
+    /// (`coplanar_merge`) while building the Fuse of the very same pair, so the interesting claim is
+    /// "nothing was removed", which is exactly the kind of answer worth hearing from a second kernel.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn cut_by_a_corner_overhanging_boss_matches_occt() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let corner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let cut = occt_boolean_of(&m, OcctBool::Cut, base, corner).unwrap();
+        assert!(approx(cut.volume, 1.0), "seated-boss cut {}", cut.volume);
+    }
+
     /// A coplanar contact on a **cavitied** operand: a hollow box ([0,3]³ minus a [1,2]³ void,
     /// volume 26) with a top-flush boss on z=3 ([0.5,0.75]²×[3,4], volume 0.0625). The union keeps
     /// the void ⇒ 26.0625. This is the independent check on the all-shell fix: the coplanar driver

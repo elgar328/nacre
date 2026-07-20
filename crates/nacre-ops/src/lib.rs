@@ -320,10 +320,11 @@ pub(crate) mod tag {
     /// pair with no coplanar contact at all (should be gated out upstream).
     pub const NO_COPLANAR_CONTACT: &str = "no_coplanar_contact";
     /// A `Whole`-survival contact face whose footprint OVERLAPS the other's (∂P × ∂Q cross) rather
-    /// than nesting. `Whole` assumes ∂Q is internal (a union with the other face contained, or the
-    /// other solid stacked entirely above); overlapping footprints need the general 2D coplanar
-    /// union/merge (a later cell), so they are honestly rejected. v1 gates the same case via
-    /// `face_contains_face`.
+    /// than nesting, in the one such case still unbuilt. `Whole` has two entries: `Fuse`/same-normal,
+    /// which the E1 union cell now builds, and `Cut`/opposite-normal, which is exact whenever the
+    /// contact plane separates the two solids (nothing to remove). What is left is a `Cut` whose tool
+    /// reaches back across that plane — a pin below its own contact face — where the cut owes a notch
+    /// this path cannot yet cut. Honest reject rather than a whole cap that ignores the pin.
     pub const COPLANAR_MERGE: &str = "coplanar_merge";
     /// The winding driver (M-C) was handed a pair with no seam (containment/disjoint) — the
     /// seam-free branch (`contained_result`) is not yet wired into the unified driver.
@@ -1587,8 +1588,14 @@ pub fn boolean(
     // unconditionally). What it CAN do is offer the coplanar arm a case the detectors deliberately
     // withheld; the golden volumes and the OCCT oracle are what pin that down.
     if coplanar_contact_count(model, a, b)? >= 1 {
-        if let Ok(r) = coplanar_result_unified(model, kind, a, b) {
-            return Ok(r);
+        match coplanar_result_unified(model, kind, a, b) {
+            Ok(r) => return Ok(r),
+            // "The result is empty" is an answer, not a failure to build one — intersecting two
+            // solids that meet only along the shared plane is the case. Falling through would hand
+            // it to the seam path, which has no seam to work with and reports the tangency as an
+            // unsupported degeneracy, turning a definite answer into a shrug.
+            Err(BoolError::EmptyResult) => return Err(BoolError::EmptyResult),
+            Err(_) => {}
         }
     }
     // One general exact path for every kind. Cell (5b) retired the convex `fuse_cut`
@@ -5108,6 +5115,32 @@ fn rings_properly_cross(
     Ok(false)
 }
 
+/// Whether the contact plane of `owner`'s face at `f_idx` **separates** the two solids: `owner`
+/// entirely on its own inner side, `other` entirely on the outer side. Both halves are needed —
+/// the face bounds `owner` only locally, so a non-convex `owner` can rise back above its own face
+/// plane, and a non-convex `other` (a pin hanging below its contact face) can reach below it.
+/// When both hold, the solids meet in the plane and nowhere else, so their intersection has zero
+/// volume: `Cut` removes nothing and `Common` is empty, whatever the footprints do in-plane.
+///
+/// Exact and rotation-sound: [`t_plane_side`](crate::tolerant::t_plane_side) judges each original
+/// vertex against the indexed plane (`side <= 0` = inside-or-on, the convention `is_convex` uses),
+/// never a coordinate cache.
+fn separated_by_contact_plane(
+    model: &Model,
+    planes: &[PlaneInfo],
+    f_idx: usize,
+    owner: Handle<Solid>,
+    other: Handle<Solid>,
+) -> bool {
+    let side = |v: Handle<Vertex>| crate::tolerant::t_plane_side(model, planes, f_idx, v);
+    solid_vertex_handles(model, owner)
+        .into_iter()
+        .all(|v| side(v) <= 0)
+        && solid_vertex_handles(model, other)
+            .into_iter()
+            .all(|v| side(v) >= 0)
+}
+
 /// One face `f` of `owner` classified and emitted for the unified per-face coplanar Boolean
 /// (M5-U, Requicha). Returns the surviving `LocalFace`(s) plus any crossings they mint. Regimes:
 /// **transversal / disjoint-coplanar** → the in/out rule via [`clip_face_to_section`]
@@ -5123,6 +5156,7 @@ fn classify_and_emit(
     f_face: Handle<Face>,
     f_idx: usize,
     owner_is_a: bool,
+    owner: Handle<Solid>,
     other: Handle<Solid>,
     kind: BoolKind,
     planes: &[PlaneInfo],
@@ -5370,12 +5404,24 @@ fn classify_and_emit(
             // disjoint) keeps the whole face. Overlapping footprints (∂P × ∂Q cross) are the general
             // 2D coplanar merge (E1 same_ground): for a same-normal Fuse cap, emit P∪Q as one cell by
             // selecting the union cell from the 2D arrangement (∂Q's arcs OUTSIDE P). Return the
-            // crossings so the interpenetrating walls weld to the same seam vertices. Any other
-            // `Whole` case with crossings (Cut/opposite) is a later cell → honest reject.
+            // crossings so the interpenetrating walls weld to the same seam vertices.
+            //
+            // The other `Whole` entry is Cut/opposite — the two solids in opposite half-spaces of the
+            // shared plane, i.e. the tool merely seated on this face. When the plane genuinely
+            // separates them ([`separated_by_contact_plane`]) their intersection has zero volume, so
+            // `Cut` removes nothing and the whole face survives no matter how the footprints cross:
+            // exactly the Cut twin of the overhang-boss Fuse this same fixture already builds. When
+            // it does not separate them — a pin on the tool reaching below the plane — a real notch
+            // is owed and emitting the whole face would be silently wrong, so that stays rejected.
             let f_bnd = contact_boundary(model, f_face, pi, inc_owner, canon)?;
             let q_bnd = contact_boundary(model, cf, pi, inc_other, canon)?;
             let cx = coplanar_boundary_crossings(planes, pi, &f_bnd, &q_bnd, contact_classes)?;
-            if cx.is_empty() {
+            // ∂Q nested or disjoint, or a Cut whose tool never crosses the plane: nothing in-plane
+            // can change what survives, so the face comes through whole.
+            if cx.is_empty()
+                || (kind == BoolKind::Cut
+                    && separated_by_contact_plane(model, planes, f_idx, owner, other))
+            {
                 Ok((vec![whole_lf()], Vec::new()))
             } else if kind == BoolKind::Fuse && same_normal {
                 let arcs = coplanar_seam_arcs(planes, pi, &q_bnd, &cx);
@@ -5491,6 +5537,7 @@ fn coplanar_result_unified(
             fh,
             surf_ix[&fh],
             true,
+            a,
             b,
             kind,
             &planes,
@@ -5510,6 +5557,7 @@ fn coplanar_result_unified(
             fh,
             surf_ix[&fh],
             false,
+            b,
             a,
             kind,
             &planes,
@@ -5564,6 +5612,14 @@ fn coplanar_result_unified(
     } else {
         faces
     };
+    // Every face dropped: the op's result is genuinely empty, not a reconstruction that failed. The
+    // survival table already names this outcome (`Common`/opposite ⇒ `Empty` ⇒ `EmptyResult`) and
+    // `contained_result` reports a disjoint `Common` the same way — e.g. intersecting two solids that
+    // only touch along the shared plane. Without this, assembly finds no outward shell and reports
+    // `NO_OUTWARD_SHELL`, which reads as a reconstruction defect rather than an empty intersection.
+    if faces.is_empty() {
+        return Err(BoolError::EmptyResult);
+    }
     assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
 }
 
@@ -12795,6 +12851,98 @@ pub mod tests {
         assert!(vs.is_empty(), "{vs:?}");
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 1.625).abs() < 1e-12, "volume {vol}");
+    }
+
+    // The Cut and Common twins of `fuse_a_corner_overhanging_boss` below — the same two solids,
+    // the same shared z=1 plane. The boss sits entirely above it, so it removes nothing and shares
+    // nothing: Cut is the base untouched and Common is empty. Both used to be rejected
+    // (`coplanar_merge` for Cut; Common's every face dropped, which assembly reported as
+    // `no_outward_shell`). The `Whole` survival cell now checks whether the contact plane actually
+    // separates the solids, which is what makes the whole cap correct here.
+    #[test]
+    fn cut_by_a_corner_overhanging_boss_removes_nothing() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let corner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, corner).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
+        // Structure, not just volume: the base comes through as itself. Six faces means the cap was
+        // not split along ∂Q and the boss contributed nothing.
+        let s = m.solids.get(r);
+        assert!(s.cavities.is_empty());
+        assert_eq!(m.shells.get(s.outer).faces.len(), 6, "a clean cube");
+    }
+
+    #[test]
+    fn cut_a_seated_block_by_the_part_below_it() {
+        // The operands swapped: now the canonical contact face is the upper block's *lower* cap, so
+        // the separation test runs with the plane's normal the other way round. Same answer — the
+        // block keeps its volume.
+        let mut m = Model::new();
+        let block = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, block, base).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
+    }
+
+    #[test]
+    fn common_with_a_corner_overhanging_boss_is_empty() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let corner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        m.rebuild_adjacency();
+        assert_eq!(
+            boolean(&mut m, BoolKind::Common, base, corner),
+            Err(BoolError::EmptyResult)
+        );
+    }
+
+    #[test]
+    fn cut_by_an_overhanging_boss_carrying_a_pin_is_rejected() {
+        // Same seating, but the tool carries a pin reaching below the contact plane, so the plane
+        // no longer separates the solids and the cut owes a real notch (1 − 0.2·0.2·0.5 = 0.98).
+        // We cannot build that yet, and emitting the whole cap would be silently wrong — so this
+        // pins the guard that keeps the widening above honest.
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let block = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        let pin = m.add_cuboid(
+            Point3::from_array([0.55, 0.55, 0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let tool = boolean_one(&mut m, BoolKind::Fuse, block, pin).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            (nacre_props::mass_props(&m, tool).unwrap().volume - 1.02).abs() < 1e-12,
+            "the pinned tool itself"
+        );
+        assert_eq!(
+            boolean_one(&mut m, BoolKind::Cut, base, tool),
+            Err(BoolError::Unsupported)
+        );
     }
 
     #[test]
