@@ -96,6 +96,18 @@ fn borrow_triple(d: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
 ///
 /// Routes on [`any_rotated`] of `p, q, r, j`: all-axis-aligned → geom, any rotated → frame3.
 pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: usize) -> i8 {
+    // The query plane `j` is one of the point's three defining planes ⇒ the point lies on `j`, so
+    // the sign is exactly 0 (a combinatorial identity) — on BOTH paths. Neither numeric branch is
+    // reliable here: the axis `three_plane_orient3d` below is exact only for f64-representable
+    // coordinates (0, 0.5, 1, 2…); for a non-representable rational (0.6, 0.65, 1.3…) it
+    // materializes `V` with a rounding error and can return ±1 for a point on its own plane,
+    // misclassifying an on-`W` vertex as off-plane (the `l_and_staple` root cause, 2026-07-21).
+    // The rotated frame3 judge computes the same tiny nonzero residual from the rounded plane
+    // coefficients (the rotation-fragility root cause). Deciding the identity here — before either
+    // branch — is exact and cheap for both.
+    if j == p || j == q || j == r {
+        return 0;
+    }
     if !any_rotated(planes, &[p, q, r, j]) {
         return three_plane_orient3d(
             &planes[p].plane,
@@ -105,14 +117,6 @@ pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: 
             planes[j].tri[1],
             planes[j].tri[2],
         );
-    }
-    // The query plane `j` is one of the point's three defining planes ⇒ the point lies on `j`, so
-    // the sign is exactly 0 (a combinatorial identity). Only the rotated path needs this: the axis
-    // predicate above already returns exact 0, but the frame3 judge computes a tiny nonzero residual
-    // from the rounded plane coefficients and can declare it ±1 above the floor, misclassifying an
-    // on-`W` vertex as off-plane (the rotation-fragility root cause, 2026-07-21).
-    if j == p || j == q || j == r {
-        return 0;
     }
     let (dp, dq, dr, dj) = (
         plane_def(planes, p),

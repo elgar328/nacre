@@ -14188,14 +14188,19 @@ pub mod tests {
             cases.len()
         );
         assert!(swept >= 10, "sweep shrank to {swept} fixtures: {skipped:?}");
-        // Measured 2026-07-20: 42 inside-disagreements, **all 42** on classes whose section
-        // producer declined. None with both sections in hand. So the restricted proposition stands
-        // and the per-line table stays unbuilt; what the sweep actually indicts is
-        // `section_of_solid`'s `VERTEX_ON_FACE_PLANE`, which is now B's measured blocker.
+        // Re-measured 2026-07-21 after moving t_orient3d's on-plane identity short-circuit into the
+        // axis path: agreed 420, on_boundary_missing_section 688, everything else 0 (was: inside_
+        // missing_section 42, outside 20, on_boundary_missing_section 626). The predicate fix makes
+        // `side_of` return exactly 0 for a point on its own plane even at non-f64-exact coords, so
+        // the 62 disagreements formerly mis-read as inside(42)/outside(20) are now correctly seen as
+        // ON a boundary. Every surviving disagreement is still on a class whose section producer
+        // declined (`missing_section`); none has both sections in hand. So the restricted
+        // proposition stands and the per-line table stays unbuilt; the sweep still indicts
+        // `section_of_solid`'s `VERTEX_ON_FACE_PLANE`.
         assert!(
-            total.inside_missing_section > 0,
-            "no inside-disagreement was attributed to a declined section — the sweep may no longer \
-             be exercising the case it was built for. Totals: {total:?}"
+            total.inside_missing_section + total.on_boundary_missing_section > 0,
+            "no disagreement was attributed to a declined section — the sweep may no longer be \
+             exercising the case it was built for. Totals: {total:?}"
         );
         // Currently zero, and that is the finding. It becomes non-zero exactly when
         // `section_of_solid` stops declining these classes — at which point real disagreements
@@ -14373,17 +14378,17 @@ pub mod tests {
 
         assert_eq!(panic, 0, "trace panicked (an un-honest reject): {notes:?}");
         assert_eq!(trace_wrong, 0, "trace is silently wrong on: {notes:?}");
-        // Measured 2026-07-21 after the grazing-wall SegKind + seated∩graze mask rule: agree 36,
-        // trace_gap 6, wrong/panic/prod_only_err/both_err 0. Classifying a wall that only grazes W
-        // as a one-bit `Graze` (not a flip-both `Transversal`) and letting it override a coincident
-        // seated cap-rim fixed the reflex-dihedral mask, graduating every L non-convex fixture
-        // (reflex, corner, inner_box, popup, notch_bar, ell_stub, dimple, rod). Floor at the
-        // measured 36: a drop means trace regressed a handled case; a gap graduating only raises it.
-        // ★ Roadmap: the 6 remaining gaps are u_and_slab (multi-loop U) and l_and_staple (coplanar
-        // contact) — the next distinct blockers, both honest rejects (trace_wrong stays 0).
+        // Measured 2026-07-21 after moving the on-plane identity short-circuit into t_orient3d's
+        // axis path (a point on its own defining plane has orient exactly 0, but the f64 axis
+        // predicate rounded it to ±1 for non-representable coords like 0.6): agree 39, trace_gap 3,
+        // wrong/panic/prod_only_err/both_err 0. l_and_staple graduated (its notch-top graze is now
+        // detected). Floor at the measured 39: a drop means trace regressed a handled case; a gap
+        // graduating only raises it.
+        // ★ Roadmap: the 3 remaining gaps are all u_and_slab (nest_cells HOLE_MULTI — the U's two
+        // prongs are two holes in the slab's one face); multi-hole faces are the next capability.
         assert!(
-            agree >= 36,
-            "only {agree} agreements (was 36); trace regressed a handled case: {notes:?}"
+            agree >= 39,
+            "only {agree} agreements (was 39); trace regressed a handled case: {notes:?}"
         );
     }
 
