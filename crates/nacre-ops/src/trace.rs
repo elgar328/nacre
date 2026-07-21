@@ -1162,6 +1162,10 @@ pub(crate) fn boolean_via_trace(
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b)?;
     let faces = trace_result_faces(model, kind, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon)?;
+    // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
+    // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
+    // chainable solid — a second boolean on it then sees no redundant coplanar planes.
+    let faces = crate::unify_coplanar_faces(model, faces, &planes, &canon);
 
     // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
     // raw-index and pierce-only). Reject rather than panic on a degenerate meet.

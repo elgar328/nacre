@@ -2457,7 +2457,7 @@ fn splice_along(a: &[Node], b: &[Node], u: Node, v: Node) -> Vec<Node> {
 /// endpoints), opposite-normal coplanar pairs, and non-disk components (a `debug_assert` guards
 /// the disk assumption). The one caller today is the coincident Fuse; a future coplanar-contact
 /// path is the second.
-fn unify_coplanar_faces(
+pub(crate) fn unify_coplanar_faces(
     model: &Model,
     faces: Vec<LocalFace>,
     planes: &[PlaneInfo],
@@ -2475,7 +2475,10 @@ fn unify_coplanar_faces(
         }
     }
     // 2. Mergeable edges (deterministic order): shared by exactly two faces that are coplanar,
-    //    same-normal, hole-free, with both endpoints `Orig`. Union the incident faces.
+    //    same-normal, hole-free. Union the incident faces. Merging two coplanar same-normal faces
+    //    across a shared full edge is a defeature (the solid is unchanged, one face fewer); the
+    //    arrangement mints crossings as shared vertices, so the shared edge is always a full edge
+    //    (no T-junction), and every node is a `Seam` triple.
     let mut mergeable: Vec<(Node, Node)> = Vec::new();
     let mut comp: Vec<usize> = (0..n).collect();
     for (fi, lf) in faces.iter().enumerate() {
@@ -2485,9 +2488,6 @@ fn unify_coplanar_faces(
             let fs = &edge_faces[&norm_edge(u, v)];
             if fs.len() != 2 || fs[0] != fi {
                 continue; // process each edge once, from its lower-index face
-            }
-            if !matches!(u, Node::Orig(_)) || !matches!(v, Node::Orig(_)) {
-                continue; // seam-shared edge — deferred
             }
             let (li, lj) = (&faces[fs[0]], &faces[fs[1]]);
             if canon[li.plane_idx] != canon[lj.plane_idx] {
@@ -2534,9 +2534,11 @@ fn unify_coplanar_faces(
         slot[sj] = si;
     }
     let mut out: Vec<LocalFace> = active.into_iter().flatten().collect();
-    // 4. Dissolve straight-angle Orig vertices: globally degree-2 (one edge line through them)
-    //    and exactly collinear. Drop from every incident loop at once, so a vertex that is a
-    //    real corner on any face survives (no T-junction).
+    // 4. Dissolve straight-angle vertices: a globally degree-2 node (one edge line through it) that
+    //    is exactly collinear with its two neighbours. Every node is a `Seam` triple `{p,q,r}`, so
+    //    collinearity is COMBINATORIAL and exact: the node lies on a line iff some pair of its three
+    //    planes is shared by both neighbours (that pair *is* the line). Drop from every incident loop
+    //    at once, so a vertex that is a real corner on any face (degree > 2) survives (no T-junction).
     let mut nbrs: HashMap<Node, HashSet<Node>> = HashMap::new();
     for lf in &out {
         let k = lf.loop_nodes.len();
@@ -2548,22 +2550,20 @@ fn unify_coplanar_faces(
     }
     let mut drop: HashSet<Node> = HashSet::new();
     for (&node, ns) in &nbrs {
-        let Node::Orig(v) = node else { continue };
+        let Node::Seam(t) = node else { continue };
         if ns.len() != 2 {
             continue;
         }
         let mut it = ns.iter();
-        let (Node::Orig(a), Node::Orig(b)) = (*it.next().unwrap(), *it.next().unwrap()) else {
-            continue; // a seam neighbour — leave the vertex (deferred)
-        };
-        let (Ok(pa), Ok(pv), Ok(pb)) = (
-            nacre_tip::vertex_pt3(model, a),
-            nacre_tip::vertex_pt3(model, v),
-            nacre_tip::vertex_pt3(model, b),
-        ) else {
+        let (Node::Seam(a), Node::Seam(b)) = (*it.next().unwrap(), *it.next().unwrap()) else {
             continue;
         };
-        if pt3_base_collinear(&pa, &pv, &pb) {
+        let both_have = |p: usize| a.contains(&p) && b.contains(&p);
+        // On the line named by some pair of the node's planes ⇒ collinear straight-through vertex.
+        if (both_have(t[0]) && both_have(t[1]))
+            || (both_have(t[0]) && both_have(t[2]))
+            || (both_have(t[1]) && both_have(t[2]))
+        {
             drop.insert(node);
         }
     }
