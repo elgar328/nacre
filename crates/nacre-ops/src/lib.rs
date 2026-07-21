@@ -293,12 +293,11 @@ pub(crate) mod tag {
     /// `∂f`. Nothing checked it. `point_in_ring` does, exactly: the ray's line meets an edge
     /// at `X`, and `X == v` strictly inside that edge means `v` is on the ring. Unfired.
     pub const POINT_ON_RING: &str = "point_on_ring";
-    /// The trace arrangement on one plane class nested more than one hole in a single face, or a
-    /// hole whose containment depth exceeds one, or produced more than one unbounded contour
-    /// (several disjoint bodies on the plane). The single-hole cell (`nest_cells`) resolves one
-    /// inner loop inside one outer loop; anything richer is honestly rejected until the general
-    /// nesting cell lands. Three distinct tags so a refactor cannot silently merge the conditions.
-    pub const HOLE_MULTI: &str = "hole_multi";
+    /// The trace arrangement on one plane class nested a hole whose containment depth exceeds one,
+    /// or produced more than one unbounded contour (several disjoint bodies on the plane).
+    /// `nest_cells` resolves any number of holes at depth one inside one outer loop; deeper nesting
+    /// and multiple bodies are honestly rejected until the general nesting cell lands. Two distinct
+    /// tags so a refactor cannot silently merge the conditions.
     pub const HOLE_DEPTH: &str = "hole_depth";
     pub const HOLE_ROOTS: &str = "hole_roots";
     /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
@@ -14378,17 +14377,15 @@ pub mod tests {
 
         assert_eq!(panic, 0, "trace panicked (an un-honest reject): {notes:?}");
         assert_eq!(trace_wrong, 0, "trace is silently wrong on: {notes:?}");
-        // Measured 2026-07-21 after moving the on-plane identity short-circuit into t_orient3d's
-        // axis path (a point on its own defining plane has orient exactly 0, but the f64 axis
-        // predicate rounded it to ±1 for non-representable coords like 0.6): agree 39, trace_gap 3,
-        // wrong/panic/prod_only_err/both_err 0. l_and_staple graduated (its notch-top graze is now
-        // detected). Floor at the measured 39: a drop means trace regressed a handled case; a gap
-        // graduating only raises it.
-        // ★ Roadmap: the 3 remaining gaps are all u_and_slab (nest_cells HOLE_MULTI — the U's two
-        // prongs are two holes in the slab's one face); multi-hole faces are the next capability.
+        // Measured 2026-07-21 after nest_cells learned multi-hole faces (dropping the HOLE_MULTI
+        // reject — the U's two prongs are two holes in the slab's one face): agree 42, trace_gap 0,
+        // wrong/panic/prod_only_err/both_err 0. u_and_slab graduated. **The whole corpus now agrees
+        // with production** — the cutover threshold: every two-solid fixture × 3 ops matches on
+        // volume+area+manifold+solid-count. Floor at the measured 42 (the maximum): any drop is a
+        // regression.
         assert!(
-            agree >= 39,
-            "only {agree} agreements (was 39); trace regressed a handled case: {notes:?}"
+            agree >= 42,
+            "only {agree} agreements (was 42, the whole corpus); trace regressed a case: {notes:?}"
         );
     }
 

@@ -833,10 +833,11 @@ struct Nesting {
     holes: HashMap<usize, Vec<usize>>,
 }
 
-/// Classify every cell as root / hole / plain `+1` (see [`Nesting`]). Single-hole scope: more than
-/// one hole in one face (`HOLE_MULTI`), a hole nested deeper than one level (`HOLE_DEPTH`), or more
-/// than one unbounded contour — several disjoint bodies on the plane — (`HOLE_ROOTS`) are honest
-/// rejects, each a distinct tag so a refactor cannot silently merge them.
+/// Classify every cell as root / hole / plain `+1` (see [`Nesting`]). A face may carry **any number
+/// of holes** (`holes[host]` is a list — e.g. a slab pierced by a U's two prongs). Still out of
+/// scope, each an honest reject with a distinct tag: a hole nested deeper than one level
+/// (`HOLE_DEPTH`), or more than one unbounded contour — several disjoint bodies on the plane —
+/// (`HOLE_ROOTS`).
 fn nest_cells(
     planes: &[PlaneInfo],
     wc: usize,
@@ -899,9 +900,6 @@ fn nest_cells(
     }
     if roots.len() != 1 {
         return Err(reject(tag::HOLE_ROOTS)); // several disjoint bodies on one plane
-    }
-    if holes.values().any(|hs| hs.len() > 1) {
-        return Err(reject(tag::HOLE_MULTI)); // more than one hole in one face
     }
     let group_of: Vec<usize> = (0..n).map(|i| find(&mut parent, i)).collect();
     let root_group = group_of[roots[0]];
@@ -2330,6 +2328,90 @@ mod tests {
             faces.iter().filter(|f| !f.inner.is_empty()).count(),
             2,
             "exactly the two annular caps carry a hole"
+        );
+
+        // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
+        let triples = |ns: &[crate::Node]| -> Vec<[usize; 3]> {
+            ns.iter()
+                .map(|n| match n {
+                    crate::Node::Seam(t) => *t,
+                    _ => unreachable!("all-Seam"),
+                })
+                .collect()
+        };
+        let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
+        for f in &faces {
+            for ring in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+                let ns = triples(ring);
+                for w in ns
+                    .windows(2)
+                    .chain(std::iter::once(&[ns[ns.len() - 1], ns[0]][..]))
+                {
+                    let key = if w[0] < w[1] {
+                        (w[0], w[1])
+                    } else {
+                        (w[1], w[0])
+                    };
+                    *count.entry(key).or_insert(0) += 1;
+                }
+            }
+        }
+        assert!(
+            count.values().all(|&c| c == 2),
+            "every edge used exactly twice (closed shell): {:?}",
+            count.iter().filter(|(_, c)| **c != 2).collect::<Vec<_>>()
+        );
+    }
+
+    /// Multi-hole lock: a slab fused with a U (its two prongs pierce the slab) emits exactly one
+    /// face with **two** inner rings — the y=2 slab annulus, holed by both prongs — and every
+    /// undirected edge across all rings is used exactly twice (closed shell). This exercises
+    /// `nest_cells`' multi-hole support (the dropped `HOLE_MULTI` reject).
+    #[test]
+    fn u_slab_fuse_emits_a_two_hole_face() {
+        let u_profile = Profile2d {
+            points: vec![
+                Point2::from_array([0.0, 0.0]),
+                Point2::from_array([3.0, 0.0]),
+                Point2::from_array([3.0, 2.3]),
+                Point2::from_array([2.0, 2.3]),
+                Point2::from_array([2.0, 1.0]),
+                Point2::from_array([1.0, 1.0]),
+                Point2::from_array([1.0, 2.0]),
+                Point2::from_array([0.0, 2.0]),
+            ],
+        };
+        let mut m = replay(&[Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile: u_profile,
+            dist: 1.0,
+        }])
+        .unwrap();
+        let u = m.live_solids[0];
+        let slab = m.add_cuboid(
+            Point3::from_array([-0.5, 1.5, -0.5]),
+            Point3::from_array([3.5, 2.5, 1.5]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, u, slab).unwrap();
+        let faces = trace_result_faces(
+            &m,
+            BoolKind::Fuse,
+            u,
+            slab,
+            &planes,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &canon,
+        )
+        .unwrap();
+
+        // Exactly one face carries two inner rings: the y=2 slab annulus, holed by both prongs.
+        assert_eq!(
+            faces.iter().filter(|f| f.inner.len() == 2).count(),
+            1,
+            "the slab face on y=2 has two holes (the U's two prongs)"
         );
 
         // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
