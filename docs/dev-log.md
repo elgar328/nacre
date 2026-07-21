@@ -1439,3 +1439,26 @@ base_top[0,1]² vs prism_top[0.5,1.5]×[0.25,0.75], 2 proper crossing @(1,0.25)/
 **잠금(측정은 사라져도 남는 것):** ① **`boolean_topology_is_the_same_on_untidy_coordinates`** — 같은 형상을 정수 치수와 비표현 실수 치수로 만들어 **face/edge/vertex/cavity 수가 동일**하고 각자 부피 공식과 일치함을 단언(원리를 잡는 그물: red면 판정이 또 파생 f64를 읽는다는 뜻); ② `one_plane_is_one_class_whatever_the_face_size` — 두 +X 벽이 한 클래스이면서 **계수 판정은 여전히 false**임을 함께 박아 "무엇이 그 병합을 벌었는가"를 테스트가 직접 말하게 함; ③ `t_planes_coplanar_guards_degeneracy_and_survives_rotation`(퇴화 tri → false, 회전 불변, 그리고 큐보이드 6면이 서로 안 병합돼 공허하지 않음). ④ `stacked_boxes_merge_volumes`의 `prop_assume!(rf.is_ok())`를 **`expect`로 승격** — 맞댄 적층은 어떤 치수에서도 커버리지 안이므로 거절은 결함이지 무관한 샘플이 아니다(이 `prop_assume!`가 커널이 2%에서 abort하고 95%를 거절하는 동안 프로퍼티를 통과시켰다).
 
 **남은 것(정직 기록):** `stacked_boxes_merge_volumes`는 이제 **Common == EmptyResult 단언에서만** red — `no_outward_shell` 6건과 같은 **EmptyResult 의미론** 계열이고 다음 후보다(결과 면 0개면 `EmptyResult`여야; 덤으로 disjoint Fuse는 이제 2솔리드가 참값이라 `boolean_one`이 터진다 = 능력 상승, 테스트 재작성 대상). **감사에서 새로 나온 위반 후보:** `is_shell_outward`(lib.rs:1651)가 outer/cavity 판정의 증인으로 **f64 좌표의 사전식 최소 정점**을 고른다 — Discovered 좌표는 반올림이라 근소 차에서 증인이 뒤바뀔 수 있고, `no_outward_shell` 계열과 무관하지 않을 수 있다. `find_face_on_plane`(1176)도 같은 계수 취약점. 둘 다 별도 셀. 게이트: fmt·clippy 36 유지(양 feature)·릴리스에서도 잠금 green.
+
+**★ (감사) 불리언 판정의 exactness 대장 — f64를 읽는 라이브 지점 전수 분류.** family#3이 판정 둘을 exact로 되돌린 뒤, *"부울 연산이 f64에 의존하는 데가 또 있는가"* 를 추측이 아니라 목록으로 답한다. 방법: `lib.rs`(테스트 앞 라이브 영역)·`trace.rs`(1-1319)·`arrange.rs`(전체)·`tolerant.rs`(1-261)에서 부동소수 비교·내적·외적·정규화·좌표 정렬을 전수 grep하고 각 지점을 읽어 분류했다. **분류 기준: (A) 판정인데 파생 f64를 읽음 = 위반 / (B) 판정이지만 증명 가능한 여유 / (C) 캐시·출력(판정 아님) / (D) 진단 가드.**
+
+| 지점 | 읽는 값 | 정하는 것 | 분류 |
+|---|---|---|---|
+| `shares_or_coplanar` 계수 분기(lib.rs) | `coefficients()` | 평면 동일성 | **(A)→해소**: family#3이 좌표 분기를 OR로 추가(계수 분기는 남아도 OR이라 거짓 병합 불가) |
+| `edge_for`(lib.rs ~2204) | 정점 좌표 동일성 | 모서리 생성 가부 | **(A)→해소**: `ZERO_LENGTH_EDGE` 거절로 강등(패닉 제거) |
+| `SEAM_ALIAS`(trace.rs) | 두 triple의 좌표 일치 | *결함 검출* | **(D)** 알람. 한계 명시: 정확히 붕괴한 경우만 잡고 1 ulp 차이는 못 잡는다 |
+| `orient_sign`(arrange.rs:224) | `normal·n_out` | 클래스 프레임 부호 | **(B)** 평행 단위벡터라 \|·\|≈1(`debug_assert(>0.5)`), `face.orientation`과 조합적 동치 |
+| `body_above`(trace.rs:357) | `n_out·n_W` | seated 면의 몸통 쪽 | **(B)** 같은 형태 |
+| `unify_coplanar_faces` same-normal | `n_out·n_out` | 두 면 병합 여부 | **(B)** canon으로 이미 공면 ⇒ 평행 ±1 |
+| `outer_tri`(lib.rs:1911-1928) | `cross.norm()>0`, `dot(newell)<0` | 증인 3점 + tri 감김(=n_out 부호) | **(B)** 단, 슬리버 면에서 여유가 줄어드는 유일한 (B). 새 `t_planes_coplanar`의 비공선 전제가 여기 기댄다 |
+| `collect_planes`의 `n_out`(1863) | `cross().normalize()` | — | **(B)** 파생이지만 소비처가 전부 ±1 부호 판정 |
+| `is_shell_outward`(1651-1699) | 사전식 최소 정점 + 계수 x부호 | outer/cavity | **(B)** — 아래 실측 |
+| `comp_key`(1631) | 정점 좌표 정렬 | 다중 솔리드 **출력 순서** | **(C)** 독스트링대로 "no judgment reads this" |
+| `three_planes` materialize·`vertex_tol` | — | 좌표 캐시·tol 측정 | **(C)** |
+| `find_face_on_plane`(1189) | 계수 비례 + `dot>0` | pocket 바닥 면 찾기 | **(A′)** 아래 |
+
+**★ `is_shell_outward`는 논증이 아니라 측정으로 (B)로 확정했다.** 우려는 "증인(사전식 최소 정점)을 반올림된 Discovered 좌표로 고른다"였는데, 판정이 실제로 의존하는 것은 **어느 *평면*이 극단인가**이고 그 극단 평면 위 어느 정점을 골라도 ∃-테스트(−x 향한 면이 있는가)의 답이 같다 — 여유는 정점 간격이 아니라 **평면 분리**다. 실측: **비표현 실수 좌표의 랜덤 중첩 박스 200쌍 Cut에서 cavity 판정 200/200 정확**(부피·validate 동시 확인, 오답 0·거절 0). 회전은 애초에 `component_is_outward_tol`로 라우팅된다.
+
+**★ `find_face_on_plane`만 (A′)로 남는다 — 불리언 경로 밖(pocket 바닥 찾기)이고, "구조적으로 취약하나 현재는 우연이 아니라 *같은 점*을 써서 정확".** `target = from_point_normal(cap_pt, n)`(raw=단위 n)와 후보 면의 저장 평면이 비례해야 하는데, `d = −n·origin`은 평면 위 **어느 점**을 쓰느냐에 따라 반올림이 갈린다. 지금 통하는 이유는 `cap_pt`가 extrude가 그 면을 만들 때 쓴 바로 그 점이라 `d`가 비트까지 같기 때문이다(`prop_pocket_stays_valid`가 랜덤 실수 치수에서 통과하는 것이 증거). 즉 **계산 경로가 조금만 달라져도 깨지는 형태**이므로 같은 좌표 술어로 옮기는 것이 다음 후보다.
+
+**결론(질문에 대한 답): family#3 이후 불리언 경로에 남은 (A) 위반은 0이다.** 남은 f64 읽기는 전부 ±1 여유의 부호 판정(B), 캐시·출력 순서(C), 알람(D)이며, 유일한 (A′)는 불리언 밖의 `find_face_on_plane`이다. 다만 **(B)가 "안전"인 근거는 여유의 크기이지 정확성이 아니다** — `outer_tri`의 슬리버 면이 그중 여유가 가장 얇고, 조합적으로 대체 가능한 것(`orient_sign` ↔ `face.orientation`)은 그렇게 바꿔 두면 (B)조차 줄일 수 있다. 이 표는 이후 f64 비교가 새로 들어올 때 대조 기준이다.
