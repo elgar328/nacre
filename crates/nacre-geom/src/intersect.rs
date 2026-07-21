@@ -187,12 +187,22 @@ pub fn three_plane_cmp_coord(a: [&Plane; 3], b: [&Plane; 3], axis: usize) -> i8 
 /// `det[nA; nB; nC] = nA · (nB × nC) = (nA × nB) · nC`. Not an f64 dot product —
 /// the sign of a decision, so it belongs to the predicate side of the precision
 /// split (design §3).
+///
+/// **Reads the rows from [`Plane::coefficients`] (the un-normalized `raw`), not [`Plane::normal`].**
+/// `raw` is a positive multiple of `normal`, and a determinant's sign is invariant under scaling
+/// each row by a positive factor, so this is the *same* function either way — except that `normal`
+/// is `raw / ‖raw‖`, and that division rounds each component differently, which can destroy an exact
+/// cancellation. Two exactly-parallel walls of a slanted prism have `raw` rows that are exact
+/// negatives (`det = 0`), but their unit rows round to `det = ±1`; the guard then admitted a triple
+/// its own consumer ([`three_plane_orient3d`], also on `coefficients`) rejects as `D = 0`, aborting.
+/// Feeding the guard the same `raw` the consumer reads keeps the two in lockstep. (Measured
+/// 2026-07-22; the invariant is already stated on `Plane`: exact predicates take `coefficients`.)
 pub fn plane_pair_dir_sign(a: &Plane, b: &Plane, c: &Plane) -> i8 {
-    nacre_predicates::det3_sign([
-        a.normal().as_array(),
-        b.normal().as_array(),
-        c.normal().as_array(),
-    ])
+    let row = |p: &Plane| {
+        let [x, y, z, _] = p.coefficients();
+        [x, y, z]
+    };
+    nacre_predicates::det3_sign([row(a), row(b), row(c)])
 }
 
 /// Whether `a` and `b` are the **same plane** — coplanar, exactly.
@@ -454,6 +464,47 @@ mod tests {
             };
             assert_eq!(dot_sign, expect, "plane_plane's direction disagrees");
         }
+    }
+
+    /// The two anti-parallel side walls of a `(1,1,1)`-slanted prism, as they actually came off
+    /// `build_prism` (measured 2026-07-22). Their `raw` rows sum to an exact zero in the 2×2 minors,
+    /// so `det = 0` against any third plane — but the `sqrt`-rounded **unit** rows do not, and the
+    /// old `normal()`-based predicate returned `±1`, admitting a triple its consumer rejects as
+    /// `D = 0`. Pinned with the real coefficients so a regression to `normal()` fails with the
+    /// reason attached. `raw` is set verbatim via `from_point_normal` (which stores its argument as
+    /// `raw`); the origin is irrelevant here (the predicate reads only the normal rows).
+    #[test]
+    fn parallel_planes_stay_degenerate_after_normalization() {
+        let p = |raw: [f64; 3]| {
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array(raw)).unwrap()
+        };
+        let a = p([
+            -2.220446049250313e-16,
+            -2.828427124746191,
+            2.8284271247461907,
+        ]);
+        let b = p([0.0, 2.8284271247461907, -2.8284271247461907]);
+        // A third, independent plane (the prism's tilted cap direction).
+        let c = p([
+            -0.5773502691896258,
+            -0.5773502691896258,
+            -0.5773502691896258,
+        ]);
+        assert_eq!(
+            plane_pair_dir_sign(&a, &b, &c),
+            0,
+            "anti-parallel walls have no well-conditioned common line — det is exactly 0"
+        );
+        // The bug this pins: the unit-normal determinant does NOT vanish.
+        let unit_det = nacre_predicates::det3_sign([
+            a.normal().as_array(),
+            b.normal().as_array(),
+            c.normal().as_array(),
+        ]);
+        assert_ne!(
+            unit_det, 0,
+            "sanity: normalized normals round the exact zero away — the reason we read coefficients"
+        );
     }
 
     #[test]

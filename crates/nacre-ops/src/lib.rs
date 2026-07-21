@@ -6728,6 +6728,82 @@ pub mod tests {
         }
     }
 
+    /// A prism raised on a `(1,1,1)`-slanted sketch plane, its far cap holding a blind pocket. The
+    /// cap and its two anti-parallel side walls meet in a triple whose `raw` coefficients are
+    /// exactly dependent (`det = 0`); before family #3's dir-sign fix the guard read `sqrt`-rounded
+    /// unit normals, called that triple non-degenerate, and the consumer aborted on `D = 0`. Now
+    /// the guard reads the same coefficients the consumer does, so the arrangement runs. Volume:
+    /// a `2×2` base × `2` deep block is `8`, less the `0.4²×0.5` pocket.
+    #[test]
+    fn a_pocket_on_a_slanted_face() {
+        let plane =
+            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
+                .unwrap();
+        let mut m = Model::new();
+        let big = Profile2d {
+            points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
+        };
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane,
+                profile: big,
+                dist: 2.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let out = apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap();
+        let OpOutput::PocketOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
+        assert!((vol - (8.0 - 0.16 * 0.5)).abs() < 1e-9, "volume {vol}");
+    }
+
+    /// The same slanted cap, but a boss (pad, Fuse) instead of a pocket — the sweep runs the other
+    /// way, a different code path. Volume: the `8` block plus a `0.4²×0.5` stub.
+    #[test]
+    fn a_pad_on_a_slanted_face() {
+        let plane =
+            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
+                .unwrap();
+        let mut m = Model::new();
+        let big = Profile2d {
+            points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
+        };
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane,
+                profile: big,
+                dist: 2.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let out = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: faces[1],
+                profile: small_square(),
+                dist: 0.5,
+            },
+        )
+        .unwrap();
+        let OpOutput::PadOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
+        assert!((vol - (8.0 + 0.16 * 0.5)).abs() < 1e-9, "volume {vol}");
+    }
+
     #[test]
     fn pocket_on_cube_top() {
         let (mut m, top) = cube_with_top();
@@ -6858,6 +6934,45 @@ pub mod tests {
             .unwrap();
             prop_assert!(nacre_validate::validate(&m).is_empty());
             prop_assert_eq!(m.faces.len(), n + 2);
+        }
+
+        /// A blind pocket on a randomly-slanted face: the arrangement must give a valid solid of the
+        /// right volume or reject honestly — **never panic**. Drives general (non-axis) plane normals
+        /// through the dir-sign guard and the `angular_order`/`turn_at` consumers that read its zeros.
+        ///
+        /// **`#[ignore]`: still panics on a *different* `D = 0` branch** — measured (2026-07-22) the
+        /// residual is a triple naming one geometric plane with two coincident faces
+        /// (`coincident_pair == true`), the P-B family, not the dir-sign guard this cell fixed.
+        /// Symmetric normals like `(1,1,1)` clear it (see `a_pocket_on_a_slanted_face`, which
+        /// passes); a general normal like `(0.446, 0.737, 0.990)` does not. Un-ignore when the P-B
+        /// vertex-naming cell lands.
+        #[test]
+        #[ignore = "residual P-B coincident-face D=0 panic on general normals; see docstring"]
+        fn pocket_on_a_random_slanted_face_is_valid_or_rejects(
+            nx in -1.0f64..1.0,
+            ny in -1.0f64..1.0,
+            nz in 0.2f64..1.0, // keep the normal clear of the sketch's degenerate zero
+        ) {
+            let normal = Vector3::from_array([nx, ny, nz]);
+            prop_assume!(normal.norm() > 0.3);
+            let plane = SketchPlane::from_origin_normal(Point3::origin(), normal).unwrap();
+            let mut m = Model::new();
+            let big = Profile2d {
+                points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
+            };
+            let OpOutput::Extrude { faces, .. } =
+                apply(&mut m, &Operation::Extrude { plane, profile: big, dist: 2.0 }).unwrap()
+            else { unreachable!() };
+            match apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)) {
+                Ok(OpOutput::PocketOnFace { solid, .. }) => {
+                    m.rebuild_adjacency();
+                    prop_assert!(nacre_validate::validate(&m).is_empty());
+                    let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
+                    prop_assert!((vol - (8.0 - 0.16 * 0.5)).abs() <= 1e-9 * 8.0, "volume {}", vol);
+                }
+                Ok(_) => prop_assert!(false, "unexpected op output"),
+                Err(_) => {} // an honest reject is acceptable; a panic is not (and would fail the test)
+            }
         }
 
         /// A random box, then a small centred square imprinted on its top face,
