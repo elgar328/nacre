@@ -624,6 +624,151 @@ fn angular_order(planes: &[PlaneInfo], w: usize, edges: &[(usize, i8)]) -> Vec<u
     out
 }
 
+/// One face of the arrangement: the cyclic list of half-edges bounding it, and its winding
+/// (`+1` a bounded island, `-1` the unbounded outer contour).
+#[derive(Clone, Debug)]
+pub(crate) struct Cell {
+    pub half_edges: Vec<usize>,
+    pub winding: i8,
+}
+
+/// Number of connected components of the 1-skeleton (union-find over vertex triples joined by each
+/// segment). The `-1`-winding face count must equal this.
+fn component_count(segs: &[MergedSeg]) -> usize {
+    let mut idx: HashMap<[usize; 3], usize> = HashMap::new();
+    let mut id = |t: [usize; 3], parent: &mut Vec<usize>| -> usize {
+        let n = idx.len();
+        *idx.entry(t).or_insert_with(|| {
+            parent.push(n);
+            n
+        })
+    };
+    let mut parent: Vec<usize> = Vec::new();
+    fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+    for s in segs {
+        let (a, b) = (id(s.end[0], &mut parent), id(s.end[1], &mut parent));
+        let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+        parent[ra] = rb;
+    }
+    (0..parent.len())
+        .filter(|&i| find(&mut parent, i) == i)
+        .count()
+}
+
+/// Extract the arrangement's cells (faces) from the split 1-skeleton by a DCEL face-walk. Returns
+/// the cells plus `face_of[he] = cell index`, which the label brick uses to reach a neighbour cell
+/// across an edge as `face_of[twin(he)]`.
+///
+/// Half-edge encoding: segment `i` gives `he = 2i` (forward, `end[0]→end[1]`) and `2i+1` (reverse);
+/// `twin(he) = he ^ 1`. `next` is set per vertex from `angular_order`: a half-edge arriving at `v`
+/// leaves as `twin`, and `next` is `twin`'s **one-step** neighbour in the cyclic order. The step
+/// direction (predecessor vs successor) is `angular_order`'s handedness — unknown up front, so both
+/// are tried and the one giving exactly `component_count` faces of winding `-1` is kept.
+fn extract_cells(
+    planes: &[PlaneInfo],
+    wc: usize,
+    segs: &[MergedSeg],
+) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
+    let n = segs.len();
+    let he_count = 2 * n;
+    let origin = |he: usize| segs[he / 2].end[he % 2]; // he%2==0: end[0]; ==1: end[1]
+    let target = |he: usize| segs[he / 2].end[1 - he % 2];
+    let wall = |he: usize| segs[he / 2].wall;
+
+    // Outgoing half-edges per vertex.
+    let mut outgoing: HashMap<[usize; 3], Vec<usize>> = HashMap::new();
+    for he in 0..he_count {
+        outgoing.entry(origin(he)).or_default().push(he);
+    }
+
+    // For each vertex, the cyclic order of its outgoing half-edges (indices into its `outs` list).
+    let mut cyclic: HashMap<[usize; 3], (Vec<usize>, Vec<usize>)> = HashMap::new();
+    for (&v, outs) in &outgoing {
+        let mut edges = Vec::with_capacity(outs.len());
+        for &he in outs {
+            let (rv, rf) = (
+                endpoint_third(origin(he), wc, wall(he))
+                    .ok_or_else(|| reject(tag::THREE_PLANES))?,
+                endpoint_third(target(he), wc, wall(he))
+                    .ok_or_else(|| reject(tag::THREE_PLANES))?,
+            );
+            // Direction sign away from v toward the far end (edge_sign convention).
+            let s = arrange::order_along(planes, wc, wall(he), rf, rv);
+            if s == 0 {
+                return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+            }
+            edges.push((wall(he), s));
+        }
+        let ord = angular_order(planes, wc, &edges);
+        cyclic.insert(v, (outs.clone(), ord));
+    }
+
+    let components = component_count(segs);
+
+    // Try both step directions (predecessor / successor); keep the one whose bounded/outer split
+    // is right. Handedness is fixed by `orient_sign(w)` and unknown up front.
+    for predecessor in [true, false] {
+        let mut next = vec![usize::MAX; he_count];
+        for (outs, ord) in cyclic.values() {
+            let len = ord.len();
+            let step = if predecessor { len - 1 } else { 1 };
+            for (local, &he_out) in outs.iter().enumerate() {
+                let incoming = he_out ^ 1; // twin arrives at this vertex
+                let pos = ord.iter().position(|&x| x == local).unwrap();
+                next[incoming] = outs[ord[(pos + step) % len]];
+            }
+        }
+
+        // Walk next-orbits into faces.
+        let mut face_of: HashMap<usize, usize> = HashMap::new();
+        let mut cells: Vec<Cell> = Vec::new();
+        let mut ok = true;
+        for start in 0..he_count {
+            if face_of.contains_key(&start) {
+                continue;
+            }
+            let mut cyc = Vec::new();
+            let mut he = start;
+            loop {
+                if face_of.contains_key(&he) {
+                    ok = false;
+                    break;
+                }
+                face_of.insert(he, cells.len());
+                cyc.push(he);
+                he = next[he];
+                if he == usize::MAX || cyc.len() > he_count {
+                    ok = false;
+                    break;
+                }
+                if he == start {
+                    break;
+                }
+            }
+            if !ok || cyc.len() < 3 {
+                ok = false;
+                break;
+            }
+            let ring: Vec<[usize; 3]> = cyc.iter().map(|&h| origin(h)).collect();
+            let w = arrange::loop_winding(planes, wc, &ring)?;
+            cells.push(Cell {
+                half_edges: cyc,
+                winding: w,
+            });
+        }
+        if ok && cells.iter().filter(|c| c.winding == -1).count() == components {
+            return Ok((cells, face_of));
+        }
+    }
+    Err(reject(tag::LOOP_ORIENT_MISMATCH))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1160,6 +1305,68 @@ mod tests {
         assert!(
             overlap,
             "a's x∈[0,2] and b's x∈[1,3] on y=1 overlap — must be flagged"
+        );
+    }
+
+    /// DCEL face-walk on the cross: 6 cells (1 outer + 5 bounded), exactly one winding -1, and the
+    /// center square is the unique cell with 2 A-edges + 2 B-edges. All checkable without labels.
+    #[test]
+    fn the_cross_arrangement_has_six_cells() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 1.0, 0.0]),
+            Point3::from_array([3.0, 2.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let merged = merge_coincident(&tr.segs);
+        let (split, _) = split_at_crossings(&planes, wc, &merged).unwrap();
+
+        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
+        assert_eq!(cells.len(), 6, "1 outer + 5 bounded: {}", cells.len());
+        assert_eq!(
+            cells.iter().filter(|c| c.winding == -1).count(),
+            1,
+            "exactly one outer (winding -1)"
+        );
+        assert_eq!(
+            cells.iter().filter(|c| c.winding == 1).count(),
+            5,
+            "five bounded (winding +1)"
+        );
+        // Every half-edge belongs to exactly one cell.
+        assert_eq!(face_of.len(), 2 * split.len(), "2E half-edges all placed");
+
+        // The center square [1,2]²: the unique bounded cell with 2 A-edges and 2 B-edges. (a and b
+        // ride disjoint walls, so there are no both-solid edges — provenance, not coincidence.)
+        let solids_of = |he: usize| -> Vec<SolidSide> {
+            split[he / 2].merged.iter().map(|(sd, _)| *sd).collect()
+        };
+        let mut center = 0;
+        for c in cells.iter().filter(|c| c.winding == 1) {
+            let (mut na, mut nb) = (0, 0);
+            for &he in &c.half_edges {
+                let s = solids_of(he);
+                if s.contains(&SolidSide::A) {
+                    na += 1;
+                }
+                if s.contains(&SolidSide::B) {
+                    nb += 1;
+                }
+            }
+            if na == 2 && nb == 2 {
+                center += 1;
+            }
+        }
+        assert_eq!(
+            center, 1,
+            "exactly one center square (2 A-edges + 2 B-edges)"
         );
     }
 
