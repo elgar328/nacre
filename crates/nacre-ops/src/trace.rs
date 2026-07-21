@@ -96,9 +96,10 @@ struct Node {
 
 /// Trace one **transversal or mixed** face `f` (plane `fp ≠ W`) onto plane class `wc`, as the
 /// segments where `f` meets `W`. This is 2D polygon-vs-line clipping on `L = W ∩ fp`, handling
-/// on-line edges (a run of `side == 0` vertices) instead of rejecting them the way
-/// `section_of_solid` does. Holes are declined this brick (a forced-covered run inside a hole
-/// would wrongly claim the hole's void as material, and the corpus has no case to verify it).
+/// on-line edges (a run of `side == 0` vertices) instead of rejecting them the way the old
+/// `section_of_solid` did. A **holed** face is handled by scanning its inner rings into the same
+/// node list: each hole's two crossings of `L` toggle the parity sweep back to void between them,
+/// carving the hole out of the emitted chord.
 ///
 /// Every emitted segment rides `wall = fp` (its line is `W ∩ fp`); the side walls appear only as
 /// the third plane naming each endpoint. `mat = orient_sign(fp)` is a per-face constant.
@@ -114,26 +115,14 @@ fn trace_transversal_face(
     canon: &[usize],
     out: &mut Trace,
 ) {
-    if arrange::hole_rings(model, fh, fp, inc).is_ok_and(|h| !h.is_empty()) {
-        out.declined.push((fp, "has-holes"));
-        return;
-    }
-    let ring = match arrange::face_vertex_triples(model, fh, fp, inc) {
+    let outer = match arrange::face_vertex_triples(model, fh, fp, inc) {
         Ok(r) => r,
         Err(_) => {
             out.declined.push((fp, "outer-ring"));
             return;
         }
     };
-    let n = ring.len();
-    let side: Vec<i8> = (0..n)
-        .map(|i| arrange::side_of(planes, ring[i], wc))
-        .collect();
-    let Some(start) = side.iter().position(|&s| s != 0) else {
-        // A face off `W` cannot have every vertex on `W`; if it does, do not guess.
-        out.declined.push((fp, "all-on-plane"));
-        return;
-    };
+    let holes = arrange::hole_rings(model, fh, fp, inc).unwrap_or_default();
 
     // `L`'s third plane naming a point of the on-line edge: the vertex triple `{fp, W-class, r}`.
     let third_on_l = |t: [usize; 3]| -> Option<usize> {
@@ -150,85 +139,100 @@ fn trace_transversal_face(
         (has_fp && has_w).then_some(r).flatten()
     };
 
-    // Phase A — one pass around the ring collecting feature nodes.
+    // Phase A — scan the outer ring and every hole ring, collecting feature nodes into ONE list.
+    // A hole ring keeps its stored CW winding, but the Phase-A predicates are winding-agnostic; the
+    // parity sweep (Phase C) then carves the hole because its two crossings of `L` toggle parity
+    // back to void between them. A ring that does not meet `W` (every vertex one side) yields no
+    // nodes; `run_counter` is shared so run ids stay unique across rings.
     let mut nodes: Vec<Node> = Vec::new();
     let mut run_counter = 0usize;
     let mut declined: Option<&'static str> = None;
-    let mut j = 0;
-    while j < n {
-        let i = (start + j) % n;
-        if side[i] != 0 {
-            let ni = (i + 1) % n;
-            if side[ni] != 0 && side[ni] != side[i] {
-                // Strict crossing on edge i; its wall is the plane the edge rides besides fp.
-                match arrange::ring_edge(fp, &ring, i) {
-                    Ok((wall, _, _)) => nodes.push(Node {
-                        r: wall,
-                        flip: true,
-                        run: None,
-                        flanks_differ: false,
-                        single_touch: false,
-                        graze_above: None,
-                    }),
-                    Err(_) => declined = Some("crossing-name"),
-                }
-            }
-            j += 1;
-        } else {
-            // A maximal run of side==0 vertices (at most two, since three would be a straight
-            // angle already rejected by `loop_triples`).
-            let run_start = i;
-            let mut m = 0;
-            while j < n && side[(start + j) % n] == 0 {
-                m += 1;
-                j += 1;
-            }
-            let before = side[(run_start + n - 1) % n];
-            let after = side[(start + j) % n];
-            let flanks_differ = before != after;
-            let name = |k: usize| third_on_l(ring[(run_start + k) % n]);
-            if m == 1 {
-                match name(0) {
-                    Some(r) => nodes.push(Node {
-                        r,
-                        flip: flanks_differ,
-                        run: None,
-                        flanks_differ,
-                        single_touch: !flanks_differ,
-                        // A single-vertex tangential touch is a point (`touches`), never a graze
-                        // segment; a flank-differing single vertex is a strict crossing.
-                        graze_above: None,
-                    }),
-                    None => declined = Some("run-name"),
-                }
-            } else if m == 2 {
-                let id = run_counter;
-                run_counter += 1;
-                // Flanks on the same side ⇒ the face grazes W along this edge with its body on
-                // that side (`before > 0` ⇒ +n_out(wc) side ⇒ above). Flanks differing ⇒ the face
-                // crosses through ⇒ a true transversal, not a graze.
-                let graze_above = (!flanks_differ).then_some(before > 0);
-                match (name(0), name(1)) {
-                    (Some(ra), Some(rb)) => {
-                        for r in [ra, rb] {
-                            nodes.push(Node {
-                                r,
-                                flip: false,
-                                run: Some(id),
-                                flanks_differ,
-                                single_touch: false,
-                                graze_above,
-                            });
-                        }
-                    }
-                    _ => declined = Some("run-name"),
-                }
-            } else {
-                declined = Some("long-run");
-            }
-        }
-        if declined.is_some() {
+    'rings: for ring in std::iter::once(&outer).chain(holes.iter()) {
+        let n = ring.len();
+        let side: Vec<i8> = (0..n)
+            .map(|i| arrange::side_of(planes, ring[i], wc))
+            .collect();
+        let Some(start) = side.iter().position(|&s| s != 0) else {
+            // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
+            declined = Some("all-on-plane");
             break;
+        };
+        let mut j = 0;
+        while j < n {
+            let i = (start + j) % n;
+            if side[i] != 0 {
+                let ni = (i + 1) % n;
+                if side[ni] != 0 && side[ni] != side[i] {
+                    // Strict crossing on edge i; its wall is the plane the edge rides besides fp.
+                    match arrange::ring_edge(fp, ring, i) {
+                        Ok((wall, _, _)) => nodes.push(Node {
+                            r: wall,
+                            flip: true,
+                            run: None,
+                            flanks_differ: false,
+                            single_touch: false,
+                            graze_above: None,
+                        }),
+                        Err(_) => declined = Some("crossing-name"),
+                    }
+                }
+                j += 1;
+            } else {
+                // A maximal run of side==0 vertices (at most two, since three would be a straight
+                // angle already rejected by `loop_triples`).
+                let run_start = i;
+                let mut m = 0;
+                while j < n && side[(start + j) % n] == 0 {
+                    m += 1;
+                    j += 1;
+                }
+                let before = side[(run_start + n - 1) % n];
+                let after = side[(start + j) % n];
+                let flanks_differ = before != after;
+                let name = |k: usize| third_on_l(ring[(run_start + k) % n]);
+                if m == 1 {
+                    match name(0) {
+                        Some(r) => nodes.push(Node {
+                            r,
+                            flip: flanks_differ,
+                            run: None,
+                            flanks_differ,
+                            single_touch: !flanks_differ,
+                            // A single-vertex tangential touch is a point (`touches`), never a graze
+                            // segment; a flank-differing single vertex is a strict crossing.
+                            graze_above: None,
+                        }),
+                        None => declined = Some("run-name"),
+                    }
+                } else if m == 2 {
+                    let id = run_counter;
+                    run_counter += 1;
+                    // Flanks on the same side ⇒ the face grazes W along this edge with its body on
+                    // that side (`before > 0` ⇒ +n_out(wc) side ⇒ above). Flanks differing ⇒ the
+                    // face crosses through ⇒ a true transversal, not a graze.
+                    let graze_above = (!flanks_differ).then_some(before > 0);
+                    match (name(0), name(1)) {
+                        (Some(ra), Some(rb)) => {
+                            for r in [ra, rb] {
+                                nodes.push(Node {
+                                    r,
+                                    flip: false,
+                                    run: Some(id),
+                                    flanks_differ,
+                                    single_touch: false,
+                                    graze_above,
+                                });
+                            }
+                        }
+                        _ => declined = Some("run-name"),
+                    }
+                } else {
+                    declined = Some("long-run");
+                }
+            }
+            if declined.is_some() {
+                break 'rings;
+            }
         }
     }
     if let Some(reason) = declined {
