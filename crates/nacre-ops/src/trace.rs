@@ -857,6 +857,62 @@ fn label_cells(
     Ok(out)
 }
 
+/// The boolean keep predicate on one chamber's `(inA, inB)`.
+fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
+    match kind {
+        BoolKind::Fuse => in_a || in_b,
+        BoolKind::Cut => in_a && !in_b,
+        BoolKind::Common => in_a && in_b,
+    }
+}
+
+/// Emit the result faces on plane class `wc` for a boolean `kind`. A cell is a face of the result
+/// iff its two chambers disagree under `keep` (material on one side of W, void on the other). The
+/// DCEL cell ring is already CCW about `n_out(wc)` (extract_cells stored `winding == +1`), which is
+/// material-on-left for *either* `flip` value, so the ring is emitted verbatim; `flip` alone
+/// carries the chamber, making the result normal point out of the kept solid:
+/// `flip = keep_above == (orient_sign(wc) > 0)`.
+///
+/// **Output contract:** every ring vertex is a `Node::Seam` triple, including triples that coincide
+/// with an original A/B vertex (a cap corner). The abutting wall faces name that point
+/// `Node::Orig`, so the next brick's SeamVertex weld table must canonicalize such a W-triple onto
+/// the same result vertex, or `assemble_fuse_cut`'s manifold guard rejects. This brick emits
+/// all-`Seam`; the reconciliation and assembly are later.
+fn emit_faces(
+    kind: BoolKind,
+    labels: &[Label],
+    cells: &[Cell],
+    segs: &[MergedSeg],
+    planes: &[PlaneInfo],
+    wc: usize,
+) -> Vec<LocalFace> {
+    let mut out = Vec::new();
+    for (c, cell) in cells.iter().enumerate() {
+        let l = labels[c];
+        let keep_above = keep(kind, l[0], l[2]);
+        let keep_below = keep(kind, l[1], l[3]);
+        if keep_above == keep_below {
+            continue; // material the same on both sides ⇒ not a result face here
+        }
+        // A surviving cell is bounded (the all-void outer cell never survives).
+        let ring: Vec<[usize; 3]> = cell
+            .half_edges
+            .iter()
+            .map(|&he| segs[he / 2].end[he % 2])
+            .collect();
+        let flip = keep_above == (arrange::orient_sign(planes, wc) > 0);
+        // `crate::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
+        // three-valued-scan struct) shadows it here.
+        out.push(LocalFace {
+            plane_idx: wc,
+            loop_nodes: ring.into_iter().map(crate::Node::Seam).collect(),
+            inner: Vec::new(),
+            flip,
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1556,6 +1612,139 @@ mod tests {
             labels[inner],
             [true, true, false, true],
             "A straddles both sides; B is one-sided (seated-wins); transversal reached the above-bit"
+        );
+    }
+
+    /// Boolean keep-decision + result-face emission on the cross. Fuse keeps 5 cells (the plus
+    /// cap), Cut a−b keeps the 2 a-arms, Common keeps the 1 center — hand-verified — and the
+    /// emitted loops share interior edges in opposite directions with a consistent winding and a
+    /// flip that points the normal out of the kept solid.
+    #[test]
+    fn boolean_keep_and_result_faces_on_the_cross() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 1.0, 0.0]),
+            Point3::from_array([3.0, 2.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let merged = merge_coincident(&tr.segs);
+        let (split, _) = split_at_crossings(&planes, wc, &merged).unwrap();
+        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
+        let labels = label_cells(&cells, &face_of, &split).unwrap();
+
+        // Centroid of a face's ring (convex cells here).
+        let centroid = |f: &LocalFace| -> [f64; 2] {
+            let ps: Vec<[f64; 3]> = f
+                .loop_nodes
+                .iter()
+                .map(|n| match n {
+                    crate::Node::Seam(t) => pt(*t, &planes),
+                    _ => unreachable!("all-Seam"),
+                })
+                .collect();
+            [
+                ps.iter().map(|p| p[0]).sum::<f64>() / ps.len() as f64,
+                ps.iter().map(|p| p[1]).sum::<f64>() / ps.len() as f64,
+            ]
+        };
+        let near = |c: [f64; 2], x: f64, y: f64| (c[0] - x).abs() < 1e-9 && (c[1] - y).abs() < 1e-9;
+
+        // Fuse: all 5 bounded cells (the plus cap).
+        let fuse = emit_faces(BoolKind::Fuse, &labels, &cells, &split, &planes, wc);
+        assert_eq!(fuse.len(), 5, "Fuse keeps the whole plus cap");
+        // Cut a−b: exactly the two a-arms.
+        let cut = emit_faces(BoolKind::Cut, &labels, &cells, &split, &planes, wc);
+        assert_eq!(cut.len(), 2, "Cut keeps the a-arms");
+        let cut_c: Vec<[f64; 2]> = cut.iter().map(centroid).collect();
+        assert!(
+            cut_c.iter().any(|c| near(*c, 0.5, 1.5)) && cut_c.iter().any(|c| near(*c, 2.5, 1.5)),
+            "the two survivors are the a-arms at (0.5,1.5),(2.5,1.5): {cut_c:?}"
+        );
+        // Common: exactly the center square.
+        let common = emit_faces(BoolKind::Common, &labels, &cells, &split, &planes, wc);
+        assert_eq!(common.len(), 1, "Common keeps the center");
+        assert!(near(centroid(&common[0]), 1.5, 1.5), "center at (1.5,1.5)");
+
+        // Each emitted loop winds +1 (CCW about n_out(wc)) and has ≥3 distinct nodes.
+        for f in fuse.iter().chain(&cut).chain(&common) {
+            let ring: Vec<[usize; 3]> = f
+                .loop_nodes
+                .iter()
+                .map(|n| match n {
+                    crate::Node::Seam(t) => *t,
+                    _ => unreachable!(),
+                })
+                .collect();
+            assert!(ring.len() >= 3);
+            assert_eq!(
+                arrange::loop_winding(&planes, wc, &ring).unwrap(),
+                1,
+                "CCW about n_out"
+            );
+        }
+
+        // flip oracle (coordinate, test-only): the result normal points away from the kept
+        // chamber. Fuse keeps below (bodies below the cap), so n_result·n_w > 0.
+        let n_w = planes[wc].plane.normal();
+        let os = arrange::orient_sign(&planes, wc) as f64;
+        for f in &fuse {
+            let n_result = os * if f.flip { -1.0 } else { 1.0 };
+            let dot = n_result * n_w.dot(n_w); // n_result·n_w, |n_w|²>0
+            assert!(
+                dot > 0.0,
+                "Fuse (keep below) normal points +n_w side: flip={}",
+                f.flip
+            );
+        }
+
+        // Edge-parity: count how many times each undirected edge is emitted, and the net
+        // direction. An edge shared by two survivors (count 2) must net to 0 (opposite directions
+        // — assemble's "each edge twice"); a plus-cap boundary edge (count 1) is excluded (it
+        // closes against a wall face only at assembly). At least one interior edge must exist.
+        let mut edges: HashMap<([usize; 3], [usize; 3]), (i32, i32)> = HashMap::new();
+        for f in &fuse {
+            let ns: Vec<[usize; 3]> = f
+                .loop_nodes
+                .iter()
+                .map(|n| match n {
+                    crate::Node::Seam(t) => *t,
+                    _ => unreachable!(),
+                })
+                .collect();
+            for w in ns
+                .windows(2)
+                .chain(std::iter::once(&[ns[ns.len() - 1], ns[0]][..]))
+            {
+                let (key, sign) = if w[0] < w[1] {
+                    ((w[0], w[1]), 1)
+                } else {
+                    ((w[1], w[0]), -1)
+                };
+                let e = edges.entry(key).or_insert((0, 0));
+                e.0 += 1;
+                e.1 += sign;
+            }
+        }
+        let mut interior = 0;
+        for (e, (count, net)) in &edges {
+            if *count == 2 {
+                interior += 1;
+                assert_eq!(
+                    *net, 0,
+                    "interior edge {e:?} emitted in opposite directions"
+                );
+            }
+        }
+        assert!(
+            interior > 0,
+            "the plus cap has interior edges between arms and center"
         );
     }
 
