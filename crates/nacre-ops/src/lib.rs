@@ -293,6 +293,14 @@ pub(crate) mod tag {
     /// `∂f`. Nothing checked it. `point_in_ring` does, exactly: the ray's line meets an edge
     /// at `X`, and `X == v` strictly inside that edge means `v` is on the ring. Unfired.
     pub const POINT_ON_RING: &str = "point_on_ring";
+    /// The trace arrangement on one plane class nested more than one hole in a single face, or a
+    /// hole whose containment depth exceeds one, or produced more than one unbounded contour
+    /// (several disjoint bodies on the plane). The single-hole cell (`nest_cells`) resolves one
+    /// inner loop inside one outer loop; anything richer is honestly rejected until the general
+    /// nesting cell lands. Three distinct tags so a refactor cannot silently merge the conditions.
+    pub const HOLE_MULTI: &str = "hole_multi";
+    pub const HOLE_DEPTH: &str = "hole_depth";
+    pub const HOLE_ROOTS: &str = "hole_roots";
     /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
     /// convex path only.
     ///

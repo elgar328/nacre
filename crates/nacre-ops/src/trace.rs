@@ -769,6 +769,105 @@ fn extract_cells(
     Err(reject(tag::LOOP_ORIENT_MISMATCH))
 }
 
+/// The nesting of an arrangement's cells: which winding `-1` contour is the unbounded root, and
+/// which are holes of a `+1` cell. A `+1` cell and its holes form one **group** (a face with
+/// holes); every other `+1` cell and the root are singleton groups.
+///
+/// A contour `c` (winding `-1`) is a **hole** of a `+1` cell `r` iff `c` lies inside `r`, tested
+/// only against an `r` it shares **no** node with. A shared node means `c` bounds `r` from the
+/// other side (they are adjacent, not nested) — this also excludes `c`'s own `+1` partner, which
+/// carries the same ring. Two vertex-disjoint simple loops are nested-or-separate (a crossing
+/// would be a shared split node), so one representative vertex settles containment via
+/// [`arrange::point_in_ring`]. A `c` inside no `+1` cell bounds the unbounded region: the root.
+struct Nesting {
+    /// `group_of[cell]` = the cell's group representative (the `+1` host for a hole group, else
+    /// the cell itself).
+    group_of: Vec<usize>,
+    /// The group of the single unbounded contour — `label_cells`' seed.
+    root_group: usize,
+    /// `holes[host]` = the `-1` cells nested in that `+1` host, emitted as its inner rings.
+    holes: HashMap<usize, Vec<usize>>,
+}
+
+/// Classify every cell as root / hole / plain `+1` (see [`Nesting`]). Single-hole scope: more than
+/// one hole in one face (`HOLE_MULTI`), a hole nested deeper than one level (`HOLE_DEPTH`), or more
+/// than one unbounded contour — several disjoint bodies on the plane — (`HOLE_ROOTS`) are honest
+/// rejects, each a distinct tag so a refactor cannot silently merge them.
+fn nest_cells(
+    planes: &[PlaneInfo],
+    wc: usize,
+    cells: &[Cell],
+    segs: &[MergedSeg],
+) -> Result<Nesting, BoolError> {
+    let n = cells.len();
+    let ring_of = |c: &Cell| -> Vec<[usize; 3]> {
+        c.half_edges
+            .iter()
+            .map(|&he| segs[he / 2].end[he % 2])
+            .collect()
+    };
+    let rings: Vec<Vec<[usize; 3]>> = cells.iter().map(ring_of).collect();
+    let pos: Vec<usize> = (0..n).filter(|&i| cells[i].winding == 1).collect();
+
+    // Union-find over cells (the pattern of `component_count`, but joining cells, not vertices).
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+
+    let mut holes: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut roots: Vec<usize> = Vec::new();
+    for c in (0..n).filter(|&i| cells[i].winding == -1) {
+        let mut hosts: Vec<usize> = Vec::new();
+        for &r in &pos {
+            // Shares a node ⇒ adjacent (or `c`'s own partner) ⇒ not a hole of `r`.
+            if rings[c].iter().any(|t| rings[r].contains(t)) {
+                continue;
+            }
+            // Vertex-disjoint: one clear ray settles it. Retry past a spoiled (ring-node) ray;
+            // all of `c`'s vertices spoiled against `r` is a genuine degeneracy → honest reject.
+            let mut inside = None;
+            for &v in &rings[c] {
+                if let Ok(hit) = arrange::point_in_ring(planes, wc, v, &rings[r]) {
+                    inside = Some(hit);
+                    break;
+                }
+            }
+            match inside {
+                Some(true) => hosts.push(r),
+                Some(false) => {}
+                None => return Err(reject(tag::NO_CLEAR_RAY)),
+            }
+        }
+        match hosts.len() {
+            0 => roots.push(c),
+            1 => {
+                let (rc, rr) = (find(&mut parent, c), find(&mut parent, hosts[0]));
+                parent[rc] = rr;
+                holes.entry(hosts[0]).or_default().push(c);
+            }
+            _ => return Err(reject(tag::HOLE_DEPTH)), // inside >1 +1 cell: nested deeper
+        }
+    }
+    if roots.len() != 1 {
+        return Err(reject(tag::HOLE_ROOTS)); // several disjoint bodies on one plane
+    }
+    if holes.values().any(|hs| hs.len() > 1) {
+        return Err(reject(tag::HOLE_MULTI)); // more than one hole in one face
+    }
+    let group_of: Vec<usize> = (0..n).map(|i| find(&mut parent, i)).collect();
+    let root_group = group_of[roots[0]];
+    Ok(Nesting {
+        group_of,
+        root_group,
+        holes,
+    })
+}
+
 /// A per-solid, per-side material label of one cell: `[A_above, A_below, B_above, B_below]`.
 type Label = [bool; 4];
 
@@ -823,22 +922,36 @@ fn label_cells(
     cells: &[Cell],
     face_of: &HashMap<usize, usize>,
     segs: &[MergedSeg],
+    nesting: &Nesting,
 ) -> Result<Vec<Label>, BoolError> {
-    let seed = cells
-        .iter()
-        .position(|c| c.winding == -1)
-        .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+    // A face-with-holes is one region: label its group as a unit. Group representative → members.
+    let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (i, &g) in nesting.group_of.iter().enumerate() {
+        members.entry(g).or_default().push(i);
+    }
     let mut label = vec![None; cells.len()];
-    label[seed] = Some([false; 4]);
-    let mut queue = std::collections::VecDeque::from([seed]);
+    let mut queue = std::collections::VecDeque::new();
+    // Seed the unbounded root group with all-void, enqueuing every member.
+    for &i in &members[&nesting.root_group] {
+        label[i] = Some([false; 4]);
+        queue.push_back(i);
+    }
     while let Some(c) = queue.pop_front() {
         let lc = label[c].unwrap();
         for &he in &cells[c].half_edges {
             let nb = face_of[&(he ^ 1)];
             if label[nb].is_none() {
                 let mask = edge_mask(&segs[he / 2].merged)?;
-                label[nb] = Some(std::array::from_fn(|i| lc[i] ^ mask[i]));
-                queue.push_back(nb);
+                let lab: Label = std::array::from_fn(|i| lc[i] ^ mask[i]);
+                // A hole and its host bound the same region: label the whole group at once and
+                // enqueue every member, so the hole cell's edges bridge to the cell inside it —
+                // the two components share no edge, so nothing else reaches the interior one.
+                for &mem in &members[&nesting.group_of[nb]] {
+                    if label[mem].is_none() {
+                        label[mem] = Some(lab);
+                        queue.push_back(mem);
+                    }
+                }
             }
         }
     }
@@ -866,12 +979,17 @@ fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
     }
 }
 
-/// Emit the result faces on plane class `wc` for a boolean `kind`. A cell is a face of the result
-/// iff its two chambers disagree under `keep` (material on one side of W, void on the other). The
-/// DCEL cell ring is already CCW about `n_out(wc)` (extract_cells stored `winding == +1`), which is
-/// material-on-left for *either* `flip` value, so the ring is emitted verbatim; `flip` alone
-/// carries the chamber, making the result normal point out of the kept solid:
+/// Emit the result faces on plane class `wc` for a boolean `kind`. A `+1` cell is a face of the
+/// result iff its two chambers disagree under `keep` (material on one side of W, void on the
+/// other); its `-1` holes (`nesting.holes`) ride along as inner rings. The DCEL cell ring is
+/// already CCW about `n_out(wc)` (extract_cells stored `winding == +1`) and a hole cell is CW
+/// (`winding == -1`) — exactly the `LocalFace.inner` contract ("kept material on the loop's left"),
+/// so both are emitted verbatim; `flip` alone carries the chamber and `assemble_fuse_cut` reverses
+/// outer and inner together, making the result normal point out of the kept solid:
 /// `flip = keep_above == (orient_sign(wc) > 0)`.
+///
+/// Only `+1` cells are hosts — a `-1` cell is either a hole (emitted as some host's inner ring) or
+/// the void root — so `-1` cells are skipped, never emitted as their own face.
 ///
 /// **Output contract:** every ring vertex is a `Node::Seam` triple, including triples that coincide
 /// with an original A/B vertex (a cap corner). The abutting wall faces name that point
@@ -885,28 +1003,36 @@ fn emit_faces(
     segs: &[MergedSeg],
     planes: &[PlaneInfo],
     wc: usize,
+    holes: &HashMap<usize, Vec<usize>>,
 ) -> Vec<LocalFace> {
+    // `crate::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
+    // three-valued-scan struct) shadows it here.
+    let ring_of = |cell: &Cell| -> Vec<crate::Node> {
+        cell.half_edges
+            .iter()
+            .map(|&he| crate::Node::Seam(segs[he / 2].end[he % 2]))
+            .collect()
+    };
     let mut out = Vec::new();
     for (c, cell) in cells.iter().enumerate() {
+        if cell.winding != 1 {
+            continue; // a -1 cell is a hole or the void root, never a face of its own
+        }
         let l = labels[c];
         let keep_above = keep(kind, l[0], l[2]);
         let keep_below = keep(kind, l[1], l[3]);
         if keep_above == keep_below {
             continue; // material the same on both sides ⇒ not a result face here
         }
-        // A surviving cell is bounded (the all-void outer cell never survives).
-        let ring: Vec<[usize; 3]> = cell
-            .half_edges
-            .iter()
-            .map(|&he| segs[he / 2].end[he % 2])
-            .collect();
         let flip = keep_above == (arrange::orient_sign(planes, wc) > 0);
-        // `crate::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
-        // three-valued-scan struct) shadows it here.
+        let inner: Vec<Vec<crate::Node>> = holes
+            .get(&c)
+            .map(|hs| hs.iter().map(|&h| ring_of(&cells[h])).collect())
+            .unwrap_or_default();
         out.push(LocalFace {
             plane_idx: wc,
-            loop_nodes: ring.into_iter().map(crate::Node::Seam).collect(),
-            inner: Vec::new(),
+            loop_nodes: ring_of(cell),
+            inner,
             flip,
         });
     }
@@ -939,8 +1065,17 @@ fn trace_result_faces(
             return Err(reject(tag::COPLANAR_OVERLAP_MULTI)); // E5 not resolved yet
         }
         let (cells, face_of) = extract_cells(planes, wc, &split)?;
-        let labels = label_cells(&cells, &face_of, &split)?;
-        faces.extend(emit_faces(kind, &labels, &cells, &split, planes, wc));
+        let nesting = nest_cells(planes, wc, &cells, &split)?;
+        let labels = label_cells(&cells, &face_of, &split, &nesting)?;
+        faces.extend(emit_faces(
+            kind,
+            &labels,
+            &cells,
+            &split,
+            planes,
+            wc,
+            &nesting.holes,
+        ));
     }
     Ok(faces)
 }
@@ -1621,7 +1756,8 @@ mod tests {
         let merged = merge_coincident(&tr.segs);
         let (split, _) = split_at_crossings(&planes, wc, &merged).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split).unwrap();
+        let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
 
         for (i, c) in cells.iter().enumerate() {
             if c.winding == -1 {
@@ -1684,7 +1820,8 @@ mod tests {
         let merged = merge_coincident(&tr.segs);
         let (split, _) = split_at_crossings(&planes, wc, &merged).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split).unwrap();
+        let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
 
         assert_eq!(cells.len(), 2, "one square: inner + unbounded");
         let inner = cells.iter().position(|c| c.winding == 1).unwrap();
@@ -1723,7 +1860,8 @@ mod tests {
         let merged = merge_coincident(&tr.segs);
         let (split, _) = split_at_crossings(&planes, wc, &merged).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split).unwrap();
+        let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
 
         // Centroid of a face's ring (convex cells here).
         let centroid = |f: &LocalFace| -> [f64; 2] {
@@ -1743,10 +1881,26 @@ mod tests {
         let near = |c: [f64; 2], x: f64, y: f64| (c[0] - x).abs() < 1e-9 && (c[1] - y).abs() < 1e-9;
 
         // Fuse: all 5 bounded cells (the plus cap).
-        let fuse = emit_faces(BoolKind::Fuse, &labels, &cells, &split, &planes, wc);
+        let fuse = emit_faces(
+            BoolKind::Fuse,
+            &labels,
+            &cells,
+            &split,
+            &planes,
+            wc,
+            &nesting.holes,
+        );
         assert_eq!(fuse.len(), 5, "Fuse keeps the whole plus cap");
         // Cut a−b: exactly the two a-arms.
-        let cut = emit_faces(BoolKind::Cut, &labels, &cells, &split, &planes, wc);
+        let cut = emit_faces(
+            BoolKind::Cut,
+            &labels,
+            &cells,
+            &split,
+            &planes,
+            wc,
+            &nesting.holes,
+        );
         assert_eq!(cut.len(), 2, "Cut keeps the a-arms");
         let cut_c: Vec<[f64; 2]> = cut.iter().map(centroid).collect();
         assert!(
@@ -1754,7 +1908,15 @@ mod tests {
             "the two survivors are the a-arms at (0.5,1.5),(2.5,1.5): {cut_c:?}"
         );
         // Common: exactly the center square.
-        let common = emit_faces(BoolKind::Common, &labels, &cells, &split, &planes, wc);
+        let common = emit_faces(
+            BoolKind::Common,
+            &labels,
+            &cells,
+            &split,
+            &planes,
+            wc,
+            &nesting.holes,
+        );
         assert_eq!(common.len(), 1, "Common keeps the center");
         assert!(near(centroid(&common[0]), 1.5, 1.5), "center at (1.5,1.5)");
 
@@ -1950,6 +2112,146 @@ mod tests {
         assert!(
             (vol_of(BoolKind::Common) - 0.125).abs() < 1e-9,
             "Common 0.125"
+        );
+    }
+
+    /// cube[0,3]³ and a square prism [1,2]²×[−1,4] piercing it in z; run the boolean, validate,
+    /// and sum (volume, area) over the result solids.
+    fn tunnel_vol_area(kind: BoolKind) -> (f64, f64) {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        m.rebuild_adjacency();
+        let solids = boolean_via_trace(&mut m, kind, a, b).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
+        solids.iter().fold((0.0, 0.0), |acc, &s| {
+            let p = nacre_props::mass_props(&m, s).unwrap();
+            (acc.0 + p.volume, acc.1 + p.area)
+        })
+    }
+
+    /// The first result with a hole. On the z=0/z=3 caps the arrangement is two disjoint loops
+    /// (cube rim `O`, tunnel mouth `I`); the mouth is a hole of the annular cap, which cannot fall
+    /// out as an absent cell (tiling the annulus needs a rim node the adjacent wall lacks) — it
+    /// must emit as an inner ring. Cut volume 24 (27−3); AREA 64 (not 54) proves a bore, not a
+    /// filled cap — volume alone cannot tell a through-hole from a blind dent.
+    #[test]
+    fn tunnel_cut_is_bored_not_dented() {
+        let (v, area) = tunnel_vol_area(BoolKind::Cut);
+        assert!((v - 24.0).abs() < 1e-9, "Cut vol 24 (27−1·1·3), got {v}");
+        assert!(
+            (area - 64.0).abs() < 1e-9,
+            "Cut area 64 (36 walls + 8+8 punched caps + 12 tunnel walls; a filled mouth is 54): {area}"
+        );
+    }
+
+    /// Fuse: the bar protrudes z∈[−1,0] and z∈[3,4], so each cap is still annular (the peg passes
+    /// through the mouth, kept on both sides) — volume 29 (27+5−3), area 62.
+    #[test]
+    fn tunnel_fuse_has_annular_caps() {
+        let (v, area) = tunnel_vol_area(BoolKind::Fuse);
+        assert!((v - 29.0).abs() < 1e-9, "Fuse vol 29 (27+5−3), got {v}");
+        assert!(
+            (area - 62.0).abs() < 1e-9,
+            "Fuse area 62 (cube 52 + two 1×1×1 pegs at 5 each): {area}"
+        );
+    }
+
+    /// Common: `nest_cells` still finds the same annulus grouping, but `keep` leaves only the mouth
+    /// (inside `I`); the annular host is skipped, its inner ring never leaks, and the mouth emits a
+    /// plain `[1,2]²` cap. Net a plain 1×1×3 box — vol 3, area 14. A stronger control than a
+    /// hole-free fixture: it exercises the nesting path and proves it does not leak a spurious hole.
+    #[test]
+    fn tunnel_common_is_the_bar_box_control() {
+        let (v, area) = tunnel_vol_area(BoolKind::Common);
+        assert!(
+            (v - 3.0).abs() < 1e-9,
+            "Common vol 3 ([1,2]²×[0,3]), got {v}"
+        );
+        assert!(
+            (area - 14.0).abs() < 1e-9,
+            "Common area 14 (2·1 caps + 4·3 walls): {area}"
+        );
+    }
+
+    /// Intermediate lock (before assembly, A/B isolation): the Cut tunnel emits exactly 10 faces
+    /// (2 annular caps + 4 cube walls + 4 tunnel walls), exactly 2 carry a non-empty inner ring
+    /// (the caps), and every undirected edge across all rings (outer + inner) is used exactly twice
+    /// — a closed shell, so a later NON_MANIFOLD is a weld gap, not an emit gap.
+    #[test]
+    fn tunnel_cut_emits_ten_faces_two_annular() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let faces = trace_result_faces(
+            &m,
+            BoolKind::Cut,
+            a,
+            b,
+            &planes,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &canon,
+        )
+        .unwrap();
+        assert_eq!(
+            faces.len(),
+            10,
+            "2 annular caps + 4 cube walls + 4 tunnel walls"
+        );
+        assert_eq!(
+            faces.iter().filter(|f| !f.inner.is_empty()).count(),
+            2,
+            "exactly the two annular caps carry a hole"
+        );
+
+        // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
+        let triples = |ns: &[crate::Node]| -> Vec<[usize; 3]> {
+            ns.iter()
+                .map(|n| match n {
+                    crate::Node::Seam(t) => *t,
+                    _ => unreachable!("all-Seam"),
+                })
+                .collect()
+        };
+        let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
+        for f in &faces {
+            for ring in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+                let ns = triples(ring);
+                for w in ns
+                    .windows(2)
+                    .chain(std::iter::once(&[ns[ns.len() - 1], ns[0]][..]))
+                {
+                    let key = if w[0] < w[1] {
+                        (w[0], w[1])
+                    } else {
+                        (w[1], w[0])
+                    };
+                    *count.entry(key).or_insert(0) += 1;
+                }
+            }
+        }
+        assert!(
+            count.values().all(|&c| c == 2),
+            "every edge used exactly twice (closed shell): {:?}",
+            count.iter().filter(|(_, c)| **c != 2).collect::<Vec<_>>()
         );
     }
 
