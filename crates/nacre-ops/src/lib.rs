@@ -6866,6 +6866,165 @@ pub mod tests {
         (m, a, b)
     }
 
+    /// **Every producer states its side in the label frame** — the invariant family #2 restored,
+    /// swept over the whole two-solid corpus (prints the interesting classes with `--nocapture`).
+    ///
+    /// The arrangement states its cell labels as `[*_above, *_below]` about one direction per plane
+    /// class: the class root's **stored surface normal** (`Seated{body_above}` and `emit_faces`'
+    /// `flip` are written against it). `arrange::side_of` answers in the root's **outward** frame
+    /// instead, and the two are opposite exactly when the root face is `Reversed`
+    /// (`orient_sign == -1`) — which no `add_cuboid` face ever is, but a face an earlier boolean
+    /// re-emitted flipped is. `graze_above` read `side_of` raw, so on a pocket wall it flipped the
+    /// wrong label bit; `arrange::label_side` converts.
+    ///
+    /// What this pins, measured before the fix (2026-07-22):
+    /// - the pocket fixture has 5 `orient_sign == -1` classes carrying seated *and* graze segments
+    ///   (4 walls + the floor); every other fixture has **no** `Reversed` root at all, which is why
+    ///   the whole corpus passed with the frames crossed and why converting cannot regress it;
+    /// - the four wall classes stopped at `loop_orient_mismatch`; the floor class did **not** — its
+    ///   four rim edges all carry a graze, so seated and graze were wrong *together*, consistently,
+    ///   and the label survived verification while being inverted (a silent wrong, not a reject);
+    /// - the hand-derived sides on those classes, so a re-crossed frame fails here first.
+    #[test]
+    fn every_producer_states_its_side_in_the_label_frame() {
+        let mut boxed: Vec<(&str, Model, Handle<Solid>, Handle<Solid>)> = Vec::new();
+        macro_rules! fixture {
+            ($name:ident) => {{
+                let (m, a, b) = $name();
+                boxed.push((stringify!($name), m, a, b));
+            }};
+        }
+        fixture!(two_boxes);
+        fixture!(nested_boxes);
+        fixture!(cube_and_notch);
+        fixture!(stacked_cubes);
+        fixture!(l_and_corner_box);
+        fixture!(l_and_reflex_box);
+        fixture!(l_and_inner_box);
+        fixture!(l_and_popup_box);
+        fixture!(l_and_notch_bar);
+        fixture!(l_and_ell_stub);
+        fixture!(l_and_staple);
+        fixture!(l_and_dimple);
+        fixture!(l_and_rod);
+        fixture!(u_and_slab);
+        {
+            // The pocket family: `pocketed_cube` is itself a boolean result, so its pocket walls
+            // are `Reversed` faces. Box coordinates are `pocket_corner_cut`'s.
+            let (mut m, pc) = pocketed_cube();
+            let bx = m.add_cuboid(
+                Point3::from_array([0.85, 0.85, 0.85]),
+                Point3::from_array([1.15, 1.15, 1.15]),
+            );
+            boxed.push(("pocket_corner_cut", m, pc, bx));
+        }
+
+        let mut reversed_with_graze: Vec<String> = Vec::new();
+        let mut reversed_seated_only: Vec<String> = Vec::new();
+        for (name, m, a, b) in &boxed {
+            let audits = trace::frame_audit(m, BoolKind::Cut, *a, *b).unwrap();
+            for au in &audits {
+                let interesting = au.orient_sign < 0 || au.failed_at.is_some();
+                if !interesting {
+                    continue;
+                }
+                let where_ = format!(
+                    "{name}: wc={} pt={:?} n={:?} orient_sign={} seated={:?} graze={:?} trans={} \
+                     declined={:?} failed_at={:?}",
+                    au.wc,
+                    au.root_point,
+                    au.root_normal,
+                    au.orient_sign,
+                    au.seated,
+                    au.grazes,
+                    au.transversals,
+                    au.declined,
+                    au.failed_at,
+                );
+                println!("{where_}");
+                if au.orient_sign < 0 {
+                    if au.grazes.is_empty() {
+                        if !au.seated.is_empty() {
+                            reversed_seated_only.push(where_);
+                        }
+                    } else {
+                        reversed_with_graze.push(where_);
+                    }
+                }
+            }
+        }
+        println!("--- reversed-root classes carrying a graze (the set the fix moves) ---");
+        for r in &reversed_with_graze {
+            println!("  {r}");
+        }
+        println!("--- reversed-root classes with seated but no graze (the alternative's risk) ---");
+        for r in &reversed_seated_only {
+            println!("  {r}");
+        }
+        // The pocket fixture must keep supplying such classes, or this test has stopped exercising
+        // the crossed-frame configuration and would pass vacuously.
+        assert_eq!(
+            reversed_with_graze.len(),
+            5,
+            "the pocket's 4 walls + floor are the corpus's only reversed-root classes with a graze"
+        );
+        assert!(
+            reversed_with_graze.iter().all(|r| r.starts_with("pocket")),
+            "no other fixture may have one: {reversed_with_graze:?}"
+        );
+
+        // Hand-derived sides on the pocket wall class `x = 0.7` (root = the pocket's +x wall, whose
+        // outward normal points into the void, so the stored normal `+x` makes "above" the material
+        // side `x > 0.7`). The wall is seated with its body above; the two side walls and the floor
+        // graze it from `x < 0.7`, i.e. below. Crossed frames invert the grazes.
+        let (m, pc, bx) = boxed
+            .iter()
+            .find_map(|(n, m, a, b)| (*n == "pocket_corner_cut").then_some((m, *a, *b)))
+            .unwrap();
+        let wall = trace::frame_audit(m, BoolKind::Cut, pc, bx)
+            .unwrap()
+            .into_iter()
+            .find(|au| au.root_point == [0.7, 0.7, 1.0] && au.root_normal == [1.0, 0.0, 0.0])
+            .expect("the x=0.7 pocket wall class");
+        assert_eq!(wall.orient_sign, -1, "the pocket wall is a Reversed face");
+        assert_eq!(
+            wall.seated,
+            vec![true; 4],
+            "body above = material at x > 0.7"
+        );
+        assert_eq!(
+            wall.grazes,
+            vec![false; 3],
+            "walls/floor graze from x < 0.7"
+        );
+        assert_eq!(wall.failed_at, None, "the class labels consistently");
+    }
+
+    /// `pocket_corner_cut` by hand, so the pocket family keeps a regression net that runs without
+    /// OCCT: the unit cube less a `0.4²×0.5` pocket is `0.92`, and the corner box `[0.85,1.15]³`
+    /// bites `0.15³` of solid (it clears the pocket, whose footprint stops at `x = 0.7`).
+    #[test]
+    fn a_corner_cut_off_a_pocketed_cube() {
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.85, 0.85, 0.85]),
+            Point3::from_array([1.15, 1.15, 1.15]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - (0.92 - 0.15 * 0.15 * 0.15)).abs() < 1e-12,
+            "volume {}",
+            props.volume
+        );
+        // A corner bite replaces three 0.15² squares with three more: the area is unchanged at
+        // 6 − 0.16 (the lid's hole) + 0.8 (four pocket walls) + 0.16 (its floor).
+        assert!((props.area - 6.8).abs() < 1e-12, "area {}", props.area);
+    }
+
     #[test]
     fn cut_of_two_cubes() {
         // A − B where A = [0,1]³, B = [0.5,1.5]³ ⇒ 1 − 0.125 = 0.875.

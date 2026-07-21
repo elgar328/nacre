@@ -38,7 +38,8 @@ pub(crate) enum SegKind {
     Seated { body_above: bool },
     /// A wall that only **grazes** `W` along one edge (its body lies entirely on one side of `W`,
     /// so it never crosses). Crossing this edge flips **one** label — the side the wall's body is
-    /// on (`body_above`) — exactly like `Seated`, but kept distinct so `edge_mask` can let a graze
+    /// on **in the label frame** (`body_above`, read with [`arrange::label_side`], not raw
+    /// `side_of`) — exactly like `Seated`, but kept distinct so `edge_mask` can let a graze
     /// override a coincident seated face's rim at a reflex dihedral (where the two disagree on
     /// which side flips). A `Transversal` that genuinely crosses `W` still flips both.
     Graze { body_above: bool },
@@ -89,8 +90,9 @@ struct Node {
     /// A single on-line vertex with equal flanks — a tangential touch, not a crossing.
     single_touch: bool,
     /// `Some(body_above)` for a two-vertex run whose flanks share a side — the face grazes `W`
-    /// along this edge with its body on that side. The graze segment emitted for the run is a
-    /// one-bit flip (`SegKind::Graze`). `None` for crossings and flank-differing runs.
+    /// along this edge with its body on that side, stated in the **label frame**
+    /// ([`arrange::label_side`]). The graze segment emitted for the run is a one-bit flip
+    /// (`SegKind::Graze`). `None` for crossings and flank-differing runs.
     graze_above: Option<bool>,
 }
 
@@ -208,9 +210,15 @@ fn trace_transversal_face(
                     let id = run_counter;
                     run_counter += 1;
                     // Flanks on the same side ⇒ the face grazes W along this edge with its body on
-                    // that side (`before > 0` ⇒ +n_out(wc) side ⇒ above). Flanks differing ⇒ the
-                    // face crosses through ⇒ a true transversal, not a graze.
-                    let graze_above = (!flanks_differ).then_some(before > 0);
+                    // that side. Flanks differing ⇒ the face crosses through ⇒ a true transversal,
+                    // not a graze. The side must be read in the **label frame**
+                    // (`arrange::label_side`), not `side_of`'s outward frame: `body_above` is a
+                    // label bit, and the two frames are opposite on a `Reversed` class root (a wall
+                    // an earlier boolean re-emitted flipped, e.g. a pocket wall). `side` itself
+                    // stays raw — its other uses read sign *differences*, which are frame-free.
+                    let graze_above = (!flanks_differ).then_some(
+                        arrange::label_side(planes, ring[(run_start + n - 1) % n], wc) > 0,
+                    );
                     match (name(0), name(1)) {
                         (Some(ra), Some(rb)) => {
                             for r in [ra, rb] {
@@ -1142,6 +1150,92 @@ fn trace_result_faces(
         ));
     }
     Ok(faces)
+}
+
+/// One plane class's **label-frame audit** (family #2 diagnostic): what each producer says about
+/// "above" on this class, plus how far the per-class pipeline gets. `#[cfg(test)]`, `pub(crate)`
+/// so the driver test can live in `crate::tests` where the two-solid fixtures are (the same reason
+/// [`boolean_via_trace`] is `pub(crate)`).
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct ClassAudit {
+    pub wc: usize,
+    /// The root plane resolved to real coordinates — a point on it and its stored normal. Plane
+    /// indices alone have twice carried a wrong geometric story into a write-up.
+    pub root_point: [f64; 3],
+    pub root_normal: [f64; 3],
+    /// `sign(stored normal · n_out)` — `-1` exactly when the class root face is `Reversed`, which
+    /// is when the stored-normal label frame and `side_of`'s outward frame disagree.
+    pub orient_sign: i8,
+    /// `body_above` of every seated segment, and `body_above` of every graze segment.
+    pub seated: Vec<bool>,
+    pub grazes: Vec<bool>,
+    pub transversals: usize,
+    pub declined: Vec<(usize, &'static str)>,
+    /// The reject tag the per-class pipeline raised, if any (`None` = the class went through).
+    pub failed_at: Option<&'static str>,
+}
+
+/// Audit every plane class of one boolean input pair. Runs the same per-class pipeline as
+/// [`trace_result_faces`] but never aborts, so one failing class does not hide the rest.
+#[cfg(test)]
+pub(crate) fn frame_audit(
+    model: &Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<ClassAudit>, BoolError> {
+    let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b)?;
+    let mut out = Vec::new();
+    for wc in (0..planes.len()).filter(|&i| canon[i] == i) {
+        let tr = trace_on_class(model, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let side = |f: fn(&SegKind) -> Option<bool>| -> Vec<bool> {
+            tr.segs.iter().filter_map(|s| f(&s.kind)).collect()
+        };
+        let mut audit = ClassAudit {
+            wc,
+            root_point: planes[wc].tri[0].as_array(),
+            root_normal: planes[wc].plane.normal().as_array(),
+            orient_sign: arrange::orient_sign(&planes, wc),
+            seated: side(|k| match k {
+                SegKind::Seated { body_above } => Some(*body_above),
+                _ => None,
+            }),
+            grazes: side(|k| match k {
+                SegKind::Graze { body_above } => Some(*body_above),
+                _ => None,
+            }),
+            transversals: tr
+                .segs
+                .iter()
+                .filter(|s| matches!(s.kind, SegKind::Transversal { .. }))
+                .count(),
+            declined: tr.declined.clone(),
+            failed_at: None,
+        };
+        // Run the rest of the per-class pipeline, recording where it stops.
+        audit.failed_at = if !audit.declined.is_empty() {
+            Some(tag::COPLANAR_PAIR)
+        } else {
+            let run = || -> Result<(), BoolError> {
+                let merged = merge_coincident(&tr.segs);
+                let split = split_at_crossings(&planes, wc, &merged)?;
+                let (cells, face_of) = extract_cells(&planes, wc, &split)?;
+                let nesting = nest_cells(&planes, wc, &cells, &split)?;
+                let labels = label_cells(&cells, &face_of, &split, &nesting)?;
+                let _ = emit_faces(kind, &labels, &cells, &split, &planes, wc, &nesting.holes);
+                Ok(())
+            };
+            crate::LAST_REJECT.with(|c| c.take());
+            run().err().map(|_| {
+                crate::LAST_REJECT
+                    .with(|c| c.take())
+                    .unwrap_or("untagged-reject")
+            })
+        };
+        out.push(audit);
+    }
+    Ok(out)
 }
 
 /// Drive the arrangement pipeline over **every** plane class and assemble the result solid — the
