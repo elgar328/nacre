@@ -308,8 +308,9 @@ fn trace_one(
             }
             // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
             // side of W — `n_out` points away from the body, so the body is above W exactly when
-            // `n_out · n_W < 0`. (f64 sign is exact for axis-aligned normals; rotated inputs are
-            // outside this corpus and this brick does not claim them.)
+            // `n_out · n_W < 0`. The f64 sign is robust even rotated: seated means `canon[fp]==wc`,
+            // so `n_out ∥ n_W` (both unit) and the dot is ≈ ±1, a full unit from the sign boundary
+            // (the rotated-tunnel tests exercise this seated path through the cube's own caps).
             let body_above = planes[fp].n_out.dot(w_normal) < 0.0;
             let kind = SegKind::Seated { body_above };
             let mut emit_ring = |tris: &[[usize; 3]]| {
@@ -2253,6 +2254,233 @@ mod tests {
             "every edge used exactly twice (closed shell): {:?}",
             count.iter().filter(|(_, c)| **c != 2).collect::<Vec<_>>()
         );
+    }
+
+    // --- Rotation-generality: the trace engine's decisions are coordinate-free. Rigidly rotating
+    // both operands by the same isometry must leave the result invariant. A non-90° angle flags the
+    // solid `Origin::Rotated`, routing every predicate to the exact frame3 backend. `rot30` (lib.rs)
+    // is in a sibling test module and unreachable here, so the isometries are built inline.
+
+    /// 30° about `axis` through (1,1,0) — non-90°, so `Origin::Rotated` (exact frame3 path).
+    fn rot_iso(axis: nacre_scalar::Axis) -> nacre_scalar::Isometry {
+        use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+        Isometry::rotation(Rotation {
+            axis,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        })
+    }
+
+    /// Rotate a solid by each axis in turn. A compound tilt needs `rebuild_adjacency` BETWEEN the
+    /// transforms (matching the oracle's `rotated_boolean_matches_occt`), or the second reads a
+    /// stale topology.
+    fn tilt(m: &mut Model, mut s: Handle<Solid>, axes: &[nacre_scalar::Axis]) -> Handle<Solid> {
+        for &ax in axes {
+            s = transform(m, s, &rot_iso(ax)).unwrap();
+            m.rebuild_adjacency();
+        }
+        s
+    }
+
+    /// Rigidly rotating both operands (same single-Z tilt) leaves all three booleans' volumes
+    /// invariant — the axis values (hand-anchored by `end_to_end_overlapping_cubes_all_three`)
+    /// transfer to the rotated case. A coordinate-dependent decision that flipped under rotation
+    /// would add/drop a cell and move the volume by O(0.1), far past 1e-9.
+    #[test]
+    fn rotated_overlapping_cubes_all_three() {
+        use nacre_scalar::Axis;
+        let vol_of = |kind: BoolKind| -> f64 {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0, 1.0, 1.0]),
+            );
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.5]),
+                Point3::from_array([1.5, 1.5, 1.5]),
+            );
+            let a = tilt(&mut m, a, &[Axis::Z]);
+            let b = tilt(&mut m, b, &[Axis::Z]);
+            let solids = boolean_via_trace(&mut m, kind, a, b).unwrap();
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
+            solids
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                .sum()
+        };
+        assert!(
+            (vol_of(BoolKind::Fuse) - 1.875).abs() < 1e-9,
+            "rotated Fuse invariant 1.875"
+        );
+        assert!(
+            (vol_of(BoolKind::Cut) - 0.875).abs() < 1e-9,
+            "rotated Cut invariant 0.875"
+        );
+        assert!(
+            (vol_of(BoolKind::Common) - 0.125).abs() < 1e-9,
+            "rotated Common invariant 0.125"
+        );
+    }
+
+    /// The through-tunnel Cut is invariant under every orientation: single Z, X, Y, and compound
+    /// Z∘X. The axis-DEPENDENCE was the tell of the bug (Y worked; Z/X declined before the
+    /// `t_orient3d` on-plane fix), so all four orientations returning 24 is the fix's direct
+    /// regression lock. The cube's own z=0/z=3 caps exercise the seated path under rotation.
+    #[test]
+    fn rotated_tunnel_cut_all_orientations() {
+        use nacre_scalar::Axis;
+        let vol_of = |axes: &[Axis]| -> f64 {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0, 0.0, 0.0]),
+                Point3::from_array([3.0, 3.0, 3.0]),
+            );
+            let b = m.add_cuboid(
+                Point3::from_array([1.0, 1.0, -1.0]),
+                Point3::from_array([2.0, 2.0, 4.0]),
+            );
+            let a = tilt(&mut m, a, axes);
+            let b = tilt(&mut m, b, axes);
+            let solids = boolean_via_trace(&mut m, BoolKind::Cut, a, b).unwrap();
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "manifold: {vs:?}");
+            solids
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                .sum()
+        };
+        for axes in [
+            &[Axis::Z][..],
+            &[Axis::X][..],
+            &[Axis::Y][..],
+            &[Axis::Z, Axis::X][..],
+        ] {
+            let v = vol_of(axes);
+            assert!(
+                (v - 24.0).abs() < 1e-9,
+                "tunnel Cut vol 24 for {axes:?}, got {v}"
+            );
+        }
+    }
+
+    /// Compound-tilted (no face normal axis-aligned) tunnel Cut: AREA 64 is invariant (the bore
+    /// discriminator volume cannot see), and the pre-assembly face set is combinatorially identical
+    /// to the axis case (`tunnel_cut_emits_ten_faces_two_annular`) — 10 faces, 2 with an inner ring,
+    /// every undirected edge twice — proving the arrangement itself survived rotation.
+    #[test]
+    fn rotated_tunnel_area_and_faces() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        let a = tilt(&mut m, a, &[Axis::Z, Axis::X]);
+        let b = tilt(&mut m, b, &[Axis::Z, Axis::X]);
+
+        // Combinatorial invariant (pre-assembly, A/B isolation).
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let faces = trace_result_faces(
+            &m,
+            BoolKind::Cut,
+            a,
+            b,
+            &planes,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &canon,
+        )
+        .unwrap();
+        assert_eq!(faces.len(), 10, "rotated arrangement keeps 10 faces");
+        assert_eq!(
+            faces.iter().filter(|f| !f.inner.is_empty()).count(),
+            2,
+            "the two annular caps survive rotation"
+        );
+        let triples = |ns: &[crate::Node]| -> Vec<[usize; 3]> {
+            ns.iter()
+                .map(|n| match n {
+                    crate::Node::Seam(t) => *t,
+                    _ => unreachable!("all-Seam"),
+                })
+                .collect()
+        };
+        let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
+        for f in &faces {
+            for ring in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+                let ns = triples(ring);
+                for w in ns
+                    .windows(2)
+                    .chain(std::iter::once(&[ns[ns.len() - 1], ns[0]][..]))
+                {
+                    let key = if w[0] < w[1] {
+                        (w[0], w[1])
+                    } else {
+                        (w[1], w[0])
+                    };
+                    *count.entry(key).or_insert(0) += 1;
+                }
+            }
+        }
+        assert!(
+            count.values().all(|&c| c == 2),
+            "every edge used exactly twice: {:?}",
+            count.iter().filter(|(_, c)| **c != 2).collect::<Vec<_>>()
+        );
+
+        // Area (assembled).
+        let solids = boolean_via_trace(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let area: f64 = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().area)
+            .sum();
+        assert!(
+            (area - 64.0).abs() < 1e-9,
+            "rotated Cut area 64 (bore survives rotation), got {area}"
+        );
+    }
+
+    /// The sharp tripwire: a compound-tilted tunnel must decline nothing, exactly like the axis
+    /// baseline `axis_aligned_cubes_decline_nothing`. This is the EXACT site the bug broke
+    /// (`coincident-features` from a `wall == wc` degenerate), so it fails immediately if the
+    /// `t_orient3d` on-plane fix is reverted.
+    #[test]
+    fn rotated_tunnel_declines_nothing() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 4.0]),
+        );
+        let a = tilt(&mut m, a, &[Axis::Z, Axis::X]);
+        let b = tilt(&mut m, b, &[Axis::Z, Axis::X]);
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        for wc in {
+            let mut c: Vec<usize> = canon.clone();
+            c.sort_unstable();
+            c.dedup();
+            c
+        } {
+            let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+            assert!(
+                tr.declined.is_empty(),
+                "rotated class {wc} declined: {tr:?}"
+            );
+        }
     }
 
     /// The z=1 class both solids seat a cap on.

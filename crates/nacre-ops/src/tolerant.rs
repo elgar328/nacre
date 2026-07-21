@@ -106,6 +106,14 @@ pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: 
             planes[j].tri[2],
         );
     }
+    // The query plane `j` is one of the point's three defining planes ⇒ the point lies on `j`, so
+    // the sign is exactly 0 (a combinatorial identity). Only the rotated path needs this: the axis
+    // predicate above already returns exact 0, but the frame3 judge computes a tiny nonzero residual
+    // from the rounded plane coefficients and can declare it ±1 above the floor, misclassifying an
+    // on-`W` vertex as off-plane (the rotation-fragility root cause, 2026-07-21).
+    if j == p || j == q || j == r {
+        return 0;
+    }
     let (dp, dq, dr, dj) = (
         plane_def(planes, p),
         plane_def(planes, q),
