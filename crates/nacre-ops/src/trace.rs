@@ -36,6 +36,12 @@ pub(crate) enum SegKind {
     /// A boundary edge of a face lying in the plane. Crossing it flips **one** label — the side
     /// the seated face's body occupies (`body_above`).
     Seated { body_above: bool },
+    /// A wall that only **grazes** `W` along one edge (its body lies entirely on one side of `W`,
+    /// so it never crosses). Crossing this edge flips **one** label — the side the wall's body is
+    /// on (`body_above`) — exactly like `Seated`, but kept distinct so `edge_mask` can let a graze
+    /// override a coincident seated face's rim at a reflex dihedral (where the two disagree on
+    /// which side flips). A `Transversal` that genuinely crosses `W` still flips both.
+    Graze { body_above: bool },
 }
 
 /// One segment of a solid's trace on a plane class, named entirely in plane-class triples.
@@ -82,6 +88,10 @@ struct Node {
     flanks_differ: bool,
     /// A single on-line vertex with equal flanks — a tangential touch, not a crossing.
     single_touch: bool,
+    /// `Some(body_above)` for a two-vertex run whose flanks share a side — the face grazes `W`
+    /// along this edge with its body on that side. The graze segment emitted for the run is a
+    /// one-bit flip (`SegKind::Graze`). `None` for crossings and flank-differing runs.
+    graze_above: Option<bool>,
 }
 
 /// Trace one **transversal or mixed** face `f` (plane `fp ≠ W`) onto plane class `wc`, as the
@@ -158,6 +168,7 @@ fn trace_transversal_face(
                         run: None,
                         flanks_differ: false,
                         single_touch: false,
+                        graze_above: None,
                     }),
                     Err(_) => declined = Some("crossing-name"),
                 }
@@ -184,12 +195,19 @@ fn trace_transversal_face(
                         run: None,
                         flanks_differ,
                         single_touch: !flanks_differ,
+                        // A single-vertex tangential touch is a point (`touches`), never a graze
+                        // segment; a flank-differing single vertex is a strict crossing.
+                        graze_above: None,
                     }),
                     None => declined = Some("run-name"),
                 }
             } else if m == 2 {
                 let id = run_counter;
                 run_counter += 1;
+                // Flanks on the same side ⇒ the face grazes W along this edge with its body on
+                // that side (`before > 0` ⇒ +n_out(wc) side ⇒ above). Flanks differing ⇒ the face
+                // crosses through ⇒ a true transversal, not a graze.
+                let graze_above = (!flanks_differ).then_some(before > 0);
                 match (name(0), name(1)) {
                     (Some(ra), Some(rb)) => {
                         for r in [ra, rb] {
@@ -199,6 +217,7 @@ fn trace_transversal_face(
                                 run: Some(id),
                                 flanks_differ,
                                 single_touch: false,
+                                graze_above,
                             });
                         }
                     }
@@ -248,14 +267,19 @@ fn trace_transversal_face(
 
     // Phase C — sweep left to right; covered gaps merge into segments.
     let mut parity = 0i8;
-    let mut seg_start: Option<usize> = None;
-    let emit = |a: usize, b: usize, out: &mut Trace| {
+    // `seg_start` also carries the graze side of the segment being built: `Some(ba)` when the
+    // segment is a pure graze gap (opened by a forced run while outside material), else `None`.
+    let mut seg_start: Option<(usize, Option<bool>)> = None;
+    let emit = |a: usize, b: usize, graze: Option<bool>, out: &mut Trace| {
         out.segs.push(Seg {
             wall: canon[fp],
             end: [canon3([wc, fp, a], canon), canon3([wc, fp, b], canon)],
             solid: which,
-            kind: SegKind::Transversal {
-                mat: arrange::orient_sign(planes, fp),
+            kind: match graze {
+                Some(body_above) => SegKind::Graze { body_above },
+                None => SegKind::Transversal {
+                    mat: arrange::orient_sign(planes, fp),
+                },
             },
         });
     };
@@ -269,10 +293,17 @@ fn trace_transversal_face(
         let forced =
             k + 1 < nodes.len() && nodes[k].run.is_some() && nodes[k].run == nodes[k + 1].run;
         let covered = parity == 1 || forced;
+        // A segment opened purely by a forced run while outside material is a graze gap; one
+        // spanning material (parity) is a real transversal boundary even if a run rides along it.
+        let opening_graze = if forced && parity == 0 {
+            nodes[k].graze_above
+        } else {
+            None
+        };
         match (seg_start, covered) {
-            (None, true) => seg_start = Some(nodes[k].r),
-            (Some(a), false) => {
-                emit(a, nodes[k].r, out);
+            (None, true) => seg_start = Some((nodes[k].r, opening_graze)),
+            (Some((a, graze)), false) => {
+                emit(a, nodes[k].r, graze, out);
                 seg_start = None;
             }
             _ => {}
@@ -887,12 +918,18 @@ type Label = [bool; 4];
 /// The flip mask an edge applies when crossed, grouping its `merged` contributions **per solid**.
 /// Crossing the edge XORs this into the cell label.
 ///
-/// A `Seated` face is ground truth for its solid's material next to W (it directly says which side
-/// the body is on), so **seated wins**: if a solid contributes any `Seated`, that fully determines
-/// its flip and a same-solid `Transversal` is discarded (the transversal's "flip both" assumes the
-/// solid straddles W, which is false exactly where it is capped). A solid with only `Transversal`
-/// genuinely straddles → flips both sides. `> 1 Transversal` or disagreeing seated body sides is a
-/// coincident-wall degeneracy outside the corpus → honest reject.
+/// Precedence per solid is **Graze > Seated > Transversal**:
+/// - A `Graze` is a wall touching W along this edge with its body on one side — the solid's true
+///   material boundary here. It overrides a coincident `Seated` cap-rim: the two agree on a convex
+///   cap (same side) but disagree at a **reflex dihedral** in W, where the graze side is correct and
+///   seated-wins would flip the wrong bit.
+/// - A `Seated` face is ground truth where no graze coincides: it directly says which side the body
+///   is on, so it **wins over a coincident `Transversal`** (the transversal's "flip both" assumes the
+///   solid straddles W, which is false exactly where a cap crosses it).
+/// - A lone `Transversal` genuinely straddles → flips both sides.
+///
+/// `> 1 Transversal`, disagreeing graze/seated sides, or a graze coincident with a same-solid true
+/// crossing is a coincident-wall degeneracy outside the corpus → honest reject.
 fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
     let mut mask = [false; 4];
     for (solid, base) in [(SolidSide::A, 0usize), (SolidSide::B, 2)] {
@@ -901,27 +938,42 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
             .filter(|(s, _)| *s == solid)
             .map(|(_, k)| *k)
             .collect();
-        let seated: Vec<bool> = kinds
+        let side_of_kind = |want_graze: bool| -> Vec<bool> {
+            kinds
+                .iter()
+                .filter_map(|k| match k {
+                    SegKind::Graze { body_above } if want_graze => Some(*body_above),
+                    SegKind::Seated { body_above } if !want_graze => Some(*body_above),
+                    _ => None,
+                })
+                .collect()
+        };
+        let grazes = side_of_kind(true);
+        let seated = side_of_kind(false);
+        let transversals = kinds
             .iter()
-            .filter_map(|k| match k {
-                SegKind::Seated { body_above } => Some(*body_above),
-                _ => None,
-            })
-            .collect();
-        if !seated.is_empty() {
+            .filter(|k| matches!(k, SegKind::Transversal { .. }))
+            .count();
+        if !grazes.is_empty() {
+            // Graze wins: it is the real boundary. A same-solid true crossing must not coincide.
+            if grazes.iter().any(|&b| b != grazes[0]) || transversals > 0 {
+                return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+            }
+            mask[base + usize::from(!grazes[0])] ^= true;
+        } else if !seated.is_empty() {
             if seated.iter().any(|&b| b != seated[0]) {
                 return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // disagreeing seated sides
             }
-            // seated wins: flip above if body_above, else below.
+            // seated wins over a coincident transversal: flip above if body_above, else below.
             mask[base + usize::from(!seated[0])] ^= true;
-        } else if kinds.len() == 1 {
+        } else if transversals == 1 {
             // pure transversal: the solid straddles W, flip both.
             mask[base] ^= true;
             mask[base + 1] ^= true;
-        } else if kinds.len() > 1 {
+        } else if transversals > 1 {
             return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // >1 transversal, same solid
         }
-        // kinds empty ⇒ solid absent from this edge ⇒ no flip.
+        // no contributions ⇒ solid absent from this edge ⇒ no flip.
     }
     Ok(mask)
 }
@@ -1198,21 +1250,37 @@ mod tests {
             .expect("a shared cap class");
 
         let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
-        // Two seated caps × 4 edges each. (The side walls now also trace as transversal chords;
-        // the two far caps are parallel to z=1 and contribute nothing — misses, not declines.)
+        // Two seated caps × 4 edges each. (The side walls only *graze* z=1 — each cube's body is
+        // entirely on one side — so they trace as `Graze` chords, not `Transversal`; the two far
+        // caps are parallel to z=1 and contribute nothing — misses, not declines.)
         let seated: Vec<&Seg> = tr
             .segs
             .iter()
             .filter(|s| matches!(s.kind, SegKind::Seated { .. }))
             .collect();
         assert_eq!(seated.len(), 8, "two seated caps, four edges each: {tr:?}");
-        // Four side walls per cube each cross z=1 in one chord.
-        let trans = tr
+        // Four side walls per cube each graze z=1 in one chord, body on the cube's side.
+        let grazes: Vec<&Seg> = tr
             .segs
             .iter()
-            .filter(|s| matches!(s.kind, SegKind::Transversal { .. }))
-            .count();
-        assert_eq!(trans, 8, "eight side-wall chords: {tr:?}");
+            .filter(|s| matches!(s.kind, SegKind::Graze { .. }))
+            .collect();
+        assert_eq!(grazes.len(), 8, "eight side-wall graze chords: {tr:?}");
+        assert_eq!(
+            tr.segs
+                .iter()
+                .filter(|s| matches!(s.kind, SegKind::Transversal { .. }))
+                .count(),
+            0,
+            "no wall crosses z=1: {tr:?}"
+        );
+        for s in &grazes {
+            match (s.solid, s.kind) {
+                (SolidSide::A, SegKind::Graze { body_above }) => assert!(!body_above, "a below"),
+                (SolidSide::B, SegKind::Graze { body_above }) => assert!(body_above, "b above"),
+                _ => unreachable!(),
+            }
+        }
         assert!(
             tr.declined.is_empty(),
             "axis-aligned cubes decline nothing: {tr:?}"
