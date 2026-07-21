@@ -257,6 +257,19 @@ pub(crate) mod tag {
     pub const TUNNEL: &str = "tunnel";
     pub const NO_ENTRY_FACE: &str = "no_entry_face";
     pub const THREE_PLANES: &str = "three_planes";
+    /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
+    /// coordinate. The triple is the truth and the coordinate only its cache (overview §5), so this
+    /// says the exact substrate and the f64 cache disagree about how many vertices exist — always a
+    /// defect upstream, never a property of the input. Raised where the seam table is built, while
+    /// both triples are still in hand; without it the disagreement surfaces much later as a
+    /// zero-length edge. The known cause is a **split plane table** (one geometric plane carried by
+    /// two classes); a genuine 4-plane concurrency would do the same.
+    pub const SEAM_ALIAS: &str = "seam_alias";
+    /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
+    /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is the
+    /// backstop that keeps a degenerate one from aborting the kernel (`Line::through_points` used to
+    /// `expect`). `SEAM_ALIAS` catches the known cause earlier, so this has no firing test.
+    pub const ZERO_LENGTH_EDGE: &str = "zero_length_edge";
     pub const FOURPLANE: &str = "fourplane";
     pub const CYLINDER_FACE: &str = "cylinder_face";
     pub const DEGENERATE_FACE: &str = "degenerate_face";
@@ -2173,39 +2186,45 @@ fn assemble_fuse_cut(
 
     // Edges keyed by unordered handle-index pair (lookup only).
     let mut edge_of: HashMap<(usize, usize), Handle<Edge>> = HashMap::new();
-    let mut edge_for =
-        |model: &mut Model, va: Handle<Vertex>, vb: Handle<Vertex>| -> Handle<Edge> {
-            let key = unordered(va.index() as usize, vb.index() as usize);
-            if let Some(&e) = edge_of.get(&key) {
-                return e;
-            }
-            let pa = model.vertices.get(va).point;
-            let pb = model.vertices.get(vb).point;
-            let curve = model
-                .curves
-                .push(Curve::Line(Line::through_points(pa, pb).expect("distinct")));
-            let e = model.edges.push(Edge {
-                curve,
-                bounds: Some([va, vb]),
-                origin: Origin::Constructed,
-            });
-            edge_of.insert(key, e);
-            e
-        };
+    // A ring's two consecutive nodes are distinct arrangement vertices, so their points differ and
+    // the line through them exists. Reject rather than panic if it does not: an aborting kernel is
+    // below the floor (`overview.md`: out-of-coverage input declines honestly). `SEAM_ALIAS`
+    // catches the known way this happens — two triples on one point — at the seam table, where the
+    // names are still in hand, so this is a backstop with no firing test (cf. `NON_MANIFOLD_EDGE`).
+    let mut edge_for = |model: &mut Model,
+                        va: Handle<Vertex>,
+                        vb: Handle<Vertex>|
+     -> Result<Handle<Edge>, BoolError> {
+        let key = unordered(va.index() as usize, vb.index() as usize);
+        if let Some(&e) = edge_of.get(&key) {
+            return Ok(e);
+        }
+        let pa = model.vertices.get(va).point;
+        let pb = model.vertices.get(vb).point;
+        let line = Line::through_points(pa, pb).ok_or_else(|| reject(tag::ZERO_LENGTH_EDGE))?;
+        let curve = model.curves.push(Curve::Line(line));
+        let e = model.edges.push(Edge {
+            curve,
+            bounds: Some([va, vb]),
+            origin: Origin::Constructed,
+        });
+        edge_of.insert(key, e);
+        Ok(e)
+    };
 
     let mut face_handles = Vec::new();
     for lf in faces {
-        let mut ring = |model: &mut Model, nodes: &[Node]| -> Loop {
+        let mut ring = |model: &mut Model, nodes: &[Node]| -> Result<Loop, BoolError> {
             let handles: Vec<Handle<Vertex>> = nodes.iter().map(|nd| vh[nd]).collect();
             let k = handles.len();
             let mut half_edges: Vec<HalfEdge> = (0..k)
                 .map(|t| {
                     let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                    let e = edge_for(model, va, vb);
+                    let e = edge_for(model, va, vb)?;
                     let forward = model.edges.get(e).bounds.expect("bounded")[0] == va;
-                    HalfEdge { edge: e, forward }
+                    Ok(HalfEdge { edge: e, forward })
                 })
-                .collect();
+                .collect::<Result<Vec<_>, BoolError>>()?;
             if lf.flip {
                 // Cut's inside-A B-pieces: reverse every loop and toggle the
                 // orientation below, so the outward normal points into the removed
@@ -2215,10 +2234,14 @@ fn assemble_fuse_cut(
                     he.forward = !he.forward;
                 }
             }
-            Loop { half_edges }
+            Ok(Loop { half_edges })
         };
-        let outer = ring(model, &lf.loop_nodes);
-        let inner: Vec<Loop> = lf.inner.iter().map(|h| ring(model, h)).collect();
+        let outer = ring(model, &lf.loop_nodes)?;
+        let inner: Vec<Loop> = lf
+            .inner
+            .iter()
+            .map(|h| ring(model, h))
+            .collect::<Result<Vec<_>, BoolError>>()?;
         let orientation = if lf.flip {
             match planes[lf.plane_idx].orient {
                 Orientation::Forward => Orientation::Reversed,
@@ -2353,8 +2376,19 @@ fn assemble_fuse_cut(
 /// fallback is what keeps independently-built coplanar contacts working; the handle
 /// path's real payoff is rotated frames, where the geometric test would need the
 /// rotation-exact judgment.
-fn shares_or_coplanar(pa: &PlaneInfo, pb: &PlaneInfo) -> bool {
-    pa.surf == pb.surf || planes_coplanar(&pa.plane, &pb.plane)
+fn shares_or_coplanar(planes: &[PlaneInfo], i: usize, j: usize) -> bool {
+    let (pa, pb) = (&planes[i], &planes[j]);
+    // Three independent witnesses, OR-ed, so this can only ever merge *more* than before:
+    //  1. the same `Surface` handle — coplanar by reference (what an ops-built tool's base cap and
+    //     its target face share, and what a chained operand's split coplanar faces share);
+    //  2. exactly proportional coefficients — the original test, kept;
+    //  3. the faces' own coordinates, exactly (`t_planes_coplanar`) — the only one of the three
+    //     that does not read a *derived* value, and the one that catches two independently built
+    //     solids whose walls coincide (`add_cuboid` stacked on `add_cuboid`), where the rounded
+    //     coefficients of differently-sized faces are not exactly proportional.
+    pa.surf == pb.surf
+        || planes_coplanar(&pa.plane, &pb.plane)
+        || tolerant::t_planes_coplanar(planes, i, j)
 }
 
 /// Union-find root of `x` in `parent` (with path compression). Roots are the smallest index
@@ -2388,7 +2422,7 @@ fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
     let mut parent: Vec<usize> = (0..n).collect();
     for i in 0..n {
         for j in (i + 1)..n {
-            if shares_or_coplanar(&planes[i], &planes[j]) {
+            if shares_or_coplanar(planes, i, j) {
                 let (ri, rj) = (uf_find(&mut parent, i), uf_find(&mut parent, j));
                 if ri != rj {
                     // Attach the larger root under the smaller so a class's root is its min index.
@@ -6025,12 +6059,13 @@ pub mod tests {
     }
 
     #[test]
-    fn a_coplanar_boss_over_a_void_plane_is_rejected() {
+    fn a_coplanar_boss_over_a_void_plane_is_solved() {
         // The boss straddles the void's x=1 and y=1 planes (it spans [0.9,1.1]²), so classifying
-        // the void's walls against it is no longer the clean whole-face case. Measured: honestly
-        // rejected, before and after the all-shell fix — the fix does not widen this one. Pinned so
-        // that a future change either keeps the reject or turns it into a correct 26.04, never into
-        // a silent answer.
+        // the void's walls against it is not the clean whole-face case. This was pinned as an
+        // honest reject with the standing instruction that a future change may "turn it into a
+        // correct 26.04, never a silent answer" — and family #3 did: once one geometric plane is
+        // one class whatever the two faces' sizes, the arrangement solves it. 26 (hollow) + 0.04
+        // (boss); area 60 + 0.8 (boss sides) + 0.04 (its top) − 0.04 (its footprint); void intact.
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
         let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
@@ -6041,10 +6076,18 @@ pub mod tests {
             Point3::from_array([1.1, 1.1, 4.0]),
         );
         m.rebuild_adjacency();
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Fuse, hollow, boss),
-            Err(BoolError::Unsupported)
+        let r = boolean_one(&mut m, BoolKind::Fuse, hollow, boss).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - 26.04).abs() < 1e-9,
+            "volume {}",
+            props.volume
         );
+        assert!((props.area - 60.8).abs() < 1e-9, "area {}", props.area);
+        assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
     }
 
     #[test]
@@ -6544,20 +6587,29 @@ pub mod tests {
         let plane_z0 =
             Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
                 .unwrap();
-        let mk = |plane| PlaneInfo {
+        // Each `tri` is three NON-collinear points of its own plane. A degenerate `tri` (three
+        // equal points) would make every `orient3d` vanish, so the coordinate branch would report
+        // coplanar and this test would pass without the handle branch ever mattering.
+        let mk = |plane, tri| PlaneInfo {
             surf: shared,
             face: fh,
             plane,
-            tri: [Point3::origin(); 3],
+            tri,
             n_out: Vector3::from_array([0.0; 3]),
             orient: Orientation::Forward,
             tri_pt3: None,
         };
-        let (pa, pb) = (mk(plane_x0), mk(plane_z0));
-        // The two planes are NOT geometrically coplanar → the fallback would fail.
-        assert!(!planes_coplanar(&pa.plane, &pb.plane));
-        // But the shared handle makes them coplanar-by-reference.
-        assert!(shares_or_coplanar(&pa, &pb));
+        let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
+        let planes = vec![
+            mk(plane_x0, [p(0., 0., 0.), p(0., 1., 0.), p(0., 0., 1.)]), // in x = 0
+            mk(plane_z0, [p(0., 0., 0.), p(1., 0., 0.), p(0., 1., 0.)]), // in z = 0
+        ];
+        // Neither fallback fires: the coefficients are not proportional, and the coordinates say
+        // these really are two different planes.
+        assert!(!planes_coplanar(&planes[0].plane, &planes[1].plane));
+        assert!(!tolerant::t_planes_coplanar(&planes, 0, 1));
+        // The shared handle alone makes them coplanar-by-reference.
+        assert!(shares_or_coplanar(&planes, 0, 1));
     }
 
     #[test]
@@ -9020,9 +9072,12 @@ pub mod tests {
             let (va, vb) = (dx * dy * h1, dx * dy * h2);
 
             let (mut m1, a1, b1) = build();
-            let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1);
-            prop_assume!(rf.is_ok());
-            let rf = rf.unwrap();
+            // Not `prop_assume!`: a matched-footprint stack is squarely in coverage whatever the
+            // dimensions are, so a reject here is a defect, not an uninteresting sample. Assuming
+            // it away is how this property went on passing while the kernel aborted on 2% of the
+            // space and rejected 95% of it (family #3).
+            let rf = boolean_one(&mut m1, BoolKind::Fuse, a1, b1)
+                .expect("stacked boxes fuse at any dimensions");
             m1.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m1).is_empty());
             let vf = nacre_props::mass_props(&m1, rf).unwrap().volume;
@@ -9039,6 +9094,113 @@ pub mod tests {
             let vc = nacre_props::mass_props(&m3, rc).unwrap().volume;
             prop_assert!((vc - va).abs() <= 1e-9 * va, "cut {vc}");
         }
+    }
+
+    /// **The topology of a boolean does not depend on whether the coordinates are
+    /// f64-representable.** The same shape is built twice — once on tidy integers, once on
+    /// dimensions that are not exact binary fractions — and both must give the same b-rep counts,
+    /// with each volume matching its own formula.
+    ///
+    /// This is the invariant family #3 restored. Plane identity used to be read from the faces'
+    /// *derived* coefficients, which are not exactly proportional for two differently-sized faces
+    /// on one plane, so one plane became two classes and the arrangement named one point twice —
+    /// but only when the arithmetic did not happen to cancel, which tidy coordinates hid
+    /// (measured before the fix: 200/200 random stacked pairs under-merged, 12/600 ops aborted).
+    #[test]
+    fn boolean_topology_is_the_same_on_untidy_coordinates() {
+        let counts = |dx: f64, dy: f64, z0: f64, h1: f64, h2: f64, kind: BoolKind| {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0, 0.0, z0]),
+                Point3::from_array([dx, dy, z0 + h1]),
+            );
+            let b = m.add_cuboid(
+                Point3::from_array([0.0, 0.0, z0 + h1]),
+                Point3::from_array([dx, dy, z0 + h1 + h2]),
+            );
+            let r = boolean_one(&mut m, kind, a, b).expect("stacked boxes fuse/cut");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+            let s = m.solids.get(r);
+            let sh = m.shells.get(s.outer);
+            let faces = sh.faces.len();
+            let mut edges = std::collections::HashSet::new();
+            let mut verts = std::collections::HashSet::new();
+            for &fh in &sh.faces {
+                let f = m.faces.get(fh);
+                for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for he in &l.half_edges {
+                        edges.insert(he.edge);
+                        if let Some(bd) = m.edges.get(he.edge).bounds {
+                            verts.extend(bd);
+                        }
+                    }
+                }
+            }
+            let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+            ((faces, edges.len(), verts.len(), s.cavities.len()), vol)
+        };
+        // The untidy dimensions are the minimal case the proptest shrank to when the kernel aborted.
+        let (tidy_dx, tidy_dy, tidy_z0, tidy_h1, tidy_h2) = (2.0, 0.5, 0.0, 0.5, 2.0);
+        let (dx, dy, z0, h1, h2) = (
+            1.628165457453874,
+            0.5,
+            0.11200046228159026,
+            0.5,
+            2.07926124157585,
+        );
+        for kind in [BoolKind::Fuse, BoolKind::Cut] {
+            let (tidy_shape, tidy_vol) = counts(tidy_dx, tidy_dy, tidy_z0, tidy_h1, tidy_h2, kind);
+            let (shape, vol) = counts(dx, dy, z0, h1, h2, kind);
+            assert_eq!(tidy_shape, shape, "{kind:?}: same topology either way");
+            let want = |a: f64, b: f64| match kind {
+                BoolKind::Fuse => a + b,
+                _ => a,
+            };
+            let (tw, w) = (
+                want(tidy_dx * tidy_dy * tidy_h1, tidy_dx * tidy_dy * tidy_h2),
+                want(dx * dy * h1, dx * dy * h2),
+            );
+            assert!((tidy_vol - tw).abs() < 1e-9, "{kind:?} tidy {tidy_vol}");
+            assert!((vol - w).abs() < 1e-9 * w, "{kind:?} untidy {vol}");
+        }
+    }
+
+    /// One geometric plane is one class **whatever the two faces' sizes**, and the coefficient test
+    /// alone still cannot say so — the two walls' un-normalized coefficient 4-vectors are not
+    /// exactly proportional. Pins that the coordinate branch is what earns the merge.
+    #[test]
+    fn one_plane_is_one_class_whatever_the_face_size() {
+        let (dx, dy) = (1.628165457453874f64, 0.5f64);
+        let (z0, h1, h2) = (0.11200046228159026f64, 0.5f64, 2.07926124157585f64);
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, z0]),
+            Point3::from_array([dx, dy, z0 + h1]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, z0 + h1]),
+            Point3::from_array([dx, dy, z0 + h1 + h2]),
+        );
+        let (planes, _, _, _, canon) = plane_index_setup(&m, a, b).unwrap();
+        // The two `+X` walls: same plane x = dx, different face sizes (heights h1 vs h2).
+        let x_walls: Vec<usize> = (0..planes.len())
+            .filter(|&i| {
+                planes[i].n_out.as_array() == [1.0, 0.0, 0.0]
+                    && (planes[i].tri[0].as_array()[0] - dx).abs() < 1e-12
+            })
+            .collect();
+        assert_eq!(x_walls.len(), 2, "one wall from each box: {x_walls:?}");
+        let (i, j) = (x_walls[0], x_walls[1]);
+        assert!(
+            !planes_coplanar(&planes[i].plane, &planes[j].plane),
+            "the coefficient test still cannot prove these coplanar — that is the whole point"
+        );
+        assert!(
+            tolerant::t_planes_coplanar(&planes, i, j),
+            "coordinates can"
+        );
+        assert_eq!(canon[i], canon[j], "so they are one class");
     }
 
     #[test]

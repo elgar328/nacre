@@ -188,6 +188,52 @@ pub(crate) fn t_plane_side(
     to_i8(orient3d_judge(&pp, &d[0], &d[1], &d[2]))
 }
 
+/// Whether the three points are **exactly collinear**, decided by the three coordinate-plane
+/// projections of the cross product (each an exact `orient2d`). Non-collinearity is the standing
+/// precondition of [`t_planes_coplanar`]; [`crate::outer_tri`] establishes it for every plane
+/// [`crate::collect_planes`] builds, but a hand-built `PlaneInfo` can violate it.
+fn tri_collinear(t: [Point3; 3]) -> bool {
+    let [a, b, c] = t.map(|p| p.as_array());
+    let proj = |i: usize, j: usize| {
+        nacre_geom::intersect::orient2d([a[i], a[j]], [b[i], b[j]], [c[i], c[j]]) == 0.0
+    };
+    proj(0, 1) && proj(1, 2) && proj(2, 0)
+}
+
+/// Whether planes `i` and `j` are the **same plane**, decided on the faces' original coordinates
+/// instead of on their derived coefficients.
+///
+/// [`PlaneInfo::plane`]'s coefficients are a *derivation* — `cross(b−a, c−a)`, then `d = −n·a`,
+/// both rounded — and the normal is **not normalized**, so its magnitude scales with the face's own
+/// triangle. Two faces of different size on one plane therefore carry coefficient 4-vectors that
+/// are only *approximately* proportional, and [`nacre_predicates::planes_coplanar`]'s exact rank-1
+/// test answers "different plane" (measured 2026-07-22: 200/200 random stacked box pairs, which is
+/// why the arrangement then names one point with two triples). The `tri` points carry no such
+/// derivation — for a `Constructed` vertex they are the truth the user gave — and `orient3d` on
+/// them is exact.
+///
+/// Three **non-collinear** points on a plane determine it, so "every point of `tri_j` lies on
+/// `tri_i`'s plane" is conclusive — but only under that non-collinearity, so a degenerate `tri`
+/// answers `false` (never merge on no evidence). One direction suffices: if `tri_j`'s three points
+/// lie on `tri_i`'s plane, the two planes coincide, hence the test is symmetric.
+///
+/// Routes like the other wrappers: axis-aligned → the geom predicate on `tri`; any rotated → the
+/// exact `Pt3` definitions and [`orient3d_judge`], so a rotated pair is decided on its bases.
+pub(crate) fn t_planes_coplanar(planes: &[PlaneInfo], i: usize, j: usize) -> bool {
+    if tri_collinear(planes[i].tri) || tri_collinear(planes[j].tri) {
+        return false;
+    }
+    if !any_rotated(planes, &[i, j]) {
+        return planes[j]
+            .tri
+            .iter()
+            .all(|&q| plane_side(planes[i].tri, q) == 0);
+    }
+    let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
+    dj.iter()
+        .all(|q| to_i8(orient3d_judge(q, &di[0], &di[1], &di[2])) == 0)
+}
+
 /// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — the toleranced twin
 /// of [`plane_pair_dir_sign`] (how the line `p ∩ a` runs relative to plane `b`), matching
 /// its shape (index-based drop-in, `+1`/`-1`/`0`).
@@ -385,6 +431,51 @@ mod tests {
             }
         }
         out
+    }
+
+    /// `t_planes_coplanar` decides plane identity from the faces' own coordinates, so it must
+    /// (a) refuse to conclude anything from a degenerate `tri` — three equal points lie on *every*
+    /// plane, and merging on that evidence would fuse genuinely different planes — and
+    /// (b) answer the same for a rotated solid as for the unrotated one.
+    #[test]
+    fn t_planes_coplanar_guards_degeneracy_and_survives_rotation() {
+        let (mut m, s) = cuboid();
+        let pu = collect_planes(&m, s).unwrap();
+        // (a) A hand-built degenerate pair: same-normal parallel planes, but `tri` is a point.
+        let degenerate: Vec<PlaneInfo> = (0..2)
+            .map(|k| PlaneInfo {
+                surf: pu[0].surf,
+                face: pu[0].face,
+                plane: pu[0].plane,
+                tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
+                n_out: pu[0].n_out,
+                orient: pu[0].orient,
+                tri_pt3: None,
+            })
+            .collect();
+        assert!(
+            !t_planes_coplanar(&degenerate, 0, 1),
+            "a degenerate tri is no evidence"
+        );
+        // (b) Rotation invariance over every pair of the cuboid's faces.
+        let r = rotated(&mut m, s);
+        let pr = collect_planes(&m, r).unwrap();
+        assert_eq!(pu.len(), pr.len());
+        let mut same = 0usize;
+        for i in 0..pu.len() {
+            for j in (i + 1)..pu.len() {
+                assert_eq!(
+                    t_planes_coplanar(&pu, i, j),
+                    t_planes_coplanar(&pr, i, j),
+                    "rotation-invariant at ({i},{j})"
+                );
+                if t_planes_coplanar(&pu, i, j) {
+                    same += 1;
+                }
+            }
+        }
+        // A cuboid has six distinct planes, so no pair may merge — the answer is not vacuously true.
+        assert_eq!(same, 0, "a cuboid has no two coplanar faces");
     }
 
     /// `plane_side` is an orient3d sign → rigid-rotation invariant: the frame3 path over a

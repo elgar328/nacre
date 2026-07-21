@@ -1295,6 +1295,23 @@ pub(crate) fn boolean_via_trace(
             }
         }
     }
+    // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
+    // materialized coordinate is only its cache — so two *different* triples landing on the same
+    // coordinate means the exact substrate and the f64 cache disagree about how many vertices
+    // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
+    // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
+    //
+    // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
+    // triples then name one point twice (measured 2026-07-22 — two `add_cuboid` walls at the same
+    // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
+    // are not exactly proportional). A genuine 4-plane concurrency does the same.
+    for (i, u) in seam.iter().enumerate() {
+        for v in &seam[i + 1..] {
+            if u.point == v.point {
+                return Err(reject(tag::SEAM_ALIAS));
+            }
+        }
+    }
 
     assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
 }
