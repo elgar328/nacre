@@ -1115,7 +1115,7 @@ fn extrude_and_boolean(
     } else {
         dist
     };
-    let (prism, _) = build_prism(model, &base_pts, n * signed, Some(frame.surface_h))?;
+    let (prism, prism_faces) = build_prism(model, &base_pts, n * signed, Some(frame.surface_h))?;
     let solids = boolean(model, kind, frame.solid_h, prism).map_err(|e| {
         model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
         OpError::Boolean(e)
@@ -1125,13 +1125,15 @@ fn extrude_and_boolean(
     // never severs; a pocket (Cut) that severs leaves several solids — scan them all for the cap
     // and return the piece that carries it, leaving the others live. The committed model is a valid
     // multi-solid either way, so there is no reject-after-commit (append-only has no rollback).
-    let cap_pt = frame.origin + n * signed;
+    // `build_prism` returns the far cap as `faces[1]`; the store is append-only, so it is still
+    // readable after the boolean retired the prism, and it names the cap plane exactly.
+    let far_cap = prism_faces[1];
     let primary = *solids
         .first()
         .expect("a pad/pocket boolean yields at least one solid");
     match solids
         .iter()
-        .find_map(|&s| find_face_on_plane(model, s, cap_pt, n).map(|c| (s, c)))
+        .find_map(|&s| find_face_coplanar_with(model, s, far_cap, n).map(|c| (s, c)))
     {
         Some((solid, cap)) => Ok((solid, Some(cap))),
         None => Ok((primary, None)),
@@ -1165,28 +1167,54 @@ fn pocket(
     Ok((solid, floor.ok_or(OpError::PocketNotBlind)?))
 }
 
-/// The outer-shell face of `solid` whose plane passes through `pt` (coplanar) and whose **oriented**
-/// outward normal agrees with `n_out` (`dot > 0`). Recovers a pocket floor from a boolean result:
-/// the oriented-normal filter distinguishes the floor (normal toward the opening) from a coincident
-/// face with the opposite normal. `None` if there is none (e.g. a through-pocket has no floor).
-fn find_face_on_plane(
+/// The outer-shell face of `solid` that lies on `reference`'s plane with its outward normal on
+/// `want`'s side — how a pad/pocket recovers its own exposed cap (the boss top, the pocket floor)
+/// from the boolean result. `None` if there is none (a through-pocket has no floor).
+///
+/// **`reference` is a real face, not a `(point, normal)` pair, and that is the point.** Naming the
+/// plane by coefficients meant comparing `d = −n·origin` computed at *different* points of the same
+/// plane: exact only when the dot happens to reproduce bit for bit, which for an axis-aligned frame
+/// it does (`n·p` is one coordinate) and for a slanted one it does not. With a face in hand the
+/// question is answered the way the kernel answers identity everywhere else:
+///
+/// 1. **the same `Surface` handle** — integers, not coordinates (overview §2). `assemble_fuse_cut`
+///    gives a result face the surface of the operand plane it came from, so the surviving cap
+///    normally lands here.
+/// 2. **the faces' own coordinates, exactly** — every `outer_tri` point of the candidate lies on
+///    `reference`'s tri plane (`plane_side`, an exact `orient3d` on the points the user gave).
+///    Needed because `plane_idx` names a *class representative*: if the cap plane merged with a
+///    coplanar face of the other operand, the survivor can carry that operand's surface instead.
+///    A `None` from `outer_tri` (no non-collinear triple) means no evidence — that face is skipped,
+///    and a degenerate `reference` leaves only branch 1.
+///
+/// The direction filter reads the **candidate's** outward normal against `want`, never
+/// `reference`'s: a pocket's tool cap faces along the sweep (`−n`) while the floor it becomes faces
+/// back into the void (`+n`). Coplanarity is settled by then, so the two are parallel and the dot
+/// is a full magnitude away from zero — an f64 read whose sign cannot round the wrong way.
+///
+/// If the cap survives as several faces they all satisfy this, and the first is returned; the
+/// coefficient test had the same ambiguity.
+///
+/// **Measured (2026-07-22): the corpus does not separate the two branches** — disabling either one
+/// leaves the whole suite at 207 passed / 23 failed. So branch 2 has no firing test today and is a
+/// documented backstop (cf. `NON_MANIFOLD_EDGE`); branch 1 is kept because handle identity is the
+/// strongest answer available and is the path a surviving cap normally takes.
+fn find_face_coplanar_with(
     model: &Model,
     solid: Handle<Solid>,
-    pt: Point3,
-    n_out: Vector3,
+    reference: Handle<Face>,
+    want: Vector3,
 ) -> Option<Handle<Face>> {
-    let target = Plane::from_point_normal(pt, n_out)?;
+    let ref_surf = model.faces.get(reference).surface;
+    let ref_tri = outer_tri(model, model.faces.get(reference)).map(|(tri, _)| tri);
     let shell = model.solids.get(solid).outer;
     model.shells.get(shell).faces.iter().copied().find(|&fh| {
-        let f = model.faces.get(fh);
-        let Surface::Plane(plane) = model.surfaces.get(f.surface) else {
+        let Some((tri, _)) = outer_tri(model, model.faces.get(fh)) else {
             return false;
         };
-        let sign = match f.orientation {
-            Orientation::Forward => 1.0,
-            Orientation::Reversed => -1.0,
-        };
-        planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n_out) > 0.0
+        let coplanar = model.faces.get(fh).surface == ref_surf
+            || ref_tri.is_some_and(|r| tri.iter().all(|&q| plane_side(r, q) == 0));
+        coplanar && (tri[1] - tri[0]).cross(tri[2] - tri[0]).dot(want) > 0.0
     })
 }
 
@@ -2641,6 +2669,28 @@ pub mod tests {
 
     fn p2(x: f64, y: f64) -> Point2 {
         Point2::from_array([x, y])
+    }
+
+    /// Is there an outer-shell face on the plane through `pt` with normal `n`, oriented that way?
+    /// The production path names a cap by the *face* that made it (`find_face_coplanar_with`); a
+    /// test that wants to say "a face sits on z = 1.5 facing +z" has no such face in hand, and
+    /// asserting geometry from coordinates is exactly what a test may do.
+    fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3) -> bool {
+        let Some(target) = Plane::from_point_normal(pt, n) else {
+            return false;
+        };
+        let shell = m.solids.get(solid).outer;
+        m.shells.get(shell).faces.iter().any(|&fh| {
+            let f = m.faces.get(fh);
+            let Surface::Plane(plane) = m.surfaces.get(f.surface) else {
+                return false;
+            };
+            let sign = match f.orientation {
+                Orientation::Forward => 1.0,
+                Orientation::Reversed => -1.0,
+            };
+            planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n) > 0.0
+        })
     }
 
     fn square() -> Profile2d {
@@ -7921,15 +7971,12 @@ pub mod tests {
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 3.08).abs() < 1e-12, "volume {vol}");
         // The boss top cap sits on the z = 1.5 plane, its outward normal +z.
-        assert!(
-            find_face_on_plane(
-                &m,
-                r,
-                Point3::from_array([0.5, 0.5, 1.5]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
-            )
-            .is_some()
-        );
+        assert!(has_face_on_plane(
+            &m,
+            r,
+            Point3::from_array([0.5, 0.5, 1.5]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+        ));
     }
 
     #[test]
@@ -7959,15 +8006,12 @@ pub mod tests {
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 1.048).abs() < 1e-12, "volume {vol}");
         // The L boss top cap sits on the z = 1.4 plane, its outward normal +z.
-        assert!(
-            find_face_on_plane(
-                &m,
-                r,
-                Point3::from_array([0.4, 0.4, 1.4]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
-            )
-            .is_some()
-        );
+        assert!(has_face_on_plane(
+            &m,
+            r,
+            Point3::from_array([0.4, 0.4, 1.4]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+        ));
     }
 
     #[test]
