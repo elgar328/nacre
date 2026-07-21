@@ -109,6 +109,7 @@ pub(crate) fn edge_planes(
 /// species of three-plane point the seam machinery already builds. Whether it lies
 /// *within* that edge and *inside* `g` is a single question, and [`edge_crosses_face`]
 /// answers it exactly.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn seam_segments_on(
     model: &Model,
     f: Handle<Face>,
@@ -117,15 +118,16 @@ pub(crate) fn seam_segments_on(
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_x: &EdgePlanes,
     inc_y: &EdgePlanes,
+    canon: &[usize],
 ) -> Result<Vec<SeamSegment>, BoolError> {
     let p = surf_ix[&f];
-    let f_rings = face_rings(model, f, p, inc_x)?;
+    let f_rings = face_rings(model, f, p, inc_x, planes, canon)?;
 
     let mut out = Vec::new();
     for shell in solid_shell_handles(model, other) {
         for &g in &model.shells.get(shell).faces {
             let q = surf_ix[&g];
-            let g_rings = face_rings(model, g, q, inc_y)?;
+            let g_rings = face_rings(model, g, q, inc_y, planes, canon)?;
 
             // `∂(f ∩ g) ⊆ (∂f ∩ g) ∪ (f ∩ ∂g)`, and these two sweeps collect exactly
             // those parts: a boundary crossing that lands outside the other face never
@@ -567,8 +569,10 @@ pub(crate) fn face_vertex_triples(
     f: Handle<Face>,
     p: usize,
     inc: &EdgePlanes,
+    planes: &[PlaneInfo],
+    canon: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
-    loop_triples(&model.faces.get(f).outer, p, inc)
+    loop_triples(&model.faces.get(f).outer, p, inc, planes, canon)
 }
 
 /// Each hole ring of face `f`, as three-plane triples.
@@ -582,31 +586,104 @@ pub(crate) fn hole_rings(
     f: Handle<Face>,
     p: usize,
     inc: &EdgePlanes,
+    planes: &[PlaneInfo],
+    canon: &[usize],
 ) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
     model
         .faces
         .get(f)
         .inner
         .iter()
-        .map(|l| loop_triples(l, p, inc))
+        .map(|l| loop_triples(l, p, inc, planes, canon))
         .collect()
 }
 
-fn loop_triples(l: &Loop, p: usize, inc: &EdgePlanes) -> Result<Vec<[usize; 3]>, BoolError> {
+/// A loop's vertices as three-plane triples.
+///
+/// The name normally comes from the loop itself — the face's own plane and the two neighbours the
+/// meeting edges carry. **That fails when both neighbours lie on one plane**: an earlier boolean can
+/// split a plane between two faces with opposite normals (a base's exposed top and the cantilever
+/// underside above it), and a vertex where the loop runs straight through their shared line then
+/// names one plane twice. Such a triple defines no point — `three_planes` answers `None`, and the
+/// exact predicates, whose precondition is `D ≠ 0`, abort on it. Measured 2026-07-22: this is the
+/// *only* path by which a degenerate triple reaches them.
+///
+/// So when the two neighbours are one class, the name is taken from **every plane touching the
+/// vertex** ([`vertex_plane_indices`]) instead: exactly three classes ⇒ that is the name, and it is
+/// the same set whichever face's loop asks, so welding stays consistent (a face whose loop does not
+/// degenerate here derives the same three). More than three is a real four-plane concurrency and
+/// fewer is a genuine straight angle — both decline. Three *dependent* planes share a line rather
+/// than a point, so independence is checked too ([`t_plane_pair_dir_sign`], which reads the same
+/// un-normalized coefficients the consumer does).
+///
+/// The common case is untouched, so no existing name moves.
+fn loop_triples(
+    l: &Loop,
+    p: usize,
+    inc: &EdgePlanes,
+    planes: &[PlaneInfo],
+    canon: &[usize],
+) -> Result<Vec<[usize; 3]>, BoolError> {
     let hes = &l.half_edges;
-    let other = |he: &nacre_topo::HalfEdge| -> Result<usize, BoolError> {
-        let (_, [pa, pb]) = *inc.get(&he.edge).ok_or_else(|| reject(tag::MISSING_SEAM))?;
-        Ok(if pa == p { pb } else { pa })
+    let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
+        inc.get(&he.edge)
+            .copied()
+            .ok_or_else(|| reject(tag::MISSING_SEAM))
     };
+    let other = |pair: [usize; 2]| if pair[0] == p { pair[1] } else { pair[0] };
     let n = hes.len();
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         // Vertex `i` starts edge `i` and ends edge `i - 1`.
-        let (a, b) = (other(&hes[(i + n - 1) % n])?, other(&hes[i])?);
-        if a == b {
-            return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // a straight angle
+        let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
+        let (out_bounds, out_pair) = edge(&hes[i])?;
+        let (a, b) = (other(in_pair), other(out_pair));
+        if canon[a] != canon[b] {
+            let mut t = [p, a, b];
+            t.sort_unstable();
+            out.push(t);
+            continue;
         }
-        let mut t = [p, a, b];
+        // Both neighbours are one plane. The vertex is the two edges' shared endpoint — and only
+        // if that is unambiguous (a two-gon or a self-bounded rim would give two, or none).
+        let shared: Vec<Handle<Vertex>> = in_bounds
+            .iter()
+            .copied()
+            .filter(|v| out_bounds.contains(v))
+            .collect();
+        let [vh] = shared[..] else {
+            return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        };
+        let mut classes: Vec<usize> = vertex_plane_indices(vh, inc)
+            .into_iter()
+            .map(|k| canon[k])
+            .collect();
+        classes.sort_unstable();
+        classes.dedup();
+        if classes.len() != 3 {
+            // >3: a genuine four-plane concurrency, which this substrate cannot name.
+            // <3: a genuine straight angle — the polygon is unchanged by dropping the vertex, but
+            // this brick does not drop vertices.
+            return Err(reject(if classes.len() > 3 {
+                tag::FOURPLANE
+            } else {
+                tag::LOOP_ORIENT_MISMATCH
+            }));
+        }
+        // Keep `p` itself, not its class representative: callers still match the face's own plane
+        // by raw index (`x != fp`), and the ring is canonized downstream anyway — so the triple
+        // stays in the same index space as every other name while denoting the same three classes.
+        let mut t = [p, 0, 0];
+        let mut k = 1;
+        for &c in &classes {
+            if c != canon[p] {
+                t[k] = c;
+                k += 1;
+            }
+        }
+        if t_plane_pair_dir_sign(planes, t[0], t[1], t[2]) == 0 {
+            return Err(reject(tag::THREE_PLANES)); // three planes through one line, not one point
+        }
         t.sort_unstable();
         out.push(t);
     }
@@ -723,9 +800,11 @@ pub(crate) fn face_rings(
     f: Handle<Face>,
     p: usize,
     inc: &EdgePlanes,
+    planes: &[PlaneInfo],
+    canon: &[usize],
 ) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
-    let mut out = vec![face_vertex_triples(model, f, p, inc)?];
-    out.extend(hole_rings(model, f, p, inc)?);
+    let mut out = vec![face_vertex_triples(model, f, p, inc, planes, canon)?];
+    out.extend(hole_rings(model, f, p, inc, planes, canon)?);
     Ok(out)
 }
 
@@ -905,7 +984,7 @@ pub(crate) fn point_in_solid_idx(
     let mut faces: Vec<(usize, Vec<Vec<[usize; 3]>>)> = Vec::new();
     for sh in solid_shell_handles(model, other) {
         for &g in &model.shells.get(sh).faces {
-            let raw = face_rings(model, g, surf_ix[&g], inc_o)?;
+            let raw = face_rings(model, g, surf_ix[&g], inc_o, planes, canon)?;
             let mut rings: Vec<Vec<[usize; 3]>> = Vec::with_capacity(raw.len());
             for ring in &raw {
                 let mut cr: Vec<[usize; 3]> = Vec::with_capacity(ring.len());
@@ -1141,6 +1220,7 @@ pub(crate) fn orient_seam_loop(
 /// predicate), and paths start at the lowest-index unused segment — so the same model
 /// yields the same paths, in the same order, walked in the same direction. Sub-unit
 /// 3d's operation-log replay rests on this.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn seam_paths_on(
     model: &Model,
     f: Handle<Face>,
@@ -1149,8 +1229,9 @@ pub(crate) fn seam_paths_on(
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_x: &EdgePlanes,
     inc_y: &EdgePlanes,
+    canon: &[usize],
 ) -> Result<Vec<SeamPath>, BoolError> {
-    let segs = seam_segments_on(model, f, other, planes, surf_ix, inc_x, inc_y)?;
+    let segs = seam_segments_on(model, f, other, planes, surf_ix, inc_x, inc_y, canon)?;
 
     let mut adj: HashMap<[usize; 3], Vec<usize>> = HashMap::new();
     for (i, s) in segs.iter().enumerate() {

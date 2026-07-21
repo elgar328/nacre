@@ -3803,7 +3803,17 @@ pub mod tests {
     ) -> Vec<arrange::SeamSegment> {
         let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
         let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
-        arrange::seam_segments_on(m, f, y, planes, surf_ix, &inc_x, &inc_y).unwrap()
+        arrange::seam_segments_on(
+            m,
+            f,
+            y,
+            planes,
+            surf_ix,
+            &inc_x,
+            &inc_y,
+            &plane_classes(planes),
+        )
+        .unwrap()
     }
 
     fn paths(
@@ -3816,7 +3826,17 @@ pub mod tests {
     ) -> Vec<arrange::SeamPath> {
         let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
         let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
-        arrange::seam_paths_on(m, f, y, planes, surf_ix, &inc_x, &inc_y).unwrap()
+        arrange::seam_paths_on(
+            m,
+            f,
+            y,
+            planes,
+            surf_ix,
+            &inc_x,
+            &inc_y,
+            &plane_classes(planes),
+        )
+        .unwrap()
     }
 
     fn near(a: Point3, b: [f64; 3]) -> bool {
@@ -3850,7 +3870,7 @@ pub mod tests {
             for &f in &m.shells.get(shell).faces {
                 // A degenerate touch is an honest reject, not a counterexample.
                 let Ok(segs) =
-                    arrange::seam_segments_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y)
+                    arrange::seam_segments_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y, &plane_classes(&planes))
                 else {
                     continue;
                 };
@@ -3899,7 +3919,7 @@ pub mod tests {
                 return Ok(());
             };
             for &f in &m.shells.get(m.solids.get(a).outer).faces {
-                let Ok(out) = arrange::seam_paths_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y)
+                let Ok(out) = arrange::seam_paths_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y, &plane_classes(&planes))
                 else {
                     continue;
                 };
@@ -4253,7 +4273,9 @@ pub mod tests {
         let be = by_edge(&m, floor, &ps);
         assert_eq!(be.iter().map(|v| v.len()).max(), Some(2));
 
-        let bnd = arrange::face_vertex_triples(&m, floor, p, &inc).unwrap();
+        let bnd =
+            arrange::face_vertex_triples(&m, floor, p, &inc, &planes, &plane_classes(&planes))
+                .unwrap();
         let br = arrange::boundary_runs(&planes, p, &bnd, &be).unwrap();
         assert_eq!(br.crossings.len(), 2);
         let mut lens: Vec<usize> = br.runs.iter().map(|r| r.len()).collect();
@@ -4546,8 +4568,17 @@ pub mod tests {
         let shell = m.solids.get(x).outer;
         let mut out = std::collections::BTreeSet::new();
         for &f in &m.shells.get(shell).faces {
-            let segs =
-                arrange::seam_segments_on(m, f, y, &planes, &surf_ix, &inc_x, &inc_y).unwrap();
+            let segs = arrange::seam_segments_on(
+                m,
+                f,
+                y,
+                &planes,
+                &surf_ix,
+                &inc_x,
+                &inc_y,
+                &plane_classes(&planes),
+            )
+            .unwrap();
             for s in segs {
                 for t in s.ends {
                     let mut surfs = [planes[t[0]].surf, planes[t[1]].surf, planes[t[2]].surf];
@@ -5265,7 +5296,9 @@ pub mod tests {
             panic!("a loop")
         };
         let inc_f = arrange::edge_planes(&m, l, &surf_ix).unwrap();
-        let bnd = arrange::face_vertex_triples(&m, top, p, &inc_f).unwrap();
+        let bnd =
+            arrange::face_vertex_triples(&m, top, p, &inc_f, &planes, &plane_classes(&planes))
+                .unwrap();
 
         let mut cycle: Vec<[usize; 3]> = kept_run.iter().map(|&i| bnd[i]).collect();
         if arc_forward {
@@ -5310,7 +5343,9 @@ pub mod tests {
                 panic!("{name}: a loop")
             };
             let inc_f = arrange::edge_planes(&m, l, &surf_ix).unwrap();
-            let bnd = arrange::face_vertex_triples(&m, top, p, &inc_f).unwrap();
+            let bnd =
+                arrange::face_vertex_triples(&m, top, p, &inc_f, &planes, &plane_classes(&planes))
+                    .unwrap();
             let ring = arrange::orient_seam_loop(&planes, p, lp, true).unwrap();
             for t in &ring {
                 let rays = arrange::every_ray(&planes, p, *t, &bnd).unwrap();
@@ -5842,7 +5877,9 @@ pub mod tests {
             let inc_l = arrange::edge_planes(&m, l, &surf_ix).unwrap();
             let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
             let q = surf_ix[&bottom];
-            let rings = arrange::face_rings(&m, bottom, q, &inc_l).unwrap();
+            let rings =
+                arrange::face_rings(&m, bottom, q, &inc_l, &planes, &plane_classes(&planes))
+                    .unwrap();
             let (bounds, inc) = *arrange::edge_planes(&m, other, &surf_ix)
                 .unwrap()
                 .values()
@@ -5864,7 +5901,9 @@ pub mod tests {
             let inc_flat = arrange::edge_planes(&m, flat, &surf_ix).unwrap();
             let floor = face_facing(&m, flat, &planes, &surf_ix, [0.0, 0.0, -1.0]);
             let q = surf_ix[&floor];
-            let rings = arrange::face_rings(&m, floor, q, &inc_flat).unwrap();
+            let rings =
+                arrange::face_rings(&m, floor, q, &inc_flat, &planes, &plane_classes(&planes))
+                    .unwrap();
             let (bounds, inc) = *arrange::edge_planes(&m, l, &surf_ix)
                 .unwrap()
                 .values()
@@ -8470,13 +8509,13 @@ pub mod tests {
                     if canon[fi] != c {
                         continue;
                     }
-                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) else {
+                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc, planes, canon) else {
                         continue;
                     };
                     let mut rings: Vec<Vec<[usize; 3]>> =
                         vec![ts.into_iter().map(canonize).collect()];
                     // Hole rims bound the face too — a point on a hole rim is on the boundary.
-                    if let Ok(hs) = arrange::hole_rings(m, fh, fi, inc) {
+                    if let Ok(hs) = arrange::hole_rings(m, fh, fi, inc, planes, canon) {
                         rings.extend(
                             hs.into_iter()
                                 .map(|r| r.into_iter().map(canonize).collect()),
@@ -8522,14 +8561,14 @@ pub mod tests {
                     if canon[fi] != c {
                         continue;
                     }
-                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc) else {
+                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc, planes, canon) else {
                         continue;
                     };
                     let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
                     match arrange::point_in_ring(planes, c, t, &ring) {
                         Ok(true) => {
                             // Inside the outer loop, but a point inside a hole is outside the face.
-                            let in_hole = arrange::hole_rings(m, fh, fi, inc)
+                            let in_hole = arrange::hole_rings(m, fh, fi, inc, planes, canon)
                                 .map(|hs| {
                                     hs.into_iter().any(|r| {
                                         let h: Vec<[usize; 3]> =
@@ -9360,6 +9399,62 @@ pub mod tests {
             "coordinates can"
         );
         assert_eq!(canon[i], canon[j], "so they are one class");
+    }
+
+    /// A vertex where one plane is split between two faces is named by **the planes that touch it**,
+    /// not by the loop's two neighbours.
+    ///
+    /// The overhang chain puts the base's exposed top and the cantilever's underside on one plane
+    /// (`z = 1`, opposite normals — `unify` rightly keeps them apart, `canon` rightly calls them one
+    /// class). At `(1, 0.25, 1)` the side wall's loop runs straight through their shared line, so the
+    /// old rule named that vertex with the same plane twice: a triple defining no point, which the
+    /// exact predicates — whose precondition is `D ≠ 0` — aborted on. Measured 2026-07-22 as the only
+    /// path a degenerate triple reached them (16 arrivals in the OCCT suite, now 0).
+    #[test]
+    fn a_vertex_is_named_by_the_planes_that_touch_it() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([1.5, 0.75, 2.0]),
+        );
+        let overhung = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        let cutter = m.add_cuboid(
+            Point3::from_array([1.1, 0.35, 0.5]),
+            Point3::from_array([1.4, 0.65, 2.5]),
+        );
+        let (planes, surf_ix, inc_a, _, canon) = plane_index_setup(&m, overhung, cutter).unwrap();
+        let mut checked = 0usize;
+        for sh in solid_shell_handles(&m, overhung) {
+            for &fh in &m.shells.get(sh).faces {
+                let p = surf_ix[&fh];
+                let tris =
+                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &canon).unwrap();
+                for t in &tris {
+                    let c: Vec<usize> = t.iter().map(|&k| canon[k]).collect();
+                    assert!(
+                        c[0] != c[1] && c[1] != c[2] && c[0] != c[2],
+                        "vertex triple {t:?} names one class twice ({c:?})"
+                    );
+                    // A name that denotes three distinct classes must denote a real point.
+                    assert!(
+                        three_planes(
+                            &planes[t[0]].plane,
+                            &planes[t[1]].plane,
+                            &planes[t[2]].plane
+                        )
+                        .is_some(),
+                        "triple {t:?} defines no point"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "the chained operand has vertices to name");
     }
 
     #[test]

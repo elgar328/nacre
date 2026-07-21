@@ -117,14 +117,14 @@ fn trace_transversal_face(
     canon: &[usize],
     out: &mut Trace,
 ) {
-    let outer = match arrange::face_vertex_triples(model, fh, fp, inc) {
+    let outer = match arrange::face_vertex_triples(model, fh, fp, inc, planes, canon) {
         Ok(r) => r,
         Err(_) => {
             out.declined.push((fp, "outer-ring"));
             return;
         }
     };
-    let holes = arrange::hole_rings(model, fh, fp, inc).unwrap_or_default();
+    let holes = arrange::hole_rings(model, fh, fp, inc, planes, canon).unwrap_or_default();
 
     // `L`'s third plane naming a point of the on-line edge: the vertex triple `{fp, W-class, r}`.
     let third_on_l = |t: [usize; 3]| -> Option<usize> {
@@ -180,8 +180,10 @@ fn trace_transversal_face(
                 }
                 j += 1;
             } else {
-                // A maximal run of side==0 vertices (at most two, since three would be a straight
-                // angle already rejected by `loop_triples`).
+                // A maximal run of side==0 vertices. Two is the common case, but a vertex whose
+                // name had to be taken from its touching planes (`loop_triples`) stays in the ring
+                // even when the loop runs straight through it, so a run can be longer: an on-line
+                // *interval* with any number of named points inside it.
                 let run_start = i;
                 let mut m = 0;
                 while j < n && side[(start + j) % n] == 0 {
@@ -206,7 +208,9 @@ fn trace_transversal_face(
                         }),
                         None => declined = Some("run-name"),
                     }
-                } else if m == 2 {
+                } else {
+                    // m >= 2: one on-line interval. Only its two ends and the flanks decide
+                    // anything; the interior points are names the arrangement may split at.
                     let id = run_counter;
                     run_counter += 1;
                     // Flanks on the same side ⇒ the face grazes W along this edge with its body on
@@ -219,9 +223,10 @@ fn trace_transversal_face(
                     let graze_above = (!flanks_differ).then_some(
                         arrange::label_side(planes, ring[(run_start + n - 1) % n], wc) > 0,
                     );
-                    match (name(0), name(1)) {
-                        (Some(ra), Some(rb)) => {
-                            for r in [ra, rb] {
+                    let names: Option<Vec<usize>> = (0..m).map(name).collect();
+                    match names {
+                        Some(rs) => {
+                            for r in rs {
                                 nodes.push(Node {
                                     r,
                                     flip: false,
@@ -232,10 +237,8 @@ fn trace_transversal_face(
                                 });
                             }
                         }
-                        _ => declined = Some("run-name"),
+                        None => declined = Some("run-name"),
                     }
-                } else {
-                    declined = Some("long-run");
                 }
             }
             if declined.is_some() {
@@ -271,7 +274,8 @@ fn trace_transversal_face(
                 out.declined.push((fp, "run-split"));
                 return;
             }
-            if prev {
+            // The whole run is one interval, so its flip happens once — at the far end.
+            if prev && !next {
                 nodes[k].flip = nodes[k].flanks_differ;
             }
         }
@@ -360,33 +364,39 @@ fn trace_one(
                 let n = tris.len();
                 for i in 0..n {
                     // Edge i runs vertex i → vertex i+1; the wall it rides is the plane the two
-                    // endpoint triples share besides `fp`.
+                    // endpoint triples share besides `fp`. Matched by **class**, not raw index: a
+                    // vertex named from its touching planes carries the class representative, while
+                    // its neighbour may carry another face of that same class, and raw equality
+                    // would miss the shared wall (they are one plane).
                     let (t0, t1) = (tris[i], tris[(i + 1) % n]);
-                    let shared: Vec<usize> = t0
+                    let mut shared: Vec<usize> = t0
                         .iter()
                         .copied()
-                        .filter(|&x| x != fp && t1.contains(&x))
+                        .map(|x| canon[x])
+                        .filter(|&c| c != canon[fp] && t1.iter().any(|&y| canon[y] == c))
                         .collect();
+                    shared.sort_unstable();
+                    shared.dedup();
                     let [wall] = shared[..] else {
                         out.declined.push((fp, "seated-edge-naming"));
                         continue;
                     };
                     out.segs.push(Seg {
-                        wall: canon[wall],
+                        wall,
                         end: [canon3(t0, canon), canon3(t1, canon)],
                         solid: which,
                         kind,
                     });
                 }
             };
-            match arrange::face_vertex_triples(model, fh, fp, inc) {
+            match arrange::face_vertex_triples(model, fh, fp, inc, planes, canon) {
                 Ok(ts) => emit_ring(&ts),
                 Err(_) => {
                     out.declined.push((fp, "outer-ring"));
                     continue;
                 }
             }
-            if let Ok(rings) = arrange::hole_rings(model, fh, fp, inc) {
+            if let Ok(rings) = arrange::hole_rings(model, fh, fp, inc, planes, canon) {
                 for r in rings {
                     emit_ring(&r);
                 }
