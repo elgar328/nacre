@@ -913,6 +913,92 @@ fn emit_faces(
     out
 }
 
+/// Every result face across all plane classes, before assembly (the driver's risky half, testable
+/// by face count without mutating the model). A declining class aborts the whole boolean.
+#[allow(clippy::too_many_arguments)]
+fn trace_result_faces(
+    model: &Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    planes: &[PlaneInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    inc_a: &arrange::EdgePlanes,
+    inc_b: &arrange::EdgePlanes,
+    canon: &[usize],
+) -> Result<Vec<LocalFace>, BoolError> {
+    let mut faces: Vec<LocalFace> = Vec::new();
+    for wc in (0..planes.len()).filter(|&i| canon[i] == i) {
+        let tr = trace_on_class(model, a, b, wc, planes, surf_ix, inc_a, inc_b, canon);
+        if !tr.declined.is_empty() {
+            return Err(reject(tag::COPLANAR_PAIR)); // incomplete trace ⇒ honest reject
+        }
+        let merged = merge_coincident(&tr.segs);
+        let (split, overlap) = split_at_crossings(planes, wc, &merged)?;
+        if overlap {
+            return Err(reject(tag::COPLANAR_OVERLAP_MULTI)); // E5 not resolved yet
+        }
+        let (cells, face_of) = extract_cells(planes, wc, &split)?;
+        let labels = label_cells(&cells, &face_of, &split)?;
+        faces.extend(emit_faces(kind, &labels, &cells, &split, planes, wc));
+    }
+    Ok(faces)
+}
+
+/// Drive the arrangement pipeline over **every** plane class and assemble the result solid — the
+/// first end-to-end boolean from the trace engine. Isolated: nothing in production calls this.
+///
+/// Vertex welding is automatic: every result vertex is a sorted triple of three canon plane
+/// classes (`canon3`), so a corner shared by three planes gets one identical `Node::Seam`
+/// regardless of which plane was the cut class W — `assemble_fuse_cut` welds them to one vertex.
+/// (This holds while every arrangement vertex is a 3-plane point; a 4-plane concurrency would name
+/// it inconsistently and is out of scope here — axis-aligned boxes never produce one.)
+///
+/// A class that declines (holes, degenerate) aborts the whole boolean: skipping it would drop real
+/// faces and silently produce a non-manifold or wrong-volume solid.
+fn boolean_via_trace(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b)?;
+    let faces = trace_result_faces(model, kind, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon)?;
+
+    // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
+    // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
+    let mut seam: Vec<SeamVertex> = Vec::new();
+    let mut seen: HashMap<[usize; 3], ()> = HashMap::new();
+    for f in &faces {
+        for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+            for node in loop_ {
+                let crate::Node::Seam(t) = node else { continue };
+                if seen.insert(*t, ()).is_some() {
+                    continue;
+                }
+                let point = three_planes(
+                    &planes[t[0]].plane,
+                    &planes[t[1]].plane,
+                    &planes[t[2]].plane,
+                )
+                .ok_or_else(|| reject(tag::THREE_PLANES))?;
+                seam.push(SeamVertex {
+                    point,
+                    triple: *t,
+                    tol: vertex_tol(
+                        point,
+                        &planes[t[0]].plane,
+                        &planes[t[1]].plane,
+                        &planes[t[2]].plane,
+                    ),
+                });
+            }
+        }
+    }
+
+    assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1745,6 +1831,125 @@ mod tests {
         assert!(
             interior > 0,
             "the plus cap has interior edges between arms and center"
+        );
+    }
+
+    /// Intermediate lock (before assembly, A/B isolation): the driver emits exactly 10 faces for
+    /// stacked Fuse (z=0 cap + z=2 cap + 4 walls × 2 z-split), no z=1 face, and every undirected
+    /// edge appears exactly twice across all faces — so a later NON_MANIFOLD reject is a weld gap,
+    /// not an emit gap.
+    #[test]
+    fn stacked_fuse_emits_ten_closed_faces() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let faces = trace_result_faces(
+            &m,
+            BoolKind::Fuse,
+            a,
+            b,
+            &planes,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &canon,
+        )
+        .unwrap();
+        assert_eq!(faces.len(), 10, "z=0 + z=2 + 4 walls×2");
+
+        // Every undirected edge (sorted triple pair) is used exactly twice — a closed shell.
+        let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
+        for f in &faces {
+            let ns: Vec<[usize; 3]> = f
+                .loop_nodes
+                .iter()
+                .map(|n| match n {
+                    crate::Node::Seam(t) => *t,
+                    _ => unreachable!("all-Seam"),
+                })
+                .collect();
+            for w in ns
+                .windows(2)
+                .chain(std::iter::once(&[ns[ns.len() - 1], ns[0]][..]))
+            {
+                let key = if w[0] < w[1] {
+                    (w[0], w[1])
+                } else {
+                    (w[1], w[0])
+                };
+                *count.entry(key).or_insert(0) += 1;
+            }
+        }
+        assert!(
+            count.values().all(|&c| c == 2),
+            "every edge used exactly twice (closed shell): {:?}",
+            count.iter().filter(|(_, c)| **c != 2).collect::<Vec<_>>()
+        );
+    }
+
+    /// First end-to-end: drive every plane class, assemble, check volume + manifold. Stacked cubes
+    /// Fuse = a 1×1×2 box, volume 2.0; the z=1 interface face vanishes (kept both sides).
+    #[test]
+    fn end_to_end_stacked_fuse_is_a_tall_box() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let solids = boolean_via_trace(&mut m, BoolKind::Fuse, a, b).unwrap();
+        assert_eq!(solids.len(), 1, "one connected solid");
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "manifold: {vs:?}");
+        let vol = nacre_props::mass_props(&m, solids[0]).unwrap().volume;
+        assert!(
+            (vol - 2.0).abs() < 1e-9,
+            "stacked Fuse volume 2.0, got {vol}"
+        );
+    }
+
+    /// Non-degenerate all-three: overlapping cubes a=[0,1]³, b=[0.5,1.5]³.
+    /// Fuse = 2 − 0.5³ = 1.875, Common = 0.5³ = 0.125, Cut = 1 − 0.125 = 0.875.
+    #[test]
+    fn end_to_end_overlapping_cubes_all_three() {
+        let vol_of = |kind: BoolKind| -> f64 {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0, 1.0, 1.0]),
+            );
+            let b = m.add_cuboid(
+                Point3::from_array([0.5, 0.5, 0.5]),
+                Point3::from_array([1.5, 1.5, 1.5]),
+            );
+            m.rebuild_adjacency();
+            let solids = boolean_via_trace(&mut m, kind, a, b).unwrap();
+            m.rebuild_adjacency();
+            let vs = nacre_validate::validate(&m);
+            assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
+            solids
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                .sum()
+        };
+        assert!((vol_of(BoolKind::Fuse) - 1.875).abs() < 1e-9, "Fuse 1.875");
+        assert!((vol_of(BoolKind::Cut) - 0.875).abs() < 1e-9, "Cut 0.875");
+        assert!(
+            (vol_of(BoolKind::Common) - 0.125).abs() < 1e-9,
+            "Common 0.125"
         );
     }
 
