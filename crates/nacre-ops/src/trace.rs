@@ -769,6 +769,94 @@ fn extract_cells(
     Err(reject(tag::LOOP_ORIENT_MISMATCH))
 }
 
+/// A per-solid, per-side material label of one cell: `[A_above, A_below, B_above, B_below]`.
+type Label = [bool; 4];
+
+/// The flip mask an edge applies when crossed, grouping its `merged` contributions **per solid**.
+/// Crossing the edge XORs this into the cell label.
+///
+/// A `Seated` face is ground truth for its solid's material next to W (it directly says which side
+/// the body is on), so **seated wins**: if a solid contributes any `Seated`, that fully determines
+/// its flip and a same-solid `Transversal` is discarded (the transversal's "flip both" assumes the
+/// solid straddles W, which is false exactly where it is capped). A solid with only `Transversal`
+/// genuinely straddles → flips both sides. `> 1 Transversal` or disagreeing seated body sides is a
+/// coincident-wall degeneracy outside the corpus → honest reject.
+fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
+    let mut mask = [false; 4];
+    for (solid, base) in [(SolidSide::A, 0usize), (SolidSide::B, 2)] {
+        let kinds: Vec<SegKind> = merged
+            .iter()
+            .filter(|(s, _)| *s == solid)
+            .map(|(_, k)| *k)
+            .collect();
+        let seated: Vec<bool> = kinds
+            .iter()
+            .filter_map(|k| match k {
+                SegKind::Seated { body_above } => Some(*body_above),
+                _ => None,
+            })
+            .collect();
+        if !seated.is_empty() {
+            if seated.iter().any(|&b| b != seated[0]) {
+                return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // disagreeing seated sides
+            }
+            // seated wins: flip above if body_above, else below.
+            mask[base + usize::from(!seated[0])] ^= true;
+        } else if kinds.len() == 1 {
+            // pure transversal: the solid straddles W, flip both.
+            mask[base] ^= true;
+            mask[base + 1] ^= true;
+        } else if kinds.len() > 1 {
+            return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // >1 transversal, same solid
+        }
+        // kinds empty ⇒ solid absent from this edge ⇒ no flip.
+    }
+    Ok(mask)
+}
+
+/// Label every cell by propagating from the unbounded cell (all void) across edges, flipping per
+/// `edge_mask`. The cell interior cannot be point-queried (no plane-triple name), so propagation is
+/// the only route — the 2D-face analogue of `run_classes`. After propagating, **every** edge's flip
+/// relation is verified (`label[c] XOR mask == label[neighbour]`); a violation means the trace was
+/// incomplete and is an honest reject.
+fn label_cells(
+    cells: &[Cell],
+    face_of: &HashMap<usize, usize>,
+    segs: &[MergedSeg],
+) -> Result<Vec<Label>, BoolError> {
+    let seed = cells
+        .iter()
+        .position(|c| c.winding == -1)
+        .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+    let mut label = vec![None; cells.len()];
+    label[seed] = Some([false; 4]);
+    let mut queue = std::collections::VecDeque::from([seed]);
+    while let Some(c) = queue.pop_front() {
+        let lc = label[c].unwrap();
+        for &he in &cells[c].half_edges {
+            let nb = face_of[&(he ^ 1)];
+            if label[nb].is_none() {
+                let mask = edge_mask(&segs[he / 2].merged)?;
+                label[nb] = Some(std::array::from_fn(|i| lc[i] ^ mask[i]));
+                queue.push_back(nb);
+            }
+        }
+    }
+    let out: Vec<Label> = label
+        .into_iter()
+        .collect::<Option<_>>()
+        .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?; // a cell never reached
+    // Verify every edge (tree and non-tree): the flip relation must hold everywhere.
+    for (he, &c) in face_of {
+        let nb = face_of[&(he ^ 1)];
+        let mask = edge_mask(&segs[he / 2].merged)?;
+        if std::array::from_fn::<bool, 4, _>(|i| out[c][i] ^ mask[i]) != out[nb] {
+            return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // inconsistent propagation
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1367,6 +1455,107 @@ mod tests {
         assert_eq!(
             center, 1,
             "exactly one center square (2 A-edges + 2 B-edges)"
+        );
+    }
+
+    /// Cell labels propagate from the void, and match footprint containment (an independent
+    /// oracle). Cross: W=z=1, a=[0,3]×[1,2], b=[1,2]×[0,3]. Both bodies below z=1 → aboves all F;
+    /// each cell's X_below = "cell centroid inside X's footprint".
+    #[test]
+    fn cell_labels_propagate_and_match_footprints() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 1.0, 0.0]),
+            Point3::from_array([3.0, 2.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
+        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let merged = merge_coincident(&tr.segs);
+        let (split, _) = split_at_crossings(&planes, wc, &merged).unwrap();
+        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
+        let labels = label_cells(&cells, &face_of, &split).unwrap();
+
+        for (i, c) in cells.iter().enumerate() {
+            if c.winding == -1 {
+                assert_eq!(labels[i], [false; 4], "unbounded is void");
+                continue;
+            }
+            // Centroid of the cell (convex here) via the average of its vertex points.
+            let verts: Vec<[f64; 3]> = {
+                let mut vs: Vec<[usize; 3]> = c
+                    .half_edges
+                    .iter()
+                    .map(|&h| split[h / 2].end[h % 2])
+                    .collect();
+                vs.dedup();
+                vs.iter().map(|&t| pt(t, &planes)).collect()
+            };
+            let cx = verts.iter().map(|p| p[0]).sum::<f64>() / verts.len() as f64;
+            let cy = verts.iter().map(|p| p[1]).sum::<f64>() / verts.len() as f64;
+            let in_a = (0.0..=3.0).contains(&cx) && (1.0..=2.0).contains(&cy);
+            let in_b = (1.0..=2.0).contains(&cx) && (0.0..=3.0).contains(&cy);
+            // aboves F (bodies below the cap); belows = footprint containment.
+            assert_eq!(
+                labels[i],
+                [false, in_a, false, in_b],
+                "cell centroid ({cx},{cy}) label vs footprint"
+            );
+        }
+    }
+
+    /// A straddle: a=[0,1]²×[0,2] passes THROUGH z=1 (transversal, no face there), b=[0,1]²×[1,2]
+    /// caps at z=1 from above. Same [0,1]² footprint → one square, 2 cells. The inner cell exercises
+    /// transversal-flips-both (a's above reaches T) and seated-wins on b in the same edge.
+    #[test]
+    fn a_straddle_drives_the_above_bit_and_seated_wins() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        // a passes through z=1 (no seated face); find the class b caps at z=1.
+        let wc = (0..planes.len())
+            .map(|i| canon[i])
+            .find(|&c| {
+                solid_shell_handles(&m, b).into_iter().any(|sh| {
+                    m.shells
+                        .get(sh)
+                        .faces
+                        .iter()
+                        .any(|fh| canon[surf_ix[fh]] == c && face_on_z1(*fh, &surf_ix, &planes))
+                })
+            })
+            .expect("b's z=1 cap class");
+        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let merged = merge_coincident(&tr.segs);
+        let (split, _) = split_at_crossings(&planes, wc, &merged).unwrap();
+        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
+        let labels = label_cells(&cells, &face_of, &split).unwrap();
+
+        assert_eq!(cells.len(), 2, "one square: inner + unbounded");
+        let inner = cells.iter().position(|c| c.winding == 1).unwrap();
+        // "above/below" is relative to +n_w (the class plane's stored normal), whose sign is a
+        // convention the boolean's keep-rule treats symmetrically. Here n_w points -z, so +n_w
+        // ("above") is physically below. A straddles z=1 → material on BOTH sides (T,T); b caps
+        // from z>1 → material only on -n_w ("below") → (B_above=F, B_below=T). The point of the
+        // fixture stands: the transversal drives A's above-bit to T (impossible on a pure cap),
+        // and B is seated-wins (a single bit) on the very same rim edge.
+        assert_eq!(
+            labels[inner],
+            [true, true, false, true],
+            "A straddles both sides; B is one-sided (seated-wins); transversal reached the above-bit"
         );
     }
 
