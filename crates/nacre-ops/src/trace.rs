@@ -1092,7 +1092,10 @@ fn trace_result_faces(
 ///
 /// A class that declines (holes, degenerate) aborts the whole boolean: skipping it would drop real
 /// faces and silently produce a non-manifold or wrong-volume solid.
-fn boolean_via_trace(
+///
+/// `pub(crate)` only so the crate's differential coverage sweep (in `crate::tests`) can compare it
+/// against production `boolean`; production still never calls it — the engine stays unwired.
+pub(crate) fn boolean_via_trace(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,

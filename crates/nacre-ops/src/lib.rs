@@ -14226,6 +14226,165 @@ pub mod tests {
         );
     }
 
+    /// **Differential coverage sweep — the cutover roadmap + silent-wrong guard.**
+    ///
+    /// Runs the isolated trace engine (`crate::trace::boolean_via_trace`, unwired) against the
+    /// OCCT-validated production `boolean` over the whole two-solid fixture corpus. The load-bearing
+    /// invariant: wherever BOTH engines succeed, trace's result is manifold and its volume+area
+    /// match production — else it is a trace silent-wrong. Everything trace declines is the recorded
+    /// cutover roadmap (`trace_gap`), not a failure; a cell only prod declines is UNVERIFIED (no
+    /// oracle). `Model` has no `Clone`, so each op rebuilds the fixture fresh (mirrors
+    /// `rotation_invariance_stress`). Compared on `vclose` (prod's own harness bound) so f64
+    /// accumulation order never fakes a disagreement.
+    #[test]
+    fn trace_vs_production_coverage_sweep() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        #[derive(Clone, Copy, Debug)]
+        enum Out {
+            Ok { vol: f64, area: f64, valid: bool },
+            Err,
+        }
+        // `Err(())` = the engine panicked (caught). `Ok(Out::Err)` = an honest `Err(BoolError)`.
+        let run = |build: &dyn Fn() -> (Model, Handle<Solid>, Handle<Solid>),
+                   kind: BoolKind,
+                   trace: bool|
+         -> Result<Out, ()> {
+            catch_unwind(AssertUnwindSafe(|| {
+                let (mut m, a, b) = build();
+                let r = if trace {
+                    crate::trace::boolean_via_trace(&mut m, kind, a, b)
+                } else {
+                    boolean(&mut m, kind, a, b)
+                };
+                match r {
+                    Ok(solids) => {
+                        m.rebuild_adjacency();
+                        let vol = solids
+                            .iter()
+                            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                            .sum();
+                        let area = solids
+                            .iter()
+                            .map(|&s| nacre_props::mass_props(&m, s).unwrap().area)
+                            .sum();
+                        let valid = nacre_validate::validate(&m).is_empty();
+                        Out::Ok { vol, area, valid }
+                    }
+                    Err(_) => Out::Err,
+                }
+            }))
+            .map_err(|_| ())
+        };
+        let vclose =
+            |x: f64, y: f64| (x - y).abs() <= 1e-6 || (x - y).abs() <= 1e-4 * x.abs().max(y.abs());
+
+        type Build = Box<dyn Fn() -> (Model, Handle<Solid>, Handle<Solid>)>;
+        let fixtures: Vec<(&str, Build)> = vec![
+            (
+                "same_ground",
+                Box::new(|| {
+                    let mut m = Model::new();
+                    let a = m.add_cuboid(
+                        Point3::from_array([0.0; 3]),
+                        Point3::from_array([1.0, 1.0, 1.0]),
+                    );
+                    let b = m.add_cuboid(
+                        Point3::from_array([0.5, 0.5, 0.0]),
+                        Point3::from_array([1.5, 1.5, 1.0]),
+                    );
+                    (m, a, b)
+                }),
+            ),
+            ("l_and_inner_box", Box::new(l_and_inner_box)),
+            ("l_and_corner_box", Box::new(l_and_corner_box)),
+            ("l_and_reflex_box", Box::new(l_and_reflex_box)),
+            ("u_and_slab", Box::new(u_and_slab)),
+            ("cube_and_notch", Box::new(cube_and_notch)),
+            ("l_and_rod", Box::new(l_and_rod)),
+            ("l_and_popup_box", Box::new(l_and_popup_box)),
+            ("l_and_notch_bar", Box::new(l_and_notch_bar)),
+            ("l_and_ell_stub", Box::new(l_and_ell_stub)),
+            ("l_and_staple", Box::new(l_and_staple)),
+            ("l_and_dimple", Box::new(l_and_dimple)),
+            ("two_boxes", Box::new(two_boxes)),
+            ("nested_boxes", Box::new(nested_boxes)),
+        ];
+
+        let (mut agree, mut trace_wrong, mut trace_gap, mut both_err, mut prod_only_err, mut panic) =
+            (0, 0, 0, 0, 0, 0);
+        let mut notes: Vec<String> = Vec::new();
+        for (name, build) in &fixtures {
+            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                let prod = run(build.as_ref(), kind, false).expect("production boolean panicked");
+                let tr = run(build.as_ref(), kind, true);
+                let class = match (prod, tr) {
+                    (_, Err(())) => {
+                        panic += 1;
+                        notes.push(format!("{name} {kind:?}: TRACE PANIC"));
+                        "TRACE_PANIC"
+                    }
+                    (
+                        Out::Ok {
+                            vol: pv, area: pa, ..
+                        },
+                        Ok(Out::Ok {
+                            vol: tv,
+                            area: ta,
+                            valid,
+                        }),
+                    ) => {
+                        if valid && vclose(pv, tv) && vclose(pa, ta) {
+                            agree += 1;
+                            "agree"
+                        } else {
+                            trace_wrong += 1;
+                            notes.push(format!(
+                                "{name} {kind:?}: WRONG prod(v={pv},a={pa}) trace(v={tv},a={ta},valid={valid})"
+                            ));
+                            "TRACE_WRONG"
+                        }
+                    }
+                    (Out::Ok { .. }, Ok(Out::Err)) => {
+                        trace_gap += 1;
+                        "trace_gap"
+                    }
+                    (Out::Err, Ok(Out::Ok { valid, .. })) => {
+                        prod_only_err += 1;
+                        notes.push(format!(
+                            "{name} {kind:?}: prod-only-err, trace Ok (UNVERIFIED, valid={valid})"
+                        ));
+                        "prod_only_err"
+                    }
+                    (Out::Err, Ok(Out::Err)) => {
+                        both_err += 1;
+                        "both_err"
+                    }
+                };
+                eprintln!("{name:18} {kind:?}: {class}");
+            }
+        }
+        eprintln!(
+            "=== agree {agree} · gap {trace_gap} · wrong {trace_wrong} · both_err {both_err} · prod_only_err {prod_only_err} · panic {panic} ==="
+        );
+        for n in &notes {
+            eprintln!("  {n}");
+        }
+
+        assert_eq!(panic, 0, "trace panicked (an un-honest reject): {notes:?}");
+        assert_eq!(trace_wrong, 0, "trace is silently wrong on: {notes:?}");
+        // Measured 2026-07-21: agree 9 (cube_and_notch, two_boxes, nested_boxes — all 3 ops each),
+        // trace_gap 33, wrong/panic/prod_only_err/both_err 0. Floor at the measured 9: a drop means
+        // trace regressed a case it handled; improvements (a gap graduating to agree) only raise it.
+        // ★ Roadmap finding, correcting the pre-measurement guess: NON-CONVEX (L/U) is the dominant
+        // gap — every l_/u_ fixture declines — while containment (nested_boxes) and the notch tunnel
+        // (cube_and_notch) already work. So the next capability is non-convex operands, not cavities.
+        assert!(
+            agree >= 9,
+            "only {agree} agreements (was 9); trace regressed a handled case: {notes:?}"
+        );
+    }
+
     /// **E1 — `coplanar_survival` is a consequence of one rule, not six independent facts.**
     ///
     /// The rule is already written down at [`coplanar_survival`]'s derivation: *a π-face survives
