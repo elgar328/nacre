@@ -14373,15 +14373,17 @@ pub mod tests {
 
         assert_eq!(panic, 0, "trace panicked (an un-honest reject): {notes:?}");
         assert_eq!(trace_wrong, 0, "trace is silently wrong on: {notes:?}");
-        // Measured 2026-07-21: agree 9 (cube_and_notch, two_boxes, nested_boxes — all 3 ops each),
-        // trace_gap 33, wrong/panic/prod_only_err/both_err 0. Floor at the measured 9: a drop means
-        // trace regressed a case it handled; improvements (a gap graduating to agree) only raise it.
-        // ★ Roadmap finding, correcting the pre-measurement guess: NON-CONVEX (L/U) is the dominant
-        // gap — every l_/u_ fixture declines — while containment (nested_boxes) and the notch tunnel
-        // (cube_and_notch) already work. So the next capability is non-convex operands, not cavities.
+        // Measured 2026-07-21 after the per-wall E5 overlay: agree 12 (cube_and_notch, two_boxes,
+        // nested_boxes, and now same_ground — the coplanar-overlap contact the overlay resolves),
+        // trace_gap 30, wrong/panic/prod_only_err/both_err 0. Floor at the measured 12: a drop means
+        // trace regressed a handled case; a gap graduating only raises it.
+        // ★ Roadmap: the L/U non-convex fixtures still gap — the E5 overlay lets them reach
+        // `label_cells`, where a reflex seated cap now trips an inconsistent-propagation reject
+        // (a NEW, distinct blocker, not a silent-wrong: honest reject, trace_wrong stays 0). That
+        // reflex-cap label consistency is the next capability.
         assert!(
-            agree >= 9,
-            "only {agree} agreements (was 9); trace regressed a handled case: {notes:?}"
+            agree >= 12,
+            "only {agree} agreements (was 12); trace regressed a handled case: {notes:?}"
         );
     }
 
