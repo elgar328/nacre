@@ -1210,7 +1210,6 @@ pub(crate) struct PlaneInfo {
     /// Outward normal, `(tri[1]−tri[0])×(tri[2]−tri[0])` normalized — the single
     /// source of "outward" for both the in/out sign test and face ordering.
     pub(crate) n_out: Vector3,
-    pub(crate) orient: Orientation,
     /// `+1` when this face's stored plane normal already points out of its solid, `-1` when the
     /// face is `Reversed` and the two oppose.
     ///
@@ -1560,7 +1559,6 @@ pub(crate) fn collect_planes(
                 plane,
                 tri,
                 n_out,
-                orient: face.orientation,
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
             });
@@ -2656,6 +2654,12 @@ pub mod tests {
     /// before a reflex corner. `rotated_l_prism` does, and it is the same solid.
     #[test]
     fn outward_normals_agree_with_their_orientation() {
+        // `collect_planes` debug_asserts, per face, that `sign(normal·n_out)` equals the topo
+        // `face.orientation` — the invariant this test used to check by reading a `.orient` field
+        // it kept alongside. That field is gone (its production role is `orient_sign`), so the
+        // check lives at construction now; running collect_planes on shapes with reversed faces
+        // (the L/U notch, a rotated solid) exercises it. Here we add the parallel invariant, which
+        // is not debug_asserted the same way.
         let mut cube = Model::new();
         let c = cube.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let (ml, sl) = l_prism();
@@ -2672,11 +2676,6 @@ pub mod tests {
                 assert!(
                     dot.abs() > 0.5,
                     "{name}: n_out is not parallel to its plane"
-                );
-                assert_eq!(
-                    dot > 0.0,
-                    pi.orient == Orientation::Forward,
-                    "{name}: n_out disagrees with the face's orientation"
                 );
             }
         }
@@ -4978,7 +4977,6 @@ pub mod tests {
             plane,
             tri,
             n_out: Vector3::from_array([0.0; 3]),
-            orient: Orientation::Forward,
             // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
             tri_pt3: None,
