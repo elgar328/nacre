@@ -95,7 +95,29 @@ fn borrow_triple(d: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
 /// Winding-invariant, so the three points defining each plane may be in any order.
 ///
 /// Routes on [`any_rotated`] of `p, q, r, j`: all-axis-aligned → geom, any rotated → frame3.
+/// Every index that *names a plane* must be a class root — one geometric plane is one index, so a
+/// raw `==` on it means "same plane". `class_of` normalizes at each consumer's entry and the
+/// producers emit class form, so anything arriving here in face form is a wiring mistake, not a
+/// tolerable variation: the predicate would then answer "different plane" for two faces of one
+/// plane and decide from rounding noise (measured 2026-07-22: 117748 such calls).
+///
+/// A hand-built table in a unit test may leave `class` unset; there a face is its own class and the
+/// check is vacuous, which is why it is `usize::MAX`-tolerant rather than absent.
+#[track_caller]
+fn assert_class_roots(planes: &[PlaneInfo], idx: &[usize]) {
+    if cfg!(debug_assertions) {
+        for &k in idx {
+            debug_assert!(
+                planes[k].class == usize::MAX || planes[k].class == k,
+                "plane index {k} names a face, not its class root {}",
+                planes[k].class
+            );
+        }
+    }
+}
+
 pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: usize) -> i8 {
+    assert_class_roots(planes, &[p, q, r, j]);
     // The query plane `j` is one of the point's three defining planes ⇒ the point lies on `j`, so
     // the sign is exactly 0 (a combinatorial identity) — on BOTH paths. Neither numeric branch is
     // reliable here: the axis `three_plane_orient3d` below is exact only for f64-representable
@@ -140,6 +162,7 @@ pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: 
 /// stored coefficients; `rotated` → each triple's three planes as exact `Pt3` →
 /// [`indirect_cmp_coord_judge`]. Routes on [`any_rotated`] of the six planes in `a` and `b`.
 pub(crate) fn t_cmp_coord(planes: &[PlaneInfo], a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
+    assert_class_roots(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]);
     if !any_rotated(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]) {
         let tri = |t: [usize; 3]| {
             [
@@ -178,6 +201,7 @@ pub(crate) fn t_plane_side(
     plane_idx: usize,
     p: Handle<Vertex>,
 ) -> i8 {
+    assert_class_roots(planes, &[plane_idx]);
     let rotated = any_rotated(planes, &[plane_idx])
         || matches!(model.vertices.get(p).origin, Origin::Rotated { .. });
     if !rotated {
@@ -244,6 +268,7 @@ pub(crate) fn t_planes_coplanar(planes: &[PlaneInfo], i: usize, j: usize) -> boo
 /// det(outward)`. `orient_sign` is an f64 dot of two parallel unit vectors (`|·| ≈ 1`),
 /// robust under rotation. Routes on [`any_rotated`] of `p, a, b`.
 pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneInfo], p: usize, a: usize, b: usize) -> i8 {
+    assert_class_roots(planes, &[p, a, b]);
     if !any_rotated(planes, &[p, a, b]) {
         return plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
     }

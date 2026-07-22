@@ -7009,14 +7009,11 @@ pub mod tests {
         /// right volume or reject honestly — **never panic**. Drives general (non-axis) plane normals
         /// through the dir-sign guard and the `angular_order`/`turn_at` consumers that read its zeros.
         ///
-        /// **`#[ignore]`: still panics on a *different* `D = 0` branch** — measured (2026-07-22) the
-        /// residual is a triple naming one geometric plane with two coincident faces
-        /// (`coincident_pair == true`), the P-B family, not the dir-sign guard this cell fixed.
-        /// Symmetric normals like `(1,1,1)` clear it (see `a_pocket_on_a_slanted_face`, which
-        /// passes); a general normal like `(0.446, 0.737, 0.990)` does not. Un-ignore when the P-B
-        /// vertex-naming cell lands.
+        /// Was `#[ignore]`d for a residual `D = 0` panic on general normals: a triple naming one
+        /// geometric plane through two coincident faces. Symmetric normals like `(1,1,1)` cleared
+        /// it, `(0.446, 0.737, 0.990)` did not. **Un-ignored 2026-07-22** — naming every plane by
+        /// its class made those two faces one index, so the degenerate triple can no longer form.
         #[test]
-        #[ignore = "residual P-B coincident-face D=0 panic on general normals; see docstring"]
         fn pocket_on_a_random_slanted_face_is_valid_or_rejects(
             nx in -1.0f64..1.0,
             ny in -1.0f64..1.0,
@@ -9486,6 +9483,111 @@ pub mod tests {
             }
         }
         assert!(checked > 0, "the chained operand has vertices to name");
+    }
+
+    /// **A plane triple is always in class form.** `planes` is a per-face table, so the same
+    /// `usize` could mean "face" or "plane"; producers settle it by emitting class roots, and a
+    /// consumer's raw `==` then means "same plane". Four silent-wrong bugs on this branch came from
+    /// the two meanings meeting in one comparison, so the invariant is asserted, not assumed.
+    #[test]
+    fn plane_triples_are_always_canon() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        // An *overhanging* boss splits `z = 1` between two faces with opposite normals (the base's
+        // exposed top and the boss underside) — the shape that makes "face index" and "plane index"
+        // differ at all. A boss sitting wholly inside the top merges into one holed face instead.
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([1.5, 0.75, 2.0]),
+        );
+        let chained = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        let probe = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.5]),
+            Point3::from_array([0.6, 0.6, 2.5]),
+        );
+        let (planes, surf_ix, inc_a, _, canon) = plane_index_setup(&m, chained, probe).unwrap();
+        // The fixture must actually merge two faces into one class, or this proves nothing.
+        assert!(
+            canon.iter().enumerate().any(|(i, &c)| c != i),
+            "fixture has no split plane — the invariant would be vacuous"
+        );
+        let mut checked = 0usize;
+        for sh in solid_shell_handles(&m, chained) {
+            for &fh in &m.shells.get(sh).faces {
+                let p = surf_ix[&fh];
+                let mut rings =
+                    vec![arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &canon).unwrap()];
+                rings.extend(arrange::hole_rings(&m, fh, p, &inc_a, &planes, &canon).unwrap());
+                for t in rings.iter().flatten() {
+                    for &k in t {
+                        assert_eq!(canon[k], k, "triple {t:?} names face {k}, not its class");
+                    }
+                    assert!(
+                        t[0] < t[1] && t[1] < t[2],
+                        "triple {t:?} is not three distinct classes in sorted order"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "the chained operand has vertices to name");
+    }
+
+    /// **A point on the cut plane reads zero no matter which face names it.** `t_orient3d`'s
+    /// on-plane shortcut is a raw `==` against the triple, so before the triples were canon a
+    /// vertex named by face 6 of the `z = 1` class was invisible to a query about face 1 of that
+    /// same class, and the numeric branch answered ±1 for a point lying exactly on the plane.
+    #[test]
+    fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([1.5, 0.75, 2.0]),
+        );
+        let chained = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        let probe = m.add_cuboid(
+            Point3::from_array([1.1, 0.35, 0.5]),
+            Point3::from_array([1.4, 0.65, 2.5]),
+        );
+        let (planes, surf_ix, inc_a, _, canon) = plane_index_setup(&m, chained, probe).unwrap();
+        assert!(
+            canon.iter().enumerate().any(|(i, &c)| c != i),
+            "fixture has no split plane — a sibling face is what this test is about"
+        );
+        let mut on_plane = 0usize;
+        for sh in solid_shell_handles(&m, chained) {
+            for &fh in &m.shells.get(sh).faces {
+                let p = surf_ix[&fh];
+                let tris =
+                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &canon).unwrap();
+                for t in &tris {
+                    // Ask about every face of every class the vertex names — including the sibling
+                    // faces that are not the class root, which is where the old bug lived.
+                    for (q, _) in planes.iter().enumerate() {
+                        if !t.contains(&canon[q]) {
+                            continue;
+                        }
+                        assert_eq!(
+                            arrange::side_of(&planes, *t, canon[q]),
+                            0,
+                            "vertex {t:?} lies on plane class {} (face {q}) but does not read 0",
+                            canon[q]
+                        );
+                        on_plane += 1;
+                    }
+                }
+            }
+        }
+        assert!(on_plane > 0, "some vertex lies on some queried plane");
     }
 
     #[test]

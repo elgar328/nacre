@@ -8,6 +8,29 @@
 //! Everything decided here is decided by an exact predicate. Coordinates that
 //! appear (`three_planes`' cache) are never the basis of a decision — the truth of
 //! a seam point is its plane triple, as it is for `Origin::Discovered` (design §4).
+//!
+//! # One `usize`, two meanings — the rule that keeps them apart
+//!
+//! `planes` is indexed **per face**, but an arrangement reasons **per plane**: an earlier boolean
+//! can split one geometric plane between two faces (a base's exposed top and the cantilever
+//! underside above it), and those are two `PlaneInfo` for one plane. When the two meanings meet in
+//! one comparison the result is wrong *silently* — measured four times on this branch, most
+//! recently as 117748 predicate calls that read "different plane" for two faces of one plane and
+//! answered from rounding noise (2026-07-22). So:
+//!
+//! - **A plane triple's elements, any index compared for plane identity, and every exact-predicate
+//!   argument are class roots** ([`class_of`]). Producers emit class form; consumers normalize on
+//!   entry; [`crate::tolerant`]'s predicates assert it.
+//! - **An index that reads *this face's* geometry is a face** — `n_out`, `orient`, `inc`
+//!   (`EdgePlanes` incidences are faces, so `other()`/`pa == own` must match raw), and the
+//!   `declined` log. Reading `n_out` off a class representative can flip a seated face inside out,
+//!   because two faces of one plane may have **opposite** normals.
+//! - **An index that states a *plane class's* label frame is a class root** — [`label_side`] and
+//!   `orient_sign(wc)` are defined about the class root's stored normal, by construction.
+//! - **Exception:** the code that *defines* the classes (`crate::fill_classes` →
+//!   `shares_or_coplanar`) runs before they exist and takes face indices.
+//!
+//! Name the two apart wherever both are in scope: `fp` for the face, `fc` for its class.
 
 // Nothing in the boolean calls this yet — cell 3c replaces `reconstruct_face` with
 // the arrangement and wires it in. Until then only tests exercise it, so a non-test
@@ -1020,26 +1043,15 @@ pub(crate) fn point_in_solid_idx(
         .collect();
     vplanes.sort_unstable();
     vplanes.dedup();
-    // `other`'s faces as (canon plane index, canon triple rings), across every shell.
+    // `other`'s faces as (class plane index, class triple rings), across every shell. The rings
+    // arrive in class form — `loop_triples` names planes by class, and re-names a vertex whose
+    // three collapse below three classes — so the local canon pass this used to do is gone.
     let mut faces: Vec<(usize, Vec<Vec<[usize; 3]>>)> = Vec::new();
     for sh in solid_shell_handles(model, other) {
         for &g in &model.shells.get(sh).faces {
-            let raw = face_rings(model, g, surf_ix[&g], inc_o, planes, canon)?;
-            let mut rings: Vec<Vec<[usize; 3]>> = Vec::with_capacity(raw.len());
-            for ring in &raw {
-                let mut cr: Vec<[usize; 3]> = Vec::with_capacity(ring.len());
-                for t in ring {
-                    let mut ct = [canon[t[0]], canon[t[1]], canon[t[2]]];
-                    ct.sort_unstable();
-                    if ct[0] == ct[1] || ct[1] == ct[2] {
-                        continue; // two planes collapsed → collinear-in-canon → redundant vertex
-                    }
-                    cr.push(ct);
-                }
-                rings.push(cr);
-            }
-            // A face whose outer boundary collapsed below a triangle is fully coplanar-bounded
-            // (no real crossing) — skip it rather than error the whole classification.
+            let rings = face_rings(model, g, surf_ix[&g], inc_o, planes, canon)?;
+            // A face whose outer boundary is below a triangle is fully coplanar-bounded (no real
+            // crossing) — skip it rather than error the whole classification.
             if rings.first().is_none_or(|r| r.len() < 3) {
                 continue;
             }
