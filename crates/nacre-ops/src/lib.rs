@@ -23,8 +23,8 @@ use nacre_topo::{
 use rayon::prelude::*;
 
 mod arrange;
+mod arrangement;
 mod tolerant;
-mod trace;
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// `x_axis`/`y_axis` are assumed unit and orthogonal (the constructors ensure
@@ -1253,7 +1253,7 @@ pub fn boolean(
     // The arrangement engine (`trace.rs`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
-    crate::trace::boolean_via_trace(model, kind, a, b)
+    crate::arrangement::boolean(model, kind, a, b)
 }
 
 /// Connected components of the reconstructed faces by shared `Node` — the same identity
@@ -2132,7 +2132,7 @@ fn node_rank(n: Node) -> (u8, usize, usize, usize) {
 ///
 /// Reused, not reinvented: `canon` for coplanarity, `n_out.dot > 0` for facing,
 /// [`arrange::loop_winding`] to tell an outer ring from a hole, [`arrange::point_in_ring`] to give
-/// each hole its owner — the same two exact predicates `trace::nest_cells` uses for the same
+/// each hole its owner — the same two exact predicates `arrangement::nest_cells` uses for the same
 /// question, neither of which reads a coordinate.
 ///
 /// Rejects rather than guesses: a directed edge appearing twice the same way (two faces claiming the
@@ -4656,7 +4656,7 @@ pub mod tests {
     /// cut opens then meets that ring along the **hole's own edge**, which is the case that used to
     /// label inconsistently: the ring's neighbouring vertices there point *into* the hole, so
     /// reading the occupied side off a flank put the material on the wrong side of `W`. The side
-    /// now comes from the ring's travel ([`trace::run_body_above`]), and the run leaves as its own
+    /// now comes from the ring's travel ([`arrangement::run_body_above`]), and the run leaves as its own
     /// homogeneous segment rather than being swallowed by the straddling stretch beside it.
     ///
     /// Hand volume: `1 + 0.5·0.5·1` fused, less the cutter's `0.2·0.2` column over `z ∈ [0.5, 2]`
@@ -5310,7 +5310,7 @@ pub mod tests {
     /// instead, and the two are opposite exactly when the root face is `Reversed`
     /// (`orient_sign == -1`) — which no `add_cuboid` face ever is, but a face an earlier boolean
     /// re-emitted flipped is. `graze_above` read `side_of` raw, so on a pocket wall it flipped the
-    /// wrong label bit. It no longer reads a point's side at all — [`trace::run_body_above`] derives
+    /// wrong label bit. It no longer reads a point's side at all — [`arrangement::run_body_above`] derives
     /// the occupied side from the ring's travel, and the frame term cancels there because
     /// `order_along`'s direction and the label frame are defined by the same stored normal — but
     /// this class stays the corpus's only crossed-frame witness, so it is what would catch a
@@ -5361,7 +5361,7 @@ pub mod tests {
         let mut reversed_with_graze: Vec<String> = Vec::new();
         let mut reversed_seated_only: Vec<String> = Vec::new();
         for (name, m, a, b) in &boxed {
-            let audits = trace::frame_audit(m, BoolKind::Cut, *a, *b).unwrap();
+            let audits = arrangement::frame_audit(m, BoolKind::Cut, *a, *b).unwrap();
             for au in &audits {
                 let interesting = au.orient_sign < 0 || au.failed_at.is_some();
                 if !interesting {
@@ -5421,13 +5421,13 @@ pub mod tests {
         // a notched region whose edge rides this plane with the material outside the pocket. That is
         // a run whose flanks *differ*, which the engine used to read as a straddling transversal —
         // this class is the corpus's only `Reversed` root, so it is also the only place the frame
-        // handling of `trace::run_body_above` is exercised against a crossed frame: the three
+        // handling of `arrangement::run_body_above` is exercised against a crossed frame: the three
         // `false` entries below are the pre-existing answers, unchanged by the new rule.
         let (m, pc, bx) = boxed
             .iter()
             .find_map(|(n, m, a, b)| (*n == "pocket_corner_cut").then_some((m, *a, *b)))
             .unwrap();
-        let wall = trace::frame_audit(m, BoolKind::Cut, pc, bx)
+        let wall = arrangement::frame_audit(m, BoolKind::Cut, pc, bx)
             .unwrap()
             .into_iter()
             .find(|au| au.root_point == [0.7, 0.7, 1.0] && au.root_normal == [1.0, 0.0, 0.0])
@@ -6512,7 +6512,7 @@ pub mod tests {
         // This used to be an honest reject: the tool's z=1 cap is an annulus-like face whose
         // *inner* edge rides the pin's walls, and reading its occupancy off the ring's flank put
         // the material on the wrong side, so the class would not label. With the side read from
-        // the ring's travel instead (`trace::run_body_above`), the notch comes out at the
+        // the ring's travel instead (`arrangement::run_body_above`), the notch comes out at the
         // hand-computed volume with a clean model.
         let mut m = Model::new();
         let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));

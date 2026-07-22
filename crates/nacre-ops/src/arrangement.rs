@@ -1359,7 +1359,7 @@ fn trace_result_faces(
 /// One plane class's **label-frame audit** (family #2 diagnostic): what each producer says about
 /// "above" on this class, plus how far the per-class pipeline gets. `#[cfg(test)]`, `pub(crate)`
 /// so the driver test can live in `crate::tests` where the two-solid fixtures are (the same reason
-/// [`boolean_via_trace`] is `pub(crate)`).
+/// [`boolean`] is `pub(crate)`).
 #[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct ClassAudit {
@@ -1456,7 +1456,7 @@ pub(crate) fn frame_audit(
 ///
 /// `pub(crate)` only so the crate's differential coverage sweep (in `crate::tests`) can compare it
 /// against production `boolean`; production still never calls it — the engine stays unwired.
-pub(crate) fn boolean_via_trace(
+pub(crate) fn boolean(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,
@@ -2534,7 +2534,7 @@ mod tests {
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         m.rebuild_adjacency();
-        let solids = boolean_via_trace(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
         assert_eq!(solids.len(), 1, "one connected solid");
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
@@ -2561,7 +2561,7 @@ mod tests {
                 Point3::from_array([1.5, 1.5, 1.5]),
             );
             m.rebuild_adjacency();
-            let solids = boolean_via_trace(&mut m, kind, a, b).unwrap();
+            let solids = boolean(&mut m, kind, a, b).unwrap();
             m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
@@ -2591,7 +2591,7 @@ mod tests {
             Point3::from_array([2.0, 2.0, 4.0]),
         );
         m.rebuild_adjacency();
-        let solids = boolean_via_trace(&mut m, kind, a, b).unwrap();
+        let solids = boolean(&mut m, kind, a, b).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
         assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
@@ -2847,7 +2847,7 @@ mod tests {
             );
             let a = tilt(&mut m, a, &[Axis::Z]);
             let b = tilt(&mut m, b, &[Axis::Z]);
-            let solids = boolean_via_trace(&mut m, kind, a, b).unwrap();
+            let solids = boolean(&mut m, kind, a, b).unwrap();
             m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "{kind:?} manifold: {vs:?}");
@@ -2889,7 +2889,7 @@ mod tests {
             );
             let a = tilt(&mut m, a, axes);
             let b = tilt(&mut m, b, axes);
-            let solids = boolean_via_trace(&mut m, BoolKind::Cut, a, b).unwrap();
+            let solids = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
             m.rebuild_adjacency();
             let vs = nacre_validate::validate(&m);
             assert!(vs.is_empty(), "manifold: {vs:?}");
@@ -2983,7 +2983,7 @@ mod tests {
         );
 
         // Area (assembled).
-        let solids = boolean_via_trace(&mut m, BoolKind::Cut, a, b).unwrap();
+        let solids = boolean(&mut m, BoolKind::Cut, a, b).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         let area: f64 = solids
