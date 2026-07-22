@@ -6506,16 +6506,55 @@ pub mod tests {
 
     #[test]
     fn pad_overhang_off_the_face_is_rejected() {
-        // A footprint that does not touch the face at all: the boss is disjoint from the solid,
-        // an unrepresentable union. Honest reject (no panic), not a silent floating boss.
+        // A footprint that does not touch the face at all. The boolean is not what fails here — it
+        // fuses the two into a base plus a detached boss, which is the right answer (see
+        // `a_touchless_boss_fuses_into_two_solids`). What breaks is the *pad's* premise, so the
+        // error names that, and the model the caller is left holding is the one it started with.
         let (mut m, top) = cube_with_top();
         let far = Profile2d {
             points: vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)],
         };
-        assert!(matches!(
+        let before = m.live_solids.clone();
+        assert_eq!(
             apply(&mut m, &pad_op(top, far, 0.3)),
-            Err(OpError::Boolean(_))
-        ));
+            Err(OpError::PadMissesFace)
+        );
+        let (mut a, mut b) = (before, m.live_solids.clone());
+        a.sort_by_key(|h| h.index());
+        b.sort_by_key(|h| h.index());
+        assert_eq!(a, b, "a rejected pad must leave the live model untouched");
+    }
+
+    /// The kernel's answer for a boss that misses the face, stated on its own so nobody "fixes" the
+    /// boolean to reject it: fusing two solids that do not touch **is** two solids, and both are
+    /// whole. Only `pad` refuses that outcome, because a pad is defined as material joined to a face
+    /// (`pad_overhang_off_the_face_is_rejected`).
+    #[test]
+    fn a_touchless_boss_fuses_into_two_solids() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        // Shares the z = 1 plane class with the base's top, but sits far away in x/y — so the plane
+        // carries two separate bodies, which is exactly what `hole_roots` used to refuse.
+        let boss = m.add_cuboid(
+            Point3::from_array([1.8, 1.8, 1.0]),
+            Point3::from_array([2.2, 2.2, 1.3]),
+        );
+        let solids = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        assert_eq!(solids.len(), 2, "disjoint operands stay two solids");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let mut vols: Vec<f64> = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .collect();
+        vols.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        assert!(
+            (vols[0] - 0.048).abs() < 1e-12 && (vols[1] - 1.0).abs() < 1e-12,
+            "both pieces whole: {vols:?}"
+        );
     }
 
     #[test]

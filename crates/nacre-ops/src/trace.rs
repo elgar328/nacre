@@ -906,18 +906,24 @@ struct Nesting {
     /// `group_of[cell]` = the cell's group representative (the `+1` host for a hole group, else
     /// the cell itself).
     group_of: Vec<usize>,
-    /// The group of the single unbounded contour — `label_cells`' seed.
-    root_group: usize,
+    /// The groups of the unbounded contours — `label_cells`' seeds. There can be **several**: one
+    /// outside region may be bounded by more than one cycle (two boxes side by side on the plane
+    /// give `0:A⁺ 1:A⁻ 2:B⁺ 3:B⁻`, and `1` and `3` bound the same outside). Every one of them is
+    /// void, so every one seeds.
+    root_groups: Vec<usize>,
     /// `holes[host]` = the `-1` cells nested in that `+1` host, emitted as its inner rings.
     holes: HashMap<usize, Vec<usize>>,
 }
 
 /// Classify every cell as root / hole / plain `+1` (see [`Nesting`]). A face may carry **any number
 /// of holes** (`holes[host]` is a list — e.g. a slab pierced by a U's two prongs), nested **any
-/// number of levels** deep (a pocket sealed by a slab, a boss cut after fusing). Still out of scope,
-/// an honest reject: more than one unbounded contour — several disjoint bodies on the plane —
-/// (`HOLE_ROOTS`), or a hole whose owner is not uniquely determined (`HOLE_DEPTH`, see
-/// [`innermost_host`]).
+/// number of levels** deep (a pocket sealed by a slab, a boss cut after fusing), and the plane may
+/// carry **any number of separate bodies** (each contributes its own unbounded contour).
+///
+/// A root is a `-1` contour inside no `+1` ring at all, so the region it bounds lies outside every
+/// cell — that is the one unbounded region, however many cycles bound it. Having none of them is
+/// the only impossibility (a closed figure always has an outside), and that is `HOLE_ROOTS`. A hole
+/// whose owner is not uniquely determined is `HOLE_DEPTH` (see [`innermost_host`]).
 fn nest_cells(
     planes: &[PlaneInfo],
     wc: usize,
@@ -977,14 +983,16 @@ fn nest_cells(
             holes.entry(host).or_default().push(c);
         }
     }
-    if roots.len() != 1 {
-        return Err(reject(tag::HOLE_ROOTS)); // several disjoint bodies on one plane
+    if roots.is_empty() {
+        return Err(reject(tag::HOLE_ROOTS)); // no unbounded contour: not a closed arrangement
     }
     let group_of: Vec<usize> = (0..n).map(|i| find(&mut parent, i)).collect();
-    let root_group = group_of[roots[0]];
+    let mut root_groups: Vec<usize> = roots.iter().map(|&r| group_of[r]).collect();
+    root_groups.sort_unstable();
+    root_groups.dedup();
     Ok(Nesting {
         group_of,
-        root_group,
+        root_groups,
         holes,
     })
 }
@@ -1117,10 +1125,12 @@ fn label_cells(
     }
     let mut label = vec![None; cells.len()];
     let mut queue = std::collections::VecDeque::new();
-    // Seed the unbounded root group with all-void, enqueuing every member.
-    for &i in &members[&nesting.root_group] {
-        label[i] = Some([false; 4]);
-        queue.push_back(i);
+    // Seed every unbounded contour's group with all-void, enqueuing every member.
+    for g in &nesting.root_groups {
+        for &i in &members[g] {
+            label[i] = Some([false; 4]);
+            queue.push_back(i);
+        }
     }
     while let Some(c) = queue.pop_front() {
         let lc = label[c].unwrap();
