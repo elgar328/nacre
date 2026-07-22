@@ -1667,15 +1667,18 @@ struct LocalFace {
 /// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
 /// Indices into the returned `planes`/`surf_ix` are shared, so a vertex of `a` and a face of
 /// `b` compose in one space.
-/// Destructure it with `..` (`let PlaneSetup { planes: faces_tab, geom: planes, canon, .. } = …`): the tables here grow as
-/// the arrangement learns to say "plane" and "face" in different index spaces, and a positional
-/// tuple made every one of those steps touch all ~25 call sites.
+/// Destructure it with `..` (`let PlaneSetup { planes: faces_tab, geom: planes, plane_ix, .. } = …`):
+/// the tables here grow as the arrangement learns to say "plane" and "face" in different index
+/// spaces, and a positional tuple made every one of those steps touch all ~25 call sites.
+///
+/// The plane classes (`canon`) are computed here to build `geom`/`plane_ix` and then dropped — the
+/// dense `plane_ix` is the only face→plane map anything downstream needs, so the sparse union-find
+/// output does not escape.
 pub(crate) struct PlaneSetup {
     pub(crate) planes: Vec<PlaneInfo>,
     pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
     pub(crate) inc_a: arrange::EdgeFaces,
     pub(crate) inc_b: arrange::EdgeFaces,
-    pub(crate) canon: Vec<usize>,
     /// The arrangement's planes, densely indexed — see [`dense_planes`].
     pub(crate) geom: Vec<PlaneGeom>,
     /// `plane_ix[face]` is that face's plane, as an index into `geom`.
@@ -1702,7 +1705,6 @@ fn plane_index_setup(
         surf_ix,
         inc_a,
         inc_b,
-        canon,
         geom,
         plane_ix,
     })
@@ -7349,7 +7351,6 @@ pub mod tests {
         let PlaneSetup {
             planes: faces_tab,
             geom: _planes,
-            canon,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -7372,8 +7373,7 @@ pub mod tests {
             tolerant::t_planes_coplanar(&faces_tab, i, j),
             "coordinates can"
         );
-        assert_eq!(canon[i], canon[j], "so they are one class");
-        assert_eq!(plane_ix[i], plane_ix[j], "and one plane-table row");
+        assert_eq!(plane_ix[i], plane_ix[j], "so they are one plane-table row");
     }
 
     /// A vertex where one plane is split between two faces is named by **the planes that touch it**,
@@ -7465,12 +7465,13 @@ pub mod tests {
             Point3::from_array([0.4, 0.4, 0.5]),
             Point3::from_array([0.6, 0.6, 2.5]),
         );
-        let PlaneSetup {
-            canon,
-            geom,
-            plane_ix,
-            ..
-        } = plane_index_setup(&m, chained, probe).unwrap();
+        // Rebuild the pieces `dense_planes` consumes, so this locks its contract without needing
+        // `canon` to escape `plane_index_setup`. `plane_classes` is the same union-find the setup
+        // runs; `dense_planes` the same ranking.
+        let mut faces = collect_planes(&m, chained).unwrap();
+        faces.extend(collect_planes(&m, probe).unwrap());
+        let canon = plane_classes(&faces);
+        let (geom, plane_ix) = dense_planes(&faces, &canon);
         assert!(
             canon.iter().enumerate().any(|(i, &c)| c != i),
             "fixture has no split plane — the invariant would be vacuous"
@@ -7523,14 +7524,12 @@ pub mod tests {
             geom: planes,
             surf_ix,
             inc_a,
-            canon,
             plane_ix,
             ..
         } = plane_index_setup(&m, chained, probe).unwrap();
-        let _ = &faces_tab;
-        // The fixture must actually merge two faces into one class, or this proves nothing.
+        // The fixture must actually merge two faces into one plane, or this proves nothing.
         assert!(
-            canon.iter().enumerate().any(|(i, &c)| c != i),
+            planes.len() < faces_tab.len(),
             "fixture has no split plane — the invariant would be vacuous"
         );
         // A producer hands out dense plane ids (`loop_triples` maps face indices through
@@ -7589,13 +7588,11 @@ pub mod tests {
             geom: planes,
             surf_ix,
             inc_a,
-            canon,
             plane_ix,
             ..
         } = plane_index_setup(&m, chained, probe).unwrap();
-        let _ = &faces_tab;
         assert!(
-            canon.iter().enumerate().any(|(i, &c)| c != i),
+            planes.len() < faces_tab.len(),
             "fixture has no split plane — the sibling faces this used to distinguish"
         );
         let mut on_plane = 0usize;

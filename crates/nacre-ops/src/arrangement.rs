@@ -1587,14 +1587,12 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
 
         // The shared class z=1: the class both solids seat a cap on.
         let wc = (0..planes.len())
-            .map(|i| canon[i])
             .find(|&c| {
                 let seats = |s: Handle<Solid>| {
                     solid_shell_handles(&m, s).into_iter().any(|sh| {
@@ -1705,18 +1703,17 @@ mod tests {
             geom: planes,
             surf_ix,
             inc_a,
-            canon,
-            plane_ix: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a2, b2).unwrap();
 
         // The y=1 class: a plane through all-y=1 points that a's reflex face sits on.
         let wc = (0..planes.len())
-            .map(|i| canon[i])
             .find(|&c| {
-                planes.iter().enumerate().any(|(i, p)| {
-                    canon[i] == c && p.tri.iter().all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
-                })
+                planes[c]
+                    .tri
+                    .iter()
+                    .all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
             })
             .expect("a y=1 class");
 
@@ -1730,7 +1727,7 @@ mod tests {
             &faces_tab,
             &surf_ix,
             &inc_a,
-            &canon,
+            &plane_ix,
             &mut out,
         );
 
@@ -1821,16 +1818,15 @@ mod tests {
             geom: planes,
             surf_ix,
             inc_a,
-            canon,
-            plane_ix: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a2, b2).unwrap();
         let wc = (0..planes.len())
-            .map(|i| canon[i])
             .find(|&c| {
-                planes.iter().enumerate().any(|(i, p)| {
-                    canon[i] == c && p.tri.iter().all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
-                })
+                planes[c]
+                    .tri
+                    .iter()
+                    .all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12)
             })
             .expect("a y=1 class");
         let mut out = Trace::default();
@@ -1843,7 +1839,7 @@ mod tests {
             &faces_tab,
             &surf_ix,
             &inc_a,
-            &canon,
+            &plane_ix,
             &mut out,
         );
 
@@ -2021,7 +2017,6 @@ mod tests {
                 surf_ix,
                 inc_a,
                 inc_b,
-                canon: _,
                 plane_ix,
                 ..
             } = plane_index_setup(&m, a, b).unwrap();
@@ -2059,7 +2054,6 @@ mod tests {
                 surf_ix,
                 inc_a,
                 inc_b,
-                canon: _,
                 plane_ix,
                 ..
             } = plane_index_setup(&m, a, b).unwrap();
@@ -2105,7 +2099,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -2198,7 +2191,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -2210,10 +2202,10 @@ mod tests {
         let split = split_at_crossings(&planes, wc, &merged).unwrap();
 
         // The shared y=1 wall (a face at y=1).
-        let y1 = canon[planes
+        let y1 = planes
             .iter()
             .position(|p| p.tri.iter().all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12))
-            .expect("a y=1 face")];
+            .expect("a y=1 face");
         // x-extent of a y=1 sub-segment, plus which solids contribute.
         let piece = |s: &MergedSeg| -> ([i64; 2], bool, bool) {
             let mut u = pt(s.end[0], &planes)[0];
@@ -2262,7 +2254,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -2336,7 +2327,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -2399,13 +2389,11 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         // a passes through z=1 (no seated face); find the class b caps at z=1.
         let wc = (0..planes.len())
-            .map(|i| canon[i])
             .find(|&c| {
                 solid_shell_handles(&m, b).into_iter().any(|sh| {
                     m.shells.get(sh).faces.iter().any(|fh| {
@@ -2460,7 +2448,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -2629,7 +2616,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -2825,7 +2811,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -2922,7 +2907,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, u, slab).unwrap();
@@ -3116,7 +3100,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -3208,7 +3191,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -3269,7 +3251,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
@@ -3282,10 +3263,10 @@ mod tests {
         // seated≡transversal coincidence).
         let merged = merge_coincident(&tr.segs);
         // The shared y=1 wall class (a face at y=1).
-        let y1 = canon[planes
+        let y1 = planes
             .iter()
             .position(|p| p.tri.iter().all(|q| (q.as_array()[1] - 1.0).abs() < 1e-12))
-            .expect("a y=1 face")];
+            .expect("a y=1 face");
         // a's chord x∈[0,2] and b's chord x∈[1,3] ride y=1 but have different endpoints, so they
         // stay as two distinct MergedSegs. A merge that ignored extent would collapse them to one.
         let on_y1 = merged.iter().filter(|e| e.wall == y1).count();
@@ -3326,7 +3307,6 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
-            canon: _,
             plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
