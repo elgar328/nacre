@@ -1384,7 +1384,7 @@ pub(crate) fn boolean_via_trace(
     // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
     // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
     // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-    let faces = crate::unify_coplanar_faces(model, faces, &planes, &canon);
+    let faces = crate::unify_coplanar_faces(faces, &planes, &canon)?;
 
     // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
     // raw-index and pierce-only). Reject rather than panic on a degenerate meet.

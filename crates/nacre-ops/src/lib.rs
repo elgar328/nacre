@@ -2527,150 +2527,262 @@ fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.
 fn norm_edge(a: Node, b: Node) -> (Node, Node) {
-    fn rank(n: Node) -> (u8, usize, usize, usize) {
-        match n {
-            Node::Orig(v) => (0, v.index() as usize, 0, 0),
-            Node::Seam(t) => (1, t[0], t[1], t[2]),
-        }
+    if node_rank(a) <= node_rank(b) {
+        (a, b)
+    } else {
+        (b, a)
     }
-    if rank(a) <= rank(b) { (a, b) } else { (b, a) }
 }
 
-/// Splice loop `b` into loop `a` across their shared edge `{u, v}` (present in `a` as `u→v`
-/// or `v→u`, and in `b` with the opposite orientation), dropping that edge — the loop-join
-/// core of the coplanar merge. Node identity throughout, agnostic to `Orig`/`Seam` away from
-/// the shared edge. The shared edge's two endpoints remain as (collinear, for a flat merge)
-/// boundary points; [`unify_coplanar_faces`] dissolves them globally afterwards.
-fn splice_along(a: &[Node], b: &[Node], u: Node, v: Node) -> Vec<Node> {
-    let m = a.len();
-    let ia = (0..m)
-        .find(|&i| {
-            let (p, q) = (a[i], a[(i + 1) % m]);
-            (p == u && q == v) || (p == v && q == u)
-        })
-        .expect("shared edge lies on A's loop");
-    let (x, y) = (a[ia], a[(ia + 1) % m]);
-    let n = b.len();
-    // B traverses the shared edge the opposite way: `b[ib] = Y`, `b[ib+1] = X`.
-    let ib = (0..n)
-        .find(|&j| b[j] == y && b[(j + 1) % n] == x)
-        .expect("B's face shares the edge, opposite orientation");
-    let mut nodes = Vec::with_capacity(m + n - 2);
-    // A from Y (ia+1) all the way to X (ia): the whole A loop, less the dropped edge.
-    for t in 0..m {
-        nodes.push(a[(ia + 1 + t) % m]);
+/// A total order on `Node`. There is no `Ord` derive — `Orig` and `Seam` carry different shapes —
+/// but every iteration over nodes has to be deterministic for replay, so they are ranked by hand.
+fn node_rank(n: Node) -> (u8, usize, usize, usize) {
+    match n {
+        Node::Orig(v) => (0, v.index() as usize, 0, 0),
+        Node::Seam(t) => (1, t[0], t[1], t[2]),
     }
-    // B's interior, strictly between X and Y (skip the shared edge's two endpoints).
-    for t in 2..n {
-        nodes.push(b[(ib + t) % n]);
-    }
-    nodes
 }
 
-/// Merge coplanar, same-normal, hole-free faces that share an original edge into one face,
-/// then dissolve straight-angle (globally degree-2, exactly collinear) original vertices — a
-/// T-junction-free defeature. Generalizes the coincident Fuse merge off the interface ring to
-/// any plane class via an edge→faces map: two faces meeting flat across an original edge fuse,
-/// and the now-redundant edge and its straight-angle vertices disappear.
+/// Merge every group of coplanar, same-facing result faces into one face per connected piece, then
+/// dissolve straight-angle vertices — the mandatory post-boolean defeature.
 ///
-/// Reused, not reinvented: `plane_classes` (`canon`) decides coplanarity, `n_out.dot > 0` the
-/// shared-normal guard — a real dihedral, or an opposite-normal cantilever step, is kept — and
-/// `pt3_base_collinear` the exact straight-angle test. `assemble_fuse_cut` downstream is
-/// unchanged. Detection is deterministic (faces in index order, edges in loop order) for replay.
+/// **Erase the interior, do not stitch the exterior.** When two faces become one region the boundary
+/// between them stops being a boundary, so the merge is: take every directed ring edge in the group,
+/// drop the ones that appear as an opposed pair (`a→b` together with `b→a`), and re-thread what is
+/// left. Nothing has to be spliced, which is what lets one rule cover every way the pieces can meet
+/// — sharing an edge, a hole filled exactly by a neighbour, a hole filled by *several* neighbours,
+/// and any chain of those (one erase settles them all at once). The earlier version stitched loops
+/// with `splice_along` and so had to special-case "exactly two hole-free faces across one edge",
+/// leaving `// holed — deferred` for the rest; a flush tool cap then stayed two faces forever.
 ///
-/// Deferred, each a safe no-op: holed faces (`inner`), seam-shared edges (detection needs `Orig`
-/// endpoints), opposite-normal coplanar pairs, and non-disk components (a `debug_assert` guards
-/// the disk assumption). The one caller today is the coincident Fuse; a future coplanar-contact
-/// path is the second.
+/// A group is one plane class, one outward direction, one `flip` — mixing any of those would fold
+/// material the wrong way — split further into **edge-connected components**, because faces that
+/// merely lie on the same plane without touching must each survive on their own.
+///
+/// Reused, not reinvented: `canon` for coplanarity, `n_out.dot > 0` for facing,
+/// [`arrange::loop_winding`] to tell an outer ring from a hole, [`arrange::point_in_ring`] to give
+/// each hole its owner — the same two exact predicates `trace::nest_cells` uses for the same
+/// question, neither of which reads a coordinate.
+///
+/// Rejects rather than guesses: a directed edge appearing twice the same way (two faces claiming the
+/// same side), an undirected edge on three or more rings (non-manifold in the plane), or a node with
+/// two outgoing edges after erasure (pieces meeting at a single point, where the cycle is not
+/// unique). A group containing an `Orig` node is passed through untouched — `loop_winding` needs the
+/// plane triples, and the arrangement emits `Seam` for everything, so this is unreachable in
+/// production.
 pub(crate) fn unify_coplanar_faces(
-    model: &Model,
     faces: Vec<LocalFace>,
     planes: &[PlaneInfo],
     canon: &[usize],
-) -> Vec<LocalFace> {
+) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
-    // 1. Edge (unordered node pair) → the faces carrying it, over outer loops. Built in face
-    //    order, so each value is ascending face indices.
-    let mut edge_faces: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
-    for (fi, lf) in faces.iter().enumerate() {
-        let k = lf.loop_nodes.len();
-        for i in 0..k {
-            let e = norm_edge(lf.loop_nodes[i], lf.loop_nodes[(i + 1) % k]);
-            edge_faces.entry(e).or_default().push(fi);
-        }
-    }
-    // 2. Mergeable edges (deterministic order): shared by exactly two faces that are coplanar,
-    //    same-normal, hole-free. Union the incident faces. Merging two coplanar same-normal faces
-    //    across a shared full edge is a defeature (the solid is unchanged, one face fewer); the
-    //    arrangement mints crossings as shared vertices, so the shared edge is always a full edge
-    //    (no T-junction), and every node is a `Seam` triple.
-    let mut mergeable: Vec<(Node, Node)> = Vec::new();
+    // A face with holes stays out of the merge for now (step ①a); its rings join the algebra once
+    // the hole path opens, and until then this reproduces the old `holed — deferred` behaviour.
+    let eligible = |lf: &LocalFace| lf.inner.is_empty() && all_seam(lf);
+    // One plane class, one outward direction, one flip.
+    let group_key = |lf: &LocalFace| -> (usize, bool, bool) {
+        let c = canon[lf.plane_idx];
+        let facing = planes[lf.plane_idx].n_out.dot(planes[c].n_out) > 0.0;
+        (c, facing, lf.flip)
+    };
+
+    // Edge-connected components within a group.
     let mut comp: Vec<usize> = (0..n).collect();
+    let mut carriers: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
-        let k = lf.loop_nodes.len();
-        for i in 0..k {
-            let (u, v) = (lf.loop_nodes[i], lf.loop_nodes[(i + 1) % k]);
-            let fs = &edge_faces[&norm_edge(u, v)];
-            if fs.len() != 2 || fs[0] != fi {
-                continue; // process each edge once, from its lower-index face
-            }
-            let (li, lj) = (&faces[fs[0]], &faces[fs[1]]);
-            if canon[li.plane_idx] != canon[lj.plane_idx] {
-                continue; // not coplanar
-            }
-            if planes[li.plane_idx].n_out.dot(planes[lj.plane_idx].n_out) <= 0.0 {
-                continue; // opposite normal — a genuine fold/step, keep
-            }
-            if !li.inner.is_empty() || !lj.inner.is_empty() {
-                continue; // holed — deferred
-            }
-            mergeable.push((u, v));
-            let (ri, rj) = (uf_find(&mut comp, fs[0]), uf_find(&mut comp, fs[1]));
-            if ri != rj {
-                comp[ri] = rj;
+        if !eligible(lf) {
+            continue;
+        }
+        for (a, b) in ring_edges(&lf.loop_nodes) {
+            carriers.entry(norm_edge(a, b)).or_default().push(fi);
+        }
+    }
+    for fs in carriers.values() {
+        for w in fs.windows(2) {
+            if group_key(&faces[w[0]]) == group_key(&faces[w[1]]) {
+                let (ri, rj) = (uf_find(&mut comp, w[0]), uf_find(&mut comp, w[1]));
+                if ri != rj {
+                    comp[ri] = rj;
+                }
             }
         }
     }
-    if mergeable.is_empty() {
-        return faces; // nothing coplanar-adjacent
-    }
-    // 3. Fold each component into one loop by splicing across its mergeable edges.
-    let mut active: Vec<Option<LocalFace>> = faces.into_iter().map(Some).collect();
-    let mut slot: Vec<usize> = (0..n).collect(); // orig face → active slot currently holding it
-    for (u, v) in mergeable {
-        let fs = &edge_faces[&norm_edge(u, v)];
-        let (si, sj) = (uf_find(&mut slot, fs[0]), uf_find(&mut slot, fs[1]));
-        if si == sj {
-            continue; // already one face (joined via another edge of this component)
+
+    // Group members by component, in face order so the result is replay-stable.
+    let mut members: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (fi, lf) in faces.iter().enumerate() {
+        if eligible(lf) {
+            let r = uf_find(&mut comp, fi);
+            members[r].push(fi);
         }
-        let lf_b = active[sj].take().expect("active slot");
-        let lf_a = active[si].as_ref().expect("active slot");
-        let loop_nodes = splice_along(&lf_a.loop_nodes, &lf_b.loop_nodes, u, v);
-        debug_assert!(
-            loop_nodes.len() >= 3,
-            "coplanar merge across a non-disk component"
-        );
-        active[si] = Some(LocalFace {
-            plane_idx: lf_a.plane_idx,
-            loop_nodes,
-            inner: Vec::new(),
-            flip: false,
-        });
-        slot[sj] = si;
     }
-    let mut out: Vec<LocalFace> = active.into_iter().flatten().collect();
-    // 4. Dissolve straight-angle vertices: a globally degree-2 node (one edge line through it) that
-    //    is exactly collinear with its two neighbours. Every node is a `Seam` triple `{p,q,r}`, so
-    //    collinearity is COMBINATORIAL and exact: the node lies on a line iff some pair of its three
-    //    planes is shared by both neighbours (that pair *is* the line). Drop from every incident loop
-    //    at once, so a vertex that is a real corner on any face (degree > 2) survives (no T-junction).
+
+    let mut merged: Vec<LocalFace> = Vec::new();
+    let mut kept: Vec<Option<LocalFace>> = faces.into_iter().map(Some).collect();
+    for mem in &members {
+        if mem.len() < 2 {
+            continue; // nothing to merge; the face (if any) is emitted as-is below
+        }
+        let group: Vec<&LocalFace> = mem
+            .iter()
+            .map(|&fi| kept[fi].as_ref().expect("member present"))
+            .collect();
+        let rings = merge_component(&group, planes, canon)?;
+        let (plane_idx, flip) = (group[0].plane_idx, group[0].flip);
+        merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
+            plane_idx,
+            loop_nodes: outer,
+            inner,
+            flip,
+        }));
+        for &fi in mem {
+            kept[fi] = None;
+        }
+    }
+    let mut out: Vec<LocalFace> = kept.into_iter().flatten().collect();
+    out.extend(merged);
+    dissolve_straight_angles(&mut out);
+    Ok(out)
+}
+
+/// Every node of every ring is a `Seam` triple — `loop_winding` and `point_in_ring` name their
+/// arguments by plane, so an `Orig` node has nothing to give them.
+fn all_seam(lf: &LocalFace) -> bool {
+    lf.loop_nodes
+        .iter()
+        .chain(lf.inner.iter().flatten())
+        .all(|nd| matches!(nd, Node::Seam(_)))
+}
+
+/// A ring's directed edges, `i → i+1` around.
+fn ring_edges(ring: &[Node]) -> impl Iterator<Item = (Node, Node)> + '_ {
+    (0..ring.len()).map(move |i| (ring[i], ring[(i + 1) % ring.len()]))
+}
+
+/// The `[usize; 3]` form a ring's nodes carry, for the exact predicates.
+fn seam_ring(ring: &[Node]) -> Vec<[usize; 3]> {
+    ring.iter()
+        .map(|nd| match nd {
+            Node::Seam(t) => *t,
+            Node::Orig(_) => unreachable!("callers filter on `all_seam`"),
+        })
+        .collect()
+}
+
+/// An outer ring with the holes that belong to it — what one merged region looks like before it
+/// becomes a `LocalFace`.
+type RegionRings = (Vec<Node>, Vec<Vec<Node>>);
+
+/// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
+/// the holes that belong to it.
+fn merge_component(
+    group: &[&LocalFace],
+    planes: &[PlaneInfo],
+    canon: &[usize],
+) -> Result<Vec<RegionRings>, BoolError> {
+    // 1. Collect directed edges. A repeat in the same direction means two faces claim the same side.
+    let mut dirs: HashMap<(Node, Node), usize> = HashMap::new();
+    for lf in group {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            for e in ring_edges(ring) {
+                *dirs.entry(e).or_insert(0) += 1;
+            }
+        }
+    }
+    if dirs.values().any(|&c| c > 1) {
+        return Err(reject(tag::COPLANAR_MERGE));
+    }
+    // 2. An edge carried in both directions is interior — it separates nothing. Anything carried
+    //    three or more times (either direction) is non-manifold in the plane.
+    let mut undirected: HashMap<(Node, Node), usize> = HashMap::new();
+    for &(a, b) in dirs.keys() {
+        *undirected.entry(norm_edge(a, b)).or_insert(0) += 1;
+    }
+    if undirected.values().any(|&c| c > 2) {
+        return Err(reject(tag::COPLANAR_MERGE));
+    }
+    // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a point
+    //    and the cycles are not determined.
+    let mut next: HashMap<Node, Node> = HashMap::new();
+    for &(a, b) in dirs.keys() {
+        if dirs.contains_key(&(b, a)) {
+            continue; // interior
+        }
+        if next.insert(a, b).is_some() {
+            return Err(reject(tag::COPLANAR_MERGE));
+        }
+    }
+    let mut starts: Vec<Node> = next.keys().copied().collect();
+    starts.sort_by_key(|&nd| node_rank(nd));
+    let mut seen: HashSet<Node> = HashSet::new();
+    let mut cycles: Vec<Vec<Node>> = Vec::new();
+    for start in starts {
+        if seen.contains(&start) {
+            continue;
+        }
+        let mut cyc = vec![start];
+        seen.insert(start);
+        let mut cur = next[&start];
+        while cur != start {
+            if !seen.insert(cur) {
+                return Err(reject(tag::COPLANAR_MERGE)); // walk re-entered another cycle
+            }
+            cyc.push(cur);
+            cur = *next.get(&cur).ok_or_else(|| reject(tag::COPLANAR_MERGE))?;
+        }
+        if cyc.len() < 3 {
+            return Err(reject(tag::COPLANAR_MERGE));
+        }
+        cycles.push(cyc);
+    }
+    if cycles.is_empty() {
+        return Err(reject(tag::COPLANAR_MERGE)); // everything erased: not a region
+    }
+    // 4. Winding tells an outer ring from a hole; the class root is the frame both are read in.
+    let wc = canon[group[0].plane_idx];
+    let mut outers: Vec<Vec<Node>> = Vec::new();
+    let mut holes: Vec<Vec<Node>> = Vec::new();
+    for cyc in cycles {
+        match arrange::loop_winding(planes, wc, &seam_ring(&cyc))? {
+            1 => outers.push(cyc),
+            -1 => holes.push(cyc),
+            _ => return Err(reject(tag::COPLANAR_MERGE)),
+        }
+    }
+    // 5. Each hole belongs to the outer ring that contains it — the same question `nest_cells` asks
+    //    of the arrangement's cells, answered by the same predicate.
+    let mut faces: Vec<RegionRings> = outers.into_iter().map(|o| (o, Vec::new())).collect();
+    for hole in holes {
+        let probe = seam_ring(&hole)[0];
+        let mut owner = None;
+        for (i, (outer, _)) in faces.iter().enumerate() {
+            if arrange::point_in_ring(planes, wc, probe, &seam_ring(outer))? {
+                if owner.is_some() {
+                    return Err(reject(tag::COPLANAR_MERGE)); // nested deeper than this brick names
+                }
+                owner = Some(i);
+            }
+        }
+        faces[owner.ok_or_else(|| reject(tag::COPLANAR_MERGE))?]
+            .1
+            .push(hole);
+    }
+    Ok(faces)
+}
+
+/// Drop straight-angle vertices: a node whose only two neighbours across **all** rings lie with it
+/// on one line. Every node is a `Seam` triple `{p, q, r}`, so the test is combinatorial and exact —
+/// the node is on a line iff some pair of its planes is shared by both neighbours. Dropping from
+/// every incident ring at once keeps a vertex that is a real corner somewhere (degree > 2), which is
+/// what stops a T-junction from opening.
+fn dissolve_straight_angles(out: &mut [LocalFace]) {
     let mut nbrs: HashMap<Node, HashSet<Node>> = HashMap::new();
-    for lf in &out {
-        let k = lf.loop_nodes.len();
-        for i in 0..k {
-            let (a, b) = (lf.loop_nodes[i], lf.loop_nodes[(i + 1) % k]);
-            nbrs.entry(a).or_default().insert(b);
-            nbrs.entry(b).or_default().insert(a);
+    for lf in out.iter() {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            for (a, b) in ring_edges(ring) {
+                nbrs.entry(a).or_default().insert(b);
+                nbrs.entry(b).or_default().insert(a);
+            }
         }
     }
     let mut drop: HashSet<Node> = HashSet::new();
@@ -2684,7 +2796,6 @@ pub(crate) fn unify_coplanar_faces(
             continue;
         };
         let both_have = |p: usize| a.contains(&p) && b.contains(&p);
-        // On the line named by some pair of the node's planes ⇒ collinear straight-through vertex.
         if (both_have(t[0]) && both_have(t[1]))
             || (both_have(t[0]) && both_have(t[2]))
             || (both_have(t[1]) && both_have(t[2]))
@@ -2692,12 +2803,15 @@ pub(crate) fn unify_coplanar_faces(
             drop.insert(node);
         }
     }
-    if !drop.is_empty() {
-        for lf in &mut out {
-            lf.loop_nodes.retain(|nd| !drop.contains(nd));
+    if drop.is_empty() {
+        return;
+    }
+    for lf in out.iter_mut() {
+        lf.loop_nodes.retain(|nd| !drop.contains(nd));
+        for ring in &mut lf.inner {
+            ring.retain(|nd| !drop.contains(nd));
         }
     }
-    out
 }
 
 #[cfg(test)]
@@ -9190,7 +9304,7 @@ pub mod tests {
             face(0, oloop(&[c10, c20, c21, c11]), vec![]),
             face(0, oloop(&[c20, c30, c31, c21]), vec![]),
         ];
-        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
         assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
         let l = &out[0].loop_nodes;
         assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
@@ -9223,7 +9337,7 @@ pub mod tests {
             face(0, oloop(&[a, b, c, d]), vec![]),
             face(1, oloop(&[b, a, h, e]), vec![]),
         ];
-        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
         assert_eq!(out.len(), 2, "opposite-normal pair stays separate");
     }
 
@@ -9250,7 +9364,7 @@ pub mod tests {
             face(0, oloop(&[a, b, c, d]), vec![oloop(&[h0, h1, h2])]),
             face(0, oloop(&[b, e, f, c]), vec![]),
         ];
-        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
         assert_eq!(out.len(), 2, "a holed face is not merged");
     }
 
@@ -9270,7 +9384,7 @@ pub mod tests {
             face(0, vec![s1, s2, a], vec![]),
             face(0, vec![s2, s1, b], vec![]),
         ];
-        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
         assert_eq!(out.len(), 2, "seam-shared edge is not merged");
     }
 
@@ -9299,7 +9413,7 @@ pub mod tests {
             face(0, oloop(&[v100, v200, v210, v110]), vec![]),
             face(1, oloop(&[v200, v100, v101, v201]), vec![]), // perpendicular, not coplanar
         ];
-        let out = unify_coplanar_faces(&m, faces, &p, &canon);
+        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
         assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
         let merged = out.iter().find(|lf| lf.plane_idx == 0).unwrap();
         assert!(
