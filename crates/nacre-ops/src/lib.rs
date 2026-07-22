@@ -2223,12 +2223,15 @@ pub(crate) fn unify_coplanar_faces(
 ) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
     let eligible = all_seam;
-    // One plane class, one outward direction, one flip.
-    let group_key = |lf: &LocalFace| -> (usize, bool, bool) {
-        let c = canon[lf.plane_idx];
-        let facing = planes[lf.plane_idx].n_out.dot(planes[c].n_out) > 0.0;
-        (c, facing, lf.flip)
-    };
+    // One plane class, one flip.
+    //
+    // There used to be an outward-direction component here, `n_out(plane_idx)·n_out(canon[plane_idx])
+    // > 0`. It never separated anything: `plane_idx` is always a class root — `emit_faces` writes
+    // `plane_idx: wc` and a merged face inherits `group[0]`'s — so `canon[plane_idx] == plane_idx`
+    // and the dot product was `|n|² > 0`, identically true. It was also redundant with `flip`, which
+    // is already in the key: `assemble_fuse_cut` derives a result face's `Orientation` from exactly
+    // `(the root's orient, flip)`, so two faces in one group orient the same way by construction.
+    let group_key = |lf: &LocalFace| -> (usize, bool) { (canon[lf.plane_idx], lf.flip) };
 
     // Edge-connected components within a group.
     let mut comp: Vec<usize> = (0..n).collect();
@@ -7006,8 +7009,14 @@ pub mod tests {
     #[test]
     fn unify_keeps_opposite_normal_coplanar() {
         // Two coplanar faces sharing an edge but with opposite outward normals — a genuine
-        // fold / cantilever step (cell canon-step), not redundant. The shared-normal guard
-        // (`n_out.dot > 0`) keeps them separate.
+        // fold / cantilever step (cell canon-step), not redundant.
+        //
+        // **What actually keeps them separate is `all_seam`, not a normal test.** The comment
+        // here used to credit a `n_out.dot > 0` component of `group_key`; deleting that component
+        // left this test passing, which is the measurement that settles it. `oloop` builds `Orig`
+        // nodes, so `eligible` rejects both faces before `group_key` is ever consulted — the
+        // passthrough documented on `unify_coplanar_faces`, and unreachable in production because
+        // the arrangement emits `Seam` for everything.
         let mut m = Model::new();
         let p = vec![
             mk_plane(&mut m, [0., 0., 1.]),
