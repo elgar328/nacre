@@ -1933,3 +1933,55 @@ design.md:456이 이미 *"pad/pocket과 무관, **유지/제거는 별도 결정
 언제든 싸게 할 수 있다).
 
 **결과.** OCCT **90/1 → 91/0**(오라클 전체 green), ops 실패 집합은 기준선 3건 그대로, pipeline 19/1 불변.
+
+## 2026-07-22 · `ImprintSketch` 은퇴 — 소비자 없는 마지막 직접-구성, 그리고 그것만을 위한 커널 코드
+
+**사용자 지적에서 출발했다** — *"임프린트된 솔리드를 부울 연산하는 게 정상 시나리오냐"*. 직전 셀(`c6ff8db`)에서
+내가 두 번 *"imprint의 존재 이유"*라고 답했는데 **둘 다 근거가 없었고**, `PadOnFace`의 시그니처를 읽고
+`region_face` 사용처를 전수 조사해서야 확정됐다: **소비자가 없다.**
+
+- `PadOnFace`/`PocketOnFace`는 `(face, profile)`을 **직접** 받는다 — 독스트링이 *"boolean sugar over
+  `Operation::Boolean`, **not a direct face-split**"* 이라고 스스로 적어 두었다.
+- `region_face`를 읽는 코드는 **0**(enum 필드·생성자·도달성 확인 테스트뿐).
+- 초기 설계는 *"imprint → `raise_region`"* 이었고 **`raise_region`은 폐기**됐다(design.md:456, dev-log:905,
+  `9357752`·`a9f3ce1`·`aed6174`). design.md가 이미 *"유지/제거는 별도 결정"* 이라 적어 둔 항목이다.
+
+**커버리지 손실을 제거 전에 전수로 확인했다 — 없다.** `FACE_BOUND`(안쪽 루프 STEP 출력)는
+`pad_step_exports`·`pocket_step_exports`가 **같은 단언**을 하고, 유효성 proptest는 `prop_pad/pocket_stays_valid`가,
+구멍 뚫린 면의 질량 기여는 `pocket_mass`·`prop_pocket_volume`이 덮는다. imprint 전용 거절 테스트(nonplanar·
+degenerate)는 pad/pocket 쪽에 **네 조합 모두** 실재한다. 대체재가 없는 것은 *"구멍이 코플래너 면으로 메워진"*
+형상 하나인데, **그 형상 자체가 사라지므로** 잃는 것은 커버리지가 아니라 대상이다.
+
+**★ 커밋을 둘로 나눈 것이 이 셀의 방법이다.**
+- **A(`3a10920`)** 연산·테스트·문서 제거. `cargo build`(non-test)가 **깨끗** ⇒ imprint는 테스트 밖에서
+  쓰이지 않았다(P5). ops 236/3 → **228/3**(실패 집합 동일), props −2, OCCT **91/0 → 90/0**.
+- **B(`8ce006a`)** 이음선 처리 제거. **실패 집합이 A와 완전히 동일** ⇒ *"그 코드는 imprint 전용이었다"*가
+  **추론이 아니라 측정**으로 확정된다(P2). 한 커밋으로 뭉쳤으면 이 증거가 사라진다.
+
+**★ 검토가 세 라운드에 걸쳐 잡은 것(전부 계획 단계):**
+1. **추가 사망자 3** — `profile_strictly_in_region`·`planar_drop_axes`·**공개 변형
+   `OpError::ProfileNotContainedInFace`**(전부 유일 호출자가 `placed_profile`).
+2. **★ 살아남는 코드의 문서가 거짓말하게 된다** — `OpError::NonPlanarFace`·`FaceNotInLiveSolid`는
+   `face_frame`이 내므로 **pad/pocket에서도 발화**하는데 문서는 imprint 전용처럼 적혀 있었다.
+   `he_start`·`FaceFrame`도 같다. **clippy는 죽은 *코드*는 잡지만 낡은 *산문*은 아무도 안 잡는다** ⇒
+   `grep -n "imprint"`를 게이트로 걸었다.
+3. **문서는 두 종류다** — design.md 언급 **10곳**(처음엔 4곳으로 셌다) 중 **현재 상태 주장**(크레이트 내용·
+   Operation 목록·456·458·465)은 고치고 **역사 기록**(M4 결정·M4가 낸 것·완료 작업)은 **손대지 않았다**.
+   dev-log에 이미 쓰던 규칙을 design.md에도 적용한 것이다.
+
+**★ 제거가 한 겹 더 있었다 — clippy diff가 잡았다.** 34 → **38**. 계획이 *"늘면 제거가 덜 된 것"*이라
+예측해 둔 그대로였고, 새 4건은 전부 imprint 경로만 읽던 것: `FaceFrame`의 필드 **5개**(`shell_h`·
+`orientation`·`outer_pts`·`outer_loop`·`inner_loops`)와 2D 헬퍼 `in_bbox`·`point_in_ring2`·`proj2`·
+`segments_meet`. 지우니 **34로 복귀(신규 0·소멸 0)**. **개수만 봤으면 놓쳤다 — diff가 잡았다.**
+
+**남긴 것(imprint와 무관한 교정):** `hole_rings(..)`의 정직 거절. `unwrap_or_default()`는 이름 못 붙인
+구멍을 *"구멍 없음"* 으로 만들어 **뚫린 면을 꽉 찬 것으로** trace한다 — 거절이어야 할 자리의 silent-wrong.
+그리고 `loop_triples`의 `classes < 3` 주석은 옛 문장(*"genuine straight angle"*)으로 되돌리되 **이음선
+꼭짓점이라는 다른 경우가 있고 지금은 도달 불가**임과 **답이 어디 있는지**를 함께 적었다 — 코드는 지우고
+지식은 남긴다. (계획의 P3b는 `grep imprint` **0**이었는데 이 포인터 **1건**을 의도적으로 남겼다.)
+
+**복원 경로:** Split Face 소비자(구역별 재질·FEA 경계조건·금형 파팅라인)가 로드맵에 들어오면
+**`8ce006a` → `3a10920` 순으로 revert**하는 것이 출발점이다. 이음선 규칙의 유도(진행 방향의 왼쪽·법선
+조건)와 252건 측정은 `c6ff8db` 셀에 그대로 있다.
+
+**결과.** ops **228/3**(기준선과 같은 3건), pipeline 19/1, **OCCT 90/0**, clippy 34 — 디버그·릴리스 동일.
