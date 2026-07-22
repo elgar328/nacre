@@ -3269,12 +3269,11 @@ pub mod tests {
 
     #[test]
     fn cut_box_inside_non_convex_is_empty() {
-        // Cut(box − L): the box is wholly inside L ⇒ nothing remains.
+        // Cut(box − L): the box is wholly inside L ⇒ nothing remains. Nothing is an answer, so the
+        // boolean succeeds with no solids — and consumes both operands like any other success.
         let (mut m, l, bx) = l_and_inner_box();
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Cut, bx, l),
-            Err(BoolError::EmptyResult)
-        );
+        assert!(boolean(&mut m, BoolKind::Cut, bx, l).unwrap().is_empty());
+        assert!(m.live_solids.is_empty(), "both operands are consumed");
     }
 
     #[test]
@@ -3287,18 +3286,26 @@ pub mod tests {
         let d = m.add_cuboid(far(), far_max());
         let r = boolean_one(&mut m, BoolKind::Cut, l, d).unwrap();
         assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_l).abs() < 1e-9);
+        // Fusing things that never touch does not merge them — it keeps both, whole.
+        let (mut m, l) = l_prism();
+        let vol_d = 1.0; // far()..far_max() is the unit box
+        let d = m.add_cuboid(far(), far_max());
+        let both = boolean(&mut m, BoolKind::Fuse, l, d).unwrap();
+        assert_eq!(both.len(), 2, "disjoint operands stay two solids");
+        m.rebuild_adjacency();
+        let mut vols: Vec<f64> = both
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .collect();
+        vols.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        assert!(
+            (vols[0] - vol_d).abs() < 1e-9 && (vols[1] - vol_l).abs() < 1e-9,
+            "{vols:?}"
+        );
+        // Their intersection, on the other hand, really is empty.
         let (mut m, l) = l_prism();
         let d = m.add_cuboid(far(), far_max());
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Fuse, l, d),
-            Err(BoolError::EmptyResult)
-        );
-        let (mut m, l) = l_prism();
-        let d = m.add_cuboid(far(), far_max());
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Common, l, d),
-            Err(BoolError::EmptyResult)
-        );
+        assert!(boolean(&mut m, BoolKind::Common, l, d).unwrap().is_empty());
     }
 
     /// The L-prism with a box biting its convex corner `(2, 0)` — the first
@@ -8090,14 +8097,20 @@ pub mod tests {
     }
 
     #[test]
-    fn fuse_of_disjoint_boxes_is_empty() {
+    /// Renamed from `..._is_empty`: that name recorded the old engine's limit, not the answer.
+    /// A union of things that never touch is both of them, whole.
+    fn fuse_of_disjoint_boxes_is_two_solids() {
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Fuse, a, b),
-            Err(BoolError::EmptyResult)
-        );
+        let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        assert_eq!(solids.len(), 2);
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        for &s in &solids {
+            let v = nacre_props::mass_props(&m, s).unwrap().volume;
+            assert!((v - 1.0).abs() < 1e-12, "each unit box survives whole: {v}");
+        }
     }
 
     #[test]
@@ -8154,14 +8167,20 @@ pub mod tests {
     #[test]
     fn containment_symmetric_when_a_inside_b() {
         // Arguments swapped: A = inner ⊂ B = outer.
+        // Cut(inner − outer): inner is wholly removed ⇒ empty, which is an answer, not an error —
+        // and a successful boolean consumes its operands, so the Fuse below needs a fresh model
+        // (it used to reuse this one only because the empty Cut was an error that consumed nothing).
+        let (mut m, outer, inner) = nested_boxes();
+        assert!(
+            boolean(&mut m, BoolKind::Cut, inner, outer)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(m.live_solids.is_empty(), "both operands are consumed");
+
+        // Fuse(inner ∪ outer) = outer.
         let (mut m, outer, inner) = nested_boxes();
         let vol_outer = nacre_props::mass_props(&m, outer).unwrap().volume;
-        // Cut(inner − outer): inner is wholly removed ⇒ empty.
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Cut, inner, outer),
-            Err(BoolError::EmptyResult)
-        );
-        // Fuse(inner ∪ outer) = outer.
         let r = boolean_one(&mut m, BoolKind::Fuse, inner, outer).unwrap();
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
@@ -8398,9 +8417,11 @@ pub mod tests {
             Point3::from_array([1.5, 1.5, 2.0]),
         );
         m.rebuild_adjacency();
-        assert_eq!(
-            boolean(&mut m, BoolKind::Common, base, corner),
-            Err(BoolError::EmptyResult)
+        // They meet only along the base's top face — a contact of zero volume.
+        assert!(
+            boolean(&mut m, BoolKind::Common, base, corner)
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -9295,11 +9316,10 @@ pub mod tests {
 
     #[test]
     fn common_stacked_cubes_is_empty() {
+        // The stack shares only its interface plane, so the intersection has no volume.
         let (mut m, a, b) = stacked_cubes();
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Common, a, b),
-            Err(BoolError::EmptyResult)
-        );
+        assert!(boolean(&mut m, BoolKind::Common, a, b).unwrap().is_empty());
+        assert!(m.live_solids.is_empty(), "both operands are consumed");
     }
 
     #[test]
@@ -9388,10 +9408,8 @@ pub mod tests {
             prop_assert!((vf - (va + vb)).abs() <= 1e-9 * (va + vb), "fuse {vf}");
 
             let (mut m2, a2, b2) = build();
-            prop_assert_eq!(
-                boolean_one(&mut m2, BoolKind::Common, a2, b2),
-                Err(BoolError::EmptyResult)
-            );
+            // The stack shares only its interface plane ⇒ no volume in common, at any dimensions.
+            prop_assert!(boolean(&mut m2, BoolKind::Common, a2, b2).unwrap().is_empty());
 
             let (mut m3, a3, b3) = build();
             let rc = boolean_one(&mut m3, BoolKind::Cut, a3, b3).unwrap();
@@ -9725,13 +9743,14 @@ pub mod tests {
 
     #[test]
     fn boolean_op_applies_and_wraps_error() {
-        // A degenerate boolean's error is surfaced as OpError::Boolean.
+        // A failing boolean's error is surfaced as `OpError::Boolean`. This used to be driven by a
+        // disjoint `Common`, but that is no longer an error (it is an empty result, see
+        // `boolean_op_passes_an_empty_result_through`), so the wrapping is exercised with a boolean
+        // that genuinely fails: a handle that is not live.
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        // Offset in all axes so no faces are coplanar with A (else the coplanar
-        // gate fires first).
         let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
-        // Disjoint ⇒ EmptyResult, wrapped.
+        m.live_solids.retain(|&s| s != b); // retire `b` behind the op's back
         assert_eq!(
             apply(
                 &mut m,
@@ -9741,8 +9760,47 @@ pub mod tests {
                     b
                 }
             ),
-            Err(OpError::Boolean(BoolError::EmptyResult))
+            Err(OpError::Boolean(BoolError::InputNotLive))
         );
+    }
+
+    /// **An empty result is an answer.** Two solids that miss each other have no intersection, and
+    /// that is what `Common` reports: `Ok` with no solids, both operands consumed like any other
+    /// successful boolean. Stated on its own because the name is the contract — if someone makes
+    /// this an error again, the failure points straight at what was decided (2026-07-22), and the
+    /// `live_solids` assertion pins the retire that an early return would otherwise skip.
+    #[test]
+    fn a_disjoint_common_is_empty_not_an_error() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+        let solids = boolean(&mut m, BoolKind::Common, a, b).expect("empty is not a failure");
+        assert!(solids.is_empty());
+        assert!(
+            m.live_solids.is_empty(),
+            "a successful boolean consumes its operands"
+        );
+    }
+
+    /// An empty boolean reaches the caller as an empty solid list, not an error — the op layer
+    /// passes the kernel's answer through rather than reinterpreting it.
+    #[test]
+    fn boolean_op_passes_an_empty_result_through() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        // Offset in all axes so no faces are coplanar with A.
+        let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
+        let out = apply(
+            &mut m,
+            &Operation::Boolean {
+                kind: BoolKind::Common,
+                a,
+                b,
+            },
+        )
+        .unwrap();
+        assert_eq!(out, OpOutput::Boolean { solids: vec![] });
+        assert!(m.live_solids.is_empty(), "both operands are consumed");
     }
 
     // ---- boolean Common algorithm (M5-c3 commit 2) ----
@@ -9788,10 +9846,7 @@ pub mod tests {
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         // Offset in all axes so no faces are coplanar with A.
         let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Common, a, b),
-            Err(BoolError::EmptyResult)
-        );
+        assert!(boolean(&mut m, BoolKind::Common, a, b).unwrap().is_empty());
     }
 
     #[test]
