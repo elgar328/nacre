@@ -2037,3 +2037,65 @@ pad 쪽 형제 둘은 **볼록** footprint다.
 `trace_vs_production_coverage_sweep`(lib.rs:8375)은 **vacuous** 다 — `boolean()`이 곧 `boolean_via_trace`라
 엔진을 자기 자신과 비교하며 `trace_wrong == 0`이 구조적으로 항상 참인데, **읽는 사람에게는 silent-wrong을
 막는 핵심 잠금처럼 보인다**.
+
+## 2026-07-22 · excise 잔재 정리 — 옛 seam 엔진의 마지막 유해, 그리고 그 위에 얹혀 있던 잠금들
+
+커토버(`925d78e`)가 옛 엔진을 들어냈지만 **`arrange`의 절반이 남아** 컴파일되고 테스트되며 살아 있는
+것처럼 보였다. 살아 있는 뿌리(`lib.rs` 비-test + `trace.rs`가 부르는 `arrange` 항목 **9개**)에서 전이적
+도달성을 계산하니 **14개 함수(~780줄) + 타입 4개**가 어디서도 도달 불가였다:
+`seam_segments_on` · `seam_paths_on` · `orient_seam_loop` · `stitch_cycles` · `point_in_solid_idx` ·
+`ordered_on_edge` · `run_classes` · `edge_crosses_face` · `point_on_ring` · `face_rings` ·
+`boundary_runs` + 헬퍼 3, 그리고 `SeamSegment`·`SeamEnd`·`SeamPath`·`BoundaryRuns`.
+
+★ **`trace_vs_production_coverage_sweep`(147줄)도 지웠고, 이 셀에서 가장 중요한 줄이다.** `boolean()`이
+곧 `boolean_via_trace`이므로 **엔진을 자기 자신과 비교**했고 `trace_wrong == 0`이 구조적으로 항상 참이었다
+— 그런데 이름과 크기 때문에 **silent-wrong을 막는 핵심 잠금처럼 읽힌다.** 진짜 오라클은 OCCT(91건)이고
+같은 fixture를 이미 덮는다. (이 메모리에 두 번이나 *"load-bearing 잠금"* 으로 잘못 기록됐던 항목이다.)
+
+**★ 계획 검토 4라운드가 잡은 것 — 지울 25곳 중 7곳은 지우면 안 됐다.**
+1. **주어가 live인 둘**: `a_hole_winds_...`·`a_reflex_node_turns_against_its_ring`은 죽은
+   `orient_seam_loop`이 아니라 **`loop_winding`/`turn_at`**(=`unify_coplanar_faces::merge_component`,
+   `extract_cells`가 쓴다)을 검사한다. 후자의 주석이 그 값어치를 말한다 — *"**The teeth.** reflex 노드에서
+   시작하면 `turn_at(ring[0])` 구현은 반대 부호를 읽는다 — **`outer_tri`가 실제로 출하했던 결함**"*.
+2. **★ 한 겹 아래에 숨은 다섯**: 직접 호출만 보면 `point_in_ring`·`every_ray`의 커버리지가 *"살아남는다"* 로
+   보이는데, 그 다섯이 전부 헬퍼 **`staple_cap_rings`**에서 링을 받고 그 헬퍼가 `seam_paths_on`·
+   `orient_seam_loop`으로 링을 만든다. **fixture가 죽는다.** 3라운드에서 "괜찮다"고 내린 결론을 4라운드가
+   뒤집었다.
+
+⇒ **재고정을 먼저, 삭제를 나중에.** 반대로 하면 중간 상태가 깨져 무엇이 왜 깨졌는지 못 읽는다.
+새 fixture **`holed_face_rings`**: `Cut(L-프리즘, stub)`의 캡이 구멍을 갖고, 두 링을
+`face_vertex_triples`(외곽) + `hole_rings`(구멍)로 얻는다 — **검사 대상 엔진이 스스로 만든 것**이고,
+원본이 인용하던 형상(사각 구멍 / L자 구멍)까지 그대로다. 재고정 직후 **230/1 불변**을 확인한 뒤 지웠다.
+★ 옮기지 못한 단언 하나는 **이름에서 빼고 이유를 적었다**: `..._and_half_of_them_are_not_clear`의 "절반은
+사용 불가"는 옛 staple fixture에서 loop과 arc가 평면을 공유해 나온 수치라 구멍 뚫린 캡에는 없다.
+
+**판정 기준 두 가지가 이 셀의 방법이다.**
+- 테스트를 지울지는 *"live 함수를 호출하는가"* 가 아니라 ***"주어가 live인가"*** 로 가른다 —
+  `edge_planes`처럼 입력을 준비하는 배관 호출은 성질 잠금이 아니다.
+- 태그를 지울지는 `grep`이 아니라 ***"어느 live 함수가 `reject()`하는가"*** 로 가른다. 그 결과
+  `SEAM_COUNT_MISMATCH`·`VERTEX_ON_FACE_PLANE`·`SEAM_BRANCH`는 발화처 0이라 삭제,
+  `POINT_ON_RING`(1)·`NO_CLEAR_RAY`(2)는 유지.
+
+**★ 삭제가 조용히 잘못되는 세 가지를 전부 밟았다(그리고 전부 계획이 경고했거나 게이트가 잡았다).**
+1. **이름 기반 일괄 삭제** — 중괄호 탐색이 순진해(`pad + '}'` 첫 등장) 살아 있는 `plane_index_setup`을
+   삼켰다. 커토버 excise가 `SketchPlane::point`로 겪은 그것. ⇒ 중괄호를 **세는** 추출기로 교체.
+2. **셸 백틱** — grep 패턴의 백틱이 **명령 치환**으로 해석돼 이름 목록이 깨졌고 `|| true`가 삼켰다.
+   *"6라운드 동안 34개 그대로인데 빌드는 OK"* 가 유일한 단서였다.
+3. **clippy의 "never used"는 빌드 프로파일 기준** — `boundary_verts`·`pt3_base_collinear`는 lib 빌드에서만
+   미사용이고 **테스트가 쓴다**. ⇒ 최종 절차는 *지우고 → 깨진 참조를 읽어 → 되돌리고 → 그 이름을 빼고
+   재시도* 루프이며, 한 라운드에 32개 제거·깨짐 0으로 끝났다.
+
+**`point_in_solid_idx`는 그냥 죽은 코드가 아니었다.** 살아 있는 거절 `SEVERED_WITH_CAVITY`의 독스트링이
+*"a re-scope of `point_in_solid`"* 를 해법으로 지목하고 있었다. 그래도 지웠다(면당 광선 판정 → 셸 범위
+판정은 재사용이 아니라 재작성이고, 도달 불가 코드를 싣지 않는다) — 대신 **그 태그 독스트링에 복구 지점을
+적었다**. ★ 처음엔 커밋 해시를 적었는데 `--amend`가 해시를 바꿔 **자기 참조가 즉시 거짓**이 됐다.
+커밋 안에 자기 해시를 쓸 수 없다 ⇒ dev-log 셀을 가리키도록 고쳤다.
+
+**살아남는 문서 16곳**이 사라진 이름을 가리켰고(여럿은 intra-doc 링크) 전부 오늘의 사실로 다시 썼다.
+의도적으로 남긴 역사 참조는 둘 — `holed_face_rings`가 왜 존재하는지, corner-flush `Common`이 옛날에 어떤
+태그로 거절됐는지.
+
+**결과.** ops **230/1 → 202/0**(워크스페이스 유일 실패는 pipeline `a_flipped_island_loop_is_caught`),
+**OCCT 91/0 불변**(오라클이 안 움직인 것이 도달성 분석이 옳았다는 증거), pipeline 19/1,
+clippy **34 → 2**(남은 둘은 이 변경과 무관: `rayon::prelude`는 비-기본 피처에서 정상,
+`Node::Orig`는 arrangement가 밟지 않는 계약을 문서화). 릴리스 동일.
