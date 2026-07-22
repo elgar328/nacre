@@ -6887,13 +6887,6 @@ pub mod tests {
     // `LocalFace` lists the coincident goldens above never reach — chains, opposite normals,
     // holes, seam edges, and the asymmetric T-junction the global dissolve exists to prevent. ----
 
-    fn mk_vert(m: &mut Model, x: f64, y: f64, z: f64) -> Handle<Vertex> {
-        m.vertices.push(Vertex {
-            point: Point3::from_array([x, y, z]),
-            origin: Origin::Constructed,
-        })
-    }
-
     /// An axis-aligned `FaceInfo` at `d` along its normal, with a **non-degenerate `tri`** whose
     /// right-hand normal is `n_out`. The merge reads more than `n_out` now — `loop_winding` and
     /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
@@ -6933,30 +6926,6 @@ pub mod tests {
 
     /// A `FaceInfo` for the `unify_coplanar_faces` tests, which read none of its geometry; the rest is a
     /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
-    fn mk_plane(m: &mut Model, n: [f64; 3]) -> PlaneGeom {
-        let normal = Vector3::from_array(n);
-        let plane = Plane::from_point_normal(Point3::origin(), normal).unwrap();
-        let surf = m.surfaces.push(Surface::Plane(plane));
-        let face = m.faces.push(Face {
-            surface: surf,
-            outer: Loop { half_edges: vec![] },
-            inner: vec![],
-            orientation: Orientation::Forward,
-        });
-        let _ = (face, normal);
-        PlaneGeom {
-            surf,
-            plane,
-            tri: [Point3::origin(); 3],
-            tri_pt3: None,
-            frame_sign: 1, // `plane` is built from `normal`, so the two agree
-        }
-    }
-
-    fn oloop(vs: &[Handle<Vertex>]) -> Vec<Node> {
-        vs.iter().map(|&v| Node::Orig(v)).collect()
-    }
-
     fn face(plane_idx: usize, nodes: Vec<Node>, inner: Vec<Vec<Node>>) -> LocalFace {
         LocalFace {
             plane_idx,
@@ -7007,59 +6976,39 @@ pub mod tests {
     }
 
     #[test]
-    fn unify_keeps_opposite_normal_coplanar() {
-        // Two coplanar faces sharing an edge but with opposite outward normals — a genuine
-        // fold / cantilever step (cell canon-step), not redundant.
+    fn an_overhang_fuse_keeps_the_two_z1_caps_separate() {
+        // An overhanging boss splits `z = 1` between two coplanar faces with **opposite** outward
+        // normals — the base's exposed top (`+z`) and the boss underside (`-z`). They must not be
+        // fused into one face: their `flip` differs, so `unify`'s `(plane_idx, flip)` group key
+        // keeps them apart.
         //
-        // **What actually keeps them separate is `all_seam`, not a normal test.** The comment
-        // here used to credit a `n_out.dot > 0` component of `group_key`; deleting that component
-        // left this test passing, which is the measurement that settles it. `oloop` builds `Orig`
-        // nodes, so `eligible` rejects both faces before `group_key` is ever consulted — the
-        // passthrough documented on `unify_coplanar_faces`, and unreachable in production because
-        // the arrangement emits `Seam` for everything.
+        // This replaces two retired tests (`unify_keeps_opposite_normal_coplanar`,
+        // `unify_keeps_holed_faces`) that built `Node::Orig` faces to exercise a passthrough the
+        // arrangement never triggers — it emits all-`Seam`. The real invariant is exercised here on
+        // the production path, in the default `cargo test` run: `overhang_fuse_then_cut_matches_occt`
+        // proves it against OCCT but is `#[ignore]`, so this hand-computed volume is the non-ignored
+        // guard. A wrong merge collapses the topology — the volume shifts or `validate` speaks.
         let mut m = Model::new();
-        let p = vec![
-            mk_plane(&mut m, [0., 0., 1.]),
-            mk_plane(&mut m, [0., 0., -1.]),
-        ];
-        let a = mk_vert(&mut m, 0., 0., 0.);
-        let b = mk_vert(&mut m, 1., 0., 0.);
-        let c = mk_vert(&mut m, 1., 1., 0.);
-        let d = mk_vert(&mut m, 0., 1., 0.);
-        let h = mk_vert(&mut m, 0., -1., 0.);
-        let e = mk_vert(&mut m, 1., -1., 0.);
-        let faces = vec![
-            face(0, oloop(&[a, b, c, d]), vec![]),
-            face(1, oloop(&[b, a, h, e]), vec![]),
-        ];
-        let out = unify_coplanar_faces(faces, &p).unwrap();
-        assert_eq!(out.len(), 2, "opposite-normal pair stays separate");
-    }
-
-    #[test]
-    fn unify_keeps_holed_faces() {
-        // A holed face is left separate (merging holes is deferred).
-        let mut m = Model::new();
-        let p = vec![mk_plane(&mut m, [0., 0., 1.])];
-        let g = |m: &mut Model, x, y| mk_vert(m, x, y, 0.0);
-        let (a, b, c, d) = (
-            g(&mut m, 0., 0.),
-            g(&mut m, 1., 0.),
-            g(&mut m, 1., 1.),
-            g(&mut m, 0., 1.),
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
         );
-        let (e, f) = (g(&mut m, 2., 0.), g(&mut m, 2., 1.));
-        let (h0, h1, h2) = (
-            g(&mut m, 0.2, 0.2),
-            g(&mut m, 0.4, 0.2),
-            g(&mut m, 0.3, 0.4),
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([1.5, 0.75, 2.0]),
         );
-        let faces = vec![
-            face(0, oloop(&[a, b, c, d]), vec![oloop(&[h0, h1, h2])]),
-            face(0, oloop(&[b, e, f, c]), vec![]),
-        ];
-        let out = unify_coplanar_faces(faces, &p).unwrap();
-        assert_eq!(out.len(), 2, "a holed face is not merged");
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!(
+            (vol - 1.5).abs() < 1e-12,
+            "base 1 + boss 0.5, no overlap: {vol}"
+        );
     }
 
     #[test]
