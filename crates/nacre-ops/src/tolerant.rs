@@ -4,7 +4,7 @@
 //! A rotated face's plane coefficients and `tri` coordinates are rounded irrationals, so
 //! the axis-aligned geom predicates (`nacre_geom::intersect`) are exact only w.r.t. the
 //! *rounded* geometry. When a predicate's planes are rotated, these wrappers rebuild each
-//! plane from the three exact `Pt3` its face carries ([`PlaneInfo::tri_pt3`], or — for the
+//! plane from the three exact `Pt3` its face carries ([`Witness::tri_pt3`], or — for the
 //! axis-aligned operand of a *mixed*-rotation boolean, whose `tri_pt3` is `None` — exactly
 //! from its `tri` coordinates, see [`plane_def`]) and decide the sign with the
 //! `nacre-scalar::frame3` judges instead.
@@ -19,7 +19,7 @@
 //! every_ray) in stage 3b-i;
 //! with a vertex handle + `model` threaded down) in 3b-ii.
 
-use crate::PlaneInfo;
+use crate::{PlaneGeom, PlaneInfo};
 use nacre_geom::intersect::{
     plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d,
 };
@@ -29,9 +29,39 @@ use nacre_scalar::frame3::{
 };
 use nacre_scalar::{Orient, Rat};
 
+/// The exact-provenance witness both tables carry: three points known to lie on the plane, and —
+/// when the solid was rotated — their exact `Pt3` definitions.
+///
+/// The predicates below need *only* this, which is why one implementation can serve both index
+/// spaces without being able to confuse them: [`PlaneGeom`] answers for a plane class,
+/// [`PlaneInfo`] for a single face. Only [`t_planes_coplanar`] uses the face form — it is the
+/// predicate that *defines* the classes, so it necessarily runs before a plane table exists.
+pub(crate) trait Witness {
+    fn tri(&self) -> [Point3; 3];
+    fn tri_pt3(&self) -> Option<&[Pt3; 3]>;
+}
+
+impl Witness for PlaneGeom {
+    fn tri(&self) -> [Point3; 3] {
+        self.tri
+    }
+    fn tri_pt3(&self) -> Option<&[Pt3; 3]> {
+        self.tri_pt3.as_ref()
+    }
+}
+
+impl Witness for PlaneInfo {
+    fn tri(&self) -> [Point3; 3] {
+        self.tri
+    }
+    fn tri_pt3(&self) -> Option<&[Pt3; 3]> {
+        self.tri_pt3.as_ref()
+    }
+}
+
 /// Whether any of the named planes is rotated — the per-predicate routing signal.
 ///
-/// A plane carries [`PlaneInfo::tri_pt3`] `Some` exactly when it came from a rotated solid
+/// A plane carries [`Witness::tri_pt3`] `Some` exactly when it came from a rotated solid
 /// (`collect_planes` fills it via [`solid_is_rotated`](crate::solid_is_rotated), whose truth
 /// is owned by the classifier: `transform` marks a vertex `Origin::Rotated` only when
 /// `Isometry::is_exact` is false, i.e. the realization is irrational). A predicate must
@@ -39,18 +69,18 @@ use nacre_scalar::{Orient, Rat};
 /// coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact on the
 /// geom path. Widening what counts as exact (e.g. more angle families) is a classifier-layer
 /// change; this consumer only reads the flag.
-pub(crate) fn any_rotated(planes: &[PlaneInfo], idx: &[usize]) -> bool {
-    idx.iter().any(|&k| planes[k].tri_pt3.is_some())
+pub(crate) fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
+    idx.iter().any(|&k| planes[k].tri_pt3().is_some())
 }
 
 /// The three exact `Pt3` defining plane `k`. A rotated plane carries them cached in
-/// [`PlaneInfo::tri_pt3`] (clone — a shallow copy of the rotation chain, no forest walk);
+/// [`Witness::tri_pt3`] (clone — a shallow copy of the rotation chain, no forest walk);
 /// an axis-aligned plane (`None`, e.g. the unrotated operand of a *mixed*-rotation
 /// boolean) is built exactly from its `tri` coordinates, which are already exact f64.
-pub(crate) fn plane_def(planes: &[PlaneInfo], k: usize) -> [Pt3; 3] {
-    match &planes[k].tri_pt3 {
+pub(crate) fn plane_def<W: Witness>(planes: &[W], k: usize) -> [Pt3; 3] {
+    match planes[k].tri_pt3() {
         Some(t) => t.clone(),
-        None => planes[k].tri.map(pt3_from_exact),
+        None => planes[k].tri().map(pt3_from_exact),
     }
 }
 
@@ -98,23 +128,7 @@ fn borrow_triple(d: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
 /// tolerable variation: the predicate would then answer "different plane" for two faces of one
 /// plane and decide from rounding noise (measured 2026-07-22: 117748 such calls).
 ///
-/// A hand-built table in a unit test may leave `class` unset; there a face is its own class and the
-/// check is vacuous, which is why it is `usize::MAX`-tolerant rather than absent.
-#[track_caller]
-fn assert_class_roots(planes: &[PlaneInfo], idx: &[usize]) {
-    if cfg!(debug_assertions) {
-        for &k in idx {
-            debug_assert!(
-                planes[k].class == usize::MAX || planes[k].class == k,
-                "plane index {k} names a face, not its class root {}",
-                planes[k].class
-            );
-        }
-    }
-}
-
-pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: usize) -> i8 {
-    assert_class_roots(planes, &[p, q, r, j]);
+pub(crate) fn t_orient3d(planes: &[PlaneGeom], p: usize, q: usize, r: usize, j: usize) -> i8 {
     // The query plane `j` is one of the point's three defining planes ⇒ the point lies on `j`, so
     // the sign is exactly 0 (a combinatorial identity) — on BOTH paths. Neither numeric branch is
     // reliable here: the axis `three_plane_orient3d` below is exact only for f64-representable
@@ -158,8 +172,7 @@ pub(crate) fn t_orient3d(planes: &[PlaneInfo], p: usize, q: usize, r: usize, j: 
 /// matching its shape (`+1` = `a[axis] > b[axis]`). `!rotated` → the geom predicate on the
 /// stored coefficients; `rotated` → each triple's three planes as exact `Pt3` →
 /// [`indirect_cmp_coord_judge`]. Routes on [`any_rotated`] of the six planes in `a` and `b`.
-pub(crate) fn t_cmp_coord(planes: &[PlaneInfo], a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
-    assert_class_roots(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]);
+pub(crate) fn t_cmp_coord(planes: &[PlaneGeom], a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
     if !any_rotated(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]) {
         let tri = |t: [usize; 3]| {
             [
@@ -182,7 +195,7 @@ pub(crate) fn t_cmp_coord(planes: &[PlaneInfo], a: [usize; 3], b: [usize; 3], ax
 /// Whether the three points are **exactly collinear**, decided by the three coordinate-plane
 /// projections of the cross product (each an exact `orient2d`). Non-collinearity is the standing
 /// precondition of [`t_planes_coplanar`]; [`crate::outer_tri`] establishes it for every plane
-/// [`crate::collect_planes`] builds, but a hand-built `PlaneInfo` can violate it.
+/// [`crate::collect_planes`] builds, but a hand-built table can violate it.
 fn tri_collinear(t: [Point3; 3]) -> bool {
     let [a, b, c] = t.map(|p| p.as_array());
     let proj = |i: usize, j: usize| {
@@ -194,7 +207,7 @@ fn tri_collinear(t: [Point3; 3]) -> bool {
 /// Whether planes `i` and `j` are the **same plane**, decided on the faces' original coordinates
 /// instead of on their derived coefficients.
 ///
-/// [`PlaneInfo::plane`]'s coefficients are a *derivation* — `cross(b−a, c−a)`, then `d = −n·a`,
+/// A stored plane's coefficients are a *derivation* — `cross(b−a, c−a)`, then `d = −n·a`,
 /// both rounded — and the normal is **not normalized**, so its magnitude scales with the face's own
 /// triangle. Two faces of different size on one plane therefore carry coefficient 4-vectors that
 /// are only *approximately* proportional, and [`nacre_predicates::planes_coplanar`]'s exact rank-1
@@ -210,15 +223,15 @@ fn tri_collinear(t: [Point3; 3]) -> bool {
 ///
 /// Routes like the other wrappers: axis-aligned → the geom predicate on `tri`; any rotated → the
 /// exact `Pt3` definitions and [`orient3d_judge`], so a rotated pair is decided on its bases.
-pub(crate) fn t_planes_coplanar(planes: &[PlaneInfo], i: usize, j: usize) -> bool {
-    if tri_collinear(planes[i].tri) || tri_collinear(planes[j].tri) {
+pub(crate) fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
+    if tri_collinear(planes[i].tri()) || tri_collinear(planes[j].tri()) {
         return false;
     }
     if !any_rotated(planes, &[i, j]) {
         return planes[j]
-            .tri
+            .tri()
             .iter()
-            .all(|&q| plane_side(planes[i].tri, q) == 0);
+            .all(|&q| plane_side(planes[i].tri(), q) == 0);
     }
     let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
     dj.iter()
@@ -231,11 +244,10 @@ pub(crate) fn t_planes_coplanar(planes: &[PlaneInfo], i: usize, j: usize) -> boo
 ///
 /// `!rotated` → the geom predicate. `rotated` → the frame3 `D` (det of the *outward*
 /// `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal convention by the
-/// per-plane [`orient_sign`]: `det(stored) = orient_sign(p)·orient_sign(a)·orient_sign(b)·
+/// per-plane [`PlaneGeom::frame_sign`]: `det(stored) = frame_sign(p)·frame_sign(a)·frame_sign(b)·
 /// det(outward)`. `orient_sign` is an f64 dot of two parallel unit vectors (`|·| ≈ 1`),
 /// robust under rotation. Routes on [`any_rotated`] of `p, a, b`.
-pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneInfo], p: usize, a: usize, b: usize) -> i8 {
-    assert_class_roots(planes, &[p, a, b]);
+pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneGeom], p: usize, a: usize, b: usize) -> i8 {
     if !any_rotated(planes, &[p, a, b]) {
         return plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
     }
@@ -244,9 +256,9 @@ pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneInfo], p: usize, a: usize, b:
         plane_def(planes, a),
         plane_def(planes, b),
     );
-    planes[p].orient_sign
-        * planes[a].orient_sign
-        * planes[b].orient_sign
+    planes[p].frame_sign
+        * planes[a].frame_sign
+        * planes[b].frame_sign
         * to_i8(dir_sign_judge(borrow3(&dp), borrow3(&da), borrow3(&db)))
 }
 
@@ -254,6 +266,15 @@ pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneInfo], p: usize, a: usize, b:
 mod tests {
     use super::*;
     use crate::{Operation, apply, collect_planes};
+
+    /// The plane table of one solid, built through the real path so these tests exercise the same
+    /// `PlaneGeom` the engine does. A single convex operand has no coplanar pair, so the numbering
+    /// is the identity — indices below name a face and its plane interchangeably.
+    fn plane_table(m: &Model, s: Handle<Solid>) -> Vec<PlaneGeom> {
+        let mut faces = collect_planes(m, s).unwrap();
+        let canon = crate::fill_classes(&mut faces);
+        crate::dense_planes(&faces, &canon).0
+    }
     use nacre_math::Point3;
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation as SRot};
     use nacre_store::Handle;
@@ -292,12 +313,9 @@ mod tests {
 
     /// The signed volume of the normal triple `(n_p, n_q, n_r)` — nonzero iff the three
     /// planes meet in a single point (so `three_plane_orient3d` is well-defined).
-    fn normals_independent(planes: &[PlaneInfo], p: usize, q: usize, r: usize) -> bool {
-        planes[p]
-            .n_out
-            .dot(planes[q].n_out.cross(planes[r].n_out))
-            .abs()
-            > 0.5
+    fn normals_independent(planes: &[PlaneGeom], p: usize, q: usize, r: usize) -> bool {
+        let n = |k: usize| planes[k].plane.normal();
+        n(p).dot(n(q).cross(n(r))).abs() > 0.5
     }
 
     /// Core: `orient3d` is rigid-rotation invariant, so the frame3 path over a rotated
@@ -307,9 +325,9 @@ mod tests {
     #[test]
     fn t_orient3d_rotation_invariant() {
         let (mut m, s) = cuboid();
-        let pu = collect_planes(&m, s).unwrap();
+        let pu = plane_table(&m, s);
         let r = rotated(&mut m, s);
-        let pr = collect_planes(&m, r).unwrap();
+        let pr = plane_table(&m, r);
         assert_eq!(pu.len(), pr.len(), "rotation preserves the face list");
         let n = pu.len();
         let mut checked = 0usize;
@@ -343,7 +361,7 @@ mod tests {
     fn plane_def_from_face() {
         let (mut m, s) = cuboid();
         let r = rotated(&mut m, s);
-        let planes = collect_planes(&m, r).unwrap();
+        let planes = plane_table(&m, r);
         for pi in &planes {
             let def = pi.tri_pt3.as_ref().expect("rotated plane carries tri_pt3");
             for (d, t) in def.iter().zip(pi.tri.iter()) {
@@ -355,7 +373,7 @@ mod tests {
             );
         }
         // The axis-aligned original carries no def.
-        let pu = collect_planes(&m, s).unwrap();
+        let pu = plane_table(&m, s);
         assert!(pu.iter().all(|pi| pi.tri_pt3.is_none()));
     }
 
@@ -364,7 +382,7 @@ mod tests {
     #[test]
     fn t_orient3d_unrotated_forwards_geom() {
         let (m, s) = cuboid();
-        let planes = collect_planes(&m, s).unwrap();
+        let planes = plane_table(&m, s);
         let n = planes.len();
         for p in 0..n {
             for q in (p + 1)..n {
@@ -392,7 +410,7 @@ mod tests {
     }
 
     /// The independent-normal plane triples of a cuboid (each meets at one corner).
-    fn corner_triples(planes: &[PlaneInfo]) -> Vec<[usize; 3]> {
+    fn corner_triples(planes: &[PlaneGeom]) -> Vec<[usize; 3]> {
         let n = planes.len();
         let mut out = Vec::new();
         for p in 0..n {
@@ -414,19 +432,15 @@ mod tests {
     #[test]
     fn t_planes_coplanar_guards_degeneracy_and_survives_rotation() {
         let (mut m, s) = cuboid();
-        let pu = collect_planes(&m, s).unwrap();
+        let pu = plane_table(&m, s);
         // (a) A hand-built degenerate pair: same-normal parallel planes, but `tri` is a point.
-        let degenerate: Vec<PlaneInfo> = (0..2)
-            .map(|k| PlaneInfo {
+        let degenerate: Vec<PlaneGeom> = (0..2)
+            .map(|k| PlaneGeom {
                 surf: pu[0].surf,
-                face: pu[0].face,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
-                n_out: pu[0].n_out,
-                orient: pu[0].orient,
-                orient_sign: pu[0].orient_sign,
                 tri_pt3: None,
-                class: usize::MAX,
+                frame_sign: pu[0].frame_sign,
             })
             .collect();
         assert!(
@@ -435,7 +449,7 @@ mod tests {
         );
         // (b) Rotation invariance over every pair of the cuboid's faces.
         let r = rotated(&mut m, s);
-        let pr = collect_planes(&m, r).unwrap();
+        let pr = plane_table(&m, r);
         assert_eq!(pu.len(), pr.len());
         let mut same = 0usize;
         for i in 0..pu.len() {
@@ -462,7 +476,7 @@ mod tests {
         use nacre_geom::intersect::three_planes;
         let (mut m, s) = cuboid();
         let r = rotated(&mut m, s);
-        let planes = collect_planes(&m, r).unwrap();
+        let planes = plane_table(&m, r);
         let triples = corner_triples(&planes);
         let meet = |t: [usize; 3]| {
             three_planes(
@@ -506,7 +520,7 @@ mod tests {
     #[test]
     fn t_cmp_coord_unrotated_forwards_geom() {
         let (m, s) = cuboid();
-        let planes = collect_planes(&m, s).unwrap();
+        let planes = plane_table(&m, s);
         let triples = corner_triples(&planes);
         for i in 0..triples.len() {
             for jx in (i + 1)..triples.len() {
@@ -541,9 +555,9 @@ mod tests {
             Point3::from_array([12.0, 13.0, 14.0]),
         );
         let a = rotated(&mut m, a0);
-        let mut planes = collect_planes(&m, a).unwrap();
+        let mut planes = plane_table(&m, a);
         let na = planes.len();
-        let pb = collect_planes(&m, b).unwrap();
+        let pb = plane_table(&m, b);
         assert!(
             planes.iter().all(|p| p.tri_pt3.is_some()),
             "rotated operand cached"
@@ -581,9 +595,9 @@ mod tests {
     #[test]
     fn t_dir_sign_rotation_invariant() {
         let (mut m, s) = cuboid();
-        let pu = collect_planes(&m, s).unwrap();
+        let pu = plane_table(&m, s);
         let r = rotated(&mut m, s);
-        let pr = collect_planes(&m, r).unwrap();
+        let pr = plane_table(&m, r);
         let n = pu.len();
         let mut checked = 0usize;
         for p in 0..n {
@@ -609,7 +623,7 @@ mod tests {
     #[test]
     fn t_dir_sign_unrotated_forwards_geom() {
         let (m, s) = cuboid();
-        let planes = collect_planes(&m, s).unwrap();
+        let planes = plane_table(&m, s);
         let n = planes.len();
         for p in 0..n {
             for a in 0..n {

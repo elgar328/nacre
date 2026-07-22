@@ -86,29 +86,25 @@ pub(crate) struct Trace {
     pub declined: Vec<(usize, &'static str)>,
 }
 
-/// Canonize a raw triple and sort it.
-fn canon3(t: [usize; 3], canon: &[usize]) -> [usize; 3] {
-    let mut c = [canon[t[0]], canon[t[1]], canon[t[2]]];
-    c.sort_unstable();
-    c
+/// Sort a triple whose elements are already dense plane ids.
+fn sorted3(mut t: [usize; 3]) -> [usize; 3] {
+    t.sort_unstable();
+    t
 }
 
-/// A ring as the arrangement must read it: **every plane index is a class root**.
+/// Sort a triple and reject it if two of its planes coincide.
 ///
-/// Ring producers hand out *face* indices — `arrange::loop_triples` matches `inc`, whose incidences
-/// are faces — so the ring is normalized here, on arrival, before any consumer sees it. That is what
-/// makes a raw `==` downstream mean "same plane" rather than "same face": one geometric plane split
-/// across two faces is one class, and only the class-root form says so.
-///
-/// `None` when a vertex's three names collapse below three classes. Such a triple defines no point
-/// (`three_planes` answers `None`, and the exact predicates' precondition is `D ≠ 0`), so the face
-/// is declined rather than fed to a predicate that would answer from rounding noise. Before this
-/// normalization the collapse was *invisible*: the three raw indices differed, so nothing complained
-/// and the predicate silently returned ±1 for a point on its own plane.
-fn canon_ring(ts: &[[usize; 3]], canon: &[usize]) -> Option<Vec<[usize; 3]>> {
+/// The triples already carry dense plane ids — `loop_triples` maps face indices through `plane_ix`
+/// at the source — so there is nothing to canonize here; the point is the collapse check. `None`
+/// when two names are equal: such a triple defines no point (`three_planes` answers `None`, and the
+/// exact predicates need `D ≠ 0`), so the face is declined rather than fed a degenerate meet. A
+/// face→plane map still collapses — two faces of one solid meeting a vertex on one plane — so this
+/// guard outlives the old face/plane ambiguity it was born with.
+fn plane_ring(ts: &[[usize; 3]]) -> Option<Vec<[usize; 3]>> {
     ts.iter()
         .map(|&t| {
-            let c = canon3(t, canon); // sorted, so equal neighbours catch every duplicate
+            let mut c = t;
+            c.sort_unstable(); // sorted, so equal neighbours catch every duplicate
             (c[0] != c[1] && c[1] != c[2]).then_some(c)
         })
         .collect()
@@ -152,17 +148,18 @@ fn trace_transversal_face(
     fp: usize,
     which: SolidSide,
     wc: usize,
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
+    faces: &[PlaneInfo],
     inc: &arrange::EdgeFaces,
-    canon: &[usize],
+    plane_ix: &[usize],
     out: &mut Trace,
 ) {
     // `fp` names a *face* (`inc` matching, `n_out`, `orient`, the declined log); `fc` names the
     // *plane class* it lies on (triples, comparisons, predicate arguments). Every ring below is in
     // class form, so the two must not be confused — see `canon_ring`.
-    let fc = canon[fp];
-    let outer = match arrange::face_vertex_triples(model, fh, fp, inc, planes, canon) {
-        Ok(r) => match canon_ring(&r, canon) {
+    let fc = plane_ix[fp];
+    let outer = match arrange::face_vertex_triples(model, fh, fp, inc, planes, plane_ix) {
+        Ok(r) => match plane_ring(&r) {
             Some(r) => r,
             None => {
                 out.declined.push((fp, "collapsed-triple"));
@@ -177,12 +174,12 @@ fn trace_transversal_face(
     let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
-    let Ok(raw_holes) = arrange::hole_rings(model, fh, fp, inc, planes, canon) else {
+    let Ok(raw_holes) = arrange::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
         out.declined.push((fp, "hole-ring"));
         return;
     };
     for r in &raw_holes {
-        match canon_ring(r, canon) {
+        match plane_ring(r) {
             Some(r) => holes.push(r),
             None => {
                 out.declined.push((fp, "collapsed-triple"));
@@ -287,7 +284,7 @@ fn trace_transversal_face(
                             // (Phase B gives it to `flip`) — it is not an occupancy fact, and
                             // gating the side on it left a crossing run classified as a
                             // straddling transversal.
-                            let graze_above = Some(run_body_above(planes, wc, fc, fp, &rs));
+                            let graze_above = Some(run_body_above(planes, faces, wc, fc, fp, &rs));
                             for r in rs {
                                 nodes.push(Node {
                                     r,
@@ -350,20 +347,20 @@ fn trace_transversal_face(
     let mut seg_start: Option<(usize, Option<bool>)> = None;
     let emit = |a: usize, b: usize, graze: Option<bool>, out: &mut Trace| {
         out.segs.push(Seg {
-            wall: canon[fp],
-            end: [canon3([wc, fc, a], canon), canon3([wc, fc, b], canon)],
+            wall: plane_ix[fp],
+            end: [sorted3([wc, fc, a]), sorted3([wc, fc, b])],
             solid: which,
             kind: match graze {
                 Some(body_above) => SegKind::Graze { body_above },
                 None => SegKind::Transversal {
-                    mat: planes[fp].orient_sign,
+                    mat: faces[fp].orient_sign,
                 },
             },
         });
     };
     for k in 0..nodes.len() {
         if nodes[k].single_touch && parity == 0 {
-            out.touches.push(canon3([wc, fc, nodes[k].r], canon));
+            out.touches.push(sorted3([wc, fc, nodes[k].r]));
         }
         if nodes[k].flip {
             parity ^= 1;
@@ -428,9 +425,16 @@ fn trace_transversal_face(
 /// `σ` is an f64 dot of two **parallel** unit vectors (`fp` and `fc` are the same plane class), so
 /// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`PlaneInfo::orient_sign`] and
 /// `trace_seated_face` already rely on. Everything else here is exact.
-fn run_body_above(planes: &[PlaneInfo], wc: usize, fc: usize, fp: usize, rs: &[usize]) -> bool {
+fn run_body_above(
+    planes: &[PlaneGeom],
+    faces: &[PlaneInfo],
+    wc: usize,
+    fc: usize,
+    fp: usize,
+    rs: &[usize],
+) -> bool {
     let t = arrange::order_along(planes, wc, fc, rs[0], rs[rs.len() - 1]);
-    let sigma = planes[fp].n_out.dot(planes[fc].plane.normal());
+    let sigma = faces[fp].n_out.dot(planes[fc].plane.normal());
     (t < 0) == (sigma > 0.0)
 }
 
@@ -442,18 +446,19 @@ fn trace_one(
     solid: Handle<Solid>,
     which: SolidSide,
     wc: usize,
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
+    faces: &[PlaneInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &arrange::EdgeFaces,
-    canon: &[usize],
+    plane_ix: &[usize],
     out: &mut Trace,
 ) {
     let w_normal = planes[wc].plane.normal();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
             let fp = surf_ix[&fh];
-            if canon[fp] != wc {
-                trace_transversal_face(model, fh, fp, which, wc, planes, inc, canon, out);
+            if plane_ix[fp] != wc {
+                trace_transversal_face(model, fh, fp, which, wc, planes, faces, inc, plane_ix, out);
                 continue;
             }
             // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
@@ -461,13 +466,13 @@ fn trace_one(
             // `n_out · n_W < 0`. The f64 sign is robust even rotated: seated means `canon[fp]==wc`,
             // so `n_out ∥ n_W` (both unit) and the dot is ≈ ±1, a full unit from the sign boundary
             // (the rotated-tunnel tests exercise this seated path through the cube's own caps).
-            let body_above = planes[fp].n_out.dot(w_normal) < 0.0;
+            let body_above = faces[fp].n_out.dot(w_normal) < 0.0;
             let kind = SegKind::Seated { body_above };
             // Collect every ring in class form first: a collapsed name declines the whole face, and
             // deciding that before the emitting closure exists keeps the two borrows apart.
-            let Some(outer) = arrange::face_vertex_triples(model, fh, fp, inc, planes, canon)
+            let Some(outer) = arrange::face_vertex_triples(model, fh, fp, inc, planes, plane_ix)
                 .ok()
-                .and_then(|ts| canon_ring(&ts, canon))
+                .and_then(|ts| plane_ring(&ts))
             else {
                 out.declined.push((fp, "outer-ring"));
                 continue;
@@ -475,12 +480,12 @@ fn trace_one(
             let mut rings = vec![outer];
             let mut collapsed = false;
             // As above: an unnameable hole is a reject, not "no hole".
-            let Ok(raw) = arrange::hole_rings(model, fh, fp, inc, planes, canon) else {
+            let Ok(raw) = arrange::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
                 out.declined.push((fp, "hole-ring"));
                 continue;
             };
             for r in &raw {
-                match canon_ring(r, canon) {
+                match plane_ring(r) {
                     Some(r) => rings.push(r),
                     None => collapsed = true,
                 }
@@ -489,20 +494,20 @@ fn trace_one(
                 out.declined.push((fp, "collapsed-triple"));
                 continue;
             }
+            let fc = plane_ix[fp];
             let mut emit_ring = |tris: &[[usize; 3]]| {
                 let n = tris.len();
                 for i in 0..n {
                     // Edge i runs vertex i → vertex i+1; the wall it rides is the plane the two
-                    // endpoint triples share besides `fp`. Matched by **class**, not raw index: a
-                    // vertex named from its touching planes carries the class representative, while
-                    // its neighbour may carry another face of that same class, and raw equality
-                    // would miss the shared wall (they are one plane).
+                    // endpoint triples share besides `fc`. The triples are already dense plane ids
+                    // (`face_vertex_triples` mapped them through `plane_ix`), so this is a plain set
+                    // intersection — no second remap, which under a non-idempotent `plane_ix` would
+                    // index the table with a value that is already an index.
                     let (t0, t1) = (tris[i], tris[(i + 1) % n]);
                     let mut shared: Vec<usize> = t0
                         .iter()
                         .copied()
-                        .map(|x| canon[x])
-                        .filter(|&c| c != canon[fp] && t1.iter().any(|&y| canon[y] == c))
+                        .filter(|&c| c != fc && t1.contains(&c))
                         .collect();
                     shared.sort_unstable();
                     shared.dedup();
@@ -512,7 +517,7 @@ fn trace_one(
                     };
                     out.segs.push(Seg {
                         wall,
-                        end: [canon3(t0, canon), canon3(t1, canon)],
+                        end: [sorted3(t0), sorted3(t1)],
                         solid: which,
                         kind,
                     });
@@ -533,11 +538,12 @@ fn trace_on_class(
     a: Handle<Solid>,
     b: Handle<Solid>,
     wc: usize,
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
+    faces: &[PlaneInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &arrange::EdgeFaces,
     inc_b: &arrange::EdgeFaces,
-    canon: &[usize],
+    plane_ix: &[usize],
 ) -> Trace {
     let mut out = Trace::default();
     trace_one(
@@ -546,9 +552,10 @@ fn trace_on_class(
         SolidSide::A,
         wc,
         planes,
+        faces,
         surf_ix,
         inc_a,
-        canon,
+        plane_ix,
         &mut out,
     );
     trace_one(
@@ -557,9 +564,10 @@ fn trace_on_class(
         SolidSide::B,
         wc,
         planes,
+        faces,
         surf_ix,
         inc_b,
-        canon,
+        plane_ix,
         &mut out,
     );
     out
@@ -655,7 +663,7 @@ fn endpoint_third(end: [usize; 3], wc: usize, wall: usize) -> Option<usize> {
 /// classes coincident on a wall's line — a four-plane concurrency `{wc, W, a, b}` the 3-plane DCEL
 /// cannot name (`FOURPLANE`).
 fn split_at_crossings(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     wc: usize,
     segs: &[MergedSeg],
 ) -> Result<Vec<MergedSeg>, BoolError> {
@@ -773,8 +781,8 @@ fn split_at_crossings(
 /// same-fp) fall into the angle-0 bucket unresolved, and collinear same-direction overlap (E5) is
 /// out of scope. The corpus's arrangement vertices are degree ≥ 3 with distinct fp's per real
 /// direction, which is what the spike exercises.
-fn angular_order(planes: &[PlaneInfo], w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
-    let os = planes[w].orient_sign;
+fn angular_order(planes: &[PlaneGeom], w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
+    let os = planes[w].frame_sign;
     let cross = |i: usize, j: usize| -> i8 {
         edges[i].1
             * edges[j].1
@@ -857,7 +865,7 @@ fn component_count(segs: &[MergedSeg]) -> usize {
 /// direction (predecessor vs successor) is `angular_order`'s handedness — unknown up front, so both
 /// are tried and the one giving exactly `component_count` faces of winding `-1` is kept.
 fn extract_cells(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     wc: usize,
     segs: &[MergedSeg],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
@@ -993,7 +1001,7 @@ struct Nesting {
 /// the only impossibility (a closed figure always has an outside), and that is `HOLE_ROOTS`. A hole
 /// whose owner is not uniquely determined is `HOLE_DEPTH` (see [`innermost_host`]).
 fn nest_cells(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     wc: usize,
     cells: &[Cell],
     segs: &[MergedSeg],
@@ -1084,7 +1092,7 @@ fn nest_cells(
 /// [`arrange::point_in_ring`], and candidates sharing a node are adjacent rather than nested, so
 /// they cannot be ordered and the honest answer is to reject.
 fn innermost_host(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     wc: usize,
     rings: &[Vec<[usize; 3]>],
     hosts: &[usize],
@@ -1280,7 +1288,7 @@ fn emit_faces(
     labels: &[Label],
     cells: &[Cell],
     segs: &[MergedSeg],
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
 ) -> Vec<LocalFace> {
@@ -1303,7 +1311,7 @@ fn emit_faces(
         if keep_above == keep_below {
             continue; // material the same on both sides ⇒ not a result face here
         }
-        let flip = keep_above == (planes[wc].orient_sign > 0);
+        let flip = keep_above == (planes[wc].frame_sign > 0);
         let inner: Vec<Vec<crate::Node>> = holes
             .get(&c)
             .map(|hs| hs.iter().map(|&h| ring_of(&cells[h])).collect())
@@ -1326,15 +1334,20 @@ fn trace_result_faces(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
+    faces: &[PlaneInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &arrange::EdgeFaces,
     inc_b: &arrange::EdgeFaces,
-    canon: &[usize],
+    plane_ix: &[usize],
 ) -> Result<Vec<LocalFace>, BoolError> {
-    let mut faces: Vec<LocalFace> = Vec::new();
-    for wc in (0..planes.len()).filter(|&i| canon[i] == i) {
-        let tr = trace_on_class(model, a, b, wc, planes, surf_ix, inc_a, inc_b, canon);
+    let mut local_faces: Vec<LocalFace> = Vec::new();
+    // `planes` is the dense plane table now, so every index in it *is* a plane — the old
+    // `filter(|&i| canon[i] == i)` was how a face table was searched for its class roots.
+    for wc in 0..planes.len() {
+        let tr = trace_on_class(
+            model, a, b, wc, planes, faces, surf_ix, inc_a, inc_b, plane_ix,
+        );
         if !tr.declined.is_empty() {
             return Err(reject(tag::COPLANAR_PAIR)); // incomplete trace ⇒ honest reject
         }
@@ -1343,7 +1356,7 @@ fn trace_result_faces(
         let (cells, face_of) = extract_cells(planes, wc, &split)?;
         let nesting = nest_cells(planes, wc, &cells, &split)?;
         let labels = label_cells(&cells, &face_of, &split, &nesting)?;
-        faces.extend(emit_faces(
+        local_faces.extend(emit_faces(
             kind,
             &labels,
             &cells,
@@ -1353,7 +1366,7 @@ fn trace_result_faces(
             &nesting.holes,
         ));
     }
-    Ok(faces)
+    Ok(local_faces)
 }
 
 /// One plane class's **label-frame audit** (family #2 diagnostic): what each producer says about
@@ -1390,24 +1403,27 @@ pub(crate) fn frame_audit(
     b: Handle<Solid>,
 ) -> Result<Vec<ClassAudit>, BoolError> {
     let PlaneSetup {
-        planes,
+        planes: faces_tab,
         surf_ix,
         inc_a,
         inc_b,
-        canon,
+        geom,
+        plane_ix,
         ..
     } = plane_index_setup(model, a, b)?;
     let mut out = Vec::new();
-    for wc in (0..planes.len()).filter(|&i| canon[i] == i) {
-        let tr = trace_on_class(model, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+    for wc in 0..geom.len() {
+        let tr = trace_on_class(
+            model, a, b, wc, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         let side = |f: fn(&SegKind) -> Option<bool>| -> Vec<bool> {
             tr.segs.iter().filter_map(|s| f(&s.kind)).collect()
         };
         let mut audit = ClassAudit {
             wc,
-            root_point: planes[wc].tri[0].as_array(),
-            root_normal: planes[wc].plane.normal().as_array(),
-            orient_sign: planes[wc].orient_sign,
+            root_point: geom[wc].tri[0].as_array(),
+            root_normal: geom[wc].plane.normal().as_array(),
+            orient_sign: geom[wc].frame_sign,
             seated: side(|k| match k {
                 SegKind::Seated { body_above } => Some(*body_above),
                 _ => None,
@@ -1430,11 +1446,11 @@ pub(crate) fn frame_audit(
         } else {
             let run = || -> Result<(), BoolError> {
                 let merged = merge_coincident(&tr.segs);
-                let split = split_at_crossings(&planes, wc, &merged)?;
-                let (cells, face_of) = extract_cells(&planes, wc, &split)?;
-                let nesting = nest_cells(&planes, wc, &cells, &split)?;
+                let split = split_at_crossings(&geom, wc, &merged)?;
+                let (cells, face_of) = extract_cells(&geom, wc, &split)?;
+                let nesting = nest_cells(&geom, wc, &cells, &split)?;
                 let labels = label_cells(&cells, &face_of, &split, &nesting)?;
-                let _ = emit_faces(kind, &labels, &cells, &split, &planes, wc, &nesting.holes);
+                let _ = emit_faces(kind, &labels, &cells, &split, &geom, wc, &nesting.holes);
                 Ok(())
             };
             crate::LAST_REJECT.with(|c| c.take());
@@ -1470,18 +1486,21 @@ pub(crate) fn boolean(
     b: Handle<Solid>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let PlaneSetup {
-        planes,
+        planes: faces_tab,
         surf_ix,
         inc_a,
         inc_b,
-        canon,
+        geom,
+        plane_ix,
         ..
     } = plane_index_setup(model, a, b)?;
-    let faces = trace_result_faces(model, kind, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon)?;
+    let faces = trace_result_faces(
+        model, kind, a, b, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+    )?;
     // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
     // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
     // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-    let faces = crate::unify_coplanar_faces(faces, &planes, &canon)?;
+    let faces = crate::unify_coplanar_faces(faces, &geom)?;
 
     // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
     // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
@@ -1494,20 +1513,16 @@ pub(crate) fn boolean(
                 if seen.insert(*t, ()).is_some() {
                     continue;
                 }
-                let point = three_planes(
-                    &planes[t[0]].plane,
-                    &planes[t[1]].plane,
-                    &planes[t[2]].plane,
-                )
-                .ok_or_else(|| reject(tag::THREE_PLANES))?;
+                let point = three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
+                    .ok_or_else(|| reject(tag::THREE_PLANES))?;
                 seam.push(SeamVertex {
                     point,
                     triple: *t,
                     tol: vertex_tol(
                         point,
-                        &planes[t[0]].plane,
-                        &planes[t[1]].plane,
-                        &planes[t[2]].plane,
+                        &geom[t[0]].plane,
+                        &geom[t[1]].plane,
+                        &geom[t[2]].plane,
                     ),
                 });
             }
@@ -1531,7 +1546,7 @@ pub(crate) fn boolean(
         }
     }
 
-    assemble_fuse_cut(model, a, b, &planes, &seam, &faces)
+    assemble_fuse_cut(model, a, b, &geom, &seam, &faces)
 }
 
 #[cfg(test)]
@@ -1539,7 +1554,7 @@ mod tests {
     use super::*;
 
     /// Point of a canon triple, for asserting geometry by hand.
-    fn pt(t: [usize; 3], planes: &[PlaneInfo]) -> [f64; 3] {
+    fn pt(t: [usize; 3], planes: &[PlaneGeom]) -> [f64; 3] {
         three_planes(
             &planes[t[0]].plane,
             &planes[t[1]].plane,
@@ -1567,11 +1582,13 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
             canon,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
 
@@ -1579,19 +1596,20 @@ mod tests {
         let wc = (0..planes.len())
             .map(|i| canon[i])
             .find(|&c| {
-                let seats =
-                    |s: Handle<Solid>| {
-                        solid_shell_handles(&m, s).into_iter().any(|sh| {
-                            m.shells.get(sh).faces.iter().any(|fh| {
-                                canon[surf_ix[fh]] == c && face_on_z1(*fh, &surf_ix, &planes)
-                            })
+                let seats = |s: Handle<Solid>| {
+                    solid_shell_handles(&m, s).into_iter().any(|sh| {
+                        m.shells.get(sh).faces.iter().any(|fh| {
+                            plane_ix[surf_ix[fh]] == c && face_on_z1(*fh, &surf_ix, &faces_tab)
                         })
-                    };
+                    })
+                };
                 seats(a) && seats(b)
             })
             .expect("a shared cap class");
 
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         // Two seated caps × 4 edges each. (The side walls only *graze* z=1 — each cube's body is
         // entirely on one side — so they trace as `Graze` chords, not `Transversal`; the two far
         // caps are parallel to z=1 and contribute nothing — misses, not declines.)
@@ -1683,10 +1701,12 @@ mod tests {
         let a2 = m.live_solids[0];
         let b2 = m.live_solids[1];
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             canon,
+            plane_ix: _,
             ..
         } = plane_index_setup(&m, a2, b2).unwrap();
 
@@ -1707,6 +1727,7 @@ mod tests {
             SolidSide::A,
             wc,
             &planes,
+            &faces_tab,
             &surf_ix,
             &inc_a,
             &canon,
@@ -1796,10 +1817,12 @@ mod tests {
         let a2 = m.live_solids[0];
         let b2 = m.live_solids[1];
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             canon,
+            plane_ix: _,
             ..
         } = plane_index_setup(&m, a2, b2).unwrap();
         let wc = (0..planes.len())
@@ -1817,6 +1840,7 @@ mod tests {
             SolidSide::A,
             wc,
             &planes,
+            &faces_tab,
             &surf_ix,
             &inc_a,
             &canon,
@@ -1895,7 +1919,12 @@ mod tests {
         }])
         .unwrap();
         let a = m.live_solids[0];
-        let planes = collect_planes(&m, a).unwrap();
+        let mut faces_tab = collect_planes(&m, a).unwrap();
+        // One prism: no two faces are coplanar, so `plane_ix` is the identity and a face index and
+        // its plane id coincide. Built through the real path anyway, so the test cannot drift.
+        let canon = crate::fill_classes(&mut faces_tab);
+        let (planes, _plane_ix) = crate::dense_planes(&faces_tab, &canon);
+        assert_eq!(planes.len(), faces_tab.len(), "no coplanar pair in a prism");
 
         // Find a face by its outward normal direction (z cap, y-wall, x-wall, diagonal wall).
         let axis = |i: usize| {
@@ -1987,15 +2016,19 @@ mod tests {
             );
             m.rebuild_adjacency();
             let PlaneSetup {
-                planes,
+                planes: faces_tab,
+                geom: planes,
                 surf_ix,
                 inc_a,
                 inc_b,
-                canon,
+                canon: _,
+                plane_ix,
                 ..
             } = plane_index_setup(&m, a, b).unwrap();
-            let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-            let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+            let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+            let tr = trace_on_class(
+                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            );
             let merged = merge_coincident(&tr.segs);
             assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
             for e in &merged {
@@ -2021,15 +2054,19 @@ mod tests {
             );
             m.rebuild_adjacency();
             let PlaneSetup {
-                planes,
+                planes: faces_tab,
+                geom: planes,
                 surf_ix,
                 inc_a,
                 inc_b,
-                canon,
+                canon: _,
+                plane_ix,
                 ..
             } = plane_index_setup(&m, a, b).unwrap();
-            let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-            let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+            let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+            let tr = trace_on_class(
+                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            );
             let merged = merge_coincident(&tr.segs);
             assert_eq!(
                 merged.len(),
@@ -2063,15 +2100,19 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         let merged = merge_coincident(&tr.segs);
         assert_eq!(merged.len(), 8, "8 merged edges before split");
 
@@ -2152,15 +2193,19 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
             canon,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(&planes, wc, &merged).unwrap();
 
@@ -2212,15 +2257,19 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(&planes, wc, &merged).unwrap();
 
@@ -2282,15 +2331,19 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(&planes, wc, &merged).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
@@ -2341,11 +2394,13 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
             canon,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         // a passes through z=1 (no seated face); find the class b caps at z=1.
@@ -2353,15 +2408,15 @@ mod tests {
             .map(|i| canon[i])
             .find(|&c| {
                 solid_shell_handles(&m, b).into_iter().any(|sh| {
-                    m.shells
-                        .get(sh)
-                        .faces
-                        .iter()
-                        .any(|fh| canon[surf_ix[fh]] == c && face_on_z1(*fh, &surf_ix, &planes))
+                    m.shells.get(sh).faces.iter().any(|fh| {
+                        plane_ix[surf_ix[fh]] == c && face_on_z1(*fh, &surf_ix, &faces_tab)
+                    })
                 })
             })
             .expect("b's z=1 cap class");
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(&planes, wc, &merged).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
@@ -2400,15 +2455,19 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(&planes, wc, &merged).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
@@ -2493,7 +2552,7 @@ mod tests {
         // flip oracle (coordinate, test-only): the result normal points away from the kept
         // chamber. Fuse keeps below (bodies below the cap), so n_result·n_w > 0.
         let n_w = planes[wc].plane.normal();
-        let os = planes[wc].orient_sign as f64;
+        let os = planes[wc].frame_sign as f64;
         for f in &fuse {
             let n_result = os * if f.flip { -1.0 } else { 1.0 };
             let dot = n_result * n_w.dot(n_w); // n_result·n_w, |n_w|²>0
@@ -2565,11 +2624,13 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let faces = trace_result_faces(
@@ -2578,10 +2639,11 @@ mod tests {
             a,
             b,
             &planes,
+            &faces_tab,
             &surf_ix,
             &inc_a,
             &inc_b,
-            &canon,
+            &plane_ix,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "z=0 + z=2 + 4 walls×2");
@@ -2758,11 +2820,13 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let faces = trace_result_faces(
@@ -2771,10 +2835,11 @@ mod tests {
             a,
             b,
             &planes,
+            &faces_tab,
             &surf_ix,
             &inc_a,
             &inc_b,
-            &canon,
+            &plane_ix,
         )
         .unwrap();
         assert_eq!(
@@ -2852,11 +2917,13 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, u, slab).unwrap();
         let faces = trace_result_faces(
@@ -2865,10 +2932,11 @@ mod tests {
             u,
             slab,
             &planes,
+            &faces_tab,
             &surf_ix,
             &inc_a,
             &inc_b,
-            &canon,
+            &plane_ix,
         )
         .unwrap();
 
@@ -3043,11 +3111,13 @@ mod tests {
 
         // Combinatorial invariant (pre-assembly, A/B isolation).
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let faces = trace_result_faces(
@@ -3056,10 +3126,11 @@ mod tests {
             a,
             b,
             &planes,
+            &faces_tab,
             &surf_ix,
             &inc_a,
             &inc_b,
-            &canon,
+            &plane_ix,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "rotated arrangement keeps 10 faces");
@@ -3132,20 +3203,19 @@ mod tests {
         let a = tilt(&mut m, a, &[Axis::Z, Axis::X]);
         let b = tilt(&mut m, b, &[Axis::Z, Axis::X]);
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        for wc in {
-            let mut c: Vec<usize> = canon.clone();
-            c.sort_unstable();
-            c.dedup();
-            c
-        } {
-            let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        for wc in 0..planes.len() {
+            let tr = trace_on_class(
+                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            );
             assert!(
                 tr.declined.is_empty(),
                 "rotated class {wc} declined: {tr:?}"
@@ -3159,17 +3229,17 @@ mod tests {
         a: Handle<Solid>,
         b: Handle<Solid>,
         surf_ix: &HashMap<Handle<Face>, usize>,
-        planes: &[PlaneInfo],
-        canon: &[usize],
+        faces: &[PlaneInfo],
+        plane_ix: &[usize],
     ) -> usize {
-        (0..planes.len())
-            .map(|i| canon[i])
+        let n_planes = plane_ix.iter().copied().max().map_or(0, |m| m + 1);
+        (0..n_planes)
             .find(|&c| {
                 let seats =
                     |s: Handle<Solid>| {
                         solid_shell_handles(m, s).into_iter().any(|sh| {
                             m.shells.get(sh).faces.iter().any(|fh| {
-                                canon[surf_ix[fh]] == c && face_on_z1(*fh, surf_ix, planes)
+                                plane_ix[surf_ix[fh]] == c && face_on_z1(*fh, surf_ix, faces)
                             })
                         })
                     };
@@ -3194,15 +3264,19 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
             canon,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
-        let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+        let tr = trace_on_class(
+            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
         // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
         // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
         // seated≡transversal coincidence).
@@ -3224,9 +3298,9 @@ mod tests {
     fn face_on_z1(
         fh: Handle<Face>,
         surf_ix: &HashMap<Handle<Face>, usize>,
-        planes: &[PlaneInfo],
+        faces: &[PlaneInfo],
     ) -> bool {
-        let p = &planes[surf_ix[&fh]];
+        let p = &faces[surf_ix[&fh]];
         // A cap in the z=1 plane: all three defining points at z=1.
         p.tri.iter().all(|q| (q.as_array()[2] - 1.0).abs() < 1e-12)
     }
@@ -3247,20 +3321,19 @@ mod tests {
         );
         m.rebuild_adjacency();
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             inc_b,
-            canon,
+            canon: _,
+            plane_ix,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
-        for wc in {
-            let mut c: Vec<usize> = canon.clone();
-            c.sort_unstable();
-            c.dedup();
-            c
-        } {
-            let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
+        for wc in 0..planes.len() {
+            let tr = trace_on_class(
+                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            );
             assert!(tr.declined.is_empty(), "class {wc} declined: {tr:?}");
         }
     }

@@ -9,29 +9,22 @@
 //! appear (`three_planes`' cache) are never the basis of a decision — the truth of
 //! a seam point is its plane triple, as it is for `Origin::Discovered` (design §4).
 //!
-//! # One `usize`, two meanings — the rule that keeps them apart
+//! # One `usize`, two meanings — now two tables
 //!
-//! `planes` is indexed **per face**, but an arrangement reasons **per plane**: an earlier boolean
-//! can split one geometric plane between two faces (a base's exposed top and the cantilever
-//! underside above it), and those are two `PlaneInfo` for one plane. When the two meanings meet in
-//! one comparison the result is wrong *silently* — measured four times on this branch, most
-//! recently as 117748 predicate calls that read "different plane" for two faces of one plane and
-//! answered from rounding noise (2026-07-22). So:
+//! An arrangement reasons **per plane**, but a solid gives you **faces**: an earlier boolean can
+//! split one geometric plane between two faces (a base's exposed top and the cantilever underside
+//! above it) whose outward normals **oppose**. Both were rows of one `planes` table, so the same
+//! `usize` meant "face" here and "plane" there, and when the two meanings met in one comparison the
+//! answer was wrong *silently* — four times on this branch, most recently as 117748 predicate calls
+//! that read "different plane" for two faces of one plane and answered from rounding noise.
 //!
-//! - **A plane triple's elements, any index compared for plane identity, and every exact-predicate
-//!   argument are class roots** ([`class_of`]). Producers emit class form; consumers normalize on
-//!   entry; [`crate::tolerant`]'s predicates assert it.
-//! - **An index that reads *this face's* geometry is a face** — `n_out`, `orient`, `inc`
-//!   (`EdgeFaces` incidences are faces, so `other()`/`pa == own` must match raw), and the
-//!   `declined` log. Reading `n_out` off a class representative can flip a seated face inside out,
-//!   because two faces of one plane may have **opposite** normals.
-//! - **An index that states a *plane class's* label frame is a class root** — the `[*_above,
-//!   *_below]` frame and `orient_sign(wc)` are defined about the class root's stored normal, by
-//!   construction (see [`side_of`] for the trap that hides in reading it raw).
-//! - **Exception:** the code that *defines* the classes (`crate::fill_classes` →
-//!   `shares_or_coplanar`) runs before they exist and takes face indices.
+//! That used to be held by a naming convention (`fp` / `fc`) and a debug-time net. It is now the
+//! type: the predicates here take [`crate::PlaneGeom`], which has no face geometry to offer, and
+//! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
 //!
-//! Name the two apart wherever both are in scope: `fp` for the face, `fc` for its class.
+//! **Exception:** the code that *defines* the classes (`crate::fill_classes` →
+//! `crate::shares_or_coplanar` → `crate::tolerant::t_planes_coplanar`) necessarily runs before a
+//! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
 // Nothing in the boolean calls this yet — cell 3c replaces `reconstruct_face` with
 // the arrangement and wires it in. Until then only tests exercise it, so a non-test
@@ -39,9 +32,9 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
-use crate::{BoolError, PlaneInfo, edge_incidence, reject, tag};
+use crate::{BoolError, PlaneGeom, edge_incidence, reject, tag};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, Loop, Model, Orientation, Solid, Vertex};
+use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
 use std::collections::HashMap;
 
 /// A solid's edges, each with its endpoints and **the indices of its two faces**.
@@ -79,7 +72,7 @@ pub(crate) fn edge_faces(
 /// The pair `(P, Q)` is a parameter, not the seam pair: sub-unit 3d orders two seam
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
 /// two planes. No new predicate is needed for that.
-pub(crate) fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j: usize) -> i8 {
+pub(crate) fn order_along(planes: &[PlaneGeom], p: usize, q: usize, i: usize, j: usize) -> i8 {
     t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
 }
 
@@ -105,7 +98,7 @@ pub(crate) fn ring_edge(
 
 /// `+1` when the ring's edge `i → i+1` runs along `d = n_P × n_Q`, `-1` against it.
 fn edge_sign(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     p: usize,
     ring: &[[usize; 3]],
     i: usize,
@@ -137,7 +130,7 @@ fn edge_sign(
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
 /// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
 pub(crate) fn turn_at(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     p: usize,
     ring: &[[usize; 3]],
     i: usize,
@@ -152,7 +145,7 @@ pub(crate) fn turn_at(
     if det == 0 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
-    Ok(sa * sb * det * planes[p].orient_sign)
+    Ok(sa * sb * det * planes[p].frame_sign)
 }
 
 /// Face `f`'s outer-loop vertices as three-plane triples: `f`'s own plane, and the
@@ -166,10 +159,10 @@ pub(crate) fn face_vertex_triples(
     f: Handle<Face>,
     p: usize,
     inc: &EdgeFaces,
-    planes: &[PlaneInfo],
-    canon: &[usize],
+    planes: &[PlaneGeom],
+    plane_ix: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
-    loop_triples(&model.faces.get(f).outer, p, inc, planes, canon)
+    loop_triples(&model.faces.get(f).outer, p, inc, planes, plane_ix)
 }
 
 /// Each hole ring of face `f`, as three-plane triples.
@@ -183,15 +176,15 @@ pub(crate) fn hole_rings(
     f: Handle<Face>,
     p: usize,
     inc: &EdgeFaces,
-    planes: &[PlaneInfo],
-    canon: &[usize],
+    planes: &[PlaneGeom],
+    plane_ix: &[usize],
 ) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
     model
         .faces
         .get(f)
         .inner
         .iter()
-        .map(|l| loop_triples(l, p, inc, planes, canon))
+        .map(|l| loop_triples(l, p, inc, planes, plane_ix))
         .collect()
 }
 
@@ -218,8 +211,8 @@ fn loop_triples(
     l: &Loop,
     p: usize,
     inc: &EdgeFaces,
-    planes: &[PlaneInfo],
-    canon: &[usize],
+    planes: &[PlaneGeom],
+    plane_ix: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
     let hes = &l.half_edges;
     let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
@@ -237,7 +230,7 @@ fn loop_triples(
         let (a, b) = (other(in_pair), other(out_pair));
         // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
         // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
-        let mut t = [canon[p], canon[a], canon[b]];
+        let mut t = [plane_ix[p], plane_ix[a], plane_ix[b]];
         t.sort_unstable();
         if t[0] != t[1] && t[1] != t[2] {
             out.push(t);
@@ -255,7 +248,7 @@ fn loop_triples(
         };
         let mut classes: Vec<usize> = vertex_face_indices(vh, inc)
             .into_iter()
-            .map(|k| canon[k])
+            .map(|k| plane_ix[k])
             .collect();
         classes.sort_unstable();
         classes.dedup();
@@ -277,14 +270,14 @@ fn loop_triples(
                 tag::LOOP_ORIENT_MISMATCH
             }));
         }
-        // `canon[p]`, not `p`. An earlier revision kept `p` raw because consumers still matched the
+        // `plane_ix[p]`, not `p`. An earlier revision kept `p` raw because consumers still matched the
         // face's own plane by raw index; they now compare classes (2026-07-22), and a triple that
         // mixed one face index with two class indices was exactly the ambiguity this brick exists
         // to remove.
-        let mut t = [canon[p], 0, 0];
+        let mut t = [plane_ix[p], 0, 0];
         let mut k = 1;
         for &c in &classes {
-            if c != canon[p] {
+            if c != plane_ix[p] {
                 t[k] = c;
                 k += 1;
             }
@@ -300,7 +293,7 @@ fn loop_triples(
 
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
 ///
-/// `+1` is the side [`PlaneInfo::tri`]'s right-hand normal points to — that is `n_out(q)`, the face's
+/// `+1` is the side the witness triangle's right-hand normal points to — that is `n_out(q)`, the face's
 /// **outward** side, since `outer_tri` winds the triangle outward.
 ///
 /// ★ **That is not the frame the arrangement's labels are stated in.** A plane class's
@@ -311,7 +304,7 @@ fn loop_triples(
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-pub(crate) fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
+pub(crate) fn side_of(planes: &[PlaneGeom], t: [usize; 3], q: usize) -> i8 {
     t_orient3d(planes, t[0], t[1], t[2], q)
 }
 
@@ -337,7 +330,7 @@ pub(crate) fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
 /// loop never touches `∂f` — and this is where it is finally checked: an intersection at
 /// `X == v` strictly inside an edge is the `POINT_ON_RING` reject.
 pub(crate) fn point_in_ring(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     p: usize,
     v: [usize; 3],
     ring: &[[usize; 3]],
@@ -351,20 +344,15 @@ pub(crate) fn point_in_ring(
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
 /// says so, which is a second machine for free.
 pub(crate) fn every_ray(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     p: usize,
     v: [usize; 3],
     ring: &[[usize; 3]],
 ) -> Result<Vec<bool>, BoolError> {
-    let p = class_of(planes, p);
     // The vertex name is a plane triple, so it obeys the same rule as a ring's: class roots only.
     // A caller holding face indices (a hand-built table, a test) is normalized here rather than
     // silently comparing a face against a class.
-    let mut v = [
-        class_of(planes, v[0]),
-        class_of(planes, v[1]),
-        class_of(planes, v[2]),
-    ];
+    let mut v = [v[0], v[1], v[2]];
     v.sort_unstable();
     if ring.len() < 3 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
@@ -442,7 +430,7 @@ pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<us
 /// f64 ray gives via `RAY_DEGENERATE`. `V` lying on a face plane of `other` (a boundary-ish
 /// query, its crossing at the ray origin) inside that face is one such abandon; off the face
 /// (a disjoint-coplanar query) it is simply not a crossing.
-// The per-op plane table (`planes`/`surf_ix`/`canon`) plus both edge-plane maps are all genuine
+// The per-op tables (`planes`/`surf_ix`/`plane_ix`) plus both edge-face maps are all genuine
 // inputs a classification needs; they travel together from one `plane_index_setup`.
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
@@ -462,11 +450,10 @@ pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<us
 /// loop is not simple. That is `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than
 /// by a tolerance — which is why design.md §9 could not check it before.
 pub(crate) fn loop_winding(
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     p: usize,
     ring: &[[usize; 3]],
 ) -> Result<i8, BoolError> {
-    let p = class_of(planes, p);
     if ring.len() < 3 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
@@ -491,25 +478,11 @@ pub(crate) fn loop_winding(
 /// correct with their dot — two parallel unit vectors, `|·| ≈ 1`, nowhere near the
 /// sign boundary.
 ///
-/// It is tempting to read the correction off `PlaneInfo::orient` instead. Don't:
+/// It is tempting to read the correction off the face's `orient` instead. Don't:
 /// "`Reversed` ⇔ `n_out = −plane.normal()`" is an invariant nothing enforces, while
 /// the predicate's convention is tied to `tri`'s RH normal by construction. Were the
 /// invariant to break, an `orient`-based order would reverse silently. Assert the
 /// agreement; do not depend on it.
-fn dir_sign(planes: &[PlaneInfo], p: usize, q: usize, r: usize) -> i8 {
-    t_plane_pair_dir_sign(planes, p, q, r) * planes[r].orient_sign
-}
-
-/// The plane class a face index lies on, read off the table rather than a passed-around `canon`.
-///
-/// `PlaneInfo::class` is filled by `crate::fill_classes` for every table the boolean builds. A
-/// hand-built table in a unit test may leave it unset, and then a face is its own class — which is
-/// what the code did before classes existed, so such a table keeps its old behaviour instead of
-/// indexing out of a `canon` it never had.
-pub(crate) fn class_of(planes: &[PlaneInfo], k: usize) -> usize {
-    if planes[k].class == usize::MAX {
-        k
-    } else {
-        planes[k].class
-    }
+fn dir_sign(planes: &[PlaneGeom], p: usize, q: usize, r: usize) -> i8 {
+    t_plane_pair_dir_sign(planes, p, q, r) * planes[r].frame_sign
 }

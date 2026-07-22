@@ -1406,7 +1406,7 @@ fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 /// on a non-simple/degenerate component (coincident nodes, a straight angle, or a non-manifold
 /// edge) — an honest reject, never a silent wrong label. Routed from `assemble_fuse_cut`'s
 /// per-component outward test by [`any_rotated`](crate::tolerant) (cell 3c-vi-b).
-fn component_is_outward_tol(planes: &[PlaneInfo], comp: &[&LocalFace]) -> Result<bool, BoolError> {
+fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result<bool, BoolError> {
     use nacre_scalar::{Orient, Rat};
 
     // Node lacks `Ord`; this is a canonical, hashable id for the unordered edge key.
@@ -1677,7 +1677,7 @@ struct LocalFace {
 /// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
 /// Indices into the returned `planes`/`surf_ix` are shared, so a vertex of `a` and a face of
 /// `b` compose in one space.
-/// Destructure it with `..` (`let PlaneSetup { planes, canon, .. } = …`): the tables here grow as
+/// Destructure it with `..` (`let PlaneSetup { planes: faces_tab, geom: planes, canon, .. } = …`): the tables here grow as
 /// the arrangement learns to say "plane" and "face" in different index spaces, and a positional
 /// tuple made every one of those steps touch all ~25 call sites.
 pub(crate) struct PlaneSetup {
@@ -1882,7 +1882,7 @@ fn assemble_fuse_cut(
     model: &mut Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    planes: &[PlaneInfo],
+    planes: &[PlaneGeom],
     seam: &[SeamVertex],
     faces: &[LocalFace],
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
@@ -2000,13 +2000,22 @@ fn assemble_fuse_cut(
             .iter()
             .map(|h| ring(model, h))
             .collect::<Result<Vec<_>, BoolError>>()?;
+        // The plane's frame *is* the root face's orientation: `frame_sign` is
+        // `sign(stored normal · that face's n_out)`, and `collect_planes` asserts that sign equals
+        // `Forward`/`Reversed`. Reading it here is what used to be `planes[plane_idx].orient` — a
+        // face field indexed by a plane, the shape of every bug this split exists to prevent.
+        let framed = if planes[lf.plane_idx].frame_sign > 0 {
+            Orientation::Forward
+        } else {
+            Orientation::Reversed
+        };
         let orientation = if lf.flip {
-            match planes[lf.plane_idx].orient {
+            match framed {
                 Orientation::Forward => Orientation::Reversed,
                 Orientation::Reversed => Orientation::Forward,
             }
         } else {
-            planes[lf.plane_idx].orient
+            framed
         };
         face_handles.push(model.faces.push(Face {
             surface: planes[lf.plane_idx].surf,
@@ -2239,20 +2248,18 @@ fn node_rank(n: Node) -> (u8, usize, usize, usize) {
 /// production.
 pub(crate) fn unify_coplanar_faces(
     faces: Vec<LocalFace>,
-    planes: &[PlaneInfo],
-    canon: &[usize],
+    planes: &[PlaneGeom],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
     let eligible = all_seam;
     // One plane class, one flip.
     //
-    // There used to be an outward-direction component here, `n_out(plane_idx)·n_out(canon[plane_idx])
-    // > 0`. It never separated anything: `plane_idx` is always a class root — `emit_faces` writes
-    // `plane_idx: wc` and a merged face inherits `group[0]`'s — so `canon[plane_idx] == plane_idx`
-    // and the dot product was `|n|² > 0`, identically true. It was also redundant with `flip`, which
-    // is already in the key: `assemble_fuse_cut` derives a result face's `Orientation` from exactly
-    // `(the root's orient, flip)`, so two faces in one group orient the same way by construction.
-    let group_key = |lf: &LocalFace| -> (usize, bool) { (canon[lf.plane_idx], lf.flip) };
+    // There used to be an outward-direction component here, and a `canon` lookup beside it. Neither
+    // separated anything: `plane_idx` names a plane, so its class is itself, and the component's dot
+    // product was `|n|² > 0` — identically true. It was redundant with `flip` besides, which is
+    // already in the key: `assemble_fuse_cut` derives a result face's `Orientation` from exactly
+    // `(the plane's frame, flip)`, so two faces in one group orient the same way by construction.
+    let group_key = |lf: &LocalFace| -> (usize, bool) { (lf.plane_idx, lf.flip) };
 
     // Edge-connected components within a group.
     let mut comp: Vec<usize> = (0..n).collect();
@@ -2300,7 +2307,7 @@ pub(crate) fn unify_coplanar_faces(
             .iter()
             .map(|&fi| kept[fi].as_ref().expect("member present"))
             .collect();
-        let rings = merge_component(&group, planes, canon)?;
+        let rings = merge_component(&group, planes)?;
         let (plane_idx, flip) = (group[0].plane_idx, group[0].flip);
         merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
             plane_idx,
@@ -2350,8 +2357,7 @@ type RegionRings = (Vec<Node>, Vec<Vec<Node>>);
 /// the holes that belong to it.
 fn merge_component(
     group: &[&LocalFace],
-    planes: &[PlaneInfo],
-    canon: &[usize],
+    planes: &[PlaneGeom],
 ) -> Result<Vec<RegionRings>, BoolError> {
     // 1. Collect directed edges. A repeat in the same direction means two faces claim the same side.
     let mut dirs: HashMap<(Node, Node), usize> = HashMap::new();
@@ -2411,8 +2417,9 @@ fn merge_component(
     if cycles.is_empty() {
         return Err(reject(tag::COPLANAR_MERGE)); // everything erased: not a region
     }
-    // 4. Winding tells an outer ring from a hole; the class root is the frame both are read in.
-    let wc = canon[group[0].plane_idx];
+    // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in. (This
+    // used to canon the index first — `plane_idx` names a plane now, so there is nothing to fold.)
+    let wc = group[0].plane_idx;
     let mut outers: Vec<Vec<Node>> = Vec::new();
     let mut holes: Vec<Vec<Node>> = Vec::new();
     for cyc in cycles {
@@ -2489,6 +2496,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace]) {
 
 #[cfg(test)]
 pub mod tests {
+
     use super::*;
     use proptest::prelude::*;
 
@@ -3688,7 +3696,7 @@ pub mod tests {
     }
 
     /// A ring's nodes as coordinates — each triple is three planes, so its point is their meet.
-    fn ring_points(planes: &[PlaneInfo], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
+    fn ring_points(planes: &[PlaneGeom], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
         ring.iter()
             .map(|t| {
                 three_planes(
@@ -3841,7 +3849,7 @@ pub mod tests {
     /// retired seam engine. The *properties* below are about `point_in_ring`/`every_ray`, which are
     /// live and load-bearing (`nest_cells` picks a hole's host with them, `unify_coplanar_faces`
     /// groups by them), so they had to be re-homed rather than deleted with their old fixture.
-    fn holed_face_rings(which: &str) -> (Vec<PlaneInfo>, usize, Ring, Ring) {
+    fn holed_face_rings(which: &str) -> (Vec<PlaneGeom>, usize, Ring, Ring) {
         let (mut m, l, stub) = if which == "dimple" {
             l_and_dimple()
         } else {
@@ -3849,20 +3857,22 @@ pub mod tests {
         };
         let r = boolean_one(&mut m, BoolKind::Cut, l, stub).expect("the cut");
         m.rebuild_adjacency();
-        let planes = collect_planes(&m, r).unwrap();
+        let mut faces_tab = collect_planes(&m, r).unwrap();
         let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
-        for (i, pi) in planes.iter().enumerate() {
+        for (i, pi) in faces_tab.iter().enumerate() {
             surf_ix.insert(pi.face, i);
         }
-        let canon = plane_classes(&planes);
+        let canon = fill_classes(&mut faces_tab);
+        let (planes, plane_ix) = dense_planes(&faces_tab, &canon);
         let inc = arrange::edge_faces(&m, r, &surf_ix).unwrap();
         for &fh in &m.shells.get(m.solids.get(r).outer).faces {
-            let p = surf_ix[&fh];
-            let holes = arrange::hole_rings(&m, fh, p, &inc, &planes, &canon).unwrap();
+            let fp = surf_ix[&fh];
+            let holes = arrange::hole_rings(&m, fh, fp, &inc, &planes, &plane_ix).unwrap();
             if let Some(hole) = holes.into_iter().next() {
-                let outer = arrange::face_vertex_triples(&m, fh, p, &inc, &planes, &canon).unwrap();
+                let outer =
+                    arrange::face_vertex_triples(&m, fh, fp, &inc, &planes, &plane_ix).unwrap();
                 assert_eq!(outer.len(), 6, "{which}: the L's cap is a reflex hexagon");
-                return (planes, p, outer, hole);
+                return (planes, plane_ix[fp], outer, hole);
             }
         }
         panic!("{which}: no holed face");
@@ -6917,7 +6927,7 @@ pub mod tests {
     /// right-hand normal is `n_out`. The merge reads more than `n_out` now — `loop_winding` and
     /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
     /// dummy triangle would make those answers meaningless.
-    fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> PlaneInfo {
+    fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> PlaneGeom {
         let mut n = [0.0; 3];
         n[axis] = if positive { 1.0 } else { -1.0 };
         let normal = Vector3::from_array(n);
@@ -6940,22 +6950,19 @@ pub mod tests {
             q[k] += 1.0;
             Point3::from_array(q)
         };
-        PlaneInfo {
+        let _ = face;
+        PlaneGeom {
             surf,
-            face,
             plane,
             tri: [origin, step(i), step(j)],
-            n_out: normal,
-            orient: Orientation::Forward,
-            orient_sign: 1, // `plane` is built from `normal`, so the two agree
             tri_pt3: None,
-            class: usize::MAX,
+            frame_sign: 1, // `plane` is built from `normal`, so the two agree
         }
     }
 
     /// A `PlaneInfo` for the `unify_coplanar_faces` tests, which read none of its geometry; the rest is a
     /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
-    fn mk_plane(m: &mut Model, n: [f64; 3]) -> PlaneInfo {
+    fn mk_plane(m: &mut Model, n: [f64; 3]) -> PlaneGeom {
         let normal = Vector3::from_array(n);
         let plane = Plane::from_point_normal(Point3::origin(), normal).unwrap();
         let surf = m.surfaces.push(Surface::Plane(plane));
@@ -6965,16 +6972,13 @@ pub mod tests {
             inner: vec![],
             orientation: Orientation::Forward,
         });
-        PlaneInfo {
+        let _ = (face, normal);
+        PlaneGeom {
             surf,
-            face,
             plane,
             tri: [Point3::origin(); 3],
-            n_out: normal,
-            orient: Orientation::Forward,
-            orient_sign: 1, // `plane` is built from `normal`, so the two agree
             tri_pt3: None,
-            class: usize::MAX,
+            frame_sign: 1, // `plane` is built from `normal`, so the two agree
         }
     }
 
@@ -7010,7 +7014,7 @@ pub mod tests {
             mk_axis_plane(&mut m, 1, 0.0, false), // 5: y=0
             mk_axis_plane(&mut m, 1, 1.0, true),  // 6: y=1
         ];
-        let canon: Vec<usize> = (0..p.len()).collect();
+        let _canon: Vec<usize> = (0..p.len()).collect();
         let v = |x: usize, y: usize| Node::Seam([0, x, y]); // sorted: class, x-plane, y-plane
         let (c00, c10, c20, c30) = (v(1, 5), v(2, 5), v(3, 5), v(4, 5));
         let (c01, c11, c21, c31) = (v(1, 6), v(2, 6), v(3, 6), v(4, 6));
@@ -7019,7 +7023,7 @@ pub mod tests {
             face(0, vec![c10, c20, c21, c11], vec![]),
             face(0, vec![c20, c30, c31, c21], vec![]),
         ];
-        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
+        let out = unify_coplanar_faces(faces, &p).unwrap();
         assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
         let l = &out[0].loop_nodes;
         assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
@@ -7047,7 +7051,6 @@ pub mod tests {
             mk_plane(&mut m, [0., 0., 1.]),
             mk_plane(&mut m, [0., 0., -1.]),
         ];
-        let canon = vec![0, 0]; // same plane class, opposite normal
         let a = mk_vert(&mut m, 0., 0., 0.);
         let b = mk_vert(&mut m, 1., 0., 0.);
         let c = mk_vert(&mut m, 1., 1., 0.);
@@ -7058,7 +7061,7 @@ pub mod tests {
             face(0, oloop(&[a, b, c, d]), vec![]),
             face(1, oloop(&[b, a, h, e]), vec![]),
         ];
-        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
+        let out = unify_coplanar_faces(faces, &p).unwrap();
         assert_eq!(out.len(), 2, "opposite-normal pair stays separate");
     }
 
@@ -7067,7 +7070,6 @@ pub mod tests {
         // A holed face is left separate (merging holes is deferred).
         let mut m = Model::new();
         let p = vec![mk_plane(&mut m, [0., 0., 1.])];
-        let canon = vec![0];
         let g = |m: &mut Model, x, y| mk_vert(m, x, y, 0.0);
         let (a, b, c, d) = (
             g(&mut m, 0., 0.),
@@ -7085,7 +7087,7 @@ pub mod tests {
             face(0, oloop(&[a, b, c, d]), vec![oloop(&[h0, h1, h2])]),
             face(0, oloop(&[b, e, f, c]), vec![]),
         ];
-        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
+        let out = unify_coplanar_faces(faces, &p).unwrap();
         assert_eq!(out.len(), 2, "a holed face is not merged");
     }
 
@@ -7113,7 +7115,7 @@ pub mod tests {
             mk_axis_plane(&mut m, 1, 2.0, true),  // 8: y=2
             mk_axis_plane(&mut m, 1, 3.0, true),  // 9: y=3
         ];
-        let canon: Vec<usize> = (0..p.len()).collect();
+        let _canon: Vec<usize> = (0..p.len()).collect();
         let v = |x: usize, y: usize| Node::Seam([0, x, y]);
         let (o00, o30, o33, o03) = (v(1, 6), v(5, 6), v(5, 9), v(1, 9));
         let (h11, h12, h22, h21) = (v(2, 7), v(2, 8), v(4, 8), v(4, 7));
@@ -7128,7 +7130,7 @@ pub mod tests {
             face(0, vec![h11, m11, m12, h12], vec![]), // left filler
             face(0, vec![m11, h21, h22, m12], vec![]), // right filler
         ];
-        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
+        let out = unify_coplanar_faces(faces, &p).unwrap();
         assert_eq!(out.len(), 1, "the hole is filled, so one face remains");
         assert!(out[0].inner.is_empty(), "and it has no hole left");
         assert_eq!(out[0].loop_nodes.len(), 4, "just the outer square");
@@ -7153,7 +7155,7 @@ pub mod tests {
             mk_axis_plane(&mut m, 1, 1.0, true),  // 5: y=1
             mk_axis_plane(&mut m, 2, 1.0, true),  // 6: z=1
         ];
-        let canon: Vec<usize> = (0..p.len()).collect();
+        let _canon: Vec<usize> = (0..p.len()).collect();
         let (v000, v100, v200) = (
             Node::Seam([0, 1, 4]),
             Node::Seam([0, 2, 4]),
@@ -7170,7 +7172,7 @@ pub mod tests {
             face(0, vec![v100, v200, v210, v110], vec![]),
             face(4, vec![v200, v100, v101, v201], vec![]), // perpendicular, not coplanar
         ];
-        let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
+        let out = unify_coplanar_faces(faces, &p).unwrap();
         assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
         let merged = out.iter().find(|lf| lf.plane_idx == 0).unwrap();
         assert!(
@@ -7373,25 +7375,34 @@ pub mod tests {
             Point3::from_array([0.0, 0.0, z0 + h1]),
             Point3::from_array([dx, dy, z0 + h1 + h2]),
         );
-        let PlaneSetup { planes, canon, .. } = plane_index_setup(&m, a, b).unwrap();
-        // The two `+X` walls: same plane x = dx, different face sizes (heights h1 vs h2).
-        let x_walls: Vec<usize> = (0..planes.len())
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: _planes,
+            canon,
+            plane_ix,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
+        // The two `+X` walls: same plane x = dx, different face sizes (heights h1 vs h2). Two
+        // *faces*, so this searches the face table — the plane table holds one entry for both,
+        // which is the property under test.
+        let x_walls: Vec<usize> = (0..faces_tab.len())
             .filter(|&i| {
-                planes[i].n_out.as_array() == [1.0, 0.0, 0.0]
-                    && (planes[i].tri[0].as_array()[0] - dx).abs() < 1e-12
+                faces_tab[i].n_out.as_array() == [1.0, 0.0, 0.0]
+                    && (faces_tab[i].tri[0].as_array()[0] - dx).abs() < 1e-12
             })
             .collect();
         assert_eq!(x_walls.len(), 2, "one wall from each box: {x_walls:?}");
         let (i, j) = (x_walls[0], x_walls[1]);
         assert!(
-            !planes_coplanar(&planes[i].plane, &planes[j].plane),
+            !planes_coplanar(&faces_tab[i].plane, &faces_tab[j].plane),
             "the coefficient test still cannot prove these coplanar — that is the whole point"
         );
         assert!(
-            tolerant::t_planes_coplanar(&planes, i, j),
+            tolerant::t_planes_coplanar(&faces_tab, i, j),
             "coordinates can"
         );
         assert_eq!(canon[i], canon[j], "so they are one class");
+        assert_eq!(plane_ix[i], plane_ix[j], "and one plane-table row");
     }
 
     /// A vertex where one plane is split between two faces is named by **the planes that touch it**,
@@ -7421,23 +7432,25 @@ pub mod tests {
             Point3::from_array([1.4, 0.65, 2.5]),
         );
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
-            canon,
+            plane_ix,
             ..
         } = plane_index_setup(&m, overhung, cutter).unwrap();
+        let _ = &faces_tab;
         let mut checked = 0usize;
         for sh in solid_shell_handles(&m, overhung) {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let tris =
-                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &canon).unwrap();
+                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap();
                 for t in &tris {
-                    let c: Vec<usize> = t.iter().map(|&k| canon[k]).collect();
+                    // The triple is already dense plane ids: distinct means three real planes.
                     assert!(
-                        c[0] != c[1] && c[1] != c[2] && c[0] != c[2],
-                        "vertex triple {t:?} names one class twice ({c:?})"
+                        t[0] != t[1] && t[1] != t[2] && t[0] != t[2],
+                        "vertex triple {t:?} names one plane twice"
                     );
                     // A name that denotes three distinct classes must denote a real point.
                     assert!(
@@ -7535,31 +7548,41 @@ pub mod tests {
             Point3::from_array([0.6, 0.6, 2.5]),
         );
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             canon,
+            plane_ix,
             ..
         } = plane_index_setup(&m, chained, probe).unwrap();
+        let _ = &faces_tab;
         // The fixture must actually merge two faces into one class, or this proves nothing.
         assert!(
             canon.iter().enumerate().any(|(i, &c)| c != i),
             "fixture has no split plane — the invariant would be vacuous"
         );
+        // A producer hands out dense plane ids (`loop_triples` maps face indices through
+        // `plane_ix`), so "every element is a plane, not a face" is now the type, not a runtime
+        // check. What remains testable is that the ids are in range and sorted-distinct.
         let mut checked = 0usize;
         for sh in solid_shell_handles(&m, chained) {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
-                let mut rings =
-                    vec![arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &canon).unwrap()];
-                rings.extend(arrange::hole_rings(&m, fh, p, &inc_a, &planes, &canon).unwrap());
+                let mut rings = vec![
+                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap(),
+                ];
+                rings.extend(arrange::hole_rings(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap());
                 for t in rings.iter().flatten() {
                     for &k in t {
-                        assert_eq!(canon[k], k, "triple {t:?} names face {k}, not its class");
+                        assert!(
+                            k < planes.len(),
+                            "triple {t:?} names {k}, out of the plane table"
+                        );
                     }
                     assert!(
                         t[0] < t[1] && t[1] < t[2],
-                        "triple {t:?} is not three distinct classes in sorted order"
+                        "triple {t:?} is not three distinct planes in sorted order"
                     );
                     checked += 1;
                 }
@@ -7568,10 +7591,11 @@ pub mod tests {
         assert!(checked > 0, "the chained operand has vertices to name");
     }
 
-    /// **A point on the cut plane reads zero no matter which face names it.** `t_orient3d`'s
-    /// on-plane shortcut is a raw `==` against the triple, so before the triples were canon a
-    /// vertex named by face 6 of the `z = 1` class was invisible to a query about face 1 of that
-    /// same class, and the numeric branch answered ±1 for a point lying exactly on the plane.
+    /// **A point reads zero on each of its three defining planes.** `t_orient3d`'s on-plane
+    /// shortcut is a raw `==` against the triple, so a vertex on the query plane must name it by the
+    /// same id the query uses. The face/plane split makes that automatic — a plane has exactly one
+    /// id now, so the old failure (a vertex named by face 6 of the `z = 1` class invisible to a
+    /// query about face 1 of it) cannot be expressed. What is left to check is the identity itself.
     #[test]
     fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
         let mut m = Model::new();
@@ -7590,34 +7614,32 @@ pub mod tests {
             Point3::from_array([1.4, 0.65, 2.5]),
         );
         let PlaneSetup {
-            planes,
+            planes: faces_tab,
+            geom: planes,
             surf_ix,
             inc_a,
             canon,
+            plane_ix,
             ..
         } = plane_index_setup(&m, chained, probe).unwrap();
+        let _ = &faces_tab;
         assert!(
             canon.iter().enumerate().any(|(i, &c)| c != i),
-            "fixture has no split plane — a sibling face is what this test is about"
+            "fixture has no split plane — the sibling faces this used to distinguish"
         );
         let mut on_plane = 0usize;
         for sh in solid_shell_handles(&m, chained) {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let tris =
-                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &canon).unwrap();
+                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap();
                 for t in &tris {
-                    // Ask about every face of every class the vertex names — including the sibling
-                    // faces that are not the class root, which is where the old bug lived.
-                    for (q, _) in planes.iter().enumerate() {
-                        if !t.contains(&canon[q]) {
-                            continue;
-                        }
+                    // The vertex lies on exactly its three defining planes; each must read 0.
+                    for &q in t {
                         assert_eq!(
-                            arrange::side_of(&planes, *t, canon[q]),
+                            arrange::side_of(&planes, *t, q),
                             0,
-                            "vertex {t:?} lies on plane class {} (face {q}) but does not read 0",
-                            canon[q]
+                            "vertex {t:?} lies on plane {q} but does not read 0"
                         );
                         on_plane += 1;
                     }
