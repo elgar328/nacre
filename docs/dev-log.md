@@ -2202,3 +2202,14 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **D4**(`4c3c270`) `PlaneInfo`→`FaceInfo` 개명(토큰 경계, 23사용처). C가 `PlaneGeom`을 평면 표로 만든 뒤 *"PlaneInfo"* 는 이 아크가 없애려던 면/평면 이름 충돌 그 자체였다 — 타입이 이제 어느 표인지 말한다. docs의 `PlaneInfo`는 append-only 역사(dev-log·overhaul-roadmap)라 불가침.
 
 **결과.** clippy **4 → 2**(기준선 `rayon`·`Orig`만; C가 드러낸 두 never-read 필드 제거 완결). 면 표는 이제 정확히 쓰이는 일곱 필드(`surf·face·plane·tri·n_out·tri_pt3·orient_sign`)만 담는다. 남은 것: **E**(`Node::Orig`와 `all_seam` 경로 — clippy의 `Orig` 경고가 그 대상, 프로파일 기준 "never constructed"지만 테스트 헬퍼 `oloop`가 실제로 만들어 지우면 경로 하나가 함께 은퇴).
+
+---
+
+**★ (커토버 마무리 ④ = 완결) `Node::Orig` 은퇴 — 옛 엔진의 마지막 죽은 변형과 그 경로.** `Node`는 재구성 면 루프의 꼭짓점으로 두 변형을 가졌다 — `Orig(Handle<Vertex>)`(옛 엔진: 건드리지 않은 원본 꼭짓점)와 `Seam([usize;3])`(교차 발견 평면 삼중항). arrangement는 `Seam`만 낸다(`emit_faces` 출력 계약) ⇒ `Orig`는 테스트 헬퍼 `oloop`에서만 생성됐다. clippy의 마지막 `variant Orig is never constructed`가 그것이고, E가 걷었다. **"사소한 변형 삭제"가 아니었다** — 연쇄로 죽는 코드가 있었다.
+
+- **E1**(`e39a16c`, 테스트 먼저) `oloop` + 두 passthrough 테스트 은퇴, non-ignored 대체 하나 추가. ★★ **그 둘은 가짜 메커니즘을 검사했다:** `unify_keeps_opposite_normal_coplanar`는 생산이 반대-법선 공면을 분리하는 진짜 메커니즘(`(plane_idx, flip)` 그룹 키)이 아니라 **`all_seam`이 Orig 면을 거른다는, 생산엔 없는 passthrough**를 검사했다(C0에서 밝힌 반쪽). 진짜 불변식은 `overhang_fuse_then_cut_matches_occt`가 OCCT 부피로 덮지만 **`#[ignore]`** 라 기본 `cargo test`엔 없다 ⇒ 새 non-ignored `an_overhang_fuse_keeps_the_two_z1_caps_separate`(overhang fuse·부피 1.5·validate)로 **가짜 메커니즘 테스트를 진짜 메커니즘·생산 경로·기본 CI 테스트로 교체**. 첫 실행 통과 = 반대-법선 공면이 생산에서 올바로 분리됨을 실측(P1의 반증 지점 무사). 구멍-면 반쪽은 이미 non-ignored `a_boss_fused_then_cut_through`가 덮는다.
+- **E2**(`a6a5842`, 코드) `Orig` 변형 삭제 → **컴파일 타임 증명**(생산 어디도 Orig를 안 만든다: 제거 후 컴파일됨). 단일 변형이 되어 `Ord` derive → **두 손수 rank 함수(`rank`·`node_rank`) 소멸**(존재 이유가 *"Orig/Seam이 다른 모양"* 이었다); `ekey`·`norm_edge`가 `a<=b`로, edge-key HashMap이 `(Node,Node)`로. 파생 순서가 손수 `(1,t)`와 동형(단일 태그 상수)이라 정렬·replay 무변경. `all_seam`은 구조적 항상-참이라 `unify`의 `eligible` 게이트가 죽음 → 제거(모든 면이 grouping을 지남 = 생산이 이미 그랬다; 싱글턴은 `kept`로 통과). `node_handle`·`seam_ring`의 Orig 갈래, stale 독스트링 넷 정리.
+
+**★ 검토 6라운드가 잡은 것들:** ① 커밋 순서(코드→테스트 뒤집으면 oloop이 컴파일 안 됨 → **테스트 먼저**) · ② 은퇴 근거를 측정으로(`overhang_fuse_then_cut_matches_occt` 코드 확인) · ③ 놓친 Orig 참조 둘(4060 잠금 독스트링·2218 passthrough 독스트링) · ④ **기본 CI 구멍**(OCCT가 `#[ignore]`라 은퇴 시 반대-법선 공면 불변식이 무방비 → non-ignored 대체 추가) · ⑤ `let-else`/`_ => unreachable` 잔여(단일 변형이라 irrefutable — regex가 다 못 잡아 clippy가 잠깐 늘었고 전수로 걷음).
+
+**결과.** workspace **494/0**, ops **204→203**(은퇴 2 + 신규 1), pipeline **20/0**, **OCCT 91/0 불변**, clippy **2 → 1**(남은 하나는 비-기본 피처 `rayon::prelude` — 정상). **커토버 정리(A 개명 → B PlaneGeom → C 술어층 분리 → D 장부 → E Node::Orig)가 완결됐다.** `Node`는 이제 실제 모양(평면 삼중항 하나)이고, 옛 seam/coplanar 엔진의 잔재가 코드에서 완전히 사라졌다. main은 `18587ed`에서 불변.
