@@ -2188,3 +2188,17 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 **★ 방법 기록 — 내 크기 추정이 세 번 틀렸다.** 원래 계획 "9개 시그니처"(너무 작게), 지난 셀 말미 "130번 판단"(너무 크게), 이 셀 초안 "arrangement 면 읽기 다수"(실제 `fp` 셋). 전부 **언급을 세고 판단을 안 센** 탓이고, 실제 인덱스 이름 분포를 세고서야 좁혀졌다. [[adjacent-proposition-failure]].
 
 **결과.** workspace **495/0**, pipeline **20/0**, **OCCT 91/0 불변** — 커널 동작 무이동. `tolerant`·`arrange`에 `PlaneInfo` 0(Witness impl 제외)·`class_of`/`orient_sign`/`assert_class_roots` 0·술어층 `canon` 0. clippy는 기준선 2(`rayon`·`Orig`) + **C가 드러낸 2**(`canon`·`orient` 필드, 테스트만 읽음) — 둘 다 **D**(PlaneInfo→FaceInfo 개명·`canon` 삭제)가 걷는다. 남은 것: **D**(개명·`canon`·`EdgeFaces` 이미 됨 이후 필드 정리·중복 제거) · **E**(`Node::Orig`와 `all_seam` 경로).
+
+---
+
+**★ (커토버 마무리 ③) 분리의 장부 정리 — 죽은 필드 셋, `canon` 강등, `PlaneInfo`→`FaceInfo`.** C가 술어 층을 `PlaneGeom`으로 옮기면서 면 표의 세 항목이 죽었고 clippy가 둘(`canon`·`orient` never-read)을 지목했다. D가 그 장부를 닫는다. **순수 정리 — 단 하나 예외**: D2가 canon을 걷어내며 C가 테스트 헬퍼에 남긴 **공간-혼용 잠복 버그**를 강제로 바로잡았다. 네 커밋 전부 workspace 495/0·OCCT 91/0 불변.
+
+- **D1**(`5ee7a50`) `.class` 삭제 — 쓰기만 하고 읽는 코드가 한 줄도 없었다(`class_of`·`assert_class_roots`가 C에서 사라짐). `fill_classes`는 그 필드 쓰기 + canon 반환이 전부였으므로 **≡ `plane_classes`**, 호출처 4곳이 직접 부른다. ★ **`let mut`→`let` 정리를 같은 커밋에서**(3곳: `fill_classes`가 유일 mutator였다) — 안 하면 `unused mut`로 clippy가 되레 는다(검토 5라운드가 예고).
+- **D2**(`f456d31`) `canon`을 `PlaneSetup` 필드에서 `plane_index_setup` **지역 변수로 강등**. canon은 `dense_planes`가 `plane_ix`를 만드는 재료일 뿐, 생산은 C에서 이미 필드를 안 읽었다.
+  - ★★ **잠복 버그 수정(검토 2라운드).** `(0..planes.len()).map(|i| canon[i])`와 `canon[planes.iter().position(..)]`는 **조밀 공간(geom)을 순회하며 canon(면 공간)으로 매핑**한 뒤 `plane_ix[face]==c`(조밀==면-루트)로 비교했다 — **픽스처 우연으로만 통과**하던 공간 혼용(C1에서 밟은 그 함정과 동종). canon 삭제가 강제로 조밀 id 직접 사용으로 바꿨고, `.find`/`.position`이 자기 검증한다.
+  - ★★ **migration gate는 은퇴가 아니라 재작성(검토 3라운드가 C 계획을 정정).** `dense_plane_ids_are_monotone_in_canon`을 `plane_classes`+`dense_planes`(둘 다 pub(crate)) **직접 호출**로 다시 써서 canon 필드 없이도 단조성 잠금을 유지했다 — C가 *"canon과 함께 은퇴"* 라 적은 것은 이 우회를 못 본 탓.
+  - ★ **`plane_classes_merge_a_shared_wall`의 "루트는 최소 인덱스" 단언 유지(검토 6라운드).** C 계획 D2 표는 이걸 *"조밀 id엔 뜻 없음 → 은퇴"* 로 오분류했으나, 이 테스트는 `plane_classes`(면 공간 union-find)를 직접 검사하고 그것은 실제로 min을 루트로 고른다(`parent[max]=min`). 참이고 의미 있는 잠금이라 **살렸다**.
+- **D3**(`0c6a89b`) `.orient` 삭제 — production 역할은 C1에서 `frame_sign`이 대체, 유일 독자는 `outward_normals_agree`. 그 교차검사(*"n_out 부호 = topo orientation"*)는 **C0c에서 collect_planes의 `debug_assert_eq!`로 이미 승격**됐고 그 assert는 `face.orientation`을 독립적으로 읽으므로(orient_sign이 아니라) vacuous가 아니다 — 테스트는 collect_planes 호출로 그 assert를 네 픽스처에 돌리고 평행 불변만 밖에서 확인한다.
+- **D4**(`4c3c270`) `PlaneInfo`→`FaceInfo` 개명(토큰 경계, 23사용처). C가 `PlaneGeom`을 평면 표로 만든 뒤 *"PlaneInfo"* 는 이 아크가 없애려던 면/평면 이름 충돌 그 자체였다 — 타입이 이제 어느 표인지 말한다. docs의 `PlaneInfo`는 append-only 역사(dev-log·overhaul-roadmap)라 불가침.
+
+**결과.** clippy **4 → 2**(기준선 `rayon`·`Orig`만; C가 드러낸 두 never-read 필드 제거 완결). 면 표는 이제 정확히 쓰이는 일곱 필드(`surf·face·plane·tri·n_out·tri_pt3·orient_sign`)만 담는다. 남은 것: **E**(`Node::Orig`와 `all_seam` 경로 — clippy의 `Orig` 경고가 그 대상, 프로파일 기준 "never constructed"지만 테스트 헬퍼 `oloop`가 실제로 만들어 지우면 경로 하나가 함께 은퇴).
