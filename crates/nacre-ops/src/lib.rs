@@ -410,6 +410,12 @@ pub enum OpError {
     /// thickness at the face (the boolean pocket path honestly rejects instead of the old
     /// direct path's silent invalid result).
     PocketNotBlind,
+    /// A pad's footprint does not meet the face at all: the `Fuse` came back severed, which two
+    /// one-shell solids can only do if they never touched. Like [`OpError::PocketNotBlind`] this is
+    /// the *operation's* premise breaking, not a boolean failure — the boolean answered correctly
+    /// (a base and a detached boss). Use `Operation::Boolean` directly if two disjoint solids are
+    /// what you want. An overhanging footprint still touches and is not this error.
+    PadMissesFace,
     /// A boolean operation failed (design §8 M5).
     Boolean(BoolError),
     /// A `Transform` input solid is not live (a stale or non-live handle).
@@ -1120,11 +1126,25 @@ fn extrude_and_boolean(
         model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
         OpError::Boolean(e)
     })?;
+    // A pad's prism must actually meet the face. Two live solids are each one outer shell, so a
+    // `Fuse` of them can only come back severed if they never touched — the footprint missed the
+    // face entirely. Returning the piece that carries the cap would hand back a floating boss and
+    // silently drop the base, so this is `PadMissesFace`: the boolean succeeded and answered
+    // correctly (two solids); it is the *pad's* premise that broke. A footprint that merely
+    // overhangs still touches, fuses into one solid, and takes the normal path.
+    //
+    // `assemble_fuse_cut` already retired the inputs, so restoring `live_solids` is what keeps the
+    // "no reject-after-commit" contract true from the outside: the model the caller sees is the one
+    // it had before. Only `live_solids` is touched — the store stays append-only.
+    if matches!(kind, BoolKind::Fuse) && solids.len() > 1 {
+        model.live_solids.retain(|s| !solids.contains(s));
+        model.live_solids.push(frame.solid_h);
+        return Err(OpError::PadMissesFace);
+    }
     // Exposed cap = the result face on the prism's far-cap plane (face plane offset by n·signed),
-    // its outward normal +n (the opening side for a pocket, the boss top for a boss). A pad (Fuse)
-    // never severs; a pocket (Cut) that severs leaves several solids — scan them all for the cap
-    // and return the piece that carries it, leaving the others live. The committed model is a valid
-    // multi-solid either way, so there is no reject-after-commit (append-only has no rollback).
+    // its outward normal +n (the opening side for a pocket, the boss top for a boss). A pocket (Cut)
+    // that severs leaves several solids — scan them all for the cap and return the piece that
+    // carries it, leaving the others live; that is a valid multi-solid model, not a failure.
     // `build_prism` returns the far cap as `faces[1]`; the store is append-only, so it is still
     // readable after the boolean retired the prism, and it names the cap plane exactly.
     let far_cap = prism_faces[1];
