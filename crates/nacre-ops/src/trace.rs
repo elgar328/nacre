@@ -897,6 +897,11 @@ fn extract_cells(
 /// carries the same ring. Two vertex-disjoint simple loops are nested-or-separate (a crossing
 /// would be a shared split node), so one representative vertex settles containment via
 /// [`arrange::point_in_ring`]. A `c` inside no `+1` cell bounds the unbounded region: the root.
+///
+/// `c` may lie inside **several** `+1` rings at once, and that is not a degeneracy: nesting two
+/// levels deep (`A⁺ ⊃ D⁻ ⊃ B⁺ ⊃ c⁻`) puts `c` inside `B`'s ring *and* `A`'s, because
+/// [`arrange::point_in_ring`] asks about a ring, not about the material it bounds. The owner is the
+/// **innermost** candidate ([`innermost_host`]).
 struct Nesting {
     /// `group_of[cell]` = the cell's group representative (the `+1` host for a hole group, else
     /// the cell itself).
@@ -908,10 +913,11 @@ struct Nesting {
 }
 
 /// Classify every cell as root / hole / plain `+1` (see [`Nesting`]). A face may carry **any number
-/// of holes** (`holes[host]` is a list — e.g. a slab pierced by a U's two prongs). Still out of
-/// scope, each an honest reject with a distinct tag: a hole nested deeper than one level
-/// (`HOLE_DEPTH`), or more than one unbounded contour — several disjoint bodies on the plane —
-/// (`HOLE_ROOTS`).
+/// of holes** (`holes[host]` is a list — e.g. a slab pierced by a U's two prongs), nested **any
+/// number of levels** deep (a pocket sealed by a slab, a boss cut after fusing). Still out of scope,
+/// an honest reject: more than one unbounded contour — several disjoint bodies on the plane —
+/// (`HOLE_ROOTS`), or a hole whose owner is not uniquely determined (`HOLE_DEPTH`, see
+/// [`innermost_host`]).
 fn nest_cells(
     planes: &[PlaneInfo],
     wc: usize,
@@ -962,14 +968,13 @@ fn nest_cells(
                 None => return Err(reject(tag::NO_CLEAR_RAY)),
             }
         }
-        match hosts.len() {
-            0 => roots.push(c),
-            1 => {
-                let (rc, rr) = (find(&mut parent, c), find(&mut parent, hosts[0]));
-                parent[rc] = rr;
-                holes.entry(hosts[0]).or_default().push(c);
-            }
-            _ => return Err(reject(tag::HOLE_DEPTH)), // inside >1 +1 cell: nested deeper
+        if hosts.is_empty() {
+            roots.push(c);
+        } else {
+            let host = innermost_host(planes, wc, &rings, &hosts)?;
+            let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
+            parent[rc] = rr;
+            holes.entry(host).or_default().push(c);
         }
     }
     if roots.len() != 1 {
@@ -982,6 +987,50 @@ fn nest_cells(
         root_group,
         holes,
     })
+}
+
+/// Which of `hosts` owns the hole: the **innermost** one — the candidate contained in all the
+/// others.
+///
+/// Being inside several `+1` rings at once is ordinary two-level nesting, not a degeneracy: for
+/// `A⁺ ⊃ D⁻ ⊃ B⁺ ⊃ c⁻`, `c` lies inside `B`'s ring *and* `A`'s, since `A`'s ring encloses its own
+/// hole. Only `B` actually wraps `c` in material, and `emit_faces` must hang `c` off `B` — hanging
+/// it off `A` would punch a hole through a face the hole is not even on.
+///
+/// **The innermost candidate always exists.** Cell rings are simple closed curves that do not cross
+/// (a crossing would have been split into a node), so containment among them is a *total* order;
+/// the candidates are a chain and its minimum is unique. Measured 2026-07-22 across the OCCT corpus:
+/// every one of the 8 multi-host cases was a chain of exactly two. So the reject below is a net for
+/// a broken invariant — if it ever fires, rings are crossing and the fault is upstream in
+/// `split_at_crossings`, not here.
+///
+/// Containment is read the same way [`nest_cells`] reads it: one representative vertex through
+/// [`arrange::point_in_ring`], and candidates sharing a node are adjacent rather than nested, so
+/// they cannot be ordered and the honest answer is to reject.
+fn innermost_host(
+    planes: &[PlaneInfo],
+    wc: usize,
+    rings: &[Vec<[usize; 3]>],
+    hosts: &[usize],
+) -> Result<usize, BoolError> {
+    let inside = |a: usize, b: usize| -> Option<bool> {
+        if rings[a].iter().any(|t| rings[b].contains(t)) {
+            return None; // adjacent, not nested — not comparable
+        }
+        rings[a]
+            .iter()
+            .find_map(|&v| arrange::point_in_ring(planes, wc, v, &rings[b]).ok())
+    };
+    let mut found = None;
+    for &h in hosts {
+        if hosts.iter().all(|&o| o == h || inside(h, o) == Some(true)) {
+            if found.is_some() {
+                return Err(reject(tag::HOLE_DEPTH)); // two minima: not a chain
+            }
+            found = Some(h);
+        }
+    }
+    found.ok_or_else(|| reject(tag::HOLE_DEPTH)) // no minimum: not a chain
 }
 
 /// A per-solid, per-side material label of one cell: `[A_above, A_below, B_above, B_below]`.
