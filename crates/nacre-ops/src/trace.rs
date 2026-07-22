@@ -161,22 +161,24 @@ fn trace_transversal_face(
     // *plane class* it lies on (triples, comparisons, predicate arguments). Every ring below is in
     // class form, so the two must not be confused — see `canon_ring`.
     let fc = canon[fp];
-    let outer = match arrange::face_vertex_triples(model, fh, fp, inc, planes, canon) {
-        Ok(r) => match canon_ring(&r, canon) {
-            Some(r) => r,
-            None => {
-                out.declined.push((fp, "collapsed-triple"));
-                return;
-            }
-        },
+    // A face whose whole outer ring is a coplanar seam is interior to a merged region, not a
+    // boundary — it is skipped, and the sibling that kept its outer ring covers the same area.
+    let raw = match arrange::face_boundary_rings(model, fh, fp, inc, planes, canon) {
+        Ok(Some(rings)) => rings,
+        Ok(None) => return,
         Err(_) => {
             out.declined.push((fp, "outer-ring"));
             return;
         }
     };
+    let (raw_outer, raw_holes) = raw.split_first().expect("a boundary has an outer ring");
+    let Some(outer) = canon_ring(raw_outer, canon) else {
+        out.declined.push((fp, "collapsed-triple"));
+        return;
+    };
     let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
-    for r in arrange::hole_rings(model, fh, fp, inc, planes, canon).unwrap_or_default() {
-        match canon_ring(&r, canon) {
+    for r in raw_holes {
+        match canon_ring(r, canon) {
             Some(r) => holes.push(r),
             None => {
                 out.declined.push((fp, "collapsed-triple"));
@@ -459,17 +461,19 @@ fn trace_one(
             let kind = SegKind::Seated { body_above };
             // Collect every ring in class form first: a collapsed name declines the whole face, and
             // deciding that before the emitting closure exists keeps the two borrows apart.
-            let Some(outer) = arrange::face_vertex_triples(model, fh, fp, inc, planes, canon)
-                .ok()
-                .and_then(|ts| canon_ring(&ts, canon))
-            else {
-                out.declined.push((fp, "outer-ring"));
-                continue;
+            // A face that is all coplanar seam is interior to a merged region — skip it.
+            let raw = match arrange::face_boundary_rings(model, fh, fp, inc, planes, canon) {
+                Ok(Some(r)) => r,
+                Ok(None) => continue,
+                Err(_) => {
+                    out.declined.push((fp, "outer-ring"));
+                    continue;
+                }
             };
-            let mut rings = vec![outer];
+            let mut rings = Vec::with_capacity(raw.len());
             let mut collapsed = false;
-            for r in arrange::hole_rings(model, fh, fp, inc, planes, canon).unwrap_or_default() {
-                match canon_ring(&r, canon) {
+            for r in &raw {
+                match canon_ring(r, canon) {
                     Some(r) => rings.push(r),
                     None => collapsed = true,
                 }

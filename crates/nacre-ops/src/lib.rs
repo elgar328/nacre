@@ -222,6 +222,24 @@ pub(crate) mod tag {
     /// node can gain a third segment. This is the backstop for that day.
     pub const SEAM_BRANCH: &str = "seam_branch";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
+    /// A ring that is **partly** a coplanar seam — some of its edges separate two coplanar,
+    /// same-facing faces of one solid (a face subdivision, not a boundary) and some do not.
+    ///
+    /// A ring that is seam **all the way round** is not a boundary at all and is dropped
+    /// ([`arrange::face_boundary_rings`]); a partial one needs the seam-connected faces merged
+    /// into one region before its boundary can be named, which no producer forces yet: the only
+    /// maker of coplanar adjacent faces is `imprint`, and it always emits whole-seam rings (the
+    /// parent's hole ring and the region face's outer ring are literally the same edges).
+    ///
+    /// Split out from `LOOP_ORIENT_MISMATCH`, which called this "a genuine straight angle — the
+    /// polygon is unchanged by dropping the vertex". That was a misdiagnosis: the vertex is a
+    /// *corner* of the seam ring, and dropping it would change the shape.
+    pub const COPLANAR_SEAM_PARTIAL: &str = "coplanar_seam_partial";
+    /// A face whose outer ring is entirely a coplanar seam — so it is interior to a merged region
+    /// and contributes no boundary — but which still carries a **real** hole ring. That hole
+    /// belongs to the region's surviving outer ring, and re-attributing it needs the winding /
+    /// containment pass this brick does not run. Not reachable from the op layer today.
+    pub const COPLANAR_SEAM_REGROUP: &str = "coplanar_seam_regroup";
     /// The result severs into two or more material solids *and* at least one enclosed void
     /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
     /// test we do not have yet (a re-scope of `point_in_solid`), so this is honestly rejected and
@@ -4889,20 +4907,161 @@ pub mod tests {
         assert_eq!(from_arrange, discovered_triples(&m));
     }
 
-    /// An imprint is the one holed operand the convex path can see, and `has_coplanar_pair`
-    /// catches it — the region face is coplanar with the lid it was cut from. This pins the
-    /// tag that took over when the door guard came down.
+    /// Faces / distinct edges / distinct vertices / cavities of a solid — order-free counts, so a
+    /// difference means a different shape rather than a different traversal.
+    fn shape_counts(m: &Model, s: Handle<Solid>) -> (usize, usize, usize, usize) {
+        let (mut faces, mut edges, mut verts) = (0usize, HashSet::new(), HashSet::new());
+        for sh in solid_shell_handles(m, s) {
+            for &fh in &m.shells.get(sh).faces {
+                faces += 1;
+                let f = m.faces.get(fh);
+                for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for he in &l.half_edges {
+                        edges.insert(he.edge);
+                        verts.insert(he_start(m, *he));
+                    }
+                }
+            }
+        }
+        (
+            faces,
+            edges.len(),
+            verts.len(),
+            m.solids.get(s).cavities.len(),
+        )
+    }
+
+    /// The shape OCCT scores as `imprinted_merge_matches_occt`: a cube imprinted on a **side** face,
+    /// fused with a box stacked on its top. Kept here because the oracle is `#[ignore]`d and so does
+    /// not run on a plain `cargo test`; the answer is the plain cube's fuse, by the same invariant as
+    /// [`an_imprinted_operand_answers_like_the_unimprinted_one`].
     #[test]
-    fn an_imprinted_convex_operand_rejects_as_coplanar_pair() {
-        let (mut m, ic) = imprinted_cube();
-        let bx = m.add_cuboid(
-            Point3::from_array([0.4, 0.4, 0.5]),
-            Point3::from_array([1.5, 1.5, 1.5]),
+    fn an_imprint_on_a_side_face_fuses_like_a_plain_cube() {
+        let run = |imprint: bool| {
+            let (mut m, _top) = cube_with_top();
+            let mut s = m.live_solids[0];
+            if imprint {
+                let side = m.shells.get(m.solids.get(s).outer).faces[3];
+                let OpOutput::ImprintSketch { solid, .. } = apply(
+                    &mut m,
+                    &Operation::ImprintSketch {
+                        face: side,
+                        profile: small_square(),
+                    },
+                )
+                .unwrap() else {
+                    unreachable!()
+                };
+                s = solid;
+            }
+            let bx = m.add_cuboid(
+                Point3::from_array([0.0, 0.0, 1.0]),
+                Point3::from_array([1.0, 1.0, 2.0]),
+            );
+            m.rebuild_adjacency();
+            let r = boolean_one(&mut m, BoolKind::Fuse, s, bx).expect("the imprinted fuse");
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty(), "imprint={imprint}");
+            let p = nacre_props::mass_props(&m, r).unwrap();
+            (p.volume, p.area, shape_counts(&m, r))
+        };
+        let plain = run(false);
+        let imprinted = run(true);
+        assert!(
+            (plain.0 - 2.0).abs() < 1e-12,
+            "two stacked unit cubes: {}",
+            plain.0
         );
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Fuse, ic, bx),
-            tag::COPLANAR_PAIR,
+        assert!(
+            (plain.0 - imprinted.0).abs() < 1e-12,
+            "volume {plain:?} vs {imprinted:?}"
         );
+        assert!(
+            (plain.1 - imprinted.1).abs() < 1e-12,
+            "area {plain:?} vs {imprinted:?}"
+        );
+        assert_eq!(plain.2, imprinted.2, "the seam leaked into the result");
+    }
+
+    /// **An imprint must not change any boolean's answer.** It subdivides a face into a holed
+    /// remainder plus a coplanar region face — a *selection* feature, not a shape change — so every
+    /// operation on the imprinted operand must return exactly what the plain one returns.
+    ///
+    /// This used to be three separate locks on an honest *rejection*
+    /// (`an_imprinted_{convex,nonconvex}_operand_rejects_as_coplanar_pair`,
+    /// `common_rejects_coplanar_faces_from_imprint`): the imprint's rim has no three-plane name,
+    /// because its two neighbours are the same plane, so the trace could not read the ring. The
+    /// engine now treats a ring that is coplanar seam all the way round as **not a boundary**
+    /// ([`arrange::face_boundary_rings`]), which restores the undivided face and opens all three.
+    ///
+    /// ★ Comparing the two runs beats asserting numbers: the expected value is *whatever the plain
+    /// operand gives*, so there is nothing to write down wrong. And because the seam now leaves no
+    /// trace at all, the match must hold for the **counts** too, not just the measures — a
+    /// difference there would mean the subdivision leaked into the result.
+    #[test]
+    fn an_imprinted_operand_answers_like_the_unimprinted_one() {
+        let bx = |lo: [f64; 3], hi: [f64; 3]| (Point3::from_array(lo), Point3::from_array(hi));
+        let cases = [
+            // (name, op, tool box, use the pocketed pair)
+            (
+                "convex fuse",
+                BoolKind::Fuse,
+                ([0.4, 0.4, 0.5], [1.5, 1.5, 1.5]),
+                false,
+            ),
+            (
+                "convex common",
+                BoolKind::Common,
+                ([0.2, 0.2, 0.2], [1.2, 1.2, 1.2]),
+                false,
+            ),
+            (
+                "non-convex cut",
+                BoolKind::Cut,
+                ([0.05, 0.05, 0.05], [0.15, 0.15, 0.15]),
+                true,
+            ),
+        ];
+        for (name, kind, (lo, hi), pocketed) in cases {
+            let run = |imprinted: bool| {
+                let (mut m, s) = match (pocketed, imprinted) {
+                    (false, false) => {
+                        let (m, _) = cube_with_top();
+                        let s = m.live_solids[0];
+                        (m, s)
+                    }
+                    (false, true) => imprinted_cube(),
+                    (true, false) => pocketed_cube(),
+                    (true, true) => imprinted_pocketed_cube(),
+                };
+                let (p, q) = bx(lo, hi);
+                let tool = m.add_cuboid(p, q);
+                m.rebuild_adjacency();
+                let r = boolean_one(&mut m, kind, s, tool)
+                    .unwrap_or_else(|e| panic!("{name} imprinted={imprinted}: {e:?}"));
+                m.rebuild_adjacency();
+                let props = nacre_props::mass_props(&m, r).unwrap();
+                assert!(
+                    nacre_validate::validate(&m).is_empty(),
+                    "{name} imprinted={imprinted}: invalid model"
+                );
+                (props.volume, props.area, shape_counts(&m, r))
+            };
+            let (plain_vol, plain_area, plain_counts) = run(false);
+            let (imp_vol, imp_area, imp_counts) = run(true);
+            assert!(
+                (plain_vol - imp_vol).abs() < 1e-12,
+                "{name} volume: plain {plain_vol} vs imprinted {imp_vol}"
+            );
+            assert!(
+                (plain_area - imp_area).abs() < 1e-12,
+                "{name} area: plain {plain_area} vs imprinted {imp_area}"
+            );
+            assert_eq!(
+                plain_counts, imp_counts,
+                "{name} (faces, edges, verts, cavities) — the seam leaked into the result"
+            );
+        }
     }
 
     /// A slab over the pocketed cube, its underside at height `z0`. The rectangle is
@@ -5975,25 +6134,10 @@ pub mod tests {
         (m, solid)
     }
 
-    /// The price of exact containment, paid at the last door. `general_boolean` had no
-    /// coplanar guard — `contained_result` reuses whole shells and never looks at a ring —
-    /// so an imprinted non-convex operand used to sail through containment and disjointness.
-    /// Now `edge_crosses_face` asks a face for its rings as three-plane triples, and an
-    /// imprinted face has none: the rim's two neighbours are the same plane. Rejected, and
-    /// `containment_boolean_already_keeps_a_pocket` measures that a *pocket* still rides
-    /// through — the guard costs the imprint alone, not every hole.
-    #[test]
-    fn an_imprinted_nonconvex_operand_rejects_as_coplanar_pair() {
-        let (mut m, ipc) = imprinted_pocketed_cube();
-        let bx = m.add_cuboid(
-            Point3::from_array([0.05, 0.05, 0.05]),
-            Point3::from_array([0.15, 0.15, 0.15]),
-        );
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Cut, ipc, bx),
-            tag::COPLANAR_PAIR,
-        );
-    }
+    // The imprinted non-convex operand no longer rejects: see
+    // `an_imprinted_operand_answers_like_the_unimprinted_one`, which scores this exact `Cut`
+    // against the unimprinted `pocketed_cube` instead of pinning the old honest rejection.
+    // `containment_boolean_already_keeps_a_pocket` still measures the plain pocket beside it.
 
     /// A holed operand already survives the seam-free path — `general_boolean` never
     /// had a hole guard, and `contained_result` reuses whole shells, so the pocket rides
@@ -10159,34 +10303,10 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn common_rejects_coplanar_faces_from_imprint() {
-        // Imprinting splits a face into two coplanar faces (outer + region), so
-        // the imprinted-but-still-convex cube has coplanar half-spaces.
-        let (mut m, top) = cube_with_top();
-        let hole = Profile2d {
-            points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
-        };
-        let OpOutput::ImprintSketch { solid, .. } = apply(
-            &mut m,
-            &Operation::ImprintSketch {
-                face: top,
-                profile: hole,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let b = m.add_cuboid(
-            Point3::from_array([0.2, 0.2, 0.2]),
-            Point3::from_array([1.2, 1.2, 1.2]),
-        );
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Common, solid, b),
-            tag::COPLANAR_PAIR,
-        );
-    }
-
+    // `Common` on an imprinted operand no longer rejects: the coplanar seam a split face leaves is
+    // not a boundary, so the trace reads the undivided face. The `Common` case of
+    // `an_imprinted_operand_answers_like_the_unimprinted_one` scores this same pair against the
+    // unimprinted cube.
     proptest! {
         /// Overlapping axis-aligned boxes: the intersection volume equals the
         /// independent AABB-overlap product (mixed A/B axis-aligned vertices).

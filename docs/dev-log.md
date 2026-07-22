@@ -1857,3 +1857,79 @@ clippy는 기준선과 **신규 0·소멸 0**(`arrange::label_side`가 마지막
 **남은 것(ops 3 / pipeline 1 / OCCT 1):** "거절→성공" 2건(결과 옳음 검증 완료, 테스트 갱신만 남음) ·
 `seam_endpoints_match_…` 1(레거시 seam 경로) · pipeline 1(커토버 초기부터 기존) ·
 OCCT `imprinted_merge` 1(직선각 정점).
+
+## 2026-07-22 · (커토버) 동일평면 이음선은 경계가 아니다 — OCCT 오라클 91/0
+
+마지막 OCCT 실패 `imprinted_merge_matches_occt`. 거절 태그는 `coplanar_pair`지만 그것은 *"어떤 면이든
+declined면"* 내는 **포괄 태그**라 이름이 거짓말을 했고, 실제 원인은 계측을 넣어서야 나왔다:
+
+```
+SWALLOWED(transversal) fp=3 wc=0 — treated as hole-free   ← 부모 면의 imprint 구멍이 조용히 사라짐
+DECLINED wc=0 : [("4[n=(1,0,0)@(1,0.30,0.70)]", "outer-ring")]  ← 영역면이 declined ⇒ 클래스 거절
+```
+
+문제의 정점: **닿는 면이 전부 같은 평면**(`raw_faces=[3,4]`, 둘 다 `n=(1,0,0)`, `classes=[3]`,
+`incident edges = 2`). substrate는 모든 점을 **평면 삼중항**으로 이름 붙이는데 imprint 이음선의 꼭짓점은
+평면 하나 위에만 있다. `prepare_face_split`을 읽어 확인: 부모의 구멍 링(`base_pe` 역순)과 영역면의 외곽
+링(같은 `base_pe`)이 **같은 모서리 핸들**이고, 그 정점들은 **`base_pe` 둘에만** 닿는다 ⇒
+`vertex_plane_indices`가 3개 클래스를 낼 **구조적 방법이 없다**. 허용오차가 아니라 **정의상 이름 없는 점**.
+
+**명제.** *한 솔리드의 두 동일평면·**같은 방향** 면이 공유하는 모서리는 경계가 아니다*(재질이 그 모서리를
+가로질러 안 바뀐다). 그런 모서리로만 이루어진 링은 경계 링이 아니고, **외곽이 통째로 그런 링인 면은 영역의
+내부**일 뿐이다. ⇒ `arrange::is_seam_edge`(= `canon` 일치 ∧ `n_out` 동향) + `face_boundary_rings`
+(통째 이음선 링 제거, `None` = 경계 아님) + trace 두 곳에서 그런 면 건너뛰기.
+
+★ **검토가 잡은 진짜 구멍 — `canon` 일치만으로는 틀린다.** 동일평면 인접면에는 두 종류가 있다:
+**면 분할**(법선 같음, 재질이 양쪽 다 같은 쪽 ⇒ 경계 아님)과 **맞댄 두 경계**(법선 반대, 재질이 서로
+반대쪽 ⇒ **진짜 경계**). 후자는 `loop_triples` 독스트링이 이미 이름 붙인 경우다("a base's exposed top and
+the cantilever underside"). 법선 조건을 안 넣었으면 **멀쩡한 벽을 지워 silent-wrong**을 냈을 것이다.
+`unify_coplanar_faces`의 그룹 키(클래스, facing)와 **같은 조건**이다.
+
+**★ P0(적용 전 계측)이 다섯 예측을 전부 맞혔다.** imprint 자리 workspace 3 + OCCT 1, 각 자리에서
+영역면 `outer=ALL(seam=4/4)` · 부모 `holes: all=1` · **부분 이음선 0** · **법선 반대 0** ·
+**건너뛸 면의 살아남은 구멍 0**. ⇒ 통째-링 가정 확인, ③b(재귀속) 불필요.
+
+**★ 계측을 두 번째로 잘못 읽을 뻔했다.** 첫 P0가 워크스페이스 **0건**을 냈는데 그건 "이음선 없음"이 아니라
+**테스트 하네스가 통과한 테스트의 stderr를 삼킨 것**이었다(imprint 테스트 셋은 거절을 단언하므로 전부
+*통과*, 실패한 OCCT 것만 출력이 샜다). 그대로 믿었으면 정반대 결론을 적었다. 앞선 셀의 교훈은
+*"컴파일 안 되는 프로파일"*이었고 이번은 **출력 경로**라 게이트에 없었다. 일반형:
+**계측이 0을 내면 "없음"인지 "안 보임"인지 먼저 가른다 — 컴파일·실행·출력 경로 셋 다.**
+
+**단계별(각 단계의 단독 안전성을 미리 선언했다 — 지난 셀의 199/40 교훈):**
+- **⑤**(구멍 링 오류를 `unwrap_or_default`로 삼키던 두 곳 → 정직 거절) 단독 → **237/3 실패 집합 동일** ✓.
+  코퍼스 발화 0이라 잠복이었지만 **뚫린 곳을 꽉 찼다고 계산하는** silent-wrong 자리였다.
+- **④**(오진 태그 분리) — `classes < 3`을 *"genuine straight angle — 정점을 빼도 다각형이 안 변한다"*로
+  처리하던 것을 `COPLANAR_SEAM_PARTIAL`/`LOOP_ORIENT_MISMATCH`로 가름. 이음선 링의 **모서리**라 빼면
+  형상이 바뀐다.
+- **①②③a는 한 걸음**(쪼개면 영역을 통째로 잃는다) → **OCCT 90/1 → 91/0**, ops는 예측한 거절 잠금
+  **정확히 3건**만 깨짐.
+
+**검증 — 골든 숫자가 아니라 불변식.** *imprint는 형상을 안 바꾸므로 같은 불리언은 같은 답을 내야 한다.*
+`cube_with_top` vs `imprinted_cube`(Fuse·Common), `pocketed_cube` vs `imprinted_pocketed_cube`(Cut)를
+**나란히 돌려 비교**한다 ⇒ 기대값을 손으로 적을 일이 없다. 그리고 이음선이 흔적을 안 남기므로
+**부피·면적뿐 아니라 면/모서리/정점/cavity 수까지 동일**해야 한다 — 실제로 전부 일치.
+잠금 `an_imprinted_operand_answers_like_the_unimprinted_one`(거절 잠금 3건을 대체) +
+`an_imprint_on_a_side_face_fuses_like_a_plain_cube`(OCCT는 `--ignored`라 매 `cargo test` 사본 필요).
+
+★ **P2 목록을 세는 질의가 처음에 틀렸다.** *"imprint **fixture**를 쓰는 테스트"*로 세어 2건이라 적었는데,
+세 번째(`common_rejects_coplanar_faces_from_imprint`)는 imprint를 **인라인**으로 만든다. 올바른 질의는
+*"imprint 거절을 **잠근** 테스트"* = `assert_rejects(.., tag::COPLANAR_PAIR)` 전수. 다시 세니 3건이고
+실제로 정확히 3건이 깨졌다.
+
+**★ 이 셀이 드러낸 더 큰 사실 — `ImprintSketch`는 은퇴한 설계의 잔재다(사용자 지적 → 문서로 확인).**
+초기 구현은 *"면에 imprint → 그 영역을 raise"*였고, `pad`/`pocket`이 **extrude + boolean**으로 재구현되며
+**`raise_region`이 폐기**됐다(design.md:456, dev-log:905). 지금 `region_face`의 소비자는 **없다**(enum 필드·
+생성자·도달성 확인 테스트 하나뿐). `PadOnFace`/`PocketOnFace`는 `(face, profile)`을 직접 받으므로
+imprint가 **불필요**하고, `imprint_step_roundtrips`가 보는 `FACE_BOUND`는 **pocket도 만든다**.
+design.md:456이 이미 *"pad/pocket과 무관, **유지/제거는 별도 결정**"*이라 적어 두었다.
+⇒ **은퇴 여부는 별도 셀**(3 크레이트 + STEP + oracle을 건드리는 결정). 그때 이음선 처리(`is_seam_edge`·
+`face_boundary_rings`)도 **함께 제거 대상**이 된다 — 생산자가 사라지면 죽은 코드가 되기 때문이다.
+이번 수정을 유지하는 근거는 ⑤·④가 **imprint와 무관한 교정**이라는 점과 오라클이 green이 된다는 점이다.
+
+**남긴 것:** `COPLANAR_SEAM_REGROUP`(영역면이 **진짜** 구멍을 가진 경우의 재귀속)은 **쓰지 않았다** —
+포켓을 판 뒤에는 불리언이 결과를 다시 만들며 imprint를 정리하므로 op 레이어에서 그 상태가 만들어지지
+않는다. **도달 불가 코드를 미검증으로 싣지 않는다.** ⑥(포괄 태그 `COPLANAR_PAIR`가 declined 이유를
+그대로 올리도록)은 이번 셀 명제와 무관해 **후속으로 접었다**(이제 그 태그를 단언하는 테스트는 0건이라
+언제든 싸게 할 수 있다).
+
+**결과.** OCCT **90/1 → 91/0**(오라클 전체 green), ops 실패 집합은 기준선 3건 그대로, pipeline 19/1 불변.
