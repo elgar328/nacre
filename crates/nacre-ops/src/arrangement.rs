@@ -356,7 +356,7 @@ fn trace_transversal_face(
             kind: match graze {
                 Some(body_above) => SegKind::Graze { body_above },
                 None => SegKind::Transversal {
-                    mat: arrange::orient_sign(planes, fp),
+                    mat: planes[fp].orient_sign,
                 },
             },
         });
@@ -426,7 +426,7 @@ fn trace_transversal_face(
 /// direction and the label frame are defined by the same stored normal.
 ///
 /// `σ` is an f64 dot of two **parallel** unit vectors (`fp` and `fc` are the same plane class), so
-/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`arrange::orient_sign`] and
+/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`PlaneInfo::orient_sign`] and
 /// `trace_seated_face` already rely on. Everything else here is exact.
 fn run_body_above(planes: &[PlaneInfo], wc: usize, fc: usize, fp: usize, rs: &[usize]) -> bool {
     let t = arrange::order_along(planes, wc, fc, rs[0], rs[rs.len() - 1]);
@@ -774,7 +774,7 @@ fn split_at_crossings(
 /// out of scope. The corpus's arrangement vertices are degree ≥ 3 with distinct fp's per real
 /// direction, which is what the spike exercises.
 fn angular_order(planes: &[PlaneInfo], w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
-    let os = arrange::orient_sign(planes, w);
+    let os = planes[w].orient_sign;
     let cross = |i: usize, j: usize| -> i8 {
         edges[i].1
             * edges[j].1
@@ -1303,7 +1303,7 @@ fn emit_faces(
         if keep_above == keep_below {
             continue; // material the same on both sides ⇒ not a result face here
         }
-        let flip = keep_above == (arrange::orient_sign(planes, wc) > 0);
+        let flip = keep_above == (planes[wc].orient_sign > 0);
         let inner: Vec<Vec<crate::Node>> = holes
             .get(&c)
             .map(|hs| hs.iter().map(|&h| ring_of(&cells[h])).collect())
@@ -1407,7 +1407,7 @@ pub(crate) fn frame_audit(
             wc,
             root_point: planes[wc].tri[0].as_array(),
             root_normal: planes[wc].plane.normal().as_array(),
-            orient_sign: arrange::orient_sign(&planes, wc),
+            orient_sign: planes[wc].orient_sign,
             seated: side(|k| match k {
                 SegKind::Seated { body_above } => Some(*body_above),
                 _ => None,
@@ -2493,7 +2493,7 @@ mod tests {
         // flip oracle (coordinate, test-only): the result normal points away from the kept
         // chamber. Fuse keeps below (bodies below the cap), so n_result·n_w > 0.
         let n_w = planes[wc].plane.normal();
-        let os = arrange::orient_sign(&planes, wc) as f64;
+        let os = planes[wc].orient_sign as f64;
         for f in &fuse {
             let n_result = os * if f.flip { -1.0 } else { 1.0 };
             let dot = n_result * n_w.dot(n_w); // n_result·n_w, |n_w|²>0

@@ -1211,6 +1211,14 @@ pub(crate) struct PlaneInfo {
     /// source of "outward" for both the in/out sign test and face ordering.
     pub(crate) n_out: Vector3,
     pub(crate) orient: Orientation,
+    /// `+1` when this face's stored plane normal already points out of its solid, `-1` when the
+    /// face is `Reversed` and the two oppose.
+    ///
+    /// **This face's**, not its plane class's. The class-frame twin is [`PlaneGeom::frame_sign`],
+    /// and the two used to be one function called with either kind of index — the single place the
+    /// face/plane convention could not be asserted, because both readings were legitimate
+    /// (dev-log, normalization cell). Separate names, separate questions.
+    pub(crate) orient_sign: i8,
     /// The three `tri` points as **toleranced `Pt3`** (exact rotation definition), in the
     /// same order as `tri` — `Some` only when the solid is rotated (overhaul stage 3;
     /// `collect_planes` builds it once). `None` on the axis-aligned path, where `tri`'s
@@ -1543,6 +1551,18 @@ pub(crate) fn collect_planes(
             } else {
                 None
             };
+            // `orient_sign`, precomputed: the two invariants it used to re-check on every call
+            // are properties of this face, so they are decided once, here.
+            let dot = plane.normal().dot(n_out);
+            debug_assert!(
+                dot.abs() > 0.5,
+                "a plane's normal must be parallel to n_out"
+            );
+            debug_assert_eq!(
+                dot > 0.0,
+                face.orientation == Orientation::Forward,
+                "n_out's sign against the surface normal is the face's orientation"
+            );
             out.push(PlaneInfo {
                 surf: face.surface,
                 face: fh,
@@ -1550,6 +1570,7 @@ pub(crate) fn collect_planes(
                 tri,
                 n_out,
                 orient: face.orientation,
+                orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
                 class: usize::MAX, // filled by `plane_index_setup` once the classes exist
             });
@@ -1767,7 +1788,7 @@ pub(crate) fn dense_planes(planes: &[PlaneInfo], canon: &[usize]) -> (Vec<PlaneG
                 surf: pi.surf,
                 tri: pi.tri,
                 tri_pt3: pi.tri_pt3.clone(),
-                frame_sign: arrange::orient_sign(planes, r),
+                frame_sign: pi.orient_sign,
             }
         })
         .collect();
@@ -4974,6 +4995,8 @@ pub mod tests {
             tri,
             n_out: Vector3::from_array([0.0; 3]),
             orient: Orientation::Forward,
+            // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
+            orient_sign: 1,
             tri_pt3: None,
             class: usize::MAX,
         };
@@ -6924,12 +6947,13 @@ pub mod tests {
             tri: [origin, step(i), step(j)],
             n_out: normal,
             orient: Orientation::Forward,
+            orient_sign: 1, // `plane` is built from `normal`, so the two agree
             tri_pt3: None,
             class: usize::MAX,
         }
     }
 
-    /// A `PlaneInfo` whose only field `unify_coplanar_faces` reads is `n_out`; the rest is a
+    /// A `PlaneInfo` for the `unify_coplanar_faces` tests, which read none of its geometry; the rest is a
     /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
     fn mk_plane(m: &mut Model, n: [f64; 3]) -> PlaneInfo {
         let normal = Vector3::from_array(n);
@@ -6948,6 +6972,7 @@ pub mod tests {
             tri: [Point3::origin(); 3],
             n_out: normal,
             orient: Orientation::Forward,
+            orient_sign: 1, // `plane` is built from `normal`, so the two agree
             tri_pt3: None,
             class: usize::MAX,
         }

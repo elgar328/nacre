@@ -78,24 +78,6 @@ pub(crate) fn order_along(planes: &[PlaneInfo], p: usize, q: usize, i: usize, j:
     t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
 }
 
-/// `+1` when a plane's stored normal already points out of its solid, `-1` when the
-/// face is `Reversed` and the two oppose. `pub(crate)` so the toleranced `dir_sign`
-/// wrapper ([`crate::tolerant`]) can bridge the frame3 `D` (over each face's outward
-/// `tri`) to `plane_pair_dir_sign`'s stored-normal convention.
-pub(crate) fn orient_sign(planes: &[PlaneInfo], i: usize) -> i8 {
-    let dot = planes[i].plane.normal().dot(planes[i].n_out);
-    debug_assert!(
-        dot.abs() > 0.5,
-        "a plane's normal must be parallel to n_out"
-    );
-    debug_assert_eq!(
-        dot > 0.0,
-        planes[i].orient == Orientation::Forward,
-        "n_out's sign against the surface normal is the face's orientation"
-    );
-    if dot > 0.0 { 1 } else { -1 }
-}
-
 /// The two planes an ordered ring's edge `i → i+1` shares beyond `P`, plus the two nodes'
 /// third planes — everything [`order_along`] needs to say which way that edge runs.
 pub(crate) fn ring_edge(
@@ -165,7 +147,7 @@ pub(crate) fn turn_at(
     if det == 0 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
-    Ok(sa * sb * det * orient_sign(planes, p))
+    Ok(sa * sb * det * planes[p].orient_sign)
 }
 
 /// Face `f`'s outer-loop vertices as three-plane triples: `f`'s own plane, and the
@@ -507,7 +489,7 @@ pub(crate) fn loop_winding(
 /// invariant to break, an `orient`-based order would reverse silently. Assert the
 /// agreement; do not depend on it.
 fn dir_sign(planes: &[PlaneInfo], p: usize, q: usize, r: usize) -> i8 {
-    t_plane_pair_dir_sign(planes, p, q, r) * orient_sign(planes, r)
+    t_plane_pair_dir_sign(planes, p, q, r) * planes[r].orient_sign
 }
 
 /// The plane class a face index lies on, read off the table rather than a passed-around `canon`.

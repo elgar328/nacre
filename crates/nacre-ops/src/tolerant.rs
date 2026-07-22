@@ -20,7 +20,6 @@
 //! with a vertex handle + `model` threaded down) in 3b-ii.
 
 use crate::PlaneInfo;
-use crate::arrange::orient_sign;
 use nacre_geom::intersect::{
     plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d,
 };
@@ -245,9 +244,9 @@ pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneInfo], p: usize, a: usize, b:
         plane_def(planes, a),
         plane_def(planes, b),
     );
-    orient_sign(planes, p)
-        * orient_sign(planes, a)
-        * orient_sign(planes, b)
+    planes[p].orient_sign
+        * planes[a].orient_sign
+        * planes[b].orient_sign
         * to_i8(dir_sign_judge(borrow3(&dp), borrow3(&da), borrow3(&db)))
 }
 
@@ -425,6 +424,7 @@ mod tests {
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
                 n_out: pu[0].n_out,
                 orient: pu[0].orient,
+                orient_sign: pu[0].orient_sign,
                 tri_pt3: None,
                 class: usize::MAX,
             })
