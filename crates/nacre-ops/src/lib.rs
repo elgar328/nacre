@@ -10,7 +10,7 @@
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::Isometry;
-use nacre_scalar::frame3::{Pt3, dir_orient3d_judge, orient3d_judge, orient3d_ray};
+use nacre_scalar::frame3::{Pt3, dir_orient3d_judge};
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Rotation, Shell, Solid, Vertex,
@@ -157,22 +157,11 @@ pub enum BoolError {
 /// of a test's expectation. Not `#[cfg(test)]`: the guards name these in release
 /// builds too. They are `const`, so they inline away where the tag is unused.
 pub(crate) mod tag {
-    /// A seam-free face whose rings do not agree about which side of the other solid
-    /// they are on. A backstop with no firing test: were a rim vertex classified against
-    /// the outer ring, the other boundary would separate the two rings and so would cut
-    /// `f`, which is a seam. A cross-check between `point_in_solid` and the arrangement,
-    /// not a defensive assert.
-    pub const HOLE_CLASS_SPLIT: &str = "hole_class_split";
     /// An outer-shell edge used by other than two face loops. A backstop with no
     /// firing test: `validate` calls this `NonOpposedEdge` and every shell the
     /// operations build is manifold — but `boolean` never runs `validate` on its
     /// inputs, so a direct caller could still hand one in.
     pub const NON_MANIFOLD_EDGE: &str = "non_manifold_edge";
-    /// A backstop with no firing test yet — the degeneracies that would produce an
-    /// odd crossing count are expected to trip `POINT_ON_RING` or `FOURPLANE` first, since an
-    /// edge that does not pierce a face cleanly is named there. Recorded as unverified in
-    /// design.md §9.
-    pub const ARRANGEMENT_DEGENERATE: &str = "arrangement_degenerate";
     /// A closed seam loop's edges disagree about which side its material lies on, or
     /// two of its nodes coincide, or two neighbours share no plane pair.
     ///
@@ -209,24 +198,6 @@ pub(crate) mod tag {
     /// is representable but its predicates are not yet sound (no TIP until stage 3), so
     /// the boolean honestly rejects until then. Fired by a `Transform`-rotated operand.
     pub const ROTATED_UNSUPPORTED: &str = "rotated_unsupported";
-    /// An overhang overlap arc could not be paired with a complementary arc sharing its two
-    /// crossings (a non-convex-cyclic arrangement `is_convex` did not screen out) — out of scope.
-    pub const OVERHANG_ARCS: &str = "overhang_arcs";
-    /// The two machines that decide where the seam is disagree about *parity*: a segment
-    /// crosses a closed surface an odd number of times exactly when its endpoints lie on
-    /// opposite sides, and `point_in_solid`'s winding says one thing while
-    /// `pierced_faces`' exact crossings say the other.
-    ///
-    /// The one way that happens is a cavitied operand, which is where the name comes from:
-    /// the classifier counts the cavity shells, the crossing count scans the outer shell
-    /// alone, so an edge reaching into a void reads `Outside` at both ends while piercing
-    /// once. `boolean` rejects those at the door (`HOLLOW_OPERAND`); this stands for the
-    /// tests that call `overlap_fuse_cut` directly, and for the day that door opens.
-    ///
-    /// It is *not* the out→in→out tunnel the name suggests. That edge crosses twice, the
-    /// parity agrees, and since cell 3e-3 it earns two seam vertices and drills a hole.
-    pub const TUNNEL: &str = "tunnel";
-    pub const NO_ENTRY_FACE: &str = "no_entry_face";
     pub const THREE_PLANES: &str = "three_planes";
     /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
     /// coordinate. The triple is the truth and the coordinate only its cache (overview §5), so this
@@ -245,21 +216,6 @@ pub(crate) mod tag {
     pub const CYLINDER_FACE: &str = "cylinder_face";
     pub const DEGENERATE_FACE: &str = "degenerate_face";
     pub const DEGENERATE_NORMAL: &str = "degenerate_normal";
-    pub const RAY_DEGENERATE: &str = "ray_degenerate";
-    /// A closed seam loop's winding and the face boundary's class disagree.
-    ///
-    /// A hole keeps its material outside, so walked material-left it runs clockwise about
-    /// the face's outward normal; an island runs counter-clockwise. Whether the boundary is
-    /// kept says the same thing, by ray casting. Three sources meet in that one equation and
-    /// none is assumed right: the local sign rule (`n_out` bookkeeping and `order_along`),
-    /// the ring's global winding (`det3` at a hull vertex, found by exact comparison), and
-    /// `classof`. `keep` cancels — it flips the ring and `kept[0]` together — so this checks
-    /// the geometry, not the operation.
-    ///
-    /// Unreachable today; the three agree on every fixture. Cell 3f-3 promotes the same
-    /// equation into a *nesting* detector, where the winding classifies each loop and
-    /// `kept[0]` only cross-checks depth zero.
-    pub const LOOP_CLASS_MISMATCH: &str = "loop_class_mismatch";
     /// Every candidate ray from a loop's nodes has a ring node on its line.
     ///
     /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
@@ -284,29 +240,6 @@ pub(crate) mod tag {
     /// convex path only.
     ///
     pub const MISSING_SEAM: &str = "missing_seam";
-    /// A solid's planar section returned more than one loop (an outer ring plus a hole, e.g. a
-    /// slot piercing a cavity). The section-clip reconstruction assumes a single loop; a
-    /// multi-loop section is honestly rejected until the multi-loop cell lands, so the
-    /// single-loop assumption is never silently reached.
-    pub const SECTION_MULTI_LOOP: &str = "section_multi_loop";
-    /// Canonicalizing a section's vertex triples through the plane classes folded two *distinct*
-    /// section vertices onto one triple (e.g. `{α,β,cutter_top}` and `{α,β,base_top}` when both
-    /// caps fold to the contact class π). Merging them would silently drop a point, so it is
-    /// rejected instead of collapsed (DNA: never silently wrong).
-    pub const SECTION_TRIPLE_COLLISION: &str = "section_triple_collision";
-    /// A ∂P vertex coincides exactly with a section corner on the contact plane (a four-plane
-    /// point). The scoped contact-plane flush (R2) covers a vertex strictly *on* a contact chord,
-    /// but a vertex *at* a chord endpoint is an ambiguous fan — honestly rejected until the general
-    /// T-junction resolver (C1) lands.
-    pub const FLUSH_VERTEX_COINCIDENT: &str = "flush_vertex_coincident";
-    /// A face is coplanar-overlapping with *two or more* faces of the other solid on one plane
-    /// class (a non-convex `other` seating twice on one plane). The per-face classifier (B4-R0)
-    /// splits against a single coincident face; multiple overlaps are out of scope until a later
-    /// cell, honestly rejected rather than picking one arbitrarily.
-    pub const COPLANAR_OVERLAP_MULTI: &str = "coplanar_overlap_multi";
-    /// The unified driver found no shared plane class between the two solids — it was invoked on a
-    /// pair with no coplanar contact at all (should be gated out upstream).
-    pub const NO_COPLANAR_CONTACT: &str = "no_coplanar_contact";
     /// A `Whole`-survival contact face whose footprint OVERLAPS the other's (∂P × ∂Q cross) rather
     /// than nesting, in the one such case still unbuilt. `Whole` has two entries: `Fuse`/same-normal,
     /// which the E1 union cell now builds, and `Cut`/opposite-normal, which is exact whenever the
@@ -314,9 +247,6 @@ pub(crate) mod tag {
     /// reaches back across that plane — a pin below its own contact face — where the cut owes a notch
     /// this path cannot yet cut. Honest reject rather than a whole cap that ignores the pin.
     pub const COPLANAR_MERGE: &str = "coplanar_merge";
-    /// The winding driver (M-C) was handed a pair with no seam (containment/disjoint) — the
-    /// seam-free branch (`contained_result`) is not yet wired into the unified driver.
-    pub const WINDING_NO_SEAM: &str = "winding_no_seam";
 }
 
 #[cfg(test)]
@@ -1256,11 +1186,7 @@ fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<Rotation
 
 // ---- boolean (M5-c3) ----
 
-use nacre_geom::intersect::{
-    RayCross, plane_plane, plane_side, planes_coplanar, three_plane_orient3d, three_planes,
-};
-#[cfg(test)]
-use std::collections::BTreeSet;
+use nacre_geom::intersect::{plane_plane, plane_side, planes_coplanar, three_planes};
 use std::collections::{HashMap, HashSet};
 
 /// A face's supporting plane plus the exact in/out data the seam path needs.
@@ -1697,13 +1623,6 @@ fn unordered(a: usize, b: usize) -> (usize, usize) {
 
 // ---- fuse / cut (M5-c4): face clipping, clean-seam convex ----
 
-/// A vertex's side relative to the *other* solid.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Side {
-    Inside,
-    Outside,
-}
-
 /// A seam vertex — a three-plane point on both `∂A` and `∂B` (2 A-planes + 1
 /// B-plane, or 1 A + 2 B). Shared (one `Handle`) by every incident result piece.
 struct SeamVertex {
@@ -1730,19 +1649,6 @@ struct LocalFace {
     inner: Vec<Vec<Node>>,
     flip: bool,
 }
-
-/// Deterministic generic ray directions (small coprime integers, none
-/// axis-aligned) for the point-in-polyhedron cast. Axis-aligned rays would
-/// systematically graze the axis-aligned faces/edges of typical inputs, so the
-/// list starts off-axis; retrying down it finds a degeneracy-free ray.
-const RAY_DIRECTIONS: [[f64; 3]; 6] = [
-    [2.0, 3.0, 5.0],
-    [3.0, 5.0, 7.0],
-    [5.0, 7.0, 11.0],
-    [7.0, 11.0, 13.0],
-    [11.0, 13.0, 17.0],
-    [13.0, 17.0, 19.0],
-];
 
 /// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
@@ -1801,6 +1707,7 @@ pub(crate) fn fill_classes(planes: &mut [PlaneInfo]) -> Vec<usize> {
 /// stays and is at worst rejected `RAY_DEGENERATE`, never falsely skipped (which would drop a
 /// real crossing — silent-wrong). Unrotated vertices carry `base == coord`, so this is the exact
 /// zero-area (collinear) test on the vertices' rotation definitions.
+#[cfg(test)]
 fn pt3_base_collinear(a: &Pt3, b: &Pt3, c: &Pt3) -> bool {
     use nacre_scalar::Rat;
     let (a, b, c) = (&a.base, &b.base, &c.base);
@@ -1818,23 +1725,6 @@ fn pt3_base_collinear(a: &Pt3, b: &Pt3, c: &Pt3) -> bool {
         (proj_zero(1, 2), proj_zero(2, 0), proj_zero(0, 1)),
         (Some(true), Some(true), Some(true))
     )
-}
-
-/// Distinct outer-shell vertex handles of a solid, in shell→face→loop order.
-fn solid_vertex_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Vertex>> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for sh in solid_shell_handles(model, solid) {
-        for &fh in &model.shells.get(sh).faces {
-            for &he in &model.faces.get(fh).outer.half_edges {
-                let vh = he_start(model, he);
-                if seen.insert(vh) {
-                    out.push(vh);
-                }
-            }
-        }
-    }
-    out
 }
 
 /// Each outer-shell edge with its bound vertices and the two combined-plane
@@ -2520,11 +2410,6 @@ pub mod tests {
             solids.len()
         );
         Ok(solids[0])
-    }
-
-    /// The single-ring successor `(i + 1) % n`.
-    fn ident_next(n: usize) -> Vec<usize> {
-        (0..n).map(|i| (i + 1) % n).collect()
     }
 
     fn p2(x: f64, y: f64) -> Point2 {
@@ -3363,69 +3248,11 @@ pub mod tests {
 
     // ---- arrangement: seam segment gathering (M5-d3 cell 3b) ----
 
-    /// Combined plane list (A then B) plus the surface→index map, as the boolean
-    /// builds them.
-    fn combined(
-        m: &Model,
-        a: Handle<Solid>,
-        b: Handle<Solid>,
-    ) -> (Vec<PlaneInfo>, HashMap<Handle<Face>, usize>) {
-        let mut planes = collect_planes(m, a).unwrap();
-        planes.extend(collect_planes(m, b).unwrap());
-        // Same as `plane_index_setup`: the classes are only meaningful once both operands are in
-        // one table, and a table with unfilled `class` is invisible to the class-root checks.
-        fill_classes(&mut planes);
-        let surf_ix = planes
-            .iter()
-            .enumerate()
-            .map(|(i, pi)| (pi.face, i))
-            .collect();
-        (planes, surf_ix)
-    }
-
-    /// The face of `solid` whose outward normal is `n` (there is exactly one, for
-    /// the axis-aligned fixtures here).
-    fn face_facing(
-        m: &Model,
-        solid: Handle<Solid>,
-        planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Face>, usize>,
-        n: [f64; 3],
-    ) -> Handle<Face> {
-        let want = Vector3::from_array(n);
-        let shell = m.solids.get(solid).outer;
-        let mut hit = None;
-        for &fh in &m.shells.get(shell).faces {
-            let pi = &planes[surf_ix[&fh]];
-            if (pi.n_out - want).norm() < 1e-9 {
-                assert!(hit.is_none(), "two faces share an outward normal");
-                hit = Some(fh);
-            }
-        }
-        hit.expect("no face with that outward normal")
-    }
-
     fn near(a: Point3, b: [f64; 3]) -> bool {
         (a - Point3::from_array(b)).norm() < 1e-9
     }
 
     proptest! {}
-
-    /// Canonicalize a node sequence: an arc up to reversal, a loop up to rotation and
-    /// reversal. These goldens are about the *arc order* and should not also freeze which end
-    /// the walk entered from.
-    fn canon(pts: &[[f64; 3]], closed: bool) -> Vec<[f64; 3]> {
-        let rots = if closed { pts.len() } else { 1 };
-        (0..rots)
-            .flat_map(|i| {
-                let rot: Vec<[f64; 3]> = pts[i..].iter().chain(&pts[..i]).copied().collect();
-                let mut rev = rot.clone();
-                rev.reverse();
-                [rot, rev]
-            })
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or_default()
-    }
 
     /// A big cube whose `y=0, z=0` edge is crossed **twice** by the seam: the notch
     /// spans `x∈[3,7]` and hangs below both `y=0` and `z=0`, so that one edge enters
@@ -3457,76 +3284,6 @@ pub mod tests {
             Point3::from_array([0.5, 0.6, 1.5]),
         );
         (m, l, rod)
-    }
-
-    /// Every non-convex overlap input that reaches `reconstruct_face_paths`: the three that
-    /// succeed and the three that it rejects from *inside*. The rejecting three matter
-    /// most — the seam-free path can reject for reasons the old convex code never could
-    /// (`point_on_ring`, `fourplane`). Should that fire
-    /// on a face visited *before* the intended one, the reject tag silently changes.
-    /// Measuring only the accepted inputs would not see it.
-    struct OverlapCase {
-        name: &'static str,
-        /// `(most open arcs on any one face, closed loops over all faces)`.
-        ///
-        /// The arrangement's own reading of each fixture, and it moves as the ladder
-        /// climbs. Arcs stopped mattering at cell 3e-2, and loops at 3f-3 — however many,
-        /// so long as they share a winding. What is left for `pokehole` is a loop *beside*
-        /// an arc. `(1, 0)` says the arrangement never had anything to say about this
-        /// fixture at all.
-        expect: (usize, usize),
-        m: Model,
-        x: Handle<Solid>,
-        y: Handle<Solid>,
-    }
-
-    fn overlap_fixtures() -> Vec<OverlapCase> {
-        let case = |name, expect, (m, x, y)| OverlapCase {
-            name,
-            expect,
-            m,
-            x,
-            y,
-        };
-        vec![
-            // `l_and_corner_box` serves both the Cut and the Fuse test: the arrangement
-            // never sees `BoolKind`.
-            case("l_and_corner_box", (1, 0), l_and_corner_box()),
-            case("l_and_reflex_box", (1, 0), l_and_reflex_box()),
-            // Two loops, measured, not guessed: the U pierces the slab's `y=1.5` face
-            // twice — its two prongs cut rectangles wholly inside that face. So this
-            // fixture needs *both* multi-chord and inner loops before it can pass;
-            // `multichord` merely happens to fire first, on the U's base cap.
-            case("u_and_slab (two flat loops)", (2, 2), u_and_slab()),
-            // `(1, 0)`: nothing about the arrangement ever blocked this one. What
-            // rejected it was the shape of a single arc, until cell 3e-1.
-            case("l_and_popup_box (folded arc)", (1, 0), l_and_popup_box()),
-            case("l_and_dimple (inner loop)", (1, 1), l_and_dimple()),
-            // `(2, 0)`: two chords on one face and not a single closed loop — the only
-            // fixture that asks for multi-chord alone. Measured.
-            case("l_and_notch_bar (two chords)", (2, 0), l_and_notch_bar()),
-            // The first non-convex inner loop: six nodes, one of them reflex.
-            case("l_and_ell_stub (non-convex loop)", (1, 1), l_and_ell_stub()),
-            // An arc and a loop on one face — the only shape `pokehole` keeps after 3f-3.
-            case("l_and_staple (arc beside a loop)", (2, 1), l_and_staple()),
-        ]
-    }
-
-    /// The `ThreePlane` definitions of a solid's `Discovered` vertices.
-    fn discovered_triples(m: &Model) -> std::collections::BTreeSet<[Handle<Surface>; 3]> {
-        let reach = m.reachable();
-        let mut out = std::collections::BTreeSet::new();
-        for vh in &reach.vertices {
-            if let Origin::Discovered {
-                definition: VertexDef::ThreePlane(mut t),
-                ..
-            } = m.vertices.get(*vh).origin
-            {
-                t.sort_unstable();
-                out.insert(t);
-            }
-        }
-        out
     }
 
     /// A slab over the pocketed cube, its underside at height `z0`. The rectangle is
@@ -3971,6 +3728,9 @@ pub mod tests {
         (m, l, st)
     }
 
+    /// One face ring, as plane triples.
+    type Ring = Vec<[usize; 3]>;
+
     /// A **holed reflex face** from the live engine, as plane triples: `(planes, p, outer, hole)`.
     ///
     /// `Cut(L-prism, stub)` leaves the L's top cap carrying a hole — `"dimple"` a square one,
@@ -3982,7 +3742,7 @@ pub mod tests {
     /// retired seam engine. The *properties* below are about `point_in_ring`/`every_ray`, which are
     /// live and load-bearing (`nest_cells` picks a hole's host with them, `unify_coplanar_faces`
     /// groups by them), so they had to be re-homed rather than deleted with their old fixture.
-    fn holed_face_rings(which: &str) -> (Vec<PlaneInfo>, usize, Vec<[usize; 3]>, Vec<[usize; 3]>) {
+    fn holed_face_rings(which: &str) -> (Vec<PlaneInfo>, usize, Ring, Ring) {
         let (mut m, l, stub) = if which == "dimple" {
             l_and_dimple()
         } else {
@@ -4163,18 +3923,6 @@ pub mod tests {
             Point3::from_array([0.7, 0.7, 1.5]),
         );
         (m, l, stub)
-    }
-
-    /// Compare two closed sequences up to rotation (not reflection — the direction is
-    /// the whole point).
-    fn assert_points_cycle(got: &[[f64; 3]], want: &[[f64; 3]]) {
-        assert_eq!(got.len(), want.len(), "{got:?} vs {want:?}");
-        let hit = (0..want.len()).any(|r| {
-            got.iter()
-                .zip(want[r..].iter().chain(&want[..r]))
-                .all(|(g, w)| near(Point3::from_array(*g), *w))
-        });
-        assert!(hit, "{got:?} vs {want:?} up to rotation");
     }
 
     #[test]
@@ -6751,207 +6499,6 @@ pub mod tests {
             unreachable!()
         };
         (m, solid)
-    }
-
-    // n0: cross-section of a solid by a wall plane (the new `section_of_solid` primitive).
-    type SectionSetup = (
-        Vec<PlaneInfo>,
-        usize,
-        std::collections::HashMap<Handle<Face>, usize>,
-    );
-    fn section_setup(m: &Model, a: Handle<Solid>, b: Handle<Solid>) -> SectionSetup {
-        let planes_a = collect_planes(m, a).unwrap();
-        let na = planes_a.len();
-        let mut planes = planes_a;
-        planes.extend(collect_planes(m, b).unwrap());
-        let mut surf_ix = std::collections::HashMap::new();
-        for (i, pi) in planes.iter().enumerate() {
-            surf_ix.insert(pi.face, i);
-        }
-        // W = b's -x face (n_out ≈ [-1,0,0]) at x = 0.5.
-        let w = (na..planes.len())
-            .find(|&i| {
-                let n = planes[i].n_out.as_array();
-                n[0] < -0.5 && (planes[i].tri[0].as_array()[0] - 0.5).abs() < 1e-9
-            })
-            .expect("b's -x wall at x=0.5");
-        (planes, w, surf_ix)
-    }
-
-    fn section_pts(loops: &[Vec<Node>], planes: &[PlaneInfo]) -> Vec<[f64; 3]> {
-        loops
-            .iter()
-            .flat_map(|l| l.iter())
-            .map(|&nd| match nd {
-                Node::Seam(t) => three_planes(
-                    &planes[t[0]].plane,
-                    &planes[t[1]].plane,
-                    &planes[t[2]].plane,
-                )
-                .unwrap()
-                .as_array(),
-                _ => panic!("section is all Seam nodes"),
-            })
-            .collect()
-    }
-
-    /// Every three-plane point plane class `p` puts on the line `p ∩ q`, gathered the way a
-    /// per-plane-class arrangement would: both solids' faces seated on `p`, plus both solids'
-    /// sections cut by `p`. Triples are canonicalized, then kept only if they name `q` as well —
-    /// those are exactly the points on the shared line. `section_of_solid` rejecting (it declines a
-    /// plane it has vertices on) contributes nothing rather than failing: a plane class with no
-    /// section still has its faces.
-    /// One boundary segment of a plane class, named entirely in plane classes. It rides `wall`, so
-    /// it lies on the line `p ∩ wall`; on that line a point is named by its *third* plane alone
-    /// (`order_along`'s convention, arrange.rs:204-214), and the segment's two ends are named by
-    /// `end[0]` / `end[1]`.
-    #[derive(Clone, Copy, Debug)]
-    struct Chord {
-        wall: usize,
-        end: [usize; 2],
-    }
-
-    /// What the chord builder had to drop. Both are ways a class ends up with *less* boundary than
-    /// it really has, and downstream neither is distinguishable from "the section was never
-    /// computed" unless it is counted here.
-    #[derive(Default, Debug, Clone, Copy)]
-    struct ChordStats {
-        /// A ring edge whose two endpoint triples do not share exactly one plane besides `p` —
-        /// what a canonized four-plane vertex looks like. Produces no chord.
-        skipped_naming: usize,
-        /// A canonized triple with a repeated index (`[c, w, w]`), which is not a point.
-        degenerate_triples: usize,
-    }
-
-    /// The arrangement vertices class `p` **mints**: for every pair of chords riding different
-    /// walls, the three-plane point `{p, w1, w2}` when it falls strictly inside both chords.
-    ///
-    /// `order_along(planes, p, w, x, e)` orders two points of the line `p ∩ w`, each named by its
-    /// third plane — so `x` is strictly between the chord's ends exactly when the two comparisons
-    /// come back non-zero and opposite. **Strict is an invariant, not a choice:** admitting an
-    /// endpoint mints a point that already exists, and a zero-length result edge panics at
-    /// `Line::through_points(..).expect("distinct")` (lib.rs:3576) — an abort, not a reject.
-    ///
-    /// Walls whose normals are coplanar with `p`'s meet it in no point; `t_plane_pair_dir_sign`
-    /// returns 0 there and the pair contributes nothing (that is the collinear-overlap case, E5).
-    fn minted_crossings(planes: &[PlaneInfo], p: usize, chords: &[Chord]) -> HashSet<[usize; 3]> {
-        let strictly_inside = |c: &Chord, x: usize| -> bool {
-            let (s0, s1) = (
-                arrange::order_along(planes, p, c.wall, x, c.end[0]),
-                arrange::order_along(planes, p, c.wall, x, c.end[1]),
-            );
-            s0 != 0 && s1 != 0 && s0 != s1
-        };
-        let mut out = HashSet::new();
-        for (i, c1) in chords.iter().enumerate() {
-            for c2 in &chords[i + 1..] {
-                if c1.wall == c2.wall
-                    || tolerant::t_plane_pair_dir_sign(planes, p, c1.wall, c2.wall) == 0
-                {
-                    continue;
-                }
-                if strictly_inside(c1, c2.wall) && strictly_inside(c2, c1.wall) {
-                    let mut t = [p, c1.wall, c2.wall];
-                    t.sort_unstable();
-                    out.insert(t);
-                }
-            }
-        }
-        out
-    }
-
-    /// One fixture's verdict: how the two sides of every intersecting class pair compare on their
-    /// shared line, once crossings are minted.
-    #[derive(Default, Debug)]
-    struct SweepTally {
-        pairs: usize,
-        agreed: usize,
-        outside: usize, // disagreement, but the missing point is outside every host face
-        /// Inside a host face, but the lacking class's section producer declined — it never had
-        /// the input, so this is a `section_of_solid` limitation, not a minting disagreement.
-        inside_missing_section: usize,
-        /// Inside a host face with both sections computed. **This is the one that would refute
-        /// per-plane minting**, and the assertion below pins it at zero.
-        inside_unexplained: usize,
-        /// **The dominant category, and the increment's real finding.** `point_in_ring` declines
-        /// because the point lies *on* the host face's boundary — neither strictly in nor out. Far
-        /// from undecidable noise, this is the case that matters most: one class puts a vertex on
-        /// the shared line where the other class's boundary passes through with no vertex at all.
-        /// That is a T-junction, the thing `resplit_overhang` exists to repair in today's engine.
-        /// On the boundary, and the lacking class had **both sections computed** — the only
-        /// sub-population that can speak about minting rather than about absent input.
-        on_boundary_complete: usize,
-        /// On the boundary, but the lacking class's section producer declined. Same confound that
-        /// accounted for 42/42 of the inside-disagreements; measured here rather than modelled.
-        on_boundary_missing_section: usize,
-        /// Boundary a class could not build: four-plane naming skips and canon-degenerate triples.
-        /// Both look like absent input downstream, so they are surfaced, not folded in.
-        chord_skips: usize,
-        chord_degenerate: usize,
-        /// Containment genuinely undecidable and not on any boundary. Counted, never read as
-        /// "outside" — reading a reject as a negative is a mistake this work already made once.
-        undecided: usize,
-    }
-
-    /// Is the three-plane point `t` inside any face either solid seats on class `c`? Rejections are
-    /// reported separately rather than folded into "outside" — reading a reject as a negative is a
-    /// mistake this line of work has already made once.
-    #[allow(clippy::too_many_arguments)]
-    fn inside_a_host_face(
-        m: &Model,
-        a: Handle<Solid>,
-        b: Handle<Solid>,
-        planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Face>, usize>,
-        inc_a: &arrange::EdgePlanes,
-        inc_b: &arrange::EdgePlanes,
-        canon: &[usize],
-        c: usize,
-        t: [usize; 3],
-    ) -> Result<bool, BoolError> {
-        let canonize = |x: [usize; 3]| {
-            let mut v = [canon[x[0]], canon[x[1]], canon[x[2]]];
-            v.sort_unstable();
-            v
-        };
-        let mut rejected = None;
-        for (solid, inc) in [(a, inc_a), (b, inc_b)] {
-            for sh in solid_shell_handles(m, solid) {
-                for &fh in &m.shells.get(sh).faces {
-                    let fi = surf_ix[&fh];
-                    if canon[fi] != c {
-                        continue;
-                    }
-                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc, planes, canon) else {
-                        continue;
-                    };
-                    let ring: Vec<[usize; 3]> = ts.into_iter().map(canonize).collect();
-                    match arrange::point_in_ring(planes, c, t, &ring) {
-                        Ok(true) => {
-                            // Inside the outer loop, but a point inside a hole is outside the face.
-                            let in_hole = arrange::hole_rings(m, fh, fi, inc, planes, canon)
-                                .map(|hs| {
-                                    hs.into_iter().any(|r| {
-                                        let h: Vec<[usize; 3]> =
-                                            r.into_iter().map(canonize).collect();
-                                        arrange::point_in_ring(planes, c, t, &h) == Ok(true)
-                                    })
-                                })
-                                .unwrap_or(false);
-                            if !in_hole {
-                                return Ok(true);
-                            }
-                        }
-                        Ok(false) => {}
-                        Err(e) => rejected = Some(e),
-                    }
-                }
-            }
-        }
-        match rejected {
-            Some(e) => Err(e),
-            None => Ok(false),
-        }
     }
 
     // A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.

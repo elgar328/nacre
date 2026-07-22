@@ -29,8 +29,6 @@ use nacre_scalar::frame3::{
     Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
 };
 use nacre_scalar::{Orient, Rat};
-use nacre_store::Handle;
-use nacre_topo::{Model, Origin, Vertex};
 
 /// Whether any of the named planes is rotated — the per-predicate routing signal.
 ///
@@ -392,24 +390,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    fn boundary_verts(m: &Model, s: Handle<Solid>) -> Vec<Handle<nacre_topo::Vertex>> {
-        let mut seen = std::collections::HashSet::new();
-        let mut vs = Vec::new();
-        let sh = m.solids.get(s).outer;
-        for &fh in &m.shells.get(sh).faces {
-            for he in &m.faces.get(fh).outer.half_edges {
-                if let Some(bd) = m.edges.get(he.edge).bounds {
-                    for vh in bd {
-                        if seen.insert(vh) {
-                            vs.push(vh);
-                        }
-                    }
-                }
-            }
-        }
-        vs
     }
 
     /// The independent-normal plane triples of a cuboid (each meets at one corner).

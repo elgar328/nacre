@@ -39,14 +39,9 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
-use crate::{
-    BoolError, PlaneInfo, edge_incidence, face_half_edges, reject, solid_shell_handles, tag,
-};
-use nacre_geom::intersect::three_planes;
-use nacre_math::Point3;
+use crate::{BoolError, PlaneInfo, edge_incidence, reject, tag};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Loop, Model, Orientation, Solid, Vertex};
-use std::cmp::Ordering;
 use std::collections::HashMap;
 
 /// A solid's edges, each with its endpoints and the planes of its two faces.
