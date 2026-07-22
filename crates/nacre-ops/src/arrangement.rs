@@ -1919,10 +1919,10 @@ mod tests {
         }])
         .unwrap();
         let a = m.live_solids[0];
-        let mut faces_tab = collect_planes(&m, a).unwrap();
+        let faces_tab = collect_planes(&m, a).unwrap();
         // One prism: no two faces are coplanar, so `plane_ix` is the identity and a face index and
         // its plane id coincide. Built through the real path anyway, so the test cannot drift.
-        let canon = crate::fill_classes(&mut faces_tab);
+        let canon = crate::plane_classes(&faces_tab);
         let (planes, _plane_ix) = crate::dense_planes(&faces_tab, &canon);
         assert_eq!(planes.len(), faces_tab.len(), "no coplanar pair in a prism");
 

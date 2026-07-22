@@ -1224,15 +1224,6 @@ pub(crate) struct PlaneInfo {
     /// `collect_planes` builds it once). `None` on the axis-aligned path, where `tri`'s
     /// f64 coordinates are already exact and the geom predicates are used directly.
     pub(crate) tri_pt3: Option<[Pt3; 3]>,
-    /// The **plane class** this face's plane belongs to — `plane_classes`' root index, filled by
-    /// `plane_index_setup` once the classes are known; `usize::MAX` until then (and in a hand-built
-    /// `PlaneInfo`, where no class table exists).
-    ///
-    /// `planes` is a **per-face** table while the arrangement reasons **per plane**, so the same
-    /// `usize` means "face" in one place and "plane" in another. Four bugs came from comparing the
-    /// two: an index that names a plane must be a class root, and this field is what lets a
-    /// predicate *check* that (`debug_assert!(planes[i].class == i)`) instead of trusting it.
-    pub(crate) class: usize,
 }
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
@@ -1572,7 +1563,6 @@ pub(crate) fn collect_planes(
                 orient: face.orientation,
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
-                class: usize::MAX, // filled by `plane_index_setup` once the classes exist
             });
         }
     }
@@ -1705,7 +1695,7 @@ fn plane_index_setup(
     }
     let inc_a = arrange::edge_faces(model, a, &surf_ix)?;
     let inc_b = arrange::edge_faces(model, b, &surf_ix)?;
-    let canon = fill_classes(&mut planes);
+    let canon = plane_classes(&planes);
     let (geom, plane_ix) = dense_planes(&planes, &canon);
     Ok(PlaneSetup {
         planes,
@@ -1716,24 +1706,6 @@ fn plane_index_setup(
         geom,
         plane_ix,
     })
-}
-
-/// Union-find the coplanar faces into plane classes, and tell each `PlaneInfo` which class it is on.
-///
-/// Coplanar planes → one class, so no exact predicate ever forms a `det=0` triple from two
-/// coplanar faces meeting a vertex (the cantilever-step degeneracy).
-///
-/// The classes exist only once the whole table is assembled, so this is where a `PlaneInfo` learns
-/// which plane it is on. Every index that *names a plane* (a triple's element, `wc`, a wall, a
-/// predicate argument) must be one of these roots; `class` is what lets a consumer assert that
-/// rather than assume it. **Anything that builds a plane table calls this** — a table whose `class`
-/// is left unfilled is invisible to that check.
-pub(crate) fn fill_classes(planes: &mut [PlaneInfo]) -> Vec<usize> {
-    let canon = plane_classes(planes);
-    for (i, pi) in planes.iter_mut().enumerate() {
-        pi.class = canon[i];
-    }
-    canon
 }
 
 /// One plane of the arrangement, indexed by a **dense** class id.
@@ -2184,7 +2156,7 @@ fn uf_find(parent: &mut [usize], x: usize) -> usize {
 /// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
 // Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
 #[cfg_attr(not(test), allow(dead_code))]
-fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
+pub(crate) fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
     let n = planes.len();
     let mut parent: Vec<usize> = (0..n).collect();
     for i in 0..n {
@@ -3857,12 +3829,12 @@ pub mod tests {
         };
         let r = boolean_one(&mut m, BoolKind::Cut, l, stub).expect("the cut");
         m.rebuild_adjacency();
-        let mut faces_tab = collect_planes(&m, r).unwrap();
+        let faces_tab = collect_planes(&m, r).unwrap();
         let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
         for (i, pi) in faces_tab.iter().enumerate() {
             surf_ix.insert(pi.face, i);
         }
-        let canon = fill_classes(&mut faces_tab);
+        let canon = plane_classes(&faces_tab);
         let (planes, plane_ix) = dense_planes(&faces_tab, &canon);
         let inc = arrange::edge_faces(&m, r, &surf_ix).unwrap();
         for &fh in &m.shells.get(m.solids.get(r).outer).faces {
@@ -5008,7 +4980,6 @@ pub mod tests {
             // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
             tri_pt3: None,
-            class: usize::MAX,
         };
         let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
         let planes = vec![

@@ -271,8 +271,8 @@ mod tests {
     /// `PlaneGeom` the engine does. A single convex operand has no coplanar pair, so the numbering
     /// is the identity — indices below name a face and its plane interchangeably.
     fn plane_table(m: &Model, s: Handle<Solid>) -> Vec<PlaneGeom> {
-        let mut faces = collect_planes(m, s).unwrap();
-        let canon = crate::fill_classes(&mut faces);
+        let faces = collect_planes(m, s).unwrap();
+        let canon = crate::plane_classes(&faces);
         crate::dense_planes(&faces, &canon).0
     }
     use nacre_math::Point3;
