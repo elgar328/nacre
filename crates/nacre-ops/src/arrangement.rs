@@ -1389,7 +1389,14 @@ pub(crate) fn frame_audit(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Vec<ClassAudit>, BoolError> {
-    let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b)?;
+    let PlaneSetup {
+        planes,
+        surf_ix,
+        inc_a,
+        inc_b,
+        canon,
+        ..
+    } = plane_index_setup(model, a, b)?;
     let mut out = Vec::new();
     for wc in (0..planes.len()).filter(|&i| canon[i] == i) {
         let tr = trace_on_class(model, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
@@ -1462,7 +1469,14 @@ pub(crate) fn boolean(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(model, a, b)?;
+    let PlaneSetup {
+        planes,
+        surf_ix,
+        inc_a,
+        inc_b,
+        canon,
+        ..
+    } = plane_index_setup(model, a, b)?;
     let faces = trace_result_faces(model, kind, a, b, &planes, &surf_ix, &inc_a, &inc_b, &canon)?;
     // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
     // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
@@ -1552,7 +1566,14 @@ mod tests {
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
 
         // The shared class z=1: the class both solids seat a cap on.
         let wc = (0..planes.len())
@@ -1661,7 +1682,13 @@ mod tests {
         m.rebuild_adjacency();
         let a2 = m.live_solids[0];
         let b2 = m.live_solids[1];
-        let (planes, surf_ix, inc_a, _inc_b, canon) = plane_index_setup(&m, a2, b2).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            canon,
+            ..
+        } = plane_index_setup(&m, a2, b2).unwrap();
 
         // The y=1 class: a plane through all-y=1 points that a's reflex face sits on.
         let wc = (0..planes.len())
@@ -1768,7 +1795,13 @@ mod tests {
         m.rebuild_adjacency();
         let a2 = m.live_solids[0];
         let b2 = m.live_solids[1];
-        let (planes, surf_ix, inc_a, _inc_b, canon) = plane_index_setup(&m, a2, b2).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            canon,
+            ..
+        } = plane_index_setup(&m, a2, b2).unwrap();
         let wc = (0..planes.len())
             .map(|i| canon[i])
             .find(|&c| {
@@ -1953,7 +1986,14 @@ mod tests {
                 Point3::from_array([1.0, 1.0, 2.0]),
             );
             m.rebuild_adjacency();
-            let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+            let PlaneSetup {
+                planes,
+                surf_ix,
+                inc_a,
+                inc_b,
+                canon,
+                ..
+            } = plane_index_setup(&m, a, b).unwrap();
             let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
             let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
             let merged = merge_coincident(&tr.segs);
@@ -1980,7 +2020,14 @@ mod tests {
                 Point3::from_array([2.0, 3.0, 1.0]),
             );
             m.rebuild_adjacency();
-            let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+            let PlaneSetup {
+                planes,
+                surf_ix,
+                inc_a,
+                inc_b,
+                canon,
+                ..
+            } = plane_index_setup(&m, a, b).unwrap();
             let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
             let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
             let merged = merge_coincident(&tr.segs);
@@ -2015,7 +2062,14 @@ mod tests {
             Point3::from_array([2.0, 3.0, 1.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
         let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
         let merged = merge_coincident(&tr.segs);
@@ -2097,7 +2151,14 @@ mod tests {
             Point3::from_array([3.0, 1.0, 1.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
         let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
         let merged = merge_coincident(&tr.segs);
@@ -2150,7 +2211,14 @@ mod tests {
             Point3::from_array([2.0, 3.0, 1.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
         let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
         let merged = merge_coincident(&tr.segs);
@@ -2213,7 +2281,14 @@ mod tests {
             Point3::from_array([2.0, 3.0, 1.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
         let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
         let merged = merge_coincident(&tr.segs);
@@ -2265,7 +2340,14 @@ mod tests {
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         // a passes through z=1 (no seated face); find the class b caps at z=1.
         let wc = (0..planes.len())
             .map(|i| canon[i])
@@ -2317,7 +2399,14 @@ mod tests {
             Point3::from_array([2.0, 3.0, 1.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
         let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
         let merged = merge_coincident(&tr.segs);
@@ -2475,7 +2564,14 @@ mod tests {
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
@@ -2661,7 +2757,14 @@ mod tests {
             Point3::from_array([2.0, 2.0, 4.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
@@ -2748,7 +2851,14 @@ mod tests {
             Point3::from_array([3.5, 2.5, 1.5]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, u, slab).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, u, slab).unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
@@ -2932,7 +3042,14 @@ mod tests {
         let b = tilt(&mut m, b, &[Axis::Z, Axis::X]);
 
         // Combinatorial invariant (pre-assembly, A/B isolation).
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
@@ -3014,7 +3131,14 @@ mod tests {
         );
         let a = tilt(&mut m, a, &[Axis::Z, Axis::X]);
         let b = tilt(&mut m, b, &[Axis::Z, Axis::X]);
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         for wc in {
             let mut c: Vec<usize> = canon.clone();
             c.sort_unstable();
@@ -3069,7 +3193,14 @@ mod tests {
             Point3::from_array([3.0, 1.0, 1.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let wc = shared_cap_class(&m, a, b, &surf_ix, &planes, &canon);
         let tr = trace_on_class(&m, a, b, wc, &planes, &surf_ix, &inc_a, &inc_b, &canon);
         // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
@@ -3115,7 +3246,14 @@ mod tests {
             Point3::from_array([1.0, 1.0, 2.0]),
         );
         m.rebuild_adjacency();
-        let (planes, surf_ix, inc_a, inc_b, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            canon,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         for wc in {
             let mut c: Vec<usize> = canon.clone();
             c.sort_unstable();

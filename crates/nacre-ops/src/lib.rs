@@ -1656,13 +1656,16 @@ struct LocalFace {
 /// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
 /// Indices into the returned `planes`/`surf_ix` are shared, so a vertex of `a` and a face of
 /// `b` compose in one space.
-type PlaneSetup = (
-    Vec<PlaneInfo>,
-    HashMap<Handle<Face>, usize>,
-    arrange::EdgePlanes,
-    arrange::EdgePlanes,
-    Vec<usize>,
-);
+/// Destructure it with `..` (`let PlaneSetup { planes, canon, .. } = …`): the tables here grow as
+/// the arrangement learns to say "plane" and "face" in different index spaces, and a positional
+/// tuple made every one of those steps touch all ~25 call sites.
+pub(crate) struct PlaneSetup {
+    pub(crate) planes: Vec<PlaneInfo>,
+    pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
+    pub(crate) inc_a: arrange::EdgePlanes,
+    pub(crate) inc_b: arrange::EdgePlanes,
+    pub(crate) canon: Vec<usize>,
+}
 
 fn plane_index_setup(
     model: &Model,
@@ -1678,7 +1681,13 @@ fn plane_index_setup(
     let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
     let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
     let canon = fill_classes(&mut planes);
-    Ok((planes, surf_ix, inc_a, inc_b, canon))
+    Ok(PlaneSetup {
+        planes,
+        surf_ix,
+        inc_a,
+        inc_b,
+        canon,
+    })
 }
 
 /// Union-find the coplanar faces into plane classes, and tell each `PlaneInfo` which class it is on.
@@ -7264,7 +7273,7 @@ pub mod tests {
             Point3::from_array([0.0, 0.0, z0 + h1]),
             Point3::from_array([dx, dy, z0 + h1 + h2]),
         );
-        let (planes, _, _, _, canon) = plane_index_setup(&m, a, b).unwrap();
+        let PlaneSetup { planes, canon, .. } = plane_index_setup(&m, a, b).unwrap();
         // The two `+X` walls: same plane x = dx, different face sizes (heights h1 vs h2).
         let x_walls: Vec<usize> = (0..planes.len())
             .filter(|&i| {
@@ -7311,7 +7320,13 @@ pub mod tests {
             Point3::from_array([1.1, 0.35, 0.5]),
             Point3::from_array([1.4, 0.65, 2.5]),
         );
-        let (planes, surf_ix, inc_a, _, canon) = plane_index_setup(&m, overhung, cutter).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            canon,
+            ..
+        } = plane_index_setup(&m, overhung, cutter).unwrap();
         let mut checked = 0usize;
         for sh in solid_shell_handles(&m, overhung) {
             for &fh in &m.shells.get(sh).faces {
@@ -7365,7 +7380,13 @@ pub mod tests {
             Point3::from_array([0.4, 0.4, 0.5]),
             Point3::from_array([0.6, 0.6, 2.5]),
         );
-        let (planes, surf_ix, inc_a, _, canon) = plane_index_setup(&m, chained, probe).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            canon,
+            ..
+        } = plane_index_setup(&m, chained, probe).unwrap();
         // The fixture must actually merge two faces into one class, or this proves nothing.
         assert!(
             canon.iter().enumerate().any(|(i, &c)| c != i),
@@ -7414,7 +7435,13 @@ pub mod tests {
             Point3::from_array([1.1, 0.35, 0.5]),
             Point3::from_array([1.4, 0.65, 2.5]),
         );
-        let (planes, surf_ix, inc_a, _, canon) = plane_index_setup(&m, chained, probe).unwrap();
+        let PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            canon,
+            ..
+        } = plane_index_setup(&m, chained, probe).unwrap();
         assert!(
             canon.iter().enumerate().any(|(i, &c)| c != i),
             "fixture has no split plane — a sibling face is what this test is about"
