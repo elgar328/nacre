@@ -451,6 +451,7 @@ mod tests {
                 n_out: pu[0].n_out,
                 orient: pu[0].orient,
                 tri_pt3: None,
+                class: usize::MAX,
             })
             .collect();
         assert!(

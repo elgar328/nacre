@@ -1581,6 +1581,15 @@ pub(crate) struct PlaneInfo {
     /// `collect_planes` builds it once). `None` on the axis-aligned path, where `tri`'s
     /// f64 coordinates are already exact and the geom predicates are used directly.
     pub(crate) tri_pt3: Option<[Pt3; 3]>,
+    /// The **plane class** this face's plane belongs to — `plane_classes`' root index, filled by
+    /// `plane_index_setup` once the classes are known; `usize::MAX` until then (and in a hand-built
+    /// `PlaneInfo`, where no class table exists).
+    ///
+    /// `planes` is a **per-face** table while the arrangement reasons **per plane**, so the same
+    /// `usize` means "face" in one place and "plane" in another. Four bugs came from comparing the
+    /// two: an index that names a plane must be a class root, and this field is what lets a
+    /// predicate *check* that (`debug_assert!(planes[i].class == i)`) instead of trusting it.
+    pub(crate) class: usize,
 }
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
@@ -1907,6 +1916,7 @@ pub(crate) fn collect_planes(
                 n_out,
                 orient: face.orientation,
                 tri_pt3,
+                class: usize::MAX, // filled by `plane_index_setup` once the classes exist
             });
         }
     }
@@ -2055,6 +2065,12 @@ fn plane_index_setup(
     // Coplanar planes → one class, so `point_in_solid_idx` never forms a `det=0` triple from two
     // coplanar faces meeting a vertex (the cantilever-step degeneracy).
     let canon = plane_classes(&planes);
+    // The classes are known only now, so this is where a `PlaneInfo` learns which plane it is on.
+    // Every index that *names a plane* (a triple's element, `wc`, a wall, a predicate argument)
+    // must be one of these roots; `class` is what lets a consumer assert that rather than assume it.
+    for (i, pi) in planes.iter_mut().enumerate() {
+        pi.class = canon[i];
+    }
     Ok((planes, surf_ix, inc_a, inc_b, canon))
 }
 
@@ -6687,6 +6703,7 @@ pub mod tests {
             n_out: Vector3::from_array([0.0; 3]),
             orient: Orientation::Forward,
             tri_pt3: None,
+            class: usize::MAX,
         };
         let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
         let planes = vec![
@@ -9023,6 +9040,7 @@ pub mod tests {
             n_out: normal,
             orient: Orientation::Forward,
             tri_pt3: None,
+            class: usize::MAX,
         }
     }
 
