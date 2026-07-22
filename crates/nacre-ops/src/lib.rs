@@ -6666,6 +6666,52 @@ pub mod tests {
         assert_eq!(a, b, "a rejected pad must leave the live model untouched");
     }
 
+    /// **Chaining onto a fused boss.** The fuse leaves the base's `z=1` face a *ring* — a face with
+    /// a hole where the boss sits — and the second boolean cuts through both. Every plane class the
+    /// cut opens then meets that ring along the **hole's own edge**, which is the case that used to
+    /// label inconsistently: the ring's neighbouring vertices there point *into* the hole, so
+    /// reading the occupied side off a flank put the material on the wrong side of `W`. The side
+    /// now comes from the ring's travel ([`trace::run_body_above`]), and the run leaves as its own
+    /// homogeneous segment rather than being swallowed by the straddling stretch beside it.
+    ///
+    /// Hand volume: `1 + 0.5·0.5·1` fused, less the cutter's `0.2·0.2` column over `z ∈ [0.5, 2]`
+    /// — `1.25 − 0.06 = 1.19`. The same shape is scored against OCCT by
+    /// `boss_fuse_then_cut_matches_occt`, but that oracle is `#[ignore]`d, so this is the copy that
+    /// runs on every `cargo test`.
+    #[test]
+    fn a_boss_fused_then_cut_through() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let boss = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, 1.0]),
+            Point3::from_array([0.75, 0.75, 2.0]),
+        );
+        let bossed = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        assert!(
+            (nacre_props::mass_props(&m, bossed).unwrap().volume - 1.25).abs() < 1e-12,
+            "the fused boss itself"
+        );
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.5]),
+            Point3::from_array([0.6, 0.6, 2.5]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, bossed, cutter).expect("the chained cut");
+        m.rebuild_adjacency();
+        assert!(
+            (nacre_props::mass_props(&m, r).unwrap().volume - 1.19).abs() < 1e-12,
+            "base + boss less the drilled column: {}",
+            nacre_props::mass_props(&m, r).unwrap().volume
+        );
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "a chained result is still a clean model"
+        );
+    }
+
     /// The kernel's answer for a boss that misses the face, stated on its own so nobody "fixes" the
     /// boolean to reject it: fusing two solids that do not touch **is** two solids, and both are
     /// whole. Only `pad` refuses that outcome, because a pad is defined as material joined to a face
@@ -7358,7 +7404,11 @@ pub mod tests {
     /// instead, and the two are opposite exactly when the root face is `Reversed`
     /// (`orient_sign == -1`) — which no `add_cuboid` face ever is, but a face an earlier boolean
     /// re-emitted flipped is. `graze_above` read `side_of` raw, so on a pocket wall it flipped the
-    /// wrong label bit; `arrange::label_side` converts.
+    /// wrong label bit. It no longer reads a point's side at all — [`trace::run_body_above`] derives
+    /// the occupied side from the ring's travel, and the frame term cancels there because
+    /// `order_along`'s direction and the label frame are defined by the same stored normal — but
+    /// this class stays the corpus's only crossed-frame witness, so it is what would catch a
+    /// producer that regresses to a raw `side_of`.
     ///
     /// What this pins, measured before the fix (2026-07-22):
     /// - the pocket fixture has 5 `orient_sign == -1` classes carrying seated *and* graze segments
@@ -7460,6 +7510,13 @@ pub mod tests {
         // outward normal points into the void, so the stored normal `+x` makes "above" the material
         // side `x > 0.7`). The wall is seated with its body above; the two side walls and the floor
         // graze it from `x < 0.7`, i.e. below. Crossed frames invert the grazes.
+        //
+        // The **box's top face** grazes it too, from `x > 0.7`: the pocket's opening makes that face
+        // a notched region whose edge rides this plane with the material outside the pocket. That is
+        // a run whose flanks *differ*, which the engine used to read as a straddling transversal —
+        // this class is the corpus's only `Reversed` root, so it is also the only place the frame
+        // handling of `trace::run_body_above` is exercised against a crossed frame: the three
+        // `false` entries below are the pre-existing answers, unchanged by the new rule.
         let (m, pc, bx) = boxed
             .iter()
             .find_map(|(n, m, a, b)| (*n == "pocket_corner_cut").then_some((m, *a, *b)))
@@ -7477,8 +7534,9 @@ pub mod tests {
         );
         assert_eq!(
             wall.grazes,
-            vec![false; 3],
-            "walls/floor graze from x < 0.7"
+            vec![true, false, false, false],
+            "the top face grazes from x > 0.7 (its pocket-opening edge, material outside); \
+             the two side walls and the floor graze from x < 0.7"
         );
         assert_eq!(wall.failed_at, None, "the class labels consistently");
     }
@@ -8541,11 +8599,15 @@ pub mod tests {
     }
 
     #[test]
-    fn cut_by_an_overhanging_boss_carrying_a_pin_is_rejected() {
+    fn cut_by_an_overhanging_boss_carrying_a_pin_owes_a_notch() {
         // Same seating, but the tool carries a pin reaching below the contact plane, so the plane
         // no longer separates the solids and the cut owes a real notch (1 − 0.2·0.2·0.5 = 0.98).
-        // We cannot build that yet, and emitting the whole cap would be silently wrong — so this
-        // pins the guard that keeps the widening above honest.
+        //
+        // This used to be an honest reject: the tool's z=1 cap is an annulus-like face whose
+        // *inner* edge rides the pin's walls, and reading its occupancy off the ring's flank put
+        // the material on the wrong side, so the class would not label. With the side read from
+        // the ring's travel instead (`trace::run_body_above`), the notch comes out at the
+        // hand-computed volume with a clean model.
         let mut m = Model::new();
         let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let block = m.add_cuboid(
@@ -8563,9 +8625,17 @@ pub mod tests {
             (nacre_props::mass_props(&m, tool).unwrap().volume - 1.02).abs() < 1e-12,
             "the pinned tool itself"
         );
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Cut, base, tool),
-            Err(BoolError::Unsupported)
+        let notched =
+            boolean_one(&mut m, BoolKind::Cut, base, tool).expect("the notch is buildable");
+        m.rebuild_adjacency();
+        assert!(
+            (nacre_props::mass_props(&m, notched).unwrap().volume - 0.98).abs() < 1e-12,
+            "the notch the tool owes: {}",
+            nacre_props::mass_props(&m, notched).unwrap().volume
+        );
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "a notched result is still a clean model"
         );
     }
 

@@ -25,8 +25,9 @@
 //!   (`EdgePlanes` incidences are faces, so `other()`/`pa == own` must match raw), and the
 //!   `declined` log. Reading `n_out` off a class representative can flip a seated face inside out,
 //!   because two faces of one plane may have **opposite** normals.
-//! - **An index that states a *plane class's* label frame is a class root** — [`label_side`] and
-//!   `orient_sign(wc)` are defined about the class root's stored normal, by construction.
+//! - **An index that states a *plane class's* label frame is a class root** — the `[*_above,
+//!   *_below]` frame and `orient_sign(wc)` are defined about the class root's stored normal, by
+//!   construction (see [`side_of`] for the trap that hides in reading it raw).
 //! - **Exception:** the code that *defines* the classes (`crate::fill_classes` →
 //!   `shares_or_coplanar`) runs before they exist and takes face indices.
 //!
@@ -730,26 +731,18 @@ fn loop_triples(
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
 ///
 /// `+1` is the side [`PlaneInfo::tri`]'s right-hand normal points to — that is `n_out(q)`, the face's
-/// **outward** side, since `outer_tri` winds the triangle outward. That is *not* the frame the
-/// arrangement's labels are stated in: see [`label_side`].
+/// **outward** side, since `outer_tri` winds the triangle outward.
+///
+/// ★ **That is not the frame the arrangement's labels are stated in.** A plane class's
+/// `[*_above, *_below]` labels are about the class root's **stored surface normal** — the convention
+/// `SegKind::Seated{body_above}` and `emit_faces`' `flip` are written against — and the two frames
+/// differ by [`orient_sign`], which is `-1` exactly when the root face is `Reversed`. No
+/// `add_cuboid` face ever is, but a face an earlier boolean re-emitted flipped is (a pocket wall),
+/// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
+/// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
+/// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
 pub(crate) fn side_of(planes: &[PlaneInfo], t: [usize; 3], q: usize) -> i8 {
     t_orient3d(planes, t[0], t[1], t[2], q)
-}
-
-/// The side of class plane `wc` that `t` lies on **in the label frame** — the frame the plane-class
-/// arrangement states its `[*_above, *_below]` cell labels in, which is the class root's **stored
-/// surface normal** (`+1` = "above"). That convention is what `SegKind::Seated{body_above}` and
-/// `emit_faces`' `flip` are written against.
-///
-/// [`side_of`] answers in the root's *outward* frame instead, and the two differ by
-/// [`orient_sign`] — which is `-1` exactly when the class root face is `Reversed`. No `add_cuboid`
-/// face ever is, but a face an earlier boolean re-emitted flipped is (a pocket wall), so a producer
-/// that reads `side_of` raw silently flips its bit on such a class.
-///
-/// **Use this whenever the answer *is* an above/below label.** Raw `side_of` is for reading a sign
-/// *difference* (does this edge cross `W`?), which is frame-free.
-pub(crate) fn label_side(planes: &[PlaneInfo], t: [usize; 3], wc: usize) -> i8 {
-    side_of(planes, t, wc) * orient_sign(planes, wc)
 }
 
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?

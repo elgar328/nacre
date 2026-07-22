@@ -27,21 +27,39 @@ pub(crate) enum SolidSide {
     B,
 }
 
+/// **Which arcs of the circle around an edge a wall fills**, over one sub-interval of that edge.
+///
+/// An arrangement edge on plane class `W` is the meeting of `W` with one other plane, so the little
+/// circle around it is cut into just two arcs — above `W` and below. A contributing face either
+/// fills both (it passes through `W` there) or exactly one (its own boundary lies along the edge
+/// there, and it hangs off to one side). That is the whole content of this enum, and `edge_mask`
+/// turns it into the label flip. It is the BRep spelling of a Nef local pyramid restricted to two
+/// planes, and the flip itself is binary winding propagation (Zhou et al. 2016).
+///
+/// ★ **The occupancy is a fact about the sub-interval, not about the face.** One face can fill both
+/// arcs over one stretch of `W ∩ fp` and one arc over the next — a notched or holed face does
+/// exactly that where its boundary rides the line. So a segment must be *homogeneous* in this kind:
+/// [`split_at_crossings`] subdivides segments later and every piece inherits the kind verbatim, so
+/// a mixed segment silently mislabels the pieces that disagree with it. Phase C therefore closes and
+/// reopens wherever the kind changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SegKind {
-    /// A face crossing the plane transversally. Crossing this segment in the arrangement flips
-    /// **both** the above-label and the below-label together. `mat` is which side of the directed
-    /// line `W ∩ fp` the solid's material lies on (`+1`/`-1`, relative to `d = n_W × n_fp`).
+    /// `L` runs through the face's **interior** here, so the face is on both sides of `W` and
+    /// crossing this segment flips the above-label and the below-label **together**. `mat` is which
+    /// side of the directed line `W ∩ fp` the solid's material lies on (`+1`/`-1`, relative to
+    /// `d = n_W × n_fp`).
     Transversal { mat: i8 },
-    /// A boundary edge of a face lying in the plane. Crossing it flips **one** label — the side
-    /// the seated face's body occupies (`body_above`).
+    /// A boundary edge of a face lying **in** `W`. The face is the boundary between material and
+    /// void on one side of `W`, so crossing it flips **one** label — the side the body occupies
+    /// (`body_above`, from the face's own outward normal against `W`'s stored normal).
     Seated { body_above: bool },
-    /// A wall that only **grazes** `W` along one edge (its body lies entirely on one side of `W`,
-    /// so it never crosses). Crossing this edge flips **one** label — the side the wall's body is
-    /// on **in the label frame** (`body_above`, read with [`arrange::label_side`], not raw
-    /// `side_of`) — exactly like `Seated`, but kept distinct so `edge_mask` can let a graze
-    /// override a coincident seated face's rim at a reflex dihedral (where the two disagree on
-    /// which side flips). A `Transversal` that genuinely crosses `W` still flips both.
+    /// `L` runs along the face's **boundary** here, so the face fills one arc only and crossing this
+    /// segment flips **one** label — `body_above`, the side it fills, from [`run_body_above`].
+    ///
+    /// Not "the face merely touches `W`": a face may pass clean through `W` elsewhere and still fill
+    /// one arc over *this* stretch, which is what the name `Graze` originally missed. Kept distinct
+    /// from `Seated` so `edge_mask` can let it override a coincident seated rim at a reflex
+    /// dihedral, where the two disagree on which side flips.
     Graze { body_above: bool },
 }
 
@@ -110,10 +128,11 @@ struct Node {
     flanks_differ: bool,
     /// A single on-line vertex with equal flanks — a tangential touch, not a crossing.
     single_touch: bool,
-    /// `Some(body_above)` for a two-vertex run whose flanks share a side — the face grazes `W`
-    /// along this edge with its body on that side, stated in the **label frame**
-    /// ([`arrange::label_side`]). The graze segment emitted for the run is a one-bit flip
-    /// (`SegKind::Graze`). `None` for crossings and flank-differing runs.
+    /// `Some(body_above)` for **every** run — the side of `W` the face occupies along it, in the
+    /// label frame, from [`run_body_above`]. A run is an edge of the face lying on `L`, so the face
+    /// is on one side of it no matter what the ring does afterwards; `flanks_differ` is a parity
+    /// fact, not an occupancy one, and must not gate this. `None` only for a strict crossing or a
+    /// single-vertex touch, which are points rather than intervals.
     graze_above: Option<bool>,
 }
 
@@ -253,19 +272,16 @@ fn trace_transversal_face(
                     // anything; the interior points are names the arrangement may split at.
                     let id = run_counter;
                     run_counter += 1;
-                    // Flanks on the same side ⇒ the face grazes W along this edge with its body on
-                    // that side. Flanks differing ⇒ the face crosses through ⇒ a true transversal,
-                    // not a graze. The side must be read in the **label frame**
-                    // (`arrange::label_side`), not `side_of`'s outward frame: `body_above` is a
-                    // label bit, and the two frames are opposite on a `Reversed` class root (a wall
-                    // an earlier boolean re-emitted flipped, e.g. a pocket wall). `side` itself
-                    // stays raw — its other uses read sign *differences*, which are frame-free.
-                    let graze_above = (!flanks_differ).then_some(
-                        arrange::label_side(planes, ring[(run_start + n - 1) % n], wc) > 0,
-                    );
                     let names: Option<Vec<usize>> = (0..m).map(name).collect();
                     match names {
                         Some(rs) => {
+                            // Every run is one-sided: it is an *edge* of `f` lying on `L`, so `f`
+                            // is on one side of it whatever the ring does afterwards.
+                            // `flanks_differ` says only whether the sweep's parity toggles here
+                            // (Phase B gives it to `flip`) — it is not an occupancy fact, and
+                            // gating the side on it left a crossing run classified as a
+                            // straddling transversal.
+                            let graze_above = Some(run_body_above(planes, wc, fc, fp, &rs));
                             for r in rs {
                                 nodes.push(Node {
                                     r,
@@ -349,15 +365,23 @@ fn trace_transversal_face(
         let forced =
             k + 1 < nodes.len() && nodes[k].run.is_some() && nodes[k].run == nodes[k + 1].run;
         let covered = parity == 1 || forced;
-        // A segment opened purely by a forced run while outside material is a graze gap; one
-        // spanning material (parity) is a real transversal boundary even if a run rides along it.
-        let opening_graze = if forced && parity == 0 {
-            nodes[k].graze_above
-        } else {
-            None
-        };
+        // The kind of the gap *after* node `k`, as a fact about that gap alone: riding a run means
+        // `L` is on `f`'s boundary there, so `f` occupies one side; any other covered gap has `L`
+        // in `f`'s interior, so `f` straddles. `parity` says whether the gap is covered, not which
+        // arcs it fills — reading occupancy off it classified a hole's edge as a straddle.
+        let gap_graze = forced.then(|| {
+            nodes[k]
+                .graze_above
+                .expect("every run node carries its occupied side")
+        });
         match (seg_start, covered) {
-            (None, true) => seg_start = Some((nodes[k].r, opening_graze)),
+            (None, true) => seg_start = Some((nodes[k].r, gap_graze)),
+            // The kind changes here, so close and reopen: a segment must be homogeneous, because
+            // `split_at_crossings` subdivides it later and every piece inherits its kind.
+            (Some((a, graze)), true) if graze != gap_graze => {
+                emit(a, nodes[k].r, graze, out);
+                seg_start = Some((nodes[k].r, gap_graze));
+            }
             (Some((a, graze)), false) => {
                 emit(a, nodes[k].r, graze, out);
                 seg_start = None;
@@ -369,6 +393,39 @@ fn trace_transversal_face(
         // A line enters and leaves a bounded region equally; an unbalanced sweep is degenerate.
         out.declined.push((fp, "odd-parity"));
     }
+}
+
+/// Which side of `W` face `fp` occupies along an on-line run — **the left of the ring's travel**,
+/// stated in the label frame (`true` = above).
+///
+/// A run is an *edge* of `f`'s boundary lying on `L = W ∩ fp`, so along it `f` is on exactly one
+/// side, and which side is the universal boundary convention: **material is on the left of the
+/// ring's direction of travel**. That holds for an outer ring, a hole ring, a notch, and a reflex
+/// corner alike — it does not care how the ring continues past the run.
+///
+/// The earlier version read the side off the run's *flank* (the neighbouring off-line vertex)
+/// instead. That is only a proxy for "which way the ring bulges", and it is **inverted wherever the
+/// ring turns away from material**: on a hole ring the neighbours point into the hole, and on an
+/// outer-ring notch they point across the notch — both void. Measured: over the whole corpus the
+/// two agree on 251 of 252 runs, and the one disagreement (a fused boss's `z=1` annulus, where the
+/// run is the hole's edge) is the one the flank gets wrong.
+///
+/// **Derivation.** `order_along` runs along `d = n_s(wc) × n_s(fc)` (stored normals — see
+/// [`arrange::dir_sign`] and [`tolerant::t_plane_pair_dir_sign`]), and the label frame's "above" is
+/// `n_s(wc)` (see [`arrange::side_of`]). With `t = order_along(wc, fc, first, last)` the travel
+/// is `−t·d`, so material points along `n_out(fp) × (−t·d)`. Since `fp` is coplanar with its class
+/// root, `n_out(fp) = σ·n_s(fc)`, and the triple product collapses to
+/// `−t·σ·(1 − (n_s(fc)·n_s(wc))²)` — whose bracket is positive because the two planes are not
+/// parallel. Hence `body_above = (t·σ < 0)`. Note `orient_sign(wc)` **cancels**: the ordering
+/// direction and the label frame are defined by the same stored normal.
+///
+/// `σ` is an f64 dot of two **parallel** unit vectors (`fp` and `fc` are the same plane class), so
+/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`arrange::orient_sign`] and
+/// `trace_seated_face` already rely on. Everything else here is exact.
+fn run_body_above(planes: &[PlaneInfo], wc: usize, fc: usize, fp: usize, rs: &[usize]) -> bool {
+    let t = arrange::order_along(planes, wc, fc, rs[0], rs[rs.len() - 1]);
+    let sigma = planes[fp].n_out.dot(planes[fc].plane.normal());
+    (t < 0) == (sigma > 0.0)
 }
 
 /// Trace one solid on plane class `wc` (a canon root, i.e. an index into `planes`). This brick:
@@ -1047,6 +1104,21 @@ type Label = [bool; 4];
 /// The flip mask an edge applies when crossed, grouping its `merged` contributions **per solid**.
 /// Crossing the edge XORs this into the cell label.
 ///
+/// **The circle around the edge.** An arrangement edge is the intersection of exactly two planes —
+/// `W` and the wall — so the little circle around it has only two arcs to fill, above `W` and below.
+/// A solid's material fills an arc or it does not, and crossing the edge inside `W` flips a label
+/// exactly for the arcs the solid's boundary separates there:
+///
+/// ```text
+///        above (n_s(W))          [T,F] one arc  → flip the above bit
+///     ────────┼────────  W       [F,T] one arc  → flip the below bit
+///        below                   [T,T] both     → flip both
+/// ```
+///
+/// This is the BRep form of a Nef local pyramid (Hachenberger & Kettner, CGAL `Nef_3`) collapsed to
+/// two planes, and the XOR itself is binary winding-number propagation (Zhou et al. 2016, "Mesh
+/// Arrangements for Solid Geometry"; libigl `propagate_winding_numbers`).
+///
 /// Precedence per solid is **Graze > Seated > Transversal**:
 /// - A `Graze` is a wall touching W along this edge with its body on one side — the solid's true
 ///   material boundary here. It overrides a coincident `Seated` cap-rim: the two agree on a convex
@@ -1547,12 +1619,13 @@ mod tests {
         ]
     }
 
-    /// The transversal chord across a non-convex reflex plane — the cap chord — is produced whole,
-    /// collapsing the on-line edge, which the seated brick provably cannot do (it declines this
-    /// face). l_prism (profile (0,0),(2,0),(2,1),(1,1),(1,2),(0,2), extruded z∈[0,1]) cut at y=1:
-    /// the z=0 cap's trace is the single segment x∈[0,2], **not** [0,1]+[1,2].
+    /// The chord across a non-convex reflex plane — the cap chord — which the seated brick provably
+    /// cannot produce (it declines this face). l_prism (profile (0,0),(2,0),(2,1),(1,1),(1,2),(0,2),
+    /// extruded z∈[0,1]) cut at y=1: the z=0 cap covers x∈[0,2], as a **transversal** stretch
+    /// x∈[0,1] where `y=1` runs through the cap's interior plus a **graze** x∈[1,2] where the cap's
+    /// own boundary edge rides the line and the cap lies on one side of it.
     #[test]
-    fn the_cap_chord_collapses_the_on_line_edge() {
+    fn the_cap_chord_stops_where_the_on_line_edge_begins() {
         let profile = Profile2d {
             points: vec![
                 Point2::from_array([0.0, 0.0]),
@@ -1616,24 +1689,27 @@ mod tests {
             })
             .collect();
 
-        // The cap chords: the z=0 (and z=1) cap ∩ (y=1) is the single segment x∈[0,2]. A cap is a
-        // horizontal segment (both endpoints share z), which distinguishes it from the reflex wall
-        // x=1's own vertical chord (1,1,0)-(1,1,1), a legitimate different face's trace.
+        // The cap chords: the z=0 (and z=1) cap ∩ (y=1) covers x∈[0,2]. A cap is a horizontal
+        // segment (both endpoints share z), which distinguishes it from the reflex wall x=1's own
+        // vertical chord (1,1,0)-(1,1,1), a legitimate different face's trace.
         let horiz_z0: Vec<_> = chords
             .iter()
             .filter(|(u, v)| u[2] == v[2] && u[2] == 0 && u[1] == 1_000_000 && v[1] == 1_000_000)
             .collect();
-        // ★ Falsifiable core: a failed collapse yields TWO horizontal chords ([0,1]+[1,2], an x=1
-        // endpoint appears); a correct collapse yields exactly ONE spanning [0,2].
+        // ★ Falsifiable core: the on-line edge does not merge into the chord that runs through the
+        // cap's interior. x∈[0,1] is interior (the cap straddles y=1) and stays transversal;
+        // x∈[1,2] is the cap's own boundary edge, so the cap is on one side there and it leaves as
+        // a graze — see `run_body_above`. A single chord spanning [0,2] would be the old,
+        // occupancy-blind bridging.
         assert_eq!(
             horiz_z0.len(),
             1,
-            "the on-line edge collapsed to one chord: {chords:?}"
+            "one transversal chord, the interior stretch: {chords:?}"
         );
         assert_eq!(
             *horiz_z0[0],
-            (rp([0.0, 1.0, 0.0]), rp([2.0, 1.0, 0.0])),
-            "cap chord spans x∈[0,2]: {chords:?}"
+            (rp([0.0, 1.0, 0.0]), rp([1.0, 1.0, 0.0])),
+            "the interior chord is x∈[0,1]: {chords:?}"
         );
         // The seated brick provably cannot produce this: it declines the z=0 cap as `not-seated`
         // (its class is z=0, not y=1). So a transversal chord riding fp=z=0 is new capability.
@@ -1647,9 +1723,15 @@ mod tests {
 
     /// The flanks-equal (tangential on-line edge) branch: u_prism's notch bottom on y=1. The run
     /// x∈[1,2] is flanked by material on **both** sides (the two prongs), so it does not toggle
-    /// parity yet must still appear inside the trace. The cap ∩ y=1 is the single span x∈[0,3].
+    /// parity yet must still appear inside the trace.
+    ///
+    /// The cap ∩ y=1 covers x∈[0,3], but **not as one kind**: over the notch bottom the line is on
+    /// the cap's *boundary* and the cap lies below it, while on either side the line runs through
+    /// the cap's *interior* and the cap straddles. So the trace is `T[0,1] · G[1,2] · T[2,3]`, and
+    /// the graze's side is **below** — note the run's flanks (2,2.3) and (1,2) are both *above*,
+    /// which is why reading the side off a flank gets a notch backwards.
     #[test]
-    fn a_tangential_on_line_edge_still_spans() {
+    fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
         let profile = Profile2d {
             points: vec![
                 Point2::from_array([0.0, 0.0]),
@@ -1697,7 +1779,7 @@ mod tests {
             &mut out,
         );
 
-        let horiz_z0: Vec<_> = out
+        let mut horiz_z0: Vec<_> = out
             .segs
             .iter()
             .filter(|s| matches!(s.kind, SegKind::Transversal { .. }))
@@ -1710,15 +1792,37 @@ mod tests {
             })
             .filter(|(u, v)| u[2] == v[2] && u[2] == 0 && u[1] == 1_000_000 && v[1] == 1_000_000)
             .collect();
+        horiz_z0.sort();
         assert_eq!(
-            horiz_z0.len(),
-            1,
-            "tangential run bridged into one span: {horiz_z0:?}"
+            horiz_z0,
+            vec![
+                (rp([0.0, 1.0, 0.0]), rp([1.0, 1.0, 0.0])),
+                (rp([2.0, 1.0, 0.0]), rp([3.0, 1.0, 0.0])),
+            ],
+            "the interior stretches straddle; the notch bottom is not one of them"
         );
+
+        // ★ The run itself is covered, as a one-sided graze — coverage is not lost, the kind
+        //   differs. Its body is **below** (y < 1), the side the notch's material is on.
+        let graze_z0: Vec<_> = out
+            .segs
+            .iter()
+            .filter_map(|s| match s.kind {
+                SegKind::Graze { body_above } => {
+                    let (mut u, mut v) = (rp(pt(s.end[0], &planes)), rp(pt(s.end[1], &planes)));
+                    if u > v {
+                        std::mem::swap(&mut u, &mut v);
+                    }
+                    (u[2] == v[2] && u[2] == 0 && u[1] == 1_000_000 && v[1] == 1_000_000)
+                        .then_some((u, v, body_above))
+                }
+                _ => None,
+            })
+            .collect();
         assert_eq!(
-            horiz_z0[0],
-            (rp([0.0, 1.0, 0.0]), rp([3.0, 1.0, 0.0])),
-            "spans x∈[0,3]"
+            graze_z0,
+            vec![(rp([1.0, 1.0, 0.0]), rp([2.0, 1.0, 0.0]), false)],
+            "the notch bottom x∈[1,2], body below"
         );
     }
 
