@@ -2062,16 +2062,26 @@ fn plane_index_setup(
     }
     let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
     let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
-    // Coplanar planes → one class, so `point_in_solid_idx` never forms a `det=0` triple from two
-    // coplanar faces meeting a vertex (the cantilever-step degeneracy).
-    let canon = plane_classes(&planes);
-    // The classes are known only now, so this is where a `PlaneInfo` learns which plane it is on.
-    // Every index that *names a plane* (a triple's element, `wc`, a wall, a predicate argument)
-    // must be one of these roots; `class` is what lets a consumer assert that rather than assume it.
+    let canon = fill_classes(&mut planes);
+    Ok((planes, surf_ix, inc_a, inc_b, canon))
+}
+
+/// Union-find the coplanar faces into plane classes, and tell each `PlaneInfo` which class it is on.
+///
+/// Coplanar planes → one class, so `point_in_solid_idx` never forms a `det=0` triple from two
+/// coplanar faces meeting a vertex (the cantilever-step degeneracy).
+///
+/// The classes exist only once the whole table is assembled, so this is where a `PlaneInfo` learns
+/// which plane it is on. Every index that *names a plane* (a triple's element, `wc`, a wall, a
+/// predicate argument) must be one of these roots; `class` is what lets a consumer assert that
+/// rather than assume it. **Anything that builds a plane table calls this** — a table whose `class`
+/// is left unfilled is invisible to that check.
+pub(crate) fn fill_classes(planes: &mut [PlaneInfo]) -> Vec<usize> {
+    let canon = plane_classes(planes);
     for (i, pi) in planes.iter_mut().enumerate() {
         pi.class = canon[i];
     }
-    Ok((planes, surf_ix, inc_a, inc_b, canon))
+    canon
 }
 
 /// Whether three `Pt3` are **exactly collinear** (zero-area triangle), decided on their
@@ -3779,6 +3789,9 @@ pub mod tests {
     ) -> (Vec<PlaneInfo>, HashMap<Handle<Face>, usize>) {
         let mut planes = collect_planes(m, a).unwrap();
         planes.extend(collect_planes(m, b).unwrap());
+        // Same as `plane_index_setup`: the classes are only meaningful once both operands are in
+        // one table, and a table with unfilled `class` is invisible to the class-root checks.
+        fill_classes(&mut planes);
         let surf_ix = planes
             .iter()
             .enumerate()
