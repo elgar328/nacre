@@ -1,11 +1,11 @@
 //! Operations for the nacre kernel, plus a replayable operation log (design §6).
 //!
 //! [`Operation::Extrude`] (M2) sweeps a planar polygon profile into a prism;
-//! [`Operation::ImprintSketch`] (M4) splits an existing planar face along a
-//! closed profile — the first op that consumes a prior op's face by `Handle`
-//! (exposed via [`OpOutput`]) and supersedes a solid (design §2 live-solid
-//! semantics). Ops are applied by [`apply`] and folded by [`replay`]; every
-//! result is a **closed** solid, so `nacre-validate` applies fully.
+//! [`Operation::PadOnFace`]/[`Operation::PocketOnFace`] (M4) consume a prior op's face by
+//! `Handle` (exposed via [`OpOutput`]) and supersede a solid (design §2 live-solid
+//! semantics) — each is a tool prism plus a boolean, not a direct face-split. Ops are
+//! applied by [`apply`] and folded by [`replay`]; every result is a **closed** solid, so
+//! `nacre-validate` applies fully.
 
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
@@ -88,13 +88,6 @@ pub enum Operation {
         plane: SketchPlane,
         profile: Profile2d,
         dist: f64,
-    },
-    /// Imprint a closed `profile` onto an existing planar `face`, splitting it
-    /// into an outer face with the profile as a hole plus a coplanar region
-    /// face. The profile is expressed in a frame derived from the face (M4).
-    ImprintSketch {
-        face: Handle<Face>,
-        profile: Profile2d,
     },
     /// Pad a boss: extrude `profile` on a planar `face` into a tool prism (height
     /// `dist`) and `Fuse` it onto the solid — boolean sugar over [`Operation::Boolean`],
@@ -409,18 +402,12 @@ pub enum OpError {
     /// A curve/surface construction collapsed (collinear/coincident points, a
     /// zero-length profile edge).
     DegenerateGeometry,
-    /// An imprint target face is not planar (only planar faces support imprint
-    /// in M4; curved-face imprint arrives with the quadric milestones).
+    /// A pad/pocket target face is not planar (only planar faces carry a sketch frame;
+    /// curved-face features arrive with the quadric milestones).
     NonPlanarFace,
-    /// An imprint target face belongs to no live solid's outer shell (a stale
+    /// A pad/pocket target face belongs to no live solid's outer shell (a stale
     /// or non-live handle).
     FaceNotInLiveSolid,
-    /// The imprint/pad/pocket profile is not strictly inside the target face's region
-    /// (it crosses, sits outside, or overhangs the boundary, or touches a hole). A
-    /// face-local imprint needs a clean inner-loop hole; profiles that reach past the face
-    /// belong to a boolean pad/pocket (extrude + fuse/cut), not this path (cell
-    /// imprint-containment).
-    ProfileNotContainedInFace,
     /// A pocket's depth reaches through the solid: the carved prism is not blind, so `Cut`
     /// produced a through-hole with no floor face. `pocket` requires `dist` less than the
     /// thickness at the face (the boolean pocket path honestly rejects instead of the old
@@ -446,11 +433,6 @@ pub enum OpOutput {
     Extrude {
         solid: Handle<Solid>,
         faces: Vec<Handle<Face>>,
-    },
-    /// The superseding solid and the new coplanar region face (inside the hole).
-    ImprintSketch {
-        solid: Handle<Solid>,
-        region_face: Handle<Face>,
     },
     /// The superseding solid and the boss's top cap face.
     PadOnFace {
@@ -480,10 +462,6 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         } => {
             let (solid, faces) = extrude(model, plane, profile, *dist)?;
             Ok(OpOutput::Extrude { solid, faces })
-        }
-        Operation::ImprintSketch { face, profile } => {
-            let (solid, region_face) = imprint(model, *face, profile)?;
-            Ok(OpOutput::ImprintSketch { solid, region_face })
         }
         Operation::PadOnFace {
             face,
@@ -751,8 +729,7 @@ fn build_prism(
 }
 
 /// The start vertex of a half-edge (`bounds[0]` if forward, else `bounds[1]`).
-/// The target face of an imprint is part of a valid solid, so its edges are
-/// bounded.
+/// Every half-edge walked here belongs to a valid solid, so its edge is bounded.
 pub(crate) fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
     let [a, b] = model
         .edges
@@ -760,40 +737,6 @@ pub(crate) fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
         .bounds
         .expect("a solid's loop edge is bounded");
     if he.forward { a } else { b }
-}
-
-/// The result of splitting a planar face along a profile: the rebuilt outer face
-/// carrying the profile as a hole, plus the profile's segment edges. Used by
-/// [`imprint`], which finishes by adding a coplanar region face and calling
-/// [`finish_split`].
-struct Split {
-    solid_h: Handle<Solid>,
-    shell_h: Handle<Shell>,
-    /// The target face's surface and orientation (for a coplanar region face).
-    surface_h: Handle<Surface>,
-    orientation: Orientation,
-    /// Profile segment edges `base_i → base_{i+1}` (CCW about the outward normal).
-    base_pe: Vec<Handle<Edge>>,
-    /// The original face rebuilt with the profile as an inner-loop hole.
-    f_outer: Handle<Face>,
-}
-
-/// Split a planar `face` along a closed `profile`: push the profile's vertices
-/// and edges onto the face's plane (centred on the face, CCW about the outward
-/// normal) and build the outer face carrying the profile as a hole. The caller
-/// adds the faces that fill/raise the profile region, then calls [`finish_split`].
-/// Drop the axis of the face normal's largest component to project a planar point to 2D.
-/// An exact projection — a coordinate is discarded, never recomputed — so `orient2d` on the
-/// result stays exact (cell imprint-containment).
-fn planar_drop_axes(n: Vector3) -> (usize, usize) {
-    let a = [n[0].abs(), n[1].abs(), n[2].abs()];
-    if a[0] >= a[1] && a[0] >= a[2] {
-        (1, 2)
-    } else if a[1] >= a[2] {
-        (0, 2)
-    } else {
-        (0, 1)
-    }
 }
 
 fn proj2(p: Point3, (i, j): (usize, usize)) -> [f64; 2] {
@@ -839,40 +782,9 @@ fn segments_meet(p0: [f64; 2], p1: [f64; 2], q0: [f64; 2], q1: [f64; 2]) -> bool
         || (o4 == 0.0 && in_bbox(q0, q1, p1))
 }
 
-/// Whether `profile` is strictly inside the face region: inside `outer`, outside every
-/// hole, and touching no boundary edge. The imprint contract — a profile that reaches past
-/// the face makes an invalid inner loop (cell imprint-containment). All rings are exact 2D
-/// projections onto the face plane (dominant axis dropped).
-fn profile_strictly_in_region(
-    profile: &[[f64; 2]],
-    outer: &[[f64; 2]],
-    holes: &[Vec<[f64; 2]>],
-) -> bool {
-    for &v in profile {
-        if point_in_ring2(v, outer) != Some(true) {
-            return false;
-        }
-        if holes.iter().any(|h| point_in_ring2(v, h) != Some(false)) {
-            return false;
-        }
-    }
-    let m = profile.len();
-    let rings = std::iter::once(outer).chain(holes.iter().map(|h| h.as_slice()));
-    for ring in rings {
-        let rn = ring.len();
-        for i in 0..m {
-            let (p0, p1) = (profile[i], profile[(i + 1) % m]);
-            if (0..rn).any(|j| segments_meet(p0, p1, ring[j], ring[(j + 1) % rn])) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
 /// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
 /// centroid so a profile's `(0,0)` lands there), and its loops — the shared setup for placing a
-/// profile on a face (imprint / pad / pocket).
+/// profile on a face (pad / pocket).
 struct FaceFrame {
     solid_h: Handle<Solid>,
     shell_h: Handle<Shell>,
@@ -952,159 +864,6 @@ fn placed_profile_unchecked(
         .iter()
         .map(|p| frame.origin + frame.x * p[0] + frame.y * p[1])
         .collect())
-}
-
-/// [`placed_profile_unchecked`] plus the strict-containment requirement: inside the outer ring,
-/// outside every hole, touching no boundary. Otherwise the "hole" is not a clean inner loop and the
-/// result is silently invalid — validate sees only topology, props integrates the ring, and only
-/// tessellate's `NoEar` catches it (cell imprint-containment; dev-log.md). Used by `imprint`, which
-/// needs a bounded inner loop; a profile reaching past the face is a boolean pad/pocket instead.
-fn placed_profile(
-    model: &Model,
-    frame: &FaceFrame,
-    profile: &Profile2d,
-) -> Result<Vec<Point3>, OpError> {
-    let base_pts = placed_profile_unchecked(frame, profile)?;
-    let drop = planar_drop_axes(frame.n);
-    let profile2: Vec<[f64; 2]> = base_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let outer2: Vec<[f64; 2]> = frame.outer_pts.iter().map(|&p| proj2(p, drop)).collect();
-    let holes2: Vec<Vec<[f64; 2]>> = frame
-        .inner_loops
-        .iter()
-        .map(|l| {
-            l.half_edges
-                .iter()
-                .map(|he| proj2(model.vertices.get(he_start(model, *he)).point, drop))
-                .collect()
-        })
-        .collect();
-    if !profile_strictly_in_region(&profile2, &outer2, &holes2) {
-        return Err(OpError::ProfileNotContainedInFace);
-    }
-    Ok(base_pts)
-}
-
-fn prepare_face_split(
-    model: &mut Model,
-    face: Handle<Face>,
-    profile: &Profile2d,
-) -> Result<Split, OpError> {
-    let frame = face_frame(model, face)?;
-    let base_pts = placed_profile(model, &frame, profile)?;
-    let (surface_h, orientation) = (frame.surface_h, frame.orientation);
-
-    // Profile vertices and segment edges.
-    let m = base_pts.len();
-    let base_pv: Vec<Handle<Vertex>> = base_pts
-        .iter()
-        .map(|p| {
-            model.vertices.push(Vertex {
-                point: *p,
-                origin: Origin::Constructed,
-            })
-        })
-        .collect();
-    let base_pe: Vec<Handle<Edge>> = (0..m)
-        .map(|i| {
-            push_line_edge(
-                model,
-                base_pv[i],
-                base_pts[i],
-                base_pv[(i + 1) % m],
-                base_pts[(i + 1) % m],
-            )
-        })
-        .collect::<Result<_, _>>()?;
-
-    // Outer face: the original boundary with the profile as a hole — the profile
-    // edges reversed + `forward = false` (CW), so each pairs oppositely with the
-    // caller's region/wall use.
-    let hole_loop = Loop {
-        half_edges: base_pe
-            .iter()
-            .rev()
-            .map(|&edge| HalfEdge {
-                edge,
-                forward: false,
-            })
-            .collect(),
-    };
-    let f_outer = model.faces.push(Face {
-        surface: surface_h,
-        outer: frame.outer_loop,
-        inner: vec![hole_loop],
-        orientation,
-    });
-
-    Ok(Split {
-        solid_h: frame.solid_h,
-        shell_h: frame.shell_h,
-        surface_h,
-        orientation,
-        base_pe,
-        f_outer,
-    })
-}
-
-/// Supersede the split solid (design §2): rebuild its shell with `face` replaced
-/// by `new_faces`, push a new solid, and drop the old one from `live_solids`.
-fn finish_split(
-    model: &mut Model,
-    solid_h: Handle<Solid>,
-    shell_h: Handle<Shell>,
-    face: Handle<Face>,
-    new_faces: &[Handle<Face>],
-) -> Handle<Solid> {
-    let old_faces = model.shells.get(shell_h).faces.clone();
-    let mut faces = Vec::with_capacity(old_faces.len() + new_faces.len());
-    for &fh in &old_faces {
-        if fh == face {
-            faces.extend_from_slice(new_faces);
-        } else {
-            faces.push(fh);
-        }
-    }
-    let cavities = model.solids.get(solid_h).cavities.clone();
-    let new_shell = model.shells.push(Shell { faces });
-    let new_solid = model.push_solid(Solid {
-        outer: new_shell,
-        cavities,
-    });
-    // The old solid is no longer live (its old face lingers as arena).
-    model.live_solids.retain(|&s| s != solid_h);
-    new_solid
-}
-
-/// Imprint a closed `profile` onto a planar `face`: split it into an outer face
-/// carrying the profile as an inner-loop hole plus a coplanar region face inside
-/// it. Returns `(new solid, region face)`. The model shape is unchanged.
-fn imprint(
-    model: &mut Model,
-    face: Handle<Face>,
-    profile: &Profile2d,
-) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
-    let s = prepare_face_split(model, face, profile)?;
-
-    // Region face: profile forward (CCW), same surface/orientation, outward +n.
-    let region_loop = Loop {
-        half_edges: s
-            .base_pe
-            .iter()
-            .map(|&edge| HalfEdge {
-                edge,
-                forward: true,
-            })
-            .collect(),
-    };
-    let region_face = model.faces.push(Face {
-        surface: s.surface_h,
-        outer: region_loop,
-        inner: vec![],
-        orientation: s.orientation,
-    });
-
-    let new_solid = finish_split(model, s.solid_h, s.shell_h, face, &[s.f_outer, region_face]);
-    Ok((new_solid, region_face))
 }
 
 /// A face-local feature built as **tool body + boolean** (roadmap §9 unification): the profile
@@ -4907,163 +4666,6 @@ pub mod tests {
         assert_eq!(from_arrange, discovered_triples(&m));
     }
 
-    /// Faces / distinct edges / distinct vertices / cavities of a solid — order-free counts, so a
-    /// difference means a different shape rather than a different traversal.
-    fn shape_counts(m: &Model, s: Handle<Solid>) -> (usize, usize, usize, usize) {
-        let (mut faces, mut edges, mut verts) = (0usize, HashSet::new(), HashSet::new());
-        for sh in solid_shell_handles(m, s) {
-            for &fh in &m.shells.get(sh).faces {
-                faces += 1;
-                let f = m.faces.get(fh);
-                for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                    for he in &l.half_edges {
-                        edges.insert(he.edge);
-                        verts.insert(he_start(m, *he));
-                    }
-                }
-            }
-        }
-        (
-            faces,
-            edges.len(),
-            verts.len(),
-            m.solids.get(s).cavities.len(),
-        )
-    }
-
-    /// The shape OCCT scores as `imprinted_merge_matches_occt`: a cube imprinted on a **side** face,
-    /// fused with a box stacked on its top. Kept here because the oracle is `#[ignore]`d and so does
-    /// not run on a plain `cargo test`; the answer is the plain cube's fuse, by the same invariant as
-    /// [`an_imprinted_operand_answers_like_the_unimprinted_one`].
-    #[test]
-    fn an_imprint_on_a_side_face_fuses_like_a_plain_cube() {
-        let run = |imprint: bool| {
-            let (mut m, _top) = cube_with_top();
-            let mut s = m.live_solids[0];
-            if imprint {
-                let side = m.shells.get(m.solids.get(s).outer).faces[3];
-                let OpOutput::ImprintSketch { solid, .. } = apply(
-                    &mut m,
-                    &Operation::ImprintSketch {
-                        face: side,
-                        profile: small_square(),
-                    },
-                )
-                .unwrap() else {
-                    unreachable!()
-                };
-                s = solid;
-            }
-            let bx = m.add_cuboid(
-                Point3::from_array([0.0, 0.0, 1.0]),
-                Point3::from_array([1.0, 1.0, 2.0]),
-            );
-            m.rebuild_adjacency();
-            let r = boolean_one(&mut m, BoolKind::Fuse, s, bx).expect("the imprinted fuse");
-            m.rebuild_adjacency();
-            assert!(nacre_validate::validate(&m).is_empty(), "imprint={imprint}");
-            let p = nacre_props::mass_props(&m, r).unwrap();
-            (p.volume, p.area, shape_counts(&m, r))
-        };
-        let plain = run(false);
-        let imprinted = run(true);
-        assert!(
-            (plain.0 - 2.0).abs() < 1e-12,
-            "two stacked unit cubes: {}",
-            plain.0
-        );
-        assert!(
-            (plain.0 - imprinted.0).abs() < 1e-12,
-            "volume {plain:?} vs {imprinted:?}"
-        );
-        assert!(
-            (plain.1 - imprinted.1).abs() < 1e-12,
-            "area {plain:?} vs {imprinted:?}"
-        );
-        assert_eq!(plain.2, imprinted.2, "the seam leaked into the result");
-    }
-
-    /// **An imprint must not change any boolean's answer.** It subdivides a face into a holed
-    /// remainder plus a coplanar region face — a *selection* feature, not a shape change — so every
-    /// operation on the imprinted operand must return exactly what the plain one returns.
-    ///
-    /// This used to be three separate locks on an honest *rejection*
-    /// (`an_imprinted_{convex,nonconvex}_operand_rejects_as_coplanar_pair`,
-    /// `common_rejects_coplanar_faces_from_imprint`): the imprint's rim has no three-plane name,
-    /// because its two neighbours are the same plane, so the trace could not read the ring. The
-    /// engine now treats a ring that is coplanar seam all the way round as **not a boundary**
-    /// ([`arrange::face_boundary_rings`]), which restores the undivided face and opens all three.
-    ///
-    /// ★ Comparing the two runs beats asserting numbers: the expected value is *whatever the plain
-    /// operand gives*, so there is nothing to write down wrong. And because the seam now leaves no
-    /// trace at all, the match must hold for the **counts** too, not just the measures — a
-    /// difference there would mean the subdivision leaked into the result.
-    #[test]
-    fn an_imprinted_operand_answers_like_the_unimprinted_one() {
-        let bx = |lo: [f64; 3], hi: [f64; 3]| (Point3::from_array(lo), Point3::from_array(hi));
-        let cases = [
-            // (name, op, tool box, use the pocketed pair)
-            (
-                "convex fuse",
-                BoolKind::Fuse,
-                ([0.4, 0.4, 0.5], [1.5, 1.5, 1.5]),
-                false,
-            ),
-            (
-                "convex common",
-                BoolKind::Common,
-                ([0.2, 0.2, 0.2], [1.2, 1.2, 1.2]),
-                false,
-            ),
-            (
-                "non-convex cut",
-                BoolKind::Cut,
-                ([0.05, 0.05, 0.05], [0.15, 0.15, 0.15]),
-                true,
-            ),
-        ];
-        for (name, kind, (lo, hi), pocketed) in cases {
-            let run = |imprinted: bool| {
-                let (mut m, s) = match (pocketed, imprinted) {
-                    (false, false) => {
-                        let (m, _) = cube_with_top();
-                        let s = m.live_solids[0];
-                        (m, s)
-                    }
-                    (false, true) => imprinted_cube(),
-                    (true, false) => pocketed_cube(),
-                    (true, true) => imprinted_pocketed_cube(),
-                };
-                let (p, q) = bx(lo, hi);
-                let tool = m.add_cuboid(p, q);
-                m.rebuild_adjacency();
-                let r = boolean_one(&mut m, kind, s, tool)
-                    .unwrap_or_else(|e| panic!("{name} imprinted={imprinted}: {e:?}"));
-                m.rebuild_adjacency();
-                let props = nacre_props::mass_props(&m, r).unwrap();
-                assert!(
-                    nacre_validate::validate(&m).is_empty(),
-                    "{name} imprinted={imprinted}: invalid model"
-                );
-                (props.volume, props.area, shape_counts(&m, r))
-            };
-            let (plain_vol, plain_area, plain_counts) = run(false);
-            let (imp_vol, imp_area, imp_counts) = run(true);
-            assert!(
-                (plain_vol - imp_vol).abs() < 1e-12,
-                "{name} volume: plain {plain_vol} vs imprinted {imp_vol}"
-            );
-            assert!(
-                (plain_area - imp_area).abs() < 1e-12,
-                "{name} area: plain {plain_area} vs imprinted {imp_area}"
-            );
-            assert_eq!(
-                plain_counts, imp_counts,
-                "{name} (faces, edges, verts, cavities) — the seam leaked into the result"
-            );
-        }
-    }
-
     /// A slab over the pocketed cube, its underside at height `z0`. The rectangle is
     /// asymmetric so that the cube's four vertical edges, which pierce the underside at
     /// `(0,0)`, `(1,0)`, `(1,1)`, `(0,1)`, miss its fan diagonals; a square slab has all
@@ -6063,23 +5665,6 @@ pub mod tests {
         (m, solid)
     }
 
-    /// The unit cube with a 0.4-square imprinted on its top face: no material moves,
-    /// the face is merely split into a holed lid and a coplanar region face.
-    fn imprinted_cube() -> (Model, Handle<Solid>) {
-        let (mut m, top) = cube_with_top();
-        let OpOutput::ImprintSketch { solid, .. } = apply(
-            &mut m,
-            &Operation::ImprintSketch {
-                face: top,
-                profile: small_square(),
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        (m, solid)
-    }
-
     /// The first time a boolean result is fed back as an operand: the overlap box
     /// (Discovered corners) stacked on a third box merges through the coincident-
     /// interface path — which runs `is_convex` on that Discovered-cornered
@@ -6108,36 +5693,6 @@ pub mod tests {
         assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
         assert_eq!(m.solids.get(r).cavities.len(), 0);
     }
-
-    /// The pocketed cube with a second square imprinted on the pocket's floor: non-convex,
-    /// so it takes the seam-free path, and carrying a coplanar pair (that floor and the
-    /// region face cut from it), so exact containment cannot read its rings as triples.
-    fn imprinted_pocketed_cube() -> (Model, Handle<Solid>) {
-        let (mut m, top) = cube_with_top();
-        let OpOutput::PocketOnFace { bottom_face, .. } =
-            apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap()
-        else {
-            unreachable!()
-        };
-        let OpOutput::ImprintSketch { solid, .. } = apply(
-            &mut m,
-            &Operation::ImprintSketch {
-                face: bottom_face,
-                profile: Profile2d {
-                    points: vec![p2(-0.1, -0.1), p2(0.1, -0.1), p2(0.1, 0.1), p2(-0.1, 0.1)],
-                },
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        (m, solid)
-    }
-
-    // The imprinted non-convex operand no longer rejects: see
-    // `an_imprinted_operand_answers_like_the_unimprinted_one`, which scores this exact `Cut`
-    // against the unimprinted `pocketed_cube` instead of pinning the old honest rejection.
-    // `containment_boolean_already_keeps_a_pocket` still measures the plain pocket beside it.
 
     /// A holed operand already survives the seam-free path — `general_boolean` never
     /// had a hole guard, and `contained_result` reuses whole shells, so the pocket rides
@@ -6633,74 +6188,6 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn imprint_square_hole_in_cube_top() {
-        let (mut m, top) = cube_with_top();
-        let out = apply(
-            &mut m,
-            &Operation::ImprintSketch {
-                face: top,
-                profile: small_square(),
-            },
-        )
-        .unwrap();
-        let OpOutput::ImprintSketch { region_face, .. } = out else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-
-        let v = nacre_validate::validate(&m);
-        assert!(v.is_empty(), "{v:?}");
-
-        let reach = m.reachable();
-        assert_eq!(reach.faces.len(), 7); // 6 − top + (outer' + region)
-        let inner: usize = reach
-            .faces
-            .iter()
-            .map(|fh| m.faces.get(*fh).inner.len())
-            .sum();
-        assert_eq!(inner, 1); // one hole, in the outer face
-        assert!(reach.faces.contains(&region_face));
-        // Euler: V 12, E 16, F 7, L_i 1 → χ = 2.
-        assert_eq!(reach.vertices.len(), 12);
-        assert_eq!(reach.edges.len(), 16);
-    }
-
-    #[test]
-    fn an_imprint_reaching_past_the_face_is_rejected() {
-        // The frame origin is the top face centroid (0.5, 0.5). Each profile reaches past the
-        // [0,1]² face region, so `imprint` rejects rather than build a silently-invalid inner loop
-        // (cell imprint-containment; n0 measured that apply was Ok, validate passed, props
-        // integrated garbage — including a negative volume — and only tessellate's NoEar caught it).
-        // Boundary contact ("touches") rejects too. `pad`/`pocket` no longer reject here — a
-        // profile past the face is a boolean overhang (see `pad_an_overhanging_boss` etc.).
-        let crosses = Profile2d {
-            points: vec![p2(-0.7, -0.2), p2(0.7, -0.2), p2(0.7, 0.2), p2(-0.7, 0.2)],
-        };
-        let outside = Profile2d {
-            points: vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)],
-        };
-        let overhang = Profile2d {
-            points: vec![p2(-2.0, -2.0), p2(2.0, -2.0), p2(2.0, 2.0), p2(-2.0, 2.0)],
-        };
-        let touches = Profile2d {
-            points: vec![p2(-0.5, -0.2), p2(0.3, -0.2), p2(0.3, 0.2), p2(-0.5, 0.2)],
-        };
-        for (name, profile) in [
-            ("crosses", crosses),
-            ("outside", outside),
-            ("overhang", overhang),
-            ("touches", touches),
-        ] {
-            let (mut m, top) = cube_with_top();
-            assert_eq!(
-                apply(&mut m, &Operation::ImprintSketch { face: top, profile }),
-                Err(OpError::ProfileNotContainedInFace),
-                "{name}"
-            );
-        }
-    }
-
     // A single-edge overhang footprint on the cube top: world x∈[0.25,0.75], y∈[-0.25,0.75]
     // (overhangs the y=0 edge), area 0.5. (Frame maps local [px,py] → world (0.5+py, 0.5−px).)
     fn edge_overhang_profile() -> Profile2d {
@@ -6921,78 +6408,6 @@ pub mod tests {
             apply(&mut m, &pad_op(top, l_over, 1.0)),
             Err(OpError::Boolean(_))
         ));
-    }
-
-    #[test]
-    fn imprint_rejects_nonplanar_face() {
-        let mut m = Model::new();
-        m.add_cylinder(
-            Point3::origin(),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            2.0,
-            5.0,
-        );
-        let shell = m.solids.get(m.live_solids[0]).outer;
-        let lateral = *m
-            .shells
-            .get(shell)
-            .faces
-            .iter()
-            .find(|&&fh| {
-                matches!(
-                    m.surfaces.get(m.faces.get(fh).surface),
-                    Surface::Cylinder(_)
-                )
-            })
-            .unwrap();
-        assert!(matches!(
-            apply(
-                &mut m,
-                &Operation::ImprintSketch {
-                    face: lateral,
-                    profile: small_square(),
-                },
-            ),
-            Err(OpError::NonPlanarFace)
-        ));
-    }
-
-    #[test]
-    fn imprint_rejects_degenerate_profile() {
-        let (mut m, top) = cube_with_top();
-        let two = Profile2d {
-            points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
-        };
-        assert!(matches!(
-            apply(
-                &mut m,
-                &Operation::ImprintSketch {
-                    face: top,
-                    profile: two,
-                },
-            ),
-            Err(OpError::DegenerateProfile)
-        ));
-    }
-
-    #[test]
-    fn imprint_step_roundtrips() {
-        let (mut m, top) = cube_with_top();
-        apply(
-            &mut m,
-            &Operation::ImprintSketch {
-                face: top,
-                profile: small_square(),
-            },
-        )
-        .unwrap();
-        // The imprinted solid exports (nacre-step handles the inner loop), and
-        // the hole is emitted as a FACE_BOUND (distinct from FACE_OUTER_BOUND).
-        let step = nacre_step::to_step(&m).expect("imprinted solid exports");
-        assert!(
-            step.contains("FACE_BOUND("),
-            "hole should emit a FACE_BOUND"
-        );
     }
 
     fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
@@ -7429,35 +6844,6 @@ pub mod tests {
                 Ok(_) => prop_assert!(false, "unexpected op output"),
                 Err(_) => {} // an honest reject is acceptable; a panic is not (and would fail the test)
             }
-        }
-
-        /// A random box, then a small centred square imprinted on its top face,
-        /// stays a valid b-rep. The hole half-size `h` keeps its circumradius
-        /// `h√2 < 0.15·√2 ≈ 0.21` below the top face's inradius `min(sx,sy)/2 ≥
-        /// 0.25`, so the profile is interior regardless of the derived frame.
-        #[test]
-        fn prop_imprint_stays_valid(
-            sx in 0.5f64..5.0,
-            sy in 0.5f64..5.0,
-            sz in 0.5f64..5.0,
-            h in 0.05f64..0.15,
-        ) {
-            let rect = Profile2d {
-                points: vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)],
-            };
-            let mut m = Model::new();
-            let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
-                profile: rect,
-                dist: sz,
-            }).unwrap() else { unreachable!() };
-            let top = faces[1];
-            let hole = Profile2d {
-                points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
-            };
-            apply(&mut m, &Operation::ImprintSketch { face: top, profile: hole }).unwrap();
-            m.rebuild_adjacency();
-            prop_assert!(nacre_validate::validate(&m).is_empty());
         }
 
         /// A random boss on a random box stays a valid b-rep (any interior
@@ -10303,10 +9689,6 @@ pub mod tests {
         );
     }
 
-    // `Common` on an imprinted operand no longer rejects: the coplanar seam a split face leaves is
-    // not a boundary, so the trace reads the undivided face. The `Common` case of
-    // `an_imprinted_operand_answers_like_the_unimprinted_one` scores this same pair against the
-    // unimprinted cube.
     proptest! {
         /// Overlapping axis-aligned boxes: the intersection volume equals the
         /// independent AABB-overlap product (mixed A/B axis-aligned vertices).

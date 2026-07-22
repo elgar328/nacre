@@ -117,7 +117,7 @@ fn face_contribution(
             Ok((area, flux))
         }
         Surface::Cylinder(cyl) => {
-            // No producer puts a hole in a curved face yet (imprint is planar).
+            // No producer puts a hole in a curved face yet (pad/pocket are planar).
             if !face.inner.is_empty() {
                 return Err(MassError::UnsupportedInnerLoop);
             }
@@ -304,59 +304,6 @@ mod tests {
         assert!(close(props.volume, a_l * dist), "volume {}", props.volume);
     }
 
-    /// Build a `size` cube, mass its solid, then imprint a `2·hw` square hole in
-    /// its top face and mass the result. Returns `(before, after)`.
-    fn cube_then_imprint(size: f64, hw: f64) -> (MassProps, MassProps) {
-        let sq = |s: f64| Profile2d {
-            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
-                .iter()
-                .map(|&p| Point2::from_array(p))
-                .collect(),
-        };
-        let mut m = Model::new();
-        let OpOutput::Extrude { solid, faces } = apply(
-            &mut m,
-            &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
-                profile: sq(size),
-                dist: size,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let before = mass_props(&m, solid).unwrap();
-        let hole = Profile2d {
-            points: [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
-                .iter()
-                .map(|&p| Point2::from_array(p))
-                .collect(),
-        };
-        let OpOutput::ImprintSketch { solid: new, .. } = apply(
-            &mut m,
-            &Operation::ImprintSketch {
-                face: faces[1],
-                profile: hole,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        (before, mass_props(&m, new).unwrap())
-    }
-
-    #[test]
-    fn imprint_preserves_mass() {
-        // Imprint is a coplanar subdivision: the hole cut from the outer face is
-        // filled by the region face, so volume and area are unchanged. This
-        // exercises the inner-loop subtraction (the outer face now has a hole).
-        let (before, after) = cube_then_imprint(1.0, 0.2);
-        assert!(close(before.volume, 1.0));
-        assert!(close(before.area, 6.0));
-        assert!(close(after.volume, before.volume), "vol {}", after.volume);
-        assert!(close(after.area, before.area), "area {}", after.area);
-    }
-
     /// Pad a `2·hw` square boss of height `dist` on a `size` cube's top face,
     /// returning the padded solid's mass.
     fn cube_then_pad(size: f64, hw: f64, dist: f64) -> MassProps {
@@ -538,16 +485,6 @@ mod tests {
             let props = mass_props(&m, s).unwrap();
             prop_assert!(close(props.volume, PI * r * r * h), "vol {} vs {}", props.volume, PI*r*r*h);
             prop_assert!(close(props.area, 2.0 * PI * r * (r + h)), "area {}", props.area);
-        }
-
-        /// Imprinting a hole preserves volume and area for any (interior) hole
-        /// size. `hw ≤ 0.3` keeps the hole's circumradius `hw√2 ≈ 0.42` below the
-        /// top face's inradius `size/2 ≥ 0.5`, so the profile stays interior.
-        #[test]
-        fn prop_imprint_preserves_mass(size in 1.0f64..5.0, hw in 0.05f64..0.3) {
-            let (before, after) = cube_then_imprint(size, hw);
-            prop_assert!(close(after.volume, before.volume), "vol {} vs {}", after.volume, before.volume);
-            prop_assert!(close(after.area, before.area), "area {} vs {}", after.area, before.area);
         }
 
         /// A boss adds `A_p·dist` of volume and `P·dist` of surface (the top hole

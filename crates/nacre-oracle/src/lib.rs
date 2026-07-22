@@ -3174,63 +3174,6 @@ bbox_min 0 0 0
         );
     }
 
-    /// `coincident_merge` with a holed operand. The imprint splits the `x = 1` face into a
-    /// holed remainder and a coplanar region face — the one holed shape the convex and seam
-    /// paths never see, since `has_coplanar_pair` stops it at their door. OCCT reads the
-    /// STEP as one cube either way, so this scores the merge, not the imprint.
-    #[test]
-    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
-    fn imprinted_merge_matches_occt() {
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
-        let prof = |pts: &[[f64; 2]]| Profile2d {
-            points: pts
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
-        };
-        let mut m = Model::new();
-        let OpOutput::Extrude { faces, .. } = apply(
-            &mut m,
-            &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
-                profile: prof(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
-                dist: 1.0,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let OpOutput::ImprintSketch { solid, .. } = apply(
-            &mut m,
-            &Operation::ImprintSketch {
-                face: faces[3],
-                profile: prof(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let bx = m.add_cuboid(
-            Point3::from_array([0.0, 0.0, 1.0]),
-            Point3::from_array([1.0, 1.0, 2.0]),
-        );
-        let occt = occt_boolean_of(&m, OcctBool::Fuse, solid, bx).unwrap();
-        let r = boolean_one(&mut m, BoolKind::Fuse, solid, bx).unwrap();
-        let nacre = mass_props(&m, r).unwrap();
-        assert!(
-            approx(nacre.volume, occt.volume),
-            "imprinted merge volume: {} vs {}",
-            nacre.volume,
-            occt.volume
-        );
-        assert!(
-            approx(nacre.area, occt.area),
-            "imprinted merge area: {} vs {}",
-            nacre.area,
-            occt.area
-        );
-    }
-
     /// A rod drilled clean through the L's bar: the first genus-1 solid this kernel makes
     /// (M5-d3 cell 3e-3). Area is scored alongside volume — a tunnel's walls are area, and
     /// nacre's own gates all read the same rings, so only an independent kernel makes the
