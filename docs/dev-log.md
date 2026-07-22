@@ -2171,3 +2171,20 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 2. **`loop_triples`의 `p`는 면 인덱스로 남아야 한다** — `inc`(`EdgePlanes`)의 incidence가 면이라 `other()`의 `pair[0] == p`가 면끼리 비교다. 호출처가 이미 `fp`를 넘기고 있어 맞지만, `wc`로 착각해 넘기면 조용히 틀린다. (그리고 `EdgePlanes`라는 **이름 자체가 거짓말** — 담긴 `usize`는 면 인덱스다. `EdgeFaces`로 개명할 것.)
 
 **결과.** ops **203/0 → 204/0**(게이트 1 추가), pipeline **20/0**, **OCCT 91/0 불변**, clippy는 B가 추가만 하는 단계라 "never read" 경고가 늘어난 상태(C가 걷는다). 남은 것: **C**(술어 층 + 인덱스 공간), **D**(`FaceInfo` 개명·`canon` 삭제·`EdgeFaces`·canon 주어 잠금 6곳 재조준/은퇴), **E**(`Node::Orig`와 `all_seam` 경로).
+
+---
+
+**★ (커토버 마무리 ②) 술어 층이 이제 면을 볼 수 없다 — `PlaneGeom`이 소비된다.** 직전 셀이 `PlaneGeom` 표와 조밀 `plane_ix`를 **추가만** 해 뒀고, 이 셀이 그것을 배선했다. `PlaneInfo.class` 독스트링이 *"네 개의 버그가 그 둘(면/평면)을 비교한 데서 나왔다"* 고 적은 그 하중을 **타입으로 옮긴** 것이다: `&[PlaneGeom]`을 든 술어는 실수로 읽을 면 필드가 없다. `tolerant.rs`·`arrange.rs`는 이제 `PlaneInfo`를 이름조차 않고(예외: `t_planes_coplanar` — **클래스를 정의**하는 술어라 `PlaneGeom` 이전에 도는 것을 공통 `Witness{tri,tri_pt3}` 트레이트로 제네릭화), `assert_class_roots`·`class_of`·`orient_sign` 함수가 **삭제**됐다.
+
+**작은 단계 넷을 앞에 빼서 원자적 부분을 줄였다** — 지난번 내가 멈춘 이유가 *"중간 초록이 없다"* 였는데, 넷은 뒤집기와 무관하게 독립이었다:
+- **C0** `unify`의 그룹 키에서 **outward-direction 요소를 삭제**했다. `plane_idx`는 언제나 클래스 루트라(생산 `LocalFace` 생성 지점 둘 다 확인) `canon[plane_idx]==plane_idx`, dot이 `|n|²>0`으로 **항등 참**이었고 `flip`과도 중복이었다. ★ 그것을 살려두는 척하던 테스트 `unify_keeps_opposite_normal_coplanar`는 실은 **주석이 지목한 `n_out.dot` 가드가 아니라 `all_seam` 필터**가 거르고 있었다 — 삭제해도 통과하는 것이 그 증거다. 주석을 사실로 고쳤다.
+- **C0c** `orient_sign`을 **필드로 미리 계산**해 함수를 없앴다. 오늘은 `wc`도 면 슬롯이라 여덟 호출처가 전부 `planes[x].orient_sign`으로 **뒤집기 없이** 치환됐다. 뒤이어 C1에서 그 여덟이 표별로 갈렸다 — 일곱은 `geom[x].frame_sign`(**클래스 프레임**), 하나(`mat`)는 `planes[fp].orient_sign`(**이 면**). dev-log가 *"가장 리뷰가 필요한 지점"* 이라 부른 모호성이 **서로 다른 이름 둘**이 됐다.
+- **C2** 이름이 거짓말하던 셋을 개명했다 — `EdgePlanes`→`EdgeFaces`, `vertex_plane_indices`→`vertex_face_indices`, `declined`의 *"face plane index"* → *"face index"*. 셋 다 `surf_ix`(Handle<Face> 키)에서 온 **면** 인덱스인데 *"plane"* 이라 적혀 있었다 — 우연 셋이 아니라 표 하나가 두 뜻을 겸하자 어휘가 표류한 것이고, C의 안전 장비라 D가 아니라 여기서 고쳤다.
+
+**★★ 원자적 뒤집기(C1)가 중간에 스위트를 통째로 빨갛게 만든 진짜 버그 — 계획의 P4가 예고한 이중 매핑.** `trace_one`의 coincident-cap 벽 계산이 **이미 조밀한 삼중항을 `plane_ix`로 다시 매핑**하고 있었다. 옛 `canon`은 멱등(`canon[canon[x]]==canon[x]`)이라 이중 적용이 무해했지만 **`plane_ix`는 멱등이 아니다** — 이미 인덱스인 값으로 표를 인덱싱해 `end=[1,7,9]`인데 `wall=8`(삼중항에 없는 평면)이 붙었고, `endpoint_third`가 `three_planes`로 거절했다. 진단: `LAST_REJECT` 태그가 `three_planes`인데 `loop_triples`의 프로브가 안 찍혀 **다른 발화처**임을 알았고, `endpoint_third`에 프로브를 걸어 `end`/`wall` 불일치를 봤다. 수정은 재매핑 제거(평범한 집합 교집합). `canon_ring`도 같은 이유로 재매핑을 걷고 `plane_ring`(정렬+축퇴검사만)으로 바꿨다 — **축퇴 거절은 보존**(P5).
+
+**★ 네 개의 `canon` 주어 잠금을 성질별로 처분**(뒤집기가 강제): `one_plane_is_one_class`(공면 두 **면**이 한 클래스 — 면 표로 재조준, `plane_ix[i]==plane_ix[j]` 추가) · `a_vertex_is_named`(삼중항이 조밀이라 `canon[k]` 매핑 제거) · `plane_triples_are_always_canon`(*"모든 원소가 클래스 루트"* 는 이제 타입이라 **은퇴**, 범위+정렬-구별만 남김) · `a_vertex_on_the_cut_plane`(*"어느 **면**으로 물어도 0"* 은 평면이 한 id라 **표현 불가능** → *"정점은 자기 세 평면 위에서 0"* 으로 재조준, 독스트링 정직화).
+
+**★ 방법 기록 — 내 크기 추정이 세 번 틀렸다.** 원래 계획 "9개 시그니처"(너무 작게), 지난 셀 말미 "130번 판단"(너무 크게), 이 셀 초안 "arrangement 면 읽기 다수"(실제 `fp` 셋). 전부 **언급을 세고 판단을 안 센** 탓이고, 실제 인덱스 이름 분포를 세고서야 좁혀졌다. [[adjacent-proposition-failure]].
+
+**결과.** workspace **495/0**, pipeline **20/0**, **OCCT 91/0 불변** — 커널 동작 무이동. `tolerant`·`arrange`에 `PlaneInfo` 0(Witness impl 제외)·`class_of`/`orient_sign`/`assert_class_roots` 0·술어층 `canon` 0. clippy는 기준선 2(`rayon`·`Orig`) + **C가 드러낸 2**(`canon`·`orient` 필드, 테스트만 읽음) — 둘 다 **D**(PlaneInfo→FaceInfo 개명·`canon` 삭제)가 걷는다. 남은 것: **D**(개명·`canon`·`EdgeFaces` 이미 됨 이후 필드 정리·중복 제거) · **E**(`Node::Orig`와 `all_seam` 경로).
