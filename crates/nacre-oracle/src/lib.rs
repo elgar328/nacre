@@ -1257,6 +1257,60 @@ bbox_min 0 0 0
         );
     }
 
+    /// A **corner-flush** `Common` scored against OCCT: an L-prism and a box that both start at
+    /// the origin, so three of their face planes coincide (`z = 0`, `x = 0`, `y = 0`) and every
+    /// vertex of the shared corner sits exactly on the other solid's planes. That configuration
+    /// used to be an honest reject (`vertex_on_face_plane`); the ops-side lock
+    /// `a_corner_flush_common_keeps_the_non_convex_overlap` pins the hand-derived volume 1.0 and
+    /// area 7.0, and this scores the same shape against an independent kernel.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn corner_flush_common_matches_occt() {
+        use nacre_ops::{BoolKind, Operation, Profile2d, SketchPlane, apply};
+        let mut m = Model::new();
+        apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d {
+                    points: [
+                        [0.0, 0.0],
+                        [2.0, 0.0],
+                        [2.0, 1.0],
+                        [1.0, 1.0],
+                        [1.0, 2.0],
+                        [0.0, 2.0],
+                    ]
+                    .iter()
+                    .map(|&p| nacre_math::Point2::from_array(p))
+                    .collect(),
+                },
+                dist: 1.0,
+            },
+        )
+        .unwrap();
+        let l = *m.live_solids.first().unwrap();
+        let b = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.5, 1.5, 0.5]),
+        );
+        let occt = occt_boolean_of(&m, OcctBool::Common, l, b).unwrap();
+        let r = boolean_one(&mut m, BoolKind::Common, l, b).unwrap();
+        let nacre = mass_props(&m, r).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "corner-flush common volume: {} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+        assert!(
+            approx(nacre.area, occt.area),
+            "corner-flush common area: {} vs {}",
+            nacre.area,
+            occt.area
+        );
+    }
+
     /// nacre's own `Common` result diffed against OCCT: build two overlapping
     /// cubes, ask OCCT for the intersection volume, and compare it to
     /// `mass_props` of the solid nacre's half-space enumeration produced.

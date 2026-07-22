@@ -6316,10 +6316,24 @@ pub mod tests {
     }
 
     #[test]
-    fn pad_non_convex_overhang_is_rejected() {
-        // A non-convex (L) overhang footprint: the overhang boolean sidecars gate on convexity, so
-        // this is out of scope and honestly rejected (contained non-convex still works — a
-        // deliberate asymmetry until the overhang convex gate is dropped).
+    fn a_non_convex_pad_cantilevers_and_runs_flush() {
+        // **Three hard properties at once**, which is what makes this footprint worth keeping. The
+        // frame maps local `[px, py]` to world `(0.5 + py, 0.5 − px)`, so the L below lands on
+        // `(0.25,0.75) (0.25,−0.25) (0.75,−0.25) (0.75,0.25) (1.0,0.25) (1.0,0.75)`:
+        //   1. **non-convex** — the L has a reflex corner at `(0.75, 0.25)`;
+        //   2. **overhanging** — `y < 0` cantilevers past the cube's `y = 0` edge;
+        //   3. **flush** — the edge `x = 1.0, y∈[0.25,0.75]` lies *exactly* on the face's `x = 1`
+        //      boundary, the "profile rim shares the face rim" case.
+        // It used to reject because the overhang sidecars gated on convexity; that gate is gone.
+        //
+        // Hand-checked shape: footprint `0.25 + 0.375 = 0.625`, prism wholly above `z = 1`, so
+        //   volume 1 + 0.625 = 1.625
+        //   area   5 (cube minus its top) + 0.5 (top left uncovered) + 3.5 (prism sides)
+        //          + 0.625 (prism cap) + 0.125 (the cantilever's underside) = 9.75
+        // The underside term is the cantilever: a contained pad would not have one.
+        //
+        // OCCT cannot score this directly — `pad` builds its tool prism internally, and rebuilding
+        // it here would lean on the same frame mapping the assertion is testing.
         let (mut m, top) = cube_with_top();
         let l_over = Profile2d {
             points: vec![
@@ -6331,10 +6345,18 @@ pub mod tests {
                 p2(-0.25, 0.5),
             ],
         };
-        assert!(matches!(
-            apply(&mut m, &pad_op(top, l_over, 1.0)),
-            Err(OpError::Boolean(_))
-        ));
+        let OpOutput::PadOnFace { solid, top_face } =
+            apply(&mut m, &pad_op(top, l_over, 1.0)).expect("the cantilevered L pad")
+        else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let p = nacre_props::mass_props(&m, solid).unwrap();
+        assert!((p.volume - 1.625).abs() < 1e-12, "volume {}", p.volume);
+        assert!((p.area - 9.75).abs() < 1e-12, "area {}", p.area);
+        assert!(m.reachable().faces.contains(&top_face)); // boss top cap recovered
     }
 
     fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
@@ -9585,15 +9607,22 @@ pub mod tests {
     }
 
     #[test]
-    fn common_rejects_non_convex_input() {
-        // An L-shaped prism (reflex edge) is not the intersection of its face
-        // half-spaces. It never reaches `common`'s `is_convex` guard, though: the box's
-        // floor is **coplanar with the L's**, so the L's bottom edges lie in that plane and
-        // `boundaries_intersect` bails on a tangential contact first. Measured, not assumed.
+    fn a_corner_flush_common_keeps_the_non_convex_overlap() {
+        // A **corner-flush** `Common`: the L-prism and the box both start at the origin, so
+        // **three** of their face planes coincide — `z = 0` (both floors), `x = 0`, `y = 0`. Every
+        // vertex of the shared corner lies exactly on the other solid's face planes, which is what
+        // the old reject tag said: `VERTEX_ON_FACE_PLANE`. The arrangement engine names such a
+        // point by its plane triple like any other, so the configuration is no longer special.
         //
-        // The fan used to call this `contact_degenerate` — "grazed a diagonal from every
-        // apex". It never was a graze. Cell (5a) reads the endpoints' exact sides of the
-        // plane, finds both zero, and says what is actually true.
+        // Not covered by the other two non-convex `Common` locks:
+        // `common_non_convex_overlap_is_their_intersection` (l_and_corner_box) and
+        // `common_non_convex_containment_is_inner` both meet transversally, with no coplanar pair.
+        //
+        // Hand-checked shape, not just volume. The overlap is the L
+        // `x∈[0,1.5]×y∈[0,1]` (1.5) plus `x∈[0,1]×y∈[1,1.5]` (0.5) = 2.0, over `z∈[0,0.5]`:
+        //   volume 2.0 · 0.5 = 1.0
+        //   area   2 · 2.0 (caps) + 6.0 (the L's perimeter) · 0.5 = 7.0
+        // and the L has six sides, so eight faces.
         let l = Profile2d {
             points: vec![
                 p2(0.0, 0.0),
@@ -9610,10 +9639,14 @@ pub mod tests {
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.5, 1.5, 0.5]),
         );
-        assert_rejects(
-            || boolean_one(&mut m, BoolKind::Common, lsolid, b),
-            tag::VERTEX_ON_FACE_PLANE,
-        );
+        let r = boolean_one(&mut m, BoolKind::Common, lsolid, b).expect("corner-flush Common");
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let p = nacre_props::mass_props(&m, r).unwrap();
+        assert!((p.volume - 1.0).abs() < 1e-12, "volume {}", p.volume);
+        assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
+        assert_eq!(m.solids.get(r).cavities.len(), 0);
     }
 
     proptest! {
