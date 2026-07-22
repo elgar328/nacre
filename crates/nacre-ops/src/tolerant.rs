@@ -16,7 +16,7 @@
 //!
 //! All four are wired into the live arrangement: [`t_orient3d`] (order_along, side_of),
 //! [`t_cmp_coord`] (loop_winding) and [`t_plane_pair_dir_sign`] (dir_sign, turn_at,
-//! point_on_ring, every_ray) in stage 3b-i; [`t_plane_side`] (edge_crosses_face straddle,
+//! every_ray) in stage 3b-i;
 //! with a vertex handle + `model` threaded down) in 3b-ii.
 
 use crate::PlaneInfo;
@@ -180,36 +180,6 @@ pub(crate) fn t_cmp_coord(planes: &[PlaneInfo], a: [usize; 3], b: [usize; 3], ax
         borrow_triple(&db),
         axis,
     ))
-}
-
-/// Which side of plane `plane_idx` the explicit vertex `p` lies on — the toleranced twin
-/// of [`plane_side`] (an all-explicit `orient3d(p, tri0, tri1, tri2)`). `!rotated` → the
-/// geom predicate on `p`'s coordinate; `rotated` → `p` and the plane's three points as
-/// exact `Pt3` → [`orient3d_judge`] (the direct toleranced orient3d).
-///
-/// Routes on the plane *or* the vertex being rotated: unlike the plane-only predicates, an
-/// axis-aligned plane may still be tested against a rotated (irrational) vertex, so `p`'s
-/// `Origin::Rotated` also forces frame3.
-///
-/// `p` is an edge endpoint — an original (`Constructed`/`Rotated`) vertex. The rotated path's
-/// `vertex_pt3` errors on a `Discovered` (three-plane) definition; a rotated boolean whose
-/// operand is a prior boolean result carries such corners, so 3c must route those endpoints
-/// through the indirect `orient3d` (nacre-tip dispatch) before the rotation guard retires.
-pub(crate) fn t_plane_side(
-    model: &Model,
-    planes: &[PlaneInfo],
-    plane_idx: usize,
-    p: Handle<Vertex>,
-) -> i8 {
-    assert_class_roots(planes, &[plane_idx]);
-    let rotated = any_rotated(planes, &[plane_idx])
-        || matches!(model.vertices.get(p).origin, Origin::Rotated { .. });
-    if !rotated {
-        return plane_side(planes[plane_idx].tri, model.vertices.get(p).point);
-    }
-    let pp = nacre_tip::vertex_pt3(model, p).expect("an original vertex is a direct point");
-    let d = plane_def(planes, plane_idx);
-    to_i8(orient3d_judge(&pp, &d[0], &d[1], &d[2]))
 }
 
 /// Whether the three points are **exactly collinear**, decided by the three coordinate-plane
@@ -502,49 +472,6 @@ mod tests {
         }
         // A cuboid has six distinct planes, so no pair may merge — the answer is not vacuously true.
         assert_eq!(same, 0, "a cuboid has no two coplanar faces");
-    }
-
-    /// `plane_side` is an orient3d sign → rigid-rotation invariant: the frame3 path over a
-    /// rotated cuboid agrees with the geom path over the same cuboid unrotated.
-    #[test]
-    fn t_plane_side_rotation_invariant() {
-        let (mut m, s) = cuboid();
-        let pu = collect_planes(&m, s).unwrap();
-        let vu = boundary_verts(&m, s);
-        let r = rotated(&mut m, s);
-        let pr = collect_planes(&m, r).unwrap();
-        let vr = boundary_verts(&m, r);
-        assert_eq!((pu.len(), vu.len()), (pr.len(), vr.len()));
-        let mut checked = 0usize;
-        for pi in 0..pu.len() {
-            for vk in 0..vu.len() {
-                let su = t_plane_side(&m, &pu, pi, vu[vk]);
-                if su == 0 {
-                    continue; // vertex on the plane — skip
-                }
-                let sr = t_plane_side(&m, &pr, pi, vr[vk]);
-                assert_eq!(
-                    su, sr,
-                    "plane_side rotation-invariant at plane {pi}, vert {vk}"
-                );
-                checked += 1;
-            }
-        }
-        assert!(checked > 0, "no definite side test in the corpus");
-    }
-
-    /// `rotated = false` forwards to `plane_side` bit-for-bit.
-    #[test]
-    fn t_plane_side_unrotated_forwards_geom() {
-        let (m, s) = cuboid();
-        let planes = collect_planes(&m, s).unwrap();
-        let vs = boundary_verts(&m, s);
-        for pi in 0..planes.len() {
-            for &v in &vs {
-                let want = plane_side(planes[pi].tri, m.vertices.get(v).point);
-                assert_eq!(t_plane_side(&m, &planes, pi, v), want);
-            }
-        }
     }
 
     /// `t_cmp_coord` orders two implicit points (corner triples) by an axis exactly as

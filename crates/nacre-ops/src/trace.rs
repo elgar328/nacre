@@ -1192,7 +1192,7 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
 
 /// Label every cell by propagating from the unbounded cell (all void) across edges, flipping per
 /// `edge_mask`. The cell interior cannot be point-queried (no plane-triple name), so propagation is
-/// the only route — the 2D-face analogue of `run_classes`. After propagating, **every** edge's flip
+/// the only route. After propagating, **every** edge's flip
 /// relation is verified (`label[c] XOR mask == label[neighbour]`); a violation means the trace was
 /// incomplete and is an honest reject.
 fn label_cells(

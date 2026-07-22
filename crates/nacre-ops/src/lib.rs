@@ -169,57 +169,37 @@ pub(crate) mod tag {
     /// inputs, so a direct caller could still hand one in.
     pub const NON_MANIFOLD_EDGE: &str = "non_manifold_edge";
     /// A backstop with no firing test yet — the degeneracies that would produce an
-    /// odd crossing count are expected to trip `VERTEX_ON_FACE_PLANE` or `POINT_ON_RING`
-    /// first, since an edge that neither straddles a face's plane nor pierces it cleanly
-    /// is named there. Recorded as unverified in design.md §9, alongside `fourplane`.
+    /// odd crossing count are expected to trip `POINT_ON_RING` or `FOURPLANE` first, since an
+    /// edge that does not pierce a face cleanly is named there. Recorded as unverified in
+    /// design.md §9.
     pub const ARRANGEMENT_DEGENERATE: &str = "arrangement_degenerate";
-    /// The arrangement and the vertex classification disagree about where the seam
-    /// meets `∂f`, or the `seam` list and the arrangement disagree about whether it
-    /// meets `f` at all.
-    ///
-    /// Not a defensive assert but a cross-check between two machineries, neither of
-    /// which is allowed to be assumed right: `classof`'s ray casting (`point_in_solid`)
-    /// and the arrangement's exact segment/face crossings. Cell 3c pinned that
-    /// agreement in a test; here it is production.
-    ///
-    /// Cell 3e-3 gave it its real work. `∂f` is cut into runs at the seam's crossings,
-    /// and the runs alternate kept/dropped because a crossing flips the class. That shape
-    /// is one machine; `classof` at each original vertex is the other. A run with no vertex
-    /// — the piece of an edge the other solid enters and leaves through — has only the
-    /// alternation, so the check is what makes the rest of it trustworthy. It also holds
-    /// the arc bookkeeping: every arc has two boundary ends whose classes oppose.
-    pub const SEAM_COUNT_MISMATCH: &str = "seam_count_mismatch";
     /// A closed seam loop's edges disagree about which side its material lies on, or
     /// two of its nodes coincide, or two neighbours share no plane pair.
     ///
-    /// Like `SEAM_COUNT_MISMATCH`, a cross-check rather than a defence: the exact
+    /// A cross-check rather than a defence: the exact
     /// predicate (`order_along`) and the orientation bookkeeping (`PlaneInfo::n_out`
     /// vs its plane's normal) must agree, edge by edge, and neither is assumed right.
     /// It survives release on purpose. Downstream, `validate` catches a wrong loop and
     /// `tessellate` catches a wrong *hole* — but a caller may run neither.
     ///
     /// It cannot catch a *globally* flipped loop: every edge would be wrong together.
-    /// That is pinned before wiring, by a golden on `orient_seam_loop` itself.
+    /// A globally flipped loop would need a golden on the loop producer itself.
     ///
     /// Unreachable today: "material on the left" is a global property, so a consistent
     /// loop makes every edge agree. Not dead code — relax `FOURPLANE` or cell 3c's
     /// node-identity argument and this is what speaks first.
     pub const LOOP_ORIENT_MISMATCH: &str = "loop_orient_mismatch";
-    /// Three seam segments meeting at one node.
-    ///
-    /// Unreachable today, and *not* dead code. A node is a boundary node (two
-    /// X-planes in its triple, degree 1) or an interior node (two Y-planes, degree
-    /// 2 — the pierced Y-edge has exactly two faces); the only way to collapse two
-    /// distinct nodes onto one triple is a duplicate third plane within one plane
-    /// pair, which `FOURPLANE` rejects. Relax that guard (sub-unit 3e/3h) and a
-    /// node can gain a third segment. This is the backstop for that day.
-    pub const SEAM_BRANCH: &str = "seam_branch";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
     /// The result severs into two or more material solids *and* at least one enclosed void
     /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
-    /// test we do not have yet (a re-scope of `point_in_solid`), so this is honestly rejected and
-    /// deferred to a follow-on cell. Reachable: `Cut` a hollow part with a cut that isolates the
-    /// void into one severed piece. Born with its firing test (`severed_with_cavity_is_rejected`).
+    /// test we do not have yet, so this is honestly rejected and deferred to a follow-on cell.
+    /// Reachable: `Cut` a hollow part with a cut that isolates the void into one severed piece.
+    /// Born with its firing test (`severed_with_cavity_is_rejected`).
+    ///
+    /// ★ The starting point for that cell is `arrange::point_in_solid_idx`, removed by the
+    /// seam-engine excise (2026-07-22 dev-log cell) once the arrangement stopped needing it (it seeds the unbounded cell and propagates inward
+    /// instead). It answers *point in solid* by ray casting; what this needs is *point in shell*,
+    /// so recover it from that commit and re-scope it rather than deriving one from scratch.
     pub const SEVERED_WITH_CAVITY: &str = "severed_with_cavity";
     /// No material-enclosing (outward) shell among the result components — every component is
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
@@ -266,9 +246,6 @@ pub(crate) mod tag {
     pub const DEGENERATE_FACE: &str = "degenerate_face";
     pub const DEGENERATE_NORMAL: &str = "degenerate_normal";
     pub const RAY_DEGENERATE: &str = "ray_degenerate";
-    /// An endpoint of an edge lies exactly on a face's plane — and if both do, the edge lies
-    /// in that plane. A tangential contact, not a crossing, and out of clean-seam coverage.
-    pub const VERTEX_ON_FACE_PLANE: &str = "vertex_on_face_plane";
     /// A closed seam loop's winding and the face boundary's class disagree.
     ///
     /// A hole keeps its material outside, so walked material-left it runs clockwise about
@@ -292,9 +269,9 @@ pub(crate) mod tag {
     pub const NO_CLEAR_RAY: &str = "no_clear_ray";
     /// A loop's node lies *on* the ring it is being tested against.
     ///
-    /// `SeamPath::Closed` has claimed since cell 3f-1 that a closed seam loop never touches
-    /// `∂f`. Nothing checked it. `point_in_ring` does, exactly: the ray's line meets an edge
-    /// at `X`, and `X == v` strictly inside that edge means `v` is on the ring. Unfired.
+    /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
+    /// exactly: the ray's line meets an edge at `X`, and `X == v` strictly inside that edge means
+    /// `v` is on the ring. Unfired.
     pub const POINT_ON_RING: &str = "point_on_ring";
     /// The trace arrangement on one plane class nested a hole whose containment depth exceeds one,
     /// or produced more than one unbounded contour (several disjoint bodies on the plane).
@@ -1749,7 +1726,7 @@ struct LocalFace {
     plane_idx: usize,
     loop_nodes: Vec<Node>,
     /// Hole rings, each already wound so the kept material stays on its left
-    /// (`arrange::orient_seam_loop`). Only the non-convex path ever fills this.
+    /// about the face's outward normal. Only the non-convex path ever fills this.
     inner: Vec<Vec<Node>>,
     flip: bool,
 }
@@ -1767,7 +1744,7 @@ const RAY_DIRECTIONS: [[f64; 3]; 6] = [
     [13.0, 17.0, 19.0],
 ];
 
-/// The minimal per-op plane table two solids share for [`arrange::point_in_solid_idx`]: the
+/// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
 /// [`arrange::EdgePlanes`]. Detectors that classify vertices exactly but lack
 /// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
@@ -1800,7 +1777,7 @@ fn plane_index_setup(
 
 /// Union-find the coplanar faces into plane classes, and tell each `PlaneInfo` which class it is on.
 ///
-/// Coplanar planes → one class, so `point_in_solid_idx` never forms a `det=0` triple from two
+/// Coplanar planes → one class, so no exact predicate ever forms a `det=0` triple from two
 /// coplanar faces meeting a vertex (the cantilever-step degeneracy).
 ///
 /// The classes exist only once the whole table is assembled, so this is where a `PlaneInfo` learns
@@ -2545,8 +2522,7 @@ pub mod tests {
         Ok(solids[0])
     }
 
-    /// The single-ring successor `(i + 1) % n` — what every caller but a multi-ring `∂f`
-    /// hands [`arrange::stitch_cycles`].
+    /// The single-ring successor `(i + 1) % n`.
     fn ident_next(n: usize) -> Vec<usize> {
         (0..n).map(|i| (i + 1) % n).collect()
     }
@@ -2742,7 +2718,7 @@ pub mod tests {
 
     #[test]
     fn a_rotated_profile_is_the_same_solid_to_the_boolean() {
-        // The silent half of the same fault. `orient_seam_loop` multiplies `orient_sign`
+        // The silent half of the same fault. A loop's orientation multiplies `orient_sign`
         // of two planes, and nothing pairs that with a `tri` whose sign would cancel it
         // (as `order_along` does — there both factors flip together). So an inward `n_out`
         // on the L's cap reverses the hole, and only `validate` and the signed mesh volume
@@ -2786,263 +2762,6 @@ pub mod tests {
             &rp(2, 4, 6),
             &rp(1, 2, 4)
         ));
-    }
-
-    /// The exact index-plane classifier [`arrange::point_in_solid_idx`] on hand-known answers.
-    /// The query is always a *vertex* (it must carry plane identity), classified against the
-    /// other solid — exactly the live use (`a`'s vertices vs `b`). Not an f64 cross-check: the
-    /// answers are computed by hand, so this is an independent oracle.
-    #[test]
-    fn point_in_solid_idx_matches_known_answers() {
-        let check = |amin: [f64; 3],
-                     amax: [f64; 3],
-                     bmin: [f64; 3],
-                     bmax: [f64; 3],
-                     inside: &dyn Fn([f64; 3]) -> bool| {
-            let mut m = Model::new();
-            let qa = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
-            let ob = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
-            m.rebuild_adjacency();
-            let mut planes = collect_planes(&m, qa).unwrap();
-            planes.extend(collect_planes(&m, ob).unwrap());
-            let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
-            for (i, pi) in planes.iter().enumerate() {
-                surf_ix.insert(pi.face, i);
-            }
-            let inc_a = arrange::edge_planes(&m, qa, &surf_ix).unwrap();
-            let inc_b = arrange::edge_planes(&m, ob, &surf_ix).unwrap();
-            let canon = plane_classes(&planes);
-            for vh in solid_vertex_handles(&m, qa) {
-                let p = m.vertices.get(vh).point.as_array();
-                let want = if inside(p) {
-                    Side::Inside
-                } else {
-                    Side::Outside
-                };
-                let got = arrange::point_in_solid_idx(
-                    &m, vh, &inc_a, ob, &inc_b, &planes, &surf_ix, &canon,
-                )
-                .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
-                assert_eq!(got, want, "vertex {p:?} vs B[{bmin:?}..{bmax:?}]");
-            }
-        };
-        // Overlap: A[0,2]³ vs B[1,3]³ — a corner is inside iff every coord (∈{0,2}) is in (1,3),
-        // i.e. only (2,2,2).
-        check([0.; 3], [2.; 3], [1.; 3], [3.; 3], &|p| {
-            p.iter().all(|&c| c > 1.0 && c < 3.0)
-        });
-        // Containment: B[-1,3]³ ⊃ A[0,2]³ — every corner Inside.
-        check([0.; 3], [2.; 3], [-1.; 3], [3.; 3], &|_| true);
-        // Disjoint: B[5,6]³ — every corner Outside.
-        check([0.; 3], [2.; 3], [5.; 3], [6.; 3], &|_| false);
-        // Coplanar-disjoint (shares the z=0/z=1 planes, footprints apart): A[0,1]³ vs
-        // B[1,2]×[3,4]×[0,1]. A's corners lie *on* B's z-planes yet off its footprint — all
-        // Outside, and crucially decided (not NO_CLEAR_RAY). This is the 4078 query species.
-        check([0.; 3], [1.; 3], [1., 3., 0.], [2., 4., 1.], &|_| false);
-    }
-
-    /// The classifier on a genuinely **non-convex** `other` (an L-prism, whose notch a
-    /// convex all-half-spaces test gets wrong) and a **holed** `other` (a hollow box, whose
-    /// void must read Outside via the outer+cavity shell sum). These are the cases boxes cannot
-    /// exercise — the whole reason classification is winding-parity, not per-face plane-side.
-    #[test]
-    fn point_in_solid_idx_on_non_convex_and_cavity() {
-        let classify_all =
-            |m: &Model, qs: Handle<Solid>, os: Handle<Solid>, want: &dyn Fn([f64; 3]) -> bool| {
-                let mut planes = collect_planes(m, qs).unwrap();
-                planes.extend(collect_planes(m, os).unwrap());
-                let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
-                for (i, pi) in planes.iter().enumerate() {
-                    surf_ix.insert(pi.face, i);
-                }
-                let inc_q = arrange::edge_planes(m, qs, &surf_ix).unwrap();
-                let inc_o = arrange::edge_planes(m, os, &surf_ix).unwrap();
-                let canon = plane_classes(&planes);
-                for vh in solid_vertex_handles(m, qs) {
-                    let p = m.vertices.get(vh).point.as_array();
-                    let got = arrange::point_in_solid_idx(
-                        m, vh, &inc_q, os, &inc_o, &planes, &surf_ix, &canon,
-                    )
-                    .unwrap_or_else(|e| panic!("vertex {p:?}: {e:?}"));
-                    assert_eq!(got == Side::Inside, want(p), "at {p:?}");
-                }
-            };
-
-        // Non-convex: L-prism (bottom bar x∈[0,2]×y∈[0,1] + left column x∈[0,1]×y∈[0,2],
-        // z∈[0,1]; notch x>1∧y>1 is empty). Query cube corners at {0.5,1.5}²×{0.25,0.75} —
-        // the (1.5,1.5) corners sit in the notch (Outside), the rest inside the L.
-        {
-            let (mut m, lp) = l_prism();
-            let q = m.add_cuboid(
-                Point3::from_array([0.5, 0.5, 0.25]),
-                Point3::from_array([1.5, 1.5, 0.75]),
-            );
-            m.rebuild_adjacency();
-            classify_all(&m, q, lp, &|p| !(p[0] > 1.0 && p[1] > 1.0));
-        }
-
-        // Cavity: hollow box, outer [0,4]³ with a concentric void [1,3]³. Query cube corners at
-        // {0.5,1.5}³ — (1.5,1.5,1.5) is in the void (Outside), the rest in the material wall.
-        {
-            let mut m = Model::new();
-            let a = m.add_cuboid(Point3::from_array([0.; 3]), Point3::from_array([4.; 3]));
-            let b = m.add_cuboid(Point3::from_array([1.; 3]), Point3::from_array([3.; 3]));
-            let void = m.reversed_shell(m.solids.get(b).outer);
-            let a_outer = m.solids.get(a).outer;
-            let hollow = m.push_solid(Solid {
-                outer: a_outer,
-                cavities: vec![void],
-            });
-            let q = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
-            m.rebuild_adjacency();
-            // Inside the wall iff not strictly inside the void (all coords in (1,3)).
-            classify_all(&m, q, hollow, &|p| !p.iter().all(|&c| c > 1.0 && c < 3.0));
-        }
-    }
-
-    /// canon-awareness (Cell 2.9): `Fuse(base, boss)` leaves two coplanar faces on z=1 (base-top
-    /// `+z`, boss-bottom `−z` — a cantilever step, not mergeable). Their shared incident vertices
-    /// give `det=0` triples that panic the predicate without canon. With canon those planes
-    /// collapse to one class, so the classifier runs **panic-free**, agrees with the f64 ray where
-    /// both decide, and honestly rejects (never panics) a degenerate step vertex.
-    #[test]
-    fn point_in_solid_idx_canon_handles_coplanar_step() {
-        let mut m = Model::new();
-        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let boss = m.add_cuboid(
-            Point3::from_array([0.5, 0.25, 1.0]),
-            Point3::from_array([1.5, 0.75, 2.0]),
-        );
-        let overhung = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
-        let probe = m.add_cuboid(
-            Point3::from_array([1.1, 0.35, 0.5]),
-            Point3::from_array([1.4, 0.65, 2.5]),
-        );
-        m.rebuild_adjacency();
-        let mut planes = collect_planes(&m, probe).unwrap();
-        planes.extend(collect_planes(&m, overhung).unwrap());
-        let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
-        for (i, pi) in planes.iter().enumerate() {
-            surf_ix.insert(pi.face, i);
-        }
-        let inc_p = arrange::edge_planes(&m, probe, &surf_ix).unwrap();
-        let inc_o = arrange::edge_planes(&m, overhung, &surf_ix).unwrap();
-        let canon = plane_classes(&planes);
-        // Hand-known membership (no f64 needed): overhung = base[0,1]³ ∪ boss[.5,.25,1]-[1.5,.75,2];
-        // probe is a box. idx must classify every vertex (both directions) panic-free and match.
-        let in_overhung = |p: [f64; 3]| {
-            let inb = |lo: [f64; 3], hi: [f64; 3]| (0..3).all(|k| p[k] >= lo[k] && p[k] <= hi[k]);
-            inb([0.0; 3], [1.0; 3]) || inb([0.5, 0.25, 1.0], [1.5, 0.75, 2.0])
-        };
-        let in_probe = |p: [f64; 3]| {
-            p[0] >= 1.1 && p[0] <= 1.4 && p[1] >= 0.35 && p[1] <= 0.65 && p[2] >= 0.5 && p[2] <= 2.5
-        };
-        for vh in solid_vertex_handles(&m, probe) {
-            let p = m.vertices.get(vh).point.as_array();
-            let got = arrange::point_in_solid_idx(
-                &m, vh, &inc_p, overhung, &inc_o, &planes, &surf_ix, &canon,
-            )
-            .unwrap_or_else(|e| panic!("probe vertex {p:?} vs overhung: {e:?}"));
-            assert_eq!(
-                got == Side::Inside,
-                in_overhung(p),
-                "probe vertex {p:?} vs overhung"
-            );
-        }
-        for vh in solid_vertex_handles(&m, overhung) {
-            let p = m.vertices.get(vh).point.as_array();
-            let got = arrange::point_in_solid_idx(
-                &m, vh, &inc_o, probe, &inc_p, &planes, &surf_ix, &canon,
-            )
-            .unwrap_or_else(|e| panic!("overhung vertex {p:?} vs probe: {e:?}"));
-            assert_eq!(
-                got == Side::Inside,
-                in_probe(p),
-                "overhung vertex {p:?} vs probe"
-            );
-        }
-    }
-
-    /// Go/no-go for the classifier-unification track (plan R7): on grid-aligned, shared-
-    /// coordinate two-box configs — where the exact ray, constrained to the query's own axis
-    /// planes, is most prone to grazing — does `point_in_solid_idx` ever reject
-    /// (`NO_CLEAR_RAY`) a strictly-in/out vertex? A strict vertex's axis rays cross the other
-    /// box's faces at footprint-interior points, never its edges, so the answer should be *zero*
-    /// regressions. Each answer is also checked against the hand-computed box membership.
-    #[test]
-    fn point_in_solid_idx_no_reject_regression_on_aligned() {
-        // (A box, B box) sharing coordinates in the adversarial grid.
-        type BoxPair = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
-        let configs: &[BoxPair] = &[
-            ([0.; 3], [2.; 3], [1.; 3], [3.; 3]),           // corner overlap
-            ([0.; 3], [2.; 3], [1., 1., 1.], [2., 2., 2.]), // B is A's octant (shares corner)
-            ([0.; 3], [2.; 3], [-1.; 3], [3.; 3]),          // B ⊃ A
-            ([0.; 3], [2.; 3], [0.5, 0.5, 0.5], [1.5, 1.5, 1.5]), // B ⊂ A
-            ([0.; 3], [2.; 3], [1., 0., 0.], [3., 2., 2.]), // face-flush slab (shares x=... none; y,z flush)
-            ([0.; 3], [2.; 3], [5.; 3], [6.; 3]),           // disjoint
-            ([0.; 3], [1.; 3], [0., 0., 1.], [1., 1., 2.]), // stacked on shared z=1 face
-            ([0.; 3], [3.; 3], [1., 1., -1.], [2., 2., 4.]), // thin bar piercing through
-        ];
-        // Strict membership of `p` in axis box [lo,hi]: Some(true/false), None on its boundary.
-        let strict = |p: [f64; 3], lo: [f64; 3], hi: [f64; 3]| -> Option<bool> {
-            let mut on = false;
-            for k in 0..3 {
-                if p[k] < lo[k] || p[k] > hi[k] {
-                    return Some(false); // a coord beyond the slab ⇒ strictly outside
-                }
-                if p[k] == lo[k] || p[k] == hi[k] {
-                    on = true;
-                }
-            }
-            if on { None } else { Some(true) }
-        };
-        let (mut compared, mut regress) = (0u32, 0u32);
-        for &(amin, amax, bmin, bmax) in configs {
-            let mut m = Model::new();
-            let sa = m.add_cuboid(Point3::from_array(amin), Point3::from_array(amax));
-            let sb = m.add_cuboid(Point3::from_array(bmin), Point3::from_array(bmax));
-            m.rebuild_adjacency();
-            let mut planes = collect_planes(&m, sa).unwrap();
-            planes.extend(collect_planes(&m, sb).unwrap());
-            let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
-            for (i, pi) in planes.iter().enumerate() {
-                surf_ix.insert(pi.face, i);
-            }
-            let inc_a = arrange::edge_planes(&m, sa, &surf_ix).unwrap();
-            let inc_b = arrange::edge_planes(&m, sb, &surf_ix).unwrap();
-            let canon = plane_classes(&planes);
-            for (qs, os, inc_q, inc_o, olo, ohi) in [
-                (sa, sb, &inc_a, &inc_b, bmin, bmax),
-                (sb, sa, &inc_b, &inc_a, amin, amax),
-            ] {
-                for vh in solid_vertex_handles(&m, qs) {
-                    let p = m.vertices.get(vh).point.as_array();
-                    let Some(want) = strict(p, olo, ohi) else {
-                        continue; // on the other box's boundary — honest-reject territory, skip
-                    };
-                    let idx = arrange::point_in_solid_idx(
-                        &m, vh, inc_q, os, inc_o, &planes, &surf_ix, &canon,
-                    );
-                    match idx {
-                        Ok(s) => {
-                            compared += 1;
-                            let inside = s == Side::Inside;
-                            assert_eq!(
-                                inside, want,
-                                "idx wrong at {p:?} vs box [{olo:?}..{ohi:?}]"
-                            );
-                        }
-                        Err(_) => regress += 1, // NO_CLEAR_RAY on a strict vertex = R7 regression
-                    }
-                }
-            }
-        }
-        assert!(compared > 0, "measured nothing");
-        assert_eq!(
-            regress, 0,
-            "R7: idx rejected {regress} strict vertices f64 would classify"
-        );
-        eprintln!("go/no-go: compared={compared} regress=0 — R7 benign on aligned grid");
     }
 
     /// The L-prism with a `[0.1,0.9]³` box strictly inside its bottom bar
@@ -3184,12 +2903,11 @@ pub mod tests {
         assert!((vol - 0.224).abs() < 1e-9, "volume {vol}");
     }
 
-    /// The first `Common` whose seam closes into a loop — where cell 3g's `Inside` keep
-    /// first reaches `orient_seam_loop`. A bar drilled through a cube: `∩ = [1,2]²×[0,3]`,
+    /// The first `Common` whose kept region closes into a loop. A bar drilled through a cube:
+    /// `∩ = [1,2]²×[0,3]`,
     /// the middle segment of the bar. On the cube's `z=0` and `z=3` caps the kept square
-    /// `[1,2]²` is bounded entirely by seam (an island face, no `∂f`), so the loop's
-    /// orientation runs through `orient_seam_loop` with `material_outside = false` — the
-    /// sign a hole (Cut) never exercised. `1·1·3`.
+    /// `[1,2]²` is bounded entirely by the cut (an island face, no `∂f`), so the loop is
+    /// oriented with material *inside* it — the sign a hole (Cut) never exercised. `1·1·3`.
     #[test]
     fn a_common_can_leave_a_closed_seam_loop() {
         let mut m = Model::new();
@@ -3687,310 +3405,15 @@ pub mod tests {
         hit.expect("no face with that outward normal")
     }
 
-    fn segs(
-        m: &Model,
-        f: Handle<Face>,
-        x: Handle<Solid>,
-        y: Handle<Solid>,
-        planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Face>, usize>,
-    ) -> Vec<arrange::SeamSegment> {
-        let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
-        let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
-        arrange::seam_segments_on(
-            m,
-            f,
-            y,
-            planes,
-            surf_ix,
-            &inc_x,
-            &inc_y,
-            &plane_classes(planes),
-        )
-        .unwrap()
-    }
-
-    fn paths(
-        m: &Model,
-        f: Handle<Face>,
-        x: Handle<Solid>,
-        y: Handle<Solid>,
-        planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Face>, usize>,
-    ) -> Vec<arrange::SeamPath> {
-        let inc_x = arrange::edge_planes(m, x, surf_ix).unwrap();
-        let inc_y = arrange::edge_planes(m, y, surf_ix).unwrap();
-        arrange::seam_paths_on(
-            m,
-            f,
-            y,
-            planes,
-            surf_ix,
-            &inc_x,
-            &inc_y,
-            &plane_classes(planes),
-        )
-        .unwrap()
-    }
-
     fn near(a: Point3, b: [f64; 3]) -> bool {
         (a - Point3::from_array(b)).norm() < 1e-9
     }
 
-    proptest! {
-        /// Whatever the sort, the pairing and the parity sweep do, an endpoint is the
-        /// meet of the three planes its triple names. This holds independently of all
-        /// of them — and breaks the instant `three_planes` and the triple disagree.
-        #[test]
-        fn prop_seam_endpoints_lie_on_their_three_planes(
-            aext in prop::array::uniform3(1.0f64..2.0),
-            bmin in prop::array::uniform3(0.3f64..0.9),
-            bext in prop::array::uniform3(1.1f64..2.0),
-        ) {
-            let mut m = Model::new();
-            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(aext));
-            let b = m.add_cuboid(
-                Point3::from_array(bmin),
-                Point3::from_array([bmin[0] + bext[0], bmin[1] + bext[1], bmin[2] + bext[2]]),
-            );
-            let (planes, surf_ix) = combined(&m, a, b);
-            let (Ok(inc_x), Ok(inc_y)) = (
-                arrange::edge_planes(&m, a, &surf_ix),
-                arrange::edge_planes(&m, b, &surf_ix),
-            ) else {
-                return Ok(());
-            };
-            let shell = m.solids.get(a).outer;
-            for &f in &m.shells.get(shell).faces {
-                // A degenerate touch is an honest reject, not a counterexample.
-                let Ok(segs) =
-                    arrange::seam_segments_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y, &plane_classes(&planes))
-                else {
-                    continue;
-                };
-                for s in segs {
-                    for (t, p) in s.ends.iter().zip(s.points) {
-                        for &i in t {
-                            prop_assert!(
-                                planes[i].plane.distance(p) < 1e-9,
-                                "endpoint {p:?} off plane {i}"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        /// The assembly's structure, checked without repeating the assembly. A node is
-        /// a boundary node (on `∂f`, two A-planes in its triple) or an interior node
-        /// (a B-edge piercing `f`, two B-planes); an arc has exactly the former at its
-        /// two ends and the latter within; a loop has none.
-        ///
-        /// Like the proptest above, an honest `Err` is skipped, so this says nothing
-        /// about rejected inputs. And it says nothing about closed loops: two boxes
-        /// sharing a corner cannot make one. Measured over a 144-instance sweep of
-        /// this generator: 859 faces accepted, 5 rejected, 381 arcs, **0 loops**. The
-        /// loop and the doubly-crossed edge are covered by hand-built fixtures, not
-        /// by chance.
-        #[test]
-        fn prop_seam_paths_have_manifold_structure(
-            aext in prop::array::uniform3(1.0f64..2.0),
-            bmin in prop::array::uniform3(0.3f64..0.9),
-            bext in prop::array::uniform3(1.1f64..2.0),
-        ) {
-            let mut m = Model::new();
-            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(aext));
-            let b = m.add_cuboid(
-                Point3::from_array(bmin),
-                Point3::from_array([bmin[0] + bext[0], bmin[1] + bext[1], bmin[2] + bext[2]]),
-            );
-            let len_a = collect_planes(&m, a).unwrap().len();
-            let (planes, surf_ix) = combined(&m, a, b);
-            let (Ok(inc_x), Ok(inc_y)) = (
-                arrange::edge_planes(&m, a, &surf_ix),
-                arrange::edge_planes(&m, b, &surf_ix),
-            ) else {
-                return Ok(());
-            };
-            for &f in &m.shells.get(m.solids.get(a).outer).faces {
-                let Ok(out) = arrange::seam_paths_on(&m, f, b, &planes, &surf_ix, &inc_x, &inc_y, &plane_classes(&planes))
-                else {
-                    continue;
-                };
-                for path in &out {
-                    let n = path.nodes();
-                    for e in n {
-                        // A plane index < len_a belongs to A. Boundary ⇔ two of them.
-                        let from_a = e.triple.iter().filter(|&&i| i < len_a).count();
-                        prop_assert_eq!(e.on_edge.is_some(), from_a == 2, "{:?}", e);
-                        prop_assert!(from_a == 1 || from_a == 2, "{e:?}");
-                    }
-                    match path {
-                        arrange::SeamPath::Open(_) => {
-                            prop_assert!(n.len() >= 2);
-                            prop_assert!(n[0].on_edge.is_some() && n[n.len() - 1].on_edge.is_some());
-                            prop_assert!(n[1..n.len() - 1].iter().all(|e| e.on_edge.is_none()));
-                        }
-                        arrange::SeamPath::Closed(_) => {
-                            prop_assert!(n.len() >= 3);
-                            prop_assert!(n.iter().all(|e| e.on_edge.is_none()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn seam_segments_on_two_overlapping_boxes() {
-        // A = [0,2]×[0,2.2]×[0,2.4] and B = [1,3.5]×[1,3.2]×[1,3.4] share a corner.
-        // Extents were unequal because with two cubes the seam lands on a face's *centre*,
-        // where both fan diagonals cross; `segment_crosses_face` grazed from every apex
-        // and said `contact_degenerate`. Cell (5a) deleted the fan, and `two_boxes` now
-        // runs this shape at the centre. The coordinates stay: one variable at a time.
-        //
-        // On A's x=2 face (y∈[0,2.2], z∈[0,2.4]) two of B's faces cut a seam:
-        //   B's z=1 face ⇒ the line {x=2, z=1} clipped to y∈[1, 2.2]
-        //   B's y=1 face ⇒ the line {x=2, y=1} clipped to z∈[1, 2.4]
-        // They meet at (2,1,1), the overlap's corner on this face. Hand-computed.
-        let mut m = Model::new();
-        let a = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 2.2, 2.4]),
-        );
-        let b = m.add_cuboid(
-            Point3::from_array([1.0; 3]),
-            Point3::from_array([3.5, 3.2, 3.4]),
-        );
-        let (planes, surf_ix) = combined(&m, a, b);
-        let f = face_facing(&m, a, &planes, &surf_ix, [1.0, 0.0, 0.0]);
-
-        let out = segs(&m, f, a, b, &planes, &surf_ix);
-        assert_eq!(
-            out.len(),
-            2,
-            "one seam segment per B-face that cuts A's face: {out:?}"
-        );
-
-        let mut ends: Vec<[[f64; 3]; 2]> = out
-            .iter()
-            .map(|s| {
-                let mut e = [s.points[0].as_array(), s.points[1].as_array()];
-                e.sort_by(|x, y| x.partial_cmp(y).unwrap());
-                e
-            })
-            .collect();
-        ends.sort_by(|x, y| x.partial_cmp(y).unwrap());
-        let want = {
-            let mut w = [
-                [[2.0, 1.0, 1.0], [2.0, 2.2, 1.0]],
-                [[2.0, 1.0, 1.0], [2.0, 1.0, 2.4]],
-            ];
-            for e in &mut w {
-                e.sort_by(|x, y| x.partial_cmp(y).unwrap());
-            }
-            w.sort_by(|x, y| x.partial_cmp(y).unwrap());
-            w
-        };
-        for (got, want) in ends.iter().zip(want.iter()) {
-            for (g, w) in got.iter().zip(want.iter()) {
-                assert!(near(Point3::from_array(*g), *w), "{ends:?} vs {want:?}");
-            }
-        }
-
-        // Each segment's two endpoint triples differ in exactly one plane: the two they
-        // share are the pair that defines the seam line.
-        for s in &out {
-            let shared: Vec<usize> = s.ends[0]
-                .iter()
-                .filter(|i| s.ends[1].contains(i))
-                .copied()
-                .collect();
-            assert_eq!(shared.len(), 2);
-            assert!(shared.contains(&s.plane_pair[0]) && shared.contains(&s.plane_pair[1]));
-        }
-    }
-
-    #[test]
-    fn seam_segments_split_a_face_into_two_chords() {
-        // A face split into two chords. The slab meets the U-prism's base cap
-        // (z=0) along {z=0, y=1.5}; the U has material there only for x∈[0,1] and
-        // x∈[2,3], so the seam is *two* segments — which cell 3e-2 taught the seam path
-        // to stitch (the old `multichord` guard retired there).
-        //
-        // All four crossings come from the base cap's own edges (neighbour planes
-        // x=0,1,2,3); the slab's edges miss the cap, lying outside the U in x or off
-        // the z=0 plane.
-        let (m, u, slab) = u_and_slab();
-        let (planes, surf_ix) = combined(&m, u, slab);
-        let cap = face_facing(&m, u, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-
-        let out = segs(&m, cap, u, slab, &planes, &surf_ix);
-        assert_eq!(out.len(), 2, "two chords on one face: {out:?}");
-        let mut spans: Vec<(f64, f64)> = out
-            .iter()
-            .map(|s| {
-                for e in s.points {
-                    assert!(
-                        (e[1] - 1.5).abs() < 1e-9 && e[2].abs() < 1e-9,
-                        "off the seam line"
-                    );
-                }
-                let (a, b) = (s.points[0][0], s.points[1][0]);
-                (a.min(b), a.max(b))
-            })
-            .collect();
-        spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        assert!(
-            (spans[0].0 - 0.0).abs() < 1e-9 && (spans[0].1 - 1.0).abs() < 1e-9,
-            "{spans:?}"
-        );
-        assert!(
-            (spans[1].0 - 2.0).abs() < 1e-9 && (spans[1].1 - 3.0).abs() < 1e-9,
-            "{spans:?}"
-        );
-    }
-
-    #[test]
-    fn seam_paths_split_a_face_into_two_open_arcs() {
-        // The same base cap as `seam_segments_split_a_face_into_two_chords`, now
-        // assembled. Two disjoint arcs, each a lone segment whose both ends sit on
-        // `∂cap` — the two-chord shape the retired `multichord` guard once rejected.
-        let (m, u, slab) = u_and_slab();
-        let (planes, surf_ix) = combined(&m, u, slab);
-        let cap = face_facing(&m, u, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-
-        let out = paths(&m, cap, u, slab, &planes, &surf_ix);
-        assert_eq!(out.len(), 2, "two arcs on one face: {out:?}");
-        for p in &out {
-            assert!(matches!(p, arrange::SeamPath::Open(_)), "{p:?}");
-            let n = p.nodes();
-            assert_eq!(n.len(), 2);
-            // Both ends are boundary nodes, so both carry the cap edge they lie on.
-            assert!(n.iter().all(|e| e.on_edge.is_some()), "{n:?}");
-        }
-        let mut spans: Vec<(f64, f64)> = out
-            .iter()
-            .map(|p| {
-                let (a, b) = (p.nodes()[0].point[0], p.nodes()[1].point[0]);
-                (a.min(b), a.max(b))
-            })
-            .collect();
-        spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        assert!(
-            (spans[0].0).abs() < 1e-9 && (spans[0].1 - 1.0).abs() < 1e-9,
-            "{spans:?}"
-        );
-        assert!(
-            (spans[1].0 - 2.0).abs() < 1e-9 && (spans[1].1 - 3.0).abs() < 1e-9,
-            "{spans:?}"
-        );
-    }
+    proptest! {}
 
     /// Canonicalize a node sequence: an arc up to reversal, a loop up to rotation and
-    /// reversal. `seam_paths_on` does fix a start and a direction — that is a contract
-    /// and `seam_paths_are_deterministic` pins it — but these goldens are about the
-    /// *arc order*, and should not also freeze which end the walk entered from.
+    /// reversal. These goldens are about the *arc order* and should not also freeze which end
+    /// the walk entered from.
     fn canon(pts: &[[f64; 3]], closed: bool) -> Vec<[f64; 3]> {
         let rots = if closed { pts.len() } else { 1 };
         (0..rots)
@@ -4002,77 +3425,6 @@ pub mod tests {
             })
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or_default()
-    }
-
-    fn assert_points(p: &arrange::SeamPath, want: &[[f64; 3]]) {
-        let closed = matches!(p, arrange::SeamPath::Closed(_));
-        let got: Vec<[f64; 3]> = p.nodes().iter().map(|n| n.point.as_array()).collect();
-        let (got, want) = (canon(&got, closed), canon(want, closed));
-        assert_eq!(got.len(), want.len(), "{got:?} vs {want:?}");
-        assert!(
-            got.iter()
-                .zip(&want)
-                .all(|(g, w)| near(Point3::from_array(*g), *w)),
-            "{got:?} vs {want:?}"
-        );
-    }
-
-    #[test]
-    fn seam_paths_follow_the_true_arc_order_through_a_bend() {
-        // The staircase of `cut_staircase_seam_arc`, assembled. On the box's bottom face
-        // the arc runs (2,0.5) → (2,1) → (1,1) → (1,1.5): two bends turning opposite
-        // ways. The old projection sort could not tell a reflex turn from an arc folded
-        // back on itself, so `strict` rejected both. Adjacency reads this order off the
-        // 1-manifold instead, and cell 3e-1 retired the guard.
-        let (m, l, bx) = l_and_popup_box();
-        let (planes, surf_ix) = combined(&m, l, bx);
-        let floor = face_facing(&m, bx, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-
-        let out = paths(&m, floor, bx, l, &planes, &surf_ix);
-        assert_eq!(out.len(), 1, "one arc: {out:?}");
-        assert!(matches!(out[0], arrange::SeamPath::Open(_)), "{:?}", out[0]);
-        assert_points(
-            &out[0],
-            &[
-                [2.0, 0.5, 0.2],
-                [2.0, 1.0, 0.2],
-                [1.0, 1.0, 0.2],
-                [1.0, 1.5, 0.2],
-            ],
-        );
-        // Ends on `∂floor`, bends where the L's two vertical edges pierce it.
-        let n = out[0].nodes();
-        assert!(n[0].on_edge.is_some() && n[3].on_edge.is_some());
-        assert!(n[1].on_edge.is_none() && n[2].on_edge.is_none());
-    }
-
-    #[test]
-    fn seam_paths_close_a_loop_inside_a_face() {
-        // The dimple of `cut_blind_dimple_is_unsupported`. The stub's footprint never
-        // reaches the top face's boundary, so the seam is a closed ring in the face
-        // interior — an inner loop. Zero boundary nodes, four interior ones, one per
-        // vertical stub edge.
-        let (m, l, stub) = l_and_dimple();
-        let (planes, surf_ix) = combined(&m, l, stub);
-        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-
-        let out = paths(&m, top, l, stub, &planes, &surf_ix);
-        assert_eq!(out.len(), 1, "one loop: {out:?}");
-        assert!(
-            matches!(out[0], arrange::SeamPath::Closed(_)),
-            "{:?}",
-            out[0]
-        );
-        assert!(out[0].nodes().iter().all(|n| n.on_edge.is_none()));
-        assert_points(
-            &out[0],
-            &[
-                [0.3, 0.3, 1.0],
-                [0.3, 0.7, 1.0],
-                [0.7, 0.7, 1.0],
-                [0.7, 0.3, 1.0],
-            ],
-        );
     }
 
     /// A big cube whose `y=0, z=0` edge is crossed **twice** by the seam: the notch
@@ -4094,35 +3446,6 @@ pub mod tests {
         (m, a, y)
     }
 
-    #[test]
-    fn seam_path_crosses_one_face_edge_twice() {
-        // Both boundary nodes lie on the *same* edge of `f`. Any splice keyed by
-        // `Handle<Edge>` keeps one and drops the other — a manifold face that
-        // `validate` accepts and that is wrong. Cell 3d must key by the seam triple
-        // and order the two crossings along the edge with `order_along`.
-        let (m, a, y) = cube_and_notch();
-        let (planes, surf_ix) = combined(&m, a, y);
-        let floor = face_facing(&m, a, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-
-        let out = paths(&m, floor, a, y, &planes, &surf_ix);
-        assert_eq!(out.len(), 1, "one arc: {out:?}");
-        assert_points(
-            &out[0],
-            &[
-                [3.0, 0.0, 0.0],
-                [3.0, 1.4, 0.0],
-                [7.0, 1.4, 0.0],
-                [7.0, 0.0, 0.0],
-            ],
-        );
-        let n = out[0].nodes();
-        assert_eq!(
-            n[0].on_edge, n[3].on_edge,
-            "both ends ride the cube's y=0,z=0 edge"
-        );
-        assert!(n[0].on_edge.is_some());
-    }
-
     /// A thin rod skewering the L's bottom bar in `z`, both ends outside. Each of its four
     /// vertical edges pierces the L's two caps, so the caps take a closed seam loop and the
     /// rod's walls take two chords apiece — and each wall's vertical edges are crossed
@@ -4136,257 +3459,10 @@ pub mod tests {
         (m, l, rod)
     }
 
-    /// Group a face's boundary seam nodes by the index of the edge each rides.
-    fn by_edge(m: &Model, f: Handle<Face>, paths: &[arrange::SeamPath]) -> Vec<Vec<[usize; 3]>> {
-        let hes = &m.faces.get(f).outer.half_edges;
-        let mut out = vec![Vec::new(); hes.len()];
-        for nd in paths.iter().flat_map(|p| p.nodes()) {
-            if let Some(e) = nd.on_edge {
-                let i = hes
-                    .iter()
-                    .position(|he| he.edge == e)
-                    .expect("an outer edge");
-                out[i].push(nd.triple);
-            }
-        }
-        out
-    }
-
-    /// Cell 3e-3's core object. The cube's floor has all four corners outside the notch and
-    /// yet the seam enters and leaves across one edge, so an edge-indexed model sees one
-    /// transition slot where there are two crossings. The run model sees two crossings and
-    /// two runs, one of which holds **no vertex** — the piece of that edge inside the notch.
-    #[test]
-    fn two_crossings_on_one_edge_make_a_run_with_no_vertex() {
-        let (m, a, y) = cube_and_notch();
-        let (planes, surf_ix) = combined(&m, a, y);
-        let floor = face_facing(&m, a, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-        let p = surf_ix[&floor];
-        let inc = arrange::edge_planes(&m, a, &surf_ix).unwrap();
-        let ps = paths(&m, floor, a, y, &planes, &surf_ix);
-        let be = by_edge(&m, floor, &ps);
-        assert_eq!(be.iter().map(|v| v.len()).max(), Some(2));
-
-        let bnd =
-            arrange::face_vertex_triples(&m, floor, p, &inc, &planes, &plane_classes(&planes))
-                .unwrap();
-        let br = arrange::boundary_runs(&planes, p, &bnd, &be).unwrap();
-        assert_eq!(br.crossings.len(), 2);
-        let mut lens: Vec<usize> = br.runs.iter().map(|r| r.len()).collect();
-        assert_eq!(br.runs.len(), 2);
-        lens.sort_unstable();
-        assert_eq!(
-            lens,
-            vec![0, 4],
-            "one run holds nothing, the other the whole floor"
-        );
-
-        // The empty run runs from the first crossing the walk meets to the second, so the
-        // pair must be ordered the way the doubly-crossed edge is directed. That edge is
-        // `y = 0, z = 0`; the notch cuts it at `x = 3` and `x = 7`.
-        let empty = br.runs.iter().position(|r| r.is_empty()).unwrap();
-        let x_of = |t: [usize; 3]| {
-            three_planes(
-                &planes[t[0]].plane,
-                &planes[t[1]].plane,
-                &planes[t[2]].plane,
-            )
-            .unwrap()
-            .as_array()[0]
-        };
-        let hes = &m.faces.get(floor).outer.half_edges;
-        let on_y0 = hes
-            .iter()
-            .position(|he| {
-                let b = m.edges.get(he.edge).bounds.unwrap();
-                b.iter()
-                    .all(|&v| m.vertices.get(v).point.as_array()[1] == 0.0)
-            })
-            .unwrap();
-        let b = m.edges.get(hes[on_y0].edge).bounds.unwrap();
-        let start = m.vertices.get(he_start(&m, hes[on_y0])).point.as_array()[0];
-        let end = b
-            .iter()
-            .map(|&v| m.vertices.get(v).point.as_array()[0])
-            .find(|&x| x != start)
-            .unwrap();
-        let (first, second) = if end > start { (3.0, 7.0) } else { (7.0, 3.0) };
-        assert!((x_of(br.crossings[empty]) - first).abs() < 1e-9);
-        assert!((x_of(br.crossings[(empty + 1) % 2]) - second).abs() < 1e-9);
-    }
-
-    /// `run_classes` on paper. Alternation shapes it, `classof` anchors it, and a run with
-    /// no vertex has only the alternation to go by.
-    #[test]
-    fn run_classes_alternate_and_are_anchored_by_a_vertex() {
-        // `cube_and_notch`'s floor: run 0 empty (inside the notch), run 1 the four corners.
-        let runs = vec![vec![], vec![0, 1, 2, 3]];
-        let kept = arrange::run_classes(&runs, &[true; 4], &[2]).unwrap();
-        assert_eq!(kept, vec![false, true]);
-
-        // A vertex disagreeing with the propagation is the two machineries in conflict.
-        assert_rejects(
-            || arrange::run_classes(&[vec![0], vec![1]], &[true, true], &[2]),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-        // Crossings alternate enter/exit around a closed curve, so an odd count is a lie.
-        assert_rejects(
-            || arrange::run_classes(&[vec![0]], &[true], &[1]),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-        // Nothing anchors a boundary made only of vertex-free runs.
-        assert_rejects(
-            || arrange::run_classes(&[vec![], vec![]], &[], &[2]),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-
-        // Two rings, seeded apart (cell 3f-6). The outer runs `[_, {0,1}]` are kept, the rim
-        // runs `[_, {2,3}]` dropped — the firing lid, whose outer boundary lies in the box and
-        // whose pocket rim lies out of it. A single global alternation would carry the outer
-        // seed onto the rim and conflict with the rim's own vertices; per-ring seeding is what
-        // lets the two loops disagree. Result `[F, T, T, F]`.
-        let runs = vec![vec![], vec![0, 1], vec![], vec![2, 3]];
-        let kept_vert = [true, true, false, false];
-        assert_eq!(
-            arrange::run_classes(&runs, &kept_vert, &[2, 2]).unwrap(),
-            vec![false, true, true, false],
-            "each ring seeded by its own vertex"
-        );
-        // A ring with an odd run count: its crossings do not alternate around a closed loop.
-        assert_rejects(
-            || arrange::run_classes(&[vec![0], vec![1], vec![2], vec![3]], &[true; 4], &[1, 3]),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-        // A ring of only vertex-free runs, beside a well-anchored one: no anchor, still a lie.
-        assert_rejects(
-            || arrange::run_classes(&[vec![], vec![], vec![0], vec![1]], &[true; 2], &[2, 2]),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-        // A vertex inside one ring disagreeing with that ring's propagation — the two machines
-        // in conflict, caught by the global check even when the other ring is clean.
-        assert_rejects(
-            || arrange::run_classes(&[vec![], vec![0, 1], vec![2], vec![3]], &[true; 4], &[2, 2]),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-    }
-
-    /// The integer algebra cell 3e-3 rests on, before a line of it is wired: with crossings
-    /// as the index space, `kept[t] && !kept[t+1]` says "crossing `t+1` is kept→dropped",
-    /// so an arc's `kd` slot is its kd **crossing minus one**. `stitch_cycles` is then the
-    /// same function it always was — it never knew what its indices meant.
-    #[test]
-    fn crossing_indices_feed_stitch_cycles_unchanged() {
-        // The cube's floor: crossings `[c0 (x=3), c1 (x=7)]`, runs `[empty, corners]`.
-        // The single arc runs c1 → c0 through the notch; c1 is dropped→kept, c0 the other.
-        let kept = [false, true];
-        let (kd_cross, dk_cross) = (0usize, 1usize);
-        let n = 2;
-        let kd = vec![(kd_cross + n - 1) % n];
-        let dk = vec![(dk_cross + n - 1) % n];
-        assert_eq!((kd.clone(), dk.clone()), (vec![1], vec![0]));
-        assert_eq!(
-            arrange::stitch_cycles(&kept, &kd, &dk, &ident_next(kept.len())).unwrap(),
-            vec![vec![0]]
-        );
-
-        // The rod's wall: crossings `c0,c1` on one vertical edge and `c2,c3` on the other,
-        // the chords `c1–c2` (at `z = 1`) and `c3–c0` (at `z = 0`). An arc's kd end is the
-        // crossing whose *incoming* run is kept — `is_kd(c_j) = kept[j-1]`.
-        let n = 4;
-        let kd_dk = |kept: [bool; 4], arcs: [[usize; 2]; 2]| {
-            let is_kd = |c: usize| kept[(c + n - 1) % n];
-            let (mut kd, mut dk) = (vec![], vec![]);
-            for [x, y] in arcs {
-                let (k, d) = if is_kd(x) { (x, y) } else { (y, x) };
-                assert!(is_kd(k) && !is_kd(d), "an arc's ends oppose");
-                kd.push((k + n - 1) % n);
-                dk.push((d + n - 1) % n);
-            }
-            (kd, dk)
-        };
-        let arcs = [[1, 2], [3, 0]];
-
-        // `Cut(l, rod)` keeps the vertex-free runs: one region, the rectangle inside L.
-        let (kd, dk) = kd_dk([true, false, true, false], arcs);
-        assert_eq!((kd.clone(), dk.clone()), (vec![0, 2], vec![1, 3]));
-        let kept = [true, false, true, false];
-        assert_eq!(
-            arrange::stitch_cycles(&kept, &kd, &dk, &ident_next(kept.len())).unwrap(),
-            vec![vec![0, 1]],
-            "one cycle: the wall's middle"
-        );
-
-        // `Fuse` keeps the other two: the stub above L and the stub below, two faces.
-        let (kd, dk) = kd_dk([false, true, false, true], arcs);
-        assert_eq!((kd.clone(), dk.clone()), (vec![1, 3], vec![0, 2]));
-        let kept = [false, true, false, true];
-        assert_eq!(
-            arrange::stitch_cycles(&kept, &kd, &dk, &ident_next(kept.len())).unwrap(),
-            vec![vec![0], vec![1]],
-            "two cycles: one face becomes two"
-        );
-    }
-
-    /// Two rings, threaded by arcs, before the multi-ring `∂f` is wired (cell 3f-6). The
-    /// firing fixture's lid: outer loop crossed twice, the pocket rim crossed twice, and two
-    /// arcs each running outer↔rim. In the crossing/run index space the outer ring takes
-    /// `{0, 1}` and the rim `{2, 3}`, so `next` cycles *within* each block — `[1, 0, 3, 2]`,
-    /// not the single ring's `(i + 1) % 4`.
-    ///
-    /// The kept runs are `0` (outer) and `2` (rim). Arc `0` joins the outer kd to the rim dk,
-    /// arc `1` the rim kd to the outer dk; `succ` walking each arc's `dk` ring lands on the
-    /// other ring's kd, so the two arcs close into **one** cycle spanning both rings. Feed the
-    /// same runs the single-ring `next` and each arc closes on *itself* — two cycles, the one
-    /// connected region wrongly split. That split is the whole of what the successor map fixes.
-    #[test]
-    fn two_rings_thread_into_one_cycle() {
-        let run_kept = [true, false, true, false]; // outer {0,1}, rim {2,3}, each alternating
-        let next = [1, 0, 3, 2]; // per-ring cyclic successor
-        // `prev` is `next`'s inverse — the caller derives an arc's slot as `prev[crossing]`,
-        // the multi-ring form of cell 3e-3's `crossing − 1`.
-        let mut prev = [0usize; 4];
-        for (i, &j) in next.iter().enumerate() {
-            prev[j] = i;
-        }
-        assert_eq!(prev, [1, 0, 3, 2]);
-        // kd crossings `1` (outer) and `3` (rim); dk crossings `0` (outer) and `2` (rim). Slots
-        // via `prev`: arc 0 = (kd slot `prev[1]=0`, dk slot `prev[2]=3`), arc 1 = (kd `prev[3]=2`,
-        // dk `prev[0]=1`).
-        let kd = [prev[1], prev[3]]; // [0, 2]
-        let dk = [prev[2], prev[0]]; // [3, 1]
-        assert_eq!((kd, dk), ([0, 2], [3, 1]));
-        assert_eq!(
-            arrange::stitch_cycles(&run_kept, &kd, &dk, &next).unwrap(),
-            vec![vec![0, 1]],
-            "one cycle threads the outer ring and the rim"
-        );
-        // The single-ring successor severs the crossing: `succ` cannot leave the ring `dk`
-        // sits on, so each arc closes on itself and the one region splits into two.
-        assert_eq!(
-            arrange::stitch_cycles(&run_kept, &kd, &dk, &ident_next(4)).unwrap(),
-            vec![vec![0], vec![1]],
-            "single-ring next wrongly splits the region"
-        );
-    }
-
-    /// Classify vertex `vh` (of `vh_solid`) in/out of `target` on the exact index-plane
-    /// substrate — the test replacement for the retired f64 `point_in_solid`.
-    fn classify_in(
-        m: &Model,
-        vh: Handle<Vertex>,
-        vh_solid: Handle<Solid>,
-        target: Handle<Solid>,
-    ) -> Side {
-        let (planes, surf_ix, inc_v, inc_o, canon) =
-            plane_index_setup(m, vh_solid, target).unwrap();
-        arrange::point_in_solid_idx(m, vh, &inc_v, target, &inc_o, &planes, &surf_ix, &canon)
-            .unwrap()
-    }
-
     /// Every non-convex overlap input that reaches `reconstruct_face_paths`: the three that
     /// succeed and the three that it rejects from *inside*. The rejecting three matter
-    /// most — it calls `seam_paths_on`, which can reject for reasons the old convex code
-    /// never could (`vertex_on_face_plane`, `point_on_ring`, `fourplane`). Should that fire
+    /// most — the seam-free path can reject for reasons the old convex code never could
+    /// (`point_on_ring`, `fourplane`). Should that fire
     /// on a face visited *before* the intended one, the reject tag silently changes.
     /// Measuring only the accepted inputs would not see it.
     struct OverlapCase {
@@ -4436,54 +3512,6 @@ pub mod tests {
         ]
     }
 
-    #[test]
-    fn seam_paths_are_deterministic() {
-        // The assembly queries its adjacency map but never iterates it: `HashMap`
-        // order varies per instance, and a path's start and direction must not. Cell
-        // 3d builds faces from these paths, and the operation log replays them.
-        let (m, l, bx) = l_and_popup_box();
-        let (planes, surf_ix) = combined(&m, l, bx);
-        let floor = face_facing(&m, bx, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-        let once = paths(&m, floor, bx, l, &planes, &surf_ix);
-        for _ in 0..8 {
-            assert_eq!(paths(&m, floor, bx, l, &planes, &surf_ix), once);
-        }
-    }
-
-    /// Every seam-segment endpoint, as a sorted triple of surface handles.
-    fn seam_endpoint_triples(
-        m: &Model,
-        x: Handle<Solid>,
-        y: Handle<Solid>,
-    ) -> std::collections::BTreeSet<[Handle<Surface>; 3]> {
-        let (planes, surf_ix) = combined(m, x, y);
-        let inc_x = arrange::edge_planes(m, x, &surf_ix).unwrap();
-        let inc_y = arrange::edge_planes(m, y, &surf_ix).unwrap();
-        let shell = m.solids.get(x).outer;
-        let mut out = std::collections::BTreeSet::new();
-        for &f in &m.shells.get(shell).faces {
-            let segs = arrange::seam_segments_on(
-                m,
-                f,
-                y,
-                &planes,
-                &surf_ix,
-                &inc_x,
-                &inc_y,
-                &plane_classes(&planes),
-            )
-            .unwrap();
-            for s in segs {
-                for t in s.ends {
-                    let mut surfs = [planes[t[0]].surf, planes[t[1]].surf, planes[t[2]].surf];
-                    surfs.sort_unstable();
-                    out.insert(surfs);
-                }
-            }
-        }
-        out
-    }
-
     /// The `ThreePlane` definitions of a solid's `Discovered` vertices.
     fn discovered_triples(m: &Model) -> std::collections::BTreeSet<[Handle<Surface>; 3]> {
         let reach = m.reachable();
@@ -4499,98 +3527,6 @@ pub mod tests {
             }
         }
         out
-    }
-
-    #[test]
-    fn seam_endpoints_match_the_boolean_result_vertices() {
-        // An independent oracle. `assemble_fuse_cut` stamps every result vertex it
-        // discovers with `VertexDef::ThreePlane` — the same identity a seam-segment
-        // endpoint carries. The two are computed along completely different routes:
-        // one walks edges through faces and reconstructs, the other clips a plane-pair
-        // line to a face pair. On a clean single-chord overlap they must agree exactly.
-        //
-        // (They would not on `poke_through` or `tunnel` fixtures, where the reconstruction
-        // rejects part-way through enumeration while the face-local gathering completes.)
-        for kind in [BoolKind::Cut, BoolKind::Fuse] {
-            let (mut m, l, bx) = l_and_corner_box();
-            let from_arrange = seam_endpoint_triples(&m, l, bx);
-            assert_eq!(from_arrange.len(), 6);
-            boolean_one(&mut m, kind, l, bx).unwrap();
-            m.rebuild_adjacency();
-            assert_eq!(from_arrange, discovered_triples(&m), "{kind:?}");
-        }
-
-        // The reflex-corner bite too: eight seam vertices, one of them where the box
-        // straddles the L's notch.
-        let (mut m, l, bx) = l_and_reflex_box();
-        let from_arrange = seam_endpoint_triples(&m, l, bx);
-        assert_eq!(from_arrange.len(), 8);
-        boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
-
-        // And the folded arc (cell 3e-1). `discovered_triples` reads `reachable()`, so
-        // a seam vertex the reconstruction built but no result face used would drop out
-        // of the set and break this — which is what a lost face looks like. Volume
-        // alone could coincide; this cannot.
-        let (mut m, l, bx) = l_and_popup_box();
-        let from_arrange = seam_endpoint_triples(&m, l, bx);
-        boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
-
-        // And the inner loop (cell 3f-1): its four nodes are the hole's rim, used once
-        // by the lid and once by a pocket wall. Lose the loop and they leave `reachable`.
-        let (mut m, l, stub) = l_and_dimple();
-        let from_arrange = seam_endpoint_triples(&m, l, stub);
-        assert_eq!(from_arrange.len(), 4);
-        boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
-
-        // Two chords (cell 3e-2). Six seam nodes: two boundary ends and a bend for each of
-        // the cap's arcs, and the same six seen again from the bar's floor. Lose one of the
-        // bar's two floor faces and its four nodes leave `reachable`.
-        let (mut m, l, bar) = l_and_notch_bar();
-        let from_arrange = seam_endpoint_triples(&m, l, bar);
-        boolean_one(&mut m, BoolKind::Cut, l, bar).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
-
-        // The non-convex hole (cell 3h): six rim nodes, none of them on `∂f`.
-        let (mut m, l, stub) = l_and_ell_stub();
-        let from_arrange = seam_endpoint_triples(&m, l, stub);
-        assert_eq!(from_arrange.len(), 6);
-        boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
-
-        // An arc beside a loop (cell 3f-4). Lose the loop, or place it on the wrong region,
-        // and its four rim nodes leave `reachable`.
-        let (mut m, l, st) = l_and_staple();
-        let from_arrange = seam_endpoint_triples(&m, l, st);
-        boolean_one(&mut m, BoolKind::Cut, l, st).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
-
-        // Two flat loops (cell 3f-3): sixteen nodes, and the two prong cross-sections must
-        // both survive as faces or their eight rim nodes leave `reachable`.
-        let (mut m, u, slab) = u_and_slab();
-        let from_arrange = seam_endpoint_triples(&m, u, slab);
-        boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
-
-        // Swapped, the same four nodes are the island's whole outer ring (cell 3f-2).
-        // The arrangement does not know which solid is `a`, so it offers the same set;
-        // the result has to still contain all of it. If the island face were dropped,
-        // the box would lose its floor and every one of the four would go with it.
-        let (mut m, l, stub) = l_and_dimple();
-        let from_arrange = seam_endpoint_triples(&m, stub, l);
-        assert_eq!(from_arrange.len(), 4);
-        boolean_one(&mut m, BoolKind::Cut, stub, l).unwrap();
-        m.rebuild_adjacency();
-        assert_eq!(from_arrange, discovered_triples(&m));
     }
 
     /// A slab over the pocketed cube, its underside at height `z0`. The rectangle is
@@ -4816,77 +3752,6 @@ pub mod tests {
     }
 
     #[test]
-    fn one_arc_stitches_to_the_old_splice() {
-        // The single-arc case must come out `[[0]]`, because that cycle *is* today's
-        // splice: run `dk+1 ..= kd`, then the arc. A hexagon with one chord.
-        let kept = [true, true, true, false, false, false];
-        assert_eq!(
-            arrange::stitch_cycles(&kept, &[2], &[5], &ident_next(6)).unwrap(),
-            vec![vec![0]]
-        );
-    }
-
-    #[test]
-    fn two_chords_make_one_ring_or_two() {
-        // Which it is depends on nothing but where the kept vertices sit.
-        //
-        // The L's cap: `[T,T,F,T,F,T]`, arcs on transitions `(kd=1, dk=2)` and
-        // `(kd=3, dk=4)`. From `dk=2` the run is vertex 3 alone and ends at `kd=3`, arc 1;
-        // from `dk=4` the run is `5,0,1` and ends at `kd=1`, arc 0. One cycle, two arcs —
-        // the kept region is the cap minus two corners.
-        let cap = [true, true, false, true, false, true];
-        assert_eq!(
-            arrange::stitch_cycles(&cap, &[1, 3], &[2, 4], &ident_next(6)).unwrap(),
-            vec![vec![0, 1]]
-        );
-
-        // The bar's floor seen from `Cut`'s B-piece: `[T,F,F,F,T,F]`, arcs `(kd=0, dk=5)`
-        // and `(kd=4, dk=3)`. Each run is one vertex and closes on its own arc: two
-        // cycles, two faces — the two bites.
-        let floor = [true, false, false, false, true, false];
-        assert_eq!(
-            arrange::stitch_cycles(&floor, &[0, 4], &[5, 3], &ident_next(6)).unwrap(),
-            vec![vec![0], vec![1]]
-        );
-    }
-
-    #[test]
-    fn cycles_start_at_the_lowest_unused_arc() {
-        // Replay rests on the order of `LocalFace`s, which rests on this. Feed the same
-        // two cycles with the arcs swapped and the output order swaps with them — it
-        // follows `opens`, which `seam_paths_on` already orders deterministically.
-        let floor = [true, false, false, false, true, false];
-        assert_eq!(
-            arrange::stitch_cycles(&floor, &[4, 0], &[3, 5], &ident_next(6)).unwrap(),
-            vec![vec![0], vec![1]]
-        );
-    }
-
-    #[test]
-    fn a_broken_successor_map_is_rejected_not_looped() {
-        // Where `classof`'s ray casting and the arrangement's exact crossings would
-        // disagree. Today's single-arc code *assumes* all three; with several arcs the
-        // assumption can be silently false, so it becomes the same reject that already
-        // arbitrates those two machines.
-        let cap = [true, true, false, true, false, true];
-        // A `kd` that is not a kept→dropped transition.
-        assert_rejects(
-            || arrange::stitch_cycles(&cap, &[0, 3], &[2, 4], &ident_next(6)).map(|_| ()),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-        // Two arcs claiming the same `kd`.
-        assert_rejects(
-            || arrange::stitch_cycles(&cap, &[1, 1], &[2, 4], &ident_next(6)).map(|_| ()),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-        // Four transitions but only one arc: the `kd`s no longer cover them.
-        assert_rejects(
-            || arrange::stitch_cycles(&cap, &[1], &[2], &ident_next(6)).map(|_| ()),
-            tag::SEAM_COUNT_MISMATCH,
-        );
-    }
-
-    #[test]
     fn cut_notch_bar() {
         // Two chords on one face, resolved. The bar bites the cap's corners `(2,1)` and
         // `(1,2)`; the kept region is the cap minus both, one ring using both arcs.
@@ -4966,118 +3831,79 @@ pub mod tests {
         (m, l, stub)
     }
 
-    /// The ring's nodes as points, in ring order — tests only, to name a node by where it is.
-    fn ring_points(nodes: &[arrange::SeamEnd], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
+    /// A ring's nodes as coordinates — each triple is three planes, so its point is their meet.
+    fn ring_points(planes: &[PlaneInfo], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
         ring.iter()
             .map(|t| {
-                nodes
-                    .iter()
-                    .find(|nd| nd.triple == *t)
-                    .unwrap()
-                    .point
-                    .as_array()
+                three_planes(
+                    &planes[t[0]].plane,
+                    &planes[t[1]].plane,
+                    &planes[t[2]].plane,
+                )
+                .unwrap()
+                .as_array()
             })
             .collect()
     }
 
     #[test]
     fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
-        // The dimple's square hole. Walked with the material on its left it runs clockwise
-        // about the cap's `+z`, so the winding is `-1`. Flip `material_outside` — which is
-        // exactly how cell 3f-2 reads the same face as an island — and it must be `+1`.
-        let (m, l, stub) = l_and_dimple();
-        let (planes, surf_ix) = combined(&m, l, stub);
-        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&top];
-        let ps = paths(&m, top, l, stub, &planes, &surf_ix);
-        let arrange::SeamPath::Closed(nodes) = &ps[0] else {
-            panic!("closed loop")
-        };
-
-        let hole = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
+        // The two rings of a holed face are stored with opposite windings — that is what makes one
+        // a hole and the other its outer boundary — and `loop_winding` must read exactly that.
+        let (planes, p, outer, hole) = holed_face_rings("dimple");
+        assert_eq!(arrange::loop_winding(&planes, p, &outer).unwrap(), 1);
         assert_eq!(arrange::loop_winding(&planes, p, &hole).unwrap(), -1);
 
-        let island = arrange::orient_seam_loop(&planes, p, nodes, false).unwrap();
-        assert_eq!(arrange::loop_winding(&planes, p, &island).unwrap(), 1);
-
         // Nothing but the ring's direction went into that. Reversing it by hand agrees.
-        let mut reversed = hole.clone();
-        reversed.reverse();
-        assert_eq!(arrange::loop_winding(&planes, p, &reversed).unwrap(), 1);
-
-        // A square turns the same way everywhere, so `nodes[0]` would have done. That is
-        // precisely what the next test refutes.
-        for i in 0..hole.len() {
-            assert_eq!(arrange::turn_at(&planes, p, &hole, i).unwrap(), -1);
+        for (name, ring, want) in [("outer", &outer, -1i8), ("hole", &hole, 1)] {
+            let mut reversed = ring.clone();
+            reversed.reverse();
+            assert_eq!(
+                arrange::loop_winding(&planes, p, &reversed).unwrap(),
+                want,
+                "{name} reversed"
+            );
         }
     }
 
     #[test]
     fn a_reflex_node_turns_against_its_ring() {
-        // The whole reason `loop_winding` hunts for a hull vertex. On the L-shaped hole the
-        // turn is `-1` at five nodes and `+1` at the reflex one, `(0.35, 0.4)` — read
-        // `turn_at` there and the ring looks counter-clockwise, which it is not.
-        //
-        // This is the `outer_tri` bug restated: the turn at one corner is the ring's winding
-        // only when that corner is convex. There a fixture found it after the fact; here the
-        // test finds it before there is any code to be wrong.
-        let (m, l, stub) = l_and_ell_stub();
-        let (planes, surf_ix) = combined(&m, l, stub);
-        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&top];
-        let ps = paths(&m, top, l, stub, &planes, &surf_ix);
-        let arrange::SeamPath::Closed(nodes) = &ps[0] else {
-            panic!("closed loop")
-        };
-        let hole = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
-        assert_eq!(arrange::loop_winding(&planes, p, &hole).unwrap(), -1);
-
-        let pts = ring_points(nodes, &hole);
+        // The L cap's outer ring is a hexagon with exactly one reflex corner, at `(1, 1)`. A
+        // convex node turns with the ring and the reflex one turns against it, so the turn signs
+        // are *not* all equal — which is why the winding cannot be read off an arbitrary node.
+        let (planes, p, outer, _) = holed_face_rings("dimple");
+        let pts = ring_points(&planes, &outer);
         let reflex = pts
             .iter()
-            .position(|q| near(Point3::from_array(*q), [0.35, 0.4, 1.0]))
+            .position(|q| near(Point3::from_array(*q), [1.0, 1.0, 1.0]))
             .expect("the reflex node");
-        assert_eq!(arrange::turn_at(&planes, p, &hole, reflex).unwrap(), 1);
-        let turns: Vec<i8> = (0..hole.len())
-            .map(|i| arrange::turn_at(&planes, p, &hole, i).unwrap())
+        assert_eq!(arrange::turn_at(&planes, p, &outer, reflex).unwrap(), -1);
+        let turns: Vec<i8> = (0..outer.len())
+            .map(|i| arrange::turn_at(&planes, p, &outer, i).unwrap())
             .collect();
-        assert_eq!(turns.iter().filter(|&&t| t == 1).count(), 1);
+        assert_eq!(
+            turns.iter().filter(|&&t| t == -1).count(),
+            1,
+            "one reflex corner: {turns:?}"
+        );
 
-        // And the node the search lands on is the lexicographically least, `(0.2, 0.25)` —
-        // a hull vertex, where the turn is the winding. The test finds it by reading
-        // coordinates; `loop_winding` finds it with an exact predicate.
+        // The node `loop_winding` lands on is the lexicographically least — a hull vertex, where
+        // the turn *is* the winding. The test finds it by reading coordinates; `loop_winding`
+        // finds it with an exact predicate.
         let lo = (0..pts.len())
             .min_by(|&i, &j| pts[i].partial_cmp(&pts[j]).unwrap())
             .unwrap();
-        assert!(near(Point3::from_array(pts[lo]), [0.2, 0.25, 1.0]));
-        assert_eq!(arrange::turn_at(&planes, p, &hole, lo).unwrap(), -1);
         assert_ne!(lo, reflex);
+        assert_eq!(arrange::turn_at(&planes, p, &outer, lo).unwrap(), 1);
 
-        // ★ The teeth. A ring is a cycle, so its winding cannot depend on where the walk
-        // began. Start it at the reflex node and a `turn_at(ring[0])` implementation reads
-        // `+1` — the exact fault `outer_tri` shipped. Measured: without this rotation, such
-        // an implementation passes every assertion above.
-        let mut rotated = hole.clone();
+        // ★ The teeth. A ring is a cycle, so its winding cannot depend on where the walk began.
+        // Start it at the reflex node and a `turn_at(ring[0])` implementation reads the reflex
+        // sign — the exact fault `outer_tri` shipped. Measured: without this rotation, such an
+        // implementation passes every assertion above.
+        let mut rotated = outer.clone();
         rotated.rotate_left(reflex);
-        assert_eq!(arrange::turn_at(&planes, p, &rotated, 0).unwrap(), 1);
-        assert_eq!(arrange::loop_winding(&planes, p, &rotated).unwrap(), -1);
-    }
-
-    #[test]
-    fn the_ell_stub_cuts_a_non_convex_loop() {
-        // Every closed seam loop in the suite so far has been a rectangle, and a convex
-        // ring turns the same way at every node. Cell 3h's hull-vertex search would never
-        // be exercised by one. This loop has a reflex node, at `(0.35, 0.4)`.
-        let (m, l, stub) = l_and_ell_stub();
-        let (planes, surf_ix) = combined(&m, l, stub);
-        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let ps = paths(&m, top, l, stub, &planes, &surf_ix);
-        assert_eq!(ps.len(), 1);
-        let arrange::SeamPath::Closed(nodes) = &ps[0] else {
-            panic!("closed loop")
-        };
-        assert_eq!(nodes.len(), 6);
-        assert!(nodes.iter().all(|nd| nd.on_edge.is_none()));
+        assert_eq!(arrange::turn_at(&planes, p, &rotated, 0).unwrap(), -1);
+        assert_eq!(arrange::loop_winding(&planes, p, &rotated).unwrap(), 1);
     }
 
     #[test]
@@ -5145,184 +3971,122 @@ pub mod tests {
         (m, l, st)
     }
 
-    /// The staple cap's `(∂f ring, cycle ring, oriented loop ring)`, as plane triples.
+    /// A **holed reflex face** from the live engine, as plane triples: `(planes, p, outer, hole)`.
     ///
-    /// The cycle is built the way `reconstruct_face_paths` builds it: `Cut(L, staple)` keeps
-    /// `[T,T,T,F,T,T]`, so the run is `4,5,0,1,2` and the arc is spliced starting at its
-    /// `kd` end (edge 2). `material_outside` picks the loop's direction.
-    #[allow(clippy::type_complexity)]
-    fn staple_cap_rings(
-        material_outside: bool,
-        kept_run: &[usize],
-        arc_forward: bool,
-    ) -> (
-        Vec<PlaneInfo>,
-        usize,
-        Vec<[usize; 3]>,
-        Vec<[usize; 3]>,
-        Vec<[usize; 3]>,
-    ) {
-        let (m, l, st) = l_and_staple();
-        let (planes, surf_ix) = combined(&m, l, st);
-        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&top];
-        let ps = paths(&m, top, l, st, &planes, &surf_ix);
-        let arrange::SeamPath::Open(arc) = &ps[0] else {
-            panic!("an arc")
-        };
-        let arrange::SeamPath::Closed(lp) = &ps[1] else {
-            panic!("a loop")
-        };
-        let inc_f = arrange::edge_planes(&m, l, &surf_ix).unwrap();
-        let bnd =
-            arrange::face_vertex_triples(&m, top, p, &inc_f, &planes, &plane_classes(&planes))
-                .unwrap();
-
-        let mut cycle: Vec<[usize; 3]> = kept_run.iter().map(|&i| bnd[i]).collect();
-        if arc_forward {
-            cycle.extend(arc.iter().map(|nd| nd.triple));
+    /// `Cut(L-prism, stub)` leaves the L's top cap carrying a hole — `"dimple"` a square one,
+    /// `"ell"` an L-shaped one. Both rings come from [`arrange::face_vertex_triples`] and
+    /// [`arrange::hole_rings`], which the boolean itself uses, so the fixture exercises only code
+    /// the kernel runs.
+    ///
+    /// This replaces a helper that built its rings from `seam_paths_on`/`orient_seam_loop` — the
+    /// retired seam engine. The *properties* below are about `point_in_ring`/`every_ray`, which are
+    /// live and load-bearing (`nest_cells` picks a hole's host with them, `unify_coplanar_faces`
+    /// groups by them), so they had to be re-homed rather than deleted with their old fixture.
+    fn holed_face_rings(which: &str) -> (Vec<PlaneInfo>, usize, Vec<[usize; 3]>, Vec<[usize; 3]>) {
+        let (mut m, l, stub) = if which == "dimple" {
+            l_and_dimple()
         } else {
-            cycle.extend(arc.iter().rev().map(|nd| nd.triple));
+            l_and_ell_stub()
+        };
+        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).expect("the cut");
+        m.rebuild_adjacency();
+        let planes = collect_planes(&m, r).unwrap();
+        let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+        for (i, pi) in planes.iter().enumerate() {
+            surf_ix.insert(pi.face, i);
         }
-        let ring = arrange::orient_seam_loop(&planes, p, lp, material_outside).unwrap();
-        (planes, p, bnd, cycle, ring)
+        let canon = plane_classes(&planes);
+        let inc = arrange::edge_planes(&m, r, &surf_ix).unwrap();
+        for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+            let p = surf_ix[&fh];
+            let holes = arrange::hole_rings(&m, fh, p, &inc, &planes, &canon).unwrap();
+            if let Some(hole) = holes.into_iter().next() {
+                let outer = arrange::face_vertex_triples(&m, fh, p, &inc, &planes, &canon).unwrap();
+                assert_eq!(outer.len(), 6, "{which}: the L's cap is a reflex hexagon");
+                return (planes, p, outer, hole);
+            }
+        }
+        panic!("{which}: no holed face");
     }
 
     #[test]
     fn a_loop_is_inside_the_face_it_was_found_on() {
-        // `SeamPath::Closed` has claimed since cell 3f-1 that a closed seam loop never
-        // touches `∂f`. Nothing checked it. Every node of the staple's loop is strictly
-        // inside the cap's own ring, and `point_on_ring` is what would say otherwise.
-        //
-        // The `∂f` ring is a hexagon with a reflex corner, so this is not a convex test.
-        let (planes, p, bnd, _, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
-        for t in &ring {
-            assert!(arrange::point_in_ring(&planes, p, *t, &bnd).unwrap());
+        // A hole ring never touches its face's outer ring: every node is *strictly* inside, so
+        // `point_in_ring` must say so for all of them. The outer ring is the L's cap, a hexagon
+        // with a reflex corner, so this is not a convex test.
+        let (planes, p, outer, hole) = holed_face_rings("dimple");
+        for t in &hole {
+            assert!(arrange::point_in_ring(&planes, p, *t, &outer).unwrap());
         }
     }
 
     #[test]
     fn the_older_loops_are_inside_their_faces_too() {
-        // The two fixtures cell 3f-4 must not move: a square hole and an L-shaped one. Both
-        // rings sit strictly inside the same reflex hexagon, and every clear ray agrees.
-        for (name, f) in [
-            (
-                "dimple",
-                l_and_dimple as fn() -> (Model, Handle<Solid>, Handle<Solid>),
-            ),
-            ("ell stub", l_and_ell_stub),
-        ] {
-            let (m, l, stub) = f();
-            let (planes, surf_ix) = combined(&m, l, stub);
-            let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-            let p = surf_ix[&top];
-            let ps = paths(&m, top, l, stub, &planes, &surf_ix);
-            let arrange::SeamPath::Closed(lp) = &ps[0] else {
-                panic!("{name}: a loop")
-            };
-            let inc_f = arrange::edge_planes(&m, l, &surf_ix).unwrap();
-            let bnd =
-                arrange::face_vertex_triples(&m, top, p, &inc_f, &planes, &plane_classes(&planes))
-                    .unwrap();
-            let ring = arrange::orient_seam_loop(&planes, p, lp, true).unwrap();
-            for t in &ring {
-                let rays = arrange::every_ray(&planes, p, *t, &bnd).unwrap();
-                assert!(!rays.is_empty(), "{name}: no clear ray");
-                assert!(rays.iter().all(|&x| x), "{name}: {rays:?}");
+        // Two hole shapes that must not move: a square one and an L-shaped one. Both sit
+        // strictly inside the same reflex hexagon, and **every** clear ray agrees — the parity
+        // cannot depend on which ray was cast, which is a second machine for free.
+        for which in ["dimple", "ell"] {
+            let (planes, p, outer, hole) = holed_face_rings(which);
+            for t in &hole {
+                let rays = arrange::every_ray(&planes, p, *t, &outer).unwrap();
+                assert!(!rays.is_empty(), "{which}: no clear ray");
+                assert!(rays.iter().all(|&x| x), "{which}: {rays:?}");
             }
         }
     }
 
     #[test]
     fn a_loop_is_placed_by_where_it_is_not_by_how_it_winds() {
-        // The shape cell 3f-3 could not decide. One face, one arc, one loop — and the loop
-        // is a *hole* or an *island* depending only on which side of the arc it lies.
+        // Containment is about **where** a ring is, never which way it runs. A hole ring is stored
+        // clockwise about the face normal and its outer ring counter-clockwise, and neither
+        // direction may enter the answer: reversing either must change nothing.
         //
-        // `Cut(L, staple)`: the kept region is the cap minus the corner bite, and the loop
-        // sits inside it. `Cut(staple, L)`: the kept region *is* the corner bite, and the
-        // same loop sits outside it. Neither the winding nor `kept[0]` can tell those apart.
-        let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
-        for t in &ring {
+        // And containment is **not symmetric** — the classic way to get this wrong is a test that
+        // only ever asks it one way round.
+        let (planes, p, outer, hole) = holed_face_rings("dimple");
+        let (mut rev_outer, mut rev_hole) = (outer.clone(), hole.clone());
+        rev_outer.reverse();
+        rev_hole.reverse();
+        for t in &hole {
+            assert!(arrange::point_in_ring(&planes, p, *t, &outer).unwrap());
             assert!(
-                arrange::point_in_ring(&planes, p, *t, &cycle).unwrap(),
-                "the loop is inside the kept region: a hole"
+                arrange::point_in_ring(&planes, p, *t, &rev_outer).unwrap(),
+                "reversing the outer ring must not move the hole"
             );
         }
-        // And the ring does not contain the region: containment is not symmetric.
-        assert!(!arrange::point_in_ring(&planes, p, cycle[0], &ring).unwrap());
-        assert!(!arrange::point_in_ring(&planes, p, cycle[7], &ring).unwrap());
-
-        let (planes, p, _, cycle, ring) = staple_cap_rings(false, &[3], true);
-        for t in &ring {
+        for t in &outer {
+            assert!(!arrange::point_in_ring(&planes, p, *t, &hole).unwrap());
             assert!(
-                !arrange::point_in_ring(&planes, p, *t, &cycle).unwrap(),
-                "the loop is outside the kept region: an island"
+                !arrange::point_in_ring(&planes, p, *t, &rev_hole).unwrap(),
+                "nor may reversing the hole swallow the outer ring"
             );
         }
     }
 
     #[test]
-    fn every_clear_ray_agrees_and_half_of_them_are_not_clear() {
-        // The ring is simple, so the parity cannot depend on which ray was cast. That is a
-        // second machine, free.
+    fn every_clear_ray_agrees() {
+        // The ring is simple, so the parity cannot depend on the ray. `every_ray` returns one
+        // answer per usable candidate and they must be unanimous; a disagreement means the ray
+        // choice leaked into the result.
         //
-        // And the candidates are not interchangeable, which is why both of a node's planes
-        // must be tried: the staple's legs are extruded from the same `y = 0.65` and
-        // `y = 1.3` caps, so the loop and the arc *share* those planes. A ray along the
-        // loop's `y` plane runs straight through the arc's nodes `(0.8, 0.65)` and
-        // `(1.4, 0.65)`. Only the `x` lines survive — two of four candidates.
-        let (planes, p, bnd, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
-
-        let vs_face = arrange::every_ray(&planes, p, ring[0], &bnd).unwrap();
-        assert_eq!(vs_face.len(), 4, "all four candidates are clear of `∂f`");
-        assert!(vs_face.iter().all(|&x| x), "and all agree: inside");
-
-        let vs_cycle = arrange::every_ray(&planes, p, ring[0], &cycle).unwrap();
-        assert_eq!(
-            vs_cycle.len(),
-            2,
-            "the loop's `y` plane meets the arc's nodes"
-        );
-        assert!(vs_cycle.iter().all(|&x| x), "the clear ones agree: inside");
+        // (Its ancestor also pinned that *half* the candidates were unusable — that count came
+        // from the retired staple fixture, whose loop and arc shared a plane. The holed L cap has
+        // no such sharing, so only the unanimity survives the move.)
+        let (planes, p, outer, hole) = holed_face_rings("dimple");
+        let rays = arrange::every_ray(&planes, p, hole[0], &outer).unwrap();
+        assert!(!rays.is_empty(), "at least one candidate is clear");
+        assert!(rays.iter().all(|&x| x), "and they agree: inside — {rays:?}");
     }
 
     #[test]
     fn a_ring_inside_a_ring_is_what_nesting_looks_like() {
-        // `nested_loops` has no operand in the suite that produces it — a polyhedral torus
-        // would. The detector can still be aimed at real geometry: the staple cap's kept
-        // region contains its loop, so feeding that pair to the containment test as though
-        // they were two loops fires exactly the condition cell 3f-4 rejects. It is the
-        // detector under test, not the fixture.
-        let (planes, p, _, cycle, ring) = staple_cap_rings(true, &[4, 5, 0, 1, 2], false);
-        assert!(arrange::point_in_ring(&planes, p, ring[0], &cycle).unwrap());
-        assert!(!arrange::point_in_ring(&planes, p, cycle[0], &ring).unwrap());
-    }
-
-    #[test]
-    fn the_staple_leaves_an_arc_beside_a_loop() {
-        // The one shape `pokehole` will still guard after cell 3f-3. The cap carries both:
-        // the near leg cuts a rectangle wholly inside it, the far leg wraps the reflex
-        // corner `(1,1)` and leaves an arc whose two ends ride *different* edges. That was
-        // chosen to keep `pierced_multi` quiet; cell 3e-3 retired it, and the fixture stays
-        // as it is so that it goes on testing one thing.
-        let (m, l, st) = l_and_staple();
-        let (planes, surf_ix) = combined(&m, l, st);
-        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let ps = paths(&m, top, l, st, &planes, &surf_ix);
-        assert_eq!(ps.len(), 2);
-
-        let arrange::SeamPath::Open(arc) = &ps[0] else {
-            panic!("an open arc")
-        };
-        assert_eq!(arc.len(), 5);
-        let ends: BTreeSet<Handle<Edge>> = arc.iter().filter_map(|nd| nd.on_edge).collect();
-        assert_eq!(ends.len(), 2, "the arc's ends ride two distinct edges");
-
-        let arrange::SeamPath::Closed(loop_) = &ps[1] else {
-            panic!("a closed loop")
-        };
-        assert_eq!(loop_.len(), 4);
-        assert!(loop_.iter().all(|nd| nd.on_edge.is_none()));
+        // `nested_loops` has no operand in the suite that produces it — a polyhedral torus would.
+        // The detector can still be aimed at real geometry: a holed face *is* a ring inside a ring,
+        // which fires exactly the condition the nesting brick asks about. It is the detector under
+        // test, not the fixture.
+        let (planes, p, outer, hole) = holed_face_rings("dimple");
+        assert!(arrange::point_in_ring(&planes, p, hole[0], &outer).unwrap());
+        assert!(!arrange::point_in_ring(&planes, p, outer[0], &hole).unwrap());
     }
 
     #[test]
@@ -5401,56 +4165,6 @@ pub mod tests {
         (m, l, stub)
     }
 
-    #[test]
-    fn a_seam_loop_keeps_material_on_its_left() {
-        // The global sign, pinned before anything is wired. `loop_orient_mismatch`
-        // cannot catch a loop that is flipped *as a whole* — every edge would be wrong
-        // together — and `validate` is a caller's option, not the kernel's. So the
-        // derivation is checked here, on the real fixture, against a sequence computed
-        // by hand.
-        //
-        // The L's top face has `n_out = +z`; the hole is the stub's footprint. Walk it
-        // with the material (outside the stub) on the left and you go clockwise seen
-        // from +z. On the edge (0.3,0.3) → (0.3,0.7) the left is `z × y = −x`: outside
-        // the stub. Only the test reads a coordinate; the rule reads three signs.
-        //
-        // The rule is local: it asks which side of the seam the kept material lies on,
-        // never whether the loop bounds a hole or an island. So the second call below
-        // is not a symmetry curiosity — `material_outside == false` is exactly the
-        // island's outer ring, the same L face read with `keep == Inside` when the
-        // operands are swapped. Cell 3f-2 wires it, and this golden is what pins its
-        // direction: downstream, only `validate` and the signed mesh volume look.
-        let (m, l, stub) = l_and_dimple();
-        let (planes, surf_ix) = combined(&m, l, stub);
-        let top = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, 1.0]);
-        let p = surf_ix[&top];
-
-        let out = paths(&m, top, l, stub, &planes, &surf_ix);
-        let arrange::SeamPath::Closed(nodes) = &out[0] else {
-            panic!("closed loop")
-        };
-        let point_of = |t: &[usize; 3]| nodes.iter().find(|nd| nd.triple == *t).unwrap().point;
-
-        let outside = arrange::orient_seam_loop(&planes, p, nodes, true).unwrap();
-        let got: Vec<[f64; 3]> = outside.iter().map(|t| point_of(t).as_array()).collect();
-        assert_points_cycle(
-            &got,
-            &[
-                [0.3, 0.3, 1.0],
-                [0.3, 0.7, 1.0],
-                [0.7, 0.7, 1.0],
-                [0.7, 0.3, 1.0],
-            ],
-        );
-
-        // The rule's only degree of freedom is that bit. Flip it and the loop must
-        // reverse exactly — if it does not, the derivation is wrong somewhere.
-        let inside = arrange::orient_seam_loop(&planes, p, nodes, false).unwrap();
-        let mut rev = outside.clone();
-        rev.reverse();
-        assert_eq!(inside, rev);
-    }
-
     /// Compare two closed sequences up to rotation (not reflection — the direction is
     /// the whole point).
     fn assert_points_cycle(got: &[[f64; 3]], want: &[[f64; 3]]) {
@@ -5470,8 +4184,8 @@ pub mod tests {
         // face has no `∂f` at all — its outer loop *is* the seam ring, four `Discovered`
         // vertices and nothing else. The answer is the `0.4 × 0.4 × 0.5` box above `z = 1`.
         //
-        // This is where `flip` first meets a ring that came from `orient_seam_loop`. The
-        // rule wound it CCW about the L's `+z`, keeping the material (inside the stub) on
+        // This is where `flip` first meets a discovered hole ring. It is wound CCW about the
+        // L's `+z`, keeping the material (inside the stub) on
         // its left; `flip` reverses it and the face becomes the box's downward-facing
         // floor. Nothing but `validate` and the signed mesh volume can see that go wrong.
         let (mut m, l, stub) = l_and_dimple();
@@ -5661,101 +4375,6 @@ pub mod tests {
         assert!(vs.is_empty(), "{vs:?}");
         for &s in &solids {
             assert!((nacre_props::mass_props(&m, s).unwrap().volume - 1.0).abs() < 1e-9);
-        }
-    }
-
-    /// The two contacts, named. Both were `contact_degenerate` — "grazed a fan diagonal" — and
-    /// neither ever was a graze.
-    ///
-    /// The vertex case is why `point_on_ring` is asked **before** `point_in_ring`: when the
-    /// piercing point is a ring node, both of its rays carry that node, every candidate is
-    /// skipped, and `point_in_ring` alone comes back `no_clear_ray`. Measured below.
-    #[test]
-    fn an_edge_touching_a_face_is_a_contact_not_a_graze() {
-        let (mut m, l) = l_prism();
-        // Its floor lies in the L's own bottom plane.
-        let flat = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.5, 1.5, 0.5]),
-        );
-        // A corner exactly on the L cap's reflex vertex `(1,1)`, and one on an edge's interior.
-        let at_vertex = m.add_cuboid(
-            Point3::from_array([1.0, 1.0, -0.5]),
-            Point3::from_array([1.2, 1.2, 0.5]),
-        );
-        let at_edge = m.add_cuboid(
-            Point3::from_array([1.5, 0.0, -0.5]),
-            Point3::from_array([1.7, 0.2, 0.5]),
-        );
-
-        let pierce = |other: Handle<Solid>, want: [f64; 2]| {
-            let (planes, surf_ix) = combined(&m, l, other);
-            let inc_l = arrange::edge_planes(&m, l, &surf_ix).unwrap();
-            let bottom = face_facing(&m, l, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-            let q = surf_ix[&bottom];
-            let rings =
-                arrange::face_rings(&m, bottom, q, &inc_l, &planes, &plane_classes(&planes))
-                    .unwrap();
-            let (bounds, inc) = *arrange::edge_planes(&m, other, &surf_ix)
-                .unwrap()
-                .values()
-                .find(|(bd, _)| {
-                    bd.iter().all(|&v| {
-                        let p = m.vertices.get(v).point.as_array();
-                        [p[0], p[1]] == want
-                    }) && bd
-                        .iter()
-                        .any(|&v| m.vertices.get(v).point.as_array()[2] < 0.0)
-                })
-                .expect("the vertical edge");
-            (planes, q, rings, inc, bounds)
-        };
-
-        // (a) The whole edge lies in the other face's plane. Both endpoint signs are zero.
-        {
-            let (planes, surf_ix) = combined(&m, l, flat);
-            let inc_flat = arrange::edge_planes(&m, flat, &surf_ix).unwrap();
-            let floor = face_facing(&m, flat, &planes, &surf_ix, [0.0, 0.0, -1.0]);
-            let q = surf_ix[&floor];
-            let rings =
-                arrange::face_rings(&m, floor, q, &inc_flat, &planes, &plane_classes(&planes))
-                    .unwrap();
-            let (bounds, inc) = *arrange::edge_planes(&m, l, &surf_ix)
-                .unwrap()
-                .values()
-                .find(|(bd, _)| {
-                    bd.iter()
-                        .all(|&v| m.vertices.get(v).point.as_array()[2] == 0.0)
-                })
-                .expect("an edge of the L's bottom");
-            assert_rejects(
-                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
-                tag::VERTEX_ON_FACE_PLANE,
-            );
-        }
-
-        // (b) The piercing point is a ring node.
-        {
-            let (planes, q, rings, inc, bounds) = pierce(at_vertex, [1.0, 1.0]);
-            assert_rejects(
-                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
-                tag::POINT_ON_RING,
-            );
-            let mut x = [inc[0], inc[1], q];
-            x.sort_unstable();
-            assert_rejects(
-                || arrange::point_in_ring(&planes, q, x, &rings[0]),
-                tag::NO_CLEAR_RAY, // the tag the pre-check exists to prevent
-            );
-        }
-
-        // (c) The piercing point is inside a ring edge. `point_in_ring` names this one itself.
-        {
-            let (planes, q, rings, inc, bounds) = pierce(at_edge, [1.5, 0.0]);
-            assert_rejects(
-                || arrange::edge_crosses_face(&m, &planes, inc, bounds[0], bounds[1], q, &rings),
-                tag::POINT_ON_RING,
-            );
         }
     }
 
@@ -8274,54 +6893,6 @@ pub mod tests {
         undecided: usize,
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn on_a_host_ring(
-        m: &Model,
-        a: Handle<Solid>,
-        b: Handle<Solid>,
-        planes: &[PlaneInfo],
-        surf_ix: &HashMap<Handle<Face>, usize>,
-        inc_a: &arrange::EdgePlanes,
-        inc_b: &arrange::EdgePlanes,
-        canon: &[usize],
-        c: usize,
-        t: [usize; 3],
-    ) -> bool {
-        let canonize = |x: [usize; 3]| {
-            let mut v = [canon[x[0]], canon[x[1]], canon[x[2]]];
-            v.sort_unstable();
-            v
-        };
-        for (solid, inc) in [(a, inc_a), (b, inc_b)] {
-            for sh in solid_shell_handles(m, solid) {
-                for &fh in &m.shells.get(sh).faces {
-                    let fi = surf_ix[&fh];
-                    if canon[fi] != c {
-                        continue;
-                    }
-                    let Ok(ts) = arrange::face_vertex_triples(m, fh, fi, inc, planes, canon) else {
-                        continue;
-                    };
-                    let mut rings: Vec<Vec<[usize; 3]>> =
-                        vec![ts.into_iter().map(canonize).collect()];
-                    // Hole rims bound the face too — a point on a hole rim is on the boundary.
-                    if let Ok(hs) = arrange::hole_rings(m, fh, fi, inc, planes, canon) {
-                        rings.extend(
-                            hs.into_iter()
-                                .map(|r| r.into_iter().map(canonize).collect()),
-                        );
-                    }
-                    for ring in &rings {
-                        if arrange::point_on_ring(planes, c, t, ring) == Ok(true) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        false
-    }
-
     /// Is the three-plane point `t` inside any face either solid seats on class `c`? Rejections are
     /// reported separately rather than folded into "outside" — reading a reject as a negative is a
     /// mistake this line of work has already made once.
@@ -8381,165 +6952,6 @@ pub mod tests {
             Some(e) => Err(e),
             None => Ok(false),
         }
-    }
-
-    /// **Differential coverage sweep — the cutover roadmap + silent-wrong guard.**
-    ///
-    /// Runs the isolated trace engine (`crate::trace::boolean_via_trace`, unwired) against the
-    /// OCCT-validated production `boolean` over the whole two-solid fixture corpus. The load-bearing
-    /// invariant: wherever BOTH engines succeed, trace's result is manifold and its volume+area
-    /// match production — else it is a trace silent-wrong. Everything trace declines is the recorded
-    /// cutover roadmap (`trace_gap`), not a failure; a cell only prod declines is UNVERIFIED (no
-    /// oracle). `Model` has no `Clone`, so each op rebuilds the fixture fresh (mirrors
-    /// `rotation_invariance_stress`). Compared on `vclose` (prod's own harness bound) so f64
-    /// accumulation order never fakes a disagreement.
-    #[test]
-    fn trace_vs_production_coverage_sweep() {
-        use std::panic::{AssertUnwindSafe, catch_unwind};
-
-        #[derive(Clone, Copy, Debug)]
-        enum Out {
-            Ok { vol: f64, area: f64, valid: bool },
-            Err,
-        }
-        // `Err(())` = the engine panicked (caught). `Ok(Out::Err)` = an honest `Err(BoolError)`.
-        let run = |build: &dyn Fn() -> (Model, Handle<Solid>, Handle<Solid>),
-                   kind: BoolKind,
-                   trace: bool|
-         -> Result<Out, ()> {
-            catch_unwind(AssertUnwindSafe(|| {
-                let (mut m, a, b) = build();
-                let r = if trace {
-                    crate::trace::boolean_via_trace(&mut m, kind, a, b)
-                } else {
-                    boolean(&mut m, kind, a, b)
-                };
-                match r {
-                    Ok(solids) => {
-                        m.rebuild_adjacency();
-                        let vol = solids
-                            .iter()
-                            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
-                            .sum();
-                        let area = solids
-                            .iter()
-                            .map(|&s| nacre_props::mass_props(&m, s).unwrap().area)
-                            .sum();
-                        let valid = nacre_validate::validate(&m).is_empty();
-                        Out::Ok { vol, area, valid }
-                    }
-                    Err(_) => Out::Err,
-                }
-            }))
-            .map_err(|_| ())
-        };
-        let vclose =
-            |x: f64, y: f64| (x - y).abs() <= 1e-6 || (x - y).abs() <= 1e-4 * x.abs().max(y.abs());
-
-        type Build = Box<dyn Fn() -> (Model, Handle<Solid>, Handle<Solid>)>;
-        let fixtures: Vec<(&str, Build)> = vec![
-            (
-                "same_ground",
-                Box::new(|| {
-                    let mut m = Model::new();
-                    let a = m.add_cuboid(
-                        Point3::from_array([0.0; 3]),
-                        Point3::from_array([1.0, 1.0, 1.0]),
-                    );
-                    let b = m.add_cuboid(
-                        Point3::from_array([0.5, 0.5, 0.0]),
-                        Point3::from_array([1.5, 1.5, 1.0]),
-                    );
-                    (m, a, b)
-                }),
-            ),
-            ("l_and_inner_box", Box::new(l_and_inner_box)),
-            ("l_and_corner_box", Box::new(l_and_corner_box)),
-            ("l_and_reflex_box", Box::new(l_and_reflex_box)),
-            ("u_and_slab", Box::new(u_and_slab)),
-            ("cube_and_notch", Box::new(cube_and_notch)),
-            ("l_and_rod", Box::new(l_and_rod)),
-            ("l_and_popup_box", Box::new(l_and_popup_box)),
-            ("l_and_notch_bar", Box::new(l_and_notch_bar)),
-            ("l_and_ell_stub", Box::new(l_and_ell_stub)),
-            ("l_and_staple", Box::new(l_and_staple)),
-            ("l_and_dimple", Box::new(l_and_dimple)),
-            ("two_boxes", Box::new(two_boxes)),
-            ("nested_boxes", Box::new(nested_boxes)),
-        ];
-
-        let (mut agree, mut trace_wrong, mut trace_gap, mut both_err, mut prod_only_err, mut panic) =
-            (0, 0, 0, 0, 0, 0);
-        let mut notes: Vec<String> = Vec::new();
-        for (name, build) in &fixtures {
-            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-                let prod = run(build.as_ref(), kind, false).expect("production boolean panicked");
-                let tr = run(build.as_ref(), kind, true);
-                let class = match (prod, tr) {
-                    (_, Err(())) => {
-                        panic += 1;
-                        notes.push(format!("{name} {kind:?}: TRACE PANIC"));
-                        "TRACE_PANIC"
-                    }
-                    (
-                        Out::Ok {
-                            vol: pv, area: pa, ..
-                        },
-                        Ok(Out::Ok {
-                            vol: tv,
-                            area: ta,
-                            valid,
-                        }),
-                    ) => {
-                        if valid && vclose(pv, tv) && vclose(pa, ta) {
-                            agree += 1;
-                            "agree"
-                        } else {
-                            trace_wrong += 1;
-                            notes.push(format!(
-                                "{name} {kind:?}: WRONG prod(v={pv},a={pa}) trace(v={tv},a={ta},valid={valid})"
-                            ));
-                            "TRACE_WRONG"
-                        }
-                    }
-                    (Out::Ok { .. }, Ok(Out::Err)) => {
-                        trace_gap += 1;
-                        "trace_gap"
-                    }
-                    (Out::Err, Ok(Out::Ok { valid, .. })) => {
-                        prod_only_err += 1;
-                        notes.push(format!(
-                            "{name} {kind:?}: prod-only-err, trace Ok (UNVERIFIED, valid={valid})"
-                        ));
-                        "prod_only_err"
-                    }
-                    (Out::Err, Ok(Out::Err)) => {
-                        both_err += 1;
-                        "both_err"
-                    }
-                };
-                eprintln!("{name:18} {kind:?}: {class}");
-            }
-        }
-        eprintln!(
-            "=== agree {agree} · gap {trace_gap} · wrong {trace_wrong} · both_err {both_err} · prod_only_err {prod_only_err} · panic {panic} ==="
-        );
-        for n in &notes {
-            eprintln!("  {n}");
-        }
-
-        assert_eq!(panic, 0, "trace panicked (an un-honest reject): {notes:?}");
-        assert_eq!(trace_wrong, 0, "trace is silently wrong on: {notes:?}");
-        // Measured 2026-07-21 after nest_cells learned multi-hole faces (dropping the HOLE_MULTI
-        // reject — the U's two prongs are two holes in the slab's one face): agree 42, trace_gap 0,
-        // wrong/panic/prod_only_err/both_err 0. u_and_slab graduated. **The whole corpus now agrees
-        // with production** — the cutover threshold: every two-solid fixture × 3 ops matches on
-        // volume+area+manifold+solid-count. Floor at the measured 42 (the maximum): any drop is a
-        // regression.
-        assert!(
-            agree >= 42,
-            "only {agree} agreements (was 42, the whole corpus); trace regressed a case: {notes:?}"
-        );
     }
 
     // A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.
