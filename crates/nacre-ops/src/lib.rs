@@ -9244,6 +9244,45 @@ pub mod tests {
         })
     }
 
+    /// An axis-aligned `PlaneInfo` at `d` along its normal, with a **non-degenerate `tri`** whose
+    /// right-hand normal is `n_out`. The merge reads more than `n_out` now — `loop_winding` and
+    /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
+    /// dummy triangle would make those answers meaningless.
+    fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> PlaneInfo {
+        let mut n = [0.0; 3];
+        n[axis] = if positive { 1.0 } else { -1.0 };
+        let normal = Vector3::from_array(n);
+        let mut at = [0.0; 3];
+        at[axis] = d;
+        let origin = Point3::from_array(at);
+        let plane = Plane::from_point_normal(origin, normal).unwrap();
+        let surf = m.surfaces.push(Surface::Plane(plane));
+        let face = m.faces.push(Face {
+            surface: surf,
+            outer: Loop { half_edges: vec![] },
+            inner: vec![],
+            orientation: Orientation::Forward,
+        });
+        // Two in-plane directions whose cross product is `+normal`, so `tri` winds outward.
+        let (i, j) = ((axis + 1) % 3, (axis + 2) % 3);
+        let (i, j) = if positive { (i, j) } else { (j, i) };
+        let step = |k: usize| {
+            let mut q = at;
+            q[k] += 1.0;
+            Point3::from_array(q)
+        };
+        PlaneInfo {
+            surf,
+            face,
+            plane,
+            tri: [origin, step(i), step(j)],
+            n_out: normal,
+            orient: Orientation::Forward,
+            tri_pt3: None,
+            class: usize::MAX,
+        }
+    }
+
     /// A `PlaneInfo` whose only field `unify_coplanar_faces` reads is `n_out`; the rest is a
     /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
     fn mk_plane(m: &mut Model, n: [f64; 3]) -> PlaneInfo {
@@ -9286,36 +9325,38 @@ pub mod tests {
         // Three unit squares on z=0 (+z), tiled in x, each sharing a vertical edge with the
         // next. One plane class, one normal ⇒ all fuse into a single face; the four
         // straight-angle mid-edge vertices dissolve, leaving one 4-corner rectangle.
+        //
+        // Named the way the arrangement names things — every vertex is the meeting of three
+        // planes — because the straight-angle test reads those triples. (The old `Orig` fixture
+        // exercised a path the engine stopped producing when it went all-`Seam`.)
         let mut m = Model::new();
-        let p = vec![mk_plane(&mut m, [0.0, 0.0, 1.0])];
-        let canon = vec![0];
-        let g = |m: &mut Model, x, y| mk_vert(m, x, y, 0.0);
-        let (c00, c10, c20, c30) = (
-            g(&mut m, 0., 0.),
-            g(&mut m, 1., 0.),
-            g(&mut m, 2., 0.),
-            g(&mut m, 3., 0.),
-        );
-        let (c31, c21, c11, c01) = (
-            g(&mut m, 3., 1.),
-            g(&mut m, 2., 1.),
-            g(&mut m, 1., 1.),
-            g(&mut m, 0., 1.),
-        );
+        let p = vec![
+            mk_axis_plane(&mut m, 2, 0.0, true),  // 0: z=0, the shared class
+            mk_axis_plane(&mut m, 0, 0.0, false), // 1: x=0
+            mk_axis_plane(&mut m, 0, 1.0, true),  // 2: x=1
+            mk_axis_plane(&mut m, 0, 2.0, true),  // 3: x=2
+            mk_axis_plane(&mut m, 0, 3.0, true),  // 4: x=3
+            mk_axis_plane(&mut m, 1, 0.0, false), // 5: y=0
+            mk_axis_plane(&mut m, 1, 1.0, true),  // 6: y=1
+        ];
+        let canon: Vec<usize> = (0..p.len()).collect();
+        let v = |x: usize, y: usize| Node::Seam([0, x, y]); // sorted: class, x-plane, y-plane
+        let (c00, c10, c20, c30) = (v(1, 5), v(2, 5), v(3, 5), v(4, 5));
+        let (c01, c11, c21, c31) = (v(1, 6), v(2, 6), v(3, 6), v(4, 6));
         let faces = vec![
-            face(0, oloop(&[c00, c10, c11, c01]), vec![]),
-            face(0, oloop(&[c10, c20, c21, c11]), vec![]),
-            face(0, oloop(&[c20, c30, c31, c21]), vec![]),
+            face(0, vec![c00, c10, c11, c01], vec![]),
+            face(0, vec![c10, c20, c21, c11], vec![]),
+            face(0, vec![c20, c30, c31, c21], vec![]),
         ];
         let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
         assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
         let l = &out[0].loop_nodes;
         assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
         for c in [c00, c30, c31, c01] {
-            assert!(l.contains(&Node::Orig(c)), "corner kept");
+            assert!(l.contains(&c), "corner kept");
         }
         for c in [c10, c20, c11, c21] {
-            assert!(!l.contains(&Node::Orig(c)), "mid vertex dropped");
+            assert!(!l.contains(&c), "mid vertex dropped");
         }
     }
 
@@ -9372,23 +9413,51 @@ pub mod tests {
     }
 
     #[test]
-    fn unify_skips_seam_shared_edges() {
-        // Two coplanar same-normal faces sharing an edge whose endpoints are seam nodes.
-        // Detection requires `Orig` endpoints (splice reads original vertices), so the pair is
-        // left separate — and, crucially, `splice_along`'s `Orig`-only path is never entered
-        // (no panic).
+    fn a_hole_filled_by_two_faces_still_merges() {
+        // Replaces `unify_skips_seam_shared_edges`, whose premise is gone twice over: the `Orig`
+        // gate it pinned was removed when the engine went all-`Seam`, and `splice_along`, whose
+        // panic it guarded against, no longer exists.
+        //
+        // What matters now is that the merge is not special-cased to "a hole filled by exactly one
+        // neighbour". A [0,3]² face with a [1,2]² hole, and that hole filled by **two** pieces split
+        // at x=1.5: every ring edge between them is carried in both directions, so erasing interior
+        // boundary leaves only the outer square — one face, no hole, whatever the filling is cut
+        // into. This is the case that separates a general rule from a bespoke one.
         let mut m = Model::new();
-        let p = vec![mk_plane(&mut m, [0., 0., 1.])];
-        let canon = vec![0];
-        let a = Node::Orig(mk_vert(&mut m, 0., 0., 0.));
-        let b = Node::Orig(mk_vert(&mut m, 1., 1., 0.));
-        let (s1, s2) = (Node::Seam([1, 2, 3]), Node::Seam([2, 3, 4]));
+        let p = vec![
+            mk_axis_plane(&mut m, 2, 0.0, true),  // 0: z=0
+            mk_axis_plane(&mut m, 0, 0.0, false), // 1: x=0
+            mk_axis_plane(&mut m, 0, 1.0, true),  // 2: x=1
+            mk_axis_plane(&mut m, 0, 1.5, true),  // 3: x=1.5, where the filling is split
+            mk_axis_plane(&mut m, 0, 2.0, true),  // 4: x=2
+            mk_axis_plane(&mut m, 0, 3.0, true),  // 5: x=3
+            mk_axis_plane(&mut m, 1, 0.0, false), // 6: y=0
+            mk_axis_plane(&mut m, 1, 1.0, true),  // 7: y=1
+            mk_axis_plane(&mut m, 1, 2.0, true),  // 8: y=2
+            mk_axis_plane(&mut m, 1, 3.0, true),  // 9: y=3
+        ];
+        let canon: Vec<usize> = (0..p.len()).collect();
+        let v = |x: usize, y: usize| Node::Seam([0, x, y]);
+        let (o00, o30, o33, o03) = (v(1, 6), v(5, 6), v(5, 9), v(1, 9));
+        let (h11, h12, h22, h21) = (v(2, 7), v(2, 8), v(4, 8), v(4, 7));
+        let (m12, m11) = (v(3, 8), v(3, 7)); // the split points on the hole's top and bottom
         let faces = vec![
-            face(0, vec![s1, s2, a], vec![]),
-            face(0, vec![s2, s1, b], vec![]),
+            // Outer square with the hole, wound the way `emit_faces` states it: outer CCW, hole CW.
+            face(
+                0,
+                vec![o00, o30, o33, o03],
+                vec![vec![h11, h12, m12, h22, h21, m11]],
+            ),
+            face(0, vec![h11, m11, m12, h12], vec![]), // left filler
+            face(0, vec![m11, h21, h22, m12], vec![]), // right filler
         ];
         let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
-        assert_eq!(out.len(), 2, "seam-shared edge is not merged");
+        assert_eq!(out.len(), 1, "the hole is filled, so one face remains");
+        assert!(out[0].inner.is_empty(), "and it has no hole left");
+        assert_eq!(out[0].loop_nodes.len(), 4, "just the outer square");
+        for c in [o00, o30, o33, o03] {
+            assert!(out[0].loop_nodes.contains(&c), "outer corner kept");
+        }
     }
 
     #[test]
@@ -9399,32 +9468,40 @@ pub mod tests {
         // twin (1,1,0), on the merged face only, IS dissolved.
         let mut m = Model::new();
         let p = vec![
-            mk_plane(&mut m, [0., 0., 1.]),
-            mk_plane(&mut m, [0., -1., 0.]),
+            mk_axis_plane(&mut m, 2, 0.0, true),  // 0: z=0
+            mk_axis_plane(&mut m, 0, 0.0, false), // 1: x=0
+            mk_axis_plane(&mut m, 0, 1.0, true),  // 2: x=1
+            mk_axis_plane(&mut m, 0, 2.0, true),  // 3: x=2
+            mk_axis_plane(&mut m, 1, 0.0, false), // 4: y=0, the perpendicular face's plane
+            mk_axis_plane(&mut m, 1, 1.0, true),  // 5: y=1
+            mk_axis_plane(&mut m, 2, 1.0, true),  // 6: z=1
         ];
-        let canon = vec![0, 1];
-        let v000 = mk_vert(&mut m, 0., 0., 0.);
-        let v100 = mk_vert(&mut m, 1., 0., 0.);
-        let v200 = mk_vert(&mut m, 2., 0., 0.);
-        let v210 = mk_vert(&mut m, 2., 1., 0.);
-        let v110 = mk_vert(&mut m, 1., 1., 0.);
-        let v010 = mk_vert(&mut m, 0., 1., 0.);
-        let v201 = mk_vert(&mut m, 2., 0., 1.);
-        let v101 = mk_vert(&mut m, 1., 0., 1.);
+        let canon: Vec<usize> = (0..p.len()).collect();
+        let (v000, v100, v200) = (
+            Node::Seam([0, 1, 4]),
+            Node::Seam([0, 2, 4]),
+            Node::Seam([0, 3, 4]),
+        );
+        let (v010, v110, v210) = (
+            Node::Seam([0, 1, 5]),
+            Node::Seam([0, 2, 5]),
+            Node::Seam([0, 3, 5]),
+        );
+        let (v101, v201) = (Node::Seam([2, 4, 6]), Node::Seam([3, 4, 6]));
         let faces = vec![
-            face(0, oloop(&[v000, v100, v110, v010]), vec![]),
-            face(0, oloop(&[v100, v200, v210, v110]), vec![]),
-            face(1, oloop(&[v200, v100, v101, v201]), vec![]), // perpendicular, not coplanar
+            face(0, vec![v000, v100, v110, v010], vec![]),
+            face(0, vec![v100, v200, v210, v110], vec![]),
+            face(4, vec![v200, v100, v101, v201], vec![]), // perpendicular, not coplanar
         ];
         let out = unify_coplanar_faces(faces, &p, &canon).unwrap();
         assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
         let merged = out.iter().find(|lf| lf.plane_idx == 0).unwrap();
         assert!(
-            merged.loop_nodes.contains(&Node::Orig(v100)),
+            merged.loop_nodes.contains(&v100),
             "corner-elsewhere vertex kept (no T-junction)"
         );
         assert!(
-            !merged.loop_nodes.contains(&Node::Orig(v110)),
+            !merged.loop_nodes.contains(&v110),
             "pure straight-angle vertex dropped"
         );
     }
