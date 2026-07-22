@@ -157,8 +157,6 @@ pub enum BoolError {
     Unsupported,
     /// An input solid handle is not in `model.live_solids`.
     InputNotLive,
-    /// The intersection is empty (or too degenerate to be a closed solid).
-    EmptyResult,
 }
 
 /// Names of the `Unsupported` reject sites, shared by the guard that raises one
