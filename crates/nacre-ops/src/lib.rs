@@ -166,7 +166,7 @@ pub(crate) mod tag {
     /// two of its nodes coincide, or two neighbours share no plane pair.
     ///
     /// A cross-check rather than a defence: the exact
-    /// predicate (`order_along`) and the orientation bookkeeping (`PlaneInfo::n_out`
+    /// predicate (`order_along`) and the orientation bookkeeping (`FaceInfo::n_out`
     /// vs its plane's normal) must agree, edge by edge, and neither is assumed right.
     /// It survives release on purpose. Downstream, `validate` catches a wrong loop and
     /// `tessellate` catches a wrong *hole* — but a caller may run neither.
@@ -1197,7 +1197,7 @@ use std::collections::{HashMap, HashSet};
 /// only because `tri` is taken outer-CCW; `plane.normal()` is the *surface's*
 /// normal and may point inward on a `Reversed` face. Every sign test here reads
 /// `n_out` (or `tri`), and none reads `plane.normal()`.
-pub(crate) struct PlaneInfo {
+pub(crate) struct FaceInfo {
     pub(crate) surf: Handle<Surface>,
     /// The face this plane came from. Distinguishes two coplanar faces that share one
     /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
@@ -1514,7 +1514,7 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
 pub(crate) fn collect_planes(
     model: &Model,
     solid: Handle<Solid>,
-) -> Result<Vec<PlaneInfo>, BoolError> {
+) -> Result<Vec<FaceInfo>, BoolError> {
     // A rotated operand's face coordinates are rounded, so each plane also carries its
     // exact `Pt3` definition (overhaul stage 3). Decided once per solid — the axis-aligned
     // path keeps `tri_pt3 = None` and pays nothing.
@@ -1553,7 +1553,7 @@ pub(crate) fn collect_planes(
                 face.orientation == Orientation::Forward,
                 "n_out's sign against the surface normal is the face's orientation"
             );
-            out.push(PlaneInfo {
+            out.push(FaceInfo {
                 surf: face.surface,
                 face: fh,
                 plane,
@@ -1673,7 +1673,7 @@ struct LocalFace {
 /// dense `plane_ix` is the only face→plane map anything downstream needs, so the sparse union-find
 /// output does not escape.
 pub(crate) struct PlaneSetup {
-    pub(crate) planes: Vec<PlaneInfo>,
+    pub(crate) planes: Vec<FaceInfo>,
     pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
     pub(crate) inc_a: arrange::EdgeFaces,
     pub(crate) inc_b: arrange::EdgeFaces,
@@ -1739,7 +1739,7 @@ pub(crate) struct PlaneGeom {
 /// depend on that (the two candidates — `loop_winding`'s lex-min node and `crossings`' pre-dedup
 /// sort — are by coordinate and by set, respectively), but the audit cannot be proved exhaustive
 /// over ~175 sites, so the numbering removes the question instead of answering it.
-pub(crate) fn dense_planes(planes: &[PlaneInfo], canon: &[usize]) -> (Vec<PlaneGeom>, Vec<usize>) {
+pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGeom>, Vec<usize>) {
     let mut roots: Vec<usize> = canon.to_vec();
     roots.sort_unstable();
     roots.dedup();
@@ -2115,7 +2115,7 @@ fn assemble_fuse_cut(
 /// fallback is what keeps independently-built coplanar contacts working; the handle
 /// path's real payoff is rotated frames, where the geometric test would need the
 /// rotation-exact judgment.
-fn shares_or_coplanar(planes: &[PlaneInfo], i: usize, j: usize) -> bool {
+fn shares_or_coplanar(planes: &[FaceInfo], i: usize, j: usize) -> bool {
     let (pa, pb) = (&planes[i], &planes[j]);
     // Three independent witnesses, OR-ed, so this can only ever merge *more* than before:
     //  1. the same `Surface` handle — coplanar by reference (what an ops-built tool's base cap and
@@ -2156,7 +2156,7 @@ fn uf_find(parent: &mut [usize], x: usize) -> usize {
 /// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
 // Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn plane_classes(planes: &[PlaneInfo]) -> Vec<usize> {
+pub(crate) fn plane_classes(planes: &[FaceInfo]) -> Vec<usize> {
     let n = planes.len();
     let mut parent: Vec<usize> = (0..n).collect();
     for i in 0..n {
@@ -2643,7 +2643,7 @@ pub mod tests {
         (m, s)
     }
 
-    /// `PlaneInfo::n_out` is documented as the single source of "outward". Two
+    /// `FaceInfo::n_out` is documented as the single source of "outward". Two
     /// independent sources say which way that is: the ring, which winds CCW about the
     /// outward normal, and the b-rep's own `Surface` plus `Orientation`. They must agree
     /// on every face of every solid.
@@ -4971,7 +4971,7 @@ pub mod tests {
         // Each `tri` is three NON-collinear points of its own plane. A degenerate `tri` (three
         // equal points) would make every `orient3d` vanish, so the coordinate branch would report
         // coplanar and this test would pass without the handle branch ever mattering.
-        let mk = |plane, tri| PlaneInfo {
+        let mk = |plane, tri| FaceInfo {
             surf: shared,
             face: fh,
             plane,
@@ -6894,7 +6894,7 @@ pub mod tests {
         })
     }
 
-    /// An axis-aligned `PlaneInfo` at `d` along its normal, with a **non-degenerate `tri`** whose
+    /// An axis-aligned `FaceInfo` at `d` along its normal, with a **non-degenerate `tri`** whose
     /// right-hand normal is `n_out`. The merge reads more than `n_out` now — `loop_winding` and
     /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
     /// dummy triangle would make those answers meaningless.
@@ -6931,7 +6931,7 @@ pub mod tests {
         }
     }
 
-    /// A `PlaneInfo` for the `unify_coplanar_faces` tests, which read none of its geometry; the rest is a
+    /// A `FaceInfo` for the `unify_coplanar_faces` tests, which read none of its geometry; the rest is a
     /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
     fn mk_plane(m: &mut Model, n: [f64; 3]) -> PlaneGeom {
         let normal = Vector3::from_array(n);

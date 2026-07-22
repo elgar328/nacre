@@ -149,7 +149,7 @@ fn trace_transversal_face(
     which: SolidSide,
     wc: usize,
     planes: &[PlaneGeom],
-    faces: &[PlaneInfo],
+    faces: &[FaceInfo],
     inc: &arrange::EdgeFaces,
     plane_ix: &[usize],
     out: &mut Trace,
@@ -423,11 +423,11 @@ fn trace_transversal_face(
 /// direction and the label frame are defined by the same stored normal.
 ///
 /// `σ` is an f64 dot of two **parallel** unit vectors (`fp` and `fc` are the same plane class), so
-/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`PlaneInfo::orient_sign`] and
+/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`FaceInfo::orient_sign`] and
 /// `trace_seated_face` already rely on. Everything else here is exact.
 fn run_body_above(
     planes: &[PlaneGeom],
-    faces: &[PlaneInfo],
+    faces: &[FaceInfo],
     wc: usize,
     fc: usize,
     fp: usize,
@@ -447,7 +447,7 @@ fn trace_one(
     which: SolidSide,
     wc: usize,
     planes: &[PlaneGeom],
-    faces: &[PlaneInfo],
+    faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &arrange::EdgeFaces,
     plane_ix: &[usize],
@@ -539,7 +539,7 @@ fn trace_on_class(
     b: Handle<Solid>,
     wc: usize,
     planes: &[PlaneGeom],
-    faces: &[PlaneInfo],
+    faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &arrange::EdgeFaces,
     inc_b: &arrange::EdgeFaces,
@@ -1335,7 +1335,7 @@ fn trace_result_faces(
     a: Handle<Solid>,
     b: Handle<Solid>,
     planes: &[PlaneGeom],
-    faces: &[PlaneInfo],
+    faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &arrange::EdgeFaces,
     inc_b: &arrange::EdgeFaces,
@@ -3211,7 +3211,7 @@ mod tests {
         a: Handle<Solid>,
         b: Handle<Solid>,
         surf_ix: &HashMap<Handle<Face>, usize>,
-        faces: &[PlaneInfo],
+        faces: &[FaceInfo],
         plane_ix: &[usize],
     ) -> usize {
         let n_planes = plane_ix.iter().copied().max().map_or(0, |m| m + 1);
@@ -3279,7 +3279,7 @@ mod tests {
     fn face_on_z1(
         fh: Handle<Face>,
         surf_ix: &HashMap<Handle<Face>, usize>,
-        faces: &[PlaneInfo],
+        faces: &[FaceInfo],
     ) -> bool {
         let p = &faces[surf_ix[&fh]];
         // A cap in the z=1 plane: all three defining points at z=1.

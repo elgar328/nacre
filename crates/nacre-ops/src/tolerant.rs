@@ -19,7 +19,7 @@
 //! every_ray) in stage 3b-i;
 //! with a vertex handle + `model` threaded down) in 3b-ii.
 
-use crate::{PlaneGeom, PlaneInfo};
+use crate::{FaceInfo, PlaneGeom};
 use nacre_geom::intersect::{
     plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d,
 };
@@ -34,7 +34,7 @@ use nacre_scalar::{Orient, Rat};
 ///
 /// The predicates below need *only* this, which is why one implementation can serve both index
 /// spaces without being able to confuse them: [`PlaneGeom`] answers for a plane class,
-/// [`PlaneInfo`] for a single face. Only [`t_planes_coplanar`] uses the face form — it is the
+/// [`FaceInfo`] for a single face. Only [`t_planes_coplanar`] uses the face form — it is the
 /// predicate that *defines* the classes, so it necessarily runs before a plane table exists.
 pub(crate) trait Witness {
     fn tri(&self) -> [Point3; 3];
@@ -50,7 +50,7 @@ impl Witness for PlaneGeom {
     }
 }
 
-impl Witness for PlaneInfo {
+impl Witness for FaceInfo {
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
