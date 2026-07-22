@@ -215,24 +215,6 @@ pub(crate) mod tag {
     /// node can gain a third segment. This is the backstop for that day.
     pub const SEAM_BRANCH: &str = "seam_branch";
     pub const COPLANAR_PAIR: &str = "coplanar_pair";
-    /// A ring that is **partly** a coplanar seam — some of its edges separate two coplanar,
-    /// same-facing faces of one solid (a face subdivision, not a boundary) and some do not.
-    ///
-    /// A ring that is seam **all the way round** is not a boundary at all and is dropped
-    /// ([`arrange::face_boundary_rings`]); a partial one needs the seam-connected faces merged
-    /// into one region before its boundary can be named, which no producer forces yet: the only
-    /// maker of coplanar adjacent faces is `imprint`, and it always emits whole-seam rings (the
-    /// parent's hole ring and the region face's outer ring are literally the same edges).
-    ///
-    /// Split out from `LOOP_ORIENT_MISMATCH`, which called this "a genuine straight angle — the
-    /// polygon is unchanged by dropping the vertex". That was a misdiagnosis: the vertex is a
-    /// *corner* of the seam ring, and dropping it would change the shape.
-    pub const COPLANAR_SEAM_PARTIAL: &str = "coplanar_seam_partial";
-    /// A face whose outer ring is entirely a coplanar seam — so it is interior to a merged region
-    /// and contributes no boundary — but which still carries a **real** hole ring. That hole
-    /// belongs to the region's surviving outer ring, and re-attributing it needs the winding /
-    /// containment pass this brick does not run. Not reachable from the op layer today.
-    pub const COPLANAR_SEAM_REGROUP: &str = "coplanar_seam_regroup";
     /// The result severs into two or more material solids *and* at least one enclosed void
     /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
     /// test we do not have yet (a re-scope of `point_in_solid`), so this is honestly rejected and
@@ -739,70 +721,22 @@ pub(crate) fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
     if he.forward { a } else { b }
 }
 
-fn proj2(p: Point3, (i, j): (usize, usize)) -> [f64; 2] {
-    [p[i], p[j]]
-}
-
-/// `c` is within the axis-aligned bounding box of segment `ab` — paired with an exact
-/// `orient2d == 0` collinearity test to decide on-segment.
-fn in_bbox(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> bool {
-    c[0] >= a[0].min(b[0])
-        && c[0] <= a[0].max(b[0])
-        && c[1] >= a[1].min(b[1])
-        && c[1] <= a[1].max(b[1])
-}
-
-/// Exact strict point-in-ring: `Some(true)` strictly inside, `Some(false)` strictly
-/// outside, `None` on the boundary. Even-odd ray cast, `orient2d` for the crossing side.
-fn point_in_ring2(p: [f64; 2], ring: &[[f64; 2]]) -> Option<bool> {
-    let n = ring.len();
-    let mut inside = false;
-    for i in 0..n {
-        let (a, b) = (ring[i], ring[(i + 1) % n]);
-        if orient2d(a, b, p) == 0.0 && in_bbox(a, b, p) {
-            return None;
-        }
-        if (a[1] > p[1]) != (b[1] > p[1]) && (orient2d(a, b, p) > 0.0) == (b[1] > a[1]) {
-            inside = !inside;
-        }
-    }
-    Some(inside)
-}
-
-/// Exact: do closed segments `p0p1` and `q0q1` meet at all (cross or merely touch)?
-fn segments_meet(p0: [f64; 2], p1: [f64; 2], q0: [f64; 2], q1: [f64; 2]) -> bool {
-    let (o1, o2) = (orient2d(p0, p1, q0), orient2d(p0, p1, q1));
-    let (o3, o4) = (orient2d(q0, q1, p0), orient2d(q0, q1, p1));
-    if o1 != 0.0 && o2 != 0.0 && o3 != 0.0 && o4 != 0.0 {
-        return (o1 > 0.0) != (o2 > 0.0) && (o3 > 0.0) != (o4 > 0.0);
-    }
-    (o1 == 0.0 && in_bbox(p0, p1, q0))
-        || (o2 == 0.0 && in_bbox(p0, p1, q1))
-        || (o3 == 0.0 && in_bbox(q0, q1, p0))
-        || (o4 == 0.0 && in_bbox(q0, q1, p1))
-}
-
 /// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
 /// centroid so a profile's `(0,0)` lands there), and its loops — the shared setup for placing a
 /// profile on a face (pad / pocket).
 struct FaceFrame {
     solid_h: Handle<Solid>,
-    shell_h: Handle<Shell>,
     surface_h: Handle<Surface>,
-    orientation: Orientation,
     n: Vector3, // outward normal
     x: Vector3,
     y: Vector3,
     origin: Point3, // face centroid
-    outer_pts: Vec<Point3>,
-    outer_loop: Loop,
-    inner_loops: Vec<Loop>,
 }
 
 /// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,
 /// `FaceNotInLiveSolid` if no live outer shell holds it.
 fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
-    let (solid_h, shell_h) = model
+    let (solid_h, _) = model
         .live_solids
         .iter()
         .map(|&s| (s, model.solids.get(s).outer))
@@ -811,8 +745,6 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let f = model.faces.get(face);
     let surface_h = f.surface;
     let orientation = f.orientation;
-    let outer_loop = f.outer.clone();
-    let inner_loops = f.inner.clone();
     let plane = match model.surfaces.get(surface_h) {
         Surface::Plane(p) => *p,
         Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
@@ -824,7 +756,8 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let n = plane.normal() * sign;
     let x = n.any_perpendicular().ok_or(OpError::DegenerateGeometry)?;
     let y = n.cross(x);
-    let outer_pts: Vec<Point3> = outer_loop
+    let outer_pts: Vec<Point3> = f
+        .outer
         .half_edges
         .iter()
         .map(|he| model.vertices.get(he_start(model, *he)).point)
@@ -832,16 +765,11 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let origin = Point3::centroid(&outer_pts).ok_or(OpError::DegenerateGeometry)?;
     Ok(FaceFrame {
         solid_h,
-        shell_h,
         surface_h,
-        orientation,
         n,
         x,
         y,
         origin,
-        outer_pts,
-        outer_loop,
-        inner_loops,
     })
 }
 
@@ -1352,8 +1280,7 @@ fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<Rotation
 // ---- boolean (M5-c3) ----
 
 use nacre_geom::intersect::{
-    RayCross, orient2d, plane_plane, plane_side, planes_coplanar, three_plane_orient3d,
-    three_planes,
+    RayCross, plane_plane, plane_side, planes_coplanar, three_plane_orient3d, three_planes,
 };
 #[cfg(test)]
 use std::collections::BTreeSet;

@@ -633,51 +633,6 @@ pub(crate) fn hole_rings(
         .collect()
 }
 
-/// A face's rings as plane triples: the outer ring first, then each hole.
-pub(crate) type Rings = Vec<Vec<[usize; 3]>>;
-
-/// Face `f`'s rings **as a boundary** — its outer ring and holes with every whole coplanar-seam ring
-/// removed. `None` means *the face is not a boundary at all*: its outer ring is seam all the way
-/// round, so it is interior to a merged coplanar region and contributes nothing.
-///
-/// A seam ring bounds nothing (see [`is_seam_edge`]), and its vertices have no three-plane name
-/// anyway — `imprint`'s profile vertices touch only the two profile edges, so
-/// [`vertex_plane_indices`] can never produce three classes for them. Dropping the ring is therefore
-/// not a workaround for a naming failure; it is the statement that the ring is not boundary.
-///
-/// The pair `imprint` builds is exactly this: the parent face keeps its real outer ring and loses the
-/// profile hole, and the region face loses its outer ring and so disappears — which together restore
-/// the undivided face the two were cut from.
-///
-/// `Err(COPLANAR_SEAM_REGROUP)` when a face that is *not* a boundary still carries a real hole: that
-/// hole belongs to the region's surviving outer ring and re-attributing it needs a containment pass
-/// this brick does not run. No op-layer path reaches it today.
-pub(crate) fn face_boundary_rings(
-    model: &Model,
-    f: Handle<Face>,
-    p: usize,
-    inc: &EdgePlanes,
-    planes: &[PlaneInfo],
-    canon: &[usize],
-) -> Result<Option<Rings>, BoolError> {
-    let face = model.faces.get(f);
-    let mut holes = Vec::new();
-    for l in &face.inner {
-        if !loop_is_all_seam(l, inc, planes, canon) {
-            holes.push(loop_triples(l, p, inc, planes, canon)?);
-        }
-    }
-    if loop_is_all_seam(&face.outer, inc, planes, canon) {
-        if !holes.is_empty() {
-            return Err(reject(tag::COPLANAR_SEAM_REGROUP));
-        }
-        return Ok(None);
-    }
-    let mut rings = vec![loop_triples(&face.outer, p, inc, planes, canon)?];
-    rings.extend(holes);
-    Ok(Some(rings))
-}
-
 /// A loop's vertices as three-plane triples.
 ///
 /// The name normally comes from the loop itself — the face's own plane and the two neighbours the
@@ -744,19 +699,18 @@ fn loop_triples(
         classes.dedup();
         if classes.len() != 3 {
             // >3: a genuine four-plane concurrency, which this substrate cannot name.
-            // <3: the vertex lies on fewer than three planes, so no triple names it. Two very
-            // different things land here and they must not share a tag:
-            //   - it touches a **coplanar seam** — a corner of a face subdivision, which has no
-            //     three-plane name by construction (its only edges are the seam's). Dropping the
-            //     vertex would change the polygon, so this is not a straight angle at all. A ring
-            //     that is seam all the way round never reaches here (`face_boundary_rings` drops
-            //     it); a *partial* one does, and wants region merging.
-            //   - otherwise a genuine straight angle, where dropping the vertex is shape-preserving
-            //     but this brick does not drop vertices.
+            // <3: the vertex lies on fewer than three planes, so no triple names it — a genuine
+            // straight angle, where dropping the vertex would preserve the polygon but this brick
+            // does not drop vertices.
+            //
+            // A vertex can also lack a triple by sitting on a **coplanar seam** (an edge between
+            // two coplanar, same-facing faces of one solid): its only edges are the seam's, so it
+            // touches one plane class. That is *not* a straight angle — the vertex is a corner and
+            // dropping it would change the shape — but no producer makes such an edge since
+            // `ImprintSketch` was retired, so it cannot reach here. See the 2026-07-22 dev-log
+            // cells if one ever does: the answer is that a whole-seam ring is not a boundary.
             return Err(reject(if classes.len() > 3 {
                 tag::FOURPLANE
-            } else if vertex_touches_seam(vh, inc, planes, canon) {
-                tag::COPLANAR_SEAM_PARTIAL
             } else {
                 tag::LOOP_ORIENT_MISMATCH
             }));
@@ -1024,55 +978,6 @@ pub(crate) fn every_ray(
         }
     }
     Ok(out)
-}
-
-/// The distinct plane indices a vertex sits on — the planes of every face incident to it.
-///
-/// Read off `inc` (the vertex's own solid's [`EdgePlanes`]): each incident edge names the two
-/// face planes it bounds, so their union over the vertex's edges is its plane set. Sorted, so
-/// the ray order in [`point_in_solid_idx`] is deterministic (replay-stable). A manifold vertex
-/// meets ≥3 faces → ≥3 planes, enough for a ray line plus a locator. The indices are `surf_ix`'s,
-/// so they compose with `other`'s face planes in the one shared `planes` array.
-/// Is this edge a **coplanar seam** — the line where one solid's face was subdivided, rather than a
-/// piece of its boundary?
-///
-/// `inc` gives an edge its two incident faces. They are a seam when the faces lie on **one plane
-/// class** *and* face **the same way**: then material does not change side across the edge, so the
-/// edge bounds nothing. `imprint` makes exactly these (the parent's hole ring and the region face's
-/// outer ring are the same edges, `prepare_face_split`), and it is the only producer in the kernel —
-/// a boolean result is always cleaned by `unify_coplanar_faces`, and there is no STEP reader.
-///
-/// ★ **The facing test is load-bearing, not decoration.** Two coplanar faces with *opposite* normals
-/// hold material on opposite sides — the case [`loop_triples`] names below ("a base's exposed top and
-/// the cantilever underside above it") — and their shared edge is a **real** boundary. Erasing it
-/// would delete a wall. Same condition `unify_coplanar_faces` groups by (class, facing).
-///
-/// The dot is of two **parallel** unit normals (one plane class), so `|·| ≈ 1` — the robustness
-/// [`orient_sign`] and `trace_seated_face` already rely on. No coordinate decides anything else here.
-pub(crate) fn is_seam_edge(planes: &[PlaneInfo], pair: [usize; 2], canon: &[usize]) -> bool {
-    canon[pair[0]] == canon[pair[1]] && planes[pair[0]].n_out.dot(planes[pair[1]].n_out) > 0.0
-}
-
-/// Does every edge of `l` bound the same plane class from the same side — i.e. is the whole ring a
-/// face subdivision rather than a boundary? See [`is_seam_edge`].
-fn loop_is_all_seam(l: &Loop, inc: &EdgePlanes, planes: &[PlaneInfo], canon: &[usize]) -> bool {
-    !l.half_edges.is_empty()
-        && l.half_edges.iter().all(|he| {
-            inc.get(&he.edge)
-                .is_some_and(|(_, pair)| is_seam_edge(planes, *pair, canon))
-        })
-}
-
-/// Does *any* edge touching `vh` belong to a coplanar seam? Distinguishes a seam vertex from a
-/// genuine straight angle when a ring's name collapses.
-fn vertex_touches_seam(
-    vh: Handle<Vertex>,
-    inc: &EdgePlanes,
-    planes: &[PlaneInfo],
-    canon: &[usize],
-) -> bool {
-    inc.values()
-        .any(|(bounds, pair)| bounds.contains(&vh) && is_seam_edge(planes, *pair, canon))
 }
 
 pub(crate) fn vertex_plane_indices(vh: Handle<Vertex>, inc: &EdgePlanes) -> Vec<usize> {
