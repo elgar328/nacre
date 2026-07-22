@@ -1486,3 +1486,47 @@ base_top[0,1]² vs prism_top[0.5,1.5]×[0.25,0.75], 2 proper crossing @(1,0.25)/
 **결과:** workspace 전체 green(geom 70·predicates·scalar), **ops 209→210**(잠금 1 추가), 실패 집합 **동일**(회귀 0), OCCT **77/14 유지**, clippy 36. **잠금:** `a_vertex_is_named_by_the_planes_that_touch_it` — 체인 operand의 **모든** 면·모든 정점에 대해 "한 클래스를 두 번 이름하지 않는다 + 그 이름이 실제 점을 정의한다"를 단언(수정 전 red).
 
 **★ 정직 기록 — 남은 것:** ① `#[ignore]` proptest(일반 기울어진 면)는 **여전히 D=0 패닉**인데, 백트레이스로 보니 **다른 갈래**다: `order_along ← trace_transversal_face`(노드의 세 번째 평면이 W와 평행 — 기울어진 프리즘의 마주보는 옆벽). 앞선 층 A 측정이 "경로는 단 하나"라 한 것은 **ignored proptest를 안 돌린 구멍**이었다(측정 설계의 오류를 기록한다). ② `classes=1` 2건. ③ OCCT 3건의 새 벽(`loop_orient_mismatch`/`hole_roots`). ④ 술어 계약 자체(축=전제조건 위반 시 UB성 / 회전=`declare-0`)는 그대로 — 도달이 줄었을 뿐이다.
+
+---
+
+## 2026-07-22 · (커토버 B) 평면 인덱스는 언제나 클래스 — 네 번 반복된 병의 근본 수정
+
+**문제(네 번째 재발).** `planes`는 **면 단위** 배열인데 arrangement는 **평면 단위**로 사고한다. 한 기하 평면이 두 면으로 쪼개져 있으면(이전 불리언이 남긴 base-top/cantilever-underside) 같은 `usize`가 어떤 곳에선 "면", 어떤 곳에선 "평면"을 뜻하고, **두 뜻이 한 비교문에서 만나면 조용히 틀린다**. `planes_coplanar` 계수판정(family#3) · `loop_triples`의 `a==b`(P-B) · seated wall 매칭(P-B) · `t_orient3d`의 `j==p/q/r` — 전부 같은 병이었다. 사용자 결정: **구멍을 또 막지 말고 근본으로**(옵션 B, 삼중을 언제나 canon 클래스로).
+
+**★ 방법론 — 손 목록 대신 런타임 감사.** 정적 grep이 네 번 놓쳤으므로 `PlaneInfo.class`(= `plane_classes`의 루트)를 넣고 **술어 진입에서 "이 인덱스가 클래스 루트인가"를 실행 중에 물었다**. 손으로 만든 정적 목록(6~7곳)은 **틀렸고**, 실제 위반은 **117,748건 / 5개 지점**이었다:
+
+| 술어 | 호출 지점 | 위반 인자 | 건수 |
+|---|---|---|---|
+| `t_orient3d` | `side_of` | 삼중 세 원소 | 88,652 |
+| `t_orient3d` | `order_along` | `fp`·`i`·`j` | 17,395 |
+| `t_plane_pair_dir_sign` | `dir_sign` | `q`·`r` | 11,624 |
+| `t_plane_pair_dir_sign` | `point_on_ring` | `x` | 2 |
+| `t_plane_side` | `edge_crosses_face` | `plane_idx` | 2 |
+| `t_cmp_coord` | — | — | **0** |
+
+정적 목록에 있던 `third_on_l`·`pa == own`·`contains(&p)`는 **술어에 닿지 않았다**. 반대로 목록에 **없던** `dir_sign`·`loop_winding`·`edge_crosses_face`가 후보로 올라왔다(그중 `loop_winding`은 실측 0).
+
+**★ 감사 자체가 두 번 틀렸다 — 둘 다 기록한다.** ① 첫 실행에서 "위반 0"이 나왔는데, 실제로는 **테스트 프로파일이 컴파일조차 안 되고 있었다**(테스트 쪽 `PlaneInfo` 리터럴 3곳에 `class` 누락). `cargo build`만 보고 "에러 없음=정상"으로 판단한 결과이고, 하마터면 *"구조 문제 없음"*이라는 **정반대 결론**을 낼 뻔했다. 이후 모든 감사는 `cargo test --no-run`으로 확인한 뒤에만 신뢰했다. ② 첫 감사는 다섯 술어 중 **하나**에만 걸려 있었고, `class`가 안 채워진 호출이 **334만 건**(테스트 헬퍼 `combined()`가 `collect_planes` 둘을 concat하고 `class`를 안 채움) 있어 사각지대였다. `fill_classes` 추출로 9.9만(전부 단위 테스트 자체 테이블)까지 줄인 뒤에야 표를 확정했다.
+
+**★ 분해 — 수정을 한 단계에 가두고 나머지를 no-op으로.** 계획을 네 번 검토하며 순서를 두 번 뒤집었다. 생산자를 먼저 고치면 소비자가 아직 raw라 **중간 상태가 red**가 되어 회귀 원인 분리가 불가능하다. 소비자를 먼저 클래스 해석으로 바꾸면 생산자가 raw인 채로도 위반이 0이 되므로, **①이 곧 수정이고 ②는 순수 이동**이 된다. 그래서 각 단계의 **판정 기준이 다르다**: ①은 "실패가 늘지 않았나", ②는 **"한 톨도 안 움직였나"**, ③은 "assert가 안 우는가". "전부 회귀 0"으로 뭉뚱그렸으면 ①의 정당한 변화와 ②의 부당한 변화를 구별하지 못했을 것이다.
+
+- **⓪′**(`9fce347`) `fill_classes` 한 곳으로 통합 + 테스트 테이블도 사용 → 감사 사각지대 334만→9.9만.
+- **①**(`bbd1549`) `canon_ring`으로 링을 **도착 즉시** 정규화 + `fc = canon[fp]` 분리. 위반 117,748→**23**. 실패 집합 **불변**.
+- **②**(`5304e33`) `loop_triples`·`triple()` 생산자가 클래스만 내고, 소비자는 `class_of`로 진입 정규화. 위반 23→**0**. 실패 집합 **불변**(no-op 확인).
+- **③**(`5bf9005`) 네 술어 진입에 `assert_class_roots` 영구 그물 + 모듈 독스트링 + `point_in_solid_idx` 중복 canon 제거.
+
+**★ 규약은 두 갈래가 아니라 세 갈래였다(검토가 코드와의 모순을 잡음).** 초안은 *"면 속성은 언제나 면"*이라 썼는데 **거짓**이다. `orient_sign`은 양쪽 모두로 정당하게 불린다 — `planes[fp].n_out`(body_above)·`orient_sign(fp)`(mat)는 **면**이지만, `label_side = side_of × orient_sign(wc)`·`flip = keep_above == (orient_sign(wc) > 0)`은 **클래스 루트**다(라벨 프레임의 **정의**가 클래스 루트의 stored normal). 판단 기준은 "면 속성이냐"가 아니라 **"*이 면*을 묻는가, *이 평면 클래스*를 묻는가"**. 그래서 `orient_sign`에는 **`debug_assert`를 걸 수 없다**(양쪽 다 합법) — 방어선은 `fp`/`fc` 이름 규약과 독스트링뿐이며, 이 셀에서 가장 리뷰가 필요한 지점이다.
+
+**★ 계획의 사실 오류 하나 — 좌표는 안 바뀐다.** 초안은 두 판 내내 *"삼중이 canon되면 다른 면의 계수로 점을 만들어 부피가 ulp 흔들린다"*고 경고했으나, 코드 확인 결과 trace 경로에서 삼중이 **밖으로 나가는 출구는 전부 이미 `canon3`를 거친다**(`Seg.end`·`touches`). weld 키도 `three_planes`의 계수도 **이미 canon**이었다. ⇒ **이 작업이 바꾸는 것은 "이름"이 아니라 "판정"**이고, 위험은 ulp가 아니라 **어떤 면이 어디서 잘리는가**다. 검증도 부피 비교가 아니라 실패 집합·면/정점 수 비교여야 했다.
+
+**결과.** ops **210→213**(잠금 2 + un-ignore 1), 실패 집합 **동일**(회귀 0), **OCCT 77/14 유지**, clippy **36→34**, workspace green.
+
+**★ P3 달성 — 기울어진 면 proptest가 열렸다.** `pocket_on_a_random_slanted_face_is_valid_or_rejects`의 `#[ignore]` 해제. 직전 셀이 *"다른 갈래(`order_along ← trace_transversal_face`)라 이 셀로는 안 닫힌다"*고 정직 기록했던 그 패닉이, **삼중을 클래스로 이름하니 사라졌다** — 그 삼중은 한 평면을 두 coincident 면으로 이름한 것이었고, 클래스 형식으로는 **표현 자체가 불가능**하기 때문이다. 예측 P3는 "추론이고 미검증"으로 등록해 뒀는데 참으로 나왔다.
+
+**잠금:** `plane_triples_are_always_canon`(모든 링의 모든 삼중이 클래스 루트·정렬·서로 다름; **fixture가 실제로 평면을 분할하는지 먼저 단언** — 첫 시도가 이 장치에 걸려 vacuous임이 드러났고 overhang fixture로 교체) · `a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it`(형제 면으로 물어도 0).
+
+**★ 만들지 않은 잠금과 그 이유.** 계획의 `naming_a_point_by_a_sibling_face_does_not_change_the_order`(부호 상쇄 논증의 경험적 고정)는 **폐기**했다 — ③의 `assert_class_roots`가 형제 면 이름을 금지하므로, 그 테스트는 검증하려는 호출 자체가 패닉한다. 상쇄는 ②의 no-op 측정(실패 집합·수치 불변)이 대신 확인했다.
+
+**정직 기록 — 남은 것:** ① 실패 23건은 그대로(이 셀의 목표가 아니었다). ② 감사 사각지대 9.9만(`point_in_solid_idx_*`·`tolerant` 자체 단위 테스트가 손으로 만든 테이블) — `class_of`가 그런 테이블에서 "면이 곧 자기 클래스"로 폴백하므로 검사가 vacuous하다. ③ P5(canon 병합으로 새로 드러나는 붕괴 삼중)는 **0건** — "문제가 없었다"가 아니라 **이 코퍼스가 그 형상을 안 만든다**는 뜻이다. ④ `t_planes_coplanar`는 클래스를 *정의*하는 술어라 규약의 명시적 예외(감사·assert에서 제외).
+
+**후속(사용자 결정).** 원리적 최종형은 **배열 분리** — `planes: Vec<PlaneGeom>`(평면 단위) + `faces: Vec<FaceInfo>`(면 단위). 그러면 `canon` 개념이 사라지고 두 뜻이 섞일 **방법이 없어진다**(지금은 사람이 지키는 규칙 + 런타임 그물). 커토버 완료 후 별도 셀이며, 이번 정규화가 그때의 이사 목록이 된다. 계획 초안의 `FaceIdx`/`ClassIdx` newtype 후속은 **철회** — 배열이 하나로 남은 채 타입만 씌우면 `planes[클래스].n_out`이라는 가장 위험한 실수가 여전히 타입상 합법이다.
