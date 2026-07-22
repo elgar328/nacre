@@ -22,7 +22,7 @@
 //!   argument are class roots** ([`class_of`]). Producers emit class form; consumers normalize on
 //!   entry; [`crate::tolerant`]'s predicates assert it.
 //! - **An index that reads *this face's* geometry is a face** — `n_out`, `orient`, `inc`
-//!   (`EdgePlanes` incidences are faces, so `other()`/`pa == own` must match raw), and the
+//!   (`EdgeFaces` incidences are faces, so `other()`/`pa == own` must match raw), and the
 //!   `declined` log. Reading `n_out` off a class representative can flip a seated face inside out,
 //!   because two faces of one plane may have **opposite** normals.
 //! - **An index that states a *plane class's* label frame is a class root** — the `[*_above,
@@ -44,19 +44,24 @@ use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Loop, Model, Orientation, Solid, Vertex};
 use std::collections::HashMap;
 
-/// A solid's edges, each with its endpoints and the planes of its two faces.
-pub(crate) type EdgePlanes = HashMap<Handle<Edge>, ([Handle<Vertex>; 2], [usize; 2])>;
+/// A solid's edges, each with its endpoints and **the indices of its two faces**.
+///
+/// Named for what it holds: the pair is `planes`-table slots, i.e. *faces*, not plane classes —
+/// `edge_faces` builds it from `surf_ix: HashMap<Handle<Face>, usize>`. It was `EdgePlanes`, and
+/// that name is how a face index gets read as a plane one. The face→plane step is `plane_ix`, and
+/// it happens in `loop_triples`, nowhere else.
+pub(crate) type EdgeFaces = HashMap<Handle<Edge>, ([Handle<Vertex>; 2], [usize; 2])>;
 
 /// Index a solid's edges by handle — [`edge_incidence`] keyed for lookup.
 ///
 /// Hole-ring edges are in here too: `edge_incidence` walks every loop of every
 /// face, and rejects an edge whose incidence is not a pair.
-pub(crate) fn edge_planes(
+pub(crate) fn edge_faces(
     model: &Model,
     solid: Handle<Solid>,
     surf_ix: &HashMap<Handle<Face>, usize>,
-) -> Result<EdgePlanes, BoolError> {
-    let mut out = EdgePlanes::new();
+) -> Result<EdgeFaces, BoolError> {
+    let mut out = EdgeFaces::new();
     for (eh, bounds, inc) in edge_incidence(model, solid, surf_ix)? {
         out.insert(eh, (bounds, inc));
     }
@@ -160,7 +165,7 @@ pub(crate) fn face_vertex_triples(
     model: &Model,
     f: Handle<Face>,
     p: usize,
-    inc: &EdgePlanes,
+    inc: &EdgeFaces,
     planes: &[PlaneInfo],
     canon: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
@@ -177,7 +182,7 @@ pub(crate) fn hole_rings(
     model: &Model,
     f: Handle<Face>,
     p: usize,
-    inc: &EdgePlanes,
+    inc: &EdgeFaces,
     planes: &[PlaneInfo],
     canon: &[usize],
 ) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
@@ -201,7 +206,7 @@ pub(crate) fn hole_rings(
 /// *only* path by which a degenerate triple reaches them.
 ///
 /// So when the two neighbours are one class, the name is taken from **every plane touching the
-/// vertex** ([`vertex_plane_indices`]) instead: exactly three classes ⇒ that is the name, and it is
+/// vertex** ([`vertex_face_indices`]) instead: exactly three classes ⇒ that is the name, and it is
 /// the same set whichever face's loop asks, so welding stays consistent (a face whose loop does not
 /// degenerate here derives the same three). More than three is a real four-plane concurrency and
 /// fewer is a genuine straight angle — both decline. Three *dependent* planes share a line rather
@@ -212,7 +217,7 @@ pub(crate) fn hole_rings(
 fn loop_triples(
     l: &Loop,
     p: usize,
-    inc: &EdgePlanes,
+    inc: &EdgeFaces,
     planes: &[PlaneInfo],
     canon: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
@@ -248,7 +253,7 @@ fn loop_triples(
         let [vh] = shared[..] else {
             return Err(reject(tag::LOOP_ORIENT_MISMATCH));
         };
-        let mut classes: Vec<usize> = vertex_plane_indices(vh, inc)
+        let mut classes: Vec<usize> = vertex_face_indices(vh, inc)
             .into_iter()
             .map(|k| canon[k])
             .collect();
@@ -403,7 +408,10 @@ pub(crate) fn every_ray(
     Ok(out)
 }
 
-pub(crate) fn vertex_plane_indices(vh: Handle<Vertex>, inc: &EdgePlanes) -> Vec<usize> {
+/// Every **face** incident to `vh`, as `planes`-table slots. (Was `vertex_plane_indices`; it
+/// returns `inc`'s pairs verbatim, and those are faces. Its one caller maps them through
+/// `plane_ix`.)
+pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<usize> {
     let mut out: Vec<usize> = Vec::new();
     for (bounds, pair) in inc.values() {
         if bounds.contains(&vh) {
@@ -424,7 +432,7 @@ pub(crate) fn vertex_plane_indices(vh: Handle<Vertex>, inc: &EdgePlanes) -> Vec<
 /// direction), so each crossing with a face on plane `q` is the three-plane point `{A,B,q}`,
 /// judged inside/ahead by [`every_ray`]/[`order_along`] — no coordinate read, no f64.
 ///
-/// `inc_v` is the query vertex's solid's [`EdgePlanes`] (to read `V`'s planes); `inc_o` is
+/// `inc_v` is the query vertex's solid's [`EdgeFaces`] (to read `V`'s planes); `inc_o` is
 /// `other`'s (its face rings). Both index into the shared `planes`/`surf_ix`. Faces of **every**
 /// shell (outer + cavities) are summed, so a point in a void reads `Outside`.
 ///

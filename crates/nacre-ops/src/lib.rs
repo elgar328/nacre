@@ -1425,12 +1425,12 @@ fn component_is_outward_tol(planes: &[PlaneInfo], comp: &[&LocalFace]) -> Result
     // outer edge of its wall and an inner edge of the holed face, so building over both loops
     // gives it both planes. A manifold edge yields exactly two.
     type EKey = ((u8, usize, usize, usize), (u8, usize, usize, usize));
-    let mut edge_planes: HashMap<EKey, Vec<usize>> = HashMap::new();
+    let mut edge_faces: HashMap<EKey, Vec<usize>> = HashMap::new();
     for lf in comp {
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
             let k = ring.len();
             for t in 0..k {
-                edge_planes
+                edge_faces
                     .entry(ekey(ring[t], ring[(t + 1) % k]))
                     .or_default()
                     .push(lf.plane_idx);
@@ -1438,7 +1438,7 @@ fn component_is_outward_tol(planes: &[PlaneInfo], comp: &[&LocalFace]) -> Result
         }
     }
     let other_plane = |a: Node, b: Node, own: usize| -> Result<usize, BoolError> {
-        let ps = edge_planes
+        let ps = edge_faces
             .get(&ekey(a, b))
             .ok_or_else(|| reject(tag::MISSING_SEAM))?;
         let mut others = ps.iter().copied().filter(|&x| x != own);
@@ -1673,7 +1673,7 @@ struct LocalFace {
 
 /// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
-/// [`arrange::EdgePlanes`]. Detectors that classify vertices exactly but lack
+/// [`arrange::EdgeFaces`]. Detectors that classify vertices exactly but lack
 /// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
 /// Indices into the returned `planes`/`surf_ix` are shared, so a vertex of `a` and a face of
 /// `b` compose in one space.
@@ -1683,8 +1683,8 @@ struct LocalFace {
 pub(crate) struct PlaneSetup {
     pub(crate) planes: Vec<PlaneInfo>,
     pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
-    pub(crate) inc_a: arrange::EdgePlanes,
-    pub(crate) inc_b: arrange::EdgePlanes,
+    pub(crate) inc_a: arrange::EdgeFaces,
+    pub(crate) inc_b: arrange::EdgeFaces,
     pub(crate) canon: Vec<usize>,
     /// The arrangement's planes, densely indexed — see [`dense_planes`].
     pub(crate) geom: Vec<PlaneGeom>,
@@ -1703,8 +1703,8 @@ fn plane_index_setup(
     for (i, pi) in planes.iter().enumerate() {
         surf_ix.insert(pi.face, i);
     }
-    let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
-    let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
+    let inc_a = arrange::edge_faces(model, a, &surf_ix)?;
+    let inc_b = arrange::edge_faces(model, b, &surf_ix)?;
     let canon = fill_classes(&mut planes);
     let (geom, plane_ix) = dense_planes(&planes, &canon);
     Ok(PlaneSetup {
@@ -3855,7 +3855,7 @@ pub mod tests {
             surf_ix.insert(pi.face, i);
         }
         let canon = plane_classes(&planes);
-        let inc = arrange::edge_planes(&m, r, &surf_ix).unwrap();
+        let inc = arrange::edge_faces(&m, r, &surf_ix).unwrap();
         for &fh in &m.shells.get(m.solids.get(r).outer).faces {
             let p = surf_ix[&fh];
             let holes = arrange::hole_rings(&m, fh, p, &inc, &planes, &canon).unwrap();

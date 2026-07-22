@@ -82,7 +82,7 @@ pub(crate) struct Trace {
     /// Single-point tangential contacts — real arrangement vertices, but not segments (a
     /// zero-length chord would abort at `Line::through_points`).
     pub touches: Vec<[usize; 3]>,
-    /// `(face plane index, reason)` for every face this brick could not trace.
+    /// `(face index, reason)` for every face this brick could not trace.
     pub declined: Vec<(usize, &'static str)>,
 }
 
@@ -153,7 +153,7 @@ fn trace_transversal_face(
     which: SolidSide,
     wc: usize,
     planes: &[PlaneInfo],
-    inc: &arrange::EdgePlanes,
+    inc: &arrange::EdgeFaces,
     canon: &[usize],
     out: &mut Trace,
 ) {
@@ -444,7 +444,7 @@ fn trace_one(
     wc: usize,
     planes: &[PlaneInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
-    inc: &arrange::EdgePlanes,
+    inc: &arrange::EdgeFaces,
     canon: &[usize],
     out: &mut Trace,
 ) {
@@ -535,8 +535,8 @@ fn trace_on_class(
     wc: usize,
     planes: &[PlaneInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
-    inc_a: &arrange::EdgePlanes,
-    inc_b: &arrange::EdgePlanes,
+    inc_a: &arrange::EdgeFaces,
+    inc_b: &arrange::EdgeFaces,
     canon: &[usize],
 ) -> Trace {
     let mut out = Trace::default();
@@ -1328,8 +1328,8 @@ fn trace_result_faces(
     b: Handle<Solid>,
     planes: &[PlaneInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
-    inc_a: &arrange::EdgePlanes,
-    inc_b: &arrange::EdgePlanes,
+    inc_a: &arrange::EdgeFaces,
+    inc_b: &arrange::EdgeFaces,
     canon: &[usize],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let mut faces: Vec<LocalFace> = Vec::new();
