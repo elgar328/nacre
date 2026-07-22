@@ -1279,8 +1279,7 @@ fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
 /// the void root — so `-1` cells are skipped, never emitted as their own face.
 ///
 /// **Output contract:** every ring vertex is a `Node::Seam` triple, including triples that coincide
-/// with an original A/B vertex (a cap corner). The abutting wall faces name that point
-/// `Node::Orig`, so the next brick's SeamVertex weld table must canonicalize such a W-triple onto
+/// with an original A/B vertex (a cap corner); the weld table canonicalizes such a W-triple onto
 /// the same result vertex, or `assemble_fuse_cut`'s manifold guard rejects. This brick emits
 /// all-`Seam`; the reconciliation and assembly are later.
 fn emit_faces(
@@ -1509,7 +1508,7 @@ pub(crate) fn boolean(
     for f in &faces {
         for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
             for node in loop_ {
-                let crate::Node::Seam(t) = node else { continue };
+                let crate::Node::Seam(t) = node;
                 if seen.insert(*t, ()).is_some() {
                     continue;
                 }
@@ -2468,7 +2467,6 @@ mod tests {
                 .iter()
                 .map(|n| match n {
                     crate::Node::Seam(t) => pt(*t, &planes),
-                    _ => unreachable!("all-Seam"),
                 })
                 .collect();
             [
@@ -2520,14 +2518,8 @@ mod tests {
 
         // Each emitted loop winds +1 (CCW about n_out(wc)) and has ≥3 distinct nodes.
         for f in fuse.iter().chain(&cut).chain(&common) {
-            let ring: Vec<[usize; 3]> = f
-                .loop_nodes
-                .iter()
-                .map(|n| match n {
-                    crate::Node::Seam(t) => *t,
-                    _ => unreachable!(),
-                })
-                .collect();
+            let ring: Vec<[usize; 3]> =
+                f.loop_nodes.iter().map(|crate::Node::Seam(t)| *t).collect();
             assert!(ring.len() >= 3);
             assert_eq!(
                 arrange::loop_winding(&planes, wc, &ring).unwrap(),
@@ -2556,14 +2548,7 @@ mod tests {
         // closes against a wall face only at assembly). At least one interior edge must exist.
         let mut edges: HashMap<([usize; 3], [usize; 3]), (i32, i32)> = HashMap::new();
         for f in &fuse {
-            let ns: Vec<[usize; 3]> = f
-                .loop_nodes
-                .iter()
-                .map(|n| match n {
-                    crate::Node::Seam(t) => *t,
-                    _ => unreachable!(),
-                })
-                .collect();
+            let ns: Vec<[usize; 3]> = f.loop_nodes.iter().map(|crate::Node::Seam(t)| *t).collect();
             for w in ns
                 .windows(2)
                 .chain(std::iter::once(&[ns[ns.len() - 1], ns[0]][..]))
@@ -2642,7 +2627,6 @@ mod tests {
                 .iter()
                 .map(|n| match n {
                     crate::Node::Seam(t) => *t,
-                    _ => unreachable!("all-Seam"),
                 })
                 .collect();
             for w in ns
@@ -2843,7 +2827,6 @@ mod tests {
             ns.iter()
                 .map(|n| match n {
                     crate::Node::Seam(t) => *t,
-                    _ => unreachable!("all-Seam"),
                 })
                 .collect()
         };
@@ -2936,7 +2919,6 @@ mod tests {
             ns.iter()
                 .map(|n| match n {
                     crate::Node::Seam(t) => *t,
-                    _ => unreachable!("all-Seam"),
                 })
                 .collect()
         };
@@ -3126,7 +3108,6 @@ mod tests {
             ns.iter()
                 .map(|n| match n {
                     crate::Node::Seam(t) => *t,
-                    _ => unreachable!("all-Seam"),
                 })
                 .collect()
         };

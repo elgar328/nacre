@@ -1399,22 +1399,13 @@ fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result<bool, BoolError> {
     use nacre_scalar::{Orient, Rat};
 
-    // Node lacks `Ord`; this is a canonical, hashable id for the unordered edge key.
-    fn rank(n: Node) -> (u8, usize, usize, usize) {
-        match n {
-            Node::Orig(h) => (0, h.index() as usize, 0, 0),
-            Node::Seam([a, b, c]) => (1, a, b, c),
-        }
-    }
-    let ekey = |a: Node, b: Node| {
-        let (ra, rb) = (rank(a), rank(b));
-        if ra <= rb { (ra, rb) } else { (rb, ra) }
-    };
+    // The unordered edge key: `Node` is `Ord`, so order the pair canonically.
+    let ekey = |a: Node, b: Node| if a <= b { (a, b) } else { (b, a) };
 
     // Edge -> the planes carrying it, over every loop (outer + inner): a hole-rim edge is the
     // outer edge of its wall and an inner edge of the holed face, so building over both loops
     // gives it both planes. A manifold edge yields exactly two.
-    type EKey = ((u8, usize, usize, usize), (u8, usize, usize, usize));
+    type EKey = (Node, Node);
     let mut edge_faces: HashMap<EKey, Vec<usize>> = HashMap::new();
     for lf in comp {
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
@@ -1466,7 +1457,7 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
     // Lexicographically-minimal vertex over the unique outer nodes (`loop_winding`'s scan;
     // `t_cmp_coord` is exact for the rotated triples). Sort candidates for replay determinism.
     let mut nodes: Vec<Node> = triple_of.keys().copied().collect();
-    nodes.sort_by_key(|&n| rank(n));
+    nodes.sort_unstable();
     let Some((&first, rest)) = nodes.split_first() else {
         return Ok(false); // empty component
     };
@@ -1640,11 +1631,11 @@ struct SeamVertex {
     tol: f64,
 }
 
-/// A node in a reconstructed face loop. `Eq`/`Hash` give identity dedup so an
-/// A-piece and a B-piece that meet at a seam node share one result vertex/edge.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+/// A node in a reconstructed face loop: the sorted plane triple naming a seam vertex.
+/// `Eq`/`Hash` give identity dedup so an A-piece and a B-piece that meet at a seam node
+/// share one result vertex/edge; `Ord` gives the deterministic node order replay needs.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 enum Node {
-    Orig(Handle<Vertex>),
     Seam([usize; 3]), // sorted triple (key into the seam map)
 }
 
@@ -1874,13 +1865,6 @@ fn assemble_fuse_cut(
             return Ok(h);
         }
         let handle = match node {
-            Node::Orig(orig) => {
-                let point = model.vertices.get(orig).point;
-                model.vertices.push(Vertex {
-                    point,
-                    origin: Origin::Constructed,
-                })
-            }
             Node::Seam(triple) => {
                 // A face references a seam node whose triple was not welded into `seam` — a
                 // reconstruction dropped a crossing. Reject (never panic): an unmodeled flush
@@ -2175,20 +2159,7 @@ pub(crate) fn plane_classes(planes: &[FaceInfo]) -> Vec<usize> {
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.
 fn norm_edge(a: Node, b: Node) -> (Node, Node) {
-    if node_rank(a) <= node_rank(b) {
-        (a, b)
-    } else {
-        (b, a)
-    }
-}
-
-/// A total order on `Node`. There is no `Ord` derive — `Orig` and `Seam` carry different shapes —
-/// but every iteration over nodes has to be deterministic for replay, so they are ranked by hand.
-fn node_rank(n: Node) -> (u8, usize, usize, usize) {
-    match n {
-        Node::Orig(v) => (0, v.index() as usize, 0, 0),
-        Node::Seam(t) => (1, t[0], t[1], t[2]),
-    }
+    if a <= b { (a, b) } else { (b, a) }
 }
 
 /// Merge every group of coplanar, same-facing result faces into one face per connected piece, then
@@ -2215,15 +2186,12 @@ fn node_rank(n: Node) -> (u8, usize, usize, usize) {
 /// Rejects rather than guesses: a directed edge appearing twice the same way (two faces claiming the
 /// same side), an undirected edge on three or more rings (non-manifold in the plane), or a node with
 /// two outgoing edges after erasure (pieces meeting at a single point, where the cycle is not
-/// unique). A group containing an `Orig` node is passed through untouched — `loop_winding` needs the
-/// plane triples, and the arrangement emits `Seam` for everything, so this is unreachable in
-/// production.
+/// unique).
 pub(crate) fn unify_coplanar_faces(
     faces: Vec<LocalFace>,
     planes: &[PlaneGeom],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
-    let eligible = all_seam;
     // One plane class, one flip.
     //
     // There used to be an outward-direction component here, and a `canon` lookup beside it. Neither
@@ -2237,9 +2205,6 @@ pub(crate) fn unify_coplanar_faces(
     let mut comp: Vec<usize> = (0..n).collect();
     let mut carriers: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
-        if !eligible(lf) {
-            continue;
-        }
         // Holes count here too: a tool cap sitting flush inside another face touches it only
         // along that hole, so leaving `inner` out would put the two in different components and
         // nothing would merge at all.
@@ -2262,11 +2227,9 @@ pub(crate) fn unify_coplanar_faces(
 
     // Group members by component, in face order so the result is replay-stable.
     let mut members: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (fi, lf) in faces.iter().enumerate() {
-        if eligible(lf) {
-            let r = uf_find(&mut comp, fi);
-            members[r].push(fi);
-        }
+    for fi in 0..n {
+        let r = uf_find(&mut comp, fi);
+        members[r].push(fi);
     }
 
     let mut merged: Vec<LocalFace> = Vec::new();
@@ -2297,15 +2260,6 @@ pub(crate) fn unify_coplanar_faces(
     Ok(out)
 }
 
-/// Every node of every ring is a `Seam` triple — `loop_winding` and `point_in_ring` name their
-/// arguments by plane, so an `Orig` node has nothing to give them.
-fn all_seam(lf: &LocalFace) -> bool {
-    lf.loop_nodes
-        .iter()
-        .chain(lf.inner.iter().flatten())
-        .all(|nd| matches!(nd, Node::Seam(_)))
-}
-
 /// A ring's directed edges, `i → i+1` around.
 fn ring_edges(ring: &[Node]) -> impl Iterator<Item = (Node, Node)> + '_ {
     (0..ring.len()).map(move |i| (ring[i], ring[(i + 1) % ring.len()]))
@@ -2313,12 +2267,7 @@ fn ring_edges(ring: &[Node]) -> impl Iterator<Item = (Node, Node)> + '_ {
 
 /// The `[usize; 3]` form a ring's nodes carry, for the exact predicates.
 fn seam_ring(ring: &[Node]) -> Vec<[usize; 3]> {
-    ring.iter()
-        .map(|nd| match nd {
-            Node::Seam(t) => *t,
-            Node::Orig(_) => unreachable!("callers filter on `all_seam`"),
-        })
-        .collect()
+    ring.iter().map(|Node::Seam(t)| *t).collect()
 }
 
 /// An outer ring with the holes that belong to it — what one merged region looks like before it
@@ -2364,7 +2313,7 @@ fn merge_component(
         }
     }
     let mut starts: Vec<Node> = next.keys().copied().collect();
-    starts.sort_by_key(|&nd| node_rank(nd));
+    starts.sort_unstable();
     let mut seen: HashSet<Node> = HashSet::new();
     let mut cycles: Vec<Vec<Node>> = Vec::new();
     for start in starts {
@@ -2439,14 +2388,12 @@ fn dissolve_straight_angles(out: &mut [LocalFace]) {
     }
     let mut drop: HashSet<Node> = HashSet::new();
     for (&node, ns) in &nbrs {
-        let Node::Seam(t) = node else { continue };
+        let Node::Seam(t) = node;
         if ns.len() != 2 {
             continue;
         }
         let mut it = ns.iter();
-        let (Node::Seam(a), Node::Seam(b)) = (*it.next().unwrap(), *it.next().unwrap()) else {
-            continue;
-        };
+        let (Node::Seam(a), Node::Seam(b)) = (*it.next().unwrap(), *it.next().unwrap());
         let both_have = |p: usize| a.contains(&p) && b.contains(&p);
         if (both_have(t[0]) && both_have(t[1]))
             || (both_have(t[0]) && both_have(t[2]))
@@ -4057,9 +4004,9 @@ pub mod tests {
     }
 
     /// **`Origin` no longer tells result faces apart.** The arrangement names every vertex
-    /// it emits by the three planes meeting there — `Node::Orig` is never built — so an
-    /// operand corner the cut never touched comes back as `Discovered`, exactly like a
-    /// seam vertex. Nothing carries over as `Constructed`.
+    /// it emits by the three planes meeting there, so an operand corner the cut never touched
+    /// comes back as `Discovered`, exactly like a seam vertex. Nothing carries over as
+    /// `Constructed` (the arrangement builds no vertex from an original handle).
     ///
     /// This is a contract, not a curiosity: `pipeline.rs`'s island test selected a face by
     /// "all its vertices are `Discovered`", which was unique under the old engine and is
