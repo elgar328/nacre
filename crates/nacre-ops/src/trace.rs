@@ -75,6 +75,27 @@ fn canon3(t: [usize; 3], canon: &[usize]) -> [usize; 3] {
     c
 }
 
+/// A ring as the arrangement must read it: **every plane index is a class root**.
+///
+/// Ring producers hand out *face* indices — `arrange::loop_triples` matches `inc`, whose incidences
+/// are faces — so the ring is normalized here, on arrival, before any consumer sees it. That is what
+/// makes a raw `==` downstream mean "same plane" rather than "same face": one geometric plane split
+/// across two faces is one class, and only the class-root form says so.
+///
+/// `None` when a vertex's three names collapse below three classes. Such a triple defines no point
+/// (`three_planes` answers `None`, and the exact predicates' precondition is `D ≠ 0`), so the face
+/// is declined rather than fed to a predicate that would answer from rounding noise. Before this
+/// normalization the collapse was *invisible*: the three raw indices differed, so nothing complained
+/// and the predicate silently returned ±1 for a point on its own plane.
+fn canon_ring(ts: &[[usize; 3]], canon: &[usize]) -> Option<Vec<[usize; 3]>> {
+    ts.iter()
+        .map(|&t| {
+            let c = canon3(t, canon); // sorted, so equal neighbours catch every duplicate
+            (c[0] != c[1] && c[1] != c[2]).then_some(c)
+        })
+        .collect()
+}
+
 /// One feature node on the line `L = W ∩ fp`: a point named by its third plane `r` (raw index).
 struct Node {
     /// Third plane naming this point on `L` (the point is `{W, fp, r}`).
@@ -117,22 +138,41 @@ fn trace_transversal_face(
     canon: &[usize],
     out: &mut Trace,
 ) {
+    // `fp` names a *face* (`inc` matching, `n_out`, `orient`, the declined log); `fc` names the
+    // *plane class* it lies on (triples, comparisons, predicate arguments). Every ring below is in
+    // class form, so the two must not be confused — see `canon_ring`.
+    let fc = canon[fp];
     let outer = match arrange::face_vertex_triples(model, fh, fp, inc, planes, canon) {
-        Ok(r) => r,
+        Ok(r) => match canon_ring(&r, canon) {
+            Some(r) => r,
+            None => {
+                out.declined.push((fp, "collapsed-triple"));
+                return;
+            }
+        },
         Err(_) => {
             out.declined.push((fp, "outer-ring"));
             return;
         }
     };
-    let holes = arrange::hole_rings(model, fh, fp, inc, planes, canon).unwrap_or_default();
+    let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
+    for r in arrange::hole_rings(model, fh, fp, inc, planes, canon).unwrap_or_default() {
+        match canon_ring(&r, canon) {
+            Some(r) => holes.push(r),
+            None => {
+                out.declined.push((fp, "collapsed-triple"));
+                return;
+            }
+        }
+    }
 
-    // `L`'s third plane naming a point of the on-line edge: the vertex triple `{fp, W-class, r}`.
+    // `L`'s third plane naming a point of the on-line edge: the vertex triple `{fc, W-class, r}`.
     let third_on_l = |t: [usize; 3]| -> Option<usize> {
         let (mut r, mut has_fp, mut has_w) = (None, false, false);
         for &x in &t {
-            if x == fp {
+            if x == fc {
                 has_fp = true;
-            } else if canon[x] == wc {
+            } else if x == wc {
                 has_w = true;
             } else if r.replace(x).is_some() {
                 return None; // two off-planes: not a clean point on L
@@ -166,7 +206,7 @@ fn trace_transversal_face(
                 let ni = (i + 1) % n;
                 if side[ni] != 0 && side[ni] != side[i] {
                     // Strict crossing on edge i; its wall is the plane the edge rides besides fp.
-                    match arrange::ring_edge(fp, ring, i) {
+                    match arrange::ring_edge(fc, ring, i) {
                         Ok((wall, _, _)) => nodes.push(Node {
                             r: wall,
                             flip: true,
@@ -253,14 +293,14 @@ fn trace_transversal_face(
 
     // Phase B — order the nodes along L and fix run structure.
     nodes.sort_by(
-        |a, b| match arrange::order_along(planes, wc, fp, a.r, b.r) {
+        |a, b| match arrange::order_along(planes, wc, fc, a.r, b.r) {
             -1 => std::cmp::Ordering::Less,
             1 => std::cmp::Ordering::Greater,
             _ => std::cmp::Ordering::Equal,
         },
     );
     for w in nodes.windows(2) {
-        if arrange::order_along(planes, wc, fp, w[0].r, w[1].r) == 0 {
+        if arrange::order_along(planes, wc, fc, w[0].r, w[1].r) == 0 {
             out.declined.push((fp, "coincident-features"));
             return;
         }
@@ -289,7 +329,7 @@ fn trace_transversal_face(
     let emit = |a: usize, b: usize, graze: Option<bool>, out: &mut Trace| {
         out.segs.push(Seg {
             wall: canon[fp],
-            end: [canon3([wc, fp, a], canon), canon3([wc, fp, b], canon)],
+            end: [canon3([wc, fc, a], canon), canon3([wc, fc, b], canon)],
             solid: which,
             kind: match graze {
                 Some(body_above) => SegKind::Graze { body_above },
@@ -301,7 +341,7 @@ fn trace_transversal_face(
     };
     for k in 0..nodes.len() {
         if nodes[k].single_touch && parity == 0 {
-            out.touches.push(canon3([wc, fp, nodes[k].r], canon));
+            out.touches.push(canon3([wc, fc, nodes[k].r], canon));
         }
         if nodes[k].flip {
             parity ^= 1;
@@ -360,6 +400,27 @@ fn trace_one(
             // (the rotated-tunnel tests exercise this seated path through the cube's own caps).
             let body_above = planes[fp].n_out.dot(w_normal) < 0.0;
             let kind = SegKind::Seated { body_above };
+            // Collect every ring in class form first: a collapsed name declines the whole face, and
+            // deciding that before the emitting closure exists keeps the two borrows apart.
+            let Some(outer) = arrange::face_vertex_triples(model, fh, fp, inc, planes, canon)
+                .ok()
+                .and_then(|ts| canon_ring(&ts, canon))
+            else {
+                out.declined.push((fp, "outer-ring"));
+                continue;
+            };
+            let mut rings = vec![outer];
+            let mut collapsed = false;
+            for r in arrange::hole_rings(model, fh, fp, inc, planes, canon).unwrap_or_default() {
+                match canon_ring(&r, canon) {
+                    Some(r) => rings.push(r),
+                    None => collapsed = true,
+                }
+            }
+            if collapsed {
+                out.declined.push((fp, "collapsed-triple"));
+                continue;
+            }
             let mut emit_ring = |tris: &[[usize; 3]]| {
                 let n = tris.len();
                 for i in 0..n {
@@ -389,17 +450,8 @@ fn trace_one(
                     });
                 }
             };
-            match arrange::face_vertex_triples(model, fh, fp, inc, planes, canon) {
-                Ok(ts) => emit_ring(&ts),
-                Err(_) => {
-                    out.declined.push((fp, "outer-ring"));
-                    continue;
-                }
-            }
-            if let Ok(rings) = arrange::hole_rings(model, fh, fp, inc, planes, canon) {
-                for r in rings {
-                    emit_ring(&r);
-                }
+            for ring in &rings {
+                emit_ring(ring);
             }
         }
     }
