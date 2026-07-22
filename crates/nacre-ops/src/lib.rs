@@ -3974,6 +3974,59 @@ pub mod tests {
         assert!((vol - (3.0 - 0.08)).abs() < 1e-9, "volume {vol}");
     }
 
+    /// **`Origin` no longer tells result faces apart.** The arrangement names every vertex
+    /// it emits by the three planes meeting there — `Node::Orig` is never built — so an
+    /// operand corner the cut never touched comes back as `Discovered`, exactly like a
+    /// seam vertex. Nothing carries over as `Constructed`.
+    ///
+    /// This is a contract, not a curiosity: `pipeline.rs`'s island test selected a face by
+    /// "all its vertices are `Discovered`", which was unique under the old engine and is
+    /// now true of *every* face. It flipped the wrong face and only the last assertion
+    /// noticed. Selecting a face by provenance is what this locks out.
+    ///
+    /// The subject is `Cut(l, stub)` — the **holed** result, so `face_half_edges` walks
+    /// `inner` rings too (`count_discovered` walks only `outer` and would miss them).
+    ///
+    /// **Unrotated only.** Rotating a boolean result re-marks these vertices `Rotated` over
+    /// a `Discovered` base — that is `transform_rotate_boolean_result_keeps_discovered_base`,
+    /// and this lock must not be read as contradicting it.
+    #[test]
+    fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
+        let (mut m, l, stub) = l_and_dimple();
+        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
+        m.rebuild_adjacency();
+
+        let mut seen = std::collections::HashSet::new();
+        let mut holed = 0;
+        for sh in solid_shell_handles(&m, r) {
+            for &fh in &m.shells.get(sh).faces {
+                let face = m.faces.get(fh);
+                holed += usize::from(!face.inner.is_empty());
+                for he in face_half_edges(face) {
+                    for vh in m.edges.get(he.edge).bounds.into_iter().flatten() {
+                        if !seen.insert(vh) {
+                            continue;
+                        }
+                        assert!(
+                            matches!(
+                                m.vertices.get(vh).origin,
+                                Origin::Discovered {
+                                    definition: VertexDef::ThreePlane(_),
+                                    ..
+                                }
+                            ),
+                            "vertex {:?} is {:?}, not a plane triple",
+                            m.vertices.get(vh).point.as_array(),
+                            m.vertices.get(vh).origin
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(holed, 1, "the blind dimple leaves exactly one holed face");
+        assert_eq!(seen.len(), 20, "the L's 12 corners + the dimple's 8");
+    }
+
     #[test]
     fn a_flipped_hole_loop_is_caught() {
         // `loop_orient_mismatch` cannot see a loop flipped as a whole, and `f2`'s golden
@@ -3989,11 +4042,18 @@ pub mod tests {
         let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
         m.rebuild_adjacency();
 
+        // The dimple is blind, so exactly one face carries a hole. Counted, not assumed:
+        // its sibling in `pipeline.rs` said "the only face …" in prose, used `find`, and
+        // silently flipped a different face once the engine stopped making the predicate
+        // unique.
         let faces = m.shells.get(m.solids.get(r).outer).faces.clone();
-        let holed = *faces
+        let holed_faces: Vec<_> = faces
             .iter()
-            .find(|&&f| !m.faces.get(f).inner.is_empty())
-            .expect("the L's top face carries the hole");
+            .copied()
+            .filter(|&f| !m.faces.get(f).inner.is_empty())
+            .collect();
+        assert_eq!(holed_faces.len(), 1, "the L's top face carries the hole");
+        let holed = holed_faces[0];
         let f = m.faces.get(holed).clone();
         let mut hole = f.inner[0].clone();
         hole.half_edges.reverse();

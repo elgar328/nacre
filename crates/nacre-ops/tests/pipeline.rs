@@ -789,23 +789,30 @@ fn a_flipped_island_loop_is_caught() {
     // to `+0.0533`.
     let (mut m, s) = island_cut();
 
-    // The island is the only face all of whose vertices are `Discovered` — the stub's
-    // side pieces each keep two of the original box's corners.
+    // The island is the face whose whole boundary *is* the cut's seam ring, so it is the
+    // one face lying on the other operand's plane — the L's top, `z = 1`.
+    //
+    // It used to be selected as "the only face all of whose vertices are `Discovered`".
+    // That died with the arrangement: every result vertex is now named by a plane triple
+    // (`an_unrotated_boolean_names_every_vertex_by_its_plane_triple`), so all six faces
+    // match and `find` silently took the `z = 1.5` top instead — five of the six
+    // assertions below pass on any face, so only the signed volume noticed. Hence the
+    // geometric predicate, and hence the count: the uniqueness this relies on is asserted,
+    // not narrated.
     let faces = m.shells.get(m.solids.get(s).outer).faces.clone();
-    let isle = *faces
+    let isles: Vec<_> = faces
         .iter()
-        .find(|&&f| {
+        .copied()
+        .filter(|&f| {
             m.faces.get(f).outer.half_edges.iter().all(|he| {
                 let b = m.edges.get(he.edge).bounds.unwrap();
-                b.iter().all(|&v| {
-                    matches!(
-                        m.vertices.get(v).origin,
-                        nacre_topo::Origin::Discovered { .. }
-                    )
-                })
+                b.iter()
+                    .all(|&v| (m.vertices.get(v).point[2] - 1.0).abs() < 1e-9)
             })
         })
-        .expect("the island face");
+        .collect();
+    assert_eq!(isles.len(), 1, "the island face is not unique: {isles:?}");
+    let isle = isles[0];
 
     // `Store` is append-only: push the reversed face, swap it into a fresh shell and
     // solid, move the live handle.
