@@ -1665,6 +1665,10 @@ pub(crate) struct PlaneSetup {
     pub(crate) inc_a: arrange::EdgePlanes,
     pub(crate) inc_b: arrange::EdgePlanes,
     pub(crate) canon: Vec<usize>,
+    /// The arrangement's planes, densely indexed — see [`dense_planes`].
+    pub(crate) geom: Vec<PlaneGeom>,
+    /// `plane_ix[face]` is that face's plane, as an index into `geom`.
+    pub(crate) plane_ix: Vec<usize>,
 }
 
 fn plane_index_setup(
@@ -1681,12 +1685,15 @@ fn plane_index_setup(
     let inc_a = arrange::edge_planes(model, a, &surf_ix)?;
     let inc_b = arrange::edge_planes(model, b, &surf_ix)?;
     let canon = fill_classes(&mut planes);
+    let (geom, plane_ix) = dense_planes(&planes, &canon);
     Ok(PlaneSetup {
         planes,
         surf_ix,
         inc_a,
         inc_b,
         canon,
+        geom,
+        plane_ix,
     })
 }
 
@@ -1706,6 +1713,65 @@ pub(crate) fn fill_classes(planes: &mut [PlaneInfo]) -> Vec<usize> {
         pi.class = canon[i];
     }
     canon
+}
+
+/// One plane of the arrangement, indexed by a **dense** class id.
+///
+/// The face table cannot answer "which plane" without a convention: a class holds faces from both
+/// operands, and two of them can face opposite ways, so there is no such thing as *the* plane's
+/// outward normal. What a plane has is a **frame** — the class root's stored normal — and the only
+/// direction fact anyone needs from it is [`PlaneGeom::frame_sign`]. Everything else here is a
+/// witness: three points known to lie on this plane, used to reconstruct it exactly.
+pub(crate) struct PlaneGeom {
+    pub(crate) plane: Plane,
+    /// The class's representative surface — what `assemble_fuse_cut` records in a
+    /// `VertexDef::ThreePlane`.
+    pub(crate) surf: Handle<Surface>,
+    /// Witness points on this plane (the root face's `tri`), outward-ordered for that face.
+    pub(crate) tri: [Point3; 3],
+    /// The witness as toleranced `Pt3` — `Some` only when the root face came from a rotated solid.
+    pub(crate) tri_pt3: Option<[Pt3; 3]>,
+    /// `+1` when the plane's stored normal agrees with the root face's outward normal, `-1` when
+    /// they oppose. This *is* the label frame: `[A_above, A_below, …]` is defined about the class
+    /// root's stored normal, and this sign is what relates it to material. Precomputed here so the
+    /// two `debug_assert`s that guard the convention run once, at construction.
+    pub(crate) frame_sign: i8,
+}
+
+/// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
+///
+/// **The numbering is monotone in `canon`.** Roots are ranked in increasing order, so
+/// `canon[i] < canon[j]` iff `plane_ix[i] < plane_ix[j]` — every comparison, sort and lex-min over
+/// plane indices is order-isomorphic to the sparse form. Nothing found in the engine turns out to
+/// depend on that (the two candidates — `loop_winding`'s lex-min node and `crossings`' pre-dedup
+/// sort — are by coordinate and by set, respectively), but the audit cannot be proved exhaustive
+/// over ~175 sites, so the numbering removes the question instead of answering it.
+pub(crate) fn dense_planes(planes: &[PlaneInfo], canon: &[usize]) -> (Vec<PlaneGeom>, Vec<usize>) {
+    let mut roots: Vec<usize> = canon.to_vec();
+    roots.sort_unstable();
+    roots.dedup();
+    let plane_ix = canon
+        .iter()
+        .map(|c| {
+            roots
+                .binary_search(c)
+                .expect("a class root is in the root set")
+        })
+        .collect();
+    let geom = roots
+        .iter()
+        .map(|&r| {
+            let pi = &planes[r];
+            PlaneGeom {
+                plane: pi.plane,
+                surf: pi.surf,
+                tri: pi.tri,
+                tri_pt3: pi.tri_pt3.clone(),
+                frame_sign: arrange::orient_sign(planes, r),
+            }
+        })
+        .collect();
+    (geom, plane_ix)
 }
 
 /// Whether three `Pt3` are **exactly collinear** (zero-area triangle), decided on their
@@ -7354,6 +7420,60 @@ pub mod tests {
             }
         }
         assert!(checked > 0, "the chained operand has vertices to name");
+    }
+
+    /// **Dense plane ids are order-isomorphic to the sparse roots.** `dense_planes` ranks the class
+    /// roots, so any comparison, sort or lex-min over plane indices reads the same either way.
+    ///
+    /// This is a **migration gate, not a permanent invariant**: it exists so the claim is measured
+    /// before the split rides on it, and it retires with `canon` — its subject, not its coverage,
+    /// is what goes away.
+    #[test]
+    fn dense_plane_ids_are_monotone_in_canon() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        // An overhanging boss splits `z = 1` between two faces, so classes really do merge and the
+        // ranking really does compress — without that the map is the identity and proves nothing.
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 1.0]),
+            Point3::from_array([1.5, 0.75, 2.0]),
+        );
+        let chained = boolean_one(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        m.rebuild_adjacency();
+        let probe = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.5]),
+            Point3::from_array([0.6, 0.6, 2.5]),
+        );
+        let PlaneSetup {
+            canon,
+            geom,
+            plane_ix,
+            ..
+        } = plane_index_setup(&m, chained, probe).unwrap();
+        assert!(
+            canon.iter().enumerate().any(|(i, &c)| c != i),
+            "fixture has no split plane — the invariant would be vacuous"
+        );
+        assert!(
+            geom.len() < canon.len(),
+            "the ranking must actually compress"
+        );
+        for i in 0..canon.len() {
+            for j in 0..canon.len() {
+                assert_eq!(
+                    canon[i].cmp(&canon[j]),
+                    plane_ix[i].cmp(&plane_ix[j]),
+                    "faces {i}/{j}: canon {}/{} vs dense {}/{}",
+                    canon[i],
+                    canon[j],
+                    plane_ix[i],
+                    plane_ix[j]
+                );
+            }
+        }
     }
 
     /// **A plane triple is always in class form.** `planes` is a per-face table, so the same
