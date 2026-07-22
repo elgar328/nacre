@@ -1148,15 +1148,25 @@ fn extrude_and_boolean(
     // `build_prism` returns the far cap as `faces[1]`; the store is append-only, so it is still
     // readable after the boolean retired the prism, and it names the cap plane exactly.
     let far_cap = prism_faces[1];
-    let primary = *solids
-        .first()
-        .expect("a pad/pocket boolean yields at least one solid");
     match solids
         .iter()
         .find_map(|&s| find_face_coplanar_with(model, s, far_cap, n).map(|c| (s, c)))
     {
         Some((solid, cap)) => Ok((solid, Some(cap))),
-        None => Ok((primary, None)),
+        // Nothing carries the cap. If anything survived at all, hand it back capless and let
+        // `pad`/`pocket` decide; if the boolean came back empty the prism removed the whole solid,
+        // which is `PocketNotBlind` taken to its limit — not merely floorless, but nothing left.
+        // Only `Cut` can empty a result: `Fuse` of two non-empty solids is never empty.
+        None => match solids.first() {
+            Some(&primary) => Ok((primary, None)),
+            None => {
+                debug_assert!(
+                    matches!(kind, BoolKind::Cut),
+                    "a Fuse cannot produce an empty result"
+                );
+                Err(OpError::PocketNotBlind)
+            }
+        },
     }
 }
 
@@ -2211,6 +2221,15 @@ fn assemble_fuse_cut(
     seam: &[SeamVertex],
     faces: &[LocalFace],
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
+    // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
+    // is wholly inside what cuts it. That is an answer, not a failure: a solid is bounded by faces,
+    // so a non-empty result cannot have none. The inputs are still consumed, exactly as they are on
+    // any other successful boolean — the retire below sits inside the `positives` match, which this
+    // early return skips, so it has to happen here too or the operands stay live.
+    if faces.is_empty() {
+        model.live_solids.retain(|&s| s != a && s != b);
+        return Ok(Vec::new());
+    }
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
     let mut node_handle = |model: &mut Model, node: Node| -> Result<Handle<Vertex>, BoolError> {
