@@ -187,7 +187,18 @@ pub(crate) fn seam_segments_on(
                 };
                 let seg = SeamSegment {
                     plane_pair: [p, q],
-                    ends: [triple(p, q, r0), triple(p, q, r1)],
+                    ends: [
+                        triple(
+                            class_of(planes, p),
+                            class_of(planes, q),
+                            class_of(planes, r0),
+                        ),
+                        triple(
+                            class_of(planes, p),
+                            class_of(planes, q),
+                            class_of(planes, r1),
+                        ),
+                    ],
                     points: [point_of(r0)?, point_of(r1)?],
                     on_edge: [e0, e1],
                 };
@@ -638,9 +649,11 @@ fn loop_triples(
         let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
         let (out_bounds, out_pair) = edge(&hes[i])?;
         let (a, b) = (other(in_pair), other(out_pair));
-        if canon[a] != canon[b] {
-            let mut t = [p, a, b];
-            t.sort_unstable();
+        // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
+        // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
+        let mut t = [canon[p], canon[a], canon[b]];
+        t.sort_unstable();
+        if t[0] != t[1] && t[1] != t[2] {
             out.push(t);
             continue;
         }
@@ -670,10 +683,11 @@ fn loop_triples(
                 tag::LOOP_ORIENT_MISMATCH
             }));
         }
-        // Keep `p` itself, not its class representative: callers still match the face's own plane
-        // by raw index (`x != fp`), and the ring is canonized downstream anyway — so the triple
-        // stays in the same index space as every other name while denoting the same three classes.
-        let mut t = [p, 0, 0];
+        // `canon[p]`, not `p`. An earlier revision kept `p` raw because consumers still matched the
+        // face's own plane by raw index; they now compare classes (2026-07-22), and a triple that
+        // mixed one face index with two class indices was exactly the ambiguity this brick exists
+        // to remove.
+        let mut t = [canon[p], 0, 0];
         let mut k = 1;
         for &c in &classes {
             if c != canon[p] {
@@ -764,6 +778,16 @@ pub(crate) fn point_on_ring(
     v: [usize; 3],
     ring: &[[usize; 3]],
 ) -> Result<bool, BoolError> {
+    let p = class_of(planes, p);
+    // The vertex name is a plane triple, so it obeys the same rule as a ring's: class roots only.
+    // A caller holding face indices (a hand-built table, a test) is normalized here rather than
+    // silently comparing a face against a class.
+    let mut v = [
+        class_of(planes, v[0]),
+        class_of(planes, v[1]),
+        class_of(planes, v[2]),
+    ];
+    v.sort_unstable();
     if ring.len() < 3 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
@@ -839,6 +863,7 @@ pub(crate) fn edge_crosses_face(
     q: usize,
     rings: &[Vec<[usize; 3]>],
 ) -> Result<bool, BoolError> {
+    let q = class_of(planes, q);
     let (s0, s1) = (
         t_plane_side(model, planes, q, v0),
         t_plane_side(model, planes, q, v1),
@@ -849,7 +874,12 @@ pub(crate) fn edge_crosses_face(
     if s0 == s1 {
         return Ok(false); // the segment never reaches `Q`
     }
-    let x = triple(e0, e1, q);
+    // Class form: `e0`/`e1` come from `inc`, which names faces.
+    let x = triple(
+        class_of(planes, e0),
+        class_of(planes, e1),
+        class_of(planes, q),
+    );
     for ring in rings {
         if point_on_ring(planes, q, x, ring)? {
             return Err(reject(tag::POINT_ON_RING));
@@ -874,6 +904,16 @@ pub(crate) fn every_ray(
     v: [usize; 3],
     ring: &[[usize; 3]],
 ) -> Result<Vec<bool>, BoolError> {
+    let p = class_of(planes, p);
+    // The vertex name is a plane triple, so it obeys the same rule as a ring's: class roots only.
+    // A caller holding face indices (a hand-built table, a test) is normalized here rather than
+    // silently comparing a face against a class.
+    let mut v = [
+        class_of(planes, v[0]),
+        class_of(planes, v[1]),
+        class_of(planes, v[2]),
+    ];
+    v.sort_unstable();
     if ring.len() < 3 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
@@ -1016,7 +1056,11 @@ pub(crate) fn point_in_solid_idx(
             if t_plane_pair_dir_sign(planes, a, b, q) == 0 {
                 continue;
             }
-            let x = triple(a, b, q);
+            let x = triple(
+                class_of(planes, a),
+                class_of(planes, b),
+                class_of(planes, q),
+            );
             // `x` on `g`'s boundary anywhere → the line is non-generic here; abandon (never guess).
             for ring in rings {
                 if point_on_ring(planes, q, x, ring)? {
@@ -1106,6 +1150,7 @@ pub(crate) fn loop_winding(
     p: usize,
     ring: &[[usize; 3]],
 ) -> Result<i8, BoolError> {
+    let p = class_of(planes, p);
     if ring.len() < 3 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
@@ -1315,6 +1360,20 @@ pub(crate) fn seam_paths_on(
 /// agreement; do not depend on it.
 fn dir_sign(planes: &[PlaneInfo], p: usize, q: usize, r: usize) -> i8 {
     t_plane_pair_dir_sign(planes, p, q, r) * orient_sign(planes, r)
+}
+
+/// The plane class a face index lies on, read off the table rather than a passed-around `canon`.
+///
+/// `PlaneInfo::class` is filled by `crate::fill_classes` for every table the boolean builds. A
+/// hand-built table in a unit test may leave it unset, and then a face is its own class — which is
+/// what the code did before classes existed, so such a table keeps its old behaviour instead of
+/// indexing out of a `canon` it never had.
+pub(crate) fn class_of(planes: &[PlaneInfo], k: usize) -> usize {
+    if planes[k].class == usize::MAX {
+        k
+    } else {
+        planes[k].class
+    }
 }
 
 fn triple(a: usize, b: usize, c: usize) -> [usize; 3] {
