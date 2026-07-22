@@ -2576,9 +2576,7 @@ pub(crate) fn unify_coplanar_faces(
     canon: &[usize],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
-    // A face with holes stays out of the merge for now (step ①a); its rings join the algebra once
-    // the hole path opens, and until then this reproduces the old `holed — deferred` behaviour.
-    let eligible = |lf: &LocalFace| lf.inner.is_empty() && all_seam(lf);
+    let eligible = all_seam;
     // One plane class, one outward direction, one flip.
     let group_key = |lf: &LocalFace| -> (usize, bool, bool) {
         let c = canon[lf.plane_idx];
@@ -2593,8 +2591,13 @@ pub(crate) fn unify_coplanar_faces(
         if !eligible(lf) {
             continue;
         }
-        for (a, b) in ring_edges(&lf.loop_nodes) {
-            carriers.entry(norm_edge(a, b)).or_default().push(fi);
+        // Holes count here too: a tool cap sitting flush inside another face touches it only
+        // along that hole, so leaving `inner` out would put the two in different components and
+        // nothing would merge at all.
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            for (a, b) in ring_edges(ring) {
+                carriers.entry(norm_edge(a, b)).or_default().push(fi);
+            }
         }
     }
     for fs in carriers.values() {
