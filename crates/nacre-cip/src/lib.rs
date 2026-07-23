@@ -52,7 +52,7 @@ pub enum CipError {
     NotSeam,
 }
 
-/// The toleranced point ([`Pt3`]) of a kernel vertex, assembled from its root
+/// The [`Pt3`] (coordinate + sound directional tol) of a kernel vertex, assembled from its root
 /// coordinate and rotation forest. `Err` when it is not a direct (Constructed-rooted,
 /// pure-rotation) point — see [`CipError`].
 pub fn vertex_pt3(model: &Model, vh: Handle<Vertex>) -> Result<Pt3, CipError> {
