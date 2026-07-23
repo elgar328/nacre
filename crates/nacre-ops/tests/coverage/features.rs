@@ -480,6 +480,36 @@ fn pocket_through_the_solid_is_rejected() {
         assert_eq!(m.shells.get(s.outer).faces.len(), 6, "a clean cube");
     }
 
+    /// A coplanar-contact undercut: the tool's boss annulus sits flush on the base's top (z=3, a
+    /// contact that removes nothing) while its pin reaches back below that plane into the base and
+    /// carves a notch. The old coplanar path rejected the reach-back (`COPLANAR_MERGE`); the
+    /// arrangement cuts the notch (27 − 1 = 26) and keeps the flush contact a no-op.
+    #[test]
+    fn a_coplanar_boss_with_a_pin_undercuts_the_base() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let boss = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 3.0]),
+            Point3::from_array([2.5, 2.5, 4.0]),
+        );
+        let pin = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 2.0]),
+            Point3::from_array([2.0, 2.0, 3.0]),
+        );
+        let tool = boolean_one(&mut m, BoolKind::Fuse, boss, pin).unwrap();
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, tool).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 26.0).abs() < 1e-12, "volume {vol}");
+        assert!(
+            m.solids.get(r).cavities.is_empty(),
+            "the notch is a surface indentation, not a void"
+        );
+    }
+
     #[test]
     fn common_with_a_corner_overhanging_boss_is_empty() {
         let mut m = Model::new();
