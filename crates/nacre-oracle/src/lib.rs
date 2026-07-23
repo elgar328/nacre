@@ -738,6 +738,30 @@ bbox_min 0 0 0
         );
     }
 
+    /// A sever that leaves a surviving cavity, cross-checked against OCCT. A hollow box ([0,3]³
+    /// minus a [0.5,1.5]×[0.5,2.5]×[0.5,2.5] void, material 23) cut by a slab at x∈[2,2.2] severs
+    /// into two pieces (total material 21.2), the x<2 piece keeping the void. nacre assigns the
+    /// void by containment (`point_in_component`); OCCT is the second kernel confirming the total.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn severed_hollow_box_matches_occt() {
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 0.5]),
+            Point3::from_array([1.5, 2.5, 2.5]),
+        );
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        let slab = m.add_cuboid(
+            Point3::from_array([2.0, -1.0, -1.0]),
+            Point3::from_array([2.2, 4.0, 4.0]),
+        );
+        m.rebuild_adjacency();
+        let cut = occt_boolean_of(&m, OcctBool::Cut, hollow, slab).unwrap();
+        assert!(approx(cut.volume, 21.2), "severed hollow box {}", cut.volume);
+    }
+
     /// E1 same_ground union: A = [0,1]³ and B = [0.5,1.5]²×[0,1] overlap in volume and share the
     /// z=0 / z=1 planes with overlapping footprints. The union is an L-footprint prism: area
     /// (1 + 1 − 0.25) × height 1 = 1.75. OCCT confirms it independently — the oracle for nacre's

@@ -105,12 +105,10 @@ pub(crate) mod tag {
     /// test we do not have yet, so this is honestly rejected and deferred to a follow-on cell.
     /// Reachable: `Cut` a hollow part with a cut that isolates the void into one severed piece.
     /// Born with its firing test (`severed_with_cavity_is_rejected`).
-    ///
-    /// ★ The starting point for that cell is the removed `point_in_solid_idx` (excised by the
-    /// seam-engine cell, 2026-07-22 dev-log) once the arrangement stopped needing it (it seeds the unbounded cell and propagates inward
-    /// instead). It answers *point in solid* by ray casting; what this needs is *point in shell*,
-    /// so recover it from that commit and re-scope it rather than deriving one from scratch.
-    pub const SEVERED_WITH_CAVITY: &str = "severed_with_cavity";
+    /// A surviving cavity that no material component contains — geometrically impossible for a
+    /// valid boolean result (a void lies inside exactly one piece). A defensive backstop; cavity
+    /// ownership is otherwise decided exactly by [`combinatorics::point_in_component`] containment.
+    pub const CAVITY_NO_OWNER: &str = "cavity_no_owner";
     /// No material-enclosing (outward) shell among the result components — every component is
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
     /// with no firing test (cf. `FOURPLANE`).
@@ -1355,15 +1353,13 @@ pub mod tests {
 
     /// A sever that also leaves a surviving cavity: a hollow box whose void sits to one side,
     /// cut by a slab that severs it without touching the void. The x<2 piece keeps the void as a
-    /// cavity, the x>2 piece is solid — two outward shells *and* one inward. Which outer owns the
-    /// cavity needs a containment test we do not have yet, so it is honestly rejected
-    /// (`SEVERED_WITH_CAVITY`) rather than mis-assembled. This is the firing test the guard is
-    /// born with (design.md); n0 measured the two-outward-plus-one-inward component split.
+    /// cavity, the x>2 piece is solid — two outward shells *and* one inward. `point_in_component`
+    /// assigns the void to the x<2 piece that nests it (a containment test), rather than rejecting.
     #[test]
-    fn severed_with_cavity_is_rejected() {
+    fn severed_with_cavity_assigns_the_void_to_its_piece() {
         let mut m = Model::new();
         let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        // Void near the x-low side, clear of the x=2 cut.
+        // Void near the x-low side (1×2×2 = 4), clear of the x=2 cut.
         let inner = m.add_cuboid(
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 2.5, 2.5]),
@@ -1371,16 +1367,85 @@ pub mod tests {
         let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
         m.rebuild_adjacency();
         assert_eq!(m.solids.get(hollow).cavities.len(), 1);
-        // A slab spanning full y,z, thin in x at x∈[2,2.2] — severs into x<2 (holds the void)
-        // and x>2 (solid).
+        // A slab spanning full y,z, thin in x at x∈[2,2.2] — severs into x<2 (holds the void, vol
+        // 2·3·3 − 4 = 14) and x>2 (solid, vol 0.8·3·3 = 7.2).
         let slab = m.add_cuboid(
             Point3::from_array([2.0, -1.0, -1.0]),
             Point3::from_array([2.2, 4.0, 4.0]),
         );
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, hollow, slab),
-            tag::SEVERED_WITH_CAVITY,
+        let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
+        assert_eq!(solids.len(), 2, "the slab severs the hollow box into two pieces");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        // Exactly one piece owns the void; volumes match the hand calculation.
+        let with_cav: Vec<_> = solids
+            .iter()
+            .filter(|&&s| !m.solids.get(s).cavities.is_empty())
+            .collect();
+        assert_eq!(with_cav.len(), 1, "the void is assigned to exactly one piece");
+        let vol = |s| nacre_props::mass_props(&m, s).unwrap().volume;
+        let hollow_piece = *with_cav[0];
+        assert!((vol(hollow_piece) - 14.0).abs() < 1e-9, "hollow piece {}", vol(hollow_piece));
+        let total: f64 = solids.iter().map(|&s| vol(s)).sum();
+        assert!((total - 21.2).abs() < 1e-9, "total {total}");
+    }
+
+    /// The adjacent case: a cut that passes *through* the void opens it — the void wall becomes
+    /// exterior boundary, so no cavity survives. Handled by the plain sever path (no cavity to
+    /// assign), not the containment code, but pinned so a regression there is caught.
+    #[test]
+    fn a_cut_through_the_void_leaves_no_cavity() {
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3])); // void 1³
+        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
+        m.rebuild_adjacency();
+        assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+        // Slab x∈[1.4,1.6] passes through the void (x∈[1,2]) → severs AND opens the void.
+        let slab = m.add_cuboid(
+            Point3::from_array([1.4, -1.0, -1.0]),
+            Point3::from_array([1.6, 4.0, 4.0]),
         );
+        let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
+        assert_eq!(solids.len(), 2);
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        // The void is opened, so neither piece keeps a cavity; material = 26 − (1.8 − 0.2) = 24.4.
+        let total_cavities: usize = solids.iter().map(|&s| m.solids.get(s).cavities.len()).sum();
+        assert_eq!(total_cavities, 0, "the cut opened the void — no surviving cavity");
+        let total: f64 = solids.iter().map(|&s| nacre_props::mass_props(&m, s).unwrap().volume).sum();
+        assert!((total - 24.4).abs() < 1e-9, "total {total}");
+    }
+
+    /// Nested cavities: a hollow box A ([0,6]³ − [1,5]³ void) with a smaller hollow box B
+    /// ([2,4]³ − [2.5,3.5]³ void) floating inside A's void. `Fuse(A,B)` is one arrangement with
+    /// four components (two materials, two voids); B's void is contained by **both** A's outer
+    /// shell and B's own, so the containment assignment must pick the **innermost** (B), not A.
+    /// The result is two solids, each keeping its own void (A: 216−64 = 152, B: 8−1 = 7).
+    #[test]
+    fn a_void_nested_in_a_floating_island_goes_to_the_inner_solid() {
+        let mut m = Model::new();
+        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([6.0; 3]));
+        let void = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([5.0; 3]));
+        let a = boolean_one(&mut m, BoolKind::Cut, big, void).unwrap();
+        m.rebuild_adjacency();
+        let bbig = m.add_cuboid(Point3::from_array([2.0; 3]), Point3::from_array([4.0; 3]));
+        let bvoid = m.add_cuboid(Point3::from_array([2.5; 3]), Point3::from_array([3.5; 3]));
+        let b = boolean_one(&mut m, BoolKind::Cut, bbig, bvoid).unwrap();
+        m.rebuild_adjacency();
+        let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        assert_eq!(solids.len(), 2);
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        // Each solid keeps exactly one void — B's void was assigned to B (innermost), not A.
+        let vol = |s| nacre_props::mass_props(&m, s).unwrap().volume;
+        for &s in &solids {
+            assert_eq!(m.solids.get(s).cavities.len(), 1, "each piece keeps its own void");
+        }
+        let mut vols: Vec<f64> = solids.iter().map(|&s| vol(s)).collect();
+        vols.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        assert!((vols[0] - 7.0).abs() < 1e-9, "inner {}", vols[0]);
+        assert!((vols[1] - 152.0).abs() < 1e-9, "outer {}", vols[1]);
     }
 
 

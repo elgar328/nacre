@@ -479,8 +479,8 @@ pub(crate) fn assemble_fuse_cut(
     // or a severed operand (two or more outward, material-enclosing shells). `is_shell_outward`
     // (exact extreme-vertex sign) tells them apart. One outward component ⇒ outer shell + the
     // rest as its cavities. Several outward components ⇒ the result severed into that many
-    // solids (cell 0.4) — unless a cavity also survives, which needs a containment test we do
-    // not have yet, so that is `SEVERED_WITH_CAVITY`. No outward component is impossible.
+    // solids (cell 0.4); a cavity that also survives is assigned to the piece whose outer shell
+    // nests it (`combinatorics::point_in_component`). No outward component is impossible.
     let (labels, n) = face_components(faces);
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
@@ -532,16 +532,68 @@ pub(crate) fn assemble_fuse_cut(
             Ok(vec![solid])
         }
         _ => {
-            // Several material solids. Cavity ownership across multiple outer shells is unsolved.
-            if (0..n).any(|c| !positives.contains(&c)) {
-                return Err(reject(tag::SEVERED_WITH_CAVITY));
+            // Several material solids. Assign each surviving cavity (an inward component) to the
+            // material whose outer shell nests it — the innermost, if materials themselves nest —
+            // by the exact point-in-solid `point_in_component`. With no cavity this loop is empty
+            // and every material emits cavity-free (the plain sever, unchanged).
+            let comp_faces = |c: usize| -> Vec<(usize, Vec<Vec<[usize; 3]>>)> {
+                by_comp_lf[c]
+                    .iter()
+                    .map(|lf| {
+                        let mut rings = vec![seam_ring(&lf.loop_nodes)];
+                        rings.extend(lf.inner.iter().map(|h| seam_ring(h)));
+                        (lf.plane_idx, rings)
+                    })
+                    .collect()
+            };
+            let nodes_of = |c: usize| -> Vec<[usize; 3]> {
+                by_comp_lf[c]
+                    .iter()
+                    .flat_map(|lf| lf.loop_nodes.iter().map(|Node::Seam(t)| *t))
+                    .collect()
+            };
+            let mut cavities_of: std::collections::HashMap<usize, Vec<Handle<Shell>>> =
+                positives.iter().map(|&m| (m, Vec::new())).collect();
+            for d in (0..n).filter(|c| !positives.contains(c)) {
+                // A cavity node that classifies cleanly against *every* material (one shared origin
+                // keeps the nesting consistent); its `true` materials nest, so take the innermost.
+                let containers = nodes_of(d).iter().find_map(|&x| {
+                    let mut cs = Vec::new();
+                    for &m in &positives {
+                        match combinatorics::point_in_component(planes, x, &comp_faces(m)) {
+                            Ok(true) => cs.push(m),
+                            Ok(false) => {}
+                            Err(_) => return None, // grazed against a material — try next node
+                        }
+                    }
+                    Some(cs)
+                });
+                let containers = containers.ok_or_else(|| reject(tag::NO_CLEAR_RAY))?;
+                let owner = match containers.as_slice() {
+                    [] => return Err(reject(tag::CAVITY_NO_OWNER)),
+                    [only] => *only,
+                    _ => *containers
+                        .iter()
+                        .find(|&&c| {
+                            // Innermost: inside every other container.
+                            containers.iter().all(|&o| {
+                                o == c
+                                    || nodes_of(c)
+                                        .iter()
+                                        .find_map(|&x| {
+                                            combinatorics::point_in_component(planes, x, &comp_faces(o)).ok()
+                                        })
+                                        .unwrap_or(false)
+                            })
+                        })
+                        .ok_or_else(|| reject(tag::CAVITY_NO_OWNER))?,
+                };
+                cavities_of.get_mut(&owner).unwrap().push(shells[d]);
             }
-            // Every component is its own cavity-free solid. Emit them in a canonical, replay-stable
-            // order keyed on geometry (a component's sorted vertex coordinates), so a downstream op
-            // can index the returned Vec deterministically. `comp_key` is total for disjoint
-            // components (distinct pieces occupy different space, so their coordinate sets differ).
-            let keys: Vec<Vec<[f64; 3]>> = by_comp.iter().map(|f| comp_key(model, f)).collect();
-            let mut order: Vec<usize> = (0..n).collect();
+            // Emit each material solid (with its cavities) in a canonical, replay-stable order
+            // keyed on geometry, so a downstream op can index the returned Vec deterministically.
+            let keys: Vec<Vec<[f64; 3]>> = positives.iter().map(|&c| comp_key(model, &by_comp[c])).collect();
+            let mut order: Vec<usize> = (0..positives.len()).collect();
             order.sort_by(|&x, &y| {
                 keys[x]
                     .partial_cmp(&keys[y])
@@ -549,10 +601,11 @@ pub(crate) fn assemble_fuse_cut(
             });
             let solids: Vec<Handle<Solid>> = order
                 .into_iter()
-                .map(|c| {
+                .map(|oi| {
+                    let c = positives[oi];
                     model.push_solid(Solid {
                         outer: shells[c],
-                        cavities: Vec::new(),
+                        cavities: cavities_of.remove(&c).unwrap(),
                     })
                 })
                 .collect();

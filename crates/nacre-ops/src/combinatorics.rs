@@ -410,24 +410,127 @@ pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<us
     out
 }
 
-/// Classify vertex `vh` in/out of `other`, entirely on the exact index-plane substrate — the
-/// 3D lift of [`point_in_ring`]. Non-convex containment is a winding-parity ray, but the ray
-/// **line `L = A ∩ B` is built from two of the query vertex's own planes** (never an arbitrary
-/// direction), so each crossing with a face on plane `q` is the three-plane point `{A,B,q}`,
-/// judged inside/ahead by [`every_ray`]/[`order_along`] — no coordinate read, no f64.
+/// Whether the point named by plane triple `v` lies on any edge of `ring` (a ring on plane `p`).
+/// Used by [`point_in_component`] to abandon a non-generic ray rather than guess on a boundary.
+fn point_on_ring(
+    planes: &[PlaneGeom],
+    p: usize,
+    mut v: [usize; 3],
+    ring: &[[usize; 3]],
+) -> Result<bool, BoolError> {
+    v.sort_unstable();
+    if ring.len() < 3 {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+    }
+    for i in 0..ring.len() {
+        let (r, si, sj) = ring_edge(p, ring, i)?;
+        if side_of(planes, v, r) != 0 {
+            continue; // `v` is not even on the edge's line
+        }
+        // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.
+        let s = *v
+            .iter()
+            .find(|&&x| x != p && t_plane_pair_dir_sign(planes, p, r, x) != 0)
+            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+        let (a, b) = (
+            order_along(planes, p, r, s, si),
+            order_along(planes, p, r, s, sj),
+        );
+        if a * b <= 0 {
+            return Ok(true); // between the endpoints (or on one)
+        }
+    }
+    Ok(false)
+}
+
+/// Whether the point named by plane triple `query` lies inside a connected component — the exact
+/// 3D lift of [`point_in_ring`]. A winding-parity ray whose line `L = a ∩ b` is built from two of
+/// the query's own planes (never an arbitrary direction): each crossing with a face on plane `q`
+/// is the exact three-plane point `{a,b,q}`, so the whole test is on the index-plane substrate —
+/// no coordinate read, no f64. Non-convex is native (parity, not a convex test).
 ///
-/// `inc_v` is the query vertex's solid's [`EdgeFaces`] (to read `V`'s planes); `inc_o` is
-/// `other`'s (its face rings). Both index into the shared `planes`/`surf_ix`. Faces of **every**
-/// shell (outer + cavities) are summed, so a point in a void reads `Outside`.
+/// `faces` is the component as `(plane, rings)` per face — `rings[0]` = outer, `rings[1..]` = holes.
+/// Only this component's faces are summed, so testing a void's vertex against a material component
+/// reads `true` iff that material's outer shell nests the void.
 ///
-/// A ray whose line grazes a node/edge, or leaves an in-face containment undecidable, is
-/// abandoned for the vertex's next plane pair; if every pair is blocked the answer is honestly
-/// `NO_CLEAR_RAY` — the degeneracy a later SoS layer resolves, and the same honest reject the
-/// f64 ray gives via `RAY_DEGENERATE`. `V` lying on a face plane of `other` (a boundary-ish
-/// query, its crossing at the ray origin) inside that face is one such abandon; off the face
-/// (a disjoint-coplanar query) it is simply not a crossing.
-// The per-op tables (`planes`/`surf_ix`/`plane_ix`) plus both edge-face maps are all genuine
-// inputs a classification needs; they travel together from one `plane_index_setup`.
+/// A ray grazing a face boundary, or an undecidable in-face containment, is abandoned for the
+/// query's next plane pair; if every pair is blocked the answer is honestly `NO_CLEAR_RAY`.
+pub(crate) fn point_in_component(
+    planes: &[PlaneGeom],
+    query: [usize; 3],
+    faces: &[(usize, Vec<Vec<[usize; 3]>>)],
+) -> Result<bool, BoolError> {
+    let mut vplanes = query.to_vec();
+    vplanes.sort_unstable();
+    vplanes.dedup();
+
+    // One ray attempt along `L = a ∩ b`, located by the query point `{a,b,c}`. `Ok(None)` = the
+    // line grazed and the caller should try the next plane pair.
+    let attempt = |a: usize, b: usize, c: usize| -> Result<Option<bool>, BoolError> {
+        let mut count = 0usize;
+        for (q, rings) in faces {
+            let q = *q;
+            if t_plane_pair_dir_sign(planes, a, b, q) == 0 {
+                continue; // `L` parallel to (or in) plane `q` — no transversal crossing
+            }
+            let mut x = [a, b, q];
+            x.sort_unstable();
+            for ring in rings {
+                if point_on_ring(planes, q, x, ring)? {
+                    return Ok(None); // `x` on `q`'s boundary — non-generic, abandon
+                }
+            }
+            // Inside `q`'s material: inside the outer ring, outside every hole.
+            let inside_outer = match every_ray(planes, q, x, &rings[0])?.first().copied() {
+                Some(v) => v,
+                None => return Ok(None),
+            };
+            let mut in_g = inside_outer;
+            if in_g {
+                for hole in &rings[1..] {
+                    match every_ray(planes, q, x, hole)?.first().copied() {
+                        Some(true) => {
+                            in_g = false;
+                            break;
+                        }
+                        Some(false) => {}
+                        None => return Ok(None),
+                    }
+                }
+            }
+            let fwd = order_along(planes, a, b, c, q);
+            if fwd == 0 {
+                // The crossing is the ray origin itself (query on plane `q`). Inside `q`'s
+                // material ⇒ query on the component's surface ⇒ undecidable → abandon.
+                if in_g {
+                    return Ok(None);
+                }
+                continue;
+            }
+            if fwd == 1 && in_g {
+                count += 1; // one side of the line — parity is the same on either half
+            }
+        }
+        Ok(Some(count % 2 == 1))
+    };
+
+    for i in 0..vplanes.len() {
+        for j in (i + 1)..vplanes.len() {
+            let (a, b) = (vplanes[i], vplanes[j]);
+            // Locator `c`: a plane of the query off the line `a ∩ b`, so `{a,b,c}` is the query.
+            let Some(&c) = vplanes
+                .iter()
+                .find(|&&x| x != a && x != b && t_plane_pair_dir_sign(planes, a, b, x) != 0)
+            else {
+                continue;
+            };
+            if let Some(inside) = attempt(a, b, c)? {
+                return Ok(inside);
+            }
+        }
+    }
+    Err(reject(tag::NO_CLEAR_RAY))
+}
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///
