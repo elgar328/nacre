@@ -1,10 +1,15 @@
-//! Convex operands — basic cut/fuse/common of axis-aligned boxes. Pins the
-//! in/out sign convention and the volume/manifold invariants end to end.
+//! Convex operands — basic cut/fuse/common of axis-aligned boxes.
 
-use crate::common::{boolean_one, two_boxes};
-use nacre_math::Point3;
-use nacre_ops::{BoolKind, boolean};
-use nacre_topo::Model;
+#![allow(unused_imports)]
+use crate::common::*;
+use nacre_geom::{Plane, Surface};
+use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::{
+    BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean, replay,
+};
+use nacre_scalar::Axis;
+use nacre_store::Handle;
+use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 
 #[test]
 fn cut_of_two_cubes() {

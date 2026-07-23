@@ -1,15 +1,15 @@
-//! Rotated operands — the boolean must be **rotation-invariant** (the same
-//! topology and volume as the un-rotated case) and never silently wrong on
-//! rotated coplanar contact. Rotation enters through the public `apply(Transform)`
-//! (via the `xf` helper); the sign/tol machinery under it is exercised end to end.
+//! Rotated operands — rotation-invariance of the boolean.
 
-use crate::common::{
-    boolean_one, l_and_corner_box, l_and_inner_box, l_and_rod, rot30, rot_iso, rotated_l_prism, xf,
+#![allow(unused_imports)]
+use crate::common::*;
+use nacre_geom::{Plane, Surface};
+use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::{
+    BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean, replay,
 };
-use nacre_math::Point3;
-use nacre_ops::{BoolKind, boolean};
 use nacre_scalar::Axis;
-use nacre_topo::Model;
+use nacre_store::Handle;
+use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 
 #[test]
 fn rotated_corner_bite_cut_is_rotation_invariant() {

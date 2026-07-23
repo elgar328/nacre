@@ -24,3 +24,6 @@ mod nonconvex;
 
 #[path = "coverage/features.rs"]
 mod features;
+
+#[path = "coverage/coplanar.rs"]
+mod coplanar;

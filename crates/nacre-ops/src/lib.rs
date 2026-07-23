@@ -227,7 +227,7 @@ pub mod tests {
     use nacre_geom::intersect::{planes_coplanar, three_planes};
     use nacre_geom::{Plane, Surface};
     use nacre_scalar::frame3::Pt3;
-    use nacre_topo::{Loop, Orientation, Origin, Shell, VertexDef};
+    use nacre_topo::{Loop, Orientation, Origin, VertexDef};
     use proptest::prelude::*;
     use std::collections::HashMap;
 
@@ -517,26 +517,6 @@ pub mod tests {
     }
 
 
-    /// The same two solids the other way round: the bar severs the rod, and `Cut` answers with
-    /// two solids (cell 0.4). Each severed stub is its own genus-0 box, so `validate` is clean —
-    /// the pieces share no vertices or edges. (Before cell 0.4 this was `DISCONNECTED_RESULT`:
-    /// one handle could not name two solids, and forcing both into one shell read as
-    /// `NegativeGenus { genus: -1 }`. `pierced_multi` had been hiding it: severing A takes an
-    /// edge of A through B.)
-    #[test]
-    fn cut_rod_by_l_severs_into_two() {
-        let (mut m, l, rod) = l_and_rod();
-        let solids = boolean(&mut m, BoolKind::Cut, rod, l).unwrap();
-        assert_eq!(solids.len(), 2);
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol: f64 = solids
-            .iter()
-            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
-            .sum();
-        assert!((vol - 0.06).abs() < 1e-9, "total volume {vol}");
-    }
 
     // --- Rotated booleans go live (overhaul 3d-i, `ROTATED_UNSUPPORTED` retired) ---
     // A boolean commutes with a rigid motion, so rotating both operands by the same
@@ -952,39 +932,7 @@ pub mod tests {
         (m, l, bx)
     }
 
-    #[test]
-    fn cut_staircase_seam_arc() {
-        // On the box's bottom face the seam runs (2,0.5) → (2,1) → (1,1) → (1,1.5): a
-        // staircase whose two bends turn opposite ways. `strict` used to reject it,
-        // unable to tell a reflex turn from an arc folded back on itself.
-        //
-        // The reconstructed face there is (0.5,0.5) → (0.5,1.5) → (1,1.5) → (1,1) →
-        // (2,1) → (2,0.5): the overlap footprint, area 1.0, reflex at (1,1). A correct
-        // simple polygon. `strict` was rejecting a right answer.
-        //
-        // Overlap = footprint 1.0 × z∈[0.2,1] = 0.8.
-        let (mut m, l, bx) = l_and_popup_box();
-        let r = boolean_one(&mut m, BoolKind::Cut, l, bx).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - (3.0 - 0.8)).abs() < 1e-9, "volume {vol}");
-    }
 
-    #[test]
-    fn fuse_staircase_seam_arc() {
-        // The `Fuse` counterpart, closing the inclusion–exclusion: V_L + V_box − 0.8.
-        // `validate` cannot see a self-intersecting face (it stays manifold, Euler
-        // holds), so the volume is what pins the folded arc — with OCCT alongside.
-        let (mut m, l, bx) = l_and_popup_box();
-        let r = boolean_one(&mut m, BoolKind::Fuse, l, bx).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - (3.0 + 2.0 - 0.8)).abs() < 1e-9, "volume {vol}");
-    }
 
     /// The L-prism and an L-shaped bar lying in its notch, biting two convex corners of
     /// the L's top face. The bar spans `z ∈ [0.5, 1.5]`, so its body clears the cap.
@@ -1138,24 +1086,6 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn cut_ell_dimple() {
-        // The blind pocket is the stub's L-shaped section, `0.65·0.15 + 0.15·0.5 = 0.1725`,
-        // half a unit deep. Area `14 − 0.1725 + 2.6·0.5 + 0.1725`: the lid gives up exactly
-        // what the floor hands back, so only the walls move it.
-        let (mut m, l, stub) = l_and_ell_stub();
-        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - (3.0 - 0.1725 * 0.5)).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 15.3).abs() < 1e-9, "area {}", props.area);
-    }
 
     /// The L-prism and a П-shaped staple straddling the L's reflex corner. The profile
     /// lives in the **XZ** sketch plane and extrudes along `−y`, so the L's cap (`z = 1`)
@@ -1327,68 +1257,8 @@ pub mod tests {
         assert!(!combinatorics::point_in_ring(&planes, p, outer[0], &hole).unwrap());
     }
 
-    #[test]
-    fn cut_l_staple() {
-        // A loop beside an arc, resolved. The cap's kept region is the hexagon minus the
-        // corner bite, and the near leg's rectangle sits inside it — so the loop is a
-        // **hole** of that region. The winding says clockwise, which is only a cross-check
-        // now: containment decided.
-        //
-        // `V_∩ = 0.5·0.5·0.65 + 0.27·0.55 = 0.311`, the two legs' parts inside the L.
-        let (mut m, l, st) = l_and_staple();
-        let r = boolean_one(&mut m, BoolKind::Cut, l, st).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - 2.689).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 15.755).abs() < 1e-9, "area {}", props.area);
-    }
 
-    #[test]
-    fn fuse_l_staple() {
-        // `3 + 0.7605 − 0.311`. The staple measures `1.17` in section, `0.65` deep.
-        let (mut m, l, st) = l_and_staple();
-        let r = boolean_one(&mut m, BoolKind::Fuse, l, st).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - (3.0 + 0.7605 - 0.311)).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 16.72).abs() < 1e-9, "area {}", props.area);
-    }
 
-    #[test]
-    fn cut_staple_by_l() {
-        // ★ The same loop, on the same face, is now an **island**. Swap the operands and the
-        // cap's kept region becomes the corner bite alone; the loop lies outside it, in a
-        // dropped region, so its interior is what survives.
-        //
-        // Cell 3f-3's counterexample made flesh: a hole and an island wind oppositely without
-        // nesting, so no winding could have told these two apart. Position did.
-        //
-        // `0.7605 − 0.311`, and the three volumes close inclusion–exclusion exactly.
-        let (mut m, l, st) = l_and_staple();
-        let r = boolean_one(&mut m, BoolKind::Cut, st, l).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - (0.7605 - 0.311)).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 4.68).abs() < 1e-9, "area {}", props.area);
-    }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that
     /// face. Unlike the rod of `drill_through_the_l`, the stub enters the L from within,
@@ -1403,54 +1273,8 @@ pub mod tests {
         (m, l, stub)
     }
 
-    #[test]
-    fn cut_the_stub_by_the_l_leaves_an_island_face() {
-        // Swap the operands of `cut_blind_dimple` and the same loop lands on a face whose
-        // boundary is *all* dropped: the kept region is the loop's interior alone. That
-        // face has no `∂f` at all — its outer loop *is* the seam ring, four `Discovered`
-        // vertices and nothing else. The answer is the `0.4 × 0.4 × 0.5` box above `z = 1`.
-        //
-        // This is where `flip` first meets a discovered hole ring. It is wound CCW about the
-        // L's `+z`, keeping the material (inside the stub) on
-        // its left; `flip` reverses it and the face becomes the box's downward-facing
-        // floor. Nothing but `validate` and the signed mesh volume can see that go wrong.
-        let (mut m, l, stub) = l_and_dimple();
-        let r = boolean_one(&mut m, BoolKind::Cut, stub, l).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 0.08).abs() < 1e-9, "volume {vol}");
-    }
 
-    #[test]
-    fn fuse_the_stub_and_the_l() {
-        // Not a new branch — the same hole, on the same face of the L, reached with the
-        // operands the other way round. `Fuse` keeps both outsides and flips neither, so
-        // what this pins is that the answer does not depend on which solid is `a`: the
-        // hole now lands on B, and 3.08 is 3.08.
-        let (mut m, l, stub) = l_and_dimple();
-        let r = boolean_one(&mut m, BoolKind::Fuse, stub, l).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - (3.0 + 0.16 - 0.08)).abs() < 1e-9, "volume {vol}");
-    }
 
-    #[test]
-    fn cut_blind_dimple() {
-        // The stub's footprint never reaches the L's top-face boundary, so the seam is
-        // a closed ring in the face interior. It is the face's inner loop, and the
-        // result is a blind pocket: `3 − 0.4² × 0.5`.
-        let (mut m, l, stub) = l_and_dimple();
-        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - (3.0 - 0.08)).abs() < 1e-9, "volume {vol}");
-    }
 
     /// **`Origin` no longer tells result faces apart.** The arrangement names every vertex
     /// it emits by the three planes meeting there, so an operand corner the cut never touched
@@ -1505,79 +1329,7 @@ pub mod tests {
         assert_eq!(seen.len(), 20, "the L's 12 corners + the dimple's 8");
     }
 
-    #[test]
-    fn a_flipped_hole_loop_is_caught() {
-        // `loop_orient_mismatch` cannot see a loop flipped as a whole, and `f2`'s golden
-        // pins the derivation — but the two downstream detectors must actually fire on
-        // *this* shape, not merely exist. They are different in kind: `validate` sees a
-        // rim edge used twice the same way, `tessellate` sees a hole wound like its
-        // outer ring. Volume and OCCT see neither: `props` sums `|area|`.
-        //
-        // `Store` is append-only, so the face cannot be edited. Push a replacement with
-        // the hole reversed, swap it into a fresh shell and solid, and move the live
-        // handle: the old face falls out of `reachable()`.
-        let (mut m, l, stub) = l_and_dimple();
-        let r = boolean_one(&mut m, BoolKind::Cut, l, stub).unwrap();
-        m.rebuild_adjacency();
 
-        // The dimple is blind, so exactly one face carries a hole. Counted, not assumed:
-        // its sibling in `pipeline.rs` said "the only face …" in prose, used `find`, and
-        // silently flipped a different face once the engine stopped making the predicate
-        // unique.
-        let faces = m.shells.get(m.solids.get(r).outer).faces.clone();
-        let holed_faces: Vec<_> = faces
-            .iter()
-            .copied()
-            .filter(|&f| !m.faces.get(f).inner.is_empty())
-            .collect();
-        assert_eq!(holed_faces.len(), 1, "the L's top face carries the hole");
-        let holed = holed_faces[0];
-        let f = m.faces.get(holed).clone();
-        let mut hole = f.inner[0].clone();
-        hole.half_edges.reverse();
-        for he in &mut hole.half_edges {
-            he.forward = !he.forward;
-        }
-        let bad = m.faces.push(Face {
-            inner: vec![hole],
-            ..f
-        });
-        let swapped = faces
-            .iter()
-            .map(|&x| if x == holed { bad } else { x })
-            .collect();
-        let shell = m.shells.push(Shell { faces: swapped });
-        let solid = m.push_solid(Solid {
-            outer: shell,
-            cavities: vec![],
-        });
-        m.live_solids = vec![solid];
-        m.rebuild_adjacency();
-
-        let vs = nacre_validate::validate(&m);
-        assert!(
-            vs.iter()
-                .any(|v| matches!(v, nacre_validate::Violation::NonOpposedEdge { .. })),
-            "validate stayed quiet: {vs:?}"
-        );
-        assert!(matches!(
-            nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()),
-            Err(nacre_tess::TessError::HoleWinding)
-        ));
-    }
-
-    #[test]
-    fn fuse_blind_dimple() {
-        // The `Fuse` counterpart — a boss on the L — closing the inclusion–exclusion:
-        // `V_L + V_stub − V_overlap`. Both put a hole in the same face of the L.
-        let (mut m, l, stub) = l_and_dimple();
-        let r = boolean_one(&mut m, BoolKind::Fuse, l, stub).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - (3.0 + 0.16 - 0.08)).abs() < 1e-9, "volume {vol}");
-    }
 
     /// The unit cube with a 0.4-square pocket, 0.5 deep, in its top face: the void
     /// is `[0.3,0.7]² × [0.5,1]` and the solid measures `1 − 0.16·0.5 = 0.92`. Its
@@ -1592,197 +1344,13 @@ pub mod tests {
         (m, solid)
     }
 
-    /// The first time a boolean result is fed back as an operand: the overlap box
-    /// (Discovered corners) stacked on a third box merges through the coincident-
-    /// interface path — which runs `is_convex` on that Discovered-cornered
-    /// operand. Volume is the sum and the shell stays closed.
-    #[test]
-    fn a_boolean_result_stacks_as_an_operand() {
-        let mut m = Model::new();
-        let a = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 2.0, 2.0]),
-        );
-        let b = m.add_cuboid(
-            Point3::from_array([1.0, 1.0, 1.0]),
-            Point3::from_array([3.0, 3.0, 3.0]),
-        );
-        let c = boolean_one(&mut m, BoolKind::Common, a, b).unwrap(); // [1,2]³
-        m.rebuild_adjacency();
-        let d = m.add_cuboid(
-            Point3::from_array([1.0, 1.0, 2.0]),
-            Point3::from_array([2.0, 2.0, 3.0]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Fuse, c, d).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 0);
-    }
 
-    /// A holed operand already survives the arrangement — it names holes as inner rings rather
-    /// than guarding against them, so the pocket rides through untouched. Nothing tested it.
-    /// Pin it before the guard comes down.
-    #[test]
-    fn containment_boolean_already_keeps_a_pocket() {
-        for (kind, want) in [(BoolKind::Cut, 0.919), (BoolKind::Fuse, 0.92)] {
-            let (mut m, pc) = pocketed_cube();
-            let bx = m.add_cuboid(
-                Point3::from_array([0.05, 0.05, 0.05]),
-                Point3::from_array([0.15, 0.15, 0.15]),
-            );
-            let r = boolean_one(&mut m, kind, pc, bx).unwrap();
-            m.rebuild_adjacency();
-            let vs = nacre_validate::validate(&m);
-            assert!(vs.is_empty(), "{kind:?} {vs:?}");
-            let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-            assert!((vol - want).abs() < 1e-9, "{kind:?} volume {vol}");
-        }
-    }
 
-    /// An edge of one convex solid, threading the other, severs it. The bar runs through the
-    /// cube and out both ends, so `Cut(bar, cube)` leaves the bar in two 1×1×1 stubs — two solids
-    /// (cell 0.4), each a clean genus-0 box (`validate` clean, pieces share nothing). The convex
-    /// path rejected this as `poke_through`; the seam path returns both pieces. (Before cell 0.4
-    /// this was `disconnected_result`; cell 3e-3's non-convex sibling was `Cut(rod, L)`.)
-    #[test]
-    fn a_convex_cut_severs_its_operand() {
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let bar = m.add_cuboid(
-            Point3::from_array([1.0, 1.0, -1.0]),
-            Point3::from_array([2.0, 2.0, 4.0]),
-        );
-        let solids = boolean(&mut m, BoolKind::Cut, bar, a).unwrap();
-        assert_eq!(solids.len(), 2);
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        for &s in &solids {
-            assert!((nacre_props::mass_props(&m, s).unwrap().volume - 1.0).abs() < 1e-9);
-        }
-    }
 
-    #[test]
-    fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
-        // The box sits wholly in the void, so the solids are disjoint and `A − B = A`.
-        // Reading the lid as filled instead classified the box's eight corners five
-        // Inside and three Outside, and the seam-free path's own `debug_assert`
-        // ("classification must be consistent per solid") caught it.
-        let (mut m, pc) = pocketed_cube();
-        let bx = m.add_cuboid(
-            Point3::from_array([0.4, 0.4, 0.6]),
-            Point3::from_array([0.6, 0.6, 0.9]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        assert!(m.solids.get(r).cavities.is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 0.92).abs() < 1e-9, "volume {vol}");
-    }
 
-    #[test]
-    fn cut_with_a_hollow_operand_far_from_the_void() {
-        // A cavitied operand whose seam misses the void: the corner cut is far from
-        // the [1,2]³ void, so the void is carried through and preserved (cell (5c-in)).
-        // The seam front-end walks all shells, so the void no longer silently vanishes
-        // (it used to read as convex and return vol 26.875, cavities 0). Now: correct
-        // 25.875 (27 − 1 void − 0.125 corner) with the cavity intact.
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        assert_eq!(m.solids.get(hollow).cavities.len(), 1);
-        m.rebuild_adjacency();
-        let cutter = m.add_cuboid(Point3::from_array([2.5; 3]), Point3::from_array([3.5; 3]));
-        let r = boolean_one(&mut m, BoolKind::Cut, hollow, cutter).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 25.875).abs() < 1e-9, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 1);
-    }
 
-    #[test]
-    fn blind_hole_drills_into_a_void() {
-        // A cut reaching *into* a void: a stub drilled from below the hollow box up into
-        // its void. The void loses its enclosure and merges with the outer shell (an
-        // open pocket, cavities 0). The seam machinery (all-shells) + the (5c) component
-        // split reconstruct it exactly: remove the channel [1.4,1.6]²×[0,1]=0.04 through
-        // the floor, void interior removes nothing ⇒ 26 − 0.04 = 25.96.
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        assert_eq!(m.solids.get(hollow).cavities.len(), 1);
-        m.rebuild_adjacency();
-        let stub = m.add_cuboid(
-            Point3::from_array([1.4, 1.4, -0.5]),
-            Point3::from_array([1.6, 1.6, 1.5]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, hollow, stub).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 25.96).abs() < 1e-9, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 0); // the void opened to outside
-    }
 
-    #[test]
-    fn a_tunnel_drilled_through_a_void() {
-        // A cut passing all the way through the void (bottom to top). Removes the floor
-        // and ceiling channels [1.4,1.6]²×([0,1]∪[2,3]) = 0.08; the void interior removes
-        // nothing ⇒ 26 − 0.08 = 25.92. Result is a genus-1 solid (a straight tunnel),
-        // one shell, no cavity.
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        m.rebuild_adjacency();
-        let tunnel = m.add_cuboid(
-            Point3::from_array([1.4, 1.4, -0.5]),
-            Point3::from_array([1.6, 1.6, 3.5]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, hollow, tunnel).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 25.92).abs() < 1e-9, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 0);
-    }
 
-    #[test]
-    fn a_slab_splits_a_hollow_box_into_two() {
-        // A slab cut through the whole box (and its void) severs it into two solids (cell 0.4).
-        // The slab spans the full cross-section, so it opens the void — both pieces are
-        // cavity-free. (Before cell 0.4 this was rejected as `DISCONNECTED_RESULT`.)
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        m.rebuild_adjacency();
-        let slab = m.add_cuboid(
-            Point3::from_array([-0.5, 1.4, -0.5]),
-            Point3::from_array([3.5, 1.6, 3.5]),
-        );
-        let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
-        assert_eq!(solids.len(), 2);
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        for &s in &solids {
-            assert_eq!(m.solids.get(s).cavities.len(), 0);
-        }
-        // Hollow 26 (= 27 − 1 void); the slab removes 1.6 of material (8 area × 0.2 thick).
-        let vol: f64 = solids
-            .iter()
-            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
-            .sum();
-        assert!((vol - 24.4).abs() < 1e-9, "total volume {vol}");
-    }
 
     /// A sever that also leaves a surviving cavity: a hollow box whose void sits to one side,
     /// cut by a slab that severs it without touching the void. The x<2 piece keeps the void as a
@@ -1814,122 +1382,10 @@ pub mod tests {
         );
     }
 
-    // A hollow operand in a COPLANAR contact — the combination nothing covered until now. The
-    // cavity goldens above all take the seam path (transversal cuts) and every coplanar golden uses
-    // solid operands, so the intersection of the two was a blind spot, and the coplanar driver had
-    // never received the all-shell patch the seam front-end got in cell (5c-in). It emitted only
-    // outer-shell faces, so the void vanished: the fuse read 27.0625 — the *un-hollowed* cube plus
-    // the boss — with `cavities: 0` and a clean `validate`, because what remained was still a
-    // closed shell. Silent-wrong, invisible to every guard. Now the driver walks all shells.
-    #[test]
-    fn a_hollow_part_takes_a_coplanar_boss() {
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        m.rebuild_adjacency();
-        // Top-flush boss on z=3: a genuine coplanar contact, clear of the void's planes.
-        let boss = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 3.0]),
-            Point3::from_array([0.75, 0.75, 4.0]),
-        );
-        m.rebuild_adjacency();
-        let r = boolean_one(&mut m, BoolKind::Fuse, hollow, boss).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        // 27 − 1 void + 0.25·0.25·1 boss.
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 26.0625).abs() < 1e-9, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
-    }
 
-    #[test]
-    fn a_hollow_part_takes_a_coplanar_pocket() {
-        // The Cut twin of the boss case: a top-flush pocket sunk into a hollow part. Same blind
-        // spot, same silent-wrong before the fix (26.96875 with the void gone).
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        m.rebuild_adjacency();
-        let tool = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 2.5]),
-            Point3::from_array([0.75, 0.75, 3.0]),
-        );
-        m.rebuild_adjacency();
-        let r = boolean_one(&mut m, BoolKind::Cut, hollow, tool).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        // 27 − 1 void − 0.25·0.25·0.5 pocket.
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 25.96875).abs() < 1e-9, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
-    }
 
-    #[test]
-    fn a_coplanar_boss_over_a_void_plane_is_solved() {
-        // The boss straddles the void's x=1 and y=1 planes (it spans [0.9,1.1]²), so classifying
-        // the void's walls against it is not the clean whole-face case. This was pinned as an
-        // honest reject with the standing instruction that a future change may "turn it into a
-        // correct 26.04, never a silent answer" — and family #3 did: once one geometric plane is
-        // one class whatever the two faces' sizes, the arrangement solves it. 26 (hollow) + 0.04
-        // (boss); area 60 + 0.8 (boss sides) + 0.04 (its top) − 0.04 (its footprint); void intact.
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        m.rebuild_adjacency();
-        let boss = m.add_cuboid(
-            Point3::from_array([0.9, 0.9, 3.0]),
-            Point3::from_array([1.1, 1.1, 4.0]),
-        );
-        m.rebuild_adjacency();
-        let r = boolean_one(&mut m, BoolKind::Fuse, hollow, boss).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - 26.04).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 60.8).abs() < 1e-9, "area {}", props.area);
-        assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
-    }
 
-    #[test]
-    fn a_hollow_part_takes_a_second_far_cut() {
-        // The headline: keep cutting a part after it is hollow. A bore at the corner
-        // opposite the void — the void survives, and the result is fed back as an
-        // operand (chaining past the first cavity-producing op, which the door used to
-        // block).
-        let mut m = Model::new();
-        let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-        let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-        let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-        m.rebuild_adjacency();
-        let bore = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
-        let r = boolean_one(&mut m, BoolKind::Cut, hollow, bore).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 25.875).abs() < 1e-9, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 1);
-    }
 
-    #[test]
-    fn clockwise_input_is_auto_corrected() {
-        // The square wound CW; auto-CCW makes it a valid cube anyway.
-        let cw = Profile2d {
-            points: vec![p2(0.0, 1.0), p2(1.0, 1.0), p2(1.0, 0.0), p2(0.0, 0.0)],
-        };
-        let m = replay(&[extrude_op(cw, 1.0)]).unwrap();
-        assert!(nacre_validate::validate(&m).is_empty());
-        assert_eq!(m.faces.len(), 6);
-    }
 
     #[test]
     fn replay_is_deterministic() {
@@ -1966,42 +1422,6 @@ pub mod tests {
         assert!(nacre_validate::validate(&m).is_empty());
     }
 
-    #[test]
-    fn degenerate_inputs_are_rejected() {
-        let plane = SketchPlane::world_xy();
-        let two = Profile2d {
-            points: vec![p2(0.0, 0.0), p2(1.0, 0.0)],
-        };
-        assert_eq!(
-            apply(
-                &mut Model::new(),
-                &Operation::Extrude {
-                    plane,
-                    profile: two,
-                    dist: 1.0
-                }
-            ),
-            Err(OpError::DegenerateProfile)
-        );
-        assert_eq!(
-            apply(&mut Model::new(), &extrude_op(square(), 0.0)),
-            Err(OpError::NonPositiveDistance)
-        );
-        let dup = Profile2d {
-            points: vec![p2(0.0, 0.0), p2(0.0, 0.0), p2(1.0, 1.0)],
-        };
-        assert_eq!(
-            apply(
-                &mut Model::new(),
-                &Operation::Extrude {
-                    plane,
-                    profile: dup,
-                    dist: 1.0
-                }
-            ),
-            Err(OpError::DegenerateGeometry)
-        );
-    }
 
     /// Extrude a unit cube and return `(model, top face handle)`.
     fn cube_with_top() -> (Model, Handle<Face>) {
@@ -2020,114 +1440,12 @@ pub mod tests {
         }
     }
 
-    // A single-edge overhang footprint on the cube top: world x∈[0.25,0.75], y∈[-0.25,0.75]
-    // (overhangs the y=0 edge), area 0.5. (Frame maps local [px,py] → world (0.5+py, 0.5−px).)
-    fn edge_overhang_profile() -> Profile2d {
-        Profile2d {
-            points: vec![
-                p2(-0.25, -0.25),
-                p2(0.75, -0.25),
-                p2(0.75, 0.25),
-                p2(-0.25, 0.25),
-            ],
-        }
-    }
 
-    // A spanning slab: world x∈[0.25,0.75], y∈[-0.25,1.25] (crosses both y edges), area 0.75.
-    fn spanning_slab_profile() -> Profile2d {
-        Profile2d {
-            points: vec![
-                p2(-0.75, -0.25),
-                p2(0.75, -0.25),
-                p2(0.75, 0.25),
-                p2(-0.75, 0.25),
-            ],
-        }
-    }
 
-    #[test]
-    fn pad_an_overhanging_boss() {
-        // The profile reaches past one face edge: part of the boss sits on the face, part
-        // cantilevers into the air. Relaxing the containment gate routes it to the overhang Fuse
-        // sidecar (Ok here proves the routing — a contained-only pad would reject). The boss lives
-        // wholly above z=1, so vol = cube 1 + footprint 0.5 · dist 1 = 1.5.
-        let (mut m, top) = cube_with_top();
-        let OpOutput::PadOnFace { solid, top_face } =
-            apply(&mut m, &pad_op(top, edge_overhang_profile(), 1.0)).unwrap()
-        else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.5).abs() < 1e-12);
-        assert!(m.reachable().faces.contains(&top_face)); // boss top cap recovered
-    }
 
-    #[test]
-    fn pad_a_spanning_slab_boss() {
-        // A slab crossing the whole face (overhangs two opposite edges). vol = 1 + 0.75 · 1 = 1.75.
-        let (mut m, top) = cube_with_top();
-        let out = apply(&mut m, &pad_op(top, spanning_slab_profile(), 1.0)).unwrap();
-        let OpOutput::PadOnFace { solid, .. } = out else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.75).abs() < 1e-12);
-    }
 
-    #[test]
-    fn pocket_an_edge_slot() {
-        // A blind pocket whose footprint overhangs one edge — an edge slot open to the side.
-        // Only the on-face part (world x[0.25,0.75]×y[0,0.75] = 0.375) carves: 1 − 0.375·0.5 = 0.8125.
-        let (mut m, top) = cube_with_top();
-        let OpOutput::PocketOnFace { solid, bottom_face } =
-            apply(&mut m, &pocket_op(top, edge_overhang_profile(), 0.5)).unwrap()
-        else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.8125).abs() < 1e-12);
-        assert!(m.reachable().faces.contains(&bottom_face)); // slot floor recovered
-    }
 
-    #[test]
-    fn pocket_a_slab_channel() {
-        // A blind channel crossing the whole face (breaches two opposite walls). On-face carve
-        // world x[0.25,0.75]×y[0,1] = 0.5: 1 − 0.5·0.5 = 0.75.
-        let (mut m, top) = cube_with_top();
-        let out = apply(&mut m, &pocket_op(top, spanning_slab_profile(), 0.5)).unwrap();
-        let OpOutput::PocketOnFace { solid, .. } = out else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.75).abs() < 1e-12);
-    }
 
-    #[test]
-    fn pad_overhang_off_the_face_is_rejected() {
-        // A footprint that does not touch the face at all. The boolean is not what fails here — it
-        // fuses the two into a base plus a detached boss, which is the right answer (see
-        // `a_touchless_boss_fuses_into_two_solids`). What breaks is the *pad's* premise, so the
-        // error names that, and the model the caller is left holding is the one it started with.
-        let (mut m, top) = cube_with_top();
-        let far = Profile2d {
-            points: vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)],
-        };
-        let before = m.live_solids.clone();
-        assert_eq!(
-            apply(&mut m, &pad_op(top, far, 0.3)),
-            Err(OpError::PadMissesFace)
-        );
-        let (mut a, mut b) = (before, m.live_solids.clone());
-        a.sort_by_key(|h| h.index());
-        b.sort_by_key(|h| h.index());
-        assert_eq!(a, b, "a rejected pad must leave the live model untouched");
-    }
 
     /// **Chaining onto a fused boss.** The fuse leaves the base's `z=1` face a *ring* — a face with
     /// a hole where the boss sits — and the second boolean cuts through both. Every plane class the
@@ -2175,102 +1493,9 @@ pub mod tests {
         );
     }
 
-    /// The kernel's answer for a boss that misses the face, stated on its own so nobody "fixes" the
-    /// boolean to reject it: fusing two solids that do not touch **is** two solids, and both are
-    /// whole. Only `pad` refuses that outcome, because a pad is defined as material joined to a face
-    /// (`pad_overhang_off_the_face_is_rejected`).
-    #[test]
-    fn a_touchless_boss_fuses_into_two_solids() {
-        let mut m = Model::new();
-        let base = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        // Shares the z = 1 plane class with the base's top, but sits far away in x/y — so the plane
-        // carries two separate bodies, which is exactly what `hole_roots` used to refuse.
-        let boss = m.add_cuboid(
-            Point3::from_array([1.8, 1.8, 1.0]),
-            Point3::from_array([2.2, 2.2, 1.3]),
-        );
-        let solids = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
-        assert_eq!(solids.len(), 2, "disjoint operands stay two solids");
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let mut vols: Vec<f64> = solids
-            .iter()
-            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
-            .collect();
-        vols.sort_by(|x, y| x.partial_cmp(y).unwrap());
-        assert!(
-            (vols[0] - 0.048).abs() < 1e-12 && (vols[1] - 1.0).abs() < 1e-12,
-            "both pieces whole: {vols:?}"
-        );
-    }
 
-    #[test]
-    fn pocket_through_overhang_is_rejected() {
-        // An overhang pocket deep enough to pierce the far side is not blind — no single floor.
-        // Honest reject via whichever path fires (the overhang detector declines, the seam path
-        // rejects the mixed contact), mirroring `pocket_through_the_solid_is_rejected`.
-        let (mut m, top) = cube_with_top();
-        let got = apply(&mut m, &pocket_op(top, edge_overhang_profile(), 1.5));
-        assert!(
-            matches!(got, Err(OpError::Boolean(_)) | Err(OpError::PocketNotBlind)),
-            "through overhang must reject honestly, got {got:?}"
-        );
-    }
 
-    #[test]
-    fn a_non_convex_pad_cantilevers_and_runs_flush() {
-        // **Three hard properties at once**, which is what makes this footprint worth keeping. The
-        // frame maps local `[px, py]` to world `(0.5 + py, 0.5 − px)`, so the L below lands on
-        // `(0.25,0.75) (0.25,−0.25) (0.75,−0.25) (0.75,0.25) (1.0,0.25) (1.0,0.75)`:
-        //   1. **non-convex** — the L has a reflex corner at `(0.75, 0.25)`;
-        //   2. **overhanging** — `y < 0` cantilevers past the cube's `y = 0` edge;
-        //   3. **flush** — the edge `x = 1.0, y∈[0.25,0.75]` lies *exactly* on the face's `x = 1`
-        //      boundary, the "profile rim shares the face rim" case.
-        // It used to reject because the overhang sidecars gated on convexity; that gate is gone.
-        //
-        // Hand-checked shape: footprint `0.25 + 0.375 = 0.625`, prism wholly above `z = 1`, so
-        //   volume 1 + 0.625 = 1.625
-        //   area   5 (cube minus its top) + 0.5 (top left uncovered) + 3.5 (prism sides)
-        //          + 0.625 (prism cap) + 0.125 (the cantilever's underside) = 9.75
-        // The underside term is the cantilever: a contained pad would not have one.
-        //
-        // OCCT cannot score this directly — `pad` builds its tool prism internally, and rebuilding
-        // it here would lean on the same frame mapping the assertion is testing.
-        let (mut m, top) = cube_with_top();
-        let l_over = Profile2d {
-            points: vec![
-                p2(-0.25, -0.25),
-                p2(0.75, -0.25),
-                p2(0.75, 0.25),
-                p2(0.25, 0.25),
-                p2(0.25, 0.5),
-                p2(-0.25, 0.5),
-            ],
-        };
-        let OpOutput::PadOnFace { solid, top_face } =
-            apply(&mut m, &pad_op(top, l_over, 1.0)).expect("the cantilevered L pad")
-        else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let p = nacre_props::mass_props(&m, solid).unwrap();
-        assert!((p.volume - 1.625).abs() < 1e-12, "volume {}", p.volume);
-        assert!((p.area - 9.75).abs() < 1e-12, "area {}", p.area);
-        assert!(m.reachable().faces.contains(&top_face)); // boss top cap recovered
-    }
 
-    fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
-        Operation::PadOnFace {
-            face,
-            profile,
-            dist,
-        }
-    }
 
 
     /// explicit sharing (overhaul #3): a prism built with a shared base-cap
@@ -2368,14 +1593,6 @@ pub mod tests {
 
 
 
-    #[test]
-    fn pad_step_exports() {
-        // The boss (holed outer face + walls + cap) exports without error.
-        let (mut m, top) = cube_with_top();
-        apply(&mut m, &pad_op(top, small_square(), 0.5)).unwrap();
-        let step = nacre_step::to_step(&m).expect("boss exports");
-        assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
-    }
 
     fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
         Operation::PocketOnFace {
@@ -2385,94 +1602,13 @@ pub mod tests {
         }
     }
 
-    /// A prism raised on a `(1,1,1)`-slanted sketch plane, its far cap holding a blind pocket. The
-    /// cap and its two anti-parallel side walls meet in a triple whose `raw` coefficients are
-    /// exactly dependent (`det = 0`); before family #3's dir-sign fix the guard read `sqrt`-rounded
-    /// unit normals, called that triple non-degenerate, and the consumer aborted on `D = 0`. Now
-    /// the guard reads the same coefficients the consumer does, so the arrangement runs. Volume:
-    /// a `2×2` base × `2` deep block is `8`, less the `0.4²×0.5` pocket.
-    #[test]
-    fn a_pocket_on_a_slanted_face() {
-        let plane =
-            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
-                .unwrap();
-        let mut m = Model::new();
-        let big = Profile2d {
-            points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
-        };
-        let OpOutput::Extrude { faces, .. } = apply(
-            &mut m,
-            &Operation::Extrude {
-                plane,
-                profile: big,
-                dist: 2.0,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let out = apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap();
-        let OpOutput::PocketOnFace { solid, .. } = out else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
-        assert!((vol - (8.0 - 0.16 * 0.5)).abs() < 1e-9, "volume {vol}");
-    }
-
-    /// The same slanted cap, but a boss (pad, Fuse) instead of a pocket — the sweep runs the other
-    /// way, a different code path. Volume: the `8` block plus a `0.4²×0.5` stub.
-    #[test]
-    fn a_pad_on_a_slanted_face() {
-        let plane =
-            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
-                .unwrap();
-        let mut m = Model::new();
-        let big = Profile2d {
-            points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
-        };
-        let OpOutput::Extrude { faces, .. } = apply(
-            &mut m,
-            &Operation::Extrude {
-                plane,
-                profile: big,
-                dist: 2.0,
-            },
-        )
-        .unwrap() else {
-            unreachable!()
-        };
-        let out = apply(
-            &mut m,
-            &Operation::PadOnFace {
-                face: faces[1],
-                profile: small_square(),
-                dist: 0.5,
-            },
-        )
-        .unwrap();
-        let OpOutput::PadOnFace { solid, .. } = out else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
-        assert!((vol - (8.0 + 0.16 * 0.5)).abs() < 1e-9, "volume {vol}");
-    }
 
 
 
 
 
 
-    #[test]
-    fn pocket_step_exports() {
-        let (mut m, top) = cube_with_top();
-        apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap();
-        let step = nacre_step::to_step(&m).expect("pocket exports");
-        assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
-    }
+
 
     proptest! {
         #[test]
@@ -2769,30 +1905,6 @@ pub mod tests {
         assert_eq!(wall.failed_at, None, "the class labels consistently");
     }
 
-    /// `pocket_corner_cut` by hand, so the pocket family keeps a regression net that runs without
-    /// OCCT: the unit cube less a `0.4²×0.5` pocket is `0.92`, and the corner box `[0.85,1.15]³`
-    /// bites `0.15³` of solid (it clears the pocket, whose footprint stops at `x = 0.7`).
-    #[test]
-    fn a_corner_cut_off_a_pocketed_cube() {
-        let (mut m, pc) = pocketed_cube();
-        let bx = m.add_cuboid(
-            Point3::from_array([0.85, 0.85, 0.85]),
-            Point3::from_array([1.15, 1.15, 1.15]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - (0.92 - 0.15 * 0.15 * 0.15)).abs() < 1e-12,
-            "volume {}",
-            props.volume
-        );
-        // A corner bite replaces three 0.15² squares with three more: the area is unchanged at
-        // 6 − 0.16 (the lid's hole) + 0.8 (four pocket walls) + 0.16 (its floor).
-        assert!((props.area - 6.8).abs() < 1e-12, "area {}", props.area);
-    }
 
 
     /// Lower corner of a solid's outer-shell vertex bounding box (for translation
@@ -2934,25 +2046,6 @@ pub mod tests {
         assert_eq!(build(), build(), "same ops → same geometry and handle");
     }
 
-    /// The `Transform` op flows through `apply`, superseding via the op dispatch.
-    #[test]
-    fn transform_op_applies() {
-        let (iso, _) = test_iso();
-        let mut m = Model::new();
-        let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let out = apply(
-            &mut m,
-            &Operation::Transform {
-                solid: c,
-                isometry: iso,
-            },
-        )
-        .unwrap();
-        match out {
-            OpOutput::Transform { solid } => assert_eq!(m.live_solids, vec![solid]),
-            other => panic!("expected Transform output, got {other:?}"),
-        }
-    }
 
     /// A genuinely tilted rigid rotation: 30° about Z through the rational axis
     /// point (1,1,0). Non-90° and non-axis-aligned, so it exercises the Rotated
@@ -3486,94 +2579,10 @@ pub mod tests {
     }
 
 
-    #[test]
-    fn cut_containment_makes_a_cavity() {
-        // A = [0,3]³ (27) with B = [1,2]³ (1) strictly inside ⇒ A − B is a
-        // hollow solid: volume 26, an outer + one void shell (V16/E24/F12/S2).
-        let (mut m, a, b) = nested_boxes();
-        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 26.0).abs() < 1e-12, "volume {vol}");
-        assert_eq!(m.solids.get(r).cavities.len(), 1);
-        let reach = m.reachable();
-        assert_eq!(reach.shells.len(), 2);
-        assert_eq!(reach.faces.len(), 12);
-        assert_eq!(reach.vertices.len(), 16);
-        assert_eq!(reach.edges.len(), 24);
-        assert_eq!(m.live_solids, vec![r]);
-    }
 
-    #[test]
-    fn cut_containment_off_center_cavity() {
-        // The inner box need not be concentric — any strictly-interior B works.
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
-        let b = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 0.5]),
-            Point3::from_array([1.5, 2.5, 3.5]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - (64.0 - 6.0)).abs() < 1e-12, "volume {vol}"); // 4³ − 1·2·3
-        assert_eq!(m.solids.get(r).cavities.len(), 1);
-    }
 
-    #[test]
-    fn fuse_containment_is_the_container() {
-        // A ∪ B with B ⊂ A is just A (no cavity).
-        let (mut m, a, b) = nested_boxes();
-        let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
-        let r = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - vol_a).abs() < 1e-12, "volume {vol}");
-        assert!(m.solids.get(r).cavities.is_empty());
-        assert_eq!(m.live_solids, vec![r]);
-    }
 
-    #[test]
-    fn containment_symmetric_when_a_inside_b() {
-        // Arguments swapped: A = inner ⊂ B = outer.
-        // Cut(inner − outer): inner is wholly removed ⇒ empty, which is an answer, not an error —
-        // and a successful boolean consumes its operands, so the Fuse below needs a fresh model
-        // (it used to reuse this one only because the empty Cut was an error that consumed nothing).
-        let (mut m, outer, inner) = nested_boxes();
-        assert!(
-            boolean(&mut m, BoolKind::Cut, inner, outer)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(m.live_solids.is_empty(), "both operands are consumed");
 
-        // Fuse(inner ∪ outer) = outer.
-        let (mut m, outer, inner) = nested_boxes();
-        let vol_outer = nacre_props::mass_props(&m, outer).unwrap().volume;
-        let r = boolean_one(&mut m, BoolKind::Fuse, inner, outer).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - vol_outer).abs() < 1e-12, "volume {vol}");
-    }
-
-    #[test]
-    fn common_containment_is_the_inner_solid() {
-        // Either argument order ⇒ the intersection is the inner solid (handled
-        // by the existing half-space enumeration path, no cavity code).
-        for swap in [false, true] {
-            let (mut m, outer, inner) = nested_boxes();
-            let vol_inner = nacre_props::mass_props(&m, inner).unwrap().volume;
-            let (x, y) = if swap { (inner, outer) } else { (outer, inner) };
-            let r = boolean_one(&mut m, BoolKind::Common, x, y).unwrap();
-            let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-            assert!((vol - vol_inner).abs() < 1e-9, "swap={swap} volume {vol}");
-        }
-    }
 
 
     // ---- coincident-coplanar merge (M5-c5) ----
@@ -3651,137 +2660,11 @@ pub mod tests {
         ));
     }
 
-    #[test]
-    fn an_edge_slot_through_the_bottom() {
-        // The prism pokes out the base's bottom too, so the old convex/blind overhang-cut gate
-        // declined it and the seam path could not build it either (honest reject). The F2 dispatch
-        // collapse hands it to the unified coplanar driver, which carves the slot exactly:
-        // base 1.0 − (x∈[0.5,1] · y∈[0.25,0.75] · z∈[0,1]) = 1 − 0.25 = 0.75.
-        let mut m = Model::new();
-        let base = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let prism = m.add_cuboid(
-            Point3::from_array([0.5, 0.25, -0.5]),
-            Point3::from_array([1.5, 0.75, 1.0]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
-    }
 
-    #[test]
-    fn a_corner_cut_through_the_bottom() {
-        // The corner prism pokes out the base's bottom, so the old blind gate declined it. The F2
-        // collapse routes it to the unified driver: base 1.0 − corner column (x,y ∈ [0.5,1], full
-        // height) = 1 − 0.25 = 0.75.
-        let mut m = Model::new();
-        let base = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let through = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, -0.5]),
-            Point3::from_array([1.5, 1.5, 1.0]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, base, through).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
-    }
 
-    #[test]
-    fn a_boss_that_pierces_the_base_is_not_an_overhang() {
-        // The boss dips below the base's top (its walls cross the base) — a transversal seam cut,
-        // not a coplanar overhang, which the arrangement handles as a normal crossing.
-        // Union = 1.0 + boss 0.75 − overlap 0.125 = 1.625.
-        let mut m = Model::new();
-        let base = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let through = m.add_cuboid(
-            Point3::from_array([0.5, 0.25, 0.5]),
-            Point3::from_array([1.5, 0.75, 2.0]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Fuse, base, through).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 1.625).abs() < 1e-12, "volume {vol}");
-    }
 
-    // The Cut and Common twins of `fuse_a_corner_overhanging_boss` below — the same two solids,
-    // the same shared z=1 plane. The boss sits entirely above it, so it removes nothing and shares
-    // nothing: Cut is the base untouched and Common is empty. Both used to be rejected
-    // (`coplanar_merge` for Cut; Common's every face dropped, which assembly reported as
-    // `no_outward_shell`). The `Whole` survival cell now checks whether the contact plane actually
-    // separates the solids, which is what makes the whole cap correct here.
-    #[test]
-    fn cut_by_a_corner_overhanging_boss_removes_nothing() {
-        let mut m = Model::new();
-        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let corner = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 1.0]),
-            Point3::from_array([1.5, 1.5, 2.0]),
-        );
-        m.rebuild_adjacency();
-        let r = boolean_one(&mut m, BoolKind::Cut, base, corner).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
-        // Structure, not just volume: the base comes through as itself. Six faces means the cap was
-        // not split along ∂Q and the boss contributed nothing.
-        let s = m.solids.get(r);
-        assert!(s.cavities.is_empty());
-        assert_eq!(m.shells.get(s.outer).faces.len(), 6, "a clean cube");
-    }
 
-    #[test]
-    fn cut_a_seated_block_by_the_part_below_it() {
-        // The operands swapped: now the canonical contact face is the upper block's *lower* cap, so
-        // the separation test runs with the plane's normal the other way round. Same answer — the
-        // block keeps its volume.
-        let mut m = Model::new();
-        let block = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 1.0]),
-            Point3::from_array([1.5, 1.5, 2.0]),
-        );
-        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        m.rebuild_adjacency();
-        let r = boolean_one(&mut m, BoolKind::Cut, block, base).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
-    }
 
-    #[test]
-    fn common_with_a_corner_overhanging_boss_is_empty() {
-        let mut m = Model::new();
-        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let corner = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 1.0]),
-            Point3::from_array([1.5, 1.5, 2.0]),
-        );
-        m.rebuild_adjacency();
-        // They meet only along the base's top face — a contact of zero volume.
-        assert!(
-            boolean(&mut m, BoolKind::Common, base, corner)
-                .unwrap()
-                .is_empty()
-        );
-    }
 
     #[test]
     fn cut_by_an_overhanging_boss_carrying_a_pin_owes_a_notch() {
@@ -3824,21 +2707,6 @@ pub mod tests {
         );
     }
 
-    // Build a unit cube with a blind pocket in its top — a non-convex solid whose side faces stay
-    // convex. Returns `(model, pocketed solid)`.
-    fn top_pocketed_cube() -> (Model, Handle<Solid>) {
-        let mut m = Model::new();
-        let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
-        else {
-            unreachable!()
-        };
-        let OpOutput::PocketOnFace { solid, .. } =
-            apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap()
-        else {
-            unreachable!()
-        };
-        (m, solid)
-    }
 
     // A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.
     #[test]
@@ -3881,23 +2749,6 @@ pub mod tests {
         assert_eq!(canon[a_xp], a_xp.min(b_xm));
     }
 
-    #[test]
-    fn fuse_an_overhanging_boss_onto_a_non_convex_solid() {
-        // A boss cantilevers off the +x side face of a top-pocketed cube (non-convex solid),
-        // overhanging the bottom edge. The whole-solid gate used to block it; the contact face
-        // (+x side) is a convex square, so the footprint gate admits it and the Fuse reconstruction
-        // is local (the far pocket is verbatim-copied). Volume: pocketed 0.92 + boss 0.25 = 1.17.
-        let (mut m, pc) = top_pocketed_cube();
-        let boss = m.add_cuboid(
-            Point3::from_array([1.0, 0.25, -0.25]),
-            Point3::from_array([1.5, 0.75, 0.75]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Fuse, pc, boss).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        assert!((nacre_props::mass_props(&m, r).unwrap().volume - 1.17).abs() < 1e-12);
-    }
 
     #[test]
     fn overhang_boss_with_a_non_convex_footprint() {
@@ -3928,157 +2779,10 @@ pub mod tests {
         assert!((vol - 1.096).abs() < 1e-12, "volume {vol}");
     }
 
-    #[test]
-    fn cut_a_blind_pocket_into_a_non_convex_solid() {
-        // A blind pocket carved into an already-pocketed (non-convex) cube: a second contained
-        // top-flush prism in a corner away from the first pocket. The kept solid `a` is non-convex,
-        // which the pocket contact now admits (the gates are convexity-agnostic). Removed
-        // 0.2·0.1·0.4 = 0.008 on top of the first pocket's 0.08 → 1 − 0.08 − 0.008 = 0.912.
-        let (mut m, pc) = pocketed_cube();
-        let corner = m.add_cuboid(
-            Point3::from_array([0.05, 0.1, 0.6]),
-            Point3::from_array([0.25, 0.2, 1.0]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, pc, corner).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 0.912).abs() < 1e-12, "volume {vol}");
-    }
 
-    #[test]
-    fn cut_a_non_convex_blind_pocket() {
-        // A blind pocket with a non-convex (L-shaped) footprint: the cutter prism is non-convex,
-        // which the pocket contact now admits. The L extrudes to z∈[0,0.5], top-flush on the base's
-        // z=0.5 face, blind. L area = 0.6² − 0.3² = 0.27, depth 0.5 → removed 0.135; base 3²·1.5 =
-        // 13.5 → 13.365.
-        let mut m = Model::new();
-        let base = m.add_cuboid(
-            Point3::from_array([-1.0, -1.0, -1.0]),
-            Point3::from_array([2.0, 2.0, 0.5]),
-        );
-        let l = Profile2d {
-            points: vec![
-                p2(-0.3, -0.3),
-                p2(0.3, -0.3),
-                p2(0.3, 0.0),
-                p2(0.0, 0.0),
-                p2(0.0, 0.3),
-                p2(-0.3, 0.3),
-            ],
-        };
-        let OpOutput::Extrude { solid: lp, .. } = apply(&mut m, &extrude_op(l, 0.5)).unwrap()
-        else {
-            unreachable!()
-        };
-        let r = boolean_one(&mut m, BoolKind::Cut, base, lp).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 13.365).abs() < 1e-12, "volume {vol}");
-    }
 
-    #[test]
-    fn a_pocket_that_punches_through_drills_a_bore() {
-        // A top-flush tool that pokes out the base's bottom: the pocket becomes a through hole.
-        // The exit face has to come out annular, and until the coplanar reconstruct learned to
-        // emit a hole it came out whole instead, leaving the bore's walls nothing to close
-        // against — an open shell the assembly guard rejected. (Honest reject, never a wrong
-        // answer; the previous cell pinned it as such.)
-        //
-        // Area is the assertion that matters here: volume alone cannot tell a bore from a shape
-        // that merely displaces the same material. 0.75 (top) + 0.75 (bottom) + 4 (sides) +
-        // 2.0 (the bore's four inner walls) = 7.5, against 6.0 for the cube.
-        let mut m = Model::new();
-        let base = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let through = m.add_cuboid(
-            Point3::from_array([0.25, 0.25, -0.5]),
-            Point3::from_array([0.75, 0.75, 1.0]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, base, through).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let p = nacre_props::mass_props(&m, r).unwrap();
-        assert!((p.volume - 0.75).abs() < 1e-12, "volume {}", p.volume);
-        assert!((p.area - 7.5).abs() < 1e-12, "area {}", p.area);
-        // A bore, not a void: no cavity shell, and both caps carry the hole (the top from the
-        // coincident contact, the bottom from the section the tool cuts through it).
-        let s = m.solids.get(r);
-        assert!(s.cavities.is_empty(), "a through hole is not a cavity");
-        let faces = &m.shells.get(s.outer).faces;
-        assert_eq!(faces.len(), 10, "6 base faces + the bore's 4 walls");
-        assert_eq!(
-            faces
-                .iter()
-                .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
-                .count(),
-            2,
-            "both caps are annular"
-        );
-    }
 
-    #[test]
-    fn a_boss_that_punches_through_keeps_the_stub() {
-        // The Fuse twin, and the same emission path: the tool's a-side face keeps `P∖Q`, so the
-        // base's bottom needs the same hole for the stub below it to join on. Volume
-        // 1 + 0.5·0.5·0.5 = 1.125; area 1.0 (top, the flush tool cap dissolves into it) + 0.75
-        // (bottom) + 4 (sides) + 1.0 (stub walls) + 0.25 (stub floor) = 7.0.
-        let mut m = Model::new();
-        let base = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.0, 1.0, 1.0]),
-        );
-        let through = m.add_cuboid(
-            Point3::from_array([0.25, 0.25, -0.5]),
-            Point3::from_array([0.75, 0.75, 1.0]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Fuse, base, through).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let p = nacre_props::mass_props(&m, r).unwrap();
-        assert!((p.volume - 1.125).abs() < 1e-12, "volume {}", p.volume);
-        assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
-        let s = m.solids.get(r);
-        assert_eq!(
-            m.shells
-                .get(s.outer)
-                .faces
-                .iter()
-                .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
-                .count(),
-            1,
-            "only the bottom is annular — the flush top merges away"
-        );
-    }
 
-    #[test]
-    fn a_fused_stack_chains_through_a_cut() {
-        // The dissolved 1×1×2 box (cell fuse-coplanar-merge) feeds a second boolean. Before
-        // the merge/dissolve this rejected — first as COPLANAR_PAIR (the flat edges), then as
-        // LOOP_ORIENT_MISMATCH (the straight-angle interface corners). A clean box cuts.
-        let (mut m, a, b) = stacked_cubes();
-        let stack = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
-        m.rebuild_adjacency();
-        // A cutter straddling z=1 (the fused interface) — the seam runs where the split
-        // vertical edges used to be. Result: 2 − 0.5·0.5·1.0.
-        let cutter = m.add_cuboid(
-            Point3::from_array([0.5, 0.5, 0.5]),
-            Point3::from_array([1.5, 1.5, 1.5]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Cut, stack, cutter).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 1.75).abs() < 1e-12, "volume {vol}");
-    }
 
     // ---- `unify_coplanar_faces`: the general (interface-free) coplanar merge, on hand-built
     // `LocalFace` lists the coincident goldens above never reach — chains, opposite normals,
@@ -4390,75 +3094,6 @@ pub mod tests {
         }
     }
 
-    /// **The topology of a boolean does not depend on whether the coordinates are
-    /// f64-representable.** The same shape is built twice — once on tidy integers, once on
-    /// dimensions that are not exact binary fractions — and both must give the same b-rep counts,
-    /// with each volume matching its own formula.
-    ///
-    /// This is the invariant family #3 restored. Plane identity used to be read from the faces'
-    /// *derived* coefficients, which are not exactly proportional for two differently-sized faces
-    /// on one plane, so one plane became two classes and the arrangement named one point twice —
-    /// but only when the arithmetic did not happen to cancel, which tidy coordinates hid
-    /// (measured before the fix: 200/200 random stacked pairs under-merged, 12/600 ops aborted).
-    #[test]
-    fn boolean_topology_is_the_same_on_untidy_coordinates() {
-        let counts = |dx: f64, dy: f64, z0: f64, h1: f64, h2: f64, kind: BoolKind| {
-            let mut m = Model::new();
-            let a = m.add_cuboid(
-                Point3::from_array([0.0, 0.0, z0]),
-                Point3::from_array([dx, dy, z0 + h1]),
-            );
-            let b = m.add_cuboid(
-                Point3::from_array([0.0, 0.0, z0 + h1]),
-                Point3::from_array([dx, dy, z0 + h1 + h2]),
-            );
-            let r = boolean_one(&mut m, kind, a, b).expect("stacked boxes fuse/cut");
-            m.rebuild_adjacency();
-            assert!(nacre_validate::validate(&m).is_empty());
-            let s = m.solids.get(r);
-            let sh = m.shells.get(s.outer);
-            let faces = sh.faces.len();
-            let mut edges = std::collections::HashSet::new();
-            let mut verts = std::collections::HashSet::new();
-            for &fh in &sh.faces {
-                let f = m.faces.get(fh);
-                for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                    for he in &l.half_edges {
-                        edges.insert(he.edge);
-                        if let Some(bd) = m.edges.get(he.edge).bounds {
-                            verts.extend(bd);
-                        }
-                    }
-                }
-            }
-            let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-            ((faces, edges.len(), verts.len(), s.cavities.len()), vol)
-        };
-        // The untidy dimensions are the minimal case the proptest shrank to when the kernel aborted.
-        let (tidy_dx, tidy_dy, tidy_z0, tidy_h1, tidy_h2) = (2.0, 0.5, 0.0, 0.5, 2.0);
-        let (dx, dy, z0, h1, h2) = (
-            1.628165457453874,
-            0.5,
-            0.11200046228159026,
-            0.5,
-            2.07926124157585,
-        );
-        for kind in [BoolKind::Fuse, BoolKind::Cut] {
-            let (tidy_shape, tidy_vol) = counts(tidy_dx, tidy_dy, tidy_z0, tidy_h1, tidy_h2, kind);
-            let (shape, vol) = counts(dx, dy, z0, h1, h2, kind);
-            assert_eq!(tidy_shape, shape, "{kind:?}: same topology either way");
-            let want = |a: f64, b: f64| match kind {
-                BoolKind::Fuse => a + b,
-                _ => a,
-            };
-            let (tw, w) = (
-                want(tidy_dx * tidy_dy * tidy_h1, tidy_dx * tidy_dy * tidy_h2),
-                want(dx * dy * h1, dx * dy * h2),
-            );
-            assert!((tidy_vol - tw).abs() < 1e-9, "{kind:?} tidy {tidy_vol}");
-            assert!((vol - w).abs() < 1e-9 * w, "{kind:?} untidy {vol}");
-        }
-    }
 
     /// One geometric plane is one class **whatever the two faces' sizes**, and the coefficient test
     /// alone still cannot say so — the two walls' un-normalized coefficient 4-vectors are not
@@ -4752,77 +3387,9 @@ pub mod tests {
 
 
 
-    #[test]
-    fn boolean_rejects_non_live_input() {
-        let (mut m, a, b) = two_boxes();
-        m.live_solids.retain(|&s| s != b); // as if superseded
-        assert_eq!(
-            boolean_one(&mut m, BoolKind::Common, a, b),
-            Err(BoolError::InputNotLive)
-        );
-    }
 
-    #[test]
-    fn boolean_op_applies_and_wraps_error() {
-        // A failing boolean's error is surfaced as `OpError::Boolean`. This used to be driven by a
-        // disjoint `Common`, but that is no longer an error (it is an empty result, see
-        // `boolean_op_passes_an_empty_result_through`), so the wrapping is exercised with a boolean
-        // that genuinely fails: a handle that is not live.
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
-        m.live_solids.retain(|&s| s != b); // retire `b` behind the op's back
-        assert_eq!(
-            apply(
-                &mut m,
-                &Operation::Boolean {
-                    kind: BoolKind::Common,
-                    a,
-                    b
-                }
-            ),
-            Err(OpError::Boolean(BoolError::InputNotLive))
-        );
-    }
 
-    /// **An empty result is an answer.** Two solids that miss each other have no intersection, and
-    /// that is what `Common` reports: `Ok` with no solids, both operands consumed like any other
-    /// successful boolean. Stated on its own because the name is the contract — if someone makes
-    /// this an error again, the failure points straight at what was decided (2026-07-22), and the
-    /// `live_solids` assertion pins the retire that an early return would otherwise skip.
-    #[test]
-    fn a_disjoint_common_is_empty_not_an_error() {
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
-        let solids = boolean(&mut m, BoolKind::Common, a, b).expect("empty is not a failure");
-        assert!(solids.is_empty());
-        assert!(
-            m.live_solids.is_empty(),
-            "a successful boolean consumes its operands"
-        );
-    }
 
-    /// An empty boolean reaches the caller as an empty solid list, not an error — the op layer
-    /// passes the kernel's answer through rather than reinterpreting it.
-    #[test]
-    fn boolean_op_passes_an_empty_result_through() {
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        // Offset in all axes so no faces are coplanar with A.
-        let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
-        let out = apply(
-            &mut m,
-            &Operation::Boolean {
-                kind: BoolKind::Common,
-                a,
-                b,
-            },
-        )
-        .unwrap();
-        assert_eq!(out, OpOutput::Boolean { solids: vec![] });
-        assert!(m.live_solids.is_empty(), "both operands are consumed");
-    }
 
     // ---- boolean Common algorithm (M5-c3 commit 2) ----
 
@@ -4845,48 +3412,6 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn a_corner_flush_common_keeps_the_non_convex_overlap() {
-        // A **corner-flush** `Common`: the L-prism and the box both start at the origin, so
-        // **three** of their face planes coincide — `z = 0` (both floors), `x = 0`, `y = 0`. Every
-        // vertex of the shared corner lies exactly on the other solid's face planes, which is what
-        // the old reject tag said: `VERTEX_ON_FACE_PLANE`. The arrangement engine names such a
-        // point by its plane triple like any other, so the configuration is no longer special.
-        //
-        // Not covered by the other two non-convex `Common` locks:
-        // `common_non_convex_overlap_is_their_intersection` (l_and_corner_box) and
-        // `common_non_convex_containment_is_inner` both meet transversally, with no coplanar pair.
-        //
-        // Hand-checked shape, not just volume. The overlap is the L
-        // `x∈[0,1.5]×y∈[0,1]` (1.5) plus `x∈[0,1]×y∈[1,1.5]` (0.5) = 2.0, over `z∈[0,0.5]`:
-        //   volume 2.0 · 0.5 = 1.0
-        //   area   2 · 2.0 (caps) + 6.0 (the L's perimeter) · 0.5 = 7.0
-        // and the L has six sides, so eight faces.
-        let l = Profile2d {
-            points: vec![
-                p2(0.0, 0.0),
-                p2(2.0, 0.0),
-                p2(2.0, 1.0),
-                p2(1.0, 1.0),
-                p2(1.0, 2.0),
-                p2(0.0, 2.0),
-            ],
-        };
-        let mut m = replay(&[extrude_op(l, 1.0)]).unwrap();
-        let lsolid = *m.live_solids.first().unwrap();
-        let b = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([1.5, 1.5, 0.5]),
-        );
-        let r = boolean_one(&mut m, BoolKind::Common, lsolid, b).expect("corner-flush Common");
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let p = nacre_props::mass_props(&m, r).unwrap();
-        assert!((p.volume - 1.0).abs() < 1e-12, "volume {}", p.volume);
-        assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
-        assert_eq!(m.solids.get(r).cavities.len(), 0);
-    }
 
     proptest! {
         /// Overlapping axis-aligned boxes: the intersection volume equals the

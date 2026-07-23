@@ -397,3 +397,121 @@ pub fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation
         dist,
     }
 }
+
+// ---- more shape fixtures (all public: add_cuboid / apply(Extrude|Pocket)) ----
+
+pub fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let mut m = Model::new();
+    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+    let y = m.add_cuboid(
+        Point3::from_array([3.0, -1.0, -1.0]),
+        Point3::from_array([7.0, 1.4, 1.2]),
+    );
+    (m, a, y)
+}
+
+pub fn nested_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let mut m = Model::new();
+    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
+    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    (m, a, b)
+}
+
+pub fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, l) = l_prism();
+    let bx = m.add_cuboid(
+        Point3::from_array([0.5, 0.5, 0.2]),
+        Point3::from_array([2.5, 1.5, 1.2]),
+    );
+    (m, l, bx)
+}
+
+pub fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, l) = l_prism();
+    let stub = m.add_cuboid(
+        Point3::from_array([0.3, 0.3, 0.5]),
+        Point3::from_array([0.7, 0.7, 1.5]),
+    );
+    (m, l, stub)
+}
+
+/// A unit cube with a small blind pocket carved in its top.
+pub fn pocketed_cube() -> (Model, Handle<Solid>) {
+    let (mut m, top) = cube_with_top();
+    let OpOutput::PocketOnFace { solid, .. } =
+        apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap()
+    else {
+        unreachable!()
+    };
+    (m, solid)
+}
+
+pub fn top_pocketed_cube() -> (Model, Handle<Solid>) {
+    let mut m = Model::new();
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap() else {
+        unreachable!()
+    };
+    let OpOutput::PocketOnFace { solid, .. } =
+        apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap()
+    else {
+        unreachable!()
+    };
+    (m, solid)
+}
+
+pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, pc) = pocketed_cube();
+    let slab = m.add_cuboid(
+        Point3::from_array([-0.2, -0.25, z0]),
+        Point3::from_array([1.3, 1.2, 1.5]),
+    );
+    (m, slab, pc)
+}
+
+pub fn edge_overhang_profile() -> Profile2d {
+    Profile2d {
+        points: vec![
+            p2(-0.25, -0.25),
+            p2(0.75, -0.25),
+            p2(0.75, 0.25),
+            p2(-0.25, 0.25),
+        ],
+    }
+}
+
+pub fn spanning_slab_profile() -> Profile2d {
+    Profile2d {
+        points: vec![
+            p2(-0.75, -0.25),
+            p2(0.75, -0.25),
+            p2(0.75, 0.25),
+            p2(-0.75, 0.25),
+        ],
+    }
+}
+
+/// f64 approximate equality for coordinate/volume comparisons.
+pub fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-9
+}
+
+pub fn test_iso() -> (Isometry, [f64; 3]) {
+    use nacre_scalar::Rat;
+    (
+        Isometry::translation([Rat::new(7, 2).unwrap(), Rat::from_int(-4), Rat::from_int(11)]),
+        [3.5, -4.0, 11.0],
+    )
+}
+
+pub fn translate_iso(off: [i128; 3]) -> Isometry {
+    use nacre_scalar::Rat;
+    Isometry::translation([Rat::from_int(off[0]), Rat::from_int(off[1]), Rat::from_int(off[2])])
+}
+
+pub fn rigid_iso(axis: Axis, deg: i128, off: [i128; 3]) -> Isometry {
+    use nacre_scalar::{Angle, Rat, Rotation};
+    Isometry::rigid(
+        Rotation { axis, point: [Rat::from_int(0); 3], angle: Angle::from_deg(Rat::from_int(deg)).unwrap() },
+        [Rat::from_int(off[0]), Rat::from_int(off[1]), Rat::from_int(off[2])],
+    )
+}

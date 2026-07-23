@@ -1,13 +1,15 @@
-//! Feature operations — pad (boss) and pocket, each a tool prism + boolean sugar
-//! over `apply(Operation::Pad/PocketOnFace)`. Covers the happy path (topology of
-//! a boss/pocket on a cube top) and the honest rejections (non-planar face,
-//! non-positive distance, degenerate profile, through-pocket).
+//! Feature operations — pad (boss) and pocket + honest rejections.
 
-use crate::common::{cube_with_top, p2, pad_op, pocket_op, small_square};
-use nacre_geom::Surface;
-use nacre_math::{Point3, Vector3};
-use nacre_ops::{OpError, OpOutput, Profile2d, apply};
-use nacre_topo::Model;
+#![allow(unused_imports)]
+use crate::common::*;
+use nacre_geom::{Plane, Surface};
+use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::{
+    BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean, replay,
+};
+use nacre_scalar::Axis;
+use nacre_store::Handle;
+use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 
 #[test]
 fn pad_boss_on_cube_top() {
@@ -137,3 +139,508 @@ fn pocket_through_the_solid_is_rejected() {
         "through-pocket must reject honestly, got {got:?}"
     );
 }
+
+    #[test]
+    fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
+        // The box sits wholly in the void, so the solids are disjoint and `A − B = A`.
+        // Reading the lid as filled instead classified the box's eight corners five
+        // Inside and three Outside, and the seam-free path's own `debug_assert`
+        // ("classification must be consistent per solid") caught it.
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.4, 0.4, 0.6]),
+            Point3::from_array([0.6, 0.6, 0.9]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!(m.solids.get(r).cavities.is_empty());
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.92).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn pad_an_overhanging_boss() {
+        // The profile reaches past one face edge: part of the boss sits on the face, part
+        // cantilevers into the air. Relaxing the containment gate routes it to the overhang Fuse
+        // sidecar (Ok here proves the routing — a contained-only pad would reject). The boss lives
+        // wholly above z=1, so vol = cube 1 + footprint 0.5 · dist 1 = 1.5.
+        let (mut m, top) = cube_with_top();
+        let OpOutput::PadOnFace { solid, top_face } =
+            apply(&mut m, &pad_op(top, edge_overhang_profile(), 1.0)).unwrap()
+        else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.5).abs() < 1e-12);
+        assert!(m.reachable().faces.contains(&top_face)); // boss top cap recovered
+    }
+
+    #[test]
+    fn pad_a_spanning_slab_boss() {
+        // A slab crossing the whole face (overhangs two opposite edges). vol = 1 + 0.75 · 1 = 1.75.
+        let (mut m, top) = cube_with_top();
+        let out = apply(&mut m, &pad_op(top, spanning_slab_profile(), 1.0)).unwrap();
+        let OpOutput::PadOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 1.75).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pocket_an_edge_slot() {
+        // A blind pocket whose footprint overhangs one edge — an edge slot open to the side.
+        // Only the on-face part (world x[0.25,0.75]×y[0,0.75] = 0.375) carves: 1 − 0.375·0.5 = 0.8125.
+        let (mut m, top) = cube_with_top();
+        let OpOutput::PocketOnFace { solid, bottom_face } =
+            apply(&mut m, &pocket_op(top, edge_overhang_profile(), 0.5)).unwrap()
+        else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.8125).abs() < 1e-12);
+        assert!(m.reachable().faces.contains(&bottom_face)); // slot floor recovered
+    }
+
+    #[test]
+    fn pocket_a_slab_channel() {
+        // A blind channel crossing the whole face (breaches two opposite walls). On-face carve
+        // world x[0.25,0.75]×y[0,1] = 0.5: 1 − 0.5·0.5 = 0.75.
+        let (mut m, top) = cube_with_top();
+        let out = apply(&mut m, &pocket_op(top, spanning_slab_profile(), 0.5)).unwrap();
+        let OpOutput::PocketOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        assert!((nacre_props::mass_props(&m, solid).unwrap().volume - 0.75).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pad_overhang_off_the_face_is_rejected() {
+        // A footprint that does not touch the face at all. The boolean is not what fails here — it
+        // fuses the two into a base plus a detached boss, which is the right answer (see
+        // `a_touchless_boss_fuses_into_two_solids`). What breaks is the *pad's* premise, so the
+        // error names that, and the model the caller is left holding is the one it started with.
+        let (mut m, top) = cube_with_top();
+        let far = Profile2d {
+            points: vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)],
+        };
+        let before = m.live_solids.clone();
+        assert_eq!(
+            apply(&mut m, &pad_op(top, far, 0.3)),
+            Err(OpError::PadMissesFace)
+        );
+        let (mut a, mut b) = (before, m.live_solids.clone());
+        a.sort_by_key(|h| h.index());
+        b.sort_by_key(|h| h.index());
+        assert_eq!(a, b, "a rejected pad must leave the live model untouched");
+    }
+
+    /// The kernel's answer for a boss that misses the face, stated on its own so nobody "fixes" the
+    /// boolean to reject it: fusing two solids that do not touch **is** two solids, and both are
+    /// whole. Only `pad` refuses that outcome, because a pad is defined as material joined to a face
+    /// (`pad_overhang_off_the_face_is_rejected`).
+    #[test]
+    fn a_touchless_boss_fuses_into_two_solids() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        // Shares the z = 1 plane class with the base's top, but sits far away in x/y — so the plane
+        // carries two separate bodies, which is exactly what `hole_roots` used to refuse.
+        let boss = m.add_cuboid(
+            Point3::from_array([1.8, 1.8, 1.0]),
+            Point3::from_array([2.2, 2.2, 1.3]),
+        );
+        let solids = boolean(&mut m, BoolKind::Fuse, base, boss).unwrap();
+        assert_eq!(solids.len(), 2, "disjoint operands stay two solids");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let mut vols: Vec<f64> = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .collect();
+        vols.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        assert!(
+            (vols[0] - 0.048).abs() < 1e-12 && (vols[1] - 1.0).abs() < 1e-12,
+            "both pieces whole: {vols:?}"
+        );
+    }
+
+    #[test]
+    fn pocket_through_overhang_is_rejected() {
+        // An overhang pocket deep enough to pierce the far side is not blind — no single floor.
+        // Honest reject via whichever path fires (the overhang detector declines, the seam path
+        // rejects the mixed contact), mirroring `pocket_through_the_solid_is_rejected`.
+        let (mut m, top) = cube_with_top();
+        let got = apply(&mut m, &pocket_op(top, edge_overhang_profile(), 1.5));
+        assert!(
+            matches!(got, Err(OpError::Boolean(_)) | Err(OpError::PocketNotBlind)),
+            "through overhang must reject honestly, got {got:?}"
+        );
+    }
+
+    #[test]
+    fn pad_step_exports() {
+        // The boss (holed outer face + walls + cap) exports without error.
+        let (mut m, top) = cube_with_top();
+        apply(&mut m, &pad_op(top, small_square(), 0.5)).unwrap();
+        let step = nacre_step::to_step(&m).expect("boss exports");
+        assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
+    }
+
+    /// A prism raised on a `(1,1,1)`-slanted sketch plane, its far cap holding a blind pocket. The
+    /// cap and its two anti-parallel side walls meet in a triple whose `raw` coefficients are
+    /// exactly dependent (`det = 0`); before family #3's dir-sign fix the guard read `sqrt`-rounded
+    /// unit normals, called that triple non-degenerate, and the consumer aborted on `D = 0`. Now
+    /// the guard reads the same coefficients the consumer does, so the arrangement runs. Volume:
+    /// a `2×2` base × `2` deep block is `8`, less the `0.4²×0.5` pocket.
+    #[test]
+    fn a_pocket_on_a_slanted_face() {
+        let plane =
+            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
+                .unwrap();
+        let mut m = Model::new();
+        let big = Profile2d {
+            points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
+        };
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane,
+                profile: big,
+                dist: 2.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let out = apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)).unwrap();
+        let OpOutput::PocketOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
+        assert!((vol - (8.0 - 0.16 * 0.5)).abs() < 1e-9, "volume {vol}");
+    }
+
+    /// The same slanted cap, but a boss (pad, Fuse) instead of a pocket — the sweep runs the other
+    /// way, a different code path. Volume: the `8` block plus a `0.4²×0.5` stub.
+    #[test]
+    fn a_pad_on_a_slanted_face() {
+        let plane =
+            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
+                .unwrap();
+        let mut m = Model::new();
+        let big = Profile2d {
+            points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
+        };
+        let OpOutput::Extrude { faces, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane,
+                profile: big,
+                dist: 2.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        let out = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: faces[1],
+                profile: small_square(),
+                dist: 0.5,
+            },
+        )
+        .unwrap();
+        let OpOutput::PadOnFace { solid, .. } = out else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let vol = nacre_props::mass_props(&m, solid).unwrap().volume;
+        assert!((vol - (8.0 + 0.16 * 0.5)).abs() < 1e-9, "volume {vol}");
+    }
+
+    #[test]
+    fn pocket_step_exports() {
+        let (mut m, top) = cube_with_top();
+        apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap();
+        let step = nacre_step::to_step(&m).expect("pocket exports");
+        assert!(step.contains("FACE_BOUND("), "the hole emits a FACE_BOUND");
+    }
+
+    /// `pocket_corner_cut` by hand, so the pocket family keeps a regression net that runs without
+    /// OCCT: the unit cube less a `0.4²×0.5` pocket is `0.92`, and the corner box `[0.85,1.15]³`
+    /// bites `0.15³` of solid (it clears the pocket, whose footprint stops at `x = 0.7`).
+    #[test]
+    fn a_corner_cut_off_a_pocketed_cube() {
+        let (mut m, pc) = pocketed_cube();
+        let bx = m.add_cuboid(
+            Point3::from_array([0.85, 0.85, 0.85]),
+            Point3::from_array([1.15, 1.15, 1.15]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, bx).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let props = nacre_props::mass_props(&m, r).unwrap();
+        assert!(
+            (props.volume - (0.92 - 0.15 * 0.15 * 0.15)).abs() < 1e-12,
+            "volume {}",
+            props.volume
+        );
+        // A corner bite replaces three 0.15² squares with three more: the area is unchanged at
+        // 6 − 0.16 (the lid's hole) + 0.8 (four pocket walls) + 0.16 (its floor).
+        assert!((props.area - 6.8).abs() < 1e-12, "area {}", props.area);
+    }
+
+    #[test]
+    fn an_edge_slot_through_the_bottom() {
+        // The prism pokes out the base's bottom too, so the old convex/blind overhang-cut gate
+        // declined it and the seam path could not build it either (honest reject). The F2 dispatch
+        // collapse hands it to the unified coplanar driver, which carves the slot exactly:
+        // base 1.0 − (x∈[0.5,1] · y∈[0.25,0.75] · z∈[0,1]) = 1 − 0.25 = 0.75.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let prism = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, -0.5]),
+            Point3::from_array([1.5, 0.75, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, base, prism).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.75).abs() < 1e-12, "volume {vol}");
+    }
+
+    #[test]
+    fn a_boss_that_pierces_the_base_is_not_an_overhang() {
+        // The boss dips below the base's top (its walls cross the base) — a transversal seam cut,
+        // not a coplanar overhang, which the arrangement handles as a normal crossing.
+        // Union = 1.0 + boss 0.75 − overlap 0.125 = 1.625.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let through = m.add_cuboid(
+            Point3::from_array([0.5, 0.25, 0.5]),
+            Point3::from_array([1.5, 0.75, 2.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, through).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.625).abs() < 1e-12, "volume {vol}");
+    }
+
+    // The Cut and Common twins of `fuse_a_corner_overhanging_boss` below — the same two solids,
+    // the same shared z=1 plane. The boss sits entirely above it, so it removes nothing and shares
+    // nothing: Cut is the base untouched and Common is empty. Both used to be rejected
+    // (`coplanar_merge` for Cut; Common's every face dropped, which assembly reported as
+    // `no_outward_shell`). The `Whole` survival cell now checks whether the contact plane actually
+    // separates the solids, which is what makes the whole cap correct here.
+    #[test]
+    fn cut_by_a_corner_overhanging_boss_removes_nothing() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let corner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, base, corner).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
+        // Structure, not just volume: the base comes through as itself. Six faces means the cap was
+        // not split along ∂Q and the boss contributed nothing.
+        let s = m.solids.get(r);
+        assert!(s.cavities.is_empty());
+        assert_eq!(m.shells.get(s.outer).faces.len(), 6, "a clean cube");
+    }
+
+    #[test]
+    fn common_with_a_corner_overhanging_boss_is_empty() {
+        let mut m = Model::new();
+        let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let corner = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, 1.0]),
+            Point3::from_array([1.5, 1.5, 2.0]),
+        );
+        m.rebuild_adjacency();
+        // They meet only along the base's top face — a contact of zero volume.
+        assert!(
+            boolean(&mut m, BoolKind::Common, base, corner)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn fuse_an_overhanging_boss_onto_a_non_convex_solid() {
+        // A boss cantilevers off the +x side face of a top-pocketed cube (non-convex solid),
+        // overhanging the bottom edge. The whole-solid gate used to block it; the contact face
+        // (+x side) is a convex square, so the footprint gate admits it and the Fuse reconstruction
+        // is local (the far pocket is verbatim-copied). Volume: pocketed 0.92 + boss 0.25 = 1.17.
+        let (mut m, pc) = top_pocketed_cube();
+        let boss = m.add_cuboid(
+            Point3::from_array([1.0, 0.25, -0.25]),
+            Point3::from_array([1.5, 0.75, 0.75]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Fuse, pc, boss).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        assert!((nacre_props::mass_props(&m, r).unwrap().volume - 1.17).abs() < 1e-12);
+    }
+
+    #[test]
+    fn cut_a_blind_pocket_into_a_non_convex_solid() {
+        // A blind pocket carved into an already-pocketed (non-convex) cube: a second contained
+        // top-flush prism in a corner away from the first pocket. The kept solid `a` is non-convex,
+        // which the pocket contact now admits (the gates are convexity-agnostic). Removed
+        // 0.2·0.1·0.4 = 0.008 on top of the first pocket's 0.08 → 1 − 0.08 − 0.008 = 0.912.
+        let (mut m, pc) = pocketed_cube();
+        let corner = m.add_cuboid(
+            Point3::from_array([0.05, 0.1, 0.6]),
+            Point3::from_array([0.25, 0.2, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, pc, corner).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 0.912).abs() < 1e-12, "volume {vol}");
+    }
+
+    #[test]
+    fn cut_a_non_convex_blind_pocket() {
+        // A blind pocket with a non-convex (L-shaped) footprint: the cutter prism is non-convex,
+        // which the pocket contact now admits. The L extrudes to z∈[0,0.5], top-flush on the base's
+        // z=0.5 face, blind. L area = 0.6² − 0.3² = 0.27, depth 0.5 → removed 0.135; base 3²·1.5 =
+        // 13.5 → 13.365.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, -1.0]),
+            Point3::from_array([2.0, 2.0, 0.5]),
+        );
+        let l = Profile2d {
+            points: vec![
+                p2(-0.3, -0.3),
+                p2(0.3, -0.3),
+                p2(0.3, 0.0),
+                p2(0.0, 0.0),
+                p2(0.0, 0.3),
+                p2(-0.3, 0.3),
+            ],
+        };
+        let OpOutput::Extrude { solid: lp, .. } = apply(&mut m, &extrude_op(l, 0.5)).unwrap()
+        else {
+            unreachable!()
+        };
+        let r = boolean_one(&mut m, BoolKind::Cut, base, lp).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((vol - 13.365).abs() < 1e-12, "volume {vol}");
+    }
+
+    #[test]
+    fn a_pocket_that_punches_through_drills_a_bore() {
+        // A top-flush tool that pokes out the base's bottom: the pocket becomes a through hole.
+        // The exit face has to come out annular, and until the coplanar reconstruct learned to
+        // emit a hole it came out whole instead, leaving the bore's walls nothing to close
+        // against — an open shell the assembly guard rejected. (Honest reject, never a wrong
+        // answer; the previous cell pinned it as such.)
+        //
+        // Area is the assertion that matters here: volume alone cannot tell a bore from a shape
+        // that merely displaces the same material. 0.75 (top) + 0.75 (bottom) + 4 (sides) +
+        // 2.0 (the bore's four inner walls) = 7.5, against 6.0 for the cube.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let through = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, -0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Cut, base, through).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let p = nacre_props::mass_props(&m, r).unwrap();
+        assert!((p.volume - 0.75).abs() < 1e-12, "volume {}", p.volume);
+        assert!((p.area - 7.5).abs() < 1e-12, "area {}", p.area);
+        // A bore, not a void: no cavity shell, and both caps carry the hole (the top from the
+        // coincident contact, the bottom from the section the tool cuts through it).
+        let s = m.solids.get(r);
+        assert!(s.cavities.is_empty(), "a through hole is not a cavity");
+        let faces = &m.shells.get(s.outer).faces;
+        assert_eq!(faces.len(), 10, "6 base faces + the bore's 4 walls");
+        assert_eq!(
+            faces
+                .iter()
+                .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
+                .count(),
+            2,
+            "both caps are annular"
+        );
+    }
+
+    #[test]
+    fn a_boss_that_punches_through_keeps_the_stub() {
+        // The Fuse twin, and the same emission path: the tool's a-side face keeps `P∖Q`, so the
+        // base's bottom needs the same hole for the stub below it to join on. Volume
+        // 1 + 0.5·0.5·0.5 = 1.125; area 1.0 (top, the flush tool cap dissolves into it) + 0.75
+        // (bottom) + 4 (sides) + 1.0 (stub walls) + 0.25 (stub floor) = 7.0.
+        let mut m = Model::new();
+        let base = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let through = m.add_cuboid(
+            Point3::from_array([0.25, 0.25, -0.5]),
+            Point3::from_array([0.75, 0.75, 1.0]),
+        );
+        let r = boolean_one(&mut m, BoolKind::Fuse, base, through).unwrap();
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "{vs:?}");
+        let p = nacre_props::mass_props(&m, r).unwrap();
+        assert!((p.volume - 1.125).abs() < 1e-12, "volume {}", p.volume);
+        assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
+        let s = m.solids.get(r);
+        assert_eq!(
+            m.shells
+                .get(s.outer)
+                .faces
+                .iter()
+                .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
+                .count(),
+            1,
+            "only the bottom is annular — the flush top merges away"
+        );
+    }
