@@ -59,12 +59,163 @@ impl Adjacency {
     }
 }
 
+/// Union-find root of `x` (path compression); roots are the smaller index (deterministic).
+fn uf_find(parent: &mut [usize], x: usize) -> usize {
+    let mut r = x;
+    while parent[r] != r {
+        r = parent[r];
+    }
+    let mut c = x;
+    while parent[c] != r {
+        let next = parent[c];
+        parent[c] = r;
+        c = next;
+    }
+    r
+}
+
+fn uf_union(parent: &mut [usize], a: usize, b: usize) {
+    let (ra, rb) = (uf_find(parent, a), uf_find(parent, b));
+    if ra != rb {
+        parent[ra.max(rb)] = ra.min(rb);
+    }
+}
+
+/// The vertices whose surface **link is not a single circle** — non-manifold "pinch" points where
+/// two or more face-fans meet at one vertex (two cubes touching only at a corner; a cut whose tool
+/// corner lands on a target's concave corner). Pure combinatorics on the reverse index, no
+/// coordinates:
+///
+/// At a vertex `V`, each incident face contributes its two `V`-edges as an arc of the link (a face
+/// using edge `e` at `V` has `V` as an endpoint of `e`, and `e` is one of the two loop edges the
+/// face turns through at `V`). Union those arcs over `V`'s edges and count connected components. A
+/// manifold vertex's link is one cycle → **one component**; a pinch is **≥2 components** (or a face
+/// using ≠2 edges at `V` — a pinched face passing through `V` twice).
+///
+/// **Soundness** rests on the caller's edges being manifold (every edge used by exactly two faces —
+/// the boolean's closed-shell guard, and what a closed solid always satisfies): the link is then
+/// 2-regular, so its components are exactly its cycles (fans).
+///
+/// **Scope — planar (polyhedral) topology.** A polyhedral corner uses exactly two of its vertex's
+/// edges per face; the function **abstains** (treats the vertex as manifold) at any vertex where a
+/// face uses a different number — a cylinder's circular cap (one closed edge), its seam edge (used
+/// twice by the lateral face), or a self-loop rim edge (`[v, v]`). These are parametric artifacts
+/// this link analysis cannot classify (M6 quadrics), never a *planar* pinch, so real planar pinches
+/// are unaffected. (A genuinely pinched *face* — a loop through `V` twice — is thus not flagged
+/// here; the M5 boolean never emits one, and the edge check covers non-manifold edges.)
+pub fn nonmanifold_vertices(
+    vertex_edges: &HashMap<Handle<Vertex>, Vec<Handle<Edge>>>,
+    edge_uses: &HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>>,
+) -> Vec<Handle<Vertex>> {
+    let mut out = Vec::new();
+    for (&v, raw_edges) in vertex_edges {
+        // Distinct edges at `v` (a self-loop `[v, v]` is listed twice by the caller).
+        let mut seen = std::collections::HashSet::new();
+        let edges: Vec<Handle<Edge>> = raw_edges.iter().copied().filter(|e| seen.insert(*e)).collect();
+        let idx: HashMap<Handle<Edge>, usize> =
+            edges.iter().enumerate().map(|(i, &e)| (e, i)).collect();
+        // face → the local indices of the `V`-edges it uses (its corner at `V`).
+        let mut face_edges: HashMap<Handle<Face>, Vec<usize>> = HashMap::new();
+        for &e in &edges {
+            for &(f, _) in edge_uses.get(&e).map(Vec::as_slice).unwrap_or(&[]) {
+                face_edges.entry(f).or_default().push(idx[&e]);
+            }
+        }
+        // Abstain on non-polyhedral corners (see scope note).
+        if face_edges.values().any(|es| es.len() != 2) {
+            continue;
+        }
+        let mut parent: Vec<usize> = (0..edges.len()).collect();
+        for es in face_edges.values() {
+            uf_union(&mut parent, es[0], es[1]);
+        }
+        let components: std::collections::HashSet<usize> =
+            (0..edges.len()).map(|i| uf_find(&mut parent, i)).collect();
+        if components.len() > 1 {
+            out.push(v);
+        }
+    }
+    out.sort_unstable_by_key(|h| h.index());
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    use super::nonmanifold_vertices;
     use crate::topology::{Edge, Face, HalfEdge, Loop};
-    use crate::{Model, Orientation, Origin, Shell, Solid, Vertex};
+    use crate::{Handle, Model, Orientation, Origin, Shell, Solid, Vertex};
     use nacre_geom::{Curve, Line, Plane, Surface};
     use nacre_math::Point3;
+    use std::collections::HashMap;
+
+    /// The pinch detector is per-vertex: a single face-fan at a vertex is manifold, two+ fans is a
+    /// pinch — and **every** pinch is flagged independently, so an *even* number of them is caught
+    /// (which an Euler-parity count cannot: two pinches flip χ back to even). Builds the reverse-index
+    /// maps directly with minted handles (the detector reads only the maps, never the stores).
+    #[test]
+    fn nonmanifold_vertices_flags_each_pinch_even_count() {
+        let mut m = Model::new();
+        let curve = m.curves.push(Curve::Line(
+            Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
+        ));
+        let surface = m.surfaces.push(Surface::Plane(
+            Plane::from_point_normal(
+                Point3::origin(),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .unwrap(),
+        ));
+        let mk_v = |m: &mut Model| {
+            m.vertices.push(Vertex {
+                point: Point3::origin(),
+                origin: Origin::Constructed,
+            })
+        };
+        let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
+        let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
+        // Add one triangular face-fan (3 edges from `apex`, 3 faces cyclically joining them).
+        let add_fan = |m: &mut Model,
+                           apex: Handle<Vertex>,
+                           vertex_edges: &mut HashMap<Handle<Vertex>, Vec<Handle<Edge>>>,
+                           edge_uses: &mut HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>>| {
+            let e: Vec<Handle<Edge>> = (0..3)
+                .map(|_| {
+                    let other = mk_v(m);
+                    m.edges.push(Edge {
+                        curve,
+                        bounds: Some([apex, other]),
+                        origin: Origin::Constructed,
+                    })
+                })
+                .collect();
+            vertex_edges.entry(apex).or_default().extend(e.iter().copied());
+            for i in 0..3 {
+                let f = m.faces.push(Face {
+                    surface,
+                    outer: Loop { half_edges: vec![] },
+                    inner: vec![],
+                    orientation: Orientation::Forward,
+                });
+                edge_uses.entry(e[i]).or_default().push((f, true));
+                edge_uses.entry(e[(i + 1) % 3]).or_default().push((f, true));
+            }
+        };
+        // Manifold apex: one fan. Two pinched apexes: two fans each.
+        let ok = mk_v(&mut m);
+        add_fan(&mut m, ok, &mut vertex_edges, &mut edge_uses);
+        let pinch1 = mk_v(&mut m);
+        add_fan(&mut m, pinch1, &mut vertex_edges, &mut edge_uses);
+        add_fan(&mut m, pinch1, &mut vertex_edges, &mut edge_uses);
+        let pinch2 = mk_v(&mut m);
+        add_fan(&mut m, pinch2, &mut vertex_edges, &mut edge_uses);
+        add_fan(&mut m, pinch2, &mut vertex_edges, &mut edge_uses);
+
+        let mut got = nonmanifold_vertices(&vertex_edges, &edge_uses);
+        got.sort_unstable_by_key(|h| h.index());
+        let mut want = vec![pinch1, pinch2];
+        want.sort_unstable_by_key(|h| h.index());
+        assert_eq!(got, want, "both pinches flagged, the manifold fan is not");
+    }
 
     /// Two triangles sharing edge v0–v1, wound so the shared edge is used once
     /// forward and once reversed. Exercises `rebuild` independent of the cube.

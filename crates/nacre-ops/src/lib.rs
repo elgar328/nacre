@@ -122,10 +122,21 @@ pub(crate) mod tag {
     /// The assembled result has an **odd Euler characteristic** (`V − E + F − L_i`), which no
     /// closed 2-manifold can have (it must equal the even `2(S − G)`) — so the arrangement produced
     /// a malformed solid and the boolean rejects rather than return it (DNA: never silently wrong).
-    /// The representative case is a coplanar degeneracy where a cutter's convex corner coincides
-    /// exactly with the target's concave corner (three planes meeting at one point), which the
-    /// per-plane trace mis-assembles; rotation-independent. Checked post-assembly in `boolean`.
+    /// This is the Euler-parity backstop for malformity that is *not* a pinch (see
+    /// `NON_MANIFOLD_VERTEX`); e.g. a dropped face. Rotation-independent. Checked post-assembly in
+    /// `boolean`, per solid.
     pub const EULER_PARITY: &str = "euler_parity";
+    /// The assembled result has a **non-manifold vertex** — a "pinch" where two or more face-fans
+    /// meet at one point (a cutter's convex corner exactly on the target's concave corner; two
+    /// solids touching only at a corner), even though every edge is manifold. No valid 2-manifold
+    /// solid has one, so the boolean rejects with this clear reason rather than the incidental
+    /// `EULER_PARITY` (which also misses an *even* number of pinches). Rotation-independent; checked
+    /// per solid post-assembly via `nacre_topo::nonmanifold_vertices`.
+    pub const NON_MANIFOLD_VERTEX: &str = "non_manifold_vertex";
+    /// The assembled result has an even Euler characteristic but a **negative genus** (`S − χ/2 < 0`)
+    /// — more handles than a solid can have, so it is not a valid closed 2-manifold. A count-based
+    /// backstop below the pinch and parity checks; checked per solid post-assembly.
+    pub const NEGATIVE_GENUS: &str = "negative_genus";
     pub const THREE_PLANES: &str = "three_planes";
     /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
     /// coordinate. The triple is the truth and the coordinate only its cache (overview §5), so this
@@ -534,13 +545,13 @@ pub mod tests {
     // sound end-to-end on rotated (rounded-irrational) geometry.
 
     /// A cutter's convex corner landing exactly on the target's concave corner — three planes
-    /// (x=1,y=1,z=1) meeting at one point (1,1,1), six faces there — is a coplanar degeneracy the
-    /// per-plane trace mis-assembles into an odd-Euler (non-closed) solid. The `boolean` Euler-parity
-    /// self-check rejects it (`EULER_PARITY`) rather than return the malformed solid, leaving the live
-    /// model untouched. **Rotation-independent**: both the axis-aligned and the rotated framings
-    /// (which take the exact and the CIP-kernel path respectively) hit the same defect and reject.
-    /// R = a cube minus a far-corner octant; C = a cube whose +corner is that removed octant's inner
-    /// corner. (Coplanar contact away from a corner works — [`a_rotated_boolean_result_can_be_cut_again`].)
+    /// (x=1,y=1,z=1) meeting at one point (1,1,1), six faces there — makes a **non-manifold pinch**
+    /// (two face-fans touching at the point). No valid 2-manifold solid exists, so `boolean` rejects
+    /// with the clear `NON_MANIFOLD_VERTEX` reason (not the incidental `EULER_PARITY`), leaving the
+    /// live model untouched. **Rotation-independent**: both the axis-aligned and the rotated framings
+    /// (exact and CIP-kernel paths) hit the same pinch and reject. R = a cube minus a far-corner
+    /// octant; C = a cube whose +corner is that removed octant's inner corner. (Coplanar contact away
+    /// from a corner works — [`a_rotated_boolean_result_can_be_cut_again`].)
     #[test]
     fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
@@ -571,11 +582,45 @@ pub mod tests {
                 (r, c)
             };
             let live = m.live_solids.clone();
-            assert_rejects(|| boolean(&mut m, BoolKind::Cut, r, c), tag::EULER_PARITY);
+            assert_rejects(|| boolean(&mut m, BoolKind::Cut, r, c), tag::NON_MANIFOLD_VERTEX);
             assert_eq!(m.live_solids, live, "reject must not mutate the live set");
         };
         run(false); // axis-aligned
         run(true); // rotated
+    }
+
+    /// Two cubes touching only at the corner (1,1,1): their Fuse pinches two solids at a single
+    /// vertex (non-manifold), so it is rejected with the clear `NON_MANIFOLD_VERTEX` — the direct,
+    /// minimal pinch (every edge is manifold; only the vertex is the defect).
+    #[test]
+    fn two_cubes_touching_at_a_corner_fuse_is_non_manifold() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        m.rebuild_adjacency();
+        let live = m.live_solids.clone();
+        assert_rejects(|| boolean(&mut m, BoolKind::Fuse, a, b), tag::NON_MANIFOLD_VERTEX);
+        assert_eq!(m.live_solids, live, "reject must not mutate the live set");
+    }
+
+    /// The kernel's validator now catches the pinch too (it previously only exposed it indirectly as
+    /// `EulerParity`). Bypass `boolean`'s reject via `arrangement::boolean` to obtain the malformed
+    /// corner-touch Fuse solid, then confirm `validate` reports a `NonManifoldVertex`.
+    #[test]
+    fn validate_reports_the_non_manifold_pinch() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        m.rebuild_adjacency();
+        crate::arrangement::boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        m.rebuild_adjacency();
+        let issues = nacre_validate::validate(&m);
+        assert!(
+            issues
+                .iter()
+                .any(|v| matches!(v, nacre_validate::Violation::NonManifoldVertex { .. })),
+            "validate must flag the pinch: {issues:?}"
+        );
     }
 
     /// Predicates over a rotated result's witness planes are rotation-invariant against the same

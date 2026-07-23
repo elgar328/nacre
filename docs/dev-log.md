@@ -2291,3 +2291,13 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
   - **★ 항상-on이 기존 테스트를 안 깨뜨렸다** — 전체 스위트 통과. odd-chi silent-wrong을 몰래 반환하던 케이스는 없었다(closed-shell 가드가 non-manifold를 이미 잡아, parity는 그 위 odd-chi만 추가로 봉인).
   - **미포착(정직):** even-chi 무효(음수 genus·off-plane)는 parity 미포착 — negative-genus는 같은 카운트로 2줄이면 될 자명한 확장이나 이 버그는 parity라 후속으로 남김. **이 퇴화의 처리(valid 솔리드 생성=trace 수정)도 별개 후속** — codimension-3라 드물고 parity가 안전 바닥.
 - **검증:** corner-coincident(비회전·회전 둘 다) `EULER_PARITY` 거절·live 무변; boss/pocket을 `if let Ok` 완화가 아니라 성공 단언으로 강화(회귀 복원); reuse-stress 9/9·rotation stress·OCCT 93 불변. workspace 495·clippy 0.
+
+---
+
+**M5 하드닝 — 명시적 non-manifold *정점(pinch)* 검출.** parity 자기검증이 pinch(정점 하나에서 표면이 두 fan으로 갈라짐 — 오목-코너/두 큐브 코너접촉)를 **홀수 오일러 특성으로 우연히** 잡던 것을, 명시적 검출로 대체·보강했다.
+
+- **왜 parity로 부족한가.** (1) 이유가 불명확(pinch인데 `EULER_PARITY`). (2) **짝수 pinch를 놓친다** — pinch 하나=χ+1(홀수), 둘=짝수 → 통과 = silent-wrong. (3) `result_euler_chi`가 **전체-결과 합산**이라 sever/disjoint로 홀수-χ 솔리드 2개면 합이 짝수라 놓침(같은 결함). ∴ parity 단독은 non-manifold 정점에 건전하지 않다. 게다가 `nacre-validate`도 정점 pinch를 못 잡았다(모서리만) — 정식 검증기의 진짜 구멍.
+- **검출 알고리즘(topo `nonmanifold_vertices`, 좌표 무관):** 정점 V의 각 면이 V에 닿는 2 모서리를 union-find로 묶어 **연결성분(fan) 수**를 센다. 1개=manifold, ≥2개=pinch. `Adjacency`의 `vertex_edges`+`edge_uses`만 사용. **건전성:** closed-shell 가드가 edge use=2를 선행 보장 → link가 2-정규 → 연결성분=cycle(fan) 정확.
+- **★ 실린더 seam이 planar 가정을 깼다(validate 착지에서 발견).** 실린더의 seam 정점(원형 self-loop 모서리, seam 모서리를 lateral 면이 2회 사용, 원형 cap 면이 모서리 1개만 사용)은 "면당 V-모서리 2개" 가정을 위반해 **false-positive**(cylinder_is_clean 등 3개 실패). → **abstain**: 면이 V의 모서리를 정확히 2개 아닌 다르게 쓰는 정점은 검출 보류(manifold 간주). planar 다면체 코너는 항상 2개라 실제 planar pinch는 무영향, cylinder(M6) 아티팩트만 회피. (대가: 진짜 pinched-*face*는 여기서 안 잡음 — M5 boolean은 안 만들고, 모서리 검사가 non-manifold 모서리는 커버.)
+- **3곳:** topo `nonmanifold_vertices`(공유, 맵만 받아 Model 무의존) · validate `NonManifoldVertex` violation(check_manifold) · ops `boolean`의 `check_result_topology`(result_euler_chi 대체, **per-solid**로 정점·parity·genus 검사 → `NON_MANIFOLD_VERTEX`/`EULER_PARITY`/`NEGATIVE_GENUS`, per-solid이라 합산-짝수 상쇄 결함도 해소).
+- **검증:** 오목-코너(비회전·회전)·두-큐브-코너접촉 → `NON_MANIFOLD_VERTEX` 거절·live 무변. 손으로 만든 위상으로 **짝수 pinch 둘 다 검출**(parity 근본한계 실증)·manifold fan 무오탐. 실제 pinch에 `validate`가 `NonManifoldVertex` 보고. workspace 495→498·clippy 0·OCCT 93·실린더/기존 전부 불변.

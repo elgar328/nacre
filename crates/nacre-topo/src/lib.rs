@@ -13,7 +13,7 @@
 mod adjacency;
 mod topology;
 
-pub use adjacency::Adjacency;
+pub use adjacency::{Adjacency, nonmanifold_vertices};
 pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
 
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
