@@ -708,7 +708,7 @@ fn sign_with_floor(val: &BigFloat, mag: f64, prec: usize) -> Option<bool> {
 
 /// CIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
 /// rotated points, the triangle three rotated points. Interval filter → astro-float
-/// escalation; a below-floor `D` or `M` is [`Orient::Zero`] (declare-0, §6 "ask the
+/// escalation; a below-floor `D` or `M` is [`Orient::Zero`] (declare-0, "ask the
 /// user"). The `Discovered`-seam analogue of [`orient3d_judge`]; boolean wiring is
 /// stage 3.
 #[allow(clippy::too_many_arguments)]
@@ -1125,7 +1125,7 @@ mod tests {
     }
 
     /// Declare-0: four **exactly coplanar** rational points (tol 0) → the determinant is
-    /// exactly 0 → `Orient::Zero` (the §6 ask-the-user case).
+    /// exactly 0 → `Orient::Zero` (the ask-the-user case).
     #[test]
     fn orient3d_coplanar_is_zero() {
         let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);

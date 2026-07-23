@@ -2668,7 +2668,7 @@ pub mod tests {
         assert!(reach.faces.contains(&top_face));
     }
 
-    /// §5 explicit sharing (overhaul #3): a prism built with a shared base-cap
+    /// explicit sharing (overhaul #3): a prism built with a shared base-cap
     /// surface reuses that `Surface` handle for its flush cap, and reconciles the
     /// cap's face orientation so the materialized outward normal stays `−sweep`.
     #[test]

@@ -1,4 +1,4 @@
-//! Exact rational scalars — the overhaul's §4 value engine — **and the 2D-frame
+//! Exact rational scalars — the overhaul's exact rational value engine — **and the 2D-frame
 //! exact-sign judgment they enable** (the [`frame2`] module).
 //!
 //! The truth layer for user-input dimensions and angles: a value the user typed
@@ -8,7 +8,7 @@
 //! complementary, not redundant.
 //!
 //! - [`Rat`] — a rational scalar (tol 0). Fixed-width `Ratio<i128>` with
-//!   **checked** arithmetic: overflow is a *signal* (the §4 downgrade trigger),
+//!   **checked** arithmetic: overflow is a *signal* (the downgrade trigger),
 //!   not a panic or silent wrap. The caller downgrades that value's cache to
 //!   f64/double-double and records the tol on its `Origin`; the definition is
 //!   never lost.
@@ -17,12 +17,12 @@
 //!   `cos`/`sin` realization crosses into f64 (the irrational boundary); the
 //!   90°-family (`0/90/180/270°`) realizes to exact rationals `{0, ±1}` (Niven),
 //!   so those rotations of a rational point stay tol 0; and `cos_hp`/`sin_hp`
-//!   realize in arbitrary precision (astro-float) for the judgment path (§4/§6).
+//!   realize in arbitrary precision (astro-float) for the judgment path.
 //!
 //! Scope (overhaul ports #1–#2): the exact value engine plus the 2D-frame sign
 //! judgment. Still deferred to later cells: the unified `Scalar { value, tol }`
-//! wrapper (§4), chained-rotation transport tol (3D axis changes), the declare-0
-//! → user-confirmation policy (§6), and the kernel wiring that makes geometry
+//! wrapper, chained-rotation transport tol (3D axis changes), the declare-0
+//! → user-confirmation policy, and the kernel wiring that makes geometry
 //! carry these. Ported from the verified 2D experiment (`experiments/exact2d`).
 
 use num_rational::Ratio;
@@ -51,7 +51,7 @@ pub mod frame3;
 pub use frame2::Orient;
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
-/// so the caller sees the §4 downgrade trigger explicitly; on overflow the kernel
+/// so the caller sees the downgrade trigger explicitly; on overflow the kernel
 /// switches that value's cache to f64/double-double and tags its `Origin` with
 /// the resulting tol, while the definition (the op-log of input rationals) is
 /// preserved. Overflow is far from normal use — adversarial coprime-denominator
@@ -70,7 +70,7 @@ impl Rat {
         Rat(Ratio::from_integer(n))
     }
 
-    /// Exact addition; `None` on overflow (§4 downgrade trigger).
+    /// Exact addition; `None` on overflow (downgrade trigger).
     pub fn checked_add(self, rhs: Self) -> Option<Self> {
         self.0.checked_add(&rhs.0).map(Rat)
     }
@@ -85,14 +85,14 @@ impl Rat {
         self.0.checked_mul(&rhs.0).map(Rat)
     }
 
-    /// Best-f64 image (for the §4 downgrade path and for measurement/export).
+    /// Best-f64 image (for the downgrade path and for measurement/export).
     pub fn to_f64(self) -> f64 {
         *self.0.numer() as f64 / *self.0.denom() as f64
     }
 
     /// The **exact** rational value of an f64 (`mantissa · 2^exp`). `None` for a
     /// non-finite input or when the exact numerator/denominator overflows i128
-    /// (subnormals, extreme exponents — the §4 downgrade trigger). Round-trips:
+    /// (subnormals, extreme exponents — the downgrade trigger). Round-trips:
     /// `to_f64(try_from_f64(x).unwrap()) == x` for finite f64 in the normal CAD range.
     /// The bridge from an f64 coordinate cache to an exact `[Rat]` definition.
     pub fn try_from_f64(x: f64) -> Option<Self> {
@@ -139,7 +139,7 @@ impl Rat {
         *self.0.denom()
     }
 
-    /// Bit-width of the larger of |numer|, |denom| — the "size" §4 watches for bit
+    /// Bit-width of the larger of |numer|, |denom| — the "size" the kernel watches for bit
     /// growth under chained rational arithmetic (the downgrade threshold).
     pub fn bit_width(self) -> u32 {
         let n = self.numer().unsigned_abs();
@@ -152,7 +152,7 @@ impl Rat {
 /// (rational). Accumulation is exact: turning by a rational angle repeatedly and
 /// completing a full turn lands back on exactly `0` — no f64 drift. `cos`/`sin`
 /// realization crosses into f64 (deg→rad via π): the irrational-realization
-/// boundary (§4), where the kernel uses double-double / arbitrary precision for
+/// boundary, where the kernel uses double-double / arbitrary precision for
 /// *judgment* (a later cell). The angle stays exact; only its realized coordinate
 /// carries tol.
 ///
@@ -165,7 +165,7 @@ pub struct Angle(Rat); // invariant: 0 <= inner < 360
 
 impl Angle {
     /// Normalize `deg` into `[0, 360)` (exact). `None` on overflow during
-    /// reduction (the §4 downgrade trigger). Assumes `deg` is within a few turns
+    /// reduction (the downgrade trigger). Assumes `deg` is within a few turns
     /// of the range — a multi-turn amount is the future `Sweep` type's job, so
     /// this reduces by subtracting whole turns rather than a `360·denom` divide
     /// (which would overflow at large denominators).
@@ -203,7 +203,7 @@ impl Angle {
     }
 
     /// `(cos, sin)` realized in arbitrary precision at `prec` bits — the judgment
-    /// path (§4/§6). astro-float replaces twofloat here (H1.5: twofloat's trig was
+    /// path. astro-float replaces twofloat here (H1.5: twofloat's trig was
     /// f64-level near zero-crossings). Higher `prec` gives ground truth; the
     /// default [`HP_PREC`] gives the working judgment realization. (numer/denom
     /// pass through f64, exact for the small values used here; a general large-
@@ -416,7 +416,7 @@ mod tests {
         }
     }
 
-    /// The core §4 property in miniature: exact rational accumulation does not
+    /// The core rational-representation property in miniature: exact rational accumulation does not
     /// drift, where the f64 control does. `(1/10)` summed ten times is exactly
     /// `1`, but `0.1_f64` summed ten times is not `1.0`.
     #[test]
@@ -435,7 +435,7 @@ mod tests {
         assert_ne!(f, 1.0); // 0.9999999999999999 — the drift Rat avoids
     }
 
-    /// The §4 "thin film" example: `1.1 × 7` must be exactly `7.7`. In rationals
+    /// The "thin film" example: `1.1 × 7` must be exactly `7.7`. In rationals
     /// `11/10 × 7 = 77/10`; in f64 `1.1 * 7.0` is not `7.7`.
     #[test]
     fn one_point_one_times_seven_is_exact() {
@@ -446,8 +446,8 @@ mod tests {
         assert_ne!(1.1_f64 * 7.0, 7.7); // f64 cannot represent 7.7 exactly
     }
 
-    /// §4 measurement: with fixed-width i128, chained coprime-denominator
-    /// accumulation *does* overflow (the finite-precision cliff §4 handles by
+    /// Measurement: with fixed-width i128, chained coprime-denominator
+    /// accumulation *does* overflow (the finite-precision cliff handled by
     /// downgrading). Summing `1/p` over successive primes forces the denominator
     /// toward the primorial, which exceeds i128. This test pins two facts:
     ///   (a) a modest sum (first 8 primes) stays exact — normal use is fine;
@@ -487,7 +487,7 @@ mod tests {
         let (idx, bits) = onset.expect("i128 rational accumulation must overflow within 30 primes");
         // Measurement record (run with `-- --nocapture`).
         eprintln!(
-            "[§4] coprime 1/p accumulation overflows at prime index {idx} (p={}); \
+            "[rational] coprime 1/p accumulation overflows at prime index {idx} (p={}); \
              denominator bit-width just before onset = {bits}",
             PRIMES[idx]
         );
@@ -499,7 +499,7 @@ mod tests {
         );
     }
 
-    /// §4 closure: a rational angle accumulates exactly, so a full turn lands back
+    /// Closure: a rational angle accumulates exactly, so a full turn lands back
     /// on exactly `0` — while the f64 control drifts. `360/7` degrees added seven
     /// times is exactly `360 → 0`; `360.0/7.0` summed seven times in f64 is not
     /// `360.0`.

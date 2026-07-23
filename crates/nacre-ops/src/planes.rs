@@ -352,7 +352,7 @@ pub(crate) fn face_half_edges(face: &Face) -> impl Iterator<Item = &HalfEdge> {
         .chain(face.inner.iter().flat_map(|l| l.half_edges.iter()))
 }
 
-/// Two faces lie on the same plane — by a **shared `Surface` handle** (§5 explicit
+/// Two faces lie on the same plane — by a **shared `Surface` handle** (explicit
 /// sharing: O(1) `Handle` identity, exact, rotation-independent) or, as a fallback,
 /// by the geometric rank-1 `planes_coplanar` test. A referenced coplanar contact —
 /// a pad/pocket cap that reuses its face's surface — is caught by the handle path

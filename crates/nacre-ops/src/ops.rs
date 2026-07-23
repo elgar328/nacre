@@ -318,8 +318,7 @@ pub(crate) fn build_prism(
     let mut faces = Vec::with_capacity(n + 2);
 
     // Base cap: outward normal −N, loop reversed (B_0 -> B_{n-1} -> ... -> B_1).
-    // When padding/pocketing on a face, reuse that face's `Surface` handle (§5
-    // explicit sharing) so the flush contact is a shared-handle coplanar pair the
+    // When padding/pocketing on a face, reuse that face's `Surface` handle (explicit sharing) so the flush contact is a shared-handle coplanar pair the
     // boolean can recognize by `Handle` identity; otherwise push a fresh plane.
     // The materialized outward normal must stay −N, so the face orientation is
     // chosen from the shared surface's stored normal — `surface` and `orientation`
@@ -498,7 +497,7 @@ fn placed_profile_unchecked(
         .collect())
 }
 
-/// A face-local feature built as **tool body + boolean** (roadmap §9 unification): the profile
+/// A face-local feature built as **tool body + boolean**: the profile
 /// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid.
 /// A **contained** footprint takes the contained-coplanar path (empty seam → all
 /// `Origin::Constructed`); one that **reaches past the face** routes to the overhang boolean

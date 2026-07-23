@@ -40,7 +40,7 @@ pub enum CipError {
     /// rotations only (§⑦), so base + chain no longer reproduce the kernel coordinate
     /// and the exact position is not recoverable here.
     TranslateInterleaved,
-    /// An f64 coordinate did not fit an exact i128 rational (§4 downgrade).
+    /// An f64 coordinate did not fit an exact i128 rational (downgrade).
     Downgrade,
     /// A `Discovered` seam's defining surface has fewer than three direct, non-collinear
     /// vertices on its faces, so its plane cannot be reconstructed for the indirect

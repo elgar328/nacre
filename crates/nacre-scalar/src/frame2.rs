@@ -7,7 +7,7 @@
 //! easy cases, and the ambiguous ones **escalate** to arbitrary precision
 //! (astro-float) from the points' exact definitions; a determinant below the
 //! precision floor is a **declare-0** ([`Orient::Zero`]) — the collinear-within-
-//! judgment case where the kernel (later) stops and asks the user (§6).
+//! judgment case where the kernel (later) stops and asks the user.
 //!
 //! [`Pt2`] here is the verified *minimal* point-construction vehicle (rotation
 //! about the origin only). The real deliverable is [`orient2d_judge`], which is
@@ -99,7 +99,7 @@ pub enum Orient {
     Positive,
     Negative,
     /// Declared 0 — collinear within the escalation precision cap. This is the
-    /// `declare-0` case where the kernel (later) stops and asks the user (§6).
+    /// `declare-0` case where the kernel (later) stops and asks the user.
     Zero,
 }
 
