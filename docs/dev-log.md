@@ -2262,3 +2262,12 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **발견(미수정):** `nacre-scalar/frame2.rs`의 "(§6)" ask-user 참조 2곳은 docs-통합 때 overhaul §6→design §9로 이동한 것의 잔재(§6은 이제 연산 층) — CIP 개명 범위 밖이라 남김, 별개 §-참조 정합 후속 후보.
 
 **세 커밋:** `59c26e3`(크레이트) → `51e8b2d`(인용·gloss) → 이 셀.
+
+---
+
+**★ (정돈) 코드 주석의 dangling overhaul §N 참조 제거 — docs-통합의 미완 잔재.** 2026-07-23 docs-통합(overhaul.md·roadmap·winding-engine → design.md §9 흡수)이 **코드 주석 ~31곳의 overhaul 섹션 참조를 놓쳤다.** 통합 게이트가 `overhaul §`(공백)·파일링크만 grep했는데, 이것들은 **bare `§4`/`§5`/`§6`** 또는 `"overhaul's §4"`(아포스트로피)라 안 걸렸고 — 지금 design.md의 **다른 섹션**(§4=위상·§5=tess·§6=연산)을 가리켜 오도했다.
+
+- **접근 = repoint 아니라 제거(사용자 결정).** 소스 주석이 design.md §N을 가리키면 **문서 재구성마다 깨진다**(이번 dangling이 그 증거). repoint는 fragility를 재도입하므로, bare §N만 떼고 산문을 남긴다. 예: `"(§4 downgrade trigger)"` → `"(downgrade trigger)"`, `"asks the user (§6)"` → `"asks the user"`, `"§5 explicit sharing"` → `"explicit sharing"`.
+- **★ bare §N은 파일마다 양의적**이라 blanket sed 금지. `nacre-scalar`의 §4=overhaul(유리수)이지만 `nacre-topo:372`의 §4=design.md §4(위상). DROP은 검증된 overhaul 위치(scalar·cip:43·ops 3사이트·roadmap 1)로 한정, **KEEP 셋(topo:372·geom:68·validate:7·tess:138·design §N·overview §N·"overhaul stage N" phase 라벨) 불가침**. 각 occurrence 개별 확인.
+- **게이트:** 제거 후 `grep §[4-7] crates/`의 non-design/overview 잔여 = 정확히 KEEP 셋 4개뿐. 주석만이라 494/0·clippy 0 불변.
+- **교훈(memory화):** 소스 주석은 design.md §번호를 가리키지 않는다 — 재구성 fragility. 통합류 정리의 무결성 grep은 `overhaul §`뿐 아니라 **bare §N·`'s §N`도** 포함해야 완결.
