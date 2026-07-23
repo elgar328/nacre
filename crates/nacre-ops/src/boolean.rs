@@ -10,7 +10,7 @@ use crate::planes::{PlaneGeom, uf_find};
 use crate::{BoolError, BoolKind, he_start, reject, tag, unordered};
 use nacre_geom::{Curve, Line, Surface};
 use nacre_math::Point3;
-use nacre_scalar::frame3::dir_orient3d_judge;
+use nacre_cip::dir_orient3d_judge;
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,

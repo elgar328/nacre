@@ -17,9 +17,10 @@
 //! H-d/H-f (chain + arbitrary-pivot tol) — the bound never under-estimates the true
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
-use crate::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
-use crate::{Angle, Axis, HP_RM, Orient, Rat};
+use super::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
+use super::HP_RM;
 use astro_float::BigFloat;
+use nacre_scalar::{Angle, Axis, Orient, Rat};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]

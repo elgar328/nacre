@@ -16,6 +16,7 @@ mod boolean;
 mod combinatorics;
 mod ops;
 mod planes;
+mod rotated_vertex;
 mod tolerant;
 mod transform;
 
@@ -226,7 +227,7 @@ pub mod tests {
     use crate::{boolean::*, ops::*, planes::*};
     use nacre_geom::intersect::{planes_coplanar, three_planes};
     use nacre_geom::{Plane, Surface};
-    use nacre_scalar::frame3::Pt3;
+    use nacre_cip::Pt3;
     use nacre_topo::{Loop, Orientation, Origin, VertexDef};
     use proptest::prelude::*;
     use std::collections::HashMap;

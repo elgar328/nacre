@@ -25,10 +25,10 @@ rayon = { workspace = true, optional = true }
 
 [features]
 # Parallelize the independent read-only predicate phases of the boolean via rayon, and
-# switch `Pt3`'s hp cache to `Arc<OnceLock>` (through `nacre-scalar/parallel`). On by
+# switch `Pt3`'s hp cache to `Arc<OnceLock>` (through `nacre-cip/parallel`). On by
 # default; `--no-default-features` gives the serial, rayon-free, `Rc<OnceCell>` build.
 default = ["parallel"]
-parallel = ["dep:rayon", "nacre-scalar/parallel"]
+parallel = ["dep:rayon", "nacre-cip/parallel"]
 
 [dev-dependencies]
 proptest.workspace = true

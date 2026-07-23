@@ -1,45 +1,19 @@
-//! Toleranced boolean predicates (overhaul stage 3): the geom sign predicates routed
-//! through CIP so they stay exact under rotation.
-//!
-//! A rotated face's plane coefficients and `tri` coordinates are rounded irrationals, so
-//! the axis-aligned geom predicates (`nacre_geom::intersect`) are exact only w.r.t. the
-//! *rounded* geometry. When a predicate's planes are rotated, these wrappers rebuild each
-//! plane from the three exact `Pt3` its face carries ([`Witness::tri_pt3`], or — for the
-//! axis-aligned operand of a *mixed*-rotation boolean, whose `tri_pt3` is `None` — exactly
-//! from its `tri` coordinates, see [`plane_def`]) and decide the sign with the
-//! `nacre-scalar::frame3` judges instead.
-//!
-//! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper asks
-//! [`any_rotated`] of just the planes it touches: all-axis-aligned → the exact geom hot path
-//! (never builds a `Pt3`); any rotated → the frame3 judge. So a mixed-rotation boolean keeps
-//! the axis-aligned operand's own predicates on the fast path, finer than a per-boolean flag.
-//!
-//! All four are wired into the live arrangement: [`t_orient3d`] (order_along, side_of),
-//! [`t_cmp_coord`] (loop_winding) and [`t_plane_pair_dir_sign`] (dir_sign, turn_at,
-//! every_ray) in stage 3b-i;
-//! with a vertex handle + `model` threaded down) in 3b-ii.
+//! The b-rep side of the toleranced predicates: `nacre-ops`'s arrangement tables
+//! ([`PlaneGeom`], [`FaceInfo`]) implement the [`Witness`]/[`PlaneWitness`] ports so the
+//! rotation-general sign predicates in [`nacre_cip::predicate`] can run over them, and the
+//! `t_*` predicates are re-exported here so existing `crate::tolerant::t_*` call sites are
+//! unchanged. The predicate logic itself (exact-vs-kernel routing, the frame3 judges) lives in
+//! `nacre-cip`.
 
 use crate::planes::{FaceInfo, PlaneGeom};
-use nacre_geom::intersect::{
-    plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d,
-};
+use nacre_cip::Pt3;
+use nacre_cip::predicate::{PlaneWitness, Witness};
 use nacre_math::Point3;
-use nacre_scalar::frame3::{
-    Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
-};
-use nacre_scalar::{Orient, Rat};
 
-/// The exact-provenance witness both tables carry: three points known to lie on the plane, and —
-/// when the solid was rotated — their exact `Pt3` definitions.
-///
-/// The predicates below need *only* this, which is why one implementation can serve both index
-/// spaces without being able to confuse them: [`PlaneGeom`] answers for a plane class,
-/// [`FaceInfo`] for a single face. Only [`t_planes_coplanar`] uses the face form — it is the
-/// predicate that *defines* the classes, so it necessarily runs before a plane table exists.
-pub(crate) trait Witness {
-    fn tri(&self) -> [Point3; 3];
-    fn tri_pt3(&self) -> Option<&[Pt3; 3]>;
-}
+// Re-export the toleranced predicates from cip so existing call sites keep working.
+pub(crate) use nacre_cip::predicate::{
+    any_rotated, plane_def, t_cmp_coord, t_orient3d, t_plane_pair_dir_sign, t_planes_coplanar,
+};
 
 impl Witness for PlaneGeom {
     fn tri(&self) -> [Point3; 3] {
@@ -59,207 +33,13 @@ impl Witness for FaceInfo {
     }
 }
 
-/// Whether any of the named planes is rotated — the per-predicate routing signal.
-///
-/// A plane carries [`Witness::tri_pt3`] `Some` exactly when it came from a rotated solid
-/// (`collect_planes` fills it via [`solid_is_rotated`](crate::solid_is_rotated), whose truth
-/// is owned by the classifier: `transform` marks a vertex `Origin::Rotated` only when
-/// `Isometry::is_exact` is false, i.e. the realization is irrational). A predicate must
-/// escalate to frame3 if **any** — not all — of its planes is irrational: a single rounded
-/// coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact on the
-/// geom path. Widening what counts as exact (e.g. more angle families) is a classifier-layer
-/// change; this consumer only reads the flag.
-pub(crate) fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
-    idx.iter().any(|&k| planes[k].tri_pt3().is_some())
-}
-
-/// The three exact `Pt3` defining plane `k`. A rotated plane carries them cached in
-/// [`Witness::tri_pt3`] (clone — a shallow copy of the rotation chain, no forest walk);
-/// an axis-aligned plane (`None`, e.g. the unrotated operand of a *mixed*-rotation
-/// boolean) is built exactly from its `tri` coordinates, which are already exact f64.
-pub(crate) fn plane_def<W: Witness>(planes: &[W], k: usize) -> [Pt3; 3] {
-    match planes[k].tri_pt3() {
-        Some(t) => t.clone(),
-        None => planes[k].tri().map(pt3_from_exact),
+impl PlaneWitness for PlaneGeom {
+    fn coeffs(&self) -> [f64; 4] {
+        self.plane.coefficients()
     }
-}
-
-/// An exact axis-aligned point as a tol-0 `Pt3` (its f64 coordinates are exact rationals).
-fn pt3_from_exact(p: Point3) -> Pt3 {
-    let a = p.as_array();
-    let rat = |x: f64| Rat::try_from_f64(x).expect("axis-aligned coordinate is an exact rational");
-    Pt3::at([rat(a[0]), rat(a[1]), rat(a[2])])
-}
-
-fn to_i8(o: Orient) -> i8 {
-    match o {
-        Orient::Positive => 1,
-        Orient::Negative => -1,
-        Orient::Zero => 0,
+    fn frame_sign(&self) -> i8 {
+        self.frame_sign
     }
-}
-
-/// Borrow an owned plane def as the `&Pt3` tuple the judges take.
-fn borrow3(d: &[Pt3; 3]) -> (&Pt3, &Pt3, &Pt3) {
-    (&d[0], &d[1], &d[2])
-}
-
-/// Borrow three owned plane defs as the tuples `indirect_cmp_coord_judge` takes.
-fn borrow_triple(d: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
-    [borrow3(&d[0]), borrow3(&d[1]), borrow3(&d[2])]
-}
-
-/// The sign of `orient3d(V, tri_j)` where `V = ∩(planes p, q, r)` is an implicit point —
-/// the toleranced twin of [`three_plane_orient3d`], matching `order_along`'s shape so it
-/// is a drop-in (`+1`/`-1`/`0`).
-///
-/// - `!rotated`: the exact axis-aligned path — `three_plane_orient3d` on the stored plane
-///   coefficients and `tri` coordinates (unchanged, fast).
-/// - `rotated`: each of `p, q, r` and the explicit triangle `j` is taken as its three
-///   exact `Pt3` ([`plane_def`]), and [`indirect_orient3d_judge`] decides the sign from
-///   the definitions — never materializing `V` or reading the rounded `tri`.
-///
-/// Winding-invariant, so the three points defining each plane may be in any order.
-///
-/// Routes on [`any_rotated`] of `p, q, r, j`: all-axis-aligned → geom, any rotated → frame3.
-/// Every index that *names a plane* must be a class root — one geometric plane is one index, so a
-/// raw `==` on it means "same plane". `class_of` normalizes at each consumer's entry and the
-/// producers emit class form, so anything arriving here in face form is a wiring mistake, not a
-/// tolerable variation: the predicate would then answer "different plane" for two faces of one
-/// plane and decide from rounding noise (measured 2026-07-22: 117748 such calls).
-///
-pub(crate) fn t_orient3d(planes: &[PlaneGeom], p: usize, q: usize, r: usize, j: usize) -> i8 {
-    // The query plane `j` is one of the point's three defining planes ⇒ the point lies on `j`, so
-    // the sign is exactly 0 (a combinatorial identity) — on BOTH paths. Neither numeric branch is
-    // reliable here: the axis `three_plane_orient3d` below is exact only for f64-representable
-    // coordinates (0, 0.5, 1, 2…); for a non-representable rational (0.6, 0.65, 1.3…) it
-    // materializes `V` with a rounding error and can return ±1 for a point on its own plane,
-    // misclassifying an on-`W` vertex as off-plane (the `l_and_staple` root cause, 2026-07-21).
-    // The rotated frame3 judge computes the same tiny nonzero residual from the rounded plane
-    // coefficients (the rotation-fragility root cause). Deciding the identity here — before either
-    // branch — is exact and cheap for both.
-    if j == p || j == q || j == r {
-        return 0;
-    }
-    if !any_rotated(planes, &[p, q, r, j]) {
-        return three_plane_orient3d(
-            &planes[p].plane,
-            &planes[q].plane,
-            &planes[r].plane,
-            planes[j].tri[0],
-            planes[j].tri[1],
-            planes[j].tri[2],
-        );
-    }
-    let (dp, dq, dr, dj) = (
-        plane_def(planes, p),
-        plane_def(planes, q),
-        plane_def(planes, r),
-        plane_def(planes, j),
-    );
-    to_i8(indirect_orient3d_judge(
-        borrow3(&dp),
-        borrow3(&dq),
-        borrow3(&dr),
-        &dj[0],
-        &dj[1],
-        &dj[2],
-    ))
-}
-
-/// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
-/// `b = ∩(planes b…)` — the toleranced twin of [`three_plane_cmp_coord`] (loop_winding),
-/// matching its shape (`+1` = `a[axis] > b[axis]`). `!rotated` → the geom predicate on the
-/// stored coefficients; `rotated` → each triple's three planes as exact `Pt3` →
-/// [`indirect_cmp_coord_judge`]. Routes on [`any_rotated`] of the six planes in `a` and `b`.
-pub(crate) fn t_cmp_coord(planes: &[PlaneGeom], a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
-    if !any_rotated(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]) {
-        let tri = |t: [usize; 3]| {
-            [
-                &planes[t[0]].plane,
-                &planes[t[1]].plane,
-                &planes[t[2]].plane,
-            ]
-        };
-        return three_plane_cmp_coord(tri(a), tri(b), axis);
-    }
-    let da = a.map(|k| plane_def(planes, k));
-    let db = b.map(|k| plane_def(planes, k));
-    to_i8(indirect_cmp_coord_judge(
-        borrow_triple(&da),
-        borrow_triple(&db),
-        axis,
-    ))
-}
-
-/// Whether the three points are **exactly collinear**, decided by the three coordinate-plane
-/// projections of the cross product (each an exact `orient2d`). Non-collinearity is the standing
-/// precondition of [`t_planes_coplanar`]; [`crate::outer_tri`] establishes it for every plane
-/// [`crate::collect_planes`] builds, but a hand-built table can violate it.
-fn tri_collinear(t: [Point3; 3]) -> bool {
-    let [a, b, c] = t.map(|p| p.as_array());
-    let proj = |i: usize, j: usize| {
-        nacre_geom::intersect::orient2d([a[i], a[j]], [b[i], b[j]], [c[i], c[j]]) == 0.0
-    };
-    proj(0, 1) && proj(1, 2) && proj(2, 0)
-}
-
-/// Whether planes `i` and `j` are the **same plane**, decided on the faces' original coordinates
-/// instead of on their derived coefficients.
-///
-/// A stored plane's coefficients are a *derivation* — `cross(b−a, c−a)`, then `d = −n·a`,
-/// both rounded — and the normal is **not normalized**, so its magnitude scales with the face's own
-/// triangle. Two faces of different size on one plane therefore carry coefficient 4-vectors that
-/// are only *approximately* proportional, and [`nacre_predicates::planes_coplanar`]'s exact rank-1
-/// test answers "different plane" (measured 2026-07-22: 200/200 random stacked box pairs, which is
-/// why the arrangement then names one point with two triples). The `tri` points carry no such
-/// derivation — for a `Constructed` vertex they are the truth the user gave — and `orient3d` on
-/// them is exact.
-///
-/// Three **non-collinear** points on a plane determine it, so "every point of `tri_j` lies on
-/// `tri_i`'s plane" is conclusive — but only under that non-collinearity, so a degenerate `tri`
-/// answers `false` (never merge on no evidence). One direction suffices: if `tri_j`'s three points
-/// lie on `tri_i`'s plane, the two planes coincide, hence the test is symmetric.
-///
-/// Routes like the other wrappers: axis-aligned → the geom predicate on `tri`; any rotated → the
-/// exact `Pt3` definitions and [`orient3d_judge`], so a rotated pair is decided on its bases.
-pub(crate) fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
-    if tri_collinear(planes[i].tri()) || tri_collinear(planes[j].tri()) {
-        return false;
-    }
-    if !any_rotated(planes, &[i, j]) {
-        return planes[j]
-            .tri()
-            .iter()
-            .all(|&q| plane_side(planes[i].tri(), q) == 0);
-    }
-    let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
-    dj.iter()
-        .all(|q| to_i8(orient3d_judge(q, &di[0], &di[1], &di[2])) == 0)
-}
-
-/// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — the toleranced twin
-/// of [`plane_pair_dir_sign`] (how the line `p ∩ a` runs relative to plane `b`), matching
-/// its shape (index-based drop-in, `+1`/`-1`/`0`).
-///
-/// `!rotated` → the geom predicate. `rotated` → the frame3 `D` (det of the *outward*
-/// `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal convention by the
-/// per-plane [`PlaneGeom::frame_sign`]: `det(stored) = frame_sign(p)·frame_sign(a)·frame_sign(b)·
-/// det(outward)`. `orient_sign` is an f64 dot of two parallel unit vectors (`|·| ≈ 1`),
-/// robust under rotation. Routes on [`any_rotated`] of `p, a, b`.
-pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneGeom], p: usize, a: usize, b: usize) -> i8 {
-    if !any_rotated(planes, &[p, a, b]) {
-        return plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
-    }
-    let (dp, da, db) = (
-        plane_def(planes, p),
-        plane_def(planes, a),
-        plane_def(planes, b),
-    );
-    planes[p].frame_sign
-        * planes[a].frame_sign
-        * planes[b].frame_sign
-        * to_i8(dir_sign_judge(borrow3(&dp), borrow3(&da), borrow3(&db)))
 }
 
 #[cfg(test)]
@@ -267,6 +47,8 @@ mod tests {
     use super::*;
     use crate::planes::collect_planes;
     use crate::{Operation, apply};
+    // The exact geom predicates, used here as independent oracles for the `t_*` wrappers.
+    use nacre_geom::intersect::{plane_pair_dir_sign, three_plane_cmp_coord, three_plane_orient3d};
 
     /// The plane table of one solid, built through the real path so these tests exercise the same
     /// `PlaneGeom` the engine does. A single convex operand has no coplanar pair, so the numbering

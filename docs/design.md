@@ -14,20 +14,20 @@
 
 ```
 nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트는 파사드(재수출 전용)
-├── nacre-store      # typed-index 인프라: Store<T>/Handle<T> (기하·위상 무지의 순수 저장소)
-├── nacre-math       # 벡터·행렬·변환. nalgebra 래핑 or 자체 (Point<D>, Vector<D>, Transform)
-├── nacre-scalar     # [overhaul] exact 유리수 스칼라 + 2D-프레임 판정: Rat(Ratio<i128>, checked=강등 트리거)·Angle(유리수 deg·정확 누적·90°계열 exact·astro-float HP 삼각). `frame` 모듈 = orient2d_judge(f64 필터→astro-float 상승→declare-0). num-rational·astro-float 의존, 커널 타입 무의존(순수 토대)
-├── nacre-predicates # [M5] indirect predicates(implicit point 부호 판정) 자체 구현. 바닥 = geometry-predicates(elrnv, MIT/Apache: orient3d + expansion primitive 노출). 순수 수치층(평면 계수·좌표 `[f64;N]`만, 커널 타입 무의존) → geom 무순환 + standalone 분리 가능
-├── nacre-geom       # 정확 기하: Surface, Curve, 평가·미분·국소 교차(SSI relaxation)
-├── nacre-topo       # Vertex/Edge/Face/Shell/Solid, half-edge, Model 집계
-├── nacre-tess       # 출처 태그 tessellation: TessVertex, TessTriangle, 증분 갱신
-│   └── polygon      # 평면 다각형 삼각분할: Newell 투영 + 구멍 브리징 + ear clipping
-├── nacre-ops        # 연산: sketch, extrude, revolve, pad/pocket, boolean(자체 — 커버리지 사다리). 프로덕션이 layer 모듈로 분할된다: private `ops`(피처 연산 + 공개 API, 최상층) → {`boolean`(arrangement 출력 `LocalFace`→결과 solid 조립 + 필수 공면 정리; boolean 진입점), `transform`(강체 변환)} → `planes`(면당 `FaceInfo`·평면류 `PlaneGeom` substrate 표, 최하층). 부울 엔진 자체는 private `arrangement` 모듈 = 면당 평면 셀-복합체(트레이스→분할→셀→중첩→라벨→방출→조립; 모든 kind의 유일 경로)이고, `arrangement`↔`boolean`은 합법적 모듈 순환(엔진이 `LocalFace`를 내면 boolean이 조립). private `combinatorics` 모듈 = 그 arrangement 위 조합 질의(winding/side/order/ring 추출, exact 술어 부호 사용). private `tolerant` 모듈 = 회전 boolean용 toleranced 술어 래퍼(회전 시 평면을 면 정점 Pt3로 재구성→frame3 judge·overhaul stage 3). lib 루트엔 `BoolError`·`tag`/`reject`·`he_start`만 잔류(횡단 공용). `Model`과 geom을 둘 다 쓰므로 geom에 둘 수 없다(§1 의존 방향). nacre-cip 의존(회전 정점 Pt3·읽기전용·tip의 ops는 dev-only라 lib 그래프 무순환)
-├── nacre-validate   # 불변식 검사: 오일러-푸앵카레, watertight, 방향성, 참조 무결성
-├── nacre-props      # mass properties: 정확 기하 발산정리로 부피·면적(해석적, tess 무관). 소비: 사용자 질의·M5 부피보존 불변식·오라클 diff
-├── nacre-cip        # [CIP] 회전 정점의 정의+방향별 tol을 forest 순회로 조립(→ scalar::frame3::Pt3)해 orient3d/cmp_coord 판정: tol-0=predicates(Shewchuk exact)·tol>0=filter→astro-float. 단일 Discovered seam=indirect orient3d(2c-ii)·두 Discovered seam=cmp_coord(cmp-ii·ThreePlane→회전 정점 3개로 평면 재구성→frame3 간접 판정)·혼합cmp/이동-후-회전=defer. topo/scalar/predicates/geom 위 read-only 분석
-├── nacre-step       # Model→AP242(Ed2) 엔티티 번역 어댑터. 직렬화 백엔드 교체 가능(커널 무지); 개발=step-io, 최종=경량 라이터
-├── nacre-oracle     # [dev] OCCT 비교 하네스 (out-of-process 헬퍼 경유), proptest 전략
+├── nacre-store      # typed-index 저장소: Store<T>/Handle<T> (기하·위상 무지)
+├── nacre-math       # 자체 선형대수: Point<D>·Vector<D>·변환
+├── nacre-scalar     # exact 유리수 값 엔진: Rat·Angle·Axis/Rotation/Isometry·Orient
+├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone
+├── nacre-cip        # toleranced 부호 술어(회전): kernel(Pt3 판정) + predicate(평면 배열 술어). predicates의 쌍둥이
+├── nacre-geom       # 정확 기하: Surface·Curve·교차(intersect 격리)
+├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model
+├── nacre-tess       # tessellation: 출처 태그·증분 갱신
+│   └── polygon      # 평면 다각형 삼각분할: Newell + 구멍 브리징 + ear clipping
+├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성
+├── nacre-props      # 질량 특성: 부피·면적(해석적, tess 무관)
+├── nacre-ops        # 연산: sketch/extrude/revolve/pad/pocket/boolean. 부울 = 면당 평면 arrangement 엔진
+├── nacre-step       # Model→STEP(AP242) 내보내기 어댑터
+├── nacre-oracle     # [dev] OCCT 비교 하네스
 └── tools/occt-helper/  # 워크스페이스 밖 헬퍼: brew OCCT(1순위) 또는 uv+OCP(폴백) — §7
                         #   OCCT는 오라클 전용 — 제품 경로에 위임 없음 (§6, §8)
 ```
@@ -38,7 +38,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 
 `Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** geom도 Handle을 쓰기 때문이다 — `Curve::Intersection`(§3)이 `Handle<Surface>`를 담으므로, Handle이 topo에 있으면 geom→topo→geom 순환 의존이 된다. typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 모든 크레이트가 자유롭게 참조한다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
 
-`nacre-scalar`는 **회전 오버홀의 근본 표현 — exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**으로, 오버플로가 §4 강등 **트리거**(값의 캐시를 f64/dd로 내리고 tol을 `Origin`에 기록; 정의는 op-log로 불변 보존). `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **★ `nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **의존 결정(오버홀 최초 새 외부 dep):** `num-rational`(+num-traits)을 채택 — 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **2D-프레임 판정(`frame` 모듈, 이식 #2):** 회전 좌표는 무리수라 exact 못 하지만 **부호**는 사다리로 sound하게 정한다 — `orient2d_judge`가 f64 필터(좌표혼합 tol `(|bx|+|by|)·da`, H4 교정)로 쉬운 케이스를 처리하고, 애매하면 **astro-float**(H1.5, 200비트)로 상승, precision floor 아래면 **declare-0**(`Orient::Zero` 값 반환; 병합/별개 ask-user 정책은 §9 회전 오버홀·후속). predicates(M5 geometry-predicates, 축정렬 격자)와 여전히 상보 — CIP 상승 판정이라 nacre-scalar에 둔다(부피 커지면 `nacre-cip`으로 분리 후보). **범위(이식 #1·#2):** exact 값 엔진 + 2D-프레임 판정까지. 통합 값+tol `Scalar`·PtChain 전파(3D 체이닝)·declare-0 정책·커널 배선은 후속 셀.
+`nacre-scalar`는 **회전 오버홀의 근본 표현 — exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**으로, 오버플로가 §4 강등 **트리거**(값의 캐시를 f64/dd로 내리고 tol을 `Origin`에 기록; 정의는 op-log로 불변 보존). `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **★ `nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **의존 결정(오버홀 최초 새 외부 dep):** `num-rational`(+num-traits)을 채택 — 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→declare-0 사다리로 sound하게 정함)은 이제 **`nacre-cip::kernel`으로 분리**됐다 — nacre-math 독립 순수 술어층, predicates의 쌍둥이(§9). **범위:** exact 값 엔진까지. 통합 값+tol `Scalar`·declare-0 ask-user 정책·커널 배선은 후속 셀.
 
 `nacre-predicates`는 **발견된 교차점의 부호 판정(내/외·orientation)을 좌표가 아니라 implicit point(정의)째로 하는 indirect predicates**를 격리한다(§3 정밀도 분업, §8 M5). 바닥의 적응 정밀 확장 산술은 `geometry-predicates`(MIT/Apache) 재사용, 그 위 implicit point 표현과 indirect 술어만 자체 구현. Rust 최초의 오픈소스 indirect predicates가 되도록 **nacre 밖으로 떼어낼 수 있게**(MIT/Apache 단독 공개 가능) 설계한다. 라이선스 엄수: 구현 참고처는 논문(Attene 2020, arXiv 2105.09772; Shewchuk 1997; Lévy PCK)과 `geometry-predicates` 소스로 한정하고, LGPL인 Attene 참조 구현 소스는 **작성 중 열람 금지 / 완성 후 실행 대조만 허용**(§8 M5·§7). M1~M4는 `Constructed`만 다뤄 이 크레이트가 불필요하므로 실제 구현은 M5.
 
@@ -559,11 +559,11 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 2. **~~입력 tol → 행렬식 오차 한계 공식~~ → orient3d는 확정·이식(단계 2a-ii): `frame3::det3_bound`**(6개 signed triple-product 구간 반경 `prod_err` + `16ε·mag` f64 반올림; `orient3d_judge`가 필터→astro-float 상승→declare-0로 소비). exact3d H-a 검증(위반0·tightness 0.12; 프로덕션 재현 0.065·피벗 포함). `plane_side`=explicit orient3d 쌍둥이(같은 공식). **간접 orient3d**(3평면 implicit point·평면 계수)도 확정·이식(단계 2c-i `indirect_orient3d_judge`; exact3d H-b/H-c 검증·프로덕션 재현 위반0). ①이 확정돼 **입력이 명확**하다 — 점 tol = xyz 방향별 벡터. "방향별 점 tol이 행렬식에서 각자 자기 계수로 증폭돼 오차 한계를 이루는"(항목 5) 공식을 술어별로 유도(현행 정적 상수는 tol = 0 가정). **H4-soundness 진행 상황**: **(a) 새-오차·(b) 전파 항 모두 실측 검증 완료.** (a) 접선형 반증→좌표혼합(10000 랜덤 0회 붕괴). (b) `|R|·기존 tol`: 증분 회전 체인 5000회 0회 붕괴(sound·~3× 타이트); 전파의 **필요성은 비대칭 tol**에서 발현(x-tol을 90° 회전 → 오차가 y로 이동, 전파 없으면 tol_y=0으로 과소예측 — 대수적 확인; 비대칭 tol은 v1-후 √거리·구속 솔버에서). 아래 ③(평면 계수 tol 전파)도 같은 유도의 일부. **남은 H4**: consistency(경로-독립 결정성)·amplification(증폭 경계)·속도.
 3. **~~평면 계수의 tol 구조~~ → sqrt 섭동은 (5d)-1이 해결, 나머지는 ②로 흡수.** `Plane::through_points`의 정규화(sqrt) 섭동은 미확정이 아니다 — (5d)-1이 Plane에 비정규화 `raw`를 함께 저장해 판정이 쓰는 `coefficients()`가 exact(정의 정점이 정확히 0)이고 `normal()`(sqrt)은 크기 소비자에게만 간다 → **판정 경로에 sqrt 섭동 없음**. 남은 **"회전된 평면의 계수 tol"**은 별개 미확정이 아니라 **①의 따름정리**다: 평면은 세 점으로 정의되고, 회전되면 그 점들이 ①의 방향별 tol을 가지며, 계수는 그 점들의 뺄셈·외적이라 **점 tol이 계수 tol로 전파**된다. ②의 오차 한계 유도의 일부로 함께 다룬다.
 4. **~~3D에서 "거리"의 정확한 정의~~ → ①에서 확정.** 새-오차 (a)는 **좌표 크기 `|x|+|y|`**로 실측 확정(H4). 각도-불확실성 (c)의 접선 크기 = `da_각도 × 회전축까지 수직거리(모멘트 암)`(v1엔 0).
-5. **~~방향별 tol의 자료구조~~ → 확정: `[f64;3]` xyz 벡터**(단계 2a). `nacre-scalar::frame3::Pt3 { base:[Rat;3], chain, coord:[f64;3], tol:[f64;3] }` — 2D `frame::Pt2`의 3D 아날로그. (**회전 시 tol 변환**은 ①의 `|R|·기존 tol`로 흡수.) 임의 유리수 피벗까지 exact3d H-f로 검증(피벗 산술 tol 항 추가).
+5. **~~방향별 tol의 자료구조~~ → 확정: `[f64;3]` xyz 벡터**(단계 2a). `nacre-cip::kernel::frame3::Pt3 { base:[Rat;3], chain, coord:[f64;3], tol:[f64;3] }` — 2D `frame::Pt2`의 3D 아날로그. (**회전 시 tol 변환**은 ①의 `|R|·기존 tol`로 흡수.) 임의 유리수 피벗까지 exact3d H-f로 검증(피벗 산술 tol 항 추가).
 6. **~~고정밀 층의 선택~~ → 확정: `astro-float`(순수 Rust 임의정밀). twofloat(double-double)는 H1.5에서 탈락.** H1.5 실측: twofloat의 π 상수는 정확하나 삼각함수가 "preliminary"라 **영점 근처 cos 오차 ~1.8e-16(f64 수준)**으로 정확도 게이트(~1e-30) 실패 — 부호 판정이 일어나는 near-degenerate가 곧 영점 근처라 치명적. `astro-float`로 교체(160비트에서 cos/sin 오차 **~1e-58**로 통과). **정밀도가 dial 가능**이라 double-double의 ~1e-32 천장이 사라진다(H4-amplification이 tol을 키워도 정밀도를 올리면 됨 → "quad-double 상승 or 정직 거절" 딜레마가 "정밀도 dial"로 단순화). 대가는 속도 **~120µs/call**(상승 경로라 드물고, 각도당 실현을 캐시해 상각; 정밀도를 낮추면 빨라짐) — H4가 속도·상승빈도 실측. **★ 이하 이 문서의 "double-double"·"f128"·"고정밀 상승"은 이 상승 층을 가리키는 일반명이며, 실제 구현은 astro-float다.**
 7. **회전 이력 트리 → 확정(단계 1c): `Model.rotations: Store<Rotation>` + `parent` 링크 forest.** 남은 **캐시 정책**(hp 실현값 수명·축출)은 단계 2a에서 미실행(Pt3 매번 fresh 계산) → **단계 2b 이후로 defer**(성능 최적화, soundness 무관).
 
-**★ 정리 — ②(오차 한계)가 완전 소진됐다: orient3d/plane_side 직접(2a-ii `det3_bound`)·간접(2c-i `indirect_orient3d_judge`)·cmp_coord(cmp-i `indirect_cmp_coord_judge`) 모두 확정·이식(프로덕션 `nacre-scalar::frame3`).** 남은 §CIP는 ⑦-캐시(성능·defer)뿐. ①·④·⑤·⑥ 확정, ⑦-트리는 1c 완료, ③은 sqrt 부분 (5d)-1이 해결·나머지 ②로 흡수. §CIP의 마지막 수학 ②는 실험 H-a(직접 orient3d)/H-b(평면 계수)/H-c(간접 orient3d)가 검증했고, cmp_coord는 exact3d에 없던 새 수학이라 frame3에서 직접 **H-g**(두 코퍼스·wrong-sign 0)로 검증했다(Cramer 기계는 2c-i 이식분 재사용·최종 부호 결합만 신규). 세 술어 모두 프로덕션에 들어왔다 — **판정층 완성**.
+**★ 정리 — ②(오차 한계)가 완전 소진됐다: orient3d/plane_side 직접(2a-ii `det3_bound`)·간접(2c-i `indirect_orient3d_judge`)·cmp_coord(cmp-i `indirect_cmp_coord_judge`) 모두 확정·이식(프로덕션 `nacre-cip::kernel::frame3`).** 남은 §CIP는 ⑦-캐시(성능·defer)뿐. ①·④·⑤·⑥ 확정, ⑦-트리는 1c 완료, ③은 sqrt 부분 (5d)-1이 해결·나머지 ②로 흡수. §CIP의 마지막 수학 ②는 실험 H-a(직접 orient3d)/H-b(평면 계수)/H-c(간접 orient3d)가 검증했고, cmp_coord는 exact3d에 없던 새 수학이라 frame3에서 직접 **H-g**(두 코퍼스·wrong-sign 0)로 검증했다(Cramer 기계는 2c-i 이식분 재사용·최종 부호 결합만 신규). 세 술어 모두 프로덕션에 들어왔다 — **판정층 완성**.
 
 **측정해야 아는 것:** 고정밀 층의 속도, 동적 필터의 실제 성공률(입력 tol이 있을 때 정적 대비 얼마나 자주 exact로 떨어지는가), 실무 형상에서 회전 tol이 실제로 얼마나 커지는가(판정 경계에 근접하는가).
 

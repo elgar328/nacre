@@ -5,21 +5,21 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Certified indirect predicates (§CIP) over the nacre b-rep Model — assembles a rotated vertex's exact definition + directional tol from the rotation forest and judges orient3d (f64 filter → astro-float escalation, or exact Shewchuk for tol-0)"
+description = "Rotated-vertex Pt3 assembly (§CIP) over the nacre b-rep Model — assembles a vertex's exact definition + directional tol from the rotation forest for the boolean's sign judges"
 
 [dependencies]
-nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
 nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
-nacre-store = { path = "../nacre-store", version = "0.0.0" }
-# `nacre-geom` is used only to name the `Handle<Surface>` type (topo does not
-# re-export `Surface`); its variant/coefficients are never inspected in lib code.
-# Tests also use it as an independent oracle (`three_plane_orient3d`).
-nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
+astro-float = "0.9.5"
+
+[features]
+# When on, the memoized high-precision cell in the kernel's `Pt3` is `Arc<OnceLock>`
+# (Send + Sync) instead of `Rc<OnceCell>`, letting a `Pt3` cross threads for the parallel
+# boolean. Off by default; a consumer (nacre-ops) turns it on via its own `parallel` feature.
+parallel = []
 
 [dev-dependencies]
-nacre-ops = { path = "../nacre-ops", version = "0.0.0" }
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

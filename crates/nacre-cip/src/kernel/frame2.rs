@@ -14,8 +14,9 @@
 //! general over any coordinate + tol; real sketch-frame placement (translation,
 //! arbitrary centre) is kernel wiring.
 
-use crate::{Angle, HP_RM, Rat};
+use super::HP_RM;
 use astro_float::BigFloat;
+use nacre_scalar::{Angle, Orient, Rat};
 
 /// f64 trig-realization error bound used by the directional tol formula — a
 /// conservative multiple of ulp covering cos/sin rounding, the deg→rad
@@ -91,16 +92,6 @@ pub(crate) fn bf_mag(bf: &BigFloat) -> f64 {
     } else {
         2f64.powi(bf.exponent().unwrap_or(0))
     }
-}
-
-/// The result of an orientation judgment (§9 CIP).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Orient {
-    Positive,
-    Negative,
-    /// Declared 0 — collinear within the escalation precision cap. This is the
-    /// `declare-0` case where the kernel (later) stops and asks the user.
-    Zero,
 }
 
 /// f64 orient2d determinant `(b−a) × (c−a)`.

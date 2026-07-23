@@ -1,5 +1,6 @@
-//! Exact rational scalars — the overhaul's exact rational value engine — **and the 2D-frame
-//! exact-sign judgment they enable** (the [`frame2`] module).
+//! Exact rational scalars — the overhaul's exact rational value engine (`Rat`/`Angle`) and
+//! the axis/rotation/isometry value types the kernel builds on. (The toleranced-sign frame
+//! judgment this value engine enables now lives in `nacre-cip`.)
 //!
 //! The truth layer for user-input dimensions and angles: a value the user typed
 //! is preserved *exactly*, so `1.1` stays `11/10` and `1.1 × 7` is exactly `7.7`
@@ -19,11 +20,10 @@
 //!   so those rotations of a rational point stay tol 0; and `cos_hp`/`sin_hp`
 //!   realize in arbitrary precision (astro-float) for the judgment path.
 //!
-//! Scope (overhaul ports #1–#2): the exact value engine plus the 2D-frame sign
-//! judgment. Still deferred to later cells: the unified `Scalar { value, tol }`
-//! wrapper, chained-rotation transport tol (3D axis changes), the declare-0
-//! → user-confirmation policy, and the kernel wiring that makes geometry
-//! carry these. Ported from the verified 2D experiment (`experiments/exact2d`).
+//! Scope: the exact value engine (the toleranced-sign frame judgment it enabled now lives
+//! in `nacre-cip`). Still deferred to later cells: the unified `Scalar { value, tol }`
+//! wrapper, the declare-0 → user-confirmation policy, and the kernel wiring that makes
+//! geometry carry these. Ported from the verified 2D experiment (`experiments/exact2d`).
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedMul, CheckedSub};
@@ -43,12 +43,18 @@ thread_local! {
     static HP_CONSTS: RefCell<Consts> = RefCell::new(Consts::new().expect("astro-float consts"));
 }
 
-pub mod frame2;
-pub mod frame3;
-
-/// The shared orientation-judgment result (§CIP) — used by both the 2D
-/// ([`frame`]) and 3D ([`frame3`]) judges and their downstream consumers.
-pub use frame2::Orient;
+/// The result of an orientation judgment (§CIP) — the shared sign vocabulary used by both
+/// the 2D and 3D toleranced-sign judges (now in `nacre-cip`) and their downstream consumers.
+/// A cross-cutting "judgment result" carried here as a fundamental value (a candidate to
+/// split into its own vocabulary type later).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Orient {
+    Positive,
+    Negative,
+    /// Declared 0 — collinear within the escalation precision cap. This is the
+    /// `declare-0` case where the kernel (later) stops and asks the user.
+    Zero,
+}
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
 /// so the caller sees the downgrade trigger explicitly; on overflow the kernel
@@ -208,7 +214,7 @@ impl Angle {
     /// default [`HP_PREC`] gives the working judgment realization. (numer/denom
     /// pass through f64, exact for the small values used here; a general large-
     /// rational path would build from a string.)
-    pub(crate) fn cos_sin_at(self, prec: usize) -> (BigFloat, BigFloat) {
+    pub fn cos_sin_at(self, prec: usize) -> (BigFloat, BigFloat) {
         HP_CONSTS.with_borrow_mut(|cc| {
             let pi = cc.pi(prec, HP_RM);
             let d180 = BigFloat::from_f64(180.0, prec);
@@ -286,7 +292,7 @@ pub enum Axis {
 impl Axis {
     /// The two in-plane coordinate indices (the third is the fixed rotation axis).
     /// The order gives a right-handed (CCW-about-the-axis) rotation.
-    pub(crate) fn plane(self) -> (usize, usize) {
+    pub fn plane(self) -> (usize, usize) {
         match self {
             Axis::X => (1, 2), // rotate y,z
             Axis::Y => (2, 0), // rotate z,x

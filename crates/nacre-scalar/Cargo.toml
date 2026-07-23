@@ -12,14 +12,6 @@ num-rational = "0.4"
 num-traits = "0.2"
 astro-float = "0.9.5"
 
-[features]
-# When on, the memoized high-precision cell in `Pt3` is `Arc<OnceLock>` (Send + Sync)
-# instead of `Rc<OnceCell>`, letting a `Pt3` cross threads for the parallel boolean.
-# Off by default here — a consumer (nacre-ops) turns it on via its own `parallel`
-# feature; a `--no-default-features` build of that consumer keeps this off, so the pure
-# single-threaded / wasm build stays `Rc<OnceCell>` with no atomic overhead.
-parallel = []
-
 [dev-dependencies]
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git

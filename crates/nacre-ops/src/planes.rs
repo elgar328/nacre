@@ -6,7 +6,7 @@ use crate::{BoolError, he_start, reject, tag, tolerant};
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::frame3::Pt3;
+use nacre_cip::Pt3;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Origin, Shell, Solid, Vertex};
 use std::collections::HashMap;
@@ -73,7 +73,8 @@ pub(crate) fn collect_planes(
                 .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
             let tri_pt3 = if rotated {
                 let pt3 = |vh| {
-                    nacre_cip::vertex_pt3(model, vh).map_err(|_| reject(tag::ROTATED_UNSUPPORTED))
+                    crate::rotated_vertex::vertex_pt3(model, vh)
+                        .map_err(|_| reject(tag::ROTATED_UNSUPPORTED))
                 };
                 Some([pt3(tri_verts[0])?, pt3(tri_verts[1])?, pt3(tri_verts[2])?])
             } else {
