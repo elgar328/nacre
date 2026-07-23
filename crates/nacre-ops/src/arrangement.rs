@@ -1,21 +1,18 @@
 #![cfg_attr(not(test), allow(dead_code))]
-//! Segment trace producer for the plane-class arrangement (the B engine). Isolated and unwired:
-//! nothing outside this module and its tests calls it, following the `winding.rs` precedent.
+//! The plane-class arrangement engine — the sole boolean path ([`boolean`], which `crate::boolean`
+//! delegates to). It traces each face of both solids onto every plane class as **line segments**
+//! (not closed loops), splits them at their crossings, extracts the cells, nests holes, labels
+//! in/out per operand, and emits the result faces. Geometry lying in a plane is *input*, not a
+//! degeneracy.
 //!
-//! Unlike [`crate::section_of_solid`], which rejects the whole solid the moment any vertex lies
-//! on the cut plane and then assembles **closed loops** (needing per-face even parity, degree-2,
-//! and an alternating walk), this produces **line segments** — the pieces where each face of the
-//! solid meets a plane class — and leaves assembly to the arrangement. Geometry lying in the
-//! plane is *input*, not a degeneracy.
-//!
-//! Two face cases are handled. **Seated** — a face whose own class is the cut class — lies wholly
+//! Two face cases feed the trace. **Seated** — a face whose own class is the cut class — lies wholly
 //! in the plane, so its whole boundary is trace. **Transversal / mixed** — a face crossing the
 //! plane, possibly with an edge lying in it — is 2D polygon-vs-line clipping on `L = W ∩ fp`, with
 //! a three-valued (−/0/+) scan that collapses on-line edges instead of rejecting them. Faces with
-//! **holes** are declined this brick (a forced-covered run inside a hole would claim its void as
-//! material, and the corpus has no case to verify it). Declining is a per-face record, never a
-//! whole-solid abort — a non-empty `declined` means "this trace is incomplete, do not conclude
-//! from it", which is the defect `section_of_solid` had.
+//! **holes** are declined by the trace brick (a forced-covered run inside a hole would claim its
+//! void as material, and the corpus has no case to verify it). Declining is a per-face record, never
+//! a whole-solid abort — a non-empty `declined` means "this trace is incomplete, do not conclude
+//! from it".
 
 use super::*;
 
@@ -134,9 +131,8 @@ struct Node {
 
 /// Trace one **transversal or mixed** face `f` (plane `fp ≠ W`) onto plane class `wc`, as the
 /// segments where `f` meets `W`. This is 2D polygon-vs-line clipping on `L = W ∩ fp`, handling
-/// on-line edges (a run of `side == 0` vertices) instead of rejecting them the way the old
-/// `section_of_solid` did. A **holed** face is handled by scanning its inner rings into the same
-/// node list: each hole's two crossings of `L` toggle the parity sweep back to void between them,
+/// on-line edges (a run of `side == 0` vertices) instead of rejecting them. A **holed** face is
+/// handled by scanning its inner rings into the same node list: each hole's two crossings of `L` toggle the parity sweep back to void between them,
 /// carving the hole out of the emitted chord.
 ///
 /// Every emitted segment rides `wall = fp` (its line is `W ∩ fp`); the side walls appear only as
@@ -779,11 +775,10 @@ fn split_at_crossings(
 /// opposite `s` is angle π; otherwise angle 0. Each open bucket is then a real sort. Returned
 /// indices are the CCW order starting at `r`.
 ///
-/// **This brick proves the predicate is buildable on the exact substrate — it does not yet handle
-/// the general case:** two *different* fp's whose lines are parallel (a `0`-turn that is not
-/// same-fp) fall into the angle-0 bucket unresolved, and collinear same-direction overlap (E5) is
-/// out of scope. The corpus's arrangement vertices are degree ≥ 3 with distinct fp's per real
-/// direction, which is what the spike exercises.
+/// **Coverage boundary — it does not handle the general case:** two *different* fp's whose lines
+/// are parallel (a `0`-turn that is not same-fp) fall into the angle-0 bucket unresolved, and
+/// collinear same-direction overlap (E5) is out of scope here. The corpus's arrangement vertices
+/// are degree ≥ 3 with distinct fp's per real direction, which is what this handles.
 fn angular_order(planes: &[PlaneGeom], w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
     let os = planes[w].frame_sign;
     let cross = |i: usize, j: usize| -> i8 {
@@ -1479,8 +1474,7 @@ pub(crate) fn frame_audit(
 /// A class that declines (holes, degenerate) aborts the whole boolean: skipping it would drop real
 /// faces and silently produce a non-manifold or wrong-volume solid.
 ///
-/// `pub(crate)` only so the crate's differential coverage sweep (in `crate::tests`) can compare it
-/// against production `boolean`; production still never calls it — the engine stays unwired.
+/// `pub(crate)` because the public `crate::boolean` delegates to it.
 pub(crate) fn boolean(
     model: &mut Model,
     kind: BoolKind,

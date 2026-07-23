@@ -130,9 +130,9 @@ pub enum Operation {
 /// Which boolean to compute.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoolKind {
-    /// A ∪ B (not yet implemented — `Unsupported`).
+    /// A ∪ B.
     Fuse,
-    /// A − B (not yet implemented — `Unsupported`).
+    /// A − B.
     Cut,
     /// A ∩ B.
     Common,
@@ -1226,19 +1226,14 @@ pub(crate) struct FaceInfo {
 }
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
-/// **Coverage:** planar solids — all three kinds go through one exact seam path
-/// (`general_boolean`) for transversal contact, and one coplanar path
-/// (`coplanar_result_unified`) when the operands share a contact plane. Anything else is
-/// rejected with [`BoolError`]. Transactional: each variant computes its result in local
-/// structures and pushes only after every degeneracy check passes, so a rejected boolean
-/// leaves the model untouched.
 ///
-/// **Dispatch (F2 collapse):** two routes, chosen by one exact question — *is there a genuine
-/// coplanar contact?* ([`coplanar_contact_count`]). The seven bespoke detectors that used to
-/// gate this (contained / pocket / overhang boss·cut·common / single-shared-plane /
-/// multi-contact) all funnelled into the same builder, so they were pure routing; collapsing
-/// them to the count both retired ~775 lines and opened cases their narrow gates declined
-/// (a non-convex overhang footprint, a slot or corner cut punching through the far face).
+/// **Coverage:** planar solids. All three kinds go through the single per-plane-class arrangement
+/// engine ([`crate::arrangement::boolean`]), which handles transverse, coplanar-contact,
+/// coincident, contained and disjoint cases in one path and cleans its own output (coplanar-face
+/// merge) so results are chainable. Anything it cannot resolve is rejected with [`BoolError`] —
+/// never a silent wrong answer (DNA). Transactional: it computes the result in local structures
+/// and pushes only after every degeneracy check passes, so a rejected boolean leaves the model
+/// untouched.
 pub fn boolean(
     model: &mut Model,
     kind: BoolKind,
@@ -1248,7 +1243,7 @@ pub fn boolean(
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
-    // The arrangement engine (`trace.rs`) is the sole boolean path: one per-plane-class 2D
+    // The arrangement engine (`arrangement.rs`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
     crate::arrangement::boolean(model, kind, a, b)
@@ -1652,10 +1647,8 @@ struct LocalFace {
 
 /// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
-/// [`combinatorics::EdgeFaces`]. Detectors that classify vertices exactly but lack
-/// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
-/// Indices into the returned `planes`/`surf_ix` are shared, so a vertex of `a` and a face of
-/// `b` compose in one space.
+/// [`combinatorics::EdgeFaces`]. Built once and shared: indices into the returned `planes`/`surf_ix`
+/// are common to both solids, so a vertex of `a` and a face of `b` compose in one index space.
 /// Destructure it with `..` (`let PlaneSetup { planes: faces_tab, geom: planes, plane_ix, .. } = …`):
 /// the tables here grow as the arrangement learns to say "plane" and "face" in different index
 /// spaces, and a positional tuple made every one of those steps touch all ~25 call sites.
@@ -2963,7 +2956,7 @@ pub mod tests {
     /// A rotated coplanar contact is out of scope (the coplanar milestone), but retiring the
     /// guard must not make it *silently* wrong. When an X rotation tilts the contact plane its
     /// rounded coefficients are no longer exactly proportional, so the exact `planes_coplanar`
-    /// detectors miss it and it reaches `general_boolean`. The DNA invariant: the result is
+    /// test misses it and the arrangement takes it as a transversal seam. The DNA invariant: the result is
     /// either an honest reject, or a valid solid of the *correct* volume — never a
     /// plausible-but-invalid solid. (Measured: the boss fuse is solved exactly; the pocket cut
     /// honestly rejects.)
@@ -4179,9 +4172,9 @@ pub mod tests {
         assert_eq!(m.solids.get(r).cavities.len(), 0);
     }
 
-    /// A holed operand already survives the seam-free path — `general_boolean` never
-    /// had a hole guard, and `contained_result` reuses whole shells, so the pocket rides
-    /// through untouched. Nothing tested it. Pin it before the guard comes down.
+    /// A holed operand already survives the arrangement — it names holes as inner rings rather
+    /// than guarding against them, so the pocket rides through untouched. Nothing tested it.
+    /// Pin it before the guard comes down.
     #[test]
     fn containment_boolean_already_keeps_a_pocket() {
         for (kind, want) in [(BoolKind::Cut, 0.919), (BoolKind::Fuse, 0.92)] {
@@ -6455,9 +6448,8 @@ pub mod tests {
     #[test]
     fn a_boss_that_pierces_the_base_is_not_an_overhang() {
         // The boss dips below the base's top (its walls cross the base) — a transversal seam cut,
-        // not a coplanar overhang. The old overhang detector declined it and the seam path built
-        // it; after the F2 collapse the coplanar arm declines it and the same seam path still
-        // does. Union = 1.0 + boss 0.75 − overlap 0.125 = 1.625.
+        // not a coplanar overhang, which the arrangement handles as a normal crossing.
+        // Union = 1.0 + boss 0.75 − overlap 0.125 = 1.625.
         let mut m = Model::new();
         let base = m.add_cuboid(
             Point3::from_array([0.0; 3]),
