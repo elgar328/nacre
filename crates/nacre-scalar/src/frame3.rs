@@ -1,4 +1,4 @@
-//! The 3D toleranced point + its `orient3d` judgment (overhaul §TIP, stage 2). The
+//! The 3D toleranced point + its `orient3d` judgment (design.md §9 TIP, stage 2). The
 //! 3D analogue of [`crate::frame2`] (`Pt2` / `orient2d_judge`).
 //!
 //! A rotated point cannot be held exactly (cos/sin are irrational), but its f64

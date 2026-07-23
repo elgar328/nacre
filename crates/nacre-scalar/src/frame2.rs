@@ -1,4 +1,4 @@
-//! The 2D-frame exact-sign judgment (overhaul §3).
+//! The 2D-frame exact-sign judgment (design.md §9, rotation overhaul).
 //!
 //! Rotating a point by a rational angle produces irrational coordinates
 //! (cos/sin), so a rotated point cannot be held exactly. But the *sign* of an

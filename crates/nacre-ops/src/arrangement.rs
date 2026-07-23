@@ -1891,8 +1891,8 @@ mod tests {
     }
 
     /// ★ Spike: a coordinate-free exact cyclic order of edges around an arrangement vertex is
-    /// buildable — the "DNA question" winding-engine.md:66/115 flagged as a possible death
-    /// condition for B. A degree-5 vertex with directions +x, +y, −x, −y and one **oblique**
+    /// buildable — the "DNA question" the winding-based engine design flagged as a possible death
+    /// condition for the per-plane arrangement. A degree-5 vertex with directions +x, +y, −x, −y and one **oblique**
     /// (the oblique is non-optional: without it every open half-plane bucket holds one element and
     /// transitivity never fires). `angular_order` returns the CCW order reading no coordinate; we
     /// check it against the CCW order computed *with* coordinates (atan2), which is the oracle.

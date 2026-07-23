@@ -1,4 +1,4 @@
-//! Toleranced indirect predicates over the b-rep `Model` (overhaul §TIP, stage 2b).
+//! Toleranced indirect predicates over the b-rep `Model` (design.md §9 TIP, stage 2b).
 //!
 //! A read-only analysis above `nacre-topo` (like `nacre-validate` / `nacre-props`): it
 //! assembles a rotated vertex's exact **definition** + **directional tol** from the
