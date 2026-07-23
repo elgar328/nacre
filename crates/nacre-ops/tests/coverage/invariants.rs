@@ -133,15 +133,13 @@ proptest! {
         }
     }
 
-    /// Fuse and Common commute: when both operand orders succeed, they agree on volume. An
-    /// order-dependent *volume* would be a silent-wrong.
-    ///
-    /// Note: we do **not** here require the two orders to agree on Ok/Err. A found counterexample —
-    /// two boxes touching only along an edge (`Common([4,5]×[2,3]×[1,3], [2,4]×[0,2]×[2,3])`) —
-    /// returns empty (correct) in one order and honestly rejects (`loop_orient_mismatch`) in the
-    /// other: the measure-zero intersection is empty either way, so neither is *wrong*, just an
-    /// order-dependent handling of a degenerate. That inconsistency is a coverage-hardening item,
-    /// not a silent-wrong, so it is out of this net's scope (tracked separately).
+    /// Fuse and Common commute: `f(a,b)` and `f(b,a)` agree on **both** the Ok/Err verdict and, when
+    /// Ok, the volume. An order-dependent volume is a silent-wrong; an order-dependent *verdict* is a
+    /// robustness defect (the arrangement is a function of the geometry, not the operand order). A
+    /// measure-zero contact — two boxes meeting only at an edge or corner — is the sharp case: it is
+    /// empty either way, and both orders must now agree on that (they once didn't, when a pinched
+    /// unbounded contour was rejected or accepted depending on its ring's start index; see
+    /// `loop_winding`).
     #[test]
     fn fuse_common_commute(
         alo in prop::array::uniform3(0i64..5), aext in prop::array::uniform3(1i64..5),
@@ -156,10 +154,12 @@ proptest! {
         for kind in [BoolKind::Fuse, BoolKind::Common] {
             let (mut m1, a1, b1) = build();
             let (mut m2, a2, b2) = build();
-            if let (Some(x), Some(y)) = (
-                run(&mut m1, kind, a1, b1),
-                run(&mut m2, kind, b2, a2),
-            ) {
+            let (x, y) = (run(&mut m1, kind, a1, b1), run(&mut m2, kind, b2, a2));
+            prop_assert_eq!(
+                x.is_some(), y.is_some(),
+                "{:?} order-dependent verdict: {:?} vs {:?}", kind, x, y
+            );
+            if let (Some(x), Some(y)) = (x, y) {
                 prop_assert!(approx(x, y), "{:?} order-dependent volume {x} vs {y}", kind);
             }
         }

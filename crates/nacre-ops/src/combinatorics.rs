@@ -545,9 +545,14 @@ pub(crate) fn point_in_component(
 /// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
 /// A hull *vertex* always exists.
 ///
-/// Two distinct triples that compare equal on all three axes are the same point, and the
-/// loop is not simple. That is `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than
-/// by a tolerance — which is why design.md §9 could not check it before.
+/// A ring may be *non-simple* — visiting one node twice — and still be a legitimate face: the
+/// unbounded contour of two cells that meet at a single point pinches through that point, tracing
+/// a figure-8. The winding is read from the turn at the lexicographically smallest node, and a
+/// coincidence elsewhere in the ring does not affect that turn, so a repeated node is not by itself
+/// an error. (The old check rejected on the first coincidence with the running minimum, which made
+/// the verdict depend on the ring's arbitrary start index — one operand order rejected a pinch the
+/// other accepted.) Only a pinch *at* the extreme node itself leaves the turn ambiguous; that stays
+/// a `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than by a tolerance.
 pub(crate) fn loop_winding(
     planes: &[PlaneGeom],
     p: usize,
@@ -556,16 +561,25 @@ pub(crate) fn loop_winding(
     if ring.len() < 3 {
         return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
+    // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
+    // the running minimum just means "not strictly smaller", so keep it; do not reject.
     let mut lo = 0usize;
     for i in 1..ring.len() {
-        let ord = (0..3)
+        let strictly_less = (0..3)
             .map(|axis| t_cmp_coord(planes, ring[i], ring[lo], axis))
-            .find(|&c| c != 0);
-        match ord {
-            Some(-1) => lo = i,
-            Some(_) => {}
-            None => return Err(reject(tag::LOOP_ORIENT_MISMATCH)), // two nodes coincide
+            .find(|&c| c != 0)
+            == Some(-1);
+        if strictly_less {
+            lo = i;
         }
+    }
+    // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
+    // ambiguous — honest-reject rather than guess.
+    let pinched_extreme = ring.iter().enumerate().any(|(i, _)| {
+        i != lo && (0..3).all(|axis| t_cmp_coord(planes, ring[i], ring[lo], axis) == 0)
+    });
+    if pinched_extreme {
+        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
     }
     turn_at(planes, p, ring, lo)
 }

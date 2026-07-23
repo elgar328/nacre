@@ -2311,3 +2311,14 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **★ 첫 실행이 실제 갭을 잡았다 — 모서리-접촉 Common 순서 의존.** `Common([4,5]×[2,3]×[1,3], [2,4]×[0,2]×[2,3])`(두 축 0-겹침=모서리 접촉)이 **한 순서는 Ok(0 solids, 정답), 반대 순서는 `loop_orient_mismatch` 거절**. 교집합은 measure-zero(빈)라 **둘 다 정직**(empty 또는 honest-reject) = silent-wrong 아님·순서 의존 커버리지 갭 → 이 작업(그물) 범위 밖으로 문서화하고 commutativity 불변식을 "둘 다 Ok면 부피 일치"로 좁힘(순서 의존 *틀린 부피*는 계속 잡음). float였으면 절대 못 찾았을 것 — 그리드 설계의 즉효.
 - **L-prism 생성기 함정(커널 무관):** `prop_assume!(nx<w)`가 과다 reject → "Too many global rejects" 중단. offset(`nx=1+nxr%(w-1)`)으로 항상-유효화(assume 제거). cut-identity 자체는 무결.
 - **검증:** inclusion-exclusion 5000·L-prism 3000·나머지 default 통과, silent-wrong 0·wrong-volume 0. workspace 504·clippy 0·OCCT 93. **회귀 안전망:** 미래에 어떤 배치가 Ok-무효/틀린 부피를 내면 여기서 실패.
+
+---
+
+**M5 능력-갭 종결 — 공면 모서리/코너-접촉 Common 순서 의존 해소 (`loop_winding` figure-8 거짓 거절 정정).** 직전 셀의 proptest가 잡은 갭: `Common([4,5]×[2,3]×[1,3], [2,4]×[0,2]×[2,3])`이 한 순서는 Ok(빈), 반대는 `loop_orient_mismatch`. 근원을 계측으로 파고들어 정정했다.
+
+- **★ 플랜의 정밀 근원("`angular_order`의 `zero` 버킷 operand-순서 tie-break")이 틀렸다.** 계측(양 순서의 접촉 평면 세그먼트를 3D 좌표로 덤프): **무방향 세그먼트 집합이 양 순서 완전 동일**(mechanism ii 반증) — 근원은 세그먼트도 angular_order도 아니다. 또한 figure-8은 예상한 공유 평면(x=4)이 아니라 **z=2 평면**(B의 바닥면이 A 내부를 지남)에서, A의 단면 사각형과 B의 바닥 사각형이 **한 점 `(4,2,2)`에서만** 접촉해 생긴다.
+- **진짜 근원 = `loop_winding`의 시작-인덱스 의존 거짓 거절.** 한 점에서 만나는 두 셀의 **비유계(외곽) 면은 그 점을 두 번 지나는 figure-8** 경계를 갖는다(Euler상 정당: 면=3 = 두 +1 섬 + 한 -1 외곽). `loop_winding`은 감김을 lex-min 코너의 turn으로 읽는데(핀치와 무관), 낡은 코드가 **주행 최소값과 일치하는 첫 노드에서 즉시 거절**(combinatorics.rs:567)했다. 그래서 핀치가 링의 index 0(초기 lo)에 오는 순서만 거절, 다른 순서는 통과.
+- **★ BA는 순전히 운으로 통과했다.** 양 순서 모두 z=2에서 **같은 figure-8**을 만든다 — 차이는 오직 핀치 점이 링의 어느 인덱스냐(AB=0,4 / BA=3,7). BA는 스캔이 핀치 이전에 진짜 lex-min `(2,0,2)`에 도달해 turn_at으로 `Ok(-1)`. 즉 순서 의존은 "한쪽만 옳다"가 아니라 "동일 기하를 인덱스 위치 때문에 다르게 판정"이었다.
+- **정정:** `loop_winding`이 일치를 무시하고 lex-min을 찾은 뒤 turn_at으로 감김 계산. 핀치가 **극값 자체**에 오면(turn 모호) `LOOP_ORIENT_MISMATCH`로 정직-거절(안전 바닥 유지). figure-8은 쪼개지 않고 **하나의 -1 외곽 셀**로 둔다 → component-count 불변식(`winding-(-1) 수 == 성분 수`) 유지.
+  - **★ 먼저 시도한 두 fix가 실패해 근원을 좁혔다.** (a) `extract_cells`에서 figure-8을 단순 서브-루프로 **분리**하니 외곽을 2셀로 쪼개 component-count 불변식이 깨져 BA 회귀. (b) loop_winding 실패를 **다음 walk 방향 시도**로 soft-fail하니 AB는 양 방향 모두 figure-8이라 무효. 둘 다 반증되며 "figure-8은 정당한 단일 외곽, 문제는 loop_winding의 판정"으로 수렴.
+- **검증:** 모서리-접촉 Common 양 순서 모두 Ok(빈)·validate clean(명시 테스트 `edge_contact_common_is_empty_in_both_orders`). 불변식 `fuse_common_commute`를 **"양 순서 Ok/Err 상태 일치"로 재강화**(순서 의존 재발 시 실패). 그리드 proptest **6000-case×6 통과**(156s, arrangement-코어 변경 광범위 회귀 넷). workspace 498→499·clippy 0·OCCT 93 불변. **안전 삼중:** 근원 수정 + per-solid `check_result_topology`(non-manifold/euler/genus) + proptest 넷. **M5 능력-갭 종결** — 남은 것은 하드닝뿐.

@@ -276,3 +276,27 @@ use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
         assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
         assert_eq!(m.solids.get(r).cavities.len(), 0);
     }
+
+    /// Two boxes that touch only along a single edge share a plane (`x = 4`) whose cross-section is
+    /// two rectangles meeting at one point; the unbounded contour of that plane pinches through the
+    /// point, tracing a figure-8. Their `Common` is empty (a measure-zero intersection), and it must
+    /// be empty in **both** operand orders — the figure-8's winding is read at a lex-extreme corner,
+    /// not at the pinch, so the verdict no longer depends on where the ring happens to start.
+    #[test]
+    fn edge_contact_common_is_empty_in_both_orders() {
+        let build = || {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([4.0, 2.0, 1.0]), Point3::from_array([5.0, 3.0, 3.0]));
+            let b = m.add_cuboid(Point3::from_array([2.0, 0.0, 2.0]), Point3::from_array([4.0, 2.0, 3.0]));
+            (m, a, b)
+        };
+        for (label, swap) in [("a,b", false), ("b,a", true)] {
+            let (mut m, a, b) = build();
+            let (x, y) = if swap { (b, a) } else { (a, b) };
+            let out = boolean(&mut m, BoolKind::Common, x, y)
+                .unwrap_or_else(|e| panic!("edge-contact Common ({label}) should be empty, not reject: {e:?}"));
+            assert!(out.is_empty(), "edge-contact Common ({label}) should be empty, got {} solid(s)", out.len());
+            m.rebuild_adjacency();
+            assert!(nacre_validate::validate(&m).is_empty());
+        }
+    }
