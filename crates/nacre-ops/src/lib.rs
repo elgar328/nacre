@@ -16,11 +16,6 @@ use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Rotation, Shell, Solid, Vertex,
     VertexDef,
 };
-// Data-parallel evaluation of the read-only predicate phases (boolean face reconstruction
-// and vertex classification). Only present under the default `parallel` feature; the
-// serial build maps with plain iterators. See `overlap_fuse_cut`.
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 mod arrangement;
 mod combinatorics;

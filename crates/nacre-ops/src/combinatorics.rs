@@ -26,11 +26,6 @@
 //! `crate::shares_or_coplanar` → `crate::tolerant::t_planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
-// The arrangement engine (`arrangement.rs`) calls these queries; a handful of helpers are
-// reached only from the `frame_audit` diagnostic (`#[cfg(test)]`), so the non-test build sees
-// those as unreachable.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
 use crate::{BoolError, PlaneGeom, edge_incidence, reject, tag};
 use nacre_store::Handle;

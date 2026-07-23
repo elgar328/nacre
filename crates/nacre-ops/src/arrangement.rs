@@ -1,4 +1,3 @@
-#![cfg_attr(not(test), allow(dead_code))]
 //! The plane-class arrangement engine — the sole boolean path ([`boolean`], which `crate::boolean`
 //! delegates to). It traces each face of both solids onto every plane class as **line segments**
 //! (not closed loops), splits them at their crossings, extracts the cells, nests holes, labels
