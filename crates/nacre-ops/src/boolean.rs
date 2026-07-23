@@ -38,7 +38,57 @@ pub fn boolean(
     // The arrangement engine (`arrangement.rs`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
-    crate::arrangement::boolean(model, kind, a, b)
+    let snapshot = model.live_solids.clone();
+    let result = crate::arrangement::boolean(model, kind, a, b)?;
+    // Euler-parity self-check: a valid closed 2-manifold has `V − E + F − L_i = 2(S − G)`, always
+    // even. An odd characteristic proves the assembled result is not a closed solid (e.g. the
+    // degenerate where a cutter's convex corner coincides with the target's concave corner, three
+    // planes meeting at one point — the arrangement mis-traces it). Reject rather than return the
+    // malformed solid (DNA: never silently wrong), restoring the pre-op live set so the reject
+    // leaves the *live* model untouched (orphaned result cells stay in the append-only arena,
+    // unreachable, as any superseded solid's do). Valid results are always even, so this never
+    // false-rejects; the traversal reads the topology stores directly (no adjacency rebuild).
+    if result_euler_chi(model, &result) % 2 != 0 {
+        model.live_solids = snapshot;
+        return Err(reject(tag::EULER_PARITY));
+    }
+    Ok(result)
+}
+
+/// The Euler characteristic `V − E + F − L_i` of `solids`, counted over their distinct reachable
+/// cells (the same count [`nacre_validate`]'s `check_euler_poincare` makes, scoped to a boolean's
+/// output — which is freshly built, so its cells never alias another live solid's).
+fn result_euler_chi(model: &Model, solids: &[Handle<Solid>]) -> i64 {
+    let mut shells = HashSet::new();
+    let mut faces = HashSet::new();
+    let mut edges = HashSet::new();
+    let mut verts = HashSet::new();
+    let mut inner_loops: i64 = 0;
+    for &sh in solids {
+        let solid = model.solids.get(sh);
+        for &shell_h in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
+            if !shells.insert(shell_h) {
+                continue;
+            }
+            for &fh in &model.shells.get(shell_h).faces {
+                if !faces.insert(fh) {
+                    continue;
+                }
+                let face = model.faces.get(fh);
+                inner_loops += face.inner.len() as i64;
+                for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                    for he in &lp.half_edges {
+                        edges.insert(he.edge);
+                        if let Some(bounds) = model.edges.get(he.edge).bounds {
+                            verts.insert(bounds[0]);
+                            verts.insert(bounds[1]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    verts.len() as i64 - edges.len() as i64 + faces.len() as i64 - inner_loops
 }
 
 /// Connected components of the reconstructed faces by shared `Node` — the same identity

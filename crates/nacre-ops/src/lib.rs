@@ -119,12 +119,13 @@ pub(crate) mod tag {
     /// The deep rotated-chain floor (e.g. a seam-only face whose `π` is itself a rotated surface).
     /// Honest reject, never a wrong result.
     pub const ROTATED_UNDERDETERMINED: &str = "rotated_underdetermined";
-    /// A rotated boolean whose operands make **coplanar contact across the two operands** (a class
-    /// merges faces of both). The arrangement does not yet resolve rotated coplanar contact
-    /// exactly — it can emit a malformed solid — so it is rejected up front where the merge is
-    /// detected, never returned. Honest reject, never silently wrong (DNA). Non-rotated coplanar
-    /// contact and within-operand coplanar merges are unaffected.
-    pub const ROTATED_COPLANAR: &str = "rotated_coplanar";
+    /// The assembled result has an **odd Euler characteristic** (`V − E + F − L_i`), which no
+    /// closed 2-manifold can have (it must equal the even `2(S − G)`) — so the arrangement produced
+    /// a malformed solid and the boolean rejects rather than return it (DNA: never silently wrong).
+    /// The representative case is a coplanar degeneracy where a cutter's convex corner coincides
+    /// exactly with the target's concave corner (three planes meeting at one point), which the
+    /// per-plane trace mis-assembles; rotation-independent. Checked post-assembly in `boolean`.
+    pub const EULER_PARITY: &str = "euler_parity";
     pub const THREE_PLANES: &str = "three_planes";
     /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
     /// coordinate. The triple is the truth and the coordinate only its cache (overview §5), so this
@@ -532,40 +533,49 @@ pub mod tests {
     // that the CIP-wired machinery (arrangement, seam, in/out, outer/cavity — 3a–3c-vi) is
     // sound end-to-end on rotated (rounded-irrational) geometry.
 
-    /// Rotated coplanar contact *during result reuse* is honestly rejected, never returned as a
-    /// malformed solid. Here rotating the result R (which shares x=1/y=1/z=1 with the reused
-    /// cutter C) makes coplanar contact across the operands; the arrangement does not resolve
-    /// rotated coplanar exactly, so the guard rejects at the merge. (Non-coplanar reuse works —
-    /// [`a_rotated_boolean_result_can_be_cut_again`]; unrotated coplanar contact is unaffected.)
+    /// A cutter's convex corner landing exactly on the target's concave corner — three planes
+    /// (x=1,y=1,z=1) meeting at one point (1,1,1), six faces there — is a coplanar degeneracy the
+    /// per-plane trace mis-assembles into an odd-Euler (non-closed) solid. The `boolean` Euler-parity
+    /// self-check rejects it (`EULER_PARITY`) rather than return the malformed solid, leaving the live
+    /// model untouched. **Rotation-independent**: both the axis-aligned and the rotated framings
+    /// (which take the exact and the CIP-kernel path respectively) hit the same defect and reject.
+    /// R = a cube minus a far-corner octant; C = a cube whose +corner is that removed octant's inner
+    /// corner. (Coplanar contact away from a corner works — [`a_rotated_boolean_result_can_be_cut_again`].)
     #[test]
-    fn rotated_coplanar_contact_in_reuse_is_rejected() {
+    fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
         let iso = Isometry::rotation(Rotation {
             axis: Axis::Z,
             point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
         });
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
-        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-        // C shares the x=1, y=1, z=1 planes with R's interior cut faces → coplanar contact.
-        let c = m.add_cuboid(
-            Point3::from_array([-1.0, -1.0, -1.0]),
-            Point3::from_array([1.0; 3]),
-        );
-        m.rebuild_adjacency();
-        let r = transform(&mut m, r, &iso).unwrap();
-        m.rebuild_adjacency();
-        let c = transform(&mut m, c, &iso).unwrap();
-        m.rebuild_adjacency();
-        let live = m.live_solids.clone();
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Cut, r, c),
-            tag::ROTATED_COPLANAR,
-        );
-        // A rejected boolean leaves the live model untouched.
-        assert_eq!(m.live_solids, live, "reject must not mutate the live set");
+        // `rotate`: None = axis-aligned (exact path); Some = the result and cutter tilted (CIP path).
+        let run = |rotate: bool| {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+            let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+            let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+            // C's +corner is (1,1,1) = R's concave corner → three shared planes meet there.
+            let c = m.add_cuboid(
+                Point3::from_array([-1.0, -1.0, -1.0]),
+                Point3::from_array([1.0; 3]),
+            );
+            m.rebuild_adjacency();
+            let (r, c) = if rotate {
+                let r = transform(&mut m, r, &iso).unwrap();
+                m.rebuild_adjacency();
+                let c = transform(&mut m, c, &iso).unwrap();
+                m.rebuild_adjacency();
+                (r, c)
+            } else {
+                (r, c)
+            };
+            let live = m.live_solids.clone();
+            assert_rejects(|| boolean(&mut m, BoolKind::Cut, r, c), tag::EULER_PARITY);
+            assert_eq!(m.live_solids, live, "reject must not mutate the live set");
+        };
+        run(false); // axis-aligned
+        run(true); // rotated
     }
 
     /// Predicates over a rotated result's witness planes are rotation-invariant against the same

@@ -115,9 +115,13 @@ fn a_rotated_profile_is_the_same_solid_to_the_boolean() {
 }
 
 #[test]
-fn rotated_coplanar_contact_is_never_silently_wrong() {
+fn rotated_coplanar_contact_boss_and_pocket_solve() {
+    // Rotated coplanar contact *away from a corner* is solved correctly (it was over-rejected by an
+    // earlier rotated-coplanar guard, now removed — the Euler-parity self-check only rejects
+    // genuinely malformed, odd-Euler results). A tilted boss fuses flush onto its base (z=1 shared);
+    // a tilted pocket carves flush into it. Both must succeed with the exact volume and stay valid.
     let tilt = |m: &mut Model, s| xf(m, s, rot_iso(Axis::X, 30));
-    // boss fuse (correct fused volume 1.25 if solved).
+    // boss fuse — fused volume 1.25.
     let mut m = Model::new();
     let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let boss = m.add_cuboid(
@@ -125,13 +129,12 @@ fn rotated_coplanar_contact_is_never_silently_wrong() {
         Point3::from_array([0.75, 0.75, 2.0]),
     );
     let (base, boss) = (tilt(&mut m, base), tilt(&mut m, boss));
-    if let Ok(r) = boolean_one(&mut m, BoolKind::Fuse, base, boss) {
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty(), "solved boss is valid");
-        let v = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((v - 1.25).abs() < 1e-9, "solved boss fuse is correct: {v}");
-    }
-    // pocket cut (correct carved volume 0.875 if solved).
+    let r = boolean_one(&mut m, BoolKind::Fuse, base, boss).expect("tilted boss fuse solves");
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty(), "solved boss is valid");
+    let v = nacre_props::mass_props(&m, r).unwrap().volume;
+    assert!((v - 1.25).abs() < 1e-9, "solved boss fuse is correct: {v}");
+    // pocket cut — carved volume 0.875.
     let mut m = Model::new();
     let base = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let prism = m.add_cuboid(
@@ -139,10 +142,9 @@ fn rotated_coplanar_contact_is_never_silently_wrong() {
         Point3::from_array([0.75, 0.75, 1.0]),
     );
     let (base, prism) = (tilt(&mut m, base), tilt(&mut m, prism));
-    if let Ok(r) = boolean_one(&mut m, BoolKind::Cut, base, prism) {
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty(), "solved pocket is valid");
-        let v = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((v - 0.875).abs() < 1e-9, "solved pocket cut is correct: {v}");
-    }
+    let r = boolean_one(&mut m, BoolKind::Cut, base, prism).expect("tilted pocket cut solves");
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty(), "solved pocket is valid");
+    let v = nacre_props::mass_props(&m, r).unwrap().volume;
+    assert!((v - 0.875).abs() < 1e-9, "solved pocket cut is correct: {v}");
 }

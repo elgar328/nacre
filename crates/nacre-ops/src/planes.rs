@@ -216,7 +216,6 @@ pub(crate) fn plane_index_setup(
     b: Handle<Solid>,
 ) -> Result<PlaneSetup, BoolError> {
     let mut planes = collect_planes(model, a)?;
-    let na = planes.len();
     planes.extend(collect_planes(model, b)?);
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
@@ -225,21 +224,6 @@ pub(crate) fn plane_index_setup(
     let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
     let inc_b = combinatorics::edge_faces(model, b, &surf_ix)?;
     let canon = plane_classes(&planes);
-    // Rotated coplanar-contact guard (`tag::ROTATED_COPLANAR`). When either operand is rotated
-    // (`tri_pt3` present), a coplanar class that merges a face of `a` (index `< na`) with a face
-    // of `b` (`>= na`) is contact across the operands. The arrangement does not resolve rotated
-    // coplanar contact exactly — it can emit a malformed solid — so reject here, where the merge
-    // is detected, rather than let it through. Within-operand merges and the non-rotated path are
-    // untouched (this is the only rotated coplanar route enabled by rotated-result reuse).
-    if planes.iter().any(|p| p.tri_pt3.is_some()) {
-        let mut side_of_class: HashMap<usize, bool> = HashMap::new();
-        for (i, &root) in canon.iter().enumerate() {
-            let side = i < na;
-            if *side_of_class.entry(root).or_insert(side) != side {
-                return Err(reject(tag::ROTATED_COPLANAR));
-            }
-        }
-    }
     let (geom, plane_ix) = dense_planes(&planes, &canon);
     Ok(PlaneSetup {
         planes,
