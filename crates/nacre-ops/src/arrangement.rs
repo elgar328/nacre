@@ -14,6 +14,7 @@
 //! from it".
 
 use super::*;
+use crate::planes::*;
 
 /// Which operand a segment came from — the boolean's per-cell label needs both solids' material
 /// above and below, so provenance cannot be merged away.

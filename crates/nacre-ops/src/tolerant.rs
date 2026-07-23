@@ -19,7 +19,7 @@
 //! every_ray) in stage 3b-i;
 //! with a vertex handle + `model` threaded down) in 3b-ii.
 
-use crate::{FaceInfo, PlaneGeom};
+use crate::planes::{FaceInfo, PlaneGeom};
 use nacre_geom::intersect::{
     plane_pair_dir_sign, plane_side, three_plane_cmp_coord, three_plane_orient3d,
 };
@@ -265,15 +265,16 @@ pub(crate) fn t_plane_pair_dir_sign(planes: &[PlaneGeom], p: usize, a: usize, b:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Operation, apply, collect_planes};
+    use crate::planes::collect_planes;
+    use crate::{Operation, apply};
 
     /// The plane table of one solid, built through the real path so these tests exercise the same
     /// `PlaneGeom` the engine does. A single convex operand has no coplanar pair, so the numbering
     /// is the identity — indices below name a face and its plane interchangeably.
     fn plane_table(m: &Model, s: Handle<Solid>) -> Vec<PlaneGeom> {
         let faces = collect_planes(m, s).unwrap();
-        let canon = crate::plane_classes(&faces);
-        crate::dense_planes(&faces, &canon).0
+        let canon = crate::planes::plane_classes(&faces);
+        crate::planes::dense_planes(&faces, &canon).0
     }
     use nacre_math::Point3;
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation as SRot};

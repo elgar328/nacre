@@ -26,8 +26,9 @@
 //! `crate::shares_or_coplanar` → `crate::tolerant::t_planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
+use crate::planes::{PlaneGeom, edge_incidence};
 use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
-use crate::{BoolError, PlaneGeom, edge_incidence, reject, tag};
+use crate::{BoolError, reject, tag};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
 use std::collections::HashMap;

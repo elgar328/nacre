@@ -1,0 +1,436 @@
+//! The plane/face substrate: per-face (`FaceInfo`) and per-plane-class (`PlaneGeom`) tables and
+//! their construction. Everything the boolean engine and its combinatorial queries build on.
+
+use crate::combinatorics;
+use crate::{BoolError, he_start, reject, tag, tolerant};
+use nacre_geom::intersect::{plane_plane, planes_coplanar};
+use nacre_geom::{Plane, Surface};
+use nacre_math::{Point3, Vector3};
+use nacre_scalar::frame3::Pt3;
+use nacre_store::Handle;
+use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Origin, Shell, Solid, Vertex};
+use std::collections::HashMap;
+
+/// A face's supporting plane plus the exact in/out data the seam path needs.
+///
+/// `three_plane_orient3d(.., tri[0], tri[1], tri[2])` returns `+1` when the
+/// implicit point lies on **`tri`'s right-hand-normal side** — the convention is
+/// tied to the triangle, never to `plane`. `n_out` happens to equal that RH normal
+/// only because `tri` is taken outer-CCW; `plane.normal()` is the *surface's*
+/// normal and may point inward on a `Reversed` face. Every sign test here reads
+/// `n_out` (or `tri`), and none reads `plane.normal()`.
+pub(crate) struct FaceInfo {
+    pub(crate) surf: Handle<Surface>,
+    /// The face this plane came from. Distinguishes two coplanar faces that share one
+    /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
+    /// cell coplanar-narrow), which `surf` alone collapses. `surf_ix` keys on this.
+    pub(crate) face: Handle<Face>,
+    pub(crate) plane: Plane,
+    /// Three non-collinear outer-loop points, **ordered so their RH normal is outward**.
+    /// The order need not follow the loop: at a reflex corner it is reversed.
+    pub(crate) tri: [Point3; 3],
+    /// Outward normal, `(tri[1]−tri[0])×(tri[2]−tri[0])` normalized — the single
+    /// source of "outward" for both the in/out sign test and face ordering.
+    pub(crate) n_out: Vector3,
+    /// `+1` when this face's stored plane normal already points out of its solid, `-1` when the
+    /// face is `Reversed` and the two oppose.
+    ///
+    /// **This face's**, not its plane class's. The class-frame twin is [`PlaneGeom::frame_sign`],
+    /// and the two used to be one function called with either kind of index — the single place the
+    /// face/plane convention could not be asserted, because both readings were legitimate
+    /// (dev-log, normalization cell). Separate names, separate questions.
+    pub(crate) orient_sign: i8,
+    /// The three `tri` points as **toleranced `Pt3`** (exact rotation definition), in the
+    /// same order as `tri` — `Some` only when the solid is rotated (overhaul stage 3;
+    /// `collect_planes` builds it once). `None` on the axis-aligned path, where `tri`'s
+    /// f64 coordinates are already exact and the geom predicates are used directly.
+    pub(crate) tri_pt3: Option<[Pt3; 3]>,
+}
+
+/// The supporting planes of a solid's outer shell. `Unsupported` if any face is
+/// non-planar or lacks three non-collinear loop points.
+pub(crate) fn collect_planes(
+    model: &Model,
+    solid: Handle<Solid>,
+) -> Result<Vec<FaceInfo>, BoolError> {
+    // A rotated operand's face coordinates are rounded, so each plane also carries its
+    // exact `Pt3` definition (overhaul stage 3). Decided once per solid — the axis-aligned
+    // path keeps `tri_pt3 = None` and pays nothing.
+    let rotated = solid_is_rotated(model, solid);
+    let mut out = Vec::new();
+    for sh in solid_shell_handles(model, solid) {
+        for &fh in &model.shells.get(sh).faces {
+            let face = model.faces.get(fh);
+            let plane = match model.surfaces.get(face.surface) {
+                Surface::Plane(p) => *p,
+                Surface::Cylinder(_) => return Err(reject(tag::CYLINDER_FACE)),
+            };
+            let (tri, tri_verts) =
+                outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
+            let n_out = (tri[1] - tri[0])
+                .cross(tri[2] - tri[0])
+                .normalize()
+                .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
+            let tri_pt3 = if rotated {
+                let pt3 = |vh| {
+                    nacre_tip::vertex_pt3(model, vh).map_err(|_| reject(tag::ROTATED_UNSUPPORTED))
+                };
+                Some([pt3(tri_verts[0])?, pt3(tri_verts[1])?, pt3(tri_verts[2])?])
+            } else {
+                None
+            };
+            // `orient_sign`, precomputed: the two invariants it used to re-check on every call
+            // are properties of this face, so they are decided once, here.
+            let dot = plane.normal().dot(n_out);
+            debug_assert!(
+                dot.abs() > 0.5,
+                "a plane's normal must be parallel to n_out"
+            );
+            debug_assert_eq!(
+                dot > 0.0,
+                face.orientation == Orientation::Forward,
+                "n_out's sign against the surface normal is the face's orientation"
+            );
+            out.push(FaceInfo {
+                surf: face.surface,
+                face: fh,
+                plane,
+                tri,
+                n_out,
+                orient_sign: if dot > 0.0 { 1 } else { -1 },
+                tri_pt3,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// All shells of a solid — outer first, then cavities. The boolean seam
+/// front-end walks these so a cavitied operand's void walls are seen (cell
+/// (5c-in)); a non-hollow solid yields just its outer shell, unchanged.
+pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Shell>> {
+    let s = model.solids.get(solid);
+    std::iter::once(s.outer)
+        .chain(s.cavities.iter().copied())
+        .collect()
+}
+
+/// Three non-collinear points of a face's outer loop — with the **vertex handle** each
+/// point came from — ordered so their right-hand normal points **out** of the solid.
+/// The handles let the toleranced predicates rebuild each point as a `Pt3` (overhaul
+/// stage 3); the coordinates alone drive the axis-aligned path.
+pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Handle<Vertex>; 3])> {
+    let verts: Vec<Handle<Vertex>> = face
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| he_start(model, he))
+        .collect();
+    let pts: Vec<Point3> = verts
+        .iter()
+        .map(|&vh| model.vertices.get(vh).point)
+        .collect();
+    let n = pts.len();
+    // The turn at one corner does not know which way the ring winds. Every b-rep loop is
+    // CCW about its face's outward normal, but at a *reflex* corner the local turn
+    // opposes the global winding, so three consecutive points can hand back an inward
+    // normal. The Newell sum has no single corner to be fooled by.
+    let newell = (0..n).fold(Vector3::zero(), |acc, i| {
+        acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
+    });
+    let i = (0..n).find(|&i| {
+        let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
+        (b - a).cross(c - a).norm() > 0.0
+    })?;
+    let (i0, i1, i2) = (i, (i + 1) % n, (i + 2) % n);
+    let (a, b, c) = (pts[i0], pts[i1], pts[i2]);
+    // Same b/c swap for coords and handles, so `tri[k]` and `tri_verts[k]` stay aligned.
+    Some(if (b - a).cross(c - a).dot(newell) < 0.0 {
+        ([a, c, b], [verts[i0], verts[i2], verts[i1]])
+    } else {
+        ([a, b, c], [verts[i0], verts[i1], verts[i2]])
+    })
+}
+
+/// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
+/// `Origin::Discovered` tolerance).
+pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
+    let mut tol = a.distance(p).max(b.distance(p)).max(c.distance(p));
+    for (x, y) in [(a, b), (a, c), (b, c)] {
+        if let Some(line) = plane_plane(x, y) {
+            tol = tol.max(line.distance(p));
+        }
+    }
+    tol
+}
+
+/// The minimal per-op plane table two solids share: the
+/// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
+/// [`combinatorics::EdgeFaces`]. Built once and shared: indices into the returned `planes`/`surf_ix`
+/// are common to both solids, so a vertex of `a` and a face of `b` compose in one index space.
+/// Destructure it with `..` (`let PlaneSetup { planes: faces_tab, geom: planes, plane_ix, .. } = …`):
+/// the tables here grow as the arrangement learns to say "plane" and "face" in different index
+/// spaces, and a positional tuple made every one of those steps touch all ~25 call sites.
+///
+/// The plane classes (`canon`) are computed here to build `geom`/`plane_ix` and then dropped — the
+/// dense `plane_ix` is the only face→plane map anything downstream needs, so the sparse union-find
+/// output does not escape.
+pub(crate) struct PlaneSetup {
+    pub(crate) planes: Vec<FaceInfo>,
+    pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
+    pub(crate) inc_a: combinatorics::EdgeFaces,
+    pub(crate) inc_b: combinatorics::EdgeFaces,
+    /// The arrangement's planes, densely indexed — see [`dense_planes`].
+    pub(crate) geom: Vec<PlaneGeom>,
+    /// `plane_ix[face]` is that face's plane, as an index into `geom`.
+    pub(crate) plane_ix: Vec<usize>,
+}
+
+pub(crate) fn plane_index_setup(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<PlaneSetup, BoolError> {
+    let mut planes = collect_planes(model, a)?;
+    planes.extend(collect_planes(model, b)?);
+    let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+    for (i, pi) in planes.iter().enumerate() {
+        surf_ix.insert(pi.face, i);
+    }
+    let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
+    let inc_b = combinatorics::edge_faces(model, b, &surf_ix)?;
+    let canon = plane_classes(&planes);
+    let (geom, plane_ix) = dense_planes(&planes, &canon);
+    Ok(PlaneSetup {
+        planes,
+        surf_ix,
+        inc_a,
+        inc_b,
+        geom,
+        plane_ix,
+    })
+}
+
+/// One plane of the arrangement, indexed by a **dense** class id.
+///
+/// The face table cannot answer "which plane" without a convention: a class holds faces from both
+/// operands, and two of them can face opposite ways, so there is no such thing as *the* plane's
+/// outward normal. What a plane has is a **frame** — the class root's stored normal — and the only
+/// direction fact anyone needs from it is [`PlaneGeom::frame_sign`]. Everything else here is a
+/// witness: three points known to lie on this plane, used to reconstruct it exactly.
+pub(crate) struct PlaneGeom {
+    pub(crate) plane: Plane,
+    /// The class's representative surface — what `assemble_fuse_cut` records in a
+    /// `VertexDef::ThreePlane`.
+    pub(crate) surf: Handle<Surface>,
+    /// Witness points on this plane (the root face's `tri`), outward-ordered for that face.
+    pub(crate) tri: [Point3; 3],
+    /// The witness as toleranced `Pt3` — `Some` only when the root face came from a rotated solid.
+    pub(crate) tri_pt3: Option<[Pt3; 3]>,
+    /// `+1` when the plane's stored normal agrees with the root face's outward normal, `-1` when
+    /// they oppose. This *is* the label frame: `[A_above, A_below, …]` is defined about the class
+    /// root's stored normal, and this sign is what relates it to material. Precomputed here so the
+    /// two `debug_assert`s that guard the convention run once, at construction.
+    pub(crate) frame_sign: i8,
+}
+
+/// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
+///
+/// **The numbering is monotone in `canon`.** Roots are ranked in increasing order, so
+/// `canon[i] < canon[j]` iff `plane_ix[i] < plane_ix[j]` — every comparison, sort and lex-min over
+/// plane indices is order-isomorphic to the sparse form. Nothing found in the engine turns out to
+/// depend on that (the two candidates — `loop_winding`'s lex-min node and `crossings`' pre-dedup
+/// sort — are by coordinate and by set, respectively), but the audit cannot be proved exhaustive
+/// over ~175 sites, so the numbering removes the question instead of answering it.
+pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGeom>, Vec<usize>) {
+    let mut roots: Vec<usize> = canon.to_vec();
+    roots.sort_unstable();
+    roots.dedup();
+    let plane_ix = canon
+        .iter()
+        .map(|c| {
+            roots
+                .binary_search(c)
+                .expect("a class root is in the root set")
+        })
+        .collect();
+    let geom = roots
+        .iter()
+        .map(|&r| {
+            let pi = &planes[r];
+            PlaneGeom {
+                plane: pi.plane,
+                surf: pi.surf,
+                tri: pi.tri,
+                tri_pt3: pi.tri_pt3.clone(),
+                frame_sign: pi.orient_sign,
+            }
+        })
+        .collect();
+    (geom, plane_ix)
+}
+
+/// Whether three `Pt3` are **exactly collinear** (zero-area triangle), decided on their
+/// pre-rotation rational `base` coordinates. A rigid rotation preserves collinearity, and three
+/// vertices of one solid share a rotation chain, so their bases are comparable; all three
+/// coordinate-plane projections of `(b−a)×(c−a)` must vanish (exact `Rat`, no tolerance). An
+/// i128 overflow returns `false` (treat as non-collinear): a genuinely-collinear triangle then
+/// stays and is at worst rejected `RAY_DEGENERATE`, never falsely skipped (which would drop a
+/// real crossing — silent-wrong). Unrotated vertices carry `base == coord`, so this is the exact
+/// zero-area (collinear) test on the vertices' rotation definitions.
+#[cfg(test)]
+pub(crate) fn pt3_base_collinear(a: &Pt3, b: &Pt3, c: &Pt3) -> bool {
+    use nacre_scalar::Rat;
+    let (a, b, c) = (&a.base, &b.base, &c.base);
+    let proj_zero = |i: usize, j: usize| -> Option<bool> {
+        let det = b[i]
+            .checked_sub(a[i])?
+            .checked_mul(c[j].checked_sub(a[j])?)?
+            .checked_sub(
+                b[j].checked_sub(a[j])?
+                    .checked_mul(c[i].checked_sub(a[i])?)?,
+            )?;
+        Some(det == Rat::from_int(0))
+    };
+    matches!(
+        (proj_zero(1, 2), proj_zero(2, 0), proj_zero(0, 1)),
+        (Some(true), Some(true), Some(true))
+    )
+}
+
+/// Each outer-shell edge with its bound vertices and the two combined-plane
+/// indices of its adjacent faces, in first-seen (deterministic) order.
+///
+/// Every loop of every face is walked, holes included: a hole-ring edge is used
+/// once by the holed face's inner loop and once by the neighbouring wall's outer
+/// loop, so it too has exactly two incident faces. Walking `outer` before `inner`
+/// on each face leaves the order of a hole-free solid untouched.
+///
+/// The pair is returned as `[usize; 2]`, so no caller can index a third slot: an
+/// edge with any other incidence count is a non-manifold shell and rejects here.
+#[allow(clippy::type_complexity)]
+pub(crate) fn edge_incidence(
+    model: &Model,
+    solid: Handle<Solid>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
+) -> Result<Vec<(Handle<Edge>, [Handle<Vertex>; 2], [usize; 2])>, BoolError> {
+    let mut order: Vec<Handle<Edge>> = Vec::new();
+    let mut map: HashMap<Handle<Edge>, ([Handle<Vertex>; 2], Vec<usize>)> = HashMap::new();
+    for sh in solid_shell_handles(model, solid) {
+        for &fh in &model.shells.get(sh).faces {
+            let face = model.faces.get(fh);
+            let pidx = surf_ix[&fh];
+            for he in face_half_edges(face) {
+                let bounds = model.edges.get(he.edge).bounds.expect("bounded");
+                let entry = map.entry(he.edge).or_insert_with(|| {
+                    order.push(he.edge);
+                    (bounds, Vec::new())
+                });
+                entry.1.push(pidx);
+            }
+        }
+    }
+    order
+        .into_iter()
+        .map(|e| {
+            let (b, p) = map.remove(&e).unwrap();
+            match p[..] {
+                [x, y] => Ok((e, b, [x, y])),
+                // `validate` would call this `NonOpposedEdge`, but `boolean` never runs
+                // `validate` on its inputs, so the guard stays. No firing test.
+                _ => Err(reject(tag::NON_MANIFOLD_EDGE)),
+            }
+        })
+        .collect()
+}
+
+/// Every half-edge of a face: its outer loop first, then each hole ring in order.
+pub(crate) fn face_half_edges(face: &Face) -> impl Iterator<Item = &HalfEdge> {
+    face.outer
+        .half_edges
+        .iter()
+        .chain(face.inner.iter().flat_map(|l| l.half_edges.iter()))
+}
+
+/// Two faces lie on the same plane — by a **shared `Surface` handle** (§5 explicit
+/// sharing: O(1) `Handle` identity, exact, rotation-independent) or, as a fallback,
+/// by the geometric rank-1 `planes_coplanar` test. A referenced coplanar contact —
+/// a pad/pocket cap that reuses its face's surface — is caught by the handle path
+/// without any coordinate test. On the axis-aligned M5 corpus the handle path is
+/// redundant with `planes_coplanar` (same handle ⇒ same plane), so the geometric
+/// fallback is what keeps independently-built coplanar contacts working; the handle
+/// path's real payoff is rotated frames, where the geometric test would need the
+/// rotation-exact judgment.
+pub(crate) fn shares_or_coplanar(planes: &[FaceInfo], i: usize, j: usize) -> bool {
+    let (pa, pb) = (&planes[i], &planes[j]);
+    // Three independent witnesses, OR-ed, so this can only ever merge *more* than before:
+    //  1. the same `Surface` handle — coplanar by reference (what an ops-built tool's base cap and
+    //     its target face share, and what a chained operand's split coplanar faces share);
+    //  2. exactly proportional coefficients — the original test, kept;
+    //  3. the faces' own coordinates, exactly (`t_planes_coplanar`) — the only one of the three
+    //     that does not read a *derived* value, and the one that catches two independently built
+    //     solids whose walls coincide (`add_cuboid` stacked on `add_cuboid`), where the rounded
+    //     coefficients of differently-sized faces are not exactly proportional.
+    pa.surf == pb.surf
+        || planes_coplanar(&pa.plane, &pb.plane)
+        || tolerant::t_planes_coplanar(planes, i, j)
+}
+
+/// Union-find root of `x` in `parent` (with path compression). Roots are the smallest index
+/// of their class, so the result is deterministic (replay, DNA §absolute-3).
+/// Union-find root with path compression. Drives component grouping in [`unify_coplanar_faces`].
+pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
+    let mut r = x;
+    while parent[r] != r {
+        r = parent[r];
+    }
+    let mut c = x;
+    while parent[c] != r {
+        let next = parent[c];
+        parent[c] = r;
+        c = next;
+    }
+    r
+}
+
+/// Canonicalize the combined plane table by coplanarity: two planes that are the same plane
+/// (shared `Surface` handle, or exact rank-1 [`planes_coplanar`]) are merged into one class, so
+/// a wall of `a` coplanar with a wall of `b` names a **single line** in a shared plane π. This is
+/// the one thing the seam engine cannot do (it rejects `order_along(R,R)==0` as `FOURPLANE`);
+/// canonicalizing turns that self-comparison into a real order. Returns `canon` where `canon[i]`
+/// is the class root (the smallest index in the class). Every decision is exact
+/// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
+// Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn plane_classes(planes: &[FaceInfo]) -> Vec<usize> {
+    let n = planes.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if shares_or_coplanar(planes, i, j) {
+                let (ri, rj) = (uf_find(&mut parent, i), uf_find(&mut parent, j));
+                if ri != rj {
+                    // Attach the larger root under the smaller so a class's root is its min index.
+                    parent[ri.max(rj)] = ri.min(rj);
+                }
+            }
+        }
+    }
+    (0..n).map(|i| uf_find(&mut parent, i)).collect()
+}
+
+/// Whether `solid` was produced by a non-exact rotation — its vertices carry
+/// `Origin::Rotated`. A `Transform` rotates a whole solid uniformly and `boolean`
+/// rejects rotated inputs, so a solid is all-or-nothing rotated: one vertex decides
+/// (O(1)). (90°-family rotations stay exact/`Constructed`, so this is false for them.)
+pub(crate) fn solid_is_rotated(model: &Model, solid: Handle<Solid>) -> bool {
+    let sh = model.solids.get(solid).outer;
+    for &fh in &model.shells.get(sh).faces {
+        for he in &model.faces.get(fh).outer.half_edges {
+            if let Some(bounds) = model.edges.get(he.edge).bounds {
+                return matches!(model.vertices.get(bounds[0]).origin, Origin::Rotated { .. });
+            }
+        }
+    }
+    false
+}
