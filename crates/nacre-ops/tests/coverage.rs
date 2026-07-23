@@ -15,3 +15,6 @@ mod convex;
 
 #[path = "coverage/multisolid.rs"]
 mod multisolid;
+
+#[path = "coverage/rotation.rs"]
+mod rotation;
