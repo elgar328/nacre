@@ -2250,3 +2250,15 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **인용 재배선(측정 확정):** 코드 주석 "overhaul §3/§TIP"(frame2·frame3·nacre-tip) → "design.md §9"; arrangement.rs의 `winding-engine.md:66/115` 파일 참조 제거(산문 보존). ★ **`§TIP ①~⑨`·"design §TIP"는 무변경** — 실측 결과 **어느 문서에도 정본 정의 표가 없는 추상 약칭**(인라인 gloss로 뜻을 달고 삶)이라 파일 링크가 아니어서 삭제로 안 끊긴다. memory 규약(citation 규칙)만 갱신, 역사 노트·dev-log의 dangling은 의도적 수용(과거-정확 보존).
 
 **게이트:** 인용 무결성 grep 0(dev-log·역사 memory 제외)·clippy 0·cargo doc 새 broken-link 0(기존 private-link 경고는 무관)·프로덕션 무변경. `docs/`가 overview·design·dev-log로 정돈됐다.
+
+---
+
+**★ (정돈) `TIP` → `CIP` 개명 = "Certified Indirect Predicates" (크레이트 `nacre-tip`→`nacre-cip`).** 회전 판정층 이름을 재검토해 개명. 순수 개명이라 동작 불변(workspace 494/0·OCCT 91/0·clippy 0 — 기준선 동일).
+
+- **왜 개명.** 옛 확장 "Toleranced Indirect Predicates"의 두 단어가 문제였다: ① **"Toleranced"** = 프로젝트가 (5d)에서 은퇴시킨 **글로벌 tolerance 냄새**(자기부정). tol은 fudge가 아니라 sound 측정 오차 한계라 **"Certified"**(증명해서 내거나 기권)가 정확. ② **"Indirect"는 유지** — 회전에서도 간접술어 machinery(implicit point 3-평면 재구성)를 그대로 쓴다. T만 교체.
+- **정체(문헌 확인 후).** 새 패러다임이 아니라 **세 계보의 하이브리드**다 — Attene 2020 간접술어(implicit point) · Shewchuk 1997/CGAL 필터(f64 필터→고정밀 상승) · Guibas 1989 **epsilon-geometry**(값+tol·sound 판정 or 기권). 우리 구별점 = 초월(회전) 입력에 sound 필터 + **정직 기권**(declare-0→ask) + 유리수/초월 하이브리드. **포기한 것은 초월수까지의 이론적 완비성이지 건전성이 아니다**(틀린 부호 0).
+- **범위(전수조사).** 크레이트(dir·Cargo·`nacre-ops` dep·`planes.rs` import·`TipError`→`CipError`) + LIVE `§TIP`→`§CIP`·"TIP"→"CIP"(topo·ops·validate·scalar·design.md, 각 occurrence가 개념인지 확인·blind sed 금지) + design.md §9 CIP 서브섹션의 **stale 오프닝 정정**(":521 구현 금지"·":523 회전은 M5 관심사 아님" → 구현-완료, 오버홀 stage 1~3) + :525에 3-계보 gloss 통합 + memory 규약(tombstone).
+- **범위 밖(역사 유지).** dev-log·`experiments/`(워크스페이스 밖·무의존)·resolved memory는 dangling 수용(과거-정확 보존). **★ 인접 `tolerant.rs`/`t_*`(~60 사이트)는 고려 후 개명 보류** — ops-계층 라우팅 래퍼로 "inexact를 tolerate"라 정확하고 CIP(개념/크레이트)와 직교. 필요 시 별개 후속.
+- **발견(미수정):** `nacre-scalar/frame2.rs`의 "(§6)" ask-user 참조 2곳은 docs-통합 때 overhaul §6→design §9로 이동한 것의 잔재(§6은 이제 연산 층) — CIP 개명 범위 밖이라 남김, 별개 §-참조 정합 후속 후보.
+
+**세 커밋:** `59c26e3`(크레이트) → `51e8b2d`(인용·gloss) → 이 셀.
