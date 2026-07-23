@@ -17,7 +17,7 @@ nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 # Read-only TIP analysis (rotated-vertex Pt3 + indirect judges) for the toleranced
 # boolean predicates (overhaul stage 3). tip's dep on nacre-ops is dev-only (a separate
 # target), so the lib dependency graph stays acyclic.
-nacre-tip = { path = "../nacre-tip", version = "0.0.0" }
+nacre-cip = { path = "../nacre-cip", version = "0.0.0" }
 # Data-parallel evaluation of the read-only boolean predicate phases (face
 # reconstruction, vertex classification). Optional + behind the default-on `parallel`
 # feature so a pure single-threaded / wasm build (`--no-default-features`) links no rayon.

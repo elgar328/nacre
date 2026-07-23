@@ -247,6 +247,20 @@ name = "nacre"
 version = "0.0.0"
 
 [[package]]
+name = "nacre-cip"
+version = "0.0.0"
+dependencies = [
+ "nacre-geom",
+ "nacre-math",
+ "nacre-ops",
+ "nacre-predicates",
+ "nacre-scalar",
+ "nacre-store",
+ "nacre-topo",
+ "proptest",
+]
+
+[[package]]
 name = "nacre-geom"
 version = "0.0.0"
 dependencies = [
@@ -266,6 +280,7 @@ dependencies = [
 name = "nacre-ops"
 version = "0.0.0"
 dependencies = [
+ "nacre-cip",
  "nacre-geom",
  "nacre-math",
  "nacre-props",
@@ -273,7 +288,6 @@ dependencies = [
  "nacre-step",
  "nacre-store",
  "nacre-tess",
- "nacre-tip",
  "nacre-topo",
  "nacre-validate",
  "proptest",
@@ -348,20 +362,6 @@ version = "0.0.0"
 dependencies = [
  "nacre-geom",
  "nacre-math",
- "nacre-store",
- "nacre-topo",
- "proptest",
-]
-
-[[package]]
-name = "nacre-tip"
-version = "0.0.0"
-dependencies = [
- "nacre-geom",
- "nacre-math",
- "nacre-ops",
- "nacre-predicates",
- "nacre-scalar",
  "nacre-store",
  "nacre-topo",
  "proptest",

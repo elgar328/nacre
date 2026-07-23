@@ -73,7 +73,7 @@ pub(crate) fn collect_planes(
                 .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
             let tri_pt3 = if rotated {
                 let pt3 = |vh| {
-                    nacre_tip::vertex_pt3(model, vh).map_err(|_| reject(tag::ROTATED_UNSUPPORTED))
+                    nacre_cip::vertex_pt3(model, vh).map_err(|_| reject(tag::ROTATED_UNSUPPORTED))
                 };
                 Some([pt3(tri_verts[0])?, pt3(tri_verts[1])?, pt3(tri_verts[2])?])
             } else {

@@ -1,4 +1,4 @@
-//! Toleranced indirect predicates over the b-rep `Model` (design.md §9 TIP, stage 2b).
+//! Certified indirect predicates over the b-rep `Model` (design.md §9 CIP, stage 2b).
 //!
 //! A read-only analysis above `nacre-topo` (like `nacre-validate` / `nacre-props`): it
 //! assembles a rotated vertex's exact **definition** + **directional tol** from the
@@ -15,7 +15,7 @@
 //! reconstructs each of its three planes from three rotated points of a face on that
 //! surface and routes to [`nacre_scalar::frame3::indirect_orient3d_judge`] (stage
 //! 2c-ii). Two or more implicit points, a vertex translated after being rotated, and a
-//! plane with too few direct vertices all surface as a typed [`TipError`] (honest
+//! plane with too few direct vertices all surface as a typed [`CipError`] (honest
 //! defer) rather than a silent wrong sign. [`cmp_coord`] is the two-implicit companion:
 //! it orders two `Discovered` seams along one axis from their plane definitions (stage
 //! cmp-ii). Not yet wired into boolean (stage 3): the boolean still rejects non-90°
@@ -31,7 +31,7 @@ use nacre_topo::{Model, Origin, Rotation, Vertex, VertexDef};
 
 /// Why a vertex could not be judged by the direct predicate here (honest defer).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TipError {
+pub enum CipError {
     /// A `Discovered` seam (or a point rooted on one): its exact position is a
     /// three-plane intersection, judged by the indirect predicate (stage 2c), not by a
     /// direct orient3d over its f64 cache.
@@ -54,25 +54,25 @@ pub enum TipError {
 
 /// The toleranced point ([`Pt3`]) of a kernel vertex, assembled from its root
 /// coordinate and rotation forest. `Err` when it is not a direct (Constructed-rooted,
-/// pure-rotation) point — see [`TipError`].
-pub fn vertex_pt3(model: &Model, vh: Handle<Vertex>) -> Result<Pt3, TipError> {
+/// pure-rotation) point — see [`CipError`].
+pub fn vertex_pt3(model: &Model, vh: Handle<Vertex>) -> Result<Pt3, CipError> {
     let pt3 = build(model, vh)?;
     // Pure-rotation guard: the forest omits translations, so a rotate-then-translate
     // history leaves base + chain ≠ the kernel coord (and hp_coord would drop the
     // translation). A pure-rotation replay uses the same `apply_point` ops, so it is
     // bit-identical — any mismatch means a translation intervened.
     if pt3.coord != model.vertices.get(vh).point.as_array() {
-        return Err(TipError::TranslateInterleaved);
+        return Err(CipError::TranslateInterleaved);
     }
     Ok(pt3)
 }
 
 /// Assemble the `Pt3` from the definition (no guard — [`vertex_pt3`] guards the result).
-fn build(model: &Model, vh: Handle<Vertex>) -> Result<Pt3, TipError> {
+fn build(model: &Model, vh: Handle<Vertex>) -> Result<Pt3, CipError> {
     let v = model.vertices.get(vh);
     match v.origin {
         Origin::Constructed => Ok(Pt3::at(coord_rat(v.point.as_array())?)),
-        Origin::Discovered { .. } => Err(TipError::IndirectRequired),
+        Origin::Discovered { .. } => Err(CipError::IndirectRequired),
         Origin::Rotated { base, rotation } => {
             // The root is a non-`Rotated` ancestor (1c invariant); build it, then replay
             // the rotation chain (root → leaf, via `parent` links).
@@ -102,11 +102,11 @@ fn rotation_chain(model: &Model, leaf: Handle<Rotation>) -> Vec<RotNode> {
     chain
 }
 
-fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], TipError> {
+fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], CipError> {
     Ok([
-        Rat::try_from_f64(c[0]).ok_or(TipError::Downgrade)?,
-        Rat::try_from_f64(c[1]).ok_or(TipError::Downgrade)?,
-        Rat::try_from_f64(c[2]).ok_or(TipError::Downgrade)?,
+        Rat::try_from_f64(c[0]).ok_or(CipError::Downgrade)?,
+        Rat::try_from_f64(c[1]).ok_or(CipError::Downgrade)?,
+        Rat::try_from_f64(c[2]).ok_or(CipError::Downgrade)?,
     ])
 }
 
@@ -120,17 +120,17 @@ fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], TipError> {
 ///   moved to the `V` slot and its three planes are reconstructed from three rotated
 ///   points each ([`plane_pts`]), then [`indirect_orient3d_judge`] decides the sign
 ///   without materializing the seam's coordinate (stage 2c-ii).
-/// - **Two or more `Discovered`** ([`TipError::IndirectRequired`]) — the ported
+/// - **Two or more `Discovered`** ([`CipError::IndirectRequired`]) — the ported
 ///   predicate carries a single implicit point; the two-implicit case is stage 3.
 ///
-/// `Err` if any vertex is not recoverable here ([`TipError`]).
+/// `Err` if any vertex is not recoverable here ([`CipError`]).
 pub fn orient3d(
     model: &Model,
     a: Handle<Vertex>,
     b: Handle<Vertex>,
     c: Handle<Vertex>,
     d: Handle<Vertex>,
-) -> Result<Orient, TipError> {
+) -> Result<Orient, CipError> {
     let verts = [a, b, c, d];
     let discovered: Vec<usize> = verts
         .iter()
@@ -141,13 +141,13 @@ pub fn orient3d(
     match discovered.as_slice() {
         [] => direct_orient3d(model, verts),
         [slot] => indirect_dispatch(model, verts, *slot),
-        _ => Err(TipError::IndirectRequired), // two-plus implicit points (stage 3)
+        _ => Err(CipError::IndirectRequired), // two-plus implicit points (stage 3)
     }
 }
 
 /// The all-direct case of [`orient3d`]: build four `Pt3` and route by tol (tol-0 →
 /// exact Shewchuk, tol > 0 → filter/escalation judge).
-fn direct_orient3d(model: &Model, verts: [Handle<Vertex>; 4]) -> Result<Orient, TipError> {
+fn direct_orient3d(model: &Model, verts: [Handle<Vertex>; 4]) -> Result<Orient, CipError> {
     let p = [
         vertex_pt3(model, verts[0])?,
         vertex_pt3(model, verts[1])?,
@@ -175,12 +175,12 @@ fn indirect_dispatch(
     model: &Model,
     verts: [Handle<Vertex>; 4],
     slot: usize,
-) -> Result<Orient, TipError> {
+) -> Result<Orient, CipError> {
     let mut v = verts;
     v.swap(0, slot);
     let flip = slot != 0;
     // v[0] is the seam (implicit V); v[1..4] are its explicit q, r, s.
-    let surfs = seam_surfaces(model, v[0]).ok_or(TipError::IndirectRequired)?;
+    let surfs = seam_surfaces(model, v[0]).ok_or(CipError::IndirectRequired)?;
     let planes = [
         plane_pts(model, surfs[0])?,
         plane_pts(model, surfs[1])?,
@@ -199,7 +199,7 @@ fn indirect_dispatch(
 /// without materializing either coordinate. `Positive` = `v1[axis] > v2[axis]`,
 /// `Negative` = `<`, `Zero` = equal or below the declare-0 floor.
 ///
-/// Both vertices must be `Discovered` seams ([`TipError::NotSeam`] otherwise): a
+/// Both vertices must be `Discovered` seams ([`CipError::NotSeam`] otherwise): a
 /// seam-vs-explicit compare is a different (mixed) predicate, stage 3. The two-implicit
 /// companion of [`orient3d`]'s single-`Discovered` path; boolean wiring is stage 3.
 pub fn cmp_coord(
@@ -207,9 +207,9 @@ pub fn cmp_coord(
     v1: Handle<Vertex>,
     v2: Handle<Vertex>,
     axis: usize,
-) -> Result<Orient, TipError> {
-    let triple = |vh: Handle<Vertex>| -> Result<[[Pt3; 3]; 3], TipError> {
-        let surfs = seam_surfaces(model, vh).ok_or(TipError::NotSeam)?;
+) -> Result<Orient, CipError> {
+    let triple = |vh: Handle<Vertex>| -> Result<[[Pt3; 3]; 3], CipError> {
+        let surfs = seam_surfaces(model, vh).ok_or(CipError::NotSeam)?;
         Ok([
             plane_pts(model, surfs[0])?,
             plane_pts(model, surfs[1])?,
@@ -253,7 +253,7 @@ fn seam_surfaces(model: &Model, vh: Handle<Vertex>) -> Option<[Handle<Surface>; 
 /// one — has vertices that still lie on that plane. `Err` if fewer than three direct,
 /// non-collinear vertices are found. The chosen triple's winding is irrelevant: the
 /// indirect predicate is invariant to each plane's normal orientation.
-fn plane_pts(model: &Model, surf: Handle<Surface>) -> Result<[Pt3; 3], TipError> {
+fn plane_pts(model: &Model, surf: Handle<Surface>) -> Result<[Pt3; 3], CipError> {
     let mut seen = std::collections::HashSet::new();
     let mut cand: Vec<Pt3> = Vec::new();
     for (_, face) in model.faces.iter() {
@@ -274,7 +274,7 @@ fn plane_pts(model: &Model, surf: Handle<Surface>) -> Result<[Pt3; 3], TipError>
             }
         }
     }
-    select_three_noncollinear(&cand).ok_or(TipError::PlaneUnderdetermined)
+    select_three_noncollinear(&cand).ok_or(CipError::PlaneUnderdetermined)
 }
 
 /// Greedily pick three non-collinear points from `cand` (an f64 relative-area test — a
@@ -467,7 +467,7 @@ mod tests {
         // some seam vertex is Discovered → IndirectRequired.
         let deferred = boundary_verts(&m, cut)
             .into_iter()
-            .any(|vh| matches!(vertex_pt3(&m, vh), Err(TipError::IndirectRequired)));
+            .any(|vh| matches!(vertex_pt3(&m, vh), Err(CipError::IndirectRequired)));
         assert!(
             deferred,
             "a boolean seam vertex must defer to the indirect predicate"
@@ -488,7 +488,7 @@ mod tests {
         let vh = boundary_verts(&m, t)[0];
         assert!(matches!(
             vertex_pt3(&m, vh),
-            Err(TipError::TranslateInterleaved)
+            Err(CipError::TranslateInterleaved)
         ));
     }
 
@@ -642,7 +642,7 @@ mod tests {
         let vd = synth_discovered(&mut m, vs[0], [dummy, dummy, dummy]);
         assert!(matches!(
             orient3d(&m, vd, vs[1], vs[2], vs[3]),
-            Err(TipError::PlaneUnderdetermined)
+            Err(CipError::PlaneUnderdetermined)
         ));
     }
 
@@ -659,7 +659,7 @@ mod tests {
         let vd2 = synth_discovered(&mut m, vs[0], surfs);
         assert!(matches!(
             orient3d(&m, vd1, vd2, vs[1], vs[2]),
-            Err(TipError::IndirectRequired)
+            Err(CipError::IndirectRequired)
         ));
     }
 
@@ -811,11 +811,11 @@ mod tests {
         let plain = boundary_verts(&m, s)[0]; // a Constructed corner, not a seam
         assert!(matches!(
             cmp_coord(&m, vd, plain, 0),
-            Err(TipError::NotSeam)
+            Err(CipError::NotSeam)
         ));
         assert!(matches!(
             cmp_coord(&m, plain, vd, 0),
-            Err(TipError::NotSeam)
+            Err(CipError::NotSeam)
         ));
     }
 
@@ -838,7 +838,7 @@ mod tests {
         let vd2 = synth_discovered(&mut m, vs[0], [dummy, dummy, dummy]);
         assert!(matches!(
             cmp_coord(&m, vd1, vd2, 0),
-            Err(TipError::PlaneUnderdetermined)
+            Err(CipError::PlaneUnderdetermined)
         ));
     }
 }
