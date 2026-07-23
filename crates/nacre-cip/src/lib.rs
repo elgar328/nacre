@@ -18,8 +18,11 @@
 //! plane with too few direct vertices all surface as a typed [`CipError`] (honest
 //! defer) rather than a silent wrong sign. [`cmp_coord`] is the two-implicit companion:
 //! it orders two `Discovered` seams along one axis from their plane definitions (stage
-//! cmp-ii). Not yet wired into boolean (stage 3): the boolean still rejects non-90°
-//! rotated inputs, so a rotated seam is exercised synthetically.
+//! cmp-ii). This crate's `orient3d`/`cmp_coord` indirect bridges are **not called by the
+//! boolean** — `nacre-ops` consumes only [`vertex_pt3`] (Pt3 assembly) and judges through
+//! its own `tolerant`→`frame3` routing — so they are exercised synthetically here. (The
+//! boolean itself **does** handle rotated inputs: overhaul 3d-i retired the
+//! `ROTATED_UNSUPPORTED` entry guard, and non-90° rotated booleans are live.)
 
 use nacre_geom::Surface;
 use nacre_scalar::frame3::{
