@@ -14,6 +14,7 @@
 //! from it".
 
 use super::*;
+use crate::boolean::*;
 use crate::planes::*;
 
 /// Which operand a segment came from — the boolean's per-cell label needs both solids' material
@@ -1289,12 +1290,12 @@ fn emit_faces(
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
 ) -> Vec<LocalFace> {
-    // `crate::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
+    // `crate::boolean::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
     // three-valued-scan struct) shadows it here.
-    let ring_of = |cell: &Cell| -> Vec<crate::Node> {
+    let ring_of = |cell: &Cell| -> Vec<crate::boolean::Node> {
         cell.half_edges
             .iter()
-            .map(|&he| crate::Node::Seam(segs[he / 2].end[he % 2]))
+            .map(|&he| crate::boolean::Node::Seam(segs[he / 2].end[he % 2]))
             .collect()
     };
     let mut out = Vec::new();
@@ -1309,7 +1310,7 @@ fn emit_faces(
             continue; // material the same on both sides ⇒ not a result face here
         }
         let flip = keep_above == (planes[wc].frame_sign > 0);
-        let inner: Vec<Vec<crate::Node>> = holes
+        let inner: Vec<Vec<crate::boolean::Node>> = holes
             .get(&c)
             .map(|hs| hs.iter().map(|&h| ring_of(&cells[h])).collect())
             .unwrap_or_default();
@@ -1505,7 +1506,7 @@ pub(crate) fn boolean(
     for f in &faces {
         for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
             for node in loop_ {
-                let crate::Node::Seam(t) = node;
+                let crate::boolean::Node::Seam(t) = node;
                 if seen.insert(*t, ()).is_some() {
                     continue;
                 }
@@ -2463,7 +2464,7 @@ mod tests {
                 .loop_nodes
                 .iter()
                 .map(|n| match n {
-                    crate::Node::Seam(t) => pt(*t, &planes),
+                    crate::boolean::Node::Seam(t) => pt(*t, &planes),
                 })
                 .collect();
             [
@@ -2515,8 +2516,11 @@ mod tests {
 
         // Each emitted loop winds +1 (CCW about n_out(wc)) and has ≥3 distinct nodes.
         for f in fuse.iter().chain(&cut).chain(&common) {
-            let ring: Vec<[usize; 3]> =
-                f.loop_nodes.iter().map(|crate::Node::Seam(t)| *t).collect();
+            let ring: Vec<[usize; 3]> = f
+                .loop_nodes
+                .iter()
+                .map(|crate::boolean::Node::Seam(t)| *t)
+                .collect();
             assert!(ring.len() >= 3);
             assert_eq!(
                 combinatorics::loop_winding(&planes, wc, &ring).unwrap(),
@@ -2545,7 +2549,11 @@ mod tests {
         // closes against a wall face only at assembly). At least one interior edge must exist.
         let mut edges: HashMap<([usize; 3], [usize; 3]), (i32, i32)> = HashMap::new();
         for f in &fuse {
-            let ns: Vec<[usize; 3]> = f.loop_nodes.iter().map(|crate::Node::Seam(t)| *t).collect();
+            let ns: Vec<[usize; 3]> = f
+                .loop_nodes
+                .iter()
+                .map(|crate::boolean::Node::Seam(t)| *t)
+                .collect();
             for w in ns
                 .windows(2)
                 .chain(std::iter::once(&[ns[ns.len() - 1], ns[0]][..]))
@@ -2623,7 +2631,7 @@ mod tests {
                 .loop_nodes
                 .iter()
                 .map(|n| match n {
-                    crate::Node::Seam(t) => *t,
+                    crate::boolean::Node::Seam(t) => *t,
                 })
                 .collect();
             for w in ns
@@ -2820,10 +2828,10 @@ mod tests {
         );
 
         // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
-        let triples = |ns: &[crate::Node]| -> Vec<[usize; 3]> {
+        let triples = |ns: &[crate::boolean::Node]| -> Vec<[usize; 3]> {
             ns.iter()
                 .map(|n| match n {
-                    crate::Node::Seam(t) => *t,
+                    crate::boolean::Node::Seam(t) => *t,
                 })
                 .collect()
         };
@@ -2912,10 +2920,10 @@ mod tests {
         );
 
         // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
-        let triples = |ns: &[crate::Node]| -> Vec<[usize; 3]> {
+        let triples = |ns: &[crate::boolean::Node]| -> Vec<[usize; 3]> {
             ns.iter()
                 .map(|n| match n {
-                    crate::Node::Seam(t) => *t,
+                    crate::boolean::Node::Seam(t) => *t,
                 })
                 .collect()
         };
@@ -3101,10 +3109,10 @@ mod tests {
             2,
             "the two annular caps survive rotation"
         );
-        let triples = |ns: &[crate::Node]| -> Vec<[usize; 3]> {
+        let triples = |ns: &[crate::boolean::Node]| -> Vec<[usize; 3]> {
             ns.iter()
                 .map(|n| match n {
-                    crate::Node::Seam(t) => *t,
+                    crate::boolean::Node::Seam(t) => *t,
                 })
                 .collect()
         };

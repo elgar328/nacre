@@ -1,0 +1,819 @@
+//! Boolean assembly: turn the arrangement engine's per-face output (`LocalFace`, named by
+//! `Node` seam triples) into result solids, and the mandatory coplanar-face cleaning pass.
+//!
+//! The public [`boolean`] entry lives here and delegates the cell-complex work to
+//! [`crate::arrangement`]; the engine calls back into [`assemble_fuse_cut`] and
+//! [`unify_coplanar_faces`] to build and clean the shells (a legal module cycle).
+
+use crate::combinatorics;
+use crate::planes::{PlaneGeom, uf_find};
+use crate::{BoolError, BoolKind, he_start, reject, tag, unordered};
+use nacre_geom::{Curve, Line, Surface};
+use nacre_math::Point3;
+use nacre_scalar::frame3::dir_orient3d_judge;
+use nacre_store::Handle;
+use nacre_topo::{
+    Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,
+};
+use std::collections::{HashMap, HashSet};
+
+/// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
+///
+/// **Coverage:** planar solids. All three kinds go through the single per-plane-class arrangement
+/// engine ([`crate::arrangement::boolean`]), which handles transverse, coplanar-contact,
+/// coincident, contained and disjoint cases in one path and cleans its own output (coplanar-face
+/// merge) so results are chainable. Anything it cannot resolve is rejected with [`BoolError`] —
+/// never a silent wrong answer (DNA). Transactional: it computes the result in local structures
+/// and pushes only after every degeneracy check passes, so a rejected boolean leaves the model
+/// untouched.
+pub fn boolean(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<Handle<Solid>>, BoolError> {
+    if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
+        return Err(BoolError::InputNotLive);
+    }
+    // The arrangement engine (`arrangement.rs`) is the sole boolean path: one per-plane-class 2D
+    // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
+    // and cleans its own output (coplanar-face merge) so results are chainable.
+    crate::arrangement::boolean(model, kind, a, b)
+}
+
+/// Connected components of the reconstructed faces by shared `Node` — the same identity
+/// `assemble_fuse_cut` welds result vertices by. Returns a component label per face (dense
+/// `0..n` in order of first appearance, for replay determinism) and the component count. An
+/// enclosed void is its own component: its boundary shares no vertex with the outer.
+fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
+    fn find(p: &mut [usize], mut x: usize) -> usize {
+        while p[x] != x {
+            p[x] = p[p[x]];
+            x = p[x];
+        }
+        x
+    }
+    let mut parent: Vec<usize> = (0..faces.len()).collect();
+    let mut owner: HashMap<Node, usize> = HashMap::new();
+    for (i, lf) in faces.iter().enumerate() {
+        for &nd in lf.loop_nodes.iter().chain(lf.inner.iter().flatten()) {
+            match owner.entry(nd) {
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    let (ra, rb) = (find(&mut parent, *e.get()), find(&mut parent, i));
+                    parent[ra] = rb;
+                }
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(i);
+                }
+            }
+        }
+    }
+    let mut label: HashMap<usize, usize> = HashMap::new();
+    let mut labels = Vec::with_capacity(faces.len());
+    let mut n = 0;
+    for i in 0..faces.len() {
+        let root = find(&mut parent, i);
+        let next = label.len();
+        let l = *label.entry(root).or_insert(next);
+        labels.push(l);
+        n = n.max(l + 1);
+    }
+    (labels, n)
+}
+
+/// A canonical, replay-stable sort key for a severed component: its outer-loop vertex
+/// coordinates, sorted lexicographically. Total order for disjoint components — distinct pieces
+/// occupy different space, so their coordinate multisets differ, and the lex-min vertex alone can
+/// tie (identity is by `Handle`, not coordinates, so two vertices may coincide). Coordinates are a
+/// derived cache used only to order multi-solid output; no judgment reads this (tol-irrelevant).
+fn comp_key(model: &Model, faces: &[Handle<Face>]) -> Vec<[f64; 3]> {
+    let mut pts: Vec<[f64; 3]> = faces
+        .iter()
+        .flat_map(|&fh| model.faces.get(fh).outer.half_edges.iter().copied())
+        .map(|he| model.vertices.get(he_start(model, he)).point.as_array())
+        .collect();
+    pts.sort_by(|a, b| a.partial_cmp(b).expect("finite vertex coordinates"));
+    pts
+}
+
+/// Whether a closed component shell (a set of oriented faces) is **outward**
+/// (material-enclosing, positive signed volume — an outer shell) versus
+/// **inward** (a void/cavity shell). The `assemble_fuse_cut` cavity-vs-outer
+/// label ((5d)#5 retired the f64 signed-volume flux this replaces), reading no
+/// coordinate arithmetic: only a lexicographic vertex ordering and one
+/// axis-aligned plane-coefficient sign.
+///
+/// At the component's lexicographically-minimal vertex `v*` (min x, then y, then
+/// z) the shell is a convex corner, and the material lies toward increasing
+/// coordinates. So an outward shell has a `−x`-facing boundary face at `v*` (its
+/// materialized outward normal `n_x < 0`), while a void's three walls all face
+/// into the void (`n_x ≥ 0` at its own `v*`). Hence: **outward iff some face
+/// incident to `v*` has materialized outward normal with `n_x < 0`**. Two
+/// antiparallel `x`-perpendicular faces cannot share a vertex, so this `∃`-test
+/// is equivalent to (and simpler than) picking the max-`|n_x|` face.
+///
+/// Exact for the axis-aligned M5 corpus: face normals are exactly `±eₓ/±e_y/±e_z`
+/// so `sign(n_x)` is the exact sign of the plane's `x`-coefficient (times the
+/// face orientation), and the `v*` search is exact coordinate ordering — both
+/// hold even for non-representable coordinates (e.g. a `0.3`-offset void face).
+/// Rotated shells break the "axis-aligned normal / unique x-perpendicular face"
+/// premises and are TIP's job (design §9 (5d)#5, honest scope).
+pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
+    // Lexicographically-minimal vertex over the component's outer loops.
+    let mut vstar: Option<Handle<Vertex>> = None;
+    let mut pstar = [f64::INFINITY; 3];
+    for &fh in faces {
+        for &he in &model.faces.get(fh).outer.half_edges {
+            let vh = he_start(model, he);
+            let p = model.vertices.get(vh).point.as_array();
+            if p < pstar {
+                pstar = p;
+                vstar = Some(vh);
+            }
+        }
+    }
+    let Some(vstar) = vstar else { return false };
+    // Outward iff some face at v* faces −x (materialized outward normal n_x < 0).
+    // n_x's sign is the plane x-coefficient's sign times the orientation sign
+    // (no normalization — exact for axis-aligned faces).
+    for &fh in faces {
+        let face = model.faces.get(fh);
+        if !face
+            .outer
+            .half_edges
+            .iter()
+            .any(|&he| he_start(model, he) == vstar)
+        {
+            continue;
+        }
+        let Surface::Plane(plane) = model.surfaces.get(face.surface) else {
+            continue;
+        };
+        let sign = match face.orientation {
+            Orientation::Forward => 1.0,
+            Orientation::Reversed => -1.0,
+        };
+        if plane.coefficients()[0] * sign < 0.0 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Rotation-sound twin of [`is_shell_outward`]: whether a result component's shell is
+/// **outward** (material, an outer shell) versus **inward** (a void/cavity shell), decided on
+/// the faces' exact `Pt3` definitions through `frame3`, so it is sound when the coordinates
+/// are rounded irrationals (rotation). Same algorithm as the f64 [`is_shell_outward`] — the
+/// lexicographically-minimal vertex `v*` is a convex extreme corner and the shell is outward
+/// iff some face there has an outward normal with `n_x < 0` — but both numeric steps become
+/// exact TIP predicates:
+///
+/// - **`v*`** by [`t_cmp_coord`](crate::tolerant) over each node's three-plane triple, the same
+///   lex-min scan as [`loop_winding`](crate::combinatorics::loop_winding). A node's triple is its
+///   own face plane plus the neighbour planes of its two loop edges (the
+///   [`loop_triples`](crate::combinatorics) construction), whose meet *is* that vertex — so an
+///   original corner is as implicit a point as a seam node, no mixed compare needed.
+/// - **`sign(n_x)`** by [`dir_orient3d_judge`]`([1,0,0], tri…)` on the face's exact plane
+///   definition ([`plane_def`](crate::tolerant), mixed-rotation safe): the x-component of the
+///   RH normal, flipped by `lf.flip` to the result face's materialized outward normal.
+///
+/// Operates on the **pre-assembly** `LocalFace`s (not the result faces), so it never reads a
+/// result vertex whose exact rotation provenance `assemble_fuse_cut` drops — every exact
+/// definition it needs lives in `planes` and in the loop adjacency. Reads no `Model`. `Err`
+/// on a non-simple/degenerate component (coincident nodes, a straight angle, or a non-manifold
+/// edge) — an honest reject, never a silent wrong label. Routed from `assemble_fuse_cut`'s
+/// per-component outward test by [`any_rotated`](crate::tolerant) (cell 3c-vi-b).
+fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result<bool, BoolError> {
+    use nacre_scalar::{Orient, Rat};
+
+    // The unordered edge key: `Node` is `Ord`, so order the pair canonically.
+    let ekey = |a: Node, b: Node| if a <= b { (a, b) } else { (b, a) };
+
+    // Edge -> the planes carrying it, over every loop (outer + inner): a hole-rim edge is the
+    // outer edge of its wall and an inner edge of the holed face, so building over both loops
+    // gives it both planes. A manifold edge yields exactly two.
+    type EKey = (Node, Node);
+    let mut edge_faces: HashMap<EKey, Vec<usize>> = HashMap::new();
+    for lf in comp {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            let k = ring.len();
+            for t in 0..k {
+                edge_faces
+                    .entry(ekey(ring[t], ring[(t + 1) % k]))
+                    .or_default()
+                    .push(lf.plane_idx);
+            }
+        }
+    }
+    let other_plane = |a: Node, b: Node, own: usize| -> Result<usize, BoolError> {
+        let ps = edge_faces
+            .get(&ekey(a, b))
+            .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+        let mut others = ps.iter().copied().filter(|&x| x != own);
+        let o = others
+            .next()
+            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+        if others.any(|x| x != o) {
+            return Err(reject(tag::NON_MANIFOLD_EDGE)); // edge shared by >2 distinct planes
+        }
+        Ok(o)
+    };
+
+    // Each unique outer node -> its three-plane triple (meet = that vertex). Any incident face
+    // yields a valid triple (all its planes pass through the vertex); first occurrence wins.
+    let mut triple_of: HashMap<Node, [usize; 3]> = HashMap::new();
+    for lf in comp {
+        let ring = &lf.loop_nodes;
+        let k = ring.len();
+        for t in 0..k {
+            let node = ring[t];
+            if triple_of.contains_key(&node) {
+                continue;
+            }
+            let prev = other_plane(ring[(t + k - 1) % k], node, lf.plane_idx)?;
+            let next = other_plane(node, ring[(t + 1) % k], lf.plane_idx)?;
+            if prev == next {
+                return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // a straight angle
+            }
+            let mut tri = [lf.plane_idx, prev, next];
+            tri.sort_unstable();
+            triple_of.insert(node, tri);
+        }
+    }
+
+    // Lexicographically-minimal vertex over the unique outer nodes (`loop_winding`'s scan;
+    // `t_cmp_coord` is exact for the rotated triples). Sort candidates for replay determinism.
+    let mut nodes: Vec<Node> = triple_of.keys().copied().collect();
+    nodes.sort_unstable();
+    let Some((&first, rest)) = nodes.split_first() else {
+        return Ok(false); // empty component
+    };
+    let mut lo = first;
+    for &node in rest {
+        let ord = (0..3)
+            .map(|axis| {
+                crate::tolerant::t_cmp_coord(planes, triple_of[&node], triple_of[&lo], axis)
+            })
+            .find(|&c| c != 0);
+        match ord {
+            Some(c) if c < 0 => lo = node,
+            Some(_) => {}
+            None => return Err(reject(tag::LOOP_ORIENT_MISMATCH)), // two distinct nodes coincide
+        }
+    }
+
+    // Outward iff some outer face at v* has a result outward normal with n_x < 0. n_x's sign is
+    // the RH-normal x-component (`dir_orient3d_judge` on the exact plane def), flipped by `flip`.
+    for lf in comp {
+        if !lf.loop_nodes.contains(&lo) {
+            continue;
+        }
+        let tri = crate::tolerant::plane_def(planes, lf.plane_idx);
+        let ex = [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)];
+        let nx = dir_orient3d_judge(ex, &tri[0], &tri[1], &tri[2]);
+        let nx = if lf.flip {
+            match nx {
+                Orient::Positive => Orient::Negative,
+                Orient::Negative => Orient::Positive,
+                Orient::Zero => Orient::Zero,
+            }
+        } else {
+            nx
+        };
+        if nx == Orient::Negative {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// A seam vertex — a three-plane point on both `∂A` and `∂B` (2 A-planes + 1
+/// B-plane, or 1 A + 2 B). Shared (one `Handle`) by every incident result piece.
+pub(crate) struct SeamVertex {
+    pub(crate) point: Point3,
+    pub(crate) triple: [usize; 3], // sorted combined-plane indices
+    pub(crate) tol: f64,
+}
+
+/// A node in a reconstructed face loop: the sorted plane triple naming a seam vertex.
+/// `Eq`/`Hash` give identity dedup so an A-piece and a B-piece that meet at a seam node
+/// share one result vertex/edge; `Ord` gives the deterministic node order replay needs.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) enum Node {
+    Seam([usize; 3]), // sorted triple (key into the seam map)
+}
+
+/// A reconstructed result face: which combined plane it is on, its loop as
+/// nodes, and whether to flip it (cut's inside-A B-pieces).
+pub(crate) struct LocalFace {
+    pub(crate) plane_idx: usize,
+    pub(crate) loop_nodes: Vec<Node>,
+    /// Hole rings, each already wound so the kept material stays on its left
+    /// about the face's outward normal. Only the non-convex path ever fills this.
+    pub(crate) inner: Vec<Vec<Node>>,
+    pub(crate) flip: bool,
+}
+
+/// Push the reconstructed result and supersede the inputs (mirrors `assemble`).
+pub(crate) fn assemble_fuse_cut(
+    model: &mut Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    planes: &[PlaneGeom],
+    seam: &[SeamVertex],
+    faces: &[LocalFace],
+) -> Result<Vec<Handle<Solid>>, BoolError> {
+    // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
+    // is wholly inside what cuts it. That is an answer, not a failure: a solid is bounded by faces,
+    // so a non-empty result cannot have none. The inputs are still consumed, exactly as they are on
+    // any other successful boolean — the retire below sits inside the `positives` match, which this
+    // early return skips, so it has to happen here too or the operands stay live.
+    if faces.is_empty() {
+        model.live_solids.retain(|&s| s != a && s != b);
+        return Ok(Vec::new());
+    }
+    // Vertices (deterministic: first appearance across faces in order).
+    let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
+    let mut node_handle = |model: &mut Model, node: Node| -> Result<Handle<Vertex>, BoolError> {
+        if let Some(&h) = vh.get(&node) {
+            return Ok(h);
+        }
+        let handle = match node {
+            Node::Seam(triple) => {
+                // A face references a seam node whose triple was not welded into `seam` — a
+                // reconstruction dropped a crossing. Reject (never panic): an unmodeled flush
+                // topology must decline honestly, not abort the kernel (DNA).
+                let sv = seam
+                    .iter()
+                    .find(|s| s.triple == triple)
+                    .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+                let def = VertexDef::ThreePlane([
+                    planes[triple[0]].surf,
+                    planes[triple[1]].surf,
+                    planes[triple[2]].surf,
+                ]);
+                model.vertices.push(Vertex {
+                    point: sv.point,
+                    origin: Origin::Discovered {
+                        tol: sv.tol,
+                        definition: def,
+                    },
+                })
+            }
+        };
+        vh.insert(node, handle);
+        Ok(handle)
+    };
+    // Materialize all vertex handles first. Outer then inner, rings in order: `vh`'s
+    // first-appearance order fixes the vertex handles, and replay depends on it.
+    for lf in faces {
+        for &node in lf.loop_nodes.iter().chain(lf.inner.iter().flatten()) {
+            node_handle(model, node)?;
+        }
+    }
+
+    // Edges keyed by unordered handle-index pair (lookup only).
+    let mut edge_of: HashMap<(usize, usize), Handle<Edge>> = HashMap::new();
+    // A ring's two consecutive nodes are distinct arrangement vertices, so their points differ and
+    // the line through them exists. Reject rather than panic if it does not: an aborting kernel is
+    // below the floor (`overview.md`: out-of-coverage input declines honestly). `SEAM_ALIAS`
+    // catches the known way this happens — two triples on one point — at the seam table, where the
+    // names are still in hand, so this is a backstop with no firing test (cf. `NON_MANIFOLD_EDGE`).
+    let mut edge_for = |model: &mut Model,
+                        va: Handle<Vertex>,
+                        vb: Handle<Vertex>|
+     -> Result<Handle<Edge>, BoolError> {
+        let key = unordered(va.index() as usize, vb.index() as usize);
+        if let Some(&e) = edge_of.get(&key) {
+            return Ok(e);
+        }
+        let pa = model.vertices.get(va).point;
+        let pb = model.vertices.get(vb).point;
+        let line = Line::through_points(pa, pb).ok_or_else(|| reject(tag::ZERO_LENGTH_EDGE))?;
+        let curve = model.curves.push(Curve::Line(line));
+        let e = model.edges.push(Edge {
+            curve,
+            bounds: Some([va, vb]),
+            origin: Origin::Constructed,
+        });
+        edge_of.insert(key, e);
+        Ok(e)
+    };
+
+    let mut face_handles = Vec::new();
+    for lf in faces {
+        let mut ring = |model: &mut Model, nodes: &[Node]| -> Result<Loop, BoolError> {
+            let handles: Vec<Handle<Vertex>> = nodes.iter().map(|nd| vh[nd]).collect();
+            let k = handles.len();
+            let mut half_edges: Vec<HalfEdge> = (0..k)
+                .map(|t| {
+                    let (va, vb) = (handles[t], handles[(t + 1) % k]);
+                    let e = edge_for(model, va, vb)?;
+                    let forward = model.edges.get(e).bounds.expect("bounded")[0] == va;
+                    Ok(HalfEdge { edge: e, forward })
+                })
+                .collect::<Result<Vec<_>, BoolError>>()?;
+            if lf.flip {
+                // Cut's inside-A B-pieces: reverse every loop and toggle the
+                // orientation below, so the outward normal points into the removed
+                // region and each loop still keeps material on its left.
+                half_edges.reverse();
+                for he in &mut half_edges {
+                    he.forward = !he.forward;
+                }
+            }
+            Ok(Loop { half_edges })
+        };
+        let outer = ring(model, &lf.loop_nodes)?;
+        let inner: Vec<Loop> = lf
+            .inner
+            .iter()
+            .map(|h| ring(model, h))
+            .collect::<Result<Vec<_>, BoolError>>()?;
+        // The plane's frame *is* the root face's orientation: `frame_sign` is
+        // `sign(stored normal · that face's n_out)`, and `collect_planes` asserts that sign equals
+        // `Forward`/`Reversed`. Reading it here is what used to be `planes[plane_idx].orient` — a
+        // face field indexed by a plane, the shape of every bug this split exists to prevent.
+        let framed = if planes[lf.plane_idx].frame_sign > 0 {
+            Orientation::Forward
+        } else {
+            Orientation::Reversed
+        };
+        let orientation = if lf.flip {
+            match framed {
+                Orientation::Forward => Orientation::Reversed,
+                Orientation::Reversed => Orientation::Forward,
+            }
+        } else {
+            framed
+        };
+        face_handles.push(model.faces.push(Face {
+            surface: planes[lf.plane_idx].surf,
+            outer,
+            inner,
+            orientation,
+        }));
+    }
+    // Closed-shell guard: a 2-manifold b-rep uses every edge exactly twice (once from each of the
+    // two faces that share it). A reconstruction that emits a face set with a dangling edge (use
+    // count 1) or a pinched one (>2) is not a solid — `validate` would call it `NonManifoldEdge`,
+    // but `boolean` never runs `validate` on its own output, so without this the caller receives a
+    // silently invalid solid. Honest-reject instead ("honest-reject > silent-wrong", overview §1).
+    // Counted on the welded `Handle<Edge>`s, so it is exact and coordinate-free.
+    {
+        let mut uses: HashMap<Handle<Edge>, usize> = HashMap::new();
+        for &fh in &face_handles {
+            let f = model.faces.get(fh);
+            for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                for he in &l.half_edges {
+                    *uses.entry(he.edge).or_default() += 1;
+                }
+            }
+        }
+        if uses.values().any(|&n| n != 2) {
+            return Err(reject(tag::NON_MANIFOLD_EDGE));
+        }
+    }
+    // Partition the faces into connected components (by shared node). One component is the
+    // whole result; several mean either an enclosed void (a cavity — an inward-oriented shell)
+    // or a severed operand (two or more outward, material-enclosing shells). `is_shell_outward`
+    // (exact extreme-vertex sign) tells them apart. One outward component ⇒ outer shell + the
+    // rest as its cavities. Several outward components ⇒ the result severed into that many
+    // solids (cell 0.4) — unless a cavity also survives, which needs a containment test we do
+    // not have yet, so that is `SEVERED_WITH_CAVITY`. No outward component is impossible.
+    let (labels, n) = face_components(faces);
+    let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
+    for (i, &fh) in face_handles.iter().enumerate() {
+        by_comp[labels[i]].push(fh);
+    }
+    // Outward/void label per component, routed by rotation (overhaul 3c-vi): a component with
+    // any rotated plane is decided on exact `Pt3` definitions (`component_is_outward_tol` over
+    // its pre-assembly `LocalFace`s), else the axis-aligned f64 `is_shell_outward` — unchanged,
+    // so an unrotated result is bit-identical. `positives` stays in ascending `c` order.
+    let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
+    for (i, lf) in faces.iter().enumerate() {
+        by_comp_lf[labels[i]].push(lf);
+    }
+    let mut positives: Vec<usize> = Vec::new();
+    for c in 0..n {
+        let idxs: Vec<usize> = by_comp_lf[c].iter().map(|lf| lf.plane_idx).collect();
+        let outward = if crate::tolerant::any_rotated(planes, &idxs) {
+            component_is_outward_tol(planes, &by_comp_lf[c])?
+        } else {
+            is_shell_outward(model, &by_comp[c])
+        };
+        if outward {
+            positives.push(c);
+        }
+    }
+    let shells: Vec<Handle<Shell>> = by_comp
+        .iter()
+        .map(|faces| {
+            model.shells.push(Shell {
+                faces: faces.clone(),
+            })
+        })
+        .collect();
+    match positives.len() {
+        0 => Err(reject(tag::NO_OUTWARD_SHELL)),
+        1 => {
+            let outer_c = positives[0];
+            // A cavity shell's faces already point into the void (the material is outside it, so
+            // the material-on-correct-side reconstruction winds them inward) — measured, no flip.
+            let cavities = (0..n)
+                .filter(|&c| c != outer_c)
+                .map(|c| shells[c])
+                .collect();
+            let solid = model.push_solid(Solid {
+                outer: shells[outer_c],
+                cavities,
+            });
+            model.live_solids.retain(|&s| s != a && s != b);
+            Ok(vec![solid])
+        }
+        _ => {
+            // Several material solids. Cavity ownership across multiple outer shells is unsolved.
+            if (0..n).any(|c| !positives.contains(&c)) {
+                return Err(reject(tag::SEVERED_WITH_CAVITY));
+            }
+            // Every component is its own cavity-free solid. Emit them in a canonical, replay-stable
+            // order keyed on geometry (a component's sorted vertex coordinates), so a downstream op
+            // can index the returned Vec deterministically. `comp_key` is total for disjoint
+            // components (distinct pieces occupy different space, so their coordinate sets differ).
+            let keys: Vec<Vec<[f64; 3]>> = by_comp.iter().map(|f| comp_key(model, f)).collect();
+            let mut order: Vec<usize> = (0..n).collect();
+            order.sort_by(|&x, &y| {
+                keys[x]
+                    .partial_cmp(&keys[y])
+                    .expect("finite vertex coordinates")
+            });
+            let solids: Vec<Handle<Solid>> = order
+                .into_iter()
+                .map(|c| {
+                    model.push_solid(Solid {
+                        outer: shells[c],
+                        cavities: Vec::new(),
+                    })
+                })
+                .collect();
+            model.live_solids.retain(|&s| s != a && s != b);
+            Ok(solids)
+        }
+    }
+}
+
+/// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.
+fn norm_edge(a: Node, b: Node) -> (Node, Node) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// Merge every group of coplanar, same-facing result faces into one face per connected piece, then
+/// dissolve straight-angle vertices — the mandatory post-boolean defeature.
+///
+/// **Erase the interior, do not stitch the exterior.** When two faces become one region the boundary
+/// between them stops being a boundary, so the merge is: take every directed ring edge in the group,
+/// drop the ones that appear as an opposed pair (`a→b` together with `b→a`), and re-thread what is
+/// left. Nothing has to be spliced, which is what lets one rule cover every way the pieces can meet
+/// — sharing an edge, a hole filled exactly by a neighbour, a hole filled by *several* neighbours,
+/// and any chain of those (one erase settles them all at once). The earlier version stitched loops
+/// with `splice_along` and so had to special-case "exactly two hole-free faces across one edge",
+/// leaving `// holed — deferred` for the rest; a flush tool cap then stayed two faces forever.
+///
+/// A group is one plane class, one outward direction, one `flip` — mixing any of those would fold
+/// material the wrong way — split further into **edge-connected components**, because faces that
+/// merely lie on the same plane without touching must each survive on their own.
+///
+/// Reused, not reinvented: `canon` for coplanarity, `n_out.dot > 0` for facing,
+/// [`combinatorics::loop_winding`] to tell an outer ring from a hole, [`combinatorics::point_in_ring`] to give
+/// each hole its owner — the same two exact predicates `arrangement::nest_cells` uses for the same
+/// question, neither of which reads a coordinate.
+///
+/// Rejects rather than guesses: a directed edge appearing twice the same way (two faces claiming the
+/// same side), an undirected edge on three or more rings (non-manifold in the plane), or a node with
+/// two outgoing edges after erasure (pieces meeting at a single point, where the cycle is not
+/// unique).
+pub(crate) fn unify_coplanar_faces(
+    faces: Vec<LocalFace>,
+    planes: &[PlaneGeom],
+) -> Result<Vec<LocalFace>, BoolError> {
+    let n = faces.len();
+    // One plane class, one flip.
+    //
+    // There used to be an outward-direction component here, and a `canon` lookup beside it. Neither
+    // separated anything: `plane_idx` names a plane, so its class is itself, and the component's dot
+    // product was `|n|² > 0` — identically true. It was redundant with `flip` besides, which is
+    // already in the key: `assemble_fuse_cut` derives a result face's `Orientation` from exactly
+    // `(the plane's frame, flip)`, so two faces in one group orient the same way by construction.
+    let group_key = |lf: &LocalFace| -> (usize, bool) { (lf.plane_idx, lf.flip) };
+
+    // Edge-connected components within a group.
+    let mut comp: Vec<usize> = (0..n).collect();
+    let mut carriers: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
+        // Holes count here too: a tool cap sitting flush inside another face touches it only
+        // along that hole, so leaving `inner` out would put the two in different components and
+        // nothing would merge at all.
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            for (a, b) in ring_edges(ring) {
+                carriers.entry(norm_edge(a, b)).or_default().push(fi);
+            }
+        }
+    }
+    for fs in carriers.values() {
+        for w in fs.windows(2) {
+            if group_key(&faces[w[0]]) == group_key(&faces[w[1]]) {
+                let (ri, rj) = (uf_find(&mut comp, w[0]), uf_find(&mut comp, w[1]));
+                if ri != rj {
+                    comp[ri] = rj;
+                }
+            }
+        }
+    }
+
+    // Group members by component, in face order so the result is replay-stable.
+    let mut members: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for fi in 0..n {
+        let r = uf_find(&mut comp, fi);
+        members[r].push(fi);
+    }
+
+    let mut merged: Vec<LocalFace> = Vec::new();
+    let mut kept: Vec<Option<LocalFace>> = faces.into_iter().map(Some).collect();
+    for mem in &members {
+        if mem.len() < 2 {
+            continue; // nothing to merge; the face (if any) is emitted as-is below
+        }
+        let group: Vec<&LocalFace> = mem
+            .iter()
+            .map(|&fi| kept[fi].as_ref().expect("member present"))
+            .collect();
+        let rings = merge_component(&group, planes)?;
+        let (plane_idx, flip) = (group[0].plane_idx, group[0].flip);
+        merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
+            plane_idx,
+            loop_nodes: outer,
+            inner,
+            flip,
+        }));
+        for &fi in mem {
+            kept[fi] = None;
+        }
+    }
+    let mut out: Vec<LocalFace> = kept.into_iter().flatten().collect();
+    out.extend(merged);
+    dissolve_straight_angles(&mut out);
+    Ok(out)
+}
+
+/// A ring's directed edges, `i → i+1` around.
+fn ring_edges(ring: &[Node]) -> impl Iterator<Item = (Node, Node)> + '_ {
+    (0..ring.len()).map(move |i| (ring[i], ring[(i + 1) % ring.len()]))
+}
+
+/// The `[usize; 3]` form a ring's nodes carry, for the exact predicates.
+fn seam_ring(ring: &[Node]) -> Vec<[usize; 3]> {
+    ring.iter().map(|Node::Seam(t)| *t).collect()
+}
+
+/// An outer ring with the holes that belong to it — what one merged region looks like before it
+/// becomes a `LocalFace`.
+type RegionRings = (Vec<Node>, Vec<Vec<Node>>);
+
+/// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
+/// the holes that belong to it.
+fn merge_component(
+    group: &[&LocalFace],
+    planes: &[PlaneGeom],
+) -> Result<Vec<RegionRings>, BoolError> {
+    // 1. Collect directed edges. A repeat in the same direction means two faces claim the same side.
+    let mut dirs: HashMap<(Node, Node), usize> = HashMap::new();
+    for lf in group {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            for e in ring_edges(ring) {
+                *dirs.entry(e).or_insert(0) += 1;
+            }
+        }
+    }
+    if dirs.values().any(|&c| c > 1) {
+        return Err(reject(tag::COPLANAR_MERGE));
+    }
+    // 2. An edge carried in both directions is interior — it separates nothing. Anything carried
+    //    three or more times (either direction) is non-manifold in the plane.
+    let mut undirected: HashMap<(Node, Node), usize> = HashMap::new();
+    for &(a, b) in dirs.keys() {
+        *undirected.entry(norm_edge(a, b)).or_insert(0) += 1;
+    }
+    if undirected.values().any(|&c| c > 2) {
+        return Err(reject(tag::COPLANAR_MERGE));
+    }
+    // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a point
+    //    and the cycles are not determined.
+    let mut next: HashMap<Node, Node> = HashMap::new();
+    for &(a, b) in dirs.keys() {
+        if dirs.contains_key(&(b, a)) {
+            continue; // interior
+        }
+        if next.insert(a, b).is_some() {
+            return Err(reject(tag::COPLANAR_MERGE));
+        }
+    }
+    let mut starts: Vec<Node> = next.keys().copied().collect();
+    starts.sort_unstable();
+    let mut seen: HashSet<Node> = HashSet::new();
+    let mut cycles: Vec<Vec<Node>> = Vec::new();
+    for start in starts {
+        if seen.contains(&start) {
+            continue;
+        }
+        let mut cyc = vec![start];
+        seen.insert(start);
+        let mut cur = next[&start];
+        while cur != start {
+            if !seen.insert(cur) {
+                return Err(reject(tag::COPLANAR_MERGE)); // walk re-entered another cycle
+            }
+            cyc.push(cur);
+            cur = *next.get(&cur).ok_or_else(|| reject(tag::COPLANAR_MERGE))?;
+        }
+        if cyc.len() < 3 {
+            return Err(reject(tag::COPLANAR_MERGE));
+        }
+        cycles.push(cyc);
+    }
+    if cycles.is_empty() {
+        return Err(reject(tag::COPLANAR_MERGE)); // everything erased: not a region
+    }
+    // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in. (This
+    // used to canon the index first — `plane_idx` names a plane now, so there is nothing to fold.)
+    let wc = group[0].plane_idx;
+    let mut outers: Vec<Vec<Node>> = Vec::new();
+    let mut holes: Vec<Vec<Node>> = Vec::new();
+    for cyc in cycles {
+        match combinatorics::loop_winding(planes, wc, &seam_ring(&cyc))? {
+            1 => outers.push(cyc),
+            -1 => holes.push(cyc),
+            _ => return Err(reject(tag::COPLANAR_MERGE)),
+        }
+    }
+    // 5. Each hole belongs to the outer ring that contains it — the same question `nest_cells` asks
+    //    of the arrangement's cells, answered by the same predicate.
+    let mut faces: Vec<RegionRings> = outers.into_iter().map(|o| (o, Vec::new())).collect();
+    for hole in holes {
+        let probe = seam_ring(&hole)[0];
+        let mut owner = None;
+        for (i, (outer, _)) in faces.iter().enumerate() {
+            if combinatorics::point_in_ring(planes, wc, probe, &seam_ring(outer))? {
+                if owner.is_some() {
+                    return Err(reject(tag::COPLANAR_MERGE)); // nested deeper than this brick names
+                }
+                owner = Some(i);
+            }
+        }
+        faces[owner.ok_or_else(|| reject(tag::COPLANAR_MERGE))?]
+            .1
+            .push(hole);
+    }
+    Ok(faces)
+}
+
+/// Drop straight-angle vertices: a node whose only two neighbours across **all** rings lie with it
+/// on one line. Every node is a `Seam` triple `{p, q, r}`, so the test is combinatorial and exact —
+/// the node is on a line iff some pair of its planes is shared by both neighbours. Dropping from
+/// every incident ring at once keeps a vertex that is a real corner somewhere (degree > 2), which is
+/// what stops a T-junction from opening.
+fn dissolve_straight_angles(out: &mut [LocalFace]) {
+    let mut nbrs: HashMap<Node, HashSet<Node>> = HashMap::new();
+    for lf in out.iter() {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            for (a, b) in ring_edges(ring) {
+                nbrs.entry(a).or_default().insert(b);
+                nbrs.entry(b).or_default().insert(a);
+            }
+        }
+    }
+    let mut drop: HashSet<Node> = HashSet::new();
+    for (&node, ns) in &nbrs {
+        let Node::Seam(t) = node;
+        if ns.len() != 2 {
+            continue;
+        }
+        let mut it = ns.iter();
+        let (Node::Seam(a), Node::Seam(b)) = (*it.next().unwrap(), *it.next().unwrap());
+        let both_have = |p: usize| a.contains(&p) && b.contains(&p);
+        if (both_have(t[0]) && both_have(t[1]))
+            || (both_have(t[0]) && both_have(t[2]))
+            || (both_have(t[1]) && both_have(t[2]))
+        {
+            drop.insert(node);
+        }
+    }
+    if drop.is_empty() {
+        return;
+    }
+    for lf in out.iter_mut() {
+        lf.loop_nodes.retain(|nd| !drop.contains(nd));
+        for ring in &mut lf.inner {
+            ring.retain(|nd| !drop.contains(nd));
+        }
+    }
+}
