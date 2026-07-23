@@ -2240,3 +2240,13 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 **★ 검토가 짚은 부기 — 커밋마다 컴파일러가 방어선.** 순수 이동이라 배선이 하나라도 빠지면 미해결 심볼로 깨진다(조용한 오답 불가). ① `use super::*`(arrangement.rs)가 보던 lib 심볼이 모듈로 나가면 안 보임 → `use crate::{planes::*, boolean::*}` 추가. ② 이동한 private fn 중 경계를 넘는 것(테스트가 부르는 `outer_tri`·`build_prism`·`pad`·`pocket` 등)은 `pub(crate)`로 승격(컴파일러가 "private" 에러로 짚음). ③ **lib-root 글롭(`use planes::*` 등)이 프로덕션 이동 뒤 테스트 전용이 됨** → 비-test 빌드에서 unused 경고 → 플랜대로 글롭을 테스트 모듈로 이관(`use crate::{boolean::*, ops::*, planes::*}` + `transform`). ④ arrangement.rs의 `crate::{unify_coplanar_faces, plane_classes, dense_planes}`(lib 재export에 얹혔던 것)를 명시 모듈경로로; `three_planes`는 직접 import. ⑤ **모듈명 vs 함수명 충돌** — `transform` 모듈과 `transform` fn이 동명이라 테스트에서 `use crate::transform::*` 글롭이 모듈에 가려 "expected function found module" → 명시 `use crate::transform::transform`로 해소.
 
 **결과.** lib.rs **7799→5623줄**(프로덕션 ~250줄, 나머지는 테스트 모듈 — **테스트 분산은 다음 셀**). 새 모듈: planes 436·boolean 819·transform 321·ops 656. design.md 25행(크레이트-트리) 갱신 — `arrange`→`combinatorics` 개명 반영 + 커토버로 갈린 `arrangement`(엔진)/`combinatorics`(조합 질의) 구분 + 이 셀의 layer 모듈(ops/boolean/transform/planes) 반영. **남은 것(별개 셀):** 테스트 분산(공유 픽스처 `boolean_one`·`l_prism`을 `test_support`로, per-module 이동), 그리고 앞 셀이 기록한 병렬성 회귀 결정(재병렬화 vs `parallel` 피처 은퇴).
+
+---
+
+**★ (정돈) `overhaul.md`·`overhaul-roadmap.md`·`winding-engine.md` → design.md 흡수 후 삭제.** 세 독립 문서를 design.md 한 곳으로 통합(사용자 결정). 조사로 성격을 갈랐다: **roadmap** = 회전 오버홀 stage 0~4 **완료 원장**(대부분 ✅·셀 상세는 dev-log 인용), **winding-engine** = 커토버로 이미 `arrangement.rs`가 된 엔진의 설계도, **overhaul** = 살아있는 회전 설계지만 **대부분 이미 design.md에 인라인**돼 있었다.
+
+- **접근 = "흡수"가 아니라 "de-reference".** design.md가 세 파일로 보낸 포인터 7개(:41·:173·:352·:466·:540·:545·:558·:563)는 **이미 결론을 인라인 요약으로 갖고** 끝에 "docs/X.md §Y 참조" 꼬리만 달고 있었다 → **꼬리만 제거**(순증가 라인 net 0). 요약조차 없던 소수 결정(명시 공유 규칙·op-log Document 소유·TIP declare-0 ask-user)만 :466 회전 오버홀 결정 목록(①~⑤)에 압축 흡수. winding 잔여 갭(containment·cavity·회전)은 :352 한 줄로.
+- **사용자 지시 = 결론 위주 압축.** 근거·유도·실측 서사·대안 배격은 전부 버림 — dev-log가 셀별로 보유하고 **git이 삭제 파일 원본을 보존**(복원 가능)하므로 안전. `1 file changed, 9 insertions(+), 9 deletions(-)`로 실증(비대 0).
+- **인용 재배선(측정 확정):** 코드 주석 "overhaul §3/§TIP"(frame2·frame3·nacre-tip) → "design.md §9"; arrangement.rs의 `winding-engine.md:66/115` 파일 참조 제거(산문 보존). ★ **`§TIP ①~⑨`·"design §TIP"는 무변경** — 실측 결과 **어느 문서에도 정본 정의 표가 없는 추상 약칭**(인라인 gloss로 뜻을 달고 삶)이라 파일 링크가 아니어서 삭제로 안 끊긴다. memory 규약(citation 규칙)만 갱신, 역사 노트·dev-log의 dangling은 의도적 수용(과거-정확 보존).
+
+**게이트:** 인용 무결성 grep 0(dev-log·역사 memory 제외)·clippy 0·cargo doc 새 broken-link 0(기존 private-link 경고는 무관)·프로덕션 무변경. `docs/`가 overview·design·dev-log로 정돈됐다.
