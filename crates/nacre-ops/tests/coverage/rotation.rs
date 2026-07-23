@@ -148,3 +148,39 @@ fn rotated_coplanar_contact_boss_and_pocket_solve() {
     let v = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((v - 0.875).abs() < 1e-9, "solved pocket cut is correct: {v}");
 }
+
+#[test]
+fn rotated_result_coplanar_reuse_under_a_general_rotation() {
+    // The intersection of two separately-solved capabilities: reusing a boolean *result* (every
+    // vertex `Discovered`) *and* coplanar contact, taken through a **compound** rotation so the
+    // shared plane's normal is fully general (no zero component) — the axis-aligned or single-axis
+    // tilt both leave one component zero, which under-tests the coplanar decision.
+    //
+    // Two unit boxes sit side by side sharing the vertical plane `x = 1`; the right one is a
+    // `Cut` result (a corner nicked away from `x = 1`, so its seating face survives). Both are then
+    // rotated `Z 35°` then `X 40°`: the shared normal `(1,0,0)` maps to
+    // `(cos35, sin35·cos40, sin35·sin40) ≈ (0.819, 0.439, 0.369)`, all nonzero. A `Fuse` must weld
+    // them flush — volume `1 + vol(right)` — in either operand order, and stay valid.
+    let tilt = |m: &mut Model, s| {
+        let s = xf(m, s, rot_iso(Axis::Z, 35));
+        xf(m, s, rot_iso(Axis::X, 40))
+    };
+    for swap in [false, true] {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b_raw = m.add_cuboid(Point3::from_array([1.0, 0.0, 0.0]), Point3::from_array([2.0, 1.0, 1.0]));
+        let nick = m.add_cuboid(Point3::from_array([1.6, 0.6, 0.6]), Point3::from_array([2.5, 1.5, 1.5]));
+        let b = boolean_one(&mut m, BoolKind::Cut, b_raw, nick).unwrap(); // vol 1 − 0.064 = 0.936
+        m.rebuild_adjacency();
+        let bvol = nacre_props::mass_props(&m, b).unwrap().volume;
+        let (a, b) = (tilt(&mut m, a), tilt(&mut m, b));
+        let (x, y) = if swap { (b, a) } else { (a, b) };
+        let r = boolean_one(&mut m, BoolKind::Fuse, x, y)
+            .unwrap_or_else(|e| panic!("rotated result + coplanar contact (swap={swap}) rejected: {e:?}"));
+        m.rebuild_adjacency();
+        let vs = nacre_validate::validate(&m);
+        assert!(vs.is_empty(), "swap={swap}: {vs:?}");
+        let v = nacre_props::mass_props(&m, r).unwrap().volume;
+        assert!((v - (1.0 + bvol)).abs() < 1e-9, "swap={swap}: fused volume {v} vs {}", 1.0 + bvol);
+    }
+}

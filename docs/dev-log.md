@@ -2322,3 +2322,11 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **정정:** `loop_winding`이 일치를 무시하고 lex-min을 찾은 뒤 turn_at으로 감김 계산. 핀치가 **극값 자체**에 오면(turn 모호) `LOOP_ORIENT_MISMATCH`로 정직-거절(안전 바닥 유지). figure-8은 쪼개지 않고 **하나의 -1 외곽 셀**로 둔다 → component-count 불변식(`winding-(-1) 수 == 성분 수`) 유지.
   - **★ 먼저 시도한 두 fix가 실패해 근원을 좁혔다.** (a) `extract_cells`에서 figure-8을 단순 서브-루프로 **분리**하니 외곽을 2셀로 쪼개 component-count 불변식이 깨져 BA 회귀. (b) loop_winding 실패를 **다음 walk 방향 시도**로 soft-fail하니 AB는 양 방향 모두 figure-8이라 무효. 둘 다 반증되며 "figure-8은 정당한 단일 외곽, 문제는 loop_winding의 판정"으로 수렴.
 - **검증:** 모서리-접촉 Common 양 순서 모두 Ok(빈)·validate clean(명시 테스트 `edge_contact_common_is_empty_in_both_orders`). 불변식 `fuse_common_commute`를 **"양 순서 Ok/Err 상태 일치"로 재강화**(순서 의존 재발 시 실패). 그리드 proptest **6000-case×6 통과**(156s, arrangement-코어 변경 광범위 회귀 넷). workspace 498→499·clippy 0·OCCT 93 불변. **안전 삼중:** 근원 수정 + per-solid `check_result_topology`(non-manifold/euler/genus) + proptest 넷. **M5 능력-갭 종결** — 남은 것은 하드닝뿐.
+
+---
+
+**M5 하드닝 — "회전 공면 접촉 결과 재사용" 갭 검증·봉인(테스트만).** 기억에 "solved-or-rejected by luck"로 남아있던 마지막 의심 항목(회전된 불리언 *결과*를 *공면 접촉*으로 재사용)을 실측했다 — 별개로 닫힌 두 능력(회전 결과 재사용 · 공면 접촉)의 교집합이라 테스트가 없었다.
+
+- **전부 정답·순서독립.** 전면 flush 공면, 부분-겹침 보스(보스가 결과), 결과를-절단-tool로 — 세 각도 모두 valid·정확.
+- **★ 단일 축 회전은 약한 테스트(사용자 지적).** 처음 프로브가 `Axis::X` 단일 회전이라 공유 평면 법선의 X성분이 0으로 남았다 — 완전 일반 방향이 아니다. **합성 회전 `Z35∘X40`**로 법선 `(1,0,0)→~(0.819,0.439,0.369)`(세 성분 다 0 아님)을 만들어야 공면 판정을 제대로 태운다. 옆으로 나란히(x=1 공유, 오른쪽은 Cut 결과) 두 박스를 함께 회전시켜 Fuse → 1.936 양 순서 정답.
+- **락:** `rotated_result_coplanar_reuse_under_a_general_rotation`(coverage/rotation.rs). 이번 세션 누적 수정(figure-8 loop_winding + provenance witness + 가드 제거)이 이 교집합을 함께 닫았음을 확인. **유일 거절 회전 케이스 = 코너-정확-일치(진짜 non-manifold, 거절 정답).** M5 능력 갭 0 — 남은 건 순수 하드닝. coverage 113·clippy 0.
