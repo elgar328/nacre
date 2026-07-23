@@ -12,6 +12,19 @@
 
 > Named for *nacre*, mother-of-pearl: it grows one layer at a time and never rewrites a layer beneath. The kernel treats geometry the same way, and unusually, its topology too.
 
+## Status
+
+The kernel grows as a coverage ladder — each milestone a self-contained kernel, exact and building on the last. The boolean engine is its spine: planar solids → quadrics → general NURBS.
+
+`M1 ✓   M2 ✓   M3 ✓   M4 ✓   M5 ◕   M6 ○   M7 ○`
+
+| Milestone | Scope | Status |
+|---|---|---|
+| **M1–M4** — foundation | Exact store & handles; plane / line / cylinder geometry; sketch → extrude; log replay; face ops; validation; STEP output; OCCT oracle | **Done** |
+| **M5** — polyhedral boolean | Cut / Fuse / Common on planar solids — one exact plane-arrangement engine over transverse, coplanar contact, containment, cavities, multi-body, and chained (incl. rotated) cases; anything else a named error | **Functionally complete; hardening** |
+| **M6** — quadric boolean | Planes, cylinders, spheres, cones — closed-form conic intersections | Planned |
+| **M7** — hybrid boolean | General NURBS — tagged mesh → combinatorial decision → exact surface snap-back | Planned |
+
 ## Relation to Fornjot
 
 Nacre began after [Fornjot](https://github.com/hannobraun/fornjot) — Hanno Braun's Rust b-rep CAD kernel, developed from 2020 until it was shut down in 2026 — and shares much of its outlook: code-first mechanical CAD, immutable objects referenced by handle, and clear errors in place of quietly wrong results. No code is shared.
