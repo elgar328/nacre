@@ -22,8 +22,8 @@ use nacre_topo::{
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-mod arrange;
 mod arrangement;
+mod combinatorics;
 mod tolerant;
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
@@ -185,8 +185,8 @@ pub(crate) mod tag {
     /// Reachable: `Cut` a hollow part with a cut that isolates the void into one severed piece.
     /// Born with its firing test (`severed_with_cavity_is_rejected`).
     ///
-    /// ★ The starting point for that cell is `arrange::point_in_solid_idx`, removed by the
-    /// seam-engine excise (2026-07-22 dev-log cell) once the arrangement stopped needing it (it seeds the unbounded cell and propagates inward
+    /// ★ The starting point for that cell is the removed `point_in_solid_idx` (excised by the
+    /// seam-engine cell, 2026-07-22 dev-log) once the arrangement stopped needing it (it seeds the unbounded cell and propagates inward
     /// instead). It answers *point in solid* by ray casting; what this needs is *point in shell*,
     /// so recover it from that commit and re-scope it rather than deriving one from scratch.
     pub const SEVERED_WITH_CAVITY: &str = "severed_with_cavity";
@@ -1382,9 +1382,9 @@ fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 /// exact TIP predicates:
 ///
 /// - **`v*`** by [`t_cmp_coord`](crate::tolerant) over each node's three-plane triple, the same
-///   lex-min scan as [`loop_winding`](crate::arrange::loop_winding). A node's triple is its
+///   lex-min scan as [`loop_winding`](crate::combinatorics::loop_winding). A node's triple is its
 ///   own face plane plus the neighbour planes of its two loop edges (the
-///   [`loop_triples`](crate::arrange) construction), whose meet *is* that vertex — so an
+///   [`loop_triples`](crate::combinatorics) construction), whose meet *is* that vertex — so an
 ///   original corner is as implicit a point as a seam node, no mixed compare needed.
 /// - **`sign(n_x)`** by [`dir_orient3d_judge`]`([1,0,0], tri…)` on the face's exact plane
 ///   definition ([`plane_def`](crate::tolerant), mixed-rotation safe): the x-component of the
@@ -1652,7 +1652,7 @@ struct LocalFace {
 
 /// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
-/// [`arrange::EdgeFaces`]. Detectors that classify vertices exactly but lack
+/// [`combinatorics::EdgeFaces`]. Detectors that classify vertices exactly but lack
 /// `overlap_fuse_cut`'s setup build it once, then classify each vertex without rebuilding.
 /// Indices into the returned `planes`/`surf_ix` are shared, so a vertex of `a` and a face of
 /// `b` compose in one space.
@@ -1666,8 +1666,8 @@ struct LocalFace {
 pub(crate) struct PlaneSetup {
     pub(crate) planes: Vec<FaceInfo>,
     pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
-    pub(crate) inc_a: arrange::EdgeFaces,
-    pub(crate) inc_b: arrange::EdgeFaces,
+    pub(crate) inc_a: combinatorics::EdgeFaces,
+    pub(crate) inc_b: combinatorics::EdgeFaces,
     /// The arrangement's planes, densely indexed — see [`dense_planes`].
     pub(crate) geom: Vec<PlaneGeom>,
     /// `plane_ix[face]` is that face's plane, as an index into `geom`.
@@ -1685,8 +1685,8 @@ fn plane_index_setup(
     for (i, pi) in planes.iter().enumerate() {
         surf_ix.insert(pi.face, i);
     }
-    let inc_a = arrange::edge_faces(model, a, &surf_ix)?;
-    let inc_b = arrange::edge_faces(model, b, &surf_ix)?;
+    let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
+    let inc_b = combinatorics::edge_faces(model, b, &surf_ix)?;
     let canon = plane_classes(&planes);
     let (geom, plane_ix) = dense_planes(&planes, &canon);
     Ok(PlaneSetup {
@@ -2179,7 +2179,7 @@ fn norm_edge(a: Node, b: Node) -> (Node, Node) {
 /// merely lie on the same plane without touching must each survive on their own.
 ///
 /// Reused, not reinvented: `canon` for coplanarity, `n_out.dot > 0` for facing,
-/// [`arrange::loop_winding`] to tell an outer ring from a hole, [`arrange::point_in_ring`] to give
+/// [`combinatorics::loop_winding`] to tell an outer ring from a hole, [`combinatorics::point_in_ring`] to give
 /// each hole its owner — the same two exact predicates `arrangement::nest_cells` uses for the same
 /// question, neither of which reads a coordinate.
 ///
@@ -2344,7 +2344,7 @@ fn merge_component(
     let mut outers: Vec<Vec<Node>> = Vec::new();
     let mut holes: Vec<Vec<Node>> = Vec::new();
     for cyc in cycles {
-        match arrange::loop_winding(planes, wc, &seam_ring(&cyc))? {
+        match combinatorics::loop_winding(planes, wc, &seam_ring(&cyc))? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
             _ => return Err(reject(tag::COPLANAR_MERGE)),
@@ -2357,7 +2357,7 @@ fn merge_component(
         let probe = seam_ring(&hole)[0];
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            if arrange::point_in_ring(planes, wc, probe, &seam_ring(outer))? {
+            if combinatorics::point_in_ring(planes, wc, probe, &seam_ring(outer))? {
                 if owner.is_some() {
                     return Err(reject(tag::COPLANAR_MERGE)); // nested deeper than this brick names
                 }
@@ -3635,15 +3635,15 @@ pub mod tests {
         // The two rings of a holed face are stored with opposite windings — that is what makes one
         // a hole and the other its outer boundary — and `loop_winding` must read exactly that.
         let (planes, p, outer, hole) = holed_face_rings("dimple");
-        assert_eq!(arrange::loop_winding(&planes, p, &outer).unwrap(), 1);
-        assert_eq!(arrange::loop_winding(&planes, p, &hole).unwrap(), -1);
+        assert_eq!(combinatorics::loop_winding(&planes, p, &outer).unwrap(), 1);
+        assert_eq!(combinatorics::loop_winding(&planes, p, &hole).unwrap(), -1);
 
         // Nothing but the ring's direction went into that. Reversing it by hand agrees.
         for (name, ring, want) in [("outer", &outer, -1i8), ("hole", &hole, 1)] {
             let mut reversed = ring.clone();
             reversed.reverse();
             assert_eq!(
-                arrange::loop_winding(&planes, p, &reversed).unwrap(),
+                combinatorics::loop_winding(&planes, p, &reversed).unwrap(),
                 want,
                 "{name} reversed"
             );
@@ -3661,9 +3661,12 @@ pub mod tests {
             .iter()
             .position(|q| near(Point3::from_array(*q), [1.0, 1.0, 1.0]))
             .expect("the reflex node");
-        assert_eq!(arrange::turn_at(&planes, p, &outer, reflex).unwrap(), -1);
+        assert_eq!(
+            combinatorics::turn_at(&planes, p, &outer, reflex).unwrap(),
+            -1
+        );
         let turns: Vec<i8> = (0..outer.len())
-            .map(|i| arrange::turn_at(&planes, p, &outer, i).unwrap())
+            .map(|i| combinatorics::turn_at(&planes, p, &outer, i).unwrap())
             .collect();
         assert_eq!(
             turns.iter().filter(|&&t| t == -1).count(),
@@ -3678,7 +3681,7 @@ pub mod tests {
             .min_by(|&i, &j| pts[i].partial_cmp(&pts[j]).unwrap())
             .unwrap();
         assert_ne!(lo, reflex);
-        assert_eq!(arrange::turn_at(&planes, p, &outer, lo).unwrap(), 1);
+        assert_eq!(combinatorics::turn_at(&planes, p, &outer, lo).unwrap(), 1);
 
         // ★ The teeth. A ring is a cycle, so its winding cannot depend on where the walk began.
         // Start it at the reflex node and a `turn_at(ring[0])` implementation reads the reflex
@@ -3686,8 +3689,11 @@ pub mod tests {
         // implementation passes every assertion above.
         let mut rotated = outer.clone();
         rotated.rotate_left(reflex);
-        assert_eq!(arrange::turn_at(&planes, p, &rotated, 0).unwrap(), -1);
-        assert_eq!(arrange::loop_winding(&planes, p, &rotated).unwrap(), 1);
+        assert_eq!(combinatorics::turn_at(&planes, p, &rotated, 0).unwrap(), -1);
+        assert_eq!(
+            combinatorics::loop_winding(&planes, p, &rotated).unwrap(),
+            1
+        );
     }
 
     #[test]
@@ -3761,8 +3767,8 @@ pub mod tests {
     /// A **holed reflex face** from the live engine, as plane triples: `(planes, p, outer, hole)`.
     ///
     /// `Cut(L-prism, stub)` leaves the L's top cap carrying a hole — `"dimple"` a square one,
-    /// `"ell"` an L-shaped one. Both rings come from [`arrange::face_vertex_triples`] and
-    /// [`arrange::hole_rings`], which the boolean itself uses, so the fixture exercises only code
+    /// `"ell"` an L-shaped one. Both rings come from [`combinatorics::face_vertex_triples`] and
+    /// [`combinatorics::hole_rings`], which the boolean itself uses, so the fixture exercises only code
     /// the kernel runs.
     ///
     /// This replaces a helper that built its rings from `seam_paths_on`/`orient_seam_loop` — the
@@ -3784,13 +3790,14 @@ pub mod tests {
         }
         let canon = plane_classes(&faces_tab);
         let (planes, plane_ix) = dense_planes(&faces_tab, &canon);
-        let inc = arrange::edge_faces(&m, r, &surf_ix).unwrap();
+        let inc = combinatorics::edge_faces(&m, r, &surf_ix).unwrap();
         for &fh in &m.shells.get(m.solids.get(r).outer).faces {
             let fp = surf_ix[&fh];
-            let holes = arrange::hole_rings(&m, fh, fp, &inc, &planes, &plane_ix).unwrap();
+            let holes = combinatorics::hole_rings(&m, fh, fp, &inc, &planes, &plane_ix).unwrap();
             if let Some(hole) = holes.into_iter().next() {
                 let outer =
-                    arrange::face_vertex_triples(&m, fh, fp, &inc, &planes, &plane_ix).unwrap();
+                    combinatorics::face_vertex_triples(&m, fh, fp, &inc, &planes, &plane_ix)
+                        .unwrap();
                 assert_eq!(outer.len(), 6, "{which}: the L's cap is a reflex hexagon");
                 return (planes, plane_ix[fp], outer, hole);
             }
@@ -3805,7 +3812,7 @@ pub mod tests {
         // with a reflex corner, so this is not a convex test.
         let (planes, p, outer, hole) = holed_face_rings("dimple");
         for t in &hole {
-            assert!(arrange::point_in_ring(&planes, p, *t, &outer).unwrap());
+            assert!(combinatorics::point_in_ring(&planes, p, *t, &outer).unwrap());
         }
     }
 
@@ -3817,7 +3824,7 @@ pub mod tests {
         for which in ["dimple", "ell"] {
             let (planes, p, outer, hole) = holed_face_rings(which);
             for t in &hole {
-                let rays = arrange::every_ray(&planes, p, *t, &outer).unwrap();
+                let rays = combinatorics::every_ray(&planes, p, *t, &outer).unwrap();
                 assert!(!rays.is_empty(), "{which}: no clear ray");
                 assert!(rays.iter().all(|&x| x), "{which}: {rays:?}");
             }
@@ -3837,16 +3844,16 @@ pub mod tests {
         rev_outer.reverse();
         rev_hole.reverse();
         for t in &hole {
-            assert!(arrange::point_in_ring(&planes, p, *t, &outer).unwrap());
+            assert!(combinatorics::point_in_ring(&planes, p, *t, &outer).unwrap());
             assert!(
-                arrange::point_in_ring(&planes, p, *t, &rev_outer).unwrap(),
+                combinatorics::point_in_ring(&planes, p, *t, &rev_outer).unwrap(),
                 "reversing the outer ring must not move the hole"
             );
         }
         for t in &outer {
-            assert!(!arrange::point_in_ring(&planes, p, *t, &hole).unwrap());
+            assert!(!combinatorics::point_in_ring(&planes, p, *t, &hole).unwrap());
             assert!(
-                !arrange::point_in_ring(&planes, p, *t, &rev_hole).unwrap(),
+                !combinatorics::point_in_ring(&planes, p, *t, &rev_hole).unwrap(),
                 "nor may reversing the hole swallow the outer ring"
             );
         }
@@ -3862,7 +3869,7 @@ pub mod tests {
         // from the retired staple fixture, whose loop and arc shared a plane. The holed L cap has
         // no such sharing, so only the unanimity survives the move.)
         let (planes, p, outer, hole) = holed_face_rings("dimple");
-        let rays = arrange::every_ray(&planes, p, hole[0], &outer).unwrap();
+        let rays = combinatorics::every_ray(&planes, p, hole[0], &outer).unwrap();
         assert!(!rays.is_empty(), "at least one candidate is clear");
         assert!(rays.iter().all(|&x| x), "and they agree: inside — {rays:?}");
     }
@@ -3874,8 +3881,8 @@ pub mod tests {
         // which fires exactly the condition the nesting brick asks about. It is the detector under
         // test, not the fixture.
         let (planes, p, outer, hole) = holed_face_rings("dimple");
-        assert!(arrange::point_in_ring(&planes, p, hole[0], &outer).unwrap());
-        assert!(!arrange::point_in_ring(&planes, p, outer[0], &hole).unwrap());
+        assert!(combinatorics::point_in_ring(&planes, p, hole[0], &outer).unwrap());
+        assert!(!combinatorics::point_in_ring(&planes, p, outer[0], &hole).unwrap());
     }
 
     #[test]
@@ -5335,7 +5342,7 @@ pub mod tests {
     ///
     /// The arrangement states its cell labels as `[*_above, *_below]` about one direction per plane
     /// class: the class root's **stored surface normal** (`Seated{body_above}` and `emit_faces`'
-    /// `flip` are written against it). `arrange::side_of` answers in the root's **outward** frame
+    /// `flip` are written against it). `combinatorics::side_of` answers in the root's **outward** frame
     /// instead, and the two are opposite exactly when the root face is `Reversed`
     /// (`orient_sign == -1`) — which no `add_cuboid` face ever is, but a face an earlier boolean
     /// re-emitted flipped is. `graze_above` read `side_of` raw, so on a pocket wall it flipped the
@@ -7310,7 +7317,8 @@ pub mod tests {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let tris =
-                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap();
+                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix)
+                        .unwrap();
                 for t in &tris {
                     // The triple is already dense plane ids: distinct means three real planes.
                     assert!(
@@ -7434,9 +7442,12 @@ pub mod tests {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let mut rings = vec![
-                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap(),
+                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix)
+                        .unwrap(),
                 ];
-                rings.extend(arrange::hole_rings(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap());
+                rings.extend(
+                    combinatorics::hole_rings(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap(),
+                );
                 for t in rings.iter().flatten() {
                     for &k in t {
                         assert!(
@@ -7494,12 +7505,13 @@ pub mod tests {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let tris =
-                    arrange::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap();
+                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix)
+                        .unwrap();
                 for t in &tris {
                     // The vertex lies on exactly its three defining planes; each must read 0.
                     for &q in t {
                         assert_eq!(
-                            arrange::side_of(&planes, *t, q),
+                            combinatorics::side_of(&planes, *t, q),
                             0,
                             "vertex {t:?} lies on plane {q} but does not read 0"
                         );

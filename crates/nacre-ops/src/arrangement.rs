@@ -150,7 +150,7 @@ fn trace_transversal_face(
     wc: usize,
     planes: &[PlaneGeom],
     faces: &[FaceInfo],
-    inc: &arrange::EdgeFaces,
+    inc: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
     out: &mut Trace,
 ) {
@@ -158,7 +158,7 @@ fn trace_transversal_face(
     // *plane class* it lies on (triples, comparisons, predicate arguments). Every ring below is in
     // class form, so the two must not be confused — see `canon_ring`.
     let fc = plane_ix[fp];
-    let outer = match arrange::face_vertex_triples(model, fh, fp, inc, planes, plane_ix) {
+    let outer = match combinatorics::face_vertex_triples(model, fh, fp, inc, planes, plane_ix) {
         Ok(r) => match plane_ring(&r) {
             Some(r) => r,
             None => {
@@ -174,7 +174,7 @@ fn trace_transversal_face(
     let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
-    let Ok(raw_holes) = arrange::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
+    let Ok(raw_holes) = combinatorics::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
         out.declined.push((fp, "hole-ring"));
         return;
     };
@@ -214,7 +214,7 @@ fn trace_transversal_face(
     'rings: for ring in std::iter::once(&outer).chain(holes.iter()) {
         let n = ring.len();
         let side: Vec<i8> = (0..n)
-            .map(|i| arrange::side_of(planes, ring[i], wc))
+            .map(|i| combinatorics::side_of(planes, ring[i], wc))
             .collect();
         let Some(start) = side.iter().position(|&s| s != 0) else {
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
@@ -228,7 +228,7 @@ fn trace_transversal_face(
                 let ni = (i + 1) % n;
                 if side[ni] != 0 && side[ni] != side[i] {
                     // Strict crossing on edge i; its wall is the plane the edge rides besides fp.
-                    match arrange::ring_edge(fc, ring, i) {
+                    match combinatorics::ring_edge(fc, ring, i) {
                         Ok((wall, _, _)) => nodes.push(Node {
                             r: wall,
                             flip: true,
@@ -312,14 +312,14 @@ fn trace_transversal_face(
 
     // Phase B — order the nodes along L and fix run structure.
     nodes.sort_by(
-        |a, b| match arrange::order_along(planes, wc, fc, a.r, b.r) {
+        |a, b| match combinatorics::order_along(planes, wc, fc, a.r, b.r) {
             -1 => std::cmp::Ordering::Less,
             1 => std::cmp::Ordering::Greater,
             _ => std::cmp::Ordering::Equal,
         },
     );
     for w in nodes.windows(2) {
-        if arrange::order_along(planes, wc, fc, w[0].r, w[1].r) == 0 {
+        if combinatorics::order_along(planes, wc, fc, w[0].r, w[1].r) == 0 {
             out.declined.push((fp, "coincident-features"));
             return;
         }
@@ -414,8 +414,8 @@ fn trace_transversal_face(
 /// run is the hole's edge) is the one the flank gets wrong.
 ///
 /// **Derivation.** `order_along` runs along `d = n_s(wc) × n_s(fc)` (stored normals — see
-/// [`arrange::dir_sign`] and [`tolerant::t_plane_pair_dir_sign`]), and the label frame's "above" is
-/// `n_s(wc)` (see [`arrange::side_of`]). With `t = order_along(wc, fc, first, last)` the travel
+/// [`combinatorics::dir_sign`] and [`tolerant::t_plane_pair_dir_sign`]), and the label frame's "above" is
+/// `n_s(wc)` (see [`combinatorics::side_of`]). With `t = order_along(wc, fc, first, last)` the travel
 /// is `−t·d`, so material points along `n_out(fp) × (−t·d)`. Since `fp` is coplanar with its class
 /// root, `n_out(fp) = σ·n_s(fc)`, and the triple product collapses to
 /// `−t·σ·(1 − (n_s(fc)·n_s(wc))²)` — whose bracket is positive because the two planes are not
@@ -433,7 +433,7 @@ fn run_body_above(
     fp: usize,
     rs: &[usize],
 ) -> bool {
-    let t = arrange::order_along(planes, wc, fc, rs[0], rs[rs.len() - 1]);
+    let t = combinatorics::order_along(planes, wc, fc, rs[0], rs[rs.len() - 1]);
     let sigma = faces[fp].n_out.dot(planes[fc].plane.normal());
     (t < 0) == (sigma > 0.0)
 }
@@ -449,7 +449,7 @@ fn trace_one(
     planes: &[PlaneGeom],
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
-    inc: &arrange::EdgeFaces,
+    inc: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
     out: &mut Trace,
 ) {
@@ -470,9 +470,10 @@ fn trace_one(
             let kind = SegKind::Seated { body_above };
             // Collect every ring in class form first: a collapsed name declines the whole face, and
             // deciding that before the emitting closure exists keeps the two borrows apart.
-            let Some(outer) = arrange::face_vertex_triples(model, fh, fp, inc, planes, plane_ix)
-                .ok()
-                .and_then(|ts| plane_ring(&ts))
+            let Some(outer) =
+                combinatorics::face_vertex_triples(model, fh, fp, inc, planes, plane_ix)
+                    .ok()
+                    .and_then(|ts| plane_ring(&ts))
             else {
                 out.declined.push((fp, "outer-ring"));
                 continue;
@@ -480,7 +481,7 @@ fn trace_one(
             let mut rings = vec![outer];
             let mut collapsed = false;
             // As above: an unnameable hole is a reject, not "no hole".
-            let Ok(raw) = arrange::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
+            let Ok(raw) = combinatorics::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
                 out.declined.push((fp, "hole-ring"));
                 continue;
             };
@@ -541,8 +542,8 @@ fn trace_on_class(
     planes: &[PlaneGeom],
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
-    inc_a: &arrange::EdgeFaces,
-    inc_b: &arrange::EdgeFaces,
+    inc_a: &combinatorics::EdgeFaces,
+    inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
 ) -> Trace {
     let mut out = Trace::default();
@@ -681,8 +682,8 @@ fn split_at_crossings(
             return Some(true);
         }
         let (a, b) = (
-            arrange::order_along(planes, wc, s.wall, r, r0),
-            arrange::order_along(planes, wc, s.wall, r, r1),
+            combinatorics::order_along(planes, wc, s.wall, r, r0),
+            combinatorics::order_along(planes, wc, s.wall, r, r1),
         );
         Some(a != 0 && b != 0 && a != b)
     };
@@ -724,14 +725,16 @@ fn split_at_crossings(
         // Distinct classes (same class = same point), then ordered along the line.
         pts.sort_unstable();
         pts.dedup();
-        pts.sort_by(|&x, &y| match arrange::order_along(planes, wc, w, x, y) {
-            -1 => std::cmp::Ordering::Less,
-            1 => std::cmp::Ordering::Greater,
-            _ => std::cmp::Ordering::Equal,
-        });
+        pts.sort_by(
+            |&x, &y| match combinatorics::order_along(planes, wc, w, x, y) {
+                -1 => std::cmp::Ordering::Less,
+                1 => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            },
+        );
         // Two DISTINCT classes at one geometric point ⇒ a four-plane concurrency `{wc, w, ·, ·}`.
         for pair in pts.windows(2) {
-            if arrange::order_along(planes, wc, w, pair[0], pair[1]) == 0 {
+            if combinatorics::order_along(planes, wc, w, pair[0], pair[1]) == 0 {
                 return Err(reject(tag::FOURPLANE));
             }
         }
@@ -767,7 +770,7 @@ fn split_at_crossings(
 /// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
 /// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
 /// given as `(fp, s)`. The signed turn between edges i and j is `turn_at`'s atom
-/// `s_i·s_j·t_plane_pair_dir_sign(w, fp_i, fp_j)·orient_sign(w)` (arrange.rs:524-556).
+/// `s_i·s_j·t_plane_pair_dir_sign(w, fp_i, fp_j)·orient_sign(w)` (combinatorics.rs).
 ///
 /// The turn sign is transitive only *within an open half-plane* (span < π), where it reproduces
 /// the angle order exactly — the textbook Graham-scan fact. So: bucket every edge by its turn
@@ -893,7 +896,7 @@ fn extract_cells(
                     .ok_or_else(|| reject(tag::THREE_PLANES))?,
             );
             // Direction sign away from v toward the far end (edge_sign convention).
-            let s = arrange::order_along(planes, wc, wall(he), rf, rv);
+            let s = combinatorics::order_along(planes, wc, wall(he), rf, rv);
             if s == 0 {
                 return Err(reject(tag::LOOP_ORIENT_MISMATCH));
             }
@@ -950,7 +953,7 @@ fn extract_cells(
                 break;
             }
             let ring: Vec<[usize; 3]> = cyc.iter().map(|&h| origin(h)).collect();
-            let w = arrange::loop_winding(planes, wc, &ring)?;
+            let w = combinatorics::loop_winding(planes, wc, &ring)?;
             cells.push(Cell {
                 half_edges: cyc,
                 winding: w,
@@ -972,11 +975,11 @@ fn extract_cells(
 /// other side (they are adjacent, not nested) — this also excludes `c`'s own `+1` partner, which
 /// carries the same ring. Two vertex-disjoint simple loops are nested-or-separate (a crossing
 /// would be a shared split node), so one representative vertex settles containment via
-/// [`arrange::point_in_ring`]. A `c` inside no `+1` cell bounds the unbounded region: the root.
+/// [`combinatorics::point_in_ring`]. A `c` inside no `+1` cell bounds the unbounded region: the root.
 ///
 /// `c` may lie inside **several** `+1` rings at once, and that is not a degeneracy: nesting two
 /// levels deep (`A⁺ ⊃ D⁻ ⊃ B⁺ ⊃ c⁻`) puts `c` inside `B`'s ring *and* `A`'s, because
-/// [`arrange::point_in_ring`] asks about a ring, not about the material it bounds. The owner is the
+/// [`combinatorics::point_in_ring`] asks about a ring, not about the material it bounds. The owner is the
 /// **innermost** candidate ([`innermost_host`]).
 struct Nesting {
     /// `group_of[cell]` = the cell's group representative (the `+1` host for a hole group, else
@@ -1039,7 +1042,7 @@ fn nest_cells(
             // all of `c`'s vertices spoiled against `r` is a genuine degeneracy → honest reject.
             let mut inside = None;
             for &v in &rings[c] {
-                if let Ok(hit) = arrange::point_in_ring(planes, wc, v, &rings[r]) {
+                if let Ok(hit) = combinatorics::point_in_ring(planes, wc, v, &rings[r]) {
                     inside = Some(hit);
                     break;
                 }
@@ -1089,7 +1092,7 @@ fn nest_cells(
 /// `split_at_crossings`, not here.
 ///
 /// Containment is read the same way [`nest_cells`] reads it: one representative vertex through
-/// [`arrange::point_in_ring`], and candidates sharing a node are adjacent rather than nested, so
+/// [`combinatorics::point_in_ring`], and candidates sharing a node are adjacent rather than nested, so
 /// they cannot be ordered and the honest answer is to reject.
 fn innermost_host(
     planes: &[PlaneGeom],
@@ -1103,7 +1106,7 @@ fn innermost_host(
         }
         rings[a]
             .iter()
-            .find_map(|&v| arrange::point_in_ring(planes, wc, v, &rings[b]).ok())
+            .find_map(|&v| combinatorics::point_in_ring(planes, wc, v, &rings[b]).ok())
     };
     let mut found = None;
     for &h in hosts {
@@ -1336,8 +1339,8 @@ fn trace_result_faces(
     planes: &[PlaneGeom],
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
-    inc_a: &arrange::EdgeFaces,
-    inc_b: &arrange::EdgeFaces,
+    inc_a: &combinatorics::EdgeFaces,
+    inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let mut local_faces: Vec<LocalFace> = Vec::new();
@@ -2522,7 +2525,7 @@ mod tests {
                 f.loop_nodes.iter().map(|crate::Node::Seam(t)| *t).collect();
             assert!(ring.len() >= 3);
             assert_eq!(
-                arrange::loop_winding(&planes, wc, &ring).unwrap(),
+                combinatorics::loop_winding(&planes, wc, &ring).unwrap(),
                 1,
                 "CCW about n_out"
             );

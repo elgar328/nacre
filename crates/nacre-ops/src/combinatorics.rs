@@ -1,4 +1,4 @@
-//! Per-face planar arrangement for the polyhedral boolean (design §8 M5, sub-unit 3).
+//! Combinatorial queries over the per-face planar arrangement (design §8 M5, sub-unit 3).
 //!
 //! This module answers combinatorial questions about how one solid's boundary cuts
 //! a face of the other. It lives in `nacre-ops` and not in `nacre-geom` because it
@@ -26,9 +26,9 @@
 //! `crate::shares_or_coplanar` → `crate::tolerant::t_planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
-// Nothing in the boolean calls this yet — cell 3c replaces `reconstruct_face` with
-// the arrangement and wires it in. Until then only tests exercise it, so a non-test
-// build rightly sees it as unreachable.
+// The arrangement engine (`arrangement.rs`) calls these queries; a handful of helpers are
+// reached only from the `frame_audit` diagnostic (`#[cfg(test)]`), so the non-test build sees
+// those as unreachable.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
