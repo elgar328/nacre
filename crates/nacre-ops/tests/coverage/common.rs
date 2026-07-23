@@ -235,3 +235,15 @@ pub fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
     }
     pts
 }
+
+/// The L with a box straddling its reflex corner (1,1): a single chord with one
+/// reflex bend — the box vertex (1.6,1.6,·) sits in the notch (inside the convex
+/// hull, outside the L), where a convex half-space test would misclassify it.
+pub fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, l) = l_prism();
+    let bx = m.add_cuboid(
+        Point3::from_array([0.6, 0.6, 0.2]),
+        Point3::from_array([1.6, 1.6, 1.4]),
+    );
+    (m, l, bx)
+}
