@@ -27,3 +27,6 @@ mod features;
 
 #[path = "coverage/coplanar.rs"]
 mod coplanar;
+
+#[path = "coverage/invariants.rs"]
+mod invariants;

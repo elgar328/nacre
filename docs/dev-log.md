@@ -2301,3 +2301,13 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **★ 실린더 seam이 planar 가정을 깼다(validate 착지에서 발견).** 실린더의 seam 정점(원형 self-loop 모서리, seam 모서리를 lateral 면이 2회 사용, 원형 cap 면이 모서리 1개만 사용)은 "면당 V-모서리 2개" 가정을 위반해 **false-positive**(cylinder_is_clean 등 3개 실패). → **abstain**: 면이 V의 모서리를 정확히 2개 아닌 다르게 쓰는 정점은 검출 보류(manifold 간주). planar 다면체 코너는 항상 2개라 실제 planar pinch는 무영향, cylinder(M6) 아티팩트만 회피. (대가: 진짜 pinched-*face*는 여기서 안 잡음 — M5 boolean은 안 만들고, 모서리 검사가 non-manifold 모서리는 커버.)
 - **3곳:** topo `nonmanifold_vertices`(공유, 맵만 받아 Model 무의존) · validate `NonManifoldVertex` violation(check_manifold) · ops `boolean`의 `check_result_topology`(result_euler_chi 대체, **per-solid**로 정점·parity·genus 검사 → `NON_MANIFOLD_VERTEX`/`EULER_PARITY`/`NEGATIVE_GENUS`, per-solid이라 합산-짝수 상쇄 결함도 해소).
 - **검증:** 오목-코너(비회전·회전)·두-큐브-코너접촉 → `NON_MANIFOLD_VERTEX` 거절·live 무변. 손으로 만든 위상으로 **짝수 pinch 둘 다 검출**(parity 근본한계 실증)·manifold fan 무오탐. 실제 pinch에 `validate`가 `NonManifoldVertex` 보고. workspace 495→498·clippy 0·OCCT 93·실린더/기존 전부 불변.
+
+---
+
+**M5 하드닝 — 그리드-샘플 proptest 불변식 스위트.** 불리언 대수(부피보존·inclusion-exclusion·cut-항등·교환·멱등) + always-valid를 랜덤 입력에 검사하는 그물(`tests/coverage/invariants.rs`, public API).
+
+- **★ 설계 통찰 두 개.** (1) **랜덤 float는 버그를 못 잡는다** — 이번 세션의 silent-wrong(오목-코너·공면 퇴화)은 전부 정확한 좌표 일치에서 나는데 float는 exact 일치가 measure-zero라 그 공간을 안 밟는다. → **작은 정수 그리드**(`{0..5}`) 샘플링으로 공유 평면·코너/모서리/면 접촉·포함을 양의 확률로 태운다. (2) **거절은 silent-wrong이 아니다**(silent-wrong=Ok-무효/틀린-부피, Ok 경로뿐) → 그물은 `Ok`→validate+부피 불변식, `Err`→스킵이면 건전. family #3(무지성 assume 금지)은 **명시 성공 핀**(`core_configs_succeed`)으로 지킨다.
+- **오라클:** 박스는 독립 AABB 정수 산술(`ovlp=Π max(0, min−max)`), L-prism은 면적×높이 독립 산술. nacre로 vA 재계산 금지(순환 방지).
+- **★ 첫 실행이 실제 갭을 잡았다 — 모서리-접촉 Common 순서 의존.** `Common([4,5]×[2,3]×[1,3], [2,4]×[0,2]×[2,3])`(두 축 0-겹침=모서리 접촉)이 **한 순서는 Ok(0 solids, 정답), 반대 순서는 `loop_orient_mismatch` 거절**. 교집합은 measure-zero(빈)라 **둘 다 정직**(empty 또는 honest-reject) = silent-wrong 아님·순서 의존 커버리지 갭 → 이 작업(그물) 범위 밖으로 문서화하고 commutativity 불변식을 "둘 다 Ok면 부피 일치"로 좁힘(순서 의존 *틀린 부피*는 계속 잡음). float였으면 절대 못 찾았을 것 — 그리드 설계의 즉효.
+- **L-prism 생성기 함정(커널 무관):** `prop_assume!(nx<w)`가 과다 reject → "Too many global rejects" 중단. offset(`nx=1+nxr%(w-1)`)으로 항상-유효화(assume 제거). cut-identity 자체는 무결.
+- **검증:** inclusion-exclusion 5000·L-prism 3000·나머지 default 통과, silent-wrong 0·wrong-volume 0. workspace 504·clippy 0·OCCT 93. **회귀 안전망:** 미래에 어떤 배치가 Ok-무효/틀린 부피를 내면 여기서 실패.
