@@ -199,7 +199,7 @@ fn tol_of(o: Origin) -> f64 {
         Origin::Discovered { tol, .. } => tol,
         // A rotated vertex's f64 cache is a rigid image of an exact point; its
         // incidence residual is machine-scale (stage 1 records rotation tol only as
-        // the definition, judged later — §TIP ⑦), so the construction epsilon holds.
+        // the definition, judged later — §CIP ⑦), so the construction epsilon holds.
         Origin::Rotated { .. } => EPS_CONSTRUCTED,
     }
 }

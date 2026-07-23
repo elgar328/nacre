@@ -93,7 +93,7 @@ pub(crate) fn bf_mag(bf: &BigFloat) -> f64 {
     }
 }
 
-/// The result of an orientation judgment (§6 TIP).
+/// The result of an orientation judgment (§9 CIP).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Orient {
     Positive,
@@ -147,7 +147,7 @@ fn det_hp(pa: &Pt2, pb: &Pt2, pc: &Pt2, prec: usize) -> BigFloat {
         .sub(&d1y.mul(&d2x, prec, HP_RM), prec, HP_RM)
 }
 
-/// TIP orient2d: f64 filter (`|det| > tol-bound` → trust the sign), else escalate
+/// CIP orient2d: f64 filter (`|det| > tol-bound` → trust the sign), else escalate
 /// to astro-float at [`JUDGE_PREC`]; if the determinant there is below the
 /// precision floor it is `Zero` (declare-0). The decision is a pure function of
 /// the three point *definitions*, so it is path-independent.

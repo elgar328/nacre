@@ -1,12 +1,12 @@
-//! The 3D toleranced point + its `orient3d` judgment (design.md §9 TIP, stage 2). The
+//! The 3D toleranced point + its `orient3d` judgment (design.md §9 CIP, stage 2). The
 //! 3D analogue of [`crate::frame2`] (`Pt2` / `orient2d_judge`).
 //!
 //! A rotated point cannot be held exactly (cos/sin are irrational), but its f64
-//! realization carries a **direction-wise xyz tol** (§TIP ⑤) that soundly bounds
+//! realization carries a **direction-wise xyz tol** (§CIP ⑤) that soundly bounds
 //! the error, accumulated as the definition is turned through a chain of
-//! axis-aligned rotations (§TIP ①: `new tol = |R|·old + mix`). [`orient3d_judge`]
+//! axis-aligned rotations (§CIP ①: `new tol = |R|·old + mix`). [`orient3d_judge`]
 //! consumes that tol: an f64 determinant filter with a sound error bound
-//! ([`det3_bound`], §TIP ②) decides the easy cases, the ambiguous ones **escalate**
+//! ([`det3_bound`], §CIP ②) decides the easy cases, the ambiguous ones **escalate**
 //! to astro-float from the point definitions, and a determinant below the precision
 //! floor is a **declare-0** ([`Orient::Zero`]). This is the judgment **layer only**
 //! ("층만") — not yet wired into boolean (that is stage 3), and it is the *tol > 0*
@@ -43,10 +43,10 @@ pub struct RotNode {
     pub point: [Rat; 3],
 }
 
-/// A rational base point carried through a chain of axis rotations (§TIP ⑦ rotation
+/// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
 /// history). `base` + `chain` are the exact **definition** (never lost); `coord` is
 /// the f64 realization (a cache), and `tol` bounds its error as a **direction-wise
-/// xyz vector** (§TIP ⑤). [`hp_coord`](Self::hp_coord) realizes the chain at
+/// xyz vector** (§CIP ⑤). [`hp_coord`](Self::hp_coord) realizes the chain at
 /// arbitrary precision from the definition, so two points with the same definition
 /// realize identically (path-independent — the soundness argument's root).
 #[derive(Clone, Debug)]
@@ -220,7 +220,7 @@ fn prod_err(va: f64, ta: f64, vb: f64, tb: f64, vc: f64, tc: f64) -> f64 {
 }
 
 /// Sound error bound on the f64 `orient3d` determinant from each point's directional
-/// tol (§TIP ②). The determinant is six signed triple-products of the edge entries;
+/// tol (§CIP ②). The determinant is six signed triple-products of the edge entries;
 /// each entry `(a−d)[k]` carries tol `tol_a[k] + tol_d[k]`. The bound sums the six
 /// product radii (input-tol propagation, triangle-inequality worst case) plus a term
 /// for the f64 rounding of the determinant's own arithmetic. The 3D analogue of
@@ -294,7 +294,7 @@ fn scale4(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
     m(a).max(m(b)).max(m(c)).max(m(d)).max(1.0)
 }
 
-/// TIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
+/// CIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
 /// astro-float at [`JUDGE_PREC`]; a determinant below the precision floor (`~scale³`,
 /// cubic for the 3×3 case) is [`Orient::Zero`] (declare-0). Path-independent (a
 /// function of the four point definitions). This is the *tol > 0* path — a tol-0
@@ -322,7 +322,7 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
     }
 }
 
-/// TIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
+/// CIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
 /// orientation of the ray direction `d` against the edge fan `(base→x, base→y)`. The
 /// **direction analogue** of [`orient3d_judge`]: `point_in_solid`'s ray-triangle test asks
 /// `orient3d(p, p+d, ·, ·)`, but `p+d` (a rotated point plus a rational offset) has no exact
@@ -376,7 +376,7 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
     }
 }
 
-/// TIP `orient3d(base, base+dir, x, y)` — an `orient3d` whose 2nd point is the ideal point
+/// CIP `orient3d(base, base+dir, x, y)` — an `orient3d` whose 2nd point is the ideal point
 /// in direction `dir` (a ray from `base`). This is exactly the shape `ray_triangle_cross`'s
 /// edge tests take (`orient3d(p, p+d, ·, ·)`), so a caller mirrors the f64 predicate
 /// argument-for-argument instead of hand-reducing the direction column.
@@ -411,7 +411,7 @@ fn det3_mag(r: [[f64; 3]; 3]) -> f64 {
 // The kernel decides `orient3d(V, q, r, s)` without materializing `V`:
 // `sign = sign(D)·sign(M)` where `D = det(normals)` and
 // `M = (Dvec − D·s)·((q−s)×(r−s))` (Cramer, no division). The f64 filter is over
-// **intervals** (value ± tol) — the design's "dynamic filter" (§TIP ⑨): interval
+// **intervals** (value ± tol) — the design's "dynamic filter" (§CIP ⑨): interval
 // arithmetic is a sound worst-case bound by construction, so no per-predicate bound
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
 // point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path, the
@@ -481,7 +481,7 @@ fn pt_iv(p: &Pt3) -> [Iv; 3] {
 /// Plane `[a,b,c,d]` (`n·X + d = 0`) through three points, as intervals: `n =
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
-/// (§TIP ②, design.md §539). Validated H-b.
+/// (§CIP ②, design.md §539). Validated H-b.
 fn plane_iv(p0: &Pt3, p1: &Pt3, p2: &Pt3) -> [Iv; 4] {
     let (a, b, c) = (pt_iv(p0), pt_iv(p1), pt_iv(p2));
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];
@@ -706,7 +706,7 @@ fn sign_with_floor(val: &BigFloat, mag: f64, prec: usize) -> Option<bool> {
     }
 }
 
-/// TIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
+/// CIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
 /// rotated points, the triangle three rotated points. Interval filter → astro-float
 /// escalation; a below-floor `D` or `M` is [`Orient::Zero`] (declare-0, §6 "ask the
 /// user"). The `Discovered`-seam analogue of [`orient3d_judge`]; boolean wiring is
@@ -801,7 +801,7 @@ fn cmp_hp(a: [[BigFloat; 4]; 3], b: [[BigFloat; 4]; 3], axis: usize, prec: usize
     .unwrap_or(Orient::Zero)
 }
 
-/// TIP indirect `cmp_coord`: the sign of `a[axis] − b[axis]` where `a`, `b` are the
+/// CIP indirect `cmp_coord`: the sign of `a[axis] − b[axis]` where `a`, `b` are the
 /// implicit points at which each three-plane triple meets — each plane through three
 /// rotated points. Interval filter → astro-float escalation. `Positive` = `a[axis] >
 /// b[axis]`, `Negative` = `<`, `Zero` = equal **or** below the declare-0 floor (unlike

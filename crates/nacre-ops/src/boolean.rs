@@ -117,7 +117,7 @@ fn comp_key(model: &Model, faces: &[Handle<Face>]) -> Vec<[f64; 3]> {
 /// face orientation), and the `v*` search is exact coordinate ordering — both
 /// hold even for non-representable coordinates (e.g. a `0.3`-offset void face).
 /// Rotated shells break the "axis-aligned normal / unique x-perpendicular face"
-/// premises and are TIP's job (design §9 (5d)#5, honest scope).
+/// premises and are CIP's job (design §9 (5d)#5, honest scope).
 pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
     // Lexicographically-minimal vertex over the component's outer loops.
     let mut vstar: Option<Handle<Vertex>> = None;
@@ -166,7 +166,7 @@ pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 /// are rounded irrationals (rotation). Same algorithm as the f64 [`is_shell_outward`] — the
 /// lexicographically-minimal vertex `v*` is a convex extreme corner and the shell is outward
 /// iff some face there has an outward normal with `n_x < 0` — but both numeric steps become
-/// exact TIP predicates:
+/// exact CIP predicates:
 ///
 /// - **`v*`** by [`t_cmp_coord`](crate::tolerant) over each node's three-plane triple, the same
 ///   lex-min scan as [`loop_winding`](crate::combinatorics::loop_winding). A node's triple is its

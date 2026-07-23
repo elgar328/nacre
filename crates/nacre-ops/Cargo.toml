@@ -14,7 +14,7 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-store = { path = "../nacre-store", version = "0.0.0" }
 # Rational scalars + the Isometry carried by the Transform op (overhaul stage 1).
 nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
-# Read-only TIP analysis (rotated-vertex Pt3 + indirect judges) for the toleranced
+# Read-only CIP analysis (rotated-vertex Pt3 + indirect judges) for the toleranced
 # boolean predicates (overhaul stage 3). tip's dep on nacre-ops is dev-only (a separate
 # target), so the lib dependency graph stays acyclic.
 nacre-cip = { path = "../nacre-cip", version = "0.0.0" }

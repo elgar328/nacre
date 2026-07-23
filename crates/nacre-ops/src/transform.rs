@@ -62,7 +62,7 @@ fn remap_origin(origin: Origin, surf_map: &HashMap<Handle<Surface>, Handle<Surfa
 /// A surface moved by `isometry`. A pure translation uses `translated` (the normal —
 /// and its exact `raw` — is unchanged). A rotation rebuilds from the moved
 /// origin/normal via the constructor (rotation makes `raw` irrational, as expected —
-/// the plane then carries tol, judged by TIP later).
+/// the plane then carries tol, judged by CIP later).
 fn transform_surface(s: &Surface, iso: &Isometry, offset: Vector3) -> Surface {
     if iso.rotate.is_none() {
         return s.translated(offset);
@@ -125,7 +125,7 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     let offset = Vector3::from_array(isometry.offset_f64());
     let src = model.solids.get(solid).clone();
 
-    // Forest node for this transform (§TIP ⑦), one shared node named by every rotated
+    // Forest node for this transform (§CIP ⑦), one shared node named by every rotated
     // vertex. The input's shared leaf (None if the input is not rotated) decides B0 vs B1:
     //   A.  translation → no node (remap path).
     //   B0. fresh rotation (input not rotated): exact (90°-family) → no node (remap,

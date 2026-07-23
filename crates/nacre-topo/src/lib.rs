@@ -37,7 +37,7 @@ pub enum VertexDef {
     ThreePlane([Handle<Surface>; 3]),
 }
 
-/// A node in the rotation-history forest (design §TIP ⑦): one axis-aligned rigid
+/// A node in the rotation-history forest (design §CIP ⑦): one axis-aligned rigid
 /// rotation applied to a solid (overhaul stage 1b), with a parent link for chained
 /// rotations (v1 records a single rotation, `parent = None`; bundling adds chains).
 /// Stored in [`Model::rotations`]; a rotated vertex's [`Origin::Rotated`] names its
@@ -61,7 +61,7 @@ pub struct Rotation {
 /// the definition). In M1–M4 every element is `Constructed`; M5's
 /// `PolyhedralBoolean` is the first `Discovered` producer. `Rotated` (overhaul stage
 /// 1b) names a vertex that is another vertex (`base`) turned by a rotation node — its
-/// point is a cache; the tol is judgment-time (§TIP ⑦), so no tol slot here.
+/// point is a cache; the tol is judgment-time (§CIP ⑦), so no tol slot here.
 ///
 /// Holds an `f64`, so `PartialEq` only — no `Eq`/`Hash` (identity is by
 /// `Handle`, never by value).
@@ -104,7 +104,7 @@ pub struct Model {
     // exact geometry (truth)
     pub surfaces: Store<Surface>,
     pub curves: Store<Curve>,
-    /// The rotation-history forest (§TIP ⑦): rotation definitions named by
+    /// The rotation-history forest (§CIP ⑦): rotation definitions named by
     /// `Origin::Rotated` vertices. Not geometry — a definition store.
     pub rotations: Store<Rotation>,
     // topology (references geometry by Handle only)

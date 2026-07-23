@@ -1,5 +1,5 @@
 //! Toleranced boolean predicates (overhaul stage 3): the geom sign predicates routed
-//! through TIP so they stay exact under rotation.
+//! through CIP so they stay exact under rotation.
 //!
 //! A rotated face's plane coefficients and `tri` coordinates are rounded irrationals, so
 //! the axis-aligned geom predicates (`nacre_geom::intersect`) are exact only w.r.t. the

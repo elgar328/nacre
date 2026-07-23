@@ -46,7 +46,7 @@ thread_local! {
 pub mod frame2;
 pub mod frame3;
 
-/// The shared orientation-judgment result (§TIP) — used by both the 2D
+/// The shared orientation-judgment result (§CIP) — used by both the 2D
 /// ([`frame`]) and 3D ([`frame3`]) judges and their downstream consumers.
 pub use frame2::Orient;
 

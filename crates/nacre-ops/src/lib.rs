@@ -115,7 +115,7 @@ pub(crate) mod tag {
     /// with no firing test (cf. `FOURPLANE`).
     pub const NO_OUTWARD_SHELL: &str = "no_outward_shell";
     /// A boolean input is a rotated solid (overhaul stage 1b). Rotated planar geometry
-    /// is representable but its predicates are not yet sound (no TIP until stage 3), so
+    /// is representable but its predicates are not yet sound (no CIP until stage 3), so
     /// the boolean honestly rejects until then. Fired by a `Transform`-rotated operand.
     pub const ROTATED_UNSUPPORTED: &str = "rotated_unsupported";
     pub const THREE_PLANES: &str = "three_planes";
@@ -701,7 +701,7 @@ pub mod tests {
     // A boolean commutes with a rigid motion, so rotating both operands by the same
     // irrational-angle isometry must give the rigid image of the unrotated result — identical
     // volume, solid count, and cavity count, and still valid. These are the first live proof
-    // that the TIP-wired machinery (arrangement, seam, in/out, outer/cavity — 3a–3c-vi) is
+    // that the CIP-wired machinery (arrangement, seam, in/out, outer/cavity — 3a–3c-vi) is
     // sound end-to-end on rotated (rounded-irrational) geometry.
 
     #[test]
@@ -831,7 +831,7 @@ pub mod tests {
     /// invariant — a rotated boolean is *never silently wrong*: its result either equals the
     /// unrotated one (a boolean commutes with a rigid motion, so volume/solid-count/cavity-count
     /// are invariant) or is an honest reject. `#[ignore]`: each rotated boolean escalates its
-    /// TIP predicates to astro-float and costs ~0.5–2.5 s, so this runs on demand, not per commit
+    /// CIP predicates to astro-float and costs ~0.5–2.5 s, so this runs on demand, not per commit
     /// (the invariance regression guard is the fast `rotated_*` tests above).
     #[test]
     #[ignore = "slow: rotated booleans ~2s each (run with --ignored)"]
