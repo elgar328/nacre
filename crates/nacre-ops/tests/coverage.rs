@@ -12,3 +12,6 @@ mod common;
 
 #[path = "coverage/convex.rs"]
 mod convex;
+
+#[path = "coverage/multisolid.rs"]
+mod multisolid;

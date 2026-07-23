@@ -103,3 +103,18 @@ pub fn two_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
     );
     (m, a, b)
 }
+
+/// Two unit boxes stacked sharing their z=1 interface plane (a face-contact pair,
+/// not overlapping volume): A = [0,1]³ below, B = z∈[1,2] above.
+pub fn stacked_cubes() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let mut m = Model::new();
+    let a = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let b = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 1.0]),
+        Point3::from_array([1.0, 1.0, 2.0]),
+    );
+    (m, a, b)
+}

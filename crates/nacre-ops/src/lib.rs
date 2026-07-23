@@ -4011,22 +4011,6 @@ pub mod tests {
         assert_eq!(build(), build(), "same ops → same geometry and handle");
     }
 
-    #[test]
-    /// Renamed from `..._is_empty`: that name recorded the old engine's limit, not the answer.
-    /// A union of things that never touch is both of them, whole.
-    fn fuse_of_disjoint_boxes_is_two_solids() {
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
-        let solids = boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
-        assert_eq!(solids.len(), 2);
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        for &s in &solids {
-            let v = nacre_props::mass_props(&m, s).unwrap().volume;
-            assert!((v - 1.0).abs() < 1e-12, "each unit box survives whole: {v}");
-        }
-    }
 
     #[test]
     fn cut_containment_makes_a_cavity() {
@@ -4117,20 +4101,6 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn cut_of_disjoint_is_a() {
-        // A − B with B disjoint from A removes nothing ⇒ the result is A.
-        let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
-        let vol_a = nacre_props::mass_props(&m, a).unwrap().volume;
-        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - vol_a).abs() < 1e-12, "volume {vol}");
-        assert_eq!(m.live_solids, vec![r]);
-    }
 
     // ---- coincident-coplanar merge (M5-c5) ----
 
@@ -4858,23 +4828,7 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn common_stacked_cubes_is_empty() {
-        // The stack shares only its interface plane, so the intersection has no volume.
-        let (mut m, a, b) = stacked_cubes();
-        assert!(boolean(&mut m, BoolKind::Common, a, b).unwrap().is_empty());
-        assert!(m.live_solids.is_empty(), "both operands are consumed");
-    }
 
-    #[test]
-    fn cut_stacked_cubes_is_a() {
-        let (mut m, a, b) = stacked_cubes();
-        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-        m.rebuild_adjacency();
-        assert!(nacre_validate::validate(&m).is_empty());
-        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
-        assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
-    }
 
     proptest! {
         /// Diagonal corner overlaps (clean seam): fuse/cut volumes match the
