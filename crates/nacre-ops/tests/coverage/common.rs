@@ -16,7 +16,7 @@ use nacre_ops::{
 };
 use nacre_scalar::{Axis, Isometry};
 use nacre_store::Handle;
-use nacre_topo::{Model, Orientation, Solid};
+use nacre_topo::{Face, Model, Orientation, Solid};
 
 /// The signed volume of a solid, via the public mass-properties crate — the
 /// independent oracle every capability test asserts against.
@@ -361,4 +361,39 @@ pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
         unreachable!("extrude yields Extrude output")
     };
     (m, l, st)
+}
+
+// ---- pad / pocket features (public: apply(Operation::Pad/PocketOnFace)) ----
+
+/// A unit cube with its top face handle — the standard target for pad/pocket.
+pub fn cube_with_top() -> (Model, Handle<Face>) {
+    let mut m = Model::new();
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap() else {
+        unreachable!()
+    };
+    let top = faces[1]; // base, top, sides…
+    (m, top)
+}
+
+/// A small square profile centred on the origin (a boss/pocket footprint).
+pub fn small_square() -> Profile2d {
+    Profile2d {
+        points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
+    }
+}
+
+pub fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
+    Operation::PadOnFace {
+        face,
+        profile,
+        dist,
+    }
+}
+
+pub fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
+    Operation::PocketOnFace {
+        face,
+        profile,
+        dist,
+    }
 }

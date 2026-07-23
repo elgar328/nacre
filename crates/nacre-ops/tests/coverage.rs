@@ -21,3 +21,6 @@ mod rotation;
 
 #[path = "coverage/nonconvex.rs"]
 mod nonconvex;
+
+#[path = "coverage/features.rs"]
+mod features;

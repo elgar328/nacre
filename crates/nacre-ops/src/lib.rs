@@ -2272,31 +2272,6 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn pad_boss_on_cube_top() {
-        let (mut m, top) = cube_with_top();
-        let out = apply(&mut m, &pad_op(top, small_square(), 0.5)).unwrap();
-        let OpOutput::PadOnFace { top_face, .. } = out else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
-
-        let v = nacre_validate::validate(&m);
-        assert!(v.is_empty(), "{v:?}");
-
-        let reach = m.reachable();
-        // 6 cube faces − top + (outer' + 4 walls + cap) = 11.
-        assert_eq!(reach.faces.len(), 11);
-        assert_eq!(reach.vertices.len(), 16); // 8 cube + 4 base + 4 top
-        assert_eq!(reach.edges.len(), 24); // 12 cube + 4 base + 4 top + 4 vertical
-        let inner: usize = reach
-            .faces
-            .iter()
-            .map(|fh| m.faces.get(*fh).inner.len())
-            .sum();
-        assert_eq!(inner, 1);
-        assert!(reach.faces.contains(&top_face));
-    }
 
     /// explicit sharing (overhaul #3): a prism built with a shared base-cap
     /// surface reuses that `Surface` handle for its flush cap, and reconciles the
@@ -2390,54 +2365,8 @@ pub mod tests {
         assert!(shares_or_coplanar(&planes, 0, 1));
     }
 
-    #[test]
-    fn pad_rejects_nonplanar_face() {
-        let mut m = Model::new();
-        m.add_cylinder(
-            Point3::origin(),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            2.0,
-            5.0,
-        );
-        let shell = m.solids.get(m.live_solids[0]).outer;
-        let lateral = *m
-            .shells
-            .get(shell)
-            .faces
-            .iter()
-            .find(|&&fh| {
-                matches!(
-                    m.surfaces.get(m.faces.get(fh).surface),
-                    Surface::Cylinder(_)
-                )
-            })
-            .unwrap();
-        assert!(matches!(
-            apply(&mut m, &pad_op(lateral, small_square(), 0.5)),
-            Err(OpError::NonPlanarFace)
-        ));
-    }
 
-    #[test]
-    fn pad_rejects_nonpositive_dist() {
-        let (mut m, top) = cube_with_top();
-        assert!(matches!(
-            apply(&mut m, &pad_op(top, small_square(), 0.0)),
-            Err(OpError::NonPositiveDistance)
-        ));
-    }
 
-    #[test]
-    fn pad_rejects_degenerate_profile() {
-        let (mut m, top) = cube_with_top();
-        let two = Profile2d {
-            points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
-        };
-        assert!(matches!(
-            apply(&mut m, &pad_op(top, two, 0.5)),
-            Err(OpError::DegenerateProfile)
-        ));
-    }
 
     #[test]
     fn pad_step_exports() {
@@ -2532,95 +2461,10 @@ pub mod tests {
         assert!((vol - (8.0 + 0.16 * 0.5)).abs() < 1e-9, "volume {vol}");
     }
 
-    #[test]
-    fn pocket_on_cube_top() {
-        let (mut m, top) = cube_with_top();
-        let out = apply(&mut m, &pocket_op(top, small_square(), 0.5)).unwrap();
-        let OpOutput::PocketOnFace { bottom_face, .. } = out else {
-            unreachable!()
-        };
-        m.rebuild_adjacency();
 
-        let v = nacre_validate::validate(&m);
-        assert!(v.is_empty(), "{v:?}");
 
-        // Same topology as a boss (a downward prism instead of upward).
-        let reach = m.reachable();
-        assert_eq!(reach.faces.len(), 11);
-        assert_eq!(reach.vertices.len(), 16);
-        assert_eq!(reach.edges.len(), 24);
-        let inner: usize = reach
-            .faces
-            .iter()
-            .map(|fh| m.faces.get(*fh).inner.len())
-            .sum();
-        assert_eq!(inner, 1);
-        assert!(reach.faces.contains(&bottom_face));
-    }
 
-    #[test]
-    fn pocket_rejects_nonplanar_face() {
-        let mut m = Model::new();
-        m.add_cylinder(
-            Point3::origin(),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            2.0,
-            5.0,
-        );
-        let shell = m.solids.get(m.live_solids[0]).outer;
-        let lateral = *m
-            .shells
-            .get(shell)
-            .faces
-            .iter()
-            .find(|&&fh| {
-                matches!(
-                    m.surfaces.get(m.faces.get(fh).surface),
-                    Surface::Cylinder(_)
-                )
-            })
-            .unwrap();
-        assert!(matches!(
-            apply(&mut m, &pocket_op(lateral, small_square(), 0.5)),
-            Err(OpError::NonPlanarFace)
-        ));
-    }
 
-    #[test]
-    fn pocket_rejects_nonpositive_dist() {
-        let (mut m, top) = cube_with_top();
-        assert!(matches!(
-            apply(&mut m, &pocket_op(top, small_square(), 0.0)),
-            Err(OpError::NonPositiveDistance)
-        ));
-    }
-
-    #[test]
-    fn pocket_rejects_degenerate_profile() {
-        let (mut m, top) = cube_with_top();
-        let two = Profile2d {
-            points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
-        };
-        assert!(matches!(
-            apply(&mut m, &pocket_op(top, two, 0.5)),
-            Err(OpError::DegenerateProfile)
-        ));
-    }
-
-    /// A pocket deep enough to pierce the far side is not blind. The extrude+Cut prism is
-    /// top-flush yet crosses the far face transversally, a mixed contact the boolean declines
-    /// (`Boolean(Unsupported)`); were the through-cut instead accepted, no floor would land on
-    /// the offset plane and the wrapper would reject it as `PocketNotBlind`. Either way the
-    /// kernel rejects honestly — no panic, no silently invalid solid (M4 left this unchecked).
-    #[test]
-    fn pocket_through_the_solid_is_rejected() {
-        let (mut m, top) = cube_with_top(); // 1.0-thick cube
-        let got = apply(&mut m, &pocket_op(top, small_square(), 1.5));
-        assert!(
-            matches!(got, Err(OpError::Boolean(_)) | Err(OpError::PocketNotBlind)),
-            "through-pocket must reject honestly, got {got:?}"
-        );
-    }
 
     #[test]
     fn pocket_step_exports() {
