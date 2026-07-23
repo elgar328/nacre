@@ -16,6 +16,9 @@
 use super::*;
 use crate::boolean::*;
 use crate::planes::*;
+#[cfg(test)]
+use crate::transform::transform;
+use nacre_geom::intersect::three_planes;
 
 /// Which operand a segment came from — the boolean's per-cell label needs both solids' material
 /// above and below, so provenance cannot be merged away.
@@ -1497,7 +1500,7 @@ pub(crate) fn boolean(
     // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
     // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
     // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-    let faces = crate::unify_coplanar_faces(faces, &geom)?;
+    let faces = crate::boolean::unify_coplanar_faces(faces, &geom)?;
 
     // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
     // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
@@ -1915,8 +1918,8 @@ mod tests {
         let faces_tab = collect_planes(&m, a).unwrap();
         // One prism: no two faces are coplanar, so `plane_ix` is the identity and a face index and
         // its plane id coincide. Built through the real path anyway, so the test cannot drift.
-        let canon = crate::plane_classes(&faces_tab);
-        let (planes, _plane_ix) = crate::dense_planes(&faces_tab, &canon);
+        let canon = crate::planes::plane_classes(&faces_tab);
+        let (planes, _plane_ix) = crate::planes::dense_planes(&faces_tab, &canon);
         assert_eq!(planes.len(), faces_tab.len(), "no coplanar pair in a prism");
 
         // Find a face by its outward normal direction (z cap, y-wall, x-wall, diagonal wall).
