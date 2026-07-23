@@ -247,3 +247,118 @@ pub fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     );
     (m, l, bx)
 }
+
+// ---- U-prism and multi-chord shapes (public: apply(Extrude) + add_cuboid) ----
+
+/// A U-prism (two prongs + a bridge), footprint spanning a reflex-rich outline.
+pub fn u_prism() -> (Model, Handle<Solid>) {
+    let u = Profile2d {
+        points: vec![
+            p2(0.0, 0.0),
+            p2(3.0, 0.0),
+            p2(3.0, 2.3),
+            p2(2.0, 2.3),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ],
+    };
+    let m = replay(&[extrude_op(u, 1.0)]).unwrap();
+    let s = m.live_solids[0];
+    (m, s)
+}
+
+pub fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, u) = u_prism();
+    let slab = m.add_cuboid(
+        Point3::from_array([-0.5, 1.5, -0.5]),
+        Point3::from_array([3.5, 2.5, 1.5]),
+    );
+    (m, u, slab)
+}
+
+/// Extrude a profile on a plane offset up the z-axis (a bar sitting above z=0.5).
+fn extrude_at_z(m: &mut Model, profile: Profile2d, z: f64, dist: f64) -> Handle<Solid> {
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            plane: SketchPlane {
+                origin: Point3::from_array([0.0, 0.0, z]),
+                ..SketchPlane::world_xy()
+            },
+            profile,
+            dist,
+        },
+    )
+    .unwrap()
+    else {
+        unreachable!("extrude yields Extrude output")
+    };
+    solid
+}
+
+pub fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, l) = l_prism();
+    let bar = Profile2d {
+        points: vec![
+            p2(1.8, 0.8),
+            p2(2.1, 0.8),
+            p2(2.1, 2.1),
+            p2(0.8, 2.1),
+            p2(0.8, 1.8),
+            p2(1.8, 1.8),
+        ],
+    };
+    let b = extrude_at_z(&mut m, bar, 0.5, 1.0);
+    (m, l, b)
+}
+
+pub fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, l) = l_prism();
+    let ell = Profile2d {
+        points: vec![
+            p2(0.2, 0.25),
+            p2(0.85, 0.25),
+            p2(0.85, 0.4),
+            p2(0.35, 0.4), // reflex
+            p2(0.35, 0.9),
+            p2(0.2, 0.9),
+        ],
+    };
+    let stub = extrude_at_z(&mut m, ell, 0.5, 1.0);
+    (m, l, stub)
+}
+
+pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (mut m, l) = l_prism();
+    let staple = Profile2d {
+        points: vec![
+            p2(0.1, 0.5),
+            p2(0.6, 0.5),
+            p2(0.6, 1.3),
+            p2(0.8, 1.3),
+            p2(0.8, 0.45),
+            p2(1.4, 0.45),
+            p2(1.4, 1.5),
+            p2(0.1, 1.5),
+        ],
+    };
+    let OpOutput::Extrude { solid: st, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            plane: SketchPlane {
+                origin: Point3::from_array([0.0, 1.3, 0.0]),
+                x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
+                y_axis: Vector3::from_array([0.0, 0.0, 1.0]),
+            },
+            profile: staple,
+            dist: 0.65,
+        },
+    )
+    .unwrap()
+    else {
+        unreachable!("extrude yields Extrude output")
+    };
+    (m, l, st)
+}

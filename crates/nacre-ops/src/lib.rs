@@ -935,59 +935,8 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn cut_u_by_slab() {
-        // Two loops on one face, resolved. The slab's `y = 1.5` face has its whole boundary
-        // dropped, so both loops are islands: the two prong cross-sections become the
-        // result's new end caps, one input face giving two output faces, both flipped.
-        //
-        // `5.3 − 1.3`. Area 18: the clipped U's perimeter is 10, its caps 4 apiece.
-        let (mut m, u, slab) = u_and_slab();
-        let r = boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!((props.volume - 4.0).abs() < 1e-9, "volume {}", props.volume);
-        assert!((props.area - 18.0).abs() < 1e-9, "area {}", props.area);
-    }
 
-    #[test]
-    fn fuse_u_and_slab() {
-        // The same face, the other way: `Fuse` keeps both outsides, so its boundary is kept
-        // and both loops are *holes*. `5.3 + 8 − 1.3`.
-        //
-        // Area `28 + 18 − 2·2`: each island's 1.0 is buried on both sides of the interface.
-        let (mut m, u, slab) = u_and_slab();
-        let r = boolean_one(&mut m, BoolKind::Fuse, u, slab).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - 12.0).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 42.0).abs() < 1e-9, "area {}", props.area);
-    }
 
-    #[test]
-    fn cut_slab_by_u() {
-        // Operands swapped: the holed face is now on **A**, and the U's caps split into two
-        // cycles apiece under `flip`. Two blind pockets, `8 − 1.3`.
-        //
-        // Area `28 − 2 + (4·0.5 + 1) + (4·0.8 + 1)`: the face gives up its two 1.0 holes and
-        // the pockets hand back walls and floors.
-        let (mut m, u, slab) = u_and_slab();
-        let r = boolean_one(&mut m, BoolKind::Cut, slab, u).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!((props.volume - 6.7).abs() < 1e-9, "volume {}", props.volume);
-        assert!((props.area - 33.2).abs() < 1e-9, "area {}", props.area);
-    }
 
     /// The L with a box biting its reflex corner and poking out the top. The box top
     /// (z=1.2) clears the L's z=1 **deliberately**: sunk inside the L's slab, the L's
@@ -1071,50 +1020,7 @@ pub mod tests {
         (m, l, b)
     }
 
-    #[test]
-    fn cut_notch_bar() {
-        // Two chords on one face, resolved. The bar bites the cap's corners `(2,1)` and
-        // `(1,2)`; the kept region is the cap minus both, one ring using both arcs.
-        // `3 − 2·(0.2 · 0.2 · 0.5) = 2.96`.
-        //
-        // The area is unchanged at 14: a corner bite removes `0.04` of cap, `0.1` of the
-        // `x=2` wall and `0.1` of the `y=1` wall, and hands back exactly those three as
-        // the bar's own faces. So area alone would not have noticed the bite at all — the
-        // volume and `validate` are what score it here.
-        let (mut m, l, bar) = l_and_notch_bar();
-        let r = boolean_one(&mut m, BoolKind::Cut, l, bar).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - 2.96).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 14.0).abs() < 1e-9, "area {}", props.area);
-    }
 
-    #[test]
-    fn fuse_notch_bar() {
-        // The `Fuse` counterpart, closing inclusion–exclusion: `3 + 0.69 − 0.04`. The bar
-        // measures `0.3·1.3 + 1.0·0.3` in section, `1.0` tall.
-        //
-        // Area `14 + 6.58 − 0.96`: the bar's own surface is `5.2·1.0 + 2·0.69`, and each
-        // bite buries `0.24` on either side of the interface.
-        let (mut m, l, bar) = l_and_notch_bar();
-        let r = boolean_one(&mut m, BoolKind::Fuse, l, bar).unwrap();
-        m.rebuild_adjacency();
-        let vs = nacre_validate::validate(&m);
-        assert!(vs.is_empty(), "{vs:?}");
-        let props = nacre_props::mass_props(&m, r).unwrap();
-        assert!(
-            (props.volume - (3.0 + 0.69 - 0.04)).abs() < 1e-9,
-            "volume {}",
-            props.volume
-        );
-        assert!((props.area - 19.62).abs() < 1e-9, "area {}", props.area);
-    }
 
     /// The L-prism with an **L-shaped** stub standing wholly inside its top face,
     /// `z ∈ [0.5, 1.5]`. The seam on the cap is a closed loop with a reflex node — the

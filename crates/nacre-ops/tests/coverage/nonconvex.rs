@@ -4,7 +4,8 @@
 //! right.
 
 use crate::common::{
-    boolean_one, l_and_corner_box, l_and_inner_box, l_and_reflex_box, l_prism,
+    boolean_one, l_and_corner_box, l_and_inner_box, l_and_notch_bar, l_and_reflex_box, l_prism,
+    u_and_slab,
 };
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, boolean};
@@ -149,4 +150,72 @@ fn cut_across_reflex_corner_bite() {
     // Overlap = xy(1.0 − notch 0.36 = 0.64) · z(0.8) = 0.512.
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - (3.0 - 0.512)).abs() < 1e-9, "volume {vol}");
+}
+
+#[test]
+fn cut_u_by_slab() {
+    // Two island loops on the slab's y=1.5 face: the two prong cross-sections become
+    // the result's new end caps (one input face → two output faces, both flipped).
+    let (mut m, u, slab) = u_and_slab();
+    let r = boolean_one(&mut m, BoolKind::Cut, u, slab).unwrap();
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    let props = nacre_props::mass_props(&m, r).unwrap();
+    assert!((props.volume - 4.0).abs() < 1e-9, "volume {}", props.volume);
+    assert!((props.area - 18.0).abs() < 1e-9, "area {}", props.area);
+}
+
+#[test]
+fn fuse_u_and_slab() {
+    // The same face the other way: Fuse keeps both outsides, so both loops are holes.
+    let (mut m, u, slab) = u_and_slab();
+    let r = boolean_one(&mut m, BoolKind::Fuse, u, slab).unwrap();
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    let props = nacre_props::mass_props(&m, r).unwrap();
+    assert!((props.volume - 12.0).abs() < 1e-9, "volume {}", props.volume);
+    assert!((props.area - 42.0).abs() < 1e-9, "area {}", props.area);
+}
+
+#[test]
+fn cut_slab_by_u() {
+    // Operands swapped: the holed face is now on A, and the U's caps split into two
+    // cycles apiece under flip — two blind pockets.
+    let (mut m, u, slab) = u_and_slab();
+    let r = boolean_one(&mut m, BoolKind::Cut, slab, u).unwrap();
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    let props = nacre_props::mass_props(&m, r).unwrap();
+    assert!((props.volume - 6.7).abs() < 1e-9, "volume {}", props.volume);
+    assert!((props.area - 33.2).abs() < 1e-9, "area {}", props.area);
+}
+
+#[test]
+fn cut_notch_bar() {
+    // Two chords on one face: the bar bites the cap's corners (2,1) and (1,2); the kept
+    // region is the cap minus both, one ring using both arcs. 3 − 2·(0.2·0.2·0.5) = 2.96.
+    let (mut m, l, bar) = l_and_notch_bar();
+    let r = boolean_one(&mut m, BoolKind::Cut, l, bar).unwrap();
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    let props = nacre_props::mass_props(&m, r).unwrap();
+    assert!((props.volume - 2.96).abs() < 1e-9, "volume {}", props.volume);
+    assert!((props.area - 14.0).abs() < 1e-9, "area {}", props.area);
+}
+
+#[test]
+fn fuse_notch_bar() {
+    // The Fuse counterpart, closing inclusion–exclusion: 3 + 0.69 − 0.04.
+    let (mut m, l, bar) = l_and_notch_bar();
+    let r = boolean_one(&mut m, BoolKind::Fuse, l, bar).unwrap();
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    let props = nacre_props::mass_props(&m, r).unwrap();
+    assert!((props.volume - (3.0 + 0.69 - 0.04)).abs() < 1e-9, "volume {}", props.volume);
+    assert!((props.area - 19.62).abs() < 1e-9, "area {}", props.area);
 }
