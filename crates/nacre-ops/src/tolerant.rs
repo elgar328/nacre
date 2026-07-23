@@ -37,9 +37,6 @@ impl PlaneWitness for PlaneGeom {
     fn coeffs(&self) -> [f64; 4] {
         self.plane.coefficients()
     }
-    fn frame_sign(&self) -> i8 {
-        self.frame_sign
-    }
 }
 
 #[cfg(test)]

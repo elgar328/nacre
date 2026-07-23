@@ -39,17 +39,14 @@ pub trait Witness {
     fn tri_pt3(&self) -> Option<&[Pt3; 3]>;
 }
 
-/// A witness that additionally carries its plane's exact coefficients and the sign relating
-/// its stored normal to its outward `tri` normal — what the plane-class predicates
-/// ([`t_orient3d`], [`t_cmp_coord`], [`t_plane_pair_dir_sign`]) need on the exact path and for
-/// the stored↔outward bridge. A single face (which never plays a plane-class role) implements
-/// only [`Witness`].
+/// A witness that additionally carries its plane's exact coefficients — what the plane-class
+/// predicates ([`t_orient3d`], [`t_cmp_coord`], [`t_plane_pair_dir_sign`]) need on the exact
+/// path. (The stored↔outward `frame_sign` [`t_plane_pair_dir_sign`] also uses is *derived* from
+/// `coeffs` + `tri` by [`frame_sign`], not required from the impl.) A single face (which never
+/// plays a plane-class role) implements only [`Witness`].
 pub trait PlaneWitness: Witness {
     /// The plane's exact (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`).
     fn coeffs(&self) -> [f64; 4];
-    /// `+1` if the stored coefficient-normal points the same way as the outward `tri` normal,
-    /// `-1` otherwise: `det(stored) = frame_sign · det(outward)`.
-    fn frame_sign(&self) -> i8;
 }
 
 /// Whether any of the named planes is rotated — the per-predicate routing signal. A plane
@@ -201,12 +198,29 @@ pub fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
         .all(|q| to_i8(orient3d_judge(q, &di[0], &di[1], &di[2])) == 0)
 }
 
+/// `+1` if plane `w`'s stored coefficient-normal points the same way as its outward `tri`
+/// normal, `-1` otherwise (`det(stored) = frame_sign · det(outward)`). Derived from the port's
+/// `coeffs` + `tri` alone: `n_out` is *defined* as `cross(tri)` and the stored normal is a
+/// positive multiple of `coeffs[0..3]`, so `sign(coeffs · cross(tri))` reproduces the
+/// arrangement's stored `frame_sign` exactly (the two are co-sourced from one face).
+fn frame_sign<W: PlaneWitness>(w: &W) -> i8 {
+    let t = w.tri();
+    let cross = (t[1] - t[0]).cross(t[2] - t[0]);
+    let c = w.coeffs();
+    let cx = cross.as_array();
+    if c[0] * cx[0] + c[1] * cx[1] + c[2] * cx[2] > 0.0 {
+        1
+    } else {
+        -1
+    }
+}
+
 /// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — how the line `p ∩ a`
 /// runs relative to plane `b`, matching `plane_pair_dir_sign`'s shape (`+1`/`-1`/`0`).
 ///
 /// `!rotated` → `det3_sign` of the stored (un-normalized) normals. `rotated` → the kernel `D`
 /// (det of the *outward* `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal
-/// convention by the per-plane [`PlaneWitness::frame_sign`]: `det(stored) =
+/// convention by the per-plane [`frame_sign`]: `det(stored) =
 /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
 pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, b: usize) -> i8 {
     if !any_rotated(planes, &[p, a, b]) {
@@ -221,9 +235,9 @@ pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, 
         plane_def(planes, a),
         plane_def(planes, b),
     );
-    planes[p].frame_sign()
-        * planes[a].frame_sign()
-        * planes[b].frame_sign()
+    frame_sign(&planes[p])
+        * frame_sign(&planes[a])
+        * frame_sign(&planes[b])
         * to_i8(dir_sign_judge(borrow3(&dp), borrow3(&da), borrow3(&db)))
 }
 
@@ -236,7 +250,6 @@ mod tests {
     struct W {
         tri: [Point3; 3],
         coeffs: [f64; 4],
-        frame_sign: i8,
     }
     impl Witness for W {
         fn tri(&self) -> [Point3; 3] {
@@ -250,9 +263,6 @@ mod tests {
         fn coeffs(&self) -> [f64; 4] {
             self.coeffs
         }
-        fn frame_sign(&self) -> i8 {
-            self.frame_sign
-        }
     }
 
     /// The three coordinate planes through `(1,1,1)`: `x=1`, `y=1`, `z=1`, plus a `z=0` plane.
@@ -262,27 +272,19 @@ mod tests {
             // x = 1  →  1·x + 0 + 0 − 1 = 0
             W {
                 tri: [p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0), p(1.0, 0.0, 1.0)],
-                coeffs: [1.0, 0.0, 0.0, -1.0],
-                frame_sign: 1,
-            },
+                coeffs: [1.0, 0.0, 0.0, -1.0],            },
             // y = 1
             W {
                 tri: [p(0.0, 1.0, 0.0), p(1.0, 1.0, 0.0), p(0.0, 1.0, 1.0)],
-                coeffs: [0.0, 1.0, 0.0, -1.0],
-                frame_sign: 1,
-            },
+                coeffs: [0.0, 1.0, 0.0, -1.0],            },
             // z = 1
             W {
                 tri: [p(0.0, 0.0, 1.0), p(1.0, 0.0, 1.0), p(0.0, 1.0, 1.0)],
-                coeffs: [0.0, 0.0, 1.0, -1.0],
-                frame_sign: 1,
-            },
+                coeffs: [0.0, 0.0, 1.0, -1.0],            },
             // z = 0
             W {
                 tri: [p(0.0, 0.0, 0.0), p(1.0, 0.0, 0.0), p(0.0, 1.0, 0.0)],
-                coeffs: [0.0, 0.0, 1.0, 0.0],
-                frame_sign: 1,
-            },
+                coeffs: [0.0, 0.0, 1.0, 0.0],            },
         ]
     }
 
@@ -310,5 +312,20 @@ mod tests {
     fn any_rotated_false_for_axis_aligned() {
         let ps = cube_corner_planes();
         assert!(!any_rotated(&ps, &[0, 1, 2, 3]));
+    }
+
+    /// `frame_sign` recomputes the stored-vs-outward sign from `coeffs` + `tri` alone: `+1`
+    /// when the coefficient-normal agrees with `cross(tri)`, `-1` when the winding is reversed.
+    #[test]
+    fn frame_sign_from_coeffs_and_tri() {
+        let ps = cube_corner_planes();
+        // x=1: tri wound so cross(tri) = +x, and the coeffs normal is +x → +1.
+        assert_eq!(frame_sign(&ps[0]), 1);
+        // reversing the tri winding flips cross(tri) → -1 (coeffs unchanged).
+        let flipped = W {
+            tri: [ps[0].tri[0], ps[0].tri[2], ps[0].tri[1]],
+            coeffs: ps[0].coeffs,
+        };
+        assert_eq!(frame_sign(&flipped), -1);
     }
 }
