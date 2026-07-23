@@ -72,11 +72,34 @@ pub(crate) fn collect_planes(
                 .normalize()
                 .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
             let tri_pt3 = if rotated {
-                let pt3 = |vh| {
-                    crate::rotated_vertex::vertex_pt3(model, vh)
-                        .map_err(|_| reject(tag::ROTATED_UNSUPPORTED))
-                };
-                Some([pt3(tri_verts[0])?, pt3(tri_verts[1])?, pt3(tri_verts[2])?])
+                // Own vertices first: a surviving operand corner assembles directly, so a plain
+                // rotated operand keeps `tri_pt3 == tri`. A seam-dominated face (its `tri` verts
+                // are rotated seams) instead witnesses its plane through provenance — its plane is
+                // `R(π)` for an operand plane `π`, recovered from the operand face still on `π`.
+                let own = (|| {
+                    Some([
+                        crate::rotated_vertex::vertex_pt3(model, tri_verts[0]).ok()?,
+                        crate::rotated_vertex::vertex_pt3(model, tri_verts[1]).ok()?,
+                        crate::rotated_vertex::vertex_pt3(model, tri_verts[2]).ok()?,
+                    ])
+                })();
+                Some(match own {
+                    Some(t) => t,
+                    None => {
+                        let mut w = crate::rotated_vertex::face_plane_witness(model, face)
+                            .map_err(|_| reject(tag::ROTATED_UNDERDETERMINED))?;
+                        // `tri_pt3` is an *oriented* plane witness: the own-vertex path inherits
+                        // outward order from `outer_tri`, so a provenance witness must be wound to
+                        // agree with this face's outward normal `n_out` too, or the implicit-point
+                        // `orient3d` reads the plane's opposite side and flips every sign on it.
+                        let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
+                        let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
+                        if e1.cross(e2).dot(n_out) < 0.0 {
+                            w.swap(1, 2);
+                        }
+                        w
+                    }
+                })
             } else {
                 None
             };
@@ -193,6 +216,7 @@ pub(crate) fn plane_index_setup(
     b: Handle<Solid>,
 ) -> Result<PlaneSetup, BoolError> {
     let mut planes = collect_planes(model, a)?;
+    let na = planes.len();
     planes.extend(collect_planes(model, b)?);
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
@@ -201,6 +225,21 @@ pub(crate) fn plane_index_setup(
     let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
     let inc_b = combinatorics::edge_faces(model, b, &surf_ix)?;
     let canon = plane_classes(&planes);
+    // Rotated coplanar-contact guard (`tag::ROTATED_COPLANAR`). When either operand is rotated
+    // (`tri_pt3` present), a coplanar class that merges a face of `a` (index `< na`) with a face
+    // of `b` (`>= na`) is contact across the operands. The arrangement does not resolve rotated
+    // coplanar contact exactly — it can emit a malformed solid — so reject here, where the merge
+    // is detected, rather than let it through. Within-operand merges and the non-rotated path are
+    // untouched (this is the only rotated coplanar route enabled by rotated-result reuse).
+    if planes.iter().any(|p| p.tri_pt3.is_some()) {
+        let mut side_of_class: HashMap<usize, bool> = HashMap::new();
+        for (i, &root) in canon.iter().enumerate() {
+            let side = i < na;
+            if *side_of_class.entry(root).or_insert(side) != side {
+                return Err(reject(tag::ROTATED_COPLANAR));
+            }
+        }
+    }
     let (geom, plane_ix) = dense_planes(&planes, &canon);
     Ok(PlaneSetup {
         planes,

@@ -8,10 +8,11 @@
 //! rotated, cannot be reproduced from the rotation forest and is a typed [`Pt3Error`] (honest
 //! defer) — the caller ([`crate::planes`]) treats either as "cannot judge here".
 
-use nacre_cip::{Pt3, RotNode};
-use nacre_scalar::Rat;
+use nacre_cip::{Pt3, RotNode, orient3d_judge};
+use nacre_geom::Surface;
+use nacre_scalar::{Orient, Rat};
 use nacre_store::Handle;
-use nacre_topo::{Model, Origin, Rotation, Vertex};
+use nacre_topo::{Face, Model, Origin, Rotation, Vertex, VertexDef};
 
 /// Why a vertex's `Pt3` could not be assembled here (honest defer).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +26,10 @@ pub(crate) enum Pt3Error {
     TranslateInterleaved,
     /// An f64 coordinate did not fit an exact i128 rational (downgrade).
     Downgrade,
+    /// A face's supporting plane could not be witnessed by three assemblable, non-collinear
+    /// points — the plane is named only by seam (or rotated-seam) vertices, so no exact
+    /// definition is recoverable here (the deep rotated-chain floor). Honest defer.
+    PlaneUnderdetermined,
 }
 
 /// The [`Pt3`] (coordinate + sound directional tol) of a kernel vertex, assembled from its root
@@ -83,6 +88,157 @@ fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], Pt3Error> {
         Rat::try_from_f64(c[1]).ok_or(Pt3Error::Downgrade)?,
         Rat::try_from_f64(c[2]).ok_or(Pt3Error::Downgrade)?,
     ])
+}
+
+/// Three exact, non-collinear `Pt3` known to lie on `surf`, drawn from any face still on it in
+/// the append-only arena. A boolean output face shares its operand's `Surface` handle, and an
+/// operand face's own vertices are `Constructed` (assemblable), so a plane that any live-or-
+/// superseded face names can be witnessed exactly even when the *querying* face's vertices are
+/// all `Discovered` (a seam-only face). `Err(PlaneUnderdetermined)` if fewer than three
+/// assemblable, non-collinear vertices are found — a plane witnessed only by seam / rotated-seam
+/// points (the deep rotated-chain floor). The chosen triple's winding is irrelevant: the plane
+/// witness is used winding-invariantly.
+fn plane_pts(model: &Model, surf: Handle<Surface>) -> Result<[Pt3; 3], Pt3Error> {
+    let mut seen = std::collections::HashSet::new();
+    let mut cand: Vec<Pt3> = Vec::new();
+    for (_, face) in model.faces.iter() {
+        if face.surface != surf {
+            continue;
+        }
+        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            for he in &lp.half_edges {
+                if let Some(bounds) = model.edges.get(he.edge).bounds {
+                    for vh in bounds {
+                        if seen.insert(vh) {
+                            if let Ok(p) = vertex_pt3(model, vh) {
+                                cand.push(p);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    select_three_noncollinear(&cand).ok_or(Pt3Error::PlaneUnderdetermined)
+}
+
+/// Greedily pick three non-collinear points from `cand` — an f64 relative-area test, a quality
+/// heuristic, not a soundness gate: an accidental collinear pick yields an exact zero-normal
+/// plane, hence a declare-0 downstream, never a wrong sign.
+fn select_three_noncollinear(cand: &[Pt3]) -> Option<[Pt3; 3]> {
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let p0 = cand.first()?;
+    let p1 = cand.iter().find(|p| {
+        let e = sub(p.coord, p0.coord);
+        dot(e, e) > 0.0
+    })?;
+    let e1 = sub(p1.coord, p0.coord);
+    let p2 = cand.iter().find(|p| {
+        let e2 = sub(p.coord, p0.coord);
+        let n = cross(e1, e2);
+        dot(n, n) > 1e-20 * dot(e1, e1) * dot(e2, e2)
+    })?;
+    Some([p0.clone(), p1.clone(), p2.clone()])
+}
+
+/// Three exact `Pt3` on the supporting plane of a **rotated-result** face, for the plane witness
+/// (`tri_pt3`) `collect_planes` needs. A boolean output face lies on an input plane, so a rotated
+/// result face's plane is `R(π)` for an operand plane `π`; `π`'s exact witness comes from the
+/// operand face still on it (append-only), rotated by the face's own chain `R`.
+///
+/// Two tiers, both exact:
+///  1. the face's own assemblable (`Constructed`-rooted) vertices, if three are non-collinear —
+///     a surviving operand wall, witnessed by `F`'s own points (keeps `tri_pt3 == tri` there);
+///  2. else a seam-dominated face: `π` is the original surface common to every `Discovered`
+///     corner's `ThreePlane` (each corner lies on `π`), witnessed via [`plane_pts`] on the
+///     original operand face and rotated by `R`. A non-unique `π` is disambiguated exactly by
+///     which candidate's rotated plane carries every tier-1 anchor point (no f64 tie-break).
+pub(crate) fn face_plane_witness(model: &Model, face: &Face) -> Result<[Pt3; 3], Pt3Error> {
+    let outer: Vec<Handle<Vertex>> = face
+        .outer
+        .half_edges
+        .iter()
+        .map(|&he| crate::he_start(model, he))
+        .collect();
+
+    // Tier 1 — the face's own exact points (survivors of a rotated operand).
+    let anchors: Vec<Pt3> = outer
+        .iter()
+        .filter_map(|&vh| vertex_pt3(model, vh).ok())
+        .collect();
+    if let Some(t) = select_three_noncollinear(&anchors) {
+        return Ok(t);
+    }
+
+    // Tier 2 — provenance witness. The uniform rotation chain (any outer vertex names it).
+    let chain = outer
+        .iter()
+        .find_map(|&vh| match model.vertices.get(vh).origin {
+            Origin::Rotated { rotation, .. } => Some(rotation_chain(model, rotation)),
+            _ => None,
+        })
+        .ok_or(Pt3Error::PlaneUnderdetermined)?;
+
+    // Candidate original surfaces: the intersection of every `Discovered` base's `ThreePlane`.
+    let mut candidates: Option<Vec<Handle<Surface>>> = None;
+    for &vh in &outer {
+        let Origin::Rotated { base, .. } = model.vertices.get(vh).origin else {
+            continue;
+        };
+        let Origin::Discovered {
+            definition: VertexDef::ThreePlane(surfs),
+            ..
+        } = model.vertices.get(base).origin
+        else {
+            continue;
+        };
+        candidates = Some(match candidates {
+            None => surfs.to_vec(),
+            Some(prev) => prev.into_iter().filter(|s| surfs.contains(s)).collect(),
+        });
+    }
+    let candidates = candidates.ok_or(Pt3Error::PlaneUnderdetermined)?;
+
+    // The exact witness of an original surface, rotated into the face's frame.
+    let rotated_witness = |pi: Handle<Surface>| -> Result<[Pt3; 3], Pt3Error> {
+        let pts = plane_pts(model, pi)?;
+        Ok(pts.map(|p| {
+            let mut q = p;
+            for node in &chain {
+                q = q.rotate_about(node.axis, node.angle, node.point);
+            }
+            q
+        }))
+    };
+
+    match candidates.as_slice() {
+        [] => Err(Pt3Error::PlaneUnderdetermined),
+        [pi] => rotated_witness(*pi),
+        many => {
+            // π is the candidate whose rotated plane carries every anchor (exact `orient3d`).
+            // With no anchors this cannot be decided here, so defer honestly.
+            for &pi in many {
+                if let Ok(wit) = rotated_witness(pi) {
+                    if !anchors.is_empty()
+                        && anchors
+                            .iter()
+                            .all(|a| orient3d_judge(a, &wit[0], &wit[1], &wit[2]) == Orient::Zero)
+                    {
+                        return Ok(wit);
+                    }
+                }
+            }
+            Err(Pt3Error::PlaneUnderdetermined)
+        }
+    }
 }
 
 #[cfg(test)]

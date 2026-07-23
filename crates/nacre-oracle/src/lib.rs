@@ -365,6 +365,53 @@ bbox_min 0 0 0
 
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn rotated_result_reuse_diff_occt() {
+        // Rotate a boolean *result* (all-`Discovered` geometry) and feed it back into a boolean —
+        // the capability the provenance plane-witness enables. R = a cube minus a far-corner
+        // octant; rotate R and a fresh severing slab by 30° about Z, then Cut. OCCT computes the
+        // same Cut of the two rotated STEP solids; the volumes must agree (nacre's exact
+        // arrangement vs OCCT's independent kernel).
+        use nacre_ops::{OpOutput, Operation, apply};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let iso = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        let xf = |m: &mut Model, s: Handle<Solid>| -> Handle<Solid> {
+            let out = apply(m, &Operation::Transform { solid: s, isometry: iso }).unwrap();
+            m.rebuild_adjacency();
+            match out {
+                OpOutput::Transform { solid } => solid,
+                _ => unreachable!(),
+            }
+        };
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        let r = xf(&mut m, r);
+        let c = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, -1.0]),
+            Point3::from_array([0.5, 4.0, 4.0]),
+        );
+        let c = xf(&mut m, c);
+        // OCCT's boolean of the two rotated solids (taken while both are still live).
+        let occt = occt_boolean_of(&m, OcctBool::Cut, r, c).unwrap();
+        let out = boolean_one(&mut m, BoolKind::Cut, r, c).unwrap();
+        m.rebuild_adjacency();
+        let nacre = mass_props(&m, out).unwrap();
+        assert!(
+            approx(nacre.volume, occt.volume),
+            "{} vs {}",
+            nacre.volume,
+            occt.volume
+        );
+    }
+
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn cube_props_diff_occt() {
         let mut model = Model::new();
         let solid = model.add_cuboid(

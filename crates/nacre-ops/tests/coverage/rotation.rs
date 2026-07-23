@@ -69,6 +69,34 @@ fn rotated_containment_cut_makes_cavity() {
 }
 
 #[test]
+fn a_rotated_cut_result_can_be_cut_again() {
+    // Rotating a boolean *result* (every vertex `Discovered`) and feeding it back into a boolean
+    // used to reject (`ROTATED_UNSUPPORTED`) — `collect_planes` could not build the rotated seam
+    // faces' plane witnesses. Now each such plane is witnessed through its provenance (its plane
+    // is `R(π)` for an operand plane `π`). R = a cube minus a far-corner octant; rotate R and a
+    // fresh slab, then Cut. A boolean commutes with a rigid motion, so the volume matches the
+    // unrotated chain (7 − 2 = 5) and the result stays valid.
+    let mut m = Model::new();
+    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+    let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+    m.rebuild_adjacency();
+    let r = xf(&mut m, r, rot30());
+    // A slab that severs at x = 0.5 — no plane coincides with R's (avoids rotated coplanar).
+    let c = m.add_cuboid(
+        Point3::from_array([-1.0, -1.0, -1.0]),
+        Point3::from_array([0.5, 4.0, 4.0]),
+    );
+    let c = xf(&mut m, c, rot30());
+    let r2 = boolean_one(&mut m, BoolKind::Cut, r, c).unwrap();
+    m.rebuild_adjacency();
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+    let vol = nacre_props::mass_props(&m, r2).unwrap().volume;
+    assert!((vol - 5.0).abs() < 1e-9, "volume {vol}");
+}
+
+#[test]
 fn a_rotated_profile_is_the_same_solid_to_the_boolean() {
     // Rotating a profile's winding cannot change the solid. The cap here carries the
     // dimple's hole, so an inward `n_out` would reverse it — only `validate` and the

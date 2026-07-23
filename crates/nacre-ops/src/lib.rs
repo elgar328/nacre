@@ -113,10 +113,18 @@ pub(crate) mod tag {
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
     /// with no firing test (cf. `FOURPLANE`).
     pub const NO_OUTWARD_SHELL: &str = "no_outward_shell";
-    /// A boolean input is a rotated solid (overhaul stage 1b). Rotated planar geometry
-    /// is representable but its predicates are not yet sound (no CIP until stage 3), so
-    /// the boolean honestly rejects until then. Fired by a `Transform`-rotated operand.
-    pub const ROTATED_UNSUPPORTED: &str = "rotated_unsupported";
+    /// A rotated-result face's supporting plane could not be witnessed exactly: neither three
+    /// of the face's own vertices assemble (a survivor wall) nor a unique operand plane `π` is
+    /// recoverable from its seam corners' provenance ([`crate::rotated_vertex::face_plane_witness`]).
+    /// The deep rotated-chain floor (e.g. a seam-only face whose `π` is itself a rotated surface).
+    /// Honest reject, never a wrong result.
+    pub const ROTATED_UNDERDETERMINED: &str = "rotated_underdetermined";
+    /// A rotated boolean whose operands make **coplanar contact across the two operands** (a class
+    /// merges faces of both). The arrangement does not yet resolve rotated coplanar contact
+    /// exactly — it can emit a malformed solid — so it is rejected up front where the merge is
+    /// detected, never returned. Honest reject, never silently wrong (DNA). Non-rotated coplanar
+    /// contact and within-operand coplanar merges are unaffected.
+    pub const ROTATED_COPLANAR: &str = "rotated_coplanar";
     pub const THREE_PLANES: &str = "three_planes";
     /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
     /// coordinate. The triple is the truth and the coordinate only its cache (overview §5), so this
@@ -524,10 +532,297 @@ pub mod tests {
     // that the CIP-wired machinery (arrangement, seam, in/out, outer/cavity — 3a–3c-vi) is
     // sound end-to-end on rotated (rounded-irrational) geometry.
 
+    /// Rotated coplanar contact *during result reuse* is honestly rejected, never returned as a
+    /// malformed solid. Here rotating the result R (which shares x=1/y=1/z=1 with the reused
+    /// cutter C) makes coplanar contact across the operands; the arrangement does not resolve
+    /// rotated coplanar exactly, so the guard rejects at the merge. (Non-coplanar reuse works —
+    /// [`a_rotated_boolean_result_can_be_cut_again`]; unrotated coplanar contact is unaffected.)
+    #[test]
+    fn rotated_coplanar_contact_in_reuse_is_rejected() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let iso = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        // C shares the x=1, y=1, z=1 planes with R's interior cut faces → coplanar contact.
+        let c = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, -1.0]),
+            Point3::from_array([1.0; 3]),
+        );
+        m.rebuild_adjacency();
+        let r = transform(&mut m, r, &iso).unwrap();
+        m.rebuild_adjacency();
+        let c = transform(&mut m, c, &iso).unwrap();
+        m.rebuild_adjacency();
+        let live = m.live_solids.clone();
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Cut, r, c),
+            tag::ROTATED_COPLANAR,
+        );
+        // A rejected boolean leaves the live model untouched.
+        assert_eq!(m.live_solids, live, "reject must not mutate the live set");
+    }
+
+    /// Predicates over a rotated result's witness planes are rotation-invariant against the same
+    /// result unrotated — the provenance witness (with outward winding) defines the exact plane,
+    /// so `t_orient3d` agrees on every definite triple. A regression guard on the witness itself.
+    #[test]
+    fn rotated_result_witness_predicates_are_invariant() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let iso = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
+        m.rebuild_adjacency();
+        let table = |m: &Model, s: Handle<Solid>| {
+            let f = collect_planes(m, s).unwrap();
+            let c = plane_classes(&f);
+            dense_planes(&f, &c).0
+        };
+        let pu = table(&m, r);
+        let r2 = transform(&mut m, r, &iso).unwrap();
+        m.rebuild_adjacency();
+        let pr = table(&m, r2);
+        assert_eq!(pu.len(), pr.len(), "rotation preserves the plane count");
+        let n = pu.len();
+        let indep = |p: &[PlaneGeom], a: usize, b: usize, c: usize| {
+            let nrm = |k: usize| p[k].plane.normal();
+            nrm(a).dot(nrm(b).cross(nrm(c))).abs() > 0.3
+        };
+        let mut disagree = 0;
+        for p in 0..n {
+            for q in (p + 1)..n {
+                for rr in (q + 1)..n {
+                    if !indep(&pu, p, q, rr) {
+                        continue;
+                    }
+                    for j in 0..n {
+                        if j == p || j == q || j == rr {
+                            continue;
+                        }
+                        let su = crate::tolerant::t_orient3d(&pu, p, q, rr, j);
+                        let sr = crate::tolerant::t_orient3d(&pr, p, q, rr, j);
+                        if su != 0 && sr != 0 && su != sr {
+                            eprintln!("DISAGREE orient3d ({p},{q},{rr},{j}): u={su} r={sr}");
+                            disagree += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(disagree, 0, "{disagree} predicate disagreements (witness wrong)");
+    }
+
+    /// Rotating a boolean *result* and feeding it back into a boolean (was `ROTATED_UNSUPPORTED`):
+    /// `collect_planes` now witnesses each rotated seam face's plane through provenance — its
+    /// plane is `R(π)` for an operand plane `π`, recovered from the operand face still on `π` and
+    /// rotated by the face's own chain. A boolean commutes with a rigid motion, so the rotated
+    /// chain's result matches the unrotated chain's (volume, solid count) and stays valid.
+    #[test]
+    fn a_rotated_boolean_result_can_be_cut_again() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let iso = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        // Chain: R = Cut(A, B) removes a far-corner octant; then Cut(R, C) removes a near one.
+        let build = |m: &mut Model| -> (Handle<Solid>, Handle<Solid>) {
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+            let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+            let r = boolean_one(m, BoolKind::Cut, a, b).unwrap();
+            // A clean slab that severs R at x = 0.5 — no plane of C coincides with any of R's
+            // (avoids the separate rotated-coplanar-contact gap; isolates the witness).
+            let c = m.add_cuboid(
+                Point3::from_array([-1.0, -1.0, -1.0]),
+                Point3::from_array([0.5, 4.0, 4.0]),
+            );
+            (r, c)
+        };
+        // Unrotated reference (reuse already works when nothing is rotated).
+        let mut m0 = Model::new();
+        let (r0, c0) = build(&mut m0);
+        m0.rebuild_adjacency();
+        let ref_out = boolean(&mut m0, BoolKind::Cut, r0, c0).unwrap();
+        m0.rebuild_adjacency();
+        let ref_vol: f64 = ref_out
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m0, s).unwrap().volume)
+            .sum();
+        // Rotated: turn the *result* R (and C) by the same isometry, then reuse R.
+        let mut m = Model::new();
+        let (r, c) = build(&mut m);
+        m.rebuild_adjacency();
+        let r = transform(&mut m, r, &iso).unwrap();
+        m.rebuild_adjacency();
+        let c = transform(&mut m, c, &iso).unwrap();
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, BoolKind::Cut, r, c).unwrap();
+        m.rebuild_adjacency();
+        let issues = nacre_validate::validate(&m);
+        assert!(
+            issues.is_empty(),
+            "rotated-result reuse must be valid: {issues:?}"
+        );
+        let vol: f64 = out
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .sum();
+        assert_eq!(out.len(), ref_out.len(), "solid count invariant under rotation");
+        assert!(
+            (vol - ref_vol).abs() < 1e-6,
+            "rotated reuse volume {vol} vs unrotated {ref_vol}"
+        );
+    }
 
 
 
 
+
+
+    /// Result-reuse rotation stress: build R with a first boolean, then feed R into a second
+    /// boolean with a fresh cutter C — once unrotated, once with R and C rotated by the same
+    /// isometry. A boolean commutes with a rigid motion, so the rotated reuse must equal the
+    /// unrotated one (volume, solid count, cavity count) or be an honest reject — never silently
+    /// wrong. This is the invariant on the newly-enabled rotated-*Discovered* geometry (every
+    /// vertex of a boolean result is `Discovered`, so its rotation exercises the provenance
+    /// witness on every face). `#[ignore]`: rotated booleans escalate to astro-float (~1–3 s).
+    #[test]
+    #[ignore = "slow: rotated result-reuse booleans (run with --ignored)"]
+    fn rotated_result_reuse_stress() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        #[derive(PartialEq, Debug)]
+        enum Out {
+            Rej,
+            Ok(f64, usize, usize),
+        }
+        let rot = |axis: Axis, deg: i128, piv: [i128; 3]| {
+            Isometry::rotation(Rotation {
+                axis,
+                point: [
+                    Rat::from_int(piv[0]),
+                    Rat::from_int(piv[1]),
+                    Rat::from_int(piv[2]),
+                ],
+                angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+            })
+        };
+        // (first kind, second kind, |m| -> (a, b, c)). R = kind1(a, b); out = kind2(R, c).
+        type Build = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>, Handle<Solid>)>;
+        let cuboid =
+            |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        let fixtures: Vec<(&str, BoolKind, BoolKind, Build)> = vec![
+            (
+                "corner_then_slab",
+                BoolKind::Cut,
+                BoolKind::Cut,
+                Box::new(move |m: &mut Model| {
+                    let a = cuboid(m, [0.0; 3], [2.0; 3]);
+                    let b = cuboid(m, [1.0; 3], [3.0; 3]);
+                    let c = cuboid(m, [-1.0, -1.0, -1.0], [0.5, 4.0, 4.0]);
+                    (a, b, c)
+                }),
+            ),
+            (
+                "fuse_then_bite",
+                BoolKind::Fuse,
+                BoolKind::Cut,
+                Box::new(move |m: &mut Model| {
+                    let a = cuboid(m, [0.0; 3], [2.0, 1.0, 1.0]);
+                    let b = cuboid(m, [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]);
+                    let c = cuboid(m, [1.3, 1.3, -1.0], [3.0, 3.0, 2.0]);
+                    (a, b, c)
+                }),
+            ),
+            (
+                "cut_then_fuse",
+                BoolKind::Cut,
+                BoolKind::Fuse,
+                Box::new(move |m: &mut Model| {
+                    let a = cuboid(m, [0.0; 3], [2.0; 3]);
+                    let b = cuboid(m, [1.3, 1.3, 1.3], [3.0, 3.0, 3.0]);
+                    let c = cuboid(m, [-0.7, 0.4, 0.4], [0.3, 1.4, 1.4]);
+                    (a, b, c)
+                }),
+            ),
+        ];
+        let isos_list: Vec<(&str, Vec<Isometry>)> = vec![
+            ("Z43", vec![rot(Axis::Z, 43, [1, 1, 0])]),
+            ("X67", vec![rot(Axis::X, 67, [2, -1, 0])]),
+            (
+                "Z50>Y37",
+                vec![rot(Axis::Z, 50, [1, 1, 0]), rot(Axis::Y, 37, [0, 0, 1])],
+            ),
+        ];
+        let run = |k1: BoolKind, k2: BoolKind, build: &Build, isos: &[Isometry]| -> Out {
+            let mut m = Model::new();
+            let (a, b, c) = build(&mut m);
+            m.rebuild_adjacency();
+            let Ok(r) = boolean(&mut m, k1, a, b) else {
+                return Out::Rej;
+            };
+            assert_eq!(r.len(), 1, "first boolean is a single solid");
+            let mut r = r[0];
+            let mut c = c;
+            m.rebuild_adjacency();
+            for iso in isos {
+                r = transform(&mut m, r, iso).unwrap();
+                m.rebuild_adjacency();
+                c = transform(&mut m, c, iso).unwrap();
+                m.rebuild_adjacency();
+            }
+            match boolean(&mut m, k2, r, c) {
+                Ok(solids) => {
+                    m.rebuild_adjacency();
+                    assert!(
+                        nacre_validate::validate(&m).is_empty(),
+                        "INVALID rotated reuse result"
+                    );
+                    let vol: f64 = solids
+                        .iter()
+                        .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                        .sum();
+                    let cav: usize = solids.iter().map(|&s| m.solids.get(s).cavities.len()).sum();
+                    Out::Ok(vol, solids.len(), cav)
+                }
+                Err(_) => Out::Rej,
+            }
+        };
+        let vclose =
+            |x: f64, y: f64| (x - y).abs() <= 1e-6 || (x - y).abs() <= 1e-4 * x.abs().max(y.abs());
+        let (mut success, mut reject, mut silent) = (0, 0, 0);
+        for (fname, k1, k2, build) in &fixtures {
+            let base = run(*k1, *k2, build, &[]);
+            for (rname, isos) in &isos_list {
+                let r = run(*k1, *k2, build, isos);
+                match (&base, &r) {
+                    (_, Out::Rej) => reject += 1,
+                    (Out::Ok(v1, s1, c1), Out::Ok(v2, s2, c2))
+                        if vclose(*v1, *v2) && s1 == s2 && c1 == c2 =>
+                    {
+                        success += 1
+                    }
+                    _ => {
+                        silent += 1;
+                        eprintln!("SILENT-WRONG {fname} {rname} base={base:?} rot={r:?}");
+                    }
+                }
+            }
+        }
+        eprintln!("REUSE STRESS: success={success} honest_reject={reject} SILENT_WRONG={silent}");
+        assert_eq!(silent, 0, "a rotated result-reuse boolean was silently wrong");
+        assert!(success >= 1, "at least one rotated reuse must actually succeed");
+    }
 
     /// Adversarial rotation stress (overhaul 3d-iii): many fixtures × kinds × rotations
     /// (single-axis, and Euler chains reaching arbitrary orientation) confirm the DNA
