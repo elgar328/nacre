@@ -2213,3 +2213,17 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 **★ 검토 6라운드가 잡은 것들:** ① 커밋 순서(코드→테스트 뒤집으면 oloop이 컴파일 안 됨 → **테스트 먼저**) · ② 은퇴 근거를 측정으로(`overhang_fuse_then_cut_matches_occt` 코드 확인) · ③ 놓친 Orig 참조 둘(4060 잠금 독스트링·2218 passthrough 독스트링) · ④ **기본 CI 구멍**(OCCT가 `#[ignore]`라 은퇴 시 반대-법선 공면 불변식이 무방비 → non-ignored 대체 추가) · ⑤ `let-else`/`_ => unreachable` 잔여(단일 변형이라 irrefutable — regex가 다 못 잡아 clippy가 잠깐 늘었고 전수로 걷음).
 
 **결과.** workspace **494/0**, ops **204→203**(은퇴 2 + 신규 1), pipeline **20/0**, **OCCT 91/0 불변**, clippy **2 → 1**(남은 하나는 비-기본 피처 `rayon::prelude` — 정상). **커토버 정리(A 개명 → B PlaneGeom → C 술어층 분리 → D 장부 → E Node::Orig)가 완결됐다.** `Node`는 이제 실제 모양(평면 삼중항 하나)이고, 옛 seam/coplanar 엔진의 잔재가 코드에서 완전히 사라졌다. main은 `18587ed`에서 불변.
+
+---
+
+**★ (정돈) `arrange.rs`→`combinatorics.rs` 개명, 커토버가 남긴 낡은 독스트링 정정, clippy 0.** 커토버가 main에 안착한 뒤 코드 정돈 조사에서 저위험 스멜을 잡았다. **순수 개명 + 주석**이라 커널 동작 무이동(ops 203/0·pipeline 20/0·OCCT 91/0 불변).
+
+- **A**(`f077514`) `arrange.rs`↔`arrangement.rs`가 한 글자 차이라 매번 헷갈렸다. 조사로 확정: `arrange.rs`는 **술어를 정의하지 않고 쓴다**(nacre-predicates 의존 0) — `tolerant.rs`의 exact 부호를 조합해 winding·side·order·링 추출 같은 **조합 질의**에 답하는 층. 반면 `arrangement.rs`는 *이 자체가* 엔진이라 이름이 정확하다 ⇒ 잘못 붙은 쪽만 `combinatorics.rs`로. **세 참조 형태**(`arrange::` 68·`crate::arrange` 2·파일참조 1) + **모듈 독스트링 첫 줄**(*"Per-face planar arrangement"* → *"Combinatorial queries over…"*, 안 고치면 반쪽 개명) + **자체 stale 헤더**(*"Nothing in the boolean calls this yet"* — 이제 부름) 전부 정정. `point_in_solid_idx` 복구 포인터는 모듈경로만 떼고 뜻 보존.
+
+- **B**(`5221acc`) 커토버가 남긴 낡은 독스트링. ★★ **원칙: 현재-거짓만 고치고 과거-정확은 보존**(맹목적 grep-0은 의도적 문서를 파괴한다). **공개 API 둘이 최우선**: `BoolKind::Fuse/Cut`가 *"(not yet implemented — Unsupported)"* 라는데 **완전 구현**됐고(keep()가 셋 다, OCCT 153회 대조) 초기 M5 잔재였다; 공개 `boolean` docstring이 excise된 `general_boolean`·`coplanar_result_unified`·F2 dispatch·`coplanar_contact_count`(=**유일한 rustdoc broken-link 경고**)를 현재처럼 서술하며 **본문과 모순**했다 → 본문(단일 arrangement 엔진)과 일치하게 다시 씀. 내부: 헤더 *"B engine·unwired·winding.rs·section_of_solid"*, `trace.rs` 파일참조, 테스트 docstring의 detectors/general_boolean, angular_order의 스파이크 프레이밍(한계 서술은 보존). **보존한 과거-정확**: `point_in_solid_idx`·`ImprintSketch`(*"retired so cannot reach here"*)·`seam_paths_on`(테스트 계보)·`build_seam` 대조. rustdoc broken-link **1→0**.
+
+- **C**(`c572409`) clippy 경고 하나(`unused import: rayon::prelude`, 전 설정)는 커토버 고아 — par_iter 트레이트를 아무 데도 안 쓴다(옛 `overlap_fuse_cut`이 쓰던 것, 경로 excise되며 import만 남음). 삭제. 엔진이 배선돼 arrangement.rs·combinatorics.rs가 완전 도달가능해졌으므로 두 모듈의 `#![cfg_attr(not(test), allow(dead_code))]`(unwired 시절 잔재)도 제거(비-test 빌드 dead-code 경고 0 확인). clippy **1→0**(default·all-features·no-default-features).
+
+**★★ 발견 — 고치지 않고 기록(별개 셀): 커토버가 생산 병렬성을 조용히 없앴다.** 옛 엔진은 면 재구성·정점 분류를 `par_iter`로 병렬화(이전 셀 실측 *"14코어 1.85×–2.13×"*)했는데, 새 arrangement 엔진은 **직렬**이다(`par_iter` 0). `parallel` 피처가 지금 하는 일은 성능이 아니라 ① nacre-scalar의 `Pt3` 캐시를 `Arc<OnceLock>`로 토글 ② 테스트 `parallel_boolean_is_thread_order_independent`(`ThreadPoolBuilder`)의 rayon 풀뿐. 그 테스트 이름·독스트링(*"par_iter code"*)도 이제 오도다. **재병렬화(진짜 기능)나 `parallel` 은퇴는 각각 큰 결정이라 별개 셀** — 여기선 clippy 고아 import만 걷고 발견을 기록만 한다.
+
+**정돈 조사 남은 것(별개 셀):** god 모듈 분할 — `nacre-ops/lib.rs`가 2417 프로덕션 줄에 ops API·transform·boolean 조립·평면 표를 섞고 있다(nacre-ops 4파일 12230줄 vs nacre-geom 1/3 크기를 7파일로). `transform.rs`·`assemble.rs`·`planes.rs` 분할 후보.
