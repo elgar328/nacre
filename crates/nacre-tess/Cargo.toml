@@ -14,6 +14,8 @@ nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
 
 [dev-dependencies]
+# Enables the topo test-only primitive `Model::add_cuboid` for the cube-dump example/tests.
+nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

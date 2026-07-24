@@ -31,6 +31,9 @@ default = ["parallel"]
 parallel = ["dep:rayon", "nacre-cip/parallel"]
 
 [dev-dependencies]
+# Enables the topo test-only primitive `Model::add_cuboid` for building test solids
+# (unusable in production; this crate sits above topo but tests build boxes directly).
+nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 proptest.workspace = true
 # Tests assert the extruded solids are valid closed b-reps.
 nacre-validate = { path = "../nacre-validate", version = "0.0.0" }

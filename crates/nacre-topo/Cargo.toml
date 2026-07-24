@@ -14,6 +14,14 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 # The rotation definition (Axis/Angle) stored in a vertex's Origin (overhaul stage 1b).
 nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 
+[features]
+# Exposes the test-only solid primitive `Model::add_cuboid` (a topo convenience that bypasses
+# the ops modelling layer). Off by default, so production consumers never see it; crates below
+# nacre-ops enable it in their [dev-dependencies] to build test solids at the topo layer.
+# `add_cylinder` stays public for now — it is the only cylinder constructor (no ops equivalent
+# until M6), so it is gated later when ops gains one.
+test-util = []
+
 [dev-dependencies]
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git

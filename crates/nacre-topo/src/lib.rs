@@ -264,6 +264,7 @@ impl Model {
     /// face is wound so its plane normal points outward, so all faces are
     /// [`Orientation::Forward`]. Does **not** rebuild adjacency — call
     /// [`Model::rebuild_adjacency`] once after all additions.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn add_cuboid(&mut self, min: Point3, max: Point3) -> Handle<Solid> {
         let [x0, y0, z0] = min.as_array();
         let [x1, y1, z1] = max.as_array();
