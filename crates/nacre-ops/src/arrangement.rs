@@ -84,7 +84,7 @@ pub(crate) struct Trace {
     /// zero-length chord would abort at `Line::through_points`).
     pub touches: Vec<[usize; 3]>,
     /// `(face index, reason)` for every face this brick could not trace.
-    pub declined: Vec<(usize, &'static str)>,
+    pub declined: Vec<(usize, DeclineKind)>,
 }
 
 /// Sort a triple whose elements are already dense plane ids.
@@ -162,12 +162,12 @@ fn trace_transversal_face(
         Ok(r) => match plane_ring(&r) {
             Some(r) => r,
             None => {
-                out.declined.push((fp, "collapsed-triple"));
+                out.declined.push((fp, DeclineKind::CollapsedTriple));
                 return;
             }
         },
         Err(_) => {
-            out.declined.push((fp, "outer-ring"));
+            out.declined.push((fp, DeclineKind::OuterRing));
             return;
         }
     };
@@ -175,14 +175,14 @@ fn trace_transversal_face(
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Ok(raw_holes) = combinatorics::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
-        out.declined.push((fp, "hole-ring"));
+        out.declined.push((fp, DeclineKind::HoleRing));
         return;
     };
     for r in &raw_holes {
         match plane_ring(r) {
             Some(r) => holes.push(r),
             None => {
-                out.declined.push((fp, "collapsed-triple"));
+                out.declined.push((fp, DeclineKind::CollapsedTriple));
                 return;
             }
         }
@@ -210,7 +210,7 @@ fn trace_transversal_face(
     // nodes; `run_counter` is shared so run ids stay unique across rings.
     let mut nodes: Vec<Node> = Vec::new();
     let mut run_counter = 0usize;
-    let mut declined: Option<&'static str> = None;
+    let mut declined: Option<DeclineKind> = None;
     'rings: for ring in std::iter::once(&outer).chain(holes.iter()) {
         let n = ring.len();
         let side: Vec<i8> = (0..n)
@@ -218,7 +218,7 @@ fn trace_transversal_face(
             .collect();
         let Some(start) = side.iter().position(|&s| s != 0) else {
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
-            declined = Some("all-on-plane");
+            declined = Some(DeclineKind::AllOnPlane);
             break;
         };
         let mut j = 0;
@@ -237,7 +237,7 @@ fn trace_transversal_face(
                             single_touch: false,
                             graze_above: None,
                         }),
-                        Err(_) => declined = Some("crossing-name"),
+                        Err(_) => declined = Some(DeclineKind::CrossingName),
                     }
                 }
                 j += 1;
@@ -268,7 +268,7 @@ fn trace_transversal_face(
                             // segment; a flank-differing single vertex is a strict crossing.
                             graze_above: None,
                         }),
-                        None => declined = Some("run-name"),
+                        None => declined = Some(DeclineKind::RunName),
                     }
                 } else {
                     // m >= 2: one on-line interval. Only its two ends and the flanks decide
@@ -296,7 +296,7 @@ fn trace_transversal_face(
                                 });
                             }
                         }
-                        None => declined = Some("run-name"),
+                        None => declined = Some(DeclineKind::RunName),
                     }
                 }
             }
@@ -320,7 +320,7 @@ fn trace_transversal_face(
     );
     for w in nodes.windows(2) {
         if combinatorics::order_along(planes, wc, fc, w[0].r, w[1].r) == 0 {
-            out.declined.push((fp, "coincident-features"));
+            out.declined.push((fp, DeclineKind::CoincidentFeatures));
             return;
         }
     }
@@ -330,7 +330,7 @@ fn trace_transversal_face(
             let prev = k > 0 && nodes[k - 1].run == Some(id);
             let next = k + 1 < nodes.len() && nodes[k + 1].run == Some(id);
             if !prev && !next {
-                out.declined.push((fp, "run-split"));
+                out.declined.push((fp, DeclineKind::RunSplit));
                 return;
             }
             // The whole run is one interval, so its flip happens once — at the far end.
@@ -394,7 +394,7 @@ fn trace_transversal_face(
     }
     if seg_start.is_some() || parity != 0 {
         // A line enters and leaves a bounded region equally; an unbalanced sweep is degenerate.
-        out.declined.push((fp, "odd-parity"));
+        out.declined.push((fp, DeclineKind::OddParity));
     }
 }
 
@@ -475,14 +475,14 @@ fn trace_one(
                     .ok()
                     .and_then(|ts| plane_ring(&ts))
             else {
-                out.declined.push((fp, "outer-ring"));
+                out.declined.push((fp, DeclineKind::OuterRing));
                 continue;
             };
             let mut rings = vec![outer];
             let mut collapsed = false;
             // As above: an unnameable hole is a reject, not "no hole".
             let Ok(raw) = combinatorics::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
-                out.declined.push((fp, "hole-ring"));
+                out.declined.push((fp, DeclineKind::HoleRing));
                 continue;
             };
             for r in &raw {
@@ -492,7 +492,7 @@ fn trace_one(
                 }
             }
             if collapsed {
-                out.declined.push((fp, "collapsed-triple"));
+                out.declined.push((fp, DeclineKind::CollapsedTriple));
                 continue;
             }
             let fc = plane_ix[fp];
@@ -513,7 +513,7 @@ fn trace_one(
                     shared.sort_unstable();
                     shared.dedup();
                     let [wall] = shared[..] else {
-                        out.declined.push((fp, "seated-edge-naming"));
+                        out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
                         continue;
                     };
                     out.segs.push(Seg {
@@ -1353,8 +1353,13 @@ fn trace_result_faces(
         let tr = trace_on_class(
             model, a, b, wc, planes, faces, surf_ix, inc_a, inc_b, plane_ix,
         );
-        if !tr.declined.is_empty() {
-            return Err(reject(RejectReason::CoplanarPair)); // incomplete trace ⇒ honest reject
+        // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on which
+        // operand face. A class can decline several faces; the first is the one reported.
+        if let Some(&(fp, kind)) = tr.declined.first() {
+            return Err(reject(RejectReason::TraceDeclined {
+                kind,
+                face: faces[fp].face,
+            }));
         }
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(planes, wc, &merged)?;
@@ -1393,7 +1398,7 @@ pub(crate) struct ClassAudit {
     pub seated: Vec<bool>,
     pub grazes: Vec<bool>,
     pub transversals: usize,
-    pub declined: Vec<(usize, &'static str)>,
+    pub declined: Vec<(usize, DeclineKind)>,
     /// The reason the per-class pipeline raised, if any (`None` = the class went through).
     pub failed_at: Option<RejectReason>,
 }
@@ -1446,8 +1451,11 @@ pub(crate) fn frame_audit(
             failed_at: None,
         };
         // Run the rest of the per-class pipeline, recording where it stops.
-        audit.failed_at = if !audit.declined.is_empty() {
-            Some(RejectReason::CoplanarPair)
+        audit.failed_at = if let Some(&(fp, kind)) = audit.declined.first() {
+            Some(RejectReason::TraceDeclined {
+                kind,
+                face: faces_tab[fp].face,
+            })
         } else {
             let run = || -> Result<(), BoolError> {
                 let merged = merge_coincident(&tr.segs);

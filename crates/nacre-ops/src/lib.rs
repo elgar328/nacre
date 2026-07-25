@@ -130,8 +130,17 @@ pub enum RejectReason {
     /// loop makes every edge agree. Not dead code — relax `FourPlane` or cell 3c's
     /// node-identity argument and this is what speaks first.
     LoopOrientMismatch,
-    /// A plane class's trace came back incomplete, so the arrangement cannot conclude.
-    CoplanarPair,
+    /// One face's trace on a plane class came back incomplete, so the arrangement cannot
+    /// conclude — a consumer must not read "no segments" as "the plane misses the solid".
+    /// `kind` says what the tracer could not do and `face` is the operand face it gave up on
+    /// (an *input* face: a rejected boolean restores the live set, so the handle stays valid).
+    ///
+    /// A class can decline several faces; this names the first. The full list is the audit's
+    /// business, not the error's.
+    TraceDeclined {
+        kind: DeclineKind,
+        face: Handle<Face>,
+    },
     /// The result severs into two or more material solids *and* at least one enclosed void
     /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
     /// test we do not have yet, so this is honestly rejected and deferred to a follow-on cell.
@@ -229,14 +238,75 @@ pub enum RejectReason {
     CoplanarMerge,
 }
 
+/// What a face's trace on one plane class could not do — the detail behind
+/// [`RejectReason::TraceDeclined`].
+///
+/// These name arrangement steps, not user-facing situations; branch on
+/// [`RejectReason::class`] and keep these for logs and bug reports. They all mean the same
+/// thing to a caller ("this configuration is beyond the tracer"), and they are kept apart so a
+/// refactor cannot silently merge two different degeneracies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DeclineKind {
+    /// A ring vertex's plane triple collapses (two of its planes coincide), so it names no point.
+    CollapsedTriple,
+    /// The face's outer ring could not be named as plane triples.
+    OuterRing,
+    /// One of the face's hole rings could not be named. Not "no hole": swallowing it would trace
+    /// the face as if it were solid.
+    HoleRing,
+    /// Every vertex of a ring lies on the class plane — a ring lying in the cut plane.
+    AllOnPlane,
+    /// A strictly crossing ring edge has no nameable wall plane beside the face's own.
+    CrossingName,
+    /// An on-plane run's bounding node has no nameable wall plane.
+    RunName,
+    /// Two arrangement features on the class line order as equal — they coincide.
+    CoincidentFeatures,
+    /// A run's two nodes did not end up adjacent after ordering, so the run is not one interval.
+    RunSplit,
+    /// The sweep along the class line entered and left unequally (an unbalanced parity), which a
+    /// closed boundary cannot do.
+    OddParity,
+    /// A seated (on-plane) edge has no unique wall plane, so its segment cannot be named.
+    SeatedEdgeNaming,
+}
+
+impl DeclineKind {
+    /// The stable kebab-case identifier used in logs and the class audit.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CollapsedTriple => "collapsed-triple",
+            Self::OuterRing => "outer-ring",
+            Self::HoleRing => "hole-ring",
+            Self::AllOnPlane => "all-on-plane",
+            Self::CrossingName => "crossing-name",
+            Self::RunName => "run-name",
+            Self::CoincidentFeatures => "coincident-features",
+            Self::RunSplit => "run-split",
+            Self::OddParity => "odd-parity",
+            Self::SeatedEdgeNaming => "seated-edge-naming",
+        }
+    }
+}
+
+impl std::fmt::Display for DeclineKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl RejectReason {
     /// The stable snake_case identifier — the same string the reject tags used, so logs and
     /// issue reports do not change meaning across this refactor.
+    ///
+    /// [`Self::TraceDeclined`] answers `"trace_declined"`; its [`DeclineKind`] carries the
+    /// detail (and `Display` prints both).
     pub fn as_str(self) -> &'static str {
         match self {
             Self::NonManifoldEdge => "non_manifold_edge",
             Self::LoopOrientMismatch => "loop_orient_mismatch",
-            Self::CoplanarPair => "coplanar_pair",
+            Self::TraceDeclined { .. } => "trace_declined",
             Self::CavityNoOwner => "cavity_no_owner",
             Self::NoOutwardShell => "no_outward_shell",
             Self::RotatedUnderdetermined => "rotated_underdetermined",
@@ -273,7 +343,7 @@ impl RejectReason {
             | Self::DegenerateNormal => RejectClass::Impossible,
             // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate
             // arrangements the substrate cannot name yet.
-            Self::CoplanarPair
+            Self::TraceDeclined { .. }
             | Self::RotatedUnderdetermined
             | Self::ThreePlanes
             | Self::FourPlane
@@ -298,7 +368,10 @@ impl RejectReason {
 
 impl std::fmt::Display for RejectReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        match self {
+            Self::TraceDeclined { kind, .. } => write!(f, "{}({kind})", self.as_str()),
+            _ => f.write_str(self.as_str()),
+        }
     }
 }
 
@@ -1199,8 +1272,9 @@ pub mod tests {
 
     /// A U-prism: a bottom bar `y∈[0,1]` with two prongs rising from it. The prong
     /// tops sit at *different* heights (y=2.3 and y=2.0) on purpose — level tops
-    /// would be coplanar faces and `has_coplanar_pair` would reject before the seam
-    /// machinery ran. Area 3 + 1 + 1.3, extruded 1.0 ⇒ volume 5.3.
+    /// would be coplanar faces, which the pre-cutover `has_coplanar_pair` door guard
+    /// rejected before the seam machinery ran. That guard is gone; the staggering stays
+    /// as this fixture's pinned shape. Area 3 + 1 + 1.3, extruded 1.0 ⇒ volume 5.3.
     fn u_prism() -> (Model, Handle<Solid>) {
         let u = Profile2d {
             points: vec![
@@ -1544,7 +1618,7 @@ pub mod tests {
     /// earlier attempt at such a fixture died on that.
     ///
     /// Leg bottoms sit at `z = 0.5` and `z = 0.45`: two coplanar faces of *one* operand
-    /// trip `coplanar_pair` at the door, exactly as `u_prism`'s staggered prongs avoid.
+    /// tripped the pre-cutover door guard, exactly as `u_prism`'s staggered prongs avoid.
     /// And the legs span `y ∈ [0.65, 1.3]`, not `[0.7, 1.3]`, because `(1.4, 0.7)` lies on
     /// the cap's fan diagonal `y = x/2` and `segment_crosses_face` would graze it.
     fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {

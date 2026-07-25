@@ -731,7 +731,8 @@ fn a_corner_cut_through_the_bottom() {
 #[test]
 fn a_fused_stack_chains_through_a_cut() {
     // The dissolved 1×1×2 box (cell fuse-coplanar-merge) feeds a second boolean. Before
-    // the merge/dissolve this rejected — first as COPLANAR_PAIR (the flat edges), then as
+    // the merge/dissolve this rejected — first as the old COPLANAR_PAIR, since replaced by
+    // `RejectReason::TraceDeclined` (the flat edges), then as
     // LOOP_ORIENT_MISMATCH (the straight-angle interface corners). A clean box cuts.
     let (mut m, a, b) = stacked_cubes();
     let stack = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
