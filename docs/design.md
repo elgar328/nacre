@@ -34,6 +34,12 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 
 `nacre-geom`과 `nacre-topo`가 서로를 모르게 하는 것이 중요하다. 기하는 위상을 모르고(순수 수학), 위상은 기하를 Handle로만 참조한다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
 
+**편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포 — 2026-07-26 결정, 미착수).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). **Rust로 두는 이유:** 헤드리스 `cargo test`가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 교체해도 살아남고, wasm 경계가 함수 하나로 유지된다. 경계 규칙은 overview.md의 "설탕 vs 커널 판별 기준"이고, **문법·의미론과 그 결정 이유는 `nacre-kit` 리포의 `docs/syntax.md`·`docs/decisions.md`에 있다**(여기에 복사하지 않는다 — 두 곳에 같은 내용이 있으면 어긋난다). **전제:** 남이 `Cargo.toml`에 추가해 쓰려면 파사드 `nacre`가 재수출로 채워져야 한다(현재는 이름만 예약한 placeholder — 소비자가 개별 크레이트를 path로 매다는 상태).
+
+**공개 표면 조사 (2026-07-26, 코드 실측 — 다시 조사하지 말 것).** 외부 소비자 관점에서 무엇이 막혀 있는지 훑은 결과.
+- **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.bounds → vertex.point`). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Origin::{Constructed, Discovered{tol,definition}, Rotated{base,rotation}}`·`VertexDef`·`Model::rotations`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개. 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
+- **진짜 빈 것 = 파생 값과 에러 표면:** 솔리드 AABB, centroid(`MassProps`는 volume·area만), 면 법선·면적, 면→`SketchPlane`(`ops::face_frame`이 private → 면 위 스케치 차단), 순회 편의(`he_start`가 `pub(crate)`), 그리고 §6의 거절 이유. 없으면 소비자마다 재구현하며 `Orientation`·평면 `raw` 해석에서 틀릴 수 있다. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 미래.
+
 **디버그 뷰어는 커널 크레이트가 아니라 워크스페이스 밖 별도 앱이다.** 연산 로그를 입력받아 매 동작을 스텝별로 재생하며(append-only라 "N번째까지 replay"가 공짜), STEP에 안 담기는 nacre **내부 정보**(`Origin`의 `Constructed`/`Discovered`, `Discovered`의 tolerance 실측값, `Handle` 관계·인접 등)까지 시각화하는 인터랙티브 도구. 내부 자료구조에 접근해야 하므로 nacre를 **직접 링크**한다(개발 중 path 의존 → 안정화 후 version 의존, 버전별 디버깅도 자연스러워짐). 만드는 시점은 **`Discovered`/tolerance가 처음 등장하는 M5 즈음** — 그 전(M1~M4는 전부 `Constructed`)의 시각 확인은 정상 결과는 STEP→step-loupe(구조+검증), 중간·깨진 상태는 OBJ 덤프→맥 미리보기로 충분해, 인터랙티브 뷰어는 필요가 증명될 때까지 미룬다.
 
 `Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** geom도 Handle을 쓰기 때문이다 — `Curve::Intersection`(§3)이 `Handle<Surface>`를 담으므로, Handle이 topo에 있으면 geom→topo→geom 순환 의존이 된다. typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 모든 크레이트가 자유롭게 참조한다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
@@ -98,6 +104,8 @@ pub struct Model {
 ### 편집 연산의 supersede 의미론 — live 도달가능성 (partially persistent)
 
 **결정 (M4에서 확정).** 편집 연산(imprint·pad, 이후 boolean)이 기존 위상을 바꿀 때, append-only라 옛 셀을 **지우지 못한다**. 그래서 Model은 **`live_solids: Vec<Handle<Solid>>`(살아있는 솔리드 목록)를 진실로 보유**하고, 편집 연산은 옛 셀을 남긴 채 새 셀을 push한 뒤 **live 목록이 새 결과 Solid만 참조하도록 갱신**한다(소비된 입력 Solid는 목록에서 빠진다). **"살아있는 모델"의 정의 = live_solids에서 하향 참조로 도달 가능한 셀의 폐포(reachable closure).** supersede된 옛 셀은 아레나에 남되 어떤 live solid도 안 가리키므로 자동으로 "안 보인다".
+
+**★ 예외 하나 — `copy`는 supersede하지 않는다 (2026-07-26 결정, 미구현).** `Operation::Copy { solid }`는 솔리드의 독립 쌍둥이를 만들고 **원본을 live 목록에 남긴다** — 즉 **live 목록에 추가만 하는 유일한 연산**이다(다른 모든 편집 연산은 "옛 것 빼고 새 것 넣기"). 필요한 이유: 지금 커널에는 *이동*만 있고 *복사*가 없어(`transform`·`boolean`이 입력을 live에서 뺀다) 같은 공구를 두 번 쓰거나 원본을 남긴 복사본을 두는 것이 불가능하고, 그래서 편의 레이어의 패턴·미러가 성립하지 않는다. **구현 규칙:** 위상 셀(정점·모서리·면·껍질·솔리드)은 **반드시 복제**하고(두 live solid가 모서리를 공유하면 `edge_uses`가 면 4개 사용으로 읽어 manifold 검사가 깨진다), 기하(곡면·곡선)는 **핸들을 공유**한다(불변이고, 두 사본이 정확히 같은 평면에 있는 것이 불리언에 유리하며, `Discovered` 정점의 정의가 그 공유 곡면을 가리켜 그대로 유효하다). `transform::transform_solid`이 이미 결정적 깊은 복제 walker라 항등 변환 + live 유지로 재사용한다. 이름은 **copy**(Handle의 clone은 얕은 참조 복사라는 반대 뜻).
 
 **결과로, 모델을 소비하는 모든 코드는 store 전체가 아니라 live 도달가능 집합만 순회·카운트한다** — `validate`의 Euler/manifold, `Adjacency`(§4), `nacre-props`(부피·면적), `nacre-step` export, 오라클. (M1~M3엔 supersede가 없어 도달가능 집합 == store 전체였기에 store 길이로 세는 단순화가 맞았고, M4가 그 전제를 처음 깬다.) 정리(compact)는 **스냅샷/직렬화 시점에만** 하며(§2 위), 편집 중엔 안 한다 — Handle 인덱스 안정성(=replay 결정성)을 유지하기 위해.
 
@@ -326,6 +334,11 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 // M3에서 tess 도입과 함께 위 (Model, Tessellation)·TessConfig 시그니처로 확장한다.
 ```
 
+**★ 다중 루프 프로파일 — `Profile2d`를 `{ outer, inners }`로 일반화 (2026-07-26 결정, 미구현).** 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 브리징하는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
+- `{ outer, inners }`(구멍 N개, 제한 없음) + `extrude`가 구멍 벽면과 뚜껑 내부 루프를 함께 생성.
+- `Profile2d::from_rings(rings, fill_rule) -> Vec<Profile2d>` — 링 목록의 중첩을 exact `point_in_ring`으로 판정해(술어이므로 커널) **덩어리(섬)별 프로파일 목록**을 돌려준다(짝수-홀수 깊이: 0=재료, 1=구멍, 2=구멍 속 섬…). 채우기 규칙 선택은 호출자.
+- **경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준). 그래서 `Extrude`의 다중 바디 출력은 필요 없다.
+
 **파라메트릭 편집의 진화 경로 (v2 이후, 지금은 기록만):** 연산이 원시 Handle 대신 계보 참조 `OpRef { op: usize, output_slot: usize }`("연산 N이 만든 k번째 면")를 담으면, 상류 수정 후에도 참조가 의미로 해석(resolve)되어 편집-재생이 가능해진다. v1에서 이를 구현하지 않되, 로그 직렬화 포맷을 설계할 때 이 확장이 포맷 파괴 없이 들어갈 자리를 남긴다. TessConfig의 tolerance도 같은 맥락에서 연산별 override(`Operation` 항목의 선택 필드)로 확장될 수 있다.
 
 불리언은 처음부터 trait 뒤에 둔다 — 커버리지 사다리의 코드화:
@@ -346,6 +359,8 @@ pub struct HybridBoolean;     // M7: 일반 곡면 — 출처태그 메시 → �
 ```
 
 OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 채점자(§7)뿐이다. 사다리의 각 단은 자기 커버리지 안에서 완전해야 하며, 밖은 조용히 틀리는 대신 에러로 거절한다.
+
+**★ 거절의 *이유*를 공개해야 한다 (2026-07-26 조사로 발견, 미구현).** 지금 `reject(tag)`는 태그를 `#[cfg(test)]` thread-local에만 기록하고 필드 없는 `BoolError::Unsupported`를 반환하며 `mod tag`는 `pub(crate)`다 — 즉 이름 붙인 거절 사유 수십 개가 크레이트 밖에서 **하나의 불투명한 "Unsupported"로 붕괴**한다. "조용히 틀리지 말고 이름 붙여 거절"이 DNA인데 그 이름이 밖으로 나가지 않으니, 소비자는 "왜 안 되는지"를 사용자에게 말할 수 없고 디버그 뷰어의 핵심 정보도 잃는다. → `BoolError::Unsupported { reason }`(문자열보다 `#[non_exhaustive]` enum이 API 안정성에 낫다) + 태그 이름 공개. 항목 크기는 작고 소비자 체감은 가장 크다.
 
 ### 6.1 M5 불리언 — 두 메커니즘을 regime로 라우팅 (합성 아님)
 
