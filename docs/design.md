@@ -360,7 +360,9 @@ pub struct HybridBoolean;     // M7: 일반 곡면 — 출처태그 메시 → �
 
 OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 채점자(§7)뿐이다. 사다리의 각 단은 자기 커버리지 안에서 완전해야 하며, 밖은 조용히 틀리는 대신 에러로 거절한다.
 
-**★ 거절의 *이유*를 공개해야 한다 (2026-07-26 조사로 발견, 미구현).** 지금 `reject(tag)`는 태그를 `#[cfg(test)]` thread-local에만 기록하고 필드 없는 `BoolError::Unsupported`를 반환하며 `mod tag`는 `pub(crate)`다 — 즉 이름 붙인 거절 사유 수십 개가 크레이트 밖에서 **하나의 불투명한 "Unsupported"로 붕괴**한다. "조용히 틀리지 말고 이름 붙여 거절"이 DNA인데 그 이름이 밖으로 나가지 않으니, 소비자는 "왜 안 되는지"를 사용자에게 말할 수 없고 디버그 뷰어의 핵심 정보도 잃는다. → `BoolError::Unsupported { reason }`(문자열보다 `#[non_exhaustive]` enum이 API 안정성에 낫다) + 태그 이름 공개. 항목 크기는 작고 소비자 체감은 가장 크다.
+**거절의 *이유*는 값에 실려 나간다 (2026-07-26 구현).** `BoolError::Unsupported { reason: RejectReason }` — 이름 붙인 거절이 크레이트 밖에서 하나의 불투명한 에러로 붕괴하던 것을 값으로 옮겼다(그전엔 태그가 `#[cfg(test)]` thread-local에만 기록됐고, 여러 지점이 거절을 울린 뒤 삼키므로 애초에 건전하지도 않았다). **소비자는 `RejectReason::class()`로 분기한다** — `NotSupportedYet`(다음 마일스톤이면 됨) / `Impossible`(어떤 마일스톤에서도 유효 솔리드가 없음) / `SuspectedDefect`(엔진 불변식이 깨짐, 리포트 대상). 변형 이름은 엔진 어휘라 로그·리포트용 안정 식별자로만 쓴다. 사람이 읽는 문장·현지화는 앱 몫이다.
+
+성장은 `RejectReason`에서만 일어나므로 그것만 `#[non_exhaustive]`이고 `BoolError`·`RejectClass`는 exhaustive다(소비자가 완전히 처리할 수 있게). 트레이스가 불완전한 경우는 `TraceDeclined { kind, face }`가 **무엇을 못 했는지와 어느 피연산자 면에서인지**를 함께 싣는다 — 예전엔 서로 다른 10가지 사유가 전부 `COPLANAR_PAIR` 하나로 나가 커널이 틀린 말을 했다. 어떤 사유가 실제로 발화하는지는 dev-log의 사유 대장(census) 참조.
 
 ### 6.1 M5 불리언 — 두 메커니즘을 regime로 라우팅 (합성 아님)
 

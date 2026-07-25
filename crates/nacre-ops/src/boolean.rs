@@ -545,8 +545,14 @@ pub(crate) fn assemble_fuse_cut(
                 }
             }
         }
+        // A use count above two is a *pinch*: the two bodies meet exactly along that edge, and no
+        // 2-manifold solid contains it (the edge twin of `NonManifoldVertex`). A count of one is a
+        // *dangling* edge — the assembly dropped a face, which is ours to fix, not the input's.
+        if uses.values().any(|&n| n > 2) {
+            return Err(reject(RejectReason::NonManifoldResultEdge));
+        }
         if uses.values().any(|&n| n != 2) {
-            return Err(reject(RejectReason::NonManifoldEdge));
+            return Err(reject(RejectReason::OpenResultShell));
         }
     }
     // Partition the faces into connected components (by shared node). One component is the

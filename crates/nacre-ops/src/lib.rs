@@ -109,11 +109,26 @@ pub enum RejectClass {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RejectReason {
-    /// An outer-shell edge used by other than two face loops. A backstop with no
-    /// firing test: `validate` calls this `NonOpposedEdge` and every shell the
-    /// operations build is manifold — but `boolean` never runs `validate` on its
-    /// inputs, so a direct caller could still hand one in.
+    /// An **operand** has an edge used by other than two face loops, so it is not a valid
+    /// 2-manifold. `validate` calls this `NonOpposedEdge` and every shell the operations build
+    /// is manifold — but `boolean` never runs `validate` on its inputs, so a direct caller could
+    /// still hand one in. Raised only where an operand is read (its plane table and its seam
+    /// neighbours); the *result*-side closure check is [`Self::ResultNotClosed`], which is a
+    /// different situation and used to share this name. Unfired across the suite (2026-07-26).
     NonManifoldEdge,
+    /// The assembled boundary uses an edge **more than twice**: the two bodies meet exactly along
+    /// that edge, so the result would pinch there and no 2-manifold solid contains it. The edge
+    /// twin of [`Self::NonManifoldVertex`], and `Impossible` for the same reason — a design that
+    /// leans on an exact edge-to-edge touch has no valid answer at any milestone.
+    ///
+    /// **The most common reject in the suite** (2026-07-26 census): the grid proptest lands on it
+    /// whenever two sampled boxes share exactly an edge, e.g. `[2,4]×[2,4]×[1,4]` fused with
+    /// `[2,4]×[4,8]×[4,6]`, which touch only along the line `y = 4, z = 4`.
+    NonManifoldResultEdge,
+    /// The assembled boundary leaves an edge used **once** — a dangling edge, so the face set is
+    /// not closed. Unlike [`Self::NonManifoldResultEdge`] this says nothing bad about the input:
+    /// the assembly dropped a face, which is ours to fix. Unfired in the suite (2026-07-26).
+    OpenResultShell,
     /// A closed seam loop's edges disagree about which side its material lies on, or
     /// two of its nodes coincide, or two neighbours share no plane pair.
     ///
@@ -305,6 +320,8 @@ impl RejectReason {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::NonManifoldEdge => "non_manifold_edge",
+            Self::NonManifoldResultEdge => "non_manifold_result_edge",
+            Self::OpenResultShell => "open_result_shell",
             Self::LoopOrientMismatch => "loop_orient_mismatch",
             Self::TraceDeclined { .. } => "trace_declined",
             Self::CavityNoOwner => "cavity_no_owner",
@@ -339,6 +356,7 @@ impl RejectReason {
             // The operands are not valid 2-manifolds, or the combination genuinely pinches.
             Self::NonManifoldEdge
             | Self::NonManifoldVertex
+            | Self::NonManifoldResultEdge
             | Self::DegenerateFace
             | Self::DegenerateNormal => RejectClass::Impossible,
             // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate
@@ -353,7 +371,8 @@ impl RejectReason {
             | Self::HoleDepth
             | Self::CoplanarMerge => RejectClass::NotSupportedYet,
             // An invariant broke: malformed assembly, or a backstop that should be unreachable.
-            Self::EulerParity
+            Self::OpenResultShell
+            | Self::EulerParity
             | Self::NegativeGenus
             | Self::CavityNoOwner
             | Self::NoOutwardShell

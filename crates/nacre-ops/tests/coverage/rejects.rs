@@ -54,6 +54,33 @@ fn a_corner_touching_fuse_tells_the_caller_why() {
     );
 }
 
+/// Two cubes meeting along one whole edge — the edge twin of the corner touch above, and the
+/// reject the grid proptest lands on most often. Four faces would meet along that edge, which no
+/// 2-manifold boundary allows, so it is `Impossible` rather than a coverage limit.
+#[test]
+fn an_edge_touching_fuse_is_impossible_not_unsupported() {
+    let mut m = Model::new();
+    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+    let b = m.add_cuboid(
+        Point3::from_array([1.0, 1.0, 0.0]),
+        Point3::from_array([2.0, 2.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+
+    let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
+
+    assert_eq!(
+        err,
+        BoolError::Unsupported {
+            reason: RejectReason::NonManifoldResultEdge
+        }
+    );
+    assert_eq!(
+        RejectReason::NonManifoldResultEdge.class(),
+        RejectClass::Impossible
+    );
+}
+
 /// A handle that no longer names a live solid is a *caller* mistake, not a kernel limit, so it
 /// stays its own variant rather than becoming a reason.
 #[test]
