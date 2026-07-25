@@ -7,7 +7,7 @@
 
 use crate::combinatorics;
 use crate::planes::{PlaneGeom, uf_find};
-use crate::{BoolError, BoolKind, he_start, reject, tag, unordered};
+use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
 use nacre_cip::dir_orient3d_judge;
 use nacre_geom::{Curve, Line, Surface};
 use nacre_math::Point3;
@@ -64,7 +64,7 @@ pub fn boolean(
 ///
 /// A boolean output is freshly built, so its cells never alias another live solid's — the scoped
 /// maps are exact.
-fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<&'static str> {
+fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<RejectReason> {
     for &sh in solids {
         let solid = model.solids.get(sh);
         let mut shells: HashSet<Handle<Shell>> = HashSet::new();
@@ -97,7 +97,7 @@ fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<&'st
             }
         }
         if !nacre_topo::nonmanifold_vertices(&vertex_edges, &edge_uses).is_empty() {
-            return Some(tag::NON_MANIFOLD_VERTEX);
+            return Some(RejectReason::NonManifoldVertex);
         }
         let (v, e, f) = (
             vertex_edges.len() as i64,
@@ -106,10 +106,10 @@ fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<&'st
         );
         let chi = v - e + f - inner_loops;
         if chi % 2 != 0 {
-            return Some(tag::EULER_PARITY);
+            return Some(RejectReason::EulerParity);
         }
         if shells.len() as i64 - chi / 2 < 0 {
-            return Some(tag::NEGATIVE_GENUS);
+            return Some(RejectReason::NegativeGenus);
         }
     }
     None
@@ -282,13 +282,13 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
     let other_plane = |a: Node, b: Node, own: usize| -> Result<usize, BoolError> {
         let ps = edge_faces
             .get(&ekey(a, b))
-            .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+            .ok_or_else(|| reject(RejectReason::MissingSeam))?;
         let mut others = ps.iter().copied().filter(|&x| x != own);
         let o = others
             .next()
-            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+            .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
         if others.any(|x| x != o) {
-            return Err(reject(tag::NON_MANIFOLD_EDGE)); // edge shared by >2 distinct planes
+            return Err(reject(RejectReason::NonManifoldEdge)); // edge shared by >2 distinct planes
         }
         Ok(o)
     };
@@ -307,7 +307,7 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
             let prev = other_plane(ring[(t + k - 1) % k], node, lf.plane_idx)?;
             let next = other_plane(node, ring[(t + 1) % k], lf.plane_idx)?;
             if prev == next {
-                return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // a straight angle
+                return Err(reject(RejectReason::LoopOrientMismatch)); // a straight angle
             }
             let mut tri = [lf.plane_idx, prev, next];
             tri.sort_unstable();
@@ -332,7 +332,7 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
         match ord {
             Some(c) if c < 0 => lo = node,
             Some(_) => {}
-            None => return Err(reject(tag::LOOP_ORIENT_MISMATCH)), // two distinct nodes coincide
+            None => return Err(reject(RejectReason::LoopOrientMismatch)), // two distinct nodes coincide
         }
     }
 
@@ -420,7 +420,7 @@ pub(crate) fn assemble_fuse_cut(
                 let sv = seam
                     .iter()
                     .find(|s| s.triple == triple)
-                    .ok_or_else(|| reject(tag::MISSING_SEAM))?;
+                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let def = VertexDef::ThreePlane([
                     planes[triple[0]].surf,
                     planes[triple[1]].surf,
@@ -463,7 +463,8 @@ pub(crate) fn assemble_fuse_cut(
         }
         let pa = model.vertices.get(va).point;
         let pb = model.vertices.get(vb).point;
-        let line = Line::through_points(pa, pb).ok_or_else(|| reject(tag::ZERO_LENGTH_EDGE))?;
+        let line =
+            Line::through_points(pa, pb).ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
         let curve = model.curves.push(Curve::Line(line));
         let e = model.edges.push(Edge {
             curve,
@@ -545,7 +546,7 @@ pub(crate) fn assemble_fuse_cut(
             }
         }
         if uses.values().any(|&n| n != 2) {
-            return Err(reject(tag::NON_MANIFOLD_EDGE));
+            return Err(reject(RejectReason::NonManifoldEdge));
         }
     }
     // Partition the faces into connected components (by shared node). One component is the
@@ -589,7 +590,7 @@ pub(crate) fn assemble_fuse_cut(
         })
         .collect();
     match positives.len() {
-        0 => Err(reject(tag::NO_OUTWARD_SHELL)),
+        0 => Err(reject(RejectReason::NoOutwardShell)),
         1 => {
             let outer_c = positives[0];
             // A cavity shell's faces already point into the void (the material is outside it, so
@@ -642,9 +643,9 @@ pub(crate) fn assemble_fuse_cut(
                     }
                     Some(cs)
                 });
-                let containers = containers.ok_or_else(|| reject(tag::NO_CLEAR_RAY))?;
+                let containers = containers.ok_or_else(|| reject(RejectReason::NoClearRay))?;
                 let owner = match containers.as_slice() {
-                    [] => return Err(reject(tag::CAVITY_NO_OWNER)),
+                    [] => return Err(reject(RejectReason::CavityNoOwner)),
                     [only] => *only,
                     _ => *containers
                         .iter()
@@ -665,7 +666,7 @@ pub(crate) fn assemble_fuse_cut(
                                         .unwrap_or(false)
                             })
                         })
-                        .ok_or_else(|| reject(tag::CAVITY_NO_OWNER))?,
+                        .ok_or_else(|| reject(RejectReason::CavityNoOwner))?,
                 };
                 cavities_of.get_mut(&owner).unwrap().push(shells[d]);
             }
@@ -830,7 +831,7 @@ fn merge_component(
         }
     }
     if dirs.values().any(|&c| c > 1) {
-        return Err(reject(tag::COPLANAR_MERGE));
+        return Err(reject(RejectReason::CoplanarMerge));
     }
     // 2. An edge carried in both directions is interior — it separates nothing. Anything carried
     //    three or more times (either direction) is non-manifold in the plane.
@@ -839,7 +840,7 @@ fn merge_component(
         *undirected.entry(norm_edge(a, b)).or_insert(0) += 1;
     }
     if undirected.values().any(|&c| c > 2) {
-        return Err(reject(tag::COPLANAR_MERGE));
+        return Err(reject(RejectReason::CoplanarMerge));
     }
     // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a point
     //    and the cycles are not determined.
@@ -849,7 +850,7 @@ fn merge_component(
             continue; // interior
         }
         if next.insert(a, b).is_some() {
-            return Err(reject(tag::COPLANAR_MERGE));
+            return Err(reject(RejectReason::CoplanarMerge));
         }
     }
     let mut starts: Vec<Node> = next.keys().copied().collect();
@@ -865,18 +866,20 @@ fn merge_component(
         let mut cur = next[&start];
         while cur != start {
             if !seen.insert(cur) {
-                return Err(reject(tag::COPLANAR_MERGE)); // walk re-entered another cycle
+                return Err(reject(RejectReason::CoplanarMerge)); // walk re-entered another cycle
             }
             cyc.push(cur);
-            cur = *next.get(&cur).ok_or_else(|| reject(tag::COPLANAR_MERGE))?;
+            cur = *next
+                .get(&cur)
+                .ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
         }
         if cyc.len() < 3 {
-            return Err(reject(tag::COPLANAR_MERGE));
+            return Err(reject(RejectReason::CoplanarMerge));
         }
         cycles.push(cyc);
     }
     if cycles.is_empty() {
-        return Err(reject(tag::COPLANAR_MERGE)); // everything erased: not a region
+        return Err(reject(RejectReason::CoplanarMerge)); // everything erased: not a region
     }
     // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in. (This
     // used to canon the index first — `plane_idx` names a plane now, so there is nothing to fold.)
@@ -887,7 +890,7 @@ fn merge_component(
         match combinatorics::loop_winding(planes, wc, &seam_ring(&cyc))? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
-            _ => return Err(reject(tag::COPLANAR_MERGE)),
+            _ => return Err(reject(RejectReason::CoplanarMerge)),
         }
     }
     // 5. Each hole belongs to the outer ring that contains it — the same question `nest_cells` asks
@@ -899,12 +902,12 @@ fn merge_component(
         for (i, (outer, _)) in faces.iter().enumerate() {
             if combinatorics::point_in_ring(planes, wc, probe, &seam_ring(outer))? {
                 if owner.is_some() {
-                    return Err(reject(tag::COPLANAR_MERGE)); // nested deeper than this brick names
+                    return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
                 }
                 owner = Some(i);
             }
         }
-        faces[owner.ok_or_else(|| reject(tag::COPLANAR_MERGE))?]
+        faces[owner.ok_or_else(|| reject(RejectReason::CoplanarMerge))?]
             .1
             .push(hole);
     }

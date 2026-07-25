@@ -30,3 +30,6 @@ mod coplanar;
 
 #[path = "coverage/invariants.rs"]
 mod invariants;
+
+#[path = "coverage/rejects.rs"]
+mod rejects;

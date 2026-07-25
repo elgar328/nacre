@@ -2,7 +2,7 @@
 //! their construction. Everything the boolean engine and its combinatorial queries build on.
 
 use crate::combinatorics;
-use crate::{BoolError, he_start, reject, tag, tolerant};
+use crate::{BoolError, RejectReason, he_start, reject, tolerant};
 use nacre_cip::Pt3;
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
@@ -63,14 +63,14 @@ pub(crate) fn collect_planes(
             let face = model.faces.get(fh);
             let plane = match model.surfaces.get(face.surface) {
                 Surface::Plane(p) => *p,
-                Surface::Cylinder(_) => return Err(reject(tag::CYLINDER_FACE)),
+                Surface::Cylinder(_) => return Err(reject(RejectReason::CylinderFace)),
             };
             let (tri, tri_verts) =
-                outer_tri(model, face).ok_or_else(|| reject(tag::DEGENERATE_FACE))?;
+                outer_tri(model, face).ok_or_else(|| reject(RejectReason::DegenerateFace))?;
             let n_out = (tri[1] - tri[0])
                 .cross(tri[2] - tri[0])
                 .normalize()
-                .ok_or_else(|| reject(tag::DEGENERATE_NORMAL))?;
+                .ok_or_else(|| reject(RejectReason::DegenerateNormal))?;
             let tri_pt3 = if rotated {
                 // Own vertices first: a surviving operand corner assembles directly, so a plain
                 // rotated operand keeps `tri_pt3 == tri`. A seam-dominated face (its `tri` verts
@@ -87,7 +87,7 @@ pub(crate) fn collect_planes(
                     Some(t) => t,
                     None => {
                         let mut w = crate::rotated_vertex::face_plane_witness(model, face)
-                            .map_err(|_| reject(tag::ROTATED_UNDERDETERMINED))?;
+                            .map_err(|_| reject(RejectReason::RotatedUnderdetermined))?;
                         // `tri_pt3` is an *oriented* plane witness: the own-vertex path inherits
                         // outward order from `outer_tri`, so a provenance witness must be wound to
                         // agree with this face's outward normal `n_out` too, or the implicit-point
@@ -362,7 +362,7 @@ pub(crate) fn edge_incidence(
                 [x, y] => Ok((e, b, [x, y])),
                 // `validate` would call this `NonOpposedEdge`, but `boolean` never runs
                 // `validate` on its inputs, so the guard stays. No firing test.
-                _ => Err(reject(tag::NON_MANIFOLD_EDGE)),
+                _ => Err(reject(RejectReason::NonManifoldEdge)),
             }
         })
         .collect()

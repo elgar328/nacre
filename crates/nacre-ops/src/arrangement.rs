@@ -708,8 +708,12 @@ fn split_at_crossings(
         let mut pts: Vec<usize> = Vec::new();
         for &i in &by_wall[&w] {
             let s = &segs[i];
-            pts.push(endpoint_third(s.end[0], wc, w).ok_or_else(|| reject(tag::THREE_PLANES))?);
-            pts.push(endpoint_third(s.end[1], wc, w).ok_or_else(|| reject(tag::THREE_PLANES))?);
+            pts.push(
+                endpoint_third(s.end[0], wc, w).ok_or_else(|| reject(RejectReason::ThreePlanes))?,
+            );
+            pts.push(
+                endpoint_third(s.end[1], wc, w).ok_or_else(|| reject(RejectReason::ThreePlanes))?,
+            );
         }
         for o in segs {
             if o.wall == w {
@@ -735,7 +739,7 @@ fn split_at_crossings(
         // Two DISTINCT classes at one geometric point ⇒ a four-plane concurrency `{wc, w, ·, ·}`.
         for pair in pts.windows(2) {
             if combinatorics::order_along(planes, wc, w, pair[0], pair[1]) == 0 {
-                return Err(reject(tag::FOURPLANE));
+                return Err(reject(RejectReason::FourPlane));
             }
         }
         // `wc`, `w`, and each class are canon; the endpoint triple is just sorted.
@@ -890,14 +894,14 @@ fn extract_cells(
         for &he in outs {
             let (rv, rf) = (
                 endpoint_third(origin(he), wc, wall(he))
-                    .ok_or_else(|| reject(tag::THREE_PLANES))?,
+                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?,
                 endpoint_third(target(he), wc, wall(he))
-                    .ok_or_else(|| reject(tag::THREE_PLANES))?,
+                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?,
             );
             // Direction sign away from v toward the far end (edge_sign convention).
             let s = combinatorics::order_along(planes, wc, wall(he), rf, rv);
             if s == 0 {
-                return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+                return Err(reject(RejectReason::LoopOrientMismatch));
             }
             edges.push((wall(he), s));
         }
@@ -962,7 +966,7 @@ fn extract_cells(
             return Ok((cells, face_of));
         }
     }
-    Err(reject(tag::LOOP_ORIENT_MISMATCH))
+    Err(reject(RejectReason::LoopOrientMismatch))
 }
 
 /// The nesting of an arrangement's cells: which winding `-1` contour is the unbounded root, and
@@ -1049,7 +1053,7 @@ fn nest_cells(
             match inside {
                 Some(true) => hosts.push(r),
                 Some(false) => {}
-                None => return Err(reject(tag::NO_CLEAR_RAY)),
+                None => return Err(reject(RejectReason::NoClearRay)),
             }
         }
         if hosts.is_empty() {
@@ -1062,7 +1066,7 @@ fn nest_cells(
         }
     }
     if roots.is_empty() {
-        return Err(reject(tag::HOLE_ROOTS)); // no unbounded contour: not a closed arrangement
+        return Err(reject(RejectReason::HoleRoots)); // no unbounded contour: not a closed arrangement
     }
     let group_of: Vec<usize> = (0..n).map(|i| find(&mut parent, i)).collect();
     let mut root_groups: Vec<usize> = roots.iter().map(|&r| group_of[r]).collect();
@@ -1111,12 +1115,12 @@ fn innermost_host(
     for &h in hosts {
         if hosts.iter().all(|&o| o == h || inside(h, o) == Some(true)) {
             if found.is_some() {
-                return Err(reject(tag::HOLE_DEPTH)); // two minima: not a chain
+                return Err(reject(RejectReason::HoleDepth)); // two minima: not a chain
             }
             found = Some(h);
         }
     }
-    found.ok_or_else(|| reject(tag::HOLE_DEPTH)) // no minimum: not a chain
+    found.ok_or_else(|| reject(RejectReason::HoleDepth)) // no minimum: not a chain
 }
 
 /// A per-solid, per-side material label of one cell: `[A_above, A_below, B_above, B_below]`.
@@ -1179,12 +1183,12 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
         if !grazes.is_empty() {
             // Graze wins: it is the real boundary. A same-solid true crossing must not coincide.
             if grazes.iter().any(|&b| b != grazes[0]) || transversals > 0 {
-                return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+                return Err(reject(RejectReason::LoopOrientMismatch));
             }
             mask[base + usize::from(!grazes[0])] ^= true;
         } else if !seated.is_empty() {
             if seated.iter().any(|&b| b != seated[0]) {
-                return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // disagreeing seated sides
+                return Err(reject(RejectReason::LoopOrientMismatch)); // disagreeing seated sides
             }
             // seated wins over a coincident transversal: flip above if body_above, else below.
             mask[base + usize::from(!seated[0])] ^= true;
@@ -1193,7 +1197,7 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
             mask[base] ^= true;
             mask[base + 1] ^= true;
         } else if transversals > 1 {
-            return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // >1 transversal, same solid
+            return Err(reject(RejectReason::LoopOrientMismatch)); // >1 transversal, same solid
         }
         // no contributions ⇒ solid absent from this edge ⇒ no flip.
     }
@@ -1247,13 +1251,13 @@ fn label_cells(
     let out: Vec<Label> = label
         .into_iter()
         .collect::<Option<_>>()
-        .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?; // a cell never reached
+        .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?; // a cell never reached
     // Verify every edge (tree and non-tree): the flip relation must hold everywhere.
     for (he, &c) in face_of {
         let nb = face_of[&(he ^ 1)];
         let mask = edge_mask(&segs[he / 2].merged)?;
         if std::array::from_fn::<bool, 4, _>(|i| out[c][i] ^ mask[i]) != out[nb] {
-            return Err(reject(tag::LOOP_ORIENT_MISMATCH)); // inconsistent propagation
+            return Err(reject(RejectReason::LoopOrientMismatch)); // inconsistent propagation
         }
     }
     Ok(out)
@@ -1350,7 +1354,7 @@ fn trace_result_faces(
             model, a, b, wc, planes, faces, surf_ix, inc_a, inc_b, plane_ix,
         );
         if !tr.declined.is_empty() {
-            return Err(reject(tag::COPLANAR_PAIR)); // incomplete trace ⇒ honest reject
+            return Err(reject(RejectReason::CoplanarPair)); // incomplete trace ⇒ honest reject
         }
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(planes, wc, &merged)?;
@@ -1390,8 +1394,8 @@ pub(crate) struct ClassAudit {
     pub grazes: Vec<bool>,
     pub transversals: usize,
     pub declined: Vec<(usize, &'static str)>,
-    /// The reject tag the per-class pipeline raised, if any (`None` = the class went through).
-    pub failed_at: Option<&'static str>,
+    /// The reason the per-class pipeline raised, if any (`None` = the class went through).
+    pub failed_at: Option<RejectReason>,
 }
 
 /// Audit every plane class of one boolean input pair. Runs the same per-class pipeline as
@@ -1443,7 +1447,7 @@ pub(crate) fn frame_audit(
         };
         // Run the rest of the per-class pipeline, recording where it stops.
         audit.failed_at = if !audit.declined.is_empty() {
-            Some(tag::COPLANAR_PAIR)
+            Some(RejectReason::CoplanarPair)
         } else {
             let run = || -> Result<(), BoolError> {
                 let merged = merge_coincident(&tr.segs);
@@ -1454,11 +1458,10 @@ pub(crate) fn frame_audit(
                 let _ = emit_faces(kind, &labels, &cells, &split, &geom, wc, &nesting.holes);
                 Ok(())
             };
-            crate::LAST_REJECT.with(|c| c.take());
-            run().err().map(|_| {
-                crate::LAST_REJECT
-                    .with(|c| c.take())
-                    .unwrap_or("untagged-reject")
+            run().err().and_then(|e| match e {
+                BoolError::Unsupported { reason } => Some(reason),
+                // No live-set check runs inside the pipeline, so this arm is unreachable.
+                BoolError::InputNotLive => None,
             })
         };
         out.push(audit);
@@ -1514,7 +1517,7 @@ pub(crate) fn boolean(
                     continue;
                 }
                 let point = three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
-                    .ok_or_else(|| reject(tag::THREE_PLANES))?;
+                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
                 seam.push(SeamVertex {
                     point,
                     triple: *t,
@@ -1541,7 +1544,7 @@ pub(crate) fn boolean(
     for (i, u) in seam.iter().enumerate() {
         for v in &seam[i + 1..] {
             if u.point == v.point {
-                return Err(reject(tag::SEAM_ALIAS));
+                return Err(reject(RejectReason::SeamAlias));
             }
         }
     }

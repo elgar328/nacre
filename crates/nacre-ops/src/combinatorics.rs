@@ -28,7 +28,7 @@
 
 use crate::planes::{PlaneGeom, edge_incidence};
 use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
-use crate::{BoolError, reject, tag};
+use crate::{BoolError, RejectReason, reject};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
 use std::collections::HashMap;
@@ -82,12 +82,12 @@ pub(crate) fn ring_edge(
     let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
     let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
     if shared.len() != 2 || !shared.contains(&p) {
-        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        return Err(reject(RejectReason::LoopOrientMismatch));
     }
     let q = shared[usize::from(shared[0] == p)];
     let third = |t: [usize; 3]| t.iter().copied().find(|&x| x != p && x != q);
     let (Some(ri), Some(rj)) = (third(a), third(b)) else {
-        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        return Err(reject(RejectReason::LoopOrientMismatch));
     };
     Ok((q, ri, rj))
 }
@@ -105,7 +105,7 @@ fn edge_sign(
     match order_along(planes, p, q, ri, rj) {
         -1 => Ok(1),
         1 => Ok(-1),
-        _ => Err(reject(tag::LOOP_ORIENT_MISMATCH)), // two nodes coincide
+        _ => Err(reject(RejectReason::LoopOrientMismatch)), // two nodes coincide
     }
 }
 
@@ -139,7 +139,7 @@ pub(crate) fn turn_at(
     let sb = edge_sign(planes, p, ring, i)?;
     let det = t_plane_pair_dir_sign(planes, p, a, b);
     if det == 0 {
-        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        return Err(reject(RejectReason::LoopOrientMismatch));
     }
     Ok(sa * sb * det * planes[p].frame_sign)
 }
@@ -214,7 +214,7 @@ fn loop_triples(
     let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
         inc.get(&he.edge)
             .copied()
-            .ok_or_else(|| reject(tag::MISSING_SEAM))
+            .ok_or_else(|| reject(RejectReason::MissingSeam))
     };
     let other = |pair: [usize; 2]| if pair[0] == p { pair[1] } else { pair[0] };
     let n = hes.len();
@@ -240,7 +240,7 @@ fn loop_triples(
             .filter(|v| out_bounds.contains(v))
             .collect();
         let [vh] = shared[..] else {
-            return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+            return Err(reject(RejectReason::LoopOrientMismatch));
         };
         let mut classes: Vec<usize> = vertex_face_indices(vh, inc)
             .into_iter()
@@ -261,9 +261,9 @@ fn loop_triples(
             // `ImprintSketch` was retired, so it cannot reach here. See the 2026-07-22 dev-log
             // cells if one ever does: the answer is that a whole-seam ring is not a boundary.
             return Err(reject(if classes.len() > 3 {
-                tag::FOURPLANE
+                RejectReason::FourPlane
             } else {
-                tag::LOOP_ORIENT_MISMATCH
+                RejectReason::LoopOrientMismatch
             }));
         }
         // `plane_ix[p]`, not `p`. An earlier revision kept `p` raw because consumers still matched the
@@ -279,7 +279,7 @@ fn loop_triples(
             }
         }
         if t_plane_pair_dir_sign(planes, t[0], t[1], t[2]) == 0 {
-            return Err(reject(tag::THREE_PLANES)); // three planes through one line, not one point
+            return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
         }
         t.sort_unstable();
         out.push(t);
@@ -334,7 +334,7 @@ pub(crate) fn point_in_ring(
     every_ray(planes, p, v, ring)?
         .first()
         .copied()
-        .ok_or_else(|| reject(tag::NO_CLEAR_RAY))
+        .ok_or_else(|| reject(RejectReason::NoClearRay))
 }
 
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
@@ -351,7 +351,7 @@ pub(crate) fn every_ray(
     let mut v = [v[0], v[1], v[2]];
     v.sort_unstable();
     if ring.len() < 3 {
-        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        return Err(reject(RejectReason::LoopOrientMismatch));
     }
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
@@ -362,7 +362,7 @@ pub(crate) fn every_ray(
         let qb = *v
             .iter()
             .find(|&&x| x != p && x != qa)
-            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+            .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
         for dir in [1i8, -1] {
             let mut crossings = 0usize;
             for i in 0..ring.len() {
@@ -381,7 +381,7 @@ pub(crate) fn every_ray(
                 }
                 // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
                 match order_along(planes, p, qa, r, qb) {
-                    0 => return Err(reject(tag::POINT_ON_RING)), // `X == v`, inside an edge
+                    0 => return Err(reject(RejectReason::PointOnRing)), // `X == v`, inside an edge
                     o if o == dir => crossings += 1,
                     _ => {}
                 }
@@ -420,7 +420,7 @@ fn point_on_ring(
 ) -> Result<bool, BoolError> {
     v.sort_unstable();
     if ring.len() < 3 {
-        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        return Err(reject(RejectReason::LoopOrientMismatch));
     }
     for i in 0..ring.len() {
         let (r, si, sj) = ring_edge(p, ring, i)?;
@@ -431,7 +431,7 @@ fn point_on_ring(
         let s = *v
             .iter()
             .find(|&&x| x != p && t_plane_pair_dir_sign(planes, p, r, x) != 0)
-            .ok_or_else(|| reject(tag::LOOP_ORIENT_MISMATCH))?;
+            .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
         let (a, b) = (
             order_along(planes, p, r, s, si),
             order_along(planes, p, r, s, sj),
@@ -529,7 +529,7 @@ pub(crate) fn point_in_component(
             }
         }
     }
-    Err(reject(tag::NO_CLEAR_RAY))
+    Err(reject(RejectReason::NoClearRay))
 }
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
@@ -559,7 +559,7 @@ pub(crate) fn loop_winding(
     ring: &[[usize; 3]],
 ) -> Result<i8, BoolError> {
     if ring.len() < 3 {
-        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        return Err(reject(RejectReason::LoopOrientMismatch));
     }
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
     // the running minimum just means "not strictly smaller", so keep it; do not reject.
@@ -579,7 +579,7 @@ pub(crate) fn loop_winding(
         i != lo && (0..3).all(|axis| t_cmp_coord(planes, ring[i], ring[lo], axis) == 0)
     });
     if pinched_extreme {
-        return Err(reject(tag::LOOP_ORIENT_MISMATCH));
+        return Err(reject(RejectReason::LoopOrientMismatch));
     }
     turn_at(planes, p, ring, lo)
 }

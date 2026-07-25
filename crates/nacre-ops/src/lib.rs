@@ -62,27 +62,58 @@ impl SketchPlane {
 /// Why a boolean could not be computed. The engine rejects out-of-coverage
 /// input honestly rather than returning a plausibly-wrong solid (overview
 /// 불리언 전략).
+/// Exhaustive on purpose: new failure modes become [`RejectReason`] variants, not new variants
+/// here, so a consumer can handle this enum completely and still not be broken by growth.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoolError {
-    /// Outside the current coverage: a non-`Common` kind, a non-planar face, a
-    /// non-convex input, coplanar faces (across or within an input), a 4-plane
-    /// concurrency, a tangential contact, or any other general-position
-    /// violation.
-    Unsupported,
+    /// The engine declined to answer, and [`RejectReason`] names *which* guard spoke.
+    /// The reason travels in the value so a consumer can say why, and so the site that
+    /// returned is the site that is reported (guards that are raised and then swallowed
+    /// by an alternative path cannot be mistaken for the surfaced one).
+    Unsupported { reason: RejectReason },
     /// An input solid handle is not in `model.live_solids`.
     InputNotLive,
 }
 
-/// Names of the `Unsupported` reject sites, shared by the guard that raises one
-/// and the test that asserts it — a renamed tag then cannot silently drift out
-/// of a test's expectation. Not `#[cfg(test)]`: the guards name these in release
-/// builds too. They are `const`, so they inline away where the tag is unused.
-pub(crate) mod tag {
+/// What kind of answer a rejection is — **the API a consumer should branch on**.
+///
+/// [`RejectReason`]'s variant names are engine vocabulary (plane triples, seam runs, ring
+/// naming); they are stable identifiers for logs and bug reports, not something an
+/// application author should have to understand. This classification is knowledge only the
+/// kernel has, so it is exposed rather than left for every consumer to guess at.
+///
+/// Exhaustive on purpose — a consumer switching on it should be forced to decide about every
+/// class, and the taxonomy is meant to stay this small (the reasons grow, not the classes).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RejectClass {
+    /// Inside the kernel's remit but outside what is built yet — the same input may succeed
+    /// at a later milestone. "Not supported yet."
+    NotSupportedYet,
+    /// No valid solid exists for this input, at any milestone: the operands are not valid
+    /// 2-manifolds, or the requested combination pinches. The design has to change.
+    Impossible,
+    /// An engine invariant broke: the arrangement built something malformed, or a backstop
+    /// that should be unreachable spoke. Reported rather than returned (DNA: never silently
+    /// wrong), and worth a bug report. Say "could not produce a valid result", not "your fault".
+    ///
+    /// The classification of variants that have never been observed to fire is provisional —
+    /// tighten it once the reason census (dev-log) says which are reachable.
+    SuspectedDefect,
+}
+
+/// Which guard raised an [`BoolError::Unsupported`].
+///
+/// Named so a guard and the test that asserts it share one identifier — a renamed reason then
+/// cannot silently drift out of a test's expectation. `#[non_exhaustive]`: reasons are added
+/// and refined as coverage grows, so match with a wildcard arm and branch on [`Self::class`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RejectReason {
     /// An outer-shell edge used by other than two face loops. A backstop with no
     /// firing test: `validate` calls this `NonOpposedEdge` and every shell the
     /// operations build is manifold — but `boolean` never runs `validate` on its
     /// inputs, so a direct caller could still hand one in.
-    pub const NON_MANIFOLD_EDGE: &str = "non_manifold_edge";
+    NonManifoldEdge,
     /// A closed seam loop's edges disagree about which side its material lies on, or
     /// two of its nodes coincide, or two neighbours share no plane pair.
     ///
@@ -96,10 +127,11 @@ pub(crate) mod tag {
     /// A globally flipped loop would need a golden on the loop producer itself.
     ///
     /// Unreachable today: "material on the left" is a global property, so a consistent
-    /// loop makes every edge agree. Not dead code — relax `FOURPLANE` or cell 3c's
+    /// loop makes every edge agree. Not dead code — relax `FourPlane` or cell 3c's
     /// node-identity argument and this is what speaks first.
-    pub const LOOP_ORIENT_MISMATCH: &str = "loop_orient_mismatch";
-    pub const COPLANAR_PAIR: &str = "coplanar_pair";
+    LoopOrientMismatch,
+    /// A plane class's trace came back incomplete, so the arrangement cannot conclude.
+    CoplanarPair,
     /// The result severs into two or more material solids *and* at least one enclosed void
     /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
     /// test we do not have yet, so this is honestly rejected and deferred to a follow-on cell.
@@ -108,36 +140,38 @@ pub(crate) mod tag {
     /// A surviving cavity that no material component contains — geometrically impossible for a
     /// valid boolean result (a void lies inside exactly one piece). A defensive backstop; cavity
     /// ownership is otherwise decided exactly by [`combinatorics::point_in_component`] containment.
-    pub const CAVITY_NO_OWNER: &str = "cavity_no_owner";
+    CavityNoOwner,
     /// No material-enclosing (outward) shell among the result components — every component is
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
-    /// with no firing test (cf. `FOURPLANE`).
-    pub const NO_OUTWARD_SHELL: &str = "no_outward_shell";
+    /// with no firing test (cf. `FourPlane`).
+    NoOutwardShell,
     /// A rotated-result face's supporting plane could not be witnessed exactly: neither three
     /// of the face's own vertices assemble (a survivor wall) nor a unique operand plane `π` is
     /// recoverable from its seam corners' provenance ([`crate::rotated_vertex::face_plane_witness`]).
     /// The deep rotated-chain floor (e.g. a seam-only face whose `π` is itself a rotated surface).
     /// Honest reject, never a wrong result.
-    pub const ROTATED_UNDERDETERMINED: &str = "rotated_underdetermined";
+    RotatedUnderdetermined,
     /// The assembled result has an **odd Euler characteristic** (`V − E + F − L_i`), which no
     /// closed 2-manifold can have (it must equal the even `2(S − G)`) — so the arrangement produced
     /// a malformed solid and the boolean rejects rather than return it (DNA: never silently wrong).
     /// This is the Euler-parity backstop for malformity that is *not* a pinch (see
-    /// `NON_MANIFOLD_VERTEX`); e.g. a dropped face. Rotation-independent. Checked post-assembly in
+    /// `NonManifoldVertex`); e.g. a dropped face. Rotation-independent. Checked post-assembly in
     /// `boolean`, per solid.
-    pub const EULER_PARITY: &str = "euler_parity";
+    EulerParity,
     /// The assembled result has a **non-manifold vertex** — a "pinch" where two or more face-fans
     /// meet at one point (a cutter's convex corner exactly on the target's concave corner; two
     /// solids touching only at a corner), even though every edge is manifold. No valid 2-manifold
     /// solid has one, so the boolean rejects with this clear reason rather than the incidental
-    /// `EULER_PARITY` (which also misses an *even* number of pinches). Rotation-independent; checked
+    /// `EulerParity` (which also misses an *even* number of pinches). Rotation-independent; checked
     /// per solid post-assembly via `nacre_topo::nonmanifold_vertices`.
-    pub const NON_MANIFOLD_VERTEX: &str = "non_manifold_vertex";
+    NonManifoldVertex,
     /// The assembled result has an even Euler characteristic but a **negative genus** (`S − χ/2 < 0`)
     /// — more handles than a solid can have, so it is not a valid closed 2-manifold. A count-based
     /// backstop below the pinch and parity checks; checked per solid post-assembly.
-    pub const NEGATIVE_GENUS: &str = "negative_genus";
-    pub const THREE_PLANES: &str = "three_planes";
+    NegativeGenus,
+    /// Three planes that should meet in a point do not (a parallel pair), so an arrangement
+    /// vertex has no name.
+    ThreePlanes,
     /// Two **different** arrangement vertices (distinct plane triples) materialized to the same
     /// coordinate. The triple is the truth and the coordinate only its cache (overview §5), so this
     /// says the exact substrate and the f64 cache disagree about how many vertices exist — always a
@@ -145,79 +179,147 @@ pub(crate) mod tag {
     /// both triples are still in hand; without it the disagreement surfaces much later as a
     /// zero-length edge. The known cause is a **split plane table** (one geometric plane carried by
     /// two classes); a genuine 4-plane concurrency would do the same.
-    pub const SEAM_ALIAS: &str = "seam_alias";
+    SeamAlias,
     /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
     /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is the
     /// backstop that keeps a degenerate one from aborting the kernel (`Line::through_points` used to
-    /// `expect`). `SEAM_ALIAS` catches the known cause earlier, so this has no firing test.
-    pub const ZERO_LENGTH_EDGE: &str = "zero_length_edge";
-    pub const FOURPLANE: &str = "fourplane";
-    pub const CYLINDER_FACE: &str = "cylinder_face";
-    pub const DEGENERATE_FACE: &str = "degenerate_face";
-    pub const DEGENERATE_NORMAL: &str = "degenerate_normal";
+    /// `expect`). `SeamAlias` catches the known cause earlier, so this has no firing test.
+    ZeroLengthEdge,
+    /// Four planes concurrent at one point: two distinct plane triples name the same arrangement
+    /// vertex, which the substrate cannot express.
+    FourPlane,
+    /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
+    /// quadrics).
+    CylinderFace,
+    /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
+    DegenerateFace,
+    /// An operand face's outer triangle has a zero-length normal, so it has no outward direction.
+    DegenerateNormal,
     /// Every candidate ray from a loop's nodes has a ring node on its line.
     ///
     /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
     /// that line makes the crossing parity ambiguous. Candidates are `2 · |loop|` lines and
     /// two directions, and half of them can be spoiled at once — `l_and_staple`'s loop and
     /// arc share both `y` planes, so only the `x` lines are clear there. Unfired today.
-    pub const NO_CLEAR_RAY: &str = "no_clear_ray";
+    NoClearRay,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
     /// exactly: the ray's line meets an edge at `X`, and `X == v` strictly inside that edge means
     /// `v` is on the ring. Unfired.
-    pub const POINT_ON_RING: &str = "point_on_ring";
-    /// The trace arrangement on one plane class nested a hole whose containment depth exceeds one,
-    /// or produced more than one unbounded contour (several disjoint bodies on the plane).
+    PointOnRing,
+    /// The trace arrangement on one plane class nested a hole whose containment depth exceeds one.
     /// `nest_cells` resolves any number of holes at depth one inside one outer loop; deeper nesting
-    /// and multiple bodies are honestly rejected until the general nesting cell lands. Two distinct
-    /// tags so a refactor cannot silently merge the conditions.
-    pub const HOLE_DEPTH: &str = "hole_depth";
-    pub const HOLE_ROOTS: &str = "hole_roots";
+    /// is honestly rejected until the general nesting cell lands. Distinct from [`Self::HoleRoots`]
+    /// so a refactor cannot silently merge the conditions.
+    HoleDepth,
+    /// A plane class's arrangement produced no unbounded contour, or more than one. A closed figure
+    /// always has an outside, so "none" is impossible; "several" means several disjoint bodies on
+    /// the plane, which the nesting resolver does not cover yet.
+    HoleRoots,
     /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
     /// convex path only.
-    ///
-    pub const MISSING_SEAM: &str = "missing_seam";
+    MissingSeam,
     /// A `Whole`-survival contact face whose footprint OVERLAPS the other's (∂P × ∂Q cross) rather
     /// than nesting, in the one such case still unbuilt. `Whole` has two entries: `Fuse`/same-normal,
     /// which the E1 union cell now builds, and `Cut`/opposite-normal, which is exact whenever the
     /// contact plane separates the two solids (nothing to remove). What is left is a `Cut` whose tool
     /// reaches back across that plane — a pin below its own contact face — where the cut owes a notch
     /// this path cannot yet cut. Honest reject rather than a whole cap that ignores the pin.
-    pub const COPLANAR_MERGE: &str = "coplanar_merge";
+    CoplanarMerge,
 }
 
-#[cfg(test)]
-thread_local! {
-    static LAST_REJECT: std::cell::Cell<Option<&'static str>> =
-        const { std::cell::Cell::new(None) };
+impl RejectReason {
+    /// The stable snake_case identifier — the same string the reject tags used, so logs and
+    /// issue reports do not change meaning across this refactor.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NonManifoldEdge => "non_manifold_edge",
+            Self::LoopOrientMismatch => "loop_orient_mismatch",
+            Self::CoplanarPair => "coplanar_pair",
+            Self::CavityNoOwner => "cavity_no_owner",
+            Self::NoOutwardShell => "no_outward_shell",
+            Self::RotatedUnderdetermined => "rotated_underdetermined",
+            Self::EulerParity => "euler_parity",
+            Self::NonManifoldVertex => "non_manifold_vertex",
+            Self::NegativeGenus => "negative_genus",
+            Self::ThreePlanes => "three_planes",
+            Self::SeamAlias => "seam_alias",
+            Self::ZeroLengthEdge => "zero_length_edge",
+            Self::FourPlane => "fourplane",
+            Self::CylinderFace => "cylinder_face",
+            Self::DegenerateFace => "degenerate_face",
+            Self::DegenerateNormal => "degenerate_normal",
+            Self::NoClearRay => "no_clear_ray",
+            Self::PointOnRing => "point_on_ring",
+            Self::HoleDepth => "hole_depth",
+            Self::HoleRoots => "hole_roots",
+            Self::MissingSeam => "missing_seam",
+            Self::CoplanarMerge => "coplanar_merge",
+        }
+    }
+
+    /// What kind of answer this is — see [`RejectClass`]. **Branch on this, not on the variant.**
+    ///
+    /// The split follows what each guard's own documentation says it detects: invalid operands
+    /// (no valid solid exists) are `Impossible`, coverage limits are `NotSupportedYet`, and
+    /// "the arrangement built something malformed" backstops are `SuspectedDefect`.
+    pub fn class(self) -> RejectClass {
+        match self {
+            // The operands are not valid 2-manifolds, or the combination genuinely pinches.
+            Self::NonManifoldEdge
+            | Self::NonManifoldVertex
+            | Self::DegenerateFace
+            | Self::DegenerateNormal => RejectClass::Impossible,
+            // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate
+            // arrangements the substrate cannot name yet.
+            Self::CoplanarPair
+            | Self::RotatedUnderdetermined
+            | Self::ThreePlanes
+            | Self::FourPlane
+            | Self::CylinderFace
+            | Self::NoClearRay
+            | Self::PointOnRing
+            | Self::HoleDepth
+            | Self::CoplanarMerge => RejectClass::NotSupportedYet,
+            // An invariant broke: malformed assembly, or a backstop that should be unreachable.
+            Self::EulerParity
+            | Self::NegativeGenus
+            | Self::CavityNoOwner
+            | Self::NoOutwardShell
+            | Self::SeamAlias
+            | Self::ZeroLengthEdge
+            | Self::LoopOrientMismatch
+            | Self::HoleRoots
+            | Self::MissingSeam => RejectClass::SuspectedDefect,
+        }
+    }
 }
 
-/// Build an `Unsupported`, recording *which* guard raised it. `Err(Unsupported)`
-/// alone cannot distinguish the guards, so a reject test whose fixture drifts
-/// onto a different guard would still pass — [`assert_rejects`] closes that hole.
-/// Every `Unsupported` site in this crate goes through here: two call sites
-/// discard a `collect_planes` error (`detect_coincident_interface`), so only
-/// exhaustive tagging makes "last tag written == the site that returned" hold.
+impl std::fmt::Display for RejectReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Build an `Unsupported` carrying *which* guard raised it.
+///
+/// Every `Unsupported` in this crate is built here. The reason rides in the returned value, so
+/// a guard that is raised and then swallowed by an alternative path (several sites try another
+/// route on `Err`) can never be mistaken for the one that actually surfaced.
 #[inline]
-#[cfg_attr(not(test), allow(unused_variables))]
-pub(crate) fn reject(tag: &'static str) -> BoolError {
-    #[cfg(test)]
-    LAST_REJECT.with(|c| c.set(Some(tag)));
-    BoolError::Unsupported
+pub(crate) fn reject(reason: RejectReason) -> BoolError {
+    BoolError::Unsupported { reason }
 }
 
-/// Assert that `f` rejects *through the intended guard*. Clears any stale tag
-/// first, so a prior call in the same test cannot be mistaken for this one.
+/// Assert that `f` rejects *through the intended guard* — a reject test whose fixture drifts
+/// onto a different guard then fails instead of silently passing.
 #[cfg(test)]
 fn assert_rejects<T: std::fmt::Debug + PartialEq>(
     f: impl FnOnce() -> Result<T, BoolError>,
-    expect: &'static str,
+    expect: RejectReason,
 ) {
-    LAST_REJECT.with(|c| c.take());
-    assert_eq!(f(), Err(BoolError::Unsupported));
-    assert_eq!(LAST_REJECT.with(|c| c.take()), Some(expect));
+    assert_eq!(f(), Err(BoolError::Unsupported { reason: expect }));
 }
 
 /// The start vertex of a half-edge (`bounds[0]` if forward, else `bounds[1]`).
@@ -572,7 +674,7 @@ pub mod tests {
             let live = m.live_solids.clone();
             assert_rejects(
                 || boolean(&mut m, BoolKind::Cut, r, c),
-                tag::NON_MANIFOLD_VERTEX,
+                RejectReason::NonManifoldVertex,
             );
             assert_eq!(m.live_solids, live, "reject must not mutate the live set");
         };
@@ -592,7 +694,7 @@ pub mod tests {
         let live = m.live_solids.clone();
         assert_rejects(
             || boolean(&mut m, BoolKind::Fuse, a, b),
-            tag::NON_MANIFOLD_VERTEX,
+            RejectReason::NonManifoldVertex,
         );
         assert_eq!(m.live_solids, live, "reject must not mutate the live set");
     }
@@ -3760,7 +3862,7 @@ pub mod tests {
         );
         assert_rejects(
             || boolean_one(&mut m, BoolKind::Common, a, cyl),
-            tag::CYLINDER_FACE,
+            RejectReason::CylinderFace,
         );
     }
 
