@@ -235,8 +235,9 @@ fn core_configs_succeed() {
             let mut m = Model::new();
             let a = grid_box(&mut m, alo, aext);
             let b = grid_box(&mut m, blo, bext);
-            run(&mut m, kind, a, b)
-                .unwrap_or_else(|| panic!("{kind:?} on a core config must succeed: {alo:?} {blo:?}"));
+            run(&mut m, kind, a, b).unwrap_or_else(|| {
+                panic!("{kind:?} on a core config must succeed: {alo:?} {blo:?}")
+            });
         }
     }
 }

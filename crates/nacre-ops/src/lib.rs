@@ -243,9 +243,9 @@ pub mod tests {
     use super::*;
     use crate::transform::transform;
     use crate::{boolean::*, ops::*, planes::*};
+    use nacre_cip::Pt3;
     use nacre_geom::intersect::{planes_coplanar, three_planes};
     use nacre_geom::{Plane, Surface};
-    use nacre_cip::Pt3;
     use nacre_topo::{Loop, Orientation, Origin, VertexDef};
     use proptest::prelude::*;
     use std::collections::HashMap;
@@ -459,7 +459,6 @@ pub mod tests {
         }
     }
 
-
     /// `pt3_base_collinear` is exact on the pre-rotation rational bases: three genuinely
     /// collinear points stay collinear under rotation (→ skipped), and a real sliver (one point
     /// off the line) is never falsely called collinear (→ its crossing is kept, no silent-wrong).
@@ -494,11 +493,6 @@ pub mod tests {
         (m, l, bx)
     }
 
-
-
-
-
-
     /// The L-prism with a box biting its convex corner `(2, 0)` — the first
     /// non-convex *overlap* (a real single-chord seam), M5-d2. The box spans
     /// `x∈[1.3,2.4]`, `y∈[-0.3,0.4]`, `z∈[0.2,1.4]`: it straddles the corner in x
@@ -518,10 +512,6 @@ pub mod tests {
         (m, l, bx)
     }
 
-
-
-
-
     /// The L with a box straddling its reflex corner (1,1): a *single* chord with one
     /// reflex bend. The box vertex `(1.6,1.6,·)` sits in the L's notch — inside the
     /// convex hull, outside the L — exactly where a convex half-space test would
@@ -534,8 +524,6 @@ pub mod tests {
         );
         (m, l, bx)
     }
-
-
 
     // --- Rotated booleans go live (overhaul 3d-i, `ROTATED_UNSUPPORTED` retired) ---
     // A boolean commutes with a rigid motion, so rotating both operands by the same
@@ -582,7 +570,10 @@ pub mod tests {
                 (r, c)
             };
             let live = m.live_solids.clone();
-            assert_rejects(|| boolean(&mut m, BoolKind::Cut, r, c), tag::NON_MANIFOLD_VERTEX);
+            assert_rejects(
+                || boolean(&mut m, BoolKind::Cut, r, c),
+                tag::NON_MANIFOLD_VERTEX,
+            );
             assert_eq!(m.live_solids, live, "reject must not mutate the live set");
         };
         run(false); // axis-aligned
@@ -599,7 +590,10 @@ pub mod tests {
         let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
         m.rebuild_adjacency();
         let live = m.live_solids.clone();
-        assert_rejects(|| boolean(&mut m, BoolKind::Fuse, a, b), tag::NON_MANIFOLD_VERTEX);
+        assert_rejects(
+            || boolean(&mut m, BoolKind::Fuse, a, b),
+            tag::NON_MANIFOLD_VERTEX,
+        );
         assert_eq!(m.live_solids, live, "reject must not mutate the live set");
     }
 
@@ -675,7 +669,10 @@ pub mod tests {
                 }
             }
         }
-        assert_eq!(disagree, 0, "{disagree} predicate disagreements (witness wrong)");
+        assert_eq!(
+            disagree, 0,
+            "{disagree} predicate disagreements (witness wrong)"
+        );
     }
 
     /// Rotating a boolean *result* and feeding it back into a boolean (was `ROTATED_UNSUPPORTED`):
@@ -733,17 +730,16 @@ pub mod tests {
             .iter()
             .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
             .sum();
-        assert_eq!(out.len(), ref_out.len(), "solid count invariant under rotation");
+        assert_eq!(
+            out.len(),
+            ref_out.len(),
+            "solid count invariant under rotation"
+        );
         assert!(
             (vol - ref_vol).abs() < 1e-6,
             "rotated reuse volume {vol} vs unrotated {ref_vol}"
         );
     }
-
-
-
-
-
 
     /// Result-reuse rotation stress: build R with a first boolean, then feed R into a second
     /// boolean with a fresh cutter C — once unrotated, once with R and C rotated by the same
@@ -774,8 +770,9 @@ pub mod tests {
         };
         // (first kind, second kind, |m| -> (a, b, c)). R = kind1(a, b); out = kind2(R, c).
         type Build = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>, Handle<Solid>)>;
-        let cuboid =
-            |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        let cuboid = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
+            m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
+        };
         let fixtures: Vec<(&str, BoolKind, BoolKind, Build)> = vec![
             (
                 "corner_then_slab",
@@ -875,8 +872,14 @@ pub mod tests {
             }
         }
         eprintln!("REUSE STRESS: success={success} honest_reject={reject} SILENT_WRONG={silent}");
-        assert_eq!(silent, 0, "a rotated result-reuse boolean was silently wrong");
-        assert!(success >= 1, "at least one rotated reuse must actually succeed");
+        assert_eq!(
+            silent, 0,
+            "a rotated result-reuse boolean was silently wrong"
+        );
+        assert!(
+            success >= 1,
+            "at least one rotated reuse must actually succeed"
+        );
     }
 
     /// Adversarial rotation stress (overhaul 3d-iii): many fixtures × kinds × rotations
@@ -1264,9 +1267,6 @@ pub mod tests {
         );
     }
 
-
-
-
     /// The L with a box biting its reflex corner and poking out the top. The box top
     /// (z=1.2) clears the L's z=1 **deliberately**: sunk inside the L's slab, the L's
     /// vertical edges at (2,1) and (1,1) would pierce the box's bottom *and* top face,
@@ -1280,8 +1280,6 @@ pub mod tests {
         );
         (m, l, bx)
     }
-
-
 
     /// The L-prism and an L-shaped bar lying in its notch, biting two convex corners of
     /// the L's top face. The bar spans `z ∈ [0.5, 1.5]`, so its body clears the cap.
@@ -1316,8 +1314,6 @@ pub mod tests {
         };
         (m, l, b)
     }
-
-
 
     /// The L-prism with an **L-shaped** stub standing wholly inside its top face,
     /// `z ∈ [0.5, 1.5]`. The seam on the cap is a closed loop with a reflex node — the
@@ -1434,7 +1430,6 @@ pub mod tests {
             1
         );
     }
-
 
     /// The L-prism and a П-shaped staple straddling the L's reflex corner. The profile
     /// lives in the **XZ** sketch plane and extrudes along `−y`, so the L's cap (`z = 1`)
@@ -1606,9 +1601,6 @@ pub mod tests {
         assert!(!combinatorics::point_in_ring(&planes, p, outer[0], &hole).unwrap());
     }
 
-
-
-
     /// The L with a stub rising out of its top face, footprint strictly inside that
     /// face. Unlike the rod of `drill_through_the_l`, the stub enters the L from within,
     /// so each of its vertical edges crosses exactly one face and its bottom ring stays
@@ -1621,9 +1613,6 @@ pub mod tests {
         );
         (m, l, stub)
     }
-
-
-
 
     /// **`Origin` no longer tells result faces apart.** The arrangement names every vertex
     /// it emits by the three planes meeting there, so an operand corner the cut never touched
@@ -1678,8 +1667,6 @@ pub mod tests {
         assert_eq!(seen.len(), 20, "the L's 12 corners + the dimple's 8");
     }
 
-
-
     /// The unit cube with a 0.4-square pocket, 0.5 deep, in its top face: the void
     /// is `[0.3,0.7]² × [0.5,1]` and the solid measures `1 − 0.16·0.5 = 0.92`. Its
     /// lid is the only face in the suite that carries an inner loop.
@@ -1692,14 +1679,6 @@ pub mod tests {
         };
         (m, solid)
     }
-
-
-
-
-
-
-
-
 
     /// A sever that also leaves a surviving cavity: a hollow box whose void sits to one side,
     /// cut by a slab that severs it without touching the void. The x<2 piece keeps the void as a
@@ -1724,7 +1703,11 @@ pub mod tests {
             Point3::from_array([2.2, 4.0, 4.0]),
         );
         let solids = boolean(&mut m, BoolKind::Cut, hollow, slab).unwrap();
-        assert_eq!(solids.len(), 2, "the slab severs the hollow box into two pieces");
+        assert_eq!(
+            solids.len(),
+            2,
+            "the slab severs the hollow box into two pieces"
+        );
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
         // Exactly one piece owns the void; volumes match the hand calculation.
@@ -1732,10 +1715,18 @@ pub mod tests {
             .iter()
             .filter(|&&s| !m.solids.get(s).cavities.is_empty())
             .collect();
-        assert_eq!(with_cav.len(), 1, "the void is assigned to exactly one piece");
+        assert_eq!(
+            with_cav.len(),
+            1,
+            "the void is assigned to exactly one piece"
+        );
         let vol = |s| nacre_props::mass_props(&m, s).unwrap().volume;
         let hollow_piece = *with_cav[0];
-        assert!((vol(hollow_piece) - 14.0).abs() < 1e-9, "hollow piece {}", vol(hollow_piece));
+        assert!(
+            (vol(hollow_piece) - 14.0).abs() < 1e-9,
+            "hollow piece {}",
+            vol(hollow_piece)
+        );
         let total: f64 = solids.iter().map(|&s| vol(s)).sum();
         assert!((total - 21.2).abs() < 1e-9, "total {total}");
     }
@@ -1762,8 +1753,14 @@ pub mod tests {
         assert!(nacre_validate::validate(&m).is_empty());
         // The void is opened, so neither piece keeps a cavity; material = 26 − (1.8 − 0.2) = 24.4.
         let total_cavities: usize = solids.iter().map(|&s| m.solids.get(s).cavities.len()).sum();
-        assert_eq!(total_cavities, 0, "the cut opened the void — no surviving cavity");
-        let total: f64 = solids.iter().map(|&s| nacre_props::mass_props(&m, s).unwrap().volume).sum();
+        assert_eq!(
+            total_cavities, 0,
+            "the cut opened the void — no surviving cavity"
+        );
+        let total: f64 = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .sum();
         assert!((total - 24.4).abs() < 1e-9, "total {total}");
     }
 
@@ -1790,18 +1787,17 @@ pub mod tests {
         // Each solid keeps exactly one void — B's void was assigned to B (innermost), not A.
         let vol = |s| nacre_props::mass_props(&m, s).unwrap().volume;
         for &s in &solids {
-            assert_eq!(m.solids.get(s).cavities.len(), 1, "each piece keeps its own void");
+            assert_eq!(
+                m.solids.get(s).cavities.len(),
+                1,
+                "each piece keeps its own void"
+            );
         }
         let mut vols: Vec<f64> = solids.iter().map(|&s| vol(s)).collect();
         vols.sort_by(|x, y| x.partial_cmp(y).unwrap());
         assert!((vols[0] - 7.0).abs() < 1e-9, "inner {}", vols[0]);
         assert!((vols[1] - 152.0).abs() < 1e-9, "outer {}", vols[1]);
     }
-
-
-
-
-
 
     #[test]
     fn replay_is_deterministic() {
@@ -1838,7 +1834,6 @@ pub mod tests {
         assert!(nacre_validate::validate(&m).is_empty());
     }
 
-
     /// Extrude a unit cube and return `(model, top face handle)`.
     fn cube_with_top() -> (Model, Handle<Face>) {
         let mut m = Model::new();
@@ -1855,13 +1850,6 @@ pub mod tests {
             points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
         }
     }
-
-
-
-
-
-
-
 
     /// **Chaining onto a fused boss.** The fuse leaves the base's `z=1` face a *ring* — a face with
     /// a hole where the boss sits — and the second boolean cuts through both. Every plane class the
@@ -1908,11 +1896,6 @@ pub mod tests {
             "a chained result is still a clean model"
         );
     }
-
-
-
-
-
 
     /// explicit sharing (overhaul #3): a prism built with a shared base-cap
     /// surface reuses that `Surface` handle for its flush cap, and reconciles the
@@ -2006,10 +1989,6 @@ pub mod tests {
         assert!(shares_or_coplanar(&planes, 0, 1));
     }
 
-
-
-
-
     fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
         Operation::PocketOnFace {
             face,
@@ -2017,14 +1996,6 @@ pub mod tests {
             dist,
         }
     }
-
-
-
-
-
-
-
-
 
     proptest! {
         #[test]
@@ -2321,8 +2292,6 @@ pub mod tests {
         assert_eq!(wall.failed_at, None, "the class labels consistently");
     }
 
-
-
     /// Lower corner of a solid's outer-shell vertex bounding box (for translation
     /// tests: a rigid move shifts it by exactly the offset).
     fn bbox_lo(m: &Model, s: Handle<Solid>) -> [f64; 3] {
@@ -2461,7 +2430,6 @@ pub mod tests {
         };
         assert_eq!(build(), build(), "same ops → same geometry and handle");
     }
-
 
     /// A genuinely tilted rigid rotation: 30° about Z through the rational axis
     /// point (1,1,0). Non-90° and non-axis-aligned, so it exercises the Rotated
@@ -2994,13 +2962,6 @@ pub mod tests {
         assert_eq!(build(), build(), "same ops → same geometry and handle");
     }
 
-
-
-
-
-
-
-
     // ---- coincident-coplanar merge (M5-c5) ----
 
     fn stacked_cubes() -> (Model, Handle<Solid>, Handle<Solid>) {
@@ -3076,12 +3037,6 @@ pub mod tests {
         ));
     }
 
-
-
-
-
-
-
     #[test]
     fn cut_by_an_overhanging_boss_carrying_a_pin_owes_a_notch() {
         // Same seating, but the tool carries a pin reaching below the contact plane, so the plane
@@ -3122,7 +3077,6 @@ pub mod tests {
             "a notched result is still a clean model"
         );
     }
-
 
     // A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.
     #[test]
@@ -3165,7 +3119,6 @@ pub mod tests {
         assert_eq!(canon[a_xp], a_xp.min(b_xm));
     }
 
-
     #[test]
     fn overhang_boss_with_a_non_convex_footprint() {
         // An L-shaped (non-convex) boss footprint overhanging a cube edge. The old convexity-gated
@@ -3194,11 +3147,6 @@ pub mod tests {
         let vol = nacre_props::mass_props(&m, r).unwrap().volume;
         assert!((vol - 1.096).abs() < 1e-12, "volume {vol}");
     }
-
-
-
-
-
 
     // ---- `unify_coplanar_faces`: the general (interface-free) coplanar merge, on hand-built
     // `LocalFace` lists the coincident goldens above never reach — chains, opposite normals,
@@ -3422,8 +3370,6 @@ pub mod tests {
         );
     }
 
-
-
     proptest! {
         /// Diagonal corner overlaps (clean seam): fuse/cut volumes match the
         /// independent AABB formula (not nacre's own common).
@@ -3509,7 +3455,6 @@ pub mod tests {
             prop_assert!((vc - va).abs() <= 1e-9 * va, "cut {vc}");
         }
     }
-
 
     /// One geometric plane is one class **whatever the two faces' sizes**, and the coefficient test
     /// alone still cannot say so — the two walls' un-normalized coefficient 4-vectors are not
@@ -3801,16 +3746,7 @@ pub mod tests {
         assert!(on_plane > 0, "some vertex lies on some queried plane");
     }
 
-
-
-
-
-
-
     // ---- boolean Common algorithm (M5-c3 commit 2) ----
-
-
-
 
     #[test]
     fn common_rejects_non_planar_input() {
@@ -3827,7 +3763,6 @@ pub mod tests {
             tag::CYLINDER_FACE,
         );
     }
-
 
     proptest! {
         /// Overlapping axis-aligned boxes: the intersection volume equals the

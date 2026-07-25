@@ -379,7 +379,14 @@ bbox_min 0 0 0
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
         });
         let xf = |m: &mut Model, s: Handle<Solid>| -> Handle<Solid> {
-            let out = apply(m, &Operation::Transform { solid: s, isometry: iso }).unwrap();
+            let out = apply(
+                m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: iso,
+                },
+            )
+            .unwrap();
             m.rebuild_adjacency();
             match out {
                 OpOutput::Transform { solid } => solid,
@@ -806,7 +813,11 @@ bbox_min 0 0 0
         );
         m.rebuild_adjacency();
         let cut = occt_boolean_of(&m, OcctBool::Cut, hollow, slab).unwrap();
-        assert!(approx(cut.volume, 21.2), "severed hollow box {}", cut.volume);
+        assert!(
+            approx(cut.volume, 21.2),
+            "severed hollow box {}",
+            cut.volume
+        );
     }
 
     /// E1 same_ground union: A = [0,1]³ and B = [0.5,1.5]²×[0,1] overlap in volume and share the

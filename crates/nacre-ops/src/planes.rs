@@ -3,10 +3,10 @@
 
 use crate::combinatorics;
 use crate::{BoolError, he_start, reject, tag, tolerant};
+use nacre_cip::Pt3;
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
-use nacre_cip::Pt3;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Origin, Shell, Solid, Vertex};
 use std::collections::HashMap;

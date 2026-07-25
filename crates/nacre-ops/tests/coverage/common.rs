@@ -127,9 +127,14 @@ pub fn stacked_cubes() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// Apply a rigid transform to `s` via the public `apply(Transform)` path and
 /// return the image, rebuilding adjacency (as every call site does).
 pub fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
-    let OpOutput::Transform { solid } = apply(m, &Operation::Transform { solid: s, isometry: iso })
-        .unwrap()
-    else {
+    let OpOutput::Transform { solid } = apply(
+        m,
+        &Operation::Transform {
+            solid: s,
+            isometry: iso,
+        },
+    )
+    .unwrap() else {
         panic!("expected Transform output");
     };
     m.rebuild_adjacency();
@@ -291,8 +296,7 @@ fn extrude_at_z(m: &mut Model, profile: Profile2d, z: f64, dist: f64) -> Handle<
             dist,
         },
     )
-    .unwrap()
-    else {
+    .unwrap() else {
         unreachable!("extrude yields Extrude output")
     };
     solid
@@ -356,8 +360,7 @@ pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
             dist: 0.65,
         },
     )
-    .unwrap()
-    else {
+    .unwrap() else {
         unreachable!("extrude yields Extrude output")
     };
     (m, l, st)
@@ -498,20 +501,36 @@ pub fn near(a: f64, b: f64) -> bool {
 pub fn test_iso() -> (Isometry, [f64; 3]) {
     use nacre_scalar::Rat;
     (
-        Isometry::translation([Rat::new(7, 2).unwrap(), Rat::from_int(-4), Rat::from_int(11)]),
+        Isometry::translation([
+            Rat::new(7, 2).unwrap(),
+            Rat::from_int(-4),
+            Rat::from_int(11),
+        ]),
         [3.5, -4.0, 11.0],
     )
 }
 
 pub fn translate_iso(off: [i128; 3]) -> Isometry {
     use nacre_scalar::Rat;
-    Isometry::translation([Rat::from_int(off[0]), Rat::from_int(off[1]), Rat::from_int(off[2])])
+    Isometry::translation([
+        Rat::from_int(off[0]),
+        Rat::from_int(off[1]),
+        Rat::from_int(off[2]),
+    ])
 }
 
 pub fn rigid_iso(axis: Axis, deg: i128, off: [i128; 3]) -> Isometry {
     use nacre_scalar::{Angle, Rat, Rotation};
     Isometry::rigid(
-        Rotation { axis, point: [Rat::from_int(0); 3], angle: Angle::from_deg(Rat::from_int(deg)).unwrap() },
-        [Rat::from_int(off[0]), Rat::from_int(off[1]), Rat::from_int(off[2])],
+        Rotation {
+            axis,
+            point: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+        },
+        [
+            Rat::from_int(off[0]),
+            Rat::from_int(off[1]),
+            Rat::from_int(off[2]),
+        ],
     )
 }

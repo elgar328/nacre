@@ -17,8 +17,8 @@
 //! H-d/H-f (chain + arbitrary-pivot tol) — the bound never under-estimates the true
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
-use super::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
 use super::HP_RM;
+use super::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
 use astro_float::BigFloat;
 use nacre_scalar::{Angle, Axis, Orient, Rat};
 #[cfg(feature = "parallel")]

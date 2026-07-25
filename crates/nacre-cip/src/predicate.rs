@@ -272,19 +272,23 @@ mod tests {
             // x = 1  →  1·x + 0 + 0 − 1 = 0
             W {
                 tri: [p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0), p(1.0, 0.0, 1.0)],
-                coeffs: [1.0, 0.0, 0.0, -1.0],            },
+                coeffs: [1.0, 0.0, 0.0, -1.0],
+            },
             // y = 1
             W {
                 tri: [p(0.0, 1.0, 0.0), p(1.0, 1.0, 0.0), p(0.0, 1.0, 1.0)],
-                coeffs: [0.0, 1.0, 0.0, -1.0],            },
+                coeffs: [0.0, 1.0, 0.0, -1.0],
+            },
             // z = 1
             W {
                 tri: [p(0.0, 0.0, 1.0), p(1.0, 0.0, 1.0), p(0.0, 1.0, 1.0)],
-                coeffs: [0.0, 0.0, 1.0, -1.0],            },
+                coeffs: [0.0, 0.0, 1.0, -1.0],
+            },
             // z = 0
             W {
                 tri: [p(0.0, 0.0, 0.0), p(1.0, 0.0, 0.0), p(0.0, 1.0, 0.0)],
-                coeffs: [0.0, 0.0, 1.0, 0.0],            },
+                coeffs: [0.0, 0.0, 1.0, 0.0],
+            },
         ]
     }
 
@@ -303,8 +307,14 @@ mod tests {
     #[test]
     fn t_planes_coplanar_reflexive_and_distinct() {
         let ps = cube_corner_planes();
-        assert!(t_planes_coplanar(&ps, 0, 0), "a plane is coplanar with itself");
-        assert!(!t_planes_coplanar(&ps, 0, 1), "x=1 and y=1 are distinct planes");
+        assert!(
+            t_planes_coplanar(&ps, 0, 0),
+            "a plane is coplanar with itself"
+        );
+        assert!(
+            !t_planes_coplanar(&ps, 0, 1),
+            "x=1 and y=1 are distinct planes"
+        );
     }
 
     /// `any_rotated` is false for axis-aligned witnesses (`tri_pt3` is `None`).

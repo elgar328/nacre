@@ -111,7 +111,11 @@ pub fn nonmanifold_vertices(
     for (&v, raw_edges) in vertex_edges {
         // Distinct edges at `v` (a self-loop `[v, v]` is listed twice by the caller).
         let mut seen = std::collections::HashSet::new();
-        let edges: Vec<Handle<Edge>> = raw_edges.iter().copied().filter(|e| seen.insert(*e)).collect();
+        let edges: Vec<Handle<Edge>> = raw_edges
+            .iter()
+            .copied()
+            .filter(|e| seen.insert(*e))
+            .collect();
         let idx: HashMap<Handle<Edge>, usize> =
             edges.iter().enumerate().map(|(i, &e)| (e, i)).collect();
         // face → the local indices of the `V`-edges it uses (its corner at `V`).
@@ -174,32 +178,36 @@ mod tests {
         let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
         let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
         // Add one triangular face-fan (3 edges from `apex`, 3 faces cyclically joining them).
-        let add_fan = |m: &mut Model,
-                           apex: Handle<Vertex>,
-                           vertex_edges: &mut HashMap<Handle<Vertex>, Vec<Handle<Edge>>>,
-                           edge_uses: &mut HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>>| {
-            let e: Vec<Handle<Edge>> = (0..3)
-                .map(|_| {
-                    let other = mk_v(m);
-                    m.edges.push(Edge {
-                        curve,
-                        bounds: Some([apex, other]),
-                        origin: Origin::Constructed,
+        let add_fan =
+            |m: &mut Model,
+             apex: Handle<Vertex>,
+             vertex_edges: &mut HashMap<Handle<Vertex>, Vec<Handle<Edge>>>,
+             edge_uses: &mut HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>>| {
+                let e: Vec<Handle<Edge>> = (0..3)
+                    .map(|_| {
+                        let other = mk_v(m);
+                        m.edges.push(Edge {
+                            curve,
+                            bounds: Some([apex, other]),
+                            origin: Origin::Constructed,
+                        })
                     })
-                })
-                .collect();
-            vertex_edges.entry(apex).or_default().extend(e.iter().copied());
-            for i in 0..3 {
-                let f = m.faces.push(Face {
-                    surface,
-                    outer: Loop { half_edges: vec![] },
-                    inner: vec![],
-                    orientation: Orientation::Forward,
-                });
-                edge_uses.entry(e[i]).or_default().push((f, true));
-                edge_uses.entry(e[(i + 1) % 3]).or_default().push((f, true));
-            }
-        };
+                    .collect();
+                vertex_edges
+                    .entry(apex)
+                    .or_default()
+                    .extend(e.iter().copied());
+                for i in 0..3 {
+                    let f = m.faces.push(Face {
+                        surface,
+                        outer: Loop { half_edges: vec![] },
+                        inner: vec![],
+                        orientation: Orientation::Forward,
+                    });
+                    edge_uses.entry(e[i]).or_default().push((f, true));
+                    edge_uses.entry(e[(i + 1) % 3]).or_default().push((f, true));
+                }
+            };
         // Manifold apex: one fan. Two pinched apexes: two fans each.
         let ok = mk_v(&mut m);
         add_fan(&mut m, ok, &mut vertex_edges, &mut edge_uses);

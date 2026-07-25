@@ -8,9 +8,9 @@
 use crate::combinatorics;
 use crate::planes::{PlaneGeom, uf_find};
 use crate::{BoolError, BoolKind, he_start, reject, tag, unordered};
+use nacre_cip::dir_orient3d_judge;
 use nacre_geom::{Curve, Line, Surface};
 use nacre_math::Point3;
-use nacre_cip::dir_orient3d_judge;
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,
@@ -655,7 +655,12 @@ pub(crate) fn assemble_fuse_cut(
                                     || nodes_of(c)
                                         .iter()
                                         .find_map(|&x| {
-                                            combinatorics::point_in_component(planes, x, &comp_faces(o)).ok()
+                                            combinatorics::point_in_component(
+                                                planes,
+                                                x,
+                                                &comp_faces(o),
+                                            )
+                                            .ok()
                                         })
                                         .unwrap_or(false)
                             })
@@ -666,7 +671,10 @@ pub(crate) fn assemble_fuse_cut(
             }
             // Emit each material solid (with its cavities) in a canonical, replay-stable order
             // keyed on geometry, so a downstream op can index the returned Vec deterministically.
-            let keys: Vec<Vec<[f64; 3]>> = positives.iter().map(|&c| comp_key(model, &by_comp[c])).collect();
+            let keys: Vec<Vec<[f64; 3]>> = positives
+                .iter()
+                .map(|&c| comp_key(model, &by_comp[c]))
+                .collect();
             let mut order: Vec<usize> = (0..positives.len()).collect();
             order.sort_by(|&x, &y| {
                 keys[x]
