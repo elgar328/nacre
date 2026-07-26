@@ -763,3 +763,78 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
     // And the frame stays right-handed about the face's outward normal.
     assert!((plane.x_axis.cross(plane.y_axis) - diag).norm() < 1e-12);
 }
+
+/// **Why the sketch origin is an area centroid and not a mean of the corners.**
+///
+/// The two rules agree on a rectangle, which is why every other fixture here is
+/// blind to the difference — the whole suite stayed green when the rule changed.
+/// They part on a reflex outline, and they part *catastrophically* on the case
+/// that matters: adding a vertex along a straight edge leaves the face's shape
+/// untouched but drags a vertex mean sideways, so the same face would seat a boss
+/// somewhere else. An area centroid is a property of the region and does not move.
+#[test]
+fn the_sketch_origin_does_not_depend_on_how_the_outline_is_subdivided() {
+    // An L, and the same L with two extra points along its bottom edge.
+    let l = vec![
+        p2(0.0, 0.0),
+        p2(4.0, 0.0),
+        p2(4.0, 2.0),
+        p2(2.0, 2.0),
+        p2(2.0, 4.0),
+        p2(0.0, 4.0),
+    ];
+    let subdivided = vec![
+        p2(0.0, 0.0),
+        p2(1.0, 0.0), // mid-run on a straight edge — shape unchanged
+        p2(3.0, 0.0),
+        p2(4.0, 0.0),
+        p2(4.0, 2.0),
+        p2(2.0, 2.0),
+        p2(2.0, 4.0),
+        p2(0.0, 4.0),
+    ];
+
+    let top_origin = |pts: Vec<Point2>| {
+        let mut m = Model::new();
+        let OpOutput::Extrude { faces, .. } =
+            apply(&mut m, &extrude_op(Profile2d::polygon(pts), 1.0)).unwrap()
+        else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        nacre_ops::face_plane(&m, faces[1]).unwrap().origin
+    };
+
+    let a = top_origin(l.clone());
+    let b = top_origin(subdivided.clone());
+    assert!(
+        (a - b).norm() < 1e-12,
+        "subdividing an edge moved the sketch origin: {a:?} vs {b:?}"
+    );
+
+    // It is the region's centroid: area 12, centroid (5/3, 5/3) at the cap's height.
+    assert!(
+        (a[0] - 5.0 / 3.0).abs() < 1e-12 && (a[1] - 5.0 / 3.0).abs() < 1e-12,
+        "{a:?}"
+    );
+
+    // And the rule this replaced would have failed both assertions — the corner
+    // mean sits at (2, 2) on the plain L and moves to (1.75, 1.5) once subdivided.
+    let mean = |pts: &[Point2]| {
+        let (sx, sy) = pts
+            .iter()
+            .fold((0.0, 0.0), |(x, y), p| (x + p[0], y + p[1]));
+        [sx / pts.len() as f64, sy / pts.len() as f64]
+    };
+    let (ma, mb) = (mean(&l), mean(&subdivided));
+    let moved = ((ma[0] - mb[0]).powi(2) + (ma[1] - mb[1]).powi(2)).sqrt();
+    assert!(
+        moved > 0.2,
+        "the old rule must visibly move: {ma:?} vs {mb:?}"
+    );
+    let apart = ((ma[0] - a[0]).powi(2) + (ma[1] - a[1]).powi(2)).sqrt();
+    assert!(
+        apart > 0.3,
+        "the two rules must differ on an L: {ma:?} vs {a:?}"
+    );
+}

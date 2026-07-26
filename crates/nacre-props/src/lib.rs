@@ -39,12 +39,16 @@ pub struct MassProps {
 
 /// A shape this analysis does not yet cover.
 ///
+/// Named for the crate, not for mass: [`bounds`] and [`face_props`] return it too,
+/// and an error type called `MassError` coming back from a bounding-box query
+/// would be a name that lies.
+///
 /// There is deliberately **no** `UnsupportedSurface`: the surface `match` is
 /// exhaustive over [`Surface`], so a new variant (NURBS, sphere…) is a compile
 /// error here until it is handled — the same "new variant forces handling"
 /// idiom `Surface::distance` and `to_step` use.
 #[derive(Debug)]
-pub enum MassError {
+pub enum PropsError {
     /// A planar face bounded by something other than a straight polygon or a
     /// single full circle (e.g. a future line+arc mix). None occur today.
     UnsupportedBoundary,
@@ -67,7 +71,7 @@ pub enum MassError {
 /// flux dot product: the closed-surface identity `∮ n̂ dA = 0` makes `V`
 /// independent of `R`, while choosing `R` near the solid removes the
 /// catastrophic cancellation a far-from-origin placement would otherwise cause.
-pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, MassError> {
+pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, PropsError> {
     let solid = model.solids.get(solid);
     let outer = model.shells.get(solid.outer);
 
@@ -117,7 +121,7 @@ pub struct FaceProps {
 }
 
 /// [`FaceProps`] of one face.
-pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, MassError> {
+pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsError> {
     let face = model.faces.get(face);
     let sign = match face.orientation {
         Orientation::Forward => 1.0,
@@ -134,7 +138,7 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, MassEr
         }
         Surface::Cylinder(cyl) => {
             if !face.inner.is_empty() {
-                return Err(MassError::UnsupportedInnerLoop);
+                return Err(PropsError::UnsupportedInnerLoop);
             }
             let axis = cyl.axis().direction();
             let (lo, hi) = axial_range(model, &face.outer, axis)?;
@@ -166,7 +170,7 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, MassEr
 /// A **curved** face breaks that argument (the cone over it is not one), so a
 /// solid carrying any is refused rather than approximated — volume and area on
 /// the same solid keep working, which is why this is not a [`MassProps`] field.
-pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, MassError> {
+pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, PropsError> {
     let solid = model.solids.get(solid);
     let outer = model.shells.get(solid.outer);
     let first_face = model.faces.get(outer.faces[0]);
@@ -180,7 +184,7 @@ pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, MassError
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
         for &face in &model.shells.get(sh).faces {
             let f = face_props(model, face)?;
-            let normal = f.normal.ok_or(MassError::CentroidOfCurvedFace)?;
+            let normal = f.normal.ok_or(PropsError::CentroidOfCurvedFace)?;
             let arm = f.centroid - reference;
             let v = f.area * normal.dot(arm) / 3.0;
             volume += v;
@@ -188,7 +192,7 @@ pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, MassError
         }
     }
     if volume == 0.0 {
-        return Err(MassError::UnsupportedBoundary);
+        return Err(PropsError::UnsupportedBoundary);
     }
     Ok(reference + moment * (1.0 / volume))
 }
@@ -200,7 +204,7 @@ pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, MassError
 /// silently too small. A full circle of radius `r` and normal `n̂` extends
 /// `±r·√(1 − (n̂·e)²)` along each axis `e`, which is exact; a cylinder band is
 /// bounded by its two rim circles, so walking every edge covers it.
-pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), MassError> {
+pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), PropsError> {
     let solid = model.solids.get(solid);
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
@@ -231,7 +235,7 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), M
         }
     }
     if lo[0] > hi[0] {
-        return Err(MassError::UnsupportedBoundary);
+        return Err(PropsError::UnsupportedBoundary);
     }
     Ok((Point3::from_array(lo), Point3::from_array(hi)))
 }
@@ -242,7 +246,7 @@ fn face_contribution(
     model: &Model,
     face: &Face,
     reference: Point3,
-) -> Result<(f64, f64), MassError> {
+) -> Result<(f64, f64), PropsError> {
     let sign = match face.orientation {
         Orientation::Forward => 1.0,
         Orientation::Reversed => -1.0,
@@ -259,7 +263,7 @@ fn face_contribution(
         Surface::Cylinder(cyl) => {
             // No producer puts a hole in a curved face yet (pad/pocket are planar).
             if !face.inner.is_empty() {
-                return Err(MassError::UnsupportedInnerLoop);
+                return Err(PropsError::UnsupportedInnerLoop);
             }
             // Full 2π lateral band (seam model A, design §9). Area = 2πr·h; the
             // flux integral ∮(r−R)·n̂ over the full band is 2πr²·h (the axial and
@@ -277,7 +281,7 @@ fn face_contribution(
 /// Area and area-weighted centroid of a planar face's **region** — its outer
 /// loop with every hole removed. Area and first moment are both additive, so a
 /// hole subtracts each.
-fn planar_region(model: &Model, face: &Face) -> Result<(f64, Point3), MassError> {
+fn planar_region(model: &Model, face: &Face) -> Result<(f64, Point3), PropsError> {
     let (mut area, c_out) = planar_face(model, &face.outer)?;
     let mut moment = Vector3::zero();
     for hole in &face.inner {
@@ -286,14 +290,14 @@ fn planar_region(model: &Model, face: &Face) -> Result<(f64, Point3), MassError>
         moment -= (c_in - c_out) * a_in;
     }
     if area == 0.0 {
-        return Err(MassError::UnsupportedBoundary);
+        return Err(PropsError::UnsupportedBoundary);
     }
     Ok((area, c_out + moment * (1.0 / area)))
 }
 
 /// Area and area-weighted centroid of one planar loop: a straight polygon, or a
 /// single full circle (a cylinder cap).
-fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), MassError> {
+fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError> {
     let all_lines = outer
         .half_edges
         .iter()
@@ -303,30 +307,30 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), MassError> 
         let points = loop_points(model, outer)?;
         // The signed-area-weighted centroid lives in `nacre-geom` (pure geometry, and
         // `nacre-ops` needs the same computation for its sketch frames).
-        nacre_geom::planar_region_area_centroid(&points, &[]).ok_or(MassError::UnsupportedBoundary)
+        nacre_geom::planar_region_area_centroid(&points, &[]).ok_or(PropsError::UnsupportedBoundary)
     } else if outer.half_edges.len() == 1 {
         match edge_curve(model, outer.half_edges[0]) {
             Curve::Circle(circle) => {
                 let area = PI * circle.radius() * circle.radius();
                 Ok((area, circle.center()))
             }
-            _ => Err(MassError::UnsupportedBoundary),
+            _ => Err(PropsError::UnsupportedBoundary),
         }
     } else {
-        Err(MassError::UnsupportedBoundary)
+        Err(PropsError::UnsupportedBoundary)
     }
 }
 
 /// Axial extent of a face's loop: the span of its vertices projected on `axis`
 /// (the two seam vertices for a cylinder band → the exact height).
-fn axial_span(model: &Model, outer: &Loop, axis: Vector3) -> Result<f64, MassError> {
+fn axial_span(model: &Model, outer: &Loop, axis: Vector3) -> Result<f64, PropsError> {
     let (lo, hi) = axial_range(model, outer, axis)?;
     Ok(hi - lo)
 }
 
 /// The loop's projection onto `axis`, as `(min, max)` **relative to the loop's first vertex** —
 /// which keeps the numbers small regardless of where the solid sits.
-fn axial_range(model: &Model, outer: &Loop, axis: Vector3) -> Result<(f64, f64), MassError> {
+fn axial_range(model: &Model, outer: &Loop, axis: Vector3) -> Result<(f64, f64), PropsError> {
     let points = loop_points(model, outer)?;
     let origin = points[0];
     let mut min = 0.0;
@@ -340,7 +344,7 @@ fn axial_range(model: &Model, outer: &Loop, axis: Vector3) -> Result<(f64, f64),
 }
 
 /// The ordered start vertices of a loop's half-edges (the boundary polyline).
-fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, MassError> {
+fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, PropsError> {
     outer
         .half_edges
         .iter()
@@ -353,8 +357,8 @@ fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, MassError> {
 fn he_start(
     model: &Model,
     he: nacre_topo::HalfEdge,
-) -> Result<Handle<nacre_topo::Vertex>, MassError> {
-    model.he_start(he).ok_or(MassError::UnsupportedBoundary)
+) -> Result<Handle<nacre_topo::Vertex>, PropsError> {
+    model.he_start(he).ok_or(PropsError::UnsupportedBoundary)
 }
 
 /// The `Curve` carried by a half-edge's edge.
@@ -609,7 +613,7 @@ mod tests {
         );
         assert!(matches!(
             centroid(&m, s),
-            Err(MassError::CentroidOfCurvedFace)
+            Err(PropsError::CentroidOfCurvedFace)
         ));
         assert!(close(mass_props(&m, s).unwrap().volume, 20.0 * PI));
     }

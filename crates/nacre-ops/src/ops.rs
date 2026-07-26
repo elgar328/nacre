@@ -749,13 +749,22 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let n = plane.normal() * sign;
     let x = n.any_perpendicular().ok_or(OpError::DegenerateGeometry)?;
     let y = n.cross(x);
-    let outer_pts: Vec<Point3> = f
-        .outer
-        .half_edges
-        .iter()
-        .map(|he| model.vertices.get(he_start(model, *he)).point)
-        .collect();
-    let origin = Point3::centroid(&outer_pts).ok_or(OpError::DegenerateGeometry)?;
+    // The origin is the face **region's** area centroid, holes included in the
+    // subtraction. It was the mean of the outer loop's corners, which is not the same point on a
+    // reflex face and — worse — *moves when a vertex is added along a straight edge*, so the same
+    // shape could seat a boss in two different places. An area centroid is a property of the
+    // region, so it does not care how the boundary is subdivided.
+    let loop_pts = |lp: &Loop| -> Vec<Point3> {
+        lp.half_edges
+            .iter()
+            .map(|he| model.vertices.get(he_start(model, *he)).point)
+            .collect()
+    };
+    let outer_pts = loop_pts(&f.outer);
+    let holes: Vec<Vec<Point3>> = f.inner.iter().map(&loop_pts).collect();
+    let hole_refs: Vec<&[Point3]> = holes.iter().map(|h| h.as_slice()).collect();
+    let (_, origin) = nacre_geom::planar_region_area_centroid(&outer_pts, &hole_refs)
+        .ok_or(OpError::DegenerateGeometry)?;
     Ok(FaceFrame {
         solid_h,
         surface_h,

@@ -38,7 +38,19 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 
 **공개 표면 조사 (2026-07-26, 코드 실측 — 다시 조사하지 말 것).** 외부 소비자 관점에서 무엇이 막혀 있는지 훑은 결과.
 - **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.bounds → vertex.point`). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Origin::{Constructed, Discovered{tol,definition}, Rotated{base,rotation}}`·`VertexDef`·`Model::rotations`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개. 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
-- **진짜 빈 것 = 파생 값과 에러 표면:** 솔리드 AABB, centroid(`MassProps`는 volume·area만), 면 법선·면적, 면→`SketchPlane`(`ops::face_frame`이 private → 면 위 스케치 차단), 순회 편의(`he_start`가 `pub(crate)`), 그리고 §6의 거절 이유. 없으면 소비자마다 재구현하며 `Orientation`·평면 `raw` 해석에서 틀릴 수 있다. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 미래.
+- **파생 값과 에러 표면 — ✅ 2026-07-26 공개.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. §6의 거절 이유는 그 앞에 끝났다. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 미래.
+  - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(실측 ~1e-7).
+  - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).
+  - **`face_props.normal`은 `Option`이다.** 원통 면에는 하나의 법선이 없는데, **면 고르기는 모든 면을 훑는 일**이라 실패시키면 필터가 통째로 망가진다. `None`이면 자연스럽게 건너뛴다.
+  - **면 고르기가 위상 명명 문제를 우회한다.** 코드-CAD는 면을 번호가 아니라 `filter(법선≈+Z).max_by(중심.z)`처럼 **생김새로** 고르고 매 실행 다시 고른다 — 저장된 참조가 없으니 상류가 바뀌어도 썩지 않는다.
+
+**면의 스케치 좌표계 — `face_plane` (2026-07-26).** `ops::face_frame`을 공개한 것이고, **`PadOnFace`/`PocketOnFace`가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 같은 함수의 사영 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다).
+
+**원점을 꼭짓점 평균에서 면의 *면적중심*으로 바꿨다.** 옛 규칙은 오목한 면에서 면적중심이 아니었고, 더 나쁘게는 **직선 도중에 꼭짓점이 하나 늘면 움직였다** — 면의 모양은 그대로인데 보스가 다른 자리에 앉는다. 면적중심은 **영역의 성질**이라 이산화에 무관하다. *(월드 원점 정사영(Onshape 방식)도 검토했으나 채택하지 않았다: 안정적이지만 원점에서 먼 면에 `pad`하면 프로파일이 면 밖에 앉아 대개 실패한다. Onshape는 사용자가 스케치를 모서리에 구속으로 붙이지만 스크립트엔 그 단계가 없다.)*
+
+X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onshape `perpendicularVector()`와 같은 규칙이다. 가장 작은 두 성분이 **동률일 때 불연속**이고(연속인 선택은 수학적으로 불가능), 그 타이브레이크는 `nacre-math`에서 테스트로 못 박혀 있다.
+
+**남는 한계**: 면의 *모양 자체*가 바뀌면 면적중심도 움직인다(면에 매인 어떤 규칙도 그렇다). 그리고 프레임은 f64다 — 축이 정규화를 거치므로 **유리수 법선에 수직인 단위벡터는 일반적으로 무리수**이고, 면 위 스케치의 정확성은 원점이 아니라 **축**이 벽이다(⑦).
 
 **디버그 뷰어는 커널 크레이트가 아니라 워크스페이스 밖 별도 앱이다.** 연산 로그를 입력받아 매 동작을 스텝별로 재생하며(append-only라 "N번째까지 replay"가 공짜), STEP에 안 담기는 nacre **내부 정보**(`Origin`의 `Constructed`/`Discovered`, `Discovered`의 tolerance 실측값, `Handle` 관계·인접 등)까지 시각화하는 인터랙티브 도구. 내부 자료구조에 접근해야 하므로 nacre를 **직접 링크**한다(개발 중 path 의존 → 안정화 후 version 의존, 버전별 디버깅도 자연스러워짐). 만드는 시점은 **`Discovered`/tolerance가 처음 등장하는 M5 즈음** — 그 전(M1~M4는 전부 `Constructed`)의 시각 확인은 정상 결과는 STEP→step-loupe(구조+검증), 중간·깨진 상태는 OBJ 덤프→맥 미리보기로 충분해, 인터랙티브 뷰어는 필요가 증명될 때까지 미룬다.
 
