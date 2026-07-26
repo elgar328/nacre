@@ -245,6 +245,18 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 [[package]]
 name = "nacre"
 version = "0.0.0"
+dependencies = [
+ "nacre-geom",
+ "nacre-math",
+ "nacre-ops",
+ "nacre-props",
+ "nacre-scalar",
+ "nacre-step",
+ "nacre-store",
+ "nacre-tess",
+ "nacre-topo",
+ "nacre-validate",
+]
 
 [[package]]
 name = "nacre-cip"

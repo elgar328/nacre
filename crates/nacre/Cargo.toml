@@ -5,8 +5,45 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "A pure-Rust CAD kernel keeping exact b-rep (NURBS / analytic surfaces) as the source of truth. Work in progress — this release only reserves the name."
+description = "A pure-Rust CAD kernel keeping exact b-rep (NURBS / analytic surfaces) as the source of truth. The facade crate: depend on this one and get every layer."
 keywords = ["cad", "brep", "nurbs", "geometry", "kernel"]
 categories = ["mathematics"]
 
+[features]
+default = ["parallel"]
+# Parallelize the boolean's independent read-only predicate phases via rayon.
+# `--no-default-features` gives the serial, rayon-free build a wasm target needs.
+# **Not only a speed switch:** turning it off also switches the CIP kernel's
+# high-precision cache from `Arc<OnceLock>` to `Rc<OnceCell>`, so the affected values
+# stop being `Send`. A consumer that drops this for wasm gives up moving them across
+# threads too.
+parallel = ["nacre-ops/parallel"]
+# Exposes `topo::Model::add_cuboid`, a test-only solid primitive that bypasses the
+# modelling ops. Off by default so production consumers never see it; enable it in
+# your own `[dev-dependencies]` to build fixtures at the topology layer.
+test-util = ["nacre-topo/test-util"]
+
 [dependencies]
+# Every re-exported layer must be a real dependency — `pub use nacre_x as x` does not
+# compile otherwise. `version` is carried alongside `path` because a published crate
+# cannot depend on a path alone.
+nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
+nacre-math = { path = "../nacre-math", version = "0.0.0" }
+# Taken without defaults so this crate's own `parallel` feature is what turns rayon
+# on. Wiring it with defaults would leave a consumer no way to turn it off.
+nacre-ops = { path = "../nacre-ops", version = "0.0.0", default-features = false }
+nacre-props = { path = "../nacre-props", version = "0.0.0" }
+nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
+nacre-step = { path = "../nacre-step", version = "0.0.0" }
+nacre-store = { path = "../nacre-store", version = "0.0.0" }
+nacre-tess = { path = "../nacre-tess", version = "0.0.0" }
+nacre-topo = { path = "../nacre-topo", version = "0.0.0" }
+nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
+
+[dev-dependencies]
+# The integration tests build fixture solids at the topology layer. Enabling the
+# feature here — rather than through this crate's own `test-util` — keeps those tests
+# in the default `cargo test` run; a `#[cfg(feature = "...")]` test would never run.
+nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
+# NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
+# pre-commit hook is owned solely by nacre-store; this crate inherits it.
