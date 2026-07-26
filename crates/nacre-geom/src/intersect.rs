@@ -262,8 +262,10 @@ pub enum RingSide {
 /// the ray from being counted twice.
 ///
 /// The ring is assumed **simple** (no self-intersections); for such a ring parity and winding
-/// agree, so this needs no fill rule. A self-intersecting ring is out of contract — the sketch
-/// layer rejects those before asking.
+/// agree, so this needs no fill rule. A self-intersecting ring is out of contract, and the
+/// callers enforce that rather than assume it: `sketch::from_rings` runs
+/// [`ring_self_intersection`] over every ring before it classifies containment, and
+/// `Profile2d::check` does the same before an operation consumes a profile.
 pub fn point_in_ring_2d(p: Point2, ring: &[Point2]) -> RingSide {
     let n = ring.len();
     if n < 3 {

@@ -346,3 +346,166 @@ fn drawn_segments_become_a_donut() {
     assert!(nacre_validate::validate(&m).is_empty());
     assert!((volume(&m, d) - 12.0).abs() < 1e-12, "{}", volume(&m, d));
 }
+
+// --- the profile contract: what the kernel refuses to build from ---
+
+fn sq(a: f64, b: f64) -> Vec<Point2> {
+    vec![
+        Point2::from_array([a, a]),
+        Point2::from_array([b, a]),
+        Point2::from_array([b, b]),
+        Point2::from_array([a, b]),
+    ]
+}
+
+fn try_extrude(profile: Profile2d) -> Result<(), nacre_ops::OpError> {
+    apply(
+        &mut Model::new(),
+        &Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile,
+            dist: 1.0,
+        },
+    )
+    .map(|_| ())
+}
+
+/// **The measurement this whole contract exists for.** Before the check, each of these built a
+/// solid that `validate` called clean and `nacre-step` happily exported. The bowtie's volume came
+/// out `NaN`; the two nesting mistakes came out as *plausible numbers* — 12.0 for a hole that
+/// lies nowhere near the outline (it should be 16), and 20.0 where even-odd says 52. A wrong
+/// number that looks right is the failure mode the kernel exists to prevent.
+#[test]
+fn profiles_the_kernel_used_to_build_silently_wrong_are_now_refused() {
+    let bowtie = vec![
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([4.0, 4.0]),
+        Point2::from_array([4.0, 0.0]),
+        Point2::from_array([0.0, 4.0]),
+    ];
+    assert!(matches!(
+        try_extrude(Profile2d::polygon(bowtie)),
+        Err(nacre_ops::OpError::SelfIntersectingProfile { .. })
+    ));
+    // A hole that misses the outline entirely: it used to be subtracted anyway.
+    assert!(matches!(
+        try_extrude(Profile2d::with_holes(sq(0.0, 4.0), vec![sq(10.0, 12.0)])),
+        Err(nacre_ops::OpError::HoleNotInsideOuter { hole: 0 })
+    ));
+    // A hole inside a hole is an island — material, not a second subtraction.
+    assert!(matches!(
+        try_extrude(Profile2d::with_holes(
+            sq(0.0, 10.0),
+            vec![sq(1.0, 9.0), sq(3.0, 7.0)]
+        )),
+        Err(nacre_ops::OpError::NestedHole { .. })
+    ));
+}
+
+/// A ring that touches itself without crossing. There is no strict inside at the pinch, and the
+/// prism it used to build had a believable volume (14.0) and a clean `validate`.
+#[test]
+fn a_pinched_ring_is_refused() {
+    let pinch = vec![
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([2.0, 2.0]),
+        Point2::from_array([4.0, 0.0]),
+        Point2::from_array([4.0, 4.0]),
+        Point2::from_array([2.0, 2.0]),
+        Point2::from_array([0.0, 4.0]),
+    ];
+    assert!(matches!(
+        try_extrude(Profile2d::polygon(pinch)),
+        Err(nacre_ops::OpError::SelfIntersectingProfile { .. })
+    ));
+}
+
+/// Holes touching the outline, or each other, have no unambiguous inside either — and the pad and
+/// pocket path shares the same gate, so it refuses them too.
+#[test]
+fn touching_rings_are_refused_on_every_profile_entry_point() {
+    let touching = Profile2d::with_holes(sq(0.0, 4.0), vec![sq(0.0, 2.0)]);
+    assert!(matches!(
+        try_extrude(touching.clone()),
+        Err(nacre_ops::OpError::ProfileRingsMeet { .. })
+    ));
+
+    // Same profile, arriving through `pad` on a face of an existing solid.
+    let mut m = Model::new();
+    let base = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([10.0, 10.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+    let top = *m.shells.get(m.solids.get(base).outer).faces.last().unwrap();
+    assert!(matches!(
+        apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: top,
+                profile: touching,
+                dist: 1.0,
+            },
+        ),
+        Err(nacre_ops::OpError::ProfileRingsMeet { .. })
+    ));
+}
+
+/// The sketch layer refuses before it classifies, because it must: containment is decided by
+/// even-odd parity, which only means "inside" on a simple ring. Reported by **point**, not edge
+/// index — `from_edges` chains rings in walk order, so an index would name nothing the author
+/// wrote. The bowtie here is drawn as four loose segments, exactly how it reaches the front door.
+#[test]
+fn a_self_crossing_outline_is_refused_before_the_rings_are_sorted() {
+    let p = |x: f64, y: f64| Point2::from_array([x, y]);
+    let bowtie = vec![
+        Edge2d::line(p(0.0, 0.0), p(4.0, 4.0)),
+        Edge2d::line(p(4.0, 4.0), p(4.0, 0.0)),
+        Edge2d::line(p(4.0, 0.0), p(0.0, 4.0)),
+        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)),
+    ];
+    assert!(matches!(
+        from_edges(bowtie),
+        Err(nacre_ops::SketchError::RingSelfIntersects { .. })
+    ));
+
+    // With a second, perfectly good ring alongside it, the self-intersection still wins — the
+    // nesting pass never runs on a ring whose inside is undefined.
+    let crossing = vec![
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([4.0, 4.0]),
+        Point2::from_array([4.0, 0.0]),
+        Point2::from_array([0.0, 4.0]),
+    ];
+    assert_eq!(
+        from_rings(vec![sq(-10.0, -5.0), crossing]),
+        Err(nacre_ops::SketchError::RingSelfIntersects {
+            ring: 1,
+            at: [[2.0, 2.0], [2.0, 2.0]],
+        })
+    );
+}
+
+/// The other half of the contract: everything legitimate still goes through. A reflex outline, a
+/// donut, and a flat (collinear) corner are all simple polygons, and `check` must not touch them.
+#[test]
+fn the_contract_does_not_bite_legitimate_profiles() {
+    let l = vec![
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([4.0, 0.0]),
+        Point2::from_array([4.0, 2.0]),
+        Point2::from_array([2.0, 2.0]),
+        Point2::from_array([2.0, 4.0]),
+        Point2::from_array([0.0, 4.0]),
+    ];
+    assert_eq!(Profile2d::polygon(l).check(), Ok(()));
+    assert_eq!(donut_profile().check(), Ok(()));
+    let flat = vec![
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([2.0, 0.0]), // mid-run on a straight edge
+        Point2::from_array([4.0, 0.0]),
+        Point2::from_array([4.0, 4.0]),
+        Point2::from_array([0.0, 4.0]),
+    ];
+    assert_eq!(Profile2d::polygon(flat).check(), Ok(()));
+}

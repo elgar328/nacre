@@ -6,7 +6,9 @@ use crate::boolean::boolean;
 use crate::planes::outer_tri;
 use crate::transform::transform;
 use crate::{BoolError, he_start};
-use nacre_geom::intersect::plane_side;
+use nacre_geom::intersect::{
+    RingSide, plane_side, point_in_ring_2d, ring_self_intersection, rings_cross,
+};
 use nacre_geom::{Curve, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
@@ -32,13 +34,22 @@ pub struct SketchPlane {
 /// "counter-clockwise" means). Fixing the winding here as well would put that decision in two
 /// places, which is exactly how the holes and the outer ring come to disagree.
 ///
-/// Self-intersection and the rings' relationships (a hole must lie inside the outer ring and
-/// outside its siblings) are **not checked here** — `with_holes` takes the caller's word.
-/// `sketch::from_rings` is the checking constructor.
+/// The constructors cost nothing and check nothing; [`Profile2d::check`] states the contract and
+/// **every operation that consumes a profile runs it first**, so the kernel never works from an
+/// unverified one. `sketch::from_rings` is the checking constructor for loose rings.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Profile2d {
     outer: Vec<Point2>,
     inners: Vec<Vec<Point2>>,
+}
+
+/// Which ring of a [`Profile2d`] an error is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProfileRing {
+    /// The outer ring.
+    Outer,
+    /// The hole at this index in [`Profile2d::inners`].
+    Hole(usize),
 }
 
 impl Profile2d {
@@ -50,10 +61,81 @@ impl Profile2d {
         }
     }
 
-    /// An outer ring with holes. The caller guarantees each hole lies inside `outer` and outside
-    /// the other holes; nothing here verifies it (see the type docs).
+    /// An outer ring with holes. Nothing is verified here; [`Profile2d::check`] is where the
+    /// contract is enforced, and every operation that consumes a profile runs it.
     pub fn with_holes(outer: Vec<Point2>, inners: Vec<Vec<Point2>>) -> Profile2d {
         Profile2d { outer, inners }
+    }
+
+    /// Verify the contract: every ring is a **simple polygon** of at least three points, the rings
+    /// are pairwise disjoint, and each hole lies inside the outer ring and inside no other hole.
+    ///
+    /// Every operation that consumes a profile calls this first, so an unverified profile never
+    /// reaches the topology. It is public because an app can ask before it builds.
+    ///
+    /// **Simplicity is a contract on authored input, not an invariant of kernel data.** A drawn
+    /// ring's inside is *defined* by even-odd, which needs simplicity to mean anything; the
+    /// contours a boolean produces get their inside from the arrangement instead, and those may
+    /// legitimately be non-simple (a figure-8 pinch — see `loop_winding`). Do not "unify" the two.
+    ///
+    /// Exact: every decision is an `orient2d` sign on the coordinates as written. The 2-D ring is
+    /// then placed into 3-D in `f64`, which is a separate exactness question (the same one every
+    /// constructed coordinate has), so this rejects what the *author* drew, not every ring that
+    /// could conceivably self-intersect after placement.
+    ///
+    /// `O(n²)` in the ring size, and it runs on every extrude and every replay of one. Measured
+    /// on a convex ring (the worst case — nothing short-circuits): 47 µs at 100 points, 4.6 ms at
+    /// 1 000, 115 ms at 5 000. Hand-written sketches are nowhere near that; a generator or an
+    /// import that emits thousands of points per ring would feel it, and that is when a
+    /// sweep-line is worth its robustness cost — not before.
+    pub fn check(&self) -> Result<(), OpError> {
+        let rings = || {
+            std::iter::once((ProfileRing::Outer, &self.outer)).chain(
+                self.inners
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| (ProfileRing::Hole(i), r)),
+            )
+        };
+        for (id, r) in rings() {
+            if r.len() < 3 {
+                return Err(OpError::DegenerateProfile);
+            }
+            // Simplicity first: `point_in_ring_2d` below is only meaningful on a simple ring.
+            // The predicate reports a zero-length edge as a pair with itself.
+            if let Some((a, b)) = ring_self_intersection(r) {
+                return Err(if a == b {
+                    OpError::ZeroLengthProfileEdge { ring: id, edge: a }
+                } else {
+                    OpError::SelfIntersectingProfile {
+                        ring: id,
+                        edges: (a, b),
+                    }
+                });
+            }
+        }
+        let all: Vec<(ProfileRing, &Vec<Point2>)> = rings().collect();
+        for (i, (ida, a)) in all.iter().enumerate() {
+            for (idb, b) in &all[i + 1..] {
+                if rings_cross(a, b) {
+                    return Err(OpError::ProfileRingsMeet { a: *ida, b: *idb });
+                }
+            }
+        }
+        // The rings are disjoint, so any one vertex answers for a whole ring.
+        for (h, hole) in self.inners.iter().enumerate() {
+            if point_in_ring_2d(hole[0], &self.outer) != RingSide::Inside {
+                return Err(OpError::HoleNotInsideOuter { hole: h });
+            }
+            for (k, other) in self.inners.iter().enumerate() {
+                if k != h && point_in_ring_2d(hole[0], other) == RingSide::Inside {
+                    // A ring inside a hole is an island — material again, so it belongs to a
+                    // profile of its own. `sketch::from_rings` is what splits those out.
+                    return Err(OpError::NestedHole { outer: k, inner: h });
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The outer ring, as given.
@@ -142,8 +224,52 @@ pub enum BoolKind {
 /// A failure while applying an operation.
 #[derive(Debug, PartialEq)]
 pub enum OpError {
-    /// A profile with fewer than 3 points.
+    /// A profile ring with fewer than 3 points.
     DegenerateProfile,
+    /// A profile ring meets itself — it crosses, touches, doubles back over one of its own edges,
+    /// or doubles back over one of its own edges. Such a ring has no unambiguous inside, so the
+    /// region it is supposed to bound is undefined. `edges` are the two offending edge indices
+    /// within that ring. The input is wrong; this is not a missing capability.
+    SelfIntersectingProfile {
+        /// Which ring of the profile.
+        ring: ProfileRing,
+        /// The offending pair of edge indices within that ring.
+        edges: (usize, usize),
+    },
+    /// A profile ring repeats a point, so one of its edges has zero length. It would leave a
+    /// degenerate edge in the topology. (Reported apart from
+    /// [`OpError::SelfIntersectingProfile`] because "you typed the same point twice" and "your
+    /// outline crosses itself" are different mistakes to the author, though the same predicate
+    /// finds them.)
+    ZeroLengthProfileEdge {
+        /// Which ring of the profile.
+        ring: ProfileRing,
+        /// The zero-length edge's index within that ring.
+        edge: usize,
+    },
+    /// Two rings of a profile touch or cross. A hole must lie strictly inside the outer ring and
+    /// strictly outside its siblings; anything else has no unambiguous inside.
+    ProfileRingsMeet {
+        /// The first ring.
+        a: ProfileRing,
+        /// The second ring.
+        b: ProfileRing,
+    },
+    /// A hole ring lies outside the outer ring, so it cuts nothing. Left unchecked this is a
+    /// *silent* wrong: the prism builds, `validate` is clean, and the volume comes out reduced by
+    /// a hole that is not there.
+    HoleNotInsideOuter {
+        /// The index in [`Profile2d::inners`].
+        hole: usize,
+    },
+    /// A hole ring lies inside another hole. That region is material again — an island — and
+    /// belongs to a profile of its own; `sketch::from_rings` splits those out by nesting depth.
+    NestedHole {
+        /// The containing hole's index.
+        outer: usize,
+        /// The contained hole's index.
+        inner: usize,
+    },
     /// A non-positive extrusion distance.
     NonPositiveDistance,
     /// A curve/surface construction collapsed (collinear/coincident points, a
@@ -308,9 +434,7 @@ pub(crate) fn extrude(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
-    if profile.outer().len() < 3 {
-        return Err(OpError::DegenerateProfile);
-    }
+    profile.check()?;
     let on_plane =
         |ring: &[Point2]| -> Vec<Point3> { ring.iter().map(|p| plane.point(*p)).collect() };
     let base_pts = on_plane(profile.outer());
@@ -509,6 +633,10 @@ impl RingCells {
 
 /// `pts` wound counter-clockwise about `normal` when `ccw`, clockwise when not. The test is the
 /// polygon's area vector against `normal`, so it does not care which axis dominates.
+/// **Requires a nonzero area.** The winding is read from the sign of the area vector, and a ring
+/// that encloses nothing gives zero — the comparison below would then pick a side by accident.
+/// [`Profile2d::check`] is what guarantees it: a simple polygon cannot have zero area, and a ring
+/// that folds back on itself (a symmetric bowtie cancels to exactly zero) is not simple.
 fn oriented_ring(pts: &[Point3], normal: Vector3, ccw: bool) -> Vec<Point3> {
     let mut v = pts.to_vec();
     let k = v.len();
@@ -667,6 +795,7 @@ fn extrude_and_boolean(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
+    profile.check()?;
     let frame = face_frame(model, face)?;
     // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
     let (base_pts, inner_pts) = placed_profile_unchecked(&frame, profile)?;

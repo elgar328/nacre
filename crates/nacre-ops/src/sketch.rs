@@ -7,7 +7,7 @@
 //! (design §1 isolates that); what is here is the policy — depth parity — and the assembly.
 
 use crate::Profile2d;
-use nacre_geom::intersect::{RingSide, point_in_ring_2d, rings_cross};
+use nacre_geom::intersect::{RingSide, point_in_ring_2d, ring_self_intersection, rings_cross};
 use nacre_math::Point2;
 
 /// Why a set of rings or edges is not a valid set of profiles.
@@ -30,6 +30,13 @@ pub enum SketchError {
     OpenChain { at: [f64; 2], gap: Option<f64> },
     /// Three or more edges meet at one point, so the chain has no unambiguous continuation.
     BranchingVertex { at: [f64; 2] },
+    /// A ring meets itself — it crosses, touches, or doubles back over its own edge. Such a ring
+    /// has no unambiguous inside, so it cannot be sorted into a profile at all.
+    ///
+    /// Reported as the two offending edges' **midpoints**, not as indices: [`from_edges`] chains
+    /// the edges into rings in walk order, so a ring's edge index says nothing about where the
+    /// author's input went wrong. Points are what the rest of this enum reports too.
+    RingSelfIntersects { ring: usize, at: [[f64; 2]; 2] },
 }
 
 /// Sort closed rings into profiles by containment depth.
@@ -45,6 +52,20 @@ pub fn from_rings(rings: Vec<Vec<Point2>>) -> Result<Vec<Profile2d>, SketchError
     for (i, r) in rings.iter().enumerate() {
         if r.len() < 3 {
             return Err(SketchError::DegenerateRing { ring: i });
+        }
+    }
+    // Simplicity comes before nesting, and not merely for a better message: `point_in_ring_2d`
+    // decides containment by even-odd parity, which only means "inside" on a simple ring.
+    for (i, r) in rings.iter().enumerate() {
+        if let Some((a, b)) = ring_self_intersection(r) {
+            let mid = |e: usize| {
+                let (p, q) = (r[e], r[(e + 1) % r.len()]);
+                [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0]
+            };
+            return Err(SketchError::RingSelfIntersects {
+                ring: i,
+                at: [mid(a), mid(b)],
+            });
         }
     }
     let n = rings.len();

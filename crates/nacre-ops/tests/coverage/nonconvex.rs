@@ -5,8 +5,8 @@ use crate::common::*;
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
-    BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean,
-    replay,
+    BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, ProfileRing, SketchPlane, apply,
+    boolean, replay,
 };
 use nacre_scalar::Axis;
 use nacre_store::Handle;
@@ -577,6 +577,8 @@ fn degenerate_inputs_are_rejected() {
         apply(&mut Model::new(), &extrude_op(square(), 0.0)),
         Err(OpError::NonPositiveDistance)
     );
+    // A repeated point. This used to surface as `DegenerateGeometry` from `Line::through_points`
+    // failing deep in the prism builder; the profile contract now names it at the input instead.
     let dup = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.0, 0.0), p2(1.0, 1.0)]);
     assert_eq!(
         apply(
@@ -587,7 +589,10 @@ fn degenerate_inputs_are_rejected() {
                 dist: 1.0
             }
         ),
-        Err(OpError::DegenerateGeometry)
+        Err(OpError::ZeroLengthProfileEdge {
+            ring: ProfileRing::Outer,
+            edge: 0
+        })
     );
 }
 

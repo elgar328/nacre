@@ -22,7 +22,9 @@ mod tolerant;
 mod transform;
 
 pub use boolean::boolean;
-pub use ops::{BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
+pub use ops::{
+    BoolKind, OpError, OpOutput, Operation, Profile2d, ProfileRing, SketchPlane, apply, replay,
+};
 pub use sketch::{Curve2d, Edge2d, SketchError, from_edges, from_rings};
 
 impl SketchPlane {
