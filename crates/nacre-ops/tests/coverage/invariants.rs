@@ -22,9 +22,14 @@ use proptest::prelude::*;
 /// non-convex operand). Area = `w·h − (w−nx)·(h−ny)`.
 fn l_profile(w: i64, h: i64, nx: i64, ny: i64) -> Profile2d {
     let p = |x: i64, y: i64| Point2::from_array([x as f64, y as f64]);
-    Profile2d {
-        points: vec![p(0, 0), p(w, 0), p(w, ny), p(nx, ny), p(nx, h), p(0, h)],
-    }
+    Profile2d::polygon(vec![
+        p(0, 0),
+        p(w, 0),
+        p(w, ny),
+        p(nx, ny),
+        p(nx, h),
+        p(0, h),
+    ])
 }
 
 /// A cuboid from integer grid coordinates.

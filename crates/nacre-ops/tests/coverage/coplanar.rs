@@ -210,16 +210,14 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
     // OCCT cannot score this directly — `pad` builds its tool prism internally, and rebuilding
     // it here would lean on the same frame mapping the assertion is testing.
     let (mut m, top) = cube_with_top();
-    let l_over = Profile2d {
-        points: vec![
-            p2(-0.25, -0.25),
-            p2(0.75, -0.25),
-            p2(0.75, 0.25),
-            p2(0.25, 0.25),
-            p2(0.25, 0.5),
-            p2(-0.25, 0.5),
-        ],
-    };
+    let l_over = Profile2d::polygon(vec![
+        p2(-0.25, -0.25),
+        p2(0.75, -0.25),
+        p2(0.75, 0.25),
+        p2(0.25, 0.25),
+        p2(0.25, 0.5),
+        p2(-0.25, 0.5),
+    ]);
     let OpOutput::PadOnFace { solid, top_face } =
         apply(&mut m, &pad_op(top, l_over, 1.0)).expect("the cantilevered L pad")
     else {
@@ -251,16 +249,14 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
     //   volume 2.0 · 0.5 = 1.0
     //   area   2 · 2.0 (caps) + 6.0 (the L's perimeter) · 0.5 = 7.0
     // and the L has six sides, so eight faces.
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
     let mut m = replay(&[extrude_op(l, 1.0)]).unwrap();
     let lsolid = *m.live_solids.first().unwrap();
     let b = m.add_cuboid(

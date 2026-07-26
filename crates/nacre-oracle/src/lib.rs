@@ -352,16 +352,14 @@ bbox_min 0 0 0
 
         // An L-prism, asymmetric so the mirror cannot be a no-op: area 4, height 1.
         let mut model = Model::new();
-        let profile = nacre_ops::Profile2d {
-            points: vec![
-                Point2::from_array([0.0, 0.0]),
-                Point2::from_array([2.0, 0.0]),
-                Point2::from_array([2.0, 1.0]),
-                Point2::from_array([1.0, 1.0]),
-                Point2::from_array([1.0, 3.0]),
-                Point2::from_array([0.0, 3.0]),
-            ],
-        };
+        let profile = nacre_ops::Profile2d::polygon(vec![
+            Point2::from_array([0.0, 0.0]),
+            Point2::from_array([2.0, 0.0]),
+            Point2::from_array([2.0, 1.0]),
+            Point2::from_array([1.0, 1.0]),
+            Point2::from_array([1.0, 3.0]),
+            Point2::from_array([0.0, 3.0]),
+        ]);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut model,
             &Operation::Extrude {
@@ -529,11 +527,13 @@ bbox_min 0 0 0
         // padded solid's top face has a real hole (a FACE_BOUND in STEP); this
         // checks OCCT reads that holed boss as a closed solid and agrees on its
         // volume (1.08) and area (6.8) with nacre's analytic value.
-        let sq = |s: f64| Profile2d {
-            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
+        let sq = |s: f64| {
+            Profile2d::polygon(
+                [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                    .iter()
+                    .map(|&p| nacre_math::Point2::from_array(p))
+                    .collect(),
+            )
         };
         let mut model = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -547,12 +547,12 @@ bbox_min 0 0 0
         .unwrap() else {
             unreachable!()
         };
-        let boss = Profile2d {
-            points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+        let boss = Profile2d::polygon(
+            [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        };
+        );
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PadOnFace {
@@ -589,11 +589,13 @@ bbox_min 0 0 0
         // Unit cube, then a 0.4-square pocket of depth 0.5 in the top face. The
         // inward walls remove material; this checks OCCT reads the holed,
         // concave solid and agrees (volume 0.92, area 6.8) with nacre.
-        let sq = |s: f64| Profile2d {
-            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
+        let sq = |s: f64| {
+            Profile2d::polygon(
+                [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                    .iter()
+                    .map(|&p| nacre_math::Point2::from_array(p))
+                    .collect(),
+            )
         };
         let mut model = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -607,12 +609,12 @@ bbox_min 0 0 0
         .unwrap() else {
             unreachable!()
         };
-        let pocket = Profile2d {
-            points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+        let pocket = Profile2d::polygon(
+            [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        };
+        );
         let OpOutput::PocketOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PocketOnFace {
@@ -653,12 +655,12 @@ bbox_min 0 0 0
             &mut model,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d {
-                    points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                profile: Profile2d::polygon(
+                    [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                },
+                ),
                 dist: 1.0,
             },
         )
@@ -666,12 +668,12 @@ bbox_min 0 0 0
             unreachable!()
         };
         // Footprint world x in [0.25,0.75], y in [-0.25,0.75] - overhangs the y=0 edge.
-        let boss = Profile2d {
-            points: [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
+        let boss = Profile2d::polygon(
+            [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        };
+        );
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PadOnFace {
@@ -705,24 +707,24 @@ bbox_min 0 0 0
             &mut model,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d {
-                    points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                profile: Profile2d::polygon(
+                    [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                },
+                ),
                 dist: 1.0,
             },
         )
         .unwrap() else {
             unreachable!()
         };
-        let slot = Profile2d {
-            points: [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
+        let slot = Profile2d::polygon(
+            [[-0.25, -0.25], [0.75, -0.25], [0.75, 0.25], [-0.25, 0.25]]
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        };
+        );
         let OpOutput::PocketOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PocketOnFace {
@@ -1407,8 +1409,8 @@ bbox_min 0 0 0
             &mut m,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d {
-                    points: [
+                profile: Profile2d::polygon(
+                    [
                         [0.0, 0.0],
                         [2.0, 0.0],
                         [2.0, 1.0],
@@ -1419,7 +1421,7 @@ bbox_min 0 0 0
                     .iter()
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
-                },
+                ),
                 dist: 1.0,
             },
         )
@@ -1578,8 +1580,8 @@ bbox_min 0 0 0
         // both (concave) inputs and cuts them independently of nacre's
         // point-in-polyhedron classification.
         let mut m = Model::new();
-        let l_profile = Profile2d {
-            points: [
+        let l_profile = Profile2d::polygon(
+            [
                 [0.0, 0.0],
                 [2.0, 0.0],
                 [2.0, 1.0],
@@ -1590,7 +1592,7 @@ bbox_min 0 0 0
             .iter()
             .map(|&p| Point2::from_array(p))
             .collect(),
-        };
+        );
         let OpOutput::Extrude { solid: l, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -1654,9 +1656,7 @@ bbox_min 0 0 0
     ) -> Handle<Solid> {
         use nacre_math::Point2;
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-        let profile = Profile2d {
-            points: pts.iter().map(|&p| Point2::from_array(p)).collect(),
-        };
+        let profile = Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect());
         let OpOutput::Extrude { solid, .. } = apply(
             m,
             &Operation::Extrude {
@@ -2238,8 +2238,8 @@ bbox_min 0 0 0
             Point3::from_array([-1.0, -1.0, -1.0]),
             Point3::from_array([2.0, 2.0, 0.5]),
         );
-        let l = Profile2d {
-            points: [
+        let l = Profile2d::polygon(
+            [
                 [-0.3, -0.3],
                 [0.3, -0.3],
                 [0.3, 0.0],
@@ -2250,7 +2250,7 @@ bbox_min 0 0 0
             .iter()
             .map(|&p| nacre_math::Point2::from_array(p))
             .collect(),
-        };
+        );
         let OpOutput::Extrude { solid: lp, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -2284,12 +2284,12 @@ bbox_min 0 0 0
             &mut m,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d {
-                    points: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+                profile: Profile2d::polygon(
+                    [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                },
+                ),
                 dist: 1.0,
             },
         )
@@ -2300,12 +2300,12 @@ bbox_min 0 0 0
             &mut m,
             &Operation::PocketOnFace {
                 face: faces[1],
-                profile: Profile2d {
-                    points: [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
+                profile: Profile2d::polygon(
+                    [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                },
+                ),
                 dist: 0.5,
             },
         )
@@ -2339,8 +2339,8 @@ bbox_min 0 0 0
             Point3::from_array([-1.0, -1.0, -1.0]),
             Point3::from_array([2.0, 2.0, 0.0]),
         );
-        let l = Profile2d {
-            points: [
+        let l = Profile2d::polygon(
+            [
                 [-0.3, -0.3],
                 [0.3, -0.3],
                 [0.3, 0.0],
@@ -2351,7 +2351,7 @@ bbox_min 0 0 0
             .iter()
             .map(|&p| nacre_math::Point2::from_array(p))
             .collect(),
-        };
+        );
         let OpOutput::Extrude { solid: lb, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -2387,9 +2387,12 @@ bbox_min 0 0 0
             &mut m,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d {
-                    points: vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)],
-                },
+                profile: Profile2d::polygon(vec![
+                    p2(0.0, 0.0),
+                    p2(1.0, 0.0),
+                    p2(1.0, 1.0),
+                    p2(0.0, 1.0),
+                ]),
                 dist: 1.0,
             },
         )
@@ -2400,9 +2403,12 @@ bbox_min 0 0 0
             &mut m,
             &Operation::PocketOnFace {
                 face: faces[1],
-                profile: Profile2d {
-                    points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
-                },
+                profile: Profile2d::polygon(vec![
+                    p2(-0.2, -0.2),
+                    p2(0.2, -0.2),
+                    p2(0.2, 0.2),
+                    p2(-0.2, 0.2),
+                ]),
                 dist: 0.5,
             },
         )
@@ -2436,8 +2442,8 @@ bbox_min 0 0 0
             &mut m,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d {
-                    points: [
+                profile: Profile2d::polygon(
+                    [
                         [0.0, 0.0],
                         [2.0, 0.0],
                         [2.0, 1.0],
@@ -2448,7 +2454,7 @@ bbox_min 0 0 0
                     .iter()
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
-                },
+                ),
                 dist: 1.0,
             },
         )
@@ -3094,8 +3100,8 @@ bbox_min 0 0 0
         use nacre_math::Point2;
         use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
         let mut m = Model::new();
-        let sq = |pts: [[f64; 2]; 4]| Profile2d {
-            points: pts.iter().map(|&p| Point2::from_array(p)).collect(),
+        let sq = |pts: [[f64; 2]; 4]| {
+            Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect())
         };
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
@@ -3165,11 +3171,12 @@ bbox_min 0 0 0
     /// asks it to reproduce `PocketOnFace`.
     fn pocketed_cube() -> (Model, Handle<Solid>) {
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-        let prof = |pts: &[[f64; 2]]| Profile2d {
-            points: pts
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
+        let prof = |pts: &[[f64; 2]]| {
+            Profile2d::polygon(
+                pts.iter()
+                    .map(|&p| nacre_math::Point2::from_array(p))
+                    .collect(),
+            )
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -3420,11 +3427,12 @@ bbox_min 0 0 0
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn non_convex_overhang_cut_matches_occt() {
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-        let sq = |pts: &[[f64; 2]]| Profile2d {
-            points: pts
-                .iter()
-                .map(|&p| nacre_math::Point2::from_array(p))
-                .collect(),
+        let sq = |pts: &[[f64; 2]]| {
+            Profile2d::polygon(
+                pts.iter()
+                    .map(|&p| nacre_math::Point2::from_array(p))
+                    .collect(),
+            )
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(

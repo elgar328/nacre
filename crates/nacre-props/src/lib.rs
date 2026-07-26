@@ -282,9 +282,7 @@ mod tests {
             [1.0, 2.0],
             [0.0, 2.0],
         ];
-        let profile = Profile2d {
-            points: pts.iter().map(|&p| Point2::from_array(p)).collect(),
-        };
+        let profile = Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect());
         let dist = 3.0;
         let mut m = Model::new();
         let op = Operation::Extrude {
@@ -307,11 +305,13 @@ mod tests {
     /// Pad a `2·hw` square boss of height `dist` on a `size` cube's top face,
     /// returning the padded solid's mass.
     fn cube_then_pad(size: f64, hw: f64, dist: f64) -> MassProps {
-        let sq = |s: f64| Profile2d {
-            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
-                .iter()
-                .map(|&p| Point2::from_array(p))
-                .collect(),
+        let sq = |s: f64| {
+            Profile2d::polygon(
+                [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                    .iter()
+                    .map(|&p| Point2::from_array(p))
+                    .collect(),
+            )
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -325,12 +325,12 @@ mod tests {
         .unwrap() else {
             unreachable!()
         };
-        let boss = Profile2d {
-            points: [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
+        let boss = Profile2d::polygon(
+            [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
                 .iter()
                 .map(|&p| Point2::from_array(p))
                 .collect(),
-        };
+        );
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut m,
             &Operation::PadOnFace {
@@ -357,11 +357,13 @@ mod tests {
 
     /// Carve a `2·hw` square pocket of depth `dist` into a `size` cube's top face.
     fn cube_then_pocket(size: f64, hw: f64, dist: f64) -> MassProps {
-        let sq = |s: f64| Profile2d {
-            points: [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
-                .iter()
-                .map(|&p| Point2::from_array(p))
-                .collect(),
+        let sq = |s: f64| {
+            Profile2d::polygon(
+                [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]]
+                    .iter()
+                    .map(|&p| Point2::from_array(p))
+                    .collect(),
+            )
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -375,12 +377,12 @@ mod tests {
         .unwrap() else {
             unreachable!()
         };
-        let pocket = Profile2d {
-            points: [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
+        let pocket = Profile2d::polygon(
+            [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
                 .iter()
                 .map(|&p| Point2::from_array(p))
                 .collect(),
-        };
+        );
         let OpOutput::PocketOnFace { solid, .. } = apply(
             &mut m,
             &Operation::PocketOnFace {

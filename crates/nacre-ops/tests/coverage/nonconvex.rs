@@ -552,9 +552,7 @@ fn a_tunnel_drilled_through_a_void() {
 #[test]
 fn clockwise_input_is_auto_corrected() {
     // The square wound CW; auto-CCW makes it a valid cube anyway.
-    let cw = Profile2d {
-        points: vec![p2(0.0, 1.0), p2(1.0, 1.0), p2(1.0, 0.0), p2(0.0, 0.0)],
-    };
+    let cw = Profile2d::polygon(vec![p2(0.0, 1.0), p2(1.0, 1.0), p2(1.0, 0.0), p2(0.0, 0.0)]);
     let m = replay(&[extrude_op(cw, 1.0)]).unwrap();
     assert!(nacre_validate::validate(&m).is_empty());
     assert_eq!(m.faces.len(), 6);
@@ -563,9 +561,7 @@ fn clockwise_input_is_auto_corrected() {
 #[test]
 fn degenerate_inputs_are_rejected() {
     let plane = SketchPlane::world_xy();
-    let two = Profile2d {
-        points: vec![p2(0.0, 0.0), p2(1.0, 0.0)],
-    };
+    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0)]);
     assert_eq!(
         apply(
             &mut Model::new(),
@@ -581,9 +577,7 @@ fn degenerate_inputs_are_rejected() {
         apply(&mut Model::new(), &extrude_op(square(), 0.0)),
         Err(OpError::NonPositiveDistance)
     );
-    let dup = Profile2d {
-        points: vec![p2(0.0, 0.0), p2(0.0, 0.0), p2(1.0, 1.0)],
-    };
+    let dup = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.0, 0.0), p2(1.0, 1.0)]);
     assert_eq!(
         apply(
             &mut Model::new(),

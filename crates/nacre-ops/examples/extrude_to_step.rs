@@ -25,7 +25,7 @@ fn hexagon(r: f64) -> Profile2d {
             Point2::from_array([r * a.cos(), r * a.sin()])
         })
         .collect();
-    Profile2d { points }
+    Profile2d::polygon(points)
 }
 
 fn main() {

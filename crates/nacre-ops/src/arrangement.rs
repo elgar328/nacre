@@ -1685,16 +1685,14 @@ mod tests {
     /// own boundary edge rides the line and the cap lies on one side of it.
     #[test]
     fn the_cap_chord_stops_where_the_on_line_edge_begins() {
-        let profile = Profile2d {
-            points: vec![
-                Point2::from_array([0.0, 0.0]),
-                Point2::from_array([2.0, 0.0]),
-                Point2::from_array([2.0, 1.0]),
-                Point2::from_array([1.0, 1.0]),
-                Point2::from_array([1.0, 2.0]),
-                Point2::from_array([0.0, 2.0]),
-            ],
-        };
+        let profile = Profile2d::polygon(vec![
+            Point2::from_array([0.0, 0.0]),
+            Point2::from_array([2.0, 0.0]),
+            Point2::from_array([2.0, 1.0]),
+            Point2::from_array([1.0, 1.0]),
+            Point2::from_array([1.0, 2.0]),
+            Point2::from_array([0.0, 2.0]),
+        ]);
         let mut m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile,
@@ -1799,18 +1797,16 @@ mod tests {
     /// which is why reading the side off a flank gets a notch backwards.
     #[test]
     fn a_tangential_on_line_edge_spans_as_transversal_graze_transversal() {
-        let profile = Profile2d {
-            points: vec![
-                Point2::from_array([0.0, 0.0]),
-                Point2::from_array([3.0, 0.0]),
-                Point2::from_array([3.0, 2.3]),
-                Point2::from_array([2.0, 2.3]),
-                Point2::from_array([2.0, 1.0]),
-                Point2::from_array([1.0, 1.0]),
-                Point2::from_array([1.0, 2.0]),
-                Point2::from_array([0.0, 2.0]),
-            ],
-        };
+        let profile = Profile2d::polygon(vec![
+            Point2::from_array([0.0, 0.0]),
+            Point2::from_array([3.0, 0.0]),
+            Point2::from_array([3.0, 2.3]),
+            Point2::from_array([2.0, 2.3]),
+            Point2::from_array([2.0, 1.0]),
+            Point2::from_array([1.0, 1.0]),
+            Point2::from_array([1.0, 2.0]),
+            Point2::from_array([0.0, 2.0]),
+        ]);
         let mut m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile,
@@ -1910,15 +1906,13 @@ mod tests {
     #[test]
     fn angular_order_around_a_vertex_is_coordinate_free_and_ccw() {
         // A pentagon prism giving y-, x-, and diagonal-normal side faces plus z caps.
-        let profile = Profile2d {
-            points: vec![
-                Point2::from_array([0.0, 0.0]), // (0,0)-(3,0): y=0
-                Point2::from_array([3.0, 0.0]), // (3,0)-(3,3): x=3
-                Point2::from_array([3.0, 3.0]), // (3,3)-(2,3): y=3
-                Point2::from_array([2.0, 3.0]), // (2,3)-(0,1): diagonal y=x+1
-                Point2::from_array([0.0, 1.0]), // (0,1)-(0,0): x=0
-            ],
-        };
+        let profile = Profile2d::polygon(vec![
+            Point2::from_array([0.0, 0.0]), // (0,0)-(3,0): y=0
+            Point2::from_array([3.0, 0.0]), // (3,0)-(3,3): x=3
+            Point2::from_array([3.0, 3.0]), // (3,3)-(2,3): y=3
+            Point2::from_array([2.0, 3.0]), // (2,3)-(0,1): diagonal y=x+1
+            Point2::from_array([0.0, 1.0]), // (0,1)-(0,0): x=0
+        ]);
         let m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile,
@@ -2879,18 +2873,16 @@ mod tests {
     /// `nest_cells`' multi-hole support (the dropped `HOLE_MULTI` reject).
     #[test]
     fn u_slab_fuse_emits_a_two_hole_face() {
-        let u_profile = Profile2d {
-            points: vec![
-                Point2::from_array([0.0, 0.0]),
-                Point2::from_array([3.0, 0.0]),
-                Point2::from_array([3.0, 2.3]),
-                Point2::from_array([2.0, 2.3]),
-                Point2::from_array([2.0, 1.0]),
-                Point2::from_array([1.0, 1.0]),
-                Point2::from_array([1.0, 2.0]),
-                Point2::from_array([0.0, 2.0]),
-            ],
-        };
+        let u_profile = Profile2d::polygon(vec![
+            Point2::from_array([0.0, 0.0]),
+            Point2::from_array([3.0, 0.0]),
+            Point2::from_array([3.0, 2.3]),
+            Point2::from_array([2.0, 2.3]),
+            Point2::from_array([2.0, 1.0]),
+            Point2::from_array([1.0, 1.0]),
+            Point2::from_array([1.0, 2.0]),
+            Point2::from_array([0.0, 2.0]),
+        ]);
         let mut m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile: u_profile,

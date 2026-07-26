@@ -123,9 +123,7 @@ fn pocket_rejects_nonpositive_dist() {
 #[test]
 fn pad_rejects_degenerate_profile() {
     let (mut m, top) = cube_with_top();
-    let two = Profile2d {
-        points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
-    };
+    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]);
     assert!(matches!(
         apply(&mut m, &pad_op(top, two, 0.5)),
         Err(OpError::DegenerateProfile)
@@ -135,9 +133,7 @@ fn pad_rejects_degenerate_profile() {
 #[test]
 fn pocket_rejects_degenerate_profile() {
     let (mut m, top) = cube_with_top();
-    let two = Profile2d {
-        points: vec![p2(0.0, 0.0), p2(0.1, 0.0)],
-    };
+    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]);
     assert!(matches!(
         apply(&mut m, &pocket_op(top, two, 0.5)),
         Err(OpError::DegenerateProfile)
@@ -244,9 +240,7 @@ fn pad_overhang_off_the_face_is_rejected() {
     // `a_touchless_boss_fuses_into_two_solids`). What breaks is the *pad's* premise, so the
     // error names that, and the model the caller is left holding is the one it started with.
     let (mut m, top) = cube_with_top();
-    let far = Profile2d {
-        points: vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)],
-    };
+    let far = Profile2d::polygon(vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)]);
     let before = m.live_solids.clone();
     assert_eq!(
         apply(&mut m, &pad_op(top, far, 0.3)),
@@ -324,9 +318,12 @@ fn a_pocket_on_a_slanted_face() {
         SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
             .unwrap();
     let mut m = Model::new();
-    let big = Profile2d {
-        points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
-    };
+    let big = Profile2d::polygon(vec![
+        p2(-1.0, -1.0),
+        p2(1.0, -1.0),
+        p2(1.0, 1.0),
+        p2(-1.0, 1.0),
+    ]);
     let OpOutput::Extrude { faces, .. } = apply(
         &mut m,
         &Operation::Extrude {
@@ -356,9 +353,12 @@ fn a_pad_on_a_slanted_face() {
         SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
             .unwrap();
     let mut m = Model::new();
-    let big = Profile2d {
-        points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
-    };
+    let big = Profile2d::polygon(vec![
+        p2(-1.0, -1.0),
+        p2(1.0, -1.0),
+        p2(1.0, 1.0),
+        p2(-1.0, 1.0),
+    ]);
     let OpOutput::Extrude { faces, .. } = apply(
         &mut m,
         &Operation::Extrude {
@@ -589,16 +589,14 @@ fn cut_a_non_convex_blind_pocket() {
         Point3::from_array([-1.0, -1.0, -1.0]),
         Point3::from_array([2.0, 2.0, 0.5]),
     );
-    let l = Profile2d {
-        points: vec![
-            p2(-0.3, -0.3),
-            p2(0.3, -0.3),
-            p2(0.3, 0.0),
-            p2(0.0, 0.0),
-            p2(0.0, 0.3),
-            p2(-0.3, 0.3),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(-0.3, -0.3),
+        p2(0.3, -0.3),
+        p2(0.3, 0.0),
+        p2(0.0, 0.0),
+        p2(0.0, 0.3),
+        p2(-0.3, 0.3),
+    ]);
     let OpOutput::Extrude { solid: lp, .. } = apply(&mut m, &extrude_op(l, 0.5)).unwrap() else {
         unreachable!()
     };

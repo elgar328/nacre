@@ -45,16 +45,14 @@ fn ell(m: &mut Model) -> Handle<Solid> {
         m,
         &Operation::Extrude {
             plane: nacre_ops::SketchPlane::world_xy(),
-            profile: nacre_ops::Profile2d {
-                points: vec![
-                    p2(0.0, 0.0),
-                    p2(2.0, 0.0),
-                    p2(2.0, 1.0),
-                    p2(1.0, 1.0),
-                    p2(1.0, 3.0),
-                    p2(0.0, 3.0),
-                ],
-            },
+            profile: nacre_ops::Profile2d::polygon(vec![
+                p2(0.0, 0.0),
+                p2(2.0, 0.0),
+                p2(2.0, 1.0),
+                p2(1.0, 1.0),
+                p2(1.0, 3.0),
+                p2(0.0, 3.0),
+            ]),
             dist: 1.0,
         },
     )

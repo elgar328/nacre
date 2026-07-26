@@ -23,12 +23,48 @@ pub struct SketchPlane {
     pub y_axis: Vector3,
 }
 
-/// A closed, simple polygon profile (straight segments only), at least 3 points.
-/// Extrusion normalizes the winding to counter-clockwise, so input orientation
-/// does not matter; self-intersection is assumed absent (not checked in M2).
+/// A closed planar region: one outer ring and any number of hole rings (straight segments only,
+/// at least 3 points each).
+///
+/// **Winding is not the caller's business, and not this type's either.** The rings are stored as
+/// given; the prism builder is the single place that decides orientation, because it is the only
+/// one that knows the sweep direction (a pocket sweeps *into* a face, which flips what
+/// "counter-clockwise" means). Fixing the winding here as well would put that decision in two
+/// places, which is exactly how the holes and the outer ring come to disagree.
+///
+/// Self-intersection and the rings' relationships (a hole must lie inside the outer ring and
+/// outside its siblings) are **not checked here** — `with_holes` takes the caller's word.
+/// `sketch::from_rings` is the checking constructor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Profile2d {
-    pub points: Vec<Point2>,
+    outer: Vec<Point2>,
+    inners: Vec<Vec<Point2>>,
+}
+
+impl Profile2d {
+    /// A simple polygon — no holes.
+    pub fn polygon(points: Vec<Point2>) -> Profile2d {
+        Profile2d {
+            outer: points,
+            inners: Vec::new(),
+        }
+    }
+
+    /// An outer ring with holes. The caller guarantees each hole lies inside `outer` and outside
+    /// the other holes; nothing here verifies it (see the type docs).
+    pub fn with_holes(outer: Vec<Point2>, inners: Vec<Vec<Point2>>) -> Profile2d {
+        Profile2d { outer, inners }
+    }
+
+    /// The outer ring, as given.
+    pub fn outer(&self) -> &[Point2] {
+        &self.outer
+    }
+
+    /// The hole rings, as given.
+    pub fn inners(&self) -> &[Vec<Point2>] {
+        &self.inners
+    }
 }
 
 /// A modelling operation.
@@ -140,6 +176,10 @@ pub enum OpError {
     /// unreached in the suite (the definitions and the result faces both name the plane class's
     /// representative surface).
     OriginNotOnSolid,
+    /// A `Profile2d` carries hole rings, which the prism builder does not dig yet. **Temporary**:
+    /// the very next step teaches `build_prism` to raise hole walls and attach the cap inner
+    /// loops, and this variant goes away with it.
+    ProfileHolesUnsupported,
     /// A `Mirror` input carries curved geometry (a cylindrical face, a circular edge). A
     /// reflection reverses a circle's parametrisation, and which convention a mirrored quadric
     /// should take is a curved-geometry decision, so it is declined rather than guessed.
@@ -283,10 +323,14 @@ pub(crate) fn extrude(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
-    if profile.points.len() < 3 {
+    if profile.outer().len() < 3 {
         return Err(OpError::DegenerateProfile);
     }
-    let base_pts: Vec<Point3> = profile.points.iter().map(|p| plane.point(*p)).collect();
+    // S1: the type can carry holes but the prism builder cannot dig them yet.
+    if !profile.inners().is_empty() {
+        return Err(OpError::ProfileHolesUnsupported);
+    }
+    let base_pts: Vec<Point3> = profile.outer().iter().map(|p| plane.point(*p)).collect();
     build_prism(model, &base_pts, plane.normal() * dist, None)
 }
 
@@ -528,10 +572,13 @@ fn placed_profile_unchecked(
     frame: &FaceFrame,
     profile: &Profile2d,
 ) -> Result<Vec<Point3>, OpError> {
-    if profile.points.len() < 3 {
+    if profile.outer().len() < 3 {
         return Err(OpError::DegenerateProfile);
     }
-    let mut pts = profile.points.clone();
+    if !profile.inners().is_empty() {
+        return Err(OpError::ProfileHolesUnsupported);
+    }
+    let mut pts = profile.outer().to_vec();
     if signed_area(&pts) < 0.0 {
         pts.reverse();
     }

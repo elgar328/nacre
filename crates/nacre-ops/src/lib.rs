@@ -490,9 +490,7 @@ pub mod tests {
     }
 
     fn square() -> Profile2d {
-        Profile2d {
-            points: vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)],
-        }
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)])
     }
 
     fn extrude_op(profile: Profile2d, dist: f64) -> Operation {
@@ -510,7 +508,7 @@ pub mod tests {
                 p2(r * a.cos(), r * a.sin())
             })
             .collect();
-        Profile2d { points }
+        Profile2d::polygon(points)
     }
 
     #[test]
@@ -541,9 +539,7 @@ pub mod tests {
 
     #[test]
     fn triangle_extrudes_to_a_prism() {
-        let tri = Profile2d {
-            points: vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(1.0, 1.5)],
-        };
+        let tri = Profile2d::polygon(vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(1.0, 1.5)]);
         let m = replay(&[extrude_op(tri, 3.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 6);
@@ -562,16 +558,14 @@ pub mod tests {
     #[test]
     fn concave_l_profile_is_valid() {
         // An L-shape (a reflex vertex) — a simple concave hexagon.
-        let l = Profile2d {
-            points: vec![
-                p2(0.0, 0.0),
-                p2(2.0, 0.0),
-                p2(2.0, 1.0),
-                p2(1.0, 1.0),
-                p2(1.0, 2.0),
-                p2(0.0, 2.0),
-            ],
-        };
+        let l = Profile2d::polygon(vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ]);
         let m = replay(&[extrude_op(l, 1.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 12);
@@ -582,16 +576,14 @@ pub mod tests {
     /// z ∈ [0,1]. Material = bottom bar (x∈[0,2],y∈[0,1]) ∪ left bar (x∈[0,1],
     /// y∈[1,2]); the notch (x∈[1,2],y∈[1,2]) is empty.
     fn l_prism() -> (Model, Handle<Solid>) {
-        let l = Profile2d {
-            points: vec![
-                p2(0.0, 0.0),
-                p2(2.0, 0.0),
-                p2(2.0, 1.0),
-                p2(1.0, 1.0),
-                p2(1.0, 2.0),
-                p2(0.0, 2.0),
-            ],
-        };
+        let l = Profile2d::polygon(vec![
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ]);
         let m = replay(&[extrude_op(l, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
@@ -600,16 +592,14 @@ pub mod tests {
     /// The same L-prism, its profile started one vertex earlier so the reflex corner
     /// `(1,1)` lands at index 1 of the cap's loop. Geometrically identical.
     fn rotated_l_prism() -> (Model, Handle<Solid>) {
-        let l = Profile2d {
-            points: vec![
-                p2(2.0, 1.0),
-                p2(1.0, 1.0),
-                p2(1.0, 2.0),
-                p2(0.0, 2.0),
-                p2(0.0, 0.0),
-                p2(2.0, 0.0),
-            ],
-        };
+        let l = Profile2d::polygon(vec![
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+            p2(0.0, 0.0),
+            p2(2.0, 0.0),
+        ]);
         let m = replay(&[extrude_op(l, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
@@ -1244,13 +1234,15 @@ pub mod tests {
     fn parallel_boolean_is_thread_order_independent() {
         use nacre_scalar::{Axis, Isometry, Rat};
         let build = || {
-            let ngon = |n: usize, r: f64, cx: f64, cy: f64| Profile2d {
-                points: (0..n)
-                    .map(|i| {
-                        let ang = std::f64::consts::TAU * (i as f64) / (n as f64);
-                        p2(cx + r * ang.cos(), cy + r * ang.sin())
-                    })
-                    .collect(),
+            let ngon = |n: usize, r: f64, cx: f64, cy: f64| {
+                Profile2d::polygon(
+                    (0..n)
+                        .map(|i| {
+                            let ang = std::f64::consts::TAU * (i as f64) / (n as f64);
+                            p2(cx + r * ang.cos(), cy + r * ang.sin())
+                        })
+                        .collect(),
+                )
             };
             let mut m = replay(&[
                 extrude_op(ngon(16, 2.0, 0.0, 0.0), 3.0),
@@ -1295,18 +1287,16 @@ pub mod tests {
     /// rejected before the seam machinery ran. That guard is gone; the staggering stays
     /// as this fixture's pinned shape. Area 3 + 1 + 1.3, extruded 1.0 ⇒ volume 5.3.
     fn u_prism() -> (Model, Handle<Solid>) {
-        let u = Profile2d {
-            points: vec![
-                p2(0.0, 0.0),
-                p2(3.0, 0.0),
-                p2(3.0, 2.3),
-                p2(2.0, 2.3),
-                p2(2.0, 1.0),
-                p2(1.0, 1.0),
-                p2(1.0, 2.0),
-                p2(0.0, 2.0),
-            ],
-        };
+        let u = Profile2d::polygon(vec![
+            p2(0.0, 0.0),
+            p2(3.0, 0.0),
+            p2(3.0, 2.3),
+            p2(2.0, 2.3),
+            p2(2.0, 1.0),
+            p2(1.0, 1.0),
+            p2(1.0, 2.0),
+            p2(0.0, 2.0),
+        ]);
         let m = replay(&[extrude_op(u, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
@@ -1483,16 +1473,14 @@ pub mod tests {
     /// is pierced twice — the bar takes corners, not edges. Two chords, no closed loop.
     fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
-        let bar = Profile2d {
-            points: vec![
-                p2(1.8, 0.8),
-                p2(2.1, 0.8),
-                p2(2.1, 2.1),
-                p2(0.8, 2.1),
-                p2(0.8, 1.8),
-                p2(1.8, 1.8),
-            ],
-        };
+        let bar = Profile2d::polygon(vec![
+            p2(1.8, 0.8),
+            p2(2.1, 0.8),
+            p2(2.1, 2.1),
+            p2(0.8, 2.1),
+            p2(0.8, 1.8),
+            p2(1.8, 1.8),
+        ]);
         let OpOutput::Extrude { solid: b, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -1518,16 +1506,14 @@ pub mod tests {
     /// `y = 2x`), which `segment_crosses_face` would graze.
     fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
-        let ell = Profile2d {
-            points: vec![
-                p2(0.2, 0.25),
-                p2(0.85, 0.25),
-                p2(0.85, 0.4),
-                p2(0.35, 0.4), // reflex
-                p2(0.35, 0.9),
-                p2(0.2, 0.9),
-            ],
-        };
+        let ell = Profile2d::polygon(vec![
+            p2(0.2, 0.25),
+            p2(0.85, 0.25),
+            p2(0.85, 0.4),
+            p2(0.35, 0.4), // reflex
+            p2(0.35, 0.9),
+            p2(0.2, 0.9),
+        ]);
         let OpOutput::Extrude { solid: stub, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -1642,18 +1628,16 @@ pub mod tests {
     /// the cap's fan diagonal `y = x/2` and `segment_crosses_face` would graze it.
     fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
-        let staple = Profile2d {
-            points: vec![
-                p2(0.1, 0.5),
-                p2(0.6, 0.5),
-                p2(0.6, 1.3),
-                p2(0.8, 1.3),
-                p2(0.8, 0.45),
-                p2(1.4, 0.45),
-                p2(1.4, 1.5),
-                p2(0.1, 1.5),
-            ],
-        };
+        let staple = Profile2d::polygon(vec![
+            p2(0.1, 0.5),
+            p2(0.6, 0.5),
+            p2(0.6, 1.3),
+            p2(0.8, 1.3),
+            p2(0.8, 0.45),
+            p2(1.4, 0.45),
+            p2(1.4, 1.5),
+            p2(0.1, 1.5),
+        ]);
         let OpOutput::Extrude { solid: st, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -2041,9 +2025,12 @@ pub mod tests {
     }
 
     fn small_square() -> Profile2d {
-        Profile2d {
-            points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
-        }
+        Profile2d::polygon(vec![
+            p2(-0.2, -0.2),
+            p2(0.2, -0.2),
+            p2(0.2, 0.2),
+            p2(-0.2, 0.2),
+        ])
     }
 
     /// **Chaining onto a fused boss.** The fuse leaves the base's `z=1` face a *ring* — a face with
@@ -2244,9 +2231,7 @@ pub mod tests {
             prop_assume!(normal.norm() > 0.3);
             let plane = SketchPlane::from_origin_normal(Point3::origin(), normal).unwrap();
             let mut m = Model::new();
-            let big = Profile2d {
-                points: vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)],
-            };
+            let big = Profile2d::polygon(vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)]);
             let OpOutput::Extrude { faces, .. } =
                 apply(&mut m, &Operation::Extrude { plane, profile: big, dist: 2.0 }).unwrap()
             else { unreachable!() };
@@ -2272,18 +2257,14 @@ pub mod tests {
             h in 0.05f64..0.15,
             dist in 0.1f64..5.0,
         ) {
-            let rect = Profile2d {
-                points: vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)],
-            };
+            let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]);
             let mut m = Model::new();
             let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
                 profile: rect,
                 dist: sz,
             }).unwrap() else { unreachable!() };
-            let hole = Profile2d {
-                points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
-            };
+            let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]);
             apply(&mut m, &Operation::PadOnFace { face: faces[1], profile: hole, dist }).unwrap();
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
@@ -2299,18 +2280,14 @@ pub mod tests {
             h in 0.05f64..0.15,
             dist in 0.1f64..0.8,
         ) {
-            let rect = Profile2d {
-                points: vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)],
-            };
+            let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]);
             let mut m = Model::new();
             let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
                 profile: rect,
                 dist: sz,
             }).unwrap() else { unreachable!() };
-            let hole = Profile2d {
-                points: vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)],
-            };
+            let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]);
             apply(&mut m, &Operation::PocketOnFace { face: faces[1], profile: hole, dist }).unwrap();
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());

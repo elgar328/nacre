@@ -48,9 +48,7 @@ pub fn p2(x: f64, y: f64) -> Point2 {
 }
 
 pub fn square() -> Profile2d {
-    Profile2d {
-        points: vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)],
-    }
+    Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)])
 }
 
 pub fn regular_ngon(n: usize, r: f64) -> Profile2d {
@@ -60,7 +58,7 @@ pub fn regular_ngon(n: usize, r: f64) -> Profile2d {
             p2(r * a.cos(), r * a.sin())
         })
         .collect();
-    Profile2d { points }
+    Profile2d::polygon(points)
 }
 
 pub fn extrude_op(profile: Profile2d, dist: f64) -> Operation {
@@ -165,16 +163,14 @@ pub fn rot_iso(axis: Axis, deg: i128) -> Isometry {
 
 /// The canonical L-prism (footprint area 3, height 1 ⇒ volume 3).
 pub fn l_prism() -> (Model, Handle<Solid>) {
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
     let m = replay(&[extrude_op(l, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
@@ -183,16 +179,14 @@ pub fn l_prism() -> (Model, Handle<Solid>) {
 /// The L-prism with its profile wound the other way (vertex order rotated) — the
 /// same solid, used to prove a profile's winding cannot change the boolean.
 pub fn rotated_l_prism() -> (Model, Handle<Solid>) {
-    let l = Profile2d {
-        points: vec![
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+    ]);
     let m = replay(&[extrude_op(l, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
@@ -257,18 +251,16 @@ pub fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
 
 /// A U-prism (two prongs + a bridge), footprint spanning a reflex-rich outline.
 pub fn u_prism() -> (Model, Handle<Solid>) {
-    let u = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(3.0, 0.0),
-            p2(3.0, 2.3),
-            p2(2.0, 2.3),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
+    let u = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(3.0, 0.0),
+        p2(3.0, 2.3),
+        p2(2.0, 2.3),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
     let m = replay(&[extrude_op(u, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
@@ -304,50 +296,44 @@ fn extrude_at_z(m: &mut Model, profile: Profile2d, z: f64, dist: f64) -> Handle<
 
 pub fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let bar = Profile2d {
-        points: vec![
-            p2(1.8, 0.8),
-            p2(2.1, 0.8),
-            p2(2.1, 2.1),
-            p2(0.8, 2.1),
-            p2(0.8, 1.8),
-            p2(1.8, 1.8),
-        ],
-    };
+    let bar = Profile2d::polygon(vec![
+        p2(1.8, 0.8),
+        p2(2.1, 0.8),
+        p2(2.1, 2.1),
+        p2(0.8, 2.1),
+        p2(0.8, 1.8),
+        p2(1.8, 1.8),
+    ]);
     let b = extrude_at_z(&mut m, bar, 0.5, 1.0);
     (m, l, b)
 }
 
 pub fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let ell = Profile2d {
-        points: vec![
-            p2(0.2, 0.25),
-            p2(0.85, 0.25),
-            p2(0.85, 0.4),
-            p2(0.35, 0.4), // reflex
-            p2(0.35, 0.9),
-            p2(0.2, 0.9),
-        ],
-    };
+    let ell = Profile2d::polygon(vec![
+        p2(0.2, 0.25),
+        p2(0.85, 0.25),
+        p2(0.85, 0.4),
+        p2(0.35, 0.4), // reflex
+        p2(0.35, 0.9),
+        p2(0.2, 0.9),
+    ]);
     let stub = extrude_at_z(&mut m, ell, 0.5, 1.0);
     (m, l, stub)
 }
 
 pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
-    let staple = Profile2d {
-        points: vec![
-            p2(0.1, 0.5),
-            p2(0.6, 0.5),
-            p2(0.6, 1.3),
-            p2(0.8, 1.3),
-            p2(0.8, 0.45),
-            p2(1.4, 0.45),
-            p2(1.4, 1.5),
-            p2(0.1, 1.5),
-        ],
-    };
+    let staple = Profile2d::polygon(vec![
+        p2(0.1, 0.5),
+        p2(0.6, 0.5),
+        p2(0.6, 1.3),
+        p2(0.8, 1.3),
+        p2(0.8, 0.45),
+        p2(1.4, 0.45),
+        p2(1.4, 1.5),
+        p2(0.1, 1.5),
+    ]);
     let OpOutput::Extrude { solid: st, .. } = apply(
         &mut m,
         &Operation::Extrude {
@@ -380,9 +366,12 @@ pub fn cube_with_top() -> (Model, Handle<Face>) {
 
 /// A small square profile centred on the origin (a boss/pocket footprint).
 pub fn small_square() -> Profile2d {
-    Profile2d {
-        points: vec![p2(-0.2, -0.2), p2(0.2, -0.2), p2(0.2, 0.2), p2(-0.2, 0.2)],
-    }
+    Profile2d::polygon(vec![
+        p2(-0.2, -0.2),
+        p2(0.2, -0.2),
+        p2(0.2, 0.2),
+        p2(-0.2, 0.2),
+    ])
 }
 
 pub fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
@@ -472,25 +461,21 @@ pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 }
 
 pub fn edge_overhang_profile() -> Profile2d {
-    Profile2d {
-        points: vec![
-            p2(-0.25, -0.25),
-            p2(0.75, -0.25),
-            p2(0.75, 0.25),
-            p2(-0.25, 0.25),
-        ],
-    }
+    Profile2d::polygon(vec![
+        p2(-0.25, -0.25),
+        p2(0.75, -0.25),
+        p2(0.75, 0.25),
+        p2(-0.25, 0.25),
+    ])
 }
 
 pub fn spanning_slab_profile() -> Profile2d {
-    Profile2d {
-        points: vec![
-            p2(-0.75, -0.25),
-            p2(0.75, -0.25),
-            p2(0.75, 0.25),
-            p2(-0.75, 0.25),
-        ],
-    }
+    Profile2d::polygon(vec![
+        p2(-0.75, -0.25),
+        p2(0.75, -0.25),
+        p2(0.75, 0.25),
+        p2(-0.75, 0.25),
+    ])
 }
 
 /// f64 approximate equality for coordinate/volume comparisons.

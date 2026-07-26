@@ -16,7 +16,7 @@ fn hexagon(r: f64) -> Profile2d {
             Point2::from_array([r * a.cos(), r * a.sin()])
         })
         .collect();
-    Profile2d { points }
+    Profile2d::polygon(points)
 }
 
 fn hex_extrude(plane: SketchPlane) -> Operation {
@@ -191,22 +191,18 @@ fn assert_agrees(g: &Gate, what: &str) {
 }
 
 fn square(a: f64, b: f64) -> Profile2d {
-    Profile2d {
-        points: vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)],
-    }
+    Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)])
 }
 
 /// `PocketOnFace`'s profile lives in a frame **derived from the face** (design §6),
 /// centred on it — not in world coordinates. `±0.2` here is the `[0.3,0.7]²` void.
 fn centred_square(half: f64) -> Profile2d {
-    Profile2d {
-        points: vec![
-            p2(-half, -half),
-            p2(half, -half),
-            p2(half, half),
-            p2(-half, half),
-        ],
-    }
+    Profile2d::polygon(vec![
+        p2(-half, -half),
+        p2(half, -half),
+        p2(half, half),
+        p2(-half, half),
+    ])
 }
 
 fn p2(x: f64, y: f64) -> Point2 {
@@ -216,18 +212,16 @@ fn p2(x: f64, y: f64) -> Point2 {
 /// The `u_prism` of the boolean suite: prong tops at different heights so no two
 /// faces are coplanar. Its cap is **not star-shaped from `(0,0)`**.
 fn u_prism() -> (Model, Handle<Solid>) {
-    let u = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(3.0, 0.0),
-            p2(3.0, 2.3),
-            p2(2.0, 2.3),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
+    let u = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(3.0, 0.0),
+        p2(3.0, 2.3),
+        p2(2.0, 2.3),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
     let m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: u,
@@ -280,16 +274,14 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
 /// boss; either way the L's top face gains an inner loop, and that loop's rim edges
 /// must pair with the walls that drop or rise from them.
 fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
     let mut m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: l,
@@ -310,16 +302,14 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
 /// the stub's footprint, so the answer is a `0.4 × 0.4 × 0.5` box whose floor is that
 /// island face: an outer loop made of nothing but seam vertices (cell 3f-2).
 fn island_cut() -> (Model, Handle<Solid>) {
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
     let mut m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: l,
@@ -339,26 +329,22 @@ fn island_cut() -> (Model, Handle<Solid>) {
 /// The L-prism and an L-shaped bar in its notch, biting two corners of the cap. Two
 /// chords on one face; under `Cut` the bar's floor splits into the two bites' floors.
 fn notch_bar_cut() -> (Model, Handle<Solid>) {
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
-    let bar = Profile2d {
-        points: vec![
-            p2(1.8, 0.8),
-            p2(2.1, 0.8),
-            p2(2.1, 2.1),
-            p2(0.8, 2.1),
-            p2(0.8, 1.8),
-            p2(1.8, 1.8),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
+    let bar = Profile2d::polygon(vec![
+        p2(1.8, 0.8),
+        p2(2.1, 0.8),
+        p2(2.1, 2.1),
+        p2(0.8, 2.1),
+        p2(0.8, 1.8),
+        p2(1.8, 1.8),
+    ]);
     let mut m = replay(&[
         Operation::Extrude {
             plane: SketchPlane::world_xy(),
@@ -384,26 +370,22 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
 /// The L-prism with an L-shaped stub standing wholly inside its cap: a blind pocket whose
 /// lid carries a **non-convex** inner loop, the first the bridging triangulator has seen.
 fn ell_dimple_cut() -> (Model, Handle<Solid>) {
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
-    let ell = Profile2d {
-        points: vec![
-            p2(0.2, 0.25),
-            p2(0.85, 0.25),
-            p2(0.85, 0.4),
-            p2(0.35, 0.4),
-            p2(0.35, 0.9),
-            p2(0.2, 0.9),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
+    let ell = Profile2d::polygon(vec![
+        p2(0.2, 0.25),
+        p2(0.85, 0.25),
+        p2(0.85, 0.4),
+        p2(0.35, 0.4),
+        p2(0.35, 0.9),
+        p2(0.2, 0.9),
+    ]);
     let mut m = replay(&[
         Operation::Extrude {
             plane: SketchPlane::world_xy(),
@@ -444,28 +426,24 @@ fn u_cut_by_slab() -> (Model, Handle<Solid>) {
 /// The L's cap contributes two faces to the result: the kept region around the reflex corner,
 /// and an **island** where the near leg's footprint sits in a dropped region (cell 3f-4).
 fn staple_cut_by_l() -> (Model, Handle<Solid>) {
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
-    let staple = Profile2d {
-        points: vec![
-            p2(0.1, 0.5),
-            p2(0.6, 0.5),
-            p2(0.6, 1.3),
-            p2(0.8, 1.3),
-            p2(0.8, 0.45),
-            p2(1.4, 0.45),
-            p2(1.4, 1.5),
-            p2(0.1, 1.5),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
+    let staple = Profile2d::polygon(vec![
+        p2(0.1, 0.5),
+        p2(0.6, 0.5),
+        p2(0.6, 1.3),
+        p2(0.8, 1.3),
+        p2(0.8, 0.45),
+        p2(1.4, 0.45),
+        p2(1.4, 1.5),
+        p2(0.1, 1.5),
+    ]);
     let mut m = replay(&[
         Operation::Extrude {
             plane: SketchPlane::world_xy(),
@@ -933,16 +911,14 @@ fn a_flipped_face_keeps_its_hole() {
 /// reverse either and props, reading `orientation` and `|A_vec|`, would not notice.
 #[test]
 fn a_drilled_solid_meshes_watertight() {
-    let l = Profile2d {
-        points: vec![
-            p2(0.0, 0.0),
-            p2(2.0, 0.0),
-            p2(2.0, 1.0),
-            p2(1.0, 1.0),
-            p2(1.0, 2.0),
-            p2(0.0, 2.0),
-        ],
-    };
+    let l = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ]);
     let mut m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: l,
