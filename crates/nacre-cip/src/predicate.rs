@@ -36,7 +36,19 @@ use nacre_scalar::Orient;
 /// so it necessarily runs before a plane table exists.
 pub trait Witness {
     fn tri(&self) -> [Point3; 3];
-    fn tri_pt3(&self) -> Option<&[Pt3; 3]>;
+    /// The three `tri` points as exact [`Pt3`] definitions, **always present**.
+    ///
+    /// This is a *cache*: the definition is built once, where the witness is, and every predicate
+    /// borrows it. It used to be an `Option` whose emptiness *also* meant "not rotated" — one
+    /// field answering two questions, which is why it could not be filled in advance without
+    /// changing which predicate path runs. [`Witness::is_rotated`] is now that second question.
+    fn tri_pt3(&self) -> &[Pt3; 3];
+    /// Whether this plane came from a rotated solid — the predicate-routing signal, and a
+    /// **different fact** from "does the definition carry a rotation chain". Neither
+    /// `chain.is_empty()` nor `tol == 0` is equivalent to it (a rotated solid's face may witness
+    /// its plane through points with no chain, and a 90°-family rotation has tol exactly 0), so
+    /// the answer is carried, not derived.
+    fn is_rotated(&self) -> bool;
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
@@ -49,30 +61,21 @@ pub trait PlaneWitness: Witness {
     fn coeffs(&self) -> [f64; 4];
 }
 
-/// Whether any of the named planes is rotated — the per-predicate routing signal. A plane
-/// carries [`Witness::tri_pt3`] `Some` exactly when it came from a rotated solid. A predicate
+/// Whether any of the named planes is rotated — the per-predicate routing signal. A predicate
 /// must escalate to the kernel if **any** — not all — of its planes is irrational: a single
 /// rounded coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact.
 pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
-    idx.iter().any(|&k| planes[k].tri_pt3().is_some())
+    idx.iter().any(|&k| planes[k].is_rotated())
 }
 
-/// The three exact [`Pt3`] defining plane `k`. A rotated plane carries them cached in
-/// [`Witness::tri_pt3`]; an axis-aligned plane (`None`) is built exactly from its `tri`
-/// coordinates, which are already exact f64.
-pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> [Pt3; 3] {
-    match planes[k].tri_pt3() {
-        Some(t) => t.clone(),
-        None => planes[k].tri().map(pt3_from_exact),
-    }
-}
-
-/// An exact axis-aligned point as a tol-0 `Pt3` (its f64 coordinates are exact rationals).
+/// The three exact [`Pt3`] defining plane `k` — **borrowed**, never rebuilt.
 ///
-/// [`Pt3::exact`] is the constructor that *names* this case; reaching [`Pt3::at`] instead would
-/// **measure** a rounding error that is provably zero, at 120 bits, on the boolean's hottest path.
-fn pt3_from_exact(p: Point3) -> Pt3 {
-    Pt3::exact(p.as_array()).expect("axis-aligned coordinate is an exact rational")
+/// This used to construct them per call: cloning a rotated witness (a heap allocation each time)
+/// or rebuilding an axis-aligned one from its `tri`. A boolean over 25 rotated fins called it a
+/// million times, which was 77% of its runtime. The definitions are the same every call, so the
+/// witness owns them and this is a pure accessor.
+pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[Pt3; 3] {
+    planes[k].tri_pt3()
 }
 
 fn to_i8(o: Orient) -> i8 {
@@ -88,9 +91,9 @@ fn borrow3(d: &[Pt3; 3]) -> (&Pt3, &Pt3, &Pt3) {
     (&d[0], &d[1], &d[2])
 }
 
-/// Borrow three owned plane defs as the tuples `indirect_cmp_coord_judge` takes.
-fn borrow_triple(d: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
-    [borrow3(&d[0]), borrow3(&d[1]), borrow3(&d[2])]
+/// Borrow three plane defs as the tuples `indirect_cmp_coord_judge` takes.
+fn borrow_triple(d: [&[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
+    [borrow3(d[0]), borrow3(d[1]), borrow3(d[2])]
 }
 
 /// The sign of `orient3d(V, tri_j)` where `V = ∩(planes p, q, r)` is an implicit point,
@@ -121,9 +124,9 @@ pub fn t_orient3d<W: PlaneWitness>(planes: &[W], p: usize, q: usize, r: usize, j
         plane_def(planes, j),
     );
     to_i8(indirect_orient3d_judge(
-        borrow3(&dp),
-        borrow3(&dq),
-        borrow3(&dr),
+        borrow3(dp),
+        borrow3(dq),
+        borrow3(dr),
         &dj[0],
         &dj[1],
         &dj[2],
@@ -148,8 +151,8 @@ pub fn t_cmp_coord<W: PlaneWitness>(planes: &[W], a: [usize; 3], b: [usize; 3], 
     let da = a.map(|k| plane_def(planes, k));
     let db = b.map(|k| plane_def(planes, k));
     to_i8(indirect_cmp_coord_judge(
-        borrow_triple(&da),
-        borrow_triple(&db),
+        borrow_triple(da),
+        borrow_triple(db),
         axis,
     ))
 }
@@ -239,25 +242,37 @@ pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, 
     frame_sign(&planes[p])
         * frame_sign(&planes[a])
         * frame_sign(&planes[b])
-        * to_i8(dir_sign_judge(borrow3(&dp), borrow3(&da), borrow3(&db)))
+        * to_i8(dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A synthetic axis-aligned plane witness: three points on the plane plus its exact
-    /// coefficients. `tri_pt3` is `None` (axis-aligned), so predicates take the exact path.
+    /// A synthetic axis-aligned plane witness: three points on the plane, its exact
+    /// coefficients, and the exact `Pt3` definition of those points. `is_rotated` is `false`,
+    /// so predicates take the exact path — the definition is there but unused, which is
+    /// precisely the arrangement the production tables now have.
     struct W {
         tri: [Point3; 3],
         coeffs: [f64; 4],
+        def: [Pt3; 3],
+    }
+    impl W {
+        fn new(tri: [Point3; 3], coeffs: [f64; 4]) -> W {
+            let def = tri.map(|p| Pt3::exact(p.as_array()).expect("test coordinate"));
+            W { tri, coeffs, def }
+        }
     }
     impl Witness for W {
         fn tri(&self) -> [Point3; 3] {
             self.tri
         }
-        fn tri_pt3(&self) -> Option<&[Pt3; 3]> {
-            None
+        fn tri_pt3(&self) -> &[Pt3; 3] {
+            &self.def
+        }
+        fn is_rotated(&self) -> bool {
+            false
         }
     }
     impl PlaneWitness for W {
@@ -271,25 +286,25 @@ mod tests {
         let p = |a, b, c| Point3::from_array([a, b, c]);
         vec![
             // x = 1  →  1·x + 0 + 0 − 1 = 0
-            W {
-                tri: [p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0), p(1.0, 0.0, 1.0)],
-                coeffs: [1.0, 0.0, 0.0, -1.0],
-            },
+            W::new(
+                [p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0), p(1.0, 0.0, 1.0)],
+                [1.0, 0.0, 0.0, -1.0],
+            ),
             // y = 1
-            W {
-                tri: [p(0.0, 1.0, 0.0), p(1.0, 1.0, 0.0), p(0.0, 1.0, 1.0)],
-                coeffs: [0.0, 1.0, 0.0, -1.0],
-            },
+            W::new(
+                [p(0.0, 1.0, 0.0), p(1.0, 1.0, 0.0), p(0.0, 1.0, 1.0)],
+                [0.0, 1.0, 0.0, -1.0],
+            ),
             // z = 1
-            W {
-                tri: [p(0.0, 0.0, 1.0), p(1.0, 0.0, 1.0), p(0.0, 1.0, 1.0)],
-                coeffs: [0.0, 0.0, 1.0, -1.0],
-            },
+            W::new(
+                [p(0.0, 0.0, 1.0), p(1.0, 0.0, 1.0), p(0.0, 1.0, 1.0)],
+                [0.0, 0.0, 1.0, -1.0],
+            ),
             // z = 0
-            W {
-                tri: [p(0.0, 0.0, 0.0), p(1.0, 0.0, 0.0), p(0.0, 1.0, 0.0)],
-                coeffs: [0.0, 0.0, 1.0, 0.0],
-            },
+            W::new(
+                [p(0.0, 0.0, 0.0), p(1.0, 0.0, 0.0), p(0.0, 1.0, 0.0)],
+                [0.0, 0.0, 1.0, 0.0],
+            ),
         ]
     }
 
@@ -333,10 +348,7 @@ mod tests {
         // x=1: tri wound so cross(tri) = +x, and the coeffs normal is +x → +1.
         assert_eq!(frame_sign(&ps[0]), 1);
         // reversing the tri winding flips cross(tri) → -1 (coeffs unchanged).
-        let flipped = W {
-            tri: [ps[0].tri[0], ps[0].tri[2], ps[0].tri[1]],
-            coeffs: ps[0].coeffs,
-        };
+        let flipped = W::new([ps[0].tri[0], ps[0].tri[2], ps[0].tri[1]], ps[0].coeffs);
         assert_eq!(frame_sign(&flipped), -1);
     }
 }

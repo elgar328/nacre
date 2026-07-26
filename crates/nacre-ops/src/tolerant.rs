@@ -19,8 +19,11 @@ impl Witness for PlaneGeom {
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
-    fn tri_pt3(&self) -> Option<&[Pt3; 3]> {
-        self.tri_pt3.as_ref()
+    fn tri_pt3(&self) -> &[Pt3; 3] {
+        &self.tri_pt3
+    }
+    fn is_rotated(&self) -> bool {
+        self.rotated
     }
 }
 
@@ -28,8 +31,11 @@ impl Witness for FaceInfo {
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
-    fn tri_pt3(&self) -> Option<&[Pt3; 3]> {
-        self.tri_pt3.as_ref()
+    fn tri_pt3(&self) -> &[Pt3; 3] {
+        &self.tri_pt3
+    }
+    fn is_rotated(&self) -> bool {
+        self.rotated
     }
 }
 
@@ -143,7 +149,8 @@ mod tests {
         let r = rotated(&mut m, s);
         let planes = plane_table(&m, r);
         for pi in &planes {
-            let def = pi.tri_pt3.as_ref().expect("rotated plane carries tri_pt3");
+            assert!(pi.rotated, "a rotated solid's planes are flagged rotated");
+            let def = &pi.tri_pt3;
             for (d, t) in def.iter().zip(pi.tri.iter()) {
                 assert_eq!(d.coord, t.as_array(), "tri_pt3 matches tri");
             }
@@ -152,9 +159,17 @@ mod tests {
                 "a rotated plane's def carries rotation tol"
             );
         }
-        // The axis-aligned original carries no def.
+        // The axis-aligned original also carries a def now — that is the change this test used
+        // to forbid. What distinguishes it is the flag, not the presence of a definition, and its
+        // def is exact: tol 0 and coordinates equal to `tri`.
         let pu = plane_table(&m, s);
-        assert!(pu.iter().all(|pi| pi.tri_pt3.is_none()));
+        assert!(pu.iter().all(|pi| !pi.rotated));
+        for pi in &pu {
+            for (d, t) in pi.tri_pt3.iter().zip(pi.tri.iter()) {
+                assert_eq!(d.coord, t.as_array(), "axis-aligned def matches tri");
+                assert_eq!(d.tol, [0.0; 3], "axis-aligned def is exact");
+            }
+        }
     }
 
     /// `rotated = false` forwards to the geom predicate bit-for-bit (axis-aligned hot path
@@ -219,7 +234,8 @@ mod tests {
                 surf: pu[0].surf,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
-                tri_pt3: None,
+                tri_pt3: std::array::from_fn(|_| Pt3::exact([k as f64, 0.0, 0.0]).expect("exact")),
+                rotated: false,
                 frame_sign: pu[0].frame_sign,
             })
             .collect();
@@ -338,16 +354,14 @@ mod tests {
         let mut planes = plane_table(&m, a);
         let na = planes.len();
         let pb = plane_table(&m, b);
+        assert!(planes.iter().all(|p| p.rotated), "rotated operand flagged");
         assert!(
-            planes.iter().all(|p| p.tri_pt3.is_some()),
-            "rotated operand cached"
-        );
-        assert!(
-            pb.iter().all(|p| p.tri_pt3.is_none()),
-            "axis-aligned operand not cached"
+            pb.iter().all(|p| !p.rotated),
+            "axis-aligned operand not flagged"
         );
         planes.extend(pb);
-        // plane_def on an axis-aligned (None) plane builds an exact, tol-0 def.
+        // The axis-aligned operand's stored def is exact (tol 0) — it is cached like the
+        // rotated one, and only the flag tells them apart.
         let bdef = plane_def(&planes, na);
         assert!(
             bdef.iter().all(|d| d.tol == [0.0; 3]),

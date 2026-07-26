@@ -224,6 +224,13 @@ pub enum RejectReason {
     DegenerateFace,
     /// An operand face's outer triangle has a zero-length normal, so it has no outward direction.
     DegenerateNormal,
+    /// An operand coordinate lies outside the exact rational scalar's range, so its plane has no
+    /// exact definition to reason with. `Rat` is `Ratio<i128>`: the numerator `mantissa · 2^exp`
+    /// must fit (`|x| ≲ 1.7e38`) and so must the denominator `2^k` (`|x| ≳ 2^-74 ≈ 5.3e-23`);
+    /// exact zero is always fine. **No CAD model lives at either extreme** — this exists so the
+    /// kernel says so by name. (It used to panic on the mixed-rotation path and silently succeed
+    /// on the axis-aligned one, because the definition was built lazily, per judgment.)
+    CoordinateOutOfRange,
     /// Every candidate ray from a loop's nodes has a ring node on its line.
     ///
     /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
@@ -342,6 +349,7 @@ impl RejectReason {
             Self::CylinderFace => "cylinder_face",
             Self::DegenerateFace => "degenerate_face",
             Self::DegenerateNormal => "degenerate_normal",
+            Self::CoordinateOutOfRange => "coordinate_out_of_range",
             Self::NoClearRay => "no_clear_ray",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
@@ -371,6 +379,9 @@ impl RejectReason {
             | Self::ThreePlanes
             | Self::FourPlane
             | Self::CylinderFace
+            // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
+            // that no answer exists — a wider rational would lift this.
+            | Self::CoordinateOutOfRange
             | Self::NoClearRay
             | Self::PointOnRing
             | Self::HoleDepth
@@ -2151,7 +2162,7 @@ pub mod tests {
         // Each `tri` is three NON-collinear points of its own plane. A degenerate `tri` (three
         // equal points) would make every `orient3d` vanish, so the coordinate branch would report
         // coplanar and this test would pass without the handle branch ever mattering.
-        let mk = |plane, tri| FaceInfo {
+        let mk = |plane, tri: [Point3; 3]| FaceInfo {
             surf: shared,
             face: fh,
             plane,
@@ -2159,7 +2170,8 @@ pub mod tests {
             n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
-            tri_pt3: None,
+            tri_pt3: tri.map(|p| nacre_cip::Pt3::exact(p.as_array()).expect("exact")),
+            rotated: false,
         };
         let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
         let planes = vec![
@@ -3423,11 +3435,13 @@ pub mod tests {
             Point3::from_array(q)
         };
         let _ = face;
+        let tri = [origin, step(i), step(j)];
         PlaneGeom {
             surf,
             plane,
-            tri: [origin, step(i), step(j)],
-            tri_pt3: None,
+            tri,
+            tri_pt3: tri.map(|p| nacre_cip::Pt3::exact(p.as_array()).expect("exact")),
+            rotated: false,
             frame_sign: 1, // `plane` is built from `normal`, so the two agree
         }
     }

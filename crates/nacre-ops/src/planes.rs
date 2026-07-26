@@ -40,11 +40,18 @@ pub(crate) struct FaceInfo {
     /// face/plane convention could not be asserted, because both readings were legitimate
     /// (dev-log, normalization cell). Separate names, separate questions.
     pub(crate) orient_sign: i8,
-    /// The three `tri` points as **toleranced `Pt3`** (exact rotation definition), in the
-    /// same order as `tri` — `Some` only when the solid is rotated (overhaul stage 3;
-    /// `collect_planes` builds it once). `None` on the axis-aligned path, where `tri`'s
-    /// f64 coordinates are already exact and the geom predicates are used directly.
-    pub(crate) tri_pt3: Option<[Pt3; 3]>,
+    /// The three `tri` points as **exact `Pt3` definitions**, in the same order as `tri`.
+    /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
+    /// per judgment, which dominated the boolean's runtime.
+    pub(crate) tri_pt3: [Pt3; 3],
+    /// Whether this face's solid is rotated — the predicate-routing signal, decided by
+    /// [`solid_is_rotated`].
+    ///
+    /// **Set together with `tri_pt3`, and only here.** They used to be one field (`Option`),
+    /// whose emptiness meant "not rotated"; that conflation is what stopped the definition from
+    /// being cached. Do not derive this from the definition: a rotated solid's face can witness
+    /// its plane through chain-less points, and a 90°-family rotation has tol exactly 0.
+    pub(crate) rotated: bool,
 }
 
 /// The supporting planes of a solid's outer shell. `Unsupported` if any face is
@@ -71,6 +78,8 @@ pub(crate) fn collect_planes(
                 .cross(tri[2] - tri[0])
                 .normalize()
                 .ok_or_else(|| reject(RejectReason::DegenerateNormal))?;
+            // `tri_pt3` and `rotated` are set here, together, and nowhere else. `plane_table`
+            // copies the pair from a class root; nothing else constructs either.
             let tri_pt3 = if rotated {
                 // Own vertices first: a surviving operand corner assembles directly, so a plain
                 // rotated operand keeps `tri_pt3 == tri`. A seam-dominated face (its `tri` verts
@@ -83,7 +92,7 @@ pub(crate) fn collect_planes(
                         crate::rotated_vertex::vertex_pt3(model, tri_verts[2]).ok()?,
                     ])
                 })();
-                Some(match own {
+                match own {
                     Some(t) => t,
                     None => {
                         let mut w = crate::rotated_vertex::face_plane_witness(model, face)
@@ -99,9 +108,17 @@ pub(crate) fn collect_planes(
                         }
                         w
                     }
-                })
+                }
             } else {
-                None
+                // An axis-aligned face's `tri` coordinates are already exact f64, so the
+                // definition is stated rather than measured (`Pt3::exact`). Building it here —
+                // rather than per judgment — is the whole point of this field; it costs one
+                // construction per face and no high-precision arithmetic.
+                let e = |p: Point3| {
+                    Pt3::exact(p.as_array())
+                        .ok_or_else(|| reject(RejectReason::CoordinateOutOfRange))
+                };
+                [e(tri[0])?, e(tri[1])?, e(tri[2])?]
             };
             // `orient_sign`, precomputed: the two invariants it used to re-check on every call
             // are properties of this face, so they are decided once, here.
@@ -123,6 +140,7 @@ pub(crate) fn collect_planes(
                 n_out,
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
+                rotated,
             });
         }
     }
@@ -249,8 +267,11 @@ pub(crate) struct PlaneGeom {
     pub(crate) surf: Handle<Surface>,
     /// Witness points on this plane (the root face's `tri`), outward-ordered for that face.
     pub(crate) tri: [Point3; 3],
-    /// The witness as toleranced `Pt3` — `Some` only when the root face came from a rotated solid.
-    pub(crate) tri_pt3: Option<[Pt3; 3]>,
+    /// The witness as exact `Pt3` definitions (the root face's), borrowed by every predicate.
+    pub(crate) tri_pt3: [Pt3; 3],
+    /// Whether the root face's solid is rotated — copied from it together with `tri_pt3` so the
+    /// pair cannot disagree. See [`FaceInfo::rotated`].
+    pub(crate) rotated: bool,
     /// `+1` when the plane's stored normal agrees with the root face's outward normal, `-1` when
     /// they oppose. This *is* the label frame: `[A_above, A_below, …]` is defined about the class
     /// root's stored normal, and this sign is what relates it to material. Precomputed here so the
@@ -287,6 +308,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
                 surf: pi.surf,
                 tri: pi.tri,
                 tri_pt3: pi.tri_pt3.clone(),
+                rotated: pi.rotated,
                 frame_sign: pi.orient_sign,
             }
         })
