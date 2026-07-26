@@ -5,7 +5,7 @@
 use crate::OpError;
 use nacre_geom::{AxisMirror, Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::{Axis, Isometry, Rat};
+use nacre_scalar::{Angle, Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Origin, Rotation, Shell, Solid, Vertex, VertexDef,
@@ -26,7 +26,7 @@ pub(crate) fn transform(
     if !origins_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
-    let out = transform_solid(model, solid, &Motion::Rigid(isometry))?;
+    let out = transform_solid(model, solid, &Motion::Rigid(isometry), None)?;
     model.live_solids.retain(|&s| s != solid);
     Ok(out)
 }
@@ -57,7 +57,7 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
     let zero = Isometry::translation([Rat::from_int(0); 3]);
     // `push_solid` registers the twin as live; the input is *not* retained away — that missing
     // line is the whole difference from `transform`.
-    transform_solid(model, solid, &Motion::Rigid(&zero))
+    transform_solid(model, solid, &Motion::Rigid(&zero), None)
 }
 
 /// Whether every `Discovered` definition in `solid` names a surface the walk will remap — that is,
@@ -128,19 +128,121 @@ pub(crate) fn mirror(
     if !origins_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
-    // Temporary: a rotated input needs its rotation chain conjugated (see `OpError::MirrorOfRotated`).
-    if solid_rotation(model, solid).is_some() {
-        return Err(OpError::MirrorOfRotated);
+    let m = AxisMirror::new(axis_index(axis), offset.to_f64()).expect("axis index is 0..3");
+    let out = transform_solid(model, solid, &Motion::Mirror(m), Some((axis, offset)))?;
+    model.live_solids.retain(|&s| s != solid);
+    Ok(out)
+}
+
+/// What a reflection needs in order to carry a rotated solid's exact definitions: the mirror
+/// itself plus memo tables, so a chain shared by every boundary vertex is conjugated once.
+struct Conjugation {
+    mirror: AxisMirror,
+    axis: Axis,
+    offset: Rat,
+    nodes: HashMap<Handle<Rotation>, Handle<Rotation>>,
+    bases: HashMap<Handle<Vertex>, Handle<Vertex>>,
+    surfaces: HashMap<Handle<Surface>, Handle<Surface>>,
+}
+
+/// The reflected image of a rotation chain, as a chain.
+///
+/// `M ∘ R = (M R M⁻¹) ∘ M`, and for an axis-aligned mirror and the kernel's X/Y/Z rotation axes
+/// the conjugate `M R M⁻¹` is again a rotation about the **same axis**, through the **mirrored
+/// pivot**, by the **negated angle** — except when the mirror plane's normal *is* the rotation
+/// axis, where the two commute and the angle is unchanged (`diag(1,1,−1)` commutes with `Rot_z`).
+///
+/// Every step is exact: the pivot is `[Rat; 3]` and the angle rational degrees, so a reflection —
+/// unlike a rotation — introduces no irrational value at all. `None` only if the rational
+/// arithmetic overflows.
+fn conjugate_chain(
+    model: &mut Model,
+    leaf: Handle<Rotation>,
+    c: &mut Conjugation,
+) -> Option<Handle<Rotation>> {
+    if let Some(&h) = c.nodes.get(&leaf) {
+        return Some(h);
     }
-    let index = match axis {
+    let r = *model.rotations.get(leaf);
+    let parent = match r.parent {
+        Some(p) => Some(conjugate_chain(model, p, c)?),
+        None => None,
+    };
+    let i = axis_index(c.axis);
+    let mut point = r.point;
+    point[i] = c
+        .offset
+        .checked_mul(Rat::from_int(2))?
+        .checked_sub(point[i])?;
+    // `Angle` keeps `0 ≤ θ < 360`, so the negation of 0 is 0, not 360.
+    let angle = if r.axis == c.axis || r.angle.deg() == Rat::from_int(0) {
+        r.angle
+    } else {
+        Angle::from_deg(Rat::from_int(360).checked_sub(r.angle.deg())?)?
+    };
+    let h = model.rotations.push(Rotation {
+        axis: r.axis,
+        point,
+        angle,
+        parent,
+    });
+    c.nodes.insert(leaf, h);
+    Some(h)
+}
+
+/// The reflected image of a rotation chain's root vertex, pushed as its own cell.
+///
+/// The chain now turns *this* point, so it has to exist. A `Constructed` root mirrors to a
+/// `Constructed` root. A `Discovered` root keeps its definition with the three planes mirrored —
+/// nothing consumes that today (`vertex_pt3` stops at a `Discovered` root either way), but
+/// leaving the original planes would record the false claim that the mirrored point lies on them.
+fn mirrored_base(model: &mut Model, base: Handle<Vertex>, c: &mut Conjugation) -> Handle<Vertex> {
+    if let Some(&h) = c.bases.get(&base) {
+        return h;
+    }
+    let v = *model.vertices.get(base);
+    let origin = match v.origin {
+        Origin::Discovered {
+            tol,
+            definition: VertexDef::ThreePlane(planes),
+        } => {
+            let mapped = planes.map(|s| {
+                if let Some(&h) = c.surfaces.get(&s) {
+                    return h;
+                }
+                // A root's planes belong to the pre-rotation solid, not to the one being walked,
+                // so they are mirrored here rather than through the walk's surface map.
+                let moved = model
+                    .surfaces
+                    .get(s)
+                    .mirrored(c.mirror)
+                    .unwrap_or_else(|| model.surfaces.get(s).clone());
+                let h = model.surfaces.push(moved);
+                c.surfaces.insert(s, h);
+                h
+            });
+            Origin::Discovered {
+                tol,
+                definition: VertexDef::ThreePlane(mapped),
+            }
+        }
+        // A root is never `Rotated` (the chain always names the non-rotated ancestor).
+        other => other,
+    };
+    let h = model.vertices.push(Vertex {
+        point: c.mirror.point(v.point),
+        origin,
+    });
+    c.bases.insert(base, h);
+    h
+}
+
+fn axis_index(axis: Axis) -> usize {
+    match axis {
         Axis::X => 0,
         Axis::Y => 1,
         Axis::Z => 2,
-    };
-    let m = AxisMirror::new(index, offset.to_f64()).expect("axis index is 0..3");
-    let out = transform_solid(model, solid, &Motion::Mirror(m))?;
-    model.live_solids.retain(|&s| s != solid);
-    Ok(out)
+    }
 }
 
 /// How [`transform_solid`] maps a solid's cells. One walker serves both kinds so the seven
@@ -296,7 +398,20 @@ fn transform_solid(
     model: &mut Model,
     solid: Handle<Solid>,
     motion: &Motion<'_>,
+    mirror_plane: Option<(Axis, Rat)>,
 ) -> Result<Handle<Solid>, OpError> {
+    // A reflection carries a rotated input by conjugating its chain (see `conjugate_chain`).
+    let mut conj = match (motion, mirror_plane) {
+        (Motion::Mirror(m), Some((axis, offset))) => Some(Conjugation {
+            mirror: *m,
+            axis,
+            offset,
+            nodes: HashMap::new(),
+            bases: HashMap::new(),
+            surfaces: HashMap::new(),
+        }),
+        _ => None,
+    };
     let offset = motion
         .rigid()
         .map(|iso| Vector3::from_array(iso.offset_f64()))
@@ -415,6 +530,32 @@ fn transform_solid(
                 }
                 None => remap_origin(v.origin, &surf_map),
             },
+        };
+        // A reflection of an already-rotated vertex: the definition is the conjugated chain over
+        // the mirrored root, and the *coordinate must be replayed from it* — `vertex_pt3` requires
+        // the replay to match the stored point bit for bit, which reflecting the point separately
+        // would not (two float routes to one real number differ in the last places).
+        let new_v = match (&mut conj, v.origin) {
+            (Some(c), Origin::Rotated { base, rotation }) => {
+                let leaf =
+                    conjugate_chain(model, rotation, c).ok_or(OpError::MirrorChainOverflow)?;
+                let mbase = mirrored_base(model, base, c);
+                let bp = model.vertices.get(mbase).point.as_array();
+                let point = match crate::rotated_vertex::replay_chain_coord(model, bp, leaf) {
+                    Ok(coord) => Point3::from_array(coord),
+                    // A `Discovered` root is not replayable — before or after mirroring — so the
+                    // reflected coordinate is the honest value and `vertex_pt3` defers as it did.
+                    Err(_) => new_v.point,
+                };
+                Vertex {
+                    point,
+                    origin: Origin::Rotated {
+                        base: mbase,
+                        rotation: leaf,
+                    },
+                }
+            }
+            _ => new_v,
         };
         vert_map.insert(vh, model.vertices.push(new_v));
     }

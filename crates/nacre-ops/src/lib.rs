@@ -2626,6 +2626,46 @@ pub mod tests {
         assert_eq!(build(), build(), "same ops → same geometry and handle");
     }
 
+    /// The bit-identity guard, on the one producer that can break it.
+    ///
+    /// `vertex_pt3` rebuilds a rotated vertex from its root and chain and refuses (as
+    /// `TranslateInterleaved`) if the result differs from the stored coordinate **at all** — the
+    /// existing rotate path passes only because it replays the very same float operations. A
+    /// mirror derives the two by *different* routes: the definition by conjugating the chain, the
+    /// point by reflecting. It must therefore store the replayed value, and this fails the moment
+    /// it goes back to reflecting the point.
+    #[test]
+    fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
+        use nacre_scalar::{Axis, Rat};
+        let mut m = Model::new();
+        let c = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let r = transform(&mut m, c, &rot30()).unwrap();
+        m.rebuild_adjacency();
+        let mirrored = crate::transform::mirror(&mut m, r, Axis::X, Rat::from_int(0)).unwrap();
+        m.rebuild_adjacency();
+
+        let shell = m.solids.get(mirrored).outer;
+        let mut checked = 0;
+        for &fh in &m.shells.get(shell).faces.clone() {
+            for he in &m.faces.get(fh).outer.half_edges.clone() {
+                for vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                    assert!(
+                        matches!(m.vertices.get(*vh).origin, Origin::Rotated { .. }),
+                        "the image keeps its rotation definition"
+                    );
+                    crate::rotated_vertex::vertex_pt3(&m, *vh)
+                        .expect("definition reproduces the stored coordinate bit for bit");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "walked no vertices");
+    }
+
     /// Replay determinism (DNA 3) for the one additive operation: a copy reproduces the same
     /// geometry *and* the same handle index, and leaves the same live set behind it.
     #[test]

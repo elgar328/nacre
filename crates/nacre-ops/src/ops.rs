@@ -144,11 +144,10 @@ pub enum OpError {
     /// reflection reverses a circle's parametrisation, and which convention a mirrored quadric
     /// should take is a curved-geometry decision, so it is declined rather than guessed.
     MirrorNotPlanar,
-    /// A `Mirror` input is rotated. **Temporary**: reflecting a rotated solid is expressible by
-    /// conjugating its rotation chain (`M ∘ R = (M R M⁻¹) ∘ M`, and the conjugate is again a
-    /// rotation about the same axis with a mirrored pivot and a negated angle — all exact, since
-    /// both are rational). That is the immediate follow-up; this variant goes away with it.
-    MirrorOfRotated,
+    /// A `Mirror` input is rotated and the conjugated chain (`M R M⁻¹`) overflowed the rational
+    /// pivot or angle arithmetic. Rotated inputs are otherwise carried exactly; only the `i128`
+    /// ceiling can stop it, and reaching that takes an adversarially deep chain.
+    MirrorChainOverflow,
 }
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.

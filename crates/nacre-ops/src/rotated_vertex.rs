@@ -65,6 +65,26 @@ fn build(model: &Model, vh: Handle<Vertex>) -> Result<Pt3, Pt3Error> {
     }
 }
 
+/// The coordinate a `Constructed`-rooted vertex would have with `base_point` as its root and
+/// `leaf`'s chain applied — the *same* computation [`build`] performs, in the same order.
+///
+/// A producer of rotated vertices must store this, not an independently computed image of the
+/// point: [`vertex_pt3`] guards on the replay matching the stored coordinate **bit for bit**, and
+/// two float routes to the same real number do not agree in the last places. `Mirror` needs it
+/// because it derives a vertex's definition by conjugating the chain, which is a different route
+/// from reflecting the coordinate.
+pub(crate) fn replay_chain_coord(
+    model: &Model,
+    base_point: [f64; 3],
+    leaf: Handle<Rotation>,
+) -> Result<[f64; 3], Pt3Error> {
+    let mut p = Pt3::at(coord_rat(base_point)?);
+    for node in rotation_chain(model, leaf) {
+        p = p.rotate_about(node.axis, node.angle, node.point);
+    }
+    Ok(p.coord)
+}
+
 /// The rotation nodes from the root down to `leaf` (parent chain, reversed).
 fn rotation_chain(model: &Model, leaf: Handle<Rotation>) -> Vec<RotNode> {
     let mut chain = Vec::new();

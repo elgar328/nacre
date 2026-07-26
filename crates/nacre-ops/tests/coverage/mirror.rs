@@ -264,24 +264,95 @@ fn mirroring_a_cylinder_is_declined() {
     assert!(matches!(err, OpError::MirrorNotPlanar), "{err:?}");
 }
 
-/// Rotated inputs are declined *for now* — the conjugation that carries a rotation chain through
-/// a reflection is the immediate follow-up, and this test flips to a success then.
+/// A rotated solid mirrors: the reflection carries its rotation chain by conjugation, so the
+/// image keeps an exact `Origin::Rotated` definition rather than degrading to bare coordinates.
 #[test]
-fn mirroring_a_rotated_solid_is_declined_for_now() {
+fn a_rotated_solid_mirrors() {
     let mut m = Model::new();
     let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     m.rebuild_adjacency();
     let r = xf(&mut m, c, rot30());
     m.rebuild_adjacency();
+    let before = volume(&m, r);
 
-    let err = apply(
-        &mut m,
-        &Operation::Mirror {
-            solid: r,
-            axis: Axis::X,
-            offset: Rat::from_int(0),
-        },
-    )
-    .unwrap_err();
-    assert!(matches!(err, OpError::MirrorOfRotated), "{err:?}");
+    let mirrored = mirror_solid(&mut m, r, Axis::X, 0);
+
+    assert!((volume(&m, mirrored) - before).abs() < 1e-12);
+    let rotated_verts = m
+        .shells
+        .get(m.solids.get(mirrored).outer)
+        .faces
+        .iter()
+        .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
+        .filter_map(|he| m.edges.get(he.edge).bounds)
+        .flatten()
+        .filter(|&vh| {
+            matches!(
+                m.vertices.get(vh).origin,
+                nacre_topo::Origin::Rotated { .. }
+            )
+        })
+        .count();
+    assert!(rotated_verts > 0, "the image keeps its rotation provenance");
+    assert!(nacre_validate::validate(&m).is_empty());
+}
+
+/// **The conjugation's actual test.** A mirrored rotated vertex's coordinate is replayed from the
+/// conjugated chain, not reflected directly — so it must still land where a plain reflection would
+/// put it. A wrong conjugate (a sign on the angle, an unmirrored pivot) yields a solid that is
+/// merely *rotated* away from the truth: same volume, valid topology, wrong place. Only comparing
+/// against the independent reflection catches that.
+#[test]
+fn a_mirrored_rotated_solid_lands_where_reflection_says() {
+    let mut m = Model::new();
+    let c = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([2.0, 1.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+    let r = xf(&mut m, c, rot30());
+    m.rebuild_adjacency();
+    let source = outer_points(&m, r);
+
+    let mirrored = mirror_solid(&mut m, r, Axis::X, 0);
+
+    let mut want: Vec<[f64; 3]> = source.iter().map(|p| [-p[0], p[1], p[2]]).collect();
+    let mut got = outer_points(&m, mirrored);
+    let key = |a: &[f64; 3], b: &[f64; 3]| a.partial_cmp(b).unwrap();
+    want.sort_by(key);
+    got.sort_by(key);
+    assert_eq!(want.len(), got.len());
+    for (w, g) in want.iter().zip(&got) {
+        for k in 0..3 {
+            assert!(
+                (w[k] - g[k]).abs() < 1e-12,
+                "replayed {g:?} vs reflected {w:?}"
+            );
+        }
+    }
+}
+
+/// A mirrored *rotated* solid is still a boolean operand. Rotated operands are judged on their
+/// exact `Pt3` definitions, so a wrong conjugation shows up as a wrong or refused decision here —
+/// the coordinates alone would not reveal it, since they are produced by a different route.
+#[test]
+fn a_mirrored_rotated_solid_is_a_usable_operand() {
+    let mut m = Model::new();
+    let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+    m.rebuild_adjacency();
+    let r = xf(&mut m, c, rot30());
+    m.rebuild_adjacency();
+    let mirrored = mirror_solid(&mut m, r, Axis::X, 0);
+
+    let knife = m.add_cuboid(
+        Point3::from_array([-10.0, -10.0, 1.0]),
+        Point3::from_array([10.0, 10.0, 10.0]),
+    );
+    m.rebuild_adjacency();
+    let cut = boolean_one(&mut m, BoolKind::Cut, mirrored, knife).unwrap();
+    m.rebuild_adjacency();
+
+    // The knife takes the top half of a 2³ box, whatever its orientation about z.
+    assert!((volume(&m, cut) - 4.0).abs() < 1e-9, "{}", volume(&m, cut));
+    assert!(nacre_validate::validate(&m).is_empty());
 }
