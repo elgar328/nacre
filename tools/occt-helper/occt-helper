@@ -11,6 +11,7 @@
 #       faces <n>
 #       bbox_min <x> <y> <z>
 #       bbox_max <x> <y> <z>
+#       centroid <x> <y> <z>
 #     exit: 0 success / 1 geometry failure (unreadable, no/empty shape) / 2 DRAWEXE crash
 #
 # The boolean commands run DRAWEXE's bfuse/bcut/bcommon on two STEP solids and
@@ -23,15 +24,22 @@ set -uo pipefail
 # nbshapes → "FACE", bounding → the lone six-number line) and print the schema.
 # Returns 1 if any field is missing (empty/failed shape).
 emit_props() {
-    local out="$1" clean volume area faces bbox
+    local out="$1" clean volume area faces bbox cx cy cz
     clean=$(echo "$out" | sed 's/^Draw\[[0-9]*\]> *//')
     volume=$(echo "$clean" | grep "Mass :" | sed -n '1p' | awk '{print $NF}')
     area=$(echo "$clean" | grep "Mass :" | sed -n '2p' | awk '{print $NF}')
+    # vprops runs before sprops, so the FIRST "Center of gravity" block is the
+    # volume centroid (the second one is the surface's). "Moments" prints IX/IY/IZ,
+    # so anchoring on a bare X/Y/Z cannot pick those up by mistake.
+    cx=$(echo "$clean" | grep -E '^X =' | sed -n '1p' | awk '{print $NF}')
+    cy=$(echo "$clean" | grep -E '^Y =' | sed -n '1p' | awk '{print $NF}')
+    cz=$(echo "$clean" | grep -E '^Z =' | sed -n '1p' | awk '{print $NF}')
     faces=$(echo "$clean" | awk '/^ *FACE/ {print $NF}')
     # The bounding output is the only line of six numeric fields.
     bbox=$(echo "$clean" | awk 'NF==6 && $1+0==$1 && $6+0==$6 {print; exit}')
 
-    if [ -z "$volume" ] || [ -z "$area" ] || [ -z "$faces" ] || [ -z "$bbox" ]; then
+    if [ -z "$volume" ] || [ -z "$area" ] || [ -z "$faces" ] || [ -z "$bbox" ] ||
+        [ -z "$cx" ] || [ -z "$cy" ] || [ -z "$cz" ]; then
         echo "error: could not parse OCCT output" >&2
         echo "$out" >&2
         return 1
@@ -44,6 +52,7 @@ emit_props() {
     echo "faces $faces"
     echo "bbox_min $x0 $y0 $z0"
     echo "bbox_max $x1 $y1 $z1"
+    echo "centroid $cx $cy $cz"
 }
 
 case "${1:-}" in

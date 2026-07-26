@@ -28,6 +28,8 @@ pub struct OcctProps {
     pub faces: usize,
     pub bbox_min: [f64; 3],
     pub bbox_max: [f64; 3],
+    /// OCCT's **volume** centre of mass (`vprops`), not the surface's.
+    pub centroid: [f64; 3],
 }
 
 /// A failure while scoring a model against the OCCT oracle.
@@ -51,13 +53,15 @@ pub enum OracleError {
 impl OcctProps {
     /// Parse the helper's `props` stdout — key-value lines, one per field:
     /// `volume <v>` / `area <a>` / `faces <n>` / `bbox_min <x y z>` /
-    /// `bbox_max <x y z>`. Order-independent; every field is required.
+    /// `bbox_max <x y z>` / `centroid <x y z>`. Order-independent; every field
+    /// is required.
     fn parse(stdout: &str) -> Result<OcctProps, OracleError> {
         let mut volume = None;
         let mut area = None;
         let mut faces = None;
         let mut bbox_min = None;
         let mut bbox_max = None;
+        let mut centroid = None;
 
         for line in stdout.lines() {
             let mut it = line.split_whitespace();
@@ -74,6 +78,7 @@ impl OcctProps {
                 }
                 "bbox_min" => bbox_min = Some(parse_triple(&mut it, "bbox_min")?),
                 "bbox_max" => bbox_max = Some(parse_triple(&mut it, "bbox_max")?),
+                "centroid" => centroid = Some(parse_triple(&mut it, "centroid")?),
                 _ => {} // ignore unknown keys — forward-compatible with new fields
             }
         }
@@ -84,6 +89,7 @@ impl OcctProps {
             faces: faces.ok_or_else(|| miss("faces"))?,
             bbox_min: bbox_min.ok_or_else(|| miss("bbox_min"))?,
             bbox_max: bbox_max.ok_or_else(|| miss("bbox_max"))?,
+            centroid: centroid.ok_or_else(|| miss("centroid"))?,
         })
     }
 }
@@ -294,6 +300,7 @@ volume 24
 area 52
 bbox_max 2 3 4
 bbox_min 0 0 0
+centroid 1 1.5 2
 ";
         let p = OcctProps::parse(stdout).unwrap();
         assert_eq!(p.volume, 24.0);
@@ -301,6 +308,7 @@ bbox_min 0 0 0
         assert_eq!(p.faces, 6);
         assert_eq!(p.bbox_min, [0.0, 0.0, 0.0]);
         assert_eq!(p.bbox_max, [2.0, 3.0, 4.0]);
+        assert_eq!(p.centroid, [1.0, 1.5, 2.0]);
     }
 
     #[test]
@@ -314,7 +322,8 @@ bbox_min 0 0 0
 
     #[test]
     fn parse_reports_non_numeric() {
-        let stdout = "volume oops\narea 52\nfaces 6\nbbox_min 0 0 0\nbbox_max 2 3 4\n";
+        let stdout =
+            "volume oops\narea 52\nfaces 6\nbbox_min 0 0 0\nbbox_max 2 3 4\ncentroid 1 1 1\n";
         assert!(matches!(
             OcctProps::parse(stdout),
             Err(OracleError::Parse(_))
@@ -336,6 +345,107 @@ bbox_min 0 0 0
         assert!(approx(p.volume, 24.0), "volume {}", p.volume); // 2·3·4
         assert!(approx(p.area, 52.0), "area {}", p.area); // 2(6+8+12)
         assert_eq!(p.faces, 6);
+    }
+
+    /// **The centroid's judge.** nacre derives the centroid from a cone decomposition;
+    /// OCCT's `vprops` computes it independently. Both shapes are deliberately
+    /// asymmetric — a symmetric solid lands its centroid in the middle whatever the
+    /// arithmetic does, so it would score nothing.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn centroid_matches_occt() {
+        use nacre_math::Point2;
+        use nacre_ops::{Operation, Profile2d, apply};
+
+        // (a) An L-prism: reflex outline, centroid off both the bbox centre and the
+        //     vertex average.
+        let pts = [
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 1.0],
+            [1.0, 1.0],
+            [1.0, 2.0],
+            [0.0, 2.0],
+        ];
+        let mut model = Model::new();
+        let op = Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile: Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()),
+            dist: 3.0,
+        };
+        apply(&mut model, &op).unwrap();
+        model.rebuild_adjacency();
+        let live = model.live_solids[0];
+        let p = occt_props_of(&model).unwrap();
+        let c = nacre_props::centroid(&model, live).unwrap();
+        for i in 0..3 {
+            assert!(
+                approx(c[i], p.centroid[i]),
+                "L axis {i}: {} vs {}",
+                c[i],
+                p.centroid[i]
+            );
+        }
+
+        // (b) A box with an off-centre void. The cavity shell carries the opposite
+        //     sign; getting that wrong is invisible on a centred void.
+        let mut model = Model::new();
+        let outer = model.add_cuboid(Point3::origin(), Point3::from_array([10.0; 3]));
+        let inner = model.add_cuboid(
+            Point3::from_array([1.0; 3]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let r = boolean(&mut model, BoolKind::Cut, outer, inner).unwrap();
+        model.rebuild_adjacency();
+        assert_eq!(r.len(), 1);
+        let p = occt_props_of(&model).unwrap();
+        let c = nacre_props::centroid(&model, r[0]).unwrap();
+        for i in 0..3 {
+            assert!(
+                approx(c[i], p.centroid[i]),
+                "hollow axis {i}: {} vs {}",
+                c[i],
+                p.centroid[i]
+            );
+        }
+    }
+
+    /// **The bounding box's judge, on the shape that makes it hard.** A cylinder's
+    /// barrel bulges past its seam vertices, so a vertex hull would come out too
+    /// small — and OCCT knows the true extent.
+    ///
+    /// The comparison is one-sided on purpose: DRAWEXE's `bounding` returns a
+    /// *conservative* box (measured: ~1e-7 of slack on a unit-scale part), so the
+    /// requirement is that nacre's box sits inside OCCT's and is not meaningfully
+    /// smaller — an equality assert would fail on OCCT's padding, not on a bug.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn cylinder_bounds_match_occt() {
+        let mut model = Model::new();
+        let s = model.add_cylinder(
+            Point3::origin(),
+            Vector3::from_array([0.0, 3.0, 4.0]),
+            2.0,
+            5.0,
+        );
+        model.rebuild_adjacency();
+        let p = occt_props_of(&model).unwrap();
+        let (lo, hi) = nacre_props::bounds(&model, s).unwrap();
+        let slack = 1e-5;
+        for i in 0..3 {
+            assert!(
+                lo[i] >= p.bbox_min[i] - slack && lo[i] <= p.bbox_min[i] + slack,
+                "min axis {i}: nacre {} vs occt {}",
+                lo[i],
+                p.bbox_min[i]
+            );
+            assert!(
+                hi[i] <= p.bbox_max[i] + slack && hi[i] >= p.bbox_max[i] - slack,
+                "max axis {i}: nacre {} vs occt {}",
+                hi[i],
+                p.bbox_max[i]
+            );
+        }
     }
 
     /// A donut prism scored by an independent kernel: the hole has to be a hole to OCCT too.
