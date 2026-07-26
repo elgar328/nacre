@@ -33,3 +33,6 @@ mod invariants;
 
 #[path = "coverage/rejects.rs"]
 mod rejects;
+
+#[path = "coverage/copy.rs"]
+mod copy;

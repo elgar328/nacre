@@ -2356,3 +2356,15 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **★ 그리고 그 첫 수정도 틀렸다.** 결과측을 `ResultNotClosed`(미지원)로 뺐는데, proptest 파라미터를 뽑아 보니 발화 케이스가 전부 **두 박스가 모서리로만 맞닿는** 배치였다(`[2,4]×[2,4]×[1,4]` ∪ `[2,4]×[4,8]×[4,6]` — 선 `y=4,z=4`에서만 접촉). 그 합집합은 모서리에 4면이 모이는 **진짜 비다양체**라 "아직 미지원"이 아니라 **불가능**이다. 최종형: 사용 횟수로 갈라 **>2 = `NonManifoldResultEdge`(불가능, `NonManifoldVertex`의 모서리 쌍둥이)**, **==1 = `OpenResultShell`(면 누락 = 결함 의심)**. 픽스처도 뽑아 고정했다(`an_edge_touching_fuse_is_impossible_not_unsupported`).
 - **최종 대장(1회 실행, proptest는 난수라 횟수는 변동):** `non_manifold_result_edge` 43 · `no_clear_ray` 16(울리기만, 표면화 0) · `non_manifold_vertex` 13 · `cylinder_face` 1. **나머지 20종은 이 스위트에서 한 번도 안 울린다** — 방어용이며, 발화 케이스를 지어내지 않았다.
 - **소비자 테스트를 산출물로 넣었다**(`tests/coverage/rejects.rs`): 거절을 일으켜 → `class()`로 분기 → 사용자 문구를 만든다. 이게 즉시 설계를 고쳤다 — `#[non_exhaustive]`를 `BoolError`·`RejectClass`에도 걸었더니 소비자가 `_` 팔을 강요당해, **성장은 `RejectReason`에서만 일어난다**는 원칙에 맞춰 나머지 둘을 exhaustive로 되돌렸다.
+
+---
+
+**커널 ② — `copy`: supersede하지 않는 유일한 연산.** 커널에 *이동*만 있고 *복사*가 없어(`transform`·`boolean`이 입력을 live에서 뺀다) "같은 공구로 두 번 자르기"·"원본 남기고 옮긴 사본"·패턴이 표현 불가였다. `Operation::Copy { solid }` 추가.
+
+- **구현은 5줄이다** — `transform_solid`(결정적 7패스 walker)를 **항등 아이소메트리**로 부르고 `live_solids.retain(...)`을 **하지 않는다**. `transform`과의 차이가 그 한 줄의 부재뿐. walker를 한 글자도 안 건드려 기존 경로의 회귀 위험이 0이다.
+- **★ 설계 결정 하나를 뒤집었다 — 기하는 공유가 아니라 복제.** 설계 때 "곡면·곡선 핸들 공유"로 적었으나 코드를 읽고 정정: 순수 평행이동은 `translated` 경로라 평면의 exact `raw`가 보존돼 **사본 계수가 비트 동일**이므로 공유의 정확성 이득이 0이고, 두 live 솔리드가 `Handle<Surface>`를 공유하는 상태는 전례가 없어 위험만 남는다. (공유는 나중 메모리 최적화.)
+- **★ `Discovered.tol` 이전이 copy에서는 근사가 아니라 정확하다.** `remap_origin`이 tol을 안 건드리는 것은 회전·이동에서는 stage-1 부채(좌표는 흐트러졌는데 tol은 그대로)지만, copy는 점·평면이 비트 동일이라 "평면에서 벗어난 거리"라는 측정값이 정의상 불변이다 → 훗날 tol 전파를 구현할 때 **copy는 손댈 것이 없다**. doc에 근거를 남겨 재질문을 막았다.
+- **패닉 하나를 정직한 거절로.** `remap_origin`은 `Discovered` 정의가 그 솔리드의 면 곡면에 없으면 `.expect`로 **패닉**한다 — 바로 옆 `assemble_fuse_cut`이 같은 상황을 *"Reject (never panic) … (DNA)"*로 처리하는 것과 어긋난다. `transform`은 회전 경로에서만 이 코드를 타 노출이 작았지만 **copy는 kit이 재사용마다 부르므로 일상 경로**가 된다. → 두 진입점에 O(V) 사전 검사(`origins_are_remappable`) + `OpError::OriginNotOnSolid`. 불변식은 대체로 성립한다(결과 면과 `VertexDef::ThreePlane`이 **같은 평면-클래스 대표 곡면**을 쓴다 — `boolean.rs:526`/`424`)지만 severed·정리 패스 이후까지 증명된 적은 없었다. 발화 케이스는 지어내지 않았다.
+- **★ 낡은 근거 주석 정정.** `solid_rotation`의 `debug_assert`("경계 정점은 회전 노드 하나를 공유")가 근거로 *"`boolean` rejects rotated inputs"* 를 인용하는데 그 가드(`ROTATED_UNSUPPORTED`)는 2026-07-24 은퇴했다. 불변식은 여전히 참이나 **이유가 다르다**: `Node`에 `Seam` 변형뿐이라 조립이 **모든 결과 정점을 새 `Discovered`로** 만든다(살아남은 코너까지 재생성) ⇒ 불리언 결과에는 `Rotated`가 섞일 수 없다. 이 사실이 테스트 설계도 고쳤다 — "회전된 결과 복사 시 `Rotated` 보존"은 **없는 것을 확인하는 테스트**라 "복사 후에도 피연산자로 쓸 수 있는가"로 바꿨다.
+- **테스트 10종, 앞문(`apply`)으로만**(`tests/coverage/copy.rs` 신규 + `lib.rs`에 결정성 1). 원본 생존·**독립성**(사본을 잘라도 원본 불변)·한 공구 두 번 절단·불리언 결과 복사 후 재사용·회전 솔리드의 `Rotated` 보존·**회전된 불리언 결과**·**cavity 보존**(`transform`조차 이 경로가 미검증이었다)·비-live 거절·결정성.
+- **★ `fuse(x, copy(x))`가 그냥 된다** — 완전 일치 피연산자로 `A ∪ A = A`(부피 1.0, 단일 바디, validate 클린). kit의 값 의미론이 `fuse(a, a)`를 정당한 스크립트로 만들므로 이 입력이 흔해지는데, 거절 없이 통과한다. 전부 첫 실행에 통과: workspace 30개 바이너리 ok, clippy 0.

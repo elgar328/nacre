@@ -2626,6 +2626,22 @@ pub mod tests {
         assert_eq!(build(), build(), "same ops → same geometry and handle");
     }
 
+    /// Replay determinism (DNA 3) for the one additive operation: a copy reproduces the same
+    /// geometry *and* the same handle index, and leaves the same live set behind it.
+    #[test]
+    fn copy_is_deterministic() {
+        let build = || {
+            let mut m = Model::new();
+            let c = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([2.0, 3.0, 4.0]),
+            );
+            let twin = crate::transform::copy(&mut m, c).unwrap();
+            (bbox_lo(&m, twin), twin, m.live_solids.clone())
+        };
+        assert_eq!(build(), build(), "same ops → same geometry and handles");
+    }
+
     /// A genuinely tilted rigid rotation: 30° about Z through the rational axis
     /// point (1,1,0). Non-90° and non-axis-aligned, so it exercises the Rotated
     /// origin and the boolean reject guard (unlike the 90° family, which stays exact).

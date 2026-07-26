@@ -76,6 +76,11 @@ pub enum Operation {
         solid: Handle<Solid>,
         isometry: Isometry,
     },
+    /// Duplicate `solid` in place, keeping the original live — **the only operation that adds to
+    /// `live_solids` without removing anything** (design §2). Every other edit supersedes its
+    /// input, so this is what makes "cut with the same tool twice", "keep the original and a moved
+    /// copy", and pattern/mirror sugar expressible at all.
+    Copy { solid: Handle<Solid> },
 }
 
 /// Which boolean to compute.
@@ -120,6 +125,12 @@ pub enum OpError {
     Boolean(BoolError),
     /// A `Transform` input solid is not live (a stale or non-live handle).
     SolidNotLive,
+    /// A `Discovered` vertex or edge of a `Transform`/`Copy` input names a surface that is not one
+    /// of that solid's face surfaces, so its exact definition cannot be carried onto the duplicate.
+    /// The solid's provenance is inconsistent — declined rather than aborting the kernel, and
+    /// unreached in the suite (the definitions and the result faces both name the plane class's
+    /// representative surface).
+    OriginNotOnSolid,
 }
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
@@ -146,6 +157,8 @@ pub enum OpOutput {
     Boolean { solids: Vec<Handle<Solid>> },
     /// The transformed solid (supersedes the input).
     Transform { solid: Handle<Solid> },
+    /// The duplicate. Unlike every other output, the input stays live alongside it.
+    Copy { solid: Handle<Solid> },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -183,6 +196,10 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         Operation::Transform { solid, isometry } => {
             let out = transform(model, *solid, isometry)?;
             Ok(OpOutput::Transform { solid: out })
+        }
+        Operation::Copy { solid } => {
+            let out = crate::transform::copy(model, *solid)?;
+            Ok(OpOutput::Copy { solid: out })
         }
     }
 }
