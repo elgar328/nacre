@@ -356,7 +356,9 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 
 **분류 술어는 `geom::intersect`에 있다**(§1의 격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). ops에는 **정책(깊이 패리티)과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet`으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다). 그래서 `with_holes`의 "호출자 약속"을 **검사하는 생성자**가 이것이다.
 
-**★ (이하 원래 계획 서술 — `from_edges`는 미구현)** 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 브리징하는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
+**선 뭉치 — `from_edges` (2026-07-26 구현).** 생성 코드나 외부 데이터가 내놓는 모양 그대로, **순서도 방향도 무관한** 선들을 받아 끝점으로 이어 링을 만들고 `from_rings`에 넘긴다. `Edge2d { curve: Curve2d, start, end }`이고 `Curve2d`는 지금 `Line` 하나뿐 — M6에서 호가 들어와도 API가 안 깨지도록 자리를 먼저 만들었다.
+
+**끝점은 정확히 일치해야 한다.** 가까우면 붙여주는 스냅은 없다 — tolerance는 커널이 *발견한* 교차의 것이지 호출자가 *구성한* 것의 몫이 아니다(원칙 4). 대신 벌어진 끝점과 **가장 가까운 다른 자유 끝점까지의 거리**를 `OpenChain { at, gap }`으로 돌려준다(고치는 데 필요한 숫자가 그것이다). 그 밖의 거절: 영길이·중복 선, 그리고 세 개 이상이 만나는 `BranchingVertex`. **더 구체적인 결함을 먼저 보고한다** — 분기는 항상 어딘가에 홀수 끝점을 남기므로, 순서를 반대로 하면 늘 모호한 쪽(열림)이 보고된다(`check_result_topology`와 같은 원칙). 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 브리징하는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
 - `{ outer, inners }`(구멍 N개, 제한 없음) + `extrude`가 구멍 벽면과 뚜껑 내부 루프를 함께 생성.
 - `Profile2d::from_rings(rings, fill_rule) -> Vec<Profile2d>` — 링 목록의 중첩을 exact `point_in_ring`으로 판정해(술어이므로 커널) **덩어리(섬)별 프로파일 목록**을 돌려준다(짝수-홀수 깊이: 0=재료, 1=구멍, 2=구멍 속 섬…). 채우기 규칙 선택은 호출자.
 - **경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준). 그래서 `Extrude`의 다중 바디 출력은 필요 없다.

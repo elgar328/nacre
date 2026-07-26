@@ -8,7 +8,9 @@
 
 use crate::common::*;
 use nacre_math::{Point2, Point3};
-use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, from_rings};
+use nacre_ops::{
+    BoolKind, Edge2d, OpOutput, Operation, Profile2d, SketchPlane, apply, from_edges, from_rings,
+};
 use nacre_store::Handle;
 use nacre_topo::{Model, Origin, Solid};
 
@@ -318,4 +320,29 @@ fn an_island_extrudes_as_a_second_body() {
     assert!(nacre_validate::validate(&m).is_empty());
     // ring 0..9 minus hole 1..8 = 81 − 49 = 32, plus the island 2..7 = 25.
     assert!((total - (32.0 + 25.0)).abs() < 1e-12, "{total}");
+}
+
+/// The front door the syntax actually describes: hand over drawn segments, in any order, and get
+/// the solid. Nothing declares the hole and nothing declares the order.
+#[test]
+fn drawn_segments_become_a_donut() {
+    let ring = |a: f64, b: f64| {
+        let p = |x: f64, y: f64| Point2::from_array([x, y]);
+        vec![
+            Edge2d::line(p(a, a), p(b, a)),
+            Edge2d::line(p(b, b), p(b, a)), // backwards on purpose
+            Edge2d::line(p(b, b), p(a, b)),
+            Edge2d::line(p(a, b), p(a, a)),
+        ]
+    };
+    let mut edges = ring(1.0, 3.0); // the hole, drawn first
+    edges.extend(ring(0.0, 4.0));
+
+    let profiles = from_edges(edges).unwrap();
+    assert_eq!(profiles.len(), 1);
+
+    let mut m = Model::new();
+    let d = extrude(&mut m, profiles.into_iter().next().unwrap(), 1.0);
+    assert!(nacre_validate::validate(&m).is_empty());
+    assert!((volume(&m, d) - 12.0).abs() < 1e-12, "{}", volume(&m, d));
 }

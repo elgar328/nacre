@@ -10,8 +10,8 @@ use crate::Profile2d;
 use nacre_geom::intersect::{RingSide, point_in_ring_2d, rings_cross};
 use nacre_math::Point2;
 
-/// Why a set of rings is not a valid set of profiles.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Why a set of rings or edges is not a valid set of profiles.
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum SketchError {
     /// A ring with fewer than three points encloses nothing.
@@ -19,6 +19,17 @@ pub enum SketchError {
     /// Two rings touch or cross. A hole must lie strictly inside its outer ring and strictly
     /// outside its siblings; anything else has no unambiguous inside.
     RingsMeet { a: usize, b: usize },
+    /// An edge starts where it ends.
+    ZeroLengthEdge { edge: usize },
+    /// The same edge appears twice (same endpoints, either way round).
+    DuplicateEdge { a: usize, b: usize },
+    /// A chain ran out of edges before closing. `at` is the endpoint left dangling and `gap` the
+    /// distance to the nearest other free endpoint — reported because "you meant to close this
+    /// and missed by 1e-9" is the likely story, and the kernel will not close it for you: an
+    /// endpoint either *is* the same point or is not (overview 절대원칙 4).
+    OpenChain { at: [f64; 2], gap: Option<f64> },
+    /// Three or more edges meet at one point, so the chain has no unambiguous continuation.
+    BranchingVertex { at: [f64; 2] },
 }
 
 /// Sort closed rings into profiles by containment depth.
@@ -74,6 +85,129 @@ pub fn from_rings(rings: Vec<Vec<Point2>>) -> Result<Vec<Profile2d>, SketchError
         out.push(Profile2d::with_holes(rings[i].clone(), holes));
     }
     Ok(out)
+}
+
+/// A 2-D sketch curve. Only straight segments are wired; the enum exists now so that adding arcs
+/// with the curved-geometry milestone extends the API instead of breaking it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Curve2d {
+    Line,
+}
+
+/// One drawn segment: its curve and its two endpoints.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Edge2d {
+    pub curve: Curve2d,
+    pub start: Point2,
+    pub end: Point2,
+}
+
+impl Edge2d {
+    /// A straight segment.
+    pub fn line(start: Point2, end: Point2) -> Edge2d {
+        Edge2d {
+            curve: Curve2d::Line,
+            start,
+            end,
+        }
+    }
+}
+
+/// Chain loose edges into closed rings, then sort those into profiles ([`from_rings`]).
+///
+/// The edges may arrive in any order and pointing either way — this is the shape a generator or
+/// an imported file produces. Endpoints must **coincide exactly**; nothing here snaps a near-miss
+/// shut. Tolerance is for intersections the kernel *discovers*, never for what a caller
+/// constructs (overview 절대원칙 4), and a sketch that silently welds a 1e-9 gap is a sketch
+/// whose author does not know what they built. A dangling endpoint is reported with the distance
+/// to the nearest free endpoint, which is the number needed to fix it.
+pub fn from_edges(edges: Vec<Edge2d>) -> Result<Vec<Profile2d>, SketchError> {
+    for (i, e) in edges.iter().enumerate() {
+        if e.start == e.end {
+            return Err(SketchError::ZeroLengthEdge { edge: i });
+        }
+    }
+    for i in 0..edges.len() {
+        for j in (i + 1)..edges.len() {
+            let (a, b) = (&edges[i], &edges[j]);
+            if (a.start == b.start && a.end == b.end) || (a.start == b.end && a.end == b.start) {
+                return Err(SketchError::DuplicateEdge { a: i, b: j });
+            }
+        }
+    }
+
+    // Endpoint → the edges touching it. Exactly two is a corner; more has no single continuation.
+    let mut at: Vec<(Point2, Vec<usize>)> = Vec::new();
+    let slot = |at: &mut Vec<(Point2, Vec<usize>)>, p: Point2| -> usize {
+        match at.iter().position(|(q, _)| *q == p) {
+            Some(k) => k,
+            None => {
+                at.push((p, Vec::new()));
+                at.len() - 1
+            }
+        }
+    };
+    let ends: Vec<(usize, usize)> = edges
+        .iter()
+        .map(|e| (slot(&mut at, e.start), slot(&mut at, e.end)))
+        .collect();
+    for (i, (s, t)) in ends.iter().enumerate() {
+        at[*s].1.push(i);
+        at[*t].1.push(i);
+    }
+    // Most specific first: a branch says *which* junction is ambiguous, while a dangling end only
+    // says the outline is open — and a branch always leaves an odd end somewhere, so checking in
+    // the other order would report the vaguer of the two. (`check_result_topology` orders its
+    // defects the same way.)
+    if let Some((p, _)) = at.iter().find(|(_, touching)| touching.len() > 2) {
+        return Err(SketchError::BranchingVertex { at: p.as_array() });
+    }
+    if let Some((p, _)) = at.iter().find(|(_, touching)| touching.len() == 1) {
+        return Err(SketchError::OpenChain {
+            at: p.as_array(),
+            gap: nearest_free_gap(*p, &at),
+        });
+    }
+
+    // Walk each cycle: from an unused edge, hop endpoint to endpoint until back at the start.
+    let mut used = vec![false; edges.len()];
+    let mut rings: Vec<Vec<Point2>> = Vec::new();
+    for seed in 0..edges.len() {
+        if used[seed] {
+            continue;
+        }
+        let (first, mut here) = ends[seed];
+        let (mut edge, mut ring) = (seed, vec![at[first].0]);
+        loop {
+            used[edge] = true;
+            ring.push(at[here].0);
+            let Some(&next) = at[here].1.iter().find(|&&e| !used[e]) else {
+                break;
+            };
+            let (s, t) = ends[next];
+            here = if s == here { t } else { s };
+            edge = next;
+        }
+        // The walk returns to its start, so the last point repeats the first.
+        if ring.last() == ring.first() {
+            ring.pop();
+        }
+        rings.push(ring);
+    }
+    from_rings(rings)
+}
+
+/// The distance from `p` to the nearest *other* endpoint that is also dangling — the size of the
+/// gap the author probably meant to close.
+fn nearest_free_gap(p: Point2, at: &[(Point2, Vec<usize>)]) -> Option<f64> {
+    at.iter()
+        .filter(|(q, touching)| *q != p && touching.len() == 1)
+        .map(|(q, _)| {
+            let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
+            (dx * dx + dy * dy).sqrt()
+        })
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
 }
 
 #[cfg(test)]
@@ -162,6 +296,91 @@ mod tests {
         ]])
         .unwrap_err();
         assert_eq!(err, SketchError::DegenerateRing { ring: 0 });
+    }
+
+    fn seg(a: [f64; 2], b: [f64; 2]) -> Edge2d {
+        Edge2d::line(Point2::from_array(a), Point2::from_array(b))
+    }
+
+    /// Edges in scrambled order, some drawn backwards — the shape a generator emits.
+    #[test]
+    fn loose_edges_chain_into_a_ring() {
+        let p = from_edges(vec![
+            seg([4.0, 0.0], [4.0, 4.0]),
+            seg([0.0, 4.0], [0.0, 0.0]),
+            seg([0.0, 0.0], [4.0, 0.0]),
+            seg([0.0, 4.0], [4.0, 4.0]), // drawn right-to-left
+        ])
+        .unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].outer().len(), 4);
+        assert!(p[0].inners().is_empty());
+    }
+
+    /// Two cycles at once, one inside the other: chaining and nesting compose.
+    #[test]
+    fn two_chains_become_a_profile_with_a_hole() {
+        let ring = |a: f64, b: f64| {
+            vec![
+                seg([a, a], [b, a]),
+                seg([b, a], [b, b]),
+                seg([b, b], [a, b]),
+                seg([a, b], [a, a]),
+            ]
+        };
+        let mut edges = ring(0.0, 4.0);
+        edges.extend(ring(1.0, 3.0));
+        let p = from_edges(edges).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].inners().len(), 1);
+    }
+
+    /// A gap is not closed for the author — it is measured and handed back.
+    #[test]
+    fn an_unclosed_chain_reports_the_gap() {
+        let err = from_edges(vec![
+            seg([0.0, 0.0], [4.0, 0.0]),
+            seg([4.0, 0.0], [4.0, 4.0]),
+            seg([4.0, 4.0], [0.0, 4.0]),
+            seg([0.0, 4.0], [0.0, 0.25]), // 0.25 short of the start
+        ])
+        .unwrap_err();
+        let SketchError::OpenChain { gap, .. } = err else {
+            panic!("{err:?}");
+        };
+        assert!((gap.unwrap() - 0.25).abs() < 1e-12, "{gap:?}");
+    }
+
+    #[test]
+    fn a_zero_length_edge_is_rejected() {
+        let err = from_edges(vec![seg([1.0, 1.0], [1.0, 1.0])]).unwrap_err();
+        assert_eq!(err, SketchError::ZeroLengthEdge { edge: 0 });
+    }
+
+    #[test]
+    fn a_repeated_edge_is_rejected() {
+        let err = from_edges(vec![
+            seg([0.0, 0.0], [4.0, 0.0]),
+            seg([4.0, 0.0], [0.0, 0.0]), // the same segment, reversed
+            seg([4.0, 0.0], [4.0, 4.0]),
+        ])
+        .unwrap_err();
+        assert!(matches!(err, SketchError::DuplicateEdge { .. }), "{err:?}");
+    }
+
+    /// A T-junction has no single continuation, so the walk refuses rather than picking one.
+    #[test]
+    fn a_branching_vertex_is_rejected() {
+        let err = from_edges(vec![
+            seg([0.0, 0.0], [4.0, 0.0]),
+            seg([4.0, 0.0], [4.0, 4.0]),
+            seg([4.0, 0.0], [8.0, 0.0]),
+        ])
+        .unwrap_err();
+        assert!(
+            matches!(err, SketchError::BranchingVertex { .. }),
+            "{err:?}"
+        );
     }
 
     /// Containment must not depend on the rings' winding — the author draws in whatever direction
