@@ -2457,3 +2457,17 @@ clippy **2 불변**(같은 두 건, 신규 0). 비-test 커널 코드 diff **0**
 - **파급 반경을 코드로 증명했다**: `frame.origin`을 읽는 곳은 `ops.rs`의 **한 줄뿐**(`placed_profile_unchecked`). 나머지는 `n`·`surface_h`·`solid_h`.
 - **`he_start`가 두 벌이었다** — ops(패닉)와 props(`Result`), 정책까지 달랐다. `Model::reachable`이 이미 topo에 있는 선례를 따라 `Model::he_start -> Option`을 topo에 한 벌 두고 정책은 호출부에 남겼다.
 - **`MassError` → `PropsError`.** 크레이트 범위가 넓어졌으니 `bounds`가 "**Mass**Error"를 돌려주면 이름이 거짓말을 한다(③의 `CoplanarPair`와 같은 부류). 한 파일에서만 쓰여 비용이 거의 0이었다 — 한 번 미루면 영영 안 고칠 종류의 것.
+
+---
+
+**커널 ⑤ — 파사드 `nacre`를 채웠다.** `design.md`가 두 곳에서 *"사용자는 파사드 하나만 의존한다"*고 말하는데 그 파사드는 **13줄 placeholder, 의존성 0개**였다. 대가를 치르는 소비자가 이미 있었다 — 플레이그라운드가 커널 크레이트 **7개를 path로** 매달고, 그중 하나는 **기능 옵션까지 맞춰야** 한다.
+
+- **모듈 재수출, 평면 아님.** 층 전체 공개 이름 **93개를 세어** 충돌을 봤더니 **`Rotation` 하나뿐**이었다(scalar의 정확한 정의 vs topo의 이력 노드). 즉 **평면화가 불가능해서 모듈을 쓴 게 아니다** — 층 분리가 설계의 뼈대라서 남긴 판단이다. 근거를 세어보지 않았으면 "충돌이 많아서"라고 잘못 적었을 것이다.
+- **★ `nacre-scalar` 재수출은 선택이 아니었다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 **하위 층이 ops의 공개 API로 새는 유일한 지점**이다. 없으면 소비자가 그 op을 **만들 수조차 없다**. 반대로 `nacre-cip`·`nacre-predicates`는 새지 않아 재수출하지 않았다(퍼블리시는 필요).
+- **★ prelude를 짐작으로 고르다가 측정으로 바꿨고, 그 측정의 결함도 찾았다.** 플레이그라운드의 `use nacre_*` 전체를 뽑아 대조해 초안의 누락(`Tessellation`)을 찾았다. 그런데 **그 소비자는 ①·③·④·⑥보다 먼저 쓰인 코드**라 이번 세션에 만든 API가 목록에 하나도 없다 — 측정에만 기대면 방금 만든 것들이 빠진다. 그래서 **측정 ∪ 그 이후 표면**으로 정했다. 그리고 기준을 확인 가능한 성질로 적었다: *"`Operation`의 모든 변이가 prelude 이름만으로 만들어진다."* 그 기준을 검사하다 **`Mirror`가 `Rat`까지 요구**하는 걸 발견했다.
+- **★ 계획이 지목한 "가장 그럴듯한 실패 모드"가 실재였다.** `nacre-ops`를 `default-features = false`로 매달지 않으면 `nacre --no-default-features`에도 **rayon이 그대로 들어온다** — `cargo tree`로 재봤다(0개 vs 2개). 그러면 wasm 소비자는 파사드로 이사할 수 없다. 그리고 **그 속성은 매니페스트에 살아 훅이 검사하지 않으므로**, 테스트가 `Cargo.toml`을 직접 읽어 단언한다(투박하지만, 아무도 다시 안 돌리는 주석보다 낫다 — 일부러 지워서 빨개지는 것 확인).
+- **곁다리 발견**: `parallel`은 성능 스위치가 아니라 **`Send` 스위치**이기도 하다(cip의 hp 캐시가 `Arc<OnceLock>`↔`Rc<OnceCell>`). wasm 때문에 끄는 소비자는 스레드 간 이동도 포기하는 것이라 파사드의 기능 문서에 적었다.
+- **`test-util`은 기능으로 만들되 자기 테스트는 dev-dep으로 켠다.** `#[cfg(feature = "test-util")]` 테스트를 쓰면 **평소 `cargo test`에서 아예 돌지 않아** 검사가 썩는다 — `nacre-ops`가 이미 쓰는 방식을 따랐다.
+- **검증은 "`nacre::` 경로만으로 끝까지"다.** 크레이트 문서의 예제(doctest — `cargo test`가 함께 돌리므로 **문서가 곧 검사**)와 `tests/facade.rs` 4종: 전체 파이프라인(**`Transform`을 반드시 포함** — scalar 재수출을 주장에서 컴파일 사실로 바꾼다) · 스케치 앞문 + 면 고르기 · `test-util` 전달 · 매니페스트 불변식. **문서 예제는 프로덕션 API만** 쓴다(`add_cuboid`를 쓰면 독자가 복사해서 실행할 수 없다).
+- **하지 않은 것**: 실제 crates.io 퍼블리시(전 크레이트 `0.0.0`, `release-plz` 건) · `Document`(op 로그+Model+tess 캐시) 번들 — §2/§8이 이 층을 지목하지만 **의미론을 정하는 새 타입**이라 kit의 요구가 보이기 전에 정하지 않는다. 백로그로.
+- **퍼블리시 목록 정정**: 기록에 `-scalar`·`-predicates`·`-cip`(ops의 하드 의존)과 `-props`(파사드가 재수출)가 빠져 있었다.
