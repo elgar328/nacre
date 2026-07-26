@@ -8,7 +8,7 @@
 
 use crate::common::*;
 use nacre_math::{Point2, Point3};
-use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
+use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, from_rings};
 use nacre_store::Handle;
 use nacre_topo::{Model, Origin, Solid};
 
@@ -269,4 +269,53 @@ fn nacre_topo_first_vertex(m: &Model, fh: Handle<nacre_topo::Face>) -> Handle<na
     let he = m.faces.get(fh).outer.half_edges[0];
     let [a, b] = m.edges.get(he.edge).bounds.expect("bounded");
     if he.forward { a } else { b }
+}
+
+/// The whole point of the nesting step, through the front door: the caller hands over loose
+/// closed rings — no "this one is the hole" — and gets a solid with a hole in it.
+#[test]
+fn loose_rings_become_a_donut_without_being_told_which_is_the_hole() {
+    let sq = |a: f64, b: f64| {
+        vec![
+            Point2::from_array([a, a]),
+            Point2::from_array([b, a]),
+            Point2::from_array([b, b]),
+            Point2::from_array([a, b]),
+        ]
+    };
+    // Hole first, outer second — order carries no meaning.
+    let profiles = from_rings(vec![sq(1.0, 3.0), sq(0.0, 4.0)]).unwrap();
+    assert_eq!(profiles.len(), 1, "one body");
+
+    let mut m = Model::new();
+    let d = extrude(&mut m, profiles.into_iter().next().unwrap(), 1.0);
+
+    assert!(nacre_validate::validate(&m).is_empty());
+    assert!((volume(&m, d) - 12.0).abs() < 1e-12, "{}", volume(&m, d));
+}
+
+/// Rings inside a hole come back as their own body, and each extrudes on its own — this is the
+/// "island" the syntax promises, assembled by the caller as a loop over the returned profiles.
+#[test]
+fn an_island_extrudes_as_a_second_body() {
+    let sq = |a: f64, b: f64| {
+        vec![
+            Point2::from_array([a, a]),
+            Point2::from_array([b, a]),
+            Point2::from_array([b, b]),
+            Point2::from_array([a, b]),
+        ]
+    };
+    let profiles = from_rings(vec![sq(0.0, 9.0), sq(1.0, 8.0), sq(2.0, 7.0)]).unwrap();
+    assert_eq!(profiles.len(), 2);
+
+    let mut m = Model::new();
+    let mut total = 0.0;
+    for p in profiles {
+        let s = extrude(&mut m, p, 1.0);
+        total += volume(&m, s);
+    }
+    assert!(nacre_validate::validate(&m).is_empty());
+    // ring 0..9 minus hole 1..8 = 81 − 49 = 32, plus the island 2..7 = 25.
+    assert!((total - (32.0 + 25.0)).abs() < 1e-12, "{total}");
 }

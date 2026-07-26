@@ -352,7 +352,11 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 
 검산: 도넛 각기둥은 V16 − E24 + F10 − L_i 2 = 0 = 2(S−G), genus 1 — **오일러의 `L_i` 항이 처음으로 실제로 필요한 형상**이다. 링 관계(구멍이 외곽 안에 있는가)는 검사하지 않는다 — `with_holes`는 호출자의 약속을 받고, 검사하는 생성자는 후속 셀의 `from_rings`다.
 
-**★ (이하 원래 계획 서술 — `from_rings`/`from_edges`는 미구현)** 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 브리징하는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
+**링 중첩 판정 — `from_rings` (2026-07-26 구현).** 사용자는 닫힌 경로만 그리고 무엇이 구멍인지 말하지 않는다. `ops::sketch::from_rings`가 포함 **깊이**로 정한다: **짝수 = 재료, 홀수 = 구멍**(그래서 구멍 속 링은 다시 재료 = 섬이고 자기 몫의 profile이 된다), 구멍은 **가장 깊은 포함자**(직계)에 붙는다. 채우기 규칙 파라미터는 두지 않는다 — 짝수-홀수가 유일한 규칙이다.
+
+**분류 술어는 `geom::intersect`에 있다**(§1의 격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). ops에는 **정책(깊이 패리티)과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet`으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다). 그래서 `with_holes`의 "호출자 약속"을 **검사하는 생성자**가 이것이다.
+
+**★ (이하 원래 계획 서술 — `from_edges`는 미구현)** 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 브리징하는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
 - `{ outer, inners }`(구멍 N개, 제한 없음) + `extrude`가 구멍 벽면과 뚜껑 내부 루프를 함께 생성.
 - `Profile2d::from_rings(rings, fill_rule) -> Vec<Profile2d>` — 링 목록의 중첩을 exact `point_in_ring`으로 판정해(술어이므로 커널) **덩어리(섬)별 프로파일 목록**을 돌려준다(짝수-홀수 깊이: 0=재료, 1=구멍, 2=구멍 속 섬…). 채우기 규칙 선택은 호출자.
 - **경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준). 그래서 `Extrude`의 다중 바디 출력은 필요 없다.

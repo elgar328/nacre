@@ -8,7 +8,7 @@
 //! **sign** decisions live in `nacre-predicates`.
 
 use crate::{Line, Plane};
-use nacre_math::{Point3, Vector3};
+use nacre_math::{Point2, Point3, Vector3};
 
 /// The exact ray/segment vs triangle crossing outcomes, re-exported so callers
 /// (`nacre-ops`) reach them through geom without depending on `nacre-predicates`
@@ -242,6 +242,109 @@ pub fn segment_face_cross(a: Point3, b: Point3, tri: [Point3; 3]) -> SegCross {
         tri[1].as_array(),
         tri[2].as_array(),
     )
+}
+
+/// Where a point sits relative to a closed 2-D ring.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RingSide {
+    Inside,
+    Outside,
+    /// On the ring itself — a vertex or a point along an edge.
+    OnBoundary,
+}
+
+/// Whether `p` is inside `ring`, decided by **exact** signs only (`orient2d`), never by a
+/// tolerance.
+///
+/// Crossing parity along a ray: an edge that straddles `p`'s horizontal line contributes a
+/// crossing when `p` lies on the correct side of it, which `orient2d` answers exactly. The
+/// half-open straddle test (`>` on one end, `<=` on the other) is what keeps a vertex exactly on
+/// the ray from being counted twice.
+///
+/// The ring is assumed **simple** (no self-intersections); for such a ring parity and winding
+/// agree, so this needs no fill rule. A self-intersecting ring is out of contract — the sketch
+/// layer rejects those before asking.
+pub fn point_in_ring_2d(p: Point2, ring: &[Point2]) -> RingSide {
+    let n = ring.len();
+    if n < 3 {
+        return RingSide::Outside;
+    }
+    let pa = p.as_array();
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (ring[i].as_array(), ring[(i + 1) % n].as_array());
+        let side = orient2d(a, b, pa);
+        if side == 0.0 && on_segment_2d(a, b, pa) {
+            return RingSide::OnBoundary;
+        }
+        // Half-open in y so a vertex on the ray counts for exactly one of its two edges.
+        if (a[1] > pa[1]) != (b[1] > pa[1]) {
+            // Upward edge with `p` to its left, or downward edge with `p` to its right.
+            let upward = b[1] > a[1];
+            if (side > 0.0) == upward {
+                inside = !inside;
+            }
+        }
+    }
+    if inside {
+        RingSide::Inside
+    } else {
+        RingSide::Outside
+    }
+}
+
+/// Whether two closed rings meet at all — a proper crossing or a mere touch. Exact.
+///
+/// A profile's rings must be disjoint (a hole lies strictly inside the outer ring and strictly
+/// outside its siblings), so "touching" is a failure just as much as "crossing"; the two are not
+/// worth distinguishing here. `O(n·m)`, which is the right complexity for sketch-sized rings.
+pub fn rings_cross(a: &[Point2], b: &[Point2]) -> bool {
+    let (n, m) = (a.len(), b.len());
+    if n < 2 || m < 2 {
+        return false;
+    }
+    for i in 0..n {
+        let (p1, p2) = (a[i].as_array(), a[(i + 1) % n].as_array());
+        for j in 0..m {
+            let (q1, q2) = (b[j].as_array(), b[(j + 1) % m].as_array());
+            if segments_meet_2d(p1, p2, q1, q2) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Exact segment/segment test: `true` for a proper crossing **or** any touching contact.
+fn segments_meet_2d(p1: [f64; 2], p2: [f64; 2], q1: [f64; 2], q2: [f64; 2]) -> bool {
+    let d1 = orient2d(q1, q2, p1);
+    let d2 = orient2d(q1, q2, p2);
+    let d3 = orient2d(p1, p2, q1);
+    let d4 = orient2d(p1, p2, q2);
+    // Proper crossing: each segment separates the other's endpoints.
+    if ((d1 > 0.0) != (d2 > 0.0))
+        && ((d3 > 0.0) != (d4 > 0.0))
+        && d1 != 0.0
+        && d2 != 0.0
+        && d3 != 0.0
+        && d4 != 0.0
+    {
+        return true;
+    }
+    // Collinear or endpoint contact.
+    (d1 == 0.0 && on_segment_2d(q1, q2, p1))
+        || (d2 == 0.0 && on_segment_2d(q1, q2, p2))
+        || (d3 == 0.0 && on_segment_2d(p1, p2, q1))
+        || (d4 == 0.0 && on_segment_2d(p1, p2, q2))
+}
+
+/// Whether the **collinear** point `p` lies within segment `ab`'s extent (callers check
+/// collinearity with `orient2d` first, so this is a bounding-box question only).
+fn on_segment_2d(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> bool {
+    p[0] >= a[0].min(b[0])
+        && p[0] <= a[0].max(b[0])
+        && p[1] >= a[1].min(b[1])
+        && p[1] <= a[1].max(b[1])
 }
 
 #[cfg(test)]

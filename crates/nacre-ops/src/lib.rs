@@ -17,11 +17,13 @@ mod combinatorics;
 mod ops;
 mod planes;
 mod rotated_vertex;
+mod sketch;
 mod tolerant;
 mod transform;
 
 pub use boolean::boolean;
 pub use ops::{BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
+pub use sketch::{SketchError, from_rings};
 
 impl SketchPlane {
     /// The world XY plane (normal +Z).
