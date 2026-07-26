@@ -39,3 +39,6 @@ mod copy;
 
 #[path = "coverage/mirror.rs"]
 mod mirror;
+
+#[path = "coverage/sketch.rs"]
+mod sketch;

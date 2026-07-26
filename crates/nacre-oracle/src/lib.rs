@@ -338,6 +338,43 @@ bbox_min 0 0 0
         assert_eq!(p.faces, 6);
     }
 
+    /// A donut prism scored by an independent kernel: the hole has to be a hole to OCCT too.
+    /// Volume catches a hole that never opened, area catches missing or inverted hole walls, and
+    /// the face count catches a cap whose inner loop was dropped. It also exercises the STEP
+    /// writer's inner face bounds.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn swept_hole_matches_occt() {
+        use nacre_math::Point2;
+        use nacre_ops::{Operation, Profile2d, apply};
+
+        let sq = |a: f64, b: f64| {
+            vec![
+                Point2::from_array([a, a]),
+                Point2::from_array([b, a]),
+                Point2::from_array([b, b]),
+                Point2::from_array([a, b]),
+            ]
+        };
+        let mut model = Model::new();
+        apply(
+            &mut model,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d::with_holes(sq(0.0, 4.0), vec![sq(1.0, 3.0)]),
+                dist: 1.0,
+            },
+        )
+        .unwrap();
+        model.rebuild_adjacency();
+
+        let p = occt_props_of(&model).unwrap();
+        assert!(approx(p.volume, 12.0), "volume {}", p.volume); // 16 − 4
+        // caps 2·(16 − 4) + outer walls 16·1 + hole walls 8·1
+        assert!(approx(p.area, 48.0), "area {}", p.area);
+        assert_eq!(p.faces, 10);
+    }
+
     /// A mirrored solid, scored by an independent kernel — the only net for the one mistake a
     /// reflection can make. Turning a solid inside out (reflecting coordinates without rewinding
     /// the loops) leaves every per-cell invariant intact, so `validate` cannot see it; volume and

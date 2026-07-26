@@ -1,0 +1,272 @@
+//! Profiles with holes — extruding a region that is not simply connected.
+//!
+//! The kernel could already *produce* a donut, by cutting a bar out of a box; what it could not do
+//! was **construct** one. That distinction is the point: the boolean route makes every corner a
+//! `Discovered` intersection with a measured tolerance, while extruding the profile directly makes
+//! them `Constructed` — exact by construction (overview 절대원칙 4). So the strongest check here
+//! is not a number typed by hand but the two producers agreeing.
+
+use crate::common::*;
+use nacre_math::{Point2, Point3};
+use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
+use nacre_store::Handle;
+use nacre_topo::{Model, Origin, Solid};
+
+/// `[0,4]²` with a `[1,3]²` hole, extruded 1 high: volume 16 − 4 = 12.
+fn donut_profile() -> Profile2d {
+    let sq = |a: f64, b: f64| {
+        vec![
+            Point2::from_array([a, a]),
+            Point2::from_array([b, a]),
+            Point2::from_array([b, b]),
+            Point2::from_array([a, b]),
+        ]
+    };
+    Profile2d::with_holes(sq(0.0, 4.0), vec![sq(1.0, 3.0)])
+}
+
+fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile,
+            dist,
+        },
+    )
+    .unwrap() else {
+        unreachable!("Extrude yields an Extrude output")
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// **The check that cannot be fooled by my arithmetic.** The same donut, built two ways: swept
+/// from a profile with a hole, and cut out of a solid box. Every measurable must agree — a hole
+/// that failed to open shows up in the volume, walls that are missing or inside-out show up in
+/// the area, and a mis-wound cap shows up in the face count.
+#[test]
+fn a_swept_hole_matches_the_same_shape_cut_out() {
+    let mut m = Model::new();
+    let swept = extrude(&mut m, donut_profile(), 1.0);
+    let swept_props = nacre_props::mass_props(&m, swept).unwrap();
+    let swept_faces = m.shells.get(m.solids.get(swept).outer).faces.len();
+
+    let mut m2 = Model::new();
+    let block = m2.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([4.0, 4.0, 1.0]),
+    );
+    let bar = m2.add_cuboid(
+        Point3::from_array([1.0, 1.0, -1.0]),
+        Point3::from_array([3.0, 3.0, 2.0]),
+    );
+    m2.rebuild_adjacency();
+    let cut = boolean_one(&mut m2, BoolKind::Cut, block, bar).unwrap();
+    m2.rebuild_adjacency();
+    let cut_props = nacre_props::mass_props(&m2, cut).unwrap();
+    let cut_faces = m2.shells.get(m2.solids.get(cut).outer).faces.len();
+
+    assert!(
+        (swept_props.volume - cut_props.volume).abs() < 1e-12,
+        "volume {} vs {}",
+        swept_props.volume,
+        cut_props.volume
+    );
+    assert!(
+        (swept_props.area - cut_props.area).abs() < 1e-12,
+        "area {} vs {}",
+        swept_props.area,
+        cut_props.area
+    );
+    assert_eq!(swept_faces, cut_faces, "face count");
+}
+
+/// The construction is exact where the boolean's is not: sweeping a profile makes every vertex
+/// `Constructed`, so no tolerance is recorded anywhere. This is the reason the kernel grows a
+/// producer for a shape it could already cut.
+#[test]
+fn a_swept_hole_is_constructed_throughout() {
+    let mut m = Model::new();
+    let d = extrude(&mut m, donut_profile(), 1.0);
+    for &fh in &m.shells.get(m.solids.get(d).outer).faces {
+        let face = m.faces.get(fh).clone();
+        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            for he in &lp.half_edges {
+                for vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                    assert!(
+                        matches!(m.vertices.get(*vh).origin, Origin::Constructed),
+                        "a swept vertex carries no tolerance"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Euler with the inner-loop term, on the first shape that actually needs it: a donut prism is
+/// genus 1, and `χ = V − E + F − L_i = 16 − 24 + 10 − 2 = 0 = 2(S − G)` only if both cap holes
+/// are counted. Drop the inner loops and the same solid reads as an impossible genus.
+#[test]
+fn a_donut_prism_is_a_valid_genus_one_solid() {
+    let mut m = Model::new();
+    let d = extrude(&mut m, donut_profile(), 1.0);
+
+    let vs = nacre_validate::validate(&m);
+    assert!(vs.is_empty(), "{vs:?}");
+
+    let faces = &m.shells.get(m.solids.get(d).outer).faces;
+    assert_eq!(faces.len(), 10, "4 outer walls + 4 hole walls + 2 caps");
+    let inner_loops: usize = faces.iter().map(|&fh| m.faces.get(fh).inner.len()).sum();
+    assert_eq!(inner_loops, 2, "one hole loop per cap");
+    assert!((volume(&m, d) - 12.0).abs() < 1e-12, "{}", volume(&m, d));
+}
+
+/// A hole is only a hole if the mesh and the exchange format agree it is one. Tessellation
+/// bridges cap holes, and STEP writes them as inner face bounds.
+#[test]
+fn a_donut_prism_tessellates_and_exports() {
+    let mut m = Model::new();
+    extrude(&mut m, donut_profile(), 1.0);
+
+    assert!(
+        nacre_tess::to_obj(&m).is_ok(),
+        "caps triangulate with holes"
+    );
+    let step = nacre_step::to_step(&m).unwrap();
+    assert!(step.contains("MANIFOLD_SOLID_BREP"));
+    assert!(step.contains("FACE_BOUND"), "the hole is an inner bound");
+}
+
+/// Several holes at once — the walls and cap loops are per-ring, so two is not a special case.
+#[test]
+fn a_profile_with_two_holes() {
+    let sq = |ax: f64, ay: f64, bx: f64, by: f64| {
+        vec![
+            Point2::from_array([ax, ay]),
+            Point2::from_array([bx, ay]),
+            Point2::from_array([bx, by]),
+            Point2::from_array([ax, by]),
+        ]
+    };
+    let mut m = Model::new();
+    let p = Profile2d::with_holes(
+        sq(0.0, 0.0, 6.0, 3.0),
+        vec![sq(1.0, 1.0, 2.0, 2.0), sq(4.0, 1.0, 5.0, 2.0)],
+    );
+    let d = extrude(&mut m, p, 1.0);
+
+    assert!(nacre_validate::validate(&m).is_empty());
+    assert!(
+        (volume(&m, d) - (18.0 - 2.0)).abs() < 1e-12,
+        "{}",
+        volume(&m, d)
+    );
+    let inner_loops: usize = m
+        .shells
+        .get(m.solids.get(d).outer)
+        .faces
+        .iter()
+        .map(|&fh| m.faces.get(fh).inner.len())
+        .sum();
+    assert_eq!(inner_loops, 4, "two holes on each of two caps");
+}
+
+/// A solid built with a hole is an ordinary operand — the boolean has always accepted faces with
+/// inner loops, and this checks the constructed variety is no different.
+#[test]
+fn a_swept_hole_is_a_boolean_operand() {
+    let mut m = Model::new();
+    let d = extrude(&mut m, donut_profile(), 1.0);
+    let knife = m.add_cuboid(
+        Point3::from_array([-1.0, -1.0, 0.5]),
+        Point3::from_array([5.0, 5.0, 2.0]),
+    );
+    m.rebuild_adjacency();
+
+    let r = boolean_one(&mut m, BoolKind::Cut, d, knife).unwrap();
+    m.rebuild_adjacency();
+
+    assert!(nacre_validate::validate(&m).is_empty());
+    assert!((volume(&m, r) - 6.0).abs() < 1e-12, "{}", volume(&m, r));
+}
+
+/// The other sweep direction. A pocket sweeps *into* its face, so the outer ring is reversed on
+/// the way in — the one path where "which way is counter-clockwise" differs from every extrude
+/// above.
+///
+/// It was written expecting to be the only test that catches a mis-wound hole, and measurement
+/// said otherwise: winding each hole opposite to the *normalized* outer ring and winding it
+/// clockwise about the sweep are the same rule, because the outer ring is always normalized
+/// counter-clockwise about the sweep. There is no second rule to get wrong. What remains real is
+/// the hazard the design removed — deciding winding in two places (the frame's 2-D area *and* the
+/// sweep's) — and this test is the end-to-end cover for the direction where those two disagree.
+#[test]
+fn a_pocket_with_a_hole_sweeps_the_other_way() {
+    let mut m = Model::new();
+    let block = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 4.0]),
+    );
+    m.rebuild_adjacency();
+    let top = m
+        .shells
+        .get(m.solids.get(block).outer)
+        .faces
+        .iter()
+        .copied()
+        .find(|&fh| {
+            has_face_on_plane(
+                &m,
+                block,
+                Point3::from_array([5.0, 5.0, 4.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            ) && m.faces.get(fh).outer.half_edges.len() == 4
+                && m.vertices
+                    .get(nacre_topo_first_vertex(&m, fh))
+                    .point
+                    .as_array()[2]
+                    == 4.0
+        })
+        .expect("top face");
+
+    // An annular pocket: a square trench with an untouched island in the middle.
+    let sq = |a: f64, b: f64| {
+        vec![
+            Point2::from_array([a, a]),
+            Point2::from_array([b, a]),
+            Point2::from_array([b, b]),
+            Point2::from_array([a, b]),
+        ]
+    };
+    let profile = Profile2d::with_holes(sq(-4.0, 4.0), vec![sq(-2.0, 2.0)]);
+    let OpOutput::PocketOnFace { solid, .. } = apply(
+        &mut m,
+        &Operation::PocketOnFace {
+            face: top,
+            profile,
+            dist: 1.0,
+        },
+    )
+    .unwrap() else {
+        unreachable!("PocketOnFace yields its own output")
+    };
+    m.rebuild_adjacency();
+
+    // The trench is (8² − 4²) = 48 in plan, 1 deep. A hole wound the wrong way would remove the
+    // whole 8² footprint (64) instead — or produce an invalid solid.
+    assert!(nacre_validate::validate(&m).is_empty());
+    assert!(
+        (volume(&m, solid) - (400.0 - 48.0)).abs() < 1e-9,
+        "{}",
+        volume(&m, solid)
+    );
+}
+
+/// The first vertex of a face's outer loop — a local helper, kept out of `common` because only
+/// the pocket fixture above needs it.
+fn nacre_topo_first_vertex(m: &Model, fh: Handle<nacre_topo::Face>) -> Handle<nacre_topo::Vertex> {
+    let he = m.faces.get(fh).outer.half_edges[0];
+    let [a, b] = m.edges.get(he.edge).bounds.expect("bounded");
+    if he.forward { a } else { b }
+}

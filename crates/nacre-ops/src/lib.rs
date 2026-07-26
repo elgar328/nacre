@@ -2099,6 +2099,7 @@ pub mod tests {
         let (_prism, faces) = build_prism(
             &mut m,
             &base_pts,
+            &[],
             Vector3::from_array([0.0, 0.0, 1.0]),
             Some(sf),
         )
@@ -3248,8 +3249,14 @@ pub mod tests {
         .iter()
         .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
         .collect();
-        let (boss, _) =
-            build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
+        let (boss, _) = build_prism(
+            &mut m,
+            &l_base,
+            &[],
+            Vector3::from_array([0.0, 0.0, 0.4]),
+            None,
+        )
+        .unwrap();
         let r = boolean_one(&mut m, BoolKind::Fuse, cube, boss).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);
@@ -3366,8 +3373,14 @@ pub mod tests {
         .iter()
         .map(|&[x, y]| Point3::from_array([x, y, 1.0]))
         .collect();
-        let (l_tool, _) =
-            build_prism(&mut m, &l_base, Vector3::from_array([0.0, 0.0, 0.4]), None).unwrap();
+        let (l_tool, _) = build_prism(
+            &mut m,
+            &l_base,
+            &[],
+            Vector3::from_array([0.0, 0.0, 0.4]),
+            None,
+        )
+        .unwrap();
         let r = boolean_one(&mut m, BoolKind::Fuse, cube, l_tool).unwrap();
         m.rebuild_adjacency();
         let vs = nacre_validate::validate(&m);

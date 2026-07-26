@@ -176,10 +176,6 @@ pub enum OpError {
     /// unreached in the suite (the definitions and the result faces both name the plane class's
     /// representative surface).
     OriginNotOnSolid,
-    /// A `Profile2d` carries hole rings, which the prism builder does not dig yet. **Temporary**:
-    /// the very next step teaches `build_prism` to raise hole walls and attach the cap inner
-    /// loops, and this variant goes away with it.
-    ProfileHolesUnsupported,
     /// A `Mirror` input carries curved geometry (a cylindrical face, a circular edge). A
     /// reflection reverses a circle's parametrisation, and which convention a mirrored quadric
     /// should take is a curved-geometry decision, so it is declined rather than guessed.
@@ -282,17 +278,6 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError> {
     Ok(model)
 }
 
-/// Twice the signed area of the polygon (sign only is used): positive = CCW.
-fn signed_area(pts: &[Point2]) -> f64 {
-    let n = pts.len();
-    (0..n)
-        .map(|i| {
-            let j = (i + 1) % n;
-            pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]
-        })
-        .sum()
-}
-
 fn push_line_edge(
     model: &mut Model,
     a: Handle<Vertex>,
@@ -326,64 +311,235 @@ pub(crate) fn extrude(
     if profile.outer().len() < 3 {
         return Err(OpError::DegenerateProfile);
     }
-    // S1: the type can carry holes but the prism builder cannot dig them yet.
-    if !profile.inners().is_empty() {
-        return Err(OpError::ProfileHolesUnsupported);
-    }
-    let base_pts: Vec<Point3> = profile.outer().iter().map(|p| plane.point(*p)).collect();
-    build_prism(model, &base_pts, plane.normal() * dist, None)
+    let on_plane =
+        |ring: &[Point2]| -> Vec<Point3> { ring.iter().map(|p| plane.point(*p)).collect() };
+    let base_pts = on_plane(profile.outer());
+    let inner_pts: Vec<Vec<Point3>> = profile.inners().iter().map(|h| on_plane(h)).collect();
+    build_prism(model, &base_pts, &inner_pts, plane.normal() * dist, None)
 }
 
-/// Sweep the ring `base_pts` along `sweep` into a prism solid (caps + side quads). The ring is
-/// normalized CCW **about `sweep`** so the synthesized normals point outward; this uses the
-/// polygon's area vector dotted with the sweep normal (frame-independent — `proj2`+`signed_area`
-/// would mis-sign when the sweep runs along a negative dominant axis, e.g. a pocket into a `+z`
-/// face sweeping `−z`). All vertices are `Origin::Constructed`. Returns the solid and its faces:
-/// `faces[0]` = base cap (at `base_pts`, normal `−ŝ`), `faces[1]` = far cap (at `base_pts + sweep`,
-/// normal `+ŝ`), then the side quads. Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
+/// Sweep a profile's rings along `sweep` into a prism solid: caps, side walls, and — for each
+/// hole ring — a wall of its own plus an inner loop on each cap.
+///
+/// **This is the only place winding is decided**, because it is the only place that knows the
+/// sweep. The outer ring is normalized CCW **about `sweep`** (area vector dotted with the sweep
+/// normal — frame-independent, unlike `proj2`+`signed_area`, which mis-signs when the sweep runs
+/// along a negative dominant axis, e.g. a pocket into a `+z` face sweeping `−z`). Each hole is
+/// then normalized to the **opposite** sense *of that normalized outer ring*, never of the input:
+/// get that backwards and a pocket — where the sweep flips the outer ring — silently produces
+/// holes wound the same way as the outer, which is not a hole at all.
+///
+/// Opposite winding is all a hole needs. The wall quads are built from the ring's own traversal,
+/// so a reversed ring yields walls facing into the hole (out of the material), and the cap loops
+/// come out opposed to the cap's outer loop, which is what makes them holes.
+///
+/// All vertices are `Origin::Constructed`. Returns the solid and its faces: `faces[0]` = base cap
+/// (at the ring, normal `−ŝ`), `faces[1]` = far cap, then the outer walls, then each hole's walls.
+/// Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
 pub(crate) fn build_prism(
     model: &mut Model,
     base_pts: &[Point3],
+    inner_pts: &[Vec<Point3>],
     sweep: Vector3,
     base_cap_surface: Option<Handle<Surface>>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
-    if base_pts.len() < 3 {
+    if base_pts.len() < 3 || inner_pts.iter().any(|h| h.len() < 3) {
         return Err(OpError::DegenerateProfile);
     }
     let normal = sweep.normalize().ok_or(OpError::DegenerateGeometry)?;
-    let mut base_pts: Vec<Point3> = base_pts.to_vec();
-    let k = base_pts.len();
-    let area_vec = (0..k)
-        .map(|i| (base_pts[i] - Point3::origin()).cross(base_pts[(i + 1) % k] - Point3::origin()))
-        .fold(Vector3::from_array([0.0; 3]), |a, b| a + b);
-    if area_vec.dot(normal) < 0.0 {
-        base_pts.reverse();
+
+    let outer_pts = oriented_ring(base_pts, normal, true);
+    let outer = sweep_ring(model, &outer_pts, sweep)?;
+    let holes: Vec<RingCells> = inner_pts
+        .iter()
+        // `false` = opposite to the normalized outer ring, whichever way that ended up.
+        .map(|h| sweep_ring(model, &oriented_ring(h, normal, false), sweep))
+        .collect::<Result<_, _>>()?;
+
+    let mut faces =
+        Vec::with_capacity(2 + outer.len() + holes.iter().map(|h| h.len()).sum::<usize>());
+
+    // Base cap: outward normal −N, loops reversed.
+    // When padding/pocketing on a face, reuse that face's `Surface` handle (explicit sharing) so
+    // the flush contact is a shared-handle coplanar pair the boolean can recognize by `Handle`
+    // identity; otherwise push a fresh plane. The materialized outward normal must stay −N, so the
+    // face orientation is chosen from the shared surface's stored normal — `surface` and
+    // `orientation` travel together, and the reconstruction copies both.
+    let (base_surface, base_orient) = match base_cap_surface {
+        Some(h) => {
+            let n_h = match model.surfaces.get(h) {
+                Surface::Plane(p) => p.normal(),
+                Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
+            };
+            let orient = if n_h.dot(-normal) > 0.0 {
+                Orientation::Forward
+            } else {
+                Orientation::Reversed
+            };
+            (h, orient)
+        }
+        None => {
+            let s = model.surfaces.push(Surface::Plane(
+                Plane::from_point_normal(outer.base_pts[0], -normal)
+                    .ok_or(OpError::DegenerateGeometry)?,
+            ));
+            (s, Orientation::Forward)
+        }
+    };
+    faces.push(model.faces.push(Face {
+        surface: base_surface,
+        outer: outer.cap_loop(Cap::Base),
+        inner: holes.iter().map(|h| h.cap_loop(Cap::Base)).collect(),
+        orientation: base_orient,
+    }));
+
+    // Top cap: outward normal +N.
+    let top_surface = model.surfaces.push(Surface::Plane(
+        Plane::from_point_normal(outer.top_pts[0], normal).ok_or(OpError::DegenerateGeometry)?,
+    ));
+    faces.push(model.faces.push(Face {
+        surface: top_surface,
+        outer: outer.cap_loop(Cap::Top),
+        inner: holes.iter().map(|h| h.cap_loop(Cap::Top)).collect(),
+        orientation: Orientation::Forward,
+    }));
+
+    // Side walls — the outer ring's, then each hole's (facing into the hole).
+    for ring in std::iter::once(&outer).chain(holes.iter()) {
+        ring.push_walls(model, &mut faces)?;
     }
-    let n = base_pts.len();
+
+    let shell = model.shells.push(Shell {
+        faces: faces.clone(),
+    });
+    let solid = model.push_solid(Solid {
+        outer: shell,
+        cavities: vec![],
+    });
+    Ok((solid, faces))
+}
+
+/// Which cap a ring's loop is being built for.
+#[derive(Clone, Copy)]
+enum Cap {
+    Base,
+    Top,
+}
+
+/// One ring swept into cells: the two rings of vertices and the three edge families that join
+/// them. Built the same way for the outer ring and for a hole — the difference is only which way
+/// the ring runs, which the caller has already decided.
+struct RingCells {
+    base_pts: Vec<Point3>,
+    top_pts: Vec<Point3>,
+    be: Vec<Handle<Edge>>, // base  B_i -> B_{i+1}
+    te: Vec<Handle<Edge>>, // top   T_i -> T_{i+1}
+    ve: Vec<Handle<Edge>>, // riser B_i -> T_i
+}
+
+impl RingCells {
+    fn len(&self) -> usize {
+        self.base_pts.len()
+    }
+
+    /// The cap loop for this ring. The base cap faces `−ŝ`, so its loops run backwards.
+    fn cap_loop(&self, cap: Cap) -> Loop {
+        let n = self.len();
+        match cap {
+            Cap::Base => Loop {
+                half_edges: (0..n)
+                    .rev()
+                    .map(|i| HalfEdge {
+                        edge: self.be[i],
+                        forward: false,
+                    })
+                    .collect(),
+            },
+            Cap::Top => Loop {
+                half_edges: (0..n)
+                    .map(|i| HalfEdge {
+                        edge: self.te[i],
+                        forward: true,
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    /// One quad per ring segment. The quad's winding follows the ring's, so a ring wound against
+    /// the outer one yields walls whose normals point into the hole.
+    fn push_walls(&self, model: &mut Model, faces: &mut Vec<Handle<Face>>) -> Result<(), OpError> {
+        let n = self.len();
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let surface = model.surfaces.push(Surface::Plane(
+                Plane::through_points(self.base_pts[i], self.base_pts[j], self.top_pts[i])
+                    .ok_or(OpError::DegenerateGeometry)?,
+            ));
+            let outer = Loop {
+                half_edges: vec![
+                    HalfEdge {
+                        edge: self.be[i],
+                        forward: true,
+                    },
+                    HalfEdge {
+                        edge: self.ve[j],
+                        forward: true,
+                    },
+                    HalfEdge {
+                        edge: self.te[i],
+                        forward: false,
+                    },
+                    HalfEdge {
+                        edge: self.ve[i],
+                        forward: false,
+                    },
+                ],
+            };
+            faces.push(model.faces.push(Face {
+                surface,
+                outer,
+                inner: vec![],
+                orientation: Orientation::Forward,
+            }));
+        }
+        Ok(())
+    }
+}
+
+/// `pts` wound counter-clockwise about `normal` when `ccw`, clockwise when not. The test is the
+/// polygon's area vector against `normal`, so it does not care which axis dominates.
+fn oriented_ring(pts: &[Point3], normal: Vector3, ccw: bool) -> Vec<Point3> {
+    let mut v = pts.to_vec();
+    let k = v.len();
+    let area_vec = (0..k)
+        .map(|i| (v[i] - Point3::origin()).cross(v[(i + 1) % k] - Point3::origin()))
+        .fold(Vector3::from_array([0.0; 3]), |a, b| a + b);
+    if (area_vec.dot(normal) < 0.0) == ccw {
+        v.reverse();
+    }
+    v
+}
+
+/// Push one ring's vertices and edges (base ring, top ring, risers).
+fn sweep_ring(model: &mut Model, pts: &[Point3], sweep: Vector3) -> Result<RingCells, OpError> {
+    let n = pts.len();
+    let base_pts: Vec<Point3> = pts.to_vec();
     let top_pts: Vec<Point3> = base_pts.iter().map(|b| *b + sweep).collect();
-
-    let bv: Vec<Handle<Vertex>> = base_pts
-        .iter()
-        .map(|p| {
-            model.vertices.push(Vertex {
-                point: *p,
-                origin: Origin::Constructed,
+    let push_verts = |model: &mut Model, ps: &[Point3]| -> Vec<Handle<Vertex>> {
+        ps.iter()
+            .map(|p| {
+                model.vertices.push(Vertex {
+                    point: *p,
+                    origin: Origin::Constructed,
+                })
             })
-        })
-        .collect();
-    let tv: Vec<Handle<Vertex>> = top_pts
-        .iter()
-        .map(|p| {
-            model.vertices.push(Vertex {
-                point: *p,
-                origin: Origin::Constructed,
-            })
-        })
-        .collect();
+            .collect()
+    };
+    let bv = push_verts(model, &base_pts);
+    let tv = push_verts(model, &top_pts);
 
-    let mut be = Vec::with_capacity(n); // base edges B_i -> B_{i+1}
-    let mut te = Vec::with_capacity(n); // top edges  T_i -> T_{i+1}
-    let mut ve = Vec::with_capacity(n); // vertical   B_i -> T_i
+    let (mut be, mut te, mut ve) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
         let j = (i + 1) % n;
         be.push(push_line_edge(
@@ -402,114 +558,13 @@ pub(crate) fn build_prism(
             top_pts[i],
         )?);
     }
-
-    let mut faces = Vec::with_capacity(n + 2);
-
-    // Base cap: outward normal −N, loop reversed (B_0 -> B_{n-1} -> ... -> B_1).
-    // When padding/pocketing on a face, reuse that face's `Surface` handle (explicit sharing) so the flush contact is a shared-handle coplanar pair the
-    // boolean can recognize by `Handle` identity; otherwise push a fresh plane.
-    // The materialized outward normal must stay −N, so the face orientation is
-    // chosen from the shared surface's stored normal — `surface` and `orientation`
-    // travel together, and the reconstruction copies both.
-    let (base_surface, base_orient) = match base_cap_surface {
-        Some(h) => {
-            let n_h = match model.surfaces.get(h) {
-                Surface::Plane(p) => p.normal(),
-                Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
-            };
-            let orient = if n_h.dot(-normal) > 0.0 {
-                Orientation::Forward
-            } else {
-                Orientation::Reversed
-            };
-            (h, orient)
-        }
-        None => {
-            let s = model.surfaces.push(Surface::Plane(
-                Plane::from_point_normal(base_pts[0], -normal)
-                    .ok_or(OpError::DegenerateGeometry)?,
-            ));
-            (s, Orientation::Forward)
-        }
-    };
-    let base_loop = Loop {
-        half_edges: (0..n)
-            .rev()
-            .map(|i| HalfEdge {
-                edge: be[i],
-                forward: false,
-            })
-            .collect(),
-    };
-    faces.push(model.faces.push(Face {
-        surface: base_surface,
-        outer: base_loop,
-        inner: vec![],
-        orientation: base_orient,
-    }));
-
-    // Top cap: outward normal +N.
-    let top_surface = model.surfaces.push(Surface::Plane(
-        Plane::from_point_normal(top_pts[0], normal).ok_or(OpError::DegenerateGeometry)?,
-    ));
-    let top_loop = Loop {
-        half_edges: (0..n)
-            .map(|i| HalfEdge {
-                edge: te[i],
-                forward: true,
-            })
-            .collect(),
-    };
-    faces.push(model.faces.push(Face {
-        surface: top_surface,
-        outer: top_loop,
-        inner: vec![],
-        orientation: Orientation::Forward,
-    }));
-
-    // Side quads.
-    for i in 0..n {
-        let j = (i + 1) % n;
-        let surface = model.surfaces.push(Surface::Plane(
-            Plane::through_points(base_pts[i], base_pts[j], top_pts[i])
-                .ok_or(OpError::DegenerateGeometry)?,
-        ));
-        let outer = Loop {
-            half_edges: vec![
-                HalfEdge {
-                    edge: be[i],
-                    forward: true,
-                },
-                HalfEdge {
-                    edge: ve[j],
-                    forward: true,
-                },
-                HalfEdge {
-                    edge: te[i],
-                    forward: false,
-                },
-                HalfEdge {
-                    edge: ve[i],
-                    forward: false,
-                },
-            ],
-        };
-        faces.push(model.faces.push(Face {
-            surface,
-            outer,
-            inner: vec![],
-            orientation: Orientation::Forward,
-        }));
-    }
-
-    let shell = model.shells.push(Shell {
-        faces: faces.clone(),
-    });
-    let solid = model.push_solid(Solid {
-        outer: shell,
-        cavities: vec![],
-    });
-    Ok((solid, faces))
+    Ok(RingCells {
+        base_pts,
+        top_pts,
+        be,
+        te,
+        ve,
+    })
 }
 
 /// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
@@ -564,28 +619,32 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     })
 }
 
-/// Place `profile` on `frame` (CCW in the frame so its RH normal is `+n`) and return its points on
-/// the face plane. **No containment check** — the profile may reach past the face boundary. Used by
-/// the boolean pad/pocket path (`extrude_and_boolean`), where an overhanging footprint routes to the
-/// overhang boolean sidecars; the boolean honestly rejects configurations it does not cover.
+/// Place `profile`'s rings on `frame`'s plane. **No containment check** — the profile may reach
+/// past the face boundary. Used by the boolean pad/pocket path (`extrude_and_boolean`), where an
+/// overhanging footprint routes to the overhang boolean sidecars; the boolean honestly rejects
+/// configurations it does not cover.
+///
+/// **Mapping only — no winding decision.** This used to force the outer ring CCW in the frame,
+/// which is a second opinion on a question `build_prism` already answers from the sweep. Two
+/// opinions is how an outer ring and its holes end up wound the same way (the pocket case, where
+/// the sweep runs `−n` and flips the outer ring). The rings travel as given; the prism builder
+/// decides.
 fn placed_profile_unchecked(
     frame: &FaceFrame,
     profile: &Profile2d,
-) -> Result<Vec<Point3>, OpError> {
-    if profile.outer().len() < 3 {
+) -> Result<(Vec<Point3>, Vec<Vec<Point3>>), OpError> {
+    if profile.outer().len() < 3 || profile.inners().iter().any(|h| h.len() < 3) {
         return Err(OpError::DegenerateProfile);
     }
-    if !profile.inners().is_empty() {
-        return Err(OpError::ProfileHolesUnsupported);
-    }
-    let mut pts = profile.outer().to_vec();
-    if signed_area(&pts) < 0.0 {
-        pts.reverse();
-    }
-    Ok(pts
-        .iter()
-        .map(|p| frame.origin + frame.x * p[0] + frame.y * p[1])
-        .collect())
+    let place = |ring: &[Point2]| -> Vec<Point3> {
+        ring.iter()
+            .map(|p| frame.origin + frame.x * p[0] + frame.y * p[1])
+            .collect()
+    };
+    Ok((
+        place(profile.outer()),
+        profile.inners().iter().map(|h| place(h)).collect(),
+    ))
 }
 
 /// A face-local feature built as **tool body + boolean**: the profile
@@ -610,7 +669,7 @@ fn extrude_and_boolean(
     }
     let frame = face_frame(model, face)?;
     // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
-    let base_pts = placed_profile_unchecked(&frame, profile)?;
+    let (base_pts, inner_pts) = placed_profile_unchecked(&frame, profile)?;
     let n = frame.n;
     // Cut carves inward, Fuse raises outward; either way the prism's near cap is flush on the face.
     let signed = if matches!(kind, BoolKind::Cut) {
@@ -618,7 +677,13 @@ fn extrude_and_boolean(
     } else {
         dist
     };
-    let (prism, prism_faces) = build_prism(model, &base_pts, n * signed, Some(frame.surface_h))?;
+    let (prism, prism_faces) = build_prism(
+        model,
+        &base_pts,
+        &inner_pts,
+        n * signed,
+        Some(frame.surface_h),
+    )?;
     let solids = boolean(model, kind, frame.solid_h, prism).map_err(|e| {
         model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
         OpError::Boolean(e)
