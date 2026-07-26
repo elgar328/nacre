@@ -53,7 +53,7 @@ pub struct RotNode {
 #[derive(Clone, Debug)]
 pub struct Pt3 {
     pub base: [Rat; 3],
-    pub chain: Vec<RotNode>,
+    pub chain: HpRc<[RotNode]>,
     pub coord: [f64; 3],
     pub tol: [f64; 3],
     /// Memoized `hp_coord(JUDGE_PREC)` — the astro-float realization of the chain, computed
@@ -89,6 +89,23 @@ impl Pt3 {
         )
     }
 
+    /// A point whose coordinates are **exactly representable** as f64 — the axis-aligned case.
+    ///
+    /// `base` is that f64 (`try_from_f64` is exact: `mantissa · 2^exp`), so realizing it back
+    /// yields the same f64 and the rounding tol is **`0` by construction**. `None` if a
+    /// coordinate falls outside `Rat`'s exponent range.
+    ///
+    /// **Use this, not [`at`](Self::at), when the coordinates came from f64.** `at` *measures*
+    /// the rounding at 120 bits; for this case that is nine BigFloat operations to compute a
+    /// zero, and the boolean's hot path used to pay it hundreds of thousands of times.
+    pub fn exact(coord: [f64; 3]) -> Option<Self> {
+        let b = |x: f64| Rat::try_from_f64(x);
+        Some(Self::at_with_tol(
+            [b(coord[0])?, b(coord[1])?, b(coord[2])?],
+            [0.0; 3],
+        ))
+    }
+
     /// A point at `base` with an explicit initial `tol` — for a root that already
     /// carries tol (a `Discovered` boolean seam), whose tol the chain then transports
     /// (`|R|·old`). [`at`](Self::at) is the Constructed case (initial tol = base
@@ -97,7 +114,7 @@ impl Pt3 {
         Pt3 {
             coord: [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
             base,
-            chain: Vec::new(),
+            chain: HpRc::from([] as [RotNode; 0]),
             tol,
             hp: HpCell::default(),
         }
@@ -144,7 +161,13 @@ impl Pt3 {
         let (ti, tj) = (self.tol[i], self.tol[j]);
         self.tol[i] = c.abs() * ti + s.abs() * tj + mix;
         self.tol[j] = s.abs() * ti + c.abs() * tj + mix;
-        self.chain.push(RotNode { axis, angle, point });
+        // Rebuild the shared slice with the new node appended. This runs when a solid is
+        // *transformed*, never on the judgment path, so the copy is not hot — and in exchange
+        // `clone` becomes a refcount bump instead of an allocation, which the judgment path
+        // does hundreds of thousands of times.
+        let mut nodes = self.chain.to_vec();
+        nodes.push(RotNode { axis, angle, point });
+        self.chain = HpRc::from(nodes);
         // The definition changed — invalidate the memoized hp of the old definition. A fresh
         // (unshared) cell, so clones made before this rotation keep their own cached value.
         self.hp = HpCell::default();
@@ -170,7 +193,7 @@ impl Pt3 {
             rat_to_big(self.base[1], prec),
             rat_to_big(self.base[2], prec),
         ];
-        for node in &self.chain {
+        for node in self.chain.iter() {
             let (i, j) = node.axis.plane();
             let (c, s) = node.angle.cos_sin_at(prec);
             let (px, py) = (
@@ -977,6 +1000,59 @@ mod tests {
         assert_eq!(p.tol, [0.0; 3]);
         // and the realized coords are the exact permutation/negation (no spurious term).
         assert_eq!(p.coord, [7.0, -3.0, -5.0]);
+    }
+
+    /// **`Pt3::exact` states the tol that `Pt3::at` would measure — the same value.**
+    ///
+    /// This equivalence is what licenses the substitution on the boolean's hot path, where `at`
+    /// spent nine 120-bit BigFloat operations per call to arrive at zero. It rests on three
+    /// links, and the third is the one worth a test: `try_from_f64` represents an f64 exactly,
+    /// realizing that base back yields the same f64, and `bf_mag` of an exact zero is `0.0` (not
+    /// a floor). If any link broke, `at` would report a nonzero tol here and the fast
+    /// constructor would be silently changing geometry rather than skipping arithmetic.
+    #[test]
+    fn exact_states_the_tol_that_at_would_measure() {
+        for c in [
+            [0.0, 1.0, -1.0],         // integers, both signs
+            [0.5, 0.25, -0.125],      // dyadic fractions
+            [4.0, 0.2, 3.0],          // 0.2 is not decimal-exact but *is* an exact f64
+            [1e-8, -2.5e-9, 7.5e-7],  // small
+            [1e18, -4e17, 3.5e19],    // large, still inside Rat's exponent range
+            [1e-20, -2.5e-21, 5e-18], // small, still inside it (the floor is 2^-74 ≈ 5.3e-23)
+        ] {
+            let fast = Pt3::exact(c).expect("representable");
+            let measured = Pt3::at(c.map(|x| Rat::try_from_f64(x).expect("representable")));
+            assert_eq!(fast.coord, c, "the coordinates round-trip: {c:?}");
+            assert_eq!(fast.coord, measured.coord, "same coord for {c:?}");
+            assert_eq!(
+                measured.tol, [0.0; 3],
+                "`at` must measure exactly zero for an f64-derived base: {c:?}"
+            );
+            assert_eq!(fast.tol, measured.tol, "same tol for {c:?}");
+        }
+    }
+
+    /// Outside `Rat`'s exponent range there is no exact base, and `exact` says so instead of
+    /// panicking — the caller decides (an operation turns it into a named reject).
+    ///
+    /// **The range is much narrower than f64's, at both ends** — easy to get wrong, and I did
+    /// on the first attempt. `Rat` is `Ratio<i128>`, so `mantissa · 2^exp` must fit `i128`
+    /// (`|x| ≲ 1.7e38`) *and* the denominator `2^k` must (`k = 1075 − exp_field ≤ 126`, i.e.
+    /// `|x| ≳ 2^-74 ≈ 5.3e-23`). Exact zero is special-cased and always representable.
+    /// A CAD model at either extreme is not real; the limit is.
+    #[test]
+    fn exact_declines_a_coordinate_it_cannot_represent() {
+        assert!(Pt3::exact([1e300, 0.0, 0.0]).is_none(), "too large");
+        assert!(
+            Pt3::exact([1e-30, 0.0, 0.0]).is_none(),
+            "below the 2^-74 floor"
+        );
+        assert!(
+            Pt3::exact([f64::MIN_POSITIVE, 0.0, 0.0]).is_none(),
+            "subnormal"
+        );
+        // Zero is not a boundary case — it is special-cased and exact.
+        assert_eq!(Pt3::exact([0.0; 3]).expect("zero is exact").tol, [0.0; 3]);
     }
 
     /// `at` seeds the base→f64 rounding: 0 for an integer base, positive for a base

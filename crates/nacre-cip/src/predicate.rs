@@ -25,7 +25,7 @@ use nacre_math::Point3;
 use nacre_predicates::{
     ThreePlane, det3_sign, indirect_cmp_coord, indirect_orient3d, orient2d, orient3d,
 };
-use nacre_scalar::{Orient, Rat};
+use nacre_scalar::Orient;
 
 /// A plane witnessed by three points known to lie on it, and — when the solid was rotated —
 /// their exact [`Pt3`] definitions.
@@ -68,10 +68,11 @@ pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> [Pt3; 3] {
 }
 
 /// An exact axis-aligned point as a tol-0 `Pt3` (its f64 coordinates are exact rationals).
+///
+/// [`Pt3::exact`] is the constructor that *names* this case; reaching [`Pt3::at`] instead would
+/// **measure** a rounding error that is provably zero, at 120 bits, on the boolean's hottest path.
 fn pt3_from_exact(p: Point3) -> Pt3 {
-    let a = p.as_array();
-    let rat = |x: f64| Rat::try_from_f64(x).expect("axis-aligned coordinate is an exact rational");
-    Pt3::at([rat(a[0]), rat(a[1]), rat(a[2])])
+    Pt3::exact(p.as_array()).expect("axis-aligned coordinate is an exact rational")
 }
 
 fn to_i8(o: Orient) -> i8 {
