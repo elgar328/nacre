@@ -205,3 +205,76 @@ fn rotated_result_coplanar_reuse_under_a_general_rotation() {
         );
     }
 }
+
+/// The near misses around the four-plane reject in `rejects.rs`.
+///
+/// That reject needs **four** coincidences at once — 45°, a square cross-section, a pivot lying in
+/// the target plane, and the fused block that makes `z = 1` a shared class. Break any single one and
+/// the cut builds. Each row here was measured, and together they are what says the reject is a
+/// genuine concurrency rather than a rotation the engine cannot handle: 44° and 46° are every bit as
+/// irrational as 45°.
+///
+/// They are also the net under the eventual four-plane *support* work: whatever normalises vertex
+/// identity must leave all of these building.
+#[test]
+fn the_near_misses_around_the_four_plane_reject_all_build() {
+    use nacre_scalar::Rat;
+    let on_plane = Rat::from_int(1);
+    for (what, half_z, deg, pivot_z, fuse) in [
+        ("44°, one degree short", 0.2, 44, on_plane, true),
+        ("46°, one degree past", 0.2, 46, on_plane, true),
+        ("30°", 0.2, 30, on_plane, true),
+        (
+            "90°, the axis-aligned quarter turn",
+            0.2,
+            90,
+            on_plane,
+            true,
+        ),
+        ("a taller-than-wide bar", 0.3, 45, on_plane, true),
+        ("a flatter-than-wide bar", 0.15, 45, on_plane, true),
+        (
+            "pivot lifted 0.05 off the plane",
+            0.2,
+            45,
+            Rat::new(21, 20).unwrap(),
+            true,
+        ),
+        (
+            "pivot lifted 0.25 off the plane",
+            0.2,
+            45,
+            Rat::new(5, 4).unwrap(),
+            true,
+        ),
+        (
+            "the plain cube, no block fused on",
+            0.2,
+            45,
+            on_plane,
+            false,
+        ),
+    ] {
+        let (mut m, cube, bar) = cube_and_spun_bar(half_z, deg, pivot_z);
+        let target = if fuse {
+            let block = m.add_cuboid(
+                Point3::from_array([0.5, 0.0, 1.0]),
+                Point3::from_array([1.0, 1.0, 2.0]),
+            );
+            m.rebuild_adjacency();
+            let t = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
+            m.rebuild_adjacency();
+            t
+        } else {
+            cube
+        };
+        let r = boolean_one(&mut m, BoolKind::Cut, target, bar)
+            .unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty(), "{what}: invalid");
+        // The bar passes clean through, so the cut always removes material.
+        let vol = nacre_props::mass_props(&m, r).unwrap().volume;
+        let whole = if fuse { 1.5 } else { 1.0 };
+        assert!(vol > 0.0 && vol < whole, "{what}: volume {vol}");
+    }
+}

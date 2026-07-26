@@ -294,6 +294,47 @@ fn extrude_at_z(m: &mut Model, profile: Profile2d, z: f64, dist: f64) -> Handle<
     solid
 }
 
+/// The unit cube, and a bar across it spun `deg`° about Y through `(0.5, ·, pivot_z)`.
+///
+/// The bar is `0.4` wide in x and `2·half_z` tall, centred on the cube's top plane `z = 1`, so a
+/// **square** cross-section (`half_z == 0.2`) spun **45°** sends two corners exactly `half_z·√2`
+/// sideways and back to `z = 1`: a tool *edge* lying in the target's face plane, whose endpoints
+/// are named by three bar planes while a fourth — the cube's top — passes through them.
+///
+/// Every argument is a knob on that coincidence, which is what makes the family worth sharing:
+/// change the angle, break the squareness, or lift the pivot off the plane and the same model
+/// builds. Rotation about Y ignores the pivot's y, so only `pivot_z` matters here.
+pub fn cube_and_spun_bar(
+    half_z: f64,
+    deg: i128,
+    pivot_z: nacre_scalar::Rat,
+) -> (Model, Handle<Solid>, Handle<Solid>) {
+    use nacre_scalar::{Angle, Rat, Rotation};
+    let mut m = Model::new();
+    let OpOutput::Extrude { solid: cube, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
+    else {
+        unreachable!("extrude yields Extrude output")
+    };
+    let bar = Profile2d::polygon(vec![
+        p2(0.3, -0.5),
+        p2(0.7, -0.5),
+        p2(0.7, 1.5),
+        p2(0.3, 1.5),
+    ]);
+    let bar = extrude_at_z(&mut m, bar, 1.0 - half_z, 2.0 * half_z);
+    m.rebuild_adjacency();
+    let bar = xf(
+        &mut m,
+        bar,
+        Isometry::rotation(Rotation {
+            axis: Axis::Y,
+            point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), pivot_z],
+            angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+        }),
+    );
+    (m, cube, bar)
+}
+
 pub fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
     let bar = Profile2d::polygon(vec![

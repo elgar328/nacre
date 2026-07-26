@@ -172,7 +172,7 @@ pub enum RejectReason {
     CavityNoOwner,
     /// No material-enclosing (outward) shell among the result components — every component is
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
-    /// with no firing test (cf. `FourPlane`).
+    /// with no firing test.
     NoOutwardShell,
     /// A rotated-result face's supporting plane could not be witnessed exactly: neither three
     /// of the face's own vertices assemble (a survivor wall) nor a unique operand plane `π` is
@@ -216,6 +216,17 @@ pub enum RejectReason {
     ZeroLengthEdge,
     /// Four planes concurrent at one point: two distinct plane triples name the same arrangement
     /// vertex, which the substrate cannot express.
+    ///
+    /// **What builds one.** A tool whose *edge* lands exactly in a target face's plane — tangential
+    /// contact rather than a crossing. The edge's endpoints then lie on three tool planes *and* the
+    /// target plane. The reachable example, and the firing test: a bar of **square** cross-section
+    /// spun **45°** about an axis in that plane, whose corners travel `half × √2` and land back on
+    /// it. Break any one of the three (angle, squareness, pivot on the plane) and the same model
+    /// builds — the coincidence, not the rotation, is what bites.
+    ///
+    /// On rotated operands the concurrency is *within the deciding predicate's tolerance*: the
+    /// judgement that puts the vertex on the plane is the toleranced one, the same one every other
+    /// on-plane fact in the trace rests on.
     FourPlane,
     /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
     /// quadrics).
@@ -288,6 +299,10 @@ pub enum DeclineKind {
     CrossingName,
     /// An on-plane run's bounding node has no nameable wall plane.
     RunName,
+    /// An on-plane run's node lies on the cut plane yet is not named by it — four planes meet
+    /// there. Raised as [`RejectReason::FourPlane`] rather than as a `TraceDeclined`, since the
+    /// substrate limit is the cause and the naming failure only the symptom.
+    FourPlane,
     /// Two arrangement features on the class line order as equal — they coincide.
     CoincidentFeatures,
     /// A run's two nodes did not end up adjacent after ordering, so the run is not one interval.
@@ -309,6 +324,7 @@ impl DeclineKind {
             Self::AllOnPlane => "all-on-plane",
             Self::CrossingName => "crossing-name",
             Self::RunName => "run-name",
+            Self::FourPlane => "four-plane",
             Self::CoincidentFeatures => "coincident-features",
             Self::RunSplit => "run-split",
             Self::OddParity => "odd-parity",

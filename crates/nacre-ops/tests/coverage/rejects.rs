@@ -5,8 +5,10 @@
 //! will take — and it exists to keep the error surface usable from outside the crate, which
 //! is the only place that can prove it.
 
+use crate::common::*;
 use nacre_math::Point3;
 use nacre_ops::{BoolError, BoolKind, RejectClass, RejectReason, boolean};
+use nacre_scalar::Rat;
 use nacre_topo::Model;
 
 /// The message an application would show.
@@ -99,4 +101,43 @@ fn a_stale_operand_is_not_a_reject_reason() {
         user_message(err),
         "an operand is no longer part of the model"
     );
+}
+
+/// A tool whose edge lands exactly in a target face's plane: four planes meet at that edge's
+/// endpoints, and no plane *triple* can name such a vertex. This is the model reported from the
+/// playground — a square bar spun 45° about an axis lying in the cube's top face, which is an easy
+/// thing to draw by accident.
+///
+/// The caller must hear the cause — "four planes meet at a point, not supported yet" — and not the
+/// symptom the tracer happens to trip over ("could not name a run's bounding node"). This is the
+/// firing test for [`RejectReason::FourPlane`], and the switch that flips the day the substrate can
+/// express such a vertex: then this boolean succeeds and this test says so.
+///
+/// **The fused block is load-bearing**, which was a surprise: cutting the same bar out of the plain
+/// cube succeeds ([`crate::rotation`] pins that, along with the other near misses). Fusing the block
+/// on first makes `z = 1` a *shared* plane class carrying a coplanar contact, and only then does the
+/// tangent edge become a run the tracer must name.
+#[test]
+fn a_tool_edge_in_the_target_plane_is_a_four_plane_concurrency() {
+    let (mut m, cube, bar) = cube_and_spun_bar(0.2, 45, Rat::from_int(1));
+    let block = m.add_cuboid(
+        Point3::from_array([0.5, 0.0, 1.0]),
+        Point3::from_array([1.0, 1.0, 2.0]),
+    );
+    m.rebuild_adjacency();
+    let target =
+        boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses onto the cube")[0];
+    m.rebuild_adjacency();
+
+    let err = boolean(&mut m, BoolKind::Cut, target, bar).unwrap_err();
+
+    let BoolError::Unsupported { reason } = err else {
+        panic!("expected an Unsupported rejection, got {err:?}");
+    };
+    assert_eq!(reason, RejectReason::FourPlane);
+    // A coverage limit, not a defect and not an impossible input: the cut is perfectly well
+    // defined, the arrangement just cannot name its vertices yet.
+    assert_eq!(reason.class(), RejectClass::NotSupportedYet);
+    assert_eq!(reason.as_str(), "fourplane");
+    assert_eq!(user_message(err), "not supported yet [fourplane]");
 }

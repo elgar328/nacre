@@ -101,6 +101,23 @@ fn sorted3(mut t: [usize; 3]) -> [usize; 3] {
 /// exact predicates need `D ≠ 0`), so the face is declined rather than fed a degenerate meet. A
 /// face→plane map still collapses — two faces of one solid meeting a vertex on one plane — so this
 /// guard outlives the old face/plane ambiguity it was born with.
+/// The reject a declined face reports to the caller.
+///
+/// Most kinds *are* the answer — the tracer says what it could not do, and `face` says where.
+/// [`DeclineKind::FourPlane`] is the exception: the naming failure is a symptom, and reporting it
+/// as one would hide the substrate limit that caused it, so it is raised as the cause. The face
+/// handle is dropped there because [`RejectReason::FourPlane`] carries no payload; per-face detail
+/// remains in the class audit, which is where `TraceDeclined`'s own docs put it.
+///
+/// **One function for both consumers.** The boolean's error and the audit's `failed_at` must agree
+/// — two copies of this mapping would let them drift.
+fn decline_to_reject(kind: DeclineKind, face: Handle<Face>) -> RejectReason {
+    match kind {
+        DeclineKind::FourPlane => RejectReason::FourPlane,
+        kind => RejectReason::TraceDeclined { kind, face },
+    }
+}
+
 fn plane_ring(ts: &[[usize; 3]]) -> Option<Vec<[usize; 3]>> {
     ts.iter()
         .map(|&t| {
@@ -189,18 +206,38 @@ fn trace_transversal_face(
     }
 
     // `L`'s third plane naming a point of the on-line edge: the vertex triple `{fc, W-class, r}`.
-    let third_on_l = |t: [usize; 3]| -> Option<usize> {
-        let (mut r, mut has_fp, mut has_w) = (None, false, false);
+    //
+    // Failing to name it has two *different* causes, and the caller must be able to tell them
+    // apart. `t`'s three classes are distinct (`plane_ring` rejects a collapsed triple first) and
+    // `fc != wc` is this function's precondition, so:
+    //
+    // - `wc ∉ t` — every caller passes a **run** vertex, whose point lies on `wc` (that is what
+    //   `side == 0` says). A point on `wc` that `wc` does not name, plus `t`'s three distinct
+    //   classes, is **four distinct planes through one point** — an identity the plane-triple
+    //   substrate cannot express, whether or not `fc` is among them.
+    // - `wc ∈ t` but `fc ∉ t` — the face's own plane does not name its own vertex. That is a
+    //   naming anomaly, not a concurrency, and keeps the generic `RunName`.
+    //
+    // Counting to the end rather than returning early matters: a four-plane vertex has *two*
+    // off-plane classes, so an early "two off-planes" bail would exit before `wc`'s absence is
+    // ever noticed and report every such point as `RunName`.
+    let third_on_l = |t: [usize; 3]| -> Result<usize, DeclineKind> {
+        let (mut off, mut n_off, mut has_fp, mut has_w) = (0usize, 0usize, false, false);
         for &x in &t {
             if x == fc {
                 has_fp = true;
             } else if x == wc {
                 has_w = true;
-            } else if r.replace(x).is_some() {
-                return None; // two off-planes: not a clean point on L
+            } else {
+                off = x;
+                n_off += 1;
             }
         }
-        (has_fp && has_w).then_some(r).flatten()
+        match (has_fp, has_w, n_off) {
+            (true, true, 1) => Ok(off),
+            (_, false, _) => Err(DeclineKind::FourPlane),
+            _ => Err(DeclineKind::RunName),
+        }
     };
 
     // Phase A — scan the outer ring and every hole ring, collecting feature nodes into ONE list.
@@ -258,7 +295,7 @@ fn trace_transversal_face(
                 let name = |k: usize| third_on_l(ring[(run_start + k) % n]);
                 if m == 1 {
                     match name(0) {
-                        Some(r) => nodes.push(Node {
+                        Ok(r) => nodes.push(Node {
                             r,
                             flip: flanks_differ,
                             run: None,
@@ -268,16 +305,16 @@ fn trace_transversal_face(
                             // segment; a flank-differing single vertex is a strict crossing.
                             graze_above: None,
                         }),
-                        None => declined = Some(DeclineKind::RunName),
+                        Err(kind) => declined = Some(kind),
                     }
                 } else {
                     // m >= 2: one on-line interval. Only its two ends and the flanks decide
                     // anything; the interior points are names the arrangement may split at.
                     let id = run_counter;
                     run_counter += 1;
-                    let names: Option<Vec<usize>> = (0..m).map(name).collect();
+                    let names: Result<Vec<usize>, DeclineKind> = (0..m).map(name).collect();
                     match names {
-                        Some(rs) => {
+                        Ok(rs) => {
                             // Every run is one-sided: it is an *edge* of `f` lying on `L`, so `f`
                             // is on one side of it whatever the ring does afterwards.
                             // `flanks_differ` says only whether the sweep's parity toggles here
@@ -296,7 +333,7 @@ fn trace_transversal_face(
                                 });
                             }
                         }
-                        None => declined = Some(DeclineKind::RunName),
+                        Err(kind) => declined = Some(kind),
                     }
                 }
             }
@@ -1356,10 +1393,7 @@ fn trace_result_faces(
         // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on which
         // operand face. A class can decline several faces; the first is the one reported.
         if let Some(&(fp, kind)) = tr.declined.first() {
-            return Err(reject(RejectReason::TraceDeclined {
-                kind,
-                face: faces[fp].face,
-            }));
+            return Err(reject(decline_to_reject(kind, faces[fp].face)));
         }
         let merged = merge_coincident(&tr.segs);
         let split = split_at_crossings(planes, wc, &merged)?;
@@ -1452,10 +1486,7 @@ pub(crate) fn frame_audit(
         };
         // Run the rest of the per-class pipeline, recording where it stops.
         audit.failed_at = if let Some(&(fp, kind)) = audit.declined.first() {
-            Some(RejectReason::TraceDeclined {
-                kind,
-                face: faces_tab[fp].face,
-            })
+            Some(decline_to_reject(kind, faces_tab[fp].face))
         } else {
             let run = || -> Result<(), BoolError> {
                 let merged = merge_coincident(&tr.segs);
@@ -2981,6 +3012,71 @@ mod tests {
             m.rebuild_adjacency();
         }
         s
+    }
+
+    /// The boolean's error and the class audit's `failed_at` are the **same** reject.
+    ///
+    /// They are two consumers of one `DeclineKind → RejectReason` mapping, and before
+    /// `decline_to_reject` they were two copies of it. A copy that drifts makes the audit — the
+    /// tool used to debug a reject — disagree with the reject being debugged, which is the worst
+    /// possible time to be lying. The four-plane model is the case where the mapping is not the
+    /// identity, so it is the one that can catch the drift.
+    #[test]
+    fn the_audit_reports_the_same_reject_as_the_boolean() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let build = || -> (Model, Handle<Solid>, Handle<Solid>) {
+            let mut m = Model::new();
+            let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let block = m.add_cuboid(
+                Point3::from_array([0.5, 0.0, 1.0]),
+                Point3::from_array([1.0, 1.0, 2.0]),
+            );
+            m.rebuild_adjacency();
+            let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("block fuses on")[0];
+            m.rebuild_adjacency();
+            let bar = m.add_cuboid(
+                Point3::from_array([0.3, -0.5, 0.8]),
+                Point3::from_array([0.7, 1.5, 1.2]),
+            );
+            m.rebuild_adjacency();
+            // 45° about Y through a pivot in the cube's top plane: the bar's corners land back on
+            // z = 1, putting one of its edges in that plane.
+            let bar = transform(
+                &mut m,
+                bar,
+                &Isometry::rotation(Rotation {
+                    axis: Axis::Y,
+                    point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
+                    angle: Angle::from_deg(Rat::from_int(45)).unwrap(),
+                }),
+            )
+            .unwrap();
+            m.rebuild_adjacency();
+            (m, target, bar)
+        };
+
+        let (mut m, target, bar) = build();
+        let err = boolean(&mut m, BoolKind::Cut, target, bar).unwrap_err();
+        let BoolError::Unsupported { reason } = err else {
+            panic!("expected an Unsupported rejection, got {err:?}");
+        };
+        assert_eq!(reason, RejectReason::FourPlane);
+
+        let (m, target, bar) = build();
+        let audits = frame_audit(&m, BoolKind::Cut, target, bar).unwrap();
+        let failed: Vec<RejectReason> = audits.iter().filter_map(|a| a.failed_at).collect();
+        assert!(
+            failed.contains(&reason),
+            "the audit must report the boolean's reject, got {failed:?}"
+        );
+        // And the decline it came from is still on record, face and all, which is where the
+        // per-face detail lives now that the reason itself carries none.
+        assert!(
+            audits
+                .iter()
+                .any(|a| a.declined.iter().any(|&(_, k)| k == DeclineKind::FourPlane)),
+            "the audit keeps the per-face decline"
+        );
     }
 
     /// Rigidly rotating both operands (same single-Z tilt) leaves all three booleans' volumes
