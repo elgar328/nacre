@@ -9,7 +9,7 @@ use crate::{BoolError, he_start};
 use nacre_geom::intersect::plane_side;
 use nacre_geom::{Curve, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
-use nacre_scalar::Isometry;
+use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex};
 
@@ -76,6 +76,15 @@ pub enum Operation {
         solid: Handle<Solid>,
         isometry: Isometry,
     },
+    /// Reflect `solid` in the coordinate plane `axis = offset`, superseding it (pair with
+    /// [`Operation::Copy`] to keep the original — the usual move, since mirroring exists to build
+    /// the other half of a symmetric part). Lengths are preserved and handedness is reversed:
+    /// this is a reflection, not a negative scale.
+    Mirror {
+        solid: Handle<Solid>,
+        axis: Axis,
+        offset: Rat,
+    },
     /// Duplicate `solid` in place, keeping the original live — **the only operation that adds to
     /// `live_solids` without removing anything** (design §2). Every other edit supersedes its
     /// input, so this is what makes "cut with the same tool twice", "keep the original and a moved
@@ -131,6 +140,15 @@ pub enum OpError {
     /// unreached in the suite (the definitions and the result faces both name the plane class's
     /// representative surface).
     OriginNotOnSolid,
+    /// A `Mirror` input carries curved geometry (a cylindrical face, a circular edge). A
+    /// reflection reverses a circle's parametrisation, and which convention a mirrored quadric
+    /// should take is a curved-geometry decision, so it is declined rather than guessed.
+    MirrorNotPlanar,
+    /// A `Mirror` input is rotated. **Temporary**: reflecting a rotated solid is expressible by
+    /// conjugating its rotation chain (`M ∘ R = (M R M⁻¹) ∘ M`, and the conjugate is again a
+    /// rotation about the same axis with a mirrored pivot and a negated angle — all exact, since
+    /// both are rational). That is the immediate follow-up; this variant goes away with it.
+    MirrorOfRotated,
 }
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
@@ -159,6 +177,8 @@ pub enum OpOutput {
     Transform { solid: Handle<Solid> },
     /// The duplicate. Unlike every other output, the input stays live alongside it.
     Copy { solid: Handle<Solid> },
+    /// The reflected solid (supersedes the input).
+    Mirror { solid: Handle<Solid> },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
@@ -200,6 +220,14 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         Operation::Copy { solid } => {
             let out = crate::transform::copy(model, *solid)?;
             Ok(OpOutput::Copy { solid: out })
+        }
+        Operation::Mirror {
+            solid,
+            axis,
+            offset,
+        } => {
+            let out = crate::transform::mirror(model, *solid, *axis, *offset)?;
+            Ok(OpOutput::Mirror { solid: out })
         }
     }
 }

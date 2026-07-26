@@ -338,6 +338,59 @@ bbox_min 0 0 0
         assert_eq!(p.faces, 6);
     }
 
+    /// A mirrored solid, scored by an independent kernel — the only net for the one mistake a
+    /// reflection can make. Turning a solid inside out (reflecting coordinates without rewinding
+    /// the loops) leaves every per-cell invariant intact, so `validate` cannot see it; volume and
+    /// area are reflection-invariant, so OCCT reading our STEP must report the source values.
+    /// It checks the STEP export of mirrored geometry at the same time.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn mirrored_solid_matches_occt() {
+        use nacre_math::Point2;
+        use nacre_ops::{OpOutput, Operation, apply};
+        use nacre_scalar::{Axis, Rat};
+
+        // An L-prism, asymmetric so the mirror cannot be a no-op: area 4, height 1.
+        let mut model = Model::new();
+        let profile = nacre_ops::Profile2d {
+            points: vec![
+                Point2::from_array([0.0, 0.0]),
+                Point2::from_array([2.0, 0.0]),
+                Point2::from_array([2.0, 1.0]),
+                Point2::from_array([1.0, 1.0]),
+                Point2::from_array([1.0, 3.0]),
+                Point2::from_array([0.0, 3.0]),
+            ],
+        };
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut model,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile,
+                dist: 1.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        model.rebuild_adjacency();
+        apply(
+            &mut model,
+            &Operation::Mirror {
+                solid,
+                axis: Axis::X,
+                offset: Rat::from_int(0),
+            },
+        )
+        .unwrap();
+        model.rebuild_adjacency();
+
+        let p = occt_props_of(&model).unwrap();
+        assert!(approx(p.volume, 4.0), "volume {}", p.volume);
+        assert!(approx(p.area, 18.0), "area {}", p.area); // caps 2·4 + perimeter 10 · height 1
+        assert_eq!(p.faces, 8);
+    }
+
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn cylinder_matches_occt() {

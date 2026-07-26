@@ -144,21 +144,28 @@ fn in_bounds<T>(h: Handle<T>, store: &Store<T>) -> bool {
     (h.index() as usize) < store.len()
 }
 
-/// A loop with its winding reversed: half-edges in reverse order, each traversed
-/// the opposite way. Reversing a loop's winding flips the face normal the loop
-/// implies, so paired with an [`Orientation`] toggle it yields a consistent
-/// inward-facing face (`Model::reversed_shell`).
-fn reversed_loop(lp: &Loop) -> Loop {
-    Loop {
-        half_edges: lp
-            .half_edges
-            .iter()
-            .rev()
-            .map(|he| HalfEdge {
-                edge: he.edge,
-                forward: !he.forward,
-            })
-            .collect(),
+impl Loop {
+    /// This loop with its winding reversed: half-edges in reverse order, each traversed the
+    /// opposite way. Both parts matter — reversing the *order* flips the normal the winding
+    /// implies, and flipping each `forward` keeps every edge used once in each direction, so two
+    /// faces that share an edge stay opposed when both are reversed (still a valid 2-manifold).
+    ///
+    /// Two callers want it for opposite reasons. [`Model::reversed_shell`] pairs it with an
+    /// [`Orientation`] toggle to turn a boundary inward (a cavity). A **reflection** pairs it with
+    /// nothing: mirroring negates the normal a winding implies, so rewinding restores it and the
+    /// orientation flag stays as it was.
+    pub fn reversed(&self) -> Loop {
+        Loop {
+            half_edges: self
+                .half_edges
+                .iter()
+                .rev()
+                .map(|he| HalfEdge {
+                    edge: he.edge,
+                    forward: !he.forward,
+                })
+                .collect(),
+        }
     }
 }
 
@@ -206,8 +213,8 @@ impl Model {
                 let face = self.faces.get(fh).clone();
                 self.faces.push(Face {
                     surface: face.surface,
-                    outer: reversed_loop(&face.outer),
-                    inner: face.inner.iter().map(reversed_loop).collect(),
+                    outer: face.outer.reversed(),
+                    inner: face.inner.iter().map(Loop::reversed).collect(),
                     orientation: face.orientation.flipped(),
                 })
             })

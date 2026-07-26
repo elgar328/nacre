@@ -34,6 +34,49 @@ pub use plane::Plane;
 
 use nacre_math::{Point3, Vector3};
 
+/// A reflection across the coordinate plane `p[axis] = offset`.
+///
+/// Axis-aligned only, which is the same restriction rigid motion already has (the kernel rotates
+/// about the coordinate axes only): a reflection in a general plane needs an irrational unit
+/// normal, so its image could not be reproduced from an exact definition.
+///
+/// The axis is an index rather than an enum because this crate does not depend on `nacre-scalar`
+/// (whose `Axis` names a *rotation* axis); the caller maps its typed axis once, at the boundary.
+///
+/// **Exactness:** `dir` only flips a sign, so it is always exact. `point` computes `2·offset − p`
+/// on one coordinate, which is exact when `offset == 0` and otherwise rounds once — the same
+/// rounding a translation by a rational offset already has.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AxisMirror {
+    axis: usize,
+    offset: f64,
+}
+
+impl AxisMirror {
+    /// `None` if `axis` is not 0, 1 or 2.
+    #[inline]
+    pub fn new(axis: usize, offset: f64) -> Option<AxisMirror> {
+        (axis < 3).then_some(AxisMirror { axis, offset })
+    }
+
+    /// `p` with its mirrored coordinate replaced by `2·offset − p[axis]`.
+    #[inline]
+    pub fn point(self, p: Point3) -> Point3 {
+        let mut q = p.as_array();
+        q[self.axis] = 2.0 * self.offset - q[self.axis];
+        Point3::from_array(q)
+    }
+
+    /// `v` with its mirrored component negated. A direction is offset-free, so this is a pure
+    /// sign flip and stays exact even for a mirror plane away from the origin.
+    #[inline]
+    pub fn dir(self, v: Vector3) -> Vector3 {
+        let mut w = v.as_array();
+        w[self.axis] = -w[self.axis];
+        Vector3::from_array(w)
+    }
+}
+
 /// A surface — the exact truth of a face's geometry.
 ///
 /// `Plane` and `Cylinder` are wired; a `Nurbs(NurbsSurface)` variant (the
@@ -75,6 +118,21 @@ impl Surface {
             Surface::Cylinder(s) => Surface::Cylinder(s.translated(offset)),
         }
     }
+
+    /// The surface reflected in `m`, or `None` for a cylinder.
+    ///
+    /// A reflection reverses the sense of a circle: `R(n × ref) = −(R(n) × R(ref))`, so the image
+    /// of a cylinder's parametrisation runs the opposite way round its axis. Which convention a
+    /// mirrored quadric should take is decided with the curved-geometry milestone rather than
+    /// guessed here, so the function does not exist for that variant instead of existing and
+    /// being wrong.
+    #[inline]
+    pub fn mirrored(&self, m: AxisMirror) -> Option<Surface> {
+        match self {
+            Surface::Plane(s) => Some(Surface::Plane(s.mirrored(m))),
+            Surface::Cylinder(_) => None,
+        }
+    }
 }
 
 /// A curve — the exact truth of an edge's geometry.
@@ -107,6 +165,16 @@ impl Curve {
         match self {
             Curve::Line(c) => Curve::Line(c.translated(offset)),
             Curve::Circle(c) => Curve::Circle(c.translated(offset)),
+        }
+    }
+
+    /// The curve reflected in `m`, or `None` for a circle — see [`Surface::mirrored`] for why the
+    /// curved variant is left undefined rather than guessed.
+    #[inline]
+    pub fn mirrored(&self, m: AxisMirror) -> Option<Curve> {
+        match self {
+            Curve::Line(c) => Some(Curve::Line(c.mirrored(m))),
+            Curve::Circle(_) => None,
         }
     }
 

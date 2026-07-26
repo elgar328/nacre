@@ -3,9 +3,9 @@
 //! operand stays exactly defined. [`copy`] is the same walk with no motion at all.
 
 use crate::OpError;
-use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
+use nacre_geom::{AxisMirror, Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::{Isometry, Rat};
+use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Origin, Rotation, Shell, Solid, Vertex, VertexDef,
@@ -26,7 +26,7 @@ pub(crate) fn transform(
     if !origins_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
-    let out = transform_solid(model, solid, isometry);
+    let out = transform_solid(model, solid, &Motion::Rigid(isometry))?;
     model.live_solids.retain(|&s| s != solid);
     Ok(out)
 }
@@ -57,7 +57,7 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
     let zero = Isometry::translation([Rat::from_int(0); 3]);
     // `push_solid` registers the twin as live; the input is *not* retained away — that missing
     // line is the whole difference from `transform`.
-    Ok(transform_solid(model, solid, &zero))
+    transform_solid(model, solid, &Motion::Rigid(&zero))
 }
 
 /// Whether every `Discovered` definition in `solid` names a surface the walk will remap — that is,
@@ -105,6 +105,92 @@ fn origins_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
         }
     }
     true
+}
+
+/// Supersede `solid` by its reflection in the coordinate plane `axis = offset`.
+///
+/// Lengths are preserved and **handedness is reversed** — this is a reflection, not a negative
+/// scale (the kernel has no scale, and `Isometry` cannot hold an improper motion). The plane is
+/// axis-aligned, the same restriction rotation already has: a general plane's unit normal is
+/// irrational, so the image could not be reproduced from an exact definition.
+///
+/// Like `transform` this consumes its input; pair it with [`copy`] to keep the original — which
+/// is the usual move, since mirroring exists to build the other half of a symmetric part.
+pub(crate) fn mirror(
+    model: &mut Model,
+    solid: Handle<Solid>,
+    axis: Axis,
+    offset: Rat,
+) -> Result<Handle<Solid>, OpError> {
+    if !model.live_solids.contains(&solid) {
+        return Err(OpError::SolidNotLive);
+    }
+    if !origins_are_remappable(model, solid) {
+        return Err(OpError::OriginNotOnSolid);
+    }
+    // Temporary: a rotated input needs its rotation chain conjugated (see `OpError::MirrorOfRotated`).
+    if solid_rotation(model, solid).is_some() {
+        return Err(OpError::MirrorOfRotated);
+    }
+    let index = match axis {
+        Axis::X => 0,
+        Axis::Y => 1,
+        Axis::Z => 2,
+    };
+    let m = AxisMirror::new(index, offset.to_f64()).expect("axis index is 0..3");
+    let out = transform_solid(model, solid, &Motion::Mirror(m))?;
+    model.live_solids.retain(|&s| s != solid);
+    Ok(out)
+}
+
+/// How [`transform_solid`] maps a solid's cells. One walker serves both kinds so the seven
+/// passes are not duplicated; the kinds differ in exactly three places — how a point/direction
+/// maps, whether a curved surface can be carried at all, and whether loops must be rewound.
+pub(crate) enum Motion<'a> {
+    /// A proper motion: rotation then translation. Preserves handedness.
+    Rigid(&'a Isometry),
+    /// A reflection in a coordinate plane. Reverses handedness, so `det = −1`.
+    Mirror(AxisMirror),
+}
+
+impl Motion<'_> {
+    fn point(&self, p: Point3) -> Point3 {
+        match self {
+            Motion::Rigid(iso) => Point3::from_array(iso.apply_point(p.as_array())),
+            Motion::Mirror(m) => m.point(p),
+        }
+    }
+
+    /// `None` when the variant has no image under this motion — a mirrored cylinder, whose
+    /// parametrisation handedness is a curved-geometry decision (see `Surface::mirrored`).
+    fn surface(&self, s: &Surface, offset: Vector3) -> Option<Surface> {
+        match self {
+            Motion::Rigid(iso) => Some(transform_surface(s, iso, offset)),
+            Motion::Mirror(m) => s.mirrored(*m),
+        }
+    }
+
+    fn curve(&self, c: &Curve, offset: Vector3) -> Option<Curve> {
+        match self {
+            Motion::Rigid(iso) => Some(transform_curve(c, iso, offset)),
+            Motion::Mirror(m) => c.mirrored(*m),
+        }
+    }
+
+    /// A reflection negates the normal a loop's winding implies (`R(a) × R(b) = −R(a × b)`), so
+    /// every loop is rewound to put it back — and then the `Orientation` flag needs no change,
+    /// because a reflection preserves dot products.
+    fn reverses_orientation(&self) -> bool {
+        matches!(self, Motion::Mirror(_))
+    }
+
+    /// The isometry, for the rotation-forest bookkeeping that only proper motion does.
+    fn rigid(&self) -> Option<&Isometry> {
+        match self {
+            Motion::Rigid(iso) => Some(iso),
+            Motion::Mirror(_) => None,
+        }
+    }
 }
 
 /// A vertex/edge `Origin` with any `Discovered` `ThreePlane` definition remapped
@@ -192,16 +278,29 @@ fn transform_curve(c: &Curve, iso: &Isometry, offset: Vector3) -> Curve {
     }
 }
 
-/// Clone `solid` into a new solid with every cell's geometry moved by `isometry`,
+/// Clone `solid` into a new solid with every cell's geometry mapped by `motion`,
 /// preserving topology, shared cells (surfaces/curves/vertices/edges are deduped),
-/// face orientations (a translation does not rotate normals), inner-loop holes,
-/// cavity shells, and each vertex/edge `Origin` (a `Discovered` definition's plane
-/// handles are remapped to the moved surfaces). Cells are pushed in a **deterministic
-/// traversal order** (shell → face → loop) with per-cell dedup maps, so the same
-/// op-log reproduces identical handles (replay determinism, DNA 3). Stage 1b's
-/// rotation reuses this by swapping the per-cell geometry transform.
-fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry) -> Handle<Solid> {
-    let offset = Vector3::from_array(isometry.offset_f64());
+/// inner-loop holes, cavity shells, and each vertex/edge `Origin` (a `Discovered`
+/// definition's plane handles are remapped to the moved surfaces). Cells are pushed in a
+/// **deterministic traversal order** (shell → face → loop) with per-cell dedup maps, so the same
+/// op-log reproduces identical handles (replay determinism, DNA 3).
+///
+/// Face orientation flags are carried unchanged for **both** kinds of motion. A rigid motion
+/// turns the normal and the winding together; a reflection negates the winding's implied normal,
+/// which [`Motion::reverses_orientation`] undoes by rewinding every loop — and since a reflection
+/// preserves dot products, `sign(plane.normal · n_out)` is then unchanged too, which is exactly
+/// what the `Orientation` flag records.
+///
+/// `Err` only when the motion has no image for some cell's geometry (a mirrored cylinder).
+fn transform_solid(
+    model: &mut Model,
+    solid: Handle<Solid>,
+    motion: &Motion<'_>,
+) -> Result<Handle<Solid>, OpError> {
+    let offset = motion
+        .rigid()
+        .map(|iso| Vector3::from_array(iso.offset_f64()))
+        .unwrap_or_else(Vector3::zero);
     let src = model.solids.get(solid).clone();
 
     // Forest node for this transform (§CIP ⑦), one shared node named by every rotated
@@ -215,23 +314,26 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     //       it; the forest stays complete. (Same-axis *bundling* — accumulating the
     //       angle into one node — is a later cell; this cell always chains.)
     let input_leaf = solid_rotation(model, solid);
-    let rot_node: Option<Handle<Rotation>> = match (isometry.rotate, input_leaf) {
-        (None, _) => None,
-        (Some(r), None) => (!isometry.is_exact()).then(|| {
-            model.rotations.push(Rotation {
+    let rot_node: Option<Handle<Rotation>> =
+        match (motion.rigid().and_then(|i| i.rotate), input_leaf) {
+            (None, _) => None,
+            (Some(r), None) => {
+                (!motion.rigid().expect("rotate implies rigid").is_exact()).then(|| {
+                    model.rotations.push(Rotation {
+                        axis: r.axis,
+                        point: r.point,
+                        angle: r.angle,
+                        parent: None,
+                    })
+                })
+            }
+            (Some(r), Some(parent)) => Some(model.rotations.push(Rotation {
                 axis: r.axis,
                 point: r.point,
                 angle: r.angle,
-                parent: None,
-            })
-        }),
-        (Some(r), Some(parent)) => Some(model.rotations.push(Rotation {
-            axis: r.axis,
-            point: r.point,
-            angle: r.angle,
-            parent: Some(parent),
-        })),
-    };
+                parent: Some(parent),
+            })),
+        };
 
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
@@ -247,7 +349,9 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     for &fh in &face_order {
         let s = model.faces.get(fh).surface;
         if let std::collections::hash_map::Entry::Vacant(e) = surf_map.entry(s) {
-            let moved = transform_surface(model.surfaces.get(s), isometry, offset);
+            let moved = motion
+                .surface(model.surfaces.get(s), offset)
+                .ok_or(OpError::MirrorNotPlanar)?;
             e.insert(model.surfaces.push(moved));
         }
     }
@@ -271,7 +375,9 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     for &eh in &edge_order {
         let c = model.edges.get(eh).curve;
         if let std::collections::hash_map::Entry::Vacant(e) = curve_map.entry(c) {
-            let moved = transform_curve(model.curves.get(c), isometry, offset);
+            let moved = motion
+                .curve(model.curves.get(c), offset)
+                .ok_or(OpError::MirrorNotPlanar)?;
             e.insert(model.curves.push(moved));
         }
     }
@@ -292,7 +398,7 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     for &vh in &vert_order {
         let v = *model.vertices.get(vh);
         let new_v = Vertex {
-            point: Point3::from_array(isometry.apply_point(v.point.as_array())),
+            point: motion.point(v.point),
             // A recorded rotation marks the vertex `Rotated`; `base` is the **root** —
             // the non-`Rotated` (Constructed/Discovered) ancestor whose exact definition
             // the rotation chain turns. A fresh rotation's input is itself the root; a
@@ -326,15 +432,20 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
     }
 
     // Pass 5 — faces (loops rebuilt onto the new edges; orientation unchanged).
-    let map_loop = |lp: &Loop| Loop {
-        half_edges: lp
-            .half_edges
-            .iter()
-            .map(|he| HalfEdge {
-                edge: edge_map[&he.edge],
-                forward: he.forward,
-            })
-            .collect(),
+    // A reflection rewinds every loop (see the fn doc); a rigid motion keeps the winding.
+    let rewind = motion.reverses_orientation();
+    let map_loop = |lp: &Loop| {
+        let mapped = Loop {
+            half_edges: lp
+                .half_edges
+                .iter()
+                .map(|he| HalfEdge {
+                    edge: edge_map[&he.edge],
+                    forward: he.forward,
+                })
+                .collect(),
+        };
+        if rewind { mapped.reversed() } else { mapped }
     };
     let mut face_map: HashMap<Handle<Face>, Handle<Face>> = HashMap::new();
     for &fh in &face_order {
@@ -364,7 +475,7 @@ fn transform_solid(model: &mut Model, solid: Handle<Solid>, isometry: &Isometry)
         outer: shell_map[&src.outer],
         cavities: src.cavities.iter().map(|sh| shell_map[sh]).collect(),
     };
-    model.push_solid(new_solid)
+    Ok(model.push_solid(new_solid))
 }
 
 /// The shared rotation-forest leaf that every boundary vertex of a rotated `solid`

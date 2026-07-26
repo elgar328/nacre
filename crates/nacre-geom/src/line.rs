@@ -51,6 +51,20 @@ impl Line {
         }
     }
 
+    /// The line reflected in `m`.
+    ///
+    /// The direction is mirrored component-wise rather than rebuilt through
+    /// [`Line::from_point_direction`]: a reflection only flips one component's sign, so the
+    /// mirrored direction is still exactly unit, and re-normalising an already-unit vector would
+    /// only round it.
+    #[inline]
+    pub fn mirrored(self, m: crate::AxisMirror) -> Line {
+        Line {
+            origin: m.point(self.origin),
+            direction: m.dir(self.direction),
+        }
+    }
+
     /// The unit direction.
     #[inline]
     pub fn direction(&self) -> Vector3 {

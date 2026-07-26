@@ -36,3 +36,6 @@ mod rejects;
 
 #[path = "coverage/copy.rs"]
 mod copy;
+
+#[path = "coverage/mirror.rs"]
+mod mirror;

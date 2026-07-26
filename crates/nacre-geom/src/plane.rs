@@ -75,6 +75,22 @@ impl Plane {
         }
     }
 
+    /// The plane reflected in `m`.
+    ///
+    /// Origin **and `raw`** are mirrored, so the exact coefficients survive: rebuilding through
+    /// [`Plane::from_point_normal`] would store the *unit* normal as `raw` and lose the exact
+    /// (often integer-arithmetic) one. A reflection only flips the sign of one component, so a
+    /// mirrored `raw` is as exact as the original — and the unit normal stays unit, so no
+    /// re-normalisation is needed either.
+    #[inline]
+    pub fn mirrored(self, m: crate::AxisMirror) -> Plane {
+        Plane {
+            origin: m.point(self.origin),
+            normal: m.dir(self.normal),
+            raw: m.dir(self.raw),
+        }
+    }
+
     /// The unit normal.
     #[inline]
     pub fn normal(&self) -> Vector3 {
@@ -137,6 +153,59 @@ mod tests {
     }
 
     // --- golden ---
+
+    /// A mirror keeps the exact `raw` coefficients — the reason this lives here rather than in a
+    /// caller: rebuilding through `from_point_normal` would substitute the rounded unit normal.
+    /// The plane is built from three integer points so `raw` is an exact cross product that a
+    /// unit normal cannot represent.
+    #[test]
+    fn mirroring_keeps_the_exact_raw_normal() {
+        let p = Plane::through_points(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 1.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 3.0]),
+        )
+        .unwrap();
+        let m = crate::AxisMirror::new(0, 0.0).unwrap();
+        let q = p.mirrored(m);
+
+        // `raw` is mirrored, not renormalised: exactly the source `raw` with x negated.
+        let [rx, ry, rz] = p.raw.as_array();
+        assert_eq!(q.raw.as_array(), [-rx, ry, rz]);
+        // …and it is *not* the unit normal, which is what the naive rebuild would have stored.
+        assert_ne!(q.raw.as_array(), q.normal.as_array());
+    }
+
+    /// Mirroring twice about the origin plane returns the plane bit-for-bit: a sign flip is
+    /// exact, so nothing accumulates.
+    #[test]
+    fn mirroring_twice_about_the_origin_is_bit_identical() {
+        let p = Plane::through_points(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.5, 1.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 3.25]),
+        )
+        .unwrap();
+        for axis in 0..3 {
+            let m = crate::AxisMirror::new(axis, 0.0).unwrap();
+            assert_eq!(p.mirrored(m).mirrored(m), p, "axis {axis}");
+        }
+    }
+
+    /// An offset mirror places the plane where the geometry says, and its normal flips on the
+    /// mirrored axis only.
+    #[test]
+    fn mirroring_about_an_offset_plane() {
+        let p = Plane::from_point_normal(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+        )
+        .unwrap();
+        // x = 1 mirrored about x = 3 lands on x = 5, facing −x.
+        let q = p.mirrored(crate::AxisMirror::new(0, 3.0).unwrap());
+        assert_eq!(q.origin().as_array(), [5.0, 0.0, 0.0]);
+        assert_eq!(q.normal().as_array(), [-1.0, 0.0, 0.0]);
+    }
 
     #[test]
     fn z0_plane_distances() {
