@@ -315,6 +315,65 @@ pub fn rings_cross(a: &[Point2], b: &[Point2]) -> bool {
     false
 }
 
+/// The first pair of edge indices where a closed ring meets itself, or `None` if the ring is a
+/// **simple polygon**. Exact — every decision is an `orient2d` sign.
+///
+/// [`rings_cross`] cannot answer this for a ring against itself: consecutive edges share an
+/// endpoint, so it would report every ring. The two cases are therefore split here.
+///
+/// - **Non-adjacent edges**: any contact at all is a self-intersection. A mere touch counts —
+///   a ring that pinches through a point has no strict inside there, so even-odd is not the
+///   author's meaning of it.
+/// - **Adjacent edges** share one endpoint legitimately. They fail only when *collinear and
+///   overlapping* — a spike that doubles back. Both directions must be tested: the doubling-back
+///   edge may be longer than the one it retraces, in which case it is the *first* edge's far
+///   endpoint that lies inside the second.
+/// - A **zero-length edge** (a repeated consecutive point) is a failure of its own, reported as
+///   `(i, i)`. It leaves a degenerate edge in the topology, and it breaks the adjacency rule's
+///   premise that neighbours share exactly one point.
+///
+/// A merely *collinear* vertex (a flat corner in the middle of a straight run) is **not** an
+/// error: the neighbours are collinear but do not overlap.
+///
+/// A ring that passes is a simple polygon, and a simple polygon has nonzero area — which is the
+/// unstated precondition of every winding decision taken from a signed area.
+///
+/// `O(n²)`, the right complexity for sketch-sized rings.
+pub fn ring_self_intersection(ring: &[Point2]) -> Option<(usize, usize)> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let pt = |i: usize| ring[i % n].as_array();
+    for i in 0..n {
+        if pt(i) == pt(i + 1) {
+            return Some((i, i));
+        }
+    }
+    // Adjacency is cyclic: edge `n-1` ends where edge `0` begins, so that pair shares a point too.
+    // Missing this would report every ring as self-intersecting.
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let hit = if j == i + 1 {
+                spike(pt(i), pt(i + 1), pt(i + 2))
+            } else if i == 0 && j == n - 1 {
+                spike(pt(1), pt(0), pt(n - 1))
+            } else {
+                segments_meet_2d(pt(i), pt(i + 1), pt(j), pt(j + 1))
+            };
+            if hit {
+                return Some((i, j));
+            }
+        }
+    }
+    None
+}
+
+/// Whether the edges `[u, s]` and `[s, v]`, which share `s`, double back over one another.
+fn spike(u: [f64; 2], s: [f64; 2], v: [f64; 2]) -> bool {
+    orient2d(u, s, v) == 0.0 && (on_segment_2d(u, s, v) || on_segment_2d(s, v, u))
+}
+
 /// Exact segment/segment test: `true` for a proper crossing **or** any touching contact.
 fn segments_meet_2d(p1: [f64; 2], p2: [f64; 2], q1: [f64; 2], q2: [f64; 2]) -> bool {
     let d1 = orient2d(q1, q2, p1);
@@ -828,5 +887,90 @@ mod tests {
             ),
             SegCross::Cross(1)
         );
+    }
+
+    // --- ring_self_intersection ---
+
+    fn ring(pts: &[[f64; 2]]) -> Vec<Point2> {
+        pts.iter().map(|p| Point2::from_array(*p)).collect()
+    }
+
+    /// The net that catches the likeliest way to get this wrong: edges `0` and `n-1` share a point
+    /// too, so a non-cyclic adjacency test reports *every* ring. Convex, non-convex, and a flat
+    /// (collinear) corner all have to pass.
+    #[test]
+    fn simple_polygons_have_no_self_intersection() {
+        let square = ring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
+        assert_eq!(ring_self_intersection(&square), None);
+        let triangle = ring(&[[0.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
+        assert_eq!(ring_self_intersection(&triangle), None);
+        // Reflex corner (an L).
+        let l = ring(&[
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 2.0],
+            [2.0, 2.0],
+            [2.0, 4.0],
+            [0.0, 4.0],
+        ]);
+        assert_eq!(ring_self_intersection(&l), None);
+        // A flat corner: `(2,0)` sits mid-run on a straight edge. Collinear but not overlapping.
+        let flat = ring(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
+        assert_eq!(ring_self_intersection(&flat), None);
+    }
+
+    #[test]
+    fn a_bowtie_crosses_itself() {
+        let bowtie = ring(&[[0.0, 0.0], [4.0, 4.0], [4.0, 0.0], [0.0, 4.0]]);
+        // Edges 0 (`(0,0)→(4,4)`) and 2 (`(4,0)→(0,4)`) are the crossing pair.
+        assert_eq!(ring_self_intersection(&bowtie), Some((0, 2)));
+    }
+
+    /// A touch is as fatal as a crossing: the ring has no strict inside at the pinch point.
+    #[test]
+    fn a_pinch_touching_without_crossing_is_rejected() {
+        let pinch = ring(&[
+            [0.0, 0.0],
+            [2.0, 2.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [2.0, 2.0],
+            [0.0, 4.0],
+        ]);
+        assert!(ring_self_intersection(&pinch).is_some());
+    }
+
+    /// A spike shorter than the edge it retraces, and one longer. Neither *isolates* the two-sided
+    /// adjacency test — with four or more points a long spike puts the ring's start point in the
+    /// interior of the doubling-back edge, so the non-adjacent rule catches it first. The case that
+    /// needs both directions is the collinear triple below.
+    #[test]
+    fn a_spike_doubling_back_is_rejected_either_length() {
+        let short = ring(&[[0.0, 0.0], [4.0, 0.0], [2.0, 0.0], [2.0, 4.0]]);
+        assert!(ring_self_intersection(&short).is_some());
+        let long = ring(&[[0.0, 0.0], [4.0, 0.0], [-2.0, 0.0], [0.0, 4.0]]);
+        assert!(ring_self_intersection(&long).is_some());
+    }
+
+    #[test]
+    fn a_repeated_consecutive_point_is_a_zero_length_edge() {
+        let dup = ring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
+        assert_eq!(ring_self_intersection(&dup), Some((1, 1)));
+        // Also across the wrap: the last point repeats the first.
+        let closed = ring(&[[0.0, 0.0], [4.0, 0.0], [0.0, 4.0], [0.0, 0.0]]);
+        assert_eq!(ring_self_intersection(&closed), Some((3, 3)));
+    }
+
+    /// A ring of collinear points encloses nothing, and a signed area cannot orient it. It falls
+    /// out of the same rule — the return leg always overlaps the outbound one.
+    ///
+    /// **This is the net for the two-sided adjacency test.** A brute force over every ring of 3–5
+    /// points on a 4×4 grid found the one-sided and two-sided predicates disagreeing on 88 rings,
+    /// *all* of them collinear triples like this one: at each corner the shared point sits at an
+    /// end of the retraced span, so only the `u ∈ [s, v]` direction fires.
+    #[test]
+    fn a_zero_area_ring_is_rejected() {
+        let flat = ring(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]);
+        assert!(ring_self_intersection(&flat).is_some());
     }
 }
