@@ -26,11 +26,14 @@ mod plane;
 /// write `intersect::plane_plane(..)`, keeping that isolation visible.
 pub mod intersect;
 
+mod region;
+
 pub use circle::Circle;
 pub use cylinder::Cylinder;
 pub use line::Line;
 pub use nurbs::{NurbsCurve, NurbsSurface};
 pub use plane::Plane;
+pub use region::planar_region_area_centroid;
 
 use nacre_math::{Point3, Vector3};
 

@@ -144,7 +144,9 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), MassError> 
 
     if all_lines {
         let points = loop_points(model, outer)?;
-        Ok(polygon_area_centroid(&points))
+        // The signed-area-weighted centroid lives in `nacre-geom` (pure geometry, and
+        // `nacre-ops` needs the same computation for its sketch frames).
+        nacre_geom::planar_region_area_centroid(&points, &[]).ok_or(MassError::UnsupportedBoundary)
     } else if outer.half_edges.len() == 1 {
         match edge_curve(model, outer.half_edges[0]) {
             Curve::Circle(circle) => {
@@ -156,34 +158,6 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), MassError> 
     } else {
         Err(MassError::UnsupportedBoundary)
     }
-}
-
-/// Area and area-weighted centroid of a simple (convex or concave) planar
-/// polygon, via a signed triangle fan from the first vertex.
-fn polygon_area_centroid(points: &[Point3]) -> (f64, Point3) {
-    let base = points[0];
-    // Area vector A_vec = ½ Σ (vᵢ − v₀) × (vᵢ₊₁ − v₀); |A_vec| is the true area.
-    let mut area_vec = Vector3::zero();
-    for pair in points[1..].windows(2) {
-        area_vec += (pair[0] - base).cross(pair[1] - base);
-    }
-    let unit = area_vec.normalize().unwrap_or(Vector3::zero());
-
-    // Area-weighted centroid: signed triangle areas (about `unit`) weight each
-    // triangle centroid. Σ signed-2area = |A_vec|, so this is exact for concave
-    // faces too — a plain vertex average would be wrong.
-    let mut weighted = Vector3::zero();
-    let mut weight = 0.0;
-    for pair in points[1..].windows(2) {
-        let tri = (pair[0] - base).cross(pair[1] - base);
-        let signed = tri.dot(unit);
-        let centroid_rel = ((pair[0] - base) + (pair[1] - base)) * (1.0 / 3.0);
-        weighted += centroid_rel * signed;
-        weight += signed;
-    }
-    let area = 0.5 * area_vec.norm();
-    let centroid = base + weighted * (1.0 / weight);
-    (area, centroid)
 }
 
 /// Axial extent of a face's loop: the span of its vertices projected on `axis`
