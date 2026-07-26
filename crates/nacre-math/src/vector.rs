@@ -285,6 +285,32 @@ mod tests {
         assert!(Vector::<3>::zero().any_perpendicular().is_none());
     }
 
+    /// The rule is "cross with the axis of the **smallest** component", which is
+    /// the same one Onshape's `perpendicularVector` uses — and it is *discontinuous*
+    /// where two smallest components tie. No continuous choice exists (hairy ball),
+    /// so the tie-break is pinned instead: consumers place sketch frames with this,
+    /// and a change here would silently rotate every one of them by 90°.
+    #[test]
+    fn any_perpendicular_breaks_ties_towards_the_earlier_axis() {
+        let unit = |v: Vector<3>| v.normalize().unwrap();
+        // All three tie → x wins, so the perpendicular is x̂ × v̂.
+        let v = Vector::from_array([1.0, 1.0, 1.0]);
+        let want = unit(Vector::from_array([1.0, 0.0, 0.0]).cross(v));
+        assert!((v.any_perpendicular().unwrap() - want).norm() < 1e-15);
+        // y and z tie for smallest → y wins.
+        let v = Vector::from_array([0.9, 0.3, 0.3]);
+        let want = unit(Vector::from_array([0.0, 1.0, 0.0]).cross(v));
+        assert!((v.any_perpendicular().unwrap() - want).norm() < 1e-15);
+        // Nudging z below y flips the choice — the discontinuity, made visible.
+        let v = Vector::from_array([0.9, 0.3, 0.299]);
+        let want = unit(Vector::from_array([0.0, 0.0, 1.0]).cross(v));
+        assert!((v.any_perpendicular().unwrap() - want).norm() < 1e-15);
+        // Sign does not enter: the choice is on |components|.
+        let v = Vector::from_array([0.9, -0.3, 0.3]);
+        let want = unit(Vector::from_array([0.0, 1.0, 0.0]).cross(v));
+        assert!((v.any_perpendicular().unwrap() - want).norm() < 1e-15);
+    }
+
     // --- proptest algebraic laws ---
 
     fn vec3() -> impl Strategy<Value = Vector<3>> {

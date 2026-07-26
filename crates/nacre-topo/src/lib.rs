@@ -222,6 +222,24 @@ impl Model {
         self.shells.push(Shell { faces })
     }
 
+    /// The vertex a half-edge starts at: its edge's `bounds[0]` when the use runs
+    /// forward, `bounds[1]` when it runs back.
+    ///
+    /// A traversal accessor, not an analysis — the same kind of thing as
+    /// [`Model::reachable`], and the reason it lives here: walking a loop's
+    /// corners is the first thing every consumer above does, and it was written
+    /// twice (with two different failure policies) before this existed.
+    ///
+    /// `None` for an edge with no endpoints — the standalone full circle of §4,
+    /// which is a legitimate form but has no start. Callers pick their own
+    /// policy: a solid's loop edge is always bounded, so `nacre-ops` unwraps with
+    /// that invariant while `nacre-props` reports it as unsupported input.
+    #[inline]
+    pub fn he_start(&self, he: HalfEdge) -> Option<Handle<Vertex>> {
+        let [a, b] = self.edges.get(he.edge).bounds?;
+        Some(if he.forward { a } else { b })
+    }
+
     /// The handles reachable from the live solids — the live model (design §2).
     ///
     /// Superseded cells left in the append-only arena are excluded (nothing live

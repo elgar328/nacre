@@ -23,7 +23,8 @@ mod transform;
 
 pub use boolean::boolean;
 pub use ops::{
-    BoolKind, OpError, OpOutput, Operation, Profile2d, ProfileRing, SketchPlane, apply, replay,
+    BoolKind, OpError, OpOutput, Operation, Profile2d, ProfileRing, SketchPlane, apply, face_plane,
+    replay,
 };
 pub use sketch::{Curve2d, Edge2d, SketchError, from_edges, from_rings};
 
@@ -421,12 +422,9 @@ fn assert_rejects<T: std::fmt::Debug + PartialEq>(
 /// The start vertex of a half-edge (`bounds[0]` if forward, else `bounds[1]`).
 /// Every half-edge walked here belongs to a valid solid, so its edge is bounded.
 pub(crate) fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
-    let [a, b] = model
-        .edges
-        .get(he.edge)
-        .bounds
-        .expect("a solid's loop edge is bounded");
-    if he.forward { a } else { b }
+    // A solid's loop edge is always bounded; only the standalone full circle of
+    // design §4 is not, and that is never part of a face's loop.
+    model.he_start(he).expect("a solid's loop edge is bounded")
 }
 
 use std::collections::HashMap;

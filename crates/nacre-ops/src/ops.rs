@@ -707,6 +707,25 @@ struct FaceFrame {
     origin: Point3, // face centroid
 }
 
+/// The sketch plane of a planar face — **the very frame [`Operation::PadOnFace`] and
+/// [`Operation::PocketOnFace`] place their profile in**, so a caller can work out where its
+/// `(0, 0)` will land before it builds anything.
+///
+/// That equality is the contract, not a coincidence: this is a projection of the frame those
+/// operations use, never a second derivation. A test pins a hand-placed profile against a pad to
+/// keep it that way.
+///
+/// `NonPlanarFace` for a curved surface (only a plane carries a frame); `FaceNotInLiveSolid` if no
+/// live solid's outer shell holds the face.
+pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpError> {
+    let f = face_frame(model, face)?;
+    Ok(SketchPlane {
+        origin: f.origin,
+        x_axis: f.x,
+        y_axis: f.y,
+    })
+}
+
 /// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,
 /// `FaceNotInLiveSolid` if no live outer shell holds it.
 fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {

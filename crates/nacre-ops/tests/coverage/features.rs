@@ -685,3 +685,81 @@ fn a_boss_that_punches_through_keeps_the_stub() {
         "only the bottom is annular — the flush top merges away"
     );
 }
+
+// --- face_plane: the frame pad/pocket actually use ---
+
+/// **The contract that would rot silently.** An app asks `face_plane` where the
+/// sketch origin is, then calls `pad` — and the kernel recomputes the frame. If the
+/// two ever diverge, the boss lands somewhere the app did not predict and nothing
+/// complains. So: place an **off-centre** profile through `face_plane` by hand and
+/// require `pad` to put the boss exactly there. Centred profiles would pass even if
+/// the frames disagreed only in origin, which is the divergence most likely to happen.
+#[test]
+fn face_plane_is_the_frame_pad_places_profiles_in() {
+    let (mut m, top) = cube_with_top();
+    let plane = nacre_ops::face_plane(&m, top).unwrap();
+
+    // A square from (0.1, 0.2) to (0.3, 0.4) in face coordinates — asymmetric in
+    // both axes, so any origin or axis mismatch moves its centre.
+    let profile = Profile2d::polygon(vec![p2(0.1, 0.2), p2(0.3, 0.2), p2(0.3, 0.4), p2(0.1, 0.4)]);
+    let dist = 0.5;
+    let OpOutput::PadOnFace { top_face, .. } = apply(&mut m, &pad_op(top, profile, dist)).unwrap()
+    else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+
+    // Where the caller predicts the boss's cap centre is, from `face_plane` alone.
+    let n = plane.x_axis.cross(plane.y_axis);
+    let want = plane.origin + plane.x_axis * 0.2 + plane.y_axis * 0.3 + n * dist;
+
+    let got = nacre_props::face_props(&m, top_face).unwrap().centroid;
+    assert!(
+        (got - want).norm() < 1e-12,
+        "pad placed the boss at {got:?}, face_plane predicted {want:?}"
+    );
+}
+
+/// A rotated face's sketch frame is deterministic and right-handed about its own
+/// outward normal — pinned so a change to `any_perpendicular` cannot quietly
+/// rotate every sketch on such a face.
+///
+/// This face is **not** the discontinuous case, though the first draft of this
+/// test claimed it was: `any_perpendicular` picks the *least*-aligned world axis,
+/// and for a normal of (0.707, 0.707, 0) that is z by a mile. The genuine tie is a
+/// normal whose two **smallest** components are equal, which axis-aligned rotation
+/// by a rational angle cannot even produce here — so it is pinned where the rule
+/// lives, in `nacre_math`'s own tests, not through a face.
+#[test]
+fn a_rotated_face_has_a_pinned_sketch_axis() {
+    let (mut m, _) = cube_with_top();
+    let s = m.live_solids[0];
+    let s = xf(&mut m, s, rot_iso(Axis::Z, 45));
+    m.rebuild_adjacency();
+
+    // The side face whose outward normal points into +x+y.
+    let diag = Vector3::from_array([1.0, 1.0, 0.0]).normalize().unwrap();
+    let face = *m
+        .shells
+        .get(m.solids.get(s).outer)
+        .faces
+        .iter()
+        .find(|&&f| {
+            nacre_props::face_props(&m, f)
+                .unwrap()
+                .normal
+                .is_some_and(|v| v.dot(diag) > 0.99)
+        })
+        .expect("a rotated cube has a face facing the diagonal");
+
+    let plane = nacre_ops::face_plane(&m, face).unwrap();
+    // |n| = (0.707, 0.707, 0) — z is the least-aligned axis, so x = ẑ × n̂.
+    let want = Vector3::from_array([0.0, 0.0, 1.0]).cross(diag);
+    assert!(
+        (plane.x_axis - want).norm() < 1e-12,
+        "x axis {:?}, expected {want:?}",
+        plane.x_axis
+    );
+    // And the frame stays right-handed about the face's outward normal.
+    assert!((plane.x_axis.cross(plane.y_axis) - diag).norm() < 1e-12);
+}

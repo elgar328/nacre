@@ -348,18 +348,13 @@ fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, MassError> {
         .collect()
 }
 
-/// The start vertex of a half-edge (`bounds[0]` if forward, else `bounds[1]`).
-/// A loop edge with no endpoints (`bounds: None`) is not a valid solid boundary.
+/// [`Model::he_start`] with this crate's failure policy: an unbounded loop edge
+/// is not a valid solid boundary, so it is unsupported input rather than a bug.
 fn he_start(
     model: &Model,
     he: nacre_topo::HalfEdge,
 ) -> Result<Handle<nacre_topo::Vertex>, MassError> {
-    let bounds = model
-        .edges
-        .get(he.edge)
-        .bounds
-        .ok_or(MassError::UnsupportedBoundary)?;
-    Ok(if he.forward { bounds[0] } else { bounds[1] })
+    model.he_start(he).ok_or(MassError::UnsupportedBoundary)
 }
 
 /// The `Curve` carried by a half-edge's edge.
