@@ -270,8 +270,15 @@ pub enum Decision {
     Coincident { within: Bound },
     /// Still straddling zero at `at` bits, the cap — and the separation it might stand for is
     /// *larger* than the coincidence limit, so calling it a coincidence would be a guess. More
-    /// precision would decide it; the model's rotation history has outgrown the budget.
-    Exhausted { at: usize },
+    /// precision would decide it; this judgement has outgrown the budget.
+    ///
+    /// **`within` is what it did establish**, and it is the whole point of reporting this rather
+    /// than a bare "undecided": the truth lies in `±within`, above the limit but bounded. A
+    /// judgement stopped at `1e-30` and one stopped at `1e-3` are the same variant and *not* the
+    /// same news — the first is far below anything the `f64` output can carry, the second is a
+    /// gap somebody would see. `None` when even that bound could not be formed: the cofactor was
+    /// still unresolved at the cap, so there is no distance to quote at all.
+    Exhausted { at: usize, within: Option<Bound> },
     /// The quantity that turns this determinant into a distance cannot be bounded away from zero
     /// — a degenerate witness triangle, or three planes with no well-defined meeting point. **A
     /// different cause from [`Self::Exhausted`], and the distinction matters**: more precision
@@ -363,12 +370,13 @@ fn escalate(
             Ok(o) => return Decision::Sign(o),
             Err(g) => g,
         };
-        // How many bits short this judgement is. From a gap it is `log₂(gap / limit)`; from an
-        // unresolved cofactor the cofactor itself named it. Either way the answer is *computed*,
-        // never guessed at by doubling.
-        let short = match gap {
+        // How many bits short this judgement is, and the bound it managed — the second is what
+        // gets reported if the budget runs out. From a gap the shortfall is `log₂(gap / limit)`;
+        // from an unresolved cofactor the cofactor itself named it, and there is no bound to
+        // quote. Either way the number is *computed*, never guessed at by doubling.
+        let (short, within) = match gap {
             Gap::Vanished => return Decision::Degenerate,
-            Gap::Unresolved { short } => short,
+            Gap::Unresolved { short } => (short, None),
             // **A zero gap is a proof, not a near miss.** The radius bounds how far the computed
             // value is from the true one, so a zero radius says the midpoint *is* the value — and
             // the sign came back undecided only because that midpoint is zero. Determinants reach
@@ -377,13 +385,18 @@ fn escalate(
             Gap::Of(g) if g.is_zero() => return Decision::Sign(Orient::Zero),
             Gap::Of(g) if !limit.lt(g) => return Decision::Coincident { within: g },
             Gap::Of(g) => match (g.exp2(), limit.exp2()) {
-                (Some(gx), Some(lx)) => (gx - lx).max(1) as usize,
+                (Some(gx), Some(lx)) => ((gx - lx).max(1) as usize, Some(g)),
                 // A limit with no exponent (a zero bound) is a target no depth reaches.
-                _ => return Decision::Exhausted { at: prec },
+                _ => {
+                    return Decision::Exhausted {
+                        at: prec,
+                        within: Some(g),
+                    };
+                }
             },
         };
         if prec >= j.cap {
-            return Decision::Exhausted { at: prec };
+            return Decision::Exhausted { at: prec, within };
         }
         // Up to a whole word, and never a standstill: a jump that rounded back to `prec` would
         // spin here forever.
@@ -1351,9 +1364,29 @@ mod tests {
             rounds += 1;
             Err(Gap::Of(Bound::pow2(-10)))
         });
-        assert_eq!(out, Decision::Exhausted { at: 512 });
+        // **The bound it did establish rides out with it.** Without it the caller cannot tell a
+        // judgement that stopped `2⁻¹⁰` short from one that stopped `2⁻³⁰⁰` short, and those are
+        // not the same news about the model.
+        assert_eq!(
+            out,
+            Decision::Exhausted {
+                at: 512,
+                within: Some(Bound::pow2(-10)),
+            }
+        );
         assert_eq!(out.orient(), Orient::Zero, "the geometry still gets a sign");
         assert!(rounds > 1 && rounds < 10, "climbed {rounds} times");
+
+        // An unresolved cofactor that never resolves has no distance to quote at all — reporting
+        // one would be inventing it.
+        let out = escalate(j, j.coincidence, |_| Err(Gap::Unresolved { short: 64 }));
+        assert_eq!(
+            out,
+            Decision::Exhausted {
+                at: 512,
+                within: None,
+            }
+        );
     }
 
     /// **A degenerate witness is a different answer from an exhausted one, and must not climb.**
@@ -1445,11 +1478,17 @@ mod tests {
             cap: 512,
             ..j
         };
-        assert_eq!(
-            orient3d_judge(&a, &b, &c, &d, strict),
-            Decision::Exhausted { at: 512 },
-            "the coincidence limit was ignored — any zero would pass"
-        );
+        let strict_out = orient3d_judge(&a, &b, &c, &d, strict);
+        let Decision::Exhausted {
+            at: 512,
+            within: Some(w),
+        } = strict_out
+        else {
+            panic!("{strict_out:?} — the coincidence limit was ignored, any zero would pass");
+        };
+        // What it *could* show is still the honest number, and it is nowhere near the limit asked
+        // for: the report says "within this much", not "these are the same".
+        assert!(strict.coincidence.lt(w), "reported {:?}", w.exp2());
     }
 
     /// **The design principle, as a test: raising the precision must actually narrow the bound.**
