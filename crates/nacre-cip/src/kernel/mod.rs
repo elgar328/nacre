@@ -13,3 +13,4 @@ pub(crate) const HP_RM: RoundingMode = RoundingMode::ToEven;
 
 pub mod frame2;
 pub mod frame3;
+pub(crate) mod interval;

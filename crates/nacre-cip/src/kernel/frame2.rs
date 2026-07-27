@@ -15,8 +15,9 @@
 //! arbitrary centre) is kernel wiring.
 
 use super::HP_RM;
+use super::interval::{HpIv, ub};
 use astro_float::BigFloat;
-use nacre_scalar::{Angle, Orient, Rat};
+use nacre_scalar::{Angle, Bound, Orient, Rat};
 
 /// f64 trig-realization error bound used by the directional tol formula — a
 /// conservative multiple of ulp covering cos/sin rounding, the deg→rad
@@ -83,6 +84,36 @@ pub(crate) fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
         prec,
         HP_RM,
     )
+}
+
+/// A rational realized at `prec` bits **with the error that realization carries**.
+///
+/// Two things can go wrong and both are bounded here rather than assumed away:
+///
+/// - `numer`/`denom` cross `f64` on the way in. When either does not round-trip, the value is
+///   only known to a relative `2⁻⁵³` and **no rung of the ladder recovers it** — the bound has to
+///   say so, or a deep escalation reports confidence it does not have.
+/// - the division rounds, unless it terminates: a power-of-two denominator with a numerator
+///   inside `prec` bits is exact, and then the radius is genuinely zero.
+pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpIv {
+    let mid = rat_to_big(r, prec);
+    let (n, d) = (r.numer(), r.denom()); // `d > 0` after reduction
+    let round_trips = |v: i128| (v as f64) as i128 == v;
+    let n_bits = (128 - n.unsigned_abs().leading_zeros()) as usize;
+    if round_trips(n) && round_trips(d) && d & (d - 1) == 0 && n_bits <= prec {
+        return HpIv::exact(mid);
+    }
+    let f64_rel = |v: i128| {
+        if round_trips(v) {
+            Bound::ZERO
+        } else {
+            Bound::pow2(-53)
+        }
+    };
+    let rel = f64_rel(n)
+        .plus(f64_rel(d))
+        .plus(Bound::pow2(-(prec as i64)));
+    HpIv::new(mid.clone(), ub(&mid).times(rel))
 }
 
 /// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero).

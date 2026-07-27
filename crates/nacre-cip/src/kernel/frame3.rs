@@ -18,7 +18,8 @@
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
 use super::HP_RM;
-use super::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big};
+use super::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big, rat_to_hp};
+use super::interval::{HpIv, Iv};
 use astro_float::BigFloat;
 use nacre_scalar::{Angle, Axis, Orient, Rat};
 #[cfg(feature = "parallel")]
@@ -32,7 +33,7 @@ use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
 /// is computed once and reused across workers, not per thread). Otherwise it is
 /// `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has the identical
 /// signature on both, so the consumer ([`Pt3::hp_coord`]) is unchanged by the choice.
-type HpCell = HpRc<HpOnce<[BigFloat; 3]>>;
+type HpCell = HpRc<HpOnce<[HpIv; 3]>>;
 
 /// One rotation in a point's definition: turn about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle`. `point = [0,0,0]` is the
@@ -179,42 +180,39 @@ impl Pt3 {
     /// escalation realization. At [`JUDGE_PREC`] (every escalation) the result is memoized in
     /// [`Pt3::hp`] and shared across clones of the same definition, so a definition-point pays
     /// the astro-float cos/sin once per boolean rather than once per predicate.
-    pub fn hp_coord(&self, prec: usize) -> [BigFloat; 3] {
+    pub(crate) fn hp_coord(&self, prec: usize) -> [HpIv; 3] {
         if prec == JUDGE_PREC {
             return self.hp.get_or_init(|| self.compute_hp(prec)).clone();
         }
         self.compute_hp(prec)
     }
 
-    /// The uncached realization (the body of [`hp_coord`]).
-    fn compute_hp(&self, prec: usize) -> [BigFloat; 3] {
+    /// The uncached realization (the body of [`hp_coord`]), **with the error it carries**.
+    ///
+    /// This is the same walk as [`rotate_about`](Self::rotate_about)'s tol propagation, one level
+    /// up: the definition is exact, the realization is not, and the radius is what the realization
+    /// cost. Nothing here is a chosen constant — the base contributes its own rounding (zero when
+    /// the rational lands on a `prec`-bit dyadic), each `cos`/`sin` contributes the bound
+    /// [`Angle::cos_sin_bounded`] derives, and every arithmetic operation adds its half-ulp.
+    fn compute_hp(&self, prec: usize) -> [HpIv; 3] {
         let mut p = [
-            rat_to_big(self.base[0], prec),
-            rat_to_big(self.base[1], prec),
-            rat_to_big(self.base[2], prec),
+            rat_to_hp(self.base[0], prec),
+            rat_to_hp(self.base[1], prec),
+            rat_to_hp(self.base[2], prec),
         ];
         for node in self.chain.iter() {
             let (i, j) = node.axis.plane();
-            let (c, s) = node.angle.cos_sin_at(prec);
+            let (c, s, bc, bs) = node.angle.cos_sin_bounded(prec);
+            let (c, s) = (HpIv::new(c, bc), HpIv::new(s, bs));
             let (px, py) = (
-                rat_to_big(node.point[i], prec),
-                rat_to_big(node.point[j], prec),
+                rat_to_hp(node.point[i], prec),
+                rat_to_hp(node.point[j], prec),
             );
-            // pivot-relative: u = p − pivot, rotate, shift back (exact at `prec` bits).
-            let u = p[i].sub(&px, prec, HP_RM);
-            let v = p[j].sub(&py, prec, HP_RM);
-            p[i] = px.add(
-                &u.mul(&c, prec, HP_RM)
-                    .sub(&v.mul(&s, prec, HP_RM), prec, HP_RM),
-                prec,
-                HP_RM,
-            );
-            p[j] = py.add(
-                &u.mul(&s, prec, HP_RM)
-                    .add(&v.mul(&c, prec, HP_RM), prec, HP_RM),
-                prec,
-                HP_RM,
-            );
+            // pivot-relative: u = p − pivot, rotate, shift back.
+            let u = p[i].sub(&px, prec);
+            let v = p[j].sub(&py, prec);
+            p[i] = px.add(&u.mul(&c, prec).sub(&v.mul(&s, prec), prec), prec);
+            p[j] = py.add(&u.mul(&s, prec).add(&v.mul(&c, prec), prec), prec);
         }
         p
     }
@@ -279,29 +277,28 @@ fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
     input_tol + 16.0 * f64::EPSILON * mag
 }
 
-/// 3×3 determinant of `BigFloat` rows at `prec` bits (astro-float). The row-space
-/// analogue of [`det3_iv`]; both [`det3_hp`] (edge rows) and [`dir_orient3d_judge`]
-/// (a direction row) build their rows and call this.
-fn det3_big(r: [[BigFloat; 3]; 3], prec: usize) -> BigFloat {
-    let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
-    let m0 = mul(&r[1][1], &r[2][2]).sub(&mul(&r[1][2], &r[2][1]), prec, HP_RM);
-    let m1 = mul(&r[1][0], &r[2][2]).sub(&mul(&r[1][2], &r[2][0]), prec, HP_RM);
-    let m2 = mul(&r[1][0], &r[2][1]).sub(&mul(&r[1][1], &r[2][0]), prec, HP_RM);
+/// 3×3 determinant of high-precision interval rows at `prec` bits — the same expression as
+/// [`det3_iv`], one precision up, so the filter and the escalation cannot drift apart.
+fn det3_big(r: [[HpIv; 3]; 3], prec: usize) -> HpIv {
+    let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
+    let m0 = mul(&r[1][1], &r[2][2]).sub(&mul(&r[1][2], &r[2][1]), prec);
+    let m1 = mul(&r[1][0], &r[2][2]).sub(&mul(&r[1][2], &r[2][0]), prec);
+    let m2 = mul(&r[1][0], &r[2][1]).sub(&mul(&r[1][1], &r[2][0]), prec);
     mul(&r[0][0], &m0)
-        .sub(&mul(&r[0][1], &m1), prec, HP_RM)
-        .add(&mul(&r[0][2], &m2), prec, HP_RM)
+        .sub(&mul(&r[0][1], &m1), prec)
+        .add(&mul(&r[0][2], &m2), prec)
 }
 
 /// `orient3d` determinant realized at `prec` bits (astro-float) from the point
 /// definitions — path-independent ground truth / escalation realization.
-fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> BigFloat {
+fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> HpIv {
     let (a, b, c, d) = (
         pa.hp_coord(prec),
         pb.hp_coord(prec),
         pc.hp_coord(prec),
         pd.hp_coord(prec),
     );
-    let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
+    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
     det3_big(
         [
             [sub(&a[0], &d[0]), sub(&a[1], &d[1]), sub(&a[2], &d[2])],
@@ -348,12 +345,6 @@ fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
     }))
 }
 
-/// The magnitude scale of four points (for the declare-0 floor).
-fn scale4(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
-    let m = |p: [f64; 3]| p[0].abs().max(p[1].abs()).max(p[2].abs());
-    m(a).max(m(b)).max(m(c)).max(m(d)).max(1.0)
-}
-
 /// CIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
 /// astro-float at [`JUDGE_PREC`]; a determinant below the precision floor (`~scale³`,
 /// cubic for the 3×3 case) is [`Orient::Zero`] (declare-0). Path-independent (a
@@ -378,16 +369,9 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
             _ => Orient::Zero,
         };
     }
-    let dh = det3_hp(pa, pb, pc, pd, JUDGE_PREC);
-    let scale = scale4(a, b, c, d);
-    let floor = 16.0 * scale * scale * scale * 2f64.powi(-(JUDGE_PREC as i32));
-    // Sign via is_positive (astro-float#44 workaround — see crate::frame2).
-    if dh.is_zero() || bf_mag(&dh) <= floor {
-        Orient::Zero
-    } else if dh.is_positive() {
-        Orient::Positive
-    } else {
-        Orient::Negative
+    match det3_hp(pa, pb, pc, pd, JUDGE_PREC).sign() {
+        Some(pos) => orient_of(pos),
+        None => Orient::Zero,
     }
 }
 
@@ -416,7 +400,7 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
         y.hp_coord(JUDGE_PREC),
         dp.hp_coord(JUDGE_PREC),
     );
-    let sub_hp = |u: &BigFloat, v: &BigFloat| u.sub(v, JUDGE_PREC, HP_RM);
+    let sub_hp = |u: &HpIv, v: &HpIv| u.sub(v, JUDGE_PREC);
     let rows = [
         [dh[0].clone(), dh[1].clone(), dh[2].clone()],
         [
@@ -430,16 +414,7 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
             sub_hp(&yh[2], &bh[2]),
         ],
     ];
-    let det = det3_big(rows, JUDGE_PREC);
-    // Declare-0 floor: the six |triple products| of the f64 rows (term-magnitude, as the
-    // indirect judges — `d` exact, edge rows from the f64 coords).
-    let sub_f = |u: [f64; 3], v: [f64; 3]| [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
-    let mag = det3_mag([
-        dp.coord,
-        sub_f(x.coord, base.coord),
-        sub_f(y.coord, base.coord),
-    ]);
-    match sign_with_floor(&det, mag, JUDGE_PREC) {
+    match det3_big(rows, JUDGE_PREC).sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }
@@ -457,22 +432,6 @@ pub fn orient3d_ray(base: &Pt3, dir: [Rat; 3], x: &Pt3, y: &Pt3) -> Orient {
     dir_orient3d_judge(dir, y, x, base)
 }
 
-/// Sum of the six `|triple products|` of a 3×3 f64 matrix's rows — the term-magnitude
-/// scale for [`dir_orient3d_judge`]'s declare-0 floor (cf. [`det3_bound`]'s `mag`).
-fn det3_mag(r: [[f64; 3]; 3]) -> f64 {
-    [
-        [0, 1, 2],
-        [0, 2, 1],
-        [1, 0, 2],
-        [1, 2, 0],
-        [2, 0, 1],
-        [2, 1, 0],
-    ]
-    .iter()
-    .map(|c| (r[0][c[0]] * r[1][c[1]] * r[2][c[2]]).abs())
-    .sum()
-}
-
 // ---- indirect orient3d: three rotated planes meet at an implicit point ----
 //
 // A `Discovered` seam vertex is `∩` of three planes, each a plane through three
@@ -488,46 +447,6 @@ fn det3_mag(r: [[f64; 3]; 3]) -> f64 {
 // stage 3. Validated in `experiments/exact3d` (H-b coefficient tol, H-c indirect
 // soundness); the constant `mag`-floor policy is indirect-only (distinct from the
 // explicit `16·scale³` floor of [`orient3d_judge`]).
-
-/// A value with a symmetric error radius (`mid ± rad`, `rad ≥ 0`). Arithmetic keeps
-/// `rad` a sound upper bound (worst case), plus a per-op f64-rounding inflation.
-#[derive(Clone, Copy, Debug)]
-struct Iv {
-    mid: f64,
-    rad: f64,
-}
-
-impl Iv {
-    fn new(mid: f64, rad: f64) -> Self {
-        Iv { mid, rad }
-    }
-    fn sub(self, o: Iv) -> Iv {
-        let mid = self.mid - o.mid;
-        Iv::new(mid, self.rad + o.rad + 2.0 * f64::EPSILON * mid.abs())
-    }
-    fn add(self, o: Iv) -> Iv {
-        let mid = self.mid + o.mid;
-        Iv::new(mid, self.rad + o.rad + 2.0 * f64::EPSILON * mid.abs())
-    }
-    fn mul(self, o: Iv) -> Iv {
-        let mid = self.mid * o.mid;
-        // Worst-case product radius `|a|·rad_b + |b|·rad_a + rad_a·rad_b`, plus the
-        // f64 rounding of the product itself.
-        let rad = self.mid.abs() * o.rad + o.mid.abs() * self.rad + self.rad * o.rad;
-        Iv::new(mid, rad + 2.0 * f64::EPSILON * mid.abs())
-    }
-    /// `Some(true)` if definitely positive, `Some(false)` if definitely negative,
-    /// `None` if the interval straddles 0 (escalate).
-    fn sign(self) -> Option<bool> {
-        if self.mid > self.rad {
-            Some(true)
-        } else if self.mid < -self.rad {
-            Some(false)
-        } else {
-            None
-        }
-    }
-}
 
 /// 3×3 determinant of interval rows.
 fn det3_iv(r: [[Iv; 3]; 3]) -> Iv {
@@ -570,21 +489,21 @@ fn plane_iv(p0: &Pt3, p1: &Pt3, p2: &Pt3) -> [Iv; 4] {
 /// The plane's four coefficients realized at `prec` bits from the definitions
 /// (ground truth for the coefficient tol; no trig of its own — consumes point
 /// `hp_coord`).
-fn plane_hp(p0: &Pt3, p1: &Pt3, p2: &Pt3, prec: usize) -> [BigFloat; 4] {
+fn plane_hp(p0: &Pt3, p1: &Pt3, p2: &Pt3, prec: usize) -> [HpIv; 4] {
     let (a, b, c) = (p0.hp_coord(prec), p1.hp_coord(prec), p2.hp_coord(prec));
-    let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
-    let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
+    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
+    let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
     let e1 = [sub(&b[0], &a[0]), sub(&b[1], &a[1]), sub(&b[2], &a[2])];
     let e2 = [sub(&c[0], &a[0]), sub(&c[1], &a[1]), sub(&c[2], &a[2])];
     let n = [
-        mul(&e1[1], &e2[2]).sub(&mul(&e1[2], &e2[1]), prec, HP_RM),
-        mul(&e1[2], &e2[0]).sub(&mul(&e1[0], &e2[2]), prec, HP_RM),
-        mul(&e1[0], &e2[1]).sub(&mul(&e1[1], &e2[0]), prec, HP_RM),
+        mul(&e1[1], &e2[2]).sub(&mul(&e1[2], &e2[1]), prec),
+        mul(&e1[2], &e2[0]).sub(&mul(&e1[0], &e2[2]), prec),
+        mul(&e1[0], &e2[1]).sub(&mul(&e1[1], &e2[0]), prec),
     ];
-    let d = BigFloat::from_f64(0.0, prec)
-        .sub(&mul(&n[0], &a[0]), prec, HP_RM)
-        .sub(&mul(&n[1], &a[1]), prec, HP_RM)
-        .sub(&mul(&n[2], &a[2]), prec, HP_RM);
+    let d = HpIv::exact(BigFloat::from_f64(0.0, prec))
+        .sub(&mul(&n[0], &a[0]), prec)
+        .sub(&mul(&n[1], &a[1]), prec)
+        .sub(&mul(&n[2], &a[2]), prec);
     [n[0].clone(), n[1].clone(), n[2].clone(), d]
 }
 
@@ -655,17 +574,19 @@ fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> 
     combine(d.sign(), m.sign())
 }
 
-/// The astro-float Cramer parts of `V = ∩(planes)` at `prec` bits: `(D, Dvec, mag_d,
-/// mag_dvec)` — the determinant, its numerator vector, and the cancellation-free
-/// magnitude bounds of each (for the declare-0 floors). Shared by [`indirect_hp`]
-/// (orient3d) and [`cmp_hp`] (cmp_coord) — both need `mag_dvec` to bound a term the other one
-/// cancels into.
-fn cramer_hp(planes: [[BigFloat; 4]; 3], prec: usize) -> (BigFloat, [BigFloat; 3], f64, [f64; 3]) {
-    let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
-    let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
-    let add = |x: &BigFloat, y: &BigFloat| x.add(y, prec, HP_RM);
-    let zero = BigFloat::from_f64(0.0, prec);
-    let det3 = |r: &[[BigFloat; 3]; 3]| {
+/// The Cramer parts of `V = ∩(planes)` at `prec` bits: `(D, Dvec)` — the determinant and its
+/// numerator vector, each carrying the error radius accumulated along the way. Shared by
+/// [`indirect_hp`] (orient3d) and [`cmp_hp`] (cmp_coord).
+///
+/// The magnitude bounds these used to return alongside are gone: the radius rides *with* the
+/// value now, so there is nothing left for a caller to forget to use — which is exactly how the
+/// indirect judge came to bound `M` by a scale that had already cancelled.
+fn cramer_hp(planes: [[HpIv; 4]; 3], prec: usize) -> (HpIv, [HpIv; 3]) {
+    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
+    let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
+    let add = |x: &HpIv, y: &HpIv| x.add(y, prec);
+    let zero = HpIv::exact(BigFloat::from_f64(0.0, prec));
+    let det3 = |r: &[[HpIv; 3]; 3]| {
         let m0 = sub(&mul(&r[1][1], &r[2][2]), &mul(&r[1][2], &r[2][1]));
         let m1 = sub(&mul(&r[1][0], &r[2][2]), &mul(&r[1][2], &r[2][0]));
         let m2 = sub(&mul(&r[1][0], &r[2][1]), &mul(&r[1][1], &r[2][0]));
@@ -673,16 +594,6 @@ fn cramer_hp(planes: [[BigFloat; 4]; 3], prec: usize) -> (BigFloat, [BigFloat; 3
             &sub(&mul(&r[0][0], &m0), &mul(&r[0][1], &m1)),
             &mul(&r[0][2], &m2),
         )
-    };
-    // Sum of the six triple-product magnitudes of a 3×3 (bounds the term scale).
-    let det3_mag = |r: &[[BigFloat; 3]; 3]| -> f64 {
-        let t = |a: &BigFloat, b: &BigFloat, c: &BigFloat| bf_mag(a) * bf_mag(b) * bf_mag(c);
-        t(&r[0][0], &r[1][1], &r[2][2])
-            + t(&r[0][0], &r[1][2], &r[2][1])
-            + t(&r[0][1], &r[1][0], &r[2][2])
-            + t(&r[0][1], &r[1][2], &r[2][0])
-            + t(&r[0][2], &r[1][0], &r[2][1])
-            + t(&r[0][2], &r[1][1], &r[2][0])
     };
     let nrm = |k: usize| {
         [
@@ -695,7 +606,6 @@ fn cramer_hp(planes: [[BigFloat; 4]; 3], prec: usize) -> (BigFloat, [BigFloat; 3
     let (n0, n1, n2) = (nrm(0), nrm(1), nrm(2));
     let nrows = [n0.clone(), n1.clone(), n2.clone()];
     let d = det3(&nrows);
-    let mag_d = det3_mag(&nrows);
     let hc = [hh(0), hh(1), hh(2)];
     let cols = [
         [
@@ -715,25 +625,30 @@ fn cramer_hp(planes: [[BigFloat; 4]; 3], prec: usize) -> (BigFloat, [BigFloat; 3
         ],
     ];
     let dvec = [det3(&cols[0]), det3(&cols[1]), det3(&cols[2])];
-    let mag_dvec = [det3_mag(&cols[0]), det3_mag(&cols[1]), det3_mag(&cols[2])];
-    (d, dvec, mag_d, mag_dvec)
+    (d, dvec)
 }
 
 /// The same `sign(D)·sign(M)` realized at `prec` bits (astro-float) — ground truth /
-/// escalation. Returns `(D, M, mag_d, mag_m)`: the two determinants and the f64
-/// magnitudes of their term sums, so the caller can floor a below-precision result to
-/// declare-0 ([`sign_with_floor`]).
+/// escalation. Returns the two determinants as intervals; their radii are what decides whether
+/// either sign may be used.
+///
+/// **This is where the cancellation bug lived.** `row1 = Dvec − D·s` collapses to nothing when
+/// the query point coincides with the implicit point, and the old code sized the declare-0 floor
+/// off that collapsed value, so a floor of `1e-131` let a `8.6e-78` rounding residue through as a
+/// confident sign while two other ways of asking the same question answered zero. An interval
+/// cannot make that mistake: the radius of `row1` is the sum of what went into it, and a
+/// subtraction that cancels leaves the radius behind.
 fn indirect_hp(
-    planes: [[BigFloat; 4]; 3],
-    q: [BigFloat; 3],
-    r: [BigFloat; 3],
-    s: [BigFloat; 3],
+    planes: [[HpIv; 4]; 3],
+    q: [HpIv; 3],
+    r: [HpIv; 3],
+    s: [HpIv; 3],
     prec: usize,
-) -> (BigFloat, BigFloat, f64, f64) {
-    let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
-    let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
-    let add = |x: &BigFloat, y: &BigFloat| x.add(y, prec, HP_RM);
-    let (d, dvec, mag_d, mag_dvec) = cramer_hp(planes, prec);
+) -> (HpIv, HpIv) {
+    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
+    let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
+    let add = |x: &HpIv, y: &HpIv| x.add(y, prec);
+    let (d, dvec) = cramer_hp(planes, prec);
     let row1 = [
         sub(&dvec[0], &mul(&d, &s[0])),
         sub(&dvec[1], &mul(&d, &s[1])),
@@ -750,58 +665,7 @@ fn indirect_hp(
         &add(&mul(&row1[0], &cross[0]), &mul(&row1[1], &cross[1])),
         &mul(&row1[2], &cross[2]),
     );
-    // ★ The term scale must be **cancellation-free**, and reading it off `row1`/`cross` is not:
-    // those are subtractions, so where they cancel the scale collapses with them — and that is
-    // exactly the degenerate configuration the floor exists to catch. Measured: a query point
-    // coinciding with the implicit point left `|row1| ~ 1e-77`, a floor of `1e-131`, and a
-    // confident sign on what was only rounding residue, while two other ways of asking the same
-    // question returned zero. The scale is therefore accumulated along the computation, the way
-    // `cmp_hp` right below already does it; `cramer_hp` computes `mag_dvec` for this and it used
-    // to be discarded here.
-    let mag = bf_mag;
-    let mag_row1 = [
-        mag_dvec[0] + mag_d * mag(&s[0]),
-        mag_dvec[1] + mag_d * mag(&s[1]),
-        mag_dvec[2] + mag_d * mag(&s[2]),
-    ];
-    let mag_dq = [
-        mag(&q[0]) + mag(&s[0]),
-        mag(&q[1]) + mag(&s[1]),
-        mag(&q[2]) + mag(&s[2]),
-    ];
-    let mag_dr = [
-        mag(&r[0]) + mag(&s[0]),
-        mag(&r[1]) + mag(&s[1]),
-        mag(&r[2]) + mag(&s[2]),
-    ];
-    let mag_cross = [
-        mag_dq[1] * mag_dr[2] + mag_dq[2] * mag_dr[1],
-        mag_dq[2] * mag_dr[0] + mag_dq[0] * mag_dr[2],
-        mag_dq[0] * mag_dr[1] + mag_dq[1] * mag_dr[0],
-    ];
-    let mag_m =
-        mag_row1[0] * mag_cross[0] + mag_row1[1] * mag_cross[1] + mag_row1[2] * mag_cross[2];
-    (d, m, mag_d, mag_m)
-}
-
-/// Multiplier over `mag·2⁻ᵖʳᵉᶜ` for the indirect declare-0 floor — generously above
-/// the accumulated rounding of the ~100-op indirect computation (soundness first; a
-/// tighter constant would only reduce the rare declare-0 rate, never soundness). This
-/// is the **indirect-only** floor policy (term-magnitude based), distinct from the
-/// explicit `16·scale³` floor of [`orient3d_judge`].
-const FLOOR_K: f64 = 1.0e6;
-
-/// A `BigFloat`'s sign as `Some(is_positive)`, floored to declare-0 (`None`) when its
-/// magnitude is at or below the rounding floor for a `prec`-bit computation whose terms
-/// scale to `mag`. Reuses [`orient3d_judge`]'s inline sign idiom (`is_zero`/`bf_mag`/
-/// `is_positive`, astro-float#44 workaround) — one sign-extraction path in frame3.
-fn sign_with_floor(val: &BigFloat, mag: f64, prec: usize) -> Option<bool> {
-    let floor = FLOOR_K * mag * 2f64.powi(-(prec as i32));
-    if val.is_zero() || bf_mag(val) <= floor {
-        None
-    } else {
-        Some(val.is_positive())
-    }
+    (d, m)
 }
 
 /// CIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
@@ -826,21 +690,17 @@ pub fn indirect_orient3d_judge(
     if let Some(o) = indirect_filter(planes, pt_iv(q), pt_iv(r), pt_iv(s)) {
         return o;
     }
-    // Escalate. Trust each sign only if its magnitude clears the rounding floor for a
-    // JUDGE_PREC computation; a below-floor `D` or `M` is declare-0.
+    // Escalate: the same two determinants at JUDGE_PREC, each carrying the radius accumulated
+    // along its own computation. A determinant whose interval straddles zero is undecided.
     let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, JUDGE_PREC);
-    let (d, m, mag_d, mag_m) = indirect_hp(
+    let (d, m) = indirect_hp(
         [ph(plane_a), ph(plane_b), ph(plane_c)],
         q.hp_coord(JUDGE_PREC),
         r.hp_coord(JUDGE_PREC),
         s.hp_coord(JUDGE_PREC),
         JUDGE_PREC,
     );
-    combine(
-        sign_with_floor(&d, mag_d, JUDGE_PREC),
-        sign_with_floor(&m, mag_m, JUDGE_PREC),
-    )
-    .unwrap_or(Orient::Zero)
+    combine(d.sign(), m.sign()).unwrap_or(Orient::Zero)
 }
 
 // ---- indirect cmp_coord: order two implicit points along one axis ----
@@ -880,23 +740,16 @@ fn cmp_filter(a: [[Iv; 4]; 3], b: [[Iv; 4]; 3], axis: usize) -> Option<Orient> {
     cmp_combine(m.sign(), da.sign(), db.sign())
 }
 
-/// The astro-float escalation for `cmp_coord`: the same three signs at `prec` bits,
-/// each floored to declare-0 ([`sign_with_floor`]); `Orient::Zero` if any is below its
-/// floor (the two coordinates are equal or too close to separate).
-fn cmp_hp(a: [[BigFloat; 4]; 3], b: [[BigFloat; 4]; 3], axis: usize, prec: usize) -> Orient {
-    let (da, dva, mag_da, mag_dva) = cramer_hp(a, prec);
-    let (db, dvb, mag_db, mag_dvb) = cramer_hp(b, prec);
+/// The astro-float escalation for `cmp_coord`: the same three signs at `prec` bits, each read off
+/// its own interval; `Orient::Zero` if any straddles zero (the two coordinates are equal, or too
+/// close to separate at this precision).
+fn cmp_hp(a: [[HpIv; 4]; 3], b: [[HpIv; 4]; 3], axis: usize, prec: usize) -> Orient {
+    let (da, dva) = cramer_hp(a, prec);
+    let (db, dvb) = cramer_hp(b, prec);
     let m = dva[axis]
-        .mul(&db, prec, HP_RM)
-        .sub(&dvb[axis].mul(&da, prec, HP_RM), prec, HP_RM);
-    // Sound bound on |M|'s two term magnitudes (cancellation-free Dvec bound × |D|).
-    let mag_m = mag_dva[axis] * bf_mag(&db) + mag_dvb[axis] * bf_mag(&da);
-    cmp_combine(
-        sign_with_floor(&m, mag_m, prec),
-        sign_with_floor(&da, mag_da, prec),
-        sign_with_floor(&db, mag_db, prec),
-    )
-    .unwrap_or(Orient::Zero)
+        .mul(&db, prec)
+        .sub(&dvb[axis].mul(&da, prec), prec);
+    cmp_combine(m.sign(), da.sign(), db.sign()).unwrap_or(Orient::Zero)
 }
 
 /// CIP indirect `cmp_coord`: the sign of `a[axis] − b[axis]` where `a`, `b` are the
@@ -964,8 +817,8 @@ pub fn dir_sign_judge(
         return orient_of(pos);
     }
     let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, JUDGE_PREC);
-    let (dh, _, mag_d, _) = cramer_hp([ph(a), ph(b), ph(c)], JUDGE_PREC);
-    match sign_with_floor(&dh, mag_d, JUDGE_PREC) {
+    let (dh, _) = cramer_hp([ph(a), ph(b), ph(c)], JUDGE_PREC);
+    match dh.sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }
@@ -1008,8 +861,11 @@ mod tests {
             ri(rng(st, -100_000, 100_000), rng(st, 1, 100)),
         ]
     }
-    fn abs_err(f: f64, truth: &BigFloat, gt: usize) -> f64 {
-        bf_mag(&BigFloat::from_f64(f, gt).sub(truth, gt, HP_RM).abs())
+    /// The f64 value's distance from the high-precision realization's **midpoint** — what the
+    /// f64 tol has to bound. (The realization's own radius is a separate, far smaller quantity;
+    /// `GT` is deep enough that it does not enter these comparisons.)
+    fn abs_err(f: f64, truth: &HpIv, gt: usize) -> f64 {
+        bf_mag(&BigFloat::from_f64(f, gt).sub(&truth.mid, gt, HP_RM).abs())
     }
 
     /// Soundness: over random rotation chains (mixed axes, arbitrary pivots, exact and
@@ -1366,7 +1222,7 @@ mod tests {
     ) -> Option<Orient> {
         let at = |prec: usize| -> Orient {
             let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-            let (d, m, _, _) = indirect_hp(
+            let (d, m) = indirect_hp(
                 [ph(pa), ph(pb), ph(pc)],
                 q.hp_coord(prec),
                 r.hp_coord(prec),
@@ -1381,7 +1237,7 @@ mod tests {
                     Some(x.is_positive())
                 }
             };
-            combine(raw(&d), raw(&m)).unwrap_or(Orient::Zero)
+            combine(raw(&d.mid), raw(&m.mid)).unwrap_or(Orient::Zero)
         };
         let (lo, hi) = (at(prec), at(2 * prec));
         (lo == hi && lo != Orient::Zero).then_some(lo)
@@ -1985,8 +1841,11 @@ mod tests {
         prec: usize,
     ) -> Option<bool> {
         let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-        let (dh, _, mag_d, _) = cramer_hp([ph(a), ph(b), ph(c)], prec);
-        sign_with_floor(&dh, mag_d, prec)
+        // The **raw** sign, with no radius and no floor — see `dir_orient_at` for why the oracle
+        // must not borrow the judge's bound. `dir_sign_truth` gets its confidence from two
+        // precisions agreeing instead.
+        let (dh, _) = cramer_hp([ph(a), ph(b), ph(c)], prec);
+        (!dh.mid.is_zero()).then(|| dh.mid.is_positive())
     }
 
     /// The **GT-stable** `dir_sign` truth: `Some` only when `prec` and `prec + 128` agree
@@ -2146,7 +2005,7 @@ mod tests {
     /// declare-0 — the GT / escalation realization (mirrors the judge's hp path).
     fn dir_orient_at(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Option<bool> {
         let dp = Pt3::at(d);
-        let sub = |u: &BigFloat, v: &BigFloat| u.sub(v, prec, HP_RM);
+        let sub = |u: &HpIv, v: &HpIv| u.sub(v, prec);
         let (bh, xh, yh, dh) = (
             base.hp_coord(prec),
             x.hp_coord(prec),
@@ -2169,13 +2028,10 @@ mod tests {
             ],
             prec,
         );
-        let subf = |u: [f64; 3], v: [f64; 3]| [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
-        let mag = det3_mag([
-            dp.coord,
-            subf(x.coord, base.coord),
-            subf(y.coord, base.coord),
-        ]);
-        sign_with_floor(&det, mag, prec)
+        // The **raw** sign at `prec` bits, with no radius and no floor. Independence from the
+        // judge is the whole point of an oracle: `dir_orient_truth` gets its confidence from two
+        // precisions agreeing, not from any bound this file also ships to production.
+        (!det.mid.is_zero()).then(|| det.mid.is_positive())
     }
 
     /// GT-stable truth: `Some` only when `prec` and `prec + 128` agree (else too degenerate
