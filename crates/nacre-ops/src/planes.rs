@@ -294,13 +294,19 @@ pub(crate) fn plane_index_setup(
 /// `scale` is the largest coordinate magnitude in either operand, taken over the whole table so
 /// the result does not depend on traversal order (replay must reproduce it exactly).
 ///
-/// The precision that reaches the target is then [`nacre_cip::judge_precision`]'s to compute, and
-/// [`JUDGE_PREC_CAP`] is where the kernel stops and says so instead.
+/// The precision that reaches the target is then [`nacre_cip::judge_precision`]'s to compute;
+/// [`JUDGE_PREC_CAP`] is where the kernel stops and says so instead, and [`CLIMB_HEADROOM`] is
+/// what a single hard judgement may spend on top of it.
+///
+/// **Only the coincidence limit is a candidate for a setting.** Everything else here — the
+/// precision, the cap, the headroom — is derived from it and from the model, because a bit count
+/// means a different physical thing in every model ("256 bits" is `1e-76` for a solid turned once
+/// and `1e+15` for one turned three hundred times).
 fn judge_for(planes: &[FaceInfo]) -> Judge {
     judge_for_points(planes.iter().flat_map(|p| p.tri_pt3.iter()))
 }
 
-/// **The most bits a judgement may ask for before the operation is rejected instead.**
+/// **How deep a model may be before the operation is rejected instead.**
 ///
 /// Not a resolution limit — the arithmetic is correct at any depth — but a **cost** limit, so it
 /// is set from measured cost. A judgement's realization is quadratic-ish in the precision, and the
@@ -309,6 +315,28 @@ fn judge_for(planes: &[FaceInfo]) -> Judge {
 /// per turn), which is far past any real model, and a model that does exceed it is told *why*
 /// rather than handed a wrong answer or an unbounded wait.
 pub(crate) const JUDGE_PREC_CAP: usize = 4096;
+
+/// **How thin a witness the kernel will still judge**, expressed as the bits a single judgement
+/// may ask for *beyond* what the model itself needed.
+///
+/// This is a **separate budget from [`JUDGE_PREC_CAP`], and it has to be.** Sharing one absolute
+/// ceiling would mean a deeply-turned model — already near the cap — leaves a hard judgement no
+/// room at all, so the same sliver would be judged in a fresh model and abandoned in a turned one.
+/// The model's depth and a judgement's difficulty are different quantities; only the second
+/// belongs here.
+///
+/// It has a physical reading. A judgement's uncertainty is `(C / |cofactor|) · 2⁻ᵖʳᵉᶜ`, and the
+/// model already chose `prec` so that `C · 2⁻ᵖʳᵉᶜ` clears the coincidence limit; what is left is
+/// `log₂(1 / cofactor)` — the **thinness of the witness**, a needle triangle or three planes that
+/// almost share a line. Two words says: a witness up to `2¹²⁸` (≈ 3·10³⁸) times more degenerate
+/// than the model's own size is still judged to the end.
+///
+/// Two words, and not a measured number, for the same reason the coincidence limit is two words
+/// below the output resolution: the error is asymmetric. Too small abandons a judgement that had
+/// an answer; too large only spends bits. And measurement says there is nothing to tune — across
+/// the rotation corpus and models turned 100 and 800 times, **no judgement asked for even one bit
+/// beyond the model's own precision** (measured with the headroom forced to zero).
+pub(crate) const CLIMB_HEADROOM: usize = 128;
 
 /// The placeholder a face table carries between `collect_planes` and the stamp in
 /// [`plane_index_setup`]. Its zero precision and zero limits are deliberately useless: a
@@ -328,7 +356,7 @@ pub(crate) fn fixed_judge(prec: usize) -> Judge {
         prec,
         coincidence: Bound::pow2(-180),
         scale: Bound::of(1.0),
-        cap: JUDGE_PREC_CAP,
+        cap: prec + CLIMB_HEADROOM,
     }
 }
 
@@ -344,11 +372,15 @@ pub(crate) fn judge_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + Clon
     let scale = Bound::of(scale);
     let output_precision = scale.times(Bound::pow2(-52));
     let coincidence = output_precision.times(Bound::pow2(-128));
+    let prec = nacre_cip::judge_precision(pts, coincidence);
     Judge {
-        prec: nacre_cip::judge_precision(pts, coincidence),
+        prec,
         coincidence,
         scale,
-        cap: JUDGE_PREC_CAP,
+        // Relative to this model's own depth — see [`CLIMB_HEADROOM`]. The absolute ceiling that
+        // leaves is `JUDGE_PREC_CAP + CLIMB_HEADROOM`, since a model deeper than the first is
+        // rejected before any judging starts.
+        cap: prec + CLIMB_HEADROOM,
     }
 }
 
@@ -680,4 +712,42 @@ pub(crate) fn solid_is_rotated(model: &Model, solid: Handle<Solid>) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nacre_scalar::{Angle, Axis, Rat};
+
+    /// **A judgement's headroom is relative to its model, not carved out of a shared ceiling.**
+    ///
+    /// The two budgets answer different questions — how deep the model is, and how thin a witness
+    /// it may still judge — and sharing one absolute number silently couples them: a solid turned
+    /// a thousand times would leave a hard judgement no room, so the same sliver would be judged
+    /// in a fresh model and abandoned in a turned one. Turning a model must not change what
+    /// counts as judgeable, so this pins the headroom to a constant *above the model's own
+    /// precision*, at both ends of the depth range.
+    #[test]
+    fn the_climbing_headroom_survives_a_deep_model() {
+        let deg = Angle::from_deg(Rat::from_int(37)).expect("angle");
+        let mut p = Pt3::at([Rat::from_int(1), Rat::from_int(2), Rat::from_int(3)]);
+        let mut seen = Vec::new();
+        for turn in 0..=200 {
+            if turn == 0 || turn == 20 || turn == 200 {
+                let j = judge_for_points(std::slice::from_ref(&p));
+                assert_eq!(
+                    j.cap,
+                    j.prec + CLIMB_HEADROOM,
+                    "turn {turn}: headroom is not the model's own precision plus a constant"
+                );
+                seen.push(j.prec);
+            }
+            p = p.rotate(Axis::Z, deg);
+        }
+        // …and the precision really did grow with the history, or the test above is vacuous.
+        assert!(
+            seen[0] < seen[2],
+            "precision did not grow with the rotation history: {seen:?}"
+        );
+    }
 }
