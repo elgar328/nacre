@@ -9,7 +9,6 @@
 //!   its planes are rotated. The b-rep supplies witnesses through the
 //!   [`Witness`](predicate::Witness) / [`PlaneWitness`](predicate::PlaneWitness) ports.
 
-pub mod audit;
 pub mod kernel;
 pub mod predicate;
 
