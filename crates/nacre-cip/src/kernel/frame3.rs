@@ -18,10 +18,10 @@
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
 use super::HP_RM;
-use super::frame2::{DA_F64, JUDGE_PREC, bf_mag, rat_to_big, rat_to_hp};
+use super::frame2::{DA_F64, bf_mag, rat_to_big, rat_to_hp};
 use super::interval::{HpIv, Iv};
 use astro_float::BigFloat;
-use nacre_scalar::{Angle, Axis, Orient, Rat};
+use nacre_scalar::{Angle, Axis, Bound, Orient, Rat};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]
@@ -33,7 +33,7 @@ use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
 /// is computed once and reused across workers, not per thread). Otherwise it is
 /// `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has the identical
 /// signature on both, so the consumer ([`Pt3::hp_coord`]) is unchanged by the choice.
-type HpCell = HpRc<HpOnce<[HpIv; 3]>>;
+type HpCell = HpRc<HpOnce<(usize, [HpIv; 3])>>;
 
 /// One rotation in a point's definition: turn about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle`. `point = [0,0,0]` is the
@@ -57,7 +57,7 @@ pub struct Pt3 {
     pub chain: HpRc<[RotNode]>,
     pub coord: [f64; 3],
     pub tol: [f64; 3],
-    /// Memoized `hp_coord(JUDGE_PREC)` — the astro-float realization of the chain, computed
+    /// Memoized `hp_coord` at the boolean's chosen precision — the astro-float realization
     /// once per definition and shared across clones (`Rc`). A judge escalates the *same*
     /// definition-point dozens of times per boolean (`plane_def` clones `tri_pt3` per call);
     /// without this each escalation replays the rotation's cos/sin at 200 bits, which dominates
@@ -177,12 +177,19 @@ impl Pt3 {
 
     /// The coordinate realized at `prec` bits from the **definition** (base rotated
     /// through the chain, each node about its pivot) — path-independent ground truth /
-    /// escalation realization. At [`JUDGE_PREC`] (every escalation) the result is memoized in
+    /// escalation realization. The result is memoized in
     /// [`Pt3::hp`] and shared across clones of the same definition, so a definition-point pays
     /// the astro-float cos/sin once per boolean rather than once per predicate.
     pub(crate) fn hp_coord(&self, prec: usize) -> [HpIv; 3] {
-        if prec == JUDGE_PREC {
-            return self.hp.get_or_init(|| self.compute_hp(prec)).clone();
+        // **Keyed by precision, and that key is load-bearing.** The precision is chosen per
+        // boolean, so within one operation every call arrives with the same value and the cell is
+        // filled once — which is the whole point, since re-realizing a definition per predicate
+        // was 77% of a rotated boolean's runtime. A call at a different precision (the rare
+        // per-judgement fallback) recomputes without disturbing the cached value, rather than
+        // silently returning coordinates realized at the wrong precision.
+        let cached = self.hp.get_or_init(|| (prec, self.compute_hp(prec)));
+        if cached.0 == prec {
+            return cached.1.clone();
         }
         self.compute_hp(prec)
     }
@@ -216,6 +223,59 @@ impl Pt3 {
         }
         p
     }
+}
+
+/// The precision at which a realization's error is *measured*, before the real one is chosen.
+///
+/// Nothing is judged here — this only has to be deep enough that the radius it produces is a
+/// meaningful reading of `C` (see [`judge_precision`]), and cheap.
+const TRIAL_PREC: usize = 128;
+
+/// Bits per word: astro-float allocates whole words, so asking for less than a multiple of 64
+/// pays for the round-up and then throws the difference away.
+const WORD: usize = 64;
+
+/// **The precision this model needs, in bits.**
+///
+/// A realization's error radius is `C · 2⁻ᵖʳᵉᶜ`, where `C` depends on the *model* — its rotation
+/// history and its coordinate magnitudes — and **not on the precision** (measured: identical `C`
+/// at 256, 320, 384, 512 and 1024 bits). So one reading of `C` at any precision fixes the
+/// precision needed to bring the radius under `limit`:
+///
+/// ```text
+///     C · 2⁻ⁿᵉᵉᵈ ≤ limit    ⇒    need = log₂(C / limit)
+/// ```
+///
+/// rounded up to a whole word. That round-up is free and its leftover is real confidence: asking
+/// for 130 bits costs the same as 192, so take the 192.
+///
+/// `C` grows about **one bit per turn** in the rotation history, which is why a fixed precision
+/// cannot work — it silently decides how long a model's history may be. At 256 bits a solid
+/// turned 245 times stops building.
+///
+/// This is an *estimate*, and correctness does not rest on it: every judgement checks its own
+/// interval, so an under-estimate costs a re-run and never an answer. It is deliberately
+/// generous by one word to cover the determinant arithmetic stacked on top of the coordinates.
+pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Bound) -> usize {
+    let mut worst = Bound::ZERO;
+    for p in pts {
+        // **Uncached on purpose.** `hp_coord` fills a point's realization cell with whatever
+        // precision asks first, and this measurement runs before the real precision is known —
+        // so going through it would fill every cell at `TRIAL_PREC` and make every later
+        // judgement miss and re-realize. That is the exact cost the cell exists to remove.
+        for c in p.compute_hp(TRIAL_PREC) {
+            if worst.lt(c.rad) {
+                worst = c.rad;
+            }
+        }
+    }
+    // `worst = C · 2⁻ᵗʳⁱᵃˡ`, so `C = worst · 2ᵗʳⁱᵃˡ` and `need = log₂C − log₂limit`.
+    let (Some(w), Some(l)) = (worst.exp2(), limit.exp2()) else {
+        return TRIAL_PREC; // an exact model, or no limit to reach — nothing to size
+    };
+    let need = (w + TRIAL_PREC as i64 - l).max(0) as usize;
+    let words = need.div_ceil(WORD) + 1; // + one word for the determinants above the coordinates
+    (words * WORD).max(TRIAL_PREC)
 }
 
 /// The three edge rows of `orient3d(a,b,c,d) = det[a−d, b−d, c−d]`.
@@ -346,11 +406,11 @@ fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
 }
 
 /// CIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
-/// astro-float at [`JUDGE_PREC`]; a determinant below the precision floor (`~scale³`,
+/// astro-float at [`prec`]; a determinant below the precision floor (`~scale³`,
 /// cubic for the 3×3 case) is [`Orient::Zero`] (declare-0). Path-independent (a
 /// function of the four point definitions). This is the *tol > 0* path — a tol-0
 /// config is exact/faster via `nacre-predicates` (Shewchuk), routed above this crate.
-pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
+pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Orient {
     let (a, b, c, d) = (pa.coord, pb.coord, pc.coord, pd.coord);
     let det = det3_f64(a, b, c, d);
     let bound = det3_bound([a, b, c, d], [pa.tol, pb.tol, pc.tol, pd.tol]);
@@ -369,7 +429,7 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
             _ => Orient::Zero,
         };
     }
-    match det3_hp(pa, pb, pc, pd, JUDGE_PREC).sign() {
+    match det3_hp(pa, pb, pc, pd, prec).sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }
@@ -386,21 +446,21 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
 ///
 /// `d` is realized through an unrotated [`Pt3`] purely to reuse `pt_iv`/`hp_coord` for its
 /// coord/tol/hp — the row is `d` itself, never `d − base`.
-pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
+pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Orient {
     let dp = Pt3::at(d);
     let (bi, xi, yi, di) = (pt_iv(base), pt_iv(x), pt_iv(y), pt_iv(&dp));
     let sub_iv = |u: [Iv; 3], v: [Iv; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
     if let Some(pos) = det3_iv([di, sub_iv(xi, bi), sub_iv(yi, bi)]).sign() {
         return orient_of(pos);
     }
-    // Escalate: the same determinant at JUDGE_PREC from the exact definitions.
+    // Escalate: the same determinant at prec from the exact definitions.
     let (bh, xh, yh, dh) = (
-        base.hp_coord(JUDGE_PREC),
-        x.hp_coord(JUDGE_PREC),
-        y.hp_coord(JUDGE_PREC),
-        dp.hp_coord(JUDGE_PREC),
+        base.hp_coord(prec),
+        x.hp_coord(prec),
+        y.hp_coord(prec),
+        dp.hp_coord(prec),
     );
-    let sub_hp = |u: &HpIv, v: &HpIv| u.sub(v, JUDGE_PREC);
+    let sub_hp = |u: &HpIv, v: &HpIv| u.sub(v, prec);
     let rows = [
         [dh[0].clone(), dh[1].clone(), dh[2].clone()],
         [
@@ -414,7 +474,7 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
             sub_hp(&yh[2], &bh[2]),
         ],
     ];
-    match det3_big(rows, JUDGE_PREC).sign() {
+    match det3_big(rows, prec).sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }
@@ -428,8 +488,8 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
 /// The determinant `det[base−y, (base+dir)−y, x−y]` column-reduces (`R1−R0 = dir`) and, after
 /// the two swaps that move `dir` to the front, is `dir·((x−y)×(base−y))` — i.e. a plain
 /// [`dir_orient3d_judge`] with the points permuted, no sign fix needed.
-pub fn orient3d_ray(base: &Pt3, dir: [Rat; 3], x: &Pt3, y: &Pt3) -> Orient {
-    dir_orient3d_judge(dir, y, x, base)
+pub fn orient3d_ray(base: &Pt3, dir: [Rat; 3], x: &Pt3, y: &Pt3, prec: usize) -> Orient {
+    dir_orient3d_judge(dir, y, x, base, prec)
 }
 
 // ---- indirect orient3d: three rotated planes meet at an implicit point ----
@@ -681,6 +741,7 @@ pub fn indirect_orient3d_judge(
     q: &Pt3,
     r: &Pt3,
     s: &Pt3,
+    prec: usize,
 ) -> Orient {
     let planes = [
         plane_iv(plane_a.0, plane_a.1, plane_a.2),
@@ -690,15 +751,15 @@ pub fn indirect_orient3d_judge(
     if let Some(o) = indirect_filter(planes, pt_iv(q), pt_iv(r), pt_iv(s)) {
         return o;
     }
-    // Escalate: the same two determinants at JUDGE_PREC, each carrying the radius accumulated
+    // Escalate: the same two determinants at prec, each carrying the radius accumulated
     // along its own computation. A determinant whose interval straddles zero is undecided.
-    let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, JUDGE_PREC);
+    let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
     let (d, m) = indirect_hp(
         [ph(plane_a), ph(plane_b), ph(plane_c)],
-        q.hp_coord(JUDGE_PREC),
-        r.hp_coord(JUDGE_PREC),
-        s.hp_coord(JUDGE_PREC),
-        JUDGE_PREC,
+        q.hp_coord(prec),
+        r.hp_coord(prec),
+        s.hp_coord(prec),
+        prec,
     );
     combine(d.sign(), m.sign()).unwrap_or(Orient::Zero)
 }
@@ -762,6 +823,7 @@ pub fn indirect_cmp_coord_judge(
     a: [(&Pt3, &Pt3, &Pt3); 3],
     b: [(&Pt3, &Pt3, &Pt3); 3],
     axis: usize,
+    prec: usize,
 ) -> Orient {
     let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
         [
@@ -775,12 +837,12 @@ pub fn indirect_cmp_coord_judge(
     }
     let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
         [
-            plane_hp(t[0].0, t[0].1, t[0].2, JUDGE_PREC),
-            plane_hp(t[1].0, t[1].1, t[1].2, JUDGE_PREC),
-            plane_hp(t[2].0, t[2].1, t[2].2, JUDGE_PREC),
+            plane_hp(t[0].0, t[0].1, t[0].2, prec),
+            plane_hp(t[1].0, t[1].1, t[1].2, prec),
+            plane_hp(t[2].0, t[2].1, t[2].2, prec),
         ]
     };
-    cmp_hp(hp(a), hp(b), axis, JUDGE_PREC)
+    cmp_hp(hp(a), hp(b), axis, prec)
 }
 
 /// A definite `bool` sign (`true` = positive) as an [`Orient`].
@@ -807,6 +869,7 @@ pub fn dir_sign_judge(
     a: (&Pt3, &Pt3, &Pt3),
     b: (&Pt3, &Pt3, &Pt3),
     c: (&Pt3, &Pt3, &Pt3),
+    prec: usize,
 ) -> Orient {
     let (d, _) = cramer_iv([
         plane_iv(a.0, a.1, a.2),
@@ -816,8 +879,8 @@ pub fn dir_sign_judge(
     if let Some(pos) = d.sign() {
         return orient_of(pos);
     }
-    let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, JUDGE_PREC);
-    let (dh, _) = cramer_hp([ph(a), ph(b), ph(c)], JUDGE_PREC);
+    let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+    let (dh, _) = cramer_hp([ph(a), ph(b), ph(c)], prec);
     match dh.sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
@@ -827,6 +890,10 @@ pub fn dir_sign_judge(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The precision these fixtures judge at. Production chooses it per model
+    /// ([`judge_precision`]); a fixture pins one so its expectations stay fixed.
+    const FIXTURE_PREC: usize = 256;
 
     fn ri(n: i128, d: i128) -> Rat {
         Rat::new(n, d).unwrap()
@@ -1168,9 +1235,12 @@ mod tests {
         let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
         // d at origin; a,b,c along +x,+y,+z → right-handed → Positive.
         let (a, b, c, d) = (pt(1, 0, 0), pt(0, 1, 0), pt(0, 0, 1), pt(0, 0, 0));
-        assert_eq!(orient3d_judge(&a, &b, &c, &d), Orient::Positive);
         assert_eq!(
-            orient3d_judge(&b, &a, &c, &d),
+            orient3d_judge(&a, &b, &c, &d, FIXTURE_PREC),
+            Orient::Positive
+        );
+        assert_eq!(
+            orient3d_judge(&b, &a, &c, &d, FIXTURE_PREC),
             Orient::Negative,
             "swap → mirror"
         );
@@ -1181,7 +1251,7 @@ mod tests {
                 .rotate_about(Axis::Z, deg(37, 1), [ri(2, 1), ri(-3, 1), ri(0, 1)])
         };
         assert_eq!(
-            orient3d_judge(&rot(&a), &rot(&b), &rot(&c), &rot(&d)),
+            orient3d_judge(&rot(&a), &rot(&b), &rot(&c), &rot(&d), FIXTURE_PREC),
             Orient::Positive,
             "orientation is rotation-invariant"
         );
@@ -1194,7 +1264,7 @@ mod tests {
         let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
         // all four in the plane z = 0.
         let (a, b, c, d) = (pt(0, 0, 0), pt(3, 0, 0), pt(0, 5, 0), pt(2, 7, 0));
-        assert_eq!(orient3d_judge(&a, &b, &c, &d), Orient::Zero);
+        assert_eq!(orient3d_judge(&a, &b, &c, &d, FIXTURE_PREC), Orient::Zero);
     }
 
     // ---- indirect orient3d (2c-i) ----
@@ -1227,18 +1297,18 @@ mod tests {
         let pc = (pt(0, 0, 0), pt(0, 1, 0), pt(0, 0, 1)); // x = 0  → V = (0,0,0)
         let (q, r, s) = (pt(1, 0, 0), pt(0, 1, 0), pt(0, 0, 1));
         assert_eq!(
-            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s),
+            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s, FIXTURE_PREC),
             Orient::Negative
         );
         assert_eq!(
-            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &r, &q, &s),
+            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &r, &q, &s, FIXTURE_PREC),
             Orient::Positive,
             "q/r swap flips the sign"
         );
         // s coplanar with V,q,r (all z = 0) → orient exactly 0 → declare-0.
         let s0 = pt(1, 1, 0);
         assert_eq!(
-            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s0),
+            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s0, FIXTURE_PREC),
             Orient::Zero
         );
         // Shared rotation of all twelve points keeps the definite sign.
@@ -1250,7 +1320,7 @@ mod tests {
         let (ra, rb, rc) = (rp(tri(&pa)), rp(tri(&pb)), rp(tri(&pc)));
         let (rq, rr, rs) = (rot(&q), rot(&r), rot(&s));
         assert_eq!(
-            indirect_orient3d_judge(tri(&ra), tri(&rb), tri(&rc), &rq, &rr, &rs),
+            indirect_orient3d_judge(tri(&ra), tri(&rb), tri(&rc), &rq, &rr, &rs, FIXTURE_PREC),
             Orient::Negative,
             "indirect orient is rotation-invariant"
         );
@@ -1374,7 +1444,9 @@ mod tests {
             for q in 0..4 {
                 let tri: Vec<usize> = (0..4).filter(|&i| i != q).collect();
                 // Skip a splitting whose three planes do not meet at a single point at all.
-                if dir_sign_judge(plane(tri[0]), plane(tri[1]), plane(tri[2])) == Orient::Zero {
+                if dir_sign_judge(plane(tri[0]), plane(tri[1]), plane(tri[2]), FIXTURE_PREC)
+                    == Orient::Zero
+                {
                     continue;
                 }
                 // `p` goes in the **third** slot: `indirect_hp` forms `row1 = Dvec − D·s` from
@@ -1389,6 +1461,7 @@ mod tests {
                     t.1,
                     t.2,
                     t.0,
+                    FIXTURE_PREC,
                 ));
             }
             if verdicts.len() < 2 {
@@ -1426,7 +1499,7 @@ mod tests {
                          q: &Pt3,
                          r: &Pt3,
                          s: &Pt3| {
-            let judged = indirect_orient3d_judge(a, b, c, q, r, s);
+            let judged = indirect_orient3d_judge(a, b, c, q, r, s, FIXTURE_PREC);
             let planes = [
                 plane_iv(a.0, a.1, a.2),
                 plane_iv(b.0, b.1, b.2),
@@ -1600,7 +1673,7 @@ mod tests {
             let a = (&p[0], &p[1], &p[2]);
             let b = (&p[3], &p[4], &p[5]);
             let c = (&p[6], &p[7], &p[8]);
-            let judged = indirect_orient3d_judge(a, b, c, &p[9], &p[10], &p[11]);
+            let judged = indirect_orient3d_judge(a, b, c, &p[9], &p[10], &p[11], FIXTURE_PREC);
             if let Some(truth) = indirect_truth(a, b, c, &p[9], &p[10], &p[11], GT) {
                 assert!(
                     judged == truth || judged == Orient::Zero,
@@ -1720,16 +1793,22 @@ mod tests {
         let b = axis_planes([1, 5, 3]);
         // y: 2 < 5 → a below b → Negative; swap → Positive.
         assert_eq!(
-            indirect_cmp_coord_judge(tr(&a), tr(&b), 1),
+            indirect_cmp_coord_judge(tr(&a), tr(&b), 1, FIXTURE_PREC),
             Orient::Negative
         );
         assert_eq!(
-            indirect_cmp_coord_judge(tr(&b), tr(&a), 1),
+            indirect_cmp_coord_judge(tr(&b), tr(&a), 1, FIXTURE_PREC),
             Orient::Positive
         );
         // x and z equal → Zero.
-        assert_eq!(indirect_cmp_coord_judge(tr(&a), tr(&b), 0), Orient::Zero);
-        assert_eq!(indirect_cmp_coord_judge(tr(&a), tr(&b), 2), Orient::Zero);
+        assert_eq!(
+            indirect_cmp_coord_judge(tr(&a), tr(&b), 0, FIXTURE_PREC),
+            Orient::Zero
+        );
+        assert_eq!(
+            indirect_cmp_coord_judge(tr(&a), tr(&b), 2, FIXTURE_PREC),
+            Orient::Zero
+        );
     }
 
     /// Fast port check: the cmp judge matches a moderate-precision truth on generic
@@ -1742,7 +1821,7 @@ mod tests {
             let a = rand_triple(&mut st);
             let b = rand_triple(&mut st);
             let axis = rng(&mut st, 0, 2) as usize;
-            let judged = indirect_cmp_coord_judge(tr(&a), tr(&b), axis);
+            let judged = indirect_cmp_coord_judge(tr(&a), tr(&b), axis, FIXTURE_PREC);
             if let Some(truth) = cmp_truth(tr(&a), tr(&b), axis, GT) {
                 assert!(
                     judged == truth || judged == Orient::Zero,
@@ -1764,7 +1843,7 @@ mod tests {
             (0usize, 0, 0, 0, 0, 0);
         let mut check = |a: &[[Pt3; 3]; 3], b: &[[Pt3; 3]; 3], axis: usize| {
             let (ta, tb) = (tr(a), tr(b));
-            let judged = indirect_cmp_coord_judge(ta, tb, axis);
+            let judged = indirect_cmp_coord_judge(ta, tb, axis, FIXTURE_PREC);
             let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
                 [
                     plane_iv(t[0].0, t[0].1, t[0].2),
@@ -1929,12 +2008,12 @@ mod tests {
     fn dir_sign_judge_sanity() {
         let ap = axis_planes([0, 0, 0]);
         assert_eq!(
-            dir_sign_judge(t3(&ap[0]), t3(&ap[1]), t3(&ap[2])),
+            dir_sign_judge(t3(&ap[0]), t3(&ap[1]), t3(&ap[2]), FIXTURE_PREC),
             Orient::Negative,
             "det[+x, -y, +z] = -1"
         );
         assert_eq!(
-            dir_sign_judge(t3(&ap[0]), t3(&ap[2]), t3(&ap[1])),
+            dir_sign_judge(t3(&ap[0]), t3(&ap[2]), t3(&ap[1]), FIXTURE_PREC),
             Orient::Positive,
             "one swap flips the sign"
         );
@@ -1944,7 +2023,7 @@ mod tests {
         };
         let (a, b, c) = (mk([1, 0, 0]), mk([0, 1, 0]), mk([1, 1, 0]));
         assert_eq!(
-            dir_sign_judge(t3(&a), t3(&b), t3(&c)),
+            dir_sign_judge(t3(&a), t3(&b), t3(&c), FIXTURE_PREC),
             Orient::Zero,
             "coplanar normals → D = 0"
         );
@@ -1960,7 +2039,7 @@ mod tests {
             let (ba, bb, bc) = (mk(&mut st), mk(&mut st), mk(&mut st));
             let un = |b: [[Rat; 3]; 3]| b.map(Pt3::at);
             let (ua, ub, uc) = (un(ba), un(bb), un(bc));
-            let s = dir_sign_judge(t3(&ua), t3(&ub), t3(&uc));
+            let s = dir_sign_judge(t3(&ua), t3(&ub), t3(&uc), FIXTURE_PREC);
             if s == Orient::Zero {
                 continue;
             }
@@ -1973,7 +2052,7 @@ mod tests {
                 rot_plane(bc, ax, ang, piv),
             );
             assert_eq!(
-                dir_sign_judge(t3(&ra), t3(&rb), t3(&rc)),
+                dir_sign_judge(t3(&ra), t3(&rb), t3(&rc), FIXTURE_PREC),
                 s,
                 "rotation-invariant"
             );
@@ -2023,7 +2102,7 @@ mod tests {
             if !(well_conditioned(&pa) && well_conditioned(&pb) && well_conditioned(&pc)) {
                 continue; // a degenerate plane is not the regime under test
             }
-            let judged = dir_sign_judge(t3(&pa), t3(&pb), t3(&pc));
+            let judged = dir_sign_judge(t3(&pa), t3(&pb), t3(&pc), FIXTURE_PREC);
             let (d, _) = cramer_iv([
                 plane_iv(&pa[0], &pa[1], &pa[2]),
                 plane_iv(&pb[0], &pb[1], &pb[2]),
@@ -2111,18 +2190,21 @@ mod tests {
         let x = Pt3::at([ri(1, 1), ri(0, 1), ri(0, 1)]);
         let y = Pt3::at([ri(0, 1), ri(1, 1), ri(0, 1)]);
         let e = |a: i128, b: i128, c: i128| [ri(a, 1), ri(b, 1), ri(c, 1)];
-        assert_eq!(dir_orient3d_judge(e(0, 0, 1), &o, &x, &y), Orient::Positive);
         assert_eq!(
-            dir_orient3d_judge(e(0, 0, -1), &o, &x, &y),
+            dir_orient3d_judge(e(0, 0, 1), &o, &x, &y, FIXTURE_PREC),
+            Orient::Positive
+        );
+        assert_eq!(
+            dir_orient3d_judge(e(0, 0, -1), &o, &x, &y, FIXTURE_PREC),
             Orient::Negative
         );
         assert_eq!(
-            dir_orient3d_judge(e(1, 0, 0), &o, &x, &y),
+            dir_orient3d_judge(e(1, 0, 0), &o, &x, &y, FIXTURE_PREC),
             Orient::Zero,
             "d in the edge plane → det 0"
         );
         assert_eq!(
-            dir_orient3d_judge(e(0, 0, 1), &o, &y, &x),
+            dir_orient3d_judge(e(0, 0, 1), &o, &y, &x, FIXTURE_PREC),
             Orient::Negative,
             "swapping x,y flips the sign"
         );
@@ -2150,8 +2232,8 @@ mod tests {
             ];
             let (base, x, y) = (at(bb), at(xb), at(yb));
             assert_eq!(
-                orient3d_ray(&base, dir, &x, &y),
-                orient3d_judge(&base, &at(q), &x, &y),
+                orient3d_ray(&base, dir, &x, &y, FIXTURE_PREC),
+                orient3d_judge(&base, &at(q), &x, &y, FIXTURE_PREC),
                 "orient3d_ray == orient3d(base, base+dir, x, y)"
             );
         }
@@ -2197,7 +2279,7 @@ mod tests {
                 let comp = |k: usize| ri((big * (x.coord[k] - base.coord[k])).round() as i128, 1);
                 [comp(0), comp(1), comp(2)]
             };
-            let judged = dir_orient3d_judge(d, &base, &x, &y);
+            let judged = dir_orient3d_judge(d, &base, &x, &y, FIXTURE_PREC);
             // Recompute the Iv filter to tally which path resolved (mirrors the judge).
             let dp = Pt3::at(d);
             let (bi, xi, yi, di) = (pt_iv(&base), pt_iv(&x), pt_iv(&y), pt_iv(&dp));

@@ -31,6 +31,9 @@ impl Witness for PlaneGeom {
     fn is_rotated(&self) -> bool {
         self.rotated
     }
+    fn judge_prec(&self) -> usize {
+        self.judge_prec
+    }
 }
 
 impl Witness for FaceInfo {
@@ -50,6 +53,9 @@ impl Witness for FaceInfo {
     }
     fn is_rotated(&self) -> bool {
         self.rotated
+    }
+    fn judge_prec(&self) -> usize {
+        self.judge_prec
     }
 }
 
@@ -249,6 +255,7 @@ mod tests {
         let degenerate: Vec<PlaneGeom> = (0..2)
             .map(|k| PlaneGeom {
                 base: crate::planes::BaseFrame::none(),
+                judge_prec: 256,
                 surf: pu[0].surf,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],

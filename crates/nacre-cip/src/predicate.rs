@@ -62,6 +62,16 @@ pub trait Witness {
     /// The witness triangle **before** that motion, or `None` when the pre-rotation coordinates
     /// are not `f64`-representable and so cannot be handed to the exact predicate.
     fn base_tri(&self) -> Option<[Point3; 3]>;
+
+    /// The precision (bits) the escalating judges realize this operation's definitions at.
+    ///
+    /// **A property of the model, not a constant.** The error a realization carries grows with
+    /// the rotation history — one bit per turn, measured — so a fixed precision decides the
+    /// longest chain a model may have before its judgements stop separating. It is chosen once
+    /// per boolean (see `nacre_ops::judge_precision`) and carried here because every predicate
+    /// call site has the plane table in hand and nothing else. Uniform within an operation, which
+    /// is what keeps [`Pt3`]'s realization cache warm.
+    fn judge_prec(&self) -> usize;
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
@@ -172,6 +182,7 @@ pub fn t_orient3d<W: PlaneWitness>(planes: &[W], p: usize, q: usize, r: usize, j
         &dj[0],
         &dj[1],
         &dj[2],
+        planes[p].judge_prec(),
     ))
 }
 
@@ -199,6 +210,7 @@ pub fn t_cmp_coord<W: PlaneWitness>(planes: &[W], a: [usize; 3], b: [usize; 3], 
         borrow_triple(da),
         borrow_triple(db),
         axis,
+        planes[a[0]].judge_prec(),
     ))
 }
 
@@ -338,8 +350,15 @@ pub fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
         }
     }
     let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
-    dj.iter()
-        .all(|q| to_i8(orient3d_judge(q, &di[0], &di[1], &di[2])) == 0)
+    dj.iter().all(|q| {
+        to_i8(orient3d_judge(
+            q,
+            &di[0],
+            &di[1],
+            &di[2],
+            planes[i].judge_prec(),
+        )) == 0
+    })
 }
 
 /// `+1` if plane `w`'s stored coefficient-normal points the same way as its outward `tri`
@@ -390,12 +409,20 @@ pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, 
     frame_sign(&planes[p])
         * frame_sign(&planes[a])
         * frame_sign(&planes[b])
-        * to_i8(dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db)))
+        * to_i8(dir_sign_judge(
+            borrow3(dp),
+            borrow3(da),
+            borrow3(db),
+            planes[p].judge_prec(),
+        ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The precision these fixtures judge at; production chooses it per model.
+    const FIXTURE_PREC: usize = 256;
 
     /// A synthetic axis-aligned plane witness: three points on the plane, its exact
     /// coefficients, and the exact `Pt3` definition of those points. `is_rotated` is `false`,
@@ -428,6 +455,9 @@ mod tests {
         }
         fn base_tri(&self) -> Option<[Point3; 3]> {
             None
+        }
+        fn judge_prec(&self) -> usize {
+            FIXTURE_PREC
         }
     }
     impl PlaneWitness for W {
@@ -536,6 +566,9 @@ mod tests {
         fn base_tri(&self) -> Option<[Point3; 3]> {
             Some(self.base)
         }
+        fn judge_prec(&self) -> usize {
+            FIXTURE_PREC
+        }
     }
     impl PlaneWitness for RW {
         fn coeffs(&self) -> [f64; 4] {
@@ -586,6 +619,7 @@ mod tests {
                             borrow_triple(a.map(|i| plane_def(&ps, i))),
                             borrow_triple(b.map(|i| plane_def(&ps, i))),
                             k,
+                            FIXTURE_PREC,
                         ));
                         assert_eq!(
                             got, want,
@@ -655,6 +689,7 @@ mod tests {
                 borrow_triple(a.map(|i| plane_def(&ps, i))),
                 borrow_triple(b.map(|i| plane_def(&ps, i))),
                 k,
+                FIXTURE_PREC,
             ));
             assert_eq!(t_cmp_coord(&ps, a, b, k), want);
         }

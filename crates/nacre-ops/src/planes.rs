@@ -7,6 +7,7 @@ use nacre_cip::Pt3;
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
+use nacre_scalar::Bound;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Origin, Shell, Solid, Vertex};
 use std::collections::HashMap;
@@ -40,6 +41,10 @@ pub(crate) struct FaceInfo {
     /// face/plane convention could not be asserted, because both readings were legitimate
     /// (dev-log, normalization cell). Separate names, separate questions.
     pub(crate) orient_sign: i8,
+    /// The precision the escalating judges realize this operation's definitions at — see
+    /// [`judge_precision_for`]. Stamped on every entry after the table is built, because it is a
+    /// property of the whole operation and every predicate call site has only this table in hand.
+    pub(crate) judge_prec: usize,
     /// The three `tri` points as **exact `Pt3` definitions**, in the same order as `tri`.
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
     /// per judgment, which dominated the boolean's runtime.
@@ -138,6 +143,9 @@ pub(crate) fn collect_planes(
                 plane,
                 tri,
                 n_out,
+                // Stamped by `plane_index_setup` once both operands' tables exist — the
+                // precision is a property of the operation, not of one face.
+                judge_prec: 0,
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
                 rotated,
@@ -235,6 +243,10 @@ pub(crate) fn plane_index_setup(
 ) -> Result<PlaneSetup, BoolError> {
     let mut planes = collect_planes(model, a)?;
     planes.extend(collect_planes(model, b)?);
+    let prec = judge_precision_for(&planes);
+    for p in &mut planes {
+        p.judge_prec = prec;
+    }
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
         surf_ix.insert(pi.face, i);
@@ -251,6 +263,47 @@ pub(crate) fn plane_index_setup(
         geom,
         plane_ix,
     })
+}
+
+/// **How precisely this operation's rotated definitions must be realized.**
+///
+/// The judges' error radius is `C · 2⁻ᵖʳᵉᶜ`, and `C` belongs to the model — it grows about one
+/// bit per turn of rotation history and with the coordinate magnitudes. A fixed precision
+/// therefore decides, silently, how long a model's history may be: at 256 bits a solid turned 245
+/// times stops building, with a reject that names a symptom rather than the cause. So the
+/// precision is read off the model instead.
+///
+/// The target is the **coincidence precision**: two things closer than this are treated as
+/// coincident, and the kernel will only say so once it has *proved* the separation is below it.
+/// Its default is derived rather than chosen —
+///
+/// - `output_precision = scale · 2⁻⁵²`, the finest distinction the `f64` coordinates this kernel
+///   emits can carry. Below it nothing survives export, so distinguishing is meaningless.
+/// - `coincidence_precision = output_precision · 2⁻¹²⁸`, two whole words further down. Erring low
+///   only costs bits, while erring high merges features that were genuinely apart, so the
+///   asymmetry says push it down; and a word is the natural unit because astro-float allocates
+///   whole words anyway.
+///
+/// `scale` is the largest coordinate magnitude in either operand, taken over the whole table so
+/// the result does not depend on traversal order (replay must reproduce it exactly).
+fn judge_precision_for(planes: &[FaceInfo]) -> usize {
+    judge_precision_for_points(planes.iter().flat_map(|p| p.tri_pt3.iter()))
+}
+
+/// [`judge_precision_for`] over a bare set of definitions — for the places that must judge
+/// before a plane table exists (witness selection in [`crate::rotated_vertex`]).
+pub(crate) fn judge_precision_for_points<'a>(
+    pts: impl IntoIterator<Item = &'a Pt3> + Clone,
+) -> usize {
+    let mut scale = 1.0f64;
+    for p in pts.clone() {
+        for c in p.coord {
+            scale = scale.max(c.abs());
+        }
+    }
+    let output_precision = Bound::of(scale).times(Bound::pow2(-52));
+    let coincidence_precision = output_precision.times(Bound::pow2(-128));
+    nacre_cip::judge_precision(pts, coincidence_precision)
 }
 
 /// One plane of the arrangement, indexed by a **dense** class id.
@@ -375,6 +428,8 @@ pub(crate) struct PlaneGeom {
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
+    /// Copied from the face table — see [`FaceInfo::judge_prec`].
+    pub(crate) judge_prec: usize,
 }
 
 /// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
@@ -409,6 +464,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
                 tri_pt3: pi.tri_pt3.clone(),
                 rotated: pi.rotated,
                 frame_sign: pi.orient_sign,
+                judge_prec: pi.judge_prec,
             }
         })
         .collect();

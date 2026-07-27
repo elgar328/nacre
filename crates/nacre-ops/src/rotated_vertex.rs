@@ -245,12 +245,19 @@ pub(crate) fn face_plane_witness(model: &Model, face: &Face) -> Result<[Pt3; 3],
         many => {
             // π is the candidate whose rotated plane carries every anchor (exact `orient3d`).
             // With no anchors this cannot be decided here, so defer honestly.
+            if anchors.is_empty() {
+                return Err(Pt3Error::PlaneUnderdetermined);
+            }
+            // No plane table exists yet, so the precision comes from the points at hand by the
+            // same derivation `plane_index_setup` uses — **once**, outside the loop. Deriving it
+            // per candidate realizes every anchor again, and a long rotation history makes that
+            // realization the expensive thing in the whole operation.
+            let prec = crate::planes::judge_precision_for_points(&anchors);
             for &pi in many {
                 if let Ok(wit) = rotated_witness(pi) {
-                    if !anchors.is_empty()
-                        && anchors
-                            .iter()
-                            .all(|a| orient3d_judge(a, &wit[0], &wit[1], &wit[2]) == Orient::Zero)
+                    if anchors
+                        .iter()
+                        .all(|a| orient3d_judge(a, &wit[0], &wit[1], &wit[2], prec) == Orient::Zero)
                     {
                         return Ok(wit);
                     }

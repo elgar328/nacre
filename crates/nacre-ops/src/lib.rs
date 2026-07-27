@@ -2312,6 +2312,7 @@ pub mod tests {
             face: fh,
             plane,
             tri,
+            judge_prec: 256,
             n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
@@ -3756,6 +3757,7 @@ pub mod tests {
         let tri = [origin, step(i), step(j)];
         PlaneGeom {
             base: crate::planes::BaseFrame::none(),
+            judge_prec: 256,
             surf,
             plane,
             tri,

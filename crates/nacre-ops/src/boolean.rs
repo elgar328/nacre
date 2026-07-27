@@ -344,7 +344,13 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
         }
         let tri = crate::tolerant::plane_def(planes, lf.plane_idx);
         let ex = [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)];
-        let nx = dir_orient3d_judge(ex, &tri[0], &tri[1], &tri[2]);
+        let nx = dir_orient3d_judge(
+            ex,
+            &tri[0],
+            &tri[1],
+            &tri[2],
+            planes[lf.plane_idx].judge_prec,
+        );
         let nx = if lf.flip {
             match nx {
                 Orient::Positive => Orient::Negative,
