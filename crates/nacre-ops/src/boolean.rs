@@ -358,7 +358,7 @@ fn component_is_outward_tol(
         let mut others = ps.iter().copied().filter(|&x| x != own);
         let o = others
             .next()
-            .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
+            .ok_or_else(|| reject(RejectReason::UnpairedSeamEdge))?;
         if others.any(|x| x != o) {
             return Err(reject(RejectReason::NonManifoldEdge)); // edge shared by >2 distinct planes
         }
@@ -379,7 +379,7 @@ fn component_is_outward_tol(
             let prev = other_plane(ring[(t + k - 1) % k], node, lf.plane_idx)?;
             let next = other_plane(node, ring[(t + 1) % k], lf.plane_idx)?;
             if prev == next {
-                return Err(reject(RejectReason::LoopOrientMismatch)); // a straight angle
+                return Err(reject(RejectReason::StraightAngle)); // a straight angle
             }
             let mut tri = [lf.plane_idx, prev, next];
             tri.sort_unstable();
@@ -402,7 +402,7 @@ fn component_is_outward_tol(
         match ord {
             Some(c) if c < 0 => lo = node,
             Some(_) => {}
-            None => return Err(reject(RejectReason::LoopOrientMismatch)), // two distinct nodes coincide
+            None => return Err(reject(RejectReason::CoincidentNodes)), // two distinct nodes coincide
         }
     }
 

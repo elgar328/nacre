@@ -45,3 +45,6 @@ mod sketch;
 
 #[path = "coverage/report.rs"]
 mod report;
+
+#[path = "coverage/fin_array.rs"]
+mod fin_array;

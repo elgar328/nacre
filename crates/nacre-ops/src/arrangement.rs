@@ -1116,7 +1116,7 @@ fn extract_cells(
             // Direction sign away from v toward the far end (edge_sign convention).
             let s = combinatorics::order_along(jd, wc, wall(he), rf, rv);
             if s == 0 {
-                return Err(reject(RejectReason::LoopOrientMismatch));
+                return Err(reject(RejectReason::CoincidentNodes));
             }
             edges.push((wall(he), s));
         }
@@ -1192,7 +1192,7 @@ fn extract_cells(
             return Ok((cells, face_of));
         }
     }
-    Err(reject(RejectReason::LoopOrientMismatch))
+    Err(reject(RejectReason::RingOrientation))
 }
 
 /// The nesting of an arrangement's cells: which winding `-1` contour is the unbounded root, and
@@ -1424,7 +1424,7 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
             if transversals > 0 {
                 // A graze coincident with a same-solid true crossing: the two disagree about
                 // whether the solid straddles here, and nothing says which to believe.
-                return Err(reject(RejectReason::LoopOrientMismatch));
+                return Err(reject(RejectReason::EdgeOccupancyConflict));
             }
             // ★ Grazes fill arcs, so take their **union** rather than requiring them to agree.
             // Two faces of one solid meeting *at* this edge each fill one side, and together they
@@ -1437,7 +1437,7 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
             }
         } else if !seated.is_empty() {
             if seated.iter().any(|&b| b != seated[0]) {
-                return Err(reject(RejectReason::LoopOrientMismatch)); // disagreeing seated sides
+                return Err(reject(RejectReason::EdgeOccupancyConflict)); // disagreeing seated sides
             }
             // seated wins over a coincident transversal: flip above if body_above, else below.
             mask[base + usize::from(!seated[0])] ^= true;
@@ -1446,7 +1446,7 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
             mask[base] ^= true;
             mask[base + 1] ^= true;
         } else if transversals > 1 {
-            return Err(reject(RejectReason::LoopOrientMismatch)); // >1 transversal, same solid
+            return Err(reject(RejectReason::EdgeOccupancyConflict)); // >1 transversal, same solid
         }
         // no contributions ⇒ solid absent from this edge ⇒ no flip.
     }
@@ -1500,13 +1500,13 @@ fn label_cells(
     let out: Vec<Label> = label
         .into_iter()
         .collect::<Option<_>>()
-        .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?; // a cell never reached
+        .ok_or_else(|| reject(RejectReason::UnreachedCell))?; // a cell never reached
     // Verify every edge (tree and non-tree): the flip relation must hold everywhere.
     for (he, &c) in face_of {
         let nb = face_of[&(he ^ 1)];
         let mask = edge_mask(&segs[he / 2].merged)?;
         if std::array::from_fn::<bool, 4, _>(|i| out[c][i] ^ mask[i]) != out[nb] {
-            return Err(reject(RejectReason::LoopOrientMismatch)); // inconsistent propagation
+            return Err(reject(RejectReason::LabelConflict)); // inconsistent propagation
         }
     }
     Ok(out)

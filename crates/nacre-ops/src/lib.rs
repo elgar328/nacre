@@ -138,22 +138,49 @@ pub enum RejectReason {
     /// not closed. Unlike [`Self::NonManifoldResultEdge`] this says nothing bad about the input:
     /// the assembly dropped a face, which is ours to fix. Unfired in the suite (2026-07-26).
     OpenResultShell,
-    /// A closed seam loop's edges disagree about which side its material lies on, or
-    /// two of its nodes coincide, or two neighbours share no plane pair.
+    // ---- the arrangement's own consistency checks ----
+    //
+    // These ten questions used to share one name, `LoopOrientMismatch`, raised from **22
+    // places** across three files — and its doc claimed it was unreachable, which measurement
+    // refuted. One label over that many questions makes a reject name a dead end: it says the
+    // engine is unhappy without saying about what, and a census cannot tell two causes apart.
+    // Each name below is one question, asked at one kind of place.
+    /// **Two distinct plane triples name the same point.** A vertex is named by the three planes
+    /// meeting there, so two names for one point means a **fourth** plane passes through it — the
+    /// arrangement then holds an edge with no direction, or a loop whose extreme vertex recurs.
     ///
-    /// A cross-check rather than a defence: the exact
-    /// predicate (`order_along`) and the orientation bookkeeping (`FaceInfo::n_out`
-    /// vs its plane's normal) must agree, edge by edge, and neither is assumed right.
-    /// It survives release on purpose. Downstream, `validate` catches a wrong loop and
-    /// `tessellate` catches a wrong *hole* — but a caller may run neither.
-    ///
-    /// It cannot catch a *globally* flipped loop: every edge would be wrong together.
-    /// A globally flipped loop would need a golden on the loop producer itself.
-    ///
-    /// Unreachable today: "material on the left" is a global property, so a consistent
-    /// loop makes every edge agree. Not dead code — relax `FourPlane` or cell 3c's
-    /// node-identity argument and this is what speaks first.
-    LoopOrientMismatch,
+    /// The same substrate limit [`Self::FourPlane`] names; this is where it surfaces on the
+    /// paths that do not run that check.
+    CoincidentNodes,
+    /// A ring's node names do not chain: two consecutive nodes share other than exactly the
+    /// class plane and one wall, or a node has no third plane to be named by.
+    RingNaming,
+    /// A ring is shorter than a triangle, so it bounds nothing and has no winding to read.
+    DegenerateRing,
+    /// **A corner with no turn**: the two edges meeting at a ring node run along one line
+    /// (their wall planes' determinant vanishes, or both edges name the same wall), so the loop
+    /// has no left or right there.
+    StraightAngle,
+    /// Two ring edges meet at more than one vertex, or at none, so which vertex the corner *is*
+    /// cannot be decided (a two-gon, or a self-bounded rim).
+    AmbiguousCorner,
+    /// A result face's edge is used by only one plane, so the boundary is open there. The
+    /// under-used twin of [`Self::NonManifoldEdge`], which is the over-used case.
+    UnpairedSeamEdge,
+    /// **Two facts about one edge disagree**: a graze coincident with a same-solid crossing, two
+    /// seated faces claiming opposite sides, or one solid crossing the same edge twice. Whichever
+    /// is right, nothing on that edge says which.
+    EdgeOccupancyConflict,
+    /// No assignment of the class's rings to cells leaves exactly one outer boundary per
+    /// component — the planar subdivision does not close into faces the way a subdivision must.
+    RingOrientation,
+    /// **A cell the inside/outside labels never reached.** Labels spread across shared edges, and
+    /// a component sharing none is bridged by its nesting host instead — so this says the host
+    /// was not found, and the cell has no side.
+    UnreachedCell,
+    /// Labels reached a cell two ways and disagreed, so the flip relation does not hold across
+    /// the whole complex.
+    LabelConflict,
     /// One face's trace on a plane class came back incomplete, so the arrangement cannot
     /// conclude — a consumer must not read "no segments" as "the plane misses the solid".
     /// `kind` says what the tracer could not do and `face` is the operand face it gave up on
@@ -391,7 +418,16 @@ impl RejectReason {
             Self::NonManifoldEdge => "non_manifold_edge",
             Self::NonManifoldResultEdge => "non_manifold_result_edge",
             Self::OpenResultShell => "open_result_shell",
-            Self::LoopOrientMismatch => "loop_orient_mismatch",
+            Self::CoincidentNodes => "coincident_nodes",
+            Self::RingNaming => "ring_naming",
+            Self::DegenerateRing => "degenerate_ring",
+            Self::StraightAngle => "straight_angle",
+            Self::AmbiguousCorner => "ambiguous_corner",
+            Self::UnpairedSeamEdge => "unpaired_seam_edge",
+            Self::EdgeOccupancyConflict => "edge_occupancy_conflict",
+            Self::RingOrientation => "ring_orientation",
+            Self::UnreachedCell => "unreached_cell",
+            Self::LabelConflict => "label_conflict",
             Self::TraceDeclined { .. } => "trace_declined",
             Self::CavityNoOwner => "cavity_no_owner",
             Self::NoOutwardShell => "no_outward_shell",
@@ -448,6 +484,14 @@ impl RejectReason {
             // The arrangement named a point that is not a point — a degenerate configuration the
             // substrate cannot describe, not a defect in the assembly.
             | Self::DegenerateWitness
+            // The substrate cannot name what this configuration asks it to name: a point with
+            // four planes through it, a ring it cannot chain, a corner with no turn, or an edge
+            // two facts disagree about.
+            | Self::CoincidentNodes
+            | Self::RingNaming
+            | Self::StraightAngle
+            | Self::AmbiguousCorner
+            | Self::EdgeOccupancyConflict
             | Self::NoClearRay
             | Self::PointOnRing
             | Self::HoleDepth
@@ -460,7 +504,13 @@ impl RejectReason {
             | Self::NoOutwardShell
             | Self::SeamAlias
             | Self::ZeroLengthEdge
-            | Self::LoopOrientMismatch
+            // The arrangement built something that is not a subdivision: a ring that bounds
+            // nothing, an edge used once, faces that will not close, a cell with no side.
+            | Self::DegenerateRing
+            | Self::UnpairedSeamEdge
+            | Self::RingOrientation
+            | Self::UnreachedCell
+            | Self::LabelConflict
             | Self::HoleRoots
             | Self::MissingSeam => RejectClass::SuspectedDefect,
         }

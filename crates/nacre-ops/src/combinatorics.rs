@@ -104,12 +104,12 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
             let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
             let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
             if shared.len() != 2 || !shared.contains(&p) {
-                return Err(reject(RejectReason::LoopOrientMismatch));
+                return Err(reject(RejectReason::RingNaming));
             }
             let wall = shared[usize::from(shared[0] == p)];
             let third = |t: [usize; 3]| t.iter().copied().find(|&x| x != p && x != wall);
             let (Some(from_h), Some(to_h)) = (third(a), third(b)) else {
-                return Err(reject(RejectReason::LoopOrientMismatch));
+                return Err(reject(RejectReason::RingNaming));
             };
             Ok(RingEdge {
                 node: a,
@@ -128,7 +128,7 @@ fn edge_sign(jd: &Judge<'_, PlaneGeom>, p: usize, e: &RingEdge) -> Result<i8, Bo
     match order_along(jd, p, e.wall, e.from_h, e.to_h) {
         -1 => Ok(1),
         1 => Ok(-1),
-        _ => Err(reject(RejectReason::LoopOrientMismatch)), // two nodes coincide
+        _ => Err(reject(RejectReason::CoincidentNodes)), // two nodes coincide
     }
 }
 
@@ -162,7 +162,7 @@ pub(crate) fn turn_at(
     let sb = edge_sign(jd, p, leaving)?;
     let det = jd.plane_pair_dir_sign(p, a, b);
     if det == 0 {
-        return Err(reject(RejectReason::LoopOrientMismatch));
+        return Err(reject(RejectReason::StraightAngle));
     }
     Ok(sa * sb * det * planes[p].frame_sign)
 }
@@ -263,7 +263,7 @@ fn loop_triples(
             .filter(|v| out_bounds.contains(v))
             .collect();
         let [vh] = shared[..] else {
-            return Err(reject(RejectReason::LoopOrientMismatch));
+            return Err(reject(RejectReason::AmbiguousCorner));
         };
         let mut classes: Vec<usize> = vertex_face_indices(vh, inc)
             .into_iter()
@@ -286,7 +286,8 @@ fn loop_triples(
             return Err(reject(if classes.len() > 3 {
                 RejectReason::FourPlane
             } else {
-                RejectReason::LoopOrientMismatch
+                // Fewer than three classes: there is no triple to name this vertex by.
+                RejectReason::RingNaming
             }));
         }
         // `plane_ix[p]`, not `p`. An earlier revision kept `p` raw because consumers still matched the
@@ -374,7 +375,7 @@ pub(crate) fn every_ray(
     let mut v = [v[0], v[1], v[2]];
     v.sort_unstable();
     if ring.len() < 3 {
-        return Err(reject(RejectReason::LoopOrientMismatch));
+        return Err(reject(RejectReason::DegenerateRing));
     }
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
@@ -385,7 +386,7 @@ pub(crate) fn every_ray(
         let qb = *v
             .iter()
             .find(|&&x| x != p && x != qa)
-            .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
+            .ok_or_else(|| reject(RejectReason::RingNaming))?;
         for dir in [1i8, -1] {
             let mut crossings = 0usize;
             for e in ring {
@@ -440,7 +441,7 @@ fn point_on_ring(
 ) -> Result<bool, BoolError> {
     v.sort_unstable();
     if ring.len() < 3 {
-        return Err(reject(RejectReason::LoopOrientMismatch));
+        return Err(reject(RejectReason::DegenerateRing));
     }
     for e in ring {
         let (r, si, sj) = (e.wall, e.from_h, e.to_h);
@@ -451,7 +452,7 @@ fn point_on_ring(
         let s = *v
             .iter()
             .find(|&&x| x != p && jd.plane_pair_dir_sign(p, r, x) != 0)
-            .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
+            .ok_or_else(|| reject(RejectReason::RingNaming))?;
         let (a, b) = (order_along(jd, p, r, s, si), order_along(jd, p, r, s, sj));
         if a * b <= 0 {
             return Ok(true); // between the endpoints (or on one)
@@ -585,7 +586,7 @@ pub(crate) fn loop_winding(
     ring: &[RingEdge],
 ) -> Result<i8, BoolError> {
     if ring.len() < 3 {
-        return Err(reject(RejectReason::LoopOrientMismatch));
+        return Err(reject(RejectReason::DegenerateRing));
     }
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
     // the running minimum just means "not strictly smaller", so keep it; do not reject.
@@ -605,7 +606,7 @@ pub(crate) fn loop_winding(
         i != lo && (0..3).all(|axis| jd.cmp_coord(ring[i].node, ring[lo].node, axis) == 0)
     });
     if pinched_extreme {
-        return Err(reject(RejectReason::LoopOrientMismatch));
+        return Err(reject(RejectReason::CoincidentNodes));
     }
     turn_at(jd, p, ring, lo)
 }
