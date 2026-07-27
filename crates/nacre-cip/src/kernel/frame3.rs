@@ -836,6 +836,62 @@ mod tests {
         Angle::from_deg(ri(n, d)).unwrap()
     }
 
+    /// **The design principle, as a test: raising the precision must actually narrow the bound.**
+    ///
+    /// The old declare-0 floor was a constant, so a deeper escalation bought a smaller threshold
+    /// only because `2⁻ᵖʳᵉᶜ` appeared in it — the *estimate* it multiplied never improved. A
+    /// computed radius has to do better than that, and if it did not, every "a deeper rung settles
+    /// nothing" measurement would be reporting a broken radius rather than a fact about the
+    /// geometry. So this pins the response directly: doubling the precision must take roughly a
+    /// factor of `2⁻ᵖʳᵉᶜ` off the radius, both for a realized coordinate and for a determinant
+    /// built out of several of them.
+    #[test]
+    fn a_deeper_precision_actually_narrows_the_radius() {
+        // A rotation with an irrational cos/sin, about a non-origin pivot, so the radius has
+        // every term in it: the trig bound, the pivot arithmetic, and the per-operation rounding.
+        let pt = |x: i128, y: i128, z: i128| {
+            Pt3::at([ri(x, 10), ri(y, 10), ri(z, 10)]).rotate_about(
+                Axis::Z,
+                deg(37, 1),
+                [ri(1, 3), ri(1, 7), ri(0, 1)],
+            )
+        };
+        let (a, b, c, d) = (pt(3, 5, 0), pt(11, 2, 4), pt(-7, 9, 13), pt(1, -6, 2));
+
+        let mut prev_coord: Option<i64> = None;
+        let mut prev_det: Option<i64> = None;
+        for prec in [256usize, 512, 1024, 2048] {
+            let coord = a.hp_coord(prec)[0]
+                .rad
+                .exp2()
+                .expect("a rotated coordinate is not exact, so its radius is not zero");
+            let det = det3_hp(&a, &b, &c, &d, prec)
+                .rad
+                .exp2()
+                .expect("a determinant over rotated points carries a radius");
+            if let (Some(pc), Some(pd)) = (prev_coord, prev_det) {
+                // Each step doubles `prec`, so the radius should drop by about that many binary
+                // orders. Demand most of it — the seed terms and the operation count add a
+                // constant offset that does not shrink, but it must not dominate.
+                let want = (prec / 2) as i64 - 32;
+                assert!(
+                    pc - coord >= want,
+                    "coordinate radius went 2^{pc} → 2^{coord} at {prec} bits: only {} orders, \
+                     wanted {want}. A radius that ignores precision makes the ladder meaningless.",
+                    pc - coord
+                );
+                assert!(
+                    pd - det >= want,
+                    "determinant radius went 2^{pd} → 2^{det} at {prec} bits: only {} orders, \
+                     wanted {want}",
+                    pd - det
+                );
+            }
+            prev_coord = Some(coord);
+            prev_det = Some(det);
+        }
+    }
+
     /// Deterministic PRNG (splitmix64) for reproducible stress corpora.
     fn splitmix64(state: &mut u64) -> u64 {
         *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);

@@ -24,8 +24,13 @@ use nacre_scalar::{Angle, Bound, Orient, Rat};
 /// conversion, and the combining arithmetic.
 pub(crate) const DA_F64: f64 = 16.0 * f64::EPSILON;
 
-/// Precision (bits) the orient2d judge escalates to before declaring 0.
-pub(crate) const JUDGE_PREC: usize = 200;
+/// Precision (bits) a judge escalates to before reporting that it cannot decide.
+///
+/// **A multiple of 64, because astro-float allocates whole words.** The previous value, `200`,
+/// was computed at 256 bits and then claimed as 200 — the 56 bits in between were paid for and
+/// thrown away. `the_trig_bound_holds_against_a_far_deeper_realization` measures exactly that
+/// gap: 2⁷ of slack at word-aligned precisions, 2⁶³ at 200.
+pub(crate) const JUDGE_PREC: usize = 256;
 
 /// A rational base point rotated about the origin by a rational `angle`. The
 /// `base` + `angle` are the exact **definition** (never lost); `coord` is the f64
