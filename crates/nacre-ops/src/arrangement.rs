@@ -1465,6 +1465,115 @@ fn trace_result_faces(
     Ok(local_faces)
 }
 
+/// One arrangement vertex a boolean named, with **every** plane through it.
+///
+/// `planes` is ground truth: it is found by asking every plane in the table whether it passes
+/// through the point, not by the rule the engine uses to notice concurrencies. That is the whole
+/// value of it — the discovery rule can then be measured against something other than itself.
+#[cfg(test)]
+#[derive(Debug, Clone)]
+pub(crate) struct Concurrency {
+    /// The plane class whose arrangement used the name.
+    pub wc: usize,
+    /// The name that class used for the point.
+    pub triple: [usize; 3],
+    /// Every plane through that point, sorted. Longer than 3 exactly when the point is concurrent.
+    pub planes: Vec<usize>,
+}
+
+/// Every **concurrent** vertex (four or more planes) the two solids' arrangement would name.
+///
+/// Runs the per-class front half — trace, merge, split — over **all** classes and keeps going past
+/// a decline, which the production driver cannot do: it returns at the first declined class, so on
+/// exactly the models that have concurrencies it would see one and stop. Both halves are called,
+/// not reimplemented, so what is observed is what the engine does.
+#[cfg(test)]
+pub(crate) fn concurrency_audit(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<Concurrency>, BoolError> {
+    let PlaneSetup {
+        planes: faces_tab,
+        surf_ix,
+        inc_a,
+        inc_b,
+        geom,
+        plane_ix,
+        ..
+    } = plane_index_setup(model, a, b)?;
+    let mut out = Vec::new();
+    for wc in 0..geom.len() {
+        let tr = trace_on_class(
+            model, a, b, wc, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
+        // Names this class used: segment endpoints, single-point touches, and — since a crossing
+        // the arrangement mints is a vertex too — the split's endpoints where it got that far.
+        let merged = merge_coincident(&tr.segs);
+        let mut names: Vec<[usize; 3]> = tr.touches.clone();
+        for s in merged.iter().chain(
+            split_at_crossings(&geom, wc, &merged)
+                .as_deref()
+                .unwrap_or(&[])
+                .iter(),
+        ) {
+            names.extend(s.end);
+        }
+        // ★ And the input the *trace's* rule actually sees: the operand faces' ring vertices.
+        // Emitted segment endpoints are named `[wc, wall, r]`, so they always mention `wc` and can
+        // never exercise the `wc ∉ t` branch — collecting only those measured nothing, which is
+        // what the "was the rule exercised?" counter in the driver test caught.
+        for (solid, inc) in [(a, &inc_a), (b, &inc_b)] {
+            let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
+                .into_iter()
+                .flat_map(|sh| model.shells.get(sh).faces.clone())
+                .collect();
+            for fh in face_handles {
+                let Some(&fp) = surf_ix.get(&fh) else {
+                    continue;
+                };
+                let mut rings =
+                    combinatorics::face_vertex_triples(model, fh, fp, inc, &geom, &plane_ix)
+                        .unwrap_or_default();
+                rings.extend(
+                    combinatorics::hole_rings(model, fh, fp, inc, &geom, &plane_ix)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .flatten(),
+                );
+                // Only vertices the class would actually name: those lying on it (`side == 0`),
+                // which is exactly the run condition the trace's rule fires under.
+                names.extend(
+                    rings
+                        .into_iter()
+                        .filter(|&t| combinatorics::side_of(&geom, sorted3(t), wc) == 0)
+                        .map(sorted3),
+                );
+            }
+        }
+        names.sort_unstable();
+        names.dedup();
+        for t in names {
+            if tolerant::t_plane_pair_dir_sign(&geom, t[0], t[1], t[2]) == 0 {
+                continue; // names no point, so "the planes through it" is not a question
+            }
+            let mut planes: Vec<usize> = t.to_vec();
+            planes.extend((0..geom.len()).filter(|q| {
+                !t.contains(q) && tolerant::t_orient3d(&geom, t[0], t[1], t[2], *q) == 0
+            }));
+            if planes.len() > 3 {
+                planes.sort_unstable();
+                out.push(Concurrency {
+                    wc,
+                    triple: t,
+                    planes,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// One plane class's **label-frame audit** (family #2 diagnostic): what each producer says about
 /// "above" on this class, plus how far the per-class pipeline gets. `#[cfg(test)]`, `pub(crate)`
 /// so the driver test can live in `crate::tests` where the two-solid fixtures are (the same reason

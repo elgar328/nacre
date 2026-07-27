@@ -2478,6 +2478,169 @@ pub mod tests {
         (m, a, b)
     }
 
+    /// The reported four-plane model: a unit cube with a block fused on its top, and a bar spun
+    /// `deg`° about an axis in the block's `x = 0.5` plane. At 45° with `half_z == 0.2` the bar's
+    /// half-width and its pivot-to-bottom offset are equal, so its bottom corner edge lands in that
+    /// plane and the y-planes cutting the edge become four-plane vertices.
+    fn four_plane_model(half_z: f64, deg: i128) -> (Model, Handle<Solid>, Handle<Solid>) {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let block = m.add_cuboid(
+            Point3::from_array([0.5, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
+        m.rebuild_adjacency();
+        let bar = m.add_cuboid(
+            Point3::from_array([0.3, -0.5, 1.0 - half_z]),
+            Point3::from_array([0.7, 1.5, 1.0 + half_z]),
+        );
+        m.rebuild_adjacency();
+        let bar = transform(
+            &mut m,
+            bar,
+            &Isometry::rotation(Rotation {
+                axis: Axis::Y,
+                point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
+                angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+            }),
+        )
+        .unwrap();
+        m.rebuild_adjacency();
+        (m, target, bar)
+    }
+
+    /// **What the corpus actually contains in the way of concurrent vertices — and whether the
+    /// engine's rule for noticing them is complete.**
+    ///
+    /// The four-plane work rests on one premise: a point's identity can be made a function of the
+    /// *set* of planes through it, because **every producer that meets the point derives the same
+    /// set**. Until now that was checked on a single model. This measures it against ground truth
+    /// (every plane asked, not the rule asking itself) over the whole fixture corpus.
+    ///
+    /// Two things are asserted, and the second is the load-bearing one:
+    ///
+    /// 1. **Exactly four.** No corpus point has five or more planes through it. That matters
+    ///    because it is what makes both discovery rules complete: the trace learns `{wc} ∪ t`, and
+    ///    with `|S| = 4` that *is* `S`. A five-plane point would leave it one short — so if this
+    ///    ever fires, the identity rule needs the full set from somewhere else, and the message
+    ///    says which model found it.
+    /// 2. **The trace's rule reproduces ground truth.** Wherever the trace would notice a
+    ///    concurrency (a name on class `wc` that does not mention `wc`), the set it would record
+    ///    equals the set every plane agrees on.
+    ///
+    /// The count is printed rather than pinned: this is a *measurement*, and a number here would
+    /// only pin today's fixture list.
+    #[test]
+    fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
+        let mut boxed: Vec<(String, Model, Handle<Solid>, Handle<Solid>)> = Vec::new();
+        macro_rules! fixture {
+            ($name:ident) => {{
+                let (m, a, b) = $name();
+                boxed.push((stringify!($name).to_string(), m, a, b));
+            }};
+        }
+        fixture!(two_boxes);
+        fixture!(nested_boxes);
+        fixture!(cube_and_notch);
+        fixture!(stacked_cubes);
+        fixture!(l_and_corner_box);
+        fixture!(l_and_reflex_box);
+        fixture!(l_and_inner_box);
+        fixture!(l_and_popup_box);
+        fixture!(l_and_notch_bar);
+        fixture!(l_and_ell_stub);
+        fixture!(l_and_staple);
+        fixture!(l_and_dimple);
+        fixture!(l_and_rod);
+        fixture!(u_and_slab);
+        // ...and the same shapes tilted, since a rotated operand is where concurrencies actually
+        // turn up: an axis-aligned corpus would measure the easy half and call it the whole.
+        macro_rules! tilted {
+            ($name:ident) => {{
+                let (mut m, a, b) = $name();
+                let iso = rot_iso(nacre_scalar::Axis::Z, 30);
+                let a = transform(&mut m, a, &iso).unwrap();
+                m.rebuild_adjacency();
+                let b = transform(&mut m, b, &iso).unwrap();
+                m.rebuild_adjacency();
+                boxed.push((format!("{} (tilted)", stringify!($name)), m, a, b));
+            }};
+        }
+        tilted!(two_boxes);
+        tilted!(nested_boxes);
+        tilted!(cube_and_notch);
+        tilted!(stacked_cubes);
+        tilted!(l_and_corner_box);
+        tilted!(l_and_reflex_box);
+        tilted!(l_and_inner_box);
+        tilted!(l_and_popup_box);
+        tilted!(l_and_notch_bar);
+        tilted!(l_and_ell_stub);
+        tilted!(l_and_staple);
+        tilted!(l_and_dimple);
+        tilted!(l_and_rod);
+        tilted!(u_and_slab);
+
+        // ★ And the models that actually have one. Without these the sweep asserts nothing: the
+        // corpus above turns out to carry **no** concurrent vertex at all, so it can measure the
+        // blast radius of the coming stages but not the discovery rule. These are the reported
+        // model (a bar spun 45° whose bottom corner edge lands in the block's x = 0.5 plane) and
+        // its variants; `rejects.rs` pins the same shape from outside.
+        for (label, half_z, deg) in [
+            ("four_plane (the reported model)", 0.2, 45),
+            ("four_plane at 44 deg (a near miss)", 0.2, 44),
+            ("four_plane, taller bar (a near miss)", 0.3, 45),
+        ] {
+            let (m, t, bar) = four_plane_model(half_z, deg);
+            boxed.push((label.to_string(), m, t, bar));
+        }
+
+        let (mut with_any, mut total, mut trace_rule_checked) = (0usize, 0usize, 0usize);
+        for (name, m, a, b) in &boxed {
+            let found = arrangement::concurrency_audit(m, *a, *b).unwrap();
+            if !found.is_empty() {
+                with_any += 1;
+            }
+            total += found.len();
+            for c in &found {
+                assert_eq!(
+                    c.planes.len(),
+                    4,
+                    "{name}: a {}-plane point at {:?} — the trace learns only `{{wc}} ∪ t`, \
+                     which is four names at most, so this one would be discovered incomplete",
+                    c.planes.len(),
+                    c.planes
+                );
+                if !c.triple.contains(&c.wc) {
+                    trace_rule_checked += 1;
+                    let mut derived = c.triple.to_vec();
+                    derived.push(c.wc);
+                    derived.sort_unstable();
+                    assert_eq!(
+                        derived, c.planes,
+                        "{name}: on class {} the trace would record {derived:?} for the point \
+                         named {:?}, but every plane says {:?}",
+                        c.wc, c.triple, c.planes
+                    );
+                }
+            }
+        }
+        println!(
+            "concurrency audit: {with_any}/{} fixtures carry a concurrent vertex, {total} in total",
+            boxed.len()
+        );
+        // A sweep that quietly stops finding anything reads as agreement, so say what was actually
+        // exercised — and fail if the load-bearing assertion never ran.
+        assert!(
+            trace_rule_checked > 0,
+            "no observation reached the trace's discovery condition, so the rule was not measured"
+        );
+        println!("  of which {trace_rule_checked} exercised the trace's discovery rule");
+    }
+
     /// **Every producer states its side in the label frame** — the invariant family #2 restored,
     /// swept over the whole two-solid corpus (prints the interesting classes with `--nocapture`).
     ///
