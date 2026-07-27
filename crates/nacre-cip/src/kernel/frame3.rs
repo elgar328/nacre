@@ -758,7 +758,7 @@ fn indirect_hp(
     r: [HpIv; 3],
     s: [HpIv; 3],
     prec: usize,
-) -> (HpIv, HpIv) {
+) -> (HpIv, HpIv, Option<Bound>) {
     let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
     let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
     let add = |x: &HpIv, y: &HpIv| x.add(y, prec);
@@ -779,7 +779,27 @@ fn indirect_hp(
         &add(&mul(&row1[0], &cross[0]), &mul(&row1[1], &cross[1])),
         &mul(&row1[2], &cross[2]),
     );
-    (d, m)
+    let gap = plane_gap(&m, &d, &cross, prec);
+    (d, m, gap)
+}
+
+/// **How far the implicit point may be from the triangle's plane**, in the model's own units.
+///
+/// `row1 = Dvec − D·s = D·(V − s)` and `M = row1 · cross`, so `M = D · (V−s)·cross`. The signed
+/// distance from `V` to the plane through `q, r, s` is `(V−s)·n̂ = (V−s)·cross / |cross|`, hence
+///
+/// ```text
+///     distance = M / (|D| · |cross|)
+/// ```
+///
+/// Both denominators are needed: `|D|` because `V` is `Dvec/D` and the point's coordinates carry
+/// that division, `|cross|` because the dot product carries the triangle's area. Bounded above
+/// from `M`'s radius and below by the denominators' own lower bounds. `None` when either cannot
+/// be kept away from zero — three near-parallel planes have no well-defined meeting point, and a
+/// degenerate triangle no plane.
+fn plane_gap(m: &HpIv, d: &HpIv, cross: &[HpIv; 3], prec: usize) -> Option<Bound> {
+    let d_lo = super::interval::lb(&d.mid)?.minus(d.rad)?;
+    distance_bound(m.rad, cross, prec)?.over(d_lo)
 }
 
 /// CIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
@@ -808,7 +828,7 @@ pub fn indirect_orient3d_judge(
     // Escalate: the same two determinants at prec, each carrying the radius accumulated
     // along its own computation. A determinant whose interval straddles zero is undecided.
     let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-    let (d, m) = indirect_hp(
+    let (d, m, _gap) = indirect_hp(
         [ph(plane_a), ph(plane_b), ph(plane_c)],
         q.hp_coord(prec),
         r.hp_coord(prec),
@@ -859,12 +879,36 @@ fn cmp_filter(a: [[Iv; 4]; 3], b: [[Iv; 4]; 3], axis: usize) -> Option<Orient> {
 /// its own interval; `Orient::Zero` if any straddles zero (the two coordinates are equal, or too
 /// close to separate at this precision).
 fn cmp_hp(a: [[HpIv; 4]; 3], b: [[HpIv; 4]; 3], axis: usize, prec: usize) -> Orient {
+    cmp_hp_with_gap(a, b, axis, prec).0
+}
+
+/// [`cmp_hp`], and **how far apart the two coordinates may be** in the model's own units.
+///
+/// Each implicit point's coordinate is `Dvec[axis]/D` (Cramer), so their difference is
+/// `M / (D_a · D_b)` — a length, once divided. `M` alone is not: it carries both denominators, so
+/// a threshold applied to it would move with the planes' scaling. The gap is `None` when either
+/// denominator cannot be bounded away from zero, which is the near-parallel-planes case where
+/// the implicit point itself is not well defined.
+fn cmp_hp_with_gap(
+    a: [[HpIv; 4]; 3],
+    b: [[HpIv; 4]; 3],
+    axis: usize,
+    prec: usize,
+) -> (Orient, Option<Bound>) {
     let (da, dva) = cramer_hp(a, prec);
     let (db, dvb) = cramer_hp(b, prec);
     let m = dva[axis]
         .mul(&db, prec)
         .sub(&dvb[axis].mul(&da, prec), prec);
-    cmp_combine(m.sign(), da.sign(), db.sign()).unwrap_or(Orient::Zero)
+    let o = cmp_combine(m.sign(), da.sign(), db.sign()).unwrap_or(Orient::Zero);
+    (o, coord_gap(&m, &da, &db))
+}
+
+/// `|M| / |D_a · D_b|`, the separation `M` stands for — bounded above from `M`'s own radius, and
+/// below by the denominators' lower bounds (dividing by an upper bound would understate the gap).
+fn coord_gap(m: &HpIv, da: &HpIv, db: &HpIv) -> Option<Bound> {
+    let denom = |d: &HpIv| super::interval::lb(&d.mid)?.minus(d.rad);
+    m.rad.over(denom(da)?.times(denom(db)?))
 }
 
 /// CIP indirect `cmp_coord`: the sign of `a[axis] − b[axis]` where `a`, `b` are the
@@ -934,11 +978,43 @@ pub fn dir_sign_judge(
         return orient_of(pos);
     }
     let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-    let (dh, _) = cramer_hp([ph(a), ph(b), ph(c)], prec);
+    let planes = [ph(a), ph(b), ph(c)];
+    let (dh, _) = cramer_hp(planes.clone(), prec);
+    let _ = dir_gap(&dh, &planes, prec);
     match dh.sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }
+}
+
+/// **How far three plane normals are from being coplanar — as an angle, not a length.**
+///
+/// The other judges reduce to a distance; this one cannot, because it asks a question about
+/// *directions*: whether three planes share a common line direction. Its determinant is the
+/// triple product of the normals, which carries each normal's own magnitude — and those are
+/// arbitrary, since a plane's coefficients may be scaled freely. Dividing by `|n_a||n_b||n_c|`
+/// leaves the triple product of the **unit** normals, which is dimensionless and, near zero, is
+/// the sine of the angle by which the third normal misses the other two's plane.
+///
+/// A caller compares it against `coincidence_precision / scale`: the angle a deviation of the
+/// coincidence limit subtends across the model. `None` when a normal cannot be bounded away from
+/// zero — a degenerate plane has no direction to be off by.
+fn dir_gap(d: &HpIv, planes: &[[HpIv; 4]; 3], prec: usize) -> Option<Bound> {
+    let mut denom = Bound::of(1.0);
+    for p in planes {
+        // `|n| ≥ max|n_k|`, which is enough and needs no square root.
+        let mut lo = Bound::ZERO;
+        for c in p.iter().take(3) {
+            if let Some(b) = super::interval::lb(&c.mid).and_then(|l| l.minus(c.rad)) {
+                if lo.lt(b) {
+                    lo = b;
+                }
+            }
+        }
+        denom = denom.times(lo);
+    }
+    let _ = prec;
+    d.rad.over(denom)
 }
 
 #[cfg(test)]
@@ -1061,28 +1137,203 @@ mod tests {
                         u[2].mul(&v[0], prec).sub(&u[0].mul(&v[2], prec), prec),
                         u[0].mul(&v[1], prec).sub(&u[1].mul(&v[0], prec), prec),
                     ];
-                    let norm = cross
-                        .iter()
-                        .map(|k| {
-                            let f = bf_mag(&k.mid);
-                            f * f
-                        })
-                        .sum::<f64>()
-                        .sqrt();
-                    let got = bf_mag(&det.mid) / norm;
-                    let want = hn as f64 / hd as f64;
-                    // `bf_mag` is a power-of-two magnitude, so the comparison is by exponent —
-                    // enough to catch a factor of the triangle span or the model scale, which is
-                    // what this is for.
-                    let ratio = got / want;
+                    // Squared, so no square root is needed: `det² / |cross|²` must be `h²`.
+                    let sq = |x: &BigFloat| x.mul(x, prec, HP_RM);
+                    let norm2 = cross.iter().fold(BigFloat::from_f64(0.0, prec), |acc, k| {
+                        acc.add(&sq(&k.mid), prec, HP_RM)
+                    });
+                    let got = sq(&det.mid).div(&norm2, prec, HP_RM);
+                    let h = BigFloat::from_i128(hn, prec).div(
+                        &BigFloat::from_i128(hd, prec),
+                        prec,
+                        HP_RM,
+                    );
+                    let err = rel_err(&got, &sq(&h), prec);
                     assert!(
-                        (0.25..=4.0).contains(&ratio),
-                        "scale {scale}, h {hn}/{hd}, triangle span {tri_span}: normalized value \
-                         {got:e} is not the height {want:e} (off by {ratio:e})"
+                        err < 1e-6,
+                        "scale {scale}, h {hn}/{hd}, triangle span {tri_span}: the normalized \
+                         value is not the height (relative error {err:e})"
                     );
                 }
             }
         }
+    }
+
+    /// **Is `cmp_coord`'s normalized value actually a coordinate difference?**
+    ///
+    /// The same trap as the orient3d height: `M` alone carries both Cramer denominators, so a
+    /// threshold applied to it moves when the planes are scaled — and the sign, which is all the
+    /// suite checks, does not move at all. Two implicit points a **known** distance apart, with
+    /// the plane coefficients deliberately scaled by 1000 (which multiplies `M` by 10⁹ and must
+    /// leave the gap untouched).
+    #[test]
+    fn the_normalized_cmp_is_a_coordinate_difference() {
+        let prec = 256;
+        for (gn, gd) in [(1i128, 1i128), (7, 100), (1, 1_000_000_000)] {
+            for k in [1i128, 1_000] {
+                // x = 0, y = 0, z = 0  and  x = 0, y = 0, z = g: two points on the z axis, `g`
+                // apart. Coefficients scaled by `k` — the same planes, differently written.
+                let pl = |c: [i128; 4]| {
+                    [
+                        HpIv::exact(BigFloat::from_i128(c[0] * k, prec)),
+                        HpIv::exact(BigFloat::from_i128(c[1] * k, prec)),
+                        HpIv::exact(BigFloat::from_i128(c[2] * k, prec)),
+                        // `d` carries the offset, which must not be scaled away: `g = gn/gd`.
+                        HpIv::new(
+                            BigFloat::from_i128(c[3] * k, prec).div(
+                                &BigFloat::from_i128(gd, prec),
+                                prec,
+                                HP_RM,
+                            ),
+                            Bound::ZERO,
+                        ),
+                    ]
+                };
+                let x0 = pl([1, 0, 0, 0]);
+                let y0 = pl([0, 1, 0, 0]);
+                let z0 = pl([0, 0, 1, 0]);
+                let zg = pl([0, 0, 1, -gn]); // z = gn/gd
+                let (da, dva) = cramer_hp([x0.clone(), y0.clone(), z0], prec);
+                let (db, dvb) = cramer_hp([x0, y0, zg], prec);
+                let m = dva[2].mul(&db, prec).sub(&dvb[2].mul(&da, prec), prec);
+                // The midpoint version of `coord_gap`: |M| / |D_a·D_b| must be the separation.
+                let got = m
+                    .mid
+                    .div(&da.mid.mul(&db.mid, prec, HP_RM), prec, HP_RM)
+                    .abs();
+                let want =
+                    BigFloat::from_i128(gn, prec).div(&BigFloat::from_i128(gd, prec), prec, HP_RM);
+                let err = rel_err(&got, &want, prec);
+                assert!(
+                    err < 1e-6,
+                    "gap {gn}/{gd}, coefficients scaled by {k}: the normalized value is not the \
+                     separation (relative error {err:e})"
+                );
+            }
+        }
+    }
+
+    /// **Is the indirect orient3d's normalized value a point-to-plane distance?**
+    ///
+    /// This one carries *two* denominators — `|D|` because the implicit point is `Dvec/D`, and
+    /// `|cross|` because the dot product carries the triangle's area — so there are two separate
+    /// ways for it to stop being a length. The fixture scales each independently: the plane
+    /// coefficients by `k` (which moves `D`) and the query triangle by `t` (which moves `cross`),
+    /// while the true distance stays put.
+    #[test]
+    fn the_normalized_indirect_orient3d_is_a_distance() {
+        let prec = 256;
+        let big = |v: i128| HpIv::exact(BigFloat::from_i128(v, prec));
+        for (hn, hd) in [(1i128, 1i128), (3, 100), (1, 1_000_000)] {
+            for k in [1i128, 1_000] {
+                for t in [1i128, 1_000] {
+                    // V = ∩(x=0, y=0, z=h) sits `h` above the plane z = 0 through the triangle
+                    // (0,0,0), (t,0,0), (0,t,0).
+                    let pl = |c: [i128; 3], d: (i128, i128)| {
+                        [
+                            big(c[0] * k),
+                            big(c[1] * k),
+                            big(c[2] * k),
+                            HpIv::new(
+                                BigFloat::from_i128(d.0 * k, prec).div(
+                                    &BigFloat::from_i128(d.1, prec),
+                                    prec,
+                                    HP_RM,
+                                ),
+                                Bound::ZERO,
+                            ),
+                        ]
+                    };
+                    let planes = [
+                        pl([1, 0, 0], (0, 1)),
+                        pl([0, 1, 0], (0, 1)),
+                        pl([0, 0, 1], (-hn, hd)),
+                    ];
+                    let pt = |x: i128, y: i128| [big(x), big(y), big(0)];
+                    let (d, m, _) = indirect_hp(planes, pt(t, 0), pt(0, t), pt(0, 0), prec);
+                    // |M| / (|D| · |cross|); `cross` here is (t,0,0)×(0,t,0) = (0,0,t²).
+                    // `cross` here is (t,0,0)×(0,t,0) = (0,0,t²), so `|cross| = t²`.
+                    let norm = BigFloat::from_i128(t * t, prec);
+                    let got = m.mid.div(&d.mid.mul(&norm, prec, HP_RM), prec, HP_RM).abs();
+                    let want = BigFloat::from_i128(hn, prec).div(
+                        &BigFloat::from_i128(hd, prec),
+                        prec,
+                        HP_RM,
+                    );
+                    let err = rel_err(&got, &want, prec);
+                    assert!(
+                        err < 1e-6,
+                        "h {hn}/{hd}, coefficients x{k}, triangle x{t}: the normalized value is \
+                         not the distance (relative error {err:e})"
+                    );
+                }
+            }
+        }
+    }
+
+    /// **Is `dir_sign`'s normalized value an angle?**
+    ///
+    /// This is the one judge whose answer is not a length: it asks whether three plane normals
+    /// are coplanar, and its determinant carries each normal's magnitude — which is arbitrary,
+    /// since a plane's coefficients scale freely. Normals `(1,0,0)`, `(0,1,0)`, `(0,1,ε)` miss
+    /// coplanarity by `ε/√(1+ε²)` in sine; scaling any coefficient set must leave that alone,
+    /// and without the normalization it does not.
+    #[test]
+    fn the_normalized_dir_sign_is_an_angle() {
+        let prec = 256;
+        let big = |v: i128| HpIv::exact(BigFloat::from_i128(v, prec));
+        for (en, ed) in [(1i128, 1i128), (1, 1_000), (1, 1_000_000_000)] {
+            for k in [1i128, 1_000] {
+                let eps = HpIv::new(
+                    BigFloat::from_i128(en * k, prec).div(
+                        &BigFloat::from_i128(ed, prec),
+                        prec,
+                        HP_RM,
+                    ),
+                    Bound::ZERO,
+                );
+                let planes = [
+                    [big(1), big(0), big(0), big(0)],
+                    [big(0), big(1), big(0), big(0)],
+                    [big(0), big(k), eps, big(0)],
+                ];
+                let (d, _) = cramer_hp(planes.clone(), prec);
+                // |D| / (|n_a||n_b||n_c|), with each |n| taken as its largest component.
+                // Squared again, so the three norms need no square root: `D² / Π|n|²` is `sin²`.
+                let sq = |x: &BigFloat| x.mul(x, prec, HP_RM);
+                let norm2 = planes.iter().fold(BigFloat::from_f64(1.0, prec), |acc, p| {
+                    let n2 = (0..3).fold(BigFloat::from_f64(0.0, prec), |a, i| {
+                        a.add(&sq(&p[i].mid), prec, HP_RM)
+                    });
+                    acc.mul(&n2, prec, HP_RM)
+                });
+                let got = sq(&d.mid).div(&norm2, prec, HP_RM);
+                let sine =
+                    BigFloat::from_i128(en, prec).div(&BigFloat::from_i128(ed, prec), prec, HP_RM);
+                // The exact sine of the miss is `ε/√(1+ε²)` — `ε` only for small `ε`, and the
+                // fixture spans up to `ε = 1` where the two differ by √2. Squared: `ε²/(1+ε²)`.
+                let s2 = sq(&sine);
+                let want2 = s2.div(
+                    &s2.add(&BigFloat::from_f64(1.0, prec), prec, HP_RM),
+                    prec,
+                    HP_RM,
+                );
+                let err = rel_err(&got, &want2, prec);
+                assert!(
+                    err < 1e-6,
+                    "sine {en}/{ed}, coefficients x{k}: the normalized value is not the angle \
+                     (relative error {err:e})"
+                );
+            }
+        }
+    }
+
+    /// Relative error of `got` against `want`, as an `f64` magnitude — computed **in astro-float**
+    /// so the comparison is not limited by `bf_mag`'s power-of-two rounding. Used by the
+    /// normalization tests, where a factor-of-two slop would hide a real units error.
+    fn rel_err(got: &BigFloat, want: &BigFloat, prec: usize) -> f64 {
+        let d = got.sub(want, prec, HP_RM);
+        bf_mag(&d.abs()) / bf_mag(&want.abs())
     }
 
     /// Deterministic PRNG (splitmix64) for reproducible stress corpora.
@@ -1474,7 +1725,7 @@ mod tests {
     ) -> Option<Orient> {
         let at = |prec: usize| -> Orient {
             let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-            let (d, m) = indirect_hp(
+            let (d, m, _gap) = indirect_hp(
                 [ph(pa), ph(pb), ph(pc)],
                 q.hp_coord(prec),
                 r.hp_coord(prec),
