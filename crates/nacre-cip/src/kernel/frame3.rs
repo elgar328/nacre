@@ -617,7 +617,8 @@ fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> 
 /// The astro-float Cramer parts of `V = ∩(planes)` at `prec` bits: `(D, Dvec, mag_d,
 /// mag_dvec)` — the determinant, its numerator vector, and the cancellation-free
 /// magnitude bounds of each (for the declare-0 floors). Shared by [`indirect_hp`]
-/// (orient3d, which ignores `mag_dvec`) and [`cmp_hp`] (cmp_coord).
+/// (orient3d) and [`cmp_hp`] (cmp_coord) — both need `mag_dvec` to bound a term the other one
+/// cancels into.
 fn cramer_hp(planes: [[BigFloat; 4]; 3], prec: usize) -> (BigFloat, [BigFloat; 3], f64, [f64; 3]) {
     let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
     let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
@@ -691,7 +692,7 @@ fn indirect_hp(
     let sub = |x: &BigFloat, y: &BigFloat| x.sub(y, prec, HP_RM);
     let mul = |x: &BigFloat, y: &BigFloat| x.mul(y, prec, HP_RM);
     let add = |x: &BigFloat, y: &BigFloat| x.add(y, prec, HP_RM);
-    let (d, dvec, mag_d, _mag_dvec) = cramer_hp(planes, prec);
+    let (d, dvec, mag_d, mag_dvec) = cramer_hp(planes, prec);
     let row1 = [
         sub(&dvec[0], &mul(&d, &s[0])),
         sub(&dvec[1], &mul(&d, &s[1])),
@@ -708,9 +709,37 @@ fn indirect_hp(
         &add(&mul(&row1[0], &cross[0]), &mul(&row1[1], &cross[1])),
         &mul(&row1[2], &cross[2]),
     );
-    let mag_m = bf_mag(&row1[0]) * bf_mag(&cross[0])
-        + bf_mag(&row1[1]) * bf_mag(&cross[1])
-        + bf_mag(&row1[2]) * bf_mag(&cross[2]);
+    // ★ The term scale must be **cancellation-free**, and reading it off `row1`/`cross` is not:
+    // those are subtractions, so where they cancel the scale collapses with them — and that is
+    // exactly the degenerate configuration the floor exists to catch. Measured: a query point
+    // coinciding with the implicit point left `|row1| ~ 1e-77`, a floor of `1e-131`, and a
+    // confident sign on what was only rounding residue, while two other ways of asking the same
+    // question returned zero. The scale is therefore accumulated along the computation, the way
+    // `cmp_hp` right below already does it; `cramer_hp` computes `mag_dvec` for this and it used
+    // to be discarded here.
+    let mag = bf_mag;
+    let mag_row1 = [
+        mag_dvec[0] + mag_d * mag(&s[0]),
+        mag_dvec[1] + mag_d * mag(&s[1]),
+        mag_dvec[2] + mag_d * mag(&s[2]),
+    ];
+    let mag_dq = [
+        mag(&q[0]) + mag(&s[0]),
+        mag(&q[1]) + mag(&s[1]),
+        mag(&q[2]) + mag(&s[2]),
+    ];
+    let mag_dr = [
+        mag(&r[0]) + mag(&s[0]),
+        mag(&r[1]) + mag(&s[1]),
+        mag(&r[2]) + mag(&s[2]),
+    ];
+    let mag_cross = [
+        mag_dq[1] * mag_dr[2] + mag_dq[2] * mag_dr[1],
+        mag_dq[2] * mag_dr[0] + mag_dq[0] * mag_dr[2],
+        mag_dq[0] * mag_dr[1] + mag_dq[1] * mag_dr[0],
+    ];
+    let mag_m =
+        mag_row1[0] * mag_cross[0] + mag_row1[1] * mag_cross[1] + mag_row1[2] * mag_cross[2];
     (d, m, mag_d, mag_m)
 }
 
@@ -1286,6 +1315,14 @@ mod tests {
     /// The high-precision indirect truth with a stability flag: `None` if even the
     /// ground truth cannot resolve `D` or `M` above its floor (a genuine degeneracy).
     #[allow(clippy::too_many_arguments)]
+    /// Ground truth for the indirect judge — and **not** by running the judge harder.
+    ///
+    /// It used to call `sign_with_floor` with the judge's own `mag`, differing only in precision.
+    /// A floor that is wrong is then wrong identically in both, so the two agree and the test
+    /// passes: the oracle shared the defect it existed to find, which is how the `mag`-collapse
+    /// bug survived a soundness suite. Here the verdict comes from **comparing two precisions**
+    /// instead: a sign is trusted only when `prec` and `2·prec` produce the same nonzero sign, and
+    /// anything else is `None` (not asserted against). That borrows no formula from the judge.
     fn indirect_truth(
         pa: (&Pt3, &Pt3, &Pt3),
         pb: (&Pt3, &Pt3, &Pt3),
@@ -1295,18 +1332,27 @@ mod tests {
         s: &Pt3,
         prec: usize,
     ) -> Option<Orient> {
-        let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-        let (d, m, mag_d, mag_m) = indirect_hp(
-            [ph(pa), ph(pb), ph(pc)],
-            q.hp_coord(prec),
-            r.hp_coord(prec),
-            s.hp_coord(prec),
-            prec,
-        );
-        combine(
-            sign_with_floor(&d, mag_d, prec),
-            sign_with_floor(&m, mag_m, prec),
-        )
+        let at = |prec: usize| -> Orient {
+            let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+            let (d, m, _, _) = indirect_hp(
+                [ph(pa), ph(pb), ph(pc)],
+                q.hp_coord(prec),
+                r.hp_coord(prec),
+                s.hp_coord(prec),
+                prec,
+            );
+            // Raw signs, no floor: the agreement between two precisions is what filters noise.
+            let raw = |x: &BigFloat| {
+                if x.is_zero() {
+                    None
+                } else {
+                    Some(x.is_positive())
+                }
+            };
+            combine(raw(&d), raw(&m)).unwrap_or(Orient::Zero)
+        };
+        let (lo, hi) = (at(prec), at(2 * prec));
+        (lo == hi && lo != Orient::Zero).then_some(lo)
     }
 
     /// H-b — rotated plane coefficient tol soundness. A plane's four coefficients
@@ -1340,6 +1386,82 @@ mod tests {
         }
         eprintln!("[H-b N={N}] coefficient tol violations: {bad}; worst tightness: {worst:.3}");
         assert_eq!(bad, 0, "plane coefficient tol must bound the error");
+    }
+
+    /// **Asking one question four ways must give one answer.**
+    ///
+    /// Four planes through a common point are concurrent or they are not, and that fact does not
+    /// depend on which three of them you call "the point" and which one you call "the query". The
+    /// judge is free to *abstain* — but not to say `Positive` for one splitting and `Zero` for
+    /// another, because then two callers reading the same geometry disagree, and the arrangement
+    /// enters one vertex twice.
+    ///
+    /// **The corpus is built, not sampled.** Random points never place a query vertex *on* the
+    /// implicit point, and that coincidence is the whole difficulty: it makes `row1 = D·(V − s)`
+    /// cancel to nothing. Here every plane is spanned by the shared point `p` and two others, so
+    /// `p` is both the meet of any three and a defining point of the fourth — the exact shape the
+    /// engine hits when a tool edge lands in a target plane.
+    #[test]
+    fn one_concurrency_read_four_ways_gives_one_answer() {
+        let mut st = 0x5EED_1234_ABCD_9999u64;
+        let mut checked = 0usize;
+        for _ in 0..200 {
+            // A rotated common point, and four planes each spanned by it and two more.
+            let axis = axis_of(rng(&mut st, 0, 2));
+            let ang = deg(rng(&mut st, 1, 359_000), rng(&mut st, 1, 997)); // inexact ⇒ toleranced
+            let pivot = rand_base(&mut st);
+            let turn = |b: [Rat; 3], st: &mut u64| {
+                let _ = st;
+                Pt3::at(b).rotate_about(axis, ang, pivot)
+            };
+            let p = turn(rand_base(&mut st), &mut st);
+            let spans: Vec<[Pt3; 2]> = (0..4)
+                .map(|_| {
+                    [
+                        turn(rand_base(&mut st), &mut st),
+                        turn(rand_base(&mut st), &mut st),
+                    ]
+                })
+                .collect();
+            let plane = |i: usize| (&p, &spans[i][0], &spans[i][1]);
+
+            // Every way of choosing which three planes make the point and which one is queried.
+            let mut verdicts = Vec::new();
+            for q in 0..4 {
+                let tri: Vec<usize> = (0..4).filter(|&i| i != q).collect();
+                // Skip a splitting whose three planes do not meet at a single point at all.
+                if dir_sign_judge(plane(tri[0]), plane(tri[1]), plane(tri[2])) == Orient::Zero {
+                    continue;
+                }
+                // `p` goes in the **third** slot: `indirect_hp` forms `row1 = Dvec − D·s` from
+                // that one, so putting the shared point there is what makes the subtraction cancel
+                // — the configuration the engine actually hit. With `p` first the term stays
+                // healthy and the corpus measures nothing.
+                let t = plane(q);
+                verdicts.push(indirect_orient3d_judge(
+                    plane(tri[0]),
+                    plane(tri[1]),
+                    plane(tri[2]),
+                    t.1,
+                    t.2,
+                    t.0,
+                ));
+            }
+            if verdicts.len() < 2 {
+                continue; // nothing to compare
+            }
+            checked += 1;
+            assert!(
+                verdicts.iter().all(|v| *v == verdicts[0]),
+                "the same concurrency read four ways: {verdicts:?}"
+            );
+        }
+        // A sweep that quietly stops constructing anything reads as agreement.
+        assert!(
+            checked > 20,
+            "only {checked} configurations were comparable"
+        );
+        eprintln!("[form-invariance] {checked} concurrent configurations, all splittings agreed");
     }
 
     /// H-c — indirect orient3d soundness over heterogeneous provenance (corpus A) and a
@@ -1478,6 +1600,34 @@ mod tests {
                 &r,
                 &s,
             );
+        }
+
+        // Corpus C — a **constructed** four-plane concurrency, because a random one never happens
+        // and this is the configuration that matters: every plane is spanned by one shared point
+        // `p` and two others, so `p` is both the meet of any three and a defining point of the
+        // fourth. With `p` in the third slot, `indirect_hp`'s `row1 = Dvec − D·s` cancels to
+        // nothing — the shape a tool edge lying in a target plane produces, and the one that let a
+        // wrong sign through a suite of random corpora.
+        for _ in 0..400 {
+            let axis = axis_of(rng(&mut st, 0, 2));
+            let ang = deg(rng(&mut st, 1, 359_000), rng(&mut st, 1, 997)); // inexact
+            let pivot = rand_base(&mut st);
+            let turn = |b: [Rat; 3]| Pt3::at(b).rotate_about(axis, ang, pivot);
+            let p = turn(rand_base(&mut st));
+            let sp: Vec<[Pt3; 2]> = (0..4)
+                .map(|_| [turn(rand_base(&mut st)), turn(rand_base(&mut st))])
+                .collect();
+            for qi in 0..4 {
+                let t: Vec<usize> = (0..4).filter(|&i| i != qi).collect();
+                check(
+                    (&p, &sp[t[0]][0], &sp[t[0]][1]),
+                    (&p, &sp[t[1]][0], &sp[t[1]][1]),
+                    (&p, &sp[t[2]][0], &sp[t[2]][1]),
+                    &sp[qi][0],
+                    &sp[qi][1],
+                    &p,
+                );
+            }
         }
 
         eprintln!(
