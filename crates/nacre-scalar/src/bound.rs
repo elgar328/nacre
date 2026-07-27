@@ -133,6 +133,74 @@ impl Bound {
         .inflate()
     }
 
+    /// An upper bound on `self / other`, rounded away from zero. `None` when `other` is zero —
+    /// there is no bound to give, and returning a large one would be a guess.
+    pub fn over(self, other: Bound) -> Option<Bound> {
+        if other.m == 0.0 {
+            return None;
+        }
+        if self.m == 0.0 {
+            return Some(Bound::ZERO);
+        }
+        let (m, e) = frexp(self.m / other.m);
+        Some(
+            Bound {
+                m,
+                e: e + self.e - other.e,
+            }
+            .inflate(),
+        )
+    }
+
+    /// A **lower** bound on `self − other`, or `None` when the difference may not be positive.
+    ///
+    /// This is the one operation here that rounds *toward* zero, and it has to: its result is
+    /// used where a quantity must be shown to be at least so large (a norm that has to stay away
+    /// from zero before anything is divided by it). Rounding it up the way everything else
+    /// rounds would turn a lower bound into a claim, which is the failure this whole type exists
+    /// to prevent.
+    pub fn minus(self, other: Bound) -> Option<Bound> {
+        if other.m == 0.0 {
+            return (self.m != 0.0).then_some(self);
+        }
+        if !other.lt(self) {
+            return None; // the difference may be zero or negative — no positive lower bound
+        }
+        let de = self.e - other.e;
+        if de > GAP {
+            return Some(self.deflate()); // `other` cannot reach `self`'s mantissa
+        }
+        let m = self.m - other.m * 2f64.powi((-de) as i32);
+        if m <= 0.0 {
+            return None;
+        }
+        let (nm, ne) = frexp(m);
+        Some(
+            Bound {
+                m: nm,
+                e: ne + self.e,
+            }
+            .deflate(),
+        )
+    }
+
+    /// Round the mantissa toward zero by one relative step — the mirror of [`inflate`], for the
+    /// lower-bound direction.
+    fn deflate(self) -> Bound {
+        if self.m == 0.0 {
+            return self;
+        }
+        let m = self.m / UP;
+        if m < 0.5 {
+            Bound {
+                m: m * 2.0,
+                e: self.e - 1,
+            }
+        } else {
+            Bound { m, e: self.e }
+        }
+    }
+
     /// Is this bound strictly below `other`? Used to ask whether a value's magnitude clears its
     /// own error radius.
     pub fn lt(self, other: Bound) -> bool {

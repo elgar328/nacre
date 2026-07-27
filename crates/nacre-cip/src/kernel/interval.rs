@@ -74,7 +74,7 @@ pub(crate) fn ub(x: &BigFloat) -> Bound {
 /// Reading the mantissa would tighten this by up to one bit. It is left at the exponent because
 /// the error is in the safe direction — a judgement declines slightly sooner than it must, and
 /// the ladder is what recovers those, not a tighter comparison here.
-fn lb(x: &BigFloat) -> Option<Bound> {
+pub(crate) fn lb(x: &BigFloat) -> Option<Bound> {
     match x.exponent() {
         Some(e) if !x.is_zero() => Some(Bound::pow2(e as i64 - 1)),
         _ => None,

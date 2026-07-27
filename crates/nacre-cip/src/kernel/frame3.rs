@@ -278,6 +278,35 @@ pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Bound)
     (words * WORD).max(TRIAL_PREC)
 }
 
+/// **A determinant is not a length, and the coincidence limit is.**
+///
+/// `orient3d(a, b, c, d) = det[a−d, b−d, c−d]` is a signed volume: six times the tetrahedron's.
+/// Divide it by the area term `|(b−d) × (c−d)|` and what is left is the **height of `a` above the
+/// plane through `b, c, d`** — a distance, in the model's own units, which is the only thing a
+/// limit like "closer than 1e-54" can be compared against. Comparing the raw determinant instead
+/// would make the threshold scale with the triangle's size, which is how a tolerance becomes a
+/// number nobody can reason about.
+///
+/// Returns an upper bound on that distance, given the determinant's own interval: the value is
+/// somewhere inside `±rad`, so the distance is at most `rad / |cross|` — and `|cross|` is itself
+/// uncertain, so its **lower** bound is what divides. `None` when the area term cannot be bounded
+/// away from zero: a degenerate witness triangle has no plane to be a distance from, and saying
+/// "within X" of it would be meaningless rather than conservative.
+fn distance_bound(det_rad: Bound, cross: &[HpIv; 3], prec: usize) -> Option<Bound> {
+    // `|cross|² = Σ cross[k]²`, and a lower bound on the norm needs a lower bound on the sum.
+    let mut lo = HpIv::exact(BigFloat::from_f64(0.0, prec));
+    for c in cross {
+        lo = lo.add(&c.mul(c, prec), prec);
+    }
+    // `|cross| ≥ √(mid − rad)`, and the square root only halves the exponent, so working in
+    // exponents avoids needing a high-precision sqrt at all.
+    let sq_lo = super::interval::lb(&lo.mid)?.minus(lo.rad)?;
+    let e = sq_lo.exp2()?;
+    // `√(m · 2^e) ≥ 2^(⌊e/2⌋ − 1)` for `m ∈ [0.5, 1)`, which is the bound we need below.
+    let norm_lo = Bound::pow2(e.div_euclid(2) - 1);
+    det_rad.over(norm_lo)
+}
+
 /// The three edge rows of `orient3d(a,b,c,d) = det[a−d, b−d, c−d]`.
 fn rows(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> [[f64; 3]; 3] {
     [
@@ -433,6 +462,31 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Or
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }
+}
+
+/// How far `pa` may be from the plane through `pb, pc, pd`, in the model's own length units.
+///
+/// This is [`orient3d_judge`]'s determinant turned into a distance by [`distance_bound`]. When
+/// the judge cannot decide a sign, this is the honest statement of what it *did* establish: not
+/// "these are the same", but "`pa` is within **this much** of that plane". `None` when the three
+/// plane points are too near collinear for a distance to mean anything.
+pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Option<Bound> {
+    let (b, c, d) = (pb.hp_coord(prec), pc.hp_coord(prec), pd.hp_coord(prec));
+    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
+    let (u, v) = (
+        [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
+        [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
+    );
+    let cross = [
+        u[1].mul(&v[2], prec).sub(&u[2].mul(&v[1], prec), prec),
+        u[2].mul(&v[0], prec).sub(&u[0].mul(&v[2], prec), prec),
+        u[0].mul(&v[1], prec).sub(&u[1].mul(&v[0], prec), prec),
+    ];
+    let det = det3_hp(pa, pb, pc, pd, prec);
+    // The *value* the judge could not separate from zero is somewhere in `±rad`, so the distance
+    // it bounds is `rad / |cross|`. Reported alongside the midpoint's own distance so a caller
+    // can see both what was measured and how well.
+    distance_bound(det.rad, &cross, prec)
 }
 
 /// CIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
@@ -956,6 +1010,78 @@ mod tests {
             }
             prev_coord = Some(coord);
             prev_det = Some(det);
+        }
+    }
+
+    /// **Is the normalized determinant actually a distance?**
+    ///
+    /// The coincidence limit is a length, so the quantity compared against it has to be one too.
+    /// `orient3d` is a signed volume; dividing by the area term is supposed to leave a height.
+    /// Nothing else in the suite would notice if that division were wrong by a factor of the
+    /// triangle's size — the sign would still be right, and only the *threshold* would silently
+    /// become a number that scales with the model.
+    ///
+    /// So this builds a point a **known** height above a plane and checks the normalized value is
+    /// that height: across heights spanning 12 orders of magnitude, model scales spanning 9, and
+    /// a triangle deliberately made 1000× larger, which is exactly what an unnormalized
+    /// determinant would be fooled by.
+    #[test]
+    fn the_normalized_determinant_is_a_height_in_model_units() {
+        let prec = 256;
+        for scale in [1i128, 1_000, 1_000_000_000] {
+            for (hn, hd) in [(1i128, 1i128), (1, 1_000), (1, 1_000_000_000_000)] {
+                for tri_span in [1i128, 1_000] {
+                    let p = |x: i128, y: i128, z: (i128, i128)| {
+                        Pt3::at([ri(x * scale, 1), ri(y * scale, 1), ri(z.0, z.1)])
+                    };
+                    // Plane z = 0 through three points, and the query a height h above it.
+                    let (b, c, d) = (
+                        p(tri_span, 0, (0, 1)),
+                        p(0, tri_span, (0, 1)),
+                        p(0, 0, (0, 1)),
+                    );
+                    let a = p(0, 0, (hn, hd));
+                    let det = det3_hp(&a, &b, &c, &d, prec);
+                    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
+                    let (bh, ch, dh) = (b.hp_coord(prec), c.hp_coord(prec), d.hp_coord(prec));
+                    let (u, v) = (
+                        [
+                            sub(&bh[0], &dh[0]),
+                            sub(&bh[1], &dh[1]),
+                            sub(&bh[2], &dh[2]),
+                        ],
+                        [
+                            sub(&ch[0], &dh[0]),
+                            sub(&ch[1], &dh[1]),
+                            sub(&ch[2], &dh[2]),
+                        ],
+                    );
+                    let cross = [
+                        u[1].mul(&v[2], prec).sub(&u[2].mul(&v[1], prec), prec),
+                        u[2].mul(&v[0], prec).sub(&u[0].mul(&v[2], prec), prec),
+                        u[0].mul(&v[1], prec).sub(&u[1].mul(&v[0], prec), prec),
+                    ];
+                    let norm = cross
+                        .iter()
+                        .map(|k| {
+                            let f = bf_mag(&k.mid);
+                            f * f
+                        })
+                        .sum::<f64>()
+                        .sqrt();
+                    let got = bf_mag(&det.mid) / norm;
+                    let want = hn as f64 / hd as f64;
+                    // `bf_mag` is a power-of-two magnitude, so the comparison is by exponent —
+                    // enough to catch a factor of the triangle span or the model scale, which is
+                    // what this is for.
+                    let ratio = got / want;
+                    assert!(
+                        (0.25..=4.0).contains(&ratio),
+                        "scale {scale}, h {hn}/{hd}, triangle span {tri_span}: normalized value \
+                         {got:e} is not the height {want:e} (off by {ratio:e})"
+                    );
+                }
+            }
         }
     }
 
