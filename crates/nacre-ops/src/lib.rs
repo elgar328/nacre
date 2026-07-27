@@ -217,16 +217,23 @@ pub enum RejectReason {
     /// Four planes concurrent at one point: two distinct plane triples name the same arrangement
     /// vertex, which the substrate cannot express.
     ///
-    /// **What builds one.** A tool whose *edge* lands exactly in a target face's plane — tangential
-    /// contact rather than a crossing. The edge's endpoints then lie on three tool planes *and* the
-    /// target plane. The reachable example, and the firing test: a bar of **square** cross-section
-    /// spun **45°** about an axis in that plane, whose corners travel `half × √2` and land back on
-    /// it. Break any one of the three (angle, squareness, pivot on the plane) and the same model
-    /// builds — the coincidence, not the rotation, is what bites.
+    /// **What builds one.** A tool *edge* lying inside one of the target's planes — tangential
+    /// contact rather than a crossing. Three planes then share that edge's line (the tool's two
+    /// faces and the target's one), so every point of the line already lies on three planes and a
+    /// fourth turns it into a vertex: each plane crossing the line yields a four-plane point.
     ///
-    /// On rotated operands the concurrency is *within the deciding predicate's tolerance*: the
-    /// judgement that puts the vertex on the plane is the toleranced one, the same one every other
-    /// on-plane fact in the trace rests on.
+    /// The reachable example, and the firing test: a bar spun **45°** about an axis in that plane,
+    /// whose bottom corner edge lands back in it. The equality that does it is **half-width ==
+    /// offset from the pivot to the bottom face** — for a bar 0.4 wide centred on x = 0.5 and 0.4
+    /// tall centred on z = 1, both are `0.2` and the corner travels to x = 0.5 exactly. Break the
+    /// angle, either extent, or the pivot's position and the same model builds: the coincidence is
+    /// what bites, not the rotation.
+    ///
+    /// **Exact, not toleranced.** Measured: perturbing an operand coordinate by **one ULP** in
+    /// either direction removes the concurrency and the boolean succeeds. The judgement returns
+    /// zero because the determinant *is* zero at 200 bits, not because it fell below the declare-0
+    /// floor (which sits ~55 orders of magnitude lower). Exact rational input would produce the
+    /// same concurrency — this is not an artefact of `f64` construction.
     FourPlane,
     /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
     /// quadrics).

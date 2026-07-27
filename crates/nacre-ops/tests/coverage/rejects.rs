@@ -103,20 +103,22 @@ fn a_stale_operand_is_not_a_reject_reason() {
     );
 }
 
-/// A tool whose edge lands exactly in a target face's plane: four planes meet at that edge's
-/// endpoints, and no plane *triple* can name such a vertex. This is the model reported from the
-/// playground — a square bar spun 45° about an axis lying in the cube's top face, which is an easy
-/// thing to draw by accident.
+/// A tool edge lying inside one of the target's planes: three planes share that line, so a fourth
+/// crossing it makes a vertex no plane *triple* can name. This is the model reported from the
+/// playground — a bar spun 45° next to a step — which is an easy thing to draw by accident.
 ///
 /// The caller must hear the cause — "four planes meet at a point, not supported yet" — and not the
 /// symptom the tracer happens to trip over ("could not name a run's bounding node"). This is the
 /// firing test for [`RejectReason::FourPlane`], and the switch that flips the day the substrate can
 /// express such a vertex: then this boolean succeeds and this test says so.
 ///
-/// **The fused block is load-bearing**, which was a surprise: cutting the same bar out of the plain
-/// cube succeeds ([`crate::rotation`] pins that, along with the other near misses). Fusing the block
-/// on first makes `z = 1` a *shared* plane class carrying a coplanar contact, and only then does the
-/// tangent edge become a run the tracer must name.
+/// **The fused block is load-bearing** — and for a more specific reason than "it adds a face": it
+/// supplies the plane **x = 0.5**, and *that* is the plane the bar's bottom corner edge lands in.
+/// The bar is 0.4 wide centred on x = 0.5 and 0.4 tall centred on z = 1, so its half-width and its
+/// pivot-to-bottom offset are equal (both `0.2`, and bit-identical in `f64`: `0.7 − 0.5` and
+/// `1 − 0.8` round the same way) — spun 45°, the corner travels to x = 0.5 exactly. Without the
+/// block that plane does not exist and the same cut succeeds; [`crate::rotation`] pins that along
+/// with the other near misses.
 #[test]
 fn a_tool_edge_in_the_target_plane_is_a_four_plane_concurrency() {
     let (mut m, cube, bar) = cube_and_spun_bar(0.2, 45, Rat::from_int(1));

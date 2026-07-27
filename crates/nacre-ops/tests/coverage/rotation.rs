@@ -208,11 +208,12 @@ fn rotated_result_coplanar_reuse_under_a_general_rotation() {
 
 /// The near misses around the four-plane reject in `rejects.rs`.
 ///
-/// That reject needs **four** coincidences at once — 45°, a square cross-section, a pivot lying in
-/// the target plane, and the fused block that makes `z = 1` a shared class. Break any single one and
-/// the cut builds. Each row here was measured, and together they are what says the reject is a
-/// genuine concurrency rather than a rotation the engine cannot handle: 44° and 46° are every bit as
-/// irrational as 45°.
+/// That reject needs **four** coincidences at once: 45°, a bar whose half-width equals its
+/// pivot-to-bottom offset, a pivot in the plane those two measure from, and the fused block — which
+/// is what supplies the plane `x = 0.5` that the bar's bottom corner edge lands in. Break any single
+/// one and the cut builds. Each row here was measured, and together they are what says the reject is
+/// a genuine concurrency rather than a rotation the engine cannot handle: 44° and 46° are every bit
+/// as irrational as 45°.
 ///
 /// They are also the net under the eventual four-plane *support* work: whatever normalises vertex
 /// identity must leave all of these building.
