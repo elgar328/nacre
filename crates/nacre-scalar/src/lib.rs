@@ -17,7 +17,7 @@
 //!   a full turn lands back on exactly `0` (no f64 drift — a sketch closes). The
 //!   `cos`/`sin` realization crosses into f64 (the irrational boundary); the
 //!   90°-family (`0/90/180/270°`) realizes to exact rationals `{0, ±1}` (Niven),
-//!   so those rotations of a rational point stay tol 0; and `cos_hp`/`sin_hp`
+//!   so those rotations of a rational point stay tol 0; and `cos_sin_at`
 //!   realize in arbitrary precision (astro-float) for the judgment path.
 //!
 //! Scope: the exact value engine (the toleranced-sign frame judgment it enabled now lives
@@ -35,10 +35,12 @@ use std::f64::consts::PI;
 use astro_float::{BigFloat, Consts, RoundingMode};
 use std::cell::RefCell;
 
-/// Precision (bits) and rounding for the high-precision realization layer
-/// (astro-float). ~160 bits ≈ 48 decimal digits — far below CAD tolerance and
-/// dial-able if amplification ever needs more (the ceiling twofloat lacked, H1.5).
-pub(crate) const HP_PREC: usize = 160;
+/// Rounding for the high-precision realization layer (astro-float).
+///
+/// **There is no default precision here, on purpose.** A fixed one used to sit beside this
+/// (`HP_PREC = 160`) with `cos_hp`/`sin_hp` reading it, and nothing outside this crate's own
+/// tests ever called them — a hand-picked depth waiting to be wired into a judgement whose
+/// precision belongs to the *model* (`nacre_cip::judge_precision`). Callers pass `prec`.
 pub(crate) const HP_RM: RoundingMode = RoundingMode::ToEven;
 
 thread_local! {
@@ -210,10 +212,9 @@ impl Angle {
 
     /// `(cos, sin)` realized in arbitrary precision at `prec` bits — the judgment
     /// path. astro-float replaces twofloat here (H1.5: twofloat's trig was
-    /// f64-level near zero-crossings). Higher `prec` gives ground truth; the
-    /// default [`HP_PREC`] gives the working judgment realization. (numer/denom
-    /// pass through f64, exact for the small values used here; a general large-
-    /// rational path would build from a string.)
+    /// f64-level near zero-crossings). The depth is the caller's: a judgement's precision is a
+    /// property of the model it judges, not of this crate. (numer/denom pass through f64, exact
+    /// for the small values used here; a general large-rational path would build from a string.)
     pub fn cos_sin_at(self, prec: usize) -> (BigFloat, BigFloat) {
         let (c, s, _, _) = self.cos_sin_bounded(prec);
         (c, s)
@@ -278,16 +279,6 @@ impl Angle {
             let err_sin = uc.times(d_theta).plus(us.times(u));
             (c, s, err_cos, err_sin)
         })
-    }
-
-    /// cos realized at the default judgment precision ([`HP_PREC`]).
-    pub fn cos_hp(self) -> BigFloat {
-        self.cos_sin_at(HP_PREC).0
-    }
-
-    /// sin realized at the default judgment precision ([`HP_PREC`]).
-    pub fn sin_hp(self) -> BigFloat {
-        self.cos_sin_at(HP_PREC).1
     }
 
     /// Exact `(cos, sin)` as rationals — `Some` only for the quadrantal angles
@@ -453,6 +444,11 @@ impl Isometry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The depth these tests realize at. **Test-local on purpose**: production has no default
+    /// precision — it is computed from the model — so a constant here must not be reachable from
+    /// outside the fixtures that chose it.
+    const GT_PREC: usize = 160;
     use proptest::prelude::*;
 
     /// `try_from_f64` is the exact rational of the f64: it round-trips (`to_f64` gives
@@ -702,17 +698,17 @@ mod tests {
         let mut worst = i32::MIN;
         for (deg, exact_cos, exact_sin) in cases {
             let a = Angle::from_deg(Rat::from_int(deg)).unwrap();
-            let ec = hp_err_exp(&a.cos_hp(), exact_cos);
+            let ec = hp_err_exp(&a.cos_sin_at(GT_PREC).0, exact_cos);
             assert!(ec < GATE_EXP, "cos {deg}° error 2^{ec} exceeds gate");
             worst = worst.max(ec);
             if let Some(s) = exact_sin {
-                let es = hp_err_exp(&a.sin_hp(), s);
+                let es = hp_err_exp(&a.cos_sin_at(GT_PREC).1, s);
                 assert!(es < GATE_EXP, "sin {deg}° error 2^{es} exceeds gate");
                 worst = worst.max(es);
             }
         }
         eprintln!(
-            "[H1.5] astro-float {HP_PREC}-bit worst cos/sin error at rational angles: 2^{worst}"
+            "[H1.5] astro-float {GT_PREC}-bit worst cos/sin error at rational angles: 2^{worst}"
         );
     }
 
@@ -856,7 +852,7 @@ mod tests {
     /// Error of a high-precision realization `a` against an exact f64 `b`, as a
     /// power-of-two exponent (`i32::MIN` when exactly equal).
     fn hp_err_exp(a: &BigFloat, b: f64) -> i32 {
-        let err = a.sub(&BigFloat::from_f64(b, HP_PREC), HP_PREC, HP_RM);
+        let err = a.sub(&BigFloat::from_f64(b, GT_PREC), GT_PREC, HP_RM);
         if err.is_zero() {
             i32::MIN
         } else {

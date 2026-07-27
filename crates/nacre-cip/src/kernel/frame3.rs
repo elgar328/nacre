@@ -1,5 +1,4 @@
-//! The 3D toleranced point + its `orient3d` judgment (design.md §9 CIP, stage 2). The
-//! 3D analogue of [`crate::frame2`] (`Pt2` / `orient2d_judge`).
+//! The toleranced point + its `orient3d` judgment (design.md §9 CIP, stage 2).
 //!
 //! A rotated point cannot be held exactly (cos/sin are irrational), but its f64
 //! realization carries a **direction-wise xyz tol** (§CIP ⑤) that soundly bounds
@@ -21,7 +20,7 @@
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
 use super::HP_RM;
-use super::frame2::{DA_F64, bf_mag, rat_to_big, rat_to_hp};
+use super::interval::{DA_F64, bf_mag, rat_to_big, rat_to_hp};
 use super::interval::{HpIv, Iv};
 use astro_float::BigFloat;
 use nacre_scalar::{Angle, Axis, Bound, Orient, Rat};
@@ -1845,7 +1844,10 @@ mod tests {
         for _ in 0..2000 {
             let base = rand_base(&mut st);
             let mut p = Pt3::at(base);
-            for _ in 0..rng(&mut st, 2, 5) {
+            // **From one node, not two.** A single origin rotation of an exact base is the case
+            // the deleted 2D frame validated on its own; sampling it here is what makes this test
+            // strictly cover that one, rather than merely resemble it.
+            for _ in 0..rng(&mut st, 1, 5) {
                 let ax = axis_of(rng(&mut st, 0, 2));
                 let pivot = match rng(&mut st, 0, 2) {
                     0 => [Rat::from_int(0); 3],
@@ -1883,6 +1885,61 @@ mod tests {
     }
 
     /// A 90°-family chain about the origin stays exactly tol 0 (Niven exact realization).
+    /// **Why the tol is a coordinate *mixing* term and not a tangential one.**
+    ///
+    /// The design's first directional tol was tangential — `tol_x = da·|y|`, `tol_y = da·|x|` —
+    /// on the reasoning that rotation moves a point along its circle. It is **not sound**: `cos`
+    /// and `sin` round independently, which puts a *radial* component into the error, and near an
+    /// axis the tangential prediction goes to zero while the real error does not. The adopted
+    /// `(|bx|+|by|)·da` per component covers both.
+    ///
+    /// This is the standing guard on that shape. It moved here when the 2D frame it was written
+    /// in was deleted (nothing consumed that frame), because the *invariant* is about the tol
+    /// formula, which 3D uses verbatim — a rotation about Z is the 2D case with `z` carried along.
+    #[test]
+    fn the_tangential_tol_is_unsound_and_the_mixing_one_is_not() {
+        const GT: usize = 256;
+        let (mut tangential_sound, mut mixing_sound) = (true, true);
+        let mut first_break = None;
+        for (bxn, bxd, byn, byd) in [(1, 1, 0, 1), (3, 1, 4, 1), (5, 2, 7, 3), (1, 1, 1, 1)] {
+            // Near-axis angles are where the tangential model is thinnest, so they are in here.
+            for (an, ad) in [
+                (30, 1),
+                (45, 1),
+                (60, 1),
+                (37, 1),
+                (899, 10),
+                (1, 10),
+                (3, 1),
+            ] {
+                let base = [ri(bxn, bxd), ri(byn, byd), ri(0, 1)];
+                let p = Pt3::at(base).rotate(Axis::Z, deg(an, ad));
+                let hp = p.compute_hp(GT);
+                for (k, hp_k) in hp.iter().enumerate().take(2) {
+                    let err = abs_err(p.coord[k], hp_k, GT);
+                    // (1) the refuted tangential prediction: the *other* coordinate's magnitude.
+                    if err > DA_F64 * p.coord[1 - k].abs() {
+                        tangential_sound = false;
+                        first_break.get_or_insert((bxn, bxd, byn, byd, an, ad, k));
+                    }
+                    // (2) the adopted mixing tol, which is what `rotate_about` computes.
+                    if err > p.tol[k] {
+                        mixing_sound = false;
+                    }
+                }
+            }
+        }
+        assert!(
+            !tangential_sound,
+            "the tangential formula bounded every sample — either the fixtures stopped reaching \
+             near an axis, or the realization changed and this guard is now vacuous"
+        );
+        assert!(
+            mixing_sound,
+            "the adopted tol failed to bound a single origin rotation: {first_break:?}"
+        );
+    }
+
     #[test]
     fn quadrantal_origin_chain_is_tol_zero() {
         let p = Pt3::at([ri(3, 1), ri(5, 1), ri(7, 1)])
