@@ -563,7 +563,8 @@ fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
         );
         mag += r[r0][c0].abs() * r[r1][c1].abs() * r[r2][c2].abs();
     }
-    // f64 rounding of the ~17-op determinant, bounded generously (2D uses 8ε).
+    // f64 rounding of the determinant's own ~17 operations. Round-to-nearest costs `ε/2` each, so
+    // the accumulation is about `8.5·ε·mag`; `16·ε` is that with a factor of two over it.
     input_tol + 16.0 * f64::EPSILON * mag
 }
 
@@ -1841,8 +1842,11 @@ mod tests {
         const GT: usize = 512;
         let mut st = 0x2A5C_1234_ABCD_9999u64;
         let (mut exact_seen, mut pivot_seen) = (false, false);
+        let mut worst_ratio = 0.0_f64;
+        let mut worst_rot = 0.0_f64;
         for _ in 0..2000 {
             let base = rand_base(&mut st);
+            let seed_free = Pt3::at(base).tol == [0.0; 3];
             let mut p = Pt3::at(base);
             // **From one node, not two.** A single origin rotation of an exact base is the case
             // the deleted 2D frame validated on its own; sampling it here is what makes this test
@@ -1876,11 +1880,28 @@ mod tests {
                     "tol must bound the error: axis {axis}, err {err:e} > tol {:e}",
                     p.tol[axis]
                 );
+                if p.tol[axis] > 0.0 {
+                    worst_ratio = worst_ratio.max(err / p.tol[axis]);
+                    if seed_free {
+                        worst_rot = worst_rot.max(err / p.tol[axis]);
+                    }
+                }
             }
         }
         assert!(
             exact_seen && pivot_seen,
             "corpus must mix exact angles and pivots"
+        );
+        // **How much of the bound the real error actually uses.** `DA_F64` is the one constant in
+        // this kernel that cannot be derived — `f64::cos`'s accuracy is not contracted by Rust or
+        // by any libm this runs on — so it rests on measurement, and this is the measurement.
+        eprintln!(
+            "[tol tightness] worst err/tol: {worst_ratio:.4} all, {worst_rot:.4} rotation-only"
+        );
+        assert!(
+            worst_ratio < 1.0,
+            "the bound was reached exactly, which leaves nothing for a platform whose trig is \
+             one ulp worse than this one's"
         );
     }
 

@@ -3631,4 +3631,115 @@ centroid 1 1.5 2
             occt.area
         );
     }
+
+    /// **The four-plane result, scored by a kernel that has never heard of our substrate.**
+    ///
+    /// A bar spun 45° whose bottom corner edge lands exactly in the plane `x = 0.5` that a fused
+    /// block supplies: three planes share that edge's line, so every plane crossing it makes a
+    /// vertex with **four** planes through it. Naming such a vertex is what the arrangement could
+    /// not do until the concurrency work, and the coverage suite checks the answer against a hand
+    /// figure and against the models one ULP away.
+    ///
+    /// Neither of those is independent. This is: OCCT builds the same cut from the same two
+    /// solids, through STEP, with its own arithmetic and its own idea of what a vertex is. A
+    /// degenerate case is exactly where two kernels are most likely to disagree, which is why the
+    /// one result born of a coincidence gets an outside opinion.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn the_four_plane_cut_matches_occt() {
+        use nacre_math::Point2;
+        use nacre_ops::{BoolKind, Operation, Profile2d, apply, boolean};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+
+        let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+        let extrude = |m: &mut Model, poly: Vec<Point2>, z: f64, dist: f64| {
+            let out = apply(
+                m,
+                &Operation::Extrude {
+                    plane: SketchPlane {
+                        origin: Point3::from_array([0.0, 0.0, z]),
+                        ..SketchPlane::world_xy()
+                    },
+                    profile: Profile2d::polygon(poly),
+                    dist,
+                },
+            )
+            .expect("extrude");
+            let nacre_ops::OpOutput::Extrude { solid, .. } = out else {
+                unreachable!("extrude yields Extrude output")
+            };
+            solid
+        };
+
+        let mut m = Model::new();
+        // The unit cube, plus a block fused on that carries the plane x = 0.5 up to z = 2.
+        let cube = extrude(
+            &mut m,
+            vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)],
+            0.0,
+            1.0,
+        );
+        let block = m.add_cuboid(
+            Point3::from_array([0.5, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
+        m.rebuild_adjacency();
+
+        // A square-section bar (half-height 0.2) spun 45° about Y through (0.5, ·, 1): the corner
+        // travels 0.2·√2 sideways and lands back on z = 1.
+        let bar = extrude(
+            &mut m,
+            vec![p2(0.3, -0.5), p2(0.7, -0.5), p2(0.7, 1.5), p2(0.3, 1.5)],
+            0.8,
+            0.4,
+        );
+        m.rebuild_adjacency();
+        let nacre_ops::OpOutput::Transform { solid: bar } = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: bar,
+                isometry: Isometry::rotation(Rotation {
+                    axis: Axis::Y,
+                    point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
+                    angle: Angle::from_deg(Rat::from_int(45)).unwrap(),
+                }),
+            },
+        )
+        .expect("transform") else {
+            unreachable!("transform yields Transform output")
+        };
+        m.rebuild_adjacency();
+
+        // OCCT scores the same cut from the same operands — before nacre consumes them.
+        let occt = occt_boolean_of(&m, OcctBool::Cut, target, bar).expect("occt cut");
+        let r = boolean(&mut m, BoolKind::Cut, target, bar).expect("the four-plane cut builds");
+        m.rebuild_adjacency();
+        assert_eq!(r.len(), 1, "one solid");
+        let ours = nacre_props::mass_props(&m, r[0]).expect("props");
+        // **The fixture is reproduced by hand here, so pin it to the figure the coverage suite
+        // knows** (`1 + 0.5` of target, `0.12` removed). Without this, building a *different*
+        // model that both kernels agree on would read as a passing cross-check.
+        assert!(
+            (ours.volume - 1.38).abs() < 1e-9,
+            "this is not the four-plane model: volume {}, expected 1.38",
+            ours.volume
+        );
+        assert!(
+            approx(ours.volume, occt.volume),
+            "four-plane cut volume: nacre {} vs occt {}",
+            ours.volume,
+            occt.volume
+        );
+        let c = nacre_props::centroid(&m, r[0]).expect("centroid");
+        for i in 0..3 {
+            assert!(
+                approx(c[i], occt.centroid[i]),
+                "four-plane cut centroid axis {i}: nacre {} vs occt {}",
+                c[i],
+                occt.centroid[i]
+            );
+        }
+    }
 }

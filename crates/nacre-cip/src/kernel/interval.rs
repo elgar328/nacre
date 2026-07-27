@@ -27,9 +27,20 @@ use super::HP_RM;
 // They belong with the intervals: three of them are how an exact rational *enters* this machine,
 // and the fourth is the f64 rounding the filter charges per operation.
 
-/// f64 trig-realization error bound used by the directional tol formula — a
-/// conservative multiple of ulp covering cos/sin rounding, the deg→rad
-/// conversion, and the combining arithmetic.
+/// f64 trig-realization error bound used by the directional tol formula — a conservative multiple
+/// of ulp covering cos/sin rounding, the deg→rad conversion, and the combining arithmetic.
+///
+/// **The one constant here that cannot be derived, and it is measured instead.** Everything else
+/// in this module charges round-to-nearest, which is contracted: `≤ ε/2` relative per operation.
+/// `f64::cos` has no such contract — neither Rust nor the platform libm promises an accuracy —
+/// so the only sound basis is measurement plus margin.
+///
+/// Measured (`frame3::tol_bounds_error_over_random_chains`, 2000 random chains, 512-bit ground
+/// truth): the real error uses **0.0374** of this bound at worst when the base contributes no
+/// rounding of its own — a **27× margin**, i.e. the observed realization error is about `0.6·ε`
+/// against the `16·ε` charged. The margin is left there on purpose: erring loose costs only an
+/// escalation now and then, while erring tight is a wrong sign on a platform whose trig is a
+/// little worse than this one's.
 pub(crate) const DA_F64: f64 = 16.0 * f64::EPSILON;
 
 /// A rational as an arbitrary-precision float.
@@ -86,6 +97,8 @@ impl Iv {
     pub fn new(mid: f64, rad: f64) -> Self {
         Iv { mid, rad }
     }
+    /// `2·ε` per operation, four times the `ε/2` that round-to-nearest can cost — derived, not
+    /// picked, and the same charge in `add` and `mul`.
     pub fn sub(self, o: Iv) -> Iv {
         let mid = self.mid - o.mid;
         Iv::new(mid, self.rad + o.rad + 2.0 * f64::EPSILON * mid.abs())
