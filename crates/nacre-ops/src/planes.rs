@@ -3,7 +3,7 @@
 
 use crate::combinatorics;
 use crate::{BoolError, RejectReason, he_start, reject, tolerant};
-use nacre_cip::Pt3;
+use nacre_cip::{Judge, Pt3};
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
@@ -41,10 +41,11 @@ pub(crate) struct FaceInfo {
     /// face/plane convention could not be asserted, because both readings were legitimate
     /// (dev-log, normalization cell). Separate names, separate questions.
     pub(crate) orient_sign: i8,
-    /// The precision the escalating judges realize this operation's definitions at — see
-    /// [`judge_precision_for`]. Stamped on every entry after the table is built, because it is a
-    /// property of the whole operation and every predicate call site has only this table in hand.
-    pub(crate) judge_prec: usize,
+    /// How this operation's judgements are made: the precision its definitions are realized at
+    /// and the distance below which a proved separation counts as a coincidence — see
+    /// [`judge_for`]. Stamped on every entry after the table is built, because it is a property
+    /// of the whole operation and every predicate call site has only this table in hand.
+    pub(crate) judge: Judge,
     /// The three `tri` points as **exact `Pt3` definitions**, in the same order as `tri`.
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
     /// per judgment, which dominated the boolean's runtime.
@@ -143,9 +144,9 @@ pub(crate) fn collect_planes(
                 plane,
                 tri,
                 n_out,
-                // Stamped by `plane_index_setup` once both operands' tables exist — the
-                // precision is a property of the operation, not of one face.
-                judge_prec: 0,
+                // Stamped by `plane_index_setup` once both operands' tables exist — how the
+                // operation judges is a property of the operation, not of one face.
+                judge: UNSTAMPED,
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
                 rotated,
@@ -243,9 +244,15 @@ pub(crate) fn plane_index_setup(
 ) -> Result<PlaneSetup, BoolError> {
     let mut planes = collect_planes(model, a)?;
     planes.extend(collect_planes(model, b)?);
-    let prec = judge_precision_for(&planes);
+    let judge = judge_for(&planes);
+    if judge.prec > JUDGE_PREC_CAP {
+        return Err(reject(RejectReason::PrecisionBudget {
+            needed: judge.prec,
+            cap: JUDGE_PREC_CAP,
+        }));
+    }
     for p in &mut planes {
-        p.judge_prec = prec;
+        p.judge = judge;
     }
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
@@ -286,24 +293,63 @@ pub(crate) fn plane_index_setup(
 ///
 /// `scale` is the largest coordinate magnitude in either operand, taken over the whole table so
 /// the result does not depend on traversal order (replay must reproduce it exactly).
-fn judge_precision_for(planes: &[FaceInfo]) -> usize {
-    judge_precision_for_points(planes.iter().flat_map(|p| p.tri_pt3.iter()))
+///
+/// The precision that reaches the target is then [`nacre_cip::judge_precision`]'s to compute, and
+/// [`JUDGE_PREC_CAP`] is where the kernel stops and says so instead.
+fn judge_for(planes: &[FaceInfo]) -> Judge {
+    judge_for_points(planes.iter().flat_map(|p| p.tri_pt3.iter()))
 }
 
-/// [`judge_precision_for`] over a bare set of definitions — for the places that must judge
-/// before a plane table exists (witness selection in [`crate::rotated_vertex`]).
-pub(crate) fn judge_precision_for_points<'a>(
-    pts: impl IntoIterator<Item = &'a Pt3> + Clone,
-) -> usize {
+/// **The most bits a judgement may ask for before the operation is rejected instead.**
+///
+/// Not a resolution limit — the arithmetic is correct at any depth — but a **cost** limit, so it
+/// is set from measured cost. A judgement's realization is quadratic-ish in the precision, and the
+/// cap is placed where a single boolean's judging stays in the seconds rather than the minutes:
+/// 4096 bits covers a rotation history of roughly four thousand turns (measured: `C` grows one bit
+/// per turn), which is far past any real model, and a model that does exceed it is told *why*
+/// rather than handed a wrong answer or an unbounded wait.
+pub(crate) const JUDGE_PREC_CAP: usize = 4096;
+
+/// The placeholder a face table carries between `collect_planes` and the stamp in
+/// [`plane_index_setup`]. Its zero precision and zero limits are deliberately useless: a
+/// judgement made with it would refuse everything rather than quietly judge at some plausible
+/// default, so a missed stamp shows up as a failure and not as a subtly different answer.
+pub(crate) const UNSTAMPED: Judge = Judge {
+    prec: 0,
+    coincidence: Bound::ZERO,
+    scale: Bound::ZERO,
+    cap: 0,
+};
+
+/// A judgement context at a fixed precision, for fixtures that build a plane table by hand.
+#[cfg(test)]
+pub(crate) fn fixed_judge(prec: usize) -> Judge {
+    Judge {
+        prec,
+        coincidence: Bound::pow2(-180),
+        scale: Bound::of(1.0),
+        cap: JUDGE_PREC_CAP,
+    }
+}
+
+/// [`judge_for`] over a bare set of definitions — for the places that must judge before a plane
+/// table exists (witness selection in [`crate::rotated_vertex`]).
+pub(crate) fn judge_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + Clone) -> Judge {
     let mut scale = 1.0f64;
     for p in pts.clone() {
         for c in p.coord {
             scale = scale.max(c.abs());
         }
     }
-    let output_precision = Bound::of(scale).times(Bound::pow2(-52));
-    let coincidence_precision = output_precision.times(Bound::pow2(-128));
-    nacre_cip::judge_precision(pts, coincidence_precision)
+    let scale = Bound::of(scale);
+    let output_precision = scale.times(Bound::pow2(-52));
+    let coincidence = output_precision.times(Bound::pow2(-128));
+    Judge {
+        prec: nacre_cip::judge_precision(pts, coincidence),
+        coincidence,
+        scale,
+        cap: JUDGE_PREC_CAP,
+    }
 }
 
 /// One plane of the arrangement, indexed by a **dense** class id.
@@ -428,8 +474,8 @@ pub(crate) struct PlaneGeom {
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
-    /// Copied from the face table — see [`FaceInfo::judge_prec`].
-    pub(crate) judge_prec: usize,
+    /// Copied from the face table — see [`FaceInfo::judge`].
+    pub(crate) judge: Judge,
 }
 
 /// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
@@ -464,7 +510,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
                 tri_pt3: pi.tri_pt3.clone(),
                 rotated: pi.rotated,
                 frame_sign: pi.orient_sign,
-                judge_prec: pi.judge_prec,
+                judge: pi.judge,
             }
         })
         .collect();

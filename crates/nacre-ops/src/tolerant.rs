@@ -6,8 +6,8 @@
 //! `nacre-cip`.
 
 use crate::planes::{FaceInfo, PlaneGeom};
-use nacre_cip::Pt3;
 use nacre_cip::predicate::{PlaneWitness, Witness};
+use nacre_cip::{Judge, Pt3};
 use nacre_math::Point3;
 
 // Re-export the toleranced predicates from cip so existing call sites keep working.
@@ -31,8 +31,8 @@ impl Witness for PlaneGeom {
     fn is_rotated(&self) -> bool {
         self.rotated
     }
-    fn judge_prec(&self) -> usize {
-        self.judge_prec
+    fn judge(&self) -> Judge {
+        self.judge
     }
 }
 
@@ -54,8 +54,8 @@ impl Witness for FaceInfo {
     fn is_rotated(&self) -> bool {
         self.rotated
     }
-    fn judge_prec(&self) -> usize {
-        self.judge_prec
+    fn judge(&self) -> Judge {
+        self.judge
     }
 }
 
@@ -255,7 +255,7 @@ mod tests {
         let degenerate: Vec<PlaneGeom> = (0..2)
             .map(|k| PlaneGeom {
                 base: crate::planes::BaseFrame::none(),
-                judge_prec: 256,
+                judge: crate::planes::fixed_judge(256),
                 surf: pu[0].surf,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],

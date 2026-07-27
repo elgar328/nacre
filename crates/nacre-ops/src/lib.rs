@@ -249,6 +249,18 @@ pub enum RejectReason {
     /// kernel says so by name. (It used to panic on the mixed-rotation path and silently succeed
     /// on the axis-aligned one, because the definition was built lazily, per judgment.)
     CoordinateOutOfRange,
+    /// **The model's rotation history is longer than the judging budget.**
+    ///
+    /// A rotated point's realization carries an error `C · 2⁻ᵖʳᵉᶜ`, and `C` grows about one bit
+    /// per turn (measured). The kernel therefore sizes `prec` from the model, and this says that
+    /// size exceeded [`crate::planes::JUDGE_PREC_CAP`]: `needed` bits to separate what the
+    /// operation must separate, against a cap of `cap`.
+    ///
+    /// **Nothing is wrong with the model** — this is a cost limit, not a resolution one. The same
+    /// solid turned fewer times builds, and raising the cap would build this one too, slowly.
+    /// It exists so the cause has a name: at a fixed 256 bits a solid turned 245 times used to
+    /// fail as `LoopOrientMismatch`, a symptom three layers away from the reason.
+    PrecisionBudget { needed: usize, cap: usize },
     /// Every candidate ray from a loop's nodes has a ring node on its line.
     ///
     /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
@@ -373,6 +385,7 @@ impl RejectReason {
             Self::DegenerateFace => "degenerate_face",
             Self::DegenerateNormal => "degenerate_normal",
             Self::CoordinateOutOfRange => "coordinate_out_of_range",
+            Self::PrecisionBudget { .. } => "precision_budget",
             Self::NoClearRay => "no_clear_ray",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
@@ -405,6 +418,8 @@ impl RejectReason {
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
             | Self::CoordinateOutOfRange
+            // A cost limit, not a resolution one: more bits would answer it.
+            | Self::PrecisionBudget { .. }
             | Self::NoClearRay
             | Self::PointOnRing
             | Self::HoleDepth
@@ -2312,7 +2327,7 @@ pub mod tests {
             face: fh,
             plane,
             tri,
-            judge_prec: 256,
+            judge: crate::planes::fixed_judge(256),
             n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
@@ -3757,7 +3772,7 @@ pub mod tests {
         let tri = [origin, step(i), step(j)];
         PlaneGeom {
             base: crate::planes::BaseFrame::none(),
-            judge_prec: 256,
+            judge: crate::planes::fixed_judge(256),
             surf,
             plane,
             tri,

@@ -349,7 +349,7 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
             &tri[0],
             &tri[1],
             &tri[2],
-            planes[lf.plane_idx].judge_prec,
+            planes[lf.plane_idx].judge.prec,
         );
         let nx = if lf.flip {
             match nx {

@@ -3,7 +3,8 @@
 //! Two parts, both pure numeric (neither touches `nacre-topo`):
 //! - [`kernel`] — the toleranced-sign kernel: a rotated point ([`Pt3`]) carries a sound
 //!   directional tol, and an orientation determinant is decided by an f64 filter → astro-float
-//!   escalation → declare-0. The certified-toleranced twin of `nacre-predicates` (exact f64).
+//!   escalation → a proved coincidence or an honest "undecided" ([`Decision`]). The
+//!   certified-toleranced twin of `nacre-predicates` (exact f64).
 //! - [`predicate`] — the plane-arrangement geometric predicates (`t_orient3d`, `t_cmp_coord`,
 //!   …) that route each query to the exact path (`nacre-predicates`) or the kernel by whether
 //!   its planes are rotated. The b-rep supplies witnesses through the
@@ -15,6 +16,6 @@ pub mod predicate;
 // The toleranced-sign kernel symbols consumers use directly (`nacre-ops`: `Pt3`/`RotNode` for
 // vertex assembly, `dir_orient3d_judge` for a per-face normal sign).
 pub use kernel::frame3::{
-    Pt3, RotNode, dir_orient3d_judge, dir_sign_judge, indirect_cmp_coord_judge,
+    Decision, Judge, Pt3, RotNode, dir_orient3d_judge, dir_sign_judge, indirect_cmp_coord_judge,
     indirect_orient3d_judge, judge_precision, orient3d_judge,
 };

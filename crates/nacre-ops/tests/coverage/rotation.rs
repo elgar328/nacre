@@ -331,3 +331,33 @@ fn a_tool_edge_lying_in_a_target_plane_builds_and_agrees_with_its_neighbours() {
         );
     }
 }
+
+/// **A rotation history longer than the judging budget is rejected by its cause, not a symptom.**
+///
+/// The error a rotated definition carries grows about one bit per turn, so the kernel sizes its
+/// judging precision from the model — and past `JUDGE_PREC_CAP` it stops and says so. Measured
+/// cost is what puts the cap where it is: this same `Cut` takes 1.2s at 400 turns, 16s at 1600 and
+/// 90s at 3200 (all with the volume still exactly right), so the cap sits past any real model and
+/// still inside the minutes.
+///
+/// The reject must arrive *before* the work: the precision is known once the plane tables exist,
+/// which is why this test is fast while a boolean one turn under the cap is not.
+#[test]
+fn a_rotation_history_past_the_budget_is_rejected_by_name() {
+    let (mut m, a, b) = two_boxes();
+    let mut a = a;
+    // ~1 bit per turn on top of the ~185 the coincidence limit already asks for. One operand is
+    // enough: the precision is sized from the whole table, so the deepest history in it wins.
+    for _ in 0..4200 {
+        a = xf(&mut m, a, rot_iso(Axis::Z, 37));
+    }
+    match boolean(&mut m, BoolKind::Cut, a, b) {
+        Err(BoolError::Unsupported {
+            reason: nacre_ops::RejectReason::PrecisionBudget { needed, cap },
+        }) => {
+            assert!(needed > cap, "needed {needed} bits, cap {cap}");
+            assert!(needed > 4200, "one bit per turn: needed {needed}");
+        }
+        other => panic!("expected a named precision-budget reject, got {other:?}"),
+    }
+}

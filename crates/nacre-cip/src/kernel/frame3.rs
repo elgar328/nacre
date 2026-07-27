@@ -7,8 +7,11 @@
 //! axis-aligned rotations (§CIP ①: `new tol = |R|·old + mix`). [`orient3d_judge`]
 //! consumes that tol: an f64 determinant filter with a sound error bound
 //! ([`det3_bound`], §CIP ②) decides the easy cases, the ambiguous ones **escalate**
-//! to astro-float from the point definitions, and a determinant below the precision
-//! floor is a **declare-0** ([`Orient::Zero`]). This is the judgment **layer only**
+//! to astro-float from the point definitions, and one whose interval still straddles zero is
+//! **normalized into the distance it stands for** and held against the operation's coincidence
+//! limit ([`Judge`]): below it the coincidence is proved, above it the judgement climbs to the
+//! precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
+//! assumed. This is the judgment **layer only**
 //! ("층만") — not yet wired into boolean (that is stage 3), and it is the *tol > 0*
 //! path: a tol-0 (`Constructed`) config is faster/exact via `nacre-predicates`
 //! (Shewchuk), routed by a higher layer, not here.
@@ -225,6 +228,131 @@ impl Pt3 {
     }
 }
 
+/// **What a judgement needs beyond its points: how deep to realize, and how close counts as one.**
+///
+/// The threshold here is a **length in the model's own units**, never a bit count. "256 bits"
+/// means a resolution of `1e-76` for a solid turned once and `1e+15` for one turned three hundred
+/// times — the same setting meaning entirely different things per model, which is not something
+/// anyone can reason about. Bits are the implementation detail the kernel computes per model
+/// ([`judge_precision`]); the length is the physics.
+///
+/// `coincidence` is not a tolerance in the usual sense, and deliberately not called one: a global
+/// tol says *"anything closer than this, snap together"* (merging without knowing), while this
+/// says *"a coincidence must be **proved** to be closer than this"*. Nothing is merged on
+/// ignorance; a judgement that cannot prove it climbs, and then says so.
+#[derive(Clone, Copy, Debug)]
+pub struct Judge {
+    /// The precision the escalation realizes definitions at — chosen for this model, uniform
+    /// across the operation so [`Pt3`]'s realization cache stays warm.
+    pub prec: usize,
+    /// Two things **proved** to lie within this distance of each other are one thing.
+    pub coincidence: Bound,
+    /// The model's size — what turns the length limit into an angle for the one judgement whose
+    /// question is about directions ([`dir_sign_judge`]).
+    pub scale: Bound,
+    /// The most bits an escalation may ask for. Past it the judgement is [`Decision::Exhausted`]:
+    /// answerable in principle, too expensive in practice, and said out loud rather than guessed.
+    pub cap: usize,
+}
+
+/// **What a judgement established** — the answer *and* what backs it.
+///
+/// `Orient::Zero` alone cannot say whether a zero was proved or assumed, which is how a kernel
+/// ends up quietly guessing. These four cases are the honest partition:
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Decision {
+    /// A **proved** sign. `Zero` appears here only from a path that can prove one — an exact
+    /// predicate, or a rotation that cancelled — never from a determinant that merely failed to
+    /// separate from zero.
+    Sign(Orient),
+    /// The two things were shown to lie within `within` of each other, and that is at or below
+    /// the coincidence limit. They are treated as one, and `within` is the evidence for it.
+    Coincident { within: Bound },
+    /// Still straddling zero at `at` bits, the cap — and the separation it might stand for is
+    /// *larger* than the coincidence limit, so calling it a coincidence would be a guess. More
+    /// precision would decide it; the model's rotation history has outgrown the budget.
+    Exhausted { at: usize },
+    /// The quantity that turns this determinant into a distance cannot be bounded away from zero
+    /// — a degenerate witness triangle, or three planes with no well-defined meeting point. **A
+    /// different cause from [`Self::Exhausted`], and the distinction matters**: more precision
+    /// never helps here, because the question has no metric answer to sharpen.
+    Degenerate,
+}
+
+impl Decision {
+    /// The sign the geometry consumes, with every inconclusive outcome collapsing to `Zero`.
+    ///
+    /// A proved coincidence and an exhausted judgement are the *same instruction* to the
+    /// arrangement — "treat these as equal" — and differ only in what can be said about it
+    /// afterwards. Keeping the difference out of the control flow is what lets the reporting
+    /// channel be added without touching a single geometric decision.
+    pub fn orient(self) -> Orient {
+        match self {
+            Decision::Sign(o) => o,
+            _ => Orient::Zero,
+        }
+    }
+}
+
+/// Run one judgement at `j.prec` and, while it neither decides a sign nor proves a coincidence,
+/// again with more bits — up to the cap.
+///
+/// `attempt` answers at a given precision with the sign, if it has one, and otherwise **the
+/// separation its undecided determinant stands for**, normalized into the unit `limit` is in
+/// (`None` = the normalization is not available, see [`Decision::Degenerate`]). That separation
+/// is the whole point: a determinant is not a length, and a threshold applied to one directly
+/// would move with the size of the witness triangle.
+///
+/// **The next precision is computed, not doubled.** The gap is `C · 2⁻ᵖʳᵉᶜ` over a cofactor and
+/// `C` does not depend on the precision (measured), so `log₂(gap / limit)` *is* the number of bits
+/// missing — the same derivation [`judge_precision`] uses to size the model in the first place.
+/// One jump lands there, rounded up to a whole word because astro-float allocates whole words
+/// anyway. Doubling would either overshoot (paying for bits nobody asked for) or, on a model that
+/// starts deep, undershoot and realize everything twice for nothing.
+fn escalate(
+    j: Judge,
+    limit: Bound,
+    mut attempt: impl FnMut(usize) -> (Option<Orient>, Option<Bound>),
+) -> Decision {
+    let mut prec = j.prec;
+    loop {
+        let (sign, gap) = attempt(prec);
+        if let Some(o) = sign {
+            return Decision::Sign(o);
+        }
+        let Some(gap) = gap else {
+            return Decision::Degenerate;
+        };
+        // **A zero gap is a proof, not a near miss.** The radius bounds how far the computed value
+        // is from the true one, so a zero radius says the midpoint *is* the value — and the sign
+        // came back undecided only because that midpoint is zero. Determinants reach this
+        // honestly: a row that is exactly zero (a plane perpendicular to the rotation axis keeps
+        // its coordinate exactly) multiplies every error term to nothing.
+        if gap.is_zero() {
+            return Decision::Sign(Orient::Zero);
+        }
+        if !limit.lt(gap) {
+            return Decision::Coincident { within: gap };
+        }
+        // How many bits short this judgement is, read off the gap it did establish. A limit with
+        // no exponent (a zero bound) is a target no precision reaches, so that is exhausted too.
+        let short = match (gap.exp2(), limit.exp2()) {
+            (Some(g), Some(l)) => (g - l).max(1) as usize,
+            _ => usize::MAX,
+        };
+        if prec >= j.cap || short == usize::MAX {
+            return Decision::Exhausted { at: prec };
+        }
+        // Up to a whole word, and never a standstill: a jump that rounded back to `prec` would
+        // spin here forever.
+        prec = (prec + short)
+            .div_ceil(WORD)
+            .max(prec / WORD + 1)
+            .saturating_mul(WORD)
+            .min(j.cap);
+    }
+}
+
 /// The precision at which a realization's error is *measured*, before the real one is chosen.
 ///
 /// Nothing is judged here — this only has to be deep enough that the radius it produces is a
@@ -435,33 +563,58 @@ fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
 }
 
 /// CIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
-/// astro-float at [`prec`]; a determinant below the precision floor (`~scale³`,
-/// cubic for the 3×3 case) is [`Orient::Zero`] (declare-0). Path-independent (a
+/// astro-float at the operation's precision; a determinant that still straddles zero there is
+/// turned into a distance and answered by [`escalate`]. Path-independent (a
 /// function of the four point definitions). This is the *tol > 0* path — a tol-0
 /// config is exact/faster via `nacre-predicates` (Shewchuk), routed above this crate.
-pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Orient {
+pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, j: Judge) -> Decision {
     let (a, b, c, d) = (pa.coord, pb.coord, pc.coord, pd.coord);
     let det = det3_f64(a, b, c, d);
     let bound = det3_bound([a, b, c, d], [pa.tol, pb.tol, pc.tol, pd.tol]);
     if det > bound {
-        return Orient::Positive;
+        return Decision::Sign(Orient::Positive);
     }
     if det < -bound {
-        return Orient::Negative;
+        return Decision::Sign(Orient::Negative);
     }
     // One shared rigid motion cancels out of `det[a−d, b−d, c−d]` (`det(R) = 1`), so the same
     // question is answered exactly on the pre-rotation coordinates — no tolerance, no escalation.
+    // Its zero is a **proved** zero, which is why it is a `Sign` and not a coincidence.
     if let Some(b) = shared_base(&[pa, pb, pc, pd]) {
-        return match nacre_predicates::orient3d(b[0], b[1], b[2], b[3]) {
+        return Decision::Sign(match nacre_predicates::orient3d(b[0], b[1], b[2], b[3]) {
             x if x > 0.0 => Orient::Positive,
             x if x < 0.0 => Orient::Negative,
             _ => Orient::Zero,
-        };
+        });
     }
-    match det3_hp(pa, pb, pc, pd, prec).sign() {
-        Some(pos) => orient_of(pos),
-        None => Orient::Zero,
-    }
+    escalate(j, j.coincidence, |prec| {
+        let det = det3_hp(pa, pb, pc, pd, prec);
+        match det.sign() {
+            Some(pos) => (Some(orient_of(pos)), None),
+            // Only now is the area term worth forming: the sign decides on the first try in all
+            // but the coincident cases, and the cross product is six high-precision products.
+            None => (
+                None,
+                distance_bound(det.rad, &cross_of(pb, pc, pd, prec), prec),
+            ),
+        }
+    })
+}
+
+/// `(b−d) × (c−d)` at `prec` bits — the area term that turns [`orient3d_judge`]'s determinant
+/// into a height above the plane through `b, c, d`.
+fn cross_of(pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> [HpIv; 3] {
+    let (b, c, d) = (pb.hp_coord(prec), pc.hp_coord(prec), pd.hp_coord(prec));
+    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
+    let (u, v) = (
+        [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
+        [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
+    );
+    [
+        u[1].mul(&v[2], prec).sub(&u[2].mul(&v[1], prec), prec),
+        u[2].mul(&v[0], prec).sub(&u[0].mul(&v[2], prec), prec),
+        u[0].mul(&v[1], prec).sub(&u[1].mul(&v[0], prec), prec),
+    ]
 }
 
 /// How far `pa` may be from the plane through `pb, pc, pd`, in the model's own length units.
@@ -471,22 +624,10 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Or
 /// "these are the same", but "`pa` is within **this much** of that plane". `None` when the three
 /// plane points are too near collinear for a distance to mean anything.
 pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Option<Bound> {
-    let (b, c, d) = (pb.hp_coord(prec), pc.hp_coord(prec), pd.hp_coord(prec));
-    let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
-    let (u, v) = (
-        [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
-        [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
-    );
-    let cross = [
-        u[1].mul(&v[2], prec).sub(&u[2].mul(&v[1], prec), prec),
-        u[2].mul(&v[0], prec).sub(&u[0].mul(&v[2], prec), prec),
-        u[0].mul(&v[1], prec).sub(&u[1].mul(&v[0], prec), prec),
-    ];
     let det = det3_hp(pa, pb, pc, pd, prec);
     // The *value* the judge could not separate from zero is somewhere in `±rad`, so the distance
-    // it bounds is `rad / |cross|`. Reported alongside the midpoint's own distance so a caller
-    // can see both what was measured and how well.
-    distance_bound(det.rad, &cross, prec)
+    // it bounds is `rad / |cross|`.
+    distance_bound(det.rad, &cross_of(pb, pc, pd, prec), prec)
 }
 
 /// CIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
@@ -496,7 +637,11 @@ pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) ->
 /// `base+chain` `Pt3` (`R⁻¹d` is irrational). Every such determinant reduces to this form,
 /// where `d` enters as one **exact** (rad-0) column and only `x, y, base` carry rotation tol.
 /// Interval filter → astro-float escalation, exactly like the indirect judges; a below-floor
-/// determinant is [`Orient::Zero`] (declare-0, absorbed by the caller's ray retry).
+/// determinant that stays undecided is [`Orient::Zero`], absorbed by the caller's ray retry.
+///
+/// **The one judge with no metric normalization**, and the reason is that its caller does not
+/// need one: a zero here means the ray runs along the face's plane, and `boolean` answers that by
+/// casting a different ray rather than by asking how close it came.
 ///
 /// `d` is realized through an unrotated [`Pt3`] purely to reuse `pt_iv`/`hp_coord` for its
 /// coord/tol/hp — the row is `d` itself, never `d − base`.
@@ -758,7 +903,7 @@ fn indirect_hp(
     r: [HpIv; 3],
     s: [HpIv; 3],
     prec: usize,
-) -> (HpIv, HpIv, Option<Bound>) {
+) -> (HpIv, HpIv, [HpIv; 3]) {
     let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
     let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
     let add = |x: &HpIv, y: &HpIv| x.add(y, prec);
@@ -779,8 +924,9 @@ fn indirect_hp(
         &add(&mul(&row1[0], &cross[0]), &mul(&row1[1], &cross[1])),
         &mul(&row1[2], &cross[2]),
     );
-    let gap = plane_gap(&m, &d, &cross, prec);
-    (d, m, gap)
+    // `cross` rides out with the two determinants rather than the finished gap: forming the gap
+    // costs a division and an exponent walk, and the path that decides a sign never needs it.
+    (d, m, cross)
 }
 
 /// **How far the implicit point may be from the triangle's plane**, in the model's own units.
@@ -804,9 +950,9 @@ fn plane_gap(m: &HpIv, d: &HpIv, cross: &[HpIv; 3], prec: usize) -> Option<Bound
 
 /// CIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
 /// rotated points, the triangle three rotated points. Interval filter → astro-float
-/// escalation; a below-floor `D` or `M` is [`Orient::Zero`] (declare-0, "ask the
-/// user"). The `Discovered`-seam analogue of [`orient3d_judge`]; boolean wiring is
-/// stage 3.
+/// escalation; an undecided `D` or `M` becomes the distance from the implicit point to the
+/// triangle's plane and is answered by [`escalate`]. The `Discovered`-seam analogue of
+/// [`orient3d_judge`]; boolean wiring is stage 3.
 #[allow(clippy::too_many_arguments)]
 pub fn indirect_orient3d_judge(
     plane_a: (&Pt3, &Pt3, &Pt3),
@@ -815,27 +961,33 @@ pub fn indirect_orient3d_judge(
     q: &Pt3,
     r: &Pt3,
     s: &Pt3,
-    prec: usize,
-) -> Orient {
+    j: Judge,
+) -> Decision {
     let planes = [
         plane_iv(plane_a.0, plane_a.1, plane_a.2),
         plane_iv(plane_b.0, plane_b.1, plane_b.2),
         plane_iv(plane_c.0, plane_c.1, plane_c.2),
     ];
     if let Some(o) = indirect_filter(planes, pt_iv(q), pt_iv(r), pt_iv(s)) {
-        return o;
+        return Decision::Sign(o);
     }
     // Escalate: the same two determinants at prec, each carrying the radius accumulated
-    // along its own computation. A determinant whose interval straddles zero is undecided.
-    let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-    let (d, m, _gap) = indirect_hp(
-        [ph(plane_a), ph(plane_b), ph(plane_c)],
-        q.hp_coord(prec),
-        r.hp_coord(prec),
-        s.hp_coord(prec),
-        prec,
-    );
-    combine(d.sign(), m.sign()).unwrap_or(Orient::Zero)
+    // along its own computation. A determinant whose interval straddles zero is undecided,
+    // and what it *did* establish is how far the implicit point may be from the triangle's plane.
+    escalate(j, j.coincidence, |prec| {
+        let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+        let (d, m, cross) = indirect_hp(
+            [ph(plane_a), ph(plane_b), ph(plane_c)],
+            q.hp_coord(prec),
+            r.hp_coord(prec),
+            s.hp_coord(prec),
+            prec,
+        );
+        match combine(d.sign(), m.sign()) {
+            Some(o) => (Some(o), None),
+            None => (None, plane_gap(&m, &d, &cross, prec)),
+        }
+    })
 }
 
 // ---- indirect cmp_coord: order two implicit points along one axis ----
@@ -875,14 +1027,9 @@ fn cmp_filter(a: [[Iv; 4]; 3], b: [[Iv; 4]; 3], axis: usize) -> Option<Orient> {
     cmp_combine(m.sign(), da.sign(), db.sign())
 }
 
-/// The astro-float escalation for `cmp_coord`: the same three signs at `prec` bits, each read off
-/// its own interval; `Orient::Zero` if any straddles zero (the two coordinates are equal, or too
-/// close to separate at this precision).
-fn cmp_hp(a: [[HpIv; 4]; 3], b: [[HpIv; 4]; 3], axis: usize, prec: usize) -> Orient {
-    cmp_hp_with_gap(a, b, axis, prec).0
-}
-
-/// [`cmp_hp`], and **how far apart the two coordinates may be** in the model's own units.
+/// The astro-float escalation for `cmp_coord`: the three signs at `prec` bits, and — when they do
+/// not combine into an ordering — **how far apart the two coordinates may be** in the model's own
+/// units.
 ///
 /// Each implicit point's coordinate is `Dvec[axis]/D` (Cramer), so their difference is
 /// `M / (D_a · D_b)` — a length, once divided. `M` alone is not: it carries both denominators, so
@@ -894,14 +1041,16 @@ fn cmp_hp_with_gap(
     b: [[HpIv; 4]; 3],
     axis: usize,
     prec: usize,
-) -> (Orient, Option<Bound>) {
+) -> (Option<Orient>, Option<Bound>) {
     let (da, dva) = cramer_hp(a, prec);
     let (db, dvb) = cramer_hp(b, prec);
     let m = dva[axis]
         .mul(&db, prec)
         .sub(&dvb[axis].mul(&da, prec), prec);
-    let o = cmp_combine(m.sign(), da.sign(), db.sign()).unwrap_or(Orient::Zero);
-    (o, coord_gap(&m, &da, &db))
+    match cmp_combine(m.sign(), da.sign(), db.sign()) {
+        Some(o) => (Some(o), None),
+        None => (None, coord_gap(&m, &da, &db)),
+    }
 }
 
 /// `|M| / |D_a · D_b|`, the separation `M` stands for — bounded above from `M`'s own radius, and
@@ -914,15 +1063,16 @@ fn coord_gap(m: &HpIv, da: &HpIv, db: &HpIv) -> Option<Bound> {
 /// CIP indirect `cmp_coord`: the sign of `a[axis] − b[axis]` where `a`, `b` are the
 /// implicit points at which each three-plane triple meets — each plane through three
 /// rotated points. Interval filter → astro-float escalation. `Positive` = `a[axis] >
-/// b[axis]`, `Negative` = `<`, `Zero` = equal **or** below the declare-0 floor (unlike
-/// the exact `nacre_predicates::indirect_cmp_coord`, whose `0` means exactly equal). The
+/// b[axis]`, `Negative` = `<`, and a zero that is either **proved** or **proved within the
+/// coincidence limit** (unlike the exact `nacre_predicates::indirect_cmp_coord`, whose `0` means
+/// exactly equal — see [`Decision`] for which of the two this was). The
 /// two-implicit companion of [`indirect_orient3d_judge`]; boolean wiring is stage 3.
 pub fn indirect_cmp_coord_judge(
     a: [(&Pt3, &Pt3, &Pt3); 3],
     b: [(&Pt3, &Pt3, &Pt3); 3],
     axis: usize,
-    prec: usize,
-) -> Orient {
+    j: Judge,
+) -> Decision {
     let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
         [
             plane_iv(t[0].0, t[0].1, t[0].2),
@@ -931,16 +1081,18 @@ pub fn indirect_cmp_coord_judge(
         ]
     };
     if let Some(o) = cmp_filter(iv(a), iv(b), axis) {
-        return o;
+        return Decision::Sign(o);
     }
-    let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
-        [
-            plane_hp(t[0].0, t[0].1, t[0].2, prec),
-            plane_hp(t[1].0, t[1].1, t[1].2, prec),
-            plane_hp(t[2].0, t[2].1, t[2].2, prec),
-        ]
-    };
-    cmp_hp(hp(a), hp(b), axis, prec)
+    escalate(j, j.coincidence, |prec| {
+        let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+            [
+                plane_hp(t[0].0, t[0].1, t[0].2, prec),
+                plane_hp(t[1].0, t[1].1, t[1].2, prec),
+                plane_hp(t[2].0, t[2].1, t[2].2, prec),
+            ]
+        };
+        cmp_hp_with_gap(hp(a), hp(b), axis, prec)
+    })
 }
 
 /// A definite `bool` sign (`true` = positive) as an [`Orient`].
@@ -967,24 +1119,32 @@ pub fn dir_sign_judge(
     a: (&Pt3, &Pt3, &Pt3),
     b: (&Pt3, &Pt3, &Pt3),
     c: (&Pt3, &Pt3, &Pt3),
-    prec: usize,
-) -> Orient {
+    j: Judge,
+) -> Decision {
     let (d, _) = cramer_iv([
         plane_iv(a.0, a.1, a.2),
         plane_iv(b.0, b.1, b.2),
         plane_iv(c.0, c.1, c.2),
     ]);
     if let Some(pos) = d.sign() {
-        return orient_of(pos);
+        return Decision::Sign(orient_of(pos));
     }
-    let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
-    let planes = [ph(a), ph(b), ph(c)];
-    let (dh, _) = cramer_hp(planes.clone(), prec);
-    let _ = dir_gap(&dh, &planes, prec);
-    match dh.sign() {
-        Some(pos) => orient_of(pos),
-        None => Orient::Zero,
-    }
+    // **The one judgement whose limit is an angle.** Its question is about directions, so the
+    // coincidence length has to be converted: a deviation of `coincidence` across a model of size
+    // `scale` subtends `coincidence / scale`. A model too small to divide by leaves no angle to
+    // compare against, so the judgement is degenerate rather than guessed.
+    let Some(limit) = j.coincidence.over(j.scale) else {
+        return Decision::Degenerate;
+    };
+    escalate(j, limit, |prec| {
+        let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+        let planes = [ph(a), ph(b), ph(c)];
+        let (dh, _) = cramer_hp(planes.clone(), prec);
+        match dh.sign() {
+            Some(pos) => (Some(orient_of(pos)), None),
+            None => (None, dir_gap(&dh, &planes, prec)),
+        }
+    })
 }
 
 /// **How far three plane normals are from being coplanar — as an angle, not a length.**
@@ -1025,12 +1185,156 @@ mod tests {
     /// ([`judge_precision`]); a fixture pins one so its expectations stay fixed.
     const FIXTURE_PREC: usize = 256;
 
+    /// The judgement context those fixtures use: that precision, plus the coincidence limit the
+    /// default derivation gives a unit-scale model (output resolution `2⁻⁵²`, two words further
+    /// down) and the production cap.
+    fn fixture() -> Judge {
+        Judge {
+            prec: FIXTURE_PREC,
+            coincidence: Bound::pow2(-180),
+            scale: Bound::of(1.0),
+            cap: 4096,
+        }
+    }
+
     fn ri(n: i128, d: i128) -> Rat {
         Rat::new(n, d).unwrap()
     }
 
     fn deg(n: i128, d: i128) -> Angle {
         Angle::from_deg(ri(n, d)).unwrap()
+    }
+
+    /// **The climb lands where the shortfall says, in one jump.**
+    ///
+    /// The gap is `C · 2⁻ᵖʳᵉᶜ` over a cofactor and `C` does not move with the precision, so
+    /// `log₂(gap / limit)` is exactly the number of missing bits — the same reading
+    /// [`judge_precision`] takes to size the model. This pins that the loop uses it: the fixture's
+    /// gap shrinks bit-for-bit with the precision, it starts 100 bits short, and the next attempt
+    /// must arrive at 384 — `256 + 100` rounded up to a word — not at 512 (doubling), and not at
+    /// 320 (a fixed word step, which would need two more rounds).
+    #[test]
+    fn the_climb_lands_where_the_shortfall_names_in_one_jump() {
+        let mut asked = Vec::new();
+        let j = Judge {
+            prec: 256,
+            coincidence: Bound::pow2(-300),
+            scale: Bound::of(1.0),
+            cap: 4096,
+        };
+        let out = escalate(j, j.coincidence, |prec| {
+            asked.push(prec);
+            // `C = 2⁵⁶`: at 256 bits the gap is `2⁻²⁰⁰`, a hundred bits above the limit.
+            (None, Some(Bound::pow2(56 - prec as i64)))
+        });
+        assert_eq!(asked, vec![256, 384], "the climb overshot or crept");
+        assert!(
+            matches!(out, Decision::Coincident { within } if within.lt(Bound::pow2(-299))),
+            "{out:?} — the second attempt was inside the limit and had to be reported as proof"
+        );
+    }
+
+    /// **At the cap the judgement says so; it does not quietly become a zero.**
+    ///
+    /// This is the failure the whole cell exists to remove — an undecided determinant that reads
+    /// as "these coincide" and merges two things that are apart. A gap that never reaches the
+    /// limit must come back [`Decision::Exhausted`], and `orient()` may collapse it to `Zero` for
+    /// the geometry only because the outcome itself is still there to be reported.
+    #[test]
+    fn a_gap_that_never_reaches_the_limit_is_exhausted_not_coincident() {
+        let j = Judge {
+            prec: 256,
+            coincidence: Bound::pow2(-300),
+            scale: Bound::of(1.0),
+            cap: 512,
+        };
+        let mut rounds = 0;
+        // A gap that ignores the precision entirely — a cofactor collapsing as fast as the
+        // radius shrinks. No depth settles it, which is what the cap is for.
+        let out = escalate(j, j.coincidence, |_| {
+            rounds += 1;
+            (None, Some(Bound::pow2(-10)))
+        });
+        assert_eq!(out, Decision::Exhausted { at: 512 });
+        assert_eq!(out.orient(), Orient::Zero, "the geometry still gets a sign");
+        assert!(rounds > 1 && rounds < 10, "climbed {rounds} times");
+    }
+
+    /// **A degenerate witness is a different answer from an exhausted one, and must not climb.**
+    ///
+    /// No gap at all means the quantity that turns the determinant into a distance could not be
+    /// bounded away from zero — a collapsed witness triangle, or three planes with no meeting
+    /// point. More bits sharpen a distance; they do not conjure one. Telling the two apart is the
+    /// whole reason the outcome is not a single "could not decide": one cause is a budget, the
+    /// other is the geometry, and a caller that cannot tell them apart cannot act on either.
+    #[test]
+    fn a_degenerate_witness_is_told_apart_from_an_exhausted_one() {
+        let j = Judge {
+            prec: 256,
+            coincidence: Bound::pow2(-300),
+            scale: Bound::of(1.0),
+            cap: 4096,
+        };
+        let mut rounds = 0;
+        let out = escalate(j, j.coincidence, |_| {
+            rounds += 1;
+            (None, None)
+        });
+        assert_eq!(out, Decision::Degenerate);
+        assert_eq!(rounds, 1, "a degenerate witness must not be re-realized");
+    }
+
+    /// **A structural zero comes back proved, not assumed.**
+    ///
+    /// Four points that are coplanar *before* a rotation stay coplanar after it, but the judge
+    /// cannot see that: one base is `1/3`, so the pre-rotation shortcut cannot hand the question
+    /// to the exact predicate and the determinant is a transcendental zero no finite precision
+    /// separates. Before the gap was wired in, that came back `Orient::Zero` with nothing behind
+    /// it. Now it comes back with the distance it established — and that distance has to be
+    /// **below the coincidence limit**, which is what makes "these are the same plane" a proof
+    /// rather than a shrug.
+    ///
+    /// The plane is **tilted** (`z = x`), which the first version of this fixture was not: a plane
+    /// perpendicular to the rotation axis keeps its `z` coordinate exactly, so every error term
+    /// meets an exactly-zero factor and the determinant comes back a *proved* zero instead — a
+    /// real outcome (and one this loop reports), but not the one under test here.
+    #[test]
+    fn a_structural_zero_comes_back_proved_not_assumed() {
+        // The plane `z = x` through four points, one of them irrational, all turned together.
+        let pt = |x: Rat, y: Rat| {
+            Pt3::at([x, y, x]).rotate_about(Axis::Z, deg(30, 1), [ri(1, 3), ri(1, 7), ri(0, 1)])
+        };
+        let (a, b, c, d) = (
+            pt(ri(1, 3), ri(1, 1)),
+            pt(ri(0, 1), ri(0, 1)),
+            pt(ri(1, 1), ri(0, 1)),
+            pt(ri(0, 1), ri(1, 1)),
+        );
+        let j = fixture();
+        let out = orient3d_judge(&a, &b, &c, &d, j);
+        let Decision::Coincident { within } = out else {
+            panic!("{out:?} — a structural zero must be proved, not assumed");
+        };
+        assert!(
+            !j.coincidence.lt(within),
+            "reported {:?} against a limit of {:?}",
+            within.exp2(),
+            j.coincidence.exp2()
+        );
+        assert_eq!(out.orient(), Orient::Zero);
+
+        // …and the limit is genuinely consulted: ask for a coincidence a thousand bits finer than
+        // the model can carry and the same judgement must refuse to call it one.
+        let strict = Judge {
+            coincidence: Bound::pow2(-2000),
+            cap: 512,
+            ..j
+        };
+        assert_eq!(
+            orient3d_judge(&a, &b, &c, &d, strict),
+            Decision::Exhausted { at: 512 },
+            "the coincidence limit was ignored — any zero would pass"
+        );
     }
 
     /// **The design principle, as a test: raising the precision must actually narrow the bound.**
@@ -1613,11 +1917,11 @@ mod tests {
         // d at origin; a,b,c along +x,+y,+z → right-handed → Positive.
         let (a, b, c, d) = (pt(1, 0, 0), pt(0, 1, 0), pt(0, 0, 1), pt(0, 0, 0));
         assert_eq!(
-            orient3d_judge(&a, &b, &c, &d, FIXTURE_PREC),
+            orient3d_judge(&a, &b, &c, &d, fixture()).orient(),
             Orient::Positive
         );
         assert_eq!(
-            orient3d_judge(&b, &a, &c, &d, FIXTURE_PREC),
+            orient3d_judge(&b, &a, &c, &d, fixture()).orient(),
             Orient::Negative,
             "swap → mirror"
         );
@@ -1628,7 +1932,7 @@ mod tests {
                 .rotate_about(Axis::Z, deg(37, 1), [ri(2, 1), ri(-3, 1), ri(0, 1)])
         };
         assert_eq!(
-            orient3d_judge(&rot(&a), &rot(&b), &rot(&c), &rot(&d), FIXTURE_PREC),
+            orient3d_judge(&rot(&a), &rot(&b), &rot(&c), &rot(&d), fixture()).orient(),
             Orient::Positive,
             "orientation is rotation-invariant"
         );
@@ -1641,7 +1945,10 @@ mod tests {
         let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
         // all four in the plane z = 0.
         let (a, b, c, d) = (pt(0, 0, 0), pt(3, 0, 0), pt(0, 5, 0), pt(2, 7, 0));
-        assert_eq!(orient3d_judge(&a, &b, &c, &d, FIXTURE_PREC), Orient::Zero);
+        assert_eq!(
+            orient3d_judge(&a, &b, &c, &d, fixture()).orient(),
+            Orient::Zero
+        );
     }
 
     // ---- indirect orient3d (2c-i) ----
@@ -1674,18 +1981,18 @@ mod tests {
         let pc = (pt(0, 0, 0), pt(0, 1, 0), pt(0, 0, 1)); // x = 0  → V = (0,0,0)
         let (q, r, s) = (pt(1, 0, 0), pt(0, 1, 0), pt(0, 0, 1));
         assert_eq!(
-            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s, FIXTURE_PREC),
+            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s, fixture()).orient(),
             Orient::Negative
         );
         assert_eq!(
-            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &r, &q, &s, FIXTURE_PREC),
+            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &r, &q, &s, fixture()).orient(),
             Orient::Positive,
             "q/r swap flips the sign"
         );
         // s coplanar with V,q,r (all z = 0) → orient exactly 0 → declare-0.
         let s0 = pt(1, 1, 0);
         assert_eq!(
-            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s0, FIXTURE_PREC),
+            indirect_orient3d_judge(tri(&pa), tri(&pb), tri(&pc), &q, &r, &s0, fixture()).orient(),
             Orient::Zero
         );
         // Shared rotation of all twelve points keeps the definite sign.
@@ -1697,7 +2004,8 @@ mod tests {
         let (ra, rb, rc) = (rp(tri(&pa)), rp(tri(&pb)), rp(tri(&pc)));
         let (rq, rr, rs) = (rot(&q), rot(&r), rot(&s));
         assert_eq!(
-            indirect_orient3d_judge(tri(&ra), tri(&rb), tri(&rc), &rq, &rr, &rs, FIXTURE_PREC),
+            indirect_orient3d_judge(tri(&ra), tri(&rb), tri(&rc), &rq, &rr, &rs, fixture())
+                .orient(),
             Orient::Negative,
             "indirect orient is rotation-invariant"
         );
@@ -1821,7 +2129,7 @@ mod tests {
             for q in 0..4 {
                 let tri: Vec<usize> = (0..4).filter(|&i| i != q).collect();
                 // Skip a splitting whose three planes do not meet at a single point at all.
-                if dir_sign_judge(plane(tri[0]), plane(tri[1]), plane(tri[2]), FIXTURE_PREC)
+                if dir_sign_judge(plane(tri[0]), plane(tri[1]), plane(tri[2]), fixture()).orient()
                     == Orient::Zero
                 {
                     continue;
@@ -1831,15 +2139,18 @@ mod tests {
                 // — the configuration the engine actually hit. With `p` first the term stays
                 // healthy and the corpus measures nothing.
                 let t = plane(q);
-                verdicts.push(indirect_orient3d_judge(
-                    plane(tri[0]),
-                    plane(tri[1]),
-                    plane(tri[2]),
-                    t.1,
-                    t.2,
-                    t.0,
-                    FIXTURE_PREC,
-                ));
+                verdicts.push(
+                    indirect_orient3d_judge(
+                        plane(tri[0]),
+                        plane(tri[1]),
+                        plane(tri[2]),
+                        t.1,
+                        t.2,
+                        t.0,
+                        fixture(),
+                    )
+                    .orient(),
+                );
             }
             if verdicts.len() < 2 {
                 continue; // nothing to compare
@@ -1876,7 +2187,7 @@ mod tests {
                          q: &Pt3,
                          r: &Pt3,
                          s: &Pt3| {
-            let judged = indirect_orient3d_judge(a, b, c, q, r, s, FIXTURE_PREC);
+            let judged = indirect_orient3d_judge(a, b, c, q, r, s, fixture()).orient();
             let planes = [
                 plane_iv(a.0, a.1, a.2),
                 plane_iv(b.0, b.1, b.2),
@@ -2050,7 +2361,8 @@ mod tests {
             let a = (&p[0], &p[1], &p[2]);
             let b = (&p[3], &p[4], &p[5]);
             let c = (&p[6], &p[7], &p[8]);
-            let judged = indirect_orient3d_judge(a, b, c, &p[9], &p[10], &p[11], FIXTURE_PREC);
+            let judged =
+                indirect_orient3d_judge(a, b, c, &p[9], &p[10], &p[11], fixture()).orient();
             if let Some(truth) = indirect_truth(a, b, c, &p[9], &p[10], &p[11], GT) {
                 assert!(
                     judged == truth || judged == Orient::Zero,
@@ -2138,10 +2450,7 @@ mod tests {
                 plane_hp(t[2].0, t[2].1, t[2].2, prec),
             ]
         };
-        match cmp_hp(hp(a), hp(b), axis, prec) {
-            Orient::Zero => None,
-            o => Some(o),
-        }
+        cmp_hp_with_gap(hp(a), hp(b), axis, prec).0
     }
 
     /// `cmp_combine` maps the parity of negative signs to the ordering.
@@ -2170,20 +2479,20 @@ mod tests {
         let b = axis_planes([1, 5, 3]);
         // y: 2 < 5 → a below b → Negative; swap → Positive.
         assert_eq!(
-            indirect_cmp_coord_judge(tr(&a), tr(&b), 1, FIXTURE_PREC),
+            indirect_cmp_coord_judge(tr(&a), tr(&b), 1, fixture()).orient(),
             Orient::Negative
         );
         assert_eq!(
-            indirect_cmp_coord_judge(tr(&b), tr(&a), 1, FIXTURE_PREC),
+            indirect_cmp_coord_judge(tr(&b), tr(&a), 1, fixture()).orient(),
             Orient::Positive
         );
         // x and z equal → Zero.
         assert_eq!(
-            indirect_cmp_coord_judge(tr(&a), tr(&b), 0, FIXTURE_PREC),
+            indirect_cmp_coord_judge(tr(&a), tr(&b), 0, fixture()).orient(),
             Orient::Zero
         );
         assert_eq!(
-            indirect_cmp_coord_judge(tr(&a), tr(&b), 2, FIXTURE_PREC),
+            indirect_cmp_coord_judge(tr(&a), tr(&b), 2, fixture()).orient(),
             Orient::Zero
         );
     }
@@ -2198,7 +2507,7 @@ mod tests {
             let a = rand_triple(&mut st);
             let b = rand_triple(&mut st);
             let axis = rng(&mut st, 0, 2) as usize;
-            let judged = indirect_cmp_coord_judge(tr(&a), tr(&b), axis, FIXTURE_PREC);
+            let judged = indirect_cmp_coord_judge(tr(&a), tr(&b), axis, fixture()).orient();
             if let Some(truth) = cmp_truth(tr(&a), tr(&b), axis, GT) {
                 assert!(
                     judged == truth || judged == Orient::Zero,
@@ -2220,7 +2529,7 @@ mod tests {
             (0usize, 0, 0, 0, 0, 0);
         let mut check = |a: &[[Pt3; 3]; 3], b: &[[Pt3; 3]; 3], axis: usize| {
             let (ta, tb) = (tr(a), tr(b));
-            let judged = indirect_cmp_coord_judge(ta, tb, axis, FIXTURE_PREC);
+            let judged = indirect_cmp_coord_judge(ta, tb, axis, fixture()).orient();
             let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
                 [
                     plane_iv(t[0].0, t[0].1, t[0].2),
@@ -2385,12 +2694,12 @@ mod tests {
     fn dir_sign_judge_sanity() {
         let ap = axis_planes([0, 0, 0]);
         assert_eq!(
-            dir_sign_judge(t3(&ap[0]), t3(&ap[1]), t3(&ap[2]), FIXTURE_PREC),
+            dir_sign_judge(t3(&ap[0]), t3(&ap[1]), t3(&ap[2]), fixture()).orient(),
             Orient::Negative,
             "det[+x, -y, +z] = -1"
         );
         assert_eq!(
-            dir_sign_judge(t3(&ap[0]), t3(&ap[2]), t3(&ap[1]), FIXTURE_PREC),
+            dir_sign_judge(t3(&ap[0]), t3(&ap[2]), t3(&ap[1]), fixture()).orient(),
             Orient::Positive,
             "one swap flips the sign"
         );
@@ -2400,7 +2709,7 @@ mod tests {
         };
         let (a, b, c) = (mk([1, 0, 0]), mk([0, 1, 0]), mk([1, 1, 0]));
         assert_eq!(
-            dir_sign_judge(t3(&a), t3(&b), t3(&c), FIXTURE_PREC),
+            dir_sign_judge(t3(&a), t3(&b), t3(&c), fixture()).orient(),
             Orient::Zero,
             "coplanar normals → D = 0"
         );
@@ -2416,7 +2725,7 @@ mod tests {
             let (ba, bb, bc) = (mk(&mut st), mk(&mut st), mk(&mut st));
             let un = |b: [[Rat; 3]; 3]| b.map(Pt3::at);
             let (ua, ub, uc) = (un(ba), un(bb), un(bc));
-            let s = dir_sign_judge(t3(&ua), t3(&ub), t3(&uc), FIXTURE_PREC);
+            let s = dir_sign_judge(t3(&ua), t3(&ub), t3(&uc), fixture()).orient();
             if s == Orient::Zero {
                 continue;
             }
@@ -2429,7 +2738,7 @@ mod tests {
                 rot_plane(bc, ax, ang, piv),
             );
             assert_eq!(
-                dir_sign_judge(t3(&ra), t3(&rb), t3(&rc), FIXTURE_PREC),
+                dir_sign_judge(t3(&ra), t3(&rb), t3(&rc), fixture()).orient(),
                 s,
                 "rotation-invariant"
             );
@@ -2479,7 +2788,7 @@ mod tests {
             if !(well_conditioned(&pa) && well_conditioned(&pb) && well_conditioned(&pc)) {
                 continue; // a degenerate plane is not the regime under test
             }
-            let judged = dir_sign_judge(t3(&pa), t3(&pb), t3(&pc), FIXTURE_PREC);
+            let judged = dir_sign_judge(t3(&pa), t3(&pb), t3(&pc), fixture()).orient();
             let (d, _) = cramer_iv([
                 plane_iv(&pa[0], &pa[1], &pa[2]),
                 plane_iv(&pb[0], &pb[1], &pb[2]),
@@ -2610,7 +2919,7 @@ mod tests {
             let (base, x, y) = (at(bb), at(xb), at(yb));
             assert_eq!(
                 orient3d_ray(&base, dir, &x, &y, FIXTURE_PREC),
-                orient3d_judge(&base, &at(q), &x, &y, FIXTURE_PREC),
+                orient3d_judge(&base, &at(q), &x, &y, fixture()).orient(),
                 "orient3d_ray == orient3d(base, base+dir, x, y)"
             );
         }

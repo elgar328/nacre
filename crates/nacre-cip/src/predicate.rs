@@ -19,7 +19,7 @@
 //! b-rep and geometry types.
 
 use crate::kernel::frame3::{
-    Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
+    Judge, Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
 };
 use nacre_math::Point3;
 use nacre_predicates::{
@@ -63,7 +63,8 @@ pub trait Witness {
     /// are not `f64`-representable and so cannot be handed to the exact predicate.
     fn base_tri(&self) -> Option<[Point3; 3]>;
 
-    /// The precision (bits) the escalating judges realize this operation's definitions at.
+    /// How this operation judges: the precision its definitions are realized at, and the distance
+    /// below which two things proved that close count as one ([`Judge`]).
     ///
     /// **A property of the model, not a constant.** The error a realization carries grows with
     /// the rotation history — one bit per turn, measured — so a fixed precision decides the
@@ -71,7 +72,7 @@ pub trait Witness {
     /// per boolean (see `nacre_ops::judge_precision`) and carried here because every predicate
     /// call site has the plane table in hand and nothing else. Uniform within an operation, which
     /// is what keeps [`Pt3`]'s realization cache warm.
-    fn judge_prec(&self) -> usize;
+    fn judge(&self) -> Judge;
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
@@ -175,15 +176,18 @@ pub fn t_orient3d<W: PlaneWitness>(planes: &[W], p: usize, q: usize, r: usize, j
         plane_def(planes, r),
         plane_def(planes, j),
     );
-    to_i8(indirect_orient3d_judge(
-        borrow3(dp),
-        borrow3(dq),
-        borrow3(dr),
-        &dj[0],
-        &dj[1],
-        &dj[2],
-        planes[p].judge_prec(),
-    ))
+    to_i8(
+        indirect_orient3d_judge(
+            borrow3(dp),
+            borrow3(dq),
+            borrow3(dr),
+            &dj[0],
+            &dj[1],
+            &dj[2],
+            planes[p].judge(),
+        )
+        .orient(),
+    )
 }
 
 /// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
@@ -206,12 +210,15 @@ pub fn t_cmp_coord<W: PlaneWitness>(planes: &[W], a: [usize; 3], b: [usize; 3], 
     }
     let da = a.map(|k| plane_def(planes, k));
     let db = b.map(|k| plane_def(planes, k));
-    to_i8(indirect_cmp_coord_judge(
-        borrow_triple(da),
-        borrow_triple(db),
-        axis,
-        planes[a[0]].judge_prec(),
-    ))
+    to_i8(
+        indirect_cmp_coord_judge(
+            borrow_triple(da),
+            borrow_triple(db),
+            axis,
+            planes[a[0]].judge(),
+        )
+        .orient(),
+    )
 }
 
 /// `cmp_coord` answered exactly in the pre-rotation frame, when it can be.
@@ -350,15 +357,8 @@ pub fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
         }
     }
     let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
-    dj.iter().all(|q| {
-        to_i8(orient3d_judge(
-            q,
-            &di[0],
-            &di[1],
-            &di[2],
-            planes[i].judge_prec(),
-        )) == 0
-    })
+    dj.iter()
+        .all(|q| to_i8(orient3d_judge(q, &di[0], &di[1], &di[2], planes[i].judge()).orient()) == 0)
 }
 
 /// `+1` if plane `w`'s stored coefficient-normal points the same way as its outward `tri`
@@ -409,20 +409,24 @@ pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, 
     frame_sign(&planes[p])
         * frame_sign(&planes[a])
         * frame_sign(&planes[b])
-        * to_i8(dir_sign_judge(
-            borrow3(dp),
-            borrow3(da),
-            borrow3(db),
-            planes[p].judge_prec(),
-        ))
+        * to_i8(dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db), planes[p].judge()).orient())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nacre_scalar::Bound;
 
-    /// The precision these fixtures judge at; production chooses it per model.
-    const FIXTURE_PREC: usize = 256;
+    /// How these fixtures judge; production chooses both per model. The coincidence limit is the
+    /// derived default for a unit-scale model — output resolution (`2⁻⁵²`) two words further down.
+    fn fixture() -> Judge {
+        Judge {
+            prec: 256,
+            coincidence: Bound::pow2(-180),
+            scale: Bound::of(1.0),
+            cap: 4096,
+        }
+    }
 
     /// A synthetic axis-aligned plane witness: three points on the plane, its exact
     /// coefficients, and the exact `Pt3` definition of those points. `is_rotated` is `false`,
@@ -456,8 +460,8 @@ mod tests {
         fn base_tri(&self) -> Option<[Point3; 3]> {
             None
         }
-        fn judge_prec(&self) -> usize {
-            FIXTURE_PREC
+        fn judge(&self) -> Judge {
+            fixture()
         }
     }
     impl PlaneWitness for W {
@@ -566,8 +570,8 @@ mod tests {
         fn base_tri(&self) -> Option<[Point3; 3]> {
             Some(self.base)
         }
-        fn judge_prec(&self) -> usize {
-            FIXTURE_PREC
+        fn judge(&self) -> Judge {
+            fixture()
         }
     }
     impl PlaneWitness for RW {
@@ -615,12 +619,15 @@ mod tests {
                 ] {
                     for k in 0..3 {
                         let got = t_cmp_coord(&ps, a, b, k);
-                        let want = to_i8(indirect_cmp_coord_judge(
-                            borrow_triple(a.map(|i| plane_def(&ps, i))),
-                            borrow_triple(b.map(|i| plane_def(&ps, i))),
-                            k,
-                            FIXTURE_PREC,
-                        ));
+                        let want = to_i8(
+                            indirect_cmp_coord_judge(
+                                borrow_triple(a.map(|i| plane_def(&ps, i))),
+                                borrow_triple(b.map(|i| plane_def(&ps, i))),
+                                k,
+                                fixture(),
+                            )
+                            .orient(),
+                        );
                         assert_eq!(
                             got, want,
                             "{deg}° about {axis:?}, {what}, axis {k}: shortcut {got} vs \
@@ -685,12 +692,15 @@ mod tests {
                  decidable in the pre-rotation frame"
             );
             // …and the toleranced path still answers it, so declining costs only speed.
-            let want = to_i8(indirect_cmp_coord_judge(
-                borrow_triple(a.map(|i| plane_def(&ps, i))),
-                borrow_triple(b.map(|i| plane_def(&ps, i))),
-                k,
-                FIXTURE_PREC,
-            ));
+            let want = to_i8(
+                indirect_cmp_coord_judge(
+                    borrow_triple(a.map(|i| plane_def(&ps, i))),
+                    borrow_triple(b.map(|i| plane_def(&ps, i))),
+                    k,
+                    fixture(),
+                )
+                .orient(),
+            );
             assert_eq!(t_cmp_coord(&ps, a, b, k), want);
         }
     }

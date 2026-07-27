@@ -252,13 +252,16 @@ pub(crate) fn face_plane_witness(model: &Model, face: &Face) -> Result<[Pt3; 3],
             // same derivation `plane_index_setup` uses — **once**, outside the loop. Deriving it
             // per candidate realizes every anchor again, and a long rotation history makes that
             // realization the expensive thing in the whole operation.
-            let prec = crate::planes::judge_precision_for_points(&anchors);
+            let judge = crate::planes::judge_for_points(&anchors);
             for &pi in many {
                 if let Ok(wit) = rotated_witness(pi) {
-                    if anchors
-                        .iter()
-                        .all(|a| orient3d_judge(a, &wit[0], &wit[1], &wit[2], prec) == Orient::Zero)
-                    {
+                    if anchors.iter().all(|a| {
+                        // "On the plane" is any judgement that is not a definite side — a proved
+                        // zero, or a coincidence within the limit. An exhausted or degenerate one
+                        // lands here too, which is the same reading as before the outcomes were
+                        // told apart; distinguishing them needs the reporting channel.
+                        orient3d_judge(a, &wit[0], &wit[1], &wit[2], judge).orient() == Orient::Zero
+                    }) {
                         return Ok(wit);
                     }
                 }
