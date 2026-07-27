@@ -1421,10 +1421,20 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
             .count();
         if !grazes.is_empty() {
             // Graze wins: it is the real boundary. A same-solid true crossing must not coincide.
-            if grazes.iter().any(|&b| b != grazes[0]) || transversals > 0 {
+            if transversals > 0 {
+                // A graze coincident with a same-solid true crossing: the two disagree about
+                // whether the solid straddles here, and nothing says which to believe.
                 return Err(reject(RejectReason::LoopOrientMismatch));
             }
-            mask[base + usize::from(!grazes[0])] ^= true;
+            // ★ Grazes fill arcs, so take their **union** rather than requiring them to agree.
+            // Two faces of one solid meeting *at* this edge each fill one side, and together they
+            // fill both — which is the same occupancy the diagram above calls `[T,T]`, and the same
+            // thing a lone transversal means. Requiring agreement read that as a contradiction and
+            // rejected it; it is the ordinary picture wherever a solid's edge lies in `W`, which is
+            // exactly what a four-plane concurrency is made of.
+            for &above in &grazes {
+                mask[base + usize::from(!above)] = true;
+            }
         } else if !seated.is_empty() {
             if seated.iter().any(|&b| b != seated[0]) {
                 return Err(reject(RejectReason::LoopOrientMismatch)); // disagreeing seated sides
