@@ -25,6 +25,9 @@
 //! wrapper, the declare-0 → user-confirmation policy, and the kernel wiring that makes
 //! geometry carry these. Ported from the verified 2D experiment (`experiments/exact2d`).
 
+pub mod bound;
+pub use bound::Bound;
+
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedMul, CheckedSub};
 use std::f64::consts::PI;
@@ -176,16 +179,13 @@ impl Angle {
     /// this reduces by subtracting whole turns rather than a `360·denom` divide
     /// (which would overflow at large denominators).
     pub fn from_deg(deg: Rat) -> Option<Self> {
-        let full = Rat::from_int(360);
-        let zero = Rat::from_int(0);
-        let mut v = deg;
-        while v >= full {
-            v = v.checked_sub(full)?;
-        }
-        while v < zero {
-            v = v.checked_add(full)?;
-        }
-        Some(Angle(v))
+        // Exact reduction mod 360, in one division. Subtracting a turn at a time is the same
+        // arithmetic but costs one iteration per turn, so an input like `2⁶⁰` degrees — a value a
+        // script can produce without meaning anything unusual by it — does not return.
+        let (n, d) = (deg.numer(), deg.denom()); // `d > 0` after reduction
+        let full = 360i128.checked_mul(d)?; // one turn, in units of `1/d`
+        let rem = n.rem_euclid(full); // `0 ≤ rem < full`, so the result is in `[0, 360)`
+        Rat::new(rem, d).map(Angle)
     }
 
     /// Turn by `delta_deg` (exact) and renormalize into `[0, 360)`.
@@ -215,6 +215,33 @@ impl Angle {
     /// pass through f64, exact for the small values used here; a general large-
     /// rational path would build from a string.)
     pub fn cos_sin_at(self, prec: usize) -> (BigFloat, BigFloat) {
+        let (c, s, _, _) = self.cos_sin_bounded(prec);
+        (c, s)
+    }
+
+    /// `(cos, sin)` at `prec` bits **with an upper bound on how far each may be from the true
+    /// value** — the seed every error radius in the judgment path grows from.
+    ///
+    /// The bound is *derived*, term by term, not chosen:
+    ///
+    /// - `numer`/`denom` cross `f64` on the way in. Below `2⁵³` that is exact and contributes
+    ///   nothing; above it the angle itself is only known to a relative `2⁻⁵³`, which no amount of
+    ///   working precision can recover — so the bound says so instead of pretending otherwise.
+    /// - `n/d`, `·π`, `/180` are three round-to-nearest operations at `prec` bits, each a relative
+    ///   `2⁻ᵖʳᵉᶜ`, and `π` itself carries one more.
+    /// - The argument's absolute error `δθ = |θ|·ρ` passes through the **derivative**:
+    ///   `d cos = −sin·dθ` and `d sin = cos·dθ`. Slope 1 would also be sound, but near a zero
+    ///   crossing the true slope is what keeps a tiny result from being swamped by its own bound.
+    /// - astro-float's `cos`/`sin` run **Ziv's loop** — `cos_series` at a working precision, then
+    ///   `try_set_precision(p, rm, p_wrk)`, retrying with more bits when the value sits too close
+    ///   to a rounding boundary to decide. That is the standard construction for a *correctly
+    ///   rounded* transcendental, so the realization adds at most a half-ulp — `|result| · 2⁻ᵖʳᵉᶜ`,
+    ///   *relative* to the value, which is why the two functions get separate bounds. The crate
+    ///   does not document this, so `the_trig_bound_holds_against_a_far_deeper_realization` checks
+    ///   it rather than trusting it.
+    ///
+    /// Returns `(cos, sin, |Δcos|, |Δsin|)`.
+    pub fn cos_sin_bounded(self, prec: usize) -> (BigFloat, BigFloat, Bound, Bound) {
         HP_CONSTS.with_borrow_mut(|cc| {
             let pi = cc.pi(prec, HP_RM);
             let d180 = BigFloat::from_f64(180.0, prec);
@@ -224,7 +251,39 @@ impl Angle {
                 .div(&d, prec, HP_RM)
                 .mul(&pi, prec, HP_RM)
                 .div(&d180, prec, HP_RM);
-            (rad.cos(prec, HP_RM, cc), rad.sin(prec, HP_RM, cc))
+            let u = Bound::pow2(-(prec as i64));
+            // Relative error of the argument: the two `i128 → f64` conversions, then four
+            // rounded high-precision operations (the division, the product, the division, and π).
+            // The test is a round trip, not a size: `2⁶⁰` is far past 2⁵³ and still exact, and
+            // charging it a relative `2⁻⁵³` would put a floor under the whole ladder for an angle
+            // that has no error at all.
+            let f64_rel = |v: i128| {
+                if (v as f64) as i128 == v {
+                    Bound::ZERO
+                } else {
+                    Bound::pow2(-53)
+                }
+            };
+            let rel = f64_rel(self.0.numer())
+                .plus(f64_rel(self.0.denom()))
+                .plus(u.times(Bound::of(4.0)));
+            // `|θ|` in radians, over-estimated from its exponent (`|x| < 2^exponent`).
+            let theta = match rad.exponent() {
+                Some(e) if !rad.is_zero() => Bound::pow2(e as i64),
+                _ => Bound::ZERO,
+            };
+            let d_theta = theta.times(rel);
+            let (c, s) = (rad.cos(prec, HP_RM, cc), rad.sin(prec, HP_RM, cc));
+            // `|x| < 2^exponent` — the slope of the *other* function, and the scale of the
+            // half-ulp of this one.
+            let ub = |x: &BigFloat| match x.exponent() {
+                Some(e) if !x.is_zero() => Bound::pow2(e as i64),
+                _ => Bound::ZERO,
+            };
+            let (uc, us) = (ub(&c), ub(&s));
+            let err_cos = us.times(d_theta).plus(uc.times(u));
+            let err_sin = uc.times(d_theta).plus(us.times(u));
+            (c, s, err_cos, err_sin)
         })
     }
 
@@ -661,6 +720,143 @@ mod tests {
         }
         eprintln!(
             "[H1.5] astro-float {HP_PREC}-bit worst cos/sin error at rational angles: 2^{worst}"
+        );
+    }
+
+    /// A large angle normalizes in one step, not one step per turn.
+    ///
+    /// Normalization used to subtract 360° in a loop, so `2⁶⁰` degrees needed ~3·10¹⁵ iterations —
+    /// the kernel did not reject that input, it stopped responding to it. Found by execution: a
+    /// trig corpus reached for a big numerator and the test never returned.
+    #[test]
+    fn a_huge_angle_normalizes_without_counting_turns() {
+        let huge = Rat::new(1i128 << 60, 7).unwrap();
+        let a = Angle::from_deg(huge).expect("a large rational angle is representable");
+        assert!(a.deg() >= Rat::from_int(0) && a.deg() < Rat::from_int(360));
+        // Same residue class as the input, so the reduction is `− 360k`, not a different angle.
+        let back = a.deg().checked_sub(huge).unwrap();
+        let turns = back.to_f64() / -360.0;
+        assert_eq!(
+            turns.fract(),
+            0.0,
+            "the reduction was not a whole number of turns"
+        );
+        // Negatives land in range too, and exactly on 0 at a full turn.
+        assert_eq!(
+            Angle::from_deg(Rat::from_int(-720)).unwrap().deg(),
+            Rat::from_int(0)
+        );
+        assert_eq!(
+            Angle::from_deg(Rat::new(-1, 2).unwrap()).unwrap().deg(),
+            Rat::new(719, 2).unwrap()
+        );
+    }
+
+    /// **The seed of every error radius, checked against a realization far deeper than itself.**
+    ///
+    /// [`Angle::cos_sin_bounded`] derives its bound from two things the crate does not promise in
+    /// writing: that `Consts::pi` is correctly rounded, and that `cos`/`sin` are too (they run
+    /// Ziv's loop, which is how one builds a correctly-rounded transcendental — but an
+    /// implementation detail, not a documented contract). If either weakens, every interval above
+    /// it is unsound, so the claim is measured: at each rung the ladder uses, the value must sit
+    /// within its own bound of the same value realized with 512 extra bits.
+    ///
+    /// The reference is not independent code — it is the same routine at higher precision — so
+    /// this cannot catch an error that grows with precision in the same shape. What it does catch
+    /// is the failure that matters here: a bound that is simply too small.
+    #[test]
+    fn the_trig_bound_holds_against_a_far_deeper_realization() {
+        // Angles spanning the quadrants, plus rationals with awkward denominators and one whose
+        // numerator is large enough to exercise the `i128 → f64` term.
+        let angles = [
+            (0i128, 1i128),
+            (30, 1),
+            (45, 1),
+            (60, 1),
+            (90, 1),
+            (135, 1),
+            (180, 1),
+            (271, 1),
+            (359, 1),
+            (1, 7),
+            (22, 7),
+            (1000, 3),
+            (1, 1_000_000),
+            // A denominator past 2⁵³ that is still exact in `f64` (a power of two), so the bound
+            // must *not* charge it the conversion term.
+            (1, 1i128 << 60),
+            // …and one that genuinely does not round-trip, where the angle itself is only known
+            // to a relative `2⁻⁵³` and no working precision can recover it.
+            (1, (1i128 << 60) + 1),
+        ];
+        // Slack is tracked per rung so the two stories stay separable: a word-aligned precision
+        // is delivered as asked, while `200` is silently rounded up to 256 and the extra bits show
+        // up as slack that is astro-float's, not this bound's.
+        let mut worst = std::collections::BTreeMap::<usize, (i64, String)>::new();
+        for prec in [128usize, 200, 256, 512, 1024] {
+            for (num, den) in angles {
+                let a = Angle::from_deg(Rat::new(num, den).unwrap()).unwrap();
+                let (c, s, bc, bs) = a.cos_sin_bounded(prec);
+                let deep = prec + 512;
+                let (rc, rs) = a.cos_sin_at(deep);
+                for (got, reference, bound, what) in [(&c, &rc, bc, "cos"), (&s, &rs, bs, "sin")] {
+                    let diff = got.sub(reference, deep, HP_RM);
+                    let Some(de) = (if diff.is_zero() {
+                        None
+                    } else {
+                        diff.exponent()
+                    }) else {
+                        continue; // exactly equal — nothing to bound
+                    };
+                    // `|diff| < 2^de`; the bound must be at least that.
+                    let observed = Bound::pow2(de as i64);
+                    assert!(
+                        !bound.lt(observed),
+                        "{what} {num}/{den}° at {prec} bits: error 2^{de} exceeds its bound 2^{:?}",
+                        bound.exp2()
+                    );
+                    // Track how much slack the bound carries, so a bound that is merely
+                    // enormous does not pass as a bound that is right.
+                    // Slack is only meaningful where the angle converts exactly. Where it does
+                    // not, the `2⁻⁵³` term dominates by design and the gap to the observed error
+                    // is the honest cost of an unrepresentable angle, not looseness.
+                    let angle_exact = (num as f64) as i128 == num && (den as f64) as i128 == den;
+                    // And only where the two realizations actually disagree above the
+                    // *reference's* own resolution. `cos 60° = 1/2` is exact at both precisions,
+                    // so their difference measures the reference, not this bound.
+                    let above_reference_noise = (de as i64) > -(deep as i64) + 8;
+                    if let (Some(be), true) = (bound.exp2(), angle_exact && above_reference_noise) {
+                        let slack = be - de as i64;
+                        let e = worst.entry(prec).or_insert((i64::MIN, String::new()));
+                        if slack > e.0 {
+                            *e = (
+                                slack,
+                                format!("{what} {num}/{den}°, bound 2^{be} vs error 2^{de}"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        for (prec, (slack, at)) in &worst {
+            eprintln!("[cip] {prec}-bit trig bound slack: 2^{slack}  ({at})");
+        }
+        for (&prec, (slack, at)) in &worst {
+            if prec % 64 == 0 {
+                assert!(
+                    *slack <= 16,
+                    "at {prec} bits the bound is 2^{slack} above the worst observed error ({at}) — \
+                     that is a fudge factor wearing a derivation's clothes, not a tight bound"
+                );
+            }
+        }
+        // …and the odd rung out proves why stage 4's rungs are multiples of 64: asking for 200
+        // bits buys 256, so ~56 bits of the result are paid for and then claimed away.
+        let (slack_200, _) = &worst[&200];
+        assert!(
+            (40..=80).contains(slack_200),
+            "expected ~56 bits of unclaimed precision at 200 bits (the word-size round-up), got \
+             2^{slack_200}"
         );
     }
 
