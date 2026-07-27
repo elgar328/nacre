@@ -148,15 +148,27 @@ fn edge_sign(jd: &Judge<'_, PlaneGeom>, p: usize, e: &RingEdge) -> Result<i8, Bo
 ///
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
 /// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
+// Used by `loop_winding`'s tests and by the winding goldens in `lib.rs`; production reads the
+// turn through `turn_between`, which lets the caller skip a straight stretch.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn turn_at(
     jd: &Judge<'_, PlaneGeom>,
     p: usize,
     ring: &[RingEdge],
     i: usize,
 ) -> Result<i8, BoolError> {
-    let planes = jd.planes;
     let n = ring.len();
-    let (arriving, leaving) = (&ring[(i + n - 1) % n], &ring[i]);
+    turn_between(jd, p, &ring[(i + n - 1) % n], &ring[i])
+}
+
+/// The turn from one edge to another, both on `P` — [`turn_at`] with the two edges named, so a
+/// caller that had to look past a straight stretch can say which pair it means.
+fn turn_between(
+    jd: &Judge<'_, PlaneGeom>,
+    p: usize,
+    arriving: &RingEdge,
+    leaving: &RingEdge,
+) -> Result<i8, BoolError> {
     let (a, b) = (arriving.wall, leaving.wall);
     let sa = edge_sign(jd, p, arriving)?;
     let sb = edge_sign(jd, p, leaving)?;
@@ -164,7 +176,7 @@ pub(crate) fn turn_at(
     if det == 0 {
         return Err(reject(RejectReason::StraightAngle));
     }
-    Ok(sa * sb * det * planes[p].frame_sign)
+    Ok(sa * sb * det * jd.planes[p].frame_sign)
 }
 
 /// Face `f`'s outer-loop vertices as three-plane triples: `f`'s own plane, and the
@@ -608,7 +620,34 @@ pub(crate) fn loop_winding(
     if pinched_extreme {
         return Err(reject(RejectReason::CoincidentNodes));
     }
-    turn_at(jd, p, ring, lo)
+    // **A ring node need not be a corner.** The arrangement names a point wherever another feature
+    // crosses an edge, and `loop_triples` keeps such a vertex even when the loop runs straight
+    // through it — so one edge of the polygon can arrive as several collinear ring edges. Reading
+    // the turn at `lo` against its immediate predecessor then asks about two halves of one
+    // straight edge, which has no turn to give.
+    //
+    // The turn to read is the one between the directions the loop **actually** arrives and leaves
+    // on: walk back past the edges collinear with the leaving one. `lo` stays a hull vertex — the
+    // stretch lies on a line through it, so the polygon is still on one side of that line.
+    //
+    // **Only while the stretch keeps going the same way.** A collinear edge traversed the *other*
+    // way means the ring doubles back along the line it came in on — an antenna, whose tip has no
+    // turn and whose neighbours' turn belongs to a different vertex. Skipping past that would
+    // read a turn from somewhere else and call it this vertex's: a wrong winding, silently.
+    let n = ring.len();
+    let dir = edge_sign(jd, p, &ring[lo])?;
+    let mut back = (lo + n - 1) % n;
+    while jd.plane_pair_dir_sign(p, ring[back].wall, ring[lo].wall) == 0 {
+        if edge_sign(jd, p, &ring[back])? != dir {
+            return Err(reject(RejectReason::StraightAngle)); // the ring doubles back here
+        }
+        back = (back + n - 1) % n;
+        if back == lo {
+            // Every edge of the ring lies on one line: it bounds nothing.
+            return Err(reject(RejectReason::DegenerateRing));
+        }
+    }
+    turn_between(jd, p, &ring[back], &ring[lo])
 }
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
