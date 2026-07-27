@@ -314,6 +314,10 @@ fn escalate(
     limit: Bound,
     mut attempt: impl FnMut(usize) -> (Option<Orient>, Option<Bound>),
 ) -> Decision {
+    // A zero precision means the context never got stamped: astro-float would be asked for a
+    // realization with no bits, and every judgement would come back exhausted. That is a wiring
+    // mistake, not a geometry one, so it fails loudly here rather than quietly answering `Zero`.
+    debug_assert!(j.prec > 0, "escalate at zero precision — unstamped Judge");
     let mut prec = j.prec;
     loop {
         let (sign, gap) = attempt(prec);
@@ -2654,7 +2658,7 @@ mod tests {
         dot(n, n) > 1e-6 * dot(e1, e1) * dot(e2, e2)
     }
 
-    /// The sign of `D` (det of the three normals) at `prec` bits, floored to declare-0.
+    /// The **raw** sign of `D` (det of the three normals) at `prec` bits — no radius, no limit.
     fn dir_d_sign_at(
         a: (&Pt3, &Pt3, &Pt3),
         b: (&Pt3, &Pt3, &Pt3),
@@ -2822,8 +2826,8 @@ mod tests {
         );
     }
 
-    /// The `dir_orient3d` determinant `det[d, x−base, y−base]` at `prec` bits, floored to
-    /// declare-0 — the GT / escalation realization (mirrors the judge's hp path).
+    /// The `dir_orient3d` determinant `det[d, x−base, y−base]` at `prec` bits — the GT /
+    /// escalation realization (mirrors the judge's hp path).
     fn dir_orient_at(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Option<bool> {
         let dp = Pt3::at(d);
         let sub = |u: &HpIv, v: &HpIv| u.sub(v, prec);
