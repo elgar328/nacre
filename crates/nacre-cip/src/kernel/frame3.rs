@@ -294,12 +294,51 @@ impl Decision {
     }
 }
 
+/// **The separation an undecided determinant stands for — or why it could not be formed.**
+///
+/// Turning a determinant into a distance means dividing by a cofactor, and that division needs the
+/// cofactor kept away from zero. It can fail two ways, and they are **not the same answer**:
+#[derive(Clone, Copy, Debug)]
+enum Gap {
+    /// An upper bound on the separation, in the unit the judgement's limit is in.
+    Of(Bound),
+    /// A cofactor is nonzero but has not been separated from its own error radius yet. `short`
+    /// bits more would separate it — **so this climbs**, exactly like a gap that is merely too
+    /// wide. Collapsing it into the case below is what would make the kernel quietly merge two
+    /// things it never looked at closely enough.
+    Unresolved { short: usize },
+    /// A cofactor came out **exactly zero**, so there is no distance to sharpen: a witness
+    /// triangle with no plane, or three planes with no meeting point. Depth does not change it —
+    /// measured directly on the case this distinction was found in, where the determinant was
+    /// still bit-exactly zero 8192 bits deeper.
+    Vanished,
+}
+
+/// A denominator's lower bound, or which of the two failures it is.
+///
+/// The mantissa is deliberately not read: `lb` is an exponent bound, so `short` is generous by up
+/// to a bit — in the direction that costs a word, not correctness.
+fn denom_lo(v: &HpIv) -> Result<Bound, Gap> {
+    let Some(lo) = super::interval::lb(&v.mid) else {
+        return Err(Gap::Vanished); // the midpoint is exactly zero
+    };
+    match lo.minus(v.rad) {
+        Some(b) => Ok(b),
+        // Nonzero, but the radius swallows it: the shortfall is how far the radius has to fall.
+        None => Err(Gap::Unresolved {
+            short: match (v.rad.exp2(), lo.exp2()) {
+                (Some(r), Some(m)) => (r - m + 1).max(1) as usize,
+                _ => 1,
+            },
+        }),
+    }
+}
+
 /// Run one judgement at `j.prec` and, while it neither decides a sign nor proves a coincidence,
 /// again with more bits — up to the cap.
 ///
-/// `attempt` answers at a given precision with the sign, if it has one, and otherwise **the
-/// separation its undecided determinant stands for**, normalized into the unit `limit` is in
-/// (`None` = the normalization is not available, see [`Decision::Degenerate`]). That separation
+/// `attempt` answers at a given precision with the sign, if it has one, and otherwise (`Err`) the
+/// [`Gap`] its undecided determinant stands for, normalized into the unit `limit` is in. That separation
 /// is the whole point: a determinant is not a length, and a threshold applied to one directly
 /// would move with the size of the witness triangle.
 ///
@@ -312,7 +351,7 @@ impl Decision {
 fn escalate(
     j: Judge,
     limit: Bound,
-    mut attempt: impl FnMut(usize) -> (Option<Orient>, Option<Bound>),
+    mut attempt: impl FnMut(usize) -> Result<Orient, Gap>,
 ) -> Decision {
     // A zero precision means the context never got stamped: astro-float would be asked for a
     // realization with no bits, and every judgement would come back exhausted. That is a wiring
@@ -320,31 +359,30 @@ fn escalate(
     debug_assert!(j.prec > 0, "escalate at zero precision — unstamped Judge");
     let mut prec = j.prec;
     loop {
-        let (sign, gap) = attempt(prec);
-        if let Some(o) = sign {
-            return Decision::Sign(o);
-        }
-        let Some(gap) = gap else {
-            return Decision::Degenerate;
+        let gap = match attempt(prec) {
+            Ok(o) => return Decision::Sign(o),
+            Err(g) => g,
         };
-        // **A zero gap is a proof, not a near miss.** The radius bounds how far the computed value
-        // is from the true one, so a zero radius says the midpoint *is* the value — and the sign
-        // came back undecided only because that midpoint is zero. Determinants reach this
-        // honestly: a row that is exactly zero (a plane perpendicular to the rotation axis keeps
-        // its coordinate exactly) multiplies every error term to nothing.
-        if gap.is_zero() {
-            return Decision::Sign(Orient::Zero);
-        }
-        if !limit.lt(gap) {
-            return Decision::Coincident { within: gap };
-        }
-        // How many bits short this judgement is, read off the gap it did establish. A limit with
-        // no exponent (a zero bound) is a target no precision reaches, so that is exhausted too.
-        let short = match (gap.exp2(), limit.exp2()) {
-            (Some(g), Some(l)) => (g - l).max(1) as usize,
-            _ => usize::MAX,
+        // How many bits short this judgement is. From a gap it is `log₂(gap / limit)`; from an
+        // unresolved cofactor the cofactor itself named it. Either way the answer is *computed*,
+        // never guessed at by doubling.
+        let short = match gap {
+            Gap::Vanished => return Decision::Degenerate,
+            Gap::Unresolved { short } => short,
+            // **A zero gap is a proof, not a near miss.** The radius bounds how far the computed
+            // value is from the true one, so a zero radius says the midpoint *is* the value — and
+            // the sign came back undecided only because that midpoint is zero. Determinants reach
+            // this honestly: a row that is exactly zero (a plane perpendicular to the rotation
+            // axis keeps its coordinate exactly) multiplies every error term to nothing.
+            Gap::Of(g) if g.is_zero() => return Decision::Sign(Orient::Zero),
+            Gap::Of(g) if !limit.lt(g) => return Decision::Coincident { within: g },
+            Gap::Of(g) => match (g.exp2(), limit.exp2()) {
+                (Some(gx), Some(lx)) => (gx - lx).max(1) as usize,
+                // A limit with no exponent (a zero bound) is a target no depth reaches.
+                _ => return Decision::Exhausted { at: prec },
+            },
         };
-        if prec >= j.cap || short == usize::MAX {
+        if prec >= j.cap {
             return Decision::Exhausted { at: prec };
         }
         // Up to a whole word, and never a standstill: a jump that rounded back to `prec` would
@@ -421,10 +459,10 @@ pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Bound)
 ///
 /// Returns an upper bound on that distance, given the determinant's own interval: the value is
 /// somewhere inside `±rad`, so the distance is at most `rad / |cross|` — and `|cross|` is itself
-/// uncertain, so its **lower** bound is what divides. `None` when the area term cannot be bounded
-/// away from zero: a degenerate witness triangle has no plane to be a distance from, and saying
-/// "within X" of it would be meaningless rather than conservative.
-fn distance_bound(det_rad: Bound, cross: &[HpIv; 3], prec: usize) -> Option<Bound> {
+/// uncertain, so its **lower** bound is what divides. When the area term cannot be bounded away
+/// from zero the answer is the [`Gap`] saying which failure it is: a triangle that has collapsed
+/// has no plane to be a distance from, while one that is merely unresolved is a matter of depth.
+fn distance_bound(det_rad: Bound, cross: &[HpIv; 3], prec: usize) -> Gap {
     // `|cross|² = Σ cross[k]²`, and a lower bound on the norm needs a lower bound on the sum.
     let mut lo = HpIv::exact(BigFloat::from_f64(0.0, prec));
     for c in cross {
@@ -432,11 +470,26 @@ fn distance_bound(det_rad: Bound, cross: &[HpIv; 3], prec: usize) -> Option<Boun
     }
     // `|cross| ≥ √(mid − rad)`, and the square root only halves the exponent, so working in
     // exponents avoids needing a high-precision sqrt at all.
-    let sq_lo = super::interval::lb(&lo.mid)?.minus(lo.rad)?;
-    let e = sq_lo.exp2()?;
+    let sq_lo = match denom_lo(&lo) {
+        Ok(b) => b,
+        // The shortfall is on the *square*, so half of it separates the norm — and the halving
+        // rounds up, since a bit too many costs a word and a bit too few costs another round.
+        Err(Gap::Unresolved { short }) => {
+            return Gap::Unresolved {
+                short: short.div_ceil(2),
+            };
+        }
+        Err(g) => return g,
+    };
+    let Some(e) = sq_lo.exp2() else {
+        return Gap::Vanished;
+    };
     // `√(m · 2^e) ≥ 2^(⌊e/2⌋ − 1)` for `m ∈ [0.5, 1)`, which is the bound we need below.
     let norm_lo = Bound::pow2(e.div_euclid(2) - 1);
-    det_rad.over(norm_lo)
+    match det_rad.over(norm_lo) {
+        Some(b) => Gap::Of(b),
+        None => Gap::Vanished,
+    }
 }
 
 /// The three edge rows of `orient3d(a,b,c,d) = det[a−d, b−d, c−d]`.
@@ -594,13 +647,10 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, j: Judge) -> Decis
     escalate(j, j.coincidence, |prec| {
         let det = det3_hp(pa, pb, pc, pd, prec);
         match det.sign() {
-            Some(pos) => (Some(orient_of(pos)), None),
+            Some(pos) => Ok(orient_of(pos)),
             // Only now is the area term worth forming: the sign decides on the first try in all
             // but the coincident cases, and the cross product is six high-precision products.
-            None => (
-                None,
-                distance_bound(det.rad, &cross_of(pb, pc, pd, prec), prec),
-            ),
+            None => Err(distance_bound(det.rad, &cross_of(pb, pc, pd, prec), prec)),
         }
     })
 }
@@ -631,7 +681,10 @@ pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) ->
     let det = det3_hp(pa, pb, pc, pd, prec);
     // The *value* the judge could not separate from zero is somewhere in `±rad`, so the distance
     // it bounds is `rad / |cross|`.
-    distance_bound(det.rad, &cross_of(pb, pc, pd, prec), prec)
+    match distance_bound(det.rad, &cross_of(pb, pc, pd, prec), prec) {
+        Gap::Of(b) => Some(b),
+        _ => None,
+    }
 }
 
 /// CIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
@@ -947,9 +1000,18 @@ fn indirect_hp(
 /// from `M`'s radius and below by the denominators' own lower bounds. `None` when either cannot
 /// be kept away from zero — three near-parallel planes have no well-defined meeting point, and a
 /// degenerate triangle no plane.
-fn plane_gap(m: &HpIv, d: &HpIv, cross: &[HpIv; 3], prec: usize) -> Option<Bound> {
-    let d_lo = super::interval::lb(&d.mid)?.minus(d.rad)?;
-    distance_bound(m.rad, cross, prec)?.over(d_lo)
+fn plane_gap(m: &HpIv, d: &HpIv, cross: &[HpIv; 3], prec: usize) -> Gap {
+    let d_lo = match denom_lo(d) {
+        Ok(b) => b,
+        Err(g) => return g,
+    };
+    match distance_bound(m.rad, cross, prec) {
+        Gap::Of(b) => match b.over(d_lo) {
+            Some(b) => Gap::Of(b),
+            None => Gap::Vanished,
+        },
+        g => g,
+    }
 }
 
 /// CIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
@@ -988,8 +1050,8 @@ pub fn indirect_orient3d_judge(
             prec,
         );
         match combine(d.sign(), m.sign()) {
-            Some(o) => (Some(o), None),
-            None => (None, plane_gap(&m, &d, &cross, prec)),
+            Some(o) => Ok(o),
+            None => Err(plane_gap(&m, &d, &cross, prec)),
         }
     })
 }
@@ -1045,23 +1107,33 @@ fn cmp_hp_with_gap(
     b: [[HpIv; 4]; 3],
     axis: usize,
     prec: usize,
-) -> (Option<Orient>, Option<Bound>) {
+) -> Result<Orient, Gap> {
     let (da, dva) = cramer_hp(a, prec);
     let (db, dvb) = cramer_hp(b, prec);
     let m = dva[axis]
         .mul(&db, prec)
         .sub(&dvb[axis].mul(&da, prec), prec);
     match cmp_combine(m.sign(), da.sign(), db.sign()) {
-        Some(o) => (Some(o), None),
-        None => (None, coord_gap(&m, &da, &db)),
+        Some(o) => Ok(o),
+        None => Err(coord_gap(&m, &da, &db)),
     }
 }
 
 /// `|M| / |D_a · D_b|`, the separation `M` stands for — bounded above from `M`'s own radius, and
 /// below by the denominators' lower bounds (dividing by an upper bound would understate the gap).
-fn coord_gap(m: &HpIv, da: &HpIv, db: &HpIv) -> Option<Bound> {
-    let denom = |d: &HpIv| super::interval::lb(&d.mid)?.minus(d.rad);
-    m.rad.over(denom(da)?.times(denom(db)?))
+fn coord_gap(m: &HpIv, da: &HpIv, db: &HpIv) -> Gap {
+    let (lo_a, lo_b) = match (denom_lo(da), denom_lo(db)) {
+        (Ok(a), Ok(b)) => (a, b),
+        // Both may be short; the deeper shortfall is the one that has to be covered.
+        (Err(Gap::Unresolved { short: x }), Err(Gap::Unresolved { short: y })) => {
+            return Gap::Unresolved { short: x.max(y) };
+        }
+        (Err(g), _) | (_, Err(g)) => return g,
+    };
+    match m.rad.over(lo_a.times(lo_b)) {
+        Some(b) => Gap::Of(b),
+        None => Gap::Vanished,
+    }
 }
 
 /// CIP indirect `cmp_coord`: the sign of `a[axis] − b[axis]` where `a`, `b` are the
@@ -1145,8 +1217,8 @@ pub fn dir_sign_judge(
         let planes = [ph(a), ph(b), ph(c)];
         let (dh, _) = cramer_hp(planes.clone(), prec);
         match dh.sign() {
-            Some(pos) => (Some(orient_of(pos)), None),
-            None => (None, dir_gap(&dh, &planes, prec)),
+            Some(pos) => Ok(orient_of(pos)),
+            None => Err(dir_gap(&dh, &planes, prec)),
         }
     })
 }
@@ -1163,22 +1235,42 @@ pub fn dir_sign_judge(
 /// A caller compares it against `coincidence_precision / scale`: the angle a deviation of the
 /// coincidence limit subtends across the model. `None` when a normal cannot be bounded away from
 /// zero — a degenerate plane has no direction to be off by.
-fn dir_gap(d: &HpIv, planes: &[[HpIv; 4]; 3], prec: usize) -> Option<Bound> {
+fn dir_gap(d: &HpIv, planes: &[[HpIv; 4]; 3], prec: usize) -> Gap {
     let mut denom = Bound::of(1.0);
     for p in planes {
-        // `|n| ≥ max|n_k|`, which is enough and needs no square root.
+        // `|n| ≥ max|n_k|`, which is enough and needs no square root. One component clearing zero
+        // is all a normal needs, so a shortfall only counts when **every** component fell short —
+        // and then the smallest of them is the cheapest way out.
         let mut lo = Bound::ZERO;
+        let mut short: Option<usize> = None;
+        let mut vanished = 0;
         for c in p.iter().take(3) {
-            if let Some(b) = super::interval::lb(&c.mid).and_then(|l| l.minus(c.rad)) {
-                if lo.lt(b) {
-                    lo = b;
+            match denom_lo(c) {
+                Ok(b) if lo.lt(b) => lo = b,
+                Ok(_) => {}
+                Err(Gap::Unresolved { short: s }) => {
+                    short = Some(short.map_or(s, |t: usize| t.min(s)));
                 }
+                Err(_) => vanished += 1,
             }
+        }
+        if lo.is_zero() {
+            return match short {
+                Some(short) => Gap::Unresolved { short },
+                // Every component of this normal is exactly zero: the plane has no direction.
+                None => {
+                    debug_assert_eq!(vanished, 3);
+                    Gap::Vanished
+                }
+            };
         }
         denom = denom.times(lo);
     }
     let _ = prec;
-    d.rad.over(denom)
+    match d.rad.over(denom) {
+        Some(b) => Gap::Of(b),
+        None => Gap::Vanished,
+    }
 }
 
 #[cfg(test)]
@@ -1229,7 +1321,7 @@ mod tests {
         let out = escalate(j, j.coincidence, |prec| {
             asked.push(prec);
             // `C = 2⁵⁶`: at 256 bits the gap is `2⁻²⁰⁰`, a hundred bits above the limit.
-            (None, Some(Bound::pow2(56 - prec as i64)))
+            Err(Gap::Of(Bound::pow2(56 - prec as i64)))
         });
         assert_eq!(asked, vec![256, 384], "the climb overshot or crept");
         assert!(
@@ -1257,7 +1349,7 @@ mod tests {
         // radius shrinks. No depth settles it, which is what the cap is for.
         let out = escalate(j, j.coincidence, |_| {
             rounds += 1;
-            (None, Some(Bound::pow2(-10)))
+            Err(Gap::Of(Bound::pow2(-10)))
         });
         assert_eq!(out, Decision::Exhausted { at: 512 });
         assert_eq!(out.orient(), Orient::Zero, "the geometry still gets a sign");
@@ -1282,10 +1374,29 @@ mod tests {
         let mut rounds = 0;
         let out = escalate(j, j.coincidence, |_| {
             rounds += 1;
-            (None, None)
+            Err(Gap::Vanished)
         });
         assert_eq!(out, Decision::Degenerate);
-        assert_eq!(rounds, 1, "a degenerate witness must not be re-realized");
+        assert_eq!(rounds, 1, "a vanished cofactor must not be re-realized");
+
+        // …but a cofactor that is merely *unresolved* is the other cause, and it must climb —
+        // reporting it as degenerate is how a judgement nobody looked at closely enough turns
+        // into a silent merge. It names its own shortfall, so the climb is one jump here too.
+        let mut asked = Vec::new();
+        let out = escalate(j, j.coincidence, |prec| {
+            asked.push(prec);
+            if prec < 512 {
+                Err(Gap::Unresolved { short: 200 })
+            } else {
+                Ok(Orient::Positive)
+            }
+        });
+        assert_eq!(out, Decision::Sign(Orient::Positive));
+        assert_eq!(
+            asked,
+            vec![256, 512],
+            "an unresolved cofactor did not climb"
+        );
     }
 
     /// **A structural zero comes back proved, not assumed.**
@@ -2454,7 +2565,7 @@ mod tests {
                 plane_hp(t[2].0, t[2].1, t[2].2, prec),
             ]
         };
-        cmp_hp_with_gap(hp(a), hp(b), axis, prec).0
+        cmp_hp_with_gap(hp(a), hp(b), axis, prec).ok()
     }
 
     /// `cmp_combine` maps the parity of negative signs to the ordering.
