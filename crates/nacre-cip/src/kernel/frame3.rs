@@ -37,7 +37,7 @@ type HpCell = HpRc<HpOnce<[BigFloat; 3]>>;
 /// One rotation in a point's definition: turn about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle`. `point = [0,0,0]` is the
 /// origin-pivot case; the kernel's `Rotation` carries an arbitrary rational pivot.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RotNode {
     pub axis: Axis,
     pub angle: Angle,
@@ -333,6 +333,7 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Orient {
     if det < -bound {
         return Orient::Negative;
     }
+    crate::audit::escalation(&[pa, pb, pc, pd]);
     let dh = det3_hp(pa, pb, pc, pd, JUDGE_PREC);
     let scale = scale4(a, b, c, d);
     let floor = 16.0 * scale * scale * scale * 2f64.powi(-(JUDGE_PREC as i32));
@@ -364,6 +365,9 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3) -> Orient {
     if let Some(pos) = det3_iv([di, sub_iv(xi, bi), sub_iv(yi, bi)]).sign() {
         return orient_of(pos);
     }
+    // The direction row `dp` is exact by construction (a rational offset), so only the three
+    // rotated points decide whether a rigid motion could be cancelled here.
+    crate::audit::escalation(&[base, x, y]);
     // Escalate: the same determinant at JUDGE_PREC from the exact definitions.
     let (bh, xh, yh, dh) = (
         base.hp_coord(JUDGE_PREC),
@@ -752,6 +756,10 @@ pub fn indirect_orient3d_judge(
     if let Some(o) = indirect_filter(planes, pt_iv(q), pt_iv(r), pt_iv(s)) {
         return o;
     }
+    crate::audit::escalation(&[
+        plane_a.0, plane_a.1, plane_a.2, plane_b.0, plane_b.1, plane_b.2, plane_c.0, plane_c.1,
+        plane_c.2, q, r, s,
+    ]);
     // Escalate. Trust each sign only if its magnitude clears the rounding floor for a
     // JUDGE_PREC computation; a below-floor `D` or `M` is declare-0.
     let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, JUDGE_PREC);
@@ -846,6 +854,10 @@ pub fn indirect_cmp_coord_judge(
     if let Some(o) = cmp_filter(iv(a), iv(b), axis) {
         return o;
     }
+    crate::audit::escalation(&[
+        a[0].0, a[0].1, a[0].2, a[1].0, a[1].1, a[1].2, a[2].0, a[2].1, a[2].2, b[0].0, b[0].1,
+        b[0].2, b[1].0, b[1].1, b[1].2, b[2].0, b[2].1, b[2].2,
+    ]);
     let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
         [
             plane_hp(t[0].0, t[0].1, t[0].2, JUDGE_PREC),
@@ -889,6 +901,7 @@ pub fn dir_sign_judge(
     if let Some(pos) = d.sign() {
         return orient_of(pos);
     }
+    crate::audit::escalation(&[a.0, a.1, a.2, b.0, b.1, b.2, c.0, c.1, c.2]);
     let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, JUDGE_PREC);
     let (dh, _, mag_d, _) = cramer_hp([ph(a), ph(b), ph(c)], JUDGE_PREC);
     match sign_with_floor(&dh, mag_d, JUDGE_PREC) {
