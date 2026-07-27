@@ -40,7 +40,7 @@ impl Witness for FaceInfo {
         self.tri
     }
     // A face table exists before plane classes do, and the only predicate that runs on it is
-    // `t_planes_coplanar` during class discovery. Opting out here keeps that path unchanged.
+    // `Judge::planes_coplanar` during class discovery. Opting out here keeps that path unchanged.
     fn chain_id(&self) -> u64 {
         0
     }
@@ -128,7 +128,7 @@ mod tests {
     /// geom path over the same cuboid unrotated. Validates the ops-side assembly + routing
     /// (predicate soundness itself is `frame3`'s H-c).
     #[test]
-    fn t_orient3d_rotation_invariant() {
+    fn orient3d_is_rotation_invariant() {
         let (mut m, s) = cuboid();
         let pu = plane_table(&m, s);
         let r = rotated(&mut m, s);
@@ -194,7 +194,7 @@ mod tests {
     /// `rotated = false` forwards to the geom predicate bit-for-bit (axis-aligned hot path
     /// unchanged).
     #[test]
-    fn t_orient3d_unrotated_forwards_geom() {
+    fn orient3d_unrotated_forwards_geom() {
         let (m, s) = cuboid();
         let planes = plane_table(&m, s);
         let n = planes.len();
@@ -242,12 +242,12 @@ mod tests {
         out
     }
 
-    /// `t_planes_coplanar` decides plane identity from the faces' own coordinates, so it must
+    /// `Judge::planes_coplanar` decides plane identity from the faces' own coordinates, so it must
     /// (a) refuse to conclude anything from a degenerate `tri` — three equal points lie on *every*
     /// plane, and merging on that evidence would fuse genuinely different planes — and
     /// (b) answer the same for a rotated solid as for the unrotated one.
     #[test]
-    fn t_planes_coplanar_guards_degeneracy_and_survives_rotation() {
+    fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
         let (mut m, s) = cuboid();
         let pu = plane_table(&m, s);
         // (a) A hand-built degenerate pair: same-normal parallel planes, but `tri` is a point.
@@ -287,11 +287,11 @@ mod tests {
         assert_eq!(same, 0, "a cuboid has no two coplanar faces");
     }
 
-    /// `t_cmp_coord` orders two implicit points (corner triples) by an axis exactly as
+    /// `Judge::cmp_coord` orders two implicit points (corner triples) by an axis exactly as
     /// their `three_planes` coordinates do (cmp is not rotation-invariant, so the f64
     /// coordinate is the oracle) — never a wrong sign, resolves some, antisymmetric.
     #[test]
-    fn t_cmp_coord_matches_coord() {
+    fn cmp_coord_matches_coord() {
         use nacre_geom::intersect::three_planes;
         let (mut m, s) = cuboid();
         let r = rotated(&mut m, s);
@@ -337,7 +337,7 @@ mod tests {
 
     /// `rotated = false` forwards to `three_plane_cmp_coord` bit-for-bit.
     #[test]
-    fn t_cmp_coord_unrotated_forwards_geom() {
+    fn cmp_coord_unrotated_forwards_geom() {
         let (m, s) = cuboid();
         let planes = plane_table(&m, s);
         let triples = corner_triples(&planes);

@@ -607,7 +607,7 @@ fn trace_transversal_face(
 /// run is the hole's edge) is the one the flank gets wrong.
 ///
 /// **Derivation.** `order_along` runs along `d = n_s(wc) × n_s(fc)` (stored normals — see
-/// [`combinatorics::dir_sign`] and [`tolerant::t_plane_pair_dir_sign`]), and the label frame's "above" is
+/// [`combinatorics::dir_sign`] and [`Judge::plane_pair_dir_sign`](nacre_cip::predicate::Judge)), and the label frame's "above" is
 /// `n_s(wc)` (see [`combinatorics::side_of`]). With `t = order_along(wc, fc, first, last)` the travel
 /// is `−t·d`, so material points along `n_out(fp) × (−t·d)`. Since `fp` is coplanar with its class
 /// root, `n_out(fp) = σ·n_s(fc)`, and the triple product collapses to
@@ -993,7 +993,7 @@ fn split_at_crossings(
 /// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
 /// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
 /// given as `(fp, s)`. The signed turn between edges i and j is `turn_at`'s atom
-/// `s_i·s_j·t_plane_pair_dir_sign(w, fp_i, fp_j)·orient_sign(w)` (combinatorics.rs).
+/// `s_i·s_j·plane_pair_dir_sign(w, fp_i, fp_j)·orient_sign(w)` (combinatorics.rs).
 ///
 /// The turn sign is transitive only *within an open half-plane* (span < π), where it reproduces
 /// the angle order exactly — the textbook Graham-scan fact. So: bucket every edge by its turn
@@ -1911,7 +1911,7 @@ pub(crate) fn boolean(
     // place where "how this boolean judges" is decided.
     let jd = Judge::new(&geom, standard, &notes);
     // The plane classes are already decided at this point — `plane_index_setup` runs
-    // `t_planes_coplanar` to build them — so a judgement that could not be made has already
+    // `Judge::planes_coplanar` to build them — so a judgement that could not be made has already
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
     let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
@@ -3588,7 +3588,7 @@ mod tests {
 
     /// The through-tunnel Cut is invariant under every orientation: single Z, X, Y, and compound
     /// Z∘X. The axis-DEPENDENCE was the tell of the bug (Y worked; Z/X declined before the
-    /// `t_orient3d` on-plane fix), so all four orientations returning 24 is the fix's direct
+    /// `Judge::orient3d` on-plane fix), so all four orientations returning 24 is the fix's direct
     /// regression lock. The cube's own z=0/z=3 caps exercise the seated path under rotation.
     #[test]
     fn rotated_tunnel_cut_all_orientations() {
@@ -3726,7 +3726,7 @@ mod tests {
     /// The sharp tripwire: a compound-tilted tunnel must decline nothing, exactly like the axis
     /// baseline `axis_aligned_cubes_decline_nothing`. This is the EXACT site the bug broke
     /// (`coincident-features` from a `wall == wc` degenerate), so it fails immediately if the
-    /// `t_orient3d` on-plane fix is reverted.
+    /// `Judge::orient3d` on-plane fix is reverted.
     #[test]
     fn rotated_tunnel_declines_nothing() {
         use nacre_scalar::Axis;

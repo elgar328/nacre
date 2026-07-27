@@ -40,7 +40,7 @@ fn a_shared_rotation_still_assumes_nothing() {
 ///
 /// This is the most consequential judgement the kernel makes — a merge changes which planes exist
 /// before a single vertex is computed — and the one that used to be invisible, since
-/// `t_planes_coplanar` returns a bare `bool`.
+/// `Judge::planes_coplanar` returns a bare `bool`.
 ///
 /// The fixture is **one motion spelled two ways**: `30°` about X, against `10°` then `20°` about
 /// the same axis and pivot. The planes coincide exactly, but the chains differ structurally, so

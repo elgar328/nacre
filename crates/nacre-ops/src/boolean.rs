@@ -310,7 +310,7 @@ pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 /// iff some face there has an outward normal with `n_x < 0` — but both numeric steps become
 /// exact CIP predicates:
 ///
-/// - **`v*`** by [`t_cmp_coord`](crate::tolerant) over each node's three-plane triple, the same
+/// - **`v*`** by [`Judge::cmp_coord`](crate::tolerant) over each node's three-plane triple, the same
 ///   lex-min scan as [`loop_winding`](crate::combinatorics::loop_winding). A node's triple is its
 ///   own face plane plus the neighbour planes of its two loop edges (the
 ///   [`loop_triples`](crate::combinatorics) construction), whose meet *is* that vertex — so an
@@ -388,7 +388,7 @@ fn component_is_outward_tol(
     }
 
     // Lexicographically-minimal vertex over the unique outer nodes (`loop_winding`'s scan;
-    // `t_cmp_coord` is exact for the rotated triples). Sort candidates for replay determinism.
+    // `Judge::cmp_coord` is exact for the rotated triples). Sort candidates for replay determinism.
     let mut nodes: Vec<Node> = triple_of.keys().copied().collect();
     nodes.sort_unstable();
     let Some((&first, rest)) = nodes.split_first() else {

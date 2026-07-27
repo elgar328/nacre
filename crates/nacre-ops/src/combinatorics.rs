@@ -23,7 +23,7 @@
 //! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
 //!
 //! **Exception:** the code that *defines* the classes (`crate::fill_classes` →
-//! `crate::shares_or_coplanar` → `crate::tolerant::t_planes_coplanar`) necessarily runs before a
+//! `crate::shares_or_coplanar` → `Judge::planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
 use crate::planes::{PlaneGeom, edge_incidence};
@@ -222,7 +222,7 @@ pub(crate) fn hole_rings(
 /// the same set whichever face's loop asks, so welding stays consistent (a face whose loop does not
 /// degenerate here derives the same three). More than three is a real four-plane concurrency and
 /// fewer is a genuine straight angle — both decline. Three *dependent* planes share a line rather
-/// than a point, so independence is checked too ([`t_plane_pair_dir_sign`], which reads the same
+/// than a point, so independence is checked too ([`Judge::plane_pair_dir_sign`], which reads the same
 /// un-normalized coefficients the consumer does).
 ///
 /// The common case is untouched, so no existing name moves.

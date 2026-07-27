@@ -5,7 +5,7 @@
 //!   directional tol, and an orientation determinant is decided by an f64 filter → astro-float
 //!   escalation → a proved coincidence or an honest "undecided" ([`Decision`]). The
 //!   certified-toleranced twin of `nacre-predicates` (exact f64).
-//! - [`predicate`] — the plane-arrangement geometric predicates (`t_orient3d`, `t_cmp_coord`,
+//! - [`predicate`] — the plane-arrangement geometric predicates (`Judge::orient3d`, `Judge::cmp_coord`,
 //!   …) that route each query to the exact path (`nacre-predicates`) or the kernel by whether
 //!   its planes are rotated. The b-rep supplies witnesses through the
 //!   [`Witness`](predicate::Witness) / [`PlaneWitness`](predicate::PlaneWitness) ports.

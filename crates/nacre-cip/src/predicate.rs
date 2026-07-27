@@ -117,7 +117,7 @@ impl Notes {
 ///
 /// The rotation-general predicates need only this, which is why one implementation can serve
 /// both index spaces (a plane class and a single face) without confusing them. Only
-/// [`t_planes_coplanar`] uses the face form — it is the predicate that *defines* the classes,
+/// [`Judge::planes_coplanar`] uses the face form — it is the predicate that *defines* the classes,
 /// so it necessarily runs before a plane table exists.
 pub trait Witness {
     fn tri(&self) -> [Point3; 3];
@@ -150,8 +150,8 @@ pub trait Witness {
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
-/// predicates ([`t_orient3d`], [`t_cmp_coord`], [`t_plane_pair_dir_sign`]) need on the exact
-/// path. (The stored↔outward `frame_sign` [`t_plane_pair_dir_sign`] also uses is *derived* from
+/// predicates ([`Judge::orient3d`], [`Judge::cmp_coord`], [`Judge::plane_pair_dir_sign`]) need on the exact
+/// path. (The stored↔outward `frame_sign` [`Judge::plane_pair_dir_sign`] also uses is *derived* from
 /// `coeffs` + `tri` by [`frame_sign`], not required from the impl.) A single face (which never
 /// plays a plane-class role) implements only [`Witness`].
 pub trait PlaneWitness: Witness {
@@ -530,7 +530,7 @@ fn single_axis_motion(def: &[Pt3; 3]) -> Option<(nacre_scalar::Axis, nacre_scala
 
 /// Whether the three points are **exactly collinear**, decided by the three coordinate-plane
 /// projections of the cross product (each an exact `orient2d`). Non-collinearity is the
-/// standing precondition of [`t_planes_coplanar`].
+/// standing precondition of [`Judge::planes_coplanar`].
 fn tri_collinear(t: [Point3; 3]) -> bool {
     let [a, b, c] = t.map(|p| p.as_array());
     let proj = |i: usize, j: usize| orient2d([a[i], a[j]], [b[i], b[j]], [c[i], c[j]]) == 0.0;
@@ -538,7 +538,7 @@ fn tri_collinear(t: [Point3; 3]) -> bool {
 }
 
 /// The exact side of triangle `tri`'s plane that the explicit point `p` lies on
-/// (`+1`/`-1`/`0`), sharing [`t_orient3d`]'s convention (`p` takes `V`'s slot).
+/// (`+1`/`-1`/`0`), sharing [`Judge::orient3d`]'s convention (`p` takes `V`'s slot).
 fn plane_side_exact(tri: [Point3; 3], p: Point3) -> i8 {
     let d = orient3d(
         p.as_array(),

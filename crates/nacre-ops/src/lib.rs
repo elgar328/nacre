@@ -884,7 +884,7 @@ pub mod tests {
 
     /// Predicates over a rotated result's witness planes are rotation-invariant against the same
     /// result unrotated — the provenance witness (with outward winding) defines the exact plane,
-    /// so `t_orient3d` agrees on every definite triple. A regression guard on the witness itself.
+    /// so `Judge::orient3d` agrees on every definite triple. A regression guard on the witness itself.
     #[test]
     fn rotated_result_witness_predicates_are_invariant() {
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
@@ -2372,7 +2372,7 @@ pub mod tests {
             plane,
             tri,
             n_out: Vector3::from_array([0.0; 3]),
-            // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
+            // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
             tri_pt3: tri.map(|p| nacre_cip::Pt3::exact(p.as_array()).expect("exact")),
             rotated: false,
@@ -4330,7 +4330,7 @@ pub mod tests {
         assert!(checked > 0, "the chained operand has vertices to name");
     }
 
-    /// **A point reads zero on each of its three defining planes.** `t_orient3d`'s on-plane
+    /// **A point reads zero on each of its three defining planes.** `Judge::orient3d`'s on-plane
     /// shortcut is a raw `==` against the triple, so a vertex on the query plane must name it by the
     /// same id the query uses. The face/plane split makes that automatic — a plane has exactly one
     /// id now, so the old failure (a vertex named by face 6 of the `z = 1` class invisible to a

@@ -642,7 +642,7 @@ pub(crate) fn shares_or_coplanar(jd: &Judge<'_, FaceInfo>, i: usize, j: usize) -
     //  1. the same `Surface` handle — coplanar by reference (what an ops-built tool's base cap and
     //     its target face share, and what a chained operand's split coplanar faces share);
     //  2. exactly proportional coefficients — the original test, kept;
-    //  3. the faces' own coordinates, exactly (`t_planes_coplanar`) — the only one of the three
+    //  3. the faces' own coordinates, exactly (`Judge::planes_coplanar`) — the only one of the three
     //     that does not read a *derived* value, and the one that catches two independently built
     //     solids whose walls coincide (`add_cuboid` stacked on `add_cuboid`), where the rounded
     //     coefficients of differently-sized faces are not exactly proportional.
