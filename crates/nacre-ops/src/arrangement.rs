@@ -18,6 +18,8 @@ use crate::boolean::*;
 use crate::planes::*;
 #[cfg(test)]
 use crate::transform::transform;
+use nacre_cip::Decision;
+use nacre_cip::predicate::Notes;
 use nacre_geom::intersect::three_planes;
 
 /// Which operand a segment came from — the boolean's per-cell label needs both solids' material
@@ -1887,7 +1889,7 @@ pub(crate) fn boolean(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<Vec<Handle<Solid>>, BoolError> {
+) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
     let PlaneSetup {
         planes: faces_tab,
         surf_ix,
@@ -1895,66 +1897,110 @@ pub(crate) fn boolean(
         inc_b,
         geom,
         plane_ix,
-        ..
+        notes,
     } = plane_index_setup(model, a, b)?;
-    let faces = trace_result_faces(
-        model, kind, a, b, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
-    )?;
-    // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
-    // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
-    // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-    let faces = crate::boolean::unify_coplanar_faces(faces, &geom)?;
+    // The plane classes are already decided at this point — `plane_index_setup` runs
+    // `t_planes_coplanar` to build them — so a judgement that could not be made has already
+    // shaped everything downstream. Say so before doing the work it would invalidate.
+    undecided_reject(&notes)?;
+    let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
+        let faces = trace_result_faces(
+            model, kind, a, b, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        )?;
+        // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
+        // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
+        // chainable solid — a second boolean on it then sees no redundant coplanar planes.
+        let faces = crate::boolean::unify_coplanar_faces(faces, &geom)?;
 
-    // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
-    // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
-    let mut seam: Vec<SeamVertex> = Vec::new();
-    let mut seen: HashMap<[usize; 3], ()> = HashMap::new();
-    for f in &faces {
-        for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
-            for node in loop_ {
-                let crate::boolean::Node::Seam(t) = node;
-                if seen.insert(*t, ()).is_some() {
-                    continue;
-                }
-                let point = three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
-                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-                seam.push(SeamVertex {
-                    point,
-                    triple: *t,
-                    tol: vertex_tol(
+        // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
+        // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
+        let mut seam: Vec<SeamVertex> = Vec::new();
+        let mut seen: HashMap<[usize; 3], ()> = HashMap::new();
+        for f in &faces {
+            for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+                for node in loop_ {
+                    let crate::boolean::Node::Seam(t) = node;
+                    if seen.insert(*t, ()).is_some() {
+                        continue;
+                    }
+                    let point =
+                        three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
+                            .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
+                    seam.push(SeamVertex {
                         point,
-                        &geom[t[0]].plane,
-                        &geom[t[1]].plane,
-                        &geom[t[2]].plane,
-                    ),
-                });
+                        triple: *t,
+                        tol: vertex_tol(
+                            point,
+                            &geom[t[0]].plane,
+                            &geom[t[1]].plane,
+                            &geom[t[2]].plane,
+                        ),
+                    });
+                }
             }
         }
-    }
-    // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
-    // materialized coordinate is only its cache — so two *different* triples landing on the same
-    // coordinate means the exact substrate and the f64 cache disagree about how many vertices
-    // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
-    // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
-    //
-    // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
-    // triples then name one point twice (measured 2026-07-22 — two `add_cuboid` walls at the same
-    // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
-    // are not exactly proportional). A genuine 4-plane concurrency does the same.
-    for (i, u) in seam.iter().enumerate() {
-        for v in &seam[i + 1..] {
-            if u.point == v.point {
-                return Err(reject(RejectReason::SeamAlias));
+        // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
+        // materialized coordinate is only its cache — so two *different* triples landing on the same
+        // coordinate means the exact substrate and the f64 cache disagree about how many vertices
+        // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
+        // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
+        //
+        // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
+        // triples then name one point twice (measured 2026-07-22 — two `add_cuboid` walls at the same
+        // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
+        // are not exactly proportional). A genuine 4-plane concurrency does the same.
+        for (i, u) in seam.iter().enumerate() {
+            for v in &seam[i + 1..] {
+                if u.point == v.point {
+                    return Err(reject(RejectReason::SeamAlias));
+                }
             }
         }
-    }
 
-    assemble_fuse_cut(model, a, b, &geom, &seam, &faces)
+        assemble_fuse_cut(model, a, b, &geom, &seam, &faces)
+    };
+    let out = run(model);
+    // **The cause outranks the symptom, on both paths.** An undecided judgement has already been
+    // read as a `0` by everything downstream, so whatever the engine then complains about — a
+    // loop that will not orient, a trace that will not close — is a consequence being reported as
+    // if it were the problem. That is the `LoopOrientMismatch`-hiding-precision-exhaustion trap,
+    // and checking the evidence *before* returning the symptom is what keeps it shut.
+    undecided_reject(&notes)?;
+    out.map(|solids| (solids, notes))
+}
+
+/// **A judgement that could not be made is a reject, not a zero.**
+///
+/// `Decision::orient` collapses every inconclusive outcome to `Zero`, which the arrangement reads
+/// as "these are the same thing" — so an undecided judgement that reaches the geometry has
+/// already merged something the kernel never established. The two causes get their own names,
+/// because they call for opposite responses: one is a budget (raise it, or simplify the model),
+/// the other is the arrangement itself (nothing to raise).
+fn undecided_reject(notes: &Notes) -> Result<(), BoolError> {
+    for e in notes.sorted() {
+        match e.outcome {
+            Decision::Exhausted { .. } => return Err(reject(RejectReason::JudgeExhausted)),
+            Decision::Degenerate => return Err(reject(RejectReason::DegenerateWitness)),
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The engine entry with the evidence dropped — these tests assert geometry, and the report
+    /// has its own tests. Shadows [`super::boolean`] so the call sites read as they always did.
+    fn boolean(
+        model: &mut Model,
+        kind: BoolKind,
+        a: Handle<Solid>,
+        b: Handle<Solid>,
+    ) -> Result<Vec<Handle<Solid>>, BoolError> {
+        super::boolean(model, kind, a, b).map(|(solids, _)| solids)
+    }
 
     /// Point of a canon triple, for asserting geometry by hand.
     fn pt(t: [usize; 3], planes: &[PlaneGeom]) -> [f64; 3] {

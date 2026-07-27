@@ -19,13 +19,96 @@
 //! b-rep and geometry types.
 
 use crate::kernel::frame3::{
-    Judge, Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge, orient3d_judge,
+    Decision, Judge, Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge,
+    orient3d_judge,
 };
 use nacre_math::Point3;
 use nacre_predicates::{
     ThreePlane, det3_sign, indirect_cmp_coord, indirect_orient3d, orient2d, orient3d,
 };
 use nacre_scalar::Orient;
+
+/// **What a judgement was asked about**, in the only vocabulary this crate has: plane-table
+/// indices.
+///
+/// Turning these into vertices, faces and solids is the caller's job and costs a reverse lookup
+/// this crate cannot do — so the report starts with indices and distances, and grows names only
+/// once it has proved its worth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Site {
+    /// Two faces judged to lie on **the same plane** — the merge that decides the plane classes,
+    /// and therefore everything downstream. First in any report for that reason.
+    PlanesCoplanar { i: usize, j: usize },
+    /// Which side of plane `j` the implicit point `∩(p, q, r)` lies on.
+    Orient3d {
+        p: usize,
+        q: usize,
+        r: usize,
+        j: usize,
+    },
+    /// The order of two implicit points along one axis.
+    CmpCoord {
+        a: [usize; 3],
+        b: [usize; 3],
+        axis: usize,
+    },
+    /// How the line `p ∩ a` runs relative to plane `b`.
+    DirSign { p: usize, a: usize, b: usize },
+}
+
+/// One judgement that did **not** come back with a proved sign, and what it did establish.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Evidence {
+    pub site: Site,
+    pub outcome: Decision,
+}
+
+/// Where an operation's [`Evidence`] is collected — **diagnostic only**.
+///
+/// Nothing read from here changes a sign, a merge, or a coordinate: the geometry consumes
+/// [`Decision::orient`]'s `i8` exactly as before, and this rides alongside. That is what lets the
+/// port be added without touching a single geometric decision.
+///
+/// **It is not a global.** The collector belongs to the operation and reaches the predicates the
+/// same way the judging precision does — through the witness table the caller already holds. A
+/// thread-local would have put permanent mutable state in a pure numeric crate, and would have
+/// been wrong the moment two operations ran on one thread.
+#[derive(Clone, Debug, Default)]
+pub struct Notes(NotesCell);
+
+#[cfg(feature = "parallel")]
+type NotesCell = std::sync::Arc<std::sync::Mutex<Vec<Evidence>>>;
+#[cfg(not(feature = "parallel"))]
+type NotesCell = std::rc::Rc<std::cell::RefCell<Vec<Evidence>>>;
+
+impl Notes {
+    pub fn new() -> Notes {
+        Notes::default()
+    }
+
+    /// Record one inconclusive judgement. Clones of a `Notes` share one list, so stamping a copy
+    /// on every table entry collects into the same place.
+    pub fn push(&self, e: Evidence) {
+        #[cfg(feature = "parallel")]
+        self.0.lock().expect("notes lock").push(e);
+        #[cfg(not(feature = "parallel"))]
+        self.0.borrow_mut().push(e);
+    }
+
+    /// Everything recorded, in a **deterministic** order.
+    ///
+    /// Sorted by site, not by arrival: predicates may run in any order (and, under `parallel`, on
+    /// any thread), and a report that changed shape with the schedule would be a poor thing to
+    /// hand a user who is trying to reproduce a result.
+    pub fn sorted(&self) -> Vec<Evidence> {
+        #[cfg(feature = "parallel")]
+        let mut v = self.0.lock().expect("notes lock").clone();
+        #[cfg(not(feature = "parallel"))]
+        let mut v = self.0.borrow().clone();
+        v.sort_by_key(|e| e.site);
+        v
+    }
+}
 
 /// A plane witnessed by three points known to lie on it, and — when the solid was rotated —
 /// their exact [`Pt3`] definitions.
@@ -73,6 +156,13 @@ pub trait Witness {
     /// call site has the plane table in hand and nothing else. Uniform within an operation, which
     /// is what keeps [`Pt3`]'s realization cache warm.
     fn judge(&self) -> Judge;
+
+    /// Where this operation collects the evidence behind its inconclusive judgements — see
+    /// [`Notes`]. `None` (the default) means nobody is listening, and the judgements are made
+    /// exactly the same way.
+    fn notes(&self) -> Option<&Notes> {
+        None
+    }
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
@@ -117,6 +207,20 @@ fn shared_motion<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
 
 pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[Pt3; 3] {
     planes[k].tri_pt3()
+}
+
+/// The sign the geometry consumes, **and** a note of what backed it when it was not a proved one.
+///
+/// A proved sign — including a proved zero — is the ordinary case and says nothing worth
+/// reporting. A coincidence, an exhausted judgement or a degenerate witness is a statement about
+/// *this model* that the caller cannot recover afterwards, because by then it is just a `0`.
+fn record<W: Witness>(planes: &[W], k: usize, site: Site, d: Decision) -> i8 {
+    if !matches!(d, Decision::Sign(_)) {
+        if let Some(n) = planes[k].notes() {
+            n.push(Evidence { site, outcome: d });
+        }
+    }
+    to_i8(d.orient())
 }
 
 fn to_i8(o: Orient) -> i8 {
@@ -176,7 +280,10 @@ pub fn t_orient3d<W: PlaneWitness>(planes: &[W], p: usize, q: usize, r: usize, j
         plane_def(planes, r),
         plane_def(planes, j),
     );
-    to_i8(
+    record(
+        planes,
+        p,
+        Site::Orient3d { p, q, r, j },
         indirect_orient3d_judge(
             borrow3(dp),
             borrow3(dq),
@@ -185,8 +292,7 @@ pub fn t_orient3d<W: PlaneWitness>(planes: &[W], p: usize, q: usize, r: usize, j
             &dj[1],
             &dj[2],
             planes[p].judge(),
-        )
-        .orient(),
+        ),
     )
 }
 
@@ -210,14 +316,16 @@ pub fn t_cmp_coord<W: PlaneWitness>(planes: &[W], a: [usize; 3], b: [usize; 3], 
     }
     let da = a.map(|k| plane_def(planes, k));
     let db = b.map(|k| plane_def(planes, k));
-    to_i8(
+    record(
+        planes,
+        a[0],
+        Site::CmpCoord { a, b, axis },
         indirect_cmp_coord_judge(
             borrow_triple(da),
             borrow_triple(db),
             axis,
             planes[a[0]].judge(),
-        )
-        .orient(),
+        ),
     )
 }
 
@@ -357,8 +465,50 @@ pub fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
         }
     }
     let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
-    dj.iter()
-        .all(|q| to_i8(orient3d_judge(q, &di[0], &di[1], &di[2], planes[i].judge()).orient()) == 0)
+    // Three point-on-plane judgements, and the answer is their conjunction. **The note belongs to
+    // the merge, not to the points**: what a reader needs to know is "these two faces became one
+    // plane, on this evidence", and a definite sign anywhere means no merge happened and there is
+    // nothing to report. So the loosest of the three is recorded, and only once all three agreed.
+    let mut loosest: Option<Decision> = None;
+    for q in dj.iter() {
+        let d = orient3d_judge(q, &di[0], &di[1], &di[2], planes[i].judge());
+        if d.orient() != Orient::Zero {
+            return false;
+        }
+        if looser(d, loosest) {
+            loosest = Some(d);
+        }
+    }
+    if let (Some(d), Some(n)) = (loosest, planes[i].notes()) {
+        n.push(Evidence {
+            site: Site::PlanesCoplanar { i, j },
+            outcome: d,
+        });
+    }
+    true
+}
+
+/// Is `d` weaker evidence than `best` — the one a report should quote?
+///
+/// The order is by how much is left unsaid: a proved sign says everything, a coincidence names a
+/// distance, and the two inconclusive outcomes say the least. Among coincidences the wider bound
+/// wins, since that is the one closest to being wrong.
+fn looser(d: Decision, best: Option<Decision>) -> bool {
+    let rank = |x: Decision| match x {
+        Decision::Sign(_) => 0,
+        Decision::Coincident { .. } => 1,
+        Decision::Exhausted { .. } => 2,
+        Decision::Degenerate => 3,
+    };
+    match best {
+        None => rank(d) > 0,
+        Some(b) if rank(d) != rank(b) => rank(d) > rank(b),
+        Some(Decision::Coincident { within: y }) => match d {
+            Decision::Coincident { within: x } => y.lt(x),
+            _ => false,
+        },
+        Some(_) => false,
+    }
 }
 
 /// `+1` if plane `w`'s stored coefficient-normal points the same way as its outward `tri`
@@ -409,7 +559,12 @@ pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, 
     frame_sign(&planes[p])
         * frame_sign(&planes[a])
         * frame_sign(&planes[b])
-        * to_i8(dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db), planes[p].judge()).orient())
+        * record(
+            planes,
+            p,
+            Site::DirSign { p, a, b },
+            dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db), planes[p].judge()),
+        )
 }
 
 #[cfg(test)]

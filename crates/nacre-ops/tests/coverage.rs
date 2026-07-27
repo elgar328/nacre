@@ -42,3 +42,6 @@ mod mirror;
 
 #[path = "coverage/sketch.rs"]
 mod sketch;
+
+#[path = "coverage/report.rs"]
+mod report;

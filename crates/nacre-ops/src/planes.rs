@@ -3,6 +3,7 @@
 
 use crate::combinatorics;
 use crate::{BoolError, RejectReason, he_start, reject, tolerant};
+use nacre_cip::predicate::Notes;
 use nacre_cip::{Judge, Pt3};
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
@@ -46,6 +47,10 @@ pub(crate) struct FaceInfo {
     /// [`judge_for`]. Stamped on every entry after the table is built, because it is a property
     /// of the whole operation and every predicate call site has only this table in hand.
     pub(crate) judge: Judge,
+    /// Where this operation's inconclusive judgements are recorded — see [`Notes`]. A clone of
+    /// one per-operation collector, stamped with `judge`; diagnostic only, nothing geometric
+    /// reads it.
+    pub(crate) notes: Notes,
     /// The three `tri` points as **exact `Pt3` definitions**, in the same order as `tri`.
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
     /// per judgment, which dominated the boolean's runtime.
@@ -147,6 +152,7 @@ pub(crate) fn collect_planes(
                 // Stamped by `plane_index_setup` once both operands' tables exist — how the
                 // operation judges is a property of the operation, not of one face.
                 judge: UNSTAMPED,
+                notes: Notes::new(),
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
                 rotated,
@@ -235,6 +241,9 @@ pub(crate) struct PlaneSetup {
     pub(crate) geom: Vec<PlaneGeom>,
     /// `plane_ix[face]` is that face's plane, as an index into `geom`.
     pub(crate) plane_ix: Vec<usize>,
+    /// This operation's evidence collector, already stamped on every table entry. Held here too
+    /// so the caller can read it without reaching into a table row.
+    pub(crate) notes: Notes,
 }
 
 pub(crate) fn plane_index_setup(
@@ -245,6 +254,7 @@ pub(crate) fn plane_index_setup(
     let mut planes = collect_planes(model, a)?;
     planes.extend(collect_planes(model, b)?);
     let judge = judge_for(&planes);
+    let notes = Notes::new();
     if judge.prec > JUDGE_PREC_CAP {
         return Err(reject(RejectReason::PrecisionBudget {
             needed: judge.prec,
@@ -253,6 +263,7 @@ pub(crate) fn plane_index_setup(
     }
     for p in &mut planes {
         p.judge = judge;
+        p.notes = notes.clone();
     }
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
@@ -269,6 +280,7 @@ pub(crate) fn plane_index_setup(
         inc_b,
         geom,
         plane_ix,
+        notes,
     })
 }
 
@@ -508,6 +520,8 @@ pub(crate) struct PlaneGeom {
     pub(crate) base: BaseFrame,
     /// Copied from the face table — see [`FaceInfo::judge`].
     pub(crate) judge: Judge,
+    /// Copied from the face table — see [`FaceInfo::notes`].
+    pub(crate) notes: Notes,
 }
 
 /// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
@@ -543,6 +557,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
                 rotated: pi.rotated,
                 frame_sign: pi.orient_sign,
                 judge: pi.judge,
+                notes: pi.notes.clone(),
             }
         })
         .collect();

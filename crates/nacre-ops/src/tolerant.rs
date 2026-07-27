@@ -6,7 +6,7 @@
 //! `nacre-cip`.
 
 use crate::planes::{FaceInfo, PlaneGeom};
-use nacre_cip::predicate::{PlaneWitness, Witness};
+use nacre_cip::predicate::{Notes, PlaneWitness, Witness};
 use nacre_cip::{Judge, Pt3};
 use nacre_math::Point3;
 
@@ -34,6 +34,9 @@ impl Witness for PlaneGeom {
     fn judge(&self) -> Judge {
         self.judge
     }
+    fn notes(&self) -> Option<&Notes> {
+        Some(&self.notes)
+    }
 }
 
 impl Witness for FaceInfo {
@@ -56,6 +59,9 @@ impl Witness for FaceInfo {
     }
     fn judge(&self) -> Judge {
         self.judge
+    }
+    fn notes(&self) -> Option<&Notes> {
+        Some(&self.notes)
     }
 }
 
@@ -256,6 +262,7 @@ mod tests {
             .map(|k| PlaneGeom {
                 base: crate::planes::BaseFrame::none(),
                 judge: crate::planes::fixed_judge(256),
+                notes: nacre_cip::predicate::Notes::new(),
                 surf: pu[0].surf,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],

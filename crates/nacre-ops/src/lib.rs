@@ -21,7 +21,11 @@ mod sketch;
 mod tolerant;
 mod transform;
 
-pub use boolean::boolean;
+pub use boolean::{BoolReport, boolean, boolean_with_report};
+// The report's vocabulary: what a judgement was asked about, and what it established. Re-exported
+// so a consumer reads one crate, not two.
+pub use nacre_cip::Decision;
+pub use nacre_cip::predicate::{Evidence, Site};
 pub use ops::{
     BoolKind, OpError, OpOutput, Operation, Profile2d, ProfileRing, SketchPlane, apply, face_plane,
     replay,
@@ -261,6 +265,24 @@ pub enum RejectReason {
     /// It exists so the cause has a name: at a fixed 256 bits a solid turned 245 times used to
     /// fail as `LoopOrientMismatch`, a symptom three layers away from the reason.
     PrecisionBudget { needed: usize, cap: usize },
+    /// **A judgement ran out of bits.** A determinant could not be separated from zero even at
+    /// the judging cap, and the separation it *did* bound is wider than the coincidence limit —
+    /// so calling the two things one would be a guess, and the kernel says so instead.
+    ///
+    /// Sibling of [`Self::PrecisionBudget`], which is the same shortage seen before any work
+    /// starts: that one is the whole model being too deep, this one is a single judgement being
+    /// harder than the model's own depth suggested (a very thin witness). More bits would answer
+    /// it. Nothing is wrong with the model.
+    JudgeExhausted,
+    /// **A judgement had no distance to measure.** Turning a determinant into a length means
+    /// dividing by a cofactor, and this one came out exactly zero: a witness triangle that has
+    /// collapsed to a line, or three planes with no meeting point to speak of.
+    ///
+    /// **A different cause from [`Self::JudgeExhausted`], and the difference is what to do about
+    /// it**: no amount of precision creates a distance that is not there (measured — the
+    /// determinant was still bit-exactly zero 8192 bits deeper). The arrangement asked for a
+    /// point that does not exist.
+    DegenerateWitness,
     /// Every candidate ray from a loop's nodes has a ring node on its line.
     ///
     /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
@@ -386,6 +408,8 @@ impl RejectReason {
             Self::DegenerateNormal => "degenerate_normal",
             Self::CoordinateOutOfRange => "coordinate_out_of_range",
             Self::PrecisionBudget { .. } => "precision_budget",
+            Self::JudgeExhausted => "judge_exhausted",
+            Self::DegenerateWitness => "degenerate_witness",
             Self::NoClearRay => "no_clear_ray",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
@@ -420,6 +444,10 @@ impl RejectReason {
             | Self::CoordinateOutOfRange
             // A cost limit, not a resolution one: more bits would answer it.
             | Self::PrecisionBudget { .. }
+            | Self::JudgeExhausted
+            // The arrangement named a point that is not a point — a degenerate configuration the
+            // substrate cannot describe, not a defect in the assembly.
+            | Self::DegenerateWitness
             | Self::NoClearRay
             | Self::PointOnRing
             | Self::HoleDepth
@@ -842,6 +870,7 @@ pub mod tests {
         let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
         m.rebuild_adjacency();
         crate::arrangement::boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+
         m.rebuild_adjacency();
         let issues = nacre_validate::validate(&m);
         assert!(
@@ -2328,6 +2357,7 @@ pub mod tests {
             plane,
             tri,
             judge: crate::planes::fixed_judge(256),
+            notes: nacre_cip::predicate::Notes::new(),
             n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
@@ -3773,6 +3803,7 @@ pub mod tests {
         PlaneGeom {
             base: crate::planes::BaseFrame::none(),
             judge: crate::planes::fixed_judge(256),
+            notes: nacre_cip::predicate::Notes::new(),
             surf,
             plane,
             tri,

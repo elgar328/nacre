@@ -8,7 +8,8 @@
 use crate::combinatorics;
 use crate::planes::{PlaneGeom, uf_find};
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
-use nacre_cip::dir_orient3d_judge;
+use nacre_cip::predicate::{Evidence, Notes, Site};
+use nacre_cip::{Decision, dir_orient3d_judge};
 use nacre_geom::{Curve, Line, Surface};
 use nacre_math::Point3;
 use nacre_store::Handle;
@@ -32,6 +33,19 @@ pub fn boolean(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
+    boolean_with_report(model, kind, a, b).map(|(solids, _)| solids)
+}
+
+/// [`boolean`], and **what the kernel had to assume to get there** — see [`BoolReport`].
+///
+/// A parallel entry point rather than a wider return type: the report is wanted by roughly one
+/// caller in thirty, and changing `boolean`'s signature would rewrite every other one for nothing.
+pub fn boolean_with_report(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<(Vec<Handle<Solid>>, BoolReport), BoolError> {
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
@@ -39,7 +53,7 @@ pub fn boolean(
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
     let snapshot = model.live_solids.clone();
-    let result = crate::arrangement::boolean(model, kind, a, b)?;
+    let (result, notes) = crate::arrangement::boolean(model, kind, a, b)?;
     // Topological self-check on the assembled result (DNA: never return a malformed solid). Reject
     // rather than return, restoring the pre-op live set so the reject leaves the *live* model
     // untouched (orphaned result cells stay in the append-only arena, unreachable, as any superseded
@@ -49,7 +63,60 @@ pub fn boolean(
         model.live_solids = snapshot;
         return Err(reject(t));
     }
-    Ok(result)
+    Ok((result, BoolReport::of(&notes)))
+}
+
+/// **What the boolean had to take on faith**, so a user can see it and act on it.
+///
+/// Rotated geometry has no exact zero: a plane through turned points meets another at coordinates
+/// no finite precision writes down, so "these two faces are the same plane" is *proved to within a
+/// distance*, never proved outright. The kernel decides such a question by proving the separation
+/// is below the coincidence limit — and then this says which questions those were and how close
+/// the closest call came.
+///
+/// **It is a diagnosis, not a prompt.** Nothing here asks the user to choose; the choice was made
+/// on evidence and the evidence is here. What it is *for* is noticing an unintended coincidence —
+/// two features that met because a dimension made them meet — and going back to fix the design,
+/// which is a thing only the author of the model can do.
+#[derive(Clone, Debug, Default)]
+pub struct BoolReport {
+    /// **Faces merged into one plane class on toleranced evidence — first, because everything
+    /// else follows from them.** A merge decided here changes which planes exist before a single
+    /// vertex is computed, so a surprise in this list explains surprises everywhere else.
+    pub merges: Vec<Evidence>,
+    /// How many judgements were answered by a proved coincidence rather than a proved sign.
+    pub coincidences: usize,
+    /// The closest call: the coincidence with the **widest** bound, the one nearest to having
+    /// been wrong. `None` when nothing was assumed at all — an axis-aligned model, typically,
+    /// where every question has an exact answer.
+    pub loosest: Option<Evidence>,
+}
+
+impl BoolReport {
+    fn of(notes: &Notes) -> BoolReport {
+        let all = notes.sorted();
+        let widest = |e: &Evidence| match e.outcome {
+            Decision::Coincident { within } => within.exp2(),
+            _ => None,
+        };
+        BoolReport {
+            merges: all
+                .iter()
+                .filter(|e| matches!(e.site, Site::PlanesCoplanar { .. }))
+                .copied()
+                .collect(),
+            coincidences: all
+                .iter()
+                .filter(|e| matches!(e.outcome, Decision::Coincident { .. }))
+                .count(),
+            // Ties keep the first in sorted order, so the answer does not depend on the schedule.
+            loosest: all
+                .iter()
+                .filter(|e| matches!(e.outcome, Decision::Coincident { .. }))
+                .max_by_key(|e| widest(e))
+                .copied(),
+        }
+    }
 }
 
 /// The first topological defect in a boolean's output, checked **per solid** so one bad piece is

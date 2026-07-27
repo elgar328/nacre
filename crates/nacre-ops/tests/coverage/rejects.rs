@@ -5,8 +5,10 @@
 //! will take — and it exists to keep the error surface usable from outside the crate, which
 //! is the only place that can prove it.
 
+use crate::common::{rot_iso, two_boxes, xf};
 use nacre_math::Point3;
 use nacre_ops::{BoolError, BoolKind, RejectClass, RejectReason, boolean};
+use nacre_scalar::Axis;
 use nacre_topo::Model;
 
 /// The message an application would show.
@@ -99,4 +101,34 @@ fn a_stale_operand_is_not_a_reject_reason() {
         user_message(err),
         "an operand is no longer part of the model"
     );
+}
+
+/// **A judgement that could not be made is named as the cause, not as whatever broke downstream.**
+///
+/// Rotating one operand of a face-touching pair leaves triples of planes that never meet in a
+/// point — the Cramer determinant is exactly zero, measured, and still bit-exactly zero 8192 bits
+/// deeper — so there is no distance to measure and no precision that would create one. Before the
+/// evidence had a channel out, `Decision::orient` collapsed that to `Zero`, the arrangement read
+/// it as "the same point", and the boolean failed several steps later as `LoopOrientMismatch`: a
+/// symptom of the guess, reported as if it were the problem.
+///
+/// The `Common` of the same pair still builds, which is what makes this a statement about the
+/// judgement rather than about the geometry as a whole.
+#[test]
+fn a_degenerate_judgement_is_named_instead_of_its_downstream_symptom() {
+    for kind in [BoolKind::Fuse, BoolKind::Cut] {
+        let (mut m, a, b) = two_boxes();
+        let a = xf(&mut m, a, rot_iso(Axis::Z, 30));
+        let err = boolean(&mut m, kind, a, b).unwrap_err();
+        assert_eq!(
+            err,
+            BoolError::Unsupported {
+                reason: RejectReason::DegenerateWitness
+            },
+            "{kind:?} named a symptom instead of the judgement that caused it"
+        );
+    }
+    let (mut m, a, b) = two_boxes();
+    let a = xf(&mut m, a, rot_iso(Axis::Z, 30));
+    boolean(&mut m, BoolKind::Common, a, b).expect("the same pair still meets");
 }
