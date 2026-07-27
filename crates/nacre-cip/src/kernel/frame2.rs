@@ -82,43 +82,37 @@ impl Pt2 {
     }
 }
 
-/// A rational as an arbitrary-precision float (exact for the small values here).
+/// A rational as an arbitrary-precision float.
+///
+/// **Numerator and denominator go in as `i128`, not through `f64`.** Routing them through `f64`
+/// costs a relative `2⁻⁵³` the moment either exceeds 2⁵³ — and *no amount of working precision
+/// recovers it*, because the loss happens before astro-float ever sees the value. Measured: a
+/// denominator of `2⁵⁴+1` took a coordinate's error bound from `2⁻²⁵¹` to `2⁻⁵⁰`. Chained exact
+/// rational arithmetic multiplies denominators, so that is not an exotic input; it is what the
+/// crate's own bit-growth note is about.
 pub(crate) fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
-    BigFloat::from_f64(r.numer() as f64, prec).div(
-        &BigFloat::from_f64(r.denom() as f64, prec),
-        prec,
-        HP_RM,
-    )
+    // `from_i128` needs at least 128 bits to hold the integer before the division rounds it.
+    let p = prec.max(128);
+    BigFloat::from_i128(r.numer(), p).div(&BigFloat::from_i128(r.denom(), p), prec, HP_RM)
 }
 
 /// A rational realized at `prec` bits **with the error that realization carries**.
 ///
 /// Two things can go wrong and both are bounded here rather than assumed away:
 ///
-/// - `numer`/`denom` cross `f64` on the way in. When either does not round-trip, the value is
-///   only known to a relative `2⁻⁵³` and **no rung of the ladder recovers it** — the bound has to
-///   say so, or a deep escalation reports confidence it does not have.
-/// - the division rounds, unless it terminates: a power-of-two denominator with a numerator
-///   inside `prec` bits is exact, and then the radius is genuinely zero.
+/// The integers themselves are exact — [`rat_to_big`] feeds them in as `i128` — so the only
+/// error is the division, and even that vanishes when it terminates: a power-of-two denominator
+/// with a numerator inside `prec` bits is exact, and then the radius is genuinely zero.
 pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpIv {
     let mid = rat_to_big(r, prec);
     let (n, d) = (r.numer(), r.denom()); // `d > 0` after reduction
-    let round_trips = |v: i128| (v as f64) as i128 == v;
     let n_bits = (128 - n.unsigned_abs().leading_zeros()) as usize;
-    if round_trips(n) && round_trips(d) && d & (d - 1) == 0 && n_bits <= prec {
-        return HpIv::exact(mid);
+    if d & (d - 1) == 0 && n_bits <= prec {
+        return HpIv::exact(mid); // a terminating division: a power-of-two denominator
     }
-    let f64_rel = |v: i128| {
-        if round_trips(v) {
-            Bound::ZERO
-        } else {
-            Bound::pow2(-53)
-        }
-    };
-    let rel = f64_rel(n)
-        .plus(f64_rel(d))
-        .plus(Bound::pow2(-(prec as i64)));
-    HpIv::new(mid.clone(), ub(&mid).times(rel))
+    // The integers enter exactly (see `rat_to_big`), so the only error left is the division's
+    // own rounding.
+    HpIv::new(mid.clone(), ub(&mid).times(Bound::pow2(-(prec as i64))))
 }
 
 /// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero).

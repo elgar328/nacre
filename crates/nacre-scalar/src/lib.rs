@@ -224,9 +224,8 @@ impl Angle {
     ///
     /// The bound is *derived*, term by term, not chosen:
     ///
-    /// - `numer`/`denom` cross `f64` on the way in. Below `2⁵³` that is exact and contributes
-    ///   nothing; above it the angle itself is only known to a relative `2⁻⁵³`, which no amount of
-    ///   working precision can recover — so the bound says so instead of pretending otherwise.
+    /// - `numer`/`denom` enter as `i128`, exactly. Routing them through `f64` would cost a
+    ///   relative `2⁻⁵³` past 2⁵³ that no working precision recovers, so it is not done.
     /// - `n/d`, `·π`, `/180` are three round-to-nearest operations at `prec` bits, each a relative
     ///   `2⁻ᵖʳᵉᶜ`, and `π` itself carries one more.
     /// - The argument's absolute error `δθ = |θ|·ρ` passes through the **derivative**:
@@ -245,8 +244,12 @@ impl Angle {
         HP_CONSTS.with_borrow_mut(|cc| {
             let pi = cc.pi(prec, HP_RM);
             let d180 = BigFloat::from_f64(180.0, prec);
-            let n = BigFloat::from_f64(self.0.numer() as f64, prec);
-            let d = BigFloat::from_f64(self.0.denom() as f64, prec);
+            // As `i128`, not through `f64`: past 2⁵³ the conversion would cost a relative
+            // `2⁻⁵³` that no working precision recovers, because the loss happens before
+            // astro-float sees the value.
+            let ip = prec.max(128);
+            let n = BigFloat::from_i128(self.0.numer(), ip);
+            let d = BigFloat::from_i128(self.0.denom(), ip);
             let rad = n
                 .div(&d, prec, HP_RM)
                 .mul(&pi, prec, HP_RM)
@@ -254,19 +257,9 @@ impl Angle {
             let u = Bound::pow2(-(prec as i64));
             // Relative error of the argument: the two `i128 → f64` conversions, then four
             // rounded high-precision operations (the division, the product, the division, and π).
-            // The test is a round trip, not a size: `2⁶⁰` is far past 2⁵³ and still exact, and
-            // charging it a relative `2⁻⁵³` would put a floor under the whole ladder for an angle
-            // that has no error at all.
-            let f64_rel = |v: i128| {
-                if (v as f64) as i128 == v {
-                    Bound::ZERO
-                } else {
-                    Bound::pow2(-53)
-                }
-            };
-            let rel = f64_rel(self.0.numer())
-                .plus(f64_rel(self.0.denom()))
-                .plus(u.times(Bound::of(4.0)));
+            // Four rounded operations build the argument (the division, the product, the
+            // division, and π itself). The integers contribute nothing — they go in exactly.
+            let rel = u.times(Bound::of(4.0));
             // `|θ|` in radians, over-estimated from its exponent (`|x| < 2^exponent`).
             let theta = match rad.exponent() {
                 Some(e) if !rad.is_zero() => Bound::pow2(e as i64),
