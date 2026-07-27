@@ -7,6 +7,7 @@
 
 use crate::combinatorics;
 use crate::planes::{PlaneGeom, uf_find};
+use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
 use nacre_cip::predicate::{Evidence, Notes, Site};
 use nacre_cip::{Decision, dir_orient3d_judge};
@@ -324,7 +325,11 @@ pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 /// on a non-simple/degenerate component (coincident nodes, a straight angle, or a non-manifold
 /// edge) — an honest reject, never a silent wrong label. Routed from `assemble_fuse_cut`'s
 /// per-component outward test by [`any_rotated`](crate::tolerant) (cell 3c-vi-b).
-fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result<bool, BoolError> {
+fn component_is_outward_tol(
+    jd: &Judge<'_, PlaneGeom>,
+    comp: &[&LocalFace],
+) -> Result<bool, BoolError> {
+    let planes = jd.planes;
     use nacre_scalar::{Orient, Rat};
 
     // The unordered edge key: `Node` is `Ord`, so order the pair canonically.
@@ -392,9 +397,7 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
     let mut lo = first;
     for &node in rest {
         let ord = (0..3)
-            .map(|axis| {
-                crate::tolerant::t_cmp_coord(planes, triple_of[&node], triple_of[&lo], axis)
-            })
+            .map(|axis| jd.cmp_coord(triple_of[&node], triple_of[&lo], axis))
             .find(|&c| c != 0);
         match ord {
             Some(c) if c < 0 => lo = node,
@@ -411,13 +414,7 @@ fn component_is_outward_tol(planes: &[PlaneGeom], comp: &[&LocalFace]) -> Result
         }
         let tri = crate::tolerant::plane_def(planes, lf.plane_idx);
         let ex = [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)];
-        let nx = dir_orient3d_judge(
-            ex,
-            &tri[0],
-            &tri[1],
-            &tri[2],
-            planes[lf.plane_idx].judge.prec,
-        );
+        let nx = dir_orient3d_judge(ex, &tri[0], &tri[1], &tri[2], jd.standard.prec);
         let nx = if lf.flip {
             match nx {
                 Orient::Positive => Orient::Negative,
@@ -466,10 +463,11 @@ pub(crate) fn assemble_fuse_cut(
     model: &mut Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     seam: &[SeamVertex],
     faces: &[LocalFace],
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let planes = jd.planes;
     // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
     // is wholly inside what cuts it. That is an answer, not a failure: a solid is bounded by faces,
     // so a non-empty result cannot have none. The inputs are still consumed, exactly as they are on
@@ -652,7 +650,7 @@ pub(crate) fn assemble_fuse_cut(
     for c in 0..n {
         let idxs: Vec<usize> = by_comp_lf[c].iter().map(|lf| lf.plane_idx).collect();
         let outward = if crate::tolerant::any_rotated(planes, &idxs) {
-            component_is_outward_tol(planes, &by_comp_lf[c])?
+            component_is_outward_tol(jd, &by_comp_lf[c])?
         } else {
             is_shell_outward(model, &by_comp[c])
         };
@@ -714,7 +712,7 @@ pub(crate) fn assemble_fuse_cut(
                 let containers = nodes_of(d).iter().find_map(|&x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match combinatorics::point_in_component(planes, x, &comp_faces(m)) {
+                        match combinatorics::point_in_component(jd, x, &comp_faces(m)) {
                             Ok(true) => cs.push(m),
                             Ok(false) => {}
                             Err(_) => return None, // grazed against a material — try next node
@@ -735,12 +733,8 @@ pub(crate) fn assemble_fuse_cut(
                                     || nodes_of(c)
                                         .iter()
                                         .find_map(|&x| {
-                                            combinatorics::point_in_component(
-                                                planes,
-                                                x,
-                                                &comp_faces(o),
-                                            )
-                                            .ok()
+                                            combinatorics::point_in_component(jd, x, &comp_faces(o))
+                                                .ok()
                                         })
                                         .unwrap_or(false)
                             })
@@ -809,7 +803,7 @@ fn norm_edge(a: Node, b: Node) -> (Node, Node) {
 /// unique).
 pub(crate) fn unify_coplanar_faces(
     faces: Vec<LocalFace>,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
     // One plane class, one flip.
@@ -862,7 +856,7 @@ pub(crate) fn unify_coplanar_faces(
             .iter()
             .map(|&fi| kept[fi].as_ref().expect("member present"))
             .collect();
-        let rings = merge_component(&group, planes)?;
+        let rings = merge_component(&group, jd)?;
         let (plane_idx, flip) = (group[0].plane_idx, group[0].flip);
         merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
             plane_idx,
@@ -898,7 +892,7 @@ type RegionRings = (Vec<Node>, Vec<Vec<Node>>);
 /// the holes that belong to it.
 fn merge_component(
     group: &[&LocalFace],
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
 ) -> Result<Vec<RegionRings>, BoolError> {
     // 1. Collect directed edges. A repeat in the same direction means two faces claim the same side.
     let mut dirs: HashMap<(Node, Node), usize> = HashMap::new();
@@ -969,7 +963,7 @@ fn merge_component(
         // These cycles are built from node names alone (no DCEL here), so their edges are the
         // derived kind — see `RingEdge`.
         let ring = combinatorics::ring_from_names(wc, &seam_ring(&cyc))?;
-        match combinatorics::loop_winding(planes, wc, &ring)? {
+        match combinatorics::loop_winding(jd, wc, &ring)? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
             _ => return Err(reject(RejectReason::CoplanarMerge)),
@@ -983,7 +977,7 @@ fn merge_component(
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             let ring = combinatorics::ring_from_names(wc, &seam_ring(outer))?;
-            if combinatorics::point_in_ring(planes, wc, probe, &ring)? {
+            if combinatorics::point_in_ring(jd, wc, probe, &ring)? {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
                 }

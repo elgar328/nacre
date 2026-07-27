@@ -9,7 +9,7 @@
 //! ([`det3_bound`], §CIP ②) decides the easy cases, the ambiguous ones **escalate**
 //! to astro-float from the point definitions, and one whose interval still straddles zero is
 //! **normalized into the distance it stands for** and held against the operation's coincidence
-//! limit ([`Judge`]): below it the coincidence is proved, above it the judgement climbs to the
+//! limit ([`Standard`]): below it the coincidence is proved, above it the judgement climbs to the
 //! precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
 //! assumed. This is the judgment **layer only**
 //! ("층만") — not yet wired into boolean (that is stage 3), and it is the *tol > 0*
@@ -228,7 +228,8 @@ impl Pt3 {
     }
 }
 
-/// **What a judgement needs beyond its points: how deep to realize, and how close counts as one.**
+/// **The standard of proof a judgement is held to: how deep to realize, and how close counts as
+/// one thing.**
 ///
 /// The threshold here is a **length in the model's own units**, never a bit count. "256 bits"
 /// means a resolution of `1e-76` for a solid turned once and `1e+15` for one turned three hundred
@@ -241,7 +242,7 @@ impl Pt3 {
 /// says *"a coincidence must be **proved** to be closer than this"*. Nothing is merged on
 /// ignorance; a judgement that cannot prove it climbs, and then says so.
 #[derive(Clone, Copy, Debug)]
-pub struct Judge {
+pub struct Standard {
     /// The precision the escalation realizes definitions at — chosen for this model, uniform
     /// across the operation so [`Pt3`]'s realization cache stays warm.
     pub prec: usize,
@@ -356,14 +357,17 @@ fn denom_lo(v: &HpIv) -> Result<Bound, Gap> {
 /// anyway. Doubling would either overshoot (paying for bits nobody asked for) or, on a model that
 /// starts deep, undershoot and realize everything twice for nothing.
 fn escalate(
-    j: Judge,
+    j: Standard,
     limit: Bound,
     mut attempt: impl FnMut(usize) -> Result<Orient, Gap>,
 ) -> Decision {
     // A zero precision means the context never got stamped: astro-float would be asked for a
     // realization with no bits, and every judgement would come back exhausted. That is a wiring
     // mistake, not a geometry one, so it fails loudly here rather than quietly answering `Zero`.
-    debug_assert!(j.prec > 0, "escalate at zero precision — unstamped Judge");
+    debug_assert!(
+        j.prec > 0,
+        "escalate at zero precision — unstamped Standard"
+    );
     let mut prec = j.prec;
     loop {
         let gap = match attempt(prec) {
@@ -637,7 +641,7 @@ fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
 /// turned into a distance and answered by [`escalate`]. Path-independent (a
 /// function of the four point definitions). This is the *tol > 0* path — a tol-0
 /// config is exact/faster via `nacre-predicates` (Shewchuk), routed above this crate.
-pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, j: Judge) -> Decision {
+pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, j: Standard) -> Decision {
     let (a, b, c, d) = (pa.coord, pb.coord, pc.coord, pd.coord);
     let det = det3_f64(a, b, c, d);
     let bound = det3_bound([a, b, c, d], [pa.tol, pb.tol, pc.tol, pd.tol]);
@@ -1040,7 +1044,7 @@ pub fn indirect_orient3d_judge(
     q: &Pt3,
     r: &Pt3,
     s: &Pt3,
-    j: Judge,
+    j: Standard,
 ) -> Decision {
     let planes = [
         plane_iv(plane_a.0, plane_a.1, plane_a.2),
@@ -1160,7 +1164,7 @@ pub fn indirect_cmp_coord_judge(
     a: [(&Pt3, &Pt3, &Pt3); 3],
     b: [(&Pt3, &Pt3, &Pt3); 3],
     axis: usize,
-    j: Judge,
+    j: Standard,
 ) -> Decision {
     let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
         [
@@ -1208,7 +1212,7 @@ pub fn dir_sign_judge(
     a: (&Pt3, &Pt3, &Pt3),
     b: (&Pt3, &Pt3, &Pt3),
     c: (&Pt3, &Pt3, &Pt3),
-    j: Judge,
+    j: Standard,
 ) -> Decision {
     let (d, _) = cramer_iv([
         plane_iv(a.0, a.1, a.2),
@@ -1297,8 +1301,8 @@ mod tests {
     /// The judgement context those fixtures use: that precision, plus the coincidence limit the
     /// default derivation gives a unit-scale model (output resolution `2⁻⁵²`, two words further
     /// down) and the production cap.
-    fn fixture() -> Judge {
-        Judge {
+    fn fixture() -> Standard {
+        Standard {
             prec: FIXTURE_PREC,
             coincidence: Bound::pow2(-180),
             scale: Bound::of(1.0),
@@ -1325,7 +1329,7 @@ mod tests {
     #[test]
     fn the_climb_lands_where_the_shortfall_names_in_one_jump() {
         let mut asked = Vec::new();
-        let j = Judge {
+        let j = Standard {
             prec: 256,
             coincidence: Bound::pow2(-300),
             scale: Bound::of(1.0),
@@ -1351,7 +1355,7 @@ mod tests {
     /// the geometry only because the outcome itself is still there to be reported.
     #[test]
     fn a_gap_that_never_reaches_the_limit_is_exhausted_not_coincident() {
-        let j = Judge {
+        let j = Standard {
             prec: 256,
             coincidence: Bound::pow2(-300),
             scale: Bound::of(1.0),
@@ -1398,7 +1402,7 @@ mod tests {
     /// other is the geometry, and a caller that cannot tell them apart cannot act on either.
     #[test]
     fn a_degenerate_witness_is_told_apart_from_an_exhausted_one() {
-        let j = Judge {
+        let j = Standard {
             prec: 256,
             coincidence: Bound::pow2(-300),
             scale: Bound::of(1.0),
@@ -1473,7 +1477,7 @@ mod tests {
 
         // …and the limit is genuinely consulted: ask for a coincidence a thousand bits finer than
         // the model can carry and the same judgement must refuse to call it one.
-        let strict = Judge {
+        let strict = Standard {
             coincidence: Bound::pow2(-2000),
             cap: 512,
             ..j

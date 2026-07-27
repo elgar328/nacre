@@ -16,6 +16,7 @@
 use super::*;
 use crate::boolean::*;
 use crate::planes::*;
+use crate::tolerant::Judge;
 #[cfg(test)]
 use crate::transform::transform;
 use nacre_cip::Decision;
@@ -152,7 +153,7 @@ pub(crate) struct Aliases {
 
 impl Aliases {
     /// Record that every plane in `s` (sorted, deduped) passes through one point.
-    fn record(&mut self, planes: &[PlaneGeom], s: &[usize]) {
+    fn record(&mut self, jd: &Judge<'_, PlaneGeom>, s: &[usize]) {
         if s.len() < 4 {
             return; // three planes meeting at a point is the ordinary case, and names nothing new
         }
@@ -161,7 +162,7 @@ impl Aliases {
             for j in (i + 1)..s.len() {
                 for k in (j + 1)..s.len() {
                     let t = [s[i], s[j], s[k]];
-                    if tolerant::t_plane_pair_dir_sign(planes, t[0], t[1], t[2]) == 0 {
+                    if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
                         // Shares a line: names no point, and tells us two walls are one line.
                         self.union_wall(t[0], t[1], t[2]);
                         self.union_wall(t[1], t[0], t[2]);
@@ -300,7 +301,7 @@ fn trace_transversal_face(
     fp: usize,
     which: SolidSide,
     wc: usize,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
     inc: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
@@ -310,7 +311,7 @@ fn trace_transversal_face(
     // *plane class* it lies on (triples, comparisons, predicate arguments). Every ring below is in
     // class form, so the two must not be confused — see `canon_ring`.
     let fc = plane_ix[fp];
-    let outer = match combinatorics::face_vertex_triples(model, fh, fp, inc, planes, plane_ix) {
+    let outer = match combinatorics::face_vertex_triples(model, fh, fp, inc, jd, plane_ix) {
         Ok(r) => match plane_ring(&r) {
             Some(r) => r,
             None => {
@@ -326,7 +327,7 @@ fn trace_transversal_face(
     let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
-    let Ok(raw_holes) = combinatorics::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
+    let Ok(raw_holes) = combinatorics::hole_rings(model, fh, fp, inc, jd, plane_ix) else {
         out.declined.push((fp, DeclineKind::HoleRing));
         return;
     };
@@ -378,7 +379,7 @@ fn trace_transversal_face(
                 set.push(wc);
                 set.sort_unstable();
                 set.dedup();
-                out.aliases.record(planes, &set);
+                out.aliases.record(jd, &set);
                 // ★ A handle has a duty the identity does not: it must **cut** `L`. One parallel
                 // to it names no point there, and `order_along` — being `orient3d × dir_sign` —
                 // would read 0 against everything, fabricating a coincidence rather than missing
@@ -386,7 +387,7 @@ fn trace_transversal_face(
                 offs.sort_unstable();
                 offs.iter()
                     .copied()
-                    .find(|&r| tolerant::t_plane_pair_dir_sign(planes, wc, fc, r) != 0)
+                    .find(|&r| jd.plane_pair_dir_sign(wc, fc, r) != 0)
                     .ok_or(DeclineKind::FourPlane)
             }
             _ => Err(DeclineKind::RunName),
@@ -404,7 +405,7 @@ fn trace_transversal_face(
     'rings: for ring in std::iter::once(&outer).chain(holes.iter()) {
         let n = ring.len();
         let side: Vec<i8> = (0..n)
-            .map(|i| combinatorics::side_of(planes, ring[i], wc))
+            .map(|i| combinatorics::side_of(jd, ring[i], wc))
             .collect();
         let Some(start) = side.iter().position(|&s| s != 0) else {
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
@@ -475,7 +476,7 @@ fn trace_transversal_face(
                             // (Phase B gives it to `flip`) — it is not an occupancy fact, and
                             // gating the side on it left a crossing run classified as a
                             // straddling transversal.
-                            let graze_above = Some(run_body_above(planes, faces, wc, fc, fp, &rs));
+                            let graze_above = Some(run_body_above(jd, faces, wc, fc, fp, &rs));
                             for r in rs {
                                 nodes.push(Node {
                                     r,
@@ -503,14 +504,14 @@ fn trace_transversal_face(
 
     // Phase B — order the nodes along L and fix run structure.
     nodes.sort_by(
-        |a, b| match combinatorics::order_along(planes, wc, fc, a.r, b.r) {
+        |a, b| match combinatorics::order_along(jd, wc, fc, a.r, b.r) {
             -1 => std::cmp::Ordering::Less,
             1 => std::cmp::Ordering::Greater,
             _ => std::cmp::Ordering::Equal,
         },
     );
     for w in nodes.windows(2) {
-        if combinatorics::order_along(planes, wc, fc, w[0].r, w[1].r) == 0 {
+        if combinatorics::order_along(jd, wc, fc, w[0].r, w[1].r) == 0 {
             out.declined.push((fp, DeclineKind::CoincidentFeatures));
             return;
         }
@@ -618,14 +619,15 @@ fn trace_transversal_face(
 /// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`FaceInfo::orient_sign`] and
 /// `trace_seated_face` already rely on. Everything else here is exact.
 fn run_body_above(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
     wc: usize,
     fc: usize,
     fp: usize,
     rs: &[usize],
 ) -> bool {
-    let t = combinatorics::order_along(planes, wc, fc, rs[0], rs[rs.len() - 1]);
+    let planes = jd.planes;
+    let t = combinatorics::order_along(jd, wc, fc, rs[0], rs[rs.len() - 1]);
     let sigma = faces[fp].n_out.dot(planes[fc].plane.normal());
     (t < 0) == (sigma > 0.0)
 }
@@ -638,19 +640,20 @@ fn trace_one(
     solid: Handle<Solid>,
     which: SolidSide,
     wc: usize,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
     out: &mut Trace,
 ) {
+    let planes = jd.planes;
     let w_normal = planes[wc].plane.normal();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
             let fp = surf_ix[&fh];
             if plane_ix[fp] != wc {
-                trace_transversal_face(model, fh, fp, which, wc, planes, faces, inc, plane_ix, out);
+                trace_transversal_face(model, fh, fp, which, wc, jd, faces, inc, plane_ix, out);
                 continue;
             }
             // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
@@ -662,10 +665,9 @@ fn trace_one(
             let kind = SegKind::Seated { body_above };
             // Collect every ring in class form first: a collapsed name declines the whole face, and
             // deciding that before the emitting closure exists keeps the two borrows apart.
-            let Some(outer) =
-                combinatorics::face_vertex_triples(model, fh, fp, inc, planes, plane_ix)
-                    .ok()
-                    .and_then(|ts| plane_ring(&ts))
+            let Some(outer) = combinatorics::face_vertex_triples(model, fh, fp, inc, jd, plane_ix)
+                .ok()
+                .and_then(|ts| plane_ring(&ts))
             else {
                 out.declined.push((fp, DeclineKind::OuterRing));
                 continue;
@@ -673,7 +675,7 @@ fn trace_one(
             let mut rings = vec![outer];
             let mut collapsed = false;
             // As above: an unnameable hole is a reject, not "no hole".
-            let Ok(raw) = combinatorics::hole_rings(model, fh, fp, inc, planes, plane_ix) else {
+            let Ok(raw) = combinatorics::hole_rings(model, fh, fp, inc, jd, plane_ix) else {
                 out.declined.push((fp, DeclineKind::HoleRing));
                 continue;
             };
@@ -740,7 +742,7 @@ fn trace_on_class(
     a: Handle<Solid>,
     b: Handle<Solid>,
     wc: usize,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &combinatorics::EdgeFaces,
@@ -753,7 +755,7 @@ fn trace_on_class(
         a,
         SolidSide::A,
         wc,
-        planes,
+        jd,
         faces,
         surf_ix,
         inc_a,
@@ -765,7 +767,7 @@ fn trace_on_class(
         b,
         SolidSide::B,
         wc,
-        planes,
+        jd,
         faces,
         surf_ix,
         inc_b,
@@ -860,7 +862,7 @@ fn merge_coincident(segs: &[Seg], wc: usize, aliases: &Aliases) -> Vec<MergedSeg
 /// classes coincident on a wall's line — a four-plane concurrency `{wc, W, a, b}` the 3-plane DCEL
 /// cannot name (`FOURPLANE`).
 fn split_at_crossings(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     wc: usize,
     segs: &[MergedSeg],
     aliases: &mut Aliases,
@@ -873,8 +875,8 @@ fn split_at_crossings(
     let closed_contains = |s: &MergedSeg, r: usize| -> Option<bool> {
         let (r0, r1) = (s.end_h[0], s.end_h[1]);
         let (a, b) = (
-            combinatorics::order_along(planes, wc, s.wall, r, r0),
-            combinatorics::order_along(planes, wc, s.wall, r, r1),
+            combinatorics::order_along(jd, wc, s.wall, r, r0),
+            combinatorics::order_along(jd, wc, s.wall, r, r1),
         );
         // An endpoint is contained. Integer identity is not the whole test: where four planes meet,
         // one point wears two handles, and `r` may be the group's representative while the segment
@@ -911,7 +913,7 @@ fn split_at_crossings(
             if o.wall == w {
                 continue;
             }
-            if tolerant::t_plane_pair_dir_sign(planes, wc, w, o.wall) == 0 {
+            if jd.plane_pair_dir_sign(wc, w, o.wall) == 0 {
                 continue; // walls meet wc in no point (parallel)
             }
             if closed_contains(o, w) == Some(true) {
@@ -921,13 +923,11 @@ fn split_at_crossings(
         // Distinct classes (same class = same point), then ordered along the line.
         pts.sort_unstable();
         pts.dedup();
-        pts.sort_by(
-            |&x, &y| match combinatorics::order_along(planes, wc, w, x, y) {
-                -1 => std::cmp::Ordering::Less,
-                1 => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
-            },
-        );
+        pts.sort_by(|&x, &y| match combinatorics::order_along(jd, wc, w, x, y) {
+            -1 => std::cmp::Ordering::Less,
+            1 => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        });
         // ★ Two DISTINCT classes ordering equal are one point wearing two handles — a four-plane
         // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
         // splitting at both would emit a zero-length piece between them.
@@ -942,14 +942,14 @@ fn split_at_crossings(
                 set.extend(group.iter().copied());
                 set.sort_unstable();
                 set.dedup();
-                al.record(planes, &set);
+                al.record(jd, &set);
             }
             group.clear();
         };
         for &r in &pts {
             let same = group
                 .first()
-                .is_some_and(|&g| combinatorics::order_along(planes, wc, w, g, r) == 0);
+                .is_some_and(|&g| combinatorics::order_along(jd, wc, w, g, r) == 0);
             if !same {
                 flush(&mut group, &mut reps, aliases);
             }
@@ -1006,13 +1006,11 @@ fn split_at_crossings(
 /// are parallel (a `0`-turn that is not same-fp) fall into the angle-0 bucket unresolved, and
 /// collinear same-direction overlap (E5) is out of scope here. The corpus's arrangement vertices
 /// are degree ≥ 3 with distinct fp's per real direction, which is what this handles.
-fn angular_order(planes: &[PlaneGeom], w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
+fn angular_order(jd: &Judge<'_, PlaneGeom>, w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
+    let planes = jd.planes;
     let os = planes[w].frame_sign;
     let cross = |i: usize, j: usize| -> i8 {
-        edges[i].1
-            * edges[j].1
-            * tolerant::t_plane_pair_dir_sign(planes, w, edges[i].0, edges[j].0)
-            * os
+        edges[i].1 * edges[j].1 * jd.plane_pair_dir_sign(w, edges[i].0, edges[j].0) * os
     };
     let (mut zero, mut pos, mut pole, mut neg) = (vec![], vec![], vec![], vec![]);
     for i in 0..edges.len() {
@@ -1090,7 +1088,7 @@ fn component_count(segs: &[MergedSeg]) -> usize {
 /// direction (predecessor vs successor) is `angular_order`'s handedness — unknown up front, so both
 /// are tried and the one giving exactly `component_count` faces of winding `-1` is kept.
 fn extract_cells(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     wc: usize,
     segs: &[MergedSeg],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
@@ -1116,13 +1114,13 @@ fn extract_cells(
         for &he in outs {
             let (rv, rf) = (origin_h(he), target_h(he));
             // Direction sign away from v toward the far end (edge_sign convention).
-            let s = combinatorics::order_along(planes, wc, wall(he), rf, rv);
+            let s = combinatorics::order_along(jd, wc, wall(he), rf, rv);
             if s == 0 {
                 return Err(reject(RejectReason::LoopOrientMismatch));
             }
             edges.push((wall(he), s));
         }
-        let ord = angular_order(planes, wc, &edges);
+        let ord = angular_order(jd, wc, &edges);
         cyclic.insert(v, (outs.clone(), ord));
     }
 
@@ -1184,7 +1182,7 @@ fn extract_cells(
                     to_h: target_h(h),
                 })
                 .collect();
-            let w = combinatorics::loop_winding(planes, wc, &ring)?;
+            let w = combinatorics::loop_winding(jd, wc, &ring)?;
             cells.push(Cell {
                 half_edges: cyc,
                 winding: w,
@@ -1235,7 +1233,7 @@ struct Nesting {
 /// the only impossibility (a closed figure always has an outside), and that is `HOLE_ROOTS`. A hole
 /// whose owner is not uniquely determined is `HOLE_DEPTH` (see [`innermost_host`]).
 fn nest_cells(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     wc: usize,
     cells: &[Cell],
     segs: &[MergedSeg],
@@ -1283,7 +1281,7 @@ fn nest_cells(
             // all of `c`'s vertices spoiled against `r` is a genuine degeneracy → honest reject.
             let mut inside = None;
             for v in rings[c].iter().map(|e| e.node) {
-                if let Ok(hit) = combinatorics::point_in_ring(planes, wc, v, &rings[r]) {
+                if let Ok(hit) = combinatorics::point_in_ring(jd, wc, v, &rings[r]) {
                     inside = Some(hit);
                     break;
                 }
@@ -1297,7 +1295,7 @@ fn nest_cells(
         if hosts.is_empty() {
             roots.push(c);
         } else {
-            let host = innermost_host(planes, wc, &rings, &hosts)?;
+            let host = innermost_host(jd, wc, &rings, &hosts)?;
             let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
             parent[rc] = rr;
             holes.entry(host).or_default().push(c);
@@ -1336,7 +1334,7 @@ fn nest_cells(
 /// [`combinatorics::point_in_ring`], and candidates sharing a node are adjacent rather than nested, so
 /// they cannot be ordered and the honest answer is to reject.
 fn innermost_host(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     wc: usize,
     rings: &[Vec<combinatorics::RingEdge>],
     hosts: &[usize],
@@ -1350,7 +1348,7 @@ fn innermost_host(
         }
         rings[a]
             .iter()
-            .find_map(|e| combinatorics::point_in_ring(planes, wc, e.node, &rings[b]).ok())
+            .find_map(|e| combinatorics::point_in_ring(jd, wc, e.node, &rings[b]).ok())
     };
     let mut found = None;
     for &h in hosts {
@@ -1544,10 +1542,11 @@ fn emit_faces(
     labels: &[Label],
     cells: &[Cell],
     segs: &[MergedSeg],
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
 ) -> Vec<LocalFace> {
+    let planes = jd.planes;
     // `crate::boolean::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
     // three-valued-scan struct) shadows it here.
     let ring_of = |cell: &Cell| -> Vec<crate::boolean::Node> {
@@ -1590,13 +1589,14 @@ fn trace_result_faces(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &combinatorics::EdgeFaces,
     inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
 ) -> Result<Vec<LocalFace>, BoolError> {
+    let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
     // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
@@ -1616,9 +1616,8 @@ fn trace_result_faces(
         let before = aliases.len();
         splits.clear();
         for wc in 0..planes.len() {
-            let mut tr = trace_on_class(
-                model, a, b, wc, planes, faces, surf_ix, inc_a, inc_b, plane_ix,
-            );
+            let mut tr =
+                trace_on_class(model, a, b, wc, jd, faces, surf_ix, inc_a, inc_b, plane_ix);
             aliases.absorb(&std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
             // which operand face. A class can decline several faces; the first is the one
@@ -1627,7 +1626,7 @@ fn trace_result_faces(
                 return Err(reject(decline_to_reject(kind, faces[fp].face)));
             }
             let merged = merge_coincident(&tr.segs, wc, &aliases);
-            splits.push(split_at_crossings(planes, wc, &merged, &mut aliases)?);
+            splits.push(split_at_crossings(jd, wc, &merged, &mut aliases)?);
         }
         if aliases.len() == before {
             break;
@@ -1635,15 +1634,15 @@ fn trace_result_faces(
     }
 
     for (wc, split) in splits.iter().enumerate() {
-        let (cells, face_of) = extract_cells(planes, wc, split)?;
-        let nesting = nest_cells(planes, wc, &cells, split)?;
+        let (cells, face_of) = extract_cells(jd, wc, split)?;
+        let nesting = nest_cells(jd, wc, &cells, split)?;
         let labels = label_cells(&cells, &face_of, split, &nesting)?;
         local_faces.extend(emit_faces(
             kind,
             &labels,
             &cells,
             split,
-            planes,
+            jd,
             wc,
             &nesting.holes,
         ));
@@ -1690,19 +1689,22 @@ pub(crate) fn concurrency_audit(
         inc_b,
         geom,
         plane_ix,
-        ..
+        standard,
+        notes,
     } = plane_index_setup(model, a, b)?;
+    let jd = Judge::new(&geom, standard, &notes);
     let mut out = Vec::new();
+    #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
         let tr = trace_on_class(
-            model, a, b, wc, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            model, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         // Names this class used: segment endpoints, single-point touches, and — since a crossing
         // the arrangement mints is a vertex too — the split's endpoints where it got that far.
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let mut names: Vec<[usize; 3]> = tr.touches.clone();
         for s in merged.iter().chain(
-            split_at_crossings(&geom, wc, &merged, &mut Aliases::default())
+            split_at_crossings(&jd, wc, &merged, &mut Aliases::default())
                 .as_deref()
                 .unwrap_or(&[])
                 .iter(),
@@ -1723,10 +1725,10 @@ pub(crate) fn concurrency_audit(
                     continue;
                 };
                 let mut rings =
-                    combinatorics::face_vertex_triples(model, fh, fp, inc, &geom, &plane_ix)
+                    combinatorics::face_vertex_triples(model, fh, fp, inc, &jd, &plane_ix)
                         .unwrap_or_default();
                 rings.extend(
-                    combinatorics::hole_rings(model, fh, fp, inc, &geom, &plane_ix)
+                    combinatorics::hole_rings(model, fh, fp, inc, &jd, &plane_ix)
                         .unwrap_or_default()
                         .into_iter()
                         .flatten(),
@@ -1736,7 +1738,7 @@ pub(crate) fn concurrency_audit(
                 names.extend(
                     rings
                         .into_iter()
-                        .filter(|&t| combinatorics::side_of(&geom, sorted3(t), wc) == 0)
+                        .filter(|&t| combinatorics::side_of(&jd, sorted3(t), wc) == 0)
                         .map(sorted3),
                 );
             }
@@ -1744,13 +1746,14 @@ pub(crate) fn concurrency_audit(
         names.sort_unstable();
         names.dedup();
         for t in names {
-            if tolerant::t_plane_pair_dir_sign(&geom, t[0], t[1], t[2]) == 0 {
+            if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
                 continue; // names no point, so "the planes through it" is not a question
             }
             let mut planes: Vec<usize> = t.to_vec();
-            planes.extend((0..geom.len()).filter(|q| {
-                !t.contains(q) && tolerant::t_orient3d(&geom, t[0], t[1], t[2], *q) == 0
-            }));
+            planes.extend(
+                (0..geom.len())
+                    .filter(|q| !t.contains(q) && jd.orient3d(t[0], t[1], t[2], *q) == 0),
+            );
             if planes.len() > 3 {
                 planes.sort_unstable();
                 let mut lines = Vec::new();
@@ -1758,7 +1761,7 @@ pub(crate) fn concurrency_audit(
                     for j in (i + 1)..planes.len() {
                         for k in (j + 1)..planes.len() {
                             let tri = [planes[i], planes[j], planes[k]];
-                            if tolerant::t_plane_pair_dir_sign(&geom, tri[0], tri[1], tri[2]) == 0 {
+                            if jd.plane_pair_dir_sign(tri[0], tri[1], tri[2]) == 0 {
                                 lines.push(tri);
                             }
                         }
@@ -1816,12 +1819,15 @@ pub(crate) fn frame_audit(
         inc_b,
         geom,
         plane_ix,
-        ..
+        standard,
+        notes,
     } = plane_index_setup(model, a, b)?;
+    let jd = Judge::new(&geom, standard, &notes);
     let mut out = Vec::new();
+    #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
         let tr = trace_on_class(
-            model, a, b, wc, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            model, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let side = |f: fn(&SegKind) -> Option<bool>| -> Vec<bool> {
             tr.segs.iter().filter_map(|s| f(&s.kind)).collect()
@@ -1853,11 +1859,11 @@ pub(crate) fn frame_audit(
         } else {
             let run = || -> Result<(), BoolError> {
                 let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-                let split = split_at_crossings(&geom, wc, &merged, &mut Aliases::default())?;
-                let (cells, face_of) = extract_cells(&geom, wc, &split)?;
-                let nesting = nest_cells(&geom, wc, &cells, &split)?;
+                let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default())?;
+                let (cells, face_of) = extract_cells(&jd, wc, &split)?;
+                let nesting = nest_cells(&jd, wc, &cells, &split)?;
                 let labels = label_cells(&cells, &face_of, &split, &nesting)?;
-                let _ = emit_faces(kind, &labels, &cells, &split, &geom, wc, &nesting.holes);
+                let _ = emit_faces(kind, &labels, &cells, &split, &jd, wc, &nesting.holes);
                 Ok(())
             };
             run().err().and_then(|e| match e {
@@ -1897,20 +1903,25 @@ pub(crate) fn boolean(
         inc_b,
         geom,
         plane_ix,
+        standard,
         notes,
     } = plane_index_setup(model, a, b)?;
+    // The operation's judging, made once: the dense plane table, the standard it is held to, and
+    // the collector. Everything below reaches predicates through this, so there is exactly one
+    // place where "how this boolean judges" is decided.
+    let jd = Judge::new(&geom, standard, &notes);
     // The plane classes are already decided at this point — `plane_index_setup` runs
     // `t_planes_coplanar` to build them — so a judgement that could not be made has already
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
     let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
         let faces = trace_result_faces(
-            model, kind, a, b, &geom, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            model, kind, a, b, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         )?;
         // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
         // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
         // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-        let faces = crate::boolean::unify_coplanar_faces(faces, &geom)?;
+        let faces = crate::boolean::unify_coplanar_faces(faces, &jd)?;
 
         // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
         // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
@@ -1957,7 +1968,7 @@ pub(crate) fn boolean(
             }
         }
 
-        assemble_fuse_cut(model, a, b, &geom, &seam, &faces)
+        assemble_fuse_cut(model, a, b, &jd, &seam, &faces)
     };
     let out = run(model);
     // **The cause outranks the symptom, on both paths.** An undecided judgement has already been
@@ -2003,7 +2014,8 @@ mod tests {
     }
 
     /// Point of a canon triple, for asserting geometry by hand.
-    fn pt(t: [usize; 3], planes: &[PlaneGeom]) -> [f64; 3] {
+    fn pt(t: [usize; 3], jd: &Judge<'_, PlaneGeom>) -> [f64; 3] {
+        let planes = jd.planes;
         three_planes(
             &planes[t[0]].plane,
             &planes[t[1]].plane,
@@ -2037,8 +2049,11 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
 
         // The shared class z=1: the class both solids seat a cap on.
         let wc = (0..planes.len())
@@ -2055,7 +2070,7 @@ mod tests {
             .expect("a shared cap class");
 
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         // Two seated caps × 4 edges each. (The side walls only *graze* z=1 — each cube's body is
         // entirely on one side — so they trace as `Graze` chords, not `Transversal`; the two far
@@ -2096,7 +2111,7 @@ mod tests {
         for s in &seated {
             // On z=1, riding a side wall (not W itself), body on the geometrically correct side.
             for e in &s.end {
-                assert!((pt(*e, &planes)[2] - 1.0).abs() < 1e-12, "endpoint on z=1");
+                assert!((pt(*e, &jd)[2] - 1.0).abs() < 1e-12, "endpoint on z=1");
             }
             assert_ne!(s.wall, wc, "a seated edge rides a side wall, not W");
             match (s.solid, s.kind) {
@@ -2151,8 +2166,11 @@ mod tests {
             surf_ix,
             inc_a,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a2, b2).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
 
         // The y=1 class: a plane through all-y=1 points that a's reflex face sits on.
         let wc = (0..planes.len())
@@ -2170,7 +2188,7 @@ mod tests {
             a2,
             SolidSide::A,
             wc,
-            &planes,
+            &jd,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -2184,7 +2202,7 @@ mod tests {
             .iter()
             .filter(|s| matches!(s.kind, SegKind::Transversal { .. }))
             .map(|s| {
-                let (mut u, mut v) = (rp(pt(s.end[0], &planes)), rp(pt(s.end[1], &planes)));
+                let (mut u, mut v) = (rp(pt(s.end[0], &jd)), rp(pt(s.end[1], &jd)));
                 if u > v {
                     std::mem::swap(&mut u, &mut v);
                 }
@@ -2264,8 +2282,11 @@ mod tests {
             surf_ix,
             inc_a,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a2, b2).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let wc = (0..planes.len())
             .find(|&c| {
                 planes[c]
@@ -2280,7 +2301,7 @@ mod tests {
             a2,
             SolidSide::A,
             wc,
-            &planes,
+            &jd,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -2293,7 +2314,7 @@ mod tests {
             .iter()
             .filter(|s| matches!(s.kind, SegKind::Transversal { .. }))
             .map(|s| {
-                let (mut u, mut v) = (rp(pt(s.end[0], &planes)), rp(pt(s.end[1], &planes)));
+                let (mut u, mut v) = (rp(pt(s.end[0], &jd)), rp(pt(s.end[1], &jd)));
                 if u > v {
                     std::mem::swap(&mut u, &mut v);
                 }
@@ -2318,7 +2339,7 @@ mod tests {
             .iter()
             .filter_map(|s| match s.kind {
                 SegKind::Graze { body_above } => {
-                    let (mut u, mut v) = (rp(pt(s.end[0], &planes)), rp(pt(s.end[1], &planes)));
+                    let (mut u, mut v) = (rp(pt(s.end[0], &jd)), rp(pt(s.end[1], &jd)));
                     if u > v {
                         std::mem::swap(&mut u, &mut v);
                     }
@@ -2361,7 +2382,7 @@ mod tests {
         let faces_tab = collect_planes(&m, a).unwrap();
         // One prism: no two faces are coplanar, so `plane_ix` is the identity and a face index and
         // its plane id coincide. Built through the real path anyway, so the test cannot drift.
-        let canon = crate::planes::plane_classes(&faces_tab);
+        let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces_tab));
         let (planes, _plane_ix) = crate::planes::dense_planes(&faces_tab, &canon);
         assert_eq!(planes.len(), faces_tab.len(), "no coplanar pair in a prism");
 
@@ -2388,7 +2409,7 @@ mod tests {
         // Five edges: both directions on the y-wall and x-wall lines, one on the diagonal.
         let edges = [(fpy, 1i8), (fpy, -1), (fpx, 1), (fpx, -1), (fpd, 1)];
 
-        let order = angular_order(&planes, w, &edges);
+        let order = angular_order(&crate::planes::test_judge(&planes), w, &edges);
         assert_eq!(
             order.len(),
             edges.len(),
@@ -2461,11 +2482,14 @@ mod tests {
                 inc_a,
                 inc_b,
                 plane_ix,
+                standard,
+                notes,
                 ..
             } = plane_index_setup(&m, a, b).unwrap();
+            let jd = Judge::new(&planes, standard, &notes);
             let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
             let tr = trace_on_class(
-                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
             assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
@@ -2498,11 +2522,14 @@ mod tests {
                 inc_a,
                 inc_b,
                 plane_ix,
+                standard,
+                notes,
                 ..
             } = plane_index_setup(&m, a, b).unwrap();
+            let jd = Judge::new(&planes, standard, &notes);
             let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
             let tr = trace_on_class(
-                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
             assert_eq!(
@@ -2543,23 +2570,26 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         assert_eq!(merged.len(), 8, "8 merged edges before split");
 
-        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
         // 4 chords crossed twice → 3 pieces each = 12; 4 outer walls uncrossed = 4; total 16.
         assert_eq!(split.len(), 16, "16 sub-segments: {}", split.len());
 
         // a's y=1 chord splits into exactly 3, ending at x=0,1,2,3 — checked by coordinate.
         let seg_pts = |s: &MergedSeg| {
-            let mut u = pt(s.end[0], &planes);
-            let mut v = pt(s.end[1], &planes);
+            let mut u = pt(s.end[0], &jd);
+            let mut v = pt(s.end[1], &jd);
             if u[0] > v[0] {
                 std::mem::swap(&mut u, &mut v);
             }
@@ -2595,7 +2625,7 @@ mod tests {
         // and their (wall, far-R) pairs — i.e. (fp, direction) — are all distinct (no coincidence
         // that angular_order's zero bucket would collapse). This is what the merge earned.
         let is_v = |t: [usize; 3]| {
-            let p = pt(t, &planes);
+            let p = pt(t, &jd);
             (p[0] - 1.0).abs() < 1e-9 && (p[1] - 1.0).abs() < 1e-9 && (p[2] - 1.0).abs() < 1e-9
         };
         let incident: Vec<&MergedSeg> = split
@@ -2640,14 +2670,17 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
 
         // The shared y=1 wall (a face at y=1).
         let y1 = planes
@@ -2656,8 +2689,8 @@ mod tests {
             .expect("a y=1 face");
         // x-extent of a y=1 sub-segment, plus which solids contribute.
         let piece = |s: &MergedSeg| -> ([i64; 2], bool, bool) {
-            let mut u = pt(s.end[0], &planes)[0];
-            let mut v = pt(s.end[1], &planes)[0];
+            let mut u = pt(s.end[0], &jd)[0];
+            let mut v = pt(s.end[1], &jd)[0];
             if u > v {
                 std::mem::swap(&mut u, &mut v);
             }
@@ -2703,16 +2736,19 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
 
-        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
         assert_eq!(cells.len(), 6, "1 outer + 5 bounded: {}", cells.len());
         assert_eq!(
             cells.iter().filter(|c| c.winding == -1).count(),
@@ -2776,16 +2812,19 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
-        let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
         let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
 
         for (i, c) in cells.iter().enumerate() {
@@ -2801,7 +2840,7 @@ mod tests {
                     .map(|&h| split[h / 2].end[h % 2])
                     .collect();
                 vs.dedup();
-                vs.iter().map(|&t| pt(t, &planes)).collect()
+                vs.iter().map(|&t| pt(t, &jd)).collect()
             };
             let cx = verts.iter().map(|p| p[0]).sum::<f64>() / verts.len() as f64;
             let cy = verts.iter().map(|p| p[1]).sum::<f64>() / verts.len() as f64;
@@ -2838,8 +2877,11 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         // a passes through z=1 (no seated face); find the class b caps at z=1.
         let wc = (0..planes.len())
             .find(|&c| {
@@ -2851,12 +2893,12 @@ mod tests {
             })
             .expect("b's z=1 cap class");
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
-        let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
         let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
 
         assert_eq!(cells.len(), 2, "one square: inner + unbounded");
@@ -2897,16 +2939,19 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
-        let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
         let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
 
         // Centroid of a face's ring (convex cells here).
@@ -2915,7 +2960,7 @@ mod tests {
                 .loop_nodes
                 .iter()
                 .map(|n| match n {
-                    crate::boolean::Node::Seam(t) => pt(*t, &planes),
+                    crate::boolean::Node::Seam(t) => pt(*t, &jd),
                 })
                 .collect();
             [
@@ -2931,7 +2976,7 @@ mod tests {
             &labels,
             &cells,
             &split,
-            &planes,
+            &jd,
             wc,
             &nesting.holes,
         );
@@ -2942,7 +2987,7 @@ mod tests {
             &labels,
             &cells,
             &split,
-            &planes,
+            &jd,
             wc,
             &nesting.holes,
         );
@@ -2958,7 +3003,7 @@ mod tests {
             &labels,
             &cells,
             &split,
-            &planes,
+            &jd,
             wc,
             &nesting.holes,
         );
@@ -2975,7 +3020,7 @@ mod tests {
             assert!(ring.len() >= 3);
             assert_eq!(
                 combinatorics::loop_winding(
-                    &planes,
+                    &jd,
                     wc,
                     &combinatorics::ring_from_names(wc, &ring).unwrap()
                 )
@@ -3063,14 +3108,17 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
             a,
             b,
-            &planes,
+            &jd,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -3257,14 +3305,17 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,
             b,
-            &planes,
+            &jd,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -3350,14 +3401,17 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, u, slab).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
             u,
             slab,
-            &planes,
+            &jd,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -3601,14 +3655,17 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,
             b,
-            &planes,
+            &jd,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -3691,11 +3748,14 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         for wc in 0..planes.len() {
             let tr = trace_on_class(
-                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             assert!(
                 tr.declined.is_empty(),
@@ -3751,11 +3811,14 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class(
-            &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
         // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
@@ -3807,11 +3870,14 @@ mod tests {
             inc_a,
             inc_b,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         for wc in 0..planes.len() {
             let tr = trace_on_class(
-                &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             assert!(tr.declined.is_empty(), "class {wc} declined: {tr:?}");
         }

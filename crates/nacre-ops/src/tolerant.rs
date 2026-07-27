@@ -1,19 +1,21 @@
 //! The b-rep side of the toleranced predicates: `nacre-ops`'s arrangement tables
 //! ([`PlaneGeom`], [`FaceInfo`]) implement the [`Witness`]/[`PlaneWitness`] ports so the
-//! rotation-general sign predicates in [`nacre_cip::predicate`] can run over them, and the
-//! `t_*` predicates are re-exported here so existing `crate::tolerant::t_*` call sites are
-//! unchanged. The predicate logic itself (exact-vs-kernel routing, the frame3 judges) lives in
-//! `nacre-cip`.
+//! rotation-general sign predicates in [`nacre_cip::predicate`] can run over them.
+//!
+//! The tables are **pure description** — geometry and provenance, nothing about how this
+//! operation judges. That belongs to [`Judge`], which the engine builds once per boolean
+//! (`plane_index_setup` supplies the standard and the collector) and passes down; the predicates
+//! are its methods. The predicate logic itself (exact-vs-kernel routing, the frame3 judges) lives
+//! in `nacre-cip`.
 
 use crate::planes::{FaceInfo, PlaneGeom};
-use nacre_cip::predicate::{Notes, PlaneWitness, Witness};
-use nacre_cip::{Judge, Pt3};
+use nacre_cip::Pt3;
+use nacre_cip::predicate::{PlaneWitness, Witness};
 use nacre_math::Point3;
 
-// Re-export the toleranced predicates from cip so existing call sites keep working.
-pub(crate) use nacre_cip::predicate::{
-    any_rotated, plane_def, t_cmp_coord, t_orient3d, t_plane_pair_dir_sign, t_planes_coplanar,
-};
+// The judging context and the helpers the engine reaches for by name. The predicates themselves
+// are methods on `Judge`, so there is nothing else to re-export.
+pub(crate) use nacre_cip::predicate::{Judge, any_rotated, plane_def};
 
 impl Witness for PlaneGeom {
     fn tri(&self) -> [Point3; 3] {
@@ -30,12 +32,6 @@ impl Witness for PlaneGeom {
     }
     fn is_rotated(&self) -> bool {
         self.rotated
-    }
-    fn judge(&self) -> Judge {
-        self.judge
-    }
-    fn notes(&self) -> Option<&Notes> {
-        Some(&self.notes)
     }
 }
 
@@ -56,12 +52,6 @@ impl Witness for FaceInfo {
     }
     fn is_rotated(&self) -> bool {
         self.rotated
-    }
-    fn judge(&self) -> Judge {
-        self.judge
-    }
-    fn notes(&self) -> Option<&Notes> {
-        Some(&self.notes)
     }
 }
 
@@ -87,7 +77,7 @@ mod tests {
     /// is the identity — indices below name a face and its plane interchangeably.
     fn plane_table(m: &Model, s: Handle<Solid>) -> Vec<PlaneGeom> {
         let faces = collect_planes(m, s).unwrap();
-        let canon = crate::planes::plane_classes(&faces);
+        let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
         crate::planes::dense_planes(&faces, &canon).0
     }
     use nacre_math::Point3;
@@ -156,11 +146,11 @@ mod tests {
                         if j == p || j == q || j == rr {
                             continue;
                         }
-                        let su = t_orient3d(&pu, p, q, rr, j);
+                        let su = crate::planes::test_judge(&pu).orient3d(p, q, rr, j);
                         if su == 0 {
                             continue; // indefinite — skip
                         }
-                        let sr = t_orient3d(&pr, p, q, rr, j);
+                        let sr = crate::planes::test_judge(&pr).orient3d(p, q, rr, j);
                         assert_eq!(su, sr, "rotation-invariant at ({p},{q},{rr},{j})");
                         checked += 1;
                     }
@@ -226,7 +216,10 @@ mod tests {
                             planes[j].tri[1],
                             planes[j].tri[2],
                         );
-                        assert_eq!(t_orient3d(&planes, p, q, rr, j), want);
+                        assert_eq!(
+                            crate::planes::test_judge(&planes).orient3d(p, q, rr, j),
+                            want
+                        );
                     }
                 }
             }
@@ -261,8 +254,6 @@ mod tests {
         let degenerate: Vec<PlaneGeom> = (0..2)
             .map(|k| PlaneGeom {
                 base: crate::planes::BaseFrame::none(),
-                judge: crate::planes::fixed_judge(256),
-                notes: nacre_cip::predicate::Notes::new(),
                 surf: pu[0].surf,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
@@ -272,7 +263,7 @@ mod tests {
             })
             .collect();
         assert!(
-            !t_planes_coplanar(&degenerate, 0, 1),
+            !crate::planes::test_judge(&degenerate).planes_coplanar(0, 1),
             "a degenerate tri is no evidence"
         );
         // (b) Rotation invariance over every pair of the cuboid's faces.
@@ -283,11 +274,11 @@ mod tests {
         for i in 0..pu.len() {
             for j in (i + 1)..pu.len() {
                 assert_eq!(
-                    t_planes_coplanar(&pu, i, j),
-                    t_planes_coplanar(&pr, i, j),
+                    crate::planes::test_judge(&pu).planes_coplanar(i, j),
+                    crate::planes::test_judge(&pr).planes_coplanar(i, j),
                     "rotation-invariant at ({i},{j})"
                 );
-                if t_planes_coplanar(&pu, i, j) {
+                if crate::planes::test_judge(&pu).planes_coplanar(i, j) {
                     same += 1;
                 }
             }
@@ -327,13 +318,13 @@ mod tests {
                     }
                     checked += 1;
                     let want = if diff > 0.0 { 1 } else { -1 };
-                    let got = t_cmp_coord(&planes, a, b, axis);
+                    let got = crate::planes::test_judge(&planes).cmp_coord(a, b, axis);
                     assert!(got == want || got == 0, "cmp {got} vs coord {want}");
                     if got == want {
                         resolved += 1;
                     }
                     assert_eq!(
-                        t_cmp_coord(&planes, b, a, axis),
+                        crate::planes::test_judge(&planes).cmp_coord(b, a, axis),
                         -got,
                         "cmp is antisymmetric"
                     );
@@ -362,7 +353,10 @@ mod tests {
                         ]
                     };
                     let want = three_plane_cmp_coord(tri(a), tri(b), axis);
-                    assert_eq!(t_cmp_coord(&planes, a, b, axis), want);
+                    assert_eq!(
+                        crate::planes::test_judge(&planes).cmp_coord(a, b, axis),
+                        want
+                    );
                 }
             }
         }
@@ -406,7 +400,7 @@ mod tests {
             for q in (p + 1)..na {
                 for r in (q + 1)..na {
                     if normals_independent(&planes, p, q, r) {
-                        let _ = t_orient3d(&planes, p, q, r, na); // j = first B plane
+                        let _ = crate::planes::test_judge(&planes).orient3d(p, q, r, na); // j = first B plane
                         exercised = true;
                     }
                 }
@@ -432,11 +426,11 @@ mod tests {
                     if p == a || p == b || a == b {
                         continue;
                     }
-                    let su = t_plane_pair_dir_sign(&pu, p, a, b);
+                    let su = crate::planes::test_judge(&pu).plane_pair_dir_sign(p, a, b);
                     if su == 0 {
                         continue; // coplanar normals — skip
                     }
-                    let sr = t_plane_pair_dir_sign(&pr, p, a, b);
+                    let sr = crate::planes::test_judge(&pr).plane_pair_dir_sign(p, a, b);
                     assert_eq!(su, sr, "dir_sign rotation-invariant at ({p},{a},{b})");
                     checked += 1;
                 }
@@ -459,7 +453,10 @@ mod tests {
                     }
                     let want =
                         plane_pair_dir_sign(&planes[p].plane, &planes[a].plane, &planes[b].plane);
-                    assert_eq!(t_plane_pair_dir_sign(&planes, p, a, b), want);
+                    assert_eq!(
+                        crate::planes::test_judge(&planes).plane_pair_dir_sign(p, a, b),
+                        want
+                    );
                 }
             }
         }

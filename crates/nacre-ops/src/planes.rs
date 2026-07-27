@@ -2,9 +2,9 @@
 //! their construction. Everything the boolean engine and its combinatorial queries build on.
 
 use crate::combinatorics;
-use crate::{BoolError, RejectReason, he_start, reject, tolerant};
-use nacre_cip::predicate::Notes;
-use nacre_cip::{Judge, Pt3};
+use crate::{BoolError, RejectReason, he_start, reject};
+use nacre_cip::predicate::{Judge, Notes};
+use nacre_cip::{Pt3, Standard};
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
@@ -42,15 +42,6 @@ pub(crate) struct FaceInfo {
     /// face/plane convention could not be asserted, because both readings were legitimate
     /// (dev-log, normalization cell). Separate names, separate questions.
     pub(crate) orient_sign: i8,
-    /// How this operation's judgements are made: the precision its definitions are realized at
-    /// and the distance below which a proved separation counts as a coincidence — see
-    /// [`judge_for`]. Stamped on every entry after the table is built, because it is a property
-    /// of the whole operation and every predicate call site has only this table in hand.
-    pub(crate) judge: Judge,
-    /// Where this operation's inconclusive judgements are recorded — see [`Notes`]. A clone of
-    /// one per-operation collector, stamped with `judge`; diagnostic only, nothing geometric
-    /// reads it.
-    pub(crate) notes: Notes,
     /// The three `tri` points as **exact `Pt3` definitions**, in the same order as `tri`.
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
     /// per judgment, which dominated the boolean's runtime.
@@ -149,10 +140,6 @@ pub(crate) fn collect_planes(
                 plane,
                 tri,
                 n_out,
-                // Stamped by `plane_index_setup` once both operands' tables exist — how the
-                // operation judges is a property of the operation, not of one face.
-                judge: UNSTAMPED,
-                notes: Notes::new(),
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
                 rotated,
@@ -241,8 +228,10 @@ pub(crate) struct PlaneSetup {
     pub(crate) geom: Vec<PlaneGeom>,
     /// `plane_ix[face]` is that face's plane, as an index into `geom`.
     pub(crate) plane_ix: Vec<usize>,
-    /// This operation's evidence collector, already stamped on every table entry. Held here too
-    /// so the caller can read it without reaching into a table row.
+    /// How this operation judges, and where its evidence goes — the two facts that belong to the
+    /// operation rather than to any one plane. The caller pairs them with a table to make a
+    /// [`Judge`].
+    pub(crate) standard: Standard,
     pub(crate) notes: Notes,
 }
 
@@ -253,17 +242,13 @@ pub(crate) fn plane_index_setup(
 ) -> Result<PlaneSetup, BoolError> {
     let mut planes = collect_planes(model, a)?;
     planes.extend(collect_planes(model, b)?);
-    let judge = judge_for(&planes);
+    let standard = standard_for(&planes);
     let notes = Notes::new();
-    if judge.prec > JUDGE_PREC_CAP {
+    if standard.prec > JUDGE_PREC_CAP {
         return Err(reject(RejectReason::PrecisionBudget {
-            needed: judge.prec,
+            needed: standard.prec,
             cap: JUDGE_PREC_CAP,
         }));
-    }
-    for p in &mut planes {
-        p.judge = judge;
-        p.notes = notes.clone();
     }
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
@@ -271,7 +256,10 @@ pub(crate) fn plane_index_setup(
     }
     let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
     let inc_b = combinatorics::edge_faces(model, b, &surf_ix)?;
-    let canon = plane_classes(&planes);
+    // One judging context for the whole operation: the witnesses, the standard they are held to,
+    // and where the evidence goes. The face table judges first (it is what *defines* the plane
+    // classes), then the dense plane table inherits the same three.
+    let canon = plane_classes(&Judge::new(&planes, standard, &notes));
     let (geom, plane_ix) = dense_planes(&planes, &canon);
     Ok(PlaneSetup {
         planes,
@@ -280,6 +268,7 @@ pub(crate) fn plane_index_setup(
         inc_b,
         geom,
         plane_ix,
+        standard,
         notes,
     })
 }
@@ -314,8 +303,8 @@ pub(crate) fn plane_index_setup(
 /// precision, the cap, the headroom — is derived from it and from the model, because a bit count
 /// means a different physical thing in every model ("256 bits" is `1e-76` for a solid turned once
 /// and `1e+15` for one turned three hundred times).
-fn judge_for(planes: &[FaceInfo]) -> Judge {
-    judge_for_points(planes.iter().flat_map(|p| p.tri_pt3.iter()))
+fn standard_for(planes: &[FaceInfo]) -> Standard {
+    standard_for_points(planes.iter().flat_map(|p| p.tri_pt3.iter()))
 }
 
 /// **How deep a model may be before the operation is rejected instead.**
@@ -350,31 +339,29 @@ pub(crate) const JUDGE_PREC_CAP: usize = 4096;
 /// beyond the model's own precision** (measured with the headroom forced to zero).
 pub(crate) const CLIMB_HEADROOM: usize = 128;
 
-/// The placeholder a face table carries between `collect_planes` and the stamp in
-/// [`plane_index_setup`]. Its zero precision and zero limits are deliberately useless: a
-/// judgement made with it would refuse everything rather than quietly judge at some plausible
-/// default, so a missed stamp shows up as a failure and not as a subtly different answer.
-pub(crate) const UNSTAMPED: Judge = Judge {
-    prec: 0,
-    coincidence: Bound::ZERO,
-    scale: Bound::ZERO,
-    cap: 0,
-};
-
-/// A judgement context at a fixed precision, for fixtures that build a plane table by hand.
+/// A judging context over a hand-built table, for fixtures.
+///
+/// The standard is the derived default for a unit-scale model, and the collector is leaked so a
+/// fixture is a one-liner — a handful of `Vec`s per test run, and nothing reads them. A fixture
+/// that *does* want the evidence builds its own [`Notes`] and calls [`Judge::new`].
 #[cfg(test)]
-pub(crate) fn fixed_judge(prec: usize) -> Judge {
-    Judge {
-        prec,
-        coincidence: Bound::pow2(-180),
-        scale: Bound::of(1.0),
-        cap: prec + CLIMB_HEADROOM,
-    }
+pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
+    let notes: &'static Notes = Box::leak(Box::new(Notes::new()));
+    Judge::new(
+        planes,
+        Standard {
+            prec: 256,
+            coincidence: Bound::pow2(-180),
+            scale: Bound::of(1.0),
+            cap: 256 + CLIMB_HEADROOM,
+        },
+        notes,
+    )
 }
 
-/// [`judge_for`] over a bare set of definitions — for the places that must judge before a plane
+/// [`standard_for`] over a bare set of definitions — for the places that must judge before a plane
 /// table exists (witness selection in [`crate::rotated_vertex`]).
-pub(crate) fn judge_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + Clone) -> Judge {
+pub(crate) fn standard_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + Clone) -> Standard {
     let mut scale = 1.0f64;
     for p in pts.clone() {
         for c in p.coord {
@@ -385,7 +372,7 @@ pub(crate) fn judge_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + Clon
     let output_precision = scale.times(Bound::pow2(-52));
     let coincidence = output_precision.times(Bound::pow2(-128));
     let prec = nacre_cip::judge_precision(pts, coincidence);
-    Judge {
+    Standard {
         prec,
         coincidence,
         scale,
@@ -518,10 +505,6 @@ pub(crate) struct PlaneGeom {
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
-    /// Copied from the face table — see [`FaceInfo::judge`].
-    pub(crate) judge: Judge,
-    /// Copied from the face table — see [`FaceInfo::notes`].
-    pub(crate) notes: Notes,
 }
 
 /// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
@@ -556,8 +539,6 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
                 tri_pt3: pi.tri_pt3.clone(),
                 rotated: pi.rotated,
                 frame_sign: pi.orient_sign,
-                judge: pi.judge,
-                notes: pi.notes.clone(),
             }
         })
         .collect();
@@ -655,8 +636,8 @@ pub(crate) fn face_half_edges(face: &Face) -> impl Iterator<Item = &HalfEdge> {
 /// fallback is what keeps independently-built coplanar contacts working; the handle
 /// path's real payoff is rotated frames, where the geometric test would need the
 /// rotation-exact judgment.
-pub(crate) fn shares_or_coplanar(planes: &[FaceInfo], i: usize, j: usize) -> bool {
-    let (pa, pb) = (&planes[i], &planes[j]);
+pub(crate) fn shares_or_coplanar(jd: &Judge<'_, FaceInfo>, i: usize, j: usize) -> bool {
+    let (pa, pb) = (&jd.planes[i], &jd.planes[j]);
     // Three independent witnesses, OR-ed, so this can only ever merge *more* than before:
     //  1. the same `Surface` handle — coplanar by reference (what an ops-built tool's base cap and
     //     its target face share, and what a chained operand's split coplanar faces share);
@@ -665,9 +646,7 @@ pub(crate) fn shares_or_coplanar(planes: &[FaceInfo], i: usize, j: usize) -> boo
     //     that does not read a *derived* value, and the one that catches two independently built
     //     solids whose walls coincide (`add_cuboid` stacked on `add_cuboid`), where the rounded
     //     coefficients of differently-sized faces are not exactly proportional.
-    pa.surf == pb.surf
-        || planes_coplanar(&pa.plane, &pb.plane)
-        || tolerant::t_planes_coplanar(planes, i, j)
+    pa.surf == pb.surf || planes_coplanar(&pa.plane, &pb.plane) || jd.planes_coplanar(i, j)
 }
 
 /// Union-find root of `x` in `parent` (with path compression). Roots are the smallest index
@@ -696,12 +675,13 @@ pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
 /// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
 // Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn plane_classes(planes: &[FaceInfo]) -> Vec<usize> {
+pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
+    let planes = jd.planes;
     let n = planes.len();
     let mut parent: Vec<usize> = (0..n).collect();
     for i in 0..n {
         for j in (i + 1)..n {
-            if shares_or_coplanar(planes, i, j) {
+            if shares_or_coplanar(jd, i, j) {
                 let (ri, rj) = (uf_find(&mut parent, i), uf_find(&mut parent, j));
                 if ri != rj {
                     // Attach the larger root under the smaller so a class's root is its min index.
@@ -749,7 +729,7 @@ mod tests {
         let mut seen = Vec::new();
         for turn in 0..=200 {
             if turn == 0 || turn == 20 || turn == 200 {
-                let j = judge_for_points(std::slice::from_ref(&p));
+                let j = standard_for_points(std::slice::from_ref(&p));
                 assert_eq!(
                     j.cap,
                     j.prec + CLIMB_HEADROOM,

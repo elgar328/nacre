@@ -252,7 +252,7 @@ pub(crate) fn face_plane_witness(model: &Model, face: &Face) -> Result<[Pt3; 3],
             // same derivation `plane_index_setup` uses — **once**, outside the loop. Deriving it
             // per candidate realizes every anchor again, and a long rotation history makes that
             // realization the expensive thing in the whole operation.
-            let judge = crate::planes::judge_for_points(&anchors);
+            let judge = crate::planes::standard_for_points(&anchors);
             for &pi in many {
                 if let Ok(wit) = rotated_witness(pi) {
                     if anchors.iter().all(|a| {

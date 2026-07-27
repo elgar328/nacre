@@ -16,10 +16,12 @@
 //!
 //! The caller (`nacre-ops`) provides the witnesses by implementing [`Witness`] (a face) and
 //! [`PlaneWitness`] (a plane class) on its own tables — the port keeps this crate free of the
-//! b-rep and geometry types.
+//! b-rep and geometry types — and pairs a table with a [`Judge`], which is where the three facts
+//! that belong to the *operation* live: the standard of proof, the collector for what could not
+//! be proved, and the table itself. The predicates are its methods.
 
 use crate::kernel::frame3::{
-    Decision, Judge, Pt3, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge,
+    Decision, Pt3, Standard, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge,
     orient3d_judge,
 };
 use nacre_math::Point3;
@@ -86,8 +88,8 @@ impl Notes {
         Notes::default()
     }
 
-    /// Record one inconclusive judgement. Clones of a `Notes` share one list, so stamping a copy
-    /// on every table entry collects into the same place.
+    /// Record one inconclusive judgement. Clones share one list, so a collector may be handed
+    /// around freely and still collect into one place.
     pub fn push(&self, e: Evidence) {
         #[cfg(feature = "parallel")]
         self.0.lock().expect("notes lock").push(e);
@@ -145,24 +147,6 @@ pub trait Witness {
     /// The witness triangle **before** that motion, or `None` when the pre-rotation coordinates
     /// are not `f64`-representable and so cannot be handed to the exact predicate.
     fn base_tri(&self) -> Option<[Point3; 3]>;
-
-    /// How this operation judges: the precision its definitions are realized at, and the distance
-    /// below which two things proved that close count as one ([`Judge`]).
-    ///
-    /// **A property of the model, not a constant.** The error a realization carries grows with
-    /// the rotation history — one bit per turn, measured — so a fixed precision decides the
-    /// longest chain a model may have before its judgements stop separating. It is chosen once
-    /// per boolean (see `nacre_ops::judge_precision`) and carried here because every predicate
-    /// call site has the plane table in hand and nothing else. Uniform within an operation, which
-    /// is what keeps [`Pt3`]'s realization cache warm.
-    fn judge(&self) -> Judge;
-
-    /// Where this operation collects the evidence behind its inconclusive judgements — see
-    /// [`Notes`]. `None` (the default) means nobody is listening, and the judgements are made
-    /// exactly the same way.
-    fn notes(&self) -> Option<&Notes> {
-        None
-    }
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
@@ -176,6 +160,234 @@ pub trait PlaneWitness: Witness {
 
     /// The plane's coefficients before the rigid motion — see [`Witness::base_tri`].
     fn base_coeffs(&self) -> Option<[f64; 4]>;
+}
+
+/// **One operation's judging**: the witnesses it reasons over, the standard it holds them to, and
+/// where the evidence goes.
+///
+/// These three are properties of the *operation*, not of a plane, and this is what says so. They
+/// used to be stamped on every table row — which meant a two-phase construction (build the rows,
+/// then stamp them), a placeholder for the gap between, and a guard for forgetting; a whole class
+/// of mistake that exists only when a fact is stored somewhere it does not belong.
+///
+/// The witness table stays a **pure description** of geometry, which is what makes one
+/// implementation able to serve both index spaces (a plane class and a single face).
+pub struct Judge<'a, W> {
+    /// The witness table these indices name.
+    pub planes: &'a [W],
+    /// How deeply to realize, and how close counts as one thing.
+    pub standard: Standard,
+    /// Where an inconclusive judgement's evidence is collected — diagnostic only; nothing read
+    /// from here changes a sign, a merge or a coordinate.
+    pub notes: &'a Notes,
+}
+
+impl<'a, W> Judge<'a, W> {
+    pub fn new(planes: &'a [W], standard: Standard, notes: &'a Notes) -> Judge<'a, W> {
+        Judge {
+            planes,
+            standard,
+            notes,
+        }
+    }
+
+    /// The sign the geometry consumes, **and** a note of what backed it when it was not a proved
+    /// one.
+    ///
+    /// A proved sign — including a proved zero — is the ordinary case and says nothing worth
+    /// reporting. A coincidence, an exhausted judgement or a degenerate witness is a statement
+    /// about *this model* that the caller cannot recover afterwards, because by then it is just a
+    /// `0`.
+    fn record(&self, site: Site, d: Decision) -> i8 {
+        if !matches!(d, Decision::Sign(_)) {
+            self.notes.push(Evidence { site, outcome: d });
+        }
+        to_i8(d.orient())
+    }
+}
+
+/// The plane-class predicates — the questions the arrangement asks of a plane table.
+///
+/// Each routes itself: all-axis-aligned planes take the exact path and never build a `Pt3`;
+/// any rotated plane goes to the kernel judges, under this operation's [`Standard`], with what
+/// it could not prove recorded in [`Judge::notes`].
+impl<W: PlaneWitness> Judge<'_, W> {
+    /// The sign of `orient3d(V, tri_j)` where `V = ∩(planes p, q, r)` is an implicit point,
+    /// matching `order_along`'s shape (`+1`/`-1`/`0`).
+    ///
+    /// - `!rotated`: the exact path — the implicit-point `orient3d` (Attene) on the stored plane
+    ///   coefficients and `tri` coordinates.
+    /// - `rotated`: each of `p, q, r` and the explicit triangle `j` is taken as its three exact
+    ///   [`Pt3`] ([`plane_def`]), and [`indirect_orient3d_judge`] decides the sign from the
+    ///   definitions — never materializing `V` or reading the rounded `tri`.
+    ///
+    /// Winding-invariant. A query plane `j` equal to one of `p, q, r` means the point lies on `j`,
+    /// so the sign is exactly `0` (a combinatorial identity) — decided before either numeric
+    /// branch, exact and cheap for both.
+    pub fn orient3d(&self, p: usize, q: usize, r: usize, j: usize) -> i8 {
+        if j == p || j == q || j == r {
+            return 0;
+        }
+        if !any_rotated(self.planes, &[p, q, r, j]) {
+            let tp = ThreePlane([
+                self.planes[p].coeffs(),
+                self.planes[q].coeffs(),
+                self.planes[r].coeffs(),
+            ]);
+            let tj = self.planes[j].tri();
+            return indirect_orient3d(&tp, tj[0].as_array(), tj[1].as_array(), tj[2].as_array());
+        }
+        // One shared rigid motion ⇒ the same question, exactly, on the pre-rotation coordinates.
+        if shared_motion(self.planes, &[p, q, r, j]) {
+            if let (Some(cp), Some(cq), Some(cr), Some(tj)) = (
+                self.planes[p].base_coeffs(),
+                self.planes[q].base_coeffs(),
+                self.planes[r].base_coeffs(),
+                self.planes[j].base_tri(),
+            ) {
+                let tp = ThreePlane([cp, cq, cr]);
+                return indirect_orient3d(
+                    &tp,
+                    tj[0].as_array(),
+                    tj[1].as_array(),
+                    tj[2].as_array(),
+                );
+            }
+        }
+        let (dp, dq, dr, dj) = (
+            plane_def(self.planes, p),
+            plane_def(self.planes, q),
+            plane_def(self.planes, r),
+            plane_def(self.planes, j),
+        );
+        self.record(
+            Site::Orient3d { p, q, r, j },
+            indirect_orient3d_judge(
+                borrow3(dp),
+                borrow3(dq),
+                borrow3(dr),
+                &dj[0],
+                &dj[1],
+                &dj[2],
+                self.standard,
+            ),
+        )
+    }
+
+    /// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
+    /// `b = ∩(planes b…)` (`+1` = `a[axis] > b[axis]`). `!rotated` → the exact implicit
+    /// `cmp_coord` on the stored coefficients; `rotated` → each triple's three planes as exact
+    /// `Pt3` → [`indirect_cmp_coord_judge`].
+    pub fn cmp_coord(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
+        let planes = self.planes;
+        if !any_rotated(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]) {
+            let tp = |t: [usize; 3]| {
+                ThreePlane([
+                    planes[t[0]].coeffs(),
+                    planes[t[1]].coeffs(),
+                    planes[t[2]].coeffs(),
+                ])
+            };
+            return indirect_cmp_coord(&tp(a), &tp(b), axis);
+        }
+        if let Some(s) = cancel_cmp_coord(planes, a, b, axis) {
+            return s;
+        }
+        let da = a.map(|k| plane_def(planes, k));
+        let db = b.map(|k| plane_def(planes, k));
+        self.record(
+            Site::CmpCoord { a, b, axis },
+            indirect_cmp_coord_judge(borrow_triple(da), borrow_triple(db), axis, self.standard),
+        )
+    }
+
+    /// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — how the line `p ∩ a`
+    /// runs relative to plane `b`, matching `plane_pair_dir_sign`'s shape (`+1`/`-1`/`0`).
+    ///
+    /// `!rotated` → `det3_sign` of the stored (un-normalized) normals. `rotated` → the kernel `D`
+    /// (det of the *outward* `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal
+    /// convention by the per-plane [`frame_sign`]: `det(stored) =
+    /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
+    pub fn plane_pair_dir_sign(&self, p: usize, a: usize, b: usize) -> i8 {
+        let planes = self.planes;
+        if !any_rotated(planes, &[p, a, b]) {
+            let row = |k: usize| {
+                let [x, y, z, _] = planes[k].coeffs();
+                [x, y, z]
+            };
+            return det3_sign([row(p), row(a), row(b)]);
+        }
+        // A determinant of normals: a rigid motion multiplies it by `det(R) = 1`, so one shared motion
+        // means the pre-rotation normals give the same sign, exactly.
+        if shared_motion(planes, &[p, a, b]) {
+            let row = |k: usize| planes[k].base_coeffs().map(|[x, y, z, _]| [x, y, z]);
+            if let (Some(rp), Some(ra), Some(rb)) = (row(p), row(a), row(b)) {
+                return det3_sign([rp, ra, rb]);
+            }
+        }
+        let (dp, da, db) = (
+            plane_def(planes, p),
+            plane_def(planes, a),
+            plane_def(planes, b),
+        );
+        frame_sign(&planes[p])
+            * frame_sign(&planes[a])
+            * frame_sign(&planes[b])
+            * self.record(
+                Site::DirSign { p, a, b },
+                dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db), self.standard),
+            )
+    }
+}
+
+/// The predicate that runs **before** a plane table exists — it is what *defines* the classes,
+/// so it asks only for a [`Witness`], never a plane's coefficients.
+impl<W: Witness> Judge<'_, W> {
+    /// Whether planes `i` and `j` are the **same plane**, decided on the faces' original
+    /// coordinates instead of on their derived coefficients (three non-collinear points on a plane
+    /// determine it, so "every point of `tri_j` lies on `tri_i`'s plane" is conclusive — but only
+    /// under non-collinearity, so a degenerate `tri` answers `false`). `!rotated` → the exact
+    /// `orient3d` on `tri`; any rotated → the exact `Pt3` definitions and [`orient3d_judge`].
+    pub fn planes_coplanar(&self, i: usize, j: usize) -> bool {
+        let planes = self.planes;
+        if tri_collinear(planes[i].tri()) || tri_collinear(planes[j].tri()) {
+            return false;
+        }
+        if !any_rotated(planes, &[i, j]) {
+            return planes[j]
+                .tri()
+                .iter()
+                .all(|&q| plane_side_exact(planes[i].tri(), q) == 0);
+        }
+        // "Same plane" is a statement about incidence, which a rigid motion preserves.
+        if shared_motion(planes, &[i, j]) {
+            if let (Some(ti), Some(tj)) = (planes[i].base_tri(), planes[j].base_tri()) {
+                return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
+            }
+        }
+        let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
+        // Three point-on-plane judgements, and the answer is their conjunction. **The note belongs to
+        // the merge, not to the points**: what a reader needs to know is "these two faces became one
+        // plane, on this evidence", and a definite sign anywhere means no merge happened and there is
+        // nothing to report. So the loosest of the three is recorded, and only once all three agreed.
+        let mut loosest: Option<Decision> = None;
+        for q in dj.iter() {
+            let d = orient3d_judge(q, &di[0], &di[1], &di[2], self.standard);
+            if d.orient() != Orient::Zero {
+                return false;
+            }
+            if looser(d, loosest) {
+                loosest = Some(d);
+            }
+        }
+        if let Some(d) = loosest {
+            self.notes.push(Evidence {
+                site: Site::PlanesCoplanar { i, j },
+                outcome: d,
+            });
+        }
+        true
+    }
 }
 
 /// Whether any of the named planes is rotated — the per-predicate routing signal. A predicate
@@ -209,20 +421,6 @@ pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[Pt3; 3] {
     planes[k].tri_pt3()
 }
 
-/// The sign the geometry consumes, **and** a note of what backed it when it was not a proved one.
-///
-/// A proved sign — including a proved zero — is the ordinary case and says nothing worth
-/// reporting. A coincidence, an exhausted judgement or a degenerate witness is a statement about
-/// *this model* that the caller cannot recover afterwards, because by then it is just a `0`.
-fn record<W: Witness>(planes: &[W], k: usize, site: Site, d: Decision) -> i8 {
-    if !matches!(d, Decision::Sign(_)) {
-        if let Some(n) = planes[k].notes() {
-            n.push(Evidence { site, outcome: d });
-        }
-    }
-    to_i8(d.orient())
-}
-
 fn to_i8(o: Orient) -> i8 {
     match o {
         Orient::Positive => 1,
@@ -239,94 +437,6 @@ fn borrow3(d: &[Pt3; 3]) -> (&Pt3, &Pt3, &Pt3) {
 /// Borrow three plane defs as the tuples `indirect_cmp_coord_judge` takes.
 fn borrow_triple(d: [&[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
     [borrow3(d[0]), borrow3(d[1]), borrow3(d[2])]
-}
-
-/// The sign of `orient3d(V, tri_j)` where `V = ∩(planes p, q, r)` is an implicit point,
-/// matching `order_along`'s shape (`+1`/`-1`/`0`).
-///
-/// - `!rotated`: the exact path — the implicit-point `orient3d` (Attene) on the stored plane
-///   coefficients and `tri` coordinates.
-/// - `rotated`: each of `p, q, r` and the explicit triangle `j` is taken as its three exact
-///   [`Pt3`] ([`plane_def`]), and [`indirect_orient3d_judge`] decides the sign from the
-///   definitions — never materializing `V` or reading the rounded `tri`.
-///
-/// Winding-invariant. A query plane `j` equal to one of `p, q, r` means the point lies on `j`,
-/// so the sign is exactly `0` (a combinatorial identity) — decided before either numeric
-/// branch, exact and cheap for both.
-pub fn t_orient3d<W: PlaneWitness>(planes: &[W], p: usize, q: usize, r: usize, j: usize) -> i8 {
-    if j == p || j == q || j == r {
-        return 0;
-    }
-    if !any_rotated(planes, &[p, q, r, j]) {
-        let tp = ThreePlane([planes[p].coeffs(), planes[q].coeffs(), planes[r].coeffs()]);
-        let tj = planes[j].tri();
-        return indirect_orient3d(&tp, tj[0].as_array(), tj[1].as_array(), tj[2].as_array());
-    }
-    // One shared rigid motion ⇒ the same question, exactly, on the pre-rotation coordinates.
-    if shared_motion(planes, &[p, q, r, j]) {
-        if let (Some(cp), Some(cq), Some(cr), Some(tj)) = (
-            planes[p].base_coeffs(),
-            planes[q].base_coeffs(),
-            planes[r].base_coeffs(),
-            planes[j].base_tri(),
-        ) {
-            let tp = ThreePlane([cp, cq, cr]);
-            return indirect_orient3d(&tp, tj[0].as_array(), tj[1].as_array(), tj[2].as_array());
-        }
-    }
-    let (dp, dq, dr, dj) = (
-        plane_def(planes, p),
-        plane_def(planes, q),
-        plane_def(planes, r),
-        plane_def(planes, j),
-    );
-    record(
-        planes,
-        p,
-        Site::Orient3d { p, q, r, j },
-        indirect_orient3d_judge(
-            borrow3(dp),
-            borrow3(dq),
-            borrow3(dr),
-            &dj[0],
-            &dj[1],
-            &dj[2],
-            planes[p].judge(),
-        ),
-    )
-}
-
-/// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
-/// `b = ∩(planes b…)` (`+1` = `a[axis] > b[axis]`). `!rotated` → the exact implicit
-/// `cmp_coord` on the stored coefficients; `rotated` → each triple's three planes as exact
-/// `Pt3` → [`indirect_cmp_coord_judge`].
-pub fn t_cmp_coord<W: PlaneWitness>(planes: &[W], a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
-    if !any_rotated(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]) {
-        let tp = |t: [usize; 3]| {
-            ThreePlane([
-                planes[t[0]].coeffs(),
-                planes[t[1]].coeffs(),
-                planes[t[2]].coeffs(),
-            ])
-        };
-        return indirect_cmp_coord(&tp(a), &tp(b), axis);
-    }
-    if let Some(s) = cancel_cmp_coord(planes, a, b, axis) {
-        return s;
-    }
-    let da = a.map(|k| plane_def(planes, k));
-    let db = b.map(|k| plane_def(planes, k));
-    record(
-        planes,
-        a[0],
-        Site::CmpCoord { a, b, axis },
-        indirect_cmp_coord_judge(
-            borrow_triple(da),
-            borrow_triple(db),
-            axis,
-            planes[a[0]].judge(),
-        ),
-    )
 }
 
 /// `cmp_coord` answered exactly in the pre-rotation frame, when it can be.
@@ -443,51 +553,6 @@ fn plane_side_exact(tri: [Point3; 3], p: Point3) -> i8 {
     }
 }
 
-/// Whether planes `i` and `j` are the **same plane**, decided on the faces' original
-/// coordinates instead of on their derived coefficients (three non-collinear points on a plane
-/// determine it, so "every point of `tri_j` lies on `tri_i`'s plane" is conclusive — but only
-/// under non-collinearity, so a degenerate `tri` answers `false`). `!rotated` → the exact
-/// `orient3d` on `tri`; any rotated → the exact `Pt3` definitions and [`orient3d_judge`].
-pub fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
-    if tri_collinear(planes[i].tri()) || tri_collinear(planes[j].tri()) {
-        return false;
-    }
-    if !any_rotated(planes, &[i, j]) {
-        return planes[j]
-            .tri()
-            .iter()
-            .all(|&q| plane_side_exact(planes[i].tri(), q) == 0);
-    }
-    // "Same plane" is a statement about incidence, which a rigid motion preserves.
-    if shared_motion(planes, &[i, j]) {
-        if let (Some(ti), Some(tj)) = (planes[i].base_tri(), planes[j].base_tri()) {
-            return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
-        }
-    }
-    let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
-    // Three point-on-plane judgements, and the answer is their conjunction. **The note belongs to
-    // the merge, not to the points**: what a reader needs to know is "these two faces became one
-    // plane, on this evidence", and a definite sign anywhere means no merge happened and there is
-    // nothing to report. So the loosest of the three is recorded, and only once all three agreed.
-    let mut loosest: Option<Decision> = None;
-    for q in dj.iter() {
-        let d = orient3d_judge(q, &di[0], &di[1], &di[2], planes[i].judge());
-        if d.orient() != Orient::Zero {
-            return false;
-        }
-        if looser(d, loosest) {
-            loosest = Some(d);
-        }
-    }
-    if let (Some(d), Some(n)) = (loosest, planes[i].notes()) {
-        n.push(Evidence {
-            site: Site::PlanesCoplanar { i, j },
-            outcome: d,
-        });
-    }
-    true
-}
-
 /// Is `d` weaker evidence than `best` — the one a report should quote?
 ///
 /// The order is by how much is left unsaid: a proved sign says everything, a coincidence names a
@@ -528,45 +593,6 @@ fn frame_sign<W: PlaneWitness>(w: &W) -> i8 {
     }
 }
 
-/// `sign(det[n_p; n_a; n_b])` over the three planes' stored normals — how the line `p ∩ a`
-/// runs relative to plane `b`, matching `plane_pair_dir_sign`'s shape (`+1`/`-1`/`0`).
-///
-/// `!rotated` → `det3_sign` of the stored (un-normalized) normals. `rotated` → the kernel `D`
-/// (det of the *outward* `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal
-/// convention by the per-plane [`frame_sign`]: `det(stored) =
-/// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
-pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, b: usize) -> i8 {
-    if !any_rotated(planes, &[p, a, b]) {
-        let row = |k: usize| {
-            let [x, y, z, _] = planes[k].coeffs();
-            [x, y, z]
-        };
-        return det3_sign([row(p), row(a), row(b)]);
-    }
-    // A determinant of normals: a rigid motion multiplies it by `det(R) = 1`, so one shared motion
-    // means the pre-rotation normals give the same sign, exactly.
-    if shared_motion(planes, &[p, a, b]) {
-        let row = |k: usize| planes[k].base_coeffs().map(|[x, y, z, _]| [x, y, z]);
-        if let (Some(rp), Some(ra), Some(rb)) = (row(p), row(a), row(b)) {
-            return det3_sign([rp, ra, rb]);
-        }
-    }
-    let (dp, da, db) = (
-        plane_def(planes, p),
-        plane_def(planes, a),
-        plane_def(planes, b),
-    );
-    frame_sign(&planes[p])
-        * frame_sign(&planes[a])
-        * frame_sign(&planes[b])
-        * record(
-            planes,
-            p,
-            Site::DirSign { p, a, b },
-            dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db), planes[p].judge()),
-        )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,8 +600,8 @@ mod tests {
 
     /// How these fixtures judge; production chooses both per model. The coincidence limit is the
     /// derived default for a unit-scale model — output resolution (`2⁻⁵²`) two words further down.
-    fn fixture() -> Judge {
-        Judge {
+    fn fixture() -> Standard {
+        Standard {
             prec: 256,
             coincidence: Bound::pow2(-180),
             scale: Bound::of(1.0),
@@ -614,9 +640,6 @@ mod tests {
         }
         fn base_tri(&self) -> Option<[Point3; 3]> {
             None
-        }
-        fn judge(&self) -> Judge {
-            fixture()
         }
     }
     impl PlaneWitness for W {
@@ -725,9 +748,6 @@ mod tests {
         fn base_tri(&self) -> Option<[Point3; 3]> {
             Some(self.base)
         }
-        fn judge(&self) -> Judge {
-            fixture()
-        }
     }
     impl PlaneWitness for RW {
         fn coeffs(&self) -> [f64; 4] {
@@ -736,6 +756,15 @@ mod tests {
         fn base_coeffs(&self) -> Option<[f64; 4]> {
             Some(self.base_coeffs)
         }
+    }
+
+    /// A judging context over a fixture table.
+    ///
+    /// The collector is leaked so a fixture stays a one-liner — a `Vec` per call, in a test binary,
+    /// and nothing reads it. A fixture that *does* want the evidence builds its own [`Notes`] and
+    /// calls [`Judge::new`].
+    fn jd<W>(planes: &[W]) -> Judge<'_, W> {
+        Judge::new(planes, fixture(), Box::leak(Box::new(Notes::new())))
     }
 
     fn ri(n: i128, d: i128) -> nacre_scalar::Rat {
@@ -773,7 +802,7 @@ mod tests {
                     ([0, 1, 2], [4, 1, 2], "differ along x"),
                 ] {
                     for k in 0..3 {
-                        let got = t_cmp_coord(&ps, a, b, k);
+                        let got = jd(&ps).cmp_coord(a, b, k);
                         let want = to_i8(
                             indirect_cmp_coord_judge(
                                 borrow_triple(a.map(|i| plane_def(&ps, i))),
@@ -856,7 +885,7 @@ mod tests {
                 )
                 .orient(),
             );
-            assert_eq!(t_cmp_coord(&ps, a, b, k), want);
+            assert_eq!(jd(&ps).cmp_coord(a, b, k), want);
         }
     }
 
@@ -866,9 +895,9 @@ mod tests {
     fn t_orient3d_axis_definite_and_on_plane() {
         let ps = cube_corner_planes();
         // query plane j = 3 (z=0): definite.
-        assert_ne!(t_orient3d(&ps, 0, 1, 2, 3), 0);
+        assert_ne!(jd(&ps).orient3d(0, 1, 2, 3), 0);
         // query plane j = 2 (z=1) is one of the defining planes → exactly 0.
-        assert_eq!(t_orient3d(&ps, 0, 1, 2, 2), 0);
+        assert_eq!(jd(&ps).orient3d(0, 1, 2, 2), 0);
     }
 
     /// A plane is coplanar with itself; two distinct planes are not.
@@ -876,11 +905,11 @@ mod tests {
     fn t_planes_coplanar_reflexive_and_distinct() {
         let ps = cube_corner_planes();
         assert!(
-            t_planes_coplanar(&ps, 0, 0),
+            jd(&ps).planes_coplanar(0, 0),
             "a plane is coplanar with itself"
         );
         assert!(
-            !t_planes_coplanar(&ps, 0, 1),
+            !jd(&ps).planes_coplanar(0, 1),
             "x=1 and y=1 are distinct planes"
         );
     }

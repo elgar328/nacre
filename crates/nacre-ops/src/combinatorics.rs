@@ -27,7 +27,7 @@
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
 use crate::planes::{PlaneGeom, edge_incidence};
-use crate::tolerant::{t_cmp_coord, t_orient3d, t_plane_pair_dir_sign};
+use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, reject};
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
@@ -68,8 +68,8 @@ pub(crate) fn edge_faces(
 /// The pair `(P, Q)` is a parameter, not the seam pair: sub-unit 3d orders two seam
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
 /// two planes. No new predicate is needed for that.
-pub(crate) fn order_along(planes: &[PlaneGeom], p: usize, q: usize, i: usize, j: usize) -> i8 {
-    t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
+pub(crate) fn order_along(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, i: usize, j: usize) -> i8 {
+    jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
@@ -122,10 +122,10 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 }
 
 /// `+1` when the ring's edge `i → i+1` runs along `d = n_P × n_Q`, `-1` against it.
-fn edge_sign(planes: &[PlaneGeom], p: usize, e: &RingEdge) -> Result<i8, BoolError> {
+fn edge_sign(jd: &Judge<'_, PlaneGeom>, p: usize, e: &RingEdge) -> Result<i8, BoolError> {
     // `order_along` is `sign((V_i − V_j)·d)`, so `-1` — `V_i` precedes `V_j` — is the edge
     // running along `+d`. Recomputed rather than remembered from the assembly walk.
-    match order_along(planes, p, e.wall, e.from_h, e.to_h) {
+    match order_along(jd, p, e.wall, e.from_h, e.to_h) {
         -1 => Ok(1),
         1 => Ok(-1),
         _ => Err(reject(RejectReason::LoopOrientMismatch)), // two nodes coincide
@@ -149,17 +149,18 @@ fn edge_sign(planes: &[PlaneGeom], p: usize, e: &RingEdge) -> Result<i8, BoolErr
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
 /// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
 pub(crate) fn turn_at(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     p: usize,
     ring: &[RingEdge],
     i: usize,
 ) -> Result<i8, BoolError> {
+    let planes = jd.planes;
     let n = ring.len();
     let (arriving, leaving) = (&ring[(i + n - 1) % n], &ring[i]);
     let (a, b) = (arriving.wall, leaving.wall);
-    let sa = edge_sign(planes, p, arriving)?;
-    let sb = edge_sign(planes, p, leaving)?;
-    let det = t_plane_pair_dir_sign(planes, p, a, b);
+    let sa = edge_sign(jd, p, arriving)?;
+    let sb = edge_sign(jd, p, leaving)?;
+    let det = jd.plane_pair_dir_sign(p, a, b);
     if det == 0 {
         return Err(reject(RejectReason::LoopOrientMismatch));
     }
@@ -177,10 +178,10 @@ pub(crate) fn face_vertex_triples(
     f: Handle<Face>,
     p: usize,
     inc: &EdgeFaces,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     plane_ix: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
-    loop_triples(&model.faces.get(f).outer, p, inc, planes, plane_ix)
+    loop_triples(&model.faces.get(f).outer, p, inc, jd, plane_ix)
 }
 
 /// Each hole ring of face `f`, as three-plane triples.
@@ -194,7 +195,7 @@ pub(crate) fn hole_rings(
     f: Handle<Face>,
     p: usize,
     inc: &EdgeFaces,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     plane_ix: &[usize],
 ) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
     model
@@ -202,7 +203,7 @@ pub(crate) fn hole_rings(
         .get(f)
         .inner
         .iter()
-        .map(|l| loop_triples(l, p, inc, planes, plane_ix))
+        .map(|l| loop_triples(l, p, inc, jd, plane_ix))
         .collect()
 }
 
@@ -229,7 +230,7 @@ fn loop_triples(
     l: &Loop,
     p: usize,
     inc: &EdgeFaces,
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     plane_ix: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
     let hes = &l.half_edges;
@@ -300,7 +301,7 @@ fn loop_triples(
                 k += 1;
             }
         }
-        if t_plane_pair_dir_sign(planes, t[0], t[1], t[2]) == 0 {
+        if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
             return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
         }
         t.sort_unstable();
@@ -322,8 +323,8 @@ fn loop_triples(
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-pub(crate) fn side_of(planes: &[PlaneGeom], t: [usize; 3], q: usize) -> i8 {
-    t_orient3d(planes, t[0], t[1], t[2], q)
+pub(crate) fn side_of(jd: &Judge<'_, PlaneGeom>, t: [usize; 3], q: usize) -> i8 {
+    jd.orient3d(t[0], t[1], t[2], q)
 }
 
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
@@ -348,12 +349,12 @@ pub(crate) fn side_of(planes: &[PlaneGeom], t: [usize; 3], q: usize) -> i8 {
 /// loop never touches `∂f` — and this is where it is finally checked: an intersection at
 /// `X == v` strictly inside an edge is the `POINT_ON_RING` reject.
 pub(crate) fn point_in_ring(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     p: usize,
     v: [usize; 3],
     ring: &[RingEdge],
 ) -> Result<bool, BoolError> {
-    every_ray(planes, p, v, ring)?
+    every_ray(jd, p, v, ring)?
         .first()
         .copied()
         .ok_or_else(|| reject(RejectReason::NoClearRay))
@@ -362,7 +363,7 @@ pub(crate) fn point_in_ring(
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
 /// says so, which is a second machine for free.
 pub(crate) fn every_ray(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     p: usize,
     v: [usize; 3],
     ring: &[RingEdge],
@@ -378,7 +379,7 @@ pub(crate) fn every_ray(
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
         // Clear iff no ring node sits on `Q_a`, hence none on the line `P ∩ Q_a`.
-        if ring.iter().any(|e| side_of(planes, e.node, qa) == 0) {
+        if ring.iter().any(|e| side_of(jd, e.node, qa) == 0) {
             continue;
         }
         let qb = *v
@@ -390,19 +391,16 @@ pub(crate) fn every_ray(
             for e in ring {
                 let (r, si, sj) = (e.wall, e.from_h, e.to_h);
                 // Parallel: distinct lines, because no ring node lies on `P ∩ Q_a`.
-                if t_plane_pair_dir_sign(planes, p, qa, r) == 0 {
+                if jd.plane_pair_dir_sign(p, qa, r) == 0 {
                     continue;
                 }
                 // `X = {P, Q_a, R}` strictly inside the edge?
-                let (a, b) = (
-                    order_along(planes, p, r, qa, si),
-                    order_along(planes, p, r, qa, sj),
-                );
+                let (a, b) = (order_along(jd, p, r, qa, si), order_along(jd, p, r, qa, sj));
                 if a * b >= 0 {
                     continue; // outside the edge, or on an endpoint (excluded above)
                 }
                 // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
-                match order_along(planes, p, qa, r, qb) {
+                match order_along(jd, p, qa, r, qb) {
                     0 => return Err(reject(RejectReason::PointOnRing)), // `X == v`, inside an edge
                     o if o == dir => crossings += 1,
                     _ => {}
@@ -435,7 +433,7 @@ pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<us
 /// Whether the point named by plane triple `v` lies on any edge of `ring` (a ring on plane `p`).
 /// Used by [`point_in_component`] to abandon a non-generic ray rather than guess on a boundary.
 fn point_on_ring(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     p: usize,
     mut v: [usize; 3],
     ring: &[RingEdge],
@@ -446,18 +444,15 @@ fn point_on_ring(
     }
     for e in ring {
         let (r, si, sj) = (e.wall, e.from_h, e.to_h);
-        if side_of(planes, v, r) != 0 {
+        if side_of(jd, v, r) != 0 {
             continue; // `v` is not even on the edge's line
         }
         // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.
         let s = *v
             .iter()
-            .find(|&&x| x != p && t_plane_pair_dir_sign(planes, p, r, x) != 0)
+            .find(|&&x| x != p && jd.plane_pair_dir_sign(p, r, x) != 0)
             .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
-        let (a, b) = (
-            order_along(planes, p, r, s, si),
-            order_along(planes, p, r, s, sj),
-        );
+        let (a, b) = (order_along(jd, p, r, s, si), order_along(jd, p, r, s, sj));
         if a * b <= 0 {
             return Ok(true); // between the endpoints (or on one)
         }
@@ -478,7 +473,7 @@ fn point_on_ring(
 /// A ray grazing a face boundary, or an undecidable in-face containment, is abandoned for the
 /// query's next plane pair; if every pair is blocked the answer is honestly `NO_CLEAR_RAY`.
 pub(crate) fn point_in_component(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     query: [usize; 3],
     faces: &[(usize, Vec<Vec<[usize; 3]>>)],
 ) -> Result<bool, BoolError> {
@@ -501,25 +496,25 @@ pub(crate) fn point_in_component(
         let mut count = 0usize;
         for (q, rings) in faces {
             let q = *q;
-            if t_plane_pair_dir_sign(planes, a, b, q) == 0 {
+            if jd.plane_pair_dir_sign(a, b, q) == 0 {
                 continue; // `L` parallel to (or in) plane `q` — no transversal crossing
             }
             let mut x = [a, b, q];
             x.sort_unstable();
             for ring in rings {
-                if point_on_ring(planes, q, x, ring)? {
+                if point_on_ring(jd, q, x, ring)? {
                     return Ok(None); // `x` on `q`'s boundary — non-generic, abandon
                 }
             }
             // Inside `q`'s material: inside the outer ring, outside every hole.
-            let inside_outer = match every_ray(planes, q, x, &rings[0])?.first().copied() {
+            let inside_outer = match every_ray(jd, q, x, &rings[0])?.first().copied() {
                 Some(v) => v,
                 None => return Ok(None),
             };
             let mut in_g = inside_outer;
             if in_g {
                 for hole in &rings[1..] {
-                    match every_ray(planes, q, x, hole)?.first().copied() {
+                    match every_ray(jd, q, x, hole)?.first().copied() {
                         Some(true) => {
                             in_g = false;
                             break;
@@ -529,7 +524,7 @@ pub(crate) fn point_in_component(
                     }
                 }
             }
-            let fwd = order_along(planes, a, b, c, q);
+            let fwd = order_along(jd, a, b, c, q);
             if fwd == 0 {
                 // The crossing is the ray origin itself (query on plane `q`). Inside `q`'s
                 // material ⇒ query on the component's surface ⇒ undecidable → abandon.
@@ -551,7 +546,7 @@ pub(crate) fn point_in_component(
             // Locator `c`: a plane of the query off the line `a ∩ b`, so `{a,b,c}` is the query.
             let Some(&c) = vplanes
                 .iter()
-                .find(|&&x| x != a && x != b && t_plane_pair_dir_sign(planes, a, b, x) != 0)
+                .find(|&&x| x != a && x != b && jd.plane_pair_dir_sign(a, b, x) != 0)
             else {
                 continue;
             };
@@ -585,7 +580,7 @@ pub(crate) fn point_in_component(
 /// other accepted.) Only a pinch *at* the extreme node itself leaves the turn ambiguous; that stays
 /// a `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than by a tolerance.
 pub(crate) fn loop_winding(
-    planes: &[PlaneGeom],
+    jd: &Judge<'_, PlaneGeom>,
     p: usize,
     ring: &[RingEdge],
 ) -> Result<i8, BoolError> {
@@ -597,7 +592,7 @@ pub(crate) fn loop_winding(
     let mut lo = 0usize;
     for i in 1..ring.len() {
         let strictly_less = (0..3)
-            .map(|axis| t_cmp_coord(planes, ring[i].node, ring[lo].node, axis))
+            .map(|axis| jd.cmp_coord(ring[i].node, ring[lo].node, axis))
             .find(|&c| c != 0)
             == Some(-1);
         if strictly_less {
@@ -607,12 +602,12 @@ pub(crate) fn loop_winding(
     // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
     // ambiguous — honest-reject rather than guess.
     let pinched_extreme = ring.iter().enumerate().any(|(i, _)| {
-        i != lo && (0..3).all(|axis| t_cmp_coord(planes, ring[i].node, ring[lo].node, axis) == 0)
+        i != lo && (0..3).all(|axis| jd.cmp_coord(ring[i].node, ring[lo].node, axis) == 0)
     });
     if pinched_extreme {
         return Err(reject(RejectReason::LoopOrientMismatch));
     }
-    turn_at(planes, p, ring, lo)
+    turn_at(jd, p, ring, lo)
 }
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
@@ -627,6 +622,7 @@ pub(crate) fn loop_winding(
 /// the predicate's convention is tied to `tri`'s RH normal by construction. Were the
 /// invariant to break, an `orient`-based order would reverse silently. Assert the
 /// agreement; do not depend on it.
-fn dir_sign(planes: &[PlaneGeom], p: usize, q: usize, r: usize) -> i8 {
-    t_plane_pair_dir_sign(planes, p, q, r) * planes[r].frame_sign
+fn dir_sign(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, r: usize) -> i8 {
+    let planes = jd.planes;
+    jd.plane_pair_dir_sign(p, q, r) * planes[r].frame_sign
 }

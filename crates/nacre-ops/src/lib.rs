@@ -514,6 +514,7 @@ fn unordered(a: usize, b: usize) -> (usize, usize) {
 pub mod tests {
 
     use super::*;
+    use crate::tolerant::Judge;
     use crate::transform::transform;
     use crate::{boolean::*, ops::*, planes::*};
     use nacre_cip::Pt3;
@@ -899,7 +900,7 @@ pub mod tests {
         m.rebuild_adjacency();
         let table = |m: &Model, s: Handle<Solid>| {
             let f = collect_planes(m, s).unwrap();
-            let c = plane_classes(&f);
+            let c = plane_classes(&crate::planes::test_judge(&f));
             dense_planes(&f, &c).0
         };
         let pu = table(&m, r);
@@ -923,8 +924,8 @@ pub mod tests {
                         if j == p || j == q || j == rr {
                             continue;
                         }
-                        let su = crate::tolerant::t_orient3d(&pu, p, q, rr, j);
-                        let sr = crate::tolerant::t_orient3d(&pr, p, q, rr, j);
+                        let su = crate::planes::test_judge(&pu).orient3d(p, q, rr, j);
+                        let sr = crate::planes::test_judge(&pr).orient3d(p, q, rr, j);
                         if su != 0 && sr != 0 && su != sr {
                             eprintln!("DISAGREE orient3d ({p},{q},{rr},{j}): u={su} r={sr}");
                             disagree += 1;
@@ -1633,7 +1634,7 @@ pub mod tests {
         let (planes, p, outer, hole) = holed_face_rings("dimple");
         assert_eq!(
             combinatorics::loop_winding(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 &combinatorics::ring_from_names(p, &outer).unwrap()
             )
@@ -1642,7 +1643,7 @@ pub mod tests {
         );
         assert_eq!(
             combinatorics::loop_winding(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 &combinatorics::ring_from_names(p, &hole).unwrap()
             )
@@ -1656,7 +1657,7 @@ pub mod tests {
             reversed.reverse();
             assert_eq!(
                 combinatorics::loop_winding(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     &combinatorics::ring_from_names(p, &reversed).unwrap()
                 )
@@ -1680,7 +1681,7 @@ pub mod tests {
             .expect("the reflex node");
         assert_eq!(
             combinatorics::turn_at(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 &combinatorics::ring_from_names(p, &outer).unwrap(),
                 reflex
@@ -1691,7 +1692,7 @@ pub mod tests {
         let turns: Vec<i8> = (0..outer.len())
             .map(|i| {
                 combinatorics::turn_at(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     &combinatorics::ring_from_names(p, &outer).unwrap(),
                     i,
@@ -1714,7 +1715,7 @@ pub mod tests {
         assert_ne!(lo, reflex);
         assert_eq!(
             combinatorics::turn_at(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 &combinatorics::ring_from_names(p, &outer).unwrap(),
                 lo
@@ -1731,7 +1732,7 @@ pub mod tests {
         rotated.rotate_left(reflex);
         assert_eq!(
             combinatorics::turn_at(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 &combinatorics::ring_from_names(p, &rotated).unwrap(),
                 0
@@ -1741,7 +1742,7 @@ pub mod tests {
         );
         assert_eq!(
             combinatorics::loop_winding(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 &combinatorics::ring_from_names(p, &rotated).unwrap()
             )
@@ -1821,16 +1822,30 @@ pub mod tests {
         for (i, pi) in faces_tab.iter().enumerate() {
             surf_ix.insert(pi.face, i);
         }
-        let canon = plane_classes(&faces_tab);
+        let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
         let (planes, plane_ix) = dense_planes(&faces_tab, &canon);
         let inc = combinatorics::edge_faces(&m, r, &surf_ix).unwrap();
         for &fh in &m.shells.get(m.solids.get(r).outer).faces {
             let fp = surf_ix[&fh];
-            let holes = combinatorics::hole_rings(&m, fh, fp, &inc, &planes, &plane_ix).unwrap();
+            let holes = combinatorics::hole_rings(
+                &m,
+                fh,
+                fp,
+                &inc,
+                &crate::planes::test_judge(&planes),
+                &plane_ix,
+            )
+            .unwrap();
             if let Some(hole) = holes.into_iter().next() {
-                let outer =
-                    combinatorics::face_vertex_triples(&m, fh, fp, &inc, &planes, &plane_ix)
-                        .unwrap();
+                let outer = combinatorics::face_vertex_triples(
+                    &m,
+                    fh,
+                    fp,
+                    &inc,
+                    &crate::planes::test_judge(&planes),
+                    &plane_ix,
+                )
+                .unwrap();
                 assert_eq!(outer.len(), 6, "{which}: the L's cap is a reflex hexagon");
                 return (planes, plane_ix[fp], outer, hole);
             }
@@ -1847,7 +1862,7 @@ pub mod tests {
         for t in &hole {
             assert!(
                 combinatorics::point_in_ring(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     *t,
                     &combinatorics::ring_from_names(p, &outer).unwrap()
@@ -1866,7 +1881,7 @@ pub mod tests {
             let (planes, p, outer, hole) = holed_face_rings(which);
             for t in &hole {
                 let rays = combinatorics::every_ray(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     *t,
                     &combinatorics::ring_from_names(p, &outer).unwrap(),
@@ -1893,7 +1908,7 @@ pub mod tests {
         for t in &hole {
             assert!(
                 combinatorics::point_in_ring(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     *t,
                     &combinatorics::ring_from_names(p, &outer).unwrap()
@@ -1902,7 +1917,7 @@ pub mod tests {
             );
             assert!(
                 combinatorics::point_in_ring(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     *t,
                     &combinatorics::ring_from_names(p, &rev_outer).unwrap()
@@ -1914,7 +1929,7 @@ pub mod tests {
         for t in &outer {
             assert!(
                 !combinatorics::point_in_ring(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     *t,
                     &combinatorics::ring_from_names(p, &hole).unwrap()
@@ -1923,7 +1938,7 @@ pub mod tests {
             );
             assert!(
                 !combinatorics::point_in_ring(
-                    &planes,
+                    &crate::planes::test_judge(&planes),
                     p,
                     *t,
                     &combinatorics::ring_from_names(p, &rev_hole).unwrap()
@@ -1945,7 +1960,7 @@ pub mod tests {
         // no such sharing, so only the unanimity survives the move.)
         let (planes, p, outer, hole) = holed_face_rings("dimple");
         let rays = combinatorics::every_ray(
-            &planes,
+            &crate::planes::test_judge(&planes),
             p,
             hole[0],
             &combinatorics::ring_from_names(p, &outer).unwrap(),
@@ -1964,7 +1979,7 @@ pub mod tests {
         let (planes, p, outer, hole) = holed_face_rings("dimple");
         assert!(
             combinatorics::point_in_ring(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 hole[0],
                 &combinatorics::ring_from_names(p, &outer).unwrap()
@@ -1973,7 +1988,7 @@ pub mod tests {
         );
         assert!(
             !combinatorics::point_in_ring(
-                &planes,
+                &crate::planes::test_judge(&planes),
                 p,
                 outer[0],
                 &combinatorics::ring_from_names(p, &hole).unwrap()
@@ -2356,8 +2371,6 @@ pub mod tests {
             face: fh,
             plane,
             tri,
-            judge: crate::planes::fixed_judge(256),
-            notes: nacre_cip::predicate::Notes::new(),
             n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `t_planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
@@ -2372,9 +2385,13 @@ pub mod tests {
         // Neither fallback fires: the coefficients are not proportional, and the coordinates say
         // these really are two different planes.
         assert!(!planes_coplanar(&planes[0].plane, &planes[1].plane));
-        assert!(!tolerant::t_planes_coplanar(&planes, 0, 1));
+        assert!(!crate::planes::test_judge(&planes).planes_coplanar(0, 1));
         // The shared handle alone makes them coplanar-by-reference.
-        assert!(shares_or_coplanar(&planes, 0, 1));
+        assert!(shares_or_coplanar(
+            &crate::planes::test_judge(&planes),
+            0,
+            1
+        ));
     }
 
     fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
@@ -3721,7 +3738,7 @@ pub mod tests {
         let b_xm = find(na..planes.len(), -1.0, 1.0); // b's -x wall at x=1
         let a_xm = find(0..na, -1.0, 0.0); // a's -x wall at x=0
         let b_xp = find(na..planes.len(), 1.0, 2.0); // b's +x wall at x=2
-        let canon = plane_classes(&planes);
+        let canon = plane_classes(&crate::planes::test_judge(&planes));
         assert_eq!(canon[a_xp], canon[b_xm], "shared x=1 wall is one class");
         assert_ne!(canon[a_xm], canon[b_xp], "far walls stay distinct");
         assert_ne!(canon[a_xp], canon[a_xm], "x=1 and x=0 are different lines");
@@ -3802,8 +3819,6 @@ pub mod tests {
         let tri = [origin, step(i), step(j)];
         PlaneGeom {
             base: crate::planes::BaseFrame::none(),
-            judge: crate::planes::fixed_judge(256),
-            notes: nacre_cip::predicate::Notes::new(),
             surf,
             plane,
             tri,
@@ -3852,7 +3867,7 @@ pub mod tests {
             face(0, vec![c10, c20, c21, c11], vec![]),
             face(0, vec![c20, c30, c31, c21], vec![]),
         ];
-        let out = unify_coplanar_faces(faces, &p).unwrap();
+        let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
         assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
         let l = &out[0].loop_nodes;
         assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
@@ -3939,7 +3954,7 @@ pub mod tests {
             face(0, vec![h11, m11, m12, h12], vec![]), // left filler
             face(0, vec![m11, h21, h22, m12], vec![]), // right filler
         ];
-        let out = unify_coplanar_faces(faces, &p).unwrap();
+        let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
         assert_eq!(out.len(), 1, "the hole is filled, so one face remains");
         assert!(out[0].inner.is_empty(), "and it has no hole left");
         assert_eq!(out[0].loop_nodes.len(), 4, "just the outer square");
@@ -3981,7 +3996,7 @@ pub mod tests {
             face(0, vec![v100, v200, v210, v110], vec![]),
             face(4, vec![v200, v100, v101, v201], vec![]), // perpendicular, not coplanar
         ];
-        let out = unify_coplanar_faces(faces, &p).unwrap();
+        let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
         assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
         let merged = out.iter().find(|lf| lf.plane_idx == 0).unwrap();
         assert!(
@@ -4118,7 +4133,7 @@ pub mod tests {
             "the coefficient test still cannot prove these coplanar — that is the whole point"
         );
         assert!(
-            tolerant::t_planes_coplanar(&faces_tab, i, j),
+            crate::planes::test_judge(&faces_tab).planes_coplanar(i, j),
             "coordinates can"
         );
         assert_eq!(plane_ix[i], plane_ix[j], "so they are one plane-table row");
@@ -4156,16 +4171,18 @@ pub mod tests {
             surf_ix,
             inc_a,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, overhung, cutter).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         let _ = &faces_tab;
         let mut checked = 0usize;
         for sh in solid_shell_handles(&m, overhung) {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let tris =
-                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix)
-                        .unwrap();
+                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap();
                 for t in &tris {
                     // The triple is already dense plane ids: distinct means three real planes.
                     assert!(
@@ -4219,7 +4236,7 @@ pub mod tests {
         // runs; `dense_planes` the same ranking.
         let mut faces = collect_planes(&m, chained).unwrap();
         faces.extend(collect_planes(&m, probe).unwrap());
-        let canon = plane_classes(&faces);
+        let canon = plane_classes(&crate::planes::test_judge(&faces));
         let (geom, plane_ix) = dense_planes(&faces, &canon);
         assert!(
             canon.iter().enumerate().any(|(i, &c)| c != i),
@@ -4274,8 +4291,11 @@ pub mod tests {
             surf_ix,
             inc_a,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, chained, probe).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         // The fixture must actually merge two faces into one plane, or this proves nothing.
         assert!(
             planes.len() < faces_tab.len(),
@@ -4289,12 +4309,9 @@ pub mod tests {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let mut rings = vec![
-                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix)
-                        .unwrap(),
+                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap(),
                 ];
-                rings.extend(
-                    combinatorics::hole_rings(&m, fh, p, &inc_a, &planes, &plane_ix).unwrap(),
-                );
+                rings.extend(combinatorics::hole_rings(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap());
                 for t in rings.iter().flatten() {
                     for &k in t {
                         assert!(
@@ -4341,8 +4358,11 @@ pub mod tests {
             surf_ix,
             inc_a,
             plane_ix,
+            standard,
+            notes,
             ..
         } = plane_index_setup(&m, chained, probe).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
         assert!(
             planes.len() < faces_tab.len(),
             "fixture has no split plane — the sibling faces this used to distinguish"
@@ -4352,13 +4372,12 @@ pub mod tests {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let tris =
-                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &planes, &plane_ix)
-                        .unwrap();
+                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap();
                 for t in &tris {
                     // The vertex lies on exactly its three defining planes; each must read 0.
                     for &q in t {
                         assert_eq!(
-                            combinatorics::side_of(&planes, *t, q),
+                            combinatorics::side_of(&jd, *t, q),
                             0,
                             "vertex {t:?} lies on plane {q} but does not read 0"
                         );
