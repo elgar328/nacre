@@ -2581,6 +2581,25 @@ pub mod tests {
             tot_same += c.same_chain;
             tot_exact += c.same_chain_exact_base;
         }
+        // Per judge, so "still cancellable" can be attributed rather than guessed at.
+        let mut kinds = [(0u64, 0u64); 5];
+        for (_, build) in &cases {
+            let (mut m, a, b) = build();
+            nacre_cip::audit::reset();
+            let _ = boolean(&mut m, BoolKind::Cut, a, b);
+            let c = nacre_cip::audit::take();
+            for (k, got) in kinds.iter_mut().zip(c.by_kind) {
+                k.0 += got.0;
+                k.1 += got.1;
+            }
+        }
+        println!("per judge:");
+        for (k, n) in nacre_cip::audit::KINDS.iter().zip(kinds) {
+            println!(
+                "  {k:<20} escalated {:>6}   still cancellable {:>6}",
+                n.0, n.1
+            );
+        }
         let pct = |x: u64| {
             if tot == 0 {
                 0.0
@@ -3843,6 +3862,7 @@ pub mod tests {
         let _ = face;
         let tri = [origin, step(i), step(j)];
         PlaneGeom {
+            base: crate::planes::BaseFrame::none(),
             surf,
             plane,
             tri,

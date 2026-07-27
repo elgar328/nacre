@@ -49,6 +49,19 @@ pub trait Witness {
     /// its plane through points with no chain, and a 90°-family rotation has tol exactly 0), so
     /// the answer is carried, not derived.
     fn is_rotated(&self) -> bool;
+
+    /// Identifies the rigid motion this witness's definition carries — `0` for none, and equal
+    /// values **only** for structurally identical chains (same nodes, order and pivots).
+    ///
+    /// A rigid motion preserves every determinant these predicates take, so when all of a
+    /// judgement's inputs carry one motion the answer is the answer on their pre-rotation
+    /// coordinates — exactly, with no tolerance at all. This is what lets such a judgement leave
+    /// the toleranced path entirely.
+    fn chain_id(&self) -> u64;
+
+    /// The witness triangle **before** that motion, or `None` when the pre-rotation coordinates
+    /// are not `f64`-representable and so cannot be handed to the exact predicate.
+    fn base_tri(&self) -> Option<[Point3; 3]>;
 }
 
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
@@ -59,6 +72,9 @@ pub trait Witness {
 pub trait PlaneWitness: Witness {
     /// The plane's exact (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`).
     fn coeffs(&self) -> [f64; 4];
+
+    /// The plane's coefficients before the rigid motion — see [`Witness::base_tri`].
+    fn base_coeffs(&self) -> Option<[f64; 4]>;
 }
 
 /// Whether any of the named planes is rotated — the per-predicate routing signal. A predicate
@@ -74,6 +90,20 @@ pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
 /// or rebuilding an axis-aligned one from its `tri`. A boolean over 25 rotated fins called it a
 /// million times, which was 77% of its runtime. The definitions are the same every call, so the
 /// witness owns them and this is a pure accessor.
+/// Can this judgement be answered exactly in the pre-rotation frame?
+///
+/// Yes when every input carries **one and the same** rigid motion (`chain_id`), that motion is not
+/// the identity, and every pre-rotation witness is `f64`-representable. Then the rotation cancels
+/// out of the determinant and the exact predicate answers on the bases. A mismatch is a
+/// conservative miss — the toleranced path still answers, just more slowly.
+fn shared_motion<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
+    let Some(&first) = idx.first() else {
+        return false;
+    };
+    let id = planes[first].chain_id();
+    id != 0 && idx.iter().all(|&k| planes[k].chain_id() == id)
+}
+
 pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[Pt3; 3] {
     planes[k].tri_pt3()
 }
@@ -117,6 +147,18 @@ pub fn t_orient3d<W: PlaneWitness>(planes: &[W], p: usize, q: usize, r: usize, j
         let tj = planes[j].tri();
         return indirect_orient3d(&tp, tj[0].as_array(), tj[1].as_array(), tj[2].as_array());
     }
+    // One shared rigid motion ⇒ the same question, exactly, on the pre-rotation coordinates.
+    if shared_motion(planes, &[p, q, r, j]) {
+        if let (Some(cp), Some(cq), Some(cr), Some(tj)) = (
+            planes[p].base_coeffs(),
+            planes[q].base_coeffs(),
+            planes[r].base_coeffs(),
+            planes[j].base_tri(),
+        ) {
+            let tp = ThreePlane([cp, cq, cr]);
+            return indirect_orient3d(&tp, tj[0].as_array(), tj[1].as_array(), tj[2].as_array());
+        }
+    }
     let (dp, dq, dr, dj) = (
         plane_def(planes, p),
         plane_def(planes, q),
@@ -148,6 +190,10 @@ pub fn t_cmp_coord<W: PlaneWitness>(planes: &[W], a: [usize; 3], b: [usize; 3], 
         };
         return indirect_cmp_coord(&tp(a), &tp(b), axis);
     }
+    // ★ No shared-motion shortcut here, and that is not an oversight. The other judges take
+    // determinants, which a rigid motion preserves; this one compares **one coordinate**, and a
+    // rotation mixes the axes — `(Ra)[axis] − (Rb)[axis]` is not `(a − b)[axis]`. Cancelling the
+    // rotation would answer a different question.
     let da = a.map(|k| plane_def(planes, k));
     let db = b.map(|k| plane_def(planes, k));
     to_i8(indirect_cmp_coord_judge(
@@ -197,6 +243,12 @@ pub fn t_planes_coplanar<W: Witness>(planes: &[W], i: usize, j: usize) -> bool {
             .iter()
             .all(|&q| plane_side_exact(planes[i].tri(), q) == 0);
     }
+    // "Same plane" is a statement about incidence, which a rigid motion preserves.
+    if shared_motion(planes, &[i, j]) {
+        if let (Some(ti), Some(tj)) = (planes[i].base_tri(), planes[j].base_tri()) {
+            return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
+        }
+    }
     let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
     dj.iter()
         .all(|q| to_i8(orient3d_judge(q, &di[0], &di[1], &di[2])) == 0)
@@ -233,6 +285,14 @@ pub fn t_plane_pair_dir_sign<W: PlaneWitness>(planes: &[W], p: usize, a: usize, 
             [x, y, z]
         };
         return det3_sign([row(p), row(a), row(b)]);
+    }
+    // A determinant of normals: a rigid motion multiplies it by `det(R) = 1`, so one shared motion
+    // means the pre-rotation normals give the same sign, exactly.
+    if shared_motion(planes, &[p, a, b]) {
+        let row = |k: usize| planes[k].base_coeffs().map(|[x, y, z, _]| [x, y, z]);
+        if let (Some(rp), Some(ra), Some(rb)) = (row(p), row(a), row(b)) {
+            return det3_sign([rp, ra, rb]);
+        }
     }
     let (dp, da, db) = (
         plane_def(planes, p),
@@ -274,10 +334,20 @@ mod tests {
         fn is_rotated(&self) -> bool {
             false
         }
+        // These witnesses carry no motion, so there is nothing to cancel.
+        fn chain_id(&self) -> u64 {
+            0
+        }
+        fn base_tri(&self) -> Option<[Point3; 3]> {
+            None
+        }
     }
     impl PlaneWitness for W {
         fn coeffs(&self) -> [f64; 4] {
             self.coeffs
+        }
+        fn base_coeffs(&self) -> Option<[f64; 4]> {
+            None
         }
     }
 

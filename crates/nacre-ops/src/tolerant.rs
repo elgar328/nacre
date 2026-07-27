@@ -19,6 +19,12 @@ impl Witness for PlaneGeom {
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
+    fn chain_id(&self) -> u64 {
+        self.base.chain_id
+    }
+    fn base_tri(&self) -> Option<[Point3; 3]> {
+        self.base.tri
+    }
     fn tri_pt3(&self) -> &[Pt3; 3] {
         &self.tri_pt3
     }
@@ -31,6 +37,14 @@ impl Witness for FaceInfo {
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
+    // A face table exists before plane classes do, and the only predicate that runs on it is
+    // `t_planes_coplanar` during class discovery. Opting out here keeps that path unchanged.
+    fn chain_id(&self) -> u64 {
+        0
+    }
+    fn base_tri(&self) -> Option<[Point3; 3]> {
+        None
+    }
     fn tri_pt3(&self) -> &[Pt3; 3] {
         &self.tri_pt3
     }
@@ -42,6 +56,9 @@ impl Witness for FaceInfo {
 impl PlaneWitness for PlaneGeom {
     fn coeffs(&self) -> [f64; 4] {
         self.plane.coefficients()
+    }
+    fn base_coeffs(&self) -> Option<[f64; 4]> {
+        self.base.coeffs
     }
 }
 
@@ -231,6 +248,7 @@ mod tests {
         // (a) A hand-built degenerate pair: same-normal parallel planes, but `tri` is a point.
         let degenerate: Vec<PlaneGeom> = (0..2)
             .map(|k| PlaneGeom {
+                base: crate::planes::BaseFrame::none(),
                 surf: pu[0].surf,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],

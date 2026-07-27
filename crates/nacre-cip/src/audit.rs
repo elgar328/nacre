@@ -17,6 +17,22 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 
 static ON: AtomicBool = AtomicBool::new(false);
 static ESCALATED: AtomicU64 = AtomicU64::new(0);
+/// Per-judge tallies, in `KINDS` order: (escalated, cancellable).
+static BY_KIND: [(AtomicU64, AtomicU64); 5] = [
+    (AtomicU64::new(0), AtomicU64::new(0)),
+    (AtomicU64::new(0), AtomicU64::new(0)),
+    (AtomicU64::new(0), AtomicU64::new(0)),
+    (AtomicU64::new(0), AtomicU64::new(0)),
+    (AtomicU64::new(0), AtomicU64::new(0)),
+];
+/// Judge names, indexed by the `kind` passed to [`escalation`].
+pub const KINDS: [&str; 5] = [
+    "orient3d",
+    "indirect_orient3d",
+    "cmp_coord",
+    "dir_sign",
+    "dir_orient3d",
+];
 static SAME_CHAIN: AtomicU64 = AtomicU64::new(0);
 static SAME_CHAIN_EXACT_BASE: AtomicU64 = AtomicU64::new(0);
 
@@ -31,12 +47,18 @@ pub struct Counts {
     /// …of those, every base is also f64-representable, which is what the exact predicate needs
     /// (it takes `[f64; 3]`, and `Rat`'s `i128` cannot carry a 3×3 determinant).
     pub same_chain_exact_base: u64,
+    /// `(escalated, cancellable)` per judge, indexed by [`KINDS`].
+    pub by_kind: [(u64, u64); 5],
 }
 
 /// Start counting from zero. Not synchronized against concurrent judging — a measurement run
 /// should be single-threaded.
 pub fn reset() {
     ESCALATED.store(0, Relaxed);
+    for (a, b) in &BY_KIND {
+        a.store(0, Relaxed);
+        b.store(0, Relaxed);
+    }
     SAME_CHAIN.store(0, Relaxed);
     SAME_CHAIN_EXACT_BASE.store(0, Relaxed);
     ON.store(true, Relaxed);
@@ -49,6 +71,7 @@ pub fn take() -> Counts {
         escalated: ESCALATED.load(Relaxed),
         same_chain: SAME_CHAIN.load(Relaxed),
         same_chain_exact_base: SAME_CHAIN_EXACT_BASE.load(Relaxed),
+        by_kind: std::array::from_fn(|i| (BY_KIND[i].0.load(Relaxed), BY_KIND[i].1.load(Relaxed))),
     }
 }
 
@@ -67,11 +90,12 @@ fn base_is_f64_exact(p: &Pt3) -> bool {
 /// rather than over-counts: a missed cancellation is slower, never wrong. Pivots must match too:
 /// a rotation about `c` is `Rx + (c − Rc)`, and two different pivots leave two different
 /// translations that do not cancel in a difference.
-pub fn escalation(points: &[&Pt3]) {
+pub fn escalation(kind: usize, points: &[&Pt3]) {
     if !ON.load(Relaxed) {
         return;
     }
     ESCALATED.fetch_add(1, Relaxed);
+    BY_KIND[kind].0.fetch_add(1, Relaxed);
     let Some(first) = points.first() else { return };
     let same = points.iter().all(|p| {
         p.chain.len() == first.chain.len()
@@ -84,6 +108,7 @@ pub fn escalation(points: &[&Pt3]) {
         SAME_CHAIN.fetch_add(1, Relaxed);
         if points.iter().all(|p| base_is_f64_exact(p)) {
             SAME_CHAIN_EXACT_BASE.fetch_add(1, Relaxed);
+            BY_KIND[kind].1.fetch_add(1, Relaxed);
         }
     }
 }

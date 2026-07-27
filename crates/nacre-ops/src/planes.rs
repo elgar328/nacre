@@ -260,6 +260,102 @@ pub(crate) fn plane_index_setup(
 /// outward normal. What a plane has is a **frame** — the class root's stored normal — and the only
 /// direction fact anyone needs from it is [`PlaneGeom::frame_sign`]. Everything else here is a
 /// witness: three points known to lie on this plane, used to reconstruct it exactly.
+/// The pre-rotation twin of a witness triangle: its `chain_id`, base points and base plane.
+///
+/// A rigid motion preserves the determinants the predicates take, so a judgement whose inputs all
+/// carry **one** motion can be answered on these instead — exactly, off the toleranced path
+/// entirely. `None` for the base data when a base coordinate is not `f64`-representable, since the
+/// exact predicate takes `f64`; the judgement then stays toleranced (slower, never wrong).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BaseFrame {
+    /// `0` = no motion. Equal only for structurally identical chains.
+    pub(crate) chain_id: u64,
+    pub(crate) tri: Option<[Point3; 3]>,
+    pub(crate) coeffs: Option<[f64; 4]>,
+}
+
+impl BaseFrame {
+    /// No motion to cancel — for hand-built tables in tests.
+    #[cfg(test)]
+    pub(crate) fn none() -> Self {
+        Self {
+            chain_id: 0,
+            tri: None,
+            coeffs: None,
+        }
+    }
+
+    fn of(tri_pt3: &[Pt3; 3], frame_sign: i8) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        // All three witnesses must carry the *same* chain for the plane to have one motion.
+        for (k, p) in tri_pt3.iter().enumerate() {
+            if k > 0 && p.chain.len() != tri_pt3[0].chain.len() {
+                return Self {
+                    chain_id: 0,
+                    tri: None,
+                    coeffs: None,
+                };
+            }
+            if k > 0 {
+                for (a, b) in p.chain.iter().zip(tri_pt3[0].chain.iter()) {
+                    if a.axis != b.axis || a.angle != b.angle || a.point != b.point {
+                        return Self {
+                            chain_id: 0,
+                            tri: None,
+                            coeffs: None,
+                        };
+                    }
+                }
+            }
+        }
+        if tri_pt3[0].chain.is_empty() {
+            return Self {
+                chain_id: 0,
+                tri: None,
+                coeffs: None,
+            }; // no motion to cancel
+        }
+        for n in tri_pt3[0].chain.iter() {
+            (n.axis as u8).hash(&mut h);
+            format!("{:?}", n.angle).hash(&mut h);
+            for c in n.point {
+                format!("{c:?}").hash(&mut h);
+            }
+        }
+        // 0 is reserved for "no motion", so never hand it out as an id.
+        let chain_id = h.finish() | 1;
+        let exact = |r: nacre_scalar::Rat| nacre_scalar::Rat::try_from_f64(r.to_f64()) == Some(r);
+        if !tri_pt3.iter().all(|p| p.base.iter().all(|&r| exact(r))) {
+            return Self {
+                chain_id,
+                tri: None,
+                coeffs: None,
+            };
+        }
+        let pt = |p: &Pt3| {
+            Point3::from_array([p.base[0].to_f64(), p.base[1].to_f64(), p.base[2].to_f64()])
+        };
+        let tri = [pt(&tri_pt3[0]), pt(&tri_pt3[1]), pt(&tri_pt3[2])];
+        // ★ The base plane must carry the **stored** orientation, not the triangle's. A class's
+        // stored normal and its witness triangle's `cross` can oppose — that is exactly what
+        // `frame_sign` records — and `through_points` gives the triangle's. Rotation preserves the
+        // cross product (`det(R) = 1`), so multiplying by `frame_sign` reproduces the same relation
+        // in the base frame. Without it the exact path answers with a flipped sign, which the suite
+        // caught immediately.
+        let coeffs = Plane::through_points(tri[0], tri[1], tri[2]).map(|pl| {
+            let c = pl.coefficients();
+            let k = f64::from(frame_sign);
+            [c[0] * k, c[1] * k, c[2] * k, c[3] * k]
+        });
+        Self {
+            chain_id,
+            tri: Some(tri),
+            coeffs,
+        }
+    }
+}
+
 pub(crate) struct PlaneGeom {
     pub(crate) plane: Plane,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
@@ -277,6 +373,8 @@ pub(crate) struct PlaneGeom {
     /// root's stored normal, and this sign is what relates it to material. Precomputed here so the
     /// two `debug_assert`s that guard the convention run once, at construction.
     pub(crate) frame_sign: i8,
+    /// The pre-rotation twin — see [`BaseFrame`].
+    pub(crate) base: BaseFrame,
 }
 
 /// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
@@ -304,6 +402,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
         .map(|&r| {
             let pi = &planes[r];
             PlaneGeom {
+                base: BaseFrame::of(&pi.tri_pt3, pi.orient_sign),
                 plane: pi.plane,
                 surf: pi.surf,
                 tri: pi.tri,
