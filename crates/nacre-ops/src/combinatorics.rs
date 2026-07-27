@@ -72,37 +72,60 @@ pub(crate) fn order_along(planes: &[PlaneGeom], p: usize, q: usize, i: usize, j:
     t_orient3d(planes, p, q, i, j) * dir_sign(planes, p, q, j)
 }
 
-/// The two planes an ordered ring's edge `i → i+1` shares beyond `P`, plus the two nodes'
-/// third planes — everything [`order_along`] needs to say which way that edge runs.
-pub(crate) fn ring_edge(
-    p: usize,
-    ring: &[[usize; 3]],
-    i: usize,
-) -> Result<(usize, usize, usize), BoolError> {
-    let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
-    let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
-    if shared.len() != 2 || !shared.contains(&p) {
-        return Err(reject(RejectReason::LoopOrientMismatch));
-    }
-    let q = shared[usize::from(shared[0] == p)];
-    let third = |t: [usize; 3]| t.iter().copied().find(|&x| x != p && x != q);
-    let (Some(ri), Some(rj)) = (third(a), third(b)) else {
-        return Err(reject(RejectReason::LoopOrientMismatch));
-    };
-    Ok((q, ri, rj))
+/// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
+/// recovered from the two endpoint names.
+///
+/// ★ **Why this type exists.** A vertex name is a plane triple, and for a long time the engine read
+/// an edge's supporting plane back out of its endpoints — "the class the two names share besides
+/// `P`". That works only while every vertex lies on exactly three planes. It is an accident of the
+/// corpus, not an invariant: let four planes meet at a point, give the point one canonical name, and
+/// the shared class is **some other plane than the one the edge rides**, silently. So the walker
+/// that knows the edge — the DCEL half-edge, which was told its wall — hands the geometry over
+/// instead, and only rings whose provenance is *names alone* go through [`ring_from_names`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RingEdge {
+    /// Identity of the vertex this edge leaves.
+    pub node: [usize; 3],
+    /// The plane whose meet with `P` carries this edge.
+    pub wall: usize,
+    /// The endpoints as handles on `P ∩ wall` — the third plane pinning each there. Not a name:
+    /// see [`RingEdge`]'s note.
+    pub from_h: usize,
+    pub to_h: usize,
+}
+
+/// Recover a ring's edges from its vertex names — the classic derivation, now in **one** place.
+///
+/// Sound exactly while each name lists all three of its planes and no more (see [`RingEdge`]).
+/// A producer that can hand over the real geometry should do that instead.
+pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingEdge>, BoolError> {
+    (0..ring.len())
+        .map(|i| {
+            let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+            let shared: Vec<usize> = a.iter().copied().filter(|x| b.contains(x)).collect();
+            if shared.len() != 2 || !shared.contains(&p) {
+                return Err(reject(RejectReason::LoopOrientMismatch));
+            }
+            let wall = shared[usize::from(shared[0] == p)];
+            let third = |t: [usize; 3]| t.iter().copied().find(|&x| x != p && x != wall);
+            let (Some(from_h), Some(to_h)) = (third(a), third(b)) else {
+                return Err(reject(RejectReason::LoopOrientMismatch));
+            };
+            Ok(RingEdge {
+                node: a,
+                wall,
+                from_h,
+                to_h,
+            })
+        })
+        .collect()
 }
 
 /// `+1` when the ring's edge `i → i+1` runs along `d = n_P × n_Q`, `-1` against it.
-fn edge_sign(
-    planes: &[PlaneGeom],
-    p: usize,
-    ring: &[[usize; 3]],
-    i: usize,
-) -> Result<i8, BoolError> {
-    let (q, ri, rj) = ring_edge(p, ring, i)?;
+fn edge_sign(planes: &[PlaneGeom], p: usize, e: &RingEdge) -> Result<i8, BoolError> {
     // `order_along` is `sign((V_i − V_j)·d)`, so `-1` — `V_i` precedes `V_j` — is the edge
     // running along `+d`. Recomputed rather than remembered from the assembly walk.
-    match order_along(planes, p, q, ri, rj) {
+    match order_along(planes, p, e.wall, e.from_h, e.to_h) {
         -1 => Ok(1),
         1 => Ok(-1),
         _ => Err(reject(RejectReason::LoopOrientMismatch)), // two nodes coincide
@@ -128,15 +151,14 @@ fn edge_sign(
 pub(crate) fn turn_at(
     planes: &[PlaneGeom],
     p: usize,
-    ring: &[[usize; 3]],
+    ring: &[RingEdge],
     i: usize,
 ) -> Result<i8, BoolError> {
     let n = ring.len();
-    let prev = (i + n - 1) % n;
-    let (a, _, _) = ring_edge(p, ring, prev)?; // plane of the edge arriving at `i`
-    let (b, _, _) = ring_edge(p, ring, i)?; // plane of the edge leaving `i`
-    let sa = edge_sign(planes, p, ring, prev)?;
-    let sb = edge_sign(planes, p, ring, i)?;
+    let (arriving, leaving) = (&ring[(i + n - 1) % n], &ring[i]);
+    let (a, b) = (arriving.wall, leaving.wall);
+    let sa = edge_sign(planes, p, arriving)?;
+    let sb = edge_sign(planes, p, leaving)?;
     let det = t_plane_pair_dir_sign(planes, p, a, b);
     if det == 0 {
         return Err(reject(RejectReason::LoopOrientMismatch));
@@ -329,7 +351,7 @@ pub(crate) fn point_in_ring(
     planes: &[PlaneGeom],
     p: usize,
     v: [usize; 3],
-    ring: &[[usize; 3]],
+    ring: &[RingEdge],
 ) -> Result<bool, BoolError> {
     every_ray(planes, p, v, ring)?
         .first()
@@ -343,7 +365,7 @@ pub(crate) fn every_ray(
     planes: &[PlaneGeom],
     p: usize,
     v: [usize; 3],
-    ring: &[[usize; 3]],
+    ring: &[RingEdge],
 ) -> Result<Vec<bool>, BoolError> {
     // The vertex name is a plane triple, so it obeys the same rule as a ring's: class roots only.
     // A caller holding face indices (a hand-built table, a test) is normalized here rather than
@@ -356,7 +378,7 @@ pub(crate) fn every_ray(
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
         // Clear iff no ring node sits on `Q_a`, hence none on the line `P ∩ Q_a`.
-        if ring.iter().any(|&m| side_of(planes, m, qa) == 0) {
+        if ring.iter().any(|e| side_of(planes, e.node, qa) == 0) {
             continue;
         }
         let qb = *v
@@ -365,8 +387,8 @@ pub(crate) fn every_ray(
             .ok_or_else(|| reject(RejectReason::LoopOrientMismatch))?;
         for dir in [1i8, -1] {
             let mut crossings = 0usize;
-            for i in 0..ring.len() {
-                let (r, si, sj) = ring_edge(p, ring, i)?;
+            for e in ring {
+                let (r, si, sj) = (e.wall, e.from_h, e.to_h);
                 // Parallel: distinct lines, because no ring node lies on `P ∩ Q_a`.
                 if t_plane_pair_dir_sign(planes, p, qa, r) == 0 {
                     continue;
@@ -416,14 +438,14 @@ fn point_on_ring(
     planes: &[PlaneGeom],
     p: usize,
     mut v: [usize; 3],
-    ring: &[[usize; 3]],
+    ring: &[RingEdge],
 ) -> Result<bool, BoolError> {
     v.sort_unstable();
     if ring.len() < 3 {
         return Err(reject(RejectReason::LoopOrientMismatch));
     }
-    for i in 0..ring.len() {
-        let (r, si, sj) = ring_edge(p, ring, i)?;
+    for e in ring {
+        let (r, si, sj) = (e.wall, e.from_h, e.to_h);
         if side_of(planes, v, r) != 0 {
             continue; // `v` is not even on the edge's line
         }
@@ -460,6 +482,15 @@ pub(crate) fn point_in_component(
     query: [usize; 3],
     faces: &[(usize, Vec<Vec<[usize; 3]>>)],
 ) -> Result<bool, BoolError> {
+    // Result-face rings arrive as names, so their edges are derived here, once, up front.
+    let faces: Vec<(usize, Vec<Vec<RingEdge>>)> = faces
+        .iter()
+        .map(|(q, rings)| {
+            let rs: Result<Vec<_>, _> = rings.iter().map(|r| ring_from_names(*q, r)).collect();
+            Ok((*q, rs?))
+        })
+        .collect::<Result<_, BoolError>>()?;
+    let faces = &faces;
     let mut vplanes = query.to_vec();
     vplanes.sort_unstable();
     vplanes.dedup();
@@ -556,7 +587,7 @@ pub(crate) fn point_in_component(
 pub(crate) fn loop_winding(
     planes: &[PlaneGeom],
     p: usize,
-    ring: &[[usize; 3]],
+    ring: &[RingEdge],
 ) -> Result<i8, BoolError> {
     if ring.len() < 3 {
         return Err(reject(RejectReason::LoopOrientMismatch));
@@ -566,7 +597,7 @@ pub(crate) fn loop_winding(
     let mut lo = 0usize;
     for i in 1..ring.len() {
         let strictly_less = (0..3)
-            .map(|axis| t_cmp_coord(planes, ring[i], ring[lo], axis))
+            .map(|axis| t_cmp_coord(planes, ring[i].node, ring[lo].node, axis))
             .find(|&c| c != 0)
             == Some(-1);
         if strictly_less {
@@ -576,7 +607,7 @@ pub(crate) fn loop_winding(
     // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
     // ambiguous — honest-reject rather than guess.
     let pinched_extreme = ring.iter().enumerate().any(|(i, _)| {
-        i != lo && (0..3).all(|axis| t_cmp_coord(planes, ring[i], ring[lo], axis) == 0)
+        i != lo && (0..3).all(|axis| t_cmp_coord(planes, ring[i].node, ring[lo].node, axis) == 0)
     });
     if pinched_extreme {
         return Err(reject(RejectReason::LoopOrientMismatch));

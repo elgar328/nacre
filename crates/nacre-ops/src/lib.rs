@@ -1587,15 +1587,36 @@ pub mod tests {
         // The two rings of a holed face are stored with opposite windings — that is what makes one
         // a hole and the other its outer boundary — and `loop_winding` must read exactly that.
         let (planes, p, outer, hole) = holed_face_rings("dimple");
-        assert_eq!(combinatorics::loop_winding(&planes, p, &outer).unwrap(), 1);
-        assert_eq!(combinatorics::loop_winding(&planes, p, &hole).unwrap(), -1);
+        assert_eq!(
+            combinatorics::loop_winding(
+                &planes,
+                p,
+                &combinatorics::ring_from_names(p, &outer).unwrap()
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            combinatorics::loop_winding(
+                &planes,
+                p,
+                &combinatorics::ring_from_names(p, &hole).unwrap()
+            )
+            .unwrap(),
+            -1
+        );
 
         // Nothing but the ring's direction went into that. Reversing it by hand agrees.
         for (name, ring, want) in [("outer", &outer, -1i8), ("hole", &hole, 1)] {
             let mut reversed = ring.clone();
             reversed.reverse();
             assert_eq!(
-                combinatorics::loop_winding(&planes, p, &reversed).unwrap(),
+                combinatorics::loop_winding(
+                    &planes,
+                    p,
+                    &combinatorics::ring_from_names(p, &reversed).unwrap()
+                )
+                .unwrap(),
                 want,
                 "{name} reversed"
             );
@@ -1614,11 +1635,25 @@ pub mod tests {
             .position(|q| near(Point3::from_array(*q), [1.0, 1.0, 1.0]))
             .expect("the reflex node");
         assert_eq!(
-            combinatorics::turn_at(&planes, p, &outer, reflex).unwrap(),
+            combinatorics::turn_at(
+                &planes,
+                p,
+                &combinatorics::ring_from_names(p, &outer).unwrap(),
+                reflex
+            )
+            .unwrap(),
             -1
         );
         let turns: Vec<i8> = (0..outer.len())
-            .map(|i| combinatorics::turn_at(&planes, p, &outer, i).unwrap())
+            .map(|i| {
+                combinatorics::turn_at(
+                    &planes,
+                    p,
+                    &combinatorics::ring_from_names(p, &outer).unwrap(),
+                    i,
+                )
+                .unwrap()
+            })
             .collect();
         assert_eq!(
             turns.iter().filter(|&&t| t == -1).count(),
@@ -1633,7 +1668,16 @@ pub mod tests {
             .min_by(|&i, &j| pts[i].partial_cmp(&pts[j]).unwrap())
             .unwrap();
         assert_ne!(lo, reflex);
-        assert_eq!(combinatorics::turn_at(&planes, p, &outer, lo).unwrap(), 1);
+        assert_eq!(
+            combinatorics::turn_at(
+                &planes,
+                p,
+                &combinatorics::ring_from_names(p, &outer).unwrap(),
+                lo
+            )
+            .unwrap(),
+            1
+        );
 
         // ★ The teeth. A ring is a cycle, so its winding cannot depend on where the walk began.
         // Start it at the reflex node and a `turn_at(ring[0])` implementation reads the reflex
@@ -1641,9 +1685,23 @@ pub mod tests {
         // implementation passes every assertion above.
         let mut rotated = outer.clone();
         rotated.rotate_left(reflex);
-        assert_eq!(combinatorics::turn_at(&planes, p, &rotated, 0).unwrap(), -1);
         assert_eq!(
-            combinatorics::loop_winding(&planes, p, &rotated).unwrap(),
+            combinatorics::turn_at(
+                &planes,
+                p,
+                &combinatorics::ring_from_names(p, &rotated).unwrap(),
+                0
+            )
+            .unwrap(),
+            -1
+        );
+        assert_eq!(
+            combinatorics::loop_winding(
+                &planes,
+                p,
+                &combinatorics::ring_from_names(p, &rotated).unwrap()
+            )
+            .unwrap(),
             1
         );
     }
@@ -1743,7 +1801,15 @@ pub mod tests {
         // with a reflex corner, so this is not a convex test.
         let (planes, p, outer, hole) = holed_face_rings("dimple");
         for t in &hole {
-            assert!(combinatorics::point_in_ring(&planes, p, *t, &outer).unwrap());
+            assert!(
+                combinatorics::point_in_ring(
+                    &planes,
+                    p,
+                    *t,
+                    &combinatorics::ring_from_names(p, &outer).unwrap()
+                )
+                .unwrap()
+            );
         }
     }
 
@@ -1755,7 +1821,13 @@ pub mod tests {
         for which in ["dimple", "ell"] {
             let (planes, p, outer, hole) = holed_face_rings(which);
             for t in &hole {
-                let rays = combinatorics::every_ray(&planes, p, *t, &outer).unwrap();
+                let rays = combinatorics::every_ray(
+                    &planes,
+                    p,
+                    *t,
+                    &combinatorics::ring_from_names(p, &outer).unwrap(),
+                )
+                .unwrap();
                 assert!(!rays.is_empty(), "{which}: no clear ray");
                 assert!(rays.iter().all(|&x| x), "{which}: {rays:?}");
             }
@@ -1775,16 +1847,44 @@ pub mod tests {
         rev_outer.reverse();
         rev_hole.reverse();
         for t in &hole {
-            assert!(combinatorics::point_in_ring(&planes, p, *t, &outer).unwrap());
             assert!(
-                combinatorics::point_in_ring(&planes, p, *t, &rev_outer).unwrap(),
+                combinatorics::point_in_ring(
+                    &planes,
+                    p,
+                    *t,
+                    &combinatorics::ring_from_names(p, &outer).unwrap()
+                )
+                .unwrap()
+            );
+            assert!(
+                combinatorics::point_in_ring(
+                    &planes,
+                    p,
+                    *t,
+                    &combinatorics::ring_from_names(p, &rev_outer).unwrap()
+                )
+                .unwrap(),
                 "reversing the outer ring must not move the hole"
             );
         }
         for t in &outer {
-            assert!(!combinatorics::point_in_ring(&planes, p, *t, &hole).unwrap());
             assert!(
-                !combinatorics::point_in_ring(&planes, p, *t, &rev_hole).unwrap(),
+                !combinatorics::point_in_ring(
+                    &planes,
+                    p,
+                    *t,
+                    &combinatorics::ring_from_names(p, &hole).unwrap()
+                )
+                .unwrap()
+            );
+            assert!(
+                !combinatorics::point_in_ring(
+                    &planes,
+                    p,
+                    *t,
+                    &combinatorics::ring_from_names(p, &rev_hole).unwrap()
+                )
+                .unwrap(),
                 "nor may reversing the hole swallow the outer ring"
             );
         }
@@ -1800,7 +1900,13 @@ pub mod tests {
         // from the retired staple fixture, whose loop and arc shared a plane. The holed L cap has
         // no such sharing, so only the unanimity survives the move.)
         let (planes, p, outer, hole) = holed_face_rings("dimple");
-        let rays = combinatorics::every_ray(&planes, p, hole[0], &outer).unwrap();
+        let rays = combinatorics::every_ray(
+            &planes,
+            p,
+            hole[0],
+            &combinatorics::ring_from_names(p, &outer).unwrap(),
+        )
+        .unwrap();
         assert!(!rays.is_empty(), "at least one candidate is clear");
         assert!(rays.iter().all(|&x| x), "and they agree: inside — {rays:?}");
     }
@@ -1812,8 +1918,24 @@ pub mod tests {
         // which fires exactly the condition the nesting brick asks about. It is the detector under
         // test, not the fixture.
         let (planes, p, outer, hole) = holed_face_rings("dimple");
-        assert!(combinatorics::point_in_ring(&planes, p, hole[0], &outer).unwrap());
-        assert!(!combinatorics::point_in_ring(&planes, p, outer[0], &hole).unwrap());
+        assert!(
+            combinatorics::point_in_ring(
+                &planes,
+                p,
+                hole[0],
+                &combinatorics::ring_from_names(p, &outer).unwrap()
+            )
+            .unwrap()
+        );
+        assert!(
+            !combinatorics::point_in_ring(
+                &planes,
+                p,
+                outer[0],
+                &combinatorics::ring_from_names(p, &hole).unwrap()
+            )
+            .unwrap()
+        );
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that

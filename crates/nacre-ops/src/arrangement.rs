@@ -265,8 +265,8 @@ fn trace_transversal_face(
                 let ni = (i + 1) % n;
                 if side[ni] != 0 && side[ni] != side[i] {
                     // Strict crossing on edge i; its wall is the plane the edge rides besides fp.
-                    match combinatorics::ring_edge(fc, ring, i) {
-                        Ok((wall, _, _)) => nodes.push(Node {
+                    match combinatorics::ring_from_names(fc, ring).map(|es| es[i].wall) {
+                        Ok(wall) => nodes.push(Node {
                             r: wall,
                             flip: true,
                             run: None,
@@ -992,7 +992,34 @@ fn extract_cells(
                 ok = false;
                 break;
             }
-            let ring: Vec<[usize; 3]> = cyc.iter().map(|&h| origin(h)).collect();
+            // ★ The cell's edges come from the walk, which knows each one's wall and both
+            // handles — not from the endpoint names, which only encode it by accident (see
+            // `RingEdge`). `ring_names` is kept alongside for the transitional check below.
+            let ring_names: Vec<[usize; 3]> = cyc.iter().map(|&h| origin(h)).collect();
+            let ring: Vec<combinatorics::RingEdge> = cyc
+                .iter()
+                .map(|&h| {
+                    let third = |t| {
+                        endpoint_third(t, wc, wall(h))
+                            .ok_or_else(|| reject(RejectReason::ThreePlanes))
+                    };
+                    Ok(combinatorics::RingEdge {
+                        node: origin(h),
+                        wall: wall(h),
+                        from_h: third(origin(h))?,
+                        to_h: third(target(h))?,
+                    })
+                })
+                .collect::<Result<_, BoolError>>()?;
+            // TRANSITIONAL (removed when vertex names start being canonicalized, at which point
+            // the two legitimately differ): every vertex here still lies on exactly three planes,
+            // so the derivation must reproduce the walk. The corpus and the OCCT oracle measure
+            // that equality rather than taking it on trust.
+            debug_assert_eq!(
+                combinatorics::ring_from_names(wc, &ring_names).ok(),
+                Some(ring.clone()),
+                "the edge a ring's names imply must be the edge the walk took"
+            );
             let w = combinatorics::loop_winding(planes, wc, &ring)?;
             cells.push(Cell {
                 half_edges: cyc,
@@ -1050,13 +1077,32 @@ fn nest_cells(
     segs: &[MergedSeg],
 ) -> Result<Nesting, BoolError> {
     let n = cells.len();
-    let ring_of = |c: &Cell| -> Vec<[usize; 3]> {
+    // As in `extract_cells`: the walk knows each edge's wall and handles, so the ring carries them
+    // instead of leaving them to be re-derived from the endpoint names.
+    let ring_of = |c: &Cell| -> Result<Vec<combinatorics::RingEdge>, BoolError> {
         c.half_edges
             .iter()
-            .map(|&he| segs[he / 2].end[he % 2])
+            .map(|&he| {
+                let (w, o, t) = (
+                    segs[he / 2].wall,
+                    segs[he / 2].end[he % 2],
+                    segs[he / 2].end[1 - he % 2],
+                );
+                let third =
+                    |e| endpoint_third(e, wc, w).ok_or_else(|| reject(RejectReason::ThreePlanes));
+                Ok(combinatorics::RingEdge {
+                    node: o,
+                    wall: w,
+                    from_h: third(o)?,
+                    to_h: third(t)?,
+                })
+            })
             .collect()
     };
-    let rings: Vec<Vec<[usize; 3]>> = cells.iter().map(ring_of).collect();
+    let rings: Vec<Vec<combinatorics::RingEdge>> = cells
+        .iter()
+        .map(ring_of)
+        .collect::<Result<_, BoolError>>()?;
     let pos: Vec<usize> = (0..n).filter(|&i| cells[i].winding == 1).collect();
 
     // Union-find over cells (the pattern of `component_count`, but joining cells, not vertices).
@@ -1075,13 +1121,16 @@ fn nest_cells(
         let mut hosts: Vec<usize> = Vec::new();
         for &r in &pos {
             // Shares a node ⇒ adjacent (or `c`'s own partner) ⇒ not a hole of `r`.
-            if rings[c].iter().any(|t| rings[r].contains(t)) {
+            if rings[c]
+                .iter()
+                .any(|e| rings[r].iter().any(|f| f.node == e.node))
+            {
                 continue;
             }
             // Vertex-disjoint: one clear ray settles it. Retry past a spoiled (ring-node) ray;
             // all of `c`'s vertices spoiled against `r` is a genuine degeneracy → honest reject.
             let mut inside = None;
-            for &v in &rings[c] {
+            for v in rings[c].iter().map(|e| e.node) {
                 if let Ok(hit) = combinatorics::point_in_ring(planes, wc, v, &rings[r]) {
                     inside = Some(hit);
                     break;
@@ -1137,16 +1186,19 @@ fn nest_cells(
 fn innermost_host(
     planes: &[PlaneGeom],
     wc: usize,
-    rings: &[Vec<[usize; 3]>],
+    rings: &[Vec<combinatorics::RingEdge>],
     hosts: &[usize],
 ) -> Result<usize, BoolError> {
     let inside = |a: usize, b: usize| -> Option<bool> {
-        if rings[a].iter().any(|t| rings[b].contains(t)) {
+        if rings[a]
+            .iter()
+            .any(|e| rings[b].iter().any(|f| f.node == e.node))
+        {
             return None; // adjacent, not nested — not comparable
         }
         rings[a]
             .iter()
-            .find_map(|&v| combinatorics::point_in_ring(planes, wc, v, &rings[b]).ok())
+            .find_map(|e| combinatorics::point_in_ring(planes, wc, e.node, &rings[b]).ok())
     };
     let mut found = None;
     for &h in hosts {
@@ -2562,7 +2614,12 @@ mod tests {
                 .collect();
             assert!(ring.len() >= 3);
             assert_eq!(
-                combinatorics::loop_winding(&planes, wc, &ring).unwrap(),
+                combinatorics::loop_winding(
+                    &planes,
+                    wc,
+                    &combinatorics::ring_from_names(wc, &ring).unwrap()
+                )
+                .unwrap(),
                 1,
                 "CCW about n_out"
             );

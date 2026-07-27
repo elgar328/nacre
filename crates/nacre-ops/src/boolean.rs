@@ -893,7 +893,10 @@ fn merge_component(
     let mut outers: Vec<Vec<Node>> = Vec::new();
     let mut holes: Vec<Vec<Node>> = Vec::new();
     for cyc in cycles {
-        match combinatorics::loop_winding(planes, wc, &seam_ring(&cyc))? {
+        // These cycles are built from node names alone (no DCEL here), so their edges are the
+        // derived kind — see `RingEdge`.
+        let ring = combinatorics::ring_from_names(wc, &seam_ring(&cyc))?;
+        match combinatorics::loop_winding(planes, wc, &ring)? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
             _ => return Err(reject(RejectReason::CoplanarMerge)),
@@ -906,7 +909,8 @@ fn merge_component(
         let probe = seam_ring(&hole)[0];
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            if combinatorics::point_in_ring(planes, wc, probe, &seam_ring(outer))? {
+            let ring = combinatorics::ring_from_names(wc, &seam_ring(outer))?;
+            if combinatorics::point_in_ring(planes, wc, probe, &ring)? {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
                 }
