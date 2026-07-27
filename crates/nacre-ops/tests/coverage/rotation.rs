@@ -279,3 +279,55 @@ fn the_near_misses_around_the_four_plane_reject_all_build() {
         assert!(vol > 0.0 && vol < whole, "{what}: volume {vol}");
     }
 }
+
+/// ★ **The model that started the four-plane work now builds** — the switch the reject test used to
+/// hold open.
+///
+/// A bar spun 45° whose bottom corner edge lands exactly in the plane the fused block supplies
+/// (`x = 0.5`): three planes then share that edge's line, and every plane crossing it makes a vertex
+/// with four planes through it. Naming such a vertex is what the substrate could not do.
+///
+/// **Two independent things are asserted, because this is the first time the engine answers here
+/// rather than declining, and "it stopped rejecting" is not the same as "it is right".**
+///
+/// 1. The result is a **valid** 2-manifold and its volume is the hand figure `1.38` — the target is
+///    `1 + 0.5` and the bar removes `0.12`.
+/// 2. **It agrees with its non-degenerate neighbours.** Moving one operand coordinate by a single
+///    ULP either way destroys the concurrency, and those two models already built before any of
+///    this work. A degenerate answer that did not match them would be a discontinuity, and this is
+///    the cheapest way to notice one.
+#[test]
+fn a_tool_edge_lying_in_a_target_plane_builds_and_agrees_with_its_neighbours() {
+    use nacre_scalar::Rat;
+    let cut_volume = |ulps: i64| -> (f64, bool) {
+        let (mut m, cube, bar) = cube_and_spun_bar_ulp(0.2, 45, Rat::from_int(1), ulps);
+        let block = m.add_cuboid(
+            Point3::from_array([0.5, 0.0, 1.0]),
+            Point3::from_array([1.0, 1.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("the block fuses on")[0];
+        m.rebuild_adjacency();
+        let solids = boolean(&mut m, BoolKind::Cut, target, bar)
+            .unwrap_or_else(|e| panic!("ulps {ulps}: {e:?}"));
+        m.rebuild_adjacency();
+        let vol = solids
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+            .sum();
+        (vol, nacre_validate::validate(&m).is_empty())
+    };
+
+    let (vol, valid) = cut_volume(0);
+    assert!(valid, "the four-plane result must be a valid 2-manifold");
+    assert!((vol - 1.38).abs() < 1e-9, "volume {vol}, expected 1.38");
+
+    for ulps in [1, -1] {
+        let (near, valid) = cut_volume(ulps);
+        assert!(valid, "the {ulps:+} ULP neighbour must stay valid");
+        assert!(
+            (near - vol).abs() < 1e-9,
+            "the degenerate answer {vol} does not agree with its {ulps:+} ULP neighbour {near}"
+        );
+    }
+}

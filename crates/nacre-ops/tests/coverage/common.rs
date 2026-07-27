@@ -304,10 +304,38 @@ fn extrude_at_z(m: &mut Model, profile: Profile2d, z: f64, dist: f64) -> Handle<
 /// Every argument is a knob on that coincidence, which is what makes the family worth sharing:
 /// change the angle, break the squareness, or lift the pivot off the plane and the same model
 /// builds. Rotation about Y ignores the pivot's y, so only `pivot_z` matters here.
+/// The same family with the bar's far x edge nudged by `ulps` — the non-degenerate neighbours of
+/// the four-plane case, which the concurrency needs to be bit-exact to survive.
+pub fn cube_and_spun_bar_ulp(
+    half_z: f64,
+    deg: i128,
+    pivot_z: nacre_scalar::Rat,
+    ulps: i64,
+) -> (Model, Handle<Solid>, Handle<Solid>) {
+    let mut x_hi = 0.7f64;
+    for _ in 0..ulps.unsigned_abs() {
+        x_hi = if ulps > 0 {
+            f64::from_bits(x_hi.to_bits() + 1)
+        } else {
+            f64::from_bits(x_hi.to_bits() - 1)
+        };
+    }
+    cube_and_spun_bar_x(half_z, deg, pivot_z, x_hi)
+}
+
 pub fn cube_and_spun_bar(
     half_z: f64,
     deg: i128,
     pivot_z: nacre_scalar::Rat,
+) -> (Model, Handle<Solid>, Handle<Solid>) {
+    cube_and_spun_bar_x(half_z, deg, pivot_z, 0.7)
+}
+
+pub fn cube_and_spun_bar_x(
+    half_z: f64,
+    deg: i128,
+    pivot_z: nacre_scalar::Rat,
+    x_hi: f64,
 ) -> (Model, Handle<Solid>, Handle<Solid>) {
     use nacre_scalar::{Angle, Rat, Rotation};
     let mut m = Model::new();
@@ -317,8 +345,8 @@ pub fn cube_and_spun_bar(
     };
     let bar = Profile2d::polygon(vec![
         p2(0.3, -0.5),
-        p2(0.7, -0.5),
-        p2(0.7, 1.5),
+        p2(x_hi, -0.5),
+        p2(x_hi, 1.5),
         p2(0.3, 1.5),
     ]);
     let bar = extrude_at_z(&mut m, bar, 1.0 - half_z, 2.0 * half_z);

@@ -69,8 +69,12 @@ pub(crate) enum SegKind {
 pub(crate) struct Seg {
     /// Canon plane class the segment rides besides the cut plane (its line is `W ∩ wall`).
     pub wall: usize,
-    /// Endpoint triples, canonized.
+    /// Endpoint identities, canonized.
     pub end: [[usize; 3]; 2],
+    /// The same two endpoints as **handles on this segment's own line**: the third plane pinning
+    /// each on `wc ∩ wall`. Carried, not recovered from `end`, because a canonical name need not
+    /// mention either of this line's planes.
+    pub end_h: [usize; 2],
     pub solid: SolidSide,
     pub kind: SegKind,
 }
@@ -80,6 +84,8 @@ pub(crate) struct Seg {
 #[derive(Default, Debug)]
 pub(crate) struct Trace {
     pub segs: Vec<Seg>,
+    /// Names this trace found to denote one feature — see [`Aliases`].
+    pub aliases: Aliases,
     /// Single-point tangential contacts — real arrangement vertices, but not segments (a
     /// zero-length chord would abort at `Line::through_points`).
     pub touches: Vec<[usize; 3]>,
@@ -115,6 +121,133 @@ fn decline_to_reject(kind: DeclineKind, face: Handle<Face>) -> RejectReason {
     match kind {
         DeclineKind::FourPlane => RejectReason::FourPlane,
         kind => RejectReason::TraceDeclined { kind, face },
+    }
+}
+
+/// The names that turned out to denote **one** feature, learned while tracing.
+///
+/// Both kinds come from the same discovery. When a producer learns the full set `S` of planes
+/// through a point:
+///
+/// - **A point** with `|S| > 3` has one valid name per 3-subset, so the tables would enter it once
+///   per name. [`Aliases::point`] folds them onto the lexicographically first subset that actually
+///   names a point (three planes sharing a line name none, so such a subset cannot be the winner).
+/// - **A line** shows up as a 3-subset of `S` whose planes share a line rather than meeting at the
+///   point. On each of those three classes the other two are *the same wall* — the engine calls a
+///   line by the plane it rides besides the cut plane, so that is two names for one line, and
+///   [`Aliases::wall`] folds them onto the smallest.
+///
+/// Neither fold is optional if the other happens: `merge_coincident` keys an edge by
+/// `(wall, endpoints)`, so a duplicate edge merges only when **both** its wall and its endpoint
+/// names agree. That is why the two live in one table and are applied together.
+#[derive(Default, Debug)]
+pub(crate) struct Aliases {
+    /// Union-find over vertex names.
+    point: HashMap<[usize; 3], [usize; 3]>,
+    /// Union-find over `(class, wall)` — walls of one class that carry the same line.
+    wall: HashMap<(usize, usize), usize>,
+}
+
+impl Aliases {
+    /// Record that every plane in `s` (sorted, deduped) passes through one point.
+    fn record(&mut self, planes: &[PlaneGeom], s: &[usize]) {
+        if s.len() < 4 {
+            return; // three planes meeting at a point is the ordinary case, and names nothing new
+        }
+        let mut names = Vec::new();
+        for i in 0..s.len() {
+            for j in (i + 1)..s.len() {
+                for k in (j + 1)..s.len() {
+                    let t = [s[i], s[j], s[k]];
+                    if tolerant::t_plane_pair_dir_sign(planes, t[0], t[1], t[2]) == 0 {
+                        // Shares a line: names no point, and tells us two walls are one line.
+                        self.union_wall(t[0], t[1], t[2]);
+                        self.union_wall(t[1], t[0], t[2]);
+                        self.union_wall(t[2], t[0], t[1]);
+                    } else {
+                        names.push(t);
+                    }
+                }
+            }
+        }
+        if let Some((&rep, rest)) = names.split_first() {
+            for &t in rest {
+                self.union_point(rep, t);
+            }
+        }
+    }
+
+    fn find_point(&self, t: [usize; 3]) -> [usize; 3] {
+        let mut x = t;
+        while let Some(&p) = self.point.get(&x) {
+            if p == x {
+                break;
+            }
+            x = p;
+        }
+        x
+    }
+
+    fn union_point(&mut self, a: [usize; 3], b: [usize; 3]) {
+        let (ra, rb) = (self.find_point(a), self.find_point(b));
+        if ra == rb {
+            return;
+        }
+        // Smallest name wins, so the representative is a function of the class alone.
+        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+        self.point.insert(hi, lo);
+        self.point.entry(lo).or_insert(lo);
+    }
+
+    fn find_wall(&self, class: usize, w: usize) -> usize {
+        let mut x = w;
+        while let Some(&p) = self.wall.get(&(class, x)) {
+            if p == x {
+                break;
+            }
+            x = p;
+        }
+        x
+    }
+
+    fn union_wall(&mut self, class: usize, a: usize, b: usize) {
+        let (ra, rb) = (self.find_wall(class, a), self.find_wall(class, b));
+        if ra == rb {
+            return;
+        }
+        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+        self.wall.insert((class, hi), lo);
+        self.wall.entry((class, lo)).or_insert(lo);
+    }
+
+    /// The identity to key a vertex on — itself when nothing was merged with it.
+    pub(crate) fn canon_point(&self, t: [usize; 3]) -> [usize; 3] {
+        if self.point.is_empty() {
+            return t; // the overwhelmingly common case pays nothing
+        }
+        self.find_point(t)
+    }
+
+    /// The name to call a line by on `class` — `w` itself when no other wall carries it.
+    pub(crate) fn canon_wall(&self, class: usize, w: usize) -> usize {
+        if self.wall.is_empty() {
+            return w;
+        }
+        self.find_wall(class, w)
+    }
+
+    fn absorb(&mut self, other: &Aliases) {
+        for (&k, &v) in &other.point {
+            self.union_point(k, v);
+        }
+        for (&(c, w), &v) in &other.wall {
+            self.union_wall(c, w, v);
+        }
+    }
+
+    /// How much has been learned — the fixed-point loop's measure.
+    fn len(&self) -> usize {
+        self.point.len() + self.wall.len()
     }
 }
 
@@ -221,21 +354,39 @@ fn trace_transversal_face(
     // Counting to the end rather than returning early matters: a four-plane vertex has *two*
     // off-plane classes, so an early "two off-planes" bail would exit before `wc`'s absence is
     // ever noticed and report every such point as `RunName`.
-    let third_on_l = |t: [usize; 3]| -> Result<usize, DeclineKind> {
-        let (mut off, mut n_off, mut has_fp, mut has_w) = (0usize, 0usize, false, false);
+    let third_on_l = |t: [usize; 3], out: &mut Trace| -> Result<usize, DeclineKind> {
+        let (mut offs, mut has_fp, mut has_w) = (Vec::<usize>::new(), false, false);
         for &x in &t {
             if x == fc {
                 has_fp = true;
             } else if x == wc {
                 has_w = true;
             } else {
-                off = x;
-                n_off += 1;
+                offs.push(x);
             }
         }
-        match (has_fp, has_w, n_off) {
-            (true, true, 1) => Ok(off),
-            (_, false, _) => Err(DeclineKind::FourPlane),
+        match (has_fp, has_w, offs.len()) {
+            // The ordinary point: `t` carries both of this line's planes, and the third both pins
+            // and names it.
+            (true, true, 1) => Ok(offs[0]),
+            // On `wc` (this is a run vertex) yet `wc` does not name it. `t`'s classes are distinct
+            // (`plane_ring`) and `fc != wc` here, so `wc` is a **fourth** plane through the point.
+            (_, false, _) => {
+                let mut set = t.to_vec();
+                set.push(wc);
+                set.sort_unstable();
+                set.dedup();
+                out.aliases.record(planes, &set);
+                // ★ A handle has a duty the identity does not: it must **cut** `L`. One parallel
+                // to it names no point there, and `order_along` — being `orient3d × dir_sign` —
+                // would read 0 against everything, fabricating a coincidence rather than missing
+                // one.
+                offs.sort_unstable();
+                offs.iter()
+                    .copied()
+                    .find(|&r| tolerant::t_plane_pair_dir_sign(planes, wc, fc, r) != 0)
+                    .ok_or(DeclineKind::FourPlane)
+            }
             _ => Err(DeclineKind::RunName),
         }
     };
@@ -292,9 +443,9 @@ fn trace_transversal_face(
                 let before = side[(run_start + n - 1) % n];
                 let after = side[(start + j) % n];
                 let flanks_differ = before != after;
-                let name = |k: usize| third_on_l(ring[(run_start + k) % n]);
+                let name = |k: usize, out: &mut Trace| third_on_l(ring[(run_start + k) % n], out);
                 if m == 1 {
-                    match name(0) {
+                    match name(0, out) {
                         Ok(r) => nodes.push(Node {
                             r,
                             flip: flanks_differ,
@@ -312,7 +463,8 @@ fn trace_transversal_face(
                     // anything; the interior points are names the arrangement may split at.
                     let id = run_counter;
                     run_counter += 1;
-                    let names: Result<Vec<usize>, DeclineKind> = (0..m).map(name).collect();
+                    let names: Result<Vec<usize>, DeclineKind> =
+                        (0..m).map(|k| name(k, out)).collect();
                     match names {
                         Ok(rs) => {
                             // Every run is one-sided: it is an *edge* of `f` lying on `L`, so `f`
@@ -386,6 +538,7 @@ fn trace_transversal_face(
         out.segs.push(Seg {
             wall: plane_ix[fp],
             end: [sorted3([wc, fc, a]), sorted3([wc, fc, b])],
+            end_h: [a, b],
             solid: which,
             kind: match graze {
                 Some(body_above) => SegKind::Graze { body_above },
@@ -553,9 +706,18 @@ fn trace_one(
                         out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
                         continue;
                     };
+                    // The handle on `wc ∩ wall` is what the triple carries besides those two. A
+                    // seated face lies in `wc`, so `fc == wc` here and `shared` being a singleton
+                    // is the same fact as there being exactly one such element.
+                    let handle = |t: [usize; 3]| {
+                        t.into_iter()
+                            .find(|&c| c != fc && c != wall)
+                            .expect("a seated edge's endpoint has a third plane")
+                    };
                     out.segs.push(Seg {
                         wall,
                         end: [sorted3(t0), sorted3(t1)],
+                        end_h: [handle(t0), handle(t1)],
                         solid: which,
                         kind,
                     });
@@ -627,6 +789,8 @@ pub(crate) struct MergedSeg {
     /// geometry, not just its contributions.
     #[cfg_attr(test, allow(dead_code))]
     pub end: [[usize; 3]; 2],
+    /// The endpoints as handles on this edge's line — see [`Seg::end_h`].
+    pub end_h: [usize; 2],
     /// Every `(solid, kind)` that produced this one geometric edge. Length 1 when nothing was
     /// coincident.
     pub merged: Vec<(SolidSide, SegKind)>,
@@ -636,15 +800,16 @@ pub(crate) struct MergedSeg {
 /// (direction-independent) — into one `MergedSeg`, collecting their contributions. Partial overlap
 /// (same `wall`, *different* extent — the E5 case) is left for the per-wall interval overlay in
 /// `split_at_crossings` to resolve into non-overlapping sub-segments with unioned contributions.
-fn merge_coincident(segs: &[Seg]) -> Vec<MergedSeg> {
-    // Key an edge by (wall, sorted endpoint pair). Endpoints are canon triples, so the sorted pair
-    // is a direction-independent identity.
+fn merge_coincident(segs: &[Seg], wc: usize, aliases: &Aliases) -> Vec<MergedSeg> {
+    // Key an edge by (wall, sorted endpoint pair) — both folded onto their canonical names first,
+    // because two producers can describe one edge with a different wall *and* different endpoint
+    // names when planes are concurrent, and it takes both folds for the two keys to coincide.
     let key = |s: &Seg| -> (usize, [[usize; 3]; 2]) {
-        let (mut a, mut b) = (s.end[0], s.end[1]);
+        let (mut a, mut b) = (aliases.canon_point(s.end[0]), aliases.canon_point(s.end[1]));
         if a > b {
             std::mem::swap(&mut a, &mut b);
         }
-        (s.wall, [a, b])
+        (aliases.canon_wall(wc, s.wall), [a, b])
     };
     let mut order: Vec<(usize, [[usize; 3]; 2])> = Vec::new();
     let mut groups: HashMap<(usize, [[usize; 3]; 2]), MergedSeg> = HashMap::new();
@@ -655,8 +820,12 @@ fn merge_coincident(segs: &[Seg]) -> Vec<MergedSeg> {
             .or_insert_with(|| {
                 order.push(k);
                 MergedSeg {
-                    wall: s.wall,
-                    end: s.end,
+                    // The canonical name of the line, so every producer on it agrees. The handles
+                    // stay as recorded: an aliased wall carries the *same* line, so a handle that
+                    // pinned an endpoint there still pins it here.
+                    wall: aliases.canon_wall(wc, s.wall),
+                    end: [aliases.canon_point(s.end[0]), aliases.canon_point(s.end[1])],
+                    end_h: s.end_h,
                     merged: Vec::new(),
                 }
             })
@@ -668,18 +837,6 @@ fn merge_coincident(segs: &[Seg]) -> Vec<MergedSeg> {
         .into_iter()
         .map(|k| groups.remove(&k).unwrap())
         .collect()
-}
-
-/// The third plane naming a `MergedSeg`'s endpoint on its line `wc ∩ wall`: the canon-triple
-/// element that is neither `wc` nor the wall. `None` on a degenerate `[wc, wall, wall]` triple.
-fn endpoint_third(end: [usize; 3], wc: usize, wall: usize) -> Option<usize> {
-    let mut r = None;
-    for x in end {
-        if x != wc && x != wall && r.replace(x).is_some() {
-            return None; // two off-planes: degenerate naming
-        }
-    }
-    r
 }
 
 /// Split the segments on plane class `wc` into the arrangement's 1-skeleton by a **per-wall 1D
@@ -704,6 +861,7 @@ fn split_at_crossings(
     planes: &[PlaneGeom],
     wc: usize,
     segs: &[MergedSeg],
+    aliases: &mut Aliases,
 ) -> Result<Vec<MergedSeg>, BoolError> {
     // Is the point named by plane class `r` on `s`'s line within `s`'s CLOSED extent (endpoints
     // included)? On an endpoint (`r` is one of the two endpoint classes) it is contained — checked
@@ -711,18 +869,19 @@ fn split_at_crossings(
     // `strictly_inside` never compared a class with itself). Otherwise it is contained iff it is
     // strictly between the two endpoints (opposite `order_along` signs).
     let closed_contains = |s: &MergedSeg, r: usize| -> Option<bool> {
-        let (r0, r1) = (
-            endpoint_third(s.end[0], wc, s.wall)?,
-            endpoint_third(s.end[1], wc, s.wall)?,
-        );
-        if r == r0 || r == r1 {
-            return Some(true);
-        }
+        let (r0, r1) = (s.end_h[0], s.end_h[1]);
         let (a, b) = (
             combinatorics::order_along(planes, wc, s.wall, r, r0),
             combinatorics::order_along(planes, wc, s.wall, r, r1),
         );
-        Some(a != 0 && b != 0 && a != b)
+        // An endpoint is contained. Integer identity is not the whole test: where four planes meet,
+        // one point wears two handles, and `r` may be the group's representative while the segment
+        // still remembers the other. Ordering equal is the test — and `order_along(x, x)` is 0 by
+        // the same predicate, so the integer check is subsumed, not dropped.
+        if r == r0 || r == r1 || a == 0 || b == 0 {
+            return Some(true);
+        }
+        Some(a != b)
     };
 
     // Group segment indices by wall (walls in first-appearance order for deterministic output).
@@ -744,13 +903,7 @@ fn split_at_crossings(
         // different-wall crossing (a segment on `o.wall` whose closed extent reaches W's line).
         let mut pts: Vec<usize> = Vec::new();
         for &i in &by_wall[&w] {
-            let s = &segs[i];
-            pts.push(
-                endpoint_third(s.end[0], wc, w).ok_or_else(|| reject(RejectReason::ThreePlanes))?,
-            );
-            pts.push(
-                endpoint_third(s.end[1], wc, w).ok_or_else(|| reject(RejectReason::ThreePlanes))?,
-            );
+            pts.extend(segs[i].end_h);
         }
         for o in segs {
             if o.wall == w {
@@ -773,17 +926,43 @@ fn split_at_crossings(
                 _ => std::cmp::Ordering::Equal,
             },
         );
-        // Two DISTINCT classes at one geometric point ⇒ a four-plane concurrency `{wc, w, ·, ·}`.
-        for pair in pts.windows(2) {
-            if combinatorics::order_along(planes, wc, w, pair[0], pair[1]) == 0 {
-                return Err(reject(RejectReason::FourPlane));
+        // ★ Two DISTINCT classes ordering equal are one point wearing two handles — a four-plane
+        // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
+        // splitting at both would emit a zero-length piece between them.
+        let mut reps: Vec<usize> = Vec::with_capacity(pts.len());
+        let mut group: Vec<usize> = Vec::new();
+        let flush = |group: &mut Vec<usize>, reps: &mut Vec<usize>, al: &mut Aliases| {
+            if let Some(&rep) = group.first() {
+                reps.push(rep);
             }
+            if group.len() > 1 {
+                let mut set: Vec<usize> = vec![wc, w];
+                set.extend(group.iter().copied());
+                set.sort_unstable();
+                set.dedup();
+                al.record(planes, &set);
+            }
+            group.clear();
+        };
+        for &r in &pts {
+            let same = group
+                .first()
+                .is_some_and(|&g| combinatorics::order_along(planes, wc, w, g, r) == 0);
+            if !same {
+                flush(&mut group, &mut reps, aliases);
+            }
+            group.push(r);
         }
-        // `wc`, `w`, and each class are canon; the endpoint triple is just sorted.
-        let sorted = |r: usize| {
+        flush(&mut group, &mut reps, aliases);
+        let pts = reps;
+        // A split point is named `{wc, w, third}` — then folded, because this rebuilds the name
+        // from a handle and so would otherwise re-introduce the very alias `merge_coincident` just
+        // removed. Canonicalizing here and in the merge means every name **downstream** is already
+        // the canonical one, and no later stage has to know the table exists.
+        let sorted = |r: usize, al: &Aliases| {
             let mut t = [wc, w, r];
             t.sort_unstable();
-            t
+            al.canon_point(t)
         };
         // Each sub-interval [p, q] carries the union of the W-segments that cover it. Every segment
         // endpoint is itself a split point, so "covers both ends" means "spans the whole interval".
@@ -799,7 +978,8 @@ fn split_at_crossings(
             if !merged.is_empty() {
                 out.push(MergedSeg {
                     wall: w,
-                    end: [sorted(p), sorted(q)],
+                    end: [sorted(p, aliases), sorted(q, aliases)],
+                    end_h: [p, q],
                     merged,
                 });
             }
@@ -915,7 +1095,10 @@ fn extract_cells(
     let n = segs.len();
     let he_count = 2 * n;
     let origin = |he: usize| segs[he / 2].end[he % 2]; // he%2==0: end[0]; ==1: end[1]
-    let target = |he: usize| segs[he / 2].end[1 - he % 2];
+    // The endpoints as handles on this edge's line, carried by the segment. Not recovered from the
+    // names: a canonical name need not mention `wc` or the wall (see `combinatorics::RingEdge`).
+    let origin_h = |he: usize| segs[he / 2].end_h[he % 2];
+    let target_h = |he: usize| segs[he / 2].end_h[1 - he % 2];
     let wall = |he: usize| segs[he / 2].wall;
 
     // Outgoing half-edges per vertex.
@@ -929,12 +1112,7 @@ fn extract_cells(
     for (&v, outs) in &outgoing {
         let mut edges = Vec::with_capacity(outs.len());
         for &he in outs {
-            let (rv, rf) = (
-                endpoint_third(origin(he), wc, wall(he))
-                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?,
-                endpoint_third(target(he), wc, wall(he))
-                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?,
-            );
+            let (rv, rf) = (origin_h(he), target_h(he));
             // Direction sign away from v toward the far end (edge_sign convention).
             let s = combinatorics::order_along(planes, wc, wall(he), rf, rv);
             if s == 0 {
@@ -992,34 +1170,18 @@ fn extract_cells(
                 ok = false;
                 break;
             }
-            // ★ The cell's edges come from the walk, which knows each one's wall and both
-            // handles — not from the endpoint names, which only encode it by accident (see
-            // `RingEdge`). `ring_names` is kept alongside for the transitional check below.
-            let ring_names: Vec<[usize; 3]> = cyc.iter().map(|&h| origin(h)).collect();
+            // The cell's edges come from the walk, which knows each one's wall and both handles.
+            // The endpoint names cannot supply them: a canonical name need not mention this line's
+            // planes at all, which is what retired the derivation check that used to stand here.
             let ring: Vec<combinatorics::RingEdge> = cyc
                 .iter()
-                .map(|&h| {
-                    let third = |t| {
-                        endpoint_third(t, wc, wall(h))
-                            .ok_or_else(|| reject(RejectReason::ThreePlanes))
-                    };
-                    Ok(combinatorics::RingEdge {
-                        node: origin(h),
-                        wall: wall(h),
-                        from_h: third(origin(h))?,
-                        to_h: third(target(h))?,
-                    })
+                .map(|&h| combinatorics::RingEdge {
+                    node: origin(h),
+                    wall: wall(h),
+                    from_h: origin_h(h),
+                    to_h: target_h(h),
                 })
-                .collect::<Result<_, BoolError>>()?;
-            // TRANSITIONAL (removed when vertex names start being canonicalized, at which point
-            // the two legitimately differ): every vertex here still lies on exactly three planes,
-            // so the derivation must reproduce the walk. The corpus and the OCCT oracle measure
-            // that equality rather than taking it on trust.
-            debug_assert_eq!(
-                combinatorics::ring_from_names(wc, &ring_names).ok(),
-                Some(ring.clone()),
-                "the edge a ring's names imply must be the edge the walk took"
-            );
+                .collect();
             let w = combinatorics::loop_winding(planes, wc, &ring)?;
             cells.push(Cell {
                 half_edges: cyc,
@@ -1079,30 +1241,18 @@ fn nest_cells(
     let n = cells.len();
     // As in `extract_cells`: the walk knows each edge's wall and handles, so the ring carries them
     // instead of leaving them to be re-derived from the endpoint names.
-    let ring_of = |c: &Cell| -> Result<Vec<combinatorics::RingEdge>, BoolError> {
+    let ring_of = |c: &Cell| -> Vec<combinatorics::RingEdge> {
         c.half_edges
             .iter()
-            .map(|&he| {
-                let (w, o, t) = (
-                    segs[he / 2].wall,
-                    segs[he / 2].end[he % 2],
-                    segs[he / 2].end[1 - he % 2],
-                );
-                let third =
-                    |e| endpoint_third(e, wc, w).ok_or_else(|| reject(RejectReason::ThreePlanes));
-                Ok(combinatorics::RingEdge {
-                    node: o,
-                    wall: w,
-                    from_h: third(o)?,
-                    to_h: third(t)?,
-                })
+            .map(|&he| combinatorics::RingEdge {
+                node: segs[he / 2].end[he % 2],
+                wall: segs[he / 2].wall,
+                from_h: segs[he / 2].end_h[he % 2],
+                to_h: segs[he / 2].end_h[1 - he % 2],
             })
             .collect()
     };
-    let rings: Vec<Vec<combinatorics::RingEdge>> = cells
-        .iter()
-        .map(ring_of)
-        .collect::<Result<_, BoolError>>()?;
+    let rings: Vec<Vec<combinatorics::RingEdge>> = cells.iter().map(ring_of).collect();
     let pos: Vec<usize> = (0..n).filter(|&i| cells[i].winding == 1).collect();
 
     // Union-find over cells (the pattern of `component_count`, but joining cells, not vertices).
@@ -1436,27 +1586,51 @@ fn trace_result_faces(
     plane_ix: &[usize],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let mut local_faces: Vec<LocalFace> = Vec::new();
-    // `planes` is the dense plane table now, so every index in it *is* a plane — the old
-    // `filter(|&i| canon[i] == i)` was how a face table was searched for its class roots.
-    for wc in 0..planes.len() {
-        let tr = trace_on_class(
-            model, a, b, wc, planes, faces, surf_ix, inc_a, inc_b, plane_ix,
-        );
-        // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on which
-        // operand face. A class can decline several faces; the first is the one reported.
-        if let Some(&(fp, kind)) = tr.declined.first() {
-            return Err(reject(decline_to_reject(kind, faces[fp].face)));
+
+    // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
+    // Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
+    // Doing both in one loop would key an early class's tables before a later class had reported
+    // the alias that renames one of its vertices — the same point would then be assembled under two
+    // names and rejected as a `SeamAlias`, for a reason that is really "we asked too early".
+    //
+    // `split_at_crossings`' output does not depend on the table (it only writes to it), so pass A
+    // is a pure prefix of the old work rather than extra work — except that a *new* alias found
+    // during a split leaves the merge that ran before it stale, so pass A repeats until the table
+    // stops growing. Discoveries only accumulate and are bounded, so this terminates; a model with
+    // no concurrency at all makes exactly one round.
+    let mut aliases = Aliases::default();
+    let mut splits: Vec<Vec<MergedSeg>> = Vec::new();
+    loop {
+        let before = aliases.len();
+        splits.clear();
+        for wc in 0..planes.len() {
+            let mut tr = trace_on_class(
+                model, a, b, wc, planes, faces, surf_ix, inc_a, inc_b, plane_ix,
+            );
+            aliases.absorb(&std::mem::take(&mut tr.aliases));
+            // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
+            // which operand face. A class can decline several faces; the first is the one
+            // reported. Bailing here also keeps a rejected boolean from paying for pass B.
+            if let Some(&(fp, kind)) = tr.declined.first() {
+                return Err(reject(decline_to_reject(kind, faces[fp].face)));
+            }
+            let merged = merge_coincident(&tr.segs, wc, &aliases);
+            splits.push(split_at_crossings(planes, wc, &merged, &mut aliases)?);
         }
-        let merged = merge_coincident(&tr.segs);
-        let split = split_at_crossings(planes, wc, &merged)?;
-        let (cells, face_of) = extract_cells(planes, wc, &split)?;
-        let nesting = nest_cells(planes, wc, &cells, &split)?;
-        let labels = label_cells(&cells, &face_of, &split, &nesting)?;
+        if aliases.len() == before {
+            break;
+        }
+    }
+
+    for (wc, split) in splits.iter().enumerate() {
+        let (cells, face_of) = extract_cells(planes, wc, split)?;
+        let nesting = nest_cells(planes, wc, &cells, split)?;
+        let labels = label_cells(&cells, &face_of, split, &nesting)?;
         local_faces.extend(emit_faces(
             kind,
             &labels,
             &cells,
-            &split,
+            split,
             planes,
             wc,
             &nesting.holes,
@@ -1479,6 +1653,10 @@ pub(crate) struct Concurrency {
     pub triple: [usize; 3],
     /// Every plane through that point, sorted. Longer than 3 exactly when the point is concurrent.
     pub planes: Vec<usize>,
+    /// The sub-triples of `planes` that share a **line** rather than meeting at the point — the
+    /// second face of the same degeneracy, and what a line-identity rule would have to fold. Read
+    /// off `planes`, which is why one discovery answers both questions.
+    pub lines: Vec<[usize; 3]>,
 }
 
 /// Every **concurrent** vertex (four or more planes) the two solids' arrangement would name.
@@ -1509,10 +1687,10 @@ pub(crate) fn concurrency_audit(
         );
         // Names this class used: segment endpoints, single-point touches, and — since a crossing
         // the arrangement mints is a vertex too — the split's endpoints where it got that far.
-        let merged = merge_coincident(&tr.segs);
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let mut names: Vec<[usize; 3]> = tr.touches.clone();
         for s in merged.iter().chain(
-            split_at_crossings(&geom, wc, &merged)
+            split_at_crossings(&geom, wc, &merged, &mut Aliases::default())
                 .as_deref()
                 .unwrap_or(&[])
                 .iter(),
@@ -1563,10 +1741,22 @@ pub(crate) fn concurrency_audit(
             }));
             if planes.len() > 3 {
                 planes.sort_unstable();
+                let mut lines = Vec::new();
+                for i in 0..planes.len() {
+                    for j in (i + 1)..planes.len() {
+                        for k in (j + 1)..planes.len() {
+                            let tri = [planes[i], planes[j], planes[k]];
+                            if tolerant::t_plane_pair_dir_sign(&geom, tri[0], tri[1], tri[2]) == 0 {
+                                lines.push(tri);
+                            }
+                        }
+                    }
+                }
                 out.push(Concurrency {
                     wc,
                     triple: t,
                     planes,
+                    lines,
                 });
             }
         }
@@ -1650,8 +1840,8 @@ pub(crate) fn frame_audit(
             Some(decline_to_reject(kind, faces_tab[fp].face))
         } else {
             let run = || -> Result<(), BoolError> {
-                let merged = merge_coincident(&tr.segs);
-                let split = split_at_crossings(&geom, wc, &merged)?;
+                let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+                let split = split_at_crossings(&geom, wc, &merged, &mut Aliases::default())?;
                 let (cells, face_of) = extract_cells(&geom, wc, &split)?;
                 let nesting = nest_cells(&geom, wc, &cells, &split)?;
                 let labels = label_cells(&cells, &face_of, &split, &nesting)?;
@@ -2221,7 +2411,7 @@ mod tests {
             let tr = trace_on_class(
                 &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
-            let merged = merge_coincident(&tr.segs);
+            let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
             assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
             for e in &merged {
                 assert_eq!(
@@ -2258,7 +2448,7 @@ mod tests {
             let tr = trace_on_class(
                 &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
-            let merged = merge_coincident(&tr.segs);
+            let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
             assert_eq!(
                 merged.len(),
                 8,
@@ -2303,10 +2493,10 @@ mod tests {
         let tr = trace_on_class(
             &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
-        let merged = merge_coincident(&tr.segs);
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         assert_eq!(merged.len(), 8, "8 merged edges before split");
 
-        let split = split_at_crossings(&planes, wc, &merged).unwrap();
+        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
         // 4 chords crossed twice → 3 pieces each = 12; 4 outer walls uncrossed = 4; total 16.
         assert_eq!(split.len(), 16, "16 sub-segments: {}", split.len());
 
@@ -2359,8 +2549,13 @@ mod tests {
         assert_eq!(incident.len(), 4, "degree-4 at (1,1,1): {}", incident.len());
         let mut keys = std::collections::HashSet::new();
         for s in &incident {
-            let far = if is_v(s.end[0]) { s.end[1] } else { s.end[0] };
-            keys.insert((s.wall, endpoint_third(far, wc, s.wall).unwrap()));
+            // The far end as a handle on this edge's own line — carried by the segment now.
+            let far_h = if is_v(s.end[0]) {
+                s.end_h[1]
+            } else {
+                s.end_h[0]
+            };
+            keys.insert((s.wall, far_h));
         }
         assert_eq!(keys.len(), 4, "no coincident (fp,direction) — DCEL-ready");
     }
@@ -2395,8 +2590,8 @@ mod tests {
         let tr = trace_on_class(
             &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
-        let merged = merge_coincident(&tr.segs);
-        let split = split_at_crossings(&planes, wc, &merged).unwrap();
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
 
         // The shared y=1 wall (a face at y=1).
         let y1 = planes
@@ -2458,8 +2653,8 @@ mod tests {
         let tr = trace_on_class(
             &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
-        let merged = merge_coincident(&tr.segs);
-        let split = split_at_crossings(&planes, wc, &merged).unwrap();
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
 
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
         assert_eq!(cells.len(), 6, "1 outer + 5 bounded: {}", cells.len());
@@ -2531,8 +2726,8 @@ mod tests {
         let tr = trace_on_class(
             &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
-        let merged = merge_coincident(&tr.segs);
-        let split = split_at_crossings(&planes, wc, &merged).unwrap();
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
         let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
         let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
@@ -2602,8 +2797,8 @@ mod tests {
         let tr = trace_on_class(
             &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
-        let merged = merge_coincident(&tr.segs);
-        let split = split_at_crossings(&planes, wc, &merged).unwrap();
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
         let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
         let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
@@ -2652,8 +2847,8 @@ mod tests {
         let tr = trace_on_class(
             &m, a, b, wc, &planes, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
-        let merged = merge_coincident(&tr.segs);
-        let split = split_at_crossings(&planes, wc, &merged).unwrap();
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(&planes, wc, &merged, &mut Aliases::default()).unwrap();
         let (cells, face_of) = extract_cells(&planes, wc, &split).unwrap();
         let nesting = nest_cells(&planes, wc, &cells, &split).unwrap();
         let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
@@ -3226,7 +3421,12 @@ mod tests {
         let BoolError::Unsupported { reason } = err else {
             panic!("expected an Unsupported rejection, got {err:?}");
         };
-        assert_eq!(reason, RejectReason::FourPlane);
+        // Measured, not chosen: this construction of the four-plane model gets past naming (the
+        // extrude-built twin in `tests/coverage/rotation.rs` now builds outright) and stops in the
+        // cell walk instead, where a contour touching itself at the concurrent vertex has no
+        // unambiguous turn. That is the next capability step; what this test is about is that both
+        // consumers say the *same* thing about it.
+        assert_eq!(reason, RejectReason::LoopOrientMismatch);
 
         let (m, target, bar) = build();
         let audits = frame_audit(&m, BoolKind::Cut, target, bar).unwrap();
@@ -3237,11 +3437,11 @@ mod tests {
         );
         // And the decline it came from is still on record, face and all, which is where the
         // per-face detail lives now that the reason itself carries none.
+        // The per-face decline log stays the audit's business either way; here the stop is past
+        // the trace, so the interesting record is `failed_at`, asserted above.
         assert!(
-            audits
-                .iter()
-                .any(|a| a.declined.iter().any(|&(_, k)| k == DeclineKind::FourPlane)),
-            "the audit keeps the per-face decline"
+            audits.iter().any(|a| a.failed_at.is_some()),
+            "the audit must record where the class stopped"
         );
     }
 
@@ -3515,7 +3715,7 @@ mod tests {
         // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
         // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
         // seated≡transversal coincidence).
-        let merged = merge_coincident(&tr.segs);
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         // The shared y=1 wall class (a face at y=1).
         let y1 = planes
             .iter()

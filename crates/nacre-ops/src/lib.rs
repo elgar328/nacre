@@ -2599,6 +2599,7 @@ pub mod tests {
         }
 
         let (mut with_any, mut total, mut trace_rule_checked) = (0usize, 0usize, 0usize);
+        let mut lines_found = 0usize;
         for (name, m, a, b) in &boxed {
             let found = arrangement::concurrency_audit(m, *a, *b).unwrap();
             if !found.is_empty() {
@@ -2606,6 +2607,7 @@ pub mod tests {
             }
             total += found.len();
             for c in &found {
+                lines_found += c.lines.len();
                 assert_eq!(
                     c.planes.len(),
                     4,
@@ -2638,6 +2640,14 @@ pub mod tests {
             trace_rule_checked > 0,
             "no observation reached the trace's discovery condition, so the rule was not measured"
         );
+        // The same discovery must also yield the *line* aliases — three planes sharing a line show
+        // up as a sub-triple of `S` that names no point. In this corpus every concurrency comes
+        // from exactly that (a tool edge lying in a target plane), so each one carries one.
+        assert!(
+            lines_found > 0,
+            "no line-sharing triple was derived, yet every concurrency here comes from one"
+        );
+        println!("  and {lines_found} carried a line-sharing triple");
         println!("  of which {trace_rule_checked} exercised the trace's discovery rule");
     }
 
