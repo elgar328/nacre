@@ -698,15 +698,24 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
 /// rejects rotated inputs, so a solid is all-or-nothing rotated: one vertex decides
 /// (O(1)). (90°-family rotations stay exact/`Constructed`, so this is false for them.)
 pub(crate) fn solid_is_rotated(model: &Model, solid: Handle<Solid>) -> bool {
+    // **Every vertex, not the first one found.** A solid can hold both kinds at once — fuse an
+    // axis-aligned hub with a turned fin and the result has exact corners *and* rotated ones. This
+    // used to read one vertex of one edge of one face and answer for the whole solid, so which
+    // face happened to come first in the shell decided it. When it landed on an exact corner the
+    // solid was called unrotated, and then every face of it stated its **rounded** coordinates as
+    // exact — the kernel reasoning about a copy of the geometry a hair away from the real one.
+    // Two fins sharing a wall then had two planes for it, and everything downstream that assumed
+    // one plane per plane came apart.
     let sh = model.solids.get(solid).outer;
-    for &fh in &model.shells.get(sh).faces {
-        for he in &model.faces.get(fh).outer.half_edges {
-            if let Some(bounds) = model.edges.get(he.edge).bounds {
-                return matches!(model.vertices.get(bounds[0]).origin, Origin::Rotated { .. });
-            }
-        }
-    }
-    false
+    model.shells.get(sh).faces.iter().any(|&fh| {
+        model.faces.get(fh).outer.half_edges.iter().any(|he| {
+            model.edges.get(he.edge).bounds.is_some_and(|bounds| {
+                bounds
+                    .iter()
+                    .any(|&v| matches!(model.vertices.get(v).origin, Origin::Rotated { .. }))
+            })
+        })
+    })
 }
 
 #[cfg(test)]
