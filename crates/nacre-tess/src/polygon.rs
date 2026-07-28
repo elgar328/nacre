@@ -30,33 +30,60 @@ fn newell(pts: &[Point3], ring: &[usize]) -> Vector3 {
     Vector3::from_array(n)
 }
 
-/// Drop the axis the normal leans on hardest, keeping a right-handed `(u, v)` so
-/// that a ring wound CCW about `n` stays CCW in 2D. Choosing an axis is exact —
-/// no arithmetic, no tolerance.
-fn projector(n: Vector3) -> impl Fn(Point3) -> P2 {
+/// Which two coordinates to keep: drop the axis the normal leans on hardest.
+///
+/// **Only the magnitude is read.** Any axis the polygon does not lie edge-on to gives
+/// a non-degenerate projection, and the normal's *sign* — which decides whether that
+/// projection preserves or reverses orientation — is not consulted at all. It used to
+/// be (`if a[k] >= 0.0 { .. } else { swap }`), which put the whole frame on an `f64`
+/// sign computed by summing `n` cross products. [`ring_orientation`] settles the same
+/// question afterwards with one exact predicate, on the ring itself.
+fn drop_axis(n: Vector3) -> (usize, usize) {
     let a = n.as_array();
     let k = (0..3)
         .max_by(|&i, &j| a[i].abs().total_cmp(&a[j].abs()))
         .unwrap();
-    // (y,z) / (z,x) / (x,y) are the cyclic choices that keep `(u, v, e_k)` right
-    // handed; a negative component flips handedness, so swap `u` and `v` back.
-    let (iu, iv) = [(1, 2), (2, 0), (0, 1)][k];
-    let (iu, iv) = if a[k] >= 0.0 { (iu, iv) } else { (iv, iu) };
-    move |p: Point3| {
-        let c = p.as_array();
-        [c[iu], c[iv]]
-    }
+    // (y,z) / (z,x) / (x,y) — the cyclic choices, up to the handedness settled later.
+    [(1, 2), (2, 0), (0, 1)][k]
 }
 
-/// Twice the signed area of a ring. Positive ⇔ CCW.
-fn area2(ring: &[usize], uv: &[P2]) -> f64 {
-    let mut s = 0.0;
-    for w in 0..ring.len() {
-        let a = uv[ring[w]];
-        let b = uv[ring[(w + 1) % ring.len()]];
-        s += a[0] * b[1] - b[0] * a[1];
+/// `a` before `b` in the sweep's total order: **`v` descending, then `u` ascending**.
+///
+/// Every vertex comparison in this module goes through here, and it is exact — the
+/// projected coordinates are copied `f64`s, not computed ones, so `<` and `==` on them
+/// answer about the real numbers. Making the order *total* is what lets a face full of
+/// shared `v` values (which is what an axis-aligned CAD face is) be handled without a
+/// single tie.
+fn lex_less(a: P2, b: P2) -> bool {
+    a[1] > b[1] || (a[1] == b[1] && a[0] < b[0])
+}
+
+/// `+1` CCW, `-1` CW, `0` the ring is degenerate — **exactly**.
+///
+/// At the ring's *last* vertex in [`lex_less`] order (lowest `v`, then greatest `u`)
+/// a simple polygon's interior angle is strictly convex: both neighbours lie above, so
+/// they cannot be collinear with it unless the ring doubles back on itself. One
+/// `orient2d` there therefore decides the whole ring — where a shoelace sum would need
+/// the exact addition of `n` products to say the same thing, and `f64` addition does
+/// not give it.
+fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
+    let n = ring.len();
+    let mut m = 0;
+    for i in 1..n {
+        if lex_less(uv[ring[m]], uv[ring[i]]) {
+            m = i;
+        }
     }
-    s
+    let (p, c, q) = (
+        uv[ring[(m + n - 1) % n]],
+        uv[ring[m]],
+        uv[ring[(m + 1) % n]],
+    );
+    match nacre_predicates::orient2d(p, c, q) {
+        d if d > 0.0 => 1,
+        d if d < 0.0 => -1,
+        _ => 0,
+    }
 }
 
 /// `> 0` when `c` is to the left of `a → b`.
@@ -181,14 +208,30 @@ pub(crate) fn triangulate_polygon(
     if n.norm() <= 0.0 {
         return Err(TessError::DegenerateRing);
     }
-    let project = projector(n);
-    let uv: Vec<P2> = pts.iter().map(|&p| project(p)).collect();
+    let (iu, iv) = drop_axis(n);
+    let mut uv: Vec<P2> = pts
+        .iter()
+        .map(|&p| {
+            let c = p.as_array();
+            [c[iu], c[iv]]
+        })
+        .collect();
 
-    debug_assert!(
-        area2(outer, &uv) > 0.0,
-        "a ring is CCW about its own normal"
-    );
-    if holes.iter().any(|h| area2(h, &uv) >= 0.0) {
+    // **The frame's handedness is measured, not asserted.** The outer ring is CCW about
+    // its own Newell normal by construction, so if it comes out CW here the projection
+    // reversed orientation — and swapping `u` and `v` mirrors it back. This used to be
+    // a `debug_assert` over a shoelace sum, which meant that in release nobody checked
+    // and a near-edge-on face could run the whole triangulation in a flipped frame.
+    match ring_orientation(outer, &uv) {
+        1 => {}
+        -1 => {
+            for p in &mut uv {
+                p.swap(0, 1);
+            }
+        }
+        _ => return Err(TessError::DegenerateRing),
+    }
+    if holes.iter().any(|h| ring_orientation(h, &uv) != -1) {
         return Err(TessError::HoleWinding);
     }
 
