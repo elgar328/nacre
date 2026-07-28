@@ -19,6 +19,9 @@ mod multisolid;
 #[path = "coverage/rotation.rs"]
 mod rotation;
 
+#[path = "coverage/placement.rs"]
+mod placement;
+
 #[path = "coverage/nonconvex.rs"]
 mod nonconvex;
 
