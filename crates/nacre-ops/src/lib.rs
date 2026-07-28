@@ -205,11 +205,14 @@ pub enum RejectReason {
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
     /// with no firing test.
     NoOutwardShell,
-    /// A face lies on a surface whose exact definition the kernel cannot state — a rotation
-    /// interleaved with a translation, which the rotation forest has no node for (`SurfaceDef::
-    /// Inexact`). Judging on the rounded coefficients is what produces two plane classes for one
-    /// wall, so the operation declines instead. The vertex-level twin is
-    /// `Pt3Error::TranslateInterleaved`.
+    /// A face lies on a surface whose exact definition the kernel cannot state
+    /// (`SurfaceDef::Inexact`). Judging on rounded coefficients is what produces two plane classes
+    /// for one wall, so the operation declines instead of pretending.
+    ///
+    /// **It no longer means "rotated, then translated"** — the motion history names that now. What
+    /// is left is a surface with no recorded provenance at all (`nacre-validate` reports such a
+    /// model) and one defensive branch in the mirror path, so a firing of this today points at a
+    /// producer that skipped `Model::push_surface`, not at a motion the kernel cannot describe.
     InexactSurface,
     /// The assembled result has an **odd Euler characteristic** (`V − E + F − L_i`), which no
     /// closed 2-manifold can have (it must equal the even `2(S − G)`) — so the arrangement produced
@@ -3070,9 +3073,8 @@ pub mod tests {
 
     /// The bit-identity guard, on the one producer that can break it.
     ///
-    /// `vertex_pt3` rebuilds a rotated vertex from its root and chain and refuses (as
-    /// `TranslateInterleaved`) if the result differs from the stored coordinate **at all** — the
-    /// existing rotate path passes only because it replays the very same float operations. A
+    /// A definition and its cached coordinate must agree **exactly**, and they do for the ordinary
+    /// paths only because the replay performs the very same float operations the producer did. A
     /// mirror derives the two by *different* routes: the definition by conjugating the chain, the
     /// point by reflecting. It must therefore store the replayed value, and this fails the moment
     /// it goes back to reflecting the point.
