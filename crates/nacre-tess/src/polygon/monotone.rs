@@ -314,6 +314,123 @@ fn trace(
     Ok(pieces)
 }
 
+/// Triangulate one **y-monotone** piece by the stack algorithm (de Berg §3.3).
+///
+/// Linear, and it owes that to monotonicity: the two chains can be merged into one
+/// sweep-ordered sequence, and a stack of the vertices not yet triangulated is enough
+/// — no search, no containment test over the whole polygon, which is exactly the work
+/// ear clipping does `O(n²)` times.
+///
+/// **Winding is normalized at emission rather than reasoned about per case.** Which of
+/// the four cases produced a triangle does not change what it *is*, only the order the
+/// three indices arrive in, and one `orient2d` settles that. A triangle that comes out
+/// with no area at all is not a presentation problem — the algorithm was not supposed
+/// to make one — so it is an error.
+pub(super) fn triangulate_monotone(
+    uv: &[P2],
+    piece: &[usize],
+    out: &mut Vec<[usize; 3]>,
+) -> Result<(), TessError> {
+    let m = piece.len();
+    if m < 3 {
+        return Err(TessError::DegenerateRing);
+    }
+    let (mut top, mut bot) = (0, 0);
+    for i in 1..m {
+        if lex_less(uv[piece[i]], uv[piece[top]]) {
+            top = i;
+        }
+        if lex_less(uv[piece[bot]], uv[piece[i]]) {
+            bot = i;
+        }
+    }
+
+    // Walking the CCW ring forward from the top descends the **left** chain, so the
+    // interior lies to its right; walking backward descends the right chain.
+    let walk = |mut i: usize, step: usize| -> Vec<usize> {
+        let mut v = Vec::new();
+        while i != bot {
+            i = (i + step) % m;
+            v.push(i);
+        }
+        v.pop(); // `bot` closes both chains and is merged in last
+        v
+    };
+    let (left, right) = (walk(top, 1), walk(top, m - 1));
+
+    // One sweep-ordered sequence, each vertex tagged with the chain it came from.
+    let mut seq: Vec<(usize, bool)> = Vec::with_capacity(m);
+    seq.push((top, true));
+    let (mut li, mut ri) = (0, 0);
+    while li < left.len() || ri < right.len() {
+        let take_left = if li >= left.len() {
+            false
+        } else if ri >= right.len() {
+            true
+        } else {
+            lex_less(uv[piece[left[li]]], uv[piece[right[ri]]])
+        };
+        if take_left {
+            seq.push((left[li], true));
+            li += 1;
+        } else {
+            seq.push((right[ri], false));
+            ri += 1;
+        }
+    }
+    seq.push((bot, false));
+
+    let mut emit = |a: usize, b: usize, c: usize| -> Result<(), TessError> {
+        let (x, y, z) = (piece[a], piece[b], piece[c]);
+        match side(uv[x], uv[y], uv[z]) {
+            1 => out.push([x, y, z]),
+            -1 => out.push([x, z, y]),
+            _ => return Err(TessError::DegenerateRing),
+        }
+        Ok(())
+    };
+
+    let mut stack: Vec<(usize, bool)> = vec![seq[0], seq[1]];
+    for j in 2..seq.len() - 1 {
+        let (vj, cj) = seq[j];
+        if cj != stack[stack.len() - 1].1 {
+            // The opposite chain is reachable from every vertex still on the stack, so
+            // the whole fan comes off at once.
+            while stack.len() > 1 {
+                let (a, _) = stack.pop().expect("len > 1");
+                let (b, _) = stack[stack.len() - 1];
+                emit(a, b, vj)?;
+            }
+            stack.clear();
+            stack.push(seq[j - 1]);
+            stack.push(seq[j]);
+        } else {
+            // Same chain: cut while the boundary bends *away* from the interior. On the
+            // left chain the interior is to the right, so a left turn at the popped
+            // vertex means the triangle clears the boundary; on the right chain it is
+            // the mirror of that.
+            let want = if cj { 1 } else { -1 };
+            let mut last = stack.pop().expect("two seeded");
+            while let Some(&(t, _)) = stack.last() {
+                if side(uv[piece[t]], uv[piece[last.0]], uv[piece[vj]]) != want {
+                    break;
+                }
+                emit(t, last.0, vj)?;
+                last = stack.pop().expect("checked");
+            }
+            stack.push(last);
+            stack.push(seq[j]);
+        }
+    }
+    let (vn, _) = seq[seq.len() - 1];
+    while stack.len() > 1 {
+        let (a, _) = stack.pop().expect("len > 1");
+        let (b, _) = stack[stack.len() - 1];
+        emit(a, b, vn)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

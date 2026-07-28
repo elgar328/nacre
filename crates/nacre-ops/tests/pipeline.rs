@@ -963,29 +963,25 @@ fn a_notched_cube_meshes() {
     assert!((vol - 993.28).abs() < 1e-9, "volume {vol}");
 }
 
-/// **★ The scoreboard of the monotone-decomposition cell — this asserts today's
-/// wrong answer.**
+/// **A wall with two windows — the case the old triangulator could not mesh.**
 ///
-/// A wall with **two windows**: a hub box and two bars crossing its `x = −1` face, so
-/// that face ends up with two inner loops. `validate` reports nothing — the b-rep is
-/// correct — and `nacre-props` is happy. Only the mesh fails, with `NoEar`.
+/// A hub box and two bars crossing its `x = −1` face, so that face carries two inner
+/// loops. The b-rep was always fine here (`validate` clean, analytic mass properties);
+/// only the mesh failed, and it failed by stalling.
 ///
-/// The cause is entirely inside the triangulator. It merges each hole into the outer
-/// ring with a zero-width **bridge**, and takes the first mutually visible ring vertex
-/// it finds; here both holes pick the *same* outer corner, so the bridged ring visits
-/// that corner three times. A ring with a repeated vertex is not a simple polygon, and
-/// Meisters' two-ears theorem — which is the only reason ear clipping terminates —
-/// does not apply to it. Measured: every one of the six convex vertices has a diagonal
-/// that genuinely crosses the other hole. There is no ear, and `NoEar` is the honest
-/// thing to say about a ring the algorithm should never have built.
+/// The cause was a ring the triangulator built for itself: each hole was merged into
+/// the outer ring by a zero-width bridge to the first mutually visible vertex, and both
+/// holes picked the *same* corner, so the ring visited it three times. A repeated vertex
+/// makes the ring non-simple, and Meisters' two-ears theorem — the only reason ear
+/// clipping terminates — does not apply. Measured: all six convex vertices had a
+/// diagonal that genuinely crossed the other hole.
 ///
-/// **Nothing here is rotated.** The failing model that started the cell had seven fins
-/// at 360/7°, which made it look like a precision problem; it is not. Three boxes and
-/// two fuses are enough.
-///
-/// **When the decomposition lands, this becomes `mesh_vs_props` + `assert_agrees`.**
+/// **Nothing here is rotated.** The model that started the cell had seven fins at
+/// 360/7°, which made it look like a precision problem; three boxes and two fuses are
+/// enough. The monotone sweep never merges the rings, so the pinch is never built, and
+/// the face now meshes into the same watertight surface everything else does.
 #[test]
-fn two_windows_in_one_wall_stall_the_triangulator() {
+fn a_wall_with_two_windows_meshes() {
     let mut m = Model::new();
     let hub = m.add_cuboid(
         Point3::from_array([-1.0, -1.0, 0.0]),
@@ -1007,16 +1003,79 @@ fn two_windows_in_one_wall_stall_the_triangulator() {
     let part = boolean_one(&mut m, BoolKind::Fuse, part, lower).unwrap();
     m.rebuild_adjacency();
 
-    // The solid itself is sound: valid b-rep, analytic mass properties.
     assert!(
         nacre_validate::validate(&m).is_empty(),
         "the b-rep is correct"
     );
-    assert!(nacre_props::mass_props(&m, part).is_ok());
+    let g = mesh_vs_props(&m, part);
+    assert_agrees(&g, "wall with two windows");
+}
 
-    // Only the mesh cannot be built.
-    assert!(matches!(
-        tessellate(&m, &TessConfig::default()),
-        Err(nacre_tess::TessError::NoEar)
-    ));
+/// **The model that started the cell**, meshed end to end.
+///
+/// Seven fins arrayed at 360/7° around a hub, then a square bore crossed with a 45°
+/// copy — a code-CAD playground script that died on `tessellate` while `validate` and
+/// `mass_props` were both happy. Two of the fins cross the same hub wall, which is how
+/// that face ended up with the two holes whose bridges collided.
+///
+/// It is here for the shape, not the arithmetic: the two-window fixture above is the
+/// minimal reproduction and the one that explains the bug. This one proves the fix
+/// survives 22 booleans, rotations by an angle with no exact `f64`, and a face set built
+/// entirely from `Discovered` vertices.
+#[test]
+fn the_fin_array_with_a_star_bore_meshes() {
+    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    let turn = |m: &mut Model, s, deg: Rat| {
+        let out = nacre_ops::apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: Isometry::rotation(Rotation {
+                    axis: Axis::Z,
+                    point: [Rat::from_int(0); 3],
+                    angle: Angle::from_deg(deg).expect("angle"),
+                }),
+            },
+        )
+        .expect("rotate");
+        m.rebuild_adjacency();
+        match out {
+            nacre_ops::OpOutput::Transform { solid } => solid,
+            o => panic!("{o:?}"),
+        }
+    };
+
+    let fins = 7;
+    let mut m = Model::new();
+    let mut part = m.add_cuboid(
+        Point3::from_array([-1.0, -1.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 3.0]),
+    );
+    m.rebuild_adjacency();
+    for i in 0..fins {
+        // The script's `i * 360.0 / fins`, lifted to the exact rational it landed on.
+        let deg = Rat::try_from_f64(i as f64 * 360.0 / fins as f64).expect("degrees");
+        let fin = m.add_cuboid(
+            Point3::from_array([0.5, -0.2, 1.0]),
+            Point3::from_array([4.0, 0.2, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let fin = turn(&mut m, fin, deg);
+        part = boolean_one(&mut m, BoolKind::Fuse, part, fin).unwrap();
+        m.rebuild_adjacency();
+    }
+    for deg in [0, 45] {
+        let bore = m.add_cuboid(
+            Point3::from_array([-0.6, -0.6, 0.0]),
+            Point3::from_array([0.6, 0.6, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let bore = turn(&mut m, bore, Rat::from_int(deg));
+        part = boolean_one(&mut m, BoolKind::Cut, part, bore).unwrap();
+        m.rebuild_adjacency();
+    }
+
+    assert!(nacre_validate::validate(&m).is_empty());
+    let g = mesh_vs_props(&m, part);
+    assert_agrees(&g, "fin array with a star bore");
 }

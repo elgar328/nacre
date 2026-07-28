@@ -24,16 +24,19 @@ use std::fmt::Write;
 /// There is deliberately no `Fallback` variant. The old fan was one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TessError {
-    /// Fewer than three vertices, a zero-area ring, or a clockwise outer ring.
+    /// The rings are not a polygon with sibling holes, so no triangulation of them
+    /// exists: fewer than three vertices, a zero-area ring, a vertex used by two rings
+    /// or repeated within one, two vertices at the same point, a spike, or a boundary
+    /// that crosses itself.
+    ///
+    /// **The sweep detects these, where ear clipping used to notice them by accident**
+    /// (it stalled, and that stall was reported as `NoEar`). It is checked rather than
+    /// assumed because the b-rep guarantees it and this layer cannot: a decomposition
+    /// handed a self-crossing ring would otherwise return a confident, wrong mesh.
     DegenerateRing,
     /// A hole wound the same way as its outer ring: the b-rep does not keep
     /// material on every loop's left. A broken solid, not a repairable mesh.
     HoleWinding,
-    /// No mutually visible vertex pair to bridge a hole to its outer ring.
-    NoBridge,
-    /// Ear clipping stalled — the ring self-intersects, so no triangulation of it
-    /// exists.
-    NoEar,
     /// The bootstrap OBJ writer met a curved face. It used to fan the face's edge
     /// endpoints and emit nonsense; `tessellate` is the path that handles those.
     NonPlanarFace,
