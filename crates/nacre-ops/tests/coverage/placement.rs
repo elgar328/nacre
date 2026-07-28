@@ -124,20 +124,22 @@ fn rotate_then_place_builds() {
     assert_eq!(built, 15, "the whole sweep builds");
 }
 
-/// **A mirror still has the disease — the remaining half of it.**
+/// **A wall reached by reflection and a wall reached by translation are the same wall.**
 ///
-/// `AxisMirror` reflects as `2·offset − x` with `offset` already dropped to f64. The doubling is
-/// exact (a power of two), so the split needs a *second, independent* route to the same plane:
+/// `AxisMirror` reflects as `2·offset − x` with `offset` already dropped to `f64`. The doubling is
+/// exact (a power of two), so the split needed a *second, independent* route to the same plane:
 /// here one wall arrives by reflection and the other by translation. Two roundings each, taken in
-/// a different order, and they disagree in the last place — the same failure as
+/// a different order, and the `f64` images disagree in the last place — the same shape as
 /// [`a_shared_wall_one_ulp_apart_splits_the_part`], through the mirror.
 ///
-/// A reflection is **improper** (`det = −1`), so it is not a `Motion` the chain can hold; the
-/// kernel carries it by *conjugating* an existing chain instead. A `Constructed` surface has no
-/// chain to conjugate, so its mirror image is still declared exact — which is this split. Closing
-/// it is a different mechanism from the translation work, and this test is what will judge it.
+/// This used to fuse into **two** bodies. A reflection is improper (`det = −1`), so it was not a
+/// `Motion` the chain could hold: the kernel carried it by *conjugating* an existing chain, and a
+/// `Constructed` surface has no chain to conjugate, so its mirror image was declared exact and the
+/// two walls stayed apart. The chain holds reflections now — `1/3` is not dyadic, so the node is
+/// recorded — and the two definitions realize to the same plane. Nothing about the `f64`
+/// coordinates changed; they still differ in the last place, and they still should.
 #[test]
-fn a_mirrored_wall_and_a_placed_wall_split_the_part() {
+fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     // Reflect `x = 1` in `x = 1/3`: the image is `−1/3`, computed as `2·fl(1/3) − 1`.
     let mut m = Model::new();
     let a = m.add_cuboid(
@@ -176,5 +178,7 @@ fn a_mirrored_wall_and_a_placed_wall_split_the_part() {
     let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse itself succeeds");
     m.rebuild_adjacency();
     let vols: Vec<f64> = out.iter().map(|&s| volume(&m, s)).collect();
-    assert_eq!(vols.len(), 2, "expected today's split, got {vols:?}");
+    assert_eq!(vols.len(), 1, "one body, not a split: got {vols:?}");
+    // Two unit cubes meeting on the shared wall.
+    assert!((vols[0] - 2.0).abs() < 1e-9, "volume {vols:?}");
 }

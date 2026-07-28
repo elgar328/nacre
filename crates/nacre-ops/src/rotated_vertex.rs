@@ -26,11 +26,13 @@ pub(crate) enum Pt3Error {
 /// The coordinate a `Constructed`-rooted vertex would have with `base_point` as its root and
 /// `leaf`'s chain applied — the *same* computation [`build`] performs, in the same order.
 ///
-/// A producer of rotated vertices must store this, not an independently computed image of the
-/// point: [`vertex_pt3`] guards on the replay matching the stored coordinate **bit for bit**, and
-/// two float routes to the same real number do not agree in the last places. `Mirror` needs it
-/// because it derives a vertex's definition by conjugating the chain, which is a different route
-/// from reflecting the coordinate.
+/// **The invariant, not a producer.** Every producer reaches its coordinate by walking the motion
+/// it just recorded, so no caller needs this to *build* anything — what needs it is the check that
+/// the two agree **bit for bit**, which the predicates rely on and which two float routes to the
+/// same real number would not satisfy. Reflection used to be the exception (it derived a
+/// definition by conjugating the chain, a different route from reflecting the coordinate); it is
+/// a chain node now, so the exception is gone and only the assertions remain.
+#[cfg(test)]
 pub(crate) fn replay_chain_coord(
     model: &Model,
     base_point: [f64; 3],

@@ -5,7 +5,7 @@
 use crate::OpError;
 use nacre_geom::{AxisMirror, Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::{Angle, Axis, Isometry, Rat};
+use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Origin, Shell, Solid, SurfaceDef,
@@ -27,7 +27,7 @@ pub(crate) fn transform(
     if !origins_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
-    let out = transform_solid(model, solid, &Xform::Rigid(isometry), None)?;
+    let out = transform_solid(model, solid, &Xform::Rigid(isometry))?;
     model.live_solids.retain(|&s| s != solid);
     Ok(out)
 }
@@ -58,7 +58,7 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
     let zero = Isometry::translation([Rat::from_int(0); 3]);
     // `push_solid` registers the twin as live; the input is *not* retained away — that missing
     // line is the whole difference from `transform`.
-    transform_solid(model, solid, &Xform::Rigid(&zero), None)
+    transform_solid(model, solid, &Xform::Rigid(&zero))
 }
 
 /// Whether every `Discovered` definition in `solid` names a surface the walk will remap — that is,
@@ -130,86 +130,19 @@ pub(crate) fn mirror(
         return Err(OpError::OriginNotOnSolid);
     }
     let m = AxisMirror::new(axis_index(axis), offset.to_f64()).expect("axis index is 0..3");
-    let out = transform_solid(model, solid, &Xform::Mirror(m), Some((axis, offset)))?;
+    let out = transform_solid(model, solid, &Xform::Mirror { m, axis, offset })?;
     model.live_solids.retain(|&s| s != solid);
     Ok(out)
 }
 
-/// What a reflection needs in order to carry a rotated solid's exact definitions: the mirror
-/// itself plus memo tables, so a chain shared by every boundary vertex is conjugated once.
-struct Conjugation {
-    mirror: AxisMirror,
-    axis: Axis,
-    offset: Rat,
-    nodes: HashMap<Handle<MotionNode>, Handle<MotionNode>>,
-    bases: HashMap<Handle<Vertex>, Handle<Vertex>>,
-    surfaces: HashMap<Handle<Surface>, Handle<Surface>>,
-}
-
-/// The reflected image of a rotation chain, as a chain.
+/// The motion nodes this `motion` appends to `parent`, or `None` when it records nothing.
 ///
-/// `M ∘ R = (M R M⁻¹) ∘ M`, and for an axis-aligned mirror and the kernel's X/Y/Z rotation axes
-/// the conjugate `M R M⁻¹` is again a rotation about the **same axis**, through the **mirrored
-/// pivot**, by the **negated angle** — except when the mirror plane's normal *is* the rotation
-/// axis, where the two commute and the angle is unchanged (`diag(1,1,−1)` commutes with `Rot_z`).
-///
-/// Every step is exact: the pivot is `[Rat; 3]` and the angle rational degrees, so a reflection —
-/// unlike a rotation — introduces no irrational value at all. `None` only if the rational
-/// arithmetic overflows.
-fn conjugate_chain(
-    model: &mut Model,
-    leaf: Handle<MotionNode>,
-    c: &mut Conjugation,
-) -> Option<Handle<MotionNode>> {
-    if let Some(&h) = c.nodes.get(&leaf) {
-        return Some(h);
-    }
-    let node = *model.motions.get(leaf);
-    let parent = match node.parent {
-        Some(p) => Some(conjugate_chain(model, p, c)?),
-        None => None,
-    };
-    let i = axis_index(c.axis);
-    let motion = match node.motion {
-        Motion::Rotate {
-            axis,
-            mut point,
-            angle,
-        } => {
-            // The **pivot** is a point, so it reflects as `2c − p`.
-            point[i] = c
-                .offset
-                .checked_mul(Rat::from_int(2))?
-                .checked_sub(point[i])?;
-            // `Angle` keeps `0 ≤ θ < 360`, so the negation of 0 is 0, not 360.
-            let angle = if axis == c.axis || angle.deg() == Rat::from_int(0) {
-                angle
-            } else {
-                Angle::from_deg(Rat::from_int(360).checked_sub(angle.deg())?)?
-            };
-            Motion::Rotate { axis, point, angle }
-        }
-        // An **offset is a vector, not a point** — `M ∘ T(t) ∘ M⁻¹ = T(t')` negates the mirrored
-        // component and leaves the rest, with no `2c` term. The pivot formula above looks like it
-        // would fit (both are `[Rat; 3]`) and would be wrong.
-        Motion::Translate { mut offset } => {
-            offset[i] = Rat::from_int(0).checked_sub(offset[i])?;
-            Motion::Translate { offset }
-        }
-        // A chain that already contains a reflection is not conjugated — this whole function goes
-        // away once reflections are appended like any other motion. Declining is honest until then
-        // (nothing records one yet, so it is not reachable).
-        Motion::Mirror { .. } => return None,
-    };
-    let h = model.push_motion(motion, parent);
-    c.nodes.insert(leaf, h);
-    Some(h)
-}
-
-/// The motion nodes this `isometry` appends to `parent`, or `None` when it records nothing.
-///
-/// An `Isometry` is "rotate about a pivot, then translate", so it contributes up to two nodes in
-/// that order — **order is the definition**, since the two do not commute.
+/// **One rule for all three motions.** An `Isometry` is "rotate about a pivot, then translate",
+/// so it contributes up to two nodes in that order — **order is the definition**, since the two
+/// do not commute. A reflection contributes one. A reflection used to be carried a second way
+/// entirely (conjugate the input's chain, `M ∘ R = (M R M⁻¹) ∘ M`, and mirror its root vertex),
+/// which meant two mechanisms for one question and a chain that could not hold the reflection it
+/// had just performed. It is a motion; it goes in the chain.
 ///
 /// A node is *omitted* only when the motion changes nothing the definition needs to say: a zero
 /// translation is the identity (`copy` is `transform_solid` under one), a 90°-family rotation of
@@ -221,60 +154,94 @@ fn conjugate_chain(
 /// chain missing a link describes the datum as it was *before* that link — silently. So once
 /// `leaf` is `Some`, every motion is recorded.
 ///
-/// The translation half of that is not reachable today, and the reason is worth writing down: an
-/// inexact rotation leaves coordinates using the full 53-bit mantissa, so no nonzero translation
-/// of such a solid is exact and `exact_translate` is already false. It becomes reachable the
-/// moment an exactness-preserving motion can also carry a history — a reflection in `x = 0`, for
-/// one — which is how this was found. The rule holds regardless of whether anything exercises it.
-fn chain_isometry(
+/// The translation half of that used not to be reachable — an inexact rotation leaves coordinates
+/// using the full 53-bit mantissa, so no nonzero translation of such a solid is exact. A
+/// reflection in a dyadic plane *is* exactness-preserving and can carry a history, which is what
+/// makes the rule load-bearing rather than merely correct.
+fn chain_motion(
     model: &mut Model,
     parent: Option<Handle<MotionNode>>,
-    iso: &Isometry,
-    exact_translate: bool,
+    motion: &Xform<'_>,
+    exact: bool,
 ) -> Option<Handle<MotionNode>> {
     let mut leaf = parent;
-    if let Some(r) = iso.rotate.filter(|_| !iso.is_exact() || leaf.is_some()) {
-        leaf = Some(model.push_motion(
-            Motion::Rotate {
-                axis: r.axis,
-                point: r.point,
-                angle: r.angle,
-            },
-            leaf,
-        ));
-    }
-    if iso.translate.iter().any(|r| r.numer() != 0) && (!exact_translate || leaf.is_some()) {
-        leaf = Some(model.push_motion(
-            Motion::Translate {
-                offset: iso.translate,
-            },
-            leaf,
-        ));
+    match motion {
+        Xform::Rigid(iso) => {
+            if let Some(r) = iso.rotate.filter(|_| !iso.is_exact() || leaf.is_some()) {
+                leaf = Some(model.push_motion(
+                    Motion::Rotate {
+                        axis: r.axis,
+                        point: r.point,
+                        angle: r.angle,
+                    },
+                    leaf,
+                ));
+            }
+            if iso.translate.iter().any(|r| r.numer() != 0) && (!exact || leaf.is_some()) {
+                leaf = Some(model.push_motion(
+                    Motion::Translate {
+                        offset: iso.translate,
+                    },
+                    leaf,
+                ));
+            }
+        }
+        Xform::Mirror { axis, offset, .. } => {
+            if !exact || leaf.is_some() {
+                leaf = Some(model.push_motion(
+                    Motion::Mirror {
+                        axis: *axis,
+                        offset: *offset,
+                    },
+                    leaf,
+                ));
+            }
+        }
     }
     leaf
 }
 
-/// Whether `offset` lands **every** coordinate of `solid` back on an exact `f64`.
+/// Whether `motion` lands **every** coordinate of `solid` back on an exact `f64`.
 ///
-/// The twin of `Isometry::is_exact` for a translation: a 90°-family rotation keeps any exact datum
-/// exact by its cos/sin alone, but a translation's exactness depends on the *data* — `p + t` is
-/// representable only when `t` is dyadic **and** the sum fits 53 bits. So it is measured, not
-/// derived, and when it holds the coefficients stay the truth: no node, no tolerance, and the
-/// judgment keeps the exact `f64` predicate path that `Witness::is_rotated` gates.
+/// The twin of `Isometry::is_exact` for the data-dependent motions: a 90°-family rotation keeps any
+/// exact datum exact by its cos/sin alone, but a translation's or a reflection's exactness depends
+/// on the *data* — `p + t` and `2c − p` are representable only when the parameter is dyadic **and**
+/// the result fits 53 bits. So it is measured, not derived, and when it holds the coefficients stay
+/// the truth: no node, no tolerance, and the judgment keeps the exact `f64` predicate path that
+/// `Witness::is_rotated` gates.
 ///
 /// **Per solid, not per face.** `transform_solid` requires a solid's boundary vertices to share
-/// one node ("uniform rotation"), and a *dyadic* offset does split by magnitude — measured, `0.5`
+/// one node ("uniform motion"), and a *dyadic* parameter does split by magnitude — measured, `0.5`
 /// is exact at `p = 1.0` and rounds at `p = 1e17`. Deciding per face would then leave one solid
 /// with some vertices carrying a node and some not, and break that invariant. One pass over every
 /// vertex and every face's plane origin — the two things a judgment reads — and one rounding
 /// anywhere puts the whole solid on the recorded path.
-fn translation_is_exact(model: &Model, solid: Handle<Solid>, offset: [Rat; 3]) -> bool {
-    let exact = |x: f64, t: Rat| match Rat::try_from_f64(x).and_then(|r| r.checked_add(t)) {
-        // Representable *and* reached by the f64 add the producer actually performs.
+///
+/// This answers for the **translation/reflection** part only; `chain_motion` reads
+/// `Isometry::is_exact` for the turn itself, and a rotation that is not exact makes the whole
+/// chain recorded anyway (the exception lapses the moment a history exists).
+fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> bool {
+    // Representable *and* reached by the `f64` arithmetic the producer actually performs — the
+    // second half matters: an exactly-representable answer the producer does not land on would
+    // make the definition and the cached coordinate disagree.
+    let translated = |x: f64, t: Rat| match Rat::try_from_f64(x).and_then(|r| r.checked_add(t)) {
         Some(sum) => Rat::try_from_f64(sum.to_f64()) == Some(sum) && x + t.to_f64() == sum.to_f64(),
         None => false,
     };
-    let all = |p: Point3| p.as_array().iter().zip(offset).all(|(&x, t)| exact(x, t));
+    let reflected = |x: f64, c: Rat| match Rat::try_from_f64(x)
+        .and_then(|r| c.checked_mul(Rat::from_int(2))?.checked_sub(r))
+    {
+        Some(v) => Rat::try_from_f64(v.to_f64()) == Some(v) && 2.0 * c.to_f64() - x == v.to_f64(),
+        None => false,
+    };
+    let all = |p: Point3| match motion {
+        Xform::Rigid(iso) => p
+            .as_array()
+            .iter()
+            .zip(iso.translate)
+            .all(|(&x, t)| translated(x, t)),
+        Xform::Mirror { axis, offset, .. } => reflected(p.as_array()[axis_index(*axis)], *offset),
+    };
     let src = model.solids.get(solid);
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &model.shells.get(sh).faces {
@@ -302,22 +269,25 @@ fn translation_is_exact(model: &Model, solid: Handle<Solid>, offset: [Rat; 3]) -
 ///
 /// | source | motion records a node | motion records nothing |
 /// |---|---|---|
-/// | `Constructed` | `Moved { witness: this face's pre-motion triangle, leaf }` | `Constructed`, or a conjugated chain under a mirror |
-/// | `Moved { witness, .. }` | `Moved { witness, leaf }` — the new nodes hang off this surface's own leaf, so replaying from the root witness applies every motion once | identity (`copy`): unchanged; mirror: conjugate the chain over the mirrored witness |
+/// | `Constructed` | `Moved { witness: this face's pre-motion triangle, leaf }` | `Constructed` |
+/// | `Moved { witness, .. }` | `Moved { witness, leaf }` — the new nodes hang off this surface's own leaf, so replaying from the root witness applies every motion once | unchanged (`copy`, or an exactness-preserving move of a history-free surface) |
 /// | `Inexact` | `Inexact` | `Inexact` |
 ///
-/// **`Inexact` has no producer here any more.** It used to be what a translation of an already-
-/// rotated surface became, because the history held rotations only and `R` then `T` had no node
-/// to name; the forest names it now. The variant stays as the honest reading of a surface pushed
-/// past `Model::push_surface`, which `nacre-validate` reports.
+/// **One table for all three motions.** A reflection used to have its own column here, carrying a
+/// moved surface by conjugating its chain over a mirrored witness; it now appends a node like
+/// everything else, so the reflection is *in* the definition rather than folded into it.
+///
+/// **`Inexact` has no producer here.** It used to be what a translation of an already-rotated
+/// surface became, because the history held rotations only and `R` then `T` had no node to name;
+/// the forest names it now. The variant stays as the honest reading of a surface pushed past
+/// `Model::push_surface`, which `nacre-validate` reports.
 fn moved_surface_def(
     model: &mut Model,
     src: Handle<Surface>,
     face: Handle<Face>,
     motion: &Xform<'_>,
-    exact_translate: bool,
+    exact: bool,
     surf_rot: &mut HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>>,
-    conj: &mut Option<Conjugation>,
 ) -> Result<SurfaceDef, OpError> {
     let source = model
         .surface_defs
@@ -331,106 +301,35 @@ fn moved_surface_def(
         SurfaceDef::Moved { motion, .. } => Some(motion),
         _ => None,
     };
-    if let Some(iso) = motion.rigid() {
-        let leaf = match surf_rot.get(&parent) {
-            Some(&h) => h,
-            None => {
-                // `entry` cannot hold a `&mut Model` across the closure, so look up then insert.
-                let h = chain_isometry(model, parent, iso, exact_translate);
-                surf_rot.insert(parent, h);
-                h
-            }
-        };
-        let Some(leaf) = leaf else {
-            // Nothing recorded: the motion kept the coefficients exact.
-            return Ok(source);
-        };
-        return Ok(match source {
-            SurfaceDef::Inexact => SurfaceDef::Inexact,
-            SurfaceDef::Moved { witness, .. } => SurfaceDef::Moved {
+    let leaf = match surf_rot.get(&parent) {
+        Some(&h) => h,
+        None => {
+            // `entry` cannot hold a `&mut Model` across the closure, so look up then insert.
+            let h = chain_motion(model, parent, motion, exact);
+            surf_rot.insert(parent, h);
+            h
+        }
+    };
+    let Some(leaf) = leaf else {
+        // Nothing recorded: the motion kept the coefficients exact.
+        return Ok(source);
+    };
+    Ok(match source {
+        SurfaceDef::Inexact => SurfaceDef::Inexact,
+        SurfaceDef::Moved { witness, .. } => SurfaceDef::Moved {
+            witness,
+            motion: leaf,
+        },
+        SurfaceDef::Constructed => {
+            let f = model.faces.get(face);
+            let (witness, _) =
+                crate::planes::outer_tri(model, f).ok_or(OpError::DegenerateGeometry)?;
+            SurfaceDef::Moved {
                 witness,
                 motion: leaf,
-            },
-            SurfaceDef::Constructed => {
-                let f = model.faces.get(face);
-                let (witness, _) =
-                    crate::planes::outer_tri(model, f).ok_or(OpError::DegenerateGeometry)?;
-                SurfaceDef::Moved {
-                    witness,
-                    motion: leaf,
-                }
-            }
-        });
-    }
-    // A reflection: exact (rational pivot, negated angle — `conjugate_chain`), so a moved surface
-    // stays describable as the mirrored witness under the conjugated chain.
-    Ok(match (source, conj) {
-        (SurfaceDef::Constructed, _) => SurfaceDef::Constructed,
-        (SurfaceDef::Inexact, _) => SurfaceDef::Inexact,
-        (SurfaceDef::Moved { witness, motion }, Some(c)) => {
-            let m = c.mirror;
-            let leaf = conjugate_chain(model, motion, c).ok_or(OpError::MirrorChainOverflow)?;
-            SurfaceDef::Moved {
-                witness: witness.map(|p| m.point(p)),
-                motion: leaf,
             }
         }
-        (def @ SurfaceDef::Moved { .. }, None) => def,
     })
-}
-
-/// The reflected image of a rotation chain's root vertex, pushed as its own cell.
-///
-/// The chain now turns *this* point, so it has to exist. A `Constructed` root mirrors to a
-/// `Constructed` root. A `Discovered` root keeps its definition with the three planes mirrored —
-/// nothing consumes that today (`vertex_pt3` stops at a `Discovered` root either way), but
-/// leaving the original planes would record the false claim that the mirrored point lies on them.
-fn mirrored_base(model: &mut Model, base: Handle<Vertex>, c: &mut Conjugation) -> Handle<Vertex> {
-    if let Some(&h) = c.bases.get(&base) {
-        return h;
-    }
-    let v = *model.vertices.get(base);
-    let origin = match v.origin {
-        Origin::Discovered {
-            tol,
-            definition: VertexDef::ThreePlane(planes),
-        } => {
-            let mapped = planes.map(|s| {
-                if let Some(&h) = c.surfaces.get(&s) {
-                    return h;
-                }
-                // A root's planes belong to the pre-rotation solid, not to the one being walked,
-                // so they are mirrored here rather than through the walk's surface map.
-                let moved = model
-                    .surfaces
-                    .get(s)
-                    .mirrored(c.mirror)
-                    .unwrap_or_else(|| model.surfaces.get(s).clone());
-                // A root is pre-rotation, so its planes are `Constructed` and a reflection keeps
-                // them so. Anything else would be a rotated plane reached through a root, which
-                // the chain invariant forbids — record it as inexact rather than assert.
-                let def = match model.surface_defs.get(&s) {
-                    Some(SurfaceDef::Constructed) => SurfaceDef::Constructed,
-                    _ => SurfaceDef::Inexact,
-                };
-                let h = model.push_surface(moved, def);
-                c.surfaces.insert(s, h);
-                h
-            });
-            Origin::Discovered {
-                tol,
-                definition: VertexDef::ThreePlane(mapped),
-            }
-        }
-        // A root is never `Rotated` (the chain always names the non-rotated ancestor).
-        other => other,
-    };
-    let h = model.vertices.push(Vertex {
-        point: c.mirror.point(v.point),
-        origin,
-    });
-    c.bases.insert(base, h);
-    h
 }
 
 fn axis_index(axis: Axis) -> usize {
@@ -448,14 +347,23 @@ pub(crate) enum Xform<'a> {
     /// A proper motion: rotation then translation. Preserves handedness.
     Rigid(&'a Isometry),
     /// A reflection in a coordinate plane. Reverses handedness, so `det = −1`.
-    Mirror(AxisMirror),
+    ///
+    /// The plane is carried **twice**: `m` is the `f64` map the coordinates actually go through,
+    /// `(axis, offset)` the exact statement of the same plane that the motion history records.
+    /// They used to travel as separate arguments, and an `Option` that could in principle arrive
+    /// empty; one variant cannot lose half of itself.
+    Mirror {
+        m: AxisMirror,
+        axis: Axis,
+        offset: Rat,
+    },
 }
 
 impl Xform<'_> {
     fn point(&self, p: Point3) -> Point3 {
         match self {
             Xform::Rigid(iso) => Point3::from_array(iso.apply_point(p.as_array())),
-            Xform::Mirror(m) => m.point(p),
+            Xform::Mirror { m, .. } => m.point(p),
         }
     }
 
@@ -464,14 +372,14 @@ impl Xform<'_> {
     fn surface(&self, s: &Surface, offset: Vector3) -> Option<Surface> {
         match self {
             Xform::Rigid(iso) => Some(transform_surface(s, iso, offset)),
-            Xform::Mirror(m) => s.mirrored(*m),
+            Xform::Mirror { m, .. } => s.mirrored(*m),
         }
     }
 
     fn curve(&self, c: &Curve, offset: Vector3) -> Option<Curve> {
         match self {
             Xform::Rigid(iso) => Some(transform_curve(c, iso, offset)),
-            Xform::Mirror(m) => c.mirrored(*m),
+            Xform::Mirror { m, .. } => c.mirrored(*m),
         }
     }
 
@@ -479,14 +387,14 @@ impl Xform<'_> {
     /// every loop is rewound to put it back — and then the `Orientation` flag needs no change,
     /// because a reflection preserves dot products.
     fn reverses_orientation(&self) -> bool {
-        matches!(self, Xform::Mirror(_))
+        matches!(self, Xform::Mirror { .. })
     }
 
     /// The isometry, for the rotation-forest bookkeeping that only proper motion does.
     fn rigid(&self) -> Option<&Isometry> {
         match self {
             Xform::Rigid(iso) => Some(iso),
-            Xform::Mirror(_) => None,
+            Xform::Mirror { .. } => None,
         }
     }
 }
@@ -594,20 +502,7 @@ fn transform_solid(
     model: &mut Model,
     solid: Handle<Solid>,
     motion: &Xform<'_>,
-    mirror_plane: Option<(Axis, Rat)>,
 ) -> Result<Handle<Solid>, OpError> {
-    // A reflection carries a rotated input by conjugating its chain (see `conjugate_chain`).
-    let mut conj = match (motion, mirror_plane) {
-        (Xform::Mirror(m), Some((axis, offset))) => Some(Conjugation {
-            mirror: *m,
-            axis,
-            offset,
-            nodes: HashMap::new(),
-            bases: HashMap::new(),
-            surfaces: HashMap::new(),
-        }),
-        _ => None,
-    };
     let offset = motion
         .rigid()
         .map(|iso| Vector3::from_array(iso.offset_f64()))
@@ -615,20 +510,14 @@ fn transform_solid(
     let src = model.solids.get(solid).clone();
 
     // The forest nodes this transform appends (§CIP ⑦), one shared leaf named by every moved
-    // vertex. `chain_isometry` decides what is worth recording: a zero translation and a
-    // 90°-family rotation of a still-exact datum record nothing, and both exceptions lapse once
-    // the solid already has a history — then every motion is recorded or the chain would not
-    // reproduce the result.
+    // vertex. `chain_motion` decides what is worth recording: a zero translation, a 90°-family
+    // rotation of a still-exact datum, and an exactness-preserving reflection record nothing, and
+    // every exception lapses once the solid already has a history — then every motion is recorded
+    // or the chain would not reproduce the result.
     let input_leaf = solid_motion(model, solid);
-    // Decided once, for the whole solid — see [`translation_is_exact`].
-    let exact_translate = motion
-        .rigid()
-        .map(|iso| translation_is_exact(model, solid, iso.translate))
-        .unwrap_or(true);
-    let rot_node: Option<Handle<MotionNode>> = match motion.rigid() {
-        Some(iso) => chain_isometry(model, input_leaf, iso, exact_translate),
-        None => None, // a reflection carries its input by conjugating, not appending
-    };
+    // Decided once, for the whole solid — see [`motion_is_exact`].
+    let exact = motion_is_exact(model, solid, motion);
+    let move_node: Option<Handle<MotionNode>> = chain_motion(model, input_leaf, motion, exact);
 
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
@@ -663,15 +552,7 @@ fn transform_solid(
         let moved = motion
             .surface(model.surfaces.get(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
-        let def = moved_surface_def(
-            model,
-            s,
-            fh,
-            motion,
-            exact_translate,
-            &mut surf_rot,
-            &mut conj,
-        )?;
+        let def = moved_surface_def(model, s, fh, motion, exact, &mut surf_rot)?;
         surf_map.insert(s, model.push_surface(moved, def));
     }
 
@@ -718,57 +599,26 @@ fn transform_solid(
         let v = *model.vertices.get(vh);
         let new_v = Vertex {
             point: motion.point(v.point),
-            // A recorded rotation marks the vertex `Rotated`; `base` is the **root** —
-            // the non-`Rotated` (Constructed/Discovered) ancestor whose exact definition
-            // the rotation chain turns. A fresh rotation's input is itself the root; a
-            // re-rotation chases one hop to the input's own root (the invariant keeps
-            // `base` pointing at a root, never at another `Rotated` vertex, so stage-2
-            // recompute never applies the same rotation twice). No node → remap (1a/1b).
-            origin: match rot_node {
-                Some(rotation) => {
+            // A recorded motion marks the vertex `Moved`; `base` is the **root** — the
+            // non-`Moved` (Constructed/Discovered) ancestor whose exact definition the chain
+            // moves. A fresh move's input is itself the root; a re-move chases one hop to the
+            // input's own root (the invariant keeps `base` pointing at a root, never at another
+            // `Moved` vertex, so a replay never applies the same motion twice). No node → remap.
+            //
+            // **A reflection needs nothing more.** It used to conjugate the chain onto a mirrored
+            // copy of the root and replay the coordinate from there, because the chain had no way
+            // to say "and then reflect"; now it does, `Pt3::mirror` walks the same `2c − x` the
+            // producer just walked, and the root stays the root.
+            origin: match move_node {
+                Some(node) => {
                     let base = match v.origin {
                         Origin::Moved { base, .. } => base,
                         _ => vh,
                     };
-                    Origin::Moved {
-                        base,
-                        motion: rotation,
-                    }
+                    Origin::Moved { base, motion: node }
                 }
                 None => remap_origin(v.origin, &surf_map),
             },
-        };
-        // A reflection of an already-rotated vertex: the definition is the conjugated chain over
-        // the mirrored root, and the *coordinate must be replayed from it* — `vertex_pt3` requires
-        // the replay to match the stored point bit for bit, which reflecting the point separately
-        // would not (two float routes to one real number differ in the last places).
-        let new_v = match (&mut conj, v.origin) {
-            (
-                Some(c),
-                Origin::Moved {
-                    base,
-                    motion: rotation,
-                },
-            ) => {
-                let leaf =
-                    conjugate_chain(model, rotation, c).ok_or(OpError::MirrorChainOverflow)?;
-                let mbase = mirrored_base(model, base, c);
-                let bp = model.vertices.get(mbase).point.as_array();
-                let point = match crate::rotated_vertex::replay_chain_coord(model, bp, leaf) {
-                    Ok(coord) => Point3::from_array(coord),
-                    // A `Discovered` root is not replayable — before or after mirroring — so the
-                    // reflected coordinate is the honest value and `vertex_pt3` defers as it did.
-                    Err(_) => new_v.point,
-                };
-                Vertex {
-                    point,
-                    origin: Origin::Moved {
-                        base: mbase,
-                        motion: leaf,
-                    },
-                }
-            }
-            _ => new_v,
         };
         vert_map.insert(vh, model.vertices.push(new_v));
     }
@@ -881,11 +731,9 @@ mod tests {
     /// the datum already has a history, the chain has to keep reproducing it, and a chain missing a
     /// link describes the datum as it was before that link. Silently.
     ///
-    /// Asserted on the rule rather than on a symptom, because the symptom is not reachable today:
-    /// an inexact rotation leaves coordinates using the full mantissa, so no nonzero translation of
-    /// such a solid is exact and `exact_translate` is already false. It becomes reachable as soon
-    /// as an exactness-preserving motion can carry a history too (a reflection in `x = 0`), which
-    /// is how the rule was found to be wrong — so it is pinned here, not left to a future fixture.
+    /// Asserted on the rule rather than on a symptom. The translation half is what the rule was
+    /// found to be wrong on; the reflection half is the case that made it load-bearing, since a
+    /// reflection in a dyadic plane preserves exactness *and* can carry a history.
     #[test]
     fn an_exact_motion_is_still_recorded_once_there_is_a_history() {
         let mut m = Model::new();
@@ -898,17 +746,27 @@ mod tests {
             None,
         );
         let place = Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]);
+        let flip = Xform::Mirror {
+            m: AxisMirror::new(0, 0.0).unwrap(),
+            axis: Axis::X,
+            offset: Rat::from_int(0),
+        };
 
-        // No history: an exact translation records nothing, and the coordinates stay the truth.
-        assert_eq!(chain_isometry(&mut m, None, &place, true), None);
-        // With a history: recorded anyway, and the new leaf hangs off the old one.
-        let leaf = chain_isometry(&mut m, Some(root), &place, true)
-            .expect("a motion over a history is always recorded");
-        assert_ne!(leaf, root);
-        assert_eq!(m.motions.get(leaf).parent, Some(root));
-        assert!(matches!(
-            m.motions.get(leaf).motion,
-            Motion::Translate { .. }
-        ));
+        for (what, motion) in [
+            ("translation", &Xform::Rigid(&place)),
+            ("reflection", &flip),
+        ] {
+            // No history: an exact motion records nothing, and the coordinates stay the truth.
+            assert_eq!(
+                chain_motion(&mut m, None, motion, true),
+                None,
+                "an exact {what} over no history records nothing"
+            );
+            // With a history: recorded anyway, and the new leaf hangs off the old one.
+            let leaf = chain_motion(&mut m, Some(root), motion, true)
+                .unwrap_or_else(|| panic!("a {what} over a history is always recorded"));
+            assert_ne!(leaf, root);
+            assert_eq!(m.motions.get(leaf).parent, Some(root));
+        }
     }
 }
