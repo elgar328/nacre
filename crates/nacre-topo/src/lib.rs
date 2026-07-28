@@ -37,12 +37,10 @@ pub enum VertexDef {
     ThreePlane([Handle<Surface>; 3]),
 }
 
-/// One rigid motion in a history — what a [`MotionNode`] carries.
+/// One motion in a history — what a [`MotionNode`] carries.
 ///
-/// Rotation and translation do **not** commute, so a history is one ordered chain, never two
-/// stores: "turn then place" and "place then turn" are different motions and must stay tellable
-/// apart. (Reflections are not here: a mirror is carried by *conjugating* an existing chain, not
-/// by appending — see `nacre-ops`' `conjugate_chain`.)
+/// Motions do **not** commute, so a history is one ordered chain, never a store per kind: "turn
+/// then place" and "place then turn" are different motions and must stay tellable apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Motion {
     /// One axis-aligned rotation about the line through the rational pivot `point`.
@@ -53,6 +51,13 @@ pub enum Motion {
     },
     /// One exact rational translation.
     Translate { offset: [Rat; 3] },
+    /// One reflection in the coordinate plane `axis = offset` (`x ↦ 2·offset − x` on that axis).
+    ///
+    /// **Improper** — the only motion here with `det = −1`. It preserves lengths, distances and
+    /// incidence like the others, but it *negates* every determinant of its images rather than
+    /// leaving them alone. Judgments that answer a determinant question in a shared pre-motion
+    /// frame must account for that; see `nacre-ops`' `BaseFrame` and `nacre-cip`'s `shared_base`.
+    Mirror { axis: Axis, offset: Rat },
 }
 
 /// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a

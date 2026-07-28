@@ -39,7 +39,7 @@ type HpCell = HpRc<HpOnce<(usize, [HpIv; 3])>>;
 
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle` — `point = [0,0,0]` is the origin-pivot case.
-/// Rotation and translation do not commute, so the chain's **order is the definition**.
+/// Motions do not commute, so the chain's **order is the definition**.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveNode {
     Rotate {
@@ -49,6 +49,12 @@ pub enum MoveNode {
     },
     /// An exact rational translation. Realized by adding the offset — see [`Pt3::compute_hp`].
     Translate { offset: [Rat; 3] },
+    /// An exact reflection in `axis = offset` (`x ↦ 2·offset − x` on that axis).
+    ///
+    /// **Improper** (`det = −1`): unlike the other two it negates a determinant of its images.
+    /// A judgement that cancels a shared motion out of a determinant must bring the pre-motion
+    /// data into the same handedness first — see [`shared_base`].
+    Mirror { axis: Axis, offset: Rat },
 }
 
 /// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
@@ -181,13 +187,42 @@ impl Pt3 {
         self
     }
 
+    /// The point reflected in `axis = offset` — one more link in the definition.
+    ///
+    /// **`coord` follows the producer's own route** (`AxisMirror::point`), so a replay of the
+    /// definition reproduces the stored coordinate bit for bit. The exact offset lives in the
+    /// chain, where [`compute_hp`](Self::compute_hp) realizes it.
+    pub fn mirror(mut self, axis: Axis, offset: Rat) -> Self {
+        let k = axis.index();
+        let c = offset.to_f64();
+        // `2·c` is exact (a power-of-two multiply), so the new error is the offset's own
+        // realization plus the subtraction's half-ulp. Negation itself is exact, so the incoming
+        // tol passes through unscaled.
+        //
+        // **The offset enters doubled** (`2·c`), so its realization error does too — the factor
+        // here is `4 = 2 (the doubling) × 2 (the same safety margin every other term carries)`.
+        // Copying `translate`'s `2.0` looks right and is not: there the offset enters once, so its
+        // `2.0` *was* the margin. Measured — a chain of two reflections overran the bound by 4%.
+        self.tol[k] += 4.0
+            * bf_mag(&rat_to_big(offset, 120).sub(&BigFloat::from_f64(c, 120), 120, HP_RM)).abs()
+            + f64::EPSILON * (2.0 * c.abs() + self.coord[k].abs());
+        // The producer's own route (`AxisMirror::point`), operation for operation — a replay of
+        // the definition has to reproduce the stored coordinate bit for bit.
+        self.coord[k] = 2.0 * c - self.coord[k];
+        let mut nodes = self.chain.to_vec();
+        nodes.push(MoveNode::Mirror { axis, offset });
+        self.chain = HpRc::from(nodes);
+        self.hp = HpCell::default();
+        self
+    }
+
     /// The point translated by an exact rational `offset` — one more link in the definition.
     ///
     /// **`coord` is updated exactly as the producer does it** (`Isometry::apply_point`: add the
     /// offset's f64 image), so a replay of the definition reproduces the stored coordinate bit for
-    /// bit — the contract `nacre-ops`' mirror path depends on. The exact offset lives in the
-    /// chain, where [`compute_hp`](Self::compute_hp) realizes it; the two roundings this f64 step
-    /// takes (the offset's own, and the add's) are what `tol` grows by.
+    /// bit. The exact offset lives in the chain, where [`compute_hp`](Self::compute_hp) realizes
+    /// it; the two roundings this f64 step takes (the offset's own, and the add's) are what `tol`
+    /// grows by.
     ///
     /// That split is the whole point: two placements that reach the same real wall by different
     /// routes keep f64 coordinates an ulp apart, but their *definitions* realize to the same
@@ -259,6 +294,13 @@ impl Pt3 {
                     for k in 0..3 {
                         p[k] = p[k].add(&rat_to_hp(offset[k], prec), prec);
                     }
+                }
+                // `2·offset − x` on one coordinate: exact input, so the interval carries only its
+                // own rounding. The other two coordinates are untouched.
+                MoveNode::Mirror { axis, offset } => {
+                    let k = axis.index();
+                    let c = rat_to_hp(*offset, prec);
+                    p[k] = c.add(&c, prec).sub(&p[k], prec);
                 }
             }
         }
@@ -1872,13 +1914,13 @@ mod tests {
     }
 
     /// Soundness: over random **motion** chains (mixed axes, arbitrary pivots, exact and inexact
-    /// angles, **and rational translations interleaved**), the direction-wise tol must bound the
-    /// true f64 error on every axis (astro-float 512-bit ground truth) — the production mirror of
-    /// exact3d H-d/H-f. (An `err` below 1e-100 is 512-bit GT noise, not a real f64 error.)
+    /// angles, **and rational translations and reflections interleaved**), the direction-wise tol
+    /// must bound the true f64 error on every axis (astro-float 512-bit ground truth) — the
+    /// production mirror of exact3d H-d/H-f. (An `err` below 1e-100 is 512-bit GT noise.)
     ///
-    /// **The translations are why this is not just a rename.** A new node kind arrives with a new
-    /// tol term, and nothing else in the suite checks that term is an upper bound — the whole
-    /// judgment layer is sound only if it is.
+    /// **Every node kind must appear here.** Each arrives with its own tol term, and nothing else
+    /// in the suite checks that term is an upper bound — the whole judgment layer is sound only if
+    /// it is. (The translate term was once added without this, and had to be back-filled.)
     /// `#[ignore]`: astro-float ground truth is slow; run with `--ignored` (+ CI). The
     /// full statistical validation lives in `experiments/exact3d`.
     #[test]
@@ -1886,7 +1928,8 @@ mod tests {
     fn tol_bounds_error_over_random_chains() {
         const GT: usize = 512;
         let mut st = 0x2A5C_1234_ABCD_9999u64;
-        let (mut exact_seen, mut pivot_seen, mut translate_seen) = (false, false, false);
+        let (mut exact_seen, mut pivot_seen) = (false, false);
+        let (mut translate_seen, mut mirror_seen) = (false, false);
         let mut worst_ratio = 0.0_f64;
         let mut worst_rot = 0.0_f64;
         for _ in 0..2000 {
@@ -1897,12 +1940,25 @@ mod tests {
             // the deleted 2D frame validated on its own; sampling it here is what makes this test
             // strictly cover that one, rather than merely resemble it.
             for _ in 0..rng(&mut st, 1, 5) {
-                // Every third link is a translation, so a chain mixes the two kinds in both
-                // orders — which is where a tol term that only holds "on its own" would show.
-                if rng(&mut st, 0, 2) == 0 {
-                    translate_seen = true;
-                    p = p.translate(rand_base(&mut st));
-                    continue;
+                // Links of every kind, in both orders — which is where a tol term that only holds
+                // "on its own" would show.
+                match rng(&mut st, 0, 3) {
+                    0 => {
+                        translate_seen = true;
+                        p = p.translate(rand_base(&mut st));
+                        continue;
+                    }
+                    1 => {
+                        mirror_seen = true;
+                        let off = if rng(&mut st, 0, 2) == 0 {
+                            Rat::from_int(0) // the exact case: a pure sign flip
+                        } else {
+                            rand_base(&mut st)[0]
+                        };
+                        p = p.mirror(axis_of(rng(&mut st, 0, 2)), off);
+                        continue;
+                    }
+                    _ => {}
                 }
                 let ax = axis_of(rng(&mut st, 0, 2));
                 let pivot = match rng(&mut st, 0, 2) {
@@ -1941,8 +1997,8 @@ mod tests {
             }
         }
         assert!(
-            exact_seen && pivot_seen && translate_seen,
-            "corpus must mix exact angles, pivots and translations"
+            exact_seen && pivot_seen && translate_seen && mirror_seen,
+            "corpus must mix exact angles, pivots, translations and reflections"
         );
         // **How much of the bound the real error actually uses.** `DA_F64` is the one constant in
         // this kernel that cannot be derived — `f64::cos`'s accuracy is not contracted by Rust or

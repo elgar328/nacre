@@ -196,6 +196,10 @@ fn conjugate_chain(
             offset[i] = Rat::from_int(0).checked_sub(offset[i])?;
             Motion::Translate { offset }
         }
+        // A chain that already contains a reflection is not conjugated — this whole function goes
+        // away once reflections are appended like any other motion. Declining is honest until then
+        // (nothing records one yet, so it is not reachable).
+        Motion::Mirror { .. } => return None,
     };
     let h = model.push_motion(motion, parent);
     c.nodes.insert(leaf, h);

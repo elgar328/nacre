@@ -45,6 +45,7 @@ pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Pt3 {
     chain.iter().fold(p, |q, n| match *n {
         MoveNode::Rotate { axis, angle, point } => q.rotate_about(axis, angle, point),
         MoveNode::Translate { offset } => q.translate(offset),
+        MoveNode::Mirror { axis, offset } => q.mirror(axis, offset),
     })
 }
 
@@ -57,6 +58,7 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Vec<MoveN
         chain.push(match n.motion {
             Motion::Rotate { axis, point, angle } => MoveNode::Rotate { axis, angle, point },
             Motion::Translate { offset } => MoveNode::Translate { offset },
+            Motion::Mirror { axis, offset } => MoveNode::Mirror { axis, offset },
         });
         cur = n.parent;
     }
@@ -183,7 +185,7 @@ mod tests {
             .iter()
             .filter_map(|n| match n {
                 MoveNode::Rotate { axis, .. } => Some(*axis),
-                MoveNode::Translate { .. } => None,
+                MoveNode::Translate { .. } | MoveNode::Mirror { .. } => None,
             })
             .collect();
         assert_eq!(axes, vec![Axis::Z, Axis::X]);
