@@ -122,7 +122,7 @@ pub enum RejectReason {
     /// 2-manifold. `validate` calls this `NonOpposedEdge` and every shell the operations build
     /// is manifold — but `boolean` never runs `validate` on its inputs, so a direct caller could
     /// still hand one in. Raised only where an operand is read (its plane table and its seam
-    /// neighbours); the *result*-side closure check is [`Self::ResultNotClosed`], which is a
+    /// neighbours); the *result*-side closure check is [`Self::OpenResultShell`], which is a
     /// different situation and used to share this name. Unfired across the suite (2026-07-26).
     NonManifoldEdge,
     /// The assembled boundary uses an edge **more than twice**: the two bodies meet exactly along

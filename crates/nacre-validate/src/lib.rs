@@ -62,7 +62,7 @@ pub enum Violation {
         target_len: u32,
     },
 
-    /// A live face lies on a surface with no [`SurfaceDef`] — the surface was pushed straight
+    /// A live face lies on a surface with no [`nacre_topo::SurfaceDef`] — the surface was pushed straight
     /// into the store instead of through `Model::push_surface`, so nothing says whether its
     /// coefficients are the truth or a rounded image. A consumer that needs the exact plane has
     /// no way to ask, and the kernel's default answer ("they are exact") is the failure this
@@ -130,7 +130,7 @@ pub enum Violation {
     /// A `Discovered` vertex does not lie on one of its `VertexDef` planes within
     /// its measured tolerance — the definition is the truth, so the cached point
     /// must sit within `tol` of every plane it is defined as intersecting
-    /// (design §4). `surface_index` is type-erased (like [`DanglingReference`]) so
+    /// (design §4). `surface_index` is type-erased (like [`Self::DanglingReference`]) so
     /// the checker never names geom's `Surface` (geom stays a dev-dependency).
     VertexOffDefinition {
         vertex: Handle<Vertex>,
