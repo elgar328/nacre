@@ -262,8 +262,8 @@ fn mirroring_a_cylinder_is_declined() {
     assert!(matches!(err, OpError::MirrorNotPlanar), "{err:?}");
 }
 
-/// A rotated solid mirrors: the reflection carries its rotation chain by conjugation, so the
-/// image keeps an exact `Origin::Moved` definition rather than degrading to bare coordinates.
+/// A rotated solid mirrors: the reflection extends the chain with a `Mirror` node, so the image
+/// keeps an exact `Origin::Moved` definition rather than degrading to bare coordinates.
 #[test]
 fn a_rotated_solid_mirrors() {
     let mut m = Model::new();
@@ -290,11 +290,11 @@ fn a_rotated_solid_mirrors() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// **The conjugation's actual test.** A mirrored rotated vertex's coordinate is replayed from the
-/// conjugated chain, not reflected directly — so it must still land where a plain reflection would
-/// put it. A wrong conjugate (a sign on the angle, an unmirrored pivot) yields a solid that is
-/// merely *rotated* away from the truth: same volume, valid topology, wrong place. Only comparing
-/// against the independent reflection catches that.
+/// **The improper chain's actual test.** A mirrored rotated vertex is described by a chain that
+/// ends in a reflection, and it must still land exactly where a plain reflection would put it. A
+/// chain that is wrong in a *rigid* way (a sign on an angle, a pivot that did not move) yields a
+/// solid merely turned away from the truth: same volume, valid topology, wrong place. Only
+/// comparing against the independent reflection catches that.
 #[test]
 fn a_mirrored_rotated_solid_lands_where_reflection_says() {
     let mut m = Model::new();
@@ -325,9 +325,10 @@ fn a_mirrored_rotated_solid_lands_where_reflection_says() {
     }
 }
 
-/// A mirrored *rotated* solid is still a boolean operand. Rotated operands are judged on their
-/// exact `Pt3` definitions, so a wrong conjugation shows up as a wrong or refused decision here —
-/// the coordinates alone would not reveal it, since they are produced by a different route.
+/// A mirrored *rotated* solid is still a boolean operand. Moved operands are judged on their
+/// exact `Pt3` definitions, and this one's chain has **odd parity** — so a handedness correction
+/// that is wrong (or missing) shows up as a wrong or refused decision here, where the coordinates
+/// alone would look perfectly fine.
 #[test]
 fn a_mirrored_rotated_solid_is_a_usable_operand() {
     let mut m = Model::new();

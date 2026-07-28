@@ -3073,11 +3073,10 @@ pub mod tests {
 
     /// The bit-identity guard, on the one producer that can break it.
     ///
-    /// A definition and its cached coordinate must agree **exactly**, and they do for the ordinary
-    /// paths only because the replay performs the very same float operations the producer did. A
-    /// mirror derives the two by *different* routes: the definition by conjugating the chain, the
-    /// point by reflecting. It must therefore store the replayed value, and this fails the moment
-    /// it goes back to reflecting the point.
+    /// A definition and its cached coordinate must agree **exactly**, and they do only because the
+    /// replay performs the very same float operations the producer did. A reflection is the step
+    /// where that is easiest to lose — `Pt3::mirror` must walk the same `2c − x` that
+    /// `AxisMirror::point` just walked — and a chain that ends in one is what this checks.
     #[test]
     fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
         use nacre_scalar::{Axis, Rat};

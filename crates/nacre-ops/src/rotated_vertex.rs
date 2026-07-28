@@ -1,10 +1,10 @@
-//! Rotation-forest replay: turning a recorded rotation history back into coordinates.
+//! Motion-forest replay: turning a recorded motion history back into coordinates.
 //!
-//! A rotation node names an axis, a pivot and an angle; a chain of them is the exact definition
-//! of everything the rotation moved. This module walks that chain — [`rotation_chain`] reads it
-//! root-to-leaf, [`replay_chain_coord`] turns a point through it in the *same* order and float
-//! operations the producer used, which is what lets a consumer check a coordinate against its
-//! definition bit for bit.
+//! A node names one motion — a turn about an axis, a translation, or a reflection in a coordinate
+//! plane — and a chain of them is the exact definition of everything that motion moved. This
+//! module walks that chain: [`motion_chain`] reads it root-to-leaf and [`replay`] carries a point
+//! through it in the *same* order and float operations the producer used, which is what lets a
+//! consumer check a coordinate against its definition bit for bit.
 //!
 //! It used to also *hunt* for a rotated face's exact plane, working back through vertices and
 //! their `Discovered` three-plane definitions, because a `Surface` said nothing about where it
@@ -115,9 +115,9 @@ mod tests {
     ///
     /// This is the contract that lets a consumer check a coordinate against its definition by
     /// equality rather than by tolerance: the replay must perform the *same* float operations, in
-    /// the same order, that the producer did. `mirror` depends on it — it derives the definition
-    /// by conjugating the chain, a different route from reflecting the point, so it has to store
-    /// the replayed value.
+    /// the same order, that the producer did. Every motion node owes this, and `Mirror` is where
+    /// it is easiest to lose — `Pt3::mirror` walks the same `2c − x` that `AxisMirror::point` did,
+    /// rather than an algebraically equal rearrangement.
     #[test]
     fn replay_reproduces_the_stored_coordinate() {
         let mut m = Model::new();
