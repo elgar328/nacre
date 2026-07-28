@@ -256,18 +256,25 @@ pub enum RejectReason {
     /// faces and the target's one), so every point of the line already lies on three planes and a
     /// fourth turns it into a vertex: each plane crossing the line yields a four-plane point.
     ///
-    /// The reachable example, and the firing test: a bar spun **45°** about an axis in that plane,
-    /// whose bottom corner edge lands back in it. The equality that does it is **half-width ==
-    /// offset from the pivot to the bottom face** — for a bar 0.4 wide centred on x = 0.5 and 0.4
-    /// tall centred on z = 1, both are `0.2` and the corner travels to x = 0.5 exactly. Break the
-    /// angle, either extent, or the pivot's position and the same model builds: the coincidence is
-    /// what bites, not the rotation.
+    /// **★ The model this was written for now builds, and this has no firing test.** That model —
+    /// a bar spun **45°** about an axis in the plane, whose bottom corner edge lands back in it
+    /// because half-width equals the pivot-to-bottom offset — is `nacre-oracle`'s
+    /// `the_four_plane_cut_matches_occt`, where OCCT scores the result and agrees on volume and
+    /// centroid. Vertex identity was normalised (names identify, structures carry geometry), and
+    /// `coverage/rotation.rs` keeps the near misses around it building.
     ///
-    /// **Exact, not toleranced.** Measured: perturbing an operand coordinate by **one ULP** in
-    /// either direction removes the concurrency and the boolean succeeds. The judgement returns
-    /// zero because the determinant *is* zero at 200 bits, not because it fell below the declare-0
-    /// floor (which sits ~55 orders of magnitude lower). Exact rational input would produce the
-    /// same concurrency — this is not an artefact of `f64` construction.
+    /// What survives is the guard, at two sites: an **operand** vertex found on more than three
+    /// plane classes (`combinatorics`), and a run whose candidate handles are all parallel to the
+    /// line they must cut (`arrangement`). Neither has a reproduction. It stays because a
+    /// substrate that cannot name a point must say so rather than pick one of the names — and
+    /// because an unfired reject costs nothing, while a missing one costs a wrong solid.
+    ///
+    /// **Exact, not toleranced.** Measured on that model: perturbing an operand coordinate by
+    /// **one ULP** in either direction removed the concurrency. The judgement returned zero
+    /// because the determinant *is* zero at 200 bits, not because it fell below the coincidence
+    /// limit (~55 orders of magnitude lower). Exact rational input would produce the same
+    /// concurrency — this was never an artefact of `f64` construction, which is why the
+    /// rational-construction backlog item does not touch it.
     FourPlane,
     /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
     /// quadrics).

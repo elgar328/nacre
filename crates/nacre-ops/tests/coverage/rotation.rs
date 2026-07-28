@@ -206,17 +206,19 @@ fn rotated_result_coplanar_reuse_under_a_general_rotation() {
     }
 }
 
-/// The near misses around the four-plane reject in `rejects.rs`.
+/// The near misses around the four-plane concurrency.
 ///
-/// That reject needs **four** coincidences at once: 45°, a bar whose half-width equals its
+/// It needs **four** coincidences at once: 45°, a bar whose half-width equals its
 /// pivot-to-bottom offset, a pivot in the plane those two measure from, and the fused block — which
 /// is what supplies the plane `x = 0.5` that the bar's bottom corner edge lands in. Break any single
-/// one and the cut builds. Each row here was measured, and together they are what says the reject is
-/// a genuine concurrency rather than a rotation the engine cannot handle: 44° and 46° are every bit
-/// as irrational as 45°.
+/// one and the concurrency is gone. Each row here was measured, and together they are what says the
+/// case was a genuine concurrency rather than a rotation the engine could not handle: 44° and 46°
+/// are every bit as irrational as 45°.
 ///
-/// They are also the net under the eventual four-plane *support* work: whatever normalises vertex
-/// identity must leave all of these building.
+/// **The concurrent model itself builds now** (`nacre-oracle`'s `the_four_plane_cut_matches_occt`,
+/// where OCCT agrees on volume and centroid), so these rows have changed job: they were the near
+/// misses around a reject, and they are now the net that says normalising vertex identity did not
+/// break the neighbourhood it was reached through.
 #[test]
 fn the_near_misses_around_the_four_plane_reject_all_build() {
     use nacre_scalar::Rat;
