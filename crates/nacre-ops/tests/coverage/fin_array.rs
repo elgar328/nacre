@@ -153,3 +153,70 @@ fn rotate_then_translate_is_still_refused() {
         }
     );
 }
+
+/// **The shape that started this: a hub, twenty fins, two bores.**
+///
+/// This is the playground script a user actually wrote — a loop of `fuse`, then `cut` — and it
+/// died on the fourteenth fin. Twenty fins is not twenty chances to hit one unlucky angle; it is
+/// twenty *chained* booleans, each one reasoning about the faces the previous nineteen produced.
+/// That is precisely what a result with no provenance could not survive.
+///
+/// `#[ignore]`: 22 booleans over a solid that grows to ~90 faces.
+#[test]
+#[ignore = "the full 22-boolean shape (run with --ignored)"]
+fn the_whole_fin_array_with_bores_builds() {
+    let mut m = Model::new();
+    let mut part = m.add_cuboid(
+        Point3::from_array([-1.0, -1.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 3.0]),
+    );
+    m.rebuild_adjacency();
+    for i in 0..20 {
+        let fin = m.add_cuboid(
+            Point3::from_array([0.5, -0.2, 1.0]),
+            Point3::from_array([4.0, 0.2, 3.0]),
+        );
+        m.rebuild_adjacency();
+        let fin = xf(
+            &mut m,
+            fin,
+            Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::new(i * 18, 1).unwrap()).expect("angle"),
+            }),
+        );
+        m.rebuild_adjacency();
+        match boolean(&mut m, BoolKind::Fuse, part, fin) {
+            Ok(v) => part = v[0],
+            Err(e) => panic!("fin {i} at {}°: {e:?}", i * 18),
+        }
+        m.rebuild_adjacency();
+    }
+    let after_fins = nacre_props::mass_props(&m, part).expect("props").volume;
+    assert!(
+        (after_fins - 57.918_146_700_212_01).abs() < 1e-9,
+        "hub + 20 fins: {after_fins}"
+    );
+    for (n, (a, b)) in [
+        ([-0.5, -0.5, -1.0], [0.5, 0.5, 4.0]),
+        ([-3.5, -0.1, 1.5], [3.5, 0.1, 2.5]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let tool = m.add_cuboid(Point3::from_array(a), Point3::from_array(b));
+        m.rebuild_adjacency();
+        match boolean(&mut m, BoolKind::Cut, part, tool) {
+            Ok(v) => part = v[0],
+            Err(e) => panic!("bore {n}: {e:?}"),
+        }
+        m.rebuild_adjacency();
+    }
+    let final_volume = nacre_props::mass_props(&m, part).expect("props").volume;
+    assert!(
+        (final_volume - 53.718_146_700_212).abs() < 1e-9,
+        "the finished part: {final_volume}"
+    );
+    assert!(nacre_validate::validate(&m).is_empty());
+}

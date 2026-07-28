@@ -244,6 +244,23 @@ pub struct Vertex {
     pub point: Point<3>,    // 인라인 — 점 저장소 없음 (§2)
     pub origin: Origin,
 }
+```
+
+**★ 정확 기하는 정점만이 아니라 면에도 적용된다 (`SurfaceDef`).** 위 원칙은 오래 **정점에만** 지켜졌고 서피스는 아무 말도 하지 않았다. 그런데 비-90° 회전은 평면의 계수를 **무리수로** 만든다 — 저장된 `Plane{origin, normal, raw}`은 그 순간 진실이 아니라 **반올림된 상**이 되는데, 그 사실을 적을 곳이 없으니 커널은 기본값으로 "정확하다"고 답했다. 그것이 거짓이 되는 지점이 정확히 문제가 되는 지점이다: 불리언 **결과**는 회전 이력을 하나도 안 들고 다니므로(결과 정점은 전부 `Discovered`), 그 결과의 모든 면이 **반올림된 삼각형을 정확하다고 선언**하고, 한 벽의 두 사본이 ~1e-16 어긋난 채 *확정적으로* "공면 아님" 판정을 받아 **한 평면이 두 클래스**가 됐다. 그 아래로 가짜 교선·1e15 거리의 정점·반대칭을 잃은 `order_along`이 줄줄이 따라왔다(핀 배열 대장 8/90).
+
+```rust
+pub enum SurfaceDef {
+    /// 계수가 곧 진실 — 구성된 표면, 또는 정확성을 보존하는 운동(이동·90°계열)의 상.
+    Constructed,
+    /// 회전 이력의 상. 진실은 `(witness, rotation)`이고 계수는 캐시다.
+    /// `witness`는 **회전 이전**의 비공선 세 점(그 면에서 그 자리에 붙잡는다 —
+    /// 정의가 모델의 다른 부분이 살아남는 데 의존하면 안 된다),
+    /// `rotation`은 `Model::rotations` 포리스트의 leaf(정점 `Origin::Rotated`와 같은 포리스트).
+    Rotated { witness: [Point3; 3], rotation: Handle<Rotation> },
+    /// **정확히 기술할 수 없다** — 포리스트가 회전만 담으므로 `R` 다음 `T`는 이름 붙일 노드가 없다.
+    /// 정확한 척하지 않고 정직하게 거절한다(`InexactSurface`).
+    Inexact,
+}
 
 pub struct Edge {
     pub curve: Handle<Curve>,
@@ -264,6 +281,12 @@ pub struct Face {
     pub orientation: Orientation,
 }
 ```
+
+`SurfaceDef`는 곁표(`Model::surface_defs`)에 산다 — `Surface`는 `nacre-geom` 타입이라 `Handle<Rotation>`을 이름 붙일 수 없다. 입구는 `Model::push_surface` 하나이고, **강제는 privacy가 아니라 불변식으로** 한다: `validate`가 *"live 모델의 모든 면은 정의를 가진 표면 위에 있다"* 를 검사하므로(디버그에서 매 연산 뒤 도는 검사) 기록을 빠뜨리면 즉시 터진다. `Reachable`이 surfaces를 추적하지 않으므로 순회는 **면을 통해** 돈다.
+
+**★ 서피스는 솔리드의 leaf가 아니라 자기 leaf에서 이어진다.** 한 솔리드에 회전 이력이 하나라는 전제가 틀렸다 — 서로 다른 각도로 회전한 두 피연산자의 불리언 결과는 벽마다 다른 이력을 갖는다. 그리고 결과의 정점은 전부 `Discovered`라 정점에게 "이 솔리드는 어느 회전에 있나"를 물으면 `None`이 나오고, 다음 회전이 **뿌리부터 다시 시작**해 회전 이전 witness에 두 번째 회전만 태우게 된다(존재하지 않는 평면). 그래서 `transform`은 변환마다 노드 하나가 아니라 **서로 다른 parent leaf마다 노드 하나**를 만든다.
+
+**따라오는 단순화.** 서피스가 스스로 말하게 되자 그 침묵을 메우려 있던 코드가 통째로 없어졌다 — 면의 평면을 정점 provenance에서 사냥하던 `face_plane_witness`·`plane_pts`, 솔리드 단위 추측 `solid_is_rotated`, 그리고 그 사냥이 실패했을 때의 거절 `RotatedUnderdetermined`. 회전 뒤 이동은 여전히 정직한 거절이되, 이제 서피스 층에서 이름이 붙는다(`InexactSurface` — 정점 쪽 `TranslateInterleaved`의 쌍둥이).
 
 효과가 세 가지다. 첫째, 케이스 A(만나는 자리를 아는 구성 연산)만 쓰는 한 모델 전체가 `Constructed`로만 이루어지고, tolerance 코드 경로가 아예 실행되지 않는다 — Fornjot의 "무-tolerance 단순함"이 그 안전지대 안에서 그대로 재현된다. 둘째, `Discovered`가 처음 등장하는 지점이 곧 3층 코드가 개입한 지점이므로, 디버깅·검증에서 "어디부터 위험한가"를 데이터가 스스로 말해준다. 셋째, 검증 규칙을 출신별로 다르게 걸 수 있다(`Constructed`는 정확 일치 요구, `Discovered`는 tol 이내 요구).
 
