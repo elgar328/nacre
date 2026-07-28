@@ -21,9 +21,12 @@
 //!   realize in arbitrary precision (astro-float) for the judgment path.
 //!
 //! Scope: the exact value engine (the toleranced-sign frame judgment it enabled now lives
-//! in `nacre-cip`). Still deferred: the unified `Scalar { value, tol }` wrapper, and the
-//! wiring that would let *construction* geometry carry rationals too — planes and profiles
-//! are still built in f64, so an exact dimensional coincidence can arrive already rounded.
+//! in `nacre-cip`). [`Rat::from_decimal`] carries this into *construction*: a prism's
+//! placement and sweep are done in the rationals the dimensions were **written** as, so
+//! `1.1` then `6.6` reaches the same plane as `7.7` (`nacre_ops::exact`). That holds where
+//! the sketch frame is exactly orthonormal — a rotated frame's axes are irrational, and
+//! there this crate has nothing to offer; `nacre-cip` is what keeps *judgments* sound
+//! there. Still deferred: the unified `Scalar { value, tol }` wrapper.
 //! **The declare-0 → user-confirmation policy that stood here is retired, not pending**:
 //! measurement refuted both halves, and an unprovable sign now leaves as a proved
 //! coincidence carrying its evidence, or as a reject named for its cause (`nacre-cip`).

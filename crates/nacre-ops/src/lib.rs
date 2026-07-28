@@ -274,8 +274,8 @@ pub enum RejectReason {
     /// **one ULP** in either direction removed the concurrency. The judgement returned zero
     /// because the determinant *is* zero at 200 bits, not because it fell below the coincidence
     /// limit (~55 orders of magnitude lower). Exact rational input would produce the same
-    /// concurrency — this was never an artefact of `f64` construction, which is why the
-    /// rational-construction backlog item does not touch it.
+    /// concurrency — this was never an artefact of `f64` construction, which is why exact
+    /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
     /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
     /// quadrics).
