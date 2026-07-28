@@ -1871,10 +1871,14 @@ mod tests {
         bf_mag(&BigFloat::from_f64(f, gt).sub(&truth.mid, gt, HP_RM).abs())
     }
 
-    /// Soundness: over random rotation chains (mixed axes, arbitrary pivots, exact and
-    /// inexact angles), the direction-wise tol must bound the true f64 error on every
-    /// axis (astro-float 512-bit ground truth) — the production mirror of exact3d
-    /// H-d/H-f. (An `err` below 1e-100 is 512-bit GT noise, not a real f64 error.)
+    /// Soundness: over random **motion** chains (mixed axes, arbitrary pivots, exact and inexact
+    /// angles, **and rational translations interleaved**), the direction-wise tol must bound the
+    /// true f64 error on every axis (astro-float 512-bit ground truth) — the production mirror of
+    /// exact3d H-d/H-f. (An `err` below 1e-100 is 512-bit GT noise, not a real f64 error.)
+    ///
+    /// **The translations are why this is not just a rename.** A new node kind arrives with a new
+    /// tol term, and nothing else in the suite checks that term is an upper bound — the whole
+    /// judgment layer is sound only if it is.
     /// `#[ignore]`: astro-float ground truth is slow; run with `--ignored` (+ CI). The
     /// full statistical validation lives in `experiments/exact3d`.
     #[test]
@@ -1882,7 +1886,7 @@ mod tests {
     fn tol_bounds_error_over_random_chains() {
         const GT: usize = 512;
         let mut st = 0x2A5C_1234_ABCD_9999u64;
-        let (mut exact_seen, mut pivot_seen) = (false, false);
+        let (mut exact_seen, mut pivot_seen, mut translate_seen) = (false, false, false);
         let mut worst_ratio = 0.0_f64;
         let mut worst_rot = 0.0_f64;
         for _ in 0..2000 {
@@ -1893,6 +1897,13 @@ mod tests {
             // the deleted 2D frame validated on its own; sampling it here is what makes this test
             // strictly cover that one, rather than merely resemble it.
             for _ in 0..rng(&mut st, 1, 5) {
+                // Every third link is a translation, so a chain mixes the two kinds in both
+                // orders — which is where a tol term that only holds "on its own" would show.
+                if rng(&mut st, 0, 2) == 0 {
+                    translate_seen = true;
+                    p = p.translate(rand_base(&mut st));
+                    continue;
+                }
                 let ax = axis_of(rng(&mut st, 0, 2));
                 let pivot = match rng(&mut st, 0, 2) {
                     0 => [Rat::from_int(0); 3],
@@ -1930,8 +1941,8 @@ mod tests {
             }
         }
         assert!(
-            exact_seen && pivot_seen,
-            "corpus must mix exact angles and pivots"
+            exact_seen && pivot_seen && translate_seen,
+            "corpus must mix exact angles, pivots and translations"
         );
         // **How much of the bound the real error actually uses.** `DA_F64` is the one constant in
         // this kernel that cannot be derived — `f64::cos`'s accuracy is not contracted by Rust or
