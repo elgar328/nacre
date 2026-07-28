@@ -23,13 +23,8 @@
 //! function here returns `Option` for that reason, and for i128 overflow, which is
 //! the same answer for the same reason.
 
-// Built and tested here before `extrude`/`pad`/`pocket` call it, so that wiring it up
-// is a commit whose only visible effect is the coordinates moving — which is the one
-// thing that needs isolated blame. **The next commit wires it and removes this.**
-#![allow(dead_code)]
-
-use crate::ops::SketchPlane;
-use nacre_math::{Point2, Point3};
+use crate::ops::{Profile2d, SketchPlane};
+use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::Rat;
 
 /// A sketch frame whose origin and axes are exact rationals, with the axes proved
@@ -136,6 +131,64 @@ pub(crate) fn realize(pts: &[[Rat; 3]]) -> Vec<Point3> {
     pts.iter()
         .map(|p| Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]))
         .collect()
+}
+
+/// A ring and the ring it sweeps to.
+///
+/// The two travel together because the prism builder may **reverse** a ring to fix its
+/// winding, and the top has to follow — computing the top afterwards, as the builder
+/// used to, is only safe while the top is a pure function of the base, which is exactly
+/// what stops being true once the sweep is exact.
+#[derive(Clone, Debug)]
+pub(crate) struct Swept {
+    pub base: Vec<Point3>,
+    pub top: Vec<Point3>,
+}
+
+impl Swept {
+    /// A ring translated by a sweep vector, in f64 — the fallback for a frame or a
+    /// dimension with no exact form, and what the builder did unconditionally before.
+    pub(crate) fn along(base: Vec<Point3>, sweep: Vector3) -> Self {
+        let top = base.iter().map(|b| *b + sweep).collect();
+        Swept { base, top }
+    }
+
+    /// Reverse both rings, keeping them paired.
+    pub(crate) fn reversed(mut self) -> Self {
+        self.base.reverse();
+        self.top.reverse();
+        self
+    }
+}
+
+/// Every ring of a prism — placed on the plane and swept along it — computed in exact
+/// rationals and realized once, at the end. Returns the outer ring and then the holes.
+///
+/// `None` when there is no exact form to compute in: a frame that is not exactly
+/// orthonormal, a dimension outside the decimal window, or i128 overflow. All three
+/// mean the same thing to the caller, which is to keep its f64 path.
+pub(crate) fn prism_rings(
+    plane: &SketchPlane,
+    profile: &Profile2d,
+    dist: f64,
+) -> Option<(Swept, Vec<Swept>)> {
+    let f = plane.exact()?;
+    let sweep = f.sweep(dist)?;
+    let ring = |r: &[Point2]| -> Option<Swept> {
+        let base = f.ring(r)?;
+        let top = swept(&base, &sweep)?;
+        Some(Swept {
+            base: realize(&base),
+            top: realize(&top),
+        })
+    };
+    let outer = ring(profile.outer())?;
+    let holes = profile
+        .inners()
+        .iter()
+        .map(|h| ring(h))
+        .collect::<Option<Vec<_>>>()?;
+    Some((outer, holes))
 }
 
 #[cfg(test)]

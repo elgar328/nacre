@@ -3,6 +3,7 @@
 //! transform ([`crate::transform`]) over the plane substrate below.
 
 use crate::boolean::boolean;
+use crate::exact::Swept;
 use crate::planes::outer_tri;
 use crate::transform::transform;
 use crate::{BoolError, he_start};
@@ -433,11 +434,35 @@ pub(crate) fn extrude(
         return Err(OpError::NonPositiveDistance);
     }
     profile.check()?;
-    let on_plane =
-        |ring: &[Point2]| -> Vec<Point3> { ring.iter().map(|p| plane.point(*p)).collect() };
-    let base_pts = on_plane(profile.outer());
-    let inner_pts: Vec<Vec<Point3>> = profile.inners().iter().map(|h| on_plane(h)).collect();
-    build_prism(model, &base_pts, &inner_pts, plane.normal() * dist, None)
+    let (outer, holes) = swept_profile(plane, profile, dist);
+    build_prism(model, outer, holes, plane.normal(), None)
+}
+
+/// Place a profile on its plane and sweep it — **exactly where the plane admits it**.
+///
+/// The rational path is not an optimization: it is what makes `extrude(7.7)` and
+/// `extrude(1.1)` then `extrude(6.6)` put their caps on the same plane rather than an
+/// ulp apart. Where it does not apply — a rotated frame, a dimension outside the
+/// decimal window — this falls back to the f64 arithmetic that was here before, which
+/// is no worse than it was.
+///
+/// **Mapping only — no winding decision, and no containment check.** Forcing the outer
+/// ring CCW here would be a second opinion on a question `build_prism` already answers
+/// from the sweep, and two opinions is how an outer ring and its holes end up wound the
+/// same way (the pocket case, where the sweep runs `−n` and flips the outer ring). A
+/// profile may also reach past the face boundary; an overhanging footprint routes to
+/// the overhang boolean sidecars, which reject honestly what they do not cover.
+fn swept_profile(plane: &SketchPlane, profile: &Profile2d, dist: f64) -> (Swept, Vec<Swept>) {
+    if let Some(rings) = crate::exact::prism_rings(plane, profile, dist) {
+        return rings;
+    }
+    let sweep = plane.normal() * dist;
+    let place =
+        |ring: &[Point2]| Swept::along(ring.iter().map(|p| plane.point(*p)).collect(), sweep);
+    (
+        place(profile.outer()),
+        profile.inners().iter().map(|h| place(h)).collect(),
+    )
 }
 
 /// Sweep a profile's rings along `sweep` into a prism solid: caps, side walls, and — for each
@@ -460,22 +485,21 @@ pub(crate) fn extrude(
 /// Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
 pub(crate) fn build_prism(
     model: &mut Model,
-    base_pts: &[Point3],
-    inner_pts: &[Vec<Point3>],
-    sweep: Vector3,
+    outer_ring: Swept,
+    inner_rings: Vec<Swept>,
+    normal: Vector3,
     base_cap_surface: Option<Handle<Surface>>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
-    if base_pts.len() < 3 || inner_pts.iter().any(|h| h.len() < 3) {
+    if outer_ring.base.len() < 3 || inner_rings.iter().any(|h| h.base.len() < 3) {
         return Err(OpError::DegenerateProfile);
     }
-    let normal = sweep.normalize().ok_or(OpError::DegenerateGeometry)?;
 
-    let outer_pts = oriented_ring(base_pts, normal, true);
-    let outer = sweep_ring(model, &outer_pts, sweep)?;
-    let holes: Vec<RingCells> = inner_pts
-        .iter()
+    let outer_pts = oriented_ring(outer_ring, normal, true);
+    let outer = sweep_ring(model, &outer_pts)?;
+    let holes: Vec<RingCells> = inner_rings
+        .into_iter()
         // `false` = opposite to the normalized outer ring, whichever way that ended up.
-        .map(|h| sweep_ring(model, &oriented_ring(h, normal, false), sweep))
+        .map(|h| sweep_ring(model, &oriented_ring(h, normal, false)))
         .collect::<Result<_, _>>()?;
 
     let mut faces =
@@ -645,23 +669,29 @@ impl RingCells {
 /// that encloses nothing gives zero — the comparison below would then pick a side by accident.
 /// [`Profile2d::check`] is what guarantees it: a simple polygon cannot have zero area, and a ring
 /// that folds back on itself (a symmetric bowtie cancels to exactly zero) is not simple.
-fn oriented_ring(pts: &[Point3], normal: Vector3, ccw: bool) -> Vec<Point3> {
-    let mut v = pts.to_vec();
+fn oriented_ring(ring: Swept, normal: Vector3, ccw: bool) -> Swept {
+    let v = &ring.base;
     let k = v.len();
     let area_vec = (0..k)
         .map(|i| (v[i] - Point3::origin()).cross(v[(i + 1) % k] - Point3::origin()))
         .fold(Vector3::from_array([0.0; 3]), |a, b| a + b);
     if (area_vec.dot(normal) < 0.0) == ccw {
-        v.reverse();
+        ring.reversed()
+    } else {
+        ring
     }
-    v
 }
 
 /// Push one ring's vertices and edges (base ring, top ring, risers).
-fn sweep_ring(model: &mut Model, pts: &[Point3], sweep: Vector3) -> Result<RingCells, OpError> {
-    let n = pts.len();
-    let base_pts: Vec<Point3> = pts.to_vec();
-    let top_pts: Vec<Point3> = base_pts.iter().map(|b| *b + sweep).collect();
+///
+/// The top ring arrives already computed rather than being derived here as
+/// `base + sweep`: where the frame allows it that arithmetic is done in exact rationals
+/// (see [`crate::exact`]), and a dimension split into two then lands on the same points
+/// as the undivided one instead of an ulp away.
+fn sweep_ring(model: &mut Model, ring: &Swept) -> Result<RingCells, OpError> {
+    let n = ring.base.len();
+    let base_pts: Vec<Point3> = ring.base.clone();
+    let top_pts: Vec<Point3> = ring.top.clone();
     let push_verts = |model: &mut Model, ps: &[Point3]| -> Vec<Handle<Vertex>> {
         ps.iter()
             .map(|p| {
@@ -783,34 +813,6 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     })
 }
 
-/// Place `profile`'s rings on `frame`'s plane. **No containment check** — the profile may reach
-/// past the face boundary. Used by the boolean pad/pocket path (`extrude_and_boolean`), where an
-/// overhanging footprint routes to the overhang boolean sidecars; the boolean honestly rejects
-/// configurations it does not cover.
-///
-/// **Mapping only — no winding decision.** This used to force the outer ring CCW in the frame,
-/// which is a second opinion on a question `build_prism` already answers from the sweep. Two
-/// opinions is how an outer ring and its holes end up wound the same way (the pocket case, where
-/// the sweep runs `−n` and flips the outer ring). The rings travel as given; the prism builder
-/// decides.
-fn placed_profile_unchecked(
-    frame: &FaceFrame,
-    profile: &Profile2d,
-) -> Result<(Vec<Point3>, Vec<Vec<Point3>>), OpError> {
-    if profile.outer().len() < 3 || profile.inners().iter().any(|h| h.len() < 3) {
-        return Err(OpError::DegenerateProfile);
-    }
-    let place = |ring: &[Point2]| -> Vec<Point3> {
-        ring.iter()
-            .map(|p| frame.origin + frame.x * p[0] + frame.y * p[1])
-            .collect()
-    };
-    Ok((
-        place(profile.outer()),
-        profile.inners().iter().map(|h| place(h)).collect(),
-    ))
-}
-
 /// A face-local feature built as **tool body + boolean**: the profile
 /// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid.
 /// A **contained** footprint takes the contained-coplanar path (empty seam → all
@@ -834,7 +836,6 @@ fn extrude_and_boolean(
     profile.check()?;
     let frame = face_frame(model, face)?;
     // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
-    let (base_pts, inner_pts) = placed_profile_unchecked(&frame, profile)?;
     let n = frame.n;
     // Cut carves inward, Fuse raises outward; either way the prism's near cap is flush on the face.
     let signed = if matches!(kind, BoolKind::Cut) {
@@ -842,11 +843,19 @@ fn extrude_and_boolean(
     } else {
         dist
     };
+    // The face's own frame, so a pad or pocket takes the same exact-rational path an
+    // extrude does: its axes are `{0, ±1}` exactly whenever the face is axis-aligned.
+    let plane = SketchPlane {
+        origin: frame.origin,
+        x_axis: frame.x,
+        y_axis: frame.y,
+    };
+    let (outer, holes) = swept_profile(&plane, profile, signed);
     let (prism, prism_faces) = build_prism(
         model,
-        &base_pts,
-        &inner_pts,
-        n * signed,
+        outer,
+        holes,
+        n * signed.signum(),
         Some(frame.surface_h),
     )?;
     let solids = boolean(model, kind, frame.solid_h, prism).map_err(|e| {

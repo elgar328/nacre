@@ -2379,8 +2379,8 @@ pub mod tests {
         ];
         let (_prism, faces) = build_prism(
             &mut m,
-            &base_pts,
-            &[],
+            crate::exact::Swept::along(base_pts.to_vec(), Vector3::from_array([0.0, 0.0, 1.0])),
+            vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
             Some(sf),
         )
@@ -3946,9 +3946,9 @@ pub mod tests {
         .collect();
         let (boss, _) = build_prism(
             &mut m,
-            &l_base,
-            &[],
-            Vector3::from_array([0.0, 0.0, 0.4]),
+            crate::exact::Swept::along(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
+            vec![],
+            Vector3::from_array([0.0, 0.0, 1.0]),
             None,
         )
         .unwrap();
@@ -4070,9 +4070,9 @@ pub mod tests {
         .collect();
         let (l_tool, _) = build_prism(
             &mut m,
-            &l_base,
-            &[],
-            Vector3::from_array([0.0, 0.0, 0.4]),
+            crate::exact::Swept::along(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
+            vec![],
+            Vector3::from_array([0.0, 0.0, 1.0]),
             None,
         )
         .unwrap();

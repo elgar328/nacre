@@ -1080,21 +1080,23 @@ fn the_fin_array_with_a_star_bore_meshes() {
     assert_agrees(&g, "fin array with a star bore");
 }
 
-/// **★ The scoreboard of the exact-dimension cell — this asserts today's dirty answer.**
+/// **★ A dimension split into two lands exactly where the undivided one does.**
 ///
-/// Every number below is a literal a user typed. The only arithmetic is the kernel's own: a
-/// prism raised from `z = 1.1` by `6.6` has its top at `1.1 + 6.6` **in f64**, which is
-/// `7.699999999999999` — one ULP below the `7.7` that the block beside it was raised to in a
-/// single step. Two planes where the model has one.
+/// Every number below is a literal a user typed, and the only arithmetic is the kernel's own.
+/// It used to be done in f64, where a prism raised from `z = 1.1` by `6.6` puts its top at
+/// `7.699999999999999` — one ULP below the `7.7` that the block beside it reached in a single
+/// step. Two planes where the model has one.
 ///
-/// **It does not split and it is not wrong.** The volume is exactly right and the fuse yields one
-/// body; what it yields is a body carrying a face of area `8.9e-16` and two faces more than the
-/// shape has. Nothing rejects, nothing reports — the model just gets dirtier, and every later
-/// boolean, STEP export and mesh carries the sliver along.
+/// **That failure did not split anything and was not wrong**, which is what made it worth
+/// fixing: the volume came out exactly right and the fuse yielded one body — a body carrying a
+/// face of area `8.9e-16` and two faces more than the shape has. Nothing rejected, nothing
+/// reported, and every later boolean, STEP export and mesh carried the sliver along.
 ///
-/// **When construction arithmetic becomes exact, this becomes six faces and no sliver.**
+/// Now the placement and the sweep are done in rationals read from the decimals as written
+/// (`11/10 + 66/10 = 77/10`), so both paths reach the same plane and the fuse has one plane to
+/// merge. Six faces, no sliver.
 #[test]
-fn a_stacked_dimension_leaves_a_sliver() {
+fn a_split_dimension_meets_the_undivided_one() {
     fn rect(x0: f64, x1: f64) -> Profile2d {
         Profile2d::polygon(vec![p2(x0, 0.0), p2(x1, 0.0), p2(x1, 1.0), p2(x0, 1.0)])
     }
@@ -1119,7 +1121,7 @@ fn a_stacked_dimension_leaves_a_sliver() {
     }
 
     let mut m = Model::new();
-    // The stack: 1.1, then 6.6 starting at 1.1. Its top lands one ULP below 7.7.
+    // The stack: 1.1, then 6.6 starting at 1.1 — the path that used to miss 7.7 by an ULP.
     let lower = raise(&mut m, 0.0, 3.0, 4.0, 1.1);
     let upper = raise(&mut m, 1.1, 3.0, 4.0, 6.6);
     let stack = boolean_one(&mut m, BoolKind::Fuse, lower, upper).unwrap();
@@ -1147,9 +1149,9 @@ fn a_stacked_dimension_leaves_a_sliver() {
         .filter_map(|&fh| nacre_props::face_props(&m, fh).ok())
         .map(|p| p.area)
         .fold(f64::INFINITY, f64::min);
-    assert_eq!(faces.len(), 8, "today: two faces more than the shape has");
+    assert_eq!(faces.len(), 6, "the shape has six faces");
     assert!(
-        smallest < 1e-12,
-        "today: a sliver face survives, got {smallest}"
+        smallest > 0.9,
+        "no sliver: the smallest face is a whole wall, got {smallest}"
     );
 }
