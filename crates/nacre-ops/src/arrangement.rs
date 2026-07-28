@@ -143,7 +143,10 @@ fn decline_to_reject(kind: DeclineKind, face: Handle<Face>) -> RejectReason {
 /// Neither fold is optional if the other happens: `merge_coincident` keys an edge by
 /// `(wall, endpoints)`, so a duplicate edge merges only when **both** its wall and its endpoint
 /// names agree. That is why the two live in one table and are applied together.
-#[derive(Default, Debug)]
+// `Clone` so a round can hand every class the table as it stood when the round began, and
+// merge their discoveries afterwards — see `trace_result_faces`. In the ordinary model the
+// maps are empty, so the copy costs nothing.
+#[derive(Default, Debug, Clone)]
 pub(crate) struct Aliases {
     /// Union-find over vertex names.
     point: HashMap<[usize; 3], [usize; 3]>,
@@ -1614,19 +1617,37 @@ fn trace_result_faces(
     let mut splits: Vec<Vec<MergedSeg>> = Vec::new();
     loop {
         let before = aliases.len();
-        splits.clear();
-        for wc in 0..planes.len() {
+        // **Every class in the round sees the table as it stood when the round began**, and
+        // its own discoveries on top — where the sequential loop also showed it whatever the
+        // lower-numbered classes had found meanwhile. The fixed point is the same, and for
+        // two reasons that are both properties of `Aliases` rather than of the schedule:
+        // a merged class's representative is its **minimum** element, so the final partition
+        // does not depend on the order the unions happened in; and discoveries only
+        // accumulate, so a round that learns something later than it used to just costs one
+        // more round. The last round — the one whose splits are kept — runs on a table that
+        // has stopped growing either way.
+        let snapshot = aliases.clone();
+        let round = crate::par::try_map_range(planes.len(), |wc| {
             let mut tr =
                 trace_on_class(model, a, b, wc, jd, faces, surf_ix, inc_a, inc_b, plane_ix);
-            aliases.absorb(&std::mem::take(&mut tr.aliases));
+            let mut local = snapshot.clone();
+            local.absorb(&std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
             // which operand face. A class can decline several faces; the first is the one
-            // reported. Bailing here also keeps a rejected boolean from paying for pass B.
+            // reported, and `try_map_range` picks the lowest-numbered class, which is the one
+            // the sequential loop returned at.
             if let Some(&(fp, kind)) = tr.declined.first() {
                 return Err(reject(decline_to_reject(kind, faces[fp].face)));
             }
-            let merged = merge_coincident(&tr.segs, wc, &aliases);
-            splits.push(split_at_crossings(jd, wc, &merged, &mut aliases)?);
+            let merged = merge_coincident(&tr.segs, wc, &local);
+            let split = split_at_crossings(jd, wc, &merged, &mut local)?;
+            Ok((split, local))
+        })?;
+        splits.clear();
+        for (split, local) in round {
+            splits.push(split);
+            // Absorbing the snapshot back is a no-op; only the round's discoveries are new.
+            aliases.absorb(&local);
         }
         if aliases.len() == before {
             break;

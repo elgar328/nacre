@@ -1494,6 +1494,16 @@ pub mod tests {
             .build()
             .unwrap();
         let seven_fins = || fin_fold(7);
+        // **The only fixture here whose alias table is not empty.** `Aliases::record` returns
+        // immediately below four planes, so every other model leaves the table at zero and
+        // never exercises the snapshot-and-absorb a parallel round is built on. Measured on
+        // this one: 36 aliases, settled over two rounds.
+        let four_plane = || {
+            let (mut m, target, bar) = four_plane_model(0.2, 45);
+            let (solids, report) = boolean_with_report(&mut m, BoolKind::Cut, target, bar).unwrap();
+            m.rebuild_adjacency();
+            format!("{report:?}{}", model_sig(&m, &solids))
+        };
         for (name, run) in [
             (
                 "two rotated ngons",
@@ -1502,6 +1512,10 @@ pub mod tests {
             (
                 "a seven-fin fold",
                 &seven_fins as &(dyn Fn() -> String + Sync),
+            ),
+            (
+                "a four-plane concurrency",
+                &four_plane as &(dyn Fn() -> String + Sync),
             ),
         ] {
             let reference = pool1.install(run);
