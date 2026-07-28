@@ -14,6 +14,7 @@ use nacre_topo::{Face, HalfEdge, Model, Solid, Vertex};
 mod arrangement;
 mod boolean;
 mod combinatorics;
+mod exact;
 mod ops;
 mod planes;
 mod rotated_vertex;
