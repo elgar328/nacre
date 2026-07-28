@@ -231,6 +231,7 @@ pub(crate) fn triangulate_polygon(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn pts(v: &[[f64; 2]]) -> Vec<Point3> {
         v.iter()
@@ -238,10 +239,10 @@ mod tests {
             .collect()
     }
 
-    /// The three checks every golden gets, and each catches a different fault:
-    /// the count pins ear clipping's identity, the **unsigned** area sum pins that
-    /// no triangle escaped the polygon (a signed sum cancels and shoelace agrees),
-    /// and all-CCW pins that none is folded.
+    /// The checks every golden gets, each catching a different fault: the count pins
+    /// the triangulation's identity, the **unsigned** area sum pins that no triangle
+    /// escaped the polygon (a signed sum cancels and shoelace agrees), and all-CCW
+    /// pins that none is folded.
     fn check(p: &[Point3], tris: &[[usize; 3]], want_n: usize, want_area: f64) {
         assert_eq!(tris.len(), want_n, "triangle count");
         let mut sum = 0.0;
@@ -254,11 +255,55 @@ mod tests {
         assert!((sum - want_area).abs() < 1e-12, "area {sum} vs {want_area}");
     }
 
+    /// **Is this a partition, or merely the right amount of area?**
+    ///
+    /// Count + area + winding can all agree while triangles overlap and leave a
+    /// matching hole elsewhere. What cannot survive that is the edge bookkeeping of a
+    /// simplicial complex, so this checks it directly:
+    ///
+    /// - every **directed** edge is used at most once — two triangles covering the
+    ///   same ground the same way would repeat one;
+    /// - an undirected edge is used **twice** (interior, once each way) or **once**
+    ///   (boundary) — never more;
+    /// - and the once-used directed edges are **exactly the input rings**, which is
+    ///   what says the triangles cover the polygon that was asked for rather than
+    ///   some other region of the same area.
+    ///
+    /// Ear clipping over a bridged ring was measured clipping a triangle straight
+    /// across another hole's slit; the ring self-intersected and two more triangles
+    /// were emitted before it stalled. Had it not stalled, that mesh would have
+    /// passed the three checks above. This is the net for it.
+    fn check_partition(tris: &[[usize; 3]], outer: &[usize], holes: &[&[usize]]) {
+        let mut once: HashSet<(usize, usize)> = HashSet::new();
+        for t in tris {
+            for k in 0..3 {
+                let e = (t[k], t[(k + 1) % 3]);
+                assert!(once.insert(e), "directed edge {e:?} used twice");
+            }
+        }
+        let mut boundary: HashSet<(usize, usize)> = HashSet::new();
+        for ring in std::iter::once(outer).chain(holes.iter().copied()) {
+            for w in 0..ring.len() {
+                boundary.insert((ring[w], ring[(w + 1) % ring.len()]));
+            }
+        }
+        let unmatched: HashSet<(usize, usize)> = once
+            .iter()
+            .filter(|&&(a, b)| !once.contains(&(b, a)))
+            .copied()
+            .collect();
+        assert_eq!(
+            unmatched, boundary,
+            "the once-used directed edges are not the input rings"
+        );
+    }
+
     #[test]
     fn a_square_is_two_triangles() {
         let p = pts(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
         let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[]).unwrap();
         check(&p, &t, 2, 1.0);
+        check_partition(&t, &[0, 1, 2, 3], &[]);
     }
 
     #[test]
@@ -276,9 +321,11 @@ mod tests {
             [1.0, 2.0],
             [0.0, 2.0],
         ]);
-        let t = triangulate_polygon(&p, &(0..8).collect::<Vec<_>>(), &[]).unwrap();
+        let ring: Vec<usize> = (0..8).collect();
+        let t = triangulate_polygon(&p, &ring, &[]).unwrap();
         // Bar 3×1, left prong 1×1, right prong 1×1.3.
         check(&p, &t, 6, 3.0 + 1.0 + 1.3);
+        check_partition(&t, &ring, &[]);
     }
 
     #[test]
@@ -293,8 +340,10 @@ mod tests {
             [1.0, 2.0],
             [0.0, 2.0],
         ]);
-        let t = triangulate_polygon(&p, &(0..6).collect::<Vec<_>>(), &[]).unwrap();
+        let ring: Vec<usize> = (0..6).collect();
+        let t = triangulate_polygon(&p, &ring, &[]).unwrap();
         check(&p, &t, 4, 3.0);
+        check_partition(&t, &ring, &[]);
     }
 
     #[test]
@@ -314,6 +363,7 @@ mod tests {
         let hole = [4, 5, 6, 7];
         let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[&hole]).unwrap();
         check(&p, &t, 8, 1.0 - 0.16);
+        check_partition(&t, &[0, 1, 2, 3], &[&hole]);
     }
 
     #[test]
@@ -335,6 +385,51 @@ mod tests {
         let (h0, h1) = ([4, 5, 6, 7], [8, 9, 10, 11]);
         let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[&h0, &h1]).unwrap();
         check(&p, &t, 12 + 4 - 2, 3.0 - 2.0 * 0.36);
+        check_partition(&t, &[0, 1, 2, 3], &[&h0, &h1]);
+    }
+
+    /// **★ The scoreboard of the monotone-decomposition cell — this asserts today's
+    /// wrong answer.**
+    ///
+    /// Two holes in one face, both of whose first mutually-visible ring vertex is the
+    /// *same* outer corner. `bridge_holes` takes the first it finds, so that corner is
+    /// repeated three times in the bridged ring and the polygon is pinched there —
+    /// and a pinched ring is not simple, so Meisters' two-ears theorem does not apply
+    /// and **an ear need not exist**. Measured: every one of the six convex vertices
+    /// has a diagonal that genuinely crosses the other hole. `NoEar` here is not
+    /// "the input is bad" — the input is a perfectly ordinary wall with two windows.
+    ///
+    /// Everything here is transcribed from the failing model (a hub wall with two fins
+    /// through it, projected to its own plane): the coordinates, the index layout, and
+    /// **the order the two inner loops arrive in** — which is what decides where each
+    /// bridge lands. Handing the same two holes in the other order triangulates fine,
+    /// so the order is not incidental detail.
+    ///
+    /// **When the decomposition lands, this becomes a triangulation test.**
+    #[test]
+    fn two_holes_bridged_to_one_corner_stall_ear_clipping() {
+        let p = pts(&[
+            // Outer: the 3 × 2 wall, CCW.
+            [0.0, 1.0],
+            [0.0, -1.0],
+            [3.0, -1.0],
+            [3.0, 1.0],
+            // Upper hole, CW.
+            [1.0, 0.25959136597258015],
+            [1.0, 0.7035578716424774],
+            [2.0, 0.7035578716424774],
+            [2.0, 0.25959136597258015],
+            // Lower hole, CW.
+            [1.0, -0.703557871642477],
+            [1.0, -0.25959136597258003],
+            [2.0, -0.25959136597258003],
+            [2.0, -0.703557871642477],
+        ]);
+        let (upper, lower) = ([4, 5, 6, 7], [8, 9, 10, 11]);
+        assert!(matches!(
+            triangulate_polygon(&p, &[0, 1, 2, 3], &[&upper, &lower]),
+            Err(TessError::NoEar)
+        ));
     }
 
     #[test]

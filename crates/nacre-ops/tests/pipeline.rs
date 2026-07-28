@@ -962,3 +962,61 @@ fn a_notched_cube_meshes() {
     let vol = nacre_props::mass_props(&m, s).unwrap().volume;
     assert!((vol - 993.28).abs() < 1e-9, "volume {vol}");
 }
+
+/// **★ The scoreboard of the monotone-decomposition cell — this asserts today's
+/// wrong answer.**
+///
+/// A wall with **two windows**: a hub box and two bars crossing its `x = −1` face, so
+/// that face ends up with two inner loops. `validate` reports nothing — the b-rep is
+/// correct — and `nacre-props` is happy. Only the mesh fails, with `NoEar`.
+///
+/// The cause is entirely inside the triangulator. It merges each hole into the outer
+/// ring with a zero-width **bridge**, and takes the first mutually visible ring vertex
+/// it finds; here both holes pick the *same* outer corner, so the bridged ring visits
+/// that corner three times. A ring with a repeated vertex is not a simple polygon, and
+/// Meisters' two-ears theorem — which is the only reason ear clipping terminates —
+/// does not apply to it. Measured: every one of the six convex vertices has a diagonal
+/// that genuinely crosses the other hole. There is no ear, and `NoEar` is the honest
+/// thing to say about a ring the algorithm should never have built.
+///
+/// **Nothing here is rotated.** The failing model that started the cell had seven fins
+/// at 360/7°, which made it look like a precision problem; it is not. Three boxes and
+/// two fuses are enough.
+///
+/// **When the decomposition lands, this becomes `mesh_vs_props` + `assert_agrees`.**
+#[test]
+fn two_windows_in_one_wall_stall_the_triangulator() {
+    let mut m = Model::new();
+    let hub = m.add_cuboid(
+        Point3::from_array([-1.0, -1.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 3.0]),
+    );
+    m.rebuild_adjacency();
+    let upper = m.add_cuboid(
+        Point3::from_array([-4.0, 0.26, 1.0]),
+        Point3::from_array([0.0, 0.70, 2.0]),
+    );
+    m.rebuild_adjacency();
+    let part = boolean_one(&mut m, BoolKind::Fuse, hub, upper).unwrap();
+    m.rebuild_adjacency();
+    let lower = m.add_cuboid(
+        Point3::from_array([-4.0, -0.70, 1.0]),
+        Point3::from_array([0.0, -0.26, 2.0]),
+    );
+    m.rebuild_adjacency();
+    let part = boolean_one(&mut m, BoolKind::Fuse, part, lower).unwrap();
+    m.rebuild_adjacency();
+
+    // The solid itself is sound: valid b-rep, analytic mass properties.
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "the b-rep is correct"
+    );
+    assert!(nacre_props::mass_props(&m, part).is_ok());
+
+    // Only the mesh cannot be built.
+    assert!(matches!(
+        tessellate(&m, &TessConfig::default()),
+        Err(nacre_tess::TessError::NoEar)
+    ));
+}
