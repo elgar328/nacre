@@ -15,8 +15,8 @@
 //! path: a tol-0 (`Constructed`) config is faster/exact via `nacre-predicates`
 //! (Shewchuk), routed by a higher layer, not here.
 //!
-//! Validated in `experiments/exact3d` (FINDINGS = GO): H-a (`det3_bound` soundness),
-//! H-d/H-f (chain + arbitrary-pivot tol) — the bound never under-estimates the true
+//! Validated before the port by an isolated 3D experiment (verdict: GO): H-a (`det3_bound`
+//! soundness), H-d/H-f (chain + arbitrary-pivot tol) — the bound never under-estimates the true
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
 use super::HP_RM;
@@ -886,8 +886,8 @@ pub fn orient3d_ray(base: &Pt3, dir: [Rat; 3], x: &Pt3, y: &Pt3, prec: usize) ->
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
 // point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path, the
 // judgment **layer only** ("층만") — the boolean wiring (seam → plane `Pt3`s) is
-// stage 3. Validated in `experiments/exact3d` (H-b coefficient tol, H-c indirect
-// soundness); the constant `mag`-floor policy is indirect-only (distinct from the
+// stage 3. Validated before the port by the isolated 3D experiment (H-b coefficient
+// tol, H-c indirect soundness); the constant `mag`-floor policy is indirect-only (distinct from the
 // explicit `16·scale³` floor of [`orient3d_judge`]).
 
 /// 3×3 determinant of interval rows.
@@ -2031,7 +2031,7 @@ mod tests {
     /// in the suite checks that term is an upper bound — the whole judgment layer is sound only if
     /// it is. (The translate term was once added without this, and had to be back-filled.)
     /// `#[ignore]`: astro-float ground truth is slow; run with `--ignored` (+ CI). The
-    /// full statistical validation lives in `experiments/exact3d`.
+    /// per-predicate statistical validation is the `h_*` tests beside this one.
     #[test]
     #[ignore = "slow astro-float ground truth (run with --ignored)"]
     fn tol_bounds_error_over_random_chains() {

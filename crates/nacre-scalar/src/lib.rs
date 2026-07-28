@@ -27,7 +27,7 @@
 //! **The declare-0 → user-confirmation policy that stood here is retired, not pending**:
 //! measurement refuted both halves, and an unprovable sign now leaves as a proved
 //! coincidence carrying its evidence, or as a reject named for its cause (`nacre-cip`).
-//! Ported from the verified 2D experiment (`experiments/exact2d`).
+//! Ported from an isolated 2D experiment that verified it first.
 
 pub mod bound;
 pub use bound::Bound;
