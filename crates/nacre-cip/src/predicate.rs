@@ -21,8 +21,8 @@
 //! be proved, and the table itself. The predicates are its methods.
 
 use crate::kernel::frame3::{
-    Decision, Pt3, Standard, dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge,
-    orient3d_judge,
+    Decision, MoveNode, Pt3, Standard, dir_sign_judge, indirect_cmp_coord_judge,
+    indirect_orient3d_judge, orient3d_judge,
 };
 use nacre_math::Point3;
 use nacre_predicates::{
@@ -515,17 +515,25 @@ fn cancel_cmp_coord<W: PlaneWitness>(
 /// The single rotation axis and total angle of a chain, or `None` if it turns about more than
 /// one axis (then the product is not a rotation about a coordinate axis and this shortcut does
 /// not apply — a conservative miss).
+///
+/// **Translations are skipped, and pivots are ignored, for the same reason**: this runs on the
+/// *difference* of two points that share one chain, and a translation is the identity on a
+/// difference — `(p + t) − (q + t) = p − q`. A rotation about any pivot likewise acts on a
+/// difference as the pure linear `R`, which is why only the axis and angle are read.
 fn single_axis_motion(def: &[Pt3; 3]) -> Option<(nacre_scalar::Axis, nacre_scalar::Angle)> {
     let chain = &def[0].chain;
-    let first = chain.first()?;
+    let mut axis: Option<nacre_scalar::Axis> = None;
     let mut total = nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(0))?;
     for n in chain.iter() {
-        if n.axis != first.axis {
+        let MoveNode::Rotate { axis: a, angle, .. } = n else {
+            continue; // a translation cancels in the difference
+        };
+        if *axis.get_or_insert(*a) != *a {
             return None;
         }
-        total = total.checked_add(n.angle.deg())?;
+        total = total.checked_add(angle.deg())?;
     }
-    Some((first.axis, total))
+    Some((axis?, total))
 }
 
 /// Whether the three points are **exactly collinear**, decided by the three coordinate-plane

@@ -67,7 +67,7 @@ pub enum Orient {
 /// the resulting tol, while the definition (the op-log of input rationals) is
 /// preserved. Overflow is far from normal use — adversarial coprime-denominator
 /// accumulation reaches it near the i128 ceiling (~122 bits).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rat(Ratio<i128>);
 
 impl Rat {
@@ -171,7 +171,7 @@ impl Rat {
 /// sweep > 360°) must preserve the turn count, so it belongs to a separate
 /// *unnormalized* `Sweep` type — flat 2D sketches never need it, so it is left as
 /// a documented companion, not built here.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Angle(Rat); // invariant: 0 <= inner < 360
 
 impl Angle {
@@ -325,7 +325,7 @@ impl Angle {
 /// A coordinate axis — the fixed axis of an axis-aligned rotation (overhaul stage
 /// 1b restricts to `X`/`Y`/`Z`, the form `exact3d` validated; arbitrary rational
 /// axes via Rodrigues are a later extension).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Axis {
     X,
     Y,

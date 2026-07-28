@@ -147,7 +147,7 @@ fn a_boolean_result_copies_with_its_discovered_vertices() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A rotated solid's vertices are `Origin::Rotated`, naming a base vertex and a rotation node.
+/// A rotated solid's vertices are `Origin::Moved`, naming a base vertex and a rotation node.
 /// This is the only place that provenance is observable — a boolean *result* is uniformly
 /// `Discovered`, because every result vertex is rebuilt as a seam node.
 #[test]
@@ -168,7 +168,7 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
             .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
             .filter_map(|he| m.edges.get(he.edge).bounds)
             .flatten()
-            .filter(|&vh| matches!(m.vertices.get(vh).origin, Origin::Rotated { .. }))
+            .filter(|&vh| matches!(m.vertices.get(vh).origin, Origin::Moved { .. }))
             .count()
     };
     assert!(rotated(r) > 0, "the rotated solid has Rotated vertices");

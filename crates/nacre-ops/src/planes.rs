@@ -46,7 +46,10 @@ pub(crate) struct FaceInfo {
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
     /// per judgment, which dominated the boolean's runtime.
     pub(crate) tri_pt3: [Pt3; 3],
-    /// Whether this face's plane is a *rotated image* — the predicate-routing signal, read from
+    /// The motion-history leaf this face's plane was moved by, or `None` for a constructed one.
+    /// **The canonical identity of "which motion"** — see [`BaseFrame`].
+    pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
+    /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
     /// the surface's own [`SurfaceDef`].
     ///
     /// **Set together with `tri_pt3`, and only here.** It used to be decided per solid, by asking
@@ -87,7 +90,7 @@ pub(crate) fn collect_planes(
             // A missing definition is read as `Inexact`: a surface pushed past `Model::push_surface`
             // says nothing about itself, and guessing "exact" is exactly the failure above.
             // (`nacre-validate` reports that model, so it should not reach here.)
-            let (tri_pt3, rotated) = match model
+            let (tri_pt3, rotated, motion) = match model
                 .surface_defs
                 .get(&face.surface)
                 .copied()
@@ -100,19 +103,17 @@ pub(crate) fn collect_planes(
                         Pt3::exact(p.as_array())
                             .ok_or_else(|| reject(RejectReason::CoordinateOutOfRange))
                     };
-                    ([e(tri[0])?, e(tri[1])?, e(tri[2])?], false)
+                    ([e(tri[0])?, e(tri[1])?, e(tri[2])?], false, None)
                 }
                 SurfaceDef::Inexact => return Err(reject(RejectReason::InexactSurface)),
-                SurfaceDef::Rotated { witness, rotation } => {
-                    // The pre-rotation witness, turned by the recorded chain — the same
-                    // computation, in the same order, that a rotated vertex's `Pt3` performs.
-                    let chain = crate::rotated_vertex::rotation_chain(model, rotation);
+                SurfaceDef::Moved { witness, motion } => {
+                    // The pre-motion witness, carried through the recorded chain — the same
+                    // computation, in the same order, that a moved vertex's `Pt3` performs.
+                    let chain = crate::rotated_vertex::motion_chain(model, motion);
                     let turn = |p: Point3| -> Result<Pt3, BoolError> {
                         let base = crate::rotated_vertex::coord_rat(p.as_array())
                             .map_err(|_| reject(RejectReason::CoordinateOutOfRange))?;
-                        Ok(chain.iter().fold(Pt3::at(base), |q, n| {
-                            q.rotate_about(n.axis, n.angle, n.point)
-                        }))
+                        Ok(crate::rotated_vertex::replay(Pt3::at(base), &chain))
                     };
                     let mut w = [turn(witness[0])?, turn(witness[1])?, turn(witness[2])?];
                     // `tri_pt3` is an *oriented* plane witness, but the witness was captured from
@@ -125,7 +126,7 @@ pub(crate) fn collect_planes(
                     if e1.cross(e2).dot(n_out) < 0.0 {
                         w.swap(1, 2);
                     }
-                    (w, true)
+                    (w, true, Some(motion))
                 }
             };
             // `orient_sign`, precomputed: the two invariants it used to re-check on every call
@@ -149,6 +150,7 @@ pub(crate) fn collect_planes(
                 orient_sign: if dot > 0.0 { 1 } else { -1 },
                 tri_pt3,
                 rotated,
+                motion,
             });
         }
     }
@@ -421,46 +423,29 @@ impl BaseFrame {
         }
     }
 
-    fn of(tri_pt3: &[Pt3; 3], frame_sign: i8) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        // All three witnesses must carry the *same* chain for the plane to have one motion.
-        for (k, p) in tri_pt3.iter().enumerate() {
-            if k > 0 && p.chain.len() != tri_pt3[0].chain.len() {
-                return Self {
-                    chain_id: 0,
-                    tri: None,
-                    coeffs: None,
-                };
-            }
-            if k > 0 {
-                for (a, b) in p.chain.iter().zip(tri_pt3[0].chain.iter()) {
-                    if a.axis != b.axis || a.angle != b.angle || a.point != b.point {
-                        return Self {
-                            chain_id: 0,
-                            tri: None,
-                            coeffs: None,
-                        };
-                    }
-                }
-            }
-        }
-        if tri_pt3[0].chain.is_empty() {
+    fn of(
+        tri_pt3: &[Pt3; 3],
+        motion: Option<Handle<nacre_topo::MotionNode>>,
+        frame_sign: i8,
+    ) -> Self {
+        // **Identity by handle, not by hash.** This used to fold the chain into a 64-bit
+        // `DefaultHasher` digest and compare digests — and a collision does not make a judgement
+        // slow, it makes `shared_base` hand the *exact* predicate two incompatible pre-motion
+        // frames and answer a different question with full confidence. The motion-history leaf is
+        // the canonical name of "which motion": equal handles are the same chain by construction,
+        // and two structurally-equal chains under different handles are a conservative miss.
+        //
+        // The three witnesses share one chain by construction — `collect_planes` builds all three
+        // from the same `SurfaceDef` — so there is nothing to cross-check here either.
+        let Some(leaf) = motion else {
             return Self {
                 chain_id: 0,
                 tri: None,
                 coeffs: None,
             }; // no motion to cancel
-        }
-        for n in tri_pt3[0].chain.iter() {
-            (n.axis as u8).hash(&mut h);
-            format!("{:?}", n.angle).hash(&mut h);
-            for c in n.point {
-                format!("{c:?}").hash(&mut h);
-            }
-        }
+        };
         // 0 is reserved for "no motion", so never hand it out as an id.
-        let chain_id = h.finish() | 1;
+        let chain_id = leaf.index() as u64 + 1;
         let exact = |r: nacre_scalar::Rat| nacre_scalar::Rat::try_from_f64(r.to_f64()) == Some(r);
         if !tri_pt3.iter().all(|p| p.base.iter().all(|&r| exact(r))) {
             return Self {
@@ -538,7 +523,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
         .map(|&r| {
             let pi = &planes[r];
             PlaneGeom {
-                base: BaseFrame::of(&pi.tri_pt3, pi.orient_sign),
+                base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign),
                 plane: pi.plane,
                 surf: pi.surf,
                 tri: pi.tri,

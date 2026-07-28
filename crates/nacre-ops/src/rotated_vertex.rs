@@ -11,10 +11,10 @@
 //! came from. Surfaces carry `SurfaceDef` now, so the plane is simply read (`crate::planes`) and
 //! the hunt is gone.
 
-use nacre_cip::{Pt3, RotNode};
+use nacre_cip::{MoveNode, Pt3};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
-use nacre_topo::{Model, Rotation};
+use nacre_topo::{Model, Motion, MotionNode};
 
 /// Why a coordinate could not be lifted to an exact rational.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,27 +34,31 @@ pub(crate) enum Pt3Error {
 pub(crate) fn replay_chain_coord(
     model: &Model,
     base_point: [f64; 3],
-    leaf: Handle<Rotation>,
+    leaf: Handle<MotionNode>,
 ) -> Result<[f64; 3], Pt3Error> {
-    let mut p = Pt3::at(coord_rat(base_point)?);
-    for node in rotation_chain(model, leaf) {
-        p = p.rotate_about(node.axis, node.angle, node.point);
-    }
-    Ok(p.coord)
+    Ok(replay(Pt3::at(coord_rat(base_point)?), &motion_chain(model, leaf)).coord)
 }
 
-/// The rotation nodes from the root down to `leaf` (parent chain, reversed).
-pub(crate) fn rotation_chain(model: &Model, leaf: Handle<Rotation>) -> Vec<RotNode> {
+/// `p` carried through `chain`, in the producer's own order and float operations — the one
+/// definition of "replay" this crate has, so a coordinate and its definition cannot drift apart.
+pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Pt3 {
+    chain.iter().fold(p, |q, n| match *n {
+        MoveNode::Rotate { axis, angle, point } => q.rotate_about(axis, angle, point),
+        MoveNode::Translate { .. } => unreachable!("no producer records a translation yet"),
+    })
+}
+
+/// The motion nodes from the root down to `leaf` (parent chain, reversed).
+pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Vec<MoveNode> {
     let mut chain = Vec::new();
     let mut cur = Some(leaf);
     while let Some(h) = cur {
-        let r: &Rotation = model.rotations.get(h);
-        chain.push(RotNode {
-            axis: r.axis,
-            angle: r.angle,
-            point: r.point,
+        let n: &MotionNode = model.motions.get(h);
+        chain.push(match n.motion {
+            Motion::Rotate { axis, point, angle } => MoveNode::Rotate { axis, angle, point },
+            Motion::Translate { offset } => MoveNode::Translate { offset },
         });
-        cur = r.parent;
+        cur = n.parent;
     }
     chain.reverse();
     chain
@@ -124,7 +128,11 @@ mod tests {
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
                 for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
-                    let Origin::Rotated { base, rotation } = m.vertices.get(vh).origin else {
+                    let Origin::Moved {
+                        base,
+                        motion: rotation,
+                    } = m.vertices.get(vh).origin
+                    else {
                         panic!("a rotated solid's vertices carry their rotation");
                     };
                     let replayed =
@@ -165,12 +173,18 @@ mod tests {
             .get(m.faces.get(fh).outer.half_edges[0].edge)
             .bounds
             .unwrap()[0];
-        let Origin::Rotated { rotation, .. } = m.vertices.get(vh).origin else {
+        let Origin::Moved {
+            motion: rotation, ..
+        } = m.vertices.get(vh).origin
+        else {
             panic!("rotated");
         };
-        let axes: Vec<Axis> = rotation_chain(&m, rotation)
+        let axes: Vec<Axis> = motion_chain(&m, rotation)
             .iter()
-            .map(|n| n.axis)
+            .filter_map(|n| match n {
+                MoveNode::Rotate { axis, .. } => Some(*axis),
+                MoveNode::Translate { .. } => None,
+            })
             .collect();
         assert_eq!(axes, vec![Axis::Z, Axis::X]);
     }

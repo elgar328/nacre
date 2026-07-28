@@ -8,8 +8,8 @@ use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Angle, Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Origin, Rotation, Shell, Solid, SurfaceDef, Vertex,
-    VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Origin, Shell, Solid, SurfaceDef,
+    Vertex, VertexDef,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -27,7 +27,7 @@ pub(crate) fn transform(
     if !origins_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
-    let out = transform_solid(model, solid, &Motion::Rigid(isometry), None)?;
+    let out = transform_solid(model, solid, &Xform::Rigid(isometry), None)?;
     model.live_solids.retain(|&s| s != solid);
     Ok(out)
 }
@@ -58,7 +58,7 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
     let zero = Isometry::translation([Rat::from_int(0); 3]);
     // `push_solid` registers the twin as live; the input is *not* retained away — that missing
     // line is the whole difference from `transform`.
-    transform_solid(model, solid, &Motion::Rigid(&zero), None)
+    transform_solid(model, solid, &Xform::Rigid(&zero), None)
 }
 
 /// Whether every `Discovered` definition in `solid` names a surface the walk will remap — that is,
@@ -130,7 +130,7 @@ pub(crate) fn mirror(
         return Err(OpError::OriginNotOnSolid);
     }
     let m = AxisMirror::new(axis_index(axis), offset.to_f64()).expect("axis index is 0..3");
-    let out = transform_solid(model, solid, &Motion::Mirror(m), Some((axis, offset)))?;
+    let out = transform_solid(model, solid, &Xform::Mirror(m), Some((axis, offset)))?;
     model.live_solids.retain(|&s| s != solid);
     Ok(out)
 }
@@ -141,7 +141,7 @@ struct Conjugation {
     mirror: AxisMirror,
     axis: Axis,
     offset: Rat,
-    nodes: HashMap<Handle<Rotation>, Handle<Rotation>>,
+    nodes: HashMap<Handle<MotionNode>, Handle<MotionNode>>,
     bases: HashMap<Handle<Vertex>, Handle<Vertex>>,
     surfaces: HashMap<Handle<Surface>, Handle<Surface>>,
 }
@@ -158,35 +158,46 @@ struct Conjugation {
 /// arithmetic overflows.
 fn conjugate_chain(
     model: &mut Model,
-    leaf: Handle<Rotation>,
+    leaf: Handle<MotionNode>,
     c: &mut Conjugation,
-) -> Option<Handle<Rotation>> {
+) -> Option<Handle<MotionNode>> {
     if let Some(&h) = c.nodes.get(&leaf) {
         return Some(h);
     }
-    let r = *model.rotations.get(leaf);
-    let parent = match r.parent {
+    let node = *model.motions.get(leaf);
+    let parent = match node.parent {
         Some(p) => Some(conjugate_chain(model, p, c)?),
         None => None,
     };
     let i = axis_index(c.axis);
-    let mut point = r.point;
-    point[i] = c
-        .offset
-        .checked_mul(Rat::from_int(2))?
-        .checked_sub(point[i])?;
-    // `Angle` keeps `0 ≤ θ < 360`, so the negation of 0 is 0, not 360.
-    let angle = if r.axis == c.axis || r.angle.deg() == Rat::from_int(0) {
-        r.angle
-    } else {
-        Angle::from_deg(Rat::from_int(360).checked_sub(r.angle.deg())?)?
+    let motion = match node.motion {
+        Motion::Rotate {
+            axis,
+            mut point,
+            angle,
+        } => {
+            // The **pivot** is a point, so it reflects as `2c − p`.
+            point[i] = c
+                .offset
+                .checked_mul(Rat::from_int(2))?
+                .checked_sub(point[i])?;
+            // `Angle` keeps `0 ≤ θ < 360`, so the negation of 0 is 0, not 360.
+            let angle = if axis == c.axis || angle.deg() == Rat::from_int(0) {
+                angle
+            } else {
+                Angle::from_deg(Rat::from_int(360).checked_sub(angle.deg())?)?
+            };
+            Motion::Rotate { axis, point, angle }
+        }
+        // An **offset is a vector, not a point** — `M ∘ T(t) ∘ M⁻¹ = T(t')` negates the mirrored
+        // component and leaves the rest, with no `2c` term. The pivot formula above looks like it
+        // would fit (both are `[Rat; 3]`) and would be wrong.
+        Motion::Translate { mut offset } => {
+            offset[i] = Rat::from_int(0).checked_sub(offset[i])?;
+            Motion::Translate { offset }
+        }
     };
-    let h = model.rotations.push(Rotation {
-        axis: r.axis,
-        point,
-        angle,
-        parent,
-    });
+    let h = model.push_motion(motion, parent);
     c.nodes.insert(leaf, h);
     Some(h)
 }
@@ -211,8 +222,8 @@ fn moved_surface_def(
     model: &mut Model,
     src: Handle<Surface>,
     face: Handle<Face>,
-    motion: &Motion<'_>,
-    surf_rot: &mut HashMap<Option<Handle<Rotation>>, Handle<Rotation>>,
+    motion: &Xform<'_>,
+    surf_rot: &mut HashMap<Option<Handle<MotionNode>>, Handle<MotionNode>>,
     conj: &mut Option<Conjugation>,
 ) -> Result<SurfaceDef, OpError> {
     let rotate = motion.rigid().and_then(|i| i.rotate);
@@ -234,28 +245,42 @@ fn moved_surface_def(
     // `Constructed` surface keeps exact coefficients and needs none, but the same rotation of an
     // already-rotated one must still be recorded, or the chain would not reproduce the result.
     let parent = match source {
-        SurfaceDef::Rotated { rotation, .. } => Some(rotation),
+        SurfaceDef::Moved { motion, .. } => Some(motion),
         _ => None,
     };
     if let Some(r) = rotate.filter(|_| !exact_rotation || parent.is_some()) {
-        let rotation = *surf_rot.entry(parent).or_insert_with(|| {
-            model.rotations.push(Rotation {
-                axis: r.axis,
-                point: r.point,
-                angle: r.angle,
-                parent,
-            })
-        });
+        // `entry` cannot hold a `&mut Model` across the closure, so look up then insert.
+        let rotation = match surf_rot.get(&parent) {
+            Some(&h) => h,
+            None => {
+                let h = model.push_motion(
+                    Motion::Rotate {
+                        axis: r.axis,
+                        point: r.point,
+                        angle: r.angle,
+                    },
+                    parent,
+                );
+                surf_rot.insert(parent, h);
+                h
+            }
+        };
         return Ok(match source {
             SurfaceDef::Inexact => SurfaceDef::Inexact,
             // Keep the original witness: the new node's parent is this surface's own leaf, so
             // replaying the chain from the *root* witness applies every rotation, once each.
-            SurfaceDef::Rotated { witness, .. } => SurfaceDef::Rotated { witness, rotation },
+            SurfaceDef::Moved { witness, .. } => SurfaceDef::Moved {
+                witness,
+                motion: rotation,
+            },
             SurfaceDef::Constructed => {
                 let f = model.faces.get(face);
                 let (witness, _) =
                     crate::planes::outer_tri(model, f).ok_or(OpError::DegenerateGeometry)?;
-                SurfaceDef::Rotated { witness, rotation }
+                SurfaceDef::Moved {
+                    witness,
+                    motion: rotation,
+                }
             }
         });
     }
@@ -264,18 +289,18 @@ fn moved_surface_def(
         (SurfaceDef::Inexact, _) => SurfaceDef::Inexact,
         // A reflection is exact (rational pivot, negated angle — `conjugate_chain`), so a mirrored
         // rotated surface stays describable: the mirrored witness under the conjugated chain.
-        (SurfaceDef::Rotated { witness, rotation }, Some(c)) => {
+        (SurfaceDef::Moved { witness, motion }, Some(c)) => {
             let m = c.mirror;
-            let leaf = conjugate_chain(model, rotation, c).ok_or(OpError::MirrorChainOverflow)?;
-            SurfaceDef::Rotated {
+            let leaf = conjugate_chain(model, motion, c).ok_or(OpError::MirrorChainOverflow)?;
+            SurfaceDef::Moved {
                 witness: witness.map(|p| m.point(p)),
-                rotation: leaf,
+                motion: leaf,
             }
         }
         // A translation of a rotated surface: no node can name `R` then `T`. A *zero*
         // translation is not a translation — it is `copy`, and the definition still holds.
-        (def @ SurfaceDef::Rotated { .. }, None) if !displaced => def,
-        (SurfaceDef::Rotated { .. }, None) => SurfaceDef::Inexact,
+        (def @ SurfaceDef::Moved { .. }, None) if !displaced => def,
+        (SurfaceDef::Moved { .. }, None) => SurfaceDef::Inexact,
     })
 }
 
@@ -344,18 +369,18 @@ fn axis_index(axis: Axis) -> usize {
 /// How [`transform_solid`] maps a solid's cells. One walker serves both kinds so the seven
 /// passes are not duplicated; the kinds differ in exactly three places — how a point/direction
 /// maps, whether a curved surface can be carried at all, and whether loops must be rewound.
-pub(crate) enum Motion<'a> {
+pub(crate) enum Xform<'a> {
     /// A proper motion: rotation then translation. Preserves handedness.
     Rigid(&'a Isometry),
     /// A reflection in a coordinate plane. Reverses handedness, so `det = −1`.
     Mirror(AxisMirror),
 }
 
-impl Motion<'_> {
+impl Xform<'_> {
     fn point(&self, p: Point3) -> Point3 {
         match self {
-            Motion::Rigid(iso) => Point3::from_array(iso.apply_point(p.as_array())),
-            Motion::Mirror(m) => m.point(p),
+            Xform::Rigid(iso) => Point3::from_array(iso.apply_point(p.as_array())),
+            Xform::Mirror(m) => m.point(p),
         }
     }
 
@@ -363,15 +388,15 @@ impl Motion<'_> {
     /// parametrisation handedness is a curved-geometry decision (see `Surface::mirrored`).
     fn surface(&self, s: &Surface, offset: Vector3) -> Option<Surface> {
         match self {
-            Motion::Rigid(iso) => Some(transform_surface(s, iso, offset)),
-            Motion::Mirror(m) => s.mirrored(*m),
+            Xform::Rigid(iso) => Some(transform_surface(s, iso, offset)),
+            Xform::Mirror(m) => s.mirrored(*m),
         }
     }
 
     fn curve(&self, c: &Curve, offset: Vector3) -> Option<Curve> {
         match self {
-            Motion::Rigid(iso) => Some(transform_curve(c, iso, offset)),
-            Motion::Mirror(m) => c.mirrored(*m),
+            Xform::Rigid(iso) => Some(transform_curve(c, iso, offset)),
+            Xform::Mirror(m) => c.mirrored(*m),
         }
     }
 
@@ -379,14 +404,14 @@ impl Motion<'_> {
     /// every loop is rewound to put it back — and then the `Orientation` flag needs no change,
     /// because a reflection preserves dot products.
     fn reverses_orientation(&self) -> bool {
-        matches!(self, Motion::Mirror(_))
+        matches!(self, Xform::Mirror(_))
     }
 
     /// The isometry, for the rotation-forest bookkeeping that only proper motion does.
     fn rigid(&self) -> Option<&Isometry> {
         match self {
-            Motion::Rigid(iso) => Some(iso),
-            Motion::Mirror(_) => None,
+            Xform::Rigid(iso) => Some(iso),
+            Xform::Mirror(_) => None,
         }
     }
 }
@@ -418,7 +443,7 @@ fn remap_origin(origin: Origin, surf_map: &HashMap<Handle<Surface>, Handle<Surfa
         // definition: its `base`/`rotation` name arena ancestors unaffected by a
         // translation. (An *inexact* re-rotation instead records a chain node and is
         // handled in `transform_solid` pass 3, not here.)
-        Origin::Rotated { .. } => origin,
+        Origin::Moved { .. } => origin,
     }
 }
 
@@ -485,7 +510,7 @@ fn transform_curve(c: &Curve, iso: &Isometry, offset: Vector3) -> Curve {
 ///
 /// Face orientation flags are carried unchanged for **both** kinds of motion. A rigid motion
 /// turns the normal and the winding together; a reflection negates the winding's implied normal,
-/// which [`Motion::reverses_orientation`] undoes by rewinding every loop — and since a reflection
+/// which [`Xform::reverses_orientation`] undoes by rewinding every loop — and since a reflection
 /// preserves dot products, `sign(plane.normal · n_out)` is then unchanged too, which is exactly
 /// what the `Orientation` flag records.
 ///
@@ -493,12 +518,12 @@ fn transform_curve(c: &Curve, iso: &Isometry, offset: Vector3) -> Curve {
 fn transform_solid(
     model: &mut Model,
     solid: Handle<Solid>,
-    motion: &Motion<'_>,
+    motion: &Xform<'_>,
     mirror_plane: Option<(Axis, Rat)>,
 ) -> Result<Handle<Solid>, OpError> {
     // A reflection carries a rotated input by conjugating its chain (see `conjugate_chain`).
     let mut conj = match (motion, mirror_plane) {
-        (Motion::Mirror(m), Some((axis, offset))) => Some(Conjugation {
+        (Xform::Mirror(m), Some((axis, offset))) => Some(Conjugation {
             mirror: *m,
             axis,
             offset,
@@ -525,25 +550,29 @@ fn transform_solid(
     //       it; the forest stays complete. (Same-axis *bundling* — accumulating the
     //       angle into one node — is a later cell; this cell always chains.)
     let input_leaf = solid_rotation(model, solid);
-    let rot_node: Option<Handle<Rotation>> =
+    let rot_node: Option<Handle<MotionNode>> =
         match (motion.rigid().and_then(|i| i.rotate), input_leaf) {
             (None, _) => None,
             (Some(r), None) => {
                 (!motion.rigid().expect("rotate implies rigid").is_exact()).then(|| {
-                    model.rotations.push(Rotation {
-                        axis: r.axis,
-                        point: r.point,
-                        angle: r.angle,
-                        parent: None,
-                    })
+                    model.push_motion(
+                        Motion::Rotate {
+                            axis: r.axis,
+                            point: r.point,
+                            angle: r.angle,
+                        },
+                        None,
+                    )
                 })
             }
-            (Some(r), Some(parent)) => Some(model.rotations.push(Rotation {
-                axis: r.axis,
-                point: r.point,
-                angle: r.angle,
-                parent: Some(parent),
-            })),
+            (Some(r), Some(parent)) => Some(model.push_motion(
+                Motion::Rotate {
+                    axis: r.axis,
+                    point: r.point,
+                    angle: r.angle,
+                },
+                Some(parent),
+            )),
         };
 
     // Deterministic order: outer shell then cavities; each shell's faces in order.
@@ -568,7 +597,7 @@ fn transform_solid(
     // walls came from different rotations, and its vertices are all `Discovered`, so the
     // vertex-side `solid_rotation` cannot answer for it at all. `surf_rot` memoizes one new forest
     // node per distinct parent leaf, so surfaces that did share a history still share it.
-    let mut surf_rot: HashMap<Option<Handle<Rotation>>, Handle<Rotation>> = HashMap::new();
+    let mut surf_rot: HashMap<Option<Handle<MotionNode>>, Handle<MotionNode>> = HashMap::new();
     let mut surf_map: HashMap<Handle<Surface>, Handle<Surface>> = HashMap::new();
     for &fh in &face_order {
         let s = model.faces.get(fh).surface;
@@ -634,10 +663,13 @@ fn transform_solid(
             origin: match rot_node {
                 Some(rotation) => {
                     let base = match v.origin {
-                        Origin::Rotated { base, .. } => base,
+                        Origin::Moved { base, .. } => base,
                         _ => vh,
                     };
-                    Origin::Rotated { base, rotation }
+                    Origin::Moved {
+                        base,
+                        motion: rotation,
+                    }
                 }
                 None => remap_origin(v.origin, &surf_map),
             },
@@ -647,7 +679,13 @@ fn transform_solid(
         // the replay to match the stored point bit for bit, which reflecting the point separately
         // would not (two float routes to one real number differ in the last places).
         let new_v = match (&mut conj, v.origin) {
-            (Some(c), Origin::Rotated { base, rotation }) => {
+            (
+                Some(c),
+                Origin::Moved {
+                    base,
+                    motion: rotation,
+                },
+            ) => {
                 let leaf =
                     conjugate_chain(model, rotation, c).ok_or(OpError::MirrorChainOverflow)?;
                 let mbase = mirrored_base(model, base, c);
@@ -660,9 +698,9 @@ fn transform_solid(
                 };
                 Vertex {
                     point,
-                    origin: Origin::Rotated {
+                    origin: Origin::Moved {
                         base: mbase,
-                        rotation: leaf,
+                        motion: leaf,
                     },
                 }
             }
@@ -742,9 +780,9 @@ fn transform_solid(
 /// but because `assemble_fuse_cut` names every result vertex through `Node::Seam`, the enum's
 /// only variant: even a corner that survived untouched is rebuilt as a seam vertex, so a result
 /// is uniformly `Discovered` and carries no `Rotated` at all.
-fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<Rotation>> {
+fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<MotionNode>> {
     let sh = model.solids.get(solid).outer;
-    let mut seen: Option<Option<Handle<Rotation>>> = None;
+    let mut seen: Option<Option<Handle<MotionNode>>> = None;
     for &fh in &model.shells.get(sh).faces {
         for he in &model.faces.get(fh).outer.half_edges {
             let Some(bounds) = model.edges.get(he.edge).bounds else {
@@ -752,7 +790,7 @@ fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<Rotation
             };
             for &vh in &bounds {
                 let leaf = match model.vertices.get(vh).origin {
-                    Origin::Rotated { rotation, .. } => Some(rotation),
+                    Origin::Moved { motion, .. } => Some(motion),
                     _ => None,
                 };
                 match seen {

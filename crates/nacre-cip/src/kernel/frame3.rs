@@ -37,14 +37,18 @@ use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
 /// signature on both, so the consumer ([`Pt3::hp_coord`]) is unchanged by the choice.
 type HpCell = HpRc<HpOnce<(usize, [HpIv; 3])>>;
 
-/// One rotation in a point's definition: turn about `axis` (the line through the
-/// rational pivot `point`) by the rational `angle`. `point = [0,0,0]` is the
-/// origin-pivot case; the kernel's `Rotation` carries an arbitrary rational pivot.
+/// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
+/// rational pivot `point`) by the rational `angle` — `point = [0,0,0]` is the origin-pivot case.
+/// Rotation and translation do not commute, so the chain's **order is the definition**.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RotNode {
-    pub axis: Axis,
-    pub angle: Angle,
-    pub point: [Rat; 3],
+pub enum MoveNode {
+    Rotate {
+        axis: Axis,
+        angle: Angle,
+        point: [Rat; 3],
+    },
+    /// An exact rational translation. Realized by adding the offset — see [`Pt3::compute_hp`].
+    Translate { offset: [Rat; 3] },
 }
 
 /// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
@@ -56,7 +60,7 @@ pub struct RotNode {
 #[derive(Clone, Debug)]
 pub struct Pt3 {
     pub base: [Rat; 3],
-    pub chain: HpRc<[RotNode]>,
+    pub chain: HpRc<[MoveNode]>,
     pub coord: [f64; 3],
     pub tol: [f64; 3],
     /// Memoized `hp_coord` at the boolean's chosen precision — the astro-float realization
@@ -117,7 +121,7 @@ impl Pt3 {
         Pt3 {
             coord: [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
             base,
-            chain: HpRc::from([] as [RotNode; 0]),
+            chain: HpRc::from([] as [MoveNode; 0]),
             tol,
             hp: HpCell::default(),
         }
@@ -169,7 +173,7 @@ impl Pt3 {
         // `clone` becomes a refcount bump instead of an allocation, which the judgment path
         // does hundreds of thousands of times.
         let mut nodes = self.chain.to_vec();
-        nodes.push(RotNode { axis, angle, point });
+        nodes.push(MoveNode::Rotate { axis, angle, point });
         self.chain = HpRc::from(nodes);
         // The definition changed — invalidate the memoized hp of the old definition. A fresh
         // (unshared) cell, so clones made before this rotation keep their own cached value.
@@ -210,18 +214,26 @@ impl Pt3 {
             rat_to_hp(self.base[2], prec),
         ];
         for node in self.chain.iter() {
-            let (i, j) = node.axis.plane();
-            let (c, s, bc, bs) = node.angle.cos_sin_bounded(prec);
-            let (c, s) = (HpIv::new(c, bc), HpIv::new(s, bs));
-            let (px, py) = (
-                rat_to_hp(node.point[i], prec),
-                rat_to_hp(node.point[j], prec),
-            );
-            // pivot-relative: u = p − pivot, rotate, shift back.
-            let u = p[i].sub(&px, prec);
-            let v = p[j].sub(&py, prec);
-            p[i] = px.add(&u.mul(&c, prec).sub(&v.mul(&s, prec), prec), prec);
-            p[j] = py.add(&u.mul(&s, prec).add(&v.mul(&c, prec), prec), prec);
+            match node {
+                MoveNode::Rotate { axis, angle, point } => {
+                    let (i, j) = axis.plane();
+                    let (c, s, bc, bs) = angle.cos_sin_bounded(prec);
+                    let (c, s) = (HpIv::new(c, bc), HpIv::new(s, bs));
+                    let (px, py) = (rat_to_hp(point[i], prec), rat_to_hp(point[j], prec));
+                    // pivot-relative: u = p − pivot, rotate, shift back.
+                    let u = p[i].sub(&px, prec);
+                    let v = p[j].sub(&py, prec);
+                    p[i] = px.add(&u.mul(&c, prec).sub(&v.mul(&s, prec), prec), prec);
+                    p[j] = py.add(&u.mul(&s, prec).add(&v.mul(&c, prec), prec), prec);
+                }
+                // A translation is exact input: the only error is `rat_to_hp`'s own division
+                // rounding and the add's half-ulp, both of which the interval carries.
+                MoveNode::Translate { offset } => {
+                    for k in 0..3 {
+                        p[k] = p[k].add(&rat_to_hp(offset[k], prec), prec);
+                    }
+                }
+            }
         }
         p
     }
@@ -617,10 +629,12 @@ fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
         if p.chain.len() != first.chain.len() {
             return None;
         }
-        for (a, b) in p.chain.iter().zip(first.chain.iter()) {
-            if a.axis != b.axis || a.angle != b.angle || a.point != b.point {
-                return None;
-            }
+        // Structural equality over the **whole** node, variant included: two motions that compare
+        // equal here are declared one motion and the exact predicate then answers in their shared
+        // pre-motion frame. A comparison that ignored the variant would answer a different
+        // question with full confidence — silently wrong, not slow.
+        if p.chain.iter().zip(first.chain.iter()).any(|(a, b)| a != b) {
+            return None;
         }
     }
     let exact = |r: Rat| Rat::try_from_f64(r.to_f64()) == Some(r);

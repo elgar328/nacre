@@ -37,19 +37,35 @@ pub enum VertexDef {
     ThreePlane([Handle<Surface>; 3]),
 }
 
-/// A node in the rotation-history forest (design §CIP ⑦): one axis-aligned rigid
-/// rotation applied to a solid (overhaul stage 1b), with a parent link for chained
-/// rotations (v1 records a single rotation, `parent = None`; bundling adds chains).
-/// Stored in [`Model::rotations`]; a rotated vertex's [`Origin::Rotated`] names its
-/// leaf node. The tol a rotation contributes is application-point-dependent, so it is
-/// **not** stored here — stage-2 judgment computes it by traversing to the root
-/// (`axis`/`point` give the axis line, `angle` the rotation).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rotation {
-    pub axis: Axis,
-    pub point: [Rat; 3],
-    pub angle: Angle,
-    pub parent: Option<Handle<Rotation>>,
+/// One rigid motion in a history — what a [`MotionNode`] carries.
+///
+/// Rotation and translation do **not** commute, so a history is one ordered chain, never two
+/// stores: "turn then place" and "place then turn" are different motions and must stay tellable
+/// apart. (Reflections are not here: a mirror is carried by *conjugating* an existing chain, not
+/// by appending — see `nacre-ops`' `conjugate_chain`.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Motion {
+    /// One axis-aligned rotation about the line through the rational pivot `point`.
+    Rotate {
+        axis: Axis,
+        point: [Rat; 3],
+        angle: Angle,
+    },
+    /// One exact rational translation.
+    Translate { offset: [Rat; 3] },
+}
+
+/// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a
+/// parent link so several points can share a history's tail.
+///
+/// Stored in [`Model::motions`]; a moved vertex's [`Origin::Moved`] and a moved surface's
+/// [`SurfaceDef::Moved`] name their leaf node. The tol a motion contributes is
+/// application-point-dependent, so it is **not** stored here — judgment computes it by traversing
+/// to the root.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MotionNode {
+    pub motion: Motion,
+    pub parent: Option<Handle<MotionNode>>,
 }
 
 /// Provenance of a vertex or edge (design §4, overview 절대원칙 4).
@@ -60,7 +76,7 @@ pub struct Rotation {
 /// relaxation/closed-form achieved (`tol` — the point is a within-`tol` cache of
 /// the definition). In M1–M4 every element is `Constructed`; M5's
 /// `PolyhedralBoolean` is the first `Discovered` producer. `Rotated` (overhaul stage
-/// 1b) names a vertex that is another vertex (`base`) turned by a rotation node — its
+/// 1b) names a vertex that is another vertex (`base`) moved by a motion node — its
 /// point is a cache; the tol is judgment-time (§CIP ⑦), so no tol slot here.
 ///
 /// Holds an `f64`, so `PartialEq` only — no `Eq`/`Hash` (identity is by
@@ -72,9 +88,9 @@ pub enum Origin {
         tol: f64,
         definition: VertexDef,
     },
-    Rotated {
+    Moved {
         base: Handle<Vertex>,
-        rotation: Handle<Rotation>,
+        motion: Handle<MotionNode>,
     },
 }
 
@@ -94,21 +110,19 @@ pub enum SurfaceDef {
     /// The coefficients **are** the truth — a constructed surface, or one moved by a motion
     /// that preserves exactness (a translation, a 90°-family rotation).
     Constructed,
-    /// The image of an exact surface under a rotation history. The truth is
-    /// `(witness, rotation)`; the coefficients are a cache.
+    /// The image of an exact surface under a motion history. The truth is `(witness, motion)`;
+    /// the coefficients are a cache.
     ///
-    /// `witness` is three non-collinear points **before** the rotation, exactly representable in
-    /// f64 (they are read off the pre-rotation face, whose coordinates are exact by this same
-    /// invariant). `rotation` is the leaf of the history in [`Model::rotations`] — the chain
-    /// lives in the forest, exactly as [`Origin::Rotated`] uses it.
-    Rotated {
+    /// `witness` is three non-collinear points **before** the motion, exactly representable in
+    /// f64 (they are read off the pre-motion face, whose coordinates are exact by this same
+    /// invariant). `motion` is the leaf of the history in [`Model::motions`] — the chain lives in
+    /// the forest, exactly as [`Origin::Moved`] uses it.
+    Moved {
         witness: [Point3; 3],
-        rotation: Handle<Rotation>,
+        motion: Handle<MotionNode>,
     },
-    /// **Not exactly describable** — a history the rotation forest cannot express, today a
-    /// translation interleaved with a rotation. The kernel does not pretend the coefficients are
-    /// exact; consumers that need the truth reject honestly, as `Pt3Error::TranslateInterleaved`
-    /// already does for vertices.
+    /// **Not exactly describable** — a history the forest cannot express. The kernel does not
+    /// pretend the coefficients are exact; consumers that need the truth reject honestly.
     Inexact,
 }
 
@@ -138,12 +152,17 @@ pub struct Model {
     // exact geometry (truth)
     pub surfaces: Store<Surface>,
     pub curves: Store<Curve>,
-    /// The rotation-history forest (§CIP ⑦): rotation definitions named by
-    /// `Origin::Rotated` vertices. Not geometry — a definition store.
-    pub rotations: Store<Rotation>,
+    /// The motion-history forest (§CIP ⑦): motion definitions named by `Origin::Moved` vertices
+    /// and `SurfaceDef::Moved` surfaces. Not geometry — a definition store.
+    ///
+    /// **Interned** — see [`Model::push_motion`]; write through it, never through `Store::push`.
+    pub motions: Store<MotionNode>,
+    /// Interning table for [`Model::push_motion`]: the handle already issued for a given
+    /// `(motion, parent)`. Not iterated (a `HashMap`'s order must never reach a result).
+    pub motion_ids: HashMap<MotionNode, Handle<MotionNode>>,
     /// Each surface's provenance, keyed by handle. Not geometry — the twin of the vertex
     /// `Origin`, kept beside the store because [`Surface`] is a `nacre-geom` type and cannot
-    /// name a `Handle<Rotation>`. Written only by [`Model::push_surface`].
+    /// name a `Handle<MotionNode>`. Written only by [`Model::push_surface`].
     ///
     /// Iterate this **through the faces**, never over the map: a `HashMap`'s order is not
     /// deterministic and replay determinism (DNA 3) forbids letting it reach a result.
@@ -233,6 +252,37 @@ impl Model {
     pub fn push_solid(&mut self, solid: Solid) -> Handle<Solid> {
         let h = self.solids.push(solid);
         self.live_solids.push(h);
+        h
+    }
+
+    /// Push a motion node, **interned**: the same `(motion, parent)` always yields the same
+    /// handle.
+    ///
+    /// The handle is the canonical name of "which motion", and judgments use it to decide whether
+    /// a set of points shares one rigid motion — which lets the whole judgement be answered
+    /// exactly in the pre-motion frame. That identity has to be *both* collision-free and free of
+    /// false misses:
+    ///
+    /// - it used to be a 64-bit hash of the chain's contents, and a collision would hand the exact
+    ///   predicate two incompatible frames and answer a different question with full confidence;
+    /// - a raw `Store::push` per transform is collision-free but *misses*: turning two solids by
+    ///   the same 30° would make two nodes, and their shared motion would stop cancelling — so
+    ///   rotating a model would turn its exact questions into assumed ones (measured: it breaks
+    ///   `a_shared_rotation_still_assumes_nothing`).
+    ///
+    /// Interning gives both. It also keeps the forest small, since a chain shared by many solids
+    /// is stored once.
+    pub fn push_motion(
+        &mut self,
+        motion: Motion,
+        parent: Option<Handle<MotionNode>>,
+    ) -> Handle<MotionNode> {
+        let node = MotionNode { motion, parent };
+        if let Some(&h) = self.motion_ids.get(&node) {
+            return h;
+        }
+        let h = self.motions.push(node);
+        self.motion_ids.insert(node, h);
         h
     }
 

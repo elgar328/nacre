@@ -2423,6 +2423,7 @@ pub mod tests {
         // equal points) would make every `orient3d` vanish, so the coordinate branch would report
         // coplanar and this test would pass without the handle branch ever mattering.
         let mk = |plane, tri: [Point3; 3]| FaceInfo {
+            motion: None,
             surf: shared,
             face: fh,
             plane,
@@ -3083,10 +3084,14 @@ pub mod tests {
             for he in &m.faces.get(fh).outer.half_edges.clone() {
                 for vh in m.edges.get(he.edge).bounds.iter().flatten() {
                     assert!(
-                        matches!(m.vertices.get(*vh).origin, Origin::Rotated { .. }),
+                        matches!(m.vertices.get(*vh).origin, Origin::Moved { .. }),
                         "the image keeps its rotation definition"
                     );
-                    let Origin::Rotated { base, rotation } = m.vertices.get(*vh).origin else {
+                    let Origin::Moved {
+                        base,
+                        motion: rotation,
+                    } = m.vertices.get(*vh).origin
+                    else {
                         unreachable!("just asserted Rotated")
                     };
                     let replayed = crate::rotated_vertex::replay_chain_coord(
@@ -3156,7 +3161,7 @@ pub mod tests {
 
     /// A non-90° rotation genuinely tilts the solid: rigid (volume/area invariant),
     /// validate/tess/STEP clean, a known corner lands at its exact rotated image, the
-    /// vertices carry `Origin::Rotated` (`solid_is_rotated`), and a boolean against it now
+    /// vertices carry `Origin::Moved` (`solid_is_rotated`), and a boolean against it now
     /// runs (a *mixed*-rotation cut: rotated `c2` minus an axis-aligned `d` it contains, so
     /// `d` becomes a cavity — overhaul 3d-i retired the `ROTATED_UNSUPPORTED` entry guard).
     #[test]
@@ -3186,7 +3191,7 @@ pub mod tests {
             "rotated solid exports to STEP"
         );
 
-        assert!(solid_is_rotated(&m, c2), "vertices carry Origin::Rotated");
+        assert!(solid_is_rotated(&m, c2), "vertices carry Origin::Moved");
 
         // Corner (0,0,0) rotates about pivot (1,1) by 30°: dx=dy=-1, so
         // x' = 1 - cos30 + sin30, y' = 1 - sin30 - cos30, z' = 0.
@@ -3288,7 +3293,7 @@ pub mod tests {
             for he in &m.faces.get(fh).outer.half_edges {
                 if let Some(bd) = m.edges.get(he.edge).bounds {
                     for vh in bd {
-                        if let Origin::Rotated { base, .. } = m.vertices.get(vh).origin {
+                        if let Origin::Moved { base, .. } = m.vertices.get(vh).origin {
                             if matches!(m.vertices.get(base).origin, Origin::Discovered { .. }) {
                                 found_disc_base = true;
                             }
@@ -3363,7 +3368,7 @@ pub mod tests {
         m.shells.get(m.solids.get(s).outer).faces.iter().any(|&fh| {
             matches!(
                 m.surface_defs.get(&m.faces.get(fh).surface),
-                Some(nacre_topo::SurfaceDef::Rotated { .. })
+                Some(nacre_topo::SurfaceDef::Moved { .. })
             )
         })
     }
@@ -3381,15 +3386,21 @@ pub mod tests {
     /// Rotated boundary vertex of `s`.
     fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(bool, usize, Vec<nacre_scalar::Axis>)> {
         let vh = *boundary_verts(m, s).first()?;
-        let Origin::Rotated { base, rotation } = m.vertices.get(vh).origin else {
+        let Origin::Moved {
+            base,
+            motion: rotation,
+        } = m.vertices.get(vh).origin
+        else {
             return None;
         };
-        let base_is_rotated = matches!(m.vertices.get(base).origin, Origin::Rotated { .. });
+        let base_is_rotated = matches!(m.vertices.get(base).origin, Origin::Moved { .. });
         let mut axes = Vec::new();
         let mut cur = Some(rotation);
         while let Some(h) = cur {
-            let n = m.rotations.get(h);
-            axes.push(n.axis);
+            let n = m.motions.get(h);
+            if let nacre_topo::Motion::Rotate { axis, .. } = n.motion {
+                axes.push(axis);
+            }
             cur = n.parent;
         }
         axes.reverse();
@@ -3445,6 +3456,58 @@ pub mod tests {
         );
     }
 
+    /// **The same motion, applied twice, is the same node.**
+    ///
+    /// The motion handle is the canonical name of "which motion", and judgments use it to decide
+    /// whether a whole judgement can be answered exactly in the pre-motion frame. Without
+    /// interning, turning two solids by the same 30° makes two nodes, their shared motion stops
+    /// cancelling, and rotating a model turns its exact questions into assumed ones — which is
+    /// what `a_shared_rotation_still_assumes_nothing` measures. (The identity it replaced was a
+    /// 64-bit hash of the chain's contents, where a collision would have answered a *different*
+    /// question with full confidence.)
+    #[test]
+    fn the_same_motion_applied_twice_is_one_node() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([2.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let a = transform(&mut m, a, &rot_iso(Axis::X, 30)).unwrap();
+        m.rebuild_adjacency();
+        let b = transform(&mut m, b, &rot_iso(Axis::X, 30)).unwrap();
+        m.rebuild_adjacency();
+        fn leaf(m: &Model, s: Handle<Solid>) -> Handle<nacre_topo::MotionNode> {
+            let sh = m.solids.get(s).outer;
+            let fh = m.shells.get(sh).faces[0];
+            let vh = m
+                .edges
+                .get(m.faces.get(fh).outer.half_edges[0].edge)
+                .bounds
+                .unwrap()[0];
+            match m.vertices.get(vh).origin {
+                Origin::Moved { motion, .. } => motion,
+                other => panic!("a rotated solid's vertices are moved, got {other:?}"),
+            }
+        }
+        assert_eq!(leaf(&m, a), leaf(&m, b), "one motion, one node");
+        // …and a *different* motion is a different node, or the identity would be worthless.
+        let c = m.add_cuboid(
+            Point3::from_array([5.0, 0.0, 0.0]),
+            Point3::from_array([6.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let c = transform(&mut m, c, &rot_iso(Axis::X, 31)).unwrap();
+        m.rebuild_adjacency();
+        assert_ne!(
+            leaf(&m, a),
+            leaf(&m, c),
+            "different motions must not share a node"
+        );
+    }
+
     /// **A boolean result rotated again continues its history — per wall.**
     ///
     /// One solid does not have one rotation history. A result's vertices are all `Discovered`, so
@@ -3480,7 +3543,9 @@ pub mod tests {
         let sh = m.solids.get(r).outer;
         for &fh in &m.shells.get(sh).faces {
             let s = m.faces.get(fh).surface;
-            let nacre_topo::SurfaceDef::Rotated { rotation, .. } = m
+            let nacre_topo::SurfaceDef::Moved {
+                motion: rotation, ..
+            } = m
                 .surface_defs
                 .get(&s)
                 .copied()
@@ -3489,7 +3554,7 @@ pub mod tests {
                 panic!("a rotated result's walls must carry a rotation");
             };
             assert_eq!(
-                crate::rotated_vertex::rotation_chain(&m, rotation).len(),
+                crate::rotated_vertex::motion_chain(&m, rotation).len(),
                 2,
                 "both rotations, once each"
             );
