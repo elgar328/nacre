@@ -210,9 +210,18 @@ fn conjugate_chain(
 /// A node is *omitted* only when the motion changes nothing the definition needs to say: a zero
 /// translation is the identity (`copy` is `transform_solid` under one), a 90°-family rotation of
 /// an exact datum keeps it exact, and a translation that lands every coordinate back on an exact
-/// `f64` does too (`exact_translate`, from [`translation_is_exact`]). The rotation exception
-/// lapses once the datum already has a history — then every motion must be recorded or the chain
-/// would not reproduce the result.
+/// `f64` does too (`exact_translate`, from [`translation_is_exact`]).
+///
+/// **Both exceptions lapse once the datum already has a history.** "This motion kept the
+/// coordinates exact" is a statement about *this step*; it says nothing about the chain, and a
+/// chain missing a link describes the datum as it was *before* that link — silently. So once
+/// `leaf` is `Some`, every motion is recorded.
+///
+/// The translation half of that is not reachable today, and the reason is worth writing down: an
+/// inexact rotation leaves coordinates using the full 53-bit mantissa, so no nonzero translation
+/// of such a solid is exact and `exact_translate` is already false. It becomes reachable the
+/// moment an exactness-preserving motion can also carry a history — a reflection in `x = 0`, for
+/// one — which is how this was found. The rule holds regardless of whether anything exercises it.
 fn chain_isometry(
     model: &mut Model,
     parent: Option<Handle<MotionNode>>,
@@ -230,7 +239,7 @@ fn chain_isometry(
             leaf,
         ));
     }
-    if iso.translate.iter().any(|r| r.numer() != 0) && !exact_translate {
+    if iso.translate.iter().any(|r| r.numer() != 0) && (!exact_translate || leaf.is_some()) {
         leaf = Some(model.push_motion(
             Motion::Translate {
                 offset: iso.translate,
@@ -855,4 +864,47 @@ fn solid_motion(model: &Model, solid: Handle<Solid>) -> Option<Handle<MotionNode
         }
     }
     seen.flatten()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nacre_scalar::Angle;
+
+    /// **"This step kept it exact" never excuses a chain from recording it.**
+    ///
+    /// A motion that leaves every coordinate on an exact `f64` needs no node *of its own* — but if
+    /// the datum already has a history, the chain has to keep reproducing it, and a chain missing a
+    /// link describes the datum as it was before that link. Silently.
+    ///
+    /// Asserted on the rule rather than on a symptom, because the symptom is not reachable today:
+    /// an inexact rotation leaves coordinates using the full mantissa, so no nonzero translation of
+    /// such a solid is exact and `exact_translate` is already false. It becomes reachable as soon
+    /// as an exactness-preserving motion can carry a history too (a reflection in `x = 0`), which
+    /// is how the rule was found to be wrong — so it is pinned here, not left to a future fixture.
+    #[test]
+    fn an_exact_motion_is_still_recorded_once_there_is_a_history() {
+        let mut m = Model::new();
+        let root = m.push_motion(
+            Motion::Rotate {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+            },
+            None,
+        );
+        let place = Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]);
+
+        // No history: an exact translation records nothing, and the coordinates stay the truth.
+        assert_eq!(chain_isometry(&mut m, None, &place, true), None);
+        // With a history: recorded anyway, and the new leaf hangs off the old one.
+        let leaf = chain_isometry(&mut m, Some(root), &place, true)
+            .expect("a motion over a history is always recorded");
+        assert_ne!(leaf, root);
+        assert_eq!(m.motions.get(leaf).parent, Some(root));
+        assert!(matches!(
+            m.motions.get(leaf).motion,
+            Motion::Translate { .. }
+        ));
+    }
 }
