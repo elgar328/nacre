@@ -18,15 +18,20 @@ nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 # boolean predicates (overhaul stage 3). tip's dep on nacre-ops is dev-only (a separate
 # target), so the lib dependency graph stays acyclic.
 nacre-cip = { path = "../nacre-cip", version = "0.0.0" }
-# Data-parallel evaluation of the read-only boolean predicate phases (face
-# reconstruction, vertex classification). Optional + behind the default-on `parallel`
-# feature so a pure single-threaded / wasm build (`--no-default-features`) links no rayon.
+# Data-parallel evaluation of the boolean's three independent phases: the arrangement's
+# per-plane-class trace/split and cell build (`arrangement::trace_result_faces`), and the
+# per-point precision reading (`planes::standard_for_points`). Optional + behind the
+# default-on `parallel` feature, so a single-threaded / wasm build
+# (`--no-default-features`) links no rayon. `src/par.rs` is the only place the switch lives.
 rayon = { workspace = true, optional = true }
 
 [features]
-# Parallelize the independent read-only predicate phases of the boolean via rayon, and
-# switch `Pt3`'s hp cache to `Arc<OnceLock>` (through `nacre-cip/parallel`). On by
-# default; `--no-default-features` gives the serial, rayon-free, `Rc<OnceCell>` build.
+# Parallelize the boolean's three independent phases via rayon, and switch `Pt3`'s hp cache
+# to `Arc<OnceLock>` (through `nacre-cip/parallel`) so the shared plane table is `Sync`. On
+# by default; `--no-default-features` gives the serial, rayon-free, `Rc<OnceCell>` build --
+# which is what the wasm playground takes, and which nothing else builds, so check it with
+# `cargo test -p nacre-ops --no-default-features` (a workspace build unifies `parallel` back
+# on through nacre-oracle's and nacre-props's dev-dependencies).
 default = ["parallel"]
 parallel = ["dep:rayon", "nacre-cip/parallel"]
 

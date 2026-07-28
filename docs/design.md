@@ -38,7 +38,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 - **평면 재수출은 하지 않았다.** 층 전체 공개 이름 93개 중 충돌은 **`Rotation` 하나뿐**(scalar의 정확한 정의 vs topo의 이력 노드)이라 평면화가 가능했지만, **층 분리가 이 설계의 뼈대**여서 이름공간에 남긴다.
 - **`nacre-scalar` 재수출은 선택이 아니다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 scalar 타입을 ops의 공개 API로 새어 보내는 **유일한 지점**이라, 없으면 소비자가 그 op을 만들 수조차 없다. 반대로 `nacre-cip`·`nacre-predicates`는 공개 API에 새지 않아 재수출하지 않는다(퍼블리시는 필요 — ops의 하드 의존).
 - **prelude의 기준은 확인 가능한 성질이다**: *"`Operation`의 모든 변이가 prelude 이름만으로 만들어진다."* 내용은 실제 소비자(playground)의 import를 측정한 뒤, 그 코드보다 나중에 생긴 표면(스케치 앞문·파생 조회·거절 사유)을 합집합으로 얹어 정했다 — 낡은 소비자만 보면 최신 API가 빠진다.
-- **기능**: `parallel`(기본 on)이 `nacre-ops/parallel`로 전달된다. `nacre-ops`를 **`default-features = false`로** 매달아야 소비자가 끌 수 있고, 그러지 않으면 `--no-default-features`에도 rayon이 들어온다(실측). 이 속성은 매니페스트에 살아 훅이 검사하지 않으므로 **테스트가 `Cargo.toml`을 직접 확인**한다. `parallel`은 **`Send` 스위치이기도 하다**(cip의 hp 캐시가 `Arc`↔`Rc`). `test-util`은 topo의 테스트 전용 `add_cuboid`를 전달한다.
+- **기능**: `parallel`(기본 on)이 `nacre-ops/parallel`로 전달된다. `nacre-ops`를 **`default-features = false`로** 매달아야 소비자가 끌 수 있고, 그러지 않으면 `--no-default-features`에도 rayon이 들어온다(실측). 이 속성은 매니페스트에 살아 훅이 검사하지 않으므로 **테스트가 `Cargo.toml`을 직접 확인**한다. `parallel`은 **`Sync` 스위치이기도 하다**(cip의 hp 캐시가 `Arc`↔`Rc` — 워커들이 평면표를 *공유*해야 하므로 하중은 공유 참조 쪽이다). `test-util`은 topo의 테스트 전용 `add_cuboid`를 전달한다. **순차 조합은 반드시 `-p nacre-ops --no-default-features`로 확인한다** — 워크스페이스를 통째로 지으면 `nacre-oracle`·`nacre-props`의 dev-dependency가 기본 피처를 도로 켜서 아무것도 안 재게 된다(§6.2).
 - **검증은 "`nacre::` 경로만으로 끝까지 가기"다** — 크레이트 문서의 예제(doctest)와 `tests/facade.rs`. 재수출이 빠지면 컴파일이 깨진다. 문서 예제는 **프로덕션 API만** 쓴다(`test-util`이 필요한 예제는 독자가 실행할 수 없다).
 - **`Document`(op 로그 + Model + tess 캐시) 번들은 아직 두지 않았다** — §2/§8이 이 층을 지목하지만 의미론을 정하는 새 타입이므로, kit이 무엇을 원하는지 보이기 전에 정하지 않는다.
 
@@ -494,6 +494,22 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
 **★ glue vs clip 경계(정직):** 위는 전부 **clip**(겹치는 풋프린트를 오림). **coincident**(동일 풋프린트 스택)는 **glue**(맞닿은 면 둘 제거 + 옆벽 splice + 인터페이스 정점 remap) — 구조가 달라 통합 안 함, `coincident_merge`로 별도 유지. **정직 거절(후속):** 회전 공면(toleranced 일치 판정), 다중-loop 단면(슬롯이 cavity 관통), 임의 fan degree-≥3 flush-shared-boundary(`turn_at` 미구현), 다중 genuine 접촉, P⊂Q 대칭. 전부 named 태그 — silent-wrong 0(DNA).
 
 **은퇴:** clip bespoke 5경로의 **detector는 "진짜 공면 접촉인가(blind·not-pierces·convex)" gate로 유지**(transversal을 `general_boolean`으로 걸러 silent-wrong 방지)하되 결과는 `coplanar_result`가 만든다 — builder+헬퍼(proj2/clip/splice 계열)는 삭제.
+
+### 6.2 병렬 — 판정만 병렬, 순서는 고정 (2026-07-29)
+
+부울 시간의 90%가 **면당이 아니라 평면 클래스당** 독립인 두 루프에 있었고(트레이스→병합→분할, 셀→중첩→라벨→방출), 나머지 지배항은 모델의 정밀도를 **점마다** 읽는 `standard_for`였다. 셋을 `nacre-ops::par`의 헬퍼 둘로 병렬화한다. 옛 seam 엔진에도 같은 원칙의 병렬이 있었고 커토버(2026-07-21)가 엔진과 함께 들어냈다 — 되살린 것이지 새로 정한 것이 아니다.
+
+**원칙: 판정만 병렬, 변이·순서는 단일 스레드 고정.** `assemble_fuse_cut`이 vertex handle을 면의 first-appearance로 배정하므로 `Store::push` 순서 = handle 정체성 = 재생 결정론(§2)이다. 그래서 모든 헬퍼가 **인덱스 순서로 수집**하고, f64/BigFloat를 병렬 reduce하지 않는다(항목 내부 계산은 순차). 스케줄에 의존하는 답은 한 번 틀린 답이 아니라 **매번 다른 모델**이다.
+
+- **에러는 인덱스-최초.** 순차 루프는 가장 낮은 클래스에서 반환했다. rayon의 `collect::<Result<_,_>>()`는 단축평가라 *어느* 에러가 살아남을지 정해지지 않으므로 쓰지 않는다 — 전부 모은 뒤 순서대로 훑는다. 규칙은 `try_map_range` 안에 **한 번만** 산다.
+- **별칭 표는 라운드 스냅샷으로.** 클래스는 4-평면 동시성에서 점의 별칭을 발견하고, 순차 루프는 각 클래스에 그때까지의 발견을 보여줬다. 이제 **라운드 시작 시점의 표 + 자기 발견**을 보고, 라운드 끝에 클래스 순서로 흡수한다. 같은 고정점에 이르는 이유는 스케줄이 아니라 `Aliases`의 성질이다 — 병합 대표가 **최소 원소**라 최종 분할이 병합 순서와 무관하고, 발견이 단조 누적이라 늦게 알면 라운드가 하나 더 들 뿐이다(실측: 4-평면 모델에서 순차·병렬 모두 **2라운드·별칭 36개로 동일**).
+- **정밀도는 max 리덕션이라 안전하다.** `judge_precision`을 점당 `trial_bound`와 `precision_for`로 쪼갰다. 결합이 **최댓값**이라 결합적·정확하다 — 부분 *합*이었다면 재결합이 다른 수를 만들어 이렇게 못 나눈다.
+- **대가: 거절 입력에서 일을 더 한다.** 순차는 첫 거절에서 나머지 클래스를 안 돌았고 병렬은 전부 돈다. 답은 같고 비용만 오르지만, **뒤 클래스에 잠복한 패닉이 도달 가능**해진다 — 거절 코퍼스가 그래서 관문이다.
+- **임계값은 재서 넣는다.** `map_range`는 항목이 점 하나의 실현이라 작은 모델(면 12장 ≈ 점 36개)에서 분배가 계산보다 비쌌다(527→576µs). 측정된 크로스오버로 64를 골랐다(그 위는 fold 중간 부울이 순차로 떨어져 큰 쪽이 손해). **비용 손잡이지 답 손잡이가 아니다** — 양쪽이 같은 값을 같은 순서로 낸다는 것을 테스트가 못박는다.
+
+**실측(14코어, 같은 커밋의 순차 빌드 대비):** 7 fins 64.9→20.8ms(3.13×) · 13 fins 235.6→59.9ms(3.93×) · 25 fins **904.9→178.9ms(5.06×)** · 축정렬 소형 1.2ms→517µs(2.37×). 대장 130행 비트 동일, OCCT 101/101.
+
+**범위 밖: 브라우저.** 플레이그라운드는 `default-features = false`의 wasm 빌드라 이 이득을 못 받는다. `wasm-bindgen-rayon` + `SharedArrayBuffer` + COOP/COEP는 배포까지 얽히는 별도 작업이다. 되돌리는 길도 코드 밖에 있다 — 그 한 줄이 곧 순차 동작이다.
 
 ## 7. 검증·오라클 인프라 (`nacre-validate`, `nacre-oracle`)
 

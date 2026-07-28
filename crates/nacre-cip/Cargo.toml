@@ -15,8 +15,9 @@ astro-float = "0.9.5"
 
 [features]
 # When on, the memoized high-precision cell in the kernel's `Pt3` is `Arc<OnceLock>`
-# (Send + Sync) instead of `Rc<OnceCell>`, letting a `Pt3` cross threads for the parallel
-# boolean. Off by default; a consumer (nacre-ops) turns it on via its own `parallel` feature.
+# (Send + Sync) instead of `Rc<OnceCell>`. That is what makes the plane table `Sync`, so the
+# parallel boolean's workers can *share* it -- the load is on the shared borrow, not on
+# anything a worker returns. Off by default; nacre-ops turns it on via its own `parallel`.
 parallel = []
 
 [dev-dependencies]

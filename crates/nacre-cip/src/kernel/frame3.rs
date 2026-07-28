@@ -30,11 +30,16 @@ use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
 
 /// Shared, lazily-initialized cell for the memoized high-precision realization.
-/// Under `parallel` it is `Arc<OnceLock>` — `Send + Sync`, so a `Pt3` crosses rayon
-/// worker threads and the cache is shared (a hot definition-point's 200-bit realization
-/// is computed once and reused across workers, not per thread). Otherwise it is
-/// `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has the identical
-/// signature on both, so the consumer ([`Pt3::hp_coord`]) is unchanged by the choice.
+///
+/// Under `parallel` it is `Arc<OnceLock>` — `Send + Sync`. **What needs that is the shared
+/// borrow**: the boolean hands every worker the same `&[PlaneGeom]`, so `Pt3` must be `Sync`
+/// or the plane table cannot cross the closure at all. The cache being shared rather than
+/// per-thread is the second benefit: a hot definition point is realized once for all workers.
+/// Two workers racing to fill one cell compute the same value and one wins, so the answer
+/// does not depend on who did.
+///
+/// Otherwise it is `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has
+/// the identical signature on both, so the consumer ([`Pt3::hp_coord`]) is unchanged.
 type HpCell = HpRc<HpOnce<(usize, [HpIv; 3])>>;
 
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the

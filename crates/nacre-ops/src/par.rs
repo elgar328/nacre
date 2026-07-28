@@ -132,6 +132,59 @@ mod tests {
         }
     }
 
+    /// **rayon is named here and nowhere else in the crate.**
+    ///
+    /// The serial build is what the wasm playground takes, and **nothing builds it**: the
+    /// pre-commit hook runs the default features, and a workspace-wide
+    /// `--no-default-features` unifies `parallel` back on through `nacre-oracle`'s and
+    /// `nacre-props`'s dev-dependencies. So it has to be checked deliberately
+    /// (`cargo test -p nacre-ops --no-default-features`), and between checks the thing that
+    /// silently breaks it is a second place where parallelism lives — a `par_iter` reached
+    /// for at a call site, without the `#[cfg]` pair that keeps the serial build compiling.
+    ///
+    /// This does not replace running that command; it catches the drift that makes running
+    /// it necessary, at no cost. Same shape as the facade's test that *reads* `Cargo.toml`
+    /// rather than building a feature combination it cannot build.
+    ///
+    /// What is forbidden is the **parallel-iteration decision**, not the word rayon: the
+    /// thread-order test builds a one-thread pool on purpose, and that is the opposite of a
+    /// hazard. So this looks for the call syntax, which is also why it does not trip over
+    /// prose — it caught this file's own doc comment when it matched the bare name.
+    ///
+    /// Being textual, it can be talked around (write `.par_iter()` in a comment and it
+    /// fires; write the call some other way and it does not). It is a tripwire on the
+    /// ordinary way to get this wrong, not a proof.
+    #[test]
+    fn the_parallel_switch_lives_only_here() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        for entry in std::fs::read_dir(&src).expect("src") {
+            let path = entry.expect("entry").path();
+            if path.extension().is_some_and(|e| e == "rs")
+                && path.file_name().is_some_and(|f| f != "par.rs")
+                && {
+                    let text = std::fs::read_to_string(&path).expect("read");
+                    [
+                        ".par_iter(",
+                        ".into_par_iter(",
+                        ".par_chunks(",
+                        ".par_bridge(",
+                        "use rayon::prelude",
+                    ]
+                    .iter()
+                    .any(|api| text.contains(api))
+                }
+            {
+                offenders.push(path);
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "a parallel iterator outside par.rs, so the serial build has a second way to \
+             break -- and a second place where index order could be lost: {offenders:?}"
+        );
+    }
+
     /// Nothing to do is not an error, and not a panic — `0..0` is a real case here (a
     /// boolean whose operands share no plane class at all).
     #[test]
