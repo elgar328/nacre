@@ -237,6 +237,61 @@ fn an_offset_mirror_plane() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
+/// **A reflection that keeps every coordinate exact records nothing — and that is what keeps the
+/// ordinary mirror on the exact path.**
+///
+/// `2c − x` is exact for a dyadic `c` (and `c = 0`, the only form the script layer emits today),
+/// so the coefficients stay the truth and the surfaces stay `Constructed`. If this ever starts
+/// recording a node, nothing in the suite would *fail* — every answer stays correct — but every
+/// mirrored model would quietly leave the exact `f64` predicates for the toleranced ones. That is
+/// the kind of regression only a direct assertion catches.
+///
+/// The non-dyadic twin is the opposite claim and is checked beside it: `1/3` cannot be realized,
+/// so the reflection **must** be recorded or the kernel would be declaring a rounded plane exact
+/// (which is precisely the split `a_mirrored_wall_and_a_placed_wall_merge_the_part` pins).
+#[test]
+fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
+    let exactness = |offset: Rat| {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        m.rebuild_adjacency();
+        let OpOutput::Mirror { solid: b } = apply(
+            &mut m,
+            &Operation::Mirror {
+                solid: a,
+                axis: Axis::X,
+                offset,
+            },
+        )
+        .expect("mirror") else {
+            unreachable!("Mirror yields a Mirror output")
+        };
+        m.rebuild_adjacency();
+        let shell = m.solids.get(b).outer;
+        let mut defs = Vec::new();
+        for &fh in &m.shells.get(shell).faces {
+            defs.push(*m.surface_defs.get(&m.faces.get(fh).surface).expect("def"));
+        }
+        assert!(!defs.is_empty(), "walked no faces");
+        defs
+    };
+
+    for offset in [Rat::from_int(0), Rat::from_int(3), Rat::new(1, 2).unwrap()] {
+        assert!(
+            exactness(offset)
+                .iter()
+                .all(|d| matches!(d, nacre_topo::SurfaceDef::Constructed)),
+            "a dyadic mirror plane keeps the coefficients true, so nothing is recorded"
+        );
+    }
+    assert!(
+        exactness(Rat::new(1, 3).unwrap())
+            .iter()
+            .all(|d| matches!(d, nacre_topo::SurfaceDef::Moved { .. })),
+        "a mirror plane that cannot be realized must be recorded, not declared exact"
+    );
+}
+
 /// Curved geometry is declined rather than guessed: a reflection reverses a circle's
 /// parametrisation, and that convention is settled with the curved-geometry milestone.
 #[test]

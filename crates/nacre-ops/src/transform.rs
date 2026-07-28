@@ -129,8 +129,7 @@ pub(crate) fn mirror(
     if !origins_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
-    let m = AxisMirror::new(axis_index(axis), offset.to_f64()).expect("axis index is 0..3");
-    let out = transform_solid(model, solid, &Xform::Mirror { m, axis, offset })?;
+    let out = transform_solid(model, solid, &Xform::mirror(axis, offset))?;
     model.live_solids.retain(|&s| s != solid);
     Ok(out)
 }
@@ -351,7 +350,8 @@ pub(crate) enum Xform<'a> {
     /// The plane is carried **twice**: `m` is the `f64` map the coordinates actually go through,
     /// `(axis, offset)` the exact statement of the same plane that the motion history records.
     /// They used to travel as separate arguments, and an `Option` that could in principle arrive
-    /// empty; one variant cannot lose half of itself.
+    /// empty; one variant cannot lose half of itself. [`Xform::mirror`] is the only constructor,
+    /// so the two halves cannot be made to disagree either.
     Mirror {
         m: AxisMirror,
         axis: Axis,
@@ -360,6 +360,16 @@ pub(crate) enum Xform<'a> {
 }
 
 impl Xform<'_> {
+    /// The reflection in `axis = offset`, with its `f64` map **derived** from the exact plane
+    /// rather than handed in beside it.
+    fn mirror(axis: Axis, offset: Rat) -> Xform<'static> {
+        Xform::Mirror {
+            m: AxisMirror::new(axis_index(axis), offset.to_f64()).expect("axis index is 0..3"),
+            axis,
+            offset,
+        }
+    }
+
     fn point(&self, p: Point3) -> Point3 {
         match self {
             Xform::Rigid(iso) => Point3::from_array(iso.apply_point(p.as_array())),
@@ -746,15 +756,11 @@ mod tests {
             None,
         );
         let place = Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]);
-        let flip = Xform::Mirror {
-            m: AxisMirror::new(0, 0.0).unwrap(),
-            axis: Axis::X,
-            offset: Rat::from_int(0),
-        };
+        let flip = Xform::mirror(Axis::X, Rat::from_int(0));
 
-        for (what, motion) in [
-            ("translation", &Xform::Rigid(&place)),
-            ("reflection", &flip),
+        for (what, motion, kind) in [
+            ("translation", &Xform::Rigid(&place), "Translate"),
+            ("reflection", &flip, "Mirror"),
         ] {
             // No history: an exact motion records nothing, and the coordinates stay the truth.
             assert_eq!(
@@ -767,6 +773,14 @@ mod tests {
                 .unwrap_or_else(|| panic!("a {what} over a history is always recorded"));
             assert_ne!(leaf, root);
             assert_eq!(m.motions.get(leaf).parent, Some(root));
+            // And it records **this** motion — a chain that keeps the wrong kind of node
+            // reproduces the wrong datum just as silently as one that keeps none.
+            let got = match m.motions.get(leaf).motion {
+                Motion::Rotate { .. } => "Rotate",
+                Motion::Translate { .. } => "Translate",
+                Motion::Mirror { .. } => "Mirror",
+            };
+            assert_eq!(got, kind, "a {what} records a {kind} node");
         }
     }
 }

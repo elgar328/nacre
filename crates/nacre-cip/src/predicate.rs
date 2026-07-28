@@ -135,17 +135,33 @@ pub trait Witness {
     /// the answer is carried, not derived.
     fn is_rotated(&self) -> bool;
 
-    /// Identifies the rigid motion this witness's definition carries — `0` for none, and equal
-    /// values **only** for structurally identical chains (same nodes, order and pivots).
+    /// Identifies the motion this witness's definition carries — `0` for none, and equal values
+    /// **only** for structurally identical chains (same nodes, order and pivots).
     ///
-    /// A rigid motion preserves every determinant these predicates take, so when all of a
-    /// judgement's inputs carry one motion the answer is the answer on their pre-rotation
-    /// coordinates — exactly, with no tolerance at all. This is what lets such a judgement leave
-    /// the toleranced path entirely.
+    /// A motion preserves every determinant these predicates take *up to its own determinant*, so
+    /// when all of a judgement's inputs carry one motion the answer is the answer on their
+    /// pre-motion data — exactly, with no tolerance at all. This is what lets such a judgement
+    /// leave the toleranced path entirely.
     fn chain_id(&self) -> u64;
 
-    /// The witness triangle **before** that motion, or `None` when the pre-rotation coordinates
-    /// are not `f64`-representable and so cannot be handed to the exact predicate.
+    /// The witness triangle in the **pre-motion frame**, or `None` when those coordinates are not
+    /// `f64`-representable and so cannot be handed to the exact predicate.
+    ///
+    /// **★ It is the pre-motion triangle *canonicalised for handedness*, not the raw one — and
+    /// that is the implementor's job.** A chain containing an odd number of reflections is
+    /// improper (`det = −1`), and the "up to its own determinant" above then bites: every
+    /// judgement's inputs carry the *same* chain, so the determinant flips **uniformly** and the
+    /// shortcut returns a confidently wrong sign rather than a conservative miss. An implementor
+    /// therefore reflects the pre-motion data once more when the parity is odd
+    /// ([`crate::chain_parity`]), which restores the moved frame's handedness and makes every
+    /// determinant question transfer unchanged. `nacre-ops`' `BaseFrame::of` is the reference
+    /// implementation; `crate::frame3`'s `shared_base` applies the same convention (a sign flip
+    /// on x, exact for every finite `f64`) to the data it derives itself.
+    ///
+    /// **And a plane must be derived from the corrected points, never corrected separately** —
+    /// reflecting a triangle and re-deriving its normal differs from reflecting the normal by a
+    /// global sign, because the cross product is a pseudovector, and
+    /// [`Judge::plane_pair_dir_sign`] reads exactly that sign.
     fn base_tri(&self) -> Option<[Point3; 3]>;
 }
 
@@ -158,7 +174,8 @@ pub trait PlaneWitness: Witness {
     /// The plane's exact (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`).
     fn coeffs(&self) -> [f64; 4];
 
-    /// The plane's coefficients before the rigid motion — see [`Witness::base_tri`].
+    /// The plane's coefficients in the pre-motion frame — **derived from the canonicalised
+    /// `base_tri`**, with all the handedness caveats there.
     fn base_coeffs(&self) -> Option<[f64; 4]>;
 }
 
@@ -237,7 +254,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
             let tj = self.planes[j].tri();
             return indirect_orient3d(&tp, tj[0].as_array(), tj[1].as_array(), tj[2].as_array());
         }
-        // One shared rigid motion ⇒ the same question, exactly, on the pre-rotation coordinates.
+        // One shared motion ⇒ the same question, exactly, on the canonicalised pre-motion data.
         if shared_motion(self.planes, &[p, q, r, j]) {
             if let (Some(cp), Some(cq), Some(cr), Some(tj)) = (
                 self.planes[p].base_coeffs(),
@@ -317,8 +334,9 @@ impl<W: PlaneWitness> Judge<'_, W> {
             };
             return det3_sign([row(p), row(a), row(b)]);
         }
-        // A determinant of normals: a rigid motion multiplies it by `det(R) = 1`, so one shared motion
-        // means the pre-rotation normals give the same sign, exactly.
+        // A determinant of normals: a motion multiplies it by `det(R)`, which the canonicalised
+        // base frame has already made `+1` (see `Witness::base_tri`), so one shared motion means
+        // the pre-motion normals give the same sign, exactly.
         if shared_motion(planes, &[p, a, b]) {
             let row = |k: usize| planes[k].base_coeffs().map(|[x, y, z, _]| [x, y, z]);
             if let (Some(rp), Some(ra), Some(rb)) = (row(p), row(a), row(b)) {
@@ -359,7 +377,9 @@ impl<W: Witness> Judge<'_, W> {
                 .iter()
                 .all(|&q| plane_side_exact(planes[i].tri(), q) == 0);
         }
-        // "Same plane" is a statement about incidence, which a rigid motion preserves.
+        // "Same plane" is a statement about incidence, which *any* motion preserves — proper or
+        // not — so this one shortcut would survive an improper chain even uncorrected. It reads
+        // the canonicalised base anyway, because one convention is cheaper to keep than two.
         if shared_motion(planes, &[i, j]) {
             if let (Some(ti), Some(tj)) = (planes[i].base_tri(), planes[j].base_tri()) {
                 return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
