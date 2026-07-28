@@ -11,8 +11,8 @@
 //! - [`Rat`] — a rational scalar (tol 0). Fixed-width `Ratio<i128>` with
 //!   **checked** arithmetic: overflow is a *signal* (the downgrade trigger),
 //!   not a panic or silent wrap. The caller downgrades that value's cache to
-//!   f64/double-double and records the tol on its `Origin`; the definition is
-//!   never lost.
+//!   f64 and records the tol on its `Origin`; the definition is never lost, so a
+//!   judgement can still realize it at whatever precision it needs.
 //! - [`Angle`] — rational degrees, normalized mod-360, with exact accumulation so
 //!   a full turn lands back on exactly `0` (no f64 drift — a sketch closes). The
 //!   `cos`/`sin` realization crosses into f64 (the irrational boundary); the
@@ -21,9 +21,13 @@
 //!   realize in arbitrary precision (astro-float) for the judgment path.
 //!
 //! Scope: the exact value engine (the toleranced-sign frame judgment it enabled now lives
-//! in `nacre-cip`). Still deferred to later cells: the unified `Scalar { value, tol }`
-//! wrapper, the declare-0 → user-confirmation policy, and the kernel wiring that makes
-//! geometry carry these. Ported from the verified 2D experiment (`experiments/exact2d`).
+//! in `nacre-cip`). Still deferred: the unified `Scalar { value, tol }` wrapper, and the
+//! wiring that would let *construction* geometry carry rationals too — planes and profiles
+//! are still built in f64, so an exact dimensional coincidence can arrive already rounded.
+//! **The declare-0 → user-confirmation policy that stood here is retired, not pending**:
+//! measurement refuted both halves, and an unprovable sign now leaves as a proved
+//! coincidence carrying its evidence, or as a reject named for its cause (`nacre-cip`).
+//! Ported from the verified 2D experiment (`experiments/exact2d`).
 
 pub mod bound;
 pub use bound::Bound;
@@ -56,16 +60,20 @@ thread_local! {
 pub enum Orient {
     Positive,
     Negative,
-    /// Declared 0 — collinear within the escalation precision cap. This is the
-    /// `declare-0` case where the kernel (later) stops and asks the user.
+    /// Zero — the two things are on the same side of nothing.
+    ///
+    /// **Whether that was *proved* is not carried here.** This type is the sign the geometry
+    /// consumes; a proved zero, a coincidence established within the judging standard, and a
+    /// judgement that ran out of precision all reach it looking alike. `nacre_cip::Decision`
+    /// is what keeps them apart — and what turns the last of them into a named reject rather
+    /// than a silent merge.
     Zero,
 }
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
 /// so the caller sees the downgrade trigger explicitly; on overflow the kernel
-/// switches that value's cache to f64/double-double and tags its `Origin` with
-/// the resulting tol, while the definition (the op-log of input rationals) is
-/// preserved. Overflow is far from normal use — adversarial coprime-denominator
+/// switches that value's cache to f64 and tags its `Origin` with the resulting
+/// tol, while the definition (the op-log of input rationals) is preserved. Overflow is far from normal use — adversarial coprime-denominator
 /// accumulation reaches it near the i128 ceiling (~122 bits).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rat(Ratio<i128>);
@@ -163,8 +171,8 @@ impl Rat {
 /// (rational). Accumulation is exact: turning by a rational angle repeatedly and
 /// completing a full turn lands back on exactly `0` — no f64 drift. `cos`/`sin`
 /// realization crosses into f64 (deg→rad via π): the irrational-realization
-/// boundary, where the kernel uses double-double / arbitrary precision for
-/// *judgment* (a later cell). The angle stays exact; only its realized coordinate
+/// boundary, past which a *judgement* realizes at arbitrary precision instead
+/// ([`Angle::cos_sin_at`]). The angle stays exact; only its realized coordinate
 /// carries tol.
 ///
 /// This is the direction type. A multi-turn *amount* (helix pitch × turns, revolve
@@ -367,8 +375,8 @@ pub struct Rotation {
 /// A rigid-body isometry (§ Transform): a rotation (optional) then a translation.
 /// The exact rational data is the **definition**; the `apply_*`/`offset_f64`
 /// realizers give the f64 cache. Math-type independent — operates on plain
-/// `[f64; 3]`, mirroring [`frame2::Pt2`]'s `(f64, f64)` (so `nacre-scalar` never
-/// depends on `nacre-math`); the caller (`nacre-ops`) applies it to `Point3`/`Plane`.
+/// `[f64; 3]`, so `nacre-scalar` never depends on `nacre-math`; the caller
+/// (`nacre-ops`) applies it to `Point3`/`Plane`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Isometry {
     /// Applied first: an axis-aligned rotation, or `None` (pure translation).
