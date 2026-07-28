@@ -8,6 +8,7 @@
 //! which is why it can be tested on hand-built polygons, and why both the
 //! provenance tessellator and the bootstrap OBJ writer can share it.
 
+mod delaunay;
 mod monotone;
 
 use crate::TessError;
@@ -169,6 +170,19 @@ pub(crate) fn triangulate_polygon(
     for piece in monotone::decompose(&uv, &refs)? {
         monotone::triangulate_monotone(&uv, &piece, &mut out)?;
     }
+    // The decomposition answers *whether* the face meshes; this answers *how well*.
+    // It moves diagonals only — never the rings — so the count, the area and the
+    // boundary are the same on both sides of it.
+    let constrained = rings
+        .iter()
+        .flat_map(|r| {
+            (0..r.len()).map(move |k| {
+                let (a, b) = (r[k], r[(k + 1) % r.len()]);
+                (a.min(b), a.max(b))
+            })
+        })
+        .collect();
+    delaunay::refine(&uv, &mut out, &constrained);
     Ok(out.into_iter().map(|t| t.map(|i| back[i])).collect())
 }
 

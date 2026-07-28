@@ -42,6 +42,22 @@ pub fn orient2d(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
     geometry_predicates::orient2d(a, b, c)
 }
 
+/// Positive when `d` lies **strictly inside** the circle through `a`, `b`, `c` — which
+/// must be given counter-clockwise — zero when the four are cocircular, negative when
+/// `d` is outside. A thin wrapper over [`geometry_predicates::incircle`], so the sign is
+/// exact.
+///
+/// This is the whole of the Delaunay condition: a triangulation is Delaunay exactly
+/// when no triangle's circumcircle contains a fourth vertex, and *constrained* Delaunay
+/// is the same statement over the edges left free. Flipping every free edge that fails
+/// it maximises the smallest angle in the mesh (Lawson 1977; Chew 1989), which is what
+/// `nacre-tess` uses it for — the sign has to be exact for the same reason `orient2d`
+/// does, since a mis-signed test would flip an edge back and forth forever.
+#[inline]
+pub fn incircle(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
+    geometry_predicates::incircle(a, b, c, d)
+}
+
 /// A Shewchuk **nonoverlapping expansion**: a list of f64 components whose exact
 /// sum is the represented value, most-significant last. Built from
 /// [`geometry_predicates`]' adaptive-arithmetic primitives, it lets us evaluate
