@@ -3872,6 +3872,176 @@ centroid 1 1.5 2
         }
     }
 
+    /// **Reflection, scored by a kernel that has never heard of a motion history.**
+    ///
+    /// A reflection is now a motion the chain records, which turned two things into answers the
+    /// suite has no prior expectation for: a wall reached by reflection and a wall reached by
+    /// translation used to be one ulp apart and split the part in two, and a mirrored *rotated*
+    /// solid used to be carried by conjugating its chain rather than extending it. Both changed
+    /// what the kernel decides, so both get an outside opinion.
+    ///
+    /// The mirror planes are deliberately **non-dyadic** (`1/3`, `7/22`, `5/7`): `2c − x` is exact
+    /// for a dyadic `c`, so those are the cases where the reflection is recorded and the
+    /// definition — not the `f64` coordinate — is what answers. Dyadic planes ride along as
+    /// controls that must not have changed.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn reflection_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+
+        let flip = |m: &mut Model, s, offset: Rat| {
+            let OpOutput::Mirror { solid } = apply(
+                m,
+                &Operation::Mirror {
+                    solid: s,
+                    axis: Axis::X,
+                    offset,
+                },
+            )
+            .expect("mirror") else {
+                unreachable!("mirror yields Mirror output")
+            };
+            m.rebuild_adjacency();
+            solid
+        };
+        let shift = |m: &mut Model, s, x: Rat| {
+            let OpOutput::Transform { solid } = apply(
+                m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: Isometry::translation([x, Rat::from_int(0), Rat::from_int(0)]),
+                },
+            )
+            .expect("translate") else {
+                unreachable!("transform yields Transform output")
+            };
+            m.rebuild_adjacency();
+            solid
+        };
+        let score = |m: &Model,
+                     tag: &str,
+                     ours: &[nacre_store::Handle<nacre_topo::Solid>],
+                     occt: &OcctProps| {
+            assert_eq!(ours.len(), 1, "{tag}: one body, got {}", ours.len());
+            let mp = nacre_props::mass_props(m, ours[0]).expect("props");
+            assert!(
+                approx(mp.volume, occt.volume),
+                "{tag}: volume nacre {} vs occt {}",
+                mp.volume,
+                occt.volume
+            );
+            let c = nacre_props::centroid(m, ours[0]).expect("centroid");
+            for i in 0..3 {
+                assert!(
+                    approx(c[i], occt.centroid[i]),
+                    "{tag}: centroid axis {i}: nacre {} vs occt {}",
+                    c[i],
+                    occt.centroid[i]
+                );
+            }
+        };
+
+        // (a) **The crossing.** One wall arrives by reflection, the other by translation, and the
+        // two `f64` images differ in the last place. `[1, 2]` reflected in `x = p` puts its wall at
+        // `2p − 1`; `[0, 1]` shifted by `2p − 1` puts its wall in the same place by another route.
+        for (n, d) in [(1i128, 3i128), (7, 22), (5, 7), (1, 2), (3, 1)] {
+            let p = Rat::new(n, d).expect("mirror plane");
+            let t = p
+                .checked_mul(Rat::from_int(2))
+                .and_then(|q| q.checked_sub(Rat::from_int(1)))
+                .expect("2p − 1");
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([1.0, 0.0, 0.0]),
+                Point3::from_array([2.0, 1.0, 1.0]),
+            );
+            let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            m.rebuild_adjacency();
+            let a = flip(&mut m, a, p);
+            let b = shift(&mut m, b, t);
+            let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).expect("occt fuse");
+            let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
+            m.rebuild_adjacency();
+            score(&m, &format!("crossing {n}/{d} fuse"), &out, &occt);
+        }
+
+        // (b) **All three operations over a reflected operand that genuinely overlaps.** The
+        // crossing above only ever asks about one shared wall; this asks about the whole
+        // arrangement, with the mirrored solid on both sides of the operation.
+        for (n, d) in [(1i128, 3i128), (7, 22), (5, 7)] {
+            let p = Rat::new(n, d).expect("mirror plane");
+            // `[1, 2]` reflected in `x = p` occupies `[2p − 2, 2p − 1]`; put `[0, 1]` half inside.
+            let t = p
+                .checked_mul(Rat::from_int(2))
+                .and_then(|q| q.checked_sub(Rat::new(3, 2).expect("3/2")))
+                .expect("2p − 3/2");
+            for (kind, ok, name) in [
+                (BoolKind::Fuse, OcctBool::Fuse, "fuse"),
+                (BoolKind::Cut, OcctBool::Cut, "cut"),
+                (BoolKind::Common, OcctBool::Common, "common"),
+            ] {
+                let mut m = Model::new();
+                let a = m.add_cuboid(
+                    Point3::from_array([1.0, 0.0, 0.0]),
+                    Point3::from_array([2.0, 1.0, 1.0]),
+                );
+                let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+                m.rebuild_adjacency();
+                let a = flip(&mut m, a, p);
+                let b = shift(&mut m, b, t);
+                let occt = occt_boolean_of(&m, ok, a, b).expect("occt boolean");
+                let out = boolean(&mut m, kind, a, b).expect("boolean");
+                m.rebuild_adjacency();
+                score(&m, &format!("overlap {n}/{d} {name}"), &out, &occt);
+            }
+        }
+
+        // (c) **Mirror of a rotated solid — the improper chain in production.** The tool carries
+        // `[Rotate, Mirror]`, an odd parity, so every judgement among its own planes runs through
+        // the canonicalised base frame. A sign error there is a confidently wrong answer, not a
+        // slow one, and OCCT is what says it is not happening.
+        for deg in [7i128, 30, 45, 63] {
+            for (n, d) in [(1i128, 3i128), (5, 7)] {
+                let mut m = Model::new();
+                let base = m.add_cuboid(
+                    Point3::from_array([-2.0, -2.0, 0.0]),
+                    Point3::from_array([2.0, 2.0, 1.0]),
+                );
+                let tool = m.add_cuboid(
+                    Point3::from_array([-0.5, -0.5, -1.0]),
+                    Point3::from_array([0.5, 0.5, 2.0]),
+                );
+                m.rebuild_adjacency();
+                let OpOutput::Transform { solid: tool } = apply(
+                    &mut m,
+                    &Operation::Transform {
+                        solid: tool,
+                        isometry: Isometry::rotation(Rotation {
+                            axis: Axis::Z,
+                            point: [Rat::from_int(0); 3],
+                            angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
+                        }),
+                    },
+                )
+                .expect("rotate") else {
+                    unreachable!("transform yields Transform output")
+                };
+                m.rebuild_adjacency();
+                let tool = flip(&mut m, tool, Rat::new(n, d).expect("mirror plane"));
+                let occt = occt_boolean_of(&m, OcctBool::Cut, base, tool).expect("occt cut");
+                let out = boolean(&mut m, BoolKind::Cut, base, tool).expect("cut");
+                m.rebuild_adjacency();
+                score(
+                    &m,
+                    &format!("turned {deg}° mirrored {n}/{d} cut"),
+                    &out,
+                    &occt,
+                );
+            }
+        }
+    }
+
     /// **The fin array, scored by a kernel that has never heard of `SurfaceDef`.**
     ///
     /// These eight arrangements did not build at all until surfaces carried their own provenance:
