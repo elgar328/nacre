@@ -16,6 +16,7 @@ mod boolean;
 mod combinatorics;
 mod exact;
 mod ops;
+mod par;
 mod planes;
 mod rotated_vertex;
 mod sketch;
