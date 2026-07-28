@@ -200,7 +200,7 @@ fn conjugate_chain(
 /// | source | inexact rotation (`rot_node`) | exact motion |
 /// |---|---|---|
 /// | `Constructed` | `Rotated { witness: this face's pre-rotation triangle, rot_node }` | `Constructed`, or the conjugated chain under a mirror |
-/// | `Rotated { witness, .. }` | `Rotated { witness, rot_node }` — the node's parent *is* the source's leaf, so the chain already carries the earlier rotation | mirror: conjugate the chain over the mirrored witness; **translation: `Inexact`** |
+/// | `Rotated { witness, .. }` | `Rotated { witness, rot_node }` — the node's parent *is* the source's leaf, so the chain already carries the earlier rotation | identity (`copy`): unchanged; mirror: conjugate the chain over the mirrored witness; **translation: `Inexact`** |
 /// | `Inexact` | `Inexact` | `Inexact` |
 ///
 /// The one `Inexact` producer is a translation of an already-rotated surface: the forest holds
@@ -211,11 +211,20 @@ fn moved_surface_def(
     model: &mut Model,
     src: Handle<Surface>,
     face: Handle<Face>,
-    rotate: Option<nacre_scalar::Rotation>,
-    exact_rotation: bool,
+    motion: &Motion<'_>,
     surf_rot: &mut HashMap<Option<Handle<Rotation>>, Handle<Rotation>>,
     conj: &mut Option<Conjugation>,
 ) -> Result<SurfaceDef, OpError> {
+    let rotate = motion.rigid().and_then(|i| i.rotate);
+    let exact_rotation = motion.rigid().map(|i| i.is_exact()).unwrap_or(true);
+    // Whether the motion moves anything at all. `copy` is [`transform_solid`] under a **zero**
+    // translation, and the identity is not a translation: the geometry comes out bit-identical, so
+    // a rotated surface's definition still describes it. Reading "no rotation" as "translated"
+    // refused a boolean on any copy of a rotated solid.
+    let displaced = motion
+        .rigid()
+        .map(|i| i.translate.iter().any(|r| r.numer() != 0))
+        .unwrap_or(true);
     let source = model
         .surface_defs
         .get(&src)
@@ -263,7 +272,9 @@ fn moved_surface_def(
                 rotation: leaf,
             }
         }
-        // A translation of a rotated surface: no node can name `R` then `T`.
+        // A translation of a rotated surface: no node can name `R` then `T`. A *zero*
+        // translation is not a translation — it is `copy`, and the definition still holds.
+        (def @ SurfaceDef::Rotated { .. }, None) if !displaced => def,
         (SurfaceDef::Rotated { .. }, None) => SurfaceDef::Inexact,
     })
 }
@@ -557,8 +568,6 @@ fn transform_solid(
     // walls came from different rotations, and its vertices are all `Discovered`, so the
     // vertex-side `solid_rotation` cannot answer for it at all. `surf_rot` memoizes one new forest
     // node per distinct parent leaf, so surfaces that did share a history still share it.
-    let rotate = motion.rigid().and_then(|i| i.rotate);
-    let exact_rotation = motion.rigid().map(|i| i.is_exact()).unwrap_or(true);
     let mut surf_rot: HashMap<Option<Handle<Rotation>>, Handle<Rotation>> = HashMap::new();
     let mut surf_map: HashMap<Handle<Surface>, Handle<Surface>> = HashMap::new();
     for &fh in &face_order {
@@ -569,15 +578,7 @@ fn transform_solid(
         let moved = motion
             .surface(model.surfaces.get(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
-        let def = moved_surface_def(
-            model,
-            s,
-            fh,
-            rotate,
-            exact_rotation,
-            &mut surf_rot,
-            &mut conj,
-        )?;
+        let def = moved_surface_def(model, s, fh, motion, &mut surf_rot, &mut conj)?;
         surf_map.insert(s, model.push_surface(moved, def));
     }
 

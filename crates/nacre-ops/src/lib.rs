@@ -3498,6 +3498,39 @@ pub mod tests {
         assert_eq!(leaves.len(), 2, "the two operands' histories stay apart");
     }
 
+    /// **A copy of a rotated solid is still exactly defined.**
+    ///
+    /// `copy` is `transform` under a *zero* translation, so a surface rule that reads "any
+    /// translation makes a rotated plane inexpressible" swallows it — and then a copy of a rotated
+    /// solid cannot take part in a boolean at all, though its geometry is bit-identical to the
+    /// original's. The identity is not a translation.
+    #[test]
+    fn a_copy_of_a_rotated_solid_answers_like_the_original() {
+        use nacre_scalar::Axis;
+        let build = |use_copy: bool| {
+            let mut m = Model::new();
+            let hub = m.add_cuboid(
+                Point3::from_array([-1.0, -1.0, 0.0]),
+                Point3::from_array([1.0, 1.0, 3.0]),
+            );
+            let fin = m.add_cuboid(
+                Point3::from_array([0.5, -0.2, 1.0]),
+                Point3::from_array([4.0, 0.2, 3.0]),
+            );
+            m.rebuild_adjacency();
+            let mut fin = transform(&mut m, fin, &rot_iso(Axis::Z, 30)).unwrap();
+            m.rebuild_adjacency();
+            if use_copy {
+                fin = crate::transform::copy(&mut m, fin).unwrap();
+                m.rebuild_adjacency();
+            }
+            let r = boolean(&mut m, BoolKind::Fuse, hub, fin).expect("fuse");
+            nacre_props::mass_props(&m, r[0]).expect("props").volume
+        };
+        // Bit-identical, not merely close: the copy walks the same definitions.
+        assert_eq!(build(true), build(false));
+    }
+
     fn translate_iso(off: [i128; 3]) -> nacre_scalar::Isometry {
         use nacre_scalar::{Isometry, Rat};
         Isometry::translation([
