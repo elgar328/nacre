@@ -38,10 +38,13 @@ nacre = 진주층(자개). 한 겹씩 침착만 되고 이미 만든 겹은 절�
 
 ## 정밀도 인프라 (실수 최소화 — 코드보다 먼저)
 
-- **판정(부호)** = exact 적응 술어(`geometry-predicates` 크레이트). **반복 구성(좌표)** = double-double(`twofloat`/`qd`). 임의정밀 유리수는 반복에 쓰지 말 것(비트 폭발).
-- relaxation은 3단 사다리: f64 Newton → 정체 시 double-double → 실패 시 `RelaxError::Tangential`로 상신(삼키지 말 것).
+- **판정(부호)는 좌표가 아니라 정의로 한다.** 전부 유리수면 exact 적응 술어(`nacre-predicates`, `geometry-predicates` 기반)로 끝난다. 모션이 좌표를 무리수로 만들면 **CIP**(`nacre-cip`)가 받는다 — 점을 `정의 + 방향별 tol`로 들고, sound 필터로 거르고, 못 거르면 정밀도를 올린다. 틀린 부호는 결코 내지 않는다(no-silent-wrong). 자세히는 design.md §CIP.
+- **고정밀 층은 `astro-float`(순수 Rust 임의정밀).** ~~double-double(`twofloat`/`qd`)~~ 은 **실측으로 탈락**했다(H1.5: 영점 근처 cos 오차 ~1.8e-16 — 부호 판정이 일어나는 곳이 곧 영점 근처라 치명적). 임의정밀 유리수(`Rat`)는 **정의**에 쓰고 반복 계산에는 쓰지 말 것(비트 폭발).
+- **정밀도는 상수가 아니라 모델이 정한다.** 필요한 비트를 계산해 **한 번에 점프**한다(배증 아님). 상한 `JUDGE_PREC_CAP`은 정확성이 아니라 비용 한계다.
+- **증명하지 못한 판정은 조용한 0이 아니다.** 일치 정밀도보다 가깝다고 *증명되면* 일치로 처리하고 **근거를 보고**하며(`boolean_with_report`), 못 좁히면 원인에 이름을 붙여 거절한다(`JudgeExhausted`·`DegenerateWitness`·`PrecisionBudget`). 사용자에게 되묻지 않는다 — 그 정책은 실측이 반박했다(§9 ③).
 - 모든 연산 직후 `validate` 실행(디버그). 오일러-푸앵카레는 내부 루프 항 포함형 `V−E+F = 2(S−G) + L_i`.
 - proptest로 불변식(멱등성·부피보존·불리언 대수)과 OCCT 오라클 diff.
+- *(미구축 — 곡면이 올 때)* relaxation 3단 사다리: f64 Newton → 정체 시 고정밀 → 실패 시 `Tangential`로 상신(삼키지 말 것).
 
 ## 마일스톤 (docs/design.md §8 참조)
 
