@@ -18,28 +18,10 @@
 //! bounds, and why **both feature combinations have to be built**. `cargo` will not check
 //! the one you are not using.
 
-// Built and tested before the boolean calls it, so that wiring each phase up is a commit
-// whose only visible effect is that phase's timing. **The next commit removes this.**
-#![allow(dead_code)]
-
-/// Map `f` over `0..n`, collecting **in index order**.
-#[cfg(feature = "parallel")]
-pub(crate) fn map_range<R: Send>(n: usize, f: impl Fn(usize) -> R + Sync + Send) -> Vec<R> {
-    use rayon::prelude::*;
-    // `Range<usize>` is an `IndexedParallelIterator`, so `collect` restores index order
-    // however the work was scheduled.
-    (0..n).into_par_iter().map(f).collect()
-}
-
-/// Map `f` over `0..n`, collecting **in index order**.
-#[cfg(not(feature = "parallel"))]
-pub(crate) fn map_range<R>(n: usize, f: impl Fn(usize) -> R) -> Vec<R> {
-    (0..n).map(f).collect()
-}
-
-/// Map a fallible `f` over `0..n`, returning the **lowest-index** error.
+/// Map a fallible `f` over `0..n`, collecting **in index order**, and return the
+/// **lowest-index** error if any item fails.
 ///
-/// That is the subtle part, and the reason this exists rather than being written out at
+/// The error rule is the subtle part, and the reason this exists rather than being written out at
 /// each call site: the sequential loops it replaces return at the first failing class, so
 /// anything else would change *which* rejection a model reports. **Never use rayon's
 /// `collect::<Result<_, _>>()` here** — it short-circuits, and which error survives then
@@ -76,8 +58,8 @@ mod tests {
     /// Order, under both builds. A shuffled workload would show up here as a permutation.
     #[test]
     fn results_arrive_in_index_order() {
-        let v = map_range(1000, |i| i * 7);
-        assert_eq!(v, (0..1000).map(|i| i * 7).collect::<Vec<_>>());
+        let v: Result<Vec<usize>, ()> = try_map_range(1000, |i| Ok(i * 7));
+        assert_eq!(v.unwrap(), (0..1000).map(|i| i * 7).collect::<Vec<_>>());
     }
 
     /// **The proposition the sequential loops relied on**: the error a caller sees is the
@@ -97,7 +79,6 @@ mod tests {
     /// boolean whose operands share no plane class at all).
     #[test]
     fn an_empty_range_is_fine() {
-        assert!(map_range(0, |i: usize| i).is_empty());
         let r: Result<Vec<usize>, ()> = try_map_range(0, Ok);
         assert!(r.unwrap().is_empty());
     }

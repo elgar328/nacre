@@ -1633,11 +1633,18 @@ fn trace_result_faces(
         }
     }
 
-    for (wc, split) in splits.iter().enumerate() {
+    // Pass B is independent per class — it reads `splits[wc]` and the judging context, and
+    // returns owned faces — so it is evaluated across cores. `try_map_range` is what keeps
+    // that from being observable: the faces are consumed in class order, so the handles
+    // `assemble_fuse_cut` mints are the ones a single thread would have minted, and a class
+    // that declines surfaces the same rejection the sequential loop returned (the lowest
+    // index, not whichever worker got there first).
+    let per_class = crate::par::try_map_range(splits.len(), |wc| {
+        let split = &splits[wc];
         let (cells, face_of) = extract_cells(jd, wc, split)?;
         let nesting = nest_cells(jd, wc, &cells, split)?;
         let labels = label_cells(&cells, &face_of, split, &nesting)?;
-        local_faces.extend(emit_faces(
+        Ok(emit_faces(
             kind,
             &labels,
             &cells,
@@ -1645,7 +1652,10 @@ fn trace_result_faces(
             jd,
             wc,
             &nesting.holes,
-        ));
+        ))
+    })?;
+    for faces in per_class {
+        local_faces.extend(faces);
     }
     Ok(local_faces)
 }
