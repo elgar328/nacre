@@ -181,6 +181,33 @@ impl Pt3 {
         self
     }
 
+    /// The point translated by an exact rational `offset` — one more link in the definition.
+    ///
+    /// **`coord` is updated exactly as the producer does it** (`Isometry::apply_point`: add the
+    /// offset's f64 image), so a replay of the definition reproduces the stored coordinate bit for
+    /// bit — the contract `nacre-ops`' mirror path depends on. The exact offset lives in the
+    /// chain, where [`compute_hp`](Self::compute_hp) realizes it; the two roundings this f64 step
+    /// takes (the offset's own, and the add's) are what `tol` grows by.
+    ///
+    /// That split is the whole point: two placements that reach the same real wall by different
+    /// routes keep f64 coordinates an ulp apart, but their *definitions* realize to the same
+    /// value, and it is the definition the judgment reads.
+    pub fn translate(mut self, offset: [Rat; 3]) -> Self {
+        for (k, &off) in offset.iter().enumerate() {
+            let t = off.to_f64();
+            // The offset's realization error, plus the add's own half-ulp on the result.
+            self.tol[k] += 2.0
+                * bf_mag(&rat_to_big(off, 120).sub(&BigFloat::from_f64(t, 120), 120, HP_RM)).abs()
+                + f64::EPSILON * (self.coord[k].abs() + t.abs());
+            self.coord[k] += t;
+        }
+        let mut nodes = self.chain.to_vec();
+        nodes.push(MoveNode::Translate { offset });
+        self.chain = HpRc::from(nodes);
+        self.hp = HpCell::default();
+        self
+    }
+
     /// The coordinate realized at `prec` bits from the **definition** (base rotated
     /// through the chain, each node about its pivot) — path-independent ground truth /
     /// escalation realization. The result is memoized in

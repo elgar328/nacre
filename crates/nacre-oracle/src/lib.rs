@@ -3743,6 +3743,135 @@ centroid 1 1.5 2
         }
     }
 
+    /// **Placement, scored by a kernel that has never heard of a motion history.**
+    ///
+    /// Two things this cell changed have no prior expectation for the suite to violate: a
+    /// placement that used to come back as *two* bodies now comes back as one, and "turn it, then
+    /// put it there" used to be refused outright. A suite cannot catch a reject becoming an
+    /// answer, so the answer gets an outside opinion — OCCT builds the same booleans from the same
+    /// operands, through STEP, with its own arithmetic.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn placement_matches_occt() {
+        use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+
+        let shift = |m: &mut Model, s, x: Rat| {
+            let OpOutput::Transform { solid } = apply(
+                m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: Isometry::translation([x, Rat::from_int(0), Rat::from_int(0)]),
+                },
+            )
+            .expect("translate") else {
+                unreachable!("transform yields Transform output")
+            };
+            m.rebuild_adjacency();
+            solid
+        };
+
+        // (a) The shared wall whose two f64 images differ by one ulp — including the offsets that
+        // used to split the part in half, and dyadic ones that never did.
+        for (n, d) in [
+            (7i128, 11i128),
+            (13, 23),
+            (1, 3),
+            (2, 5),
+            (3, 10),
+            (1, 2),
+            (3, 1),
+        ] {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            m.rebuild_adjacency();
+            let a = shift(&mut m, a, Rat::new(n, d).expect("offset"));
+            let b = shift(&mut m, b, Rat::new(n + d, d).expect("offset"));
+            let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).expect("occt fuse");
+            let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
+            m.rebuild_adjacency();
+            assert_eq!(out.len(), 1, "{n}/{d}: one body");
+            let ours = nacre_props::mass_props(&m, out[0]).expect("props");
+            assert!(
+                approx(ours.volume, occt.volume),
+                "{n}/{d}: volume nacre {} vs occt {}",
+                ours.volume,
+                occt.volume
+            );
+            let c = nacre_props::centroid(&m, out[0]).expect("centroid");
+            for i in 0..3 {
+                assert!(
+                    approx(c[i], occt.centroid[i]),
+                    "{n}/{d}: centroid axis {i}: nacre {} vs occt {}",
+                    c[i],
+                    occt.centroid[i]
+                );
+            }
+        }
+
+        // (b) Turn it, then put it there — the whole sweep that used to be refused.
+        for deg in [7i128, 17, 30, 45, 63] {
+            for off in [[3i128, 0, 0], [5, -3, 2], [0, 4, 0]] {
+                let mut m = Model::new();
+                let base = m.add_cuboid(
+                    Point3::from_array([-2.0, -2.0, 0.0]),
+                    Point3::from_array([2.0, 2.0, 1.0]),
+                );
+                let tool = m.add_cuboid(
+                    Point3::from_array([-0.5, -0.5, -1.0]),
+                    Point3::from_array([0.5, 0.5, 2.0]),
+                );
+                m.rebuild_adjacency();
+                let turn = |m: &mut Model, s, iso| {
+                    let OpOutput::Transform { solid } = apply(
+                        m,
+                        &Operation::Transform {
+                            solid: s,
+                            isometry: iso,
+                        },
+                    )
+                    .expect("transform") else {
+                        unreachable!("transform yields Transform output")
+                    };
+                    m.rebuild_adjacency();
+                    solid
+                };
+                let tool = turn(
+                    &mut m,
+                    tool,
+                    Isometry::rotation(Rotation {
+                        axis: Axis::Z,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
+                    }),
+                );
+                let place = Isometry::translation(off.map(Rat::from_int));
+                let tool = turn(&mut m, tool, place);
+                let base = turn(&mut m, base, place);
+                let occt = occt_boolean_of(&m, OcctBool::Cut, base, tool).expect("occt cut");
+                let out = boolean(&mut m, BoolKind::Cut, base, tool).expect("cut");
+                m.rebuild_adjacency();
+                let ours = nacre_props::mass_props(&m, out[0]).expect("props");
+                assert!(
+                    approx(ours.volume, occt.volume),
+                    "{deg}° then {off:?}: volume nacre {} vs occt {}",
+                    ours.volume,
+                    occt.volume
+                );
+                let c = nacre_props::centroid(&m, out[0]).expect("centroid");
+                for i in 0..3 {
+                    assert!(
+                        approx(c[i], occt.centroid[i]),
+                        "{deg}° then {off:?}: centroid axis {i}: nacre {} vs occt {}",
+                        c[i],
+                        occt.centroid[i]
+                    );
+                }
+            }
+        }
+    }
+
     /// **The fin array, scored by a kernel that has never heard of `SurfaceDef`.**
     ///
     /// These eight arrangements did not build at all until surfaces carried their own provenance:

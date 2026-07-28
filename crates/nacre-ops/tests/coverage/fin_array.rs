@@ -109,52 +109,6 @@ fn theta_sweep_census() {
     assert_eq!(total, 0, "the failing population changed: {census:?}");
 }
 
-/// **A rotation followed by a translation is still refused — at the surface now.**
-///
-/// The rotation forest records rotations only, so `R` then `T` has no node to name and the plane
-/// cannot be stated exactly. That used to be caught on the *vertices* (`TranslateInterleaved`,
-/// surfacing as `RotatedUnderdetermined`); the exact plane now comes from the surface, so the
-/// refusal has to live there too — `SurfaceDef::Inexact` → `InexactSurface`. Deleting the vertex
-/// path must not have quietly turned an honest reject into a rounded answer, which is what this
-/// pins.
-#[test]
-fn rotate_then_translate_is_still_refused() {
-    let mut m = Model::new();
-    let a = m.add_cuboid(
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([2.0, 3.0, 4.0]),
-    );
-    m.rebuild_adjacency();
-    let a = xf(
-        &mut m,
-        a,
-        Isometry::rotation(Rotation {
-            axis: Axis::Z,
-            point: [Rat::from_int(0); 3],
-            angle: Angle::from_deg(Rat::from_int(30)).expect("angle"),
-        }),
-    );
-    m.rebuild_adjacency();
-    let a = xf(
-        &mut m,
-        a,
-        Isometry::translation([Rat::from_int(5), Rat::from_int(-3), Rat::from_int(2)]),
-    );
-    m.rebuild_adjacency();
-    let b = m.add_cuboid(
-        Point3::from_array([5.0, -3.0, 3.0]),
-        Point3::from_array([8.0, 0.0, 5.0]),
-    );
-    m.rebuild_adjacency();
-    assert_eq!(
-        boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err(),
-        BoolError::Unsupported {
-            reason: nacre_ops::RejectReason::InexactSurface
-        }
-    );
-}
-
-/// **The shape that started this: a hub, twenty fins, two bores.**
 ///
 /// This is the playground script a user actually wrote — a loop of `fuse`, then `cut` — and it
 /// died on the fourteenth fin. Twenty fins is not twenty chances to hit one unlucky angle; it is

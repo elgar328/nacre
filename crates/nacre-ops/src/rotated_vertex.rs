@@ -44,7 +44,7 @@ pub(crate) fn replay_chain_coord(
 pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Pt3 {
     chain.iter().fold(p, |q, n| match *n {
         MoveNode::Rotate { axis, angle, point } => q.rotate_about(axis, angle, point),
-        MoveNode::Translate { .. } => unreachable!("no producer records a translation yet"),
+        MoveNode::Translate { offset } => q.translate(offset),
     })
 }
 

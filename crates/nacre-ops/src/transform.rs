@@ -202,76 +202,141 @@ fn conjugate_chain(
     Some(h)
 }
 
+/// The motion nodes this `isometry` appends to `parent`, or `None` when it records nothing.
+///
+/// An `Isometry` is "rotate about a pivot, then translate", so it contributes up to two nodes in
+/// that order — **order is the definition**, since the two do not commute.
+///
+/// A node is *omitted* only when the motion changes nothing the definition needs to say: a zero
+/// translation is the identity (`copy` is `transform_solid` under one), a 90°-family rotation of
+/// an exact datum keeps it exact, and a translation that lands every coordinate back on an exact
+/// `f64` does too (`exact_translate`, from [`translation_is_exact`]). The rotation exception
+/// lapses once the datum already has a history — then every motion must be recorded or the chain
+/// would not reproduce the result.
+fn chain_isometry(
+    model: &mut Model,
+    parent: Option<Handle<MotionNode>>,
+    iso: &Isometry,
+    exact_translate: bool,
+) -> Option<Handle<MotionNode>> {
+    let mut leaf = parent;
+    if let Some(r) = iso.rotate.filter(|_| !iso.is_exact() || leaf.is_some()) {
+        leaf = Some(model.push_motion(
+            Motion::Rotate {
+                axis: r.axis,
+                point: r.point,
+                angle: r.angle,
+            },
+            leaf,
+        ));
+    }
+    if iso.translate.iter().any(|r| r.numer() != 0) && !exact_translate {
+        leaf = Some(model.push_motion(
+            Motion::Translate {
+                offset: iso.translate,
+            },
+            leaf,
+        ));
+    }
+    leaf
+}
+
+/// Whether `offset` lands **every** coordinate of `solid` back on an exact `f64`.
+///
+/// The twin of `Isometry::is_exact` for a translation: a 90°-family rotation keeps any exact datum
+/// exact by its cos/sin alone, but a translation's exactness depends on the *data* — `p + t` is
+/// representable only when `t` is dyadic **and** the sum fits 53 bits. So it is measured, not
+/// derived, and when it holds the coefficients stay the truth: no node, no tolerance, and the
+/// judgment keeps the exact `f64` predicate path that `Witness::is_rotated` gates.
+///
+/// **Per solid, not per face.** `transform_solid` requires a solid's boundary vertices to share
+/// one node ("uniform rotation"), and a *dyadic* offset does split by magnitude — measured, `0.5`
+/// is exact at `p = 1.0` and rounds at `p = 1e17`. Deciding per face would then leave one solid
+/// with some vertices carrying a node and some not, and break that invariant. One pass over every
+/// vertex and every face's plane origin — the two things a judgment reads — and one rounding
+/// anywhere puts the whole solid on the recorded path.
+fn translation_is_exact(model: &Model, solid: Handle<Solid>, offset: [Rat; 3]) -> bool {
+    let exact = |x: f64, t: Rat| match Rat::try_from_f64(x).and_then(|r| r.checked_add(t)) {
+        // Representable *and* reached by the f64 add the producer actually performs.
+        Some(sum) => Rat::try_from_f64(sum.to_f64()) == Some(sum) && x + t.to_f64() == sum.to_f64(),
+        None => false,
+    };
+    let all = |p: Point3| p.as_array().iter().zip(offset).all(|(&x, t)| exact(x, t));
+    let src = model.solids.get(solid);
+    for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
+        for &fh in &model.shells.get(sh).faces {
+            let face = model.faces.get(fh);
+            if let Surface::Plane(pl) = model.surfaces.get(face.surface) {
+                if !all(pl.origin()) {
+                    return false;
+                }
+            }
+            for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                for he in &lp.half_edges {
+                    for &vh in model.edges.get(he.edge).bounds.iter().flatten() {
+                        if !all(model.vertices.get(vh).point) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
 /// The provenance a moved surface inherits — the surface twin of the vertex `Origin` rules.
 ///
-/// `rot_node` is the forest node this transform recorded (`None` for a motion that keeps
-/// coefficients exact: a translation, a 90°-family rotation, a reflection). The three source
-/// definitions map as:
-///
-/// | source | inexact rotation (`rot_node`) | exact motion |
+/// | source | motion records a node | motion records nothing |
 /// |---|---|---|
-/// | `Constructed` | `Rotated { witness: this face's pre-rotation triangle, rot_node }` | `Constructed`, or the conjugated chain under a mirror |
-/// | `Rotated { witness, .. }` | `Rotated { witness, rot_node }` — the node's parent *is* the source's leaf, so the chain already carries the earlier rotation | identity (`copy`): unchanged; mirror: conjugate the chain over the mirrored witness; **translation: `Inexact`** |
+/// | `Constructed` | `Moved { witness: this face's pre-motion triangle, leaf }` | `Constructed`, or a conjugated chain under a mirror |
+/// | `Moved { witness, .. }` | `Moved { witness, leaf }` — the new nodes hang off this surface's own leaf, so replaying from the root witness applies every motion once | identity (`copy`): unchanged; mirror: conjugate the chain over the mirrored witness |
 /// | `Inexact` | `Inexact` | `Inexact` |
 ///
-/// The one `Inexact` producer is a translation of an already-rotated surface: the forest holds
-/// rotations only, so `R` then `T` has no node to name. That is the same limit
-/// `Pt3Error::TranslateInterleaved` already reports for vertices, and it is a reject, not a
-/// silent rounding.
+/// **`Inexact` has no producer here any more.** It used to be what a translation of an already-
+/// rotated surface became, because the history held rotations only and `R` then `T` had no node
+/// to name; the forest names it now. The variant stays as the honest reading of a surface pushed
+/// past `Model::push_surface`, which `nacre-validate` reports.
 fn moved_surface_def(
     model: &mut Model,
     src: Handle<Surface>,
     face: Handle<Face>,
     motion: &Xform<'_>,
-    surf_rot: &mut HashMap<Option<Handle<MotionNode>>, Handle<MotionNode>>,
+    exact_translate: bool,
+    surf_rot: &mut HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>>,
     conj: &mut Option<Conjugation>,
 ) -> Result<SurfaceDef, OpError> {
-    let rotate = motion.rigid().and_then(|i| i.rotate);
-    let exact_rotation = motion.rigid().map(|i| i.is_exact()).unwrap_or(true);
-    // Whether the motion moves anything at all. `copy` is [`transform_solid`] under a **zero**
-    // translation, and the identity is not a translation: the geometry comes out bit-identical, so
-    // a rotated surface's definition still describes it. Reading "no rotation" as "translated"
-    // refused a boolean on any copy of a rotated solid.
-    let displaced = motion
-        .rigid()
-        .map(|i| i.translate.iter().any(|r| r.numer() != 0))
-        .unwrap_or(true);
     let source = model
         .surface_defs
         .get(&src)
         .copied()
         .unwrap_or(SurfaceDef::Inexact);
-    // A node is recorded unless the whole history stays exact: a 90°-family rotation of a
-    // `Constructed` surface keeps exact coefficients and needs none, but the same rotation of an
-    // already-rotated one must still be recorded, or the chain would not reproduce the result.
+    // **Each surface chains from its own leaf, not the solid's.** One solid does not have one
+    // history: a boolean between differently-moved operands hands back walls that came from
+    // different ones. Memoized per distinct parent so surfaces that did share a history still do.
     let parent = match source {
         SurfaceDef::Moved { motion, .. } => Some(motion),
         _ => None,
     };
-    if let Some(r) = rotate.filter(|_| !exact_rotation || parent.is_some()) {
-        // `entry` cannot hold a `&mut Model` across the closure, so look up then insert.
-        let rotation = match surf_rot.get(&parent) {
+    if let Some(iso) = motion.rigid() {
+        let leaf = match surf_rot.get(&parent) {
             Some(&h) => h,
             None => {
-                let h = model.push_motion(
-                    Motion::Rotate {
-                        axis: r.axis,
-                        point: r.point,
-                        angle: r.angle,
-                    },
-                    parent,
-                );
+                // `entry` cannot hold a `&mut Model` across the closure, so look up then insert.
+                let h = chain_isometry(model, parent, iso, exact_translate);
                 surf_rot.insert(parent, h);
                 h
             }
         };
+        let Some(leaf) = leaf else {
+            // Nothing recorded: the motion kept the coefficients exact.
+            return Ok(source);
+        };
         return Ok(match source {
             SurfaceDef::Inexact => SurfaceDef::Inexact,
-            // Keep the original witness: the new node's parent is this surface's own leaf, so
-            // replaying the chain from the *root* witness applies every rotation, once each.
             SurfaceDef::Moved { witness, .. } => SurfaceDef::Moved {
                 witness,
-                motion: rotation,
+                motion: leaf,
             },
             SurfaceDef::Constructed => {
                 let f = model.faces.get(face);
@@ -279,16 +344,16 @@ fn moved_surface_def(
                     crate::planes::outer_tri(model, f).ok_or(OpError::DegenerateGeometry)?;
                 SurfaceDef::Moved {
                     witness,
-                    motion: rotation,
+                    motion: leaf,
                 }
             }
         });
     }
+    // A reflection: exact (rational pivot, negated angle — `conjugate_chain`), so a moved surface
+    // stays describable as the mirrored witness under the conjugated chain.
     Ok(match (source, conj) {
         (SurfaceDef::Constructed, _) => SurfaceDef::Constructed,
         (SurfaceDef::Inexact, _) => SurfaceDef::Inexact,
-        // A reflection is exact (rational pivot, negated angle — `conjugate_chain`), so a mirrored
-        // rotated surface stays describable: the mirrored witness under the conjugated chain.
         (SurfaceDef::Moved { witness, motion }, Some(c)) => {
             let m = c.mirror;
             let leaf = conjugate_chain(model, motion, c).ok_or(OpError::MirrorChainOverflow)?;
@@ -297,10 +362,7 @@ fn moved_surface_def(
                 motion: leaf,
             }
         }
-        // A translation of a rotated surface: no node can name `R` then `T`. A *zero*
-        // translation is not a translation — it is `copy`, and the definition still holds.
-        (def @ SurfaceDef::Moved { .. }, None) if !displaced => def,
-        (SurfaceDef::Moved { .. }, None) => SurfaceDef::Inexact,
+        (def @ SurfaceDef::Moved { .. }, None) => def,
     })
 }
 
@@ -539,41 +601,21 @@ fn transform_solid(
         .unwrap_or_else(Vector3::zero);
     let src = model.solids.get(solid).clone();
 
-    // Forest node for this transform (§CIP ⑦), one shared node named by every rotated
-    // vertex. The input's shared leaf (None if the input is not rotated) decides B0 vs B1:
-    //   A.  translation → no node (remap path).
-    //   B0. fresh rotation (input not rotated): exact (90°-family) → no node (remap,
-    //       preserving 1b); inexact → a root node (`parent = None`).
-    //   B1. re-rotation (input already rotated): **always chain** a node (`parent =
-    //       input leaf`) — record every rotation, even an exact one, because an inexact
-    //       ancestor makes the composite inexact and stage-2 tol must transport through
-    //       it; the forest stays complete. (Same-axis *bundling* — accumulating the
-    //       angle into one node — is a later cell; this cell always chains.)
-    let input_leaf = solid_rotation(model, solid);
-    let rot_node: Option<Handle<MotionNode>> =
-        match (motion.rigid().and_then(|i| i.rotate), input_leaf) {
-            (None, _) => None,
-            (Some(r), None) => {
-                (!motion.rigid().expect("rotate implies rigid").is_exact()).then(|| {
-                    model.push_motion(
-                        Motion::Rotate {
-                            axis: r.axis,
-                            point: r.point,
-                            angle: r.angle,
-                        },
-                        None,
-                    )
-                })
-            }
-            (Some(r), Some(parent)) => Some(model.push_motion(
-                Motion::Rotate {
-                    axis: r.axis,
-                    point: r.point,
-                    angle: r.angle,
-                },
-                Some(parent),
-            )),
-        };
+    // The forest nodes this transform appends (§CIP ⑦), one shared leaf named by every moved
+    // vertex. `chain_isometry` decides what is worth recording: a zero translation and a
+    // 90°-family rotation of a still-exact datum record nothing, and both exceptions lapse once
+    // the solid already has a history — then every motion is recorded or the chain would not
+    // reproduce the result.
+    let input_leaf = solid_motion(model, solid);
+    // Decided once, for the whole solid — see [`translation_is_exact`].
+    let exact_translate = motion
+        .rigid()
+        .map(|iso| translation_is_exact(model, solid, iso.translate))
+        .unwrap_or(true);
+    let rot_node: Option<Handle<MotionNode>> = match motion.rigid() {
+        Some(iso) => chain_isometry(model, input_leaf, iso, exact_translate),
+        None => None, // a reflection carries its input by conjugating, not appending
+    };
 
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
@@ -597,7 +639,8 @@ fn transform_solid(
     // walls came from different rotations, and its vertices are all `Discovered`, so the
     // vertex-side `solid_rotation` cannot answer for it at all. `surf_rot` memoizes one new forest
     // node per distinct parent leaf, so surfaces that did share a history still share it.
-    let mut surf_rot: HashMap<Option<Handle<MotionNode>>, Handle<MotionNode>> = HashMap::new();
+    let mut surf_rot: HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>> =
+        HashMap::new();
     let mut surf_map: HashMap<Handle<Surface>, Handle<Surface>> = HashMap::new();
     for &fh in &face_order {
         let s = model.faces.get(fh).surface;
@@ -607,7 +650,15 @@ fn transform_solid(
         let moved = motion
             .surface(model.surfaces.get(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
-        let def = moved_surface_def(model, s, fh, motion, &mut surf_rot, &mut conj)?;
+        let def = moved_surface_def(
+            model,
+            s,
+            fh,
+            motion,
+            exact_translate,
+            &mut surf_rot,
+            &mut conj,
+        )?;
         surf_map.insert(s, model.push_surface(moved, def));
     }
 
@@ -780,7 +831,7 @@ fn transform_solid(
 /// but because `assemble_fuse_cut` names every result vertex through `Node::Seam`, the enum's
 /// only variant: even a corner that survived untouched is rebuilt as a seam vertex, so a result
 /// is uniformly `Discovered` and carries no `Rotated` at all.
-fn solid_rotation(model: &Model, solid: Handle<Solid>) -> Option<Handle<MotionNode>> {
+fn solid_motion(model: &Model, solid: Handle<Solid>) -> Option<Handle<MotionNode>> {
     let sh = model.solids.get(solid).outer;
     let mut seen: Option<Option<Handle<MotionNode>>> = None;
     for &fh in &model.shells.get(sh).faces {

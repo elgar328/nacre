@@ -14,7 +14,7 @@
 
 use crate::common::*;
 use nacre_math::Point3;
-use nacre_ops::{BoolError, BoolKind, RejectReason, boolean};
+use nacre_ops::{BoolError, BoolKind, boolean};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
 
@@ -41,24 +41,18 @@ fn place_and_fuse(n: i128, d: i128) -> Result<Vec<f64>, BoolError> {
     Ok(out.into_iter().map(|s| volume(&m, s)).collect())
 }
 
-/// **Two bodies where there is one — the shared wall lands 1 ULP apart.**
+/// **One body, though the two walls' f64 coordinates still differ.**
 ///
-/// `x = 1` moved by `7/11` and `x = 0` moved by `18/11` are the same real number. But
-/// `1.0 + to_f64(7/11)` and `to_f64(18/11)` differ in the last place, so the wall becomes two
-/// planes and nothing merges across it. OCCT builds one body of volume 2 from the same operands
-/// (`nacre-oracle`); this asserts what we build instead.
+/// `x = 1` moved by `7/11` and `x = 0` moved by `18/11` are the same real number, and their f64
+/// images differ in the last place — they still do. What changed is that each wall now carries its
+/// motion in its *definition*, so the judgment realizes both at high precision, finds them the
+/// same plane, and merges. The cache was never the thing to fix.
 #[test]
-fn a_shared_wall_one_ulp_apart_splits_the_part() {
+fn a_shared_wall_merges_though_its_f64_images_differ() {
     for (n, d) in [(7i128, 11i128), (13, 23)] {
-        let vols = place_and_fuse(n, d).expect("the fuse itself succeeds");
-        assert_eq!(
-            vols.len(),
-            2,
-            "{n}/{d}: expected today's split, got {vols:?}"
-        );
-        for v in &vols {
-            assert!((v - 1.0).abs() < 1e-9, "{n}/{d}: half a part each, got {v}");
-        }
+        let vols = place_and_fuse(n, d).expect("fuse");
+        assert_eq!(vols.len(), 1, "{n}/{d}: one part, got {vols:?}");
+        assert!((vols[0] - 2.0).abs() < 1e-9, "{n}/{d}: {}", vols[0]);
     }
 }
 
@@ -86,14 +80,14 @@ fn most_placements_still_build_one_body() {
     }
 }
 
-/// **Rotate, then place — refused, every time.**
+/// **Rotate, then place — builds, every time.**
 ///
-/// The rotation history records rotations only, so `R` then `T` has no node to name and the plane
-/// cannot be stated exactly. "Make a feature, turn it, put it where it goes" is ordinary
-/// modelling, and none of it builds.
+/// The history used to record rotations only, so `R` then `T` had no node to name and the plane
+/// could not be stated exactly; "make a feature, turn it, put it where it goes" — ordinary
+/// modelling — was refused 15/15. The chain names both motions now, in order.
 #[test]
-fn rotate_then_place_is_refused() {
-    let mut refused = 0;
+fn rotate_then_place_builds() {
+    let mut built = 0;
     for deg in [7i128, 17, 30, 45, 63] {
         for off in [[3i128, 0, 0], [5, -3, 2], [0, 4, 0]] {
             let mut m = Model::new();
@@ -118,20 +112,19 @@ fn rotate_then_place_is_refused() {
             let place = Isometry::translation(off.map(Rat::from_int));
             let tool = xf(&mut m, tool, place);
             let base = xf(&mut m, base, place);
-            assert_eq!(
-                boolean(&mut m, BoolKind::Cut, base, tool).unwrap_err(),
-                BoolError::Unsupported {
-                    reason: RejectReason::InexactSurface
-                },
-                "{deg}° then {off:?}"
-            );
-            refused += 1;
+            let out = boolean(&mut m, BoolKind::Cut, base, tool)
+                .unwrap_or_else(|e| panic!("{deg}° then {off:?}: {e:?}"));
+            m.rebuild_adjacency();
+            // The tool is a through-cut of a 4×4×1 slab by a 1×1 post: 16 − 1, whatever the angle.
+            let v = volume(&m, out[0]);
+            assert!((v - 15.0).abs() < 1e-9, "{deg}° then {off:?}: volume {v}");
+            built += 1;
         }
     }
-    assert_eq!(refused, 15, "the whole sweep is refused today");
+    assert_eq!(built, 15, "the whole sweep builds");
 }
 
-/// **A mirror has the same disease — reached by a second route.**
+/// **A mirror still has the disease — the remaining half of it.**
 ///
 /// `AxisMirror` reflects as `2·offset − x` with `offset` already dropped to f64. The doubling is
 /// exact (a power of two), so the split needs a *second, independent* route to the same plane:
@@ -139,7 +132,10 @@ fn rotate_then_place_is_refused() {
 /// a different order, and they disagree in the last place — the same failure as
 /// [`a_shared_wall_one_ulp_apart_splits_the_part`], through the mirror.
 ///
-/// This is what puts the mirror path in this cell's scope rather than a backlog.
+/// A reflection is **improper** (`det = −1`), so it is not a `Motion` the chain can hold; the
+/// kernel carries it by *conjugating* an existing chain instead. A `Constructed` surface has no
+/// chain to conjugate, so its mirror image is still declared exact — which is this split. Closing
+/// it is a different mechanism from the translation work, and this test is what will judge it.
 #[test]
 fn a_mirrored_wall_and_a_placed_wall_split_the_part() {
     // Reflect `x = 1` in `x = 1/3`: the image is `−1/3`, computed as `2·fl(1/3) − 1`.

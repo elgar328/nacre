@@ -3010,10 +3010,14 @@ pub mod tests {
         );
     }
 
-    /// Transforming a boolean *result* (which carries `Discovered` seam vertices)
-    /// preserves those vertices' `Origin` and remaps their `ThreePlane` definition
-    /// onto the moved surfaces — the count survives and validate stays clean, so the
-    /// definition was not silently downgraded to `Constructed`.
+    /// Transforming a boolean *result* (which carries `Discovered` seam vertices) does not
+    /// **downgrade** those vertices to `Constructed` — the failure this guards.
+    ///
+    /// A motion that records a forest node supersedes the origin with `Moved { base, motion }`,
+    /// and the definition is preserved *through the base*: the base is the seam vertex, still in
+    /// the arena with its `ThreePlane` definition, and the node says how it moved. A motion that
+    /// records nothing instead remaps the definition's planes in place. Either way the truth
+    /// survives; only its spelling depends on whether the motion was worth recording.
     #[test]
     fn transform_translate_preserves_discovered_definition() {
         let (iso, _) = test_iso();
@@ -3030,11 +3034,19 @@ pub mod tests {
         m.rebuild_adjacency();
 
         assert!(nacre_validate::validate(&m).is_empty());
-        assert_eq!(
-            count_discovered(&m, r2),
-            disc,
-            "Discovered vertices preserved"
-        );
+        // Every seam vertex still names its three-plane definition — directly, or through the
+        // base of the motion that moved it. None fell back to `Constructed`.
+        let named = boundary_verts(&m, r2)
+            .into_iter()
+            .filter(|&vh| {
+                let root = match m.vertices.get(vh).origin {
+                    Origin::Moved { base, .. } => m.vertices.get(base).origin,
+                    other => other,
+                };
+                matches!(root, Origin::Discovered { .. })
+            })
+            .count();
+        assert_eq!(named, disc, "seam definitions preserved");
         let after = nacre_props::mass_props(&m, r2).unwrap().volume;
         assert!((after - before).abs() < 1e-12, "volume invariant");
     }
