@@ -128,6 +128,48 @@ impl Rat {
         if neg { -q } else { q }
     }
 
+    /// The rational **the decimal spelled**, rather than the one the f64 holds.
+    ///
+    /// These differ, and the difference is the whole point. [`try_from_f64`] lifts the
+    /// binary value — `1.1` becomes `2476979795053773/2251799813685248`, not `11/10` —
+    /// so exact arithmetic on lifted f64 reproduces the binary drift exactly instead of
+    /// removing it: `try_from_f64(1.1) + try_from_f64(6.6) != try_from_f64(7.7)`, while
+    /// `11/10 + 66/10 = 77/10` and realizes back to exactly `7.7`. A dimension a person
+    /// typed, and one the kernel derived from it, agree again.
+    ///
+    /// The decimal is the **shortest that reads back as `x`** — a deterministic normal
+    /// form, not a guess at intent: distinct f64 map to distinct rationals and equal
+    /// f64 always to the same one. Decimal is the choice only because people type
+    /// decimal. `None` for non-finite input, or when the power of ten overflows i128,
+    /// in which case the caller keeps its f64 path.
+    ///
+    /// Measured, that limit sits at `1e38` above and — for a value carrying all 17
+    /// significant digits — `1e-22` below; a short decimal reaches down to `1e-38`.
+    /// CAD dimensions live nowhere near either edge.
+    ///
+    /// [`try_from_f64`]: Rat::try_from_f64
+    pub fn from_decimal(x: f64) -> Option<Self> {
+        if !x.is_finite() {
+            return None;
+        }
+        // `{:e}`, not `{}`: both are the shortest round-tripping spelling, but `{}`
+        // writes `1e300` out in full, so the mantissa is not bounded and the i128
+        // verdict comes only after 301 characters. Here the mantissa is at most 17
+        // digits and the exponent arrives separately.
+        let s = format!("{x:e}");
+        let (mantissa, exp) = s.split_once('e')?;
+        let exp: i32 = exp.parse().ok()?;
+        let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+        let digits: i128 = format!("{int}{frac}").parse().ok()?;
+        // value = digits · 10^(exp − frac.len())
+        let scale = exp - frac.len() as i32;
+        if scale >= 0 {
+            Rat::new(digits.checked_mul(10i128.checked_pow(scale as u32)?)?, 1)
+        } else {
+            Rat::new(digits, 10i128.checked_pow(-scale as u32)?)
+        }
+    }
+
     /// The **exact** rational value of an f64 (`mantissa · 2^exp`). `None` for a
     /// non-finite input or when the exact numerator/denominator overflows i128
     /// (subnormals, extreme exponents — the downgrade trigger). Round-trips:
@@ -570,20 +612,7 @@ mod tests {
         }
     }
 
-    /// The shortest decimal that reads back as `x`, as a rational — a stand-in for the
-    /// `from_decimal` the next cell adds, kept here so this cell can state its own
-    /// property. `None` where that one will also decline: exponent form, or out of i128.
-    fn decimal_rat(x: f64) -> Option<Rat> {
-        let s = format!("{x}");
-        if s.contains(['e', 'E', 'n', 'i']) {
-            return None;
-        }
-        let (int, frac) = s.split_once('.').unwrap_or((s.as_str(), ""));
-        let digits: i128 = format!("{int}{frac}").parse().ok()?;
-        Rat::new(digits, 10i128.checked_pow(frac.len() as u32)?)
-    }
-
-    /// **The property `from_decimal` will rest on**: the shortest decimal of an f64,
+    /// **The property `from_decimal` rests on**: the shortest decimal of an f64,
     /// read as an exact rational and realized again, gives back the same bits.
     ///
     /// It holds *because* `to_f64` is correctly rounded, and only because of that. The
@@ -607,7 +636,7 @@ mod tests {
             let bits = next();
             let exp = 1023 - 60 + bits % 121;
             let x = f64::from_bits((bits & 0x800f_ffff_ffff_ffff) | (exp << 52));
-            match decimal_rat(x) {
+            match Rat::from_decimal(x) {
                 Some(r) => {
                     tried += 1;
                     assert_eq!(r.to_f64(), x, "{x:?} → {r:?} → {:?}", r.to_f64());
@@ -616,8 +645,101 @@ mod tests {
             }
         }
         // Nothing declines over this exponent range; the guard is here so a corpus that
-        // drifted into exponent form could not turn this test vacuous.
+        // drifted out of i128 could not turn this test vacuous.
         assert!(tried > 100_000, "{tried} tried, {declined} declined");
+    }
+
+    /// The same property, but over **every** finite f64 rather than the CAD-plausible
+    /// band: subnormals, `MIN_POSITIVE`, `MAX`, and the whole exponent range in between.
+    /// Where the power of ten leaves i128 the answer is `None` and the caller keeps its
+    /// f64 — what must never happen is a `Some` that realizes back to a *different*
+    /// number, because that would move a coordinate this cell has no business moving.
+    #[test]
+    fn from_decimal_never_lies_anywhere_in_the_finite_range() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut corpus = vec![
+            0.0,
+            -0.0,
+            f64::MIN_POSITIVE,
+            f64::MAX,
+            f64::MIN,
+            f64::from_bits(1), // the smallest subnormal
+            1.1,
+            7.7,
+            1e-30,
+            1e300,
+        ];
+        for _ in 0..200_000 {
+            let bits = next();
+            // Every exponent a finite f64 can have, subnormals included.
+            let exp = (bits % 2047) << 52;
+            corpus.push(f64::from_bits((bits & 0x800f_ffff_ffff_ffff) | exp));
+        }
+        let mut declined = 0;
+        for x in corpus {
+            match Rat::from_decimal(x) {
+                Some(r) => assert_eq!(r.to_f64(), x, "{x:e} → {r:?}"),
+                None => declined += 1,
+            }
+        }
+        assert!(
+            declined > 0,
+            "the i128 limit should bite somewhere out here"
+        );
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(Rat::from_decimal(bad), None, "{bad}");
+        }
+    }
+
+    /// Where the i128 limit actually bites, pinned so the doc comment stays true and a
+    /// caller can tell whether its dimensions are anywhere near it. They are not: a CAD
+    /// model in millimetres sits around `1e0`, sixty orders of magnitude inside.
+    ///
+    /// The two edges differ because a 17-digit mantissa spends 16 of its own powers of
+    /// ten on the fraction, so it runs out on the small side first. Note that exponent
+    /// *notation* is no obstacle in itself — `1e-30` is accepted; only the magnitude is.
+    #[test]
+    fn the_decimal_window_is_wide_and_its_edges_are_where_they_should_be() {
+        let at = |s: &str| Rat::from_decimal(s.parse::<f64>().unwrap()).is_some();
+        for e in -22..=38 {
+            assert!(at(&format!("1.2345678901234567e{e}")), "17 digits at 1e{e}");
+        }
+        assert!(!at("1.2345678901234567e-23"), "17 digits at 1e-23");
+        assert!(!at("1.2345678901234567e39"), "17 digits at 1e39");
+        assert!(
+            at("1e-38") && at("1e-30") && !at("1e-39"),
+            "a short decimal reaches further down"
+        );
+    }
+
+    /// **The identity this whole cell exists for.** A dimension split into two and
+    /// stacked must land where the undivided one does. Lifting the f64 *values* cannot
+    /// give that — the drift is already inside them — and reading the decimals can.
+    #[test]
+    fn a_split_dimension_stacks_back_to_the_whole_one() {
+        let split = Rat::from_decimal(1.1)
+            .unwrap()
+            .checked_add(Rat::from_decimal(6.6).unwrap())
+            .unwrap();
+        assert_eq!(split, Rat::new(77, 10).unwrap());
+        assert_eq!(split, Rat::from_decimal(7.7).unwrap());
+        assert_eq!(split.to_f64(), 7.7);
+        // The f64 arithmetic this replaces, and the exact-but-binary lift that does not
+        // help either — both land an ulp away.
+        assert_ne!(1.1 + 6.6, 7.7);
+        assert_ne!(
+            Rat::try_from_f64(1.1)
+                .unwrap()
+                .checked_add(Rat::try_from_f64(6.6).unwrap())
+                .unwrap(),
+            Rat::try_from_f64(7.7).unwrap()
+        );
     }
 
     proptest! {
