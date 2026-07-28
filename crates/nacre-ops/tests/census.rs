@@ -325,4 +325,59 @@ fn dump() {
         m.rebuild_adjacency();
         record(&format!("rt {deg}"), &m, &inputs, &out);
     }
+
+    // ── **Constructed by `extrude`, with the dimension split across steps.**
+    //
+    // Every family above builds its operands with `add_cuboid`, which takes literal corners and
+    // does no arithmetic — so none of them can see a change to how construction *accumulates*.
+    // `add_cuboid` is also `#[cfg(feature = "test-util")]`, i.e. the census was measuring a path
+    // production does not use: the playground and the kit both go through `extrude`.
+    //
+    // Here one operand is raised in a single step and the other in two that should add to the
+    // same height. In `f64` they do not (`1.1 + 6.6 != 7.7`), and the difference lands in the
+    // operand digests below — which is the point of the family.
+    for (kn, k) in KINDS {
+        for (i, (whole, first, second)) in [(7.7, 1.1, 6.6), (3.0, 0.1, 2.9), (1.0, 0.3, 0.7)]
+            .iter()
+            .enumerate()
+        {
+            let mut m = Model::new();
+            let a = ex(&mut m, 0.0, [0.0, 0.0], [2.0, 2.0], *whole);
+            let b1 = ex(&mut m, 0.0, [1.0, 1.0], [3.0, 3.0], *first);
+            let b2 = ex(&mut m, *first, [1.0, 1.0], [3.0, 3.0], *second);
+            let b = boolean(&mut m, BoolKind::Fuse, b1, b2).expect("stack fuses")[0];
+            m.rebuild_adjacency();
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("ex {kn} {i}"), &m, &inputs, &out);
+        }
+    }
+}
+
+/// A rectangular prism raised from `z` by `dist` — the construction path production uses.
+fn ex(m: &mut Model, z: f64, lo: [f64; 2], hi: [f64; 2], dist: f64) -> Handle<Solid> {
+    use nacre_math::Point2;
+    let p = |x: f64, y: f64| Point2::from_array([x, y]);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            plane: nacre_ops::SketchPlane {
+                origin: Point3::from_array([0.0, 0.0, z]),
+                ..nacre_ops::SketchPlane::world_xy()
+            },
+            profile: nacre_ops::Profile2d::polygon(vec![
+                p(lo[0], lo[1]),
+                p(hi[0], lo[1]),
+                p(hi[0], hi[1]),
+                p(lo[0], hi[1]),
+            ]),
+            dist,
+        },
+    )
+    .expect("extrude") else {
+        unreachable!("extrude yields Extrude output")
+    };
+    m.rebuild_adjacency();
+    solid
 }

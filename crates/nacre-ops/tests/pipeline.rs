@@ -1079,3 +1079,77 @@ fn the_fin_array_with_a_star_bore_meshes() {
     let g = mesh_vs_props(&m, part);
     assert_agrees(&g, "fin array with a star bore");
 }
+
+/// **★ The scoreboard of the exact-dimension cell — this asserts today's dirty answer.**
+///
+/// Every number below is a literal a user typed. The only arithmetic is the kernel's own: a
+/// prism raised from `z = 1.1` by `6.6` has its top at `1.1 + 6.6` **in f64**, which is
+/// `7.699999999999999` — one ULP below the `7.7` that the block beside it was raised to in a
+/// single step. Two planes where the model has one.
+///
+/// **It does not split and it is not wrong.** The volume is exactly right and the fuse yields one
+/// body; what it yields is a body carrying a face of area `8.9e-16` and two faces more than the
+/// shape has. Nothing rejects, nothing reports — the model just gets dirtier, and every later
+/// boolean, STEP export and mesh carries the sliver along.
+///
+/// **When construction arithmetic becomes exact, this becomes six faces and no sliver.**
+#[test]
+fn a_stacked_dimension_leaves_a_sliver() {
+    fn rect(x0: f64, x1: f64) -> Profile2d {
+        Profile2d::polygon(vec![p2(x0, 0.0), p2(x1, 0.0), p2(x1, 1.0), p2(x0, 1.0)])
+    }
+    fn raise(m: &mut Model, z: f64, x0: f64, x1: f64, dist: f64) -> Handle<Solid> {
+        let out = nacre_ops::apply(
+            m,
+            &Operation::Extrude {
+                plane: SketchPlane {
+                    origin: Point3::from_array([0.0, 0.0, z]),
+                    ..SketchPlane::world_xy()
+                },
+                profile: rect(x0, x1),
+                dist,
+            },
+        )
+        .expect("extrude");
+        m.rebuild_adjacency();
+        match out {
+            nacre_ops::OpOutput::Extrude { solid, .. } => solid,
+            o => panic!("{o:?}"),
+        }
+    }
+
+    let mut m = Model::new();
+    // The stack: 1.1, then 6.6 starting at 1.1. Its top lands one ULP below 7.7.
+    let lower = raise(&mut m, 0.0, 3.0, 4.0, 1.1);
+    let upper = raise(&mut m, 1.1, 3.0, 4.0, 6.6);
+    let stack = boolean_one(&mut m, BoolKind::Fuse, lower, upper).unwrap();
+    m.rebuild_adjacency();
+    // The neighbour: the same height in one step, sharing the wall x = 4.
+    let side = raise(&mut m, 0.0, 4.0, 5.0, 7.7);
+    let part = boolean_one(&mut m, BoolKind::Fuse, stack, side).unwrap();
+    m.rebuild_adjacency();
+
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "the b-rep is valid"
+    );
+    let props = nacre_props::mass_props(&m, part).unwrap();
+    assert!(
+        (props.volume - 15.4).abs() < 1e-9,
+        "volume {}",
+        props.volume
+    );
+
+    let shell = m.solids.get(part).outer;
+    let faces = &m.shells.get(shell).faces;
+    let smallest = faces
+        .iter()
+        .filter_map(|&fh| nacre_props::face_props(&m, fh).ok())
+        .map(|p| p.area)
+        .fold(f64::INFINITY, f64::min);
+    assert_eq!(faces.len(), 8, "today: two faces more than the shape has");
+    assert!(
+        smallest < 1e-12,
+        "today: a sliver face survives, got {smallest}"
+    );
+}
