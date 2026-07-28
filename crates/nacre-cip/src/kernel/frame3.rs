@@ -681,14 +681,24 @@ fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> HpIv {
     )
 }
 
-/// The points' pre-rotation coordinates, when they all carry **one and the same** rigid motion and
-/// every base is `f64`-representable.
+/// The points' pre-motion coordinates, **brought into the moved frame's handedness**, when they
+/// all carry one and the same motion and every base is `f64`-representable.
 ///
-/// A rigid motion preserves the determinants these judges take, so under that condition the answer
-/// on the bases *is* the answer — exactly. Chains are compared structurally, so two spellings of
-/// one motion read as different: a missed cancellation is slower, never wrong. Pivots must match
-/// too, since a rotation about `c` is `Rx + (c − Rc)` and two pivots leave two translations that
-/// do not cancel in a difference.
+/// A motion preserves the determinants these judges take *up to its own determinant*, so under
+/// that condition the answer on the bases is the answer — exactly. Chains are compared
+/// structurally, so two spellings of one motion read as different: a missed cancellation is
+/// slower, never wrong. Pivots must match too, since a rotation about `c` is `Rx + (c − Rc)` and
+/// two pivots leave two translations that do not cancel in a difference.
+///
+/// **A reflection is improper (`det = −1`), and the correction belongs here rather than at each
+/// caller.** Every point carries the same chain, so an odd number of reflections flips the
+/// determinant *uniformly* — the shortcut would return a confidently wrong sign, not a
+/// conservative miss. Rather than hand each judge a parity to multiply in (four sites, each
+/// taking a different quantity, one of them already carrying a second sign convention), the bases
+/// are handed back **already reflected once** when the parity is odd: the base frame then has the
+/// moved frame's handedness and every determinant question transfers unchanged.
+///
+/// The canonical reflection is a sign flip on x, which is exact for every finite `f64`.
 fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
     let first = pts[0];
     if first.chain.is_empty() {
@@ -710,13 +720,29 @@ fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
     if !pts.iter().all(|p| p.base.iter().all(|&r| exact(r))) {
         return None; // the exact predicate takes f64; a base that does not round-trip cannot go
     }
+    // Odd parity ⇒ hand back the mirror image, so the base frame is handed like the moved one.
+    let flip = if chain_parity(&first.chain) < 0 {
+        -1.0
+    } else {
+        1.0
+    };
     Some(std::array::from_fn(|i| {
         [
-            pts[i].base[0].to_f64(),
+            flip * pts[i].base[0].to_f64(),
             pts[i].base[1].to_f64(),
             pts[i].base[2].to_f64(),
         ]
     }))
+}
+
+/// `−1` when a chain contains an odd number of reflections, `+1` otherwise — the factor an
+/// improper motion puts on any determinant of its images.
+pub fn chain_parity(chain: &[MoveNode]) -> i8 {
+    let mirrors = chain
+        .iter()
+        .filter(|n| matches!(n, MoveNode::Mirror { .. }))
+        .count();
+    if mirrors % 2 == 0 { 1 } else { -1 }
 }
 
 /// CIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
@@ -1911,6 +1937,89 @@ mod tests {
     /// `GT` is deep enough that it does not enter these comparisons.)
     fn abs_err(f: f64, truth: &HpIv, gt: usize) -> f64 {
         bf_mag(&BigFloat::from_f64(f, gt).sub(&truth.mid, gt, HP_RM).abs())
+    }
+
+    /// **The shared-motion shortcut must answer the same question a reflection is in the chain.**
+    ///
+    /// `shared_base` cancels one shared motion out of `det[a−d, b−d, c−d]` and answers on the
+    /// pre-motion coordinates, *exactly* — on the strength of "a rigid motion preserves this
+    /// determinant". A **reflection does not**: it negates it. And the failure is not conservative,
+    /// because all four points carry the same chain, so the flip is uniform and the shortcut
+    /// returns a confidently wrong `Sign`.
+    ///
+    /// So the claim is measured rather than argued: random chains that mix rotations, translations
+    /// and reflections, against a 512-bit realization of the same four definitions.
+    ///
+    /// `#[ignore]`: astro-float ground truth is slow.
+    #[test]
+    #[ignore = "slow astro-float ground truth (run with --ignored)"]
+    fn the_shared_motion_shortcut_agrees_with_ground_truth() {
+        const GT: usize = 512;
+        let mut st = 0x51D2_7E44_0C13_A001u64;
+        let (mut took_shortcut, mut mirror_seen) = (0usize, false);
+        for _ in 0..2000 {
+            // Four points sharing one chain — the shortcut's precondition. **Dyadic** bases, or
+            // `shared_base` declines before the sign is ever in question (its own guard is that a
+            // base must round-trip through f64) and the test would pass vacuously.
+            let dyadic = |st: &mut u64| -> [Rat; 3] {
+                std::array::from_fn(|_| ri(rng(st, -100_000, 100_000), 1 << rng(st, 0, 6)))
+            };
+            let bases: [[Rat; 3]; 4] = std::array::from_fn(|_| dyadic(&mut st));
+            let mut pts: Vec<Pt3> = bases.iter().map(|&b| Pt3::at(b)).collect();
+            for _ in 0..rng(&mut st, 1, 4) {
+                match rng(&mut st, 0, 2) {
+                    0 => {
+                        let off = dyadic(&mut st);
+                        pts = pts.into_iter().map(|p| p.translate(off)).collect();
+                    }
+                    1 => {
+                        mirror_seen = true;
+                        let ax = axis_of(rng(&mut st, 0, 2));
+                        let off = if rng(&mut st, 0, 2) == 0 {
+                            ri(0, 1)
+                        } else {
+                            dyadic(&mut st)[0]
+                        };
+                        pts = pts.into_iter().map(|p| p.mirror(ax, off)).collect();
+                    }
+                    _ => {
+                        let ax = axis_of(rng(&mut st, 0, 2));
+                        let ang = deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 997));
+                        let piv = dyadic(&mut st);
+                        pts = pts
+                            .into_iter()
+                            .map(|p| p.rotate_about(ax, ang, piv))
+                            .collect();
+                    }
+                }
+            }
+            let [pa, pb, pc, pd] = [&pts[0], &pts[1], &pts[2], &pts[3]];
+            let Some(b) = shared_base(&[pa, pb, pc, pd]) else {
+                continue; // a base that does not round-trip; the toleranced path answers
+            };
+            took_shortcut += 1;
+            let shortcut = match nacre_predicates::orient3d(b[0], b[1], b[2], b[3]) {
+                x if x > 0.0 => 1i8,
+                x if x < 0.0 => -1,
+                _ => 0,
+            };
+            // Ground truth: the same determinant, realized from the definitions at 512 bits. Deep
+            // enough that only a genuinely near-zero case is ambiguous, and those are skipped.
+            let det = det3_hp(pa, pb, pc, pd, GT);
+            let Some(pos) = det.sign() else {
+                continue;
+            };
+            let truth = if pos { 1i8 } else { -1 };
+            assert_eq!(
+                shortcut, truth,
+                "the shortcut answered a different question than the definitions do"
+            );
+        }
+        assert!(mirror_seen, "the sample must include a reflection");
+        assert!(
+            took_shortcut > 100,
+            "the shortcut must actually fire ({took_shortcut} times)"
+        );
     }
 
     /// Soundness: over random **motion** chains (mixed axes, arbitrary pivots, exact and inexact

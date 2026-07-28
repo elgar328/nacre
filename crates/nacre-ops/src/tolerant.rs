@@ -461,4 +461,265 @@ mod tests {
             }
         }
     }
+
+    /// The same geometry told two ways: as a constructed solid, and as the reflection of its
+    /// own mirror image. A reflection in `x = 1` sends an integer to an integer, so the second
+    /// spelling reproduces the first **bit for bit** — same triangles, same planes,
+    /// same everything a predicate reads directly. What differs is only the *provenance*: one
+    /// table carries no motion (`chain_id = 0`, so every shortcut declines and the predicates run
+    /// on the coordinates), the other carries a reflection (`chain_id ≠ 0`, so the shortcuts fire
+    /// and answer in the pre-motion frame).
+    ///
+    /// **That is the whole point.** A reflection is improper, and the shortcuts' licence is that
+    /// a motion preserves the determinant they take — which an improper one does not. The base
+    /// frame is canonicalised for that (`BaseFrame::of`), and this test is what says the
+    /// canonicalisation is right: it puts the shortcut path and the no-shortcut path side by
+    /// side on identical geometry, with no bypass switch in between. A sign that survives one
+    /// too many or one too few reflections shows up here as a disagreement.
+    fn two_spellings() -> (Vec<PlaneGeom>, Vec<PlaneGeom>) {
+        use crate::planes::{FaceInfo, dense_planes, plane_classes};
+        use nacre_topo::Motion;
+
+        let (mut m, s) = cuboid();
+        // A **non-zero** mirror plane on purpose: with `offset = 0` the base frame would come out
+        // equal to the moved one and every comparison below would pass for free. At `x = 1` the
+        // canonicalised base is the moved triangle displaced by `(−2, 0, 0)` — a different frame,
+        // still exact.
+        let leaf = m.push_motion(
+            Motion::Mirror {
+                axis: Axis::X,
+                offset: Rat::from_int(1),
+            },
+            None,
+        );
+        let plain = collect_planes(&m, s).unwrap();
+        // The same faces, described as the image of their own reflection: base = `−coord`, one
+        // `Mirror` node, and the realized coordinate lands back on `coord`.
+        let mirrored: Vec<FaceInfo> = plain
+            .iter()
+            .map(|f| FaceInfo {
+                surf: f.surf,
+                face: f.face,
+                plane: f.plane,
+                tri: f.tri,
+                n_out: f.n_out,
+                orient_sign: f.orient_sign,
+                tri_pt3: std::array::from_fn(|i| {
+                    let c = f.tri_pt3[i].coord;
+                    let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
+                    Pt3::at([r(2.0 - c[0]), r(c[1]), r(c[2])]).mirror(Axis::X, Rat::from_int(1))
+                }),
+                motion: Some(leaf),
+                rotated: true,
+            })
+            .collect();
+        for (a, b) in plain.iter().zip(&mirrored) {
+            for i in 0..3 {
+                assert_eq!(a.tri_pt3[i].coord, b.tri_pt3[i].coord, "same coordinates");
+                // The *operation* is exact on these integers, but `tol` is an a-priori bound
+                // (`ε·(|2c| + |x|)`), not the realized error — so it is a couple of ulp, not
+                // zero. Sound, and it costs nothing here: the base frame is chosen on the
+                // rational `base`, not on `tol`.
+                for k in 0..3 {
+                    let t = b.tri_pt3[i].tol[k];
+                    let c = b.tri_pt3[i].coord[k].abs();
+                    assert!(
+                        t <= 4.0 * f64::EPSILON * c.max(1.0),
+                        "reflection tol stays within a few ulp"
+                    );
+                }
+            }
+        }
+        let ca = plane_classes(&crate::planes::test_judge(&plain));
+        let cb = plane_classes(&crate::planes::test_judge(&mirrored));
+        assert_eq!(
+            ca, cb,
+            "the two spellings agree on which faces are coplanar"
+        );
+        let pa = dense_planes(&plain, &ca).0;
+        let pb = dense_planes(&mirrored, &cb).0;
+        assert!(
+            pb.iter()
+                .all(|g| g.base.chain_id != 0 && g.base.tri.is_some() && g.base.coeffs.is_some()),
+            "the reflected spelling really does offer a base frame — else this proves nothing"
+        );
+        assert!(
+            pa.iter().all(|g| g.base.chain_id == 0),
+            "the plain spelling really does decline"
+        );
+        assert!(
+            pb.iter()
+                .any(|g| g.base.tri.unwrap() != g.tri || g.base.coeffs.unwrap() != g.coeffs()),
+            "the base frame differs from the moved one — else the comparison is free"
+        );
+        (pa, pb)
+    }
+
+    /// The three tests above compare a table that *offers* a base frame against one that does
+    /// not — and agreement proves nothing unless the base frame is what answered. So corrupt it
+    /// and require the answers to **change**: reverse each base triangle (which reverses the
+    /// normal `orient3d`'s convention is tied to) and negate each base plane (which reverses the
+    /// determinant `plane_pair_dir_sign` takes). If either sweep ever stops disagreeing, the
+    /// shortcut has stopped firing and the tests above have gone vacuous.
+    ///
+    /// A caution the first draft of this test walked into: not every perturbation is detectable.
+    /// Reflecting the base triangles *and* re-deriving their planes changes nothing at all — the
+    /// two sign flips cancel, which is the same pseudovector identity this whole cell is about.
+    #[test]
+    fn the_base_frame_is_actually_consulted() {
+        let (pa, pb) = two_spellings();
+        let n = pa.len();
+
+        let mut reversed = two_spellings().1;
+        for g in &mut reversed {
+            let [a, b, c] = g.base.tri.unwrap();
+            g.base.tri = Some([b, a, c]);
+        }
+        let mut orient_changed = 0usize;
+        for p in 0..n {
+            for q in (p + 1)..n {
+                for r in (q + 1)..n {
+                    if !normals_independent(&pa, p, q, r) {
+                        continue;
+                    }
+                    for j in 0..n {
+                        if j == p || j == q || j == r {
+                            continue;
+                        }
+                        if crate::planes::test_judge(&pb).orient3d(p, q, r, j)
+                            != crate::planes::test_judge(&reversed).orient3d(p, q, r, j)
+                        {
+                            orient_changed += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            orient_changed > 0,
+            "`orient3d` never read the base triangle"
+        );
+
+        let mut negated = two_spellings().1;
+        for g in &mut negated {
+            g.base.coeffs = g.base.coeffs.map(|c| c.map(|v| -v));
+        }
+        let mut dir_changed = 0usize;
+        for p in 0..n {
+            for a in 0..n {
+                for b in 0..n {
+                    if p == a || p == b || a == b {
+                        continue;
+                    }
+                    if crate::planes::test_judge(&pb).plane_pair_dir_sign(p, a, b)
+                        != crate::planes::test_judge(&negated).plane_pair_dir_sign(p, a, b)
+                    {
+                        dir_changed += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            dir_changed > 0,
+            "`plane_pair_dir_sign` never read the base plane"
+        );
+    }
+
+    /// `orient3d` — the shortcut ([`nacre_cip::frame3::shared_base`] via `Judge::orient3d`) is
+    /// answering the same question as the coordinates. See [`two_spellings`].
+    #[test]
+    fn a_reflected_spelling_orients_as_the_plain_one() {
+        let (pa, pb) = two_spellings();
+        let n = pa.len();
+        let mut checked = 0usize;
+        for p in 0..n {
+            for q in (p + 1)..n {
+                for r in (q + 1)..n {
+                    if !normals_independent(&pa, p, q, r) {
+                        continue;
+                    }
+                    for j in 0..n {
+                        if j == p || j == q || j == r {
+                            continue;
+                        }
+                        let sa = crate::planes::test_judge(&pa).orient3d(p, q, r, j);
+                        if sa == 0 {
+                            continue;
+                        }
+                        let sb = crate::planes::test_judge(&pb).orient3d(p, q, r, j);
+                        assert_eq!(sa, sb, "orient3d at ({p},{q},{r},{j})");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 0, "no definite config in the corpus");
+    }
+
+    /// `plane_pair_dir_sign` — the one shortcut that reads **normals**, where a pseudovector sign
+    /// would hide. See [`two_spellings`].
+    #[test]
+    fn a_reflected_spelling_takes_the_same_direction_signs() {
+        let (pa, pb) = two_spellings();
+        let n = pa.len();
+        let mut checked = 0usize;
+        for p in 0..n {
+            for a in 0..n {
+                for b in 0..n {
+                    if p == a || p == b || a == b {
+                        continue;
+                    }
+                    let sa = crate::planes::test_judge(&pa).plane_pair_dir_sign(p, a, b);
+                    if sa == 0 {
+                        continue;
+                    }
+                    let sb = crate::planes::test_judge(&pb).plane_pair_dir_sign(p, a, b);
+                    assert_eq!(sa, sb, "dir_sign at ({p},{a},{b})");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "no definite triple in the corpus");
+    }
+
+    /// `planes_coplanar` and `cmp_coord`. The latter's shortcut is switched **off** for a
+    /// reflection (a reflection negates the axis it compares along, which is not a handedness
+    /// question), so what this pins is that the fallback still answers correctly.
+    /// See [`two_spellings`].
+    #[test]
+    fn a_reflected_spelling_compares_coordinates_the_same_way() {
+        let (pa, pb) = two_spellings();
+        let n = pa.len();
+        for i in 0..n {
+            for j in 0..n {
+                assert_eq!(
+                    crate::planes::test_judge(&pa).planes_coplanar(i, j),
+                    crate::planes::test_judge(&pb).planes_coplanar(i, j),
+                    "coplanar at ({i},{j})"
+                );
+            }
+        }
+        let triples: Vec<[usize; 3]> = (0..n)
+            .flat_map(|p| ((p + 1)..n).flat_map(move |q| ((q + 1)..n).map(move |r| [p, q, r])))
+            .filter(|t| normals_independent(&pa, t[0], t[1], t[2]))
+            .collect();
+        let mut checked = 0usize;
+        for &t in &triples {
+            for &u in &triples {
+                if t == u {
+                    continue;
+                }
+                for axis in 0..3 {
+                    let sa = crate::planes::test_judge(&pa).cmp_coord(t, u, axis);
+                    if sa == 0 {
+                        continue;
+                    }
+                    let sb = crate::planes::test_judge(&pb).cmp_coord(t, u, axis);
+                    assert_eq!(sa, sb, "cmp_coord {t:?} vs {u:?} on axis {axis}");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "no definite comparison in the corpus");
+    }
 }

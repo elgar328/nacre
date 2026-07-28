@@ -458,12 +458,36 @@ impl BaseFrame {
             Point3::from_array([p.base[0].to_f64(), p.base[1].to_f64(), p.base[2].to_f64()])
         };
         let tri = [pt(&tri_pt3[0]), pt(&tri_pt3[1]), pt(&tri_pt3[2])];
+        // ★ **An improper chain is corrected here, on the points, before anything is derived
+        // from them.** An odd number of reflections leaves the base frame with the opposite
+        // handedness, and the shortcuts' whole licence is that the motion preserves the
+        // determinants they take. One more reflection puts the handedness back, and then the base
+        // is related to the moved frame by a *proper* motion again — which is what every consumer
+        // of this struct assumes. A sign flip on x is exact for every finite `f64`, and it is the
+        // same convention `nacre_cip::frame3::shared_base` applies to its own points.
+        let tri = if nacre_cip::chain_parity(&tri_pt3[0].chain) < 0 {
+            tri.map(|p| {
+                let [x, y, z] = p.as_array();
+                Point3::from_array([-x, y, z])
+            })
+        } else {
+            tri
+        };
         // ★ The base plane must carry the **stored** orientation, not the triangle's. A class's
         // stored normal and its witness triangle's `cross` can oppose — that is exactly what
-        // `frame_sign` records — and `through_points` gives the triangle's. Rotation preserves the
-        // cross product (`det(R) = 1`), so multiplying by `frame_sign` reproduces the same relation
-        // in the base frame. Without it the exact path answers with a flipped sign, which the suite
-        // caught immediately.
+        // `frame_sign` records — and `through_points` gives the triangle's. A proper motion
+        // preserves the cross product (`det = 1`), so multiplying by `frame_sign` reproduces the
+        // same relation in the base frame. Without it the exact path answers with a flipped sign,
+        // which the suite caught immediately.
+        //
+        // ★ **And it is derived from the corrected triangle, not corrected afterwards.** A plane
+        // is not a bag of points: reflecting a triangle and re-deriving its normal is *not* the
+        // same as reflecting the normal, because the cross product is a pseudovector — the two
+        // differ by a global sign, and `plane_pair_dir_sign` reads exactly that sign. Deriving
+        // last removes the question: the points are corrected once, and everything downstream is
+        // the ordinary derivation from them. (The earlier spelling corrected the plane separately
+        // and was off by that one sign; `a_reflected_spelling_takes_the_same_direction_signs`
+        // is what found it.)
         let coeffs = Plane::through_points(tri[0], tri[1], tri[2]).map(|pl| {
             let c = pl.coefficients();
             let k = f64::from(frame_sign);

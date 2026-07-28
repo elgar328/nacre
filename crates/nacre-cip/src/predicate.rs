@@ -520,18 +520,29 @@ fn cancel_cmp_coord<W: PlaneWitness>(
 /// *difference* of two points that share one chain, and a translation is the identity on a
 /// difference — `(p + t) − (q + t) = p − q`. A rotation about any pivot likewise acts on a
 /// difference as the pure linear `R`, which is why only the axis and angle are read.
+///
+/// **A reflection ends it.** Unlike the determinant shortcuts, which a canonicalised base frame
+/// repairs, this one asks about a *particular axis*, and a reflection negates the axis it fixes —
+/// there is no handedness correction that answers an axis-wise question. Two reflections do not
+/// rescue it either: their product is a half-turn, not a turn by the angles read here. So the
+/// declaration is that this shortcut is defined for **axis-preserving** motions, and anything
+/// else escalates. A conservative miss, never a wrong sign.
 fn single_axis_motion(def: &[Pt3; 3]) -> Option<(nacre_scalar::Axis, nacre_scalar::Angle)> {
     let chain = &def[0].chain;
     let mut axis: Option<nacre_scalar::Axis> = None;
     let mut total = nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(0))?;
     for n in chain.iter() {
-        let MoveNode::Rotate { axis: a, angle, .. } = n else {
-            continue; // a translation cancels in the difference
+        let a = match n {
+            MoveNode::Rotate { axis, angle, .. } => {
+                total = total.checked_add(angle.deg())?;
+                axis
+            }
+            MoveNode::Translate { .. } => continue, // cancels in the difference
+            MoveNode::Mirror { .. } => return None,
         };
         if *axis.get_or_insert(*a) != *a {
             return None;
         }
-        total = total.checked_add(angle.deg())?;
     }
     Some((axis?, total))
 }
