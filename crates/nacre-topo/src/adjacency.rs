@@ -162,13 +162,16 @@ mod tests {
         let curve = m.curves.push(Curve::Line(
             Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
         ));
-        let surface = m.surfaces.push(Surface::Plane(
-            Plane::from_point_normal(
-                Point3::origin(),
-                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
-            )
-            .unwrap(),
-        ));
+        let surface = m.push_surface(
+            Surface::Plane(
+                Plane::from_point_normal(
+                    Point3::origin(),
+                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                )
+                .unwrap(),
+            ),
+            crate::SurfaceDef::Constructed,
+        );
         let mk_v = |m: &mut Model| {
             m.vertices.push(Vertex {
                 point: Point3::origin(),
@@ -246,13 +249,16 @@ mod tests {
         let curve = m.curves.push(Curve::Line(
             Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
         ));
-        let surface = m.surfaces.push(Surface::Plane(
-            Plane::from_point_normal(
-                Point3::origin(),
-                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
-            )
-            .unwrap(),
-        ));
+        let surface = m.push_surface(
+            Surface::Plane(
+                Plane::from_point_normal(
+                    Point3::origin(),
+                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                )
+                .unwrap(),
+            ),
+            crate::SurfaceDef::Constructed,
+        );
         let mk_e = |m: &mut Model, a, b| {
             m.edges.push(Edge {
                 curve,

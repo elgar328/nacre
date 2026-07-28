@@ -20,7 +20,7 @@ use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Angle, Axis, Rat};
 use nacre_store::{Handle, Store};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// How a discovered vertex is *defined* — the primitives whose intersection it
 /// is (design §4). This definition is the **truth**; the vertex's `f64` point is
@@ -78,6 +78,40 @@ pub enum Origin {
     },
 }
 
+/// Provenance of a **surface** — the same question [`Origin`] answers for a vertex.
+///
+/// The kernel's rule is that exact geometry is the truth and f64 is a cache. A surface's
+/// coefficients are that truth only while nothing irrational has been applied to them: a
+/// non-90° rotation turns a plane's normal into an irrational direction, and the stored
+/// coefficients become a *rounded copy*. Without this, the kernel has no way to tell the two
+/// apart, so it treats the copy as exact — and two rounded copies of one wall then fail to be
+/// the same plane, which is how a chained boolean loses a coplanar contact.
+///
+/// Recorded through [`Model::push_surface`] and enforced by `nacre-validate`: every face of a
+/// live solid must lie on a surface that has a definition.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SurfaceDef {
+    /// The coefficients **are** the truth — a constructed surface, or one moved by a motion
+    /// that preserves exactness (a translation, a 90°-family rotation).
+    Constructed,
+    /// The image of an exact surface under a rotation history. The truth is
+    /// `(witness, rotation)`; the coefficients are a cache.
+    ///
+    /// `witness` is three non-collinear points **before** the rotation, exactly representable in
+    /// f64 (they are read off the pre-rotation face, whose coordinates are exact by this same
+    /// invariant). `rotation` is the leaf of the history in [`Model::rotations`] — the chain
+    /// lives in the forest, exactly as [`Origin::Rotated`] uses it.
+    Rotated {
+        witness: [Point3; 3],
+        rotation: Handle<Rotation>,
+    },
+    /// **Not exactly describable** — a history the rotation forest cannot express, today a
+    /// translation interleaved with a rotation. The kernel does not pretend the coefficients are
+    /// exact; consumers that need the truth reject honestly, as `Pt3Error::TranslateInterleaved`
+    /// already does for vertices.
+    Inexact,
+}
+
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped
 /// (`Reversed`). A pure tag — full derives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -107,6 +141,13 @@ pub struct Model {
     /// The rotation-history forest (§CIP ⑦): rotation definitions named by
     /// `Origin::Rotated` vertices. Not geometry — a definition store.
     pub rotations: Store<Rotation>,
+    /// Each surface's provenance, keyed by handle. Not geometry — the twin of the vertex
+    /// `Origin`, kept beside the store because [`Surface`] is a `nacre-geom` type and cannot
+    /// name a `Handle<Rotation>`. Written only by [`Model::push_surface`].
+    ///
+    /// Iterate this **through the faces**, never over the map: a `HashMap`'s order is not
+    /// deterministic and replay determinism (DNA 3) forbids letting it reach a result.
+    pub surface_defs: HashMap<Handle<Surface>, SurfaceDef>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,
     pub edges: Store<Edge>,
@@ -192,6 +233,15 @@ impl Model {
     pub fn push_solid(&mut self, solid: Solid) -> Handle<Solid> {
         let h = self.solids.push(solid);
         self.live_solids.push(h);
+        h
+    }
+
+    /// Push a surface **and state its provenance** ([`SurfaceDef`]) — the blessed way to add
+    /// one. Pushing into `surfaces` directly leaves the surface undefined, which
+    /// `nacre-validate` reports for any face that lands on it.
+    pub fn push_surface(&mut self, surface: Surface, def: SurfaceDef) -> Handle<Surface> {
+        let h = self.surfaces.push(surface);
+        self.surface_defs.insert(h, def);
         h
     }
 
@@ -357,10 +407,13 @@ impl Model {
         ];
         let fh: [Handle<Face>; 6] = core::array::from_fn(|i| {
             let (tri, hes) = &faces_def[i];
-            let surface = self.surfaces.push(Surface::Plane(
-                Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
-                    .expect("non-degenerate box"),
-            ));
+            let surface = self.push_surface(
+                Surface::Plane(
+                    Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
+                        .expect("non-degenerate box"),
+                ),
+                SurfaceDef::Constructed,
+            );
             let outer = Loop {
                 half_edges: hes
                     .iter()
@@ -464,9 +517,12 @@ impl Model {
 
         // Lateral cylindrical face: one loop wrapping the seam twice (opposite).
         let lateral = {
-            let surface = self.surfaces.push(Surface::Cylinder(
-                Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
-            ));
+            let surface = self.push_surface(
+                Surface::Cylinder(
+                    Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
+                ),
+                SurfaceDef::Constructed,
+            );
             let outer = Loop {
                 half_edges: vec![
                     HalfEdge {
@@ -496,9 +552,10 @@ impl Model {
         };
         // Bottom cap: outward normal −d, the bottom rim reversed.
         let bottom_cap = {
-            let surface = self.surfaces.push(Surface::Plane(
-                Plane::from_point_normal(c0, -d).expect("nonzero axis"),
-            ));
+            let surface = self.push_surface(
+                Surface::Plane(Plane::from_point_normal(c0, -d).expect("nonzero axis")),
+                SurfaceDef::Constructed,
+            );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
                     edge: bottom,
@@ -514,9 +571,10 @@ impl Model {
         };
         // Top cap: outward normal +d, the top rim forward.
         let top_cap = {
-            let surface = self.surfaces.push(Surface::Plane(
-                Plane::from_point_normal(c1, d).expect("nonzero axis"),
-            ));
+            let surface = self.push_surface(
+                Surface::Plane(Plane::from_point_normal(c1, d).expect("nonzero axis")),
+                SurfaceDef::Constructed,
+            );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
                     edge: top,

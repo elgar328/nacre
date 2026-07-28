@@ -205,12 +205,12 @@ pub enum RejectReason {
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
     /// with no firing test.
     NoOutwardShell,
-    /// A rotated-result face's supporting plane could not be witnessed exactly: neither three
-    /// of the face's own vertices assemble (a survivor wall) nor a unique operand plane `π` is
-    /// recoverable from its seam corners' provenance ([`crate::rotated_vertex::face_plane_witness`]).
-    /// The deep rotated-chain floor (e.g. a seam-only face whose `π` is itself a rotated surface).
-    /// Honest reject, never a wrong result.
-    RotatedUnderdetermined,
+    /// A face lies on a surface whose exact definition the kernel cannot state — a rotation
+    /// interleaved with a translation, which the rotation forest has no node for (`SurfaceDef::
+    /// Inexact`). Judging on the rounded coefficients is what produces two plane classes for one
+    /// wall, so the operation declines instead. The vertex-level twin is
+    /// `Pt3Error::TranslateInterleaved`.
+    InexactSurface,
     /// The assembled result has an **odd Euler characteristic** (`V − E + F − L_i`), which no
     /// closed 2-manifold can have (it must equal the even `2(S − G)`) — so the arrangement produced
     /// a malformed solid and the boolean rejects rather than return it (DNA: never silently wrong).
@@ -431,7 +431,7 @@ impl RejectReason {
             Self::TraceDeclined { .. } => "trace_declined",
             Self::CavityNoOwner => "cavity_no_owner",
             Self::NoOutwardShell => "no_outward_shell",
-            Self::RotatedUnderdetermined => "rotated_underdetermined",
+            Self::InexactSurface => "inexact_surface",
             Self::EulerParity => "euler_parity",
             Self::NonManifoldVertex => "non_manifold_vertex",
             Self::NegativeGenus => "negative_genus",
@@ -471,7 +471,7 @@ impl RejectReason {
             // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate
             // arrangements the substrate cannot name yet.
             Self::TraceDeclined { .. }
-            | Self::RotatedUnderdetermined
+            | Self::InexactSurface
             | Self::ThreePlanes
             | Self::FourPlane
             | Self::CylinderFace
@@ -2353,10 +2353,13 @@ pub mod tests {
     fn build_prism_base_cap_reuses_shared_surface() {
         let mut m = Model::new();
         // A face-plane surface with outward normal +z (as a face on the base solid).
-        let sf = m.surfaces.push(Surface::Plane(
-            Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
-                .unwrap(),
-        ));
+        let sf = m.push_surface(
+            Surface::Plane(
+                Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
+                    .unwrap(),
+            ),
+            nacre_topo::SurfaceDef::Constructed,
+        );
         let base_pts = [
             Point3::from_array([0.0, 0.0, 0.0]),
             Point3::from_array([1.0, 0.0, 0.0]),
@@ -2397,10 +2400,13 @@ pub mod tests {
     #[test]
     fn shares_or_coplanar_uses_the_handle_branch() {
         let mut m = Model::new();
-        let shared = m.surfaces.push(Surface::Plane(
-            Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0]))
-                .unwrap(),
-        ));
+        let shared = m.push_surface(
+            Surface::Plane(
+                Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0]))
+                    .unwrap(),
+            ),
+            nacre_topo::SurfaceDef::Constructed,
+        );
         let fh = m.faces.push(Face {
             surface: shared,
             outer: Loop { half_edges: vec![] },
@@ -3080,8 +3086,20 @@ pub mod tests {
                         matches!(m.vertices.get(*vh).origin, Origin::Rotated { .. }),
                         "the image keeps its rotation definition"
                     );
-                    crate::rotated_vertex::vertex_pt3(&m, *vh)
-                        .expect("definition reproduces the stored coordinate bit for bit");
+                    let Origin::Rotated { base, rotation } = m.vertices.get(*vh).origin else {
+                        unreachable!("just asserted Rotated")
+                    };
+                    let replayed = crate::rotated_vertex::replay_chain_coord(
+                        &m,
+                        m.vertices.get(base).point.as_array(),
+                        rotation,
+                    )
+                    .expect("the root coordinate lifts to an exact rational");
+                    assert_eq!(
+                        replayed,
+                        m.vertices.get(*vh).point.as_array(),
+                        "definition reproduces the stored coordinate bit for bit"
+                    );
                     checked += 1;
                 }
             }
@@ -3339,6 +3357,17 @@ pub mod tests {
         vs
     }
 
+    /// Whether any wall of `s` is a **rotated image** — what `planes::solid_is_rotated` used to
+    /// ask of the vertices, now asked of the surfaces that actually record it.
+    fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
+        m.shells.get(m.solids.get(s).outer).faces.iter().any(|&fh| {
+            matches!(
+                m.surface_defs.get(&m.faces.get(fh).surface),
+                Some(nacre_topo::SurfaceDef::Rotated { .. })
+            )
+        })
+    }
+
     fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
         use nacre_scalar::{Angle, Isometry, Rat, Rotation as SRot};
         Isometry::rotation(SRot {
@@ -3365,6 +3394,108 @@ pub mod tests {
         }
         axes.reverse();
         Some((base_is_rotated, axes.len(), axes))
+    }
+
+    /// **A chained boolean must not lose exactness.**
+    ///
+    /// A rotated solid's face coordinates are rounded, so its planes are truthful only through an
+    /// exact *definition* (`FaceInfo::tri_pt3` built from a rotation history). A boolean's *result*
+    /// is just as rotated as its operands — but the result carries no rotation provenance, so
+    /// `collect_planes` describes every one of its faces by `Pt3::exact` of the rounded triangle
+    /// and the kernel starts treating a rounded copy as the truth. That is what makes one wall
+    /// become two plane classes on the next operation.
+    ///
+    /// The invariant: **every face of a boolean between rotated operands is described by a
+    /// rotation definition, not by its rounded coordinates.**
+    #[test]
+    fn a_chained_boolean_keeps_its_faces_exact() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 3.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([0.5, -0.2, 1.0]),
+            Point3::from_array([4.0, 0.2, 3.0]),
+        );
+        m.rebuild_adjacency();
+        let a = transform(&mut m, a, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        let b = transform(&mut m, b, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        // The operands hold up: a rotated solid's faces do carry definitions.
+        for (name, s) in [("operand a", a), ("operand b", b)] {
+            let planes = crate::planes::collect_planes(&m, s).expect("planes");
+            assert!(
+                planes.iter().all(|f| f.rotated),
+                "{name}: a rotated operand's faces must be described by their rotation"
+            );
+        }
+        let r = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse")[0];
+        m.rebuild_adjacency();
+        let planes = crate::planes::collect_planes(&m, r).expect("planes");
+        let described = planes.iter().filter(|f| f.rotated).count();
+        assert_eq!(
+            described,
+            planes.len(),
+            "the result of a rotated boolean is rotated too: {described}/{} faces carry a \
+             definition, the rest are rounded coordinates declared exact",
+            planes.len()
+        );
+    }
+
+    /// **A boolean result rotated again continues its history — per wall.**
+    ///
+    /// One solid does not have one rotation history. A result's vertices are all `Discovered`, so
+    /// asking them "what rotation is this solid at" answers `None` and the next rotation would
+    /// start a fresh root — replaying a pre-first-rotation witness through only the *second*
+    /// rotation, which is a plane that does not exist. And its walls can come from operands
+    /// rotated by different angles, so there is no single answer to give. Each surface therefore
+    /// chains from its own leaf.
+    #[test]
+    fn a_rerotated_boolean_result_continues_each_walls_history() {
+        use nacre_scalar::Axis;
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        // Different angles, so the two operands' walls carry genuinely different histories.
+        let a = transform(&mut m, a, &rot_iso(Axis::Z, 30)).unwrap();
+        m.rebuild_adjacency();
+        let b = transform(&mut m, b, &rot_iso(Axis::Z, 50)).unwrap();
+        m.rebuild_adjacency();
+        let r = boolean(&mut m, BoolKind::Fuse, a, b).unwrap()[0];
+        m.rebuild_adjacency();
+        let r = transform(&mut m, r, &rot_iso(Axis::Z, 20)).unwrap();
+        m.rebuild_adjacency();
+
+        let mut leaves = std::collections::HashSet::new();
+        let sh = m.solids.get(r).outer;
+        for &fh in &m.shells.get(sh).faces {
+            let s = m.faces.get(fh).surface;
+            let nacre_topo::SurfaceDef::Rotated { rotation, .. } = m
+                .surface_defs
+                .get(&s)
+                .copied()
+                .expect("every face's surface is defined")
+            else {
+                panic!("a rotated result's walls must carry a rotation");
+            };
+            assert_eq!(
+                crate::rotated_vertex::rotation_chain(&m, rotation).len(),
+                2,
+                "both rotations, once each"
+            );
+            leaves.insert(rotation);
+        }
+        assert_eq!(leaves.len(), 2, "the two operands' histories stay apart");
     }
 
     fn translate_iso(off: [i128; 3]) -> nacre_scalar::Isometry {
@@ -3850,7 +3981,7 @@ pub mod tests {
         at[axis] = d;
         let origin = Point3::from_array(at);
         let plane = Plane::from_point_normal(origin, normal).unwrap();
-        let surf = m.surfaces.push(Surface::Plane(plane));
+        let surf = m.push_surface(Surface::Plane(plane), nacre_topo::SurfaceDef::Constructed);
         let face = m.faces.push(Face {
             surface: surf,
             outer: Loop { half_edges: vec![] },

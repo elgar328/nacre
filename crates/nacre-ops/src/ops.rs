@@ -13,7 +13,9 @@ use nacre_geom::{Curve, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex};
+use nacre_topo::{
+    Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, SurfaceDef, Vertex,
+};
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// `x_axis`/`y_axis` are assumed unit and orthogonal (the constructors ensure
@@ -503,10 +505,13 @@ pub(crate) fn build_prism(
             (h, orient)
         }
         None => {
-            let s = model.surfaces.push(Surface::Plane(
-                Plane::from_point_normal(outer.base_pts[0], -normal)
-                    .ok_or(OpError::DegenerateGeometry)?,
-            ));
+            let s = model.push_surface(
+                Surface::Plane(
+                    Plane::from_point_normal(outer.base_pts[0], -normal)
+                        .ok_or(OpError::DegenerateGeometry)?,
+                ),
+                SurfaceDef::Constructed,
+            );
             (s, Orientation::Forward)
         }
     };
@@ -518,9 +523,13 @@ pub(crate) fn build_prism(
     }));
 
     // Top cap: outward normal +N.
-    let top_surface = model.surfaces.push(Surface::Plane(
-        Plane::from_point_normal(outer.top_pts[0], normal).ok_or(OpError::DegenerateGeometry)?,
-    ));
+    let top_surface = model.push_surface(
+        Surface::Plane(
+            Plane::from_point_normal(outer.top_pts[0], normal)
+                .ok_or(OpError::DegenerateGeometry)?,
+        ),
+        SurfaceDef::Constructed,
+    );
     faces.push(model.faces.push(Face {
         surface: top_surface,
         outer: outer.cap_loop(Cap::Top),
@@ -596,10 +605,13 @@ impl RingCells {
         let n = self.len();
         for i in 0..n {
             let j = (i + 1) % n;
-            let surface = model.surfaces.push(Surface::Plane(
-                Plane::through_points(self.base_pts[i], self.base_pts[j], self.top_pts[i])
-                    .ok_or(OpError::DegenerateGeometry)?,
-            ));
+            let surface = model.push_surface(
+                Surface::Plane(
+                    Plane::through_points(self.base_pts[i], self.base_pts[j], self.top_pts[i])
+                        .ok_or(OpError::DegenerateGeometry)?,
+                ),
+                SurfaceDef::Constructed,
+            );
             let outer = Loop {
                 half_edges: vec![
                     HalfEdge {

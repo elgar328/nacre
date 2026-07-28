@@ -8,7 +8,8 @@ use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Angle, Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Origin, Rotation, Shell, Solid, Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, Origin, Rotation, Shell, Solid, SurfaceDef, Vertex,
+    VertexDef,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -190,6 +191,83 @@ fn conjugate_chain(
     Some(h)
 }
 
+/// The provenance a moved surface inherits — the surface twin of the vertex `Origin` rules.
+///
+/// `rot_node` is the forest node this transform recorded (`None` for a motion that keeps
+/// coefficients exact: a translation, a 90°-family rotation, a reflection). The three source
+/// definitions map as:
+///
+/// | source | inexact rotation (`rot_node`) | exact motion |
+/// |---|---|---|
+/// | `Constructed` | `Rotated { witness: this face's pre-rotation triangle, rot_node }` | `Constructed`, or the conjugated chain under a mirror |
+/// | `Rotated { witness, .. }` | `Rotated { witness, rot_node }` — the node's parent *is* the source's leaf, so the chain already carries the earlier rotation | mirror: conjugate the chain over the mirrored witness; **translation: `Inexact`** |
+/// | `Inexact` | `Inexact` | `Inexact` |
+///
+/// The one `Inexact` producer is a translation of an already-rotated surface: the forest holds
+/// rotations only, so `R` then `T` has no node to name. That is the same limit
+/// `Pt3Error::TranslateInterleaved` already reports for vertices, and it is a reject, not a
+/// silent rounding.
+fn moved_surface_def(
+    model: &mut Model,
+    src: Handle<Surface>,
+    face: Handle<Face>,
+    rotate: Option<nacre_scalar::Rotation>,
+    exact_rotation: bool,
+    surf_rot: &mut HashMap<Option<Handle<Rotation>>, Handle<Rotation>>,
+    conj: &mut Option<Conjugation>,
+) -> Result<SurfaceDef, OpError> {
+    let source = model
+        .surface_defs
+        .get(&src)
+        .copied()
+        .unwrap_or(SurfaceDef::Inexact);
+    // A node is recorded unless the whole history stays exact: a 90°-family rotation of a
+    // `Constructed` surface keeps exact coefficients and needs none, but the same rotation of an
+    // already-rotated one must still be recorded, or the chain would not reproduce the result.
+    let parent = match source {
+        SurfaceDef::Rotated { rotation, .. } => Some(rotation),
+        _ => None,
+    };
+    if let Some(r) = rotate.filter(|_| !exact_rotation || parent.is_some()) {
+        let rotation = *surf_rot.entry(parent).or_insert_with(|| {
+            model.rotations.push(Rotation {
+                axis: r.axis,
+                point: r.point,
+                angle: r.angle,
+                parent,
+            })
+        });
+        return Ok(match source {
+            SurfaceDef::Inexact => SurfaceDef::Inexact,
+            // Keep the original witness: the new node's parent is this surface's own leaf, so
+            // replaying the chain from the *root* witness applies every rotation, once each.
+            SurfaceDef::Rotated { witness, .. } => SurfaceDef::Rotated { witness, rotation },
+            SurfaceDef::Constructed => {
+                let f = model.faces.get(face);
+                let (witness, _) =
+                    crate::planes::outer_tri(model, f).ok_or(OpError::DegenerateGeometry)?;
+                SurfaceDef::Rotated { witness, rotation }
+            }
+        });
+    }
+    Ok(match (source, conj) {
+        (SurfaceDef::Constructed, _) => SurfaceDef::Constructed,
+        (SurfaceDef::Inexact, _) => SurfaceDef::Inexact,
+        // A reflection is exact (rational pivot, negated angle — `conjugate_chain`), so a mirrored
+        // rotated surface stays describable: the mirrored witness under the conjugated chain.
+        (SurfaceDef::Rotated { witness, rotation }, Some(c)) => {
+            let m = c.mirror;
+            let leaf = conjugate_chain(model, rotation, c).ok_or(OpError::MirrorChainOverflow)?;
+            SurfaceDef::Rotated {
+                witness: witness.map(|p| m.point(p)),
+                rotation: leaf,
+            }
+        }
+        // A translation of a rotated surface: no node can name `R` then `T`.
+        (SurfaceDef::Rotated { .. }, None) => SurfaceDef::Inexact,
+    })
+}
+
 /// The reflected image of a rotation chain's root vertex, pushed as its own cell.
 ///
 /// The chain now turns *this* point, so it has to exist. A `Constructed` root mirrors to a
@@ -217,7 +295,14 @@ fn mirrored_base(model: &mut Model, base: Handle<Vertex>, c: &mut Conjugation) -
                     .get(s)
                     .mirrored(c.mirror)
                     .unwrap_or_else(|| model.surfaces.get(s).clone());
-                let h = model.surfaces.push(moved);
+                // A root is pre-rotation, so its planes are `Constructed` and a reflection keeps
+                // them so. Anything else would be a rotated plane reached through a root, which
+                // the chain invariant forbids — record it as inexact rather than assert.
+                let def = match model.surface_defs.get(&s) {
+                    Some(SurfaceDef::Constructed) => SurfaceDef::Constructed,
+                    _ => SurfaceDef::Inexact,
+                };
+                let h = model.push_surface(moved, def);
                 c.surfaces.insert(s, h);
                 h
             });
@@ -460,15 +545,40 @@ fn transform_solid(
         .collect();
 
     // Pass 1 — surfaces (dedup, moved): needed before vertex `Origin` remap.
+    //
+    // A moved surface's coefficients are only the truth while the motion kept them exact, so each
+    // one states its provenance here (`SurfaceDef`). The witness for a rotation is the face's own
+    // **pre-rotation** triangle, read on the spot — the definition must not depend on anything
+    // else in the model surviving, and those points are exactly the ones a rotated operand's
+    // `tri_pt3` is built from today, which is why this changes no answer.
+    //
+    // **A surface chains from its own leaf, not from the solid's.** One solid does not have one
+    // rotation history: a boolean between differently-rotated operands hands back a result whose
+    // walls came from different rotations, and its vertices are all `Discovered`, so the
+    // vertex-side `solid_rotation` cannot answer for it at all. `surf_rot` memoizes one new forest
+    // node per distinct parent leaf, so surfaces that did share a history still share it.
+    let rotate = motion.rigid().and_then(|i| i.rotate);
+    let exact_rotation = motion.rigid().map(|i| i.is_exact()).unwrap_or(true);
+    let mut surf_rot: HashMap<Option<Handle<Rotation>>, Handle<Rotation>> = HashMap::new();
     let mut surf_map: HashMap<Handle<Surface>, Handle<Surface>> = HashMap::new();
     for &fh in &face_order {
         let s = model.faces.get(fh).surface;
-        if let std::collections::hash_map::Entry::Vacant(e) = surf_map.entry(s) {
-            let moved = motion
-                .surface(model.surfaces.get(s), offset)
-                .ok_or(OpError::MirrorNotPlanar)?;
-            e.insert(model.surfaces.push(moved));
+        if surf_map.contains_key(&s) {
+            continue;
         }
+        let moved = motion
+            .surface(model.surfaces.get(s), offset)
+            .ok_or(OpError::MirrorNotPlanar)?;
+        let def = moved_surface_def(
+            model,
+            s,
+            fh,
+            rotate,
+            exact_rotation,
+            &mut surf_rot,
+            &mut conj,
+        )?;
+        surf_map.insert(s, model.push_surface(moved, def));
     }
 
     // Edge order (deterministic dedup) — used by passes 2/3/4.

@@ -3742,4 +3742,77 @@ centroid 1 1.5 2
             );
         }
     }
+
+    /// **The fin array, scored by a kernel that has never heard of `SurfaceDef`.**
+    ///
+    /// These eight arrangements did not build at all until surfaces carried their own provenance:
+    /// a boolean's result used to describe its faces by their rounded coordinates, so the third
+    /// fin's wall never merged with the wall the first two had already made. The coverage suite
+    /// pins the new volumes, but those numbers came out of the very engine the fix changed — and a
+    /// fix that turns a reject into an answer has no prior expectation to violate, which is exactly
+    /// the shape of change a suite cannot catch.
+    ///
+    /// So OCCT builds the same three fuses from the same operands, and scores the result.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn the_fin_array_matches_occt() {
+        use nacre_ops::{BoolKind, Operation, apply, boolean};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+
+        // The θ that each used to reject under: RunSplit, CoincidentNodes, UnreachedCell,
+        // StraightAngle, LabelConflict ×3, TraceDeclined — the whole failing population.
+        for theta in [16.0f64, 20.0, 23.0, 46.0, 50.0, 54.0, 59.0, 62.0] {
+            let mut m = Model::new();
+            let mut part = m.add_cuboid(
+                Point3::from_array([-1.0, -1.0, 0.0]),
+                Point3::from_array([1.0, 1.0, 3.0]),
+            );
+            m.rebuild_adjacency();
+            for deg in [theta, theta + 180.0, theta + 198.0] {
+                let fin = m.add_cuboid(
+                    Point3::from_array([0.5, -0.2, 1.0]),
+                    Point3::from_array([4.0, 0.2, 3.0]),
+                );
+                m.rebuild_adjacency();
+                let nacre_ops::OpOutput::Transform { solid: fin } = apply(
+                    &mut m,
+                    &Operation::Transform {
+                        solid: fin,
+                        isometry: Isometry::rotation(Rotation {
+                            axis: Axis::Z,
+                            point: [Rat::from_int(0); 3],
+                            angle: Angle::from_deg(
+                                Rat::new((deg * 100.0).round() as i128, 100).unwrap(),
+                            )
+                            .unwrap(),
+                        }),
+                    },
+                )
+                .expect("transform") else {
+                    unreachable!("transform yields Transform output")
+                };
+                m.rebuild_adjacency();
+                // OCCT scores this fuse from the same operands, before nacre consumes them.
+                let occt = occt_boolean_of(&m, OcctBool::Fuse, part, fin).expect("occt fuse");
+                part = boolean(&mut m, BoolKind::Fuse, part, fin).expect("the fin fuses on")[0];
+                m.rebuild_adjacency();
+                let ours = nacre_props::mass_props(&m, part).expect("props");
+                assert!(
+                    approx(ours.volume, occt.volume),
+                    "θ={theta} fin {deg}°: volume nacre {} vs occt {}",
+                    ours.volume,
+                    occt.volume
+                );
+                let c = nacre_props::centroid(&m, part).expect("centroid");
+                for i in 0..3 {
+                    assert!(
+                        approx(c[i], occt.centroid[i]),
+                        "θ={theta} fin {deg}°: centroid axis {i}: nacre {} vs occt {}",
+                        c[i],
+                        occt.centroid[i]
+                    );
+                }
+            }
+        }
+    }
 }

@@ -10,7 +10,7 @@ use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::Bound;
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Origin, Shell, Solid, Vertex};
+use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Shell, Solid, SurfaceDef, Vertex};
 use std::collections::HashMap;
 
 /// A face's supporting plane plus the exact in/out data the seam path needs.
@@ -46,13 +46,13 @@ pub(crate) struct FaceInfo {
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
     /// per judgment, which dominated the boolean's runtime.
     pub(crate) tri_pt3: [Pt3; 3],
-    /// Whether this face's solid is rotated — the predicate-routing signal, decided by
-    /// [`solid_is_rotated`].
+    /// Whether this face's plane is a *rotated image* — the predicate-routing signal, read from
+    /// the surface's own [`SurfaceDef`].
     ///
-    /// **Set together with `tri_pt3`, and only here.** They used to be one field (`Option`),
-    /// whose emptiness meant "not rotated"; that conflation is what stopped the definition from
-    /// being cached. Do not derive this from the definition: a rotated solid's face can witness
-    /// its plane through chain-less points, and a 90°-family rotation has tol exactly 0.
+    /// **Set together with `tri_pt3`, and only here.** It used to be decided per solid, by asking
+    /// the vertices — which a boolean's result cannot answer, since its vertices are all
+    /// `Discovered`. The surface answers for itself, and one solid can hold both kinds at once
+    /// (fuse an axis-aligned hub with a turned fin).
     pub(crate) rotated: bool,
 }
 
@@ -62,10 +62,6 @@ pub(crate) fn collect_planes(
     model: &Model,
     solid: Handle<Solid>,
 ) -> Result<Vec<FaceInfo>, BoolError> {
-    // A rotated operand's face coordinates are rounded, so each plane also carries its
-    // exact `Pt3` definition (overhaul stage 3). Decided once per solid — the axis-aligned
-    // path keeps `tri_pt3 = None` and pays nothing.
-    let rotated = solid_is_rotated(model, solid);
     let mut out = Vec::new();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
@@ -74,53 +70,63 @@ pub(crate) fn collect_planes(
                 Surface::Plane(p) => *p,
                 Surface::Cylinder(_) => return Err(reject(RejectReason::CylinderFace)),
             };
-            let (tri, tri_verts) =
+            let (tri, _) =
                 outer_tri(model, face).ok_or_else(|| reject(RejectReason::DegenerateFace))?;
             let n_out = (tri[1] - tri[0])
                 .cross(tri[2] - tri[0])
                 .normalize()
                 .ok_or_else(|| reject(RejectReason::DegenerateNormal))?;
-            // `tri_pt3` and `rotated` are set here, together, and nowhere else. `plane_table`
-            // copies the pair from a class root; nothing else constructs either.
-            let tri_pt3 = if rotated {
-                // Own vertices first: a surviving operand corner assembles directly, so a plain
-                // rotated operand keeps `tri_pt3 == tri`. A seam-dominated face (its `tri` verts
-                // are rotated seams) instead witnesses its plane through provenance — its plane is
-                // `R(π)` for an operand plane `π`, recovered from the operand face still on `π`.
-                let own = (|| {
-                    Some([
-                        crate::rotated_vertex::vertex_pt3(model, tri_verts[0]).ok()?,
-                        crate::rotated_vertex::vertex_pt3(model, tri_verts[1]).ok()?,
-                        crate::rotated_vertex::vertex_pt3(model, tri_verts[2]).ok()?,
-                    ])
-                })();
-                match own {
-                    Some(t) => t,
-                    None => {
-                        let mut w = crate::rotated_vertex::face_plane_witness(model, face)
-                            .map_err(|_| reject(RejectReason::RotatedUnderdetermined))?;
-                        // `tri_pt3` is an *oriented* plane witness: the own-vertex path inherits
-                        // outward order from `outer_tri`, so a provenance witness must be wound to
-                        // agree with this face's outward normal `n_out` too, or the implicit-point
-                        // `orient3d` reads the plane's opposite side and flips every sign on it.
-                        let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
-                        let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
-                        if e1.cross(e2).dot(n_out) < 0.0 {
-                            w.swap(1, 2);
-                        }
-                        w
-                    }
+            // **The plane's exact definition comes from the surface, not from the vertices.**
+            //
+            // Both used to be decided per *solid* ("is this solid rotated?"), which a boolean's
+            // result cannot answer — it carries no rotation provenance, so every result face was
+            // described by `Pt3::exact` of its rounded triangle and one wall became two plane
+            // classes on the next operation. The surface knows (`SurfaceDef`), and a result face
+            // reuses its operand's surface handle, so the answer now survives a chain of booleans.
+            //
+            // A missing definition is read as `Inexact`: a surface pushed past `Model::push_surface`
+            // says nothing about itself, and guessing "exact" is exactly the failure above.
+            // (`nacre-validate` reports that model, so it should not reach here.)
+            let (tri_pt3, rotated) = match model
+                .surface_defs
+                .get(&face.surface)
+                .copied()
+                .unwrap_or(SurfaceDef::Inexact)
+            {
+                // The coefficients are the truth, so the face's own f64 triangle states the
+                // plane — no high-precision arithmetic, the axis-aligned path pays nothing.
+                SurfaceDef::Constructed => {
+                    let e = |p: Point3| {
+                        Pt3::exact(p.as_array())
+                            .ok_or_else(|| reject(RejectReason::CoordinateOutOfRange))
+                    };
+                    ([e(tri[0])?, e(tri[1])?, e(tri[2])?], false)
                 }
-            } else {
-                // An axis-aligned face's `tri` coordinates are already exact f64, so the
-                // definition is stated rather than measured (`Pt3::exact`). Building it here —
-                // rather than per judgment — is the whole point of this field; it costs one
-                // construction per face and no high-precision arithmetic.
-                let e = |p: Point3| {
-                    Pt3::exact(p.as_array())
-                        .ok_or_else(|| reject(RejectReason::CoordinateOutOfRange))
-                };
-                [e(tri[0])?, e(tri[1])?, e(tri[2])?]
+                SurfaceDef::Inexact => return Err(reject(RejectReason::InexactSurface)),
+                SurfaceDef::Rotated { witness, rotation } => {
+                    // The pre-rotation witness, turned by the recorded chain — the same
+                    // computation, in the same order, that a rotated vertex's `Pt3` performs.
+                    let chain = crate::rotated_vertex::rotation_chain(model, rotation);
+                    let turn = |p: Point3| -> Result<Pt3, BoolError> {
+                        let base = crate::rotated_vertex::coord_rat(p.as_array())
+                            .map_err(|_| reject(RejectReason::CoordinateOutOfRange))?;
+                        Ok(chain.iter().fold(Pt3::at(base), |q, n| {
+                            q.rotate_about(n.axis, n.angle, n.point)
+                        }))
+                    };
+                    let mut w = [turn(witness[0])?, turn(witness[1])?, turn(witness[2])?];
+                    // `tri_pt3` is an *oriented* plane witness, but the witness was captured from
+                    // whichever face first reached this surface — two faces can share it with
+                    // opposite outward normals. Wind it to agree with *this* face's `n_out`, or
+                    // the implicit-point `orient3d` reads the plane's other side and flips every
+                    // sign on it.
+                    let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
+                    let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
+                    if e1.cross(e2).dot(n_out) < 0.0 {
+                        w.swap(1, 2);
+                    }
+                    (w, true)
+                }
             };
             // `orient_sign`, precomputed: the two invariants it used to re-check on every call
             // are properties of this face, so they are decided once, here.
@@ -691,31 +697,6 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
         }
     }
     (0..n).map(|i| uf_find(&mut parent, i)).collect()
-}
-
-/// Whether `solid` was produced by a non-exact rotation — its vertices carry
-/// `Origin::Rotated`. A `Transform` rotates a whole solid uniformly and `boolean`
-/// rejects rotated inputs, so a solid is all-or-nothing rotated: one vertex decides
-/// (O(1)). (90°-family rotations stay exact/`Constructed`, so this is false for them.)
-pub(crate) fn solid_is_rotated(model: &Model, solid: Handle<Solid>) -> bool {
-    // **Every vertex, not the first one found.** A solid can hold both kinds at once — fuse an
-    // axis-aligned hub with a turned fin and the result has exact corners *and* rotated ones. This
-    // used to read one vertex of one edge of one face and answer for the whole solid, so which
-    // face happened to come first in the shell decided it. When it landed on an exact corner the
-    // solid was called unrotated, and then every face of it stated its **rounded** coordinates as
-    // exact — the kernel reasoning about a copy of the geometry a hair away from the real one.
-    // Two fins sharing a wall then had two planes for it, and everything downstream that assumed
-    // one plane per plane came apart.
-    let sh = model.solids.get(solid).outer;
-    model.shells.get(sh).faces.iter().any(|&fh| {
-        model.faces.get(fh).outer.half_edges.iter().any(|he| {
-            model.edges.get(he.edge).bounds.is_some_and(|bounds| {
-                bounds
-                    .iter()
-                    .any(|&v| matches!(model.vertices.get(v).origin, Origin::Rotated { .. }))
-            })
-        })
-    })
 }
 
 #[cfg(test)]

@@ -62,6 +62,16 @@ pub enum Violation {
         target_len: u32,
     },
 
+    /// A live face lies on a surface with no [`SurfaceDef`] — the surface was pushed straight
+    /// into the store instead of through `Model::push_surface`, so nothing says whether its
+    /// coefficients are the truth or a rounded image. A consumer that needs the exact plane has
+    /// no way to ask, and the kernel's default answer ("they are exact") is the failure this
+    /// definition exists to prevent.
+    UndefinedSurface {
+        face: Handle<Face>,
+        surface: Handle<Surface>,
+    },
+
     /// A loop's half-edge chain does not close: `end(he[at]) != start(he[at+1])`
     /// (indices mod loop length).
     OpenLoop {
@@ -191,6 +201,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     check_manifold(model, &adj, &reach, &mut out);
     check_cavity_orientation(model, &mut out);
     check_geometric_incidence(model, &reach, &mut out);
+    check_surface_definitions(model, &reach, &mut out);
     check_euler_poincare(model, &reach, &mut out);
     out
 }
@@ -521,6 +532,26 @@ fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
     Some((0.5 * area_vec.norm(), base + weighted * (1.0 / weight)))
 }
 
+/// Every live face lies on a surface whose provenance is recorded.
+///
+/// Walked **through the faces**, not over the surface store: `Reachable` tracks vertices, edges,
+/// faces and shells — surfaces are never orphaned by the face ops, so they are not tracked — and
+/// a surface no live face uses is nobody's truth anyway. Face order also keeps this deterministic,
+/// which iterating the `HashMap` would not be.
+fn check_surface_definitions(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
+    for (fh, face) in m.faces.iter() {
+        if !reach.faces.contains(&fh) {
+            continue;
+        }
+        if !m.surface_defs.contains_key(&face.surface) {
+            out.push(Violation::UndefinedSurface {
+                face: fh,
+                surface: face.surface,
+            });
+        }
+    }
+}
+
 fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
     // Each live edge's bound vertices must lie on the edge's curve.
     for (eh, edge) in m.edges.iter() {
@@ -848,9 +879,13 @@ mod tests {
         let sh: Vec<Handle<Surface>> = TETRA_FACES
             .iter()
             .map(|(tri, _)| {
-                m.surfaces.push(Surface::Plane(
-                    Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2])).unwrap(),
-                ))
+                m.push_surface(
+                    Surface::Plane(
+                        Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2]))
+                            .unwrap(),
+                    ),
+                    nacre_topo::SurfaceDef::Constructed,
+                )
             })
             .collect();
         let vh: Vec<Handle<Vertex>> = (0..4)
@@ -1135,6 +1170,54 @@ mod tests {
         assert_eq!(v.len(), 1, "{v:?}");
         assert!(
             matches!(v[0], Violation::CavityMisoriented { signed_volume, .. } if signed_volume > 0.0),
+            "{v:?}"
+        );
+    }
+
+    /// **A surface pushed past `push_surface` is reported.**
+    ///
+    /// The whole enforcement of [`SurfaceDef`] rests on this: producers are not stopped by the
+    /// type system from writing to `surfaces` directly, so what stops them is that the resulting
+    /// model does not validate. If this check ever became a no-op, a producer could silently go
+    /// back to leaving surfaces undefined — which is the state this cell exists to end.
+    #[test]
+    fn a_face_on_an_undefined_surface_is_reported() {
+        let mut m = Model::new();
+        m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        assert!(validate(&m).is_empty(), "the cuboid itself is clean");
+
+        // Supersede the cuboid by the same solid with one face moved onto a raw-pushed surface
+        // (the stores are append-only, so this is a rebuild, not a mutation). Topology is
+        // untouched, so the only thing that can be reported is the missing definition.
+        let mut faces = m
+            .shells
+            .get(m.solids.get(m.live_solids[0]).outer)
+            .faces
+            .clone();
+        let old = m.faces.get(faces[0]).clone();
+        let plane = match m.surfaces.get(old.surface) {
+            Surface::Plane(p) => *p,
+            Surface::Cylinder(_) => unreachable!("a cuboid has no cylinder"),
+        };
+        let raw = m.surfaces.push(Surface::Plane(plane));
+        faces[0] = m.faces.push(Face {
+            surface: raw,
+            ..old
+        });
+        let shell = m.shells.push(Shell { faces });
+        let solid = m.push_solid(Solid {
+            outer: shell,
+            cavities: vec![],
+        });
+        m.live_solids = vec![solid];
+
+        let v = validate(&m);
+        assert_eq!(v.len(), 1, "{v:?}");
+        assert!(
+            matches!(v[0], Violation::UndefinedSurface { surface, .. } if surface == raw),
             "{v:?}"
         );
     }
