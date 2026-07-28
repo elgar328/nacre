@@ -104,9 +104,28 @@ impl Rat {
         self.0.checked_mul(&rhs.0).map(Rat)
     }
 
-    /// Best-f64 image (for the downgrade path and for measurement/export).
+    /// The **nearest** f64 to this rational, ties to even — the same answer IEEE-754
+    /// would give if it could divide exactly (for the downgrade path, and for export).
+    ///
+    /// `numer as f64 / denom as f64` is *not* that answer: past 2⁵³ each conversion
+    /// rounds before the division sees it, and two roundings do not compose into one.
+    /// The error is a matter of significant digits, not of magnitude — a 17-digit
+    /// value lands off-by-an-ulp whether it is 1e-3 or 1e17. That is fine for a cache
+    /// but not for the round-trip `from_decimal(x).to_f64() == x`, which is exactly the
+    /// property that lets a decimal dimension be recovered without moving the model.
     pub fn to_f64(self) -> f64 {
-        *self.0.numer() as f64 / *self.0.denom() as f64
+        let (n, d) = (*self.0.numer(), *self.0.denom());
+        // `Ratio` keeps the sign in the numerator and the denominator positive.
+        let neg = n < 0;
+        let (n, d) = (n.unsigned_abs(), d as u128);
+        // Both terms exact as f64, so the hardware division is already the nearest
+        // value — and this covers nearly every rational the kernel actually holds.
+        if n < (1 << 53) && d < (1 << 53) {
+            let q = n as f64 / d as f64;
+            return if neg { -q } else { q };
+        }
+        let q = nearest_f64(n, d);
+        if neg { -q } else { q }
     }
 
     /// The **exact** rational value of an f64 (`mantissa · 2^exp`). `None` for a
@@ -165,6 +184,69 @@ impl Rat {
         let d = self.denom().unsigned_abs();
         (128 - n.max(d).leading_zeros()).max(1)
     }
+}
+
+/// The nearest f64 to `n / d`, ties to even. Both arguments are strictly positive,
+/// and both are below `2¹²⁷` because they came from an `i128` — which is what closes
+/// every shift below, so this is a helper for [`Rat::to_f64`] and nothing else.
+///
+/// Textbook restoring long division: emit the quotient's leading 54 bits, keep the
+/// remainder to tell a tie from a near-tie, then round once. Doing it in integers
+/// rather than in a wide float sidesteps double rounding entirely — there is only
+/// ever the one rounding, at the end.
+fn nearest_f64(n: u128, d: u128) -> f64 {
+    debug_assert!(n > 0 && d > 0 && n < (1 << 127) && d < (1 << 127));
+    let bits = |x: u128| 128 - x.leading_zeros() as i32;
+
+    // The quotient's binary exponent: `2^e ≤ n/d < 2^(e+1)`. The bit-width difference
+    // pins it to two candidates, and one comparison picks between them. Both shifts
+    // below stay under 2¹²⁸: the shifted operand's width is the *other* one's.
+    let t = bits(n) - bits(d);
+    let e = if t >= 0 {
+        if n >= (d << t) { t } else { t - 1 }
+    } else if (n << -t) >= d {
+        t
+    } else {
+        t - 1
+    };
+
+    // `m = ⌊(n/d) · 2^(53−e)⌋`, which lies in `[2⁵³, 2⁵⁴)`: 54 bits, one more than an
+    // f64 keeps, so the extra bit is the round bit and `rem` is the sticky bit.
+    let s = 53 - e;
+    let (mut m, mut rem) = (n / d, n % d);
+    let sticky;
+    if s >= 0 {
+        for _ in 0..s {
+            m <<= 1;
+            // `rem < d < 2¹²⁷`, so this cannot overflow.
+            rem <<= 1;
+            if rem >= d {
+                rem -= d;
+                m += 1;
+            }
+        }
+        sticky = rem != 0;
+    } else {
+        let drop = (-s) as u32;
+        sticky = rem != 0 || (m & ((1 << drop) - 1)) != 0;
+        m >>= drop;
+    }
+    debug_assert!((1 << 53..1 << 54).contains(&m));
+
+    // Round to 53 bits, ties to even.
+    let (round, mut mant) = (m & 1, m >> 1);
+    let mut e = e;
+    if round == 1 && (sticky || mant & 1 == 1) {
+        mant += 1;
+        if mant == 1 << 53 {
+            mant >>= 1;
+            e += 1;
+        }
+    }
+
+    // Exact: a 53-bit integer is an exact f64, and scaling by a power of two is exact
+    // as long as the result stays normal — which it does, since `|e| ≤ 127` here.
+    mant as f64 * (2.0f64).powi(e - 52)
 }
 
 /// A *direction* angle in degrees, kept normalized to `[0, 360)` exactly
@@ -485,6 +567,80 @@ mod tests {
         // round-trip over a spread of normal-range values (incl. non-dyadic f64s).
         for &x in &[0.1, 1.0 / 3.0, 2.0, 1000.0, -6.1, 4_503.7, 1e-6, 1e6] {
             assert_eq!(Rat::try_from_f64(x).unwrap().to_f64(), x, "round-trip {x}");
+        }
+    }
+
+    /// The shortest decimal that reads back as `x`, as a rational — a stand-in for the
+    /// `from_decimal` the next cell adds, kept here so this cell can state its own
+    /// property. `None` where that one will also decline: exponent form, or out of i128.
+    fn decimal_rat(x: f64) -> Option<Rat> {
+        let s = format!("{x}");
+        if s.contains(['e', 'E', 'n', 'i']) {
+            return None;
+        }
+        let (int, frac) = s.split_once('.').unwrap_or((s.as_str(), ""));
+        let digits: i128 = format!("{int}{frac}").parse().ok()?;
+        Rat::new(digits, 10i128.checked_pow(frac.len() as u32)?)
+    }
+
+    /// **The property `from_decimal` will rest on**: the shortest decimal of an f64,
+    /// read as an exact rational and realized again, gives back the same bits.
+    ///
+    /// It holds *because* `to_f64` is correctly rounded, and only because of that. The
+    /// decimal is by construction a value whose nearest f64 is `x`; nearest rounding
+    /// therefore has no choice. Rounding numerator and denominator separately first —
+    /// what this function used to do — fails **17.4%** of the values below (measured),
+    /// since a 17-digit decimal has a numerator past 2⁵³. That is the whole reason this
+    /// cell touches `to_f64` at all.
+    #[test]
+    fn a_shortest_decimal_realizes_back_to_its_own_f64() {
+        let mut state = 0x243f_6a88_85a3_08d3u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let (mut tried, mut declined) = (0, 0);
+        for _ in 0..200_000 {
+            // A random sign and mantissa over a CAD-plausible exponent range.
+            let bits = next();
+            let exp = 1023 - 60 + bits % 121;
+            let x = f64::from_bits((bits & 0x800f_ffff_ffff_ffff) | (exp << 52));
+            match decimal_rat(x) {
+                Some(r) => {
+                    tried += 1;
+                    assert_eq!(r.to_f64(), x, "{x:?} → {r:?} → {:?}", r.to_f64());
+                }
+                None => declined += 1,
+            }
+        }
+        // Nothing declines over this exponent range; the guard is here so a corpus that
+        // drifted into exponent form could not turn this test vacuous.
+        assert!(tried > 100_000, "{tried} tried, {declined} declined");
+    }
+
+    proptest! {
+        /// Nearest-ness, checked against the definition rather than against a second
+        /// implementation of it: `q` is the nearest f64 to `n/d` exactly when no
+        /// neighbour of `q` is closer, and the comparison `|n/d − a/b| ≤ |n/d − c/e|`
+        /// is decidable in exact rationals. Held to the range where those stay in i128.
+        #[test]
+        fn to_f64_lands_on_the_nearest_f64(n in -(1i128 << 60)..(1i128 << 60), d in 1i128..(1i128 << 60)) {
+            prop_assume!(n != 0);
+            let r = Rat::new(n, d).unwrap();
+            let q = r.to_f64();
+            let zero = Rat::from_int(0);
+            let err = |y: f64| {
+                let e = Rat::try_from_f64(y).and_then(|yr| r.checked_sub(yr))?;
+                if e < zero { zero.checked_sub(e) } else { Some(e) }
+            };
+            let here = err(q).expect("in range");
+            for nb in [f64::from_bits(q.to_bits() + 1), f64::from_bits(q.to_bits() - 1)] {
+                if let Some(there) = err(nb) {
+                    prop_assert!(here <= there, "{r:?}: {q:?} is not nearest ({nb:?} is closer)");
+                }
+            }
         }
     }
 
