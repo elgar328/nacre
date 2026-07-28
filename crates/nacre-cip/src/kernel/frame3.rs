@@ -526,16 +526,38 @@ const WORD: usize = 64;
 pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Bound) -> usize {
     let mut worst = Bound::ZERO;
     for p in pts {
-        // **Uncached on purpose.** `hp_coord` fills a point's realization cell with whatever
-        // precision asks first, and this measurement runs before the real precision is known —
-        // so going through it would fill every cell at `TRIAL_PREC` and make every later
-        // judgement miss and re-realize. That is the exact cost the cell exists to remove.
-        for c in p.compute_hp(TRIAL_PREC) {
-            if worst.lt(c.rad) {
-                worst = c.rad;
-            }
+        let b = trial_bound(p);
+        if worst.lt(b) {
+            worst = b;
         }
     }
+    precision_for(worst, limit)
+}
+
+/// One point's share of [`judge_precision`] — its realization error at the trial precision.
+///
+/// Split out because a model has hundreds of these and they do not depend on each other, so a
+/// caller can evaluate them however it likes. **Combining them is a maximum**, which is
+/// associative and exact, so no order of combination — and no schedule — can change the
+/// answer. That is what makes this safe to hand out, where exposing a partial *sum* would not
+/// be: a reassociated floating-point sum is a different number.
+pub fn trial_bound(p: &Pt3) -> Bound {
+    let mut worst = Bound::ZERO;
+    // **Uncached on purpose.** `hp_coord` fills a point's realization cell with whatever
+    // precision asks first, and this measurement runs before the real precision is known —
+    // so going through it would fill every cell at `TRIAL_PREC` and make every later
+    // judgement miss and re-realize. That is the exact cost the cell exists to remove.
+    for c in p.compute_hp(TRIAL_PREC) {
+        if worst.lt(c.rad) {
+            worst = c.rad;
+        }
+    }
+    worst
+}
+
+/// The working precision that brings a model whose worst trial-precision error is `worst`
+/// within `limit` — the arithmetic half of [`judge_precision`], once the maximum is known.
+pub fn precision_for(worst: Bound, limit: Bound) -> usize {
     // `worst = C · 2⁻ᵗʳⁱᵃˡ`, so `C = worst · 2ᵗʳⁱᵃˡ` and `need = log₂C − log₂limit`.
     let (Some(w), Some(l)) = (worst.exp2(), limit.exp2()) else {
         return TRIAL_PREC; // an exact model, or no limit to reach — nothing to size

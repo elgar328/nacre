@@ -379,7 +379,18 @@ pub(crate) fn standard_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + C
     let scale = Bound::of(scale);
     let output_precision = scale.times(Bound::pow2(-52));
     let coincidence = output_precision.times(Bound::pow2(-128));
-    let prec = nacre_cip::judge_precision(pts, coincidence);
+    // **The model's precision is read from every point, and this is where a boolean spends
+    // most of what is left after the arrangement went parallel** (measured: 76% of setup,
+    // and setup is 43% of the largest booleans once the trace is off the critical path).
+    // Each point's trial realization is independent and they combine by **maximum**, which
+    // is associative and exact — so evaluating them across cores cannot move the answer the
+    // way a reassociated sum would. The fold stays here, sequential and in index order.
+    let pts: Vec<&Pt3> = pts.into_iter().collect();
+    let bounds = crate::par::map_range(pts.len(), |i| nacre_cip::trial_bound(pts[i]));
+    let worst = bounds
+        .into_iter()
+        .fold(Bound::ZERO, |w, b| if w.lt(b) { b } else { w });
+    let prec = nacre_cip::precision_for(worst, coincidence);
     Standard {
         prec,
         coincidence,

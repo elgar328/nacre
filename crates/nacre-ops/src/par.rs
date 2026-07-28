@@ -18,6 +18,48 @@
 //! bounds, and why **both feature combinations have to be built**. `cargo` will not check
 //! the one you are not using.
 
+/// Below this many items, run on one thread. **Measured, not chosen** — and only for
+/// [`map_range`], whose items are single-point realizations, where the smallest models
+/// (a dozen faces, ~36 points) were paying more to dispatch than to compute.
+///
+/// The crossover, 25-fin fold against 200 small axis-aligned fuses:
+///
+/// ```text
+///   threshold      25 fins    small boolean
+///        none      176.6ms          575.6µs   <- the small case regressed
+///          64      177.8ms          530.7µs
+///         128      184.6ms          514.8µs
+///         256      214.4ms          522.6µs
+/// ```
+///
+/// 64 removes the regression without costing the large case anything; past it the fold's
+/// mid-sized booleans start falling back to one thread and the large case pays for it.
+///
+/// It is a count where the quantity that matters is *work*, so a small model made entirely
+/// of deeply-rotated points would go serial when it need not have. That case is bounded by
+/// being small: it is microseconds either way. Changing the answer is not among the risks —
+/// both branches compute the same values in the same order.
+#[cfg(feature = "parallel")]
+const PARALLEL_FLOOR: usize = 64;
+
+/// Map `f` over `0..n`, collecting **in index order**.
+#[cfg(feature = "parallel")]
+pub(crate) fn map_range<R: Send>(n: usize, f: impl Fn(usize) -> R + Sync + Send) -> Vec<R> {
+    if n < PARALLEL_FLOOR {
+        return (0..n).map(f).collect();
+    }
+    use rayon::prelude::*;
+    // `Range<usize>` is an `IndexedParallelIterator`, so `collect` restores index order
+    // however the work was scheduled.
+    (0..n).into_par_iter().map(f).collect()
+}
+
+/// Map `f` over `0..n`, collecting **in index order**.
+#[cfg(not(feature = "parallel"))]
+pub(crate) fn map_range<R>(n: usize, f: impl Fn(usize) -> R) -> Vec<R> {
+    (0..n).map(f).collect()
+}
+
 /// Map a fallible `f` over `0..n`, collecting **in index order**, and return the
 /// **lowest-index** error if any item fails.
 ///
@@ -73,6 +115,21 @@ mod tests {
         // And with no failure, the values still come back in order.
         let ok: Result<Vec<usize>, ()> = try_map_range(500, Ok);
         assert_eq!(ok.unwrap(), (0..500).collect::<Vec<_>>());
+    }
+
+    /// **The floor is a cost knob, never an answer knob.** Sizes on both sides of it must
+    /// give the same values in the same order, or a model would compute one thing when small
+    /// and another when large.
+    #[test]
+    fn both_sides_of_the_parallel_floor_agree() {
+        let f = |i: usize| (i * 2654435761) % 1_000_003;
+        for n in [1, 63, 64, 65, 200] {
+            assert_eq!(
+                map_range(n, f),
+                (0..n).map(f).collect::<Vec<_>>(),
+                "n = {n}"
+            );
+        }
     }
 
     /// Nothing to do is not an error, and not a panic — `0..0` is a real case here (a
