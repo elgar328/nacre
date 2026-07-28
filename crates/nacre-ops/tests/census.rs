@@ -48,6 +48,45 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
     solid
 }
 
+/// A hash of the solid's **plane coefficients**, sorted by bits — the other half of what a
+/// boolean actually reads.
+///
+/// **Measured, not assumed:** a boolean's result vertices are all recomputed from plane triples
+/// (`Origin::Discovered { ThreePlane }`), so the result carries *no* trace of the operands' vertex
+/// coordinates. A change that moves operand vertices but leaves the planes alone is therefore
+/// invisible in the result — which is exactly what happened the first time this census was used.
+/// Recording the operands is what makes the census see the change it exists to see.
+fn plane_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
+    use std::hash::{Hash, Hasher};
+    let mut bits: Vec<[u64; 4]> = Vec::new();
+    let src = m.solids.get(s).clone();
+    for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
+        for &fh in &m.shells.get(sh).faces {
+            match m.surfaces.get(m.faces.get(fh).surface) {
+                nacre_geom::Surface::Plane(pl) => {
+                    bits.push(pl.coefficients().map(f64::to_bits));
+                }
+                nacre_geom::Surface::Cylinder(_) => {}
+            }
+        }
+    }
+    bits.sort_unstable();
+    bits.dedup();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bits.hash(&mut h);
+    (bits.len(), h.finish())
+}
+
+/// The operands' own state, before the boolean consumes them: vertices *and* planes.
+fn operands(m: &Model, a: Handle<Solid>, b: Handle<Solid>) -> String {
+    let f = |s| {
+        let (vn, vh) = coord_digest(m, s);
+        let (pn, ph) = plane_digest(m, s);
+        format!("v{vn}h{vh:016x}p{pn}h{ph:016x}")
+    };
+    format!("{}+{}", f(a), f(b))
+}
+
 /// A hash of the solid's vertex coordinates, **sorted by bits** so it does not depend on traversal
 /// or handle order — only on the set of coordinates the operation produced.
 fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
@@ -74,10 +113,16 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     (bits.len(), h.finish())
 }
 
-fn record(tag: &str, m: &Model, out: &Result<Vec<Handle<Solid>>, nacre_ops::BoolError>) {
+fn record(
+    tag: &str,
+    m: &Model,
+    inputs: &str,
+    out: &Result<Vec<Handle<Solid>>, nacre_ops::BoolError>,
+) {
+    print!("c {tag} in:{inputs} ");
     match out {
-        Err(e) => println!("c {tag} ERR {e:?}"),
-        Ok(v) if v.is_empty() => println!("c {tag} EMPTY"),
+        Err(e) => println!("ERR {e:?}"),
+        Ok(v) if v.is_empty() => println!("EMPTY"),
         Ok(v) => {
             // Every body, in the order the engine returned them — the count is part of the answer.
             let mut parts = Vec::new();
@@ -94,7 +139,7 @@ fn record(tag: &str, m: &Model, out: &Result<Vec<Handle<Solid>>, nacre_ops::Bool
                     c[2].to_bits(),
                 ));
             }
-            println!("c {tag} {} {}", v.len(), parts.join(" "));
+            println!("{} {}", v.len(), parts.join(" "));
         }
     }
 }
@@ -123,9 +168,10 @@ fn dump() {
             let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
             let b = m.add_cuboid(Point3::from_array(*lo), Point3::from_array(*hi));
             m.rebuild_adjacency();
+            let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
             m.rebuild_adjacency();
-            record(&format!("aa {kn} {i}"), &m, &out);
+            record(&format!("aa {kn} {i}"), &m, &inputs, &out);
         }
     }
 
@@ -152,9 +198,10 @@ fn dump() {
                         angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
                     }),
                 );
+                let inputs = operands(&m, a, b);
                 let out = boolean(&mut m, k, a, b);
                 m.rebuild_adjacency();
-                record(&format!("rot {ax:?} {deg} {kn}"), &m, &out);
+                record(&format!("rot {ax:?} {deg} {kn}"), &m, &inputs, &out);
             }
         }
     }
@@ -190,9 +237,10 @@ fn dump() {
                 Isometry::translation([t, Rat::from_int(0), Rat::from_int(0)]),
             );
             let b = xf(&mut m, b, Isometry::translation([t, t, Rat::from_int(0)]));
+            let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
             m.rebuild_adjacency();
-            record(&format!("tr {n}/{d} {kn}"), &m, &out);
+            record(&format!("tr {n}/{d} {kn}"), &m, &inputs, &out);
         }
         // Chained: the same total move split in two, which f64 accumulation and exact folding
         // disagree about.
@@ -221,9 +269,10 @@ fn dump() {
                 Rat::from_int(0),
             ]),
         );
+        let inputs = operands(&m, a, b);
         let out = boolean(&mut m, BoolKind::Fuse, a, b);
         m.rebuild_adjacency();
-        record(&format!("tr2 {n}/{d} fuse"), &m, &out);
+        record(&format!("tr2 {n}/{d} fuse"), &m, &inputs, &out);
     }
 
     // ── Mirrored, about dyadic and non-dyadic planes.
@@ -240,9 +289,10 @@ fn dump() {
             );
             m.rebuild_adjacency();
             let a = mirror(&mut m, a, Axis::X, Rat::new(n, d).expect("plane"));
+            let inputs = operands(&m, a, b);
             let out = boolean(&mut m, k, a, b);
             m.rebuild_adjacency();
-            record(&format!("mir {n}/{d} {kn}"), &m, &out);
+            record(&format!("mir {n}/{d} {kn}"), &m, &inputs, &out);
         }
     }
 
@@ -270,8 +320,9 @@ fn dump() {
         let place = Isometry::translation([Rat::from_int(5), Rat::from_int(-3), Rat::from_int(2)]);
         let tool = xf(&mut m, tool, place);
         let base = xf(&mut m, base, place);
+        let inputs = operands(&m, base, tool);
         let out = boolean(&mut m, BoolKind::Cut, base, tool);
         m.rebuild_adjacency();
-        record(&format!("rt {deg}"), &m, &out);
+        record(&format!("rt {deg}"), &m, &inputs, &out);
     }
 }
