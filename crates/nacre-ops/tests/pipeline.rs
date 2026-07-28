@@ -1155,3 +1155,115 @@ fn a_split_dimension_meets_the_undivided_one() {
         "no sliver: the smallest face is a whole wall, got {smallest}"
     );
 }
+
+/// **The exact-dimension guarantee reaches `pad`/`pocket` too**, and that is a claim about
+/// `face_frame` — whose axes come from `any_perpendicular`, not from the caller — so it has
+/// to be measured on that path rather than inferred from the extrude one.
+///
+/// **★ The obvious fixture proves nothing.** A base of `2.0` padded `1.1` then `6.6`, against
+/// one padded `7.7`, agrees *already* in f64: `(2.0 + 1.1) + 6.6 == 2.0 + 7.7`. That test
+/// passed on the unfixed kernel. The numbers below are chosen because they do not.
+#[test]
+fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
+    fn base(m: &mut Model) -> Handle<Solid> {
+        let OpOutput::Extrude { solid, .. } = nacre_ops::apply(
+            m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: square(10.0),
+                dist: 1.0,
+            },
+        )
+        .expect("extrude") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        solid
+    }
+    fn square(n: f64) -> Profile2d {
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(n, 0.0), p2(n, n), p2(0.0, n)])
+    }
+    fn top_face(m: &Model, s: Handle<Solid>) -> Handle<Face> {
+        let shell = m.solids.get(s).outer;
+        let up = |f: Handle<Face>| nacre_props::face_props(m, f).unwrap();
+        *m.shells
+            .get(shell)
+            .faces
+            .iter()
+            .filter(|&&f| up(f).normal.map(|n| n[2] > 0.5).unwrap_or(false))
+            .max_by(|&&a, &&b| up(a).centroid[2].total_cmp(&up(b).centroid[2]))
+            .expect("an upward face")
+    }
+    fn pad(m: &mut Model, s: Handle<Solid>, dist: f64) -> Handle<Solid> {
+        let face = top_face(m, s);
+        let OpOutput::PadOnFace { solid, .. } = nacre_ops::apply(
+            m,
+            &Operation::PadOnFace {
+                face,
+                profile: square(4.0),
+                dist,
+            },
+        )
+        .expect("pad") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        solid
+    }
+
+    assert_ne!(
+        (1.0f64 + 0.1) + 0.1,
+        1.0f64 + 0.2,
+        "the fixture must discriminate, or it passes on the unfixed kernel too"
+    );
+
+    let (mut m1, mut m2) = (Model::new(), Model::new());
+    let whole = base(&mut m1);
+    let whole = pad(&mut m1, whole, 0.2);
+    let split = base(&mut m2);
+    let split = pad(&mut m2, split, 0.1);
+    let split = pad(&mut m2, split, 0.1);
+
+    let za = nacre_ops::face_plane(&m1, top_face(&m1, whole))
+        .unwrap()
+        .origin[2];
+    let zb = nacre_ops::face_plane(&m2, top_face(&m2, split))
+        .unwrap()
+        .origin[2];
+    assert_eq!(za, 1.2, "1.0 + 0.2");
+    assert_eq!(za, zb, "the two pad paths reach different planes");
+}
+
+/// The prism builder used to reject a degenerate frame through `sweep.normalize()`, which
+/// the exact-dimension cell removed — it now takes the unit normal as an argument. The
+/// refusal survives, one layer further in (`Plane::from_point_normal`), and this says so
+/// rather than leaving the guard's disappearance to be noticed by a wrong answer.
+#[test]
+fn a_degenerate_frame_is_still_refused() {
+    for (x, y) in [
+        ([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]), // no x axis
+        ([1.0, 0.0, 0.0], [0.0, 0.0, 0.0]), // no y axis
+        ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]), // parallel axes: no normal
+        ([1.0, 0.0, 0.0], [2.0, 0.0, 0.0]),
+    ] {
+        let mut m = Model::new();
+        let r = nacre_ops::apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane {
+                    origin: Point3::origin(),
+                    x_axis: Vector3::from_array(x),
+                    y_axis: Vector3::from_array(y),
+                },
+                profile: Profile2d::polygon(vec![
+                    p2(0.0, 0.0),
+                    p2(2.0, 0.0),
+                    p2(2.0, 2.0),
+                    p2(0.0, 2.0),
+                ]),
+                dist: 1.0,
+            },
+        );
+        assert!(r.is_err(), "x={x:?} y={y:?} built a solid");
+    }
+}

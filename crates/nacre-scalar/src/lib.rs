@@ -231,16 +231,22 @@ impl Rat {
     }
 }
 
-/// The nearest f64 to `n / d`, ties to even. Both arguments are strictly positive,
-/// and both are below `2¹²⁷` because they came from an `i128` — which is what closes
-/// every shift below, so this is a helper for [`Rat::to_f64`] and nothing else.
+/// The nearest f64 to `n / d`, ties to even. Both arguments are strictly positive and
+/// came from an `i128`, which is what closes every shift below — so this is a helper
+/// for [`Rat::to_f64`] and nothing else.
+///
+/// The two operands are bounded differently, and the difference is load-bearing. The
+/// **denominator** must be `< 2¹²⁷`, because `rem < d` is doubled in the loop; it is,
+/// since `Ratio` keeps it positive and `i128::MAX < 2¹²⁷`. The **numerator** may be
+/// `2¹²⁷` exactly — `i128::MIN.unsigned_abs()` is — and that is fine: it appears only
+/// in shifts whose width is the *other* operand's, so nothing overflows.
 ///
 /// Textbook restoring long division: emit the quotient's leading 54 bits, keep the
 /// remainder to tell a tie from a near-tie, then round once. Doing it in integers
 /// rather than in a wide float sidesteps double rounding entirely — there is only
 /// ever the one rounding, at the end.
 fn nearest_f64(n: u128, d: u128) -> f64 {
-    debug_assert!(n > 0 && d > 0 && n < (1 << 127) && d < (1 << 127));
+    debug_assert!(n > 0 && d > 0 && d < (1 << 127));
     let bits = |x: u128| 128 - x.leading_zeros() as i32;
 
     // The quotient's binary exponent: `2^e ≤ n/d < 2^(e+1)`. The bit-width difference
@@ -719,6 +725,31 @@ mod tests {
             at("1e-38") && at("1e-30") && !at("1e-39"),
             "a short decimal reaches further down"
         );
+    }
+
+    /// The ends of the `i128` range, where the two operands' bounds differ.
+    ///
+    /// `i128::MIN.unsigned_abs()` is `2¹²⁷` **exactly**, one past what the denominator
+    /// may be — an asymmetry easy to assert away and, when it was, a debug-only panic
+    /// on a value the algorithm handles correctly. The answers here are exact powers of
+    /// two and their neighbours, so they can be written down rather than approximated.
+    #[test]
+    fn the_ends_of_the_range_realize_exactly() {
+        assert_eq!(Rat::from_int(i128::MIN).to_f64(), -(2f64.powi(127)));
+        assert_eq!(Rat::from_int(i128::MAX).to_f64(), 2f64.powi(127)); // rounds up to 2¹²⁷
+        assert_eq!(Rat::new(i128::MIN, 2).unwrap().to_f64(), -(2f64.powi(126)));
+        assert_eq!(Rat::new(i128::MIN, i128::MAX).unwrap().to_f64(), -1.0);
+        assert_eq!(Rat::new(1, i128::MAX).unwrap().to_f64(), 2f64.powi(-127));
+        // Every one is finite and signed the way its numerator is.
+        for (n, d) in [
+            (i128::MIN, 3),
+            (i128::MAX, 7),
+            (-1, i128::MAX),
+            (i128::MIN + 1, 1),
+        ] {
+            let q = Rat::new(n, d).unwrap().to_f64();
+            assert!(q.is_finite() && (q < 0.0) == (n < 0), "{n}/{d} -> {q:e}");
+        }
     }
 
     /// **The identity this whole cell exists for.** A dimension split into two and
