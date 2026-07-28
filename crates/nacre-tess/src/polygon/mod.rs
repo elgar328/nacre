@@ -8,6 +8,12 @@
 //! which is why it can be tested on hand-built polygons, and why both the
 //! provenance tessellator and the bootstrap OBJ writer can share it.
 
+// Not wired yet — stage 4 replaces the ear clipper's body with it and this goes.
+// Landing the decomposition on its own is deliberate: "every piece is y-monotone" is a
+// proposition its own tests can settle, and one that a combined commit would bury.
+#[allow(dead_code)]
+mod monotone;
+
 use crate::TessError;
 use nacre_math::{Point3, Vector3};
 
