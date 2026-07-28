@@ -15,14 +15,28 @@
 //!
 //! **★ Measured, because the obvious expectation was wrong.** The mean smallest angle
 //! roughly doubles — on a cylinder cap at `tol` 1e-4, `0.51° → 1.05°`; at 1e-2,
-//! `5.04° → 7.12°` — but the *worst* triangle on a cap does not move at all. A cap's
-//! vertices are a regular polygon, and a regular polygon's vertices are **cocircular**:
-//! every triangulation of them is Delaunay, `incircle` answers zero, and there is
-//! nothing to flip. What flips at all there is only the residue of the arc having been
-//! sampled in `f64`. Getting a fat triangle out of a 314-gon needs a vertex *inside*
-//! it, and adding vertices is what the crack-free contract forbids at this layer
-//! (design §5) — so Delaunay refinement is not the missing step here, it is a
-//! different layer's decision.
+//! `5.04° → 7.12°` — but the *worst* triangle on a cap does not move at all.
+//!
+//! Two independent reasons, and the second is the one that matters.
+//!
+//! First, a cap's vertices are a regular polygon, and a regular polygon's vertices are
+//! **cocircular**: the circle through any three of them is *the* circle, and the fourth
+//! sits exactly on it. `incircle` answers zero at every candidate — every triangulation
+//! of them is Delaunay, so the criterion has no opinion and nothing flips. What fires
+//! there at all is only the residue of the arc having been sampled in `f64`.
+//!
+//! Second — and this is why no other algorithm would do better either — **the sliver is
+//! forced**. A 315-gon's interior angle is `180·313/315 = 178.86°`, and *every*
+//! triangulation has at least two **ears**, vertices belonging to a single triangle
+//! (the same two-ears theorem whose failure on bridged rings started this cell). An
+//! ear's whole interior angle goes to that one triangle, leaving `1.14°` for the other
+//! two, so some angle is below `0.57°`. The measured worst is `0.457°`: at the floor,
+//! not short of it.
+//!
+//! Getting a fat triangle out of a 315-gon therefore needs a vertex *inside* it, and
+//! adding vertices is what the crack-free contract forbids at this layer (design §5).
+//! Delaunay refinement is not the step missing from this file — it is a different
+//! layer's decision.
 
 use super::P2;
 use nacre_predicates::{incircle, orient2d};

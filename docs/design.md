@@ -22,7 +22,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 ├── nacre-geom       # 정확 기하: Surface·Curve·교차(intersect 격리)
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model
 ├── nacre-tess       # tessellation: 출처 태그·증분 갱신
-│   └── polygon      # 평면 다각형 삼각분할: Newell + 구멍 브리징 + ear clipping
+│   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
 ├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성
 ├── nacre-props      # 질량 특성: 부피·면적(해석적, tess 무관)
 ├── nacre-ops        # 연산: sketch/extrude/revolve/pad/pocket/boolean. 부울 = 면당 평면 arrangement 엔진
@@ -358,6 +358,12 @@ pub struct Tessellation {
 
 참고(성능): 불리언·교차 전에 면쌍 후보를 AABB/BVH로 컬링하는 공간 인덱스가 필수 과제다 — tess의 면별 버킷에서 AABB가 거의 공짜로 나온다. (Truck은 이게 없어 전수 비교에 가깝고, 저자도 "BSP 등 최적화는 미래 과제"로 명시 — 반면교사.)
 
+**★ 삼각분할 알고리즘 — 브리징 없는 스윕 (2026-07-28 개정).** 원래는 구멍을 외곽 링에 **브리지**(폭 0 슬릿)로 꿰맨 뒤 귀 자르기(ear clipping)를 했다. 그 브리지가 정점을 **반복**시키고, 반복된 정점이 있는 링은 단순 다각형이 아니며, **Meisters의 two-ears 정리는 단순 다각형에만 성립**한다 — 즉 그렇게 만든 링에는 **귀가 아예 없을 수 있다**. 실측: 무작위 rectilinear 면(구멍 1~4개)의 **27.6%**가 메시되지 않았고(구멍 1개 0% / 2개 15% / 3개 39% / 4개 57% — 구멍이 하나면 브리지도 하나라 핀치가 구조적으로 불가능), 그 위에 *조용한 오답*의 여지까지 있었다(귀 판정이 정점 인덱스로 제외해서 슬릿 간선이 삼각형을 관통해도 못 봄 — 링이 자기교차한 뒤에도 삼각형 2개를 더 뱉는 것을 관측).
+
+⇒ **y-단조 분해 + 단조 삼각분할**(de Berg §3). 스윕이 **링을 절대 합치지 않으므로** 퇴화 링 자체가 안 생긴다 — 구멍 간선이 보통 간선이고, 구멍의 최상단이 split·최하단이 merge 정점이 되어 대각선이 자동으로 구멍을 잇는다. 판정은 전부 부호이고 **tolerance가 없다**: 투영이 축 드롭이라 `uv`가 원본 f64 그대로이고(비교가 이미 정확), 나머지는 exact `orient2d`(`nacre-predicates`)다. 정점을 추가하지 않으므로 삼각형 수는 `V + 2H − 2`로 불변이고 crack-free 규칙도 그대로다.
+
+**품질은 직교하는 별도 패스다.** 단조 삼각분할은 정확하지만 슬리버가 많다. 자유(비제약) 간선에 **Lawson 플립**을 돌려 제약 Delaunay로 보내면 최소각이 최대화된다(정리 — Lawson 1977, Chew 1989). 새 의존성 0(`incircle`이 이미 있다). 경계는 제약이라 안 뒤집히므로 watertight·개수·면적 전부 불변. **실측: 평균 최소각 2배**(원통 캡 tol 1e-4에서 0.51°→1.05°). **다만 캡의 *최악*값은 안 움직이고, 그건 알고리즘 탓이 아니다** — 정n각형 정점은 **공원**이라 `incircle`이 전부 0을 답하고(모든 삼각분할이 Delaunay), 게다가 내각 178.9°와 two-ears가 0.57° 이하 슬리버를 **강제**한다(측정 0.457° = 하한). 고치려면 점을 **추가**해야 하는데 그것이 아래 crack-free 규칙이 금지하는 것이라, Delaunay **정제**(Ruppert/Chew)는 이 층의 빠뜨린 단계가 아니라 다른 층의 결정이다.
+
 **틈 없음(crack-free) 규칙:** 면의 삼각분할은 반드시 `by_edge`의 공유 polyline 정점들을 자기 경계로 소비해야 한다. 인접한 두 면이 각자 독립적으로 엣지를 샘플링하면 공유 엣지에서 정점이 어긋나 T-junction이 생기고 watertight가 깨진다 — 엣지 polyline이 먼저, 면 삼각분할이 그걸 경계 조건으로. (validate가 이를 검사한다: §7.)
 
 갱신 규칙: 연산이 위상에 항목을 추가하면 같은 트랜잭션에서 tess에도 해당 항목을 추가한다(Fornjot의 "함께 쌓기"). tolerance를 바꾼 재계산은 tess만 통째로 재생성하고 위상·기하는 불변.
@@ -415,7 +421,7 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 
 **선 뭉치 — `from_edges` (2026-07-26 구현).** 생성 코드나 외부 데이터가 내놓는 모양 그대로, **순서도 방향도 무관한** 선들을 받아 끝점으로 이어 링을 만들고 `from_rings`에 넘긴다. `Edge2d { curve: Curve2d, start, end }`이고 `Curve2d`는 지금 `Line` 하나뿐 — M6에서 호가 들어와도 API가 안 깨지도록 자리를 먼저 만들었다.
 
-**끝점은 정확히 일치해야 한다.** 가까우면 붙여주는 스냅은 없다 — tolerance는 커널이 *발견한* 교차의 것이지 호출자가 *구성한* 것의 몫이 아니다(원칙 4). 대신 벌어진 끝점과 **가장 가까운 다른 자유 끝점까지의 거리**를 `OpenChain { at, gap }`으로 돌려준다(고치는 데 필요한 숫자가 그것이다). 그 밖의 거절: 영길이·중복 선, 그리고 세 개 이상이 만나는 `BranchingVertex`. **더 구체적인 결함을 먼저 보고한다** — 분기는 항상 어딘가에 홀수 끝점을 남기므로, 순서를 반대로 하면 늘 모호한 쪽(열림)이 보고된다(`check_result_topology`와 같은 원칙). 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 브리징하는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
+**끝점은 정확히 일치해야 한다.** 가까우면 붙여주는 스냅은 없다 — tolerance는 커널이 *발견한* 교차의 것이지 호출자가 *구성한* 것의 몫이 아니다(원칙 4). 대신 벌어진 끝점과 **가장 가까운 다른 자유 끝점까지의 거리**를 `OpenChain { at, gap }`으로 돌려준다(고치는 데 필요한 숫자가 그것이다). 그 밖의 거절: 영길이·중복 선, 그리고 세 개 이상이 만나는 `BranchingVertex`. **더 구체적인 결함을 먼저 보고한다** — 분기는 항상 어딘가에 홀수 끝점을 남기므로, 순서를 반대로 하면 늘 모호한 쪽(열림)이 보고된다(`check_result_topology`와 같은 원칙). 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 네이티브로 다루는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
 - `{ outer, inners }`(구멍 N개, 제한 없음) + `extrude`가 구멍 벽면과 뚜껑 내부 루프를 함께 생성.
 - `Profile2d::from_rings(rings, fill_rule) -> Vec<Profile2d>` — 링 목록의 중첩을 exact `point_in_ring`으로 판정해(술어이므로 커널) **덩어리(섬)별 프로파일 목록**을 돌려준다(짝수-홀수 깊이: 0=재료, 1=구멍, 2=구멍 속 섬…). 채우기 규칙 선택은 호출자.
 - **경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준). 그래서 `Extrude`의 다중 바디 출력은 필요 없다.

@@ -328,8 +328,8 @@ fn push_tri(t: &mut Tessellation, fh: Handle<Face>, vertices: [Handle<TessVertex
 /// Triangulate a planar face: its outer ring, minus its holes.
 ///
 /// The rings are shared edge polylines, and [`polygon::triangulate_polygon`] adds no
-/// vertices — a hole is bridged by repeating two of them — so adjacent faces still
-/// meet exactly (design §5).
+/// vertices — the sweep cuts along diagonals between existing ones, and the flip pass
+/// only moves those — so adjacent faces still meet exactly (design §5).
 fn triangulate_planar(
     t: &mut Tessellation,
     fh: Handle<Face>,

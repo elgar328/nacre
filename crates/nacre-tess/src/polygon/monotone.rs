@@ -318,8 +318,8 @@ fn trace(
 ///
 /// Linear, and it owes that to monotonicity: the two chains can be merged into one
 /// sweep-ordered sequence, and a stack of the vertices not yet triangulated is enough
-/// — no search, no containment test over the whole polygon, which is exactly the work
-/// ear clipping does `O(n²)` times.
+/// — no search for a cuttable corner and no containment test over the rest of the
+/// polygon, which is the work ear clipping repeats for every triangle it emits.
 ///
 /// **Winding is normalized at emission rather than reasoned about per case.** Which of
 /// the four cases produced a triangle does not change what it *is*, only the order the
