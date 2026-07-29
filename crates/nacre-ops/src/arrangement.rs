@@ -1637,11 +1637,25 @@ pub(crate) struct Region {
     pub classes: Vec<usize>,
 }
 
+/// **How often a subdivided boolean gave up and re-ran over the whole model**, and how many were
+/// subdivided at all.
+///
+/// Plain counters, read only in aggregate — this is the one shape of instrumentation this cell got
+/// right the first time, unlike the index-space kind that mixed two concurrent booleans three
+/// times. They exist because a fallback is silent by construction: the answer stays right and every
+/// gate stays green while the fast path does nothing at all.
+pub(crate) static SUBDIVISION_FALLBACKS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(crate) static SUBDIVIDED_BOOLEANS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 /// How space is divided before arranging.
 #[derive(Clone, Debug)]
 pub(crate) enum Subdivision {
     /// One region over everything — the arrangement as it has always been run.
     Whole,
+    /// Let [`choose_tree`] decide from the faces' boxes. Production's entry.
+    Auto,
     /// **V2a spike: partition the face set, without clipping.** Each face is dealt to one
     /// half-space of `coord[axis] = at` by which side it lies wholly on, and the two halves are
     /// arranged independently.
@@ -1674,7 +1688,6 @@ pub(crate) enum Subdivision {
     /// operands by one more plane, so the six planes of a box never arrive at once — which is what
     /// keeps every cap derivable from the split edges alone (a bounded solid cannot cover an
     /// unbounded plane, so "no split edges" really is "no cap").
-    #[cfg_attr(not(test), allow(dead_code))]
     Tree(SplitTree),
 }
 
@@ -2094,7 +2107,7 @@ pub(crate) fn regions_for(
     jd: &Judge<'_, PlaneGeom>,
     plane_ix: &mut Vec<usize>,
     split_class: Option<usize>,
-) -> Vec<Region> {
+) -> Result<Vec<Region>, BoolError> {
     let input = combinatorics::trace_input(
         model,
         [(a, inc_a), (b, inc_b)],
@@ -2121,13 +2134,13 @@ pub(crate) fn regions_for(
         c
     };
     match how {
-        Subdivision::Whole => {
+        Subdivision::Whole | Subdivision::Auto => {
             let classes = classes_of(&input, plane_ix);
-            vec![Region {
+            Ok(vec![Region {
                 input,
                 seed: [false; 4],
                 classes,
-            }]
+            }])
         }
         #[cfg(test)]
         &Subdivision::SplitFaces { axis, at } => {
@@ -2143,7 +2156,7 @@ pub(crate) fn regions_for(
                     halves[usize::from(lo >= at)][side].push((fp, fl));
                 }
             }
-            halves
+            Ok(halves
                 .into_iter()
                 .map(|faces_in| {
                     let input = combinatorics::TraceInput { faces: faces_in };
@@ -2154,7 +2167,7 @@ pub(crate) fn regions_for(
                         classes,
                     }
                 })
-                .collect()
+                .collect())
         }
         Subdivision::Tree(tree) => {
             let base = split_class.expect("a subdivided run names where its box classes begin");
@@ -2169,22 +2182,23 @@ pub(crate) fn regions_for(
                 plane_ix: &mut Vec<usize>,
                 base: usize,
                 out: &mut Vec<combinatorics::TraceInput>,
-            ) {
+            ) -> Result<(), BoolError> {
                 match tree.nodes[node] {
                     None => out.push(input),
                     Some((plane, lo, hi)) => {
                         let split = base + plane;
-                        let low = clip_region(jd, &input, faces, plane_ix, split, -1);
-                        let high = clip_region(jd, &input, faces, plane_ix, split, 1);
+                        let low = clip_region(jd, &input, faces, plane_ix, split, -1)?;
+                        let high = clip_region(jd, &input, faces, plane_ix, split, 1)?;
                         drop(input);
-                        descend(tree, lo, low, jd, faces, plane_ix, base, out);
-                        descend(tree, hi, high, jd, faces, plane_ix, base, out);
+                        descend(tree, lo, low, jd, faces, plane_ix, base, out)?;
+                        descend(tree, hi, high, jd, faces, plane_ix, base, out)?;
                     }
                 }
+                Ok(())
             }
             let mut leaves = Vec::new();
-            descend(tree, 0, input, jd, faces, plane_ix, base, &mut leaves);
-            leaves
+            descend(tree, 0, input, jd, faces, plane_ix, base, &mut leaves)?;
+            Ok(leaves
                 .into_iter()
                 .map(|input| {
                     let classes = classes_of(&input, plane_ix);
@@ -2194,7 +2208,7 @@ pub(crate) fn regions_for(
                         classes,
                     }
                 })
-                .collect()
+                .collect())
         }
         #[cfg(test)]
         &Subdivision::ClipAt { .. } => {
@@ -2205,13 +2219,13 @@ pub(crate) fn regions_for(
             [1i8, -1]
                 .into_iter()
                 .map(|keep| {
-                    let input = clip_region(jd, &input, faces, plane_ix, split, keep);
+                    let input = clip_region(jd, &input, faces, plane_ix, split, keep)?;
                     let classes = classes_of(&input, plane_ix);
-                    Region {
+                    Ok(Region {
                         input,
                         seed: [false; 4],
                         classes,
-                    }
+                    })
                 })
                 .collect()
         }
@@ -2231,7 +2245,7 @@ fn clip_region(
     plane_ix: &mut Vec<usize>,
     split: usize,
     keep: i8,
-) -> combinatorics::TraceInput {
+) -> Result<combinatorics::TraceInput, BoolError> {
     let mut out: [Vec<(usize, combinatorics::FaceLoops)>; 2] = Default::default();
     for (side_in, out_side) in input.faces.iter().zip(out.iter_mut()) {
         let mut cap_edges: Vec<([usize; 3], [usize; 3])> = Vec::new();
@@ -2247,8 +2261,10 @@ fn clip_region(
                 rings.extend(hs.iter().map(Vec::as_slice));
             }
             let fc = plane_ix[*fp];
-            let clipped = clip_face(jd, fc, split, keep, &rings)
-                .unwrap_or_else(|e| panic!("clip of face slot {fp} declined: {e:?}"));
+            // ★ A decline here is honest and expected: the chooser reads the *operands'* vertex
+            // coordinates, and a leaf also holds caps and clipped pieces whose vertices it never
+            // saw. The caller falls back to the whole model rather than guess.
+            let clipped = clip_face(jd, fc, split, keep, &rings)?;
             cap_edges.extend(clipped.cap_edges);
             for (i, (o, h)) in clipped.pieces.into_iter().enumerate() {
                 let slot = if i == 0 {
@@ -2268,7 +2284,7 @@ fn clip_region(
                 ));
             }
         }
-        let caps = cap_rings(jd, split, keep, &cap_edges).expect("cap assembly");
+        let caps = cap_rings(jd, split, keep, &cap_edges)?;
         for (o, h) in caps {
             faces.push(cap_face_info(&jd.planes[split], keep));
             plane_ix.push(split);
@@ -2281,28 +2297,211 @@ fn clip_region(
             ));
         }
     }
-    combinatorics::TraceInput { faces: out }
+    Ok(combinatorics::TraceInput { faces: out })
 }
 
-/// A face's extent along one axis, from its vertices' cached coordinates.
+/// A face's box, from its vertices' cached coordinates.
 ///
-/// f64 is enough for what it decides — *which* half-space to deal a face to — because the split
-/// plane is chosen away from every model coordinate. It decides nothing about the answer: a face
-/// dealt to the wrong half would show up as a wrong solid, not as a rounding error.
-#[cfg(test)]
-fn face_span(model: &Model, fh: Handle<Face>, axis: usize) -> (f64, f64) {
+/// **`f64` is the right precision here and that is not a compromise.** Nothing this decides is part
+/// of the answer: it picks *where to cut*, which is a scheduling choice. A face put on the wrong
+/// side would show up as a wrong solid, not as a rounding error — and the exact clipper is what
+/// actually assigns geometry, from the plane, not from this.
+fn face_box(model: &Model, fh: Handle<Face>) -> [[f64; 2]; 3] {
+    let mut b = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+    for p in face_points(model, fh) {
+        for (k, s) in b.iter_mut().enumerate() {
+            s[0] = s[0].min(p[k]);
+            s[1] = s[1].max(p[k]);
+        }
+    }
+    b
+}
+
+/// A face's vertex coordinates, from the caches.
+///
+/// ★ **The box is not enough to choose a split by.** A face's box edges are only its extremes; a
+/// slanted or non-convex face has vertices strictly between them, and a plane through one of those
+/// puts four planes at a point, which `clip_face` declines. The coordinates are what the chooser
+/// has to avoid, and the model already carries them.
+fn face_points(model: &Model, fh: Handle<Face>) -> Vec<[f64; 3]> {
     let f = model.faces.get(fh);
-    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    let mut out = Vec::new();
     for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
         for he in &lp.half_edges {
             for &vh in model.edges.get(he.edge).bounds.iter().flatten() {
-                let c = model.vertices.get(vh).point.as_array()[axis];
-                lo = lo.min(c);
-                hi = hi.max(c);
+                out.push(model.vertices.get(vh).point.as_array());
             }
         }
     }
-    (lo, hi)
+    out
+}
+
+/// A face's extent along one axis.
+#[cfg(test)]
+fn face_span(model: &Model, fh: Handle<Face>, axis: usize) -> (f64, f64) {
+    let b = face_box(model, fh)[axis];
+    (b[0], b[1])
+}
+
+/// **How many model faces a leaf may hold.** Measured near the optimum of a kd-tree simulation over
+/// this corpus (EMBER uses 25 for triangle soups; our faces are polygons and carry more).
+const MAX_LEAF_FACES: usize = 16;
+
+/// **Below this the whole model is one region — and today that is *every* model.**
+///
+/// ★ The subdivision is correct (every gate green, zero fallbacks) and **slower**: the 80-fin fold
+/// goes 7.6s → 13.1s serial. The premise it was built on does not hold for this workload. Measured
+/// on the fold at 190 faces: duplication is fine (1.13–1.29×), but the **worst leaf still holds 91
+/// of the 190 faces**, where the plan projected ≤16. A radial fin array does not decompose along
+/// axis-aligned planes — the hub spans every cut, and so does every fin that crosses one.
+///
+/// What is missing is the other half of EMBER's scheme, and it is not an optimisation: §4.5.3 says
+/// choose the cut that **separates the operands**, and §4.5.1 says a region holding one operand's
+/// faces needs no arrangement at all. This chooser balances face counts instead, so its leaves are
+/// large *and* still get arranged. Wiring the early-out needs `FaceLoops` to carry its rings' walls
+/// the way `boolean::Ring` now does.
+///
+/// So the threshold is the measurement: not yet. Flipping it back to a number is the experiment.
+const MIN_FACES_TO_SUBDIVIDE: usize = usize::MAX;
+
+/// The deepest the tree may go, so a pathological model cannot make the plane table explode (every
+/// node adds a class, and the table is per boolean).
+const MAX_SPLIT_DEPTH: usize = 6;
+
+/// Decide a subdivision tree from the faces' `f64` boxes.
+///
+/// ★ **Before the judging context exists, and that is deliberate**: the tree is a schedule, not an
+/// answer, so it may be decided from the caches — which keeps it free of any circularity with the
+/// clipping it schedules. It is a deterministic function of those caches, so replay holds.
+fn choose_tree(model: &Model, faces: &[FaceInfo], n_a: usize, min_faces: usize) -> SplitTree {
+    let mut tree = SplitTree::default();
+    if faces.len() < min_faces {
+        tree.nodes.push(None);
+        return tree;
+    }
+    let points: Vec<Vec<[f64; 3]>> = faces
+        .iter()
+        .map(|f| face_points(model, f.face.expect("a real face table")))
+        .collect();
+    let boxes: Vec<[[f64; 2]; 3]> = faces
+        .iter()
+        .map(|f| face_box(model, f.face.expect("a real face table")))
+        .collect();
+    let all: Vec<usize> = (0..faces.len()).collect();
+    let mut root = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+    for b in &boxes {
+        for k in 0..3 {
+            root[k][0] = root[k][0].min(b[k][0]);
+            root[k][1] = root[k][1].max(b[k][1]);
+        }
+    }
+    build_split(&boxes, &points, n_a, &all, root, 0, &mut tree);
+    tree
+}
+
+/// Recursive half of [`choose_tree`]. Returns the index of the node it wrote.
+#[allow(clippy::too_many_arguments)]
+fn build_split(
+    boxes: &[[[f64; 2]; 3]],
+    points: &[Vec<[f64; 3]>],
+    n_a: usize,
+    slots: &[usize],
+    node_box: [[f64; 2]; 3],
+    depth: usize,
+    tree: &mut SplitTree,
+) -> usize {
+    let me = tree.nodes.len();
+    tree.nodes.push(None);
+    let one_operand = slots.iter().all(|&s| s < n_a) || slots.iter().all(|&s| s >= n_a);
+    if depth >= MAX_SPLIT_DEPTH || slots.len() <= MAX_LEAF_FACES || one_operand {
+        return me; // a leaf: small enough, deep enough, or nothing left to intersect
+    }
+    let Some((axis, at)) = split_position(points, slots, node_box) else {
+        return me;
+    };
+    let low: Vec<usize> = slots
+        .iter()
+        .copied()
+        .filter(|&s| boxes[s][axis][0] < at)
+        .collect();
+    let high: Vec<usize> = slots
+        .iter()
+        .copied()
+        .filter(|&s| boxes[s][axis][1] > at)
+        .collect();
+    // A split that leaves either side whole (or empty) has not divided anything.
+    if low.is_empty() || high.is_empty() || (low.len() == slots.len() && high.len() == slots.len())
+    {
+        return me;
+    }
+    // ★ **One geometric plane, one class.** Two nodes of a symmetric model land on the same
+    // coordinate readily, and pushing it twice would put one plane in the table under two classes —
+    // every vertex on it then lies on *both*, which is four planes at a point and declines
+    // everywhere. (Measured: that was 100% of the fallbacks.) The tree may reuse a plane freely;
+    // nodes are regions, and two regions may share a wall.
+    let plane = match tree.planes.iter().position(|&p| p == (axis, at)) {
+        Some(i) => i,
+        None => {
+            tree.planes.push((axis, at));
+            tree.planes.len() - 1
+        }
+    };
+    // ★ Each child inherits **its own half of the box**. Without this the chooser would keep
+    // reading the parent's extent — the faces' boxes still straddle the cut — and land on the same
+    // coordinate again, which is a plane its own faces already have vertices on.
+    let (mut lo_box, mut hi_box) = (node_box, node_box);
+    lo_box[axis][1] = at;
+    hi_box[axis][0] = at;
+    let lo = build_split(boxes, points, n_a, &low, lo_box, depth + 1, tree);
+    let hi = build_split(boxes, points, n_a, &high, hi_box, depth + 1, tree);
+    tree.nodes[me] = Some((plane, lo, hi));
+    me
+}
+
+/// Where to cut a node: the longest axis of **the node's own box**, at the widest gap between the
+/// operands' vertex coordinates in the middle of it.
+///
+/// Cutting between the operands' **vertex coordinates** keeps the split plane off the model's own
+/// geometry — which `clip_face` requires, since a named vertex on the split plane is four planes
+/// through a point and it declines. Preferring the *widest* gap is a second thing: a split that
+/// merely passes *near* a vertex is decidable but expensive, driving the judges up in precision for
+/// nothing.
+fn split_position(
+    points: &[Vec<[f64; 3]>],
+    slots: &[usize],
+    extent: [[f64; 2]; 3],
+) -> Option<(usize, f64)> {
+    let axis = (0..3)
+        .max_by(|&i, &j| (extent[i][1] - extent[i][0]).total_cmp(&(extent[j][1] - extent[j][0])))?;
+    let (lo, hi) = (extent[axis][0], extent[axis][1]);
+    if !(hi - lo).is_finite() || hi <= lo {
+        return None;
+    }
+    // Only the middle of the node is worth cutting: a sliver off one end costs a clip and buys no
+    // balance.
+    let (win_lo, win_hi) = (lo + 0.2 * (hi - lo), hi - 0.2 * (hi - lo));
+    // ★ Every vertex coordinate, not just the box edges — see `face_points`.
+    let mut edges: Vec<f64> = slots
+        .iter()
+        .flat_map(|&s| points[s].iter().map(move |p| p[axis]))
+        .filter(|c| (win_lo..=win_hi).contains(c))
+        .collect();
+    edges.push(win_lo);
+    edges.push(win_hi);
+    edges.sort_by(f64::total_cmp);
+    edges.dedup();
+    let mut best: Option<(f64, f64)> = None; // (gap, midpoint)
+    for w in edges.windows(2) {
+        let gap = w[1] - w[0];
+        let mid = 0.5 * (w[0] + w[1]);
+        // Ties go to the lower midpoint, so the choice is a function of the geometry alone.
+        if best.is_none_or(|(g, m)| gap > g || (gap == g && mid < m)) {
+            best = Some((gap, mid));
+        }
+    }
+    let (gap, mid) = best?;
+    // A gap that is all rounding noise is not a place to cut.
+    (gap > 1e-9 * (hi - lo).abs()).then_some((axis, mid))
 }
 
 /// ★ **Insert T-vertices.** Where one face's ring edge *contains* another ring's node, split it
@@ -2849,7 +3048,7 @@ pub(crate) fn boolean(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
-    boolean_over(model, kind, a, b, &Subdivision::Whole)
+    boolean_over(model, kind, a, b, &Subdivision::Auto)
 }
 
 /// [`boolean`], with the space division named — the seam the subdivided engine is built along.
@@ -2875,11 +3074,26 @@ pub(crate) fn boolean_over(
         notes,
         ..
     } = plane_index_setup(model, a, b)?;
+    // ★ `Auto` resolves here: after the face table exists (the tree is read off its boxes) and
+    // before the class table is extended (the tree's planes are what extend it).
+    let resolved;
+    let how = match how {
+        Subdivision::Auto => {
+            let tree = choose_tree(model, &faces_tab, n_a, MIN_FACES_TO_SUBDIVIDE);
+            resolved = if tree.planes.is_empty() {
+                Subdivision::Whole
+            } else {
+                Subdivision::Tree(tree)
+            };
+            &resolved
+        }
+        other => other,
+    };
     // **The classes the arrangement runs over.** A synthetic split plane is appended *after* them
     // and never arranged: it exists only to name the vertices clipping mints, and arranging it
     // would put a cap on every region boundary — the very thing the seed exists to avoid.
     let split_class = match how {
-        Subdivision::Whole => None,
+        Subdivision::Whole | Subdivision::Auto => None,
         #[cfg(test)]
         Subdivision::SplitFaces { .. } => None,
         #[cfg(test)]
@@ -2905,7 +3119,7 @@ pub(crate) fn boolean_over(
     // `Judge::planes_coplanar` to build them — so a judgement that could not be made has already
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
-    let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
+    let run = |model: &mut Model, how: &Subdivision| -> Result<Vec<Handle<Solid>>, BoolError> {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let whole = regions_for(
@@ -2920,7 +3134,7 @@ pub(crate) fn boolean_over(
             &jd,
             &mut pix,
             split_class,
-        );
+        )?;
         let faces = trace_result_faces(
             model,
             kind,
@@ -2962,7 +3176,7 @@ pub(crate) fn boolean_over(
                 &plain_jd,
                 &mut pix,
                 split_class,
-            );
+            )?;
             let plain = trace_result_faces(
                 model,
                 kind,
@@ -3047,7 +3261,25 @@ pub(crate) fn boolean_over(
 
         assemble_fuse_cut(model, a, b, &jd, &seam, &faces)
     };
-    let out = run(model);
+    let out = run(model, how);
+    // ★ **A subdivided run that cannot finish falls back to the whole model.**
+    //
+    // The chooser reads the *operands'* vertex coordinates, so it can keep the split plane off
+    // them — but a leaf also holds caps and clipped pieces whose vertices it never saw, and a plane
+    // through one of those is four planes at a point, which `clip_face` declines. Rather than
+    // re-choose (which would need the same knowledge it lacks), the boolean simply answers the way
+    // it always did. The counters below are the only thing that keeps this honest: a path whose
+    // failure mode is "do it the old way" is invisible to every correctness gate there is.
+    let out = match (&out, how) {
+        (Err(_), Subdivision::Tree(_)) => {
+            SUBDIVISION_FALLBACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            run(model, &Subdivision::Whole)
+        }
+        _ => out,
+    };
+    if matches!(how, Subdivision::Tree(_)) {
+        SUBDIVIDED_BOOLEANS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     // **The cause outranks the symptom, on both paths.** An undecided judgement has already been
     // read as a `0` by everything downstream, so whatever the engine then complains about — a
     // loop that will not orient, a trace that will not close — is a consequence being reported as
@@ -4206,7 +4438,8 @@ mod tests {
             &jd,
             &mut pix,
             None,
-        );
+        )
+        .unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
@@ -4421,7 +4654,8 @@ mod tests {
             &jd,
             &mut pix,
             None,
-        );
+        )
+        .unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
@@ -4535,7 +4769,8 @@ mod tests {
             &jd,
             &mut pix,
             None,
-        );
+        )
+        .unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
@@ -4807,7 +5042,8 @@ mod tests {
             &jd,
             &mut pix,
             None,
-        );
+        )
+        .unwrap();
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
@@ -5147,7 +5383,8 @@ mod tests {
             &jd,
             &mut pix,
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(regions.len(), 2);
         let count = |r: &Region| r.input.faces.iter().map(Vec::len).sum::<usize>();
         assert_eq!(count(&regions[0]), 6, "a's six faces are below x=1.5");
@@ -5284,7 +5521,8 @@ mod tests {
             &jd,
             &mut pix,
             Some(split),
-        );
+        )
+        .unwrap();
         assert_eq!(regions.len(), 2);
         for (i, r) in regions.iter().enumerate() {
             let slots: Vec<usize> = r.input.faces.iter().flatten().map(|(fp, _)| *fp).collect();
@@ -5364,7 +5602,8 @@ mod tests {
             &jd,
             &mut pix,
             Some(split),
-        );
+        )
+        .unwrap();
         // ★ **The criterion is the labelling, not a degree count.** Counting odd-degree nodes was
         // what *found* the missing cap, and it does not generalise: `merge_coincident` folds two
         // solids' coincident contributions into one edge, so a node where one operand's corner
@@ -6066,7 +6305,8 @@ mod tests {
             &jd,
             &mut pix,
             Some(split),
-        );
+        )
+        .unwrap();
         // ★ Not vacuous: the pruning has to skip something, or "same answer" is trivial.
         let skipped: usize = pruned
             .iter()
@@ -6225,7 +6465,8 @@ mod tests {
             &jd,
             &mut pix,
             Some(base),
-        );
+        )
+        .unwrap();
         assert_eq!(regions.len(), 3, "one leaf left of x=0.75, two right of it");
         let raw = trace_result_faces(
             &m,
@@ -6380,5 +6621,141 @@ mod tests {
                 nodes: vec![Some((0, 1, 2)), None, Some((1, 3, 4)), None, None],
             },
         );
+    }
+
+    /// ★ **The subdivision runs, never falls back — and its leaves are not small.**
+    ///
+    /// This is the gate the design has to pass and does not yet. It asserts the two things a
+    /// fallback path hides (that it fires, and that it finishes without giving up) and *records*
+    /// the number that decides whether it is worth anything: how many of the model's faces the
+    /// worst leaf still holds. On a fin ring that is about half of them, because the hub spans
+    /// every axis-aligned cut and so does every fin that crosses one — which is why
+    /// `MIN_FACES_TO_SUBDIVIDE` is `usize::MAX` and production still runs one region.
+    #[test]
+    fn the_subdivision_runs_without_falling_back_and_its_leaves_are_measured() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let before_runs = SUBDIVIDED_BOOLEANS.load(Relaxed);
+        let before_backs = SUBDIVISION_FALLBACKS.load(Relaxed);
+        // Fold the same fins twice — once subdivided, once whole — and require the same solid.
+        let n = 12i128;
+        let mut worst = 0usize;
+        let mut instances = (0usize, 0usize); // (face-instances, faces)
+        let mut subdivided = 0usize;
+        let mut answers = Vec::new();
+        for whole_model in [false, true] {
+            let mut m = Model::new();
+            let mut acc = m.add_cuboid(
+                Point3::from_array([-3.0, -3.0, 0.0]),
+                Point3::from_array([3.0, 3.0, 2.0]),
+            );
+            m.rebuild_adjacency();
+            for i in 0..n {
+                let fin = m.add_cuboid(
+                    Point3::from_array([2.0, -0.4, 0.0]),
+                    Point3::from_array([8.0, 0.4, 1.0]),
+                );
+                m.rebuild_adjacency();
+                let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+                let how = if whole_model {
+                    Subdivision::Whole
+                } else {
+                    let setup = plane_index_setup(&m, acc, fin).expect("setup");
+                    let tree = choose_tree(&m, &setup.planes, setup.n_a, 0);
+                    if tree.planes.is_empty() {
+                        Subdivision::Whole
+                    } else {
+                        subdivided += 1;
+                        let (total, max) = leaf_sizes(&m, &setup.planes, &tree);
+                        worst = worst.max(max);
+                        instances = (instances.0 + total, instances.1 + setup.planes.len());
+                        Subdivision::Tree(tree)
+                    }
+                };
+                acc = boolean_over(&mut m, BoolKind::Fuse, acc, fin, &how)
+                    .map(|(s, _)| s)
+                    .unwrap_or_else(|e| panic!("fin {i} ({whole_model}): {e:?}"))[0];
+                m.rebuild_adjacency();
+            }
+            let vol = nacre_props::mass_props(&m, acc).expect("props").volume;
+            let faces = m.shells.get(m.solids.get(acc).outer).faces.len();
+            answers.push((faces, vol));
+        }
+        assert!(subdivided >= 4, "only {subdivided} booleans got a tree");
+        assert_eq!(
+            SUBDIVISION_FALLBACKS.load(Relaxed) - before_backs,
+            0,
+            "a subdivided run gave up; the chooser put a plane through named geometry"
+        );
+        assert_eq!(answers[0].0, answers[1].0, "face count");
+        assert!(
+            (answers[0].1 - answers[1].1).abs() < 1e-9,
+            "volume {:?}",
+            answers
+        );
+        let _ = SUBDIVIDED_BOOLEANS.load(Relaxed) - before_runs;
+        // ★ Recorded, not asserted tight: this is the number the design is waiting on. It is about
+        // half the model today; the plan wanted 16 faces.
+        println!(
+            "worst leaf {worst} faces, duplication {:.2}x",
+            instances.0 as f64 / instances.1 as f64
+        );
+        assert!(worst > 0, "no leaf was measured");
+    }
+
+    /// `(face-instances over all leaves, worst leaf)` for a tree — a face straddling a cut counts
+    /// on both sides, which is the cost the subdivision pays.
+    fn leaf_sizes(model: &Model, faces: &[FaceInfo], t: &SplitTree) -> (usize, usize) {
+        fn walk(
+            t: &SplitTree,
+            node: usize,
+            slots: Vec<usize>,
+            boxes: &[[[f64; 2]; 3]],
+            out: &mut Vec<usize>,
+        ) {
+            match t.nodes[node] {
+                None => out.push(slots.len()),
+                Some((p, lo, hi)) => {
+                    let (axis, at) = t.planes[p];
+                    let l = slots
+                        .iter()
+                        .copied()
+                        .filter(|&s| boxes[s][axis][0] < at)
+                        .collect();
+                    let h = slots
+                        .iter()
+                        .copied()
+                        .filter(|&s| boxes[s][axis][1] > at)
+                        .collect();
+                    walk(t, lo, l, boxes, out);
+                    walk(t, hi, h, boxes, out);
+                }
+            }
+        }
+        let boxes: Vec<[[f64; 2]; 3]> = faces
+            .iter()
+            .map(|f| face_box(model, f.face.expect("real")))
+            .collect();
+        let mut per_leaf = Vec::new();
+        walk(t, 0, (0..faces.len()).collect(), &boxes, &mut per_leaf);
+        (
+            per_leaf.iter().sum(),
+            per_leaf.iter().copied().max().unwrap_or(0),
+        )
+    }
+
+    fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_scalar::Rat) -> Handle<Solid> {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let out = transform(
+            m,
+            s,
+            &Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(deg).unwrap(),
+            }),
+        )
+        .unwrap();
+        m.rebuild_adjacency();
+        out
     }
 }
