@@ -114,6 +114,7 @@ pub(crate) fn collect_planes(
                 }
                 SurfaceDef::Inexact => return Err(reject(RejectReason::InexactSurface)),
                 SurfaceDef::Moved { witness, motion } => {
+                    let _t = Watch::new(); // charged at the arm's end
                     // The pre-motion witness, carried through the recorded chain — the same
                     // computation, in the same order, that a moved vertex's `Pt3` performs.
                     let chain = crate::rotated_vertex::motion_chain(model, motion);
@@ -133,6 +134,7 @@ pub(crate) fn collect_planes(
                     if e1.cross(e2).dot(n_out) < 0.0 {
                         w.swap(1, 2);
                     }
+                    _t.charge(Sub::TriPt3);
                     (w, true, Some(motion))
                 }
             };
@@ -288,15 +290,61 @@ pub(crate) struct PlaneSetup {
     pub(crate) notes: Notes,
 }
 
+/// Which sub-phase of [`plane_index_setup`] a [`Watch`] charges — spike instrumentation, and only
+/// in a test build (see `arrangement::phase`).
+pub(crate) enum Sub {
+    TriPt3,
+    Std,
+    Collect,
+    Edges,
+    Classes,
+    Dense,
+}
+
+/// Times the scope it is charged from, or does nothing at all in a release build.
+pub(crate) struct Watch(#[cfg(test)] std::time::Instant);
+
+impl Watch {
+    pub(crate) fn new() -> Self {
+        Watch(
+            #[cfg(test)]
+            std::time::Instant::now(),
+        )
+    }
+    #[allow(unused_variables)]
+    pub(crate) fn charge(self, which: Sub) {
+        #[cfg(test)]
+        {
+            use crate::arrangement::phase;
+            let c = match which {
+                Sub::TriPt3 => &phase::S_TRIPT3,
+                Sub::Std => &phase::S_STD,
+                Sub::Collect => &phase::S_COLLECT,
+                Sub::Edges => &phase::S_EDGES,
+                Sub::Classes => &phase::S_CLASSES,
+                Sub::Dense => &phase::S_DENSE,
+            };
+            c.fetch_add(
+                self.0.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+    }
+}
+
 pub(crate) fn plane_index_setup(
     model: &Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<PlaneSetup, BoolError> {
+    let t = Watch::new();
     let mut planes = collect_planes(model, a)?;
     let n_a = planes.len();
     planes.extend(collect_planes(model, b)?);
+    t.charge(Sub::Collect);
+    let t = Watch::new();
     let standard = standard_for(&planes);
+    t.charge(Sub::Std);
     let notes = Notes::new();
     if standard.prec > JUDGE_PREC_CAP {
         return Err(reject(RejectReason::PrecisionBudget {
@@ -309,14 +357,20 @@ pub(crate) fn plane_index_setup(
         // Synthetic faces are appended later, after this table is built; every entry here is real.
         surf_ix.insert(pi.face.expect("collect_planes yields real faces"), i);
     }
+    let t = Watch::new();
     let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
     let inc_b = combinatorics::edge_faces(model, b, &surf_ix)?;
+    t.charge(Sub::Edges);
     // One judging context for the whole operation: the witnesses, the standard they are held to,
     // and where the evidence goes. The face table judges first (it is what *defines* the plane
     // classes), then the dense plane table inherits the same three.
+    let t = Watch::new();
     let canon = plane_classes(&Judge::new(&planes, standard, &notes));
+    t.charge(Sub::Classes);
+    let t = Watch::new();
     let (geom, plane_ix) = dense_planes(&planes, &canon);
     let class_owner = class_owners(&plane_ix, n_a, geom.len());
+    t.charge(Sub::Dense);
     Ok(PlaneSetup {
         planes,
         surf_ix,

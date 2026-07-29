@@ -49,6 +49,12 @@ pub(crate) mod phase {
 
     counters! {
         SETUP      = "plane_index_setup",
+        S_TRIPT3   = "    collect: tri_pt3 (chain replay)",
+        S_COLLECT  = "    collect: the per-face loop",
+        S_STD      = "    standard_for",
+        S_EDGES    = "    edge_faces x2",
+        S_CLASSES  = "    plane_classes (pairwise)",
+        S_DENSE    = "    dense_planes + owners",
         TRACE_IN   = "trace_input (face table)",
         TRACE_ON   = "  trace_on_class",
         MERGE      = "  merge_coincident",
