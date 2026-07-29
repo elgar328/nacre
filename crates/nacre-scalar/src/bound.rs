@@ -46,6 +46,21 @@ const UP: f64 = 1.0 + 2.0 * f64::EPSILON;
 /// the larger one inflated. Keeps `add` free of `2^-de` underflow.
 const GAP: i64 = 60;
 
+/// Exactly `2^k`, built from the exponent field.
+///
+/// `2f64.powi(k)` is what this replaces, and with a **runtime** `k` that is not a constant fold —
+/// it is `__powidf2`, a square-and-multiply loop, which a profile of a rotated boolean found at
+/// **2.1% of the whole run** (`Bound`'s arithmetic totalled 7.6%, for a type that is two f64s of
+/// bookkeeping). A power of two is one exponent field, so this is a shift and a load.
+///
+/// Callers stay inside `|k| <= GAP`, far from the subnormal edge, so the result is always normal
+/// and always exact — the value is identical to `powi`'s, only cheaper.
+#[inline]
+fn pow2_f64(k: i64) -> f64 {
+    debug_assert!(k.abs() <= GAP, "outside the range that keeps this normal");
+    f64::from_bits(((1023 + k) as u64) << 52)
+}
+
 impl Bound {
     /// The bound `0` — used only where a quantity is *exactly* representable (a rational read at
     /// enough bits), never as a default.
@@ -111,7 +126,7 @@ impl Bound {
         if big.e - small.e > GAP {
             return big.inflate();
         }
-        let m = big.m + small.m * 2f64.powi((small.e - big.e) as i32);
+        let m = big.m + small.m * pow2_f64(small.e - big.e);
         let (nm, ne) = frexp(m);
         Bound {
             m: nm,
@@ -170,7 +185,7 @@ impl Bound {
         if de > GAP {
             return Some(self.deflate()); // `other` cannot reach `self`'s mantissa
         }
-        let m = self.m - other.m * 2f64.powi((-de) as i32);
+        let m = self.m - other.m * pow2_f64(-de);
         if m <= 0.0 {
             return None;
         }
@@ -264,6 +279,19 @@ mod tests {
             "the smaller term was dropped"
         );
         assert!(s.lt(Bound::scaled(0.8, -99)), "the sum overshot");
+    }
+
+    /// `pow2_f64` is a *replacement*, so what matters is that it replaces exactly — every
+    /// exponent a caller can reach must give the bit-identical `powi` value.
+    #[test]
+    fn the_power_of_two_shortcut_is_bit_identical() {
+        for k in -GAP..=GAP {
+            assert_eq!(
+                pow2_f64(k).to_bits(),
+                2f64.powi(k as i32).to_bits(),
+                "2^{k}"
+            );
+        }
     }
 
     /// `Bound::of` round-trips ordinary magnitudes without collapsing them.
