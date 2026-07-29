@@ -73,7 +73,8 @@ pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpIv {
     }
     // The integers enter exactly (see `rat_to_big`), so the only error left is the division's
     // own rounding.
-    HpIv::new(mid.clone(), ub(&mid).times(Bound::pow2(-(prec as i64))))
+    let rad = ub(&mid).times(Bound::pow2(-(prec as i64)));
+    HpIv::new(mid, rad)
 }
 
 /// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero).

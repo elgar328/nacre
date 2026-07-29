@@ -678,14 +678,32 @@ fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
 
 /// 3×3 determinant of high-precision interval rows at `prec` bits — the same expression as
 /// [`det3_iv`], one precision up, so the filter and the escalation cannot drift apart.
-fn det3_big(r: [[HpIv; 3]; 3], prec: usize) -> HpIv {
+///
+/// The entries come in **by reference**, and that is not a micro-optimization: Cramer's four
+/// matrices are the same nine or twelve values in different arrangements, so a signature that
+/// owns its rows makes the caller copy each value up to three times over. An `HpIv` copy is a
+/// mantissa heap allocation, and this determinant is the hot path — [`cramer_hp`] alone made
+/// forty-five of them per call for values it only ever read.
+fn det3_big(r: [[&HpIv; 3]; 3], prec: usize) -> HpIv {
     let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
-    let m0 = mul(&r[1][1], &r[2][2]).sub(&mul(&r[1][2], &r[2][1]), prec);
-    let m1 = mul(&r[1][0], &r[2][2]).sub(&mul(&r[1][2], &r[2][0]), prec);
-    let m2 = mul(&r[1][0], &r[2][1]).sub(&mul(&r[1][1], &r[2][0]), prec);
-    mul(&r[0][0], &m0)
-        .sub(&mul(&r[0][1], &m1), prec)
-        .add(&mul(&r[0][2], &m2), prec)
+    let m0 = mul(r[1][1], r[2][2]).sub(&mul(r[1][2], r[2][1]), prec);
+    let m1 = mul(r[1][0], r[2][2]).sub(&mul(r[1][2], r[2][0]), prec);
+    let m2 = mul(r[1][0], r[2][1]).sub(&mul(r[1][1], r[2][0]), prec);
+    mul(r[0][0], &m0)
+        .sub(&mul(r[0][1], &m1), prec)
+        .add(&mul(r[0][2], &m2), prec)
+}
+
+/// [`det3_big`] over rows the caller already owns — the borrow, spelled once.
+fn det3_big_rows(r: &[[HpIv; 3]; 3], prec: usize) -> HpIv {
+    det3_big(
+        [
+            [&r[0][0], &r[0][1], &r[0][2]],
+            [&r[1][0], &r[1][1], &r[1][2]],
+            [&r[2][0], &r[2][1], &r[2][2]],
+        ],
+        prec,
+    )
 }
 
 /// `orient3d` determinant realized at `prec` bits (astro-float) from the point
@@ -698,14 +716,12 @@ fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> HpIv {
         pd.hp_coord(prec),
     );
     let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
-    det3_big(
-        [
-            [sub(&a[0], &d[0]), sub(&a[1], &d[1]), sub(&a[2], &d[2])],
-            [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
-            [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
-        ],
-        prec,
-    )
+    let rows = [
+        [sub(&a[0], &d[0]), sub(&a[1], &d[1]), sub(&a[2], &d[2])],
+        [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
+        [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
+    ];
+    det3_big_rows(&rows, prec)
 }
 
 /// The points' pre-motion coordinates, **brought into the moved frame's handedness**, when they
@@ -871,7 +887,7 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize
     );
     let sub_hp = |u: &HpIv, v: &HpIv| u.sub(v, prec);
     let rows = [
-        [dh[0].clone(), dh[1].clone(), dh[2].clone()],
+        dh,
         [
             sub_hp(&xh[0], &bh[0]),
             sub_hp(&xh[1], &bh[1]),
@@ -883,7 +899,7 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize
             sub_hp(&yh[2], &bh[2]),
         ],
     ];
-    match det3_big(rows, prec).sign() {
+    match det3_big_rows(&rows, prec).sign() {
         Some(pos) => orient_of(pos),
         None => Orient::Zero,
     }
@@ -973,7 +989,8 @@ fn plane_hp(p0: &Pt3, p1: &Pt3, p2: &Pt3, prec: usize) -> [HpIv; 4] {
         .sub(&mul(&n[0], &a[0]), prec)
         .sub(&mul(&n[1], &a[1]), prec)
         .sub(&mul(&n[2], &a[2]), prec);
-    [n[0].clone(), n[1].clone(), n[2].clone(), d]
+    let [n0, n1, n2] = n; // `d` is already built from them, so the normal moves out rather than copying
+    [n0, n1, n2, d]
 }
 
 /// `sign(D)·sign(M)` combined into an orientation (both must be definite).
@@ -1050,50 +1067,51 @@ fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> 
 /// The magnitude bounds these used to return alongside are gone: the radius rides *with* the
 /// value now, so there is nothing left for a caller to forget to use — which is exactly how the
 /// indirect judge came to bound `M` by a scale that had already cancelled.
-fn cramer_hp(planes: [[HpIv; 4]; 3], prec: usize) -> (HpIv, [HpIv; 3]) {
+fn cramer_hp(planes: &[[HpIv; 4]; 3], prec: usize) -> (HpIv, [HpIv; 3]) {
     let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
-    let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
-    let add = |x: &HpIv, y: &HpIv| x.add(y, prec);
     let zero = HpIv::exact(BigFloat::from_f64(0.0, prec));
-    let det3 = |r: &[[HpIv; 3]; 3]| {
-        let m0 = sub(&mul(&r[1][1], &r[2][2]), &mul(&r[1][2], &r[2][1]));
-        let m1 = sub(&mul(&r[1][0], &r[2][2]), &mul(&r[1][2], &r[2][0]));
-        let m2 = sub(&mul(&r[1][0], &r[2][1]), &mul(&r[1][1], &r[2][0]));
-        add(
-            &sub(&mul(&r[0][0], &m0), &mul(&r[0][1], &m1)),
-            &mul(&r[0][2], &m2),
-        )
-    };
-    let nrm = |k: usize| {
-        [
-            planes[k][0].clone(),
-            planes[k][1].clone(),
-            planes[k][2].clone(),
-        ]
-    };
-    let hh = |k: usize| sub(&zero, &planes[k][3]);
-    let (n0, n1, n2) = (nrm(0), nrm(1), nrm(2));
-    let nrows = [n0.clone(), n1.clone(), n2.clone()];
-    let d = det3(&nrows);
-    let hc = [hh(0), hh(1), hh(2)];
-    let cols = [
-        [
-            [hc[0].clone(), n0[1].clone(), n0[2].clone()],
-            [hc[1].clone(), n1[1].clone(), n1[2].clone()],
-            [hc[2].clone(), n2[1].clone(), n2[2].clone()],
-        ],
-        [
-            [n0[0].clone(), hc[0].clone(), n0[2].clone()],
-            [n1[0].clone(), hc[1].clone(), n1[2].clone()],
-            [n2[0].clone(), hc[2].clone(), n2[2].clone()],
-        ],
-        [
-            [n0[0].clone(), n0[1].clone(), hc[0].clone()],
-            [n1[0].clone(), n1[1].clone(), hc[1].clone()],
-            [n2[0].clone(), n2[1].clone(), hc[2].clone()],
-        ],
+    // The four matrices are the same twelve values rearranged, so they are built as *views* of
+    // the coefficients rather than copies of them — see [`det3_big`].
+    let n = |k: usize, j: usize| &planes[k][j];
+    let hc = [
+        sub(&zero, &planes[0][3]),
+        sub(&zero, &planes[1][3]),
+        sub(&zero, &planes[2][3]),
     ];
-    let dvec = [det3(&cols[0]), det3(&cols[1]), det3(&cols[2])];
+    let d = det3_big(
+        [
+            [n(0, 0), n(0, 1), n(0, 2)],
+            [n(1, 0), n(1, 1), n(1, 2)],
+            [n(2, 0), n(2, 1), n(2, 2)],
+        ],
+        prec,
+    );
+    let dvec = [
+        det3_big(
+            [
+                [&hc[0], n(0, 1), n(0, 2)],
+                [&hc[1], n(1, 1), n(1, 2)],
+                [&hc[2], n(2, 1), n(2, 2)],
+            ],
+            prec,
+        ),
+        det3_big(
+            [
+                [n(0, 0), &hc[0], n(0, 2)],
+                [n(1, 0), &hc[1], n(1, 2)],
+                [n(2, 0), &hc[2], n(2, 2)],
+            ],
+            prec,
+        ),
+        det3_big(
+            [
+                [n(0, 0), n(0, 1), &hc[0]],
+                [n(1, 0), n(1, 1), &hc[1]],
+                [n(2, 0), n(2, 1), &hc[2]],
+            ],
+            prec,
+        ),
+    ];
     (d, dvec)
 }
 
@@ -1117,7 +1135,7 @@ fn indirect_hp(
     let sub = |x: &HpIv, y: &HpIv| x.sub(y, prec);
     let mul = |x: &HpIv, y: &HpIv| x.mul(y, prec);
     let add = |x: &HpIv, y: &HpIv| x.add(y, prec);
-    let (d, dvec) = cramer_hp(planes, prec);
+    let (d, dvec) = cramer_hp(&planes, prec);
     let row1 = [
         sub(&dvec[0], &mul(&d, &s[0])),
         sub(&dvec[1], &mul(&d, &s[1])),
@@ -1261,8 +1279,8 @@ fn cmp_hp_with_gap(
     axis: usize,
     prec: usize,
 ) -> Result<Orient, Gap> {
-    let (da, dva) = cramer_hp(a, prec);
-    let (db, dvb) = cramer_hp(b, prec);
+    let (da, dva) = cramer_hp(&a, prec);
+    let (db, dvb) = cramer_hp(&b, prec);
     let m = dva[axis]
         .mul(&db, prec)
         .sub(&dvb[axis].mul(&da, prec), prec);
@@ -1368,7 +1386,7 @@ pub fn dir_sign_judge(
     escalate(j, limit, |prec| {
         let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
         let planes = [ph(a), ph(b), ph(c)];
-        let (dh, _) = cramer_hp(planes.clone(), prec);
+        let (dh, _) = cramer_hp(&planes, prec);
         match dh.sign() {
             Some(pos) => Ok(orient_of(pos)),
             None => Err(dir_gap(&dh, &planes, prec)),
@@ -1791,8 +1809,8 @@ mod tests {
                 let y0 = pl([0, 1, 0, 0]);
                 let z0 = pl([0, 0, 1, 0]);
                 let zg = pl([0, 0, 1, -gn]); // z = gn/gd
-                let (da, dva) = cramer_hp([x0.clone(), y0.clone(), z0], prec);
-                let (db, dvb) = cramer_hp([x0, y0, zg], prec);
+                let (da, dva) = cramer_hp(&[x0.clone(), y0.clone(), z0], prec);
+                let (db, dvb) = cramer_hp(&[x0, y0, zg], prec);
                 let m = dva[2].mul(&db, prec).sub(&dvb[2].mul(&da, prec), prec);
                 // The midpoint version of `coord_gap`: |M| / |D_a·D_b| must be the separation.
                 let got = m
@@ -1895,7 +1913,7 @@ mod tests {
                     [big(0), big(1), big(0), big(0)],
                     [big(0), big(k), eps, big(0)],
                 ];
-                let (d, _) = cramer_hp(planes.clone(), prec);
+                let (d, _) = cramer_hp(&planes, prec);
                 // |D| / (|n_a||n_b||n_c|), with each |n| taken as its largest component.
                 // Squared again, so the three norms need no square root: `D² / Π|n|²` is `sin²`.
                 let sq = |x: &BigFloat| x.mul(x, prec, HP_RM);
@@ -3145,7 +3163,7 @@ mod tests {
         // The **raw** sign, with no radius and no floor — see `dir_orient_at` for why the oracle
         // must not borrow the judge's bound. `dir_sign_truth` gets its confidence from two
         // precisions agreeing instead.
-        let (dh, _) = cramer_hp([ph(a), ph(b), ph(c)], prec);
+        let (dh, _) = cramer_hp(&[ph(a), ph(b), ph(c)], prec);
         (!dh.mid.is_zero()).then(|| dh.mid.is_positive())
     }
 
@@ -3313,22 +3331,20 @@ mod tests {
             y.hp_coord(prec),
             dp.hp_coord(prec),
         );
-        let det = det3_big(
+        let rows = [
+            dh,
             [
-                [dh[0].clone(), dh[1].clone(), dh[2].clone()],
-                [
-                    sub(&xh[0], &bh[0]),
-                    sub(&xh[1], &bh[1]),
-                    sub(&xh[2], &bh[2]),
-                ],
-                [
-                    sub(&yh[0], &bh[0]),
-                    sub(&yh[1], &bh[1]),
-                    sub(&yh[2], &bh[2]),
-                ],
+                sub(&xh[0], &bh[0]),
+                sub(&xh[1], &bh[1]),
+                sub(&xh[2], &bh[2]),
             ],
-            prec,
-        );
+            [
+                sub(&yh[0], &bh[0]),
+                sub(&yh[1], &bh[1]),
+                sub(&yh[2], &bh[2]),
+            ],
+        ];
+        let det = det3_big_rows(&rows, prec);
         // The **raw** sign at `prec` bits, with no radius and no floor. Independence from the
         // judge is the whole point of an oracle: `dir_orient_truth` gets its confidence from two
         // precisions agreeing, not from any bound this file also ships to production.
