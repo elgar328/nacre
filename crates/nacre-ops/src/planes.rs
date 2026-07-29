@@ -26,7 +26,11 @@ pub(crate) struct FaceInfo {
     /// The face this plane came from. Distinguishes two coplanar faces that share one
     /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
     /// cell coplanar-narrow), which `surf` alone collapses. `surf_ix` keys on this.
-    pub(crate) face: Handle<Face>,
+    ///
+    /// **`None` for a synthetic face** — the cap a half-space clip puts on an operand, which has
+    /// no `Face` in the model and never will (it exists for the duration of one boolean and is
+    /// never emitted). The only thing that reads this is the decline report, which says so.
+    pub(crate) face: Option<Handle<Face>>,
     pub(crate) plane: Plane,
     /// Three non-collinear outer-loop points, **ordered so their RH normal is outward**.
     /// The order need not follow the loop: at a reflex corner it is reversed.
@@ -143,7 +147,7 @@ pub(crate) fn collect_planes(
             );
             out.push(FaceInfo {
                 surf: face.surface,
-                face: fh,
+                face: Some(fh),
                 plane,
                 tri,
                 n_out,
@@ -299,7 +303,8 @@ pub(crate) fn plane_index_setup(
     }
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
-        surf_ix.insert(pi.face, i);
+        // Synthetic faces are appended later, after this table is built; every entry here is real.
+        surf_ix.insert(pi.face.expect("collect_planes yields real faces"), i);
     }
     let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
     let inc_b = combinatorics::edge_faces(model, b, &surf_ix)?;

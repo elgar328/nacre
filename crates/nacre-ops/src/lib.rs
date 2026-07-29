@@ -188,12 +188,14 @@ pub enum RejectReason {
     /// conclude — a consumer must not read "no segments" as "the plane misses the solid".
     /// `kind` says what the tracer could not do and `face` is the operand face it gave up on
     /// (an *input* face: a rejected boolean restores the live set, so the handle stays valid).
+    /// `None` names a **synthetic** face — the cap a half-space clip puts on an operand — which
+    /// has no handle to give.
     ///
     /// A class can decline several faces; this names the first. The full list is the audit's
     /// business, not the error's.
     TraceDeclined {
         kind: DeclineKind,
-        face: Handle<Face>,
+        face: Option<Handle<Face>>,
     },
     /// The result severs into two or more material solids *and* at least one enclosed void
     /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
@@ -1990,7 +1992,7 @@ pub mod tests {
         let faces_tab = collect_planes(&m, r).unwrap();
         let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
         for (i, pi) in faces_tab.iter().enumerate() {
-            surf_ix.insert(pi.face, i);
+            surf_ix.insert(pi.face.expect("a real face table"), i);
         }
         let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
         let (planes, plane_ix) = dense_planes(&faces_tab, &canon);
@@ -2545,7 +2547,7 @@ pub mod tests {
         let mk = |plane, tri: [Point3; 3]| FaceInfo {
             motion: None,
             surf: shared,
-            face: fh,
+            face: Some(fh),
             plane,
             tri,
             n_out: Vector3::from_array([0.0; 3]),

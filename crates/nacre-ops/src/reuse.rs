@@ -188,7 +188,9 @@ impl VertexClasses {
         let mut map: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
         for fi in range {
             let wc = plane_ix[fi];
-            let f = model.faces.get(faces[fi].face);
+            let f = model
+                .faces
+                .get(faces[fi].face.expect("reuse only sees real faces"));
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for &he in &lp.half_edges {
                     let e = map.entry(he_start(model, he)).or_default();
@@ -298,7 +300,9 @@ pub(crate) fn pass_through(
             }
             Some(r)
         };
-        let f = model.faces.get(fa.face);
+        let f = model
+            .faces
+            .get(fa.face.expect("reuse only sees real faces"));
         out.push(LocalFace {
             plane_idx: wc,
             loop_nodes: ring(&f.outer)?,

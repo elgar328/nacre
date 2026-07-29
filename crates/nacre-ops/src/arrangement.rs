@@ -118,7 +118,7 @@ fn sorted3(mut t: [usize; 3]) -> [usize; 3] {
 ///
 /// **One function for both consumers.** The boolean's error and the audit's `failed_at` must agree
 /// — two copies of this mapping would let them drift.
-fn decline_to_reject(kind: DeclineKind, face: Handle<Face>) -> RejectReason {
+fn decline_to_reject(kind: DeclineKind, face: Option<Handle<Face>>) -> RejectReason {
     match kind {
         DeclineKind::FourPlane => RejectReason::FourPlane,
         kind => RejectReason::TraceDeclined { kind, face },
@@ -1942,6 +1942,131 @@ fn clip_face(
     Ok(Clipped { pieces, cap_edges })
 }
 
+/// The **cap**: the cross-section of a half-space-clipped solid with the split plane, assembled
+/// from the edges [`clip_face`] laid there.
+///
+/// ★ **This is why clipping alone does not work.** A face seated on some class closes itself when
+/// clipped, but a solid that merely straddles that class has its footprint bounded by the chords of
+/// its walls — and the wall at the split plane is this. Without it the arrangement is open and
+/// `label_cells` reports the contradiction (measured: `LabelConflict`, with exactly two odd-degree
+/// nodes per class, both naming the split class).
+///
+/// **Assembly is by name identity, and that is not luck.** A cap vertex `{P, Q, split}` is minted by
+/// face `P` (whose ring edge rides wall `Q`) *and* by face `Q` (whose edge rides wall `P`), as the
+/// same sorted triple — so every vertex has exactly one incoming and one outgoing edge and the
+/// chaining needs no geometry at all.
+///
+/// **The cap traverses each edge the other way from the face that minted it.** Those edges are the
+/// free boundary of the clipped, still-open surface; closing it means adding a face that runs them
+/// backwards, which is what makes every edge used once in each direction.
+#[cfg(test)]
+fn cap_rings(
+    jd: &Judge<'_, PlaneGeom>,
+    split: usize,
+    keep: i8,
+    edges: &[([usize; 3], [usize; 3])],
+) -> Result<Vec<ClipPiece>, BoolError> {
+    if edges.is_empty() {
+        return Ok(Vec::new()); // the solid does not reach the split plane — a bounded solid
+        // cannot cover an unbounded one, so "no edges" really is "no cap"
+    }
+    let mut next: HashMap<[usize; 3], [usize; 3]> = HashMap::new();
+    for &(a, b) in edges {
+        if next.insert(a, b).is_some() {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
+    }
+    let mut starts: Vec<[usize; 3]> = next.keys().copied().collect();
+    starts.sort_unstable(); // deterministic ring order
+    let mut seen: HashSet<[usize; 3]> = HashSet::new();
+    let mut loops: Vec<Vec<[usize; 3]>> = Vec::new();
+    for start in starts {
+        if !seen.insert(start) {
+            continue;
+        }
+        let mut ring = vec![start];
+        let mut cur = start;
+        while let Some(&nx) = next.get(&cur) {
+            if nx == start {
+                break;
+            }
+            if !seen.insert(nx) {
+                return Err(reject(RejectReason::RingNaming));
+            }
+            ring.push(nx);
+            cur = nx;
+        }
+        if ring.len() < 3 {
+            return Err(reject(RejectReason::DegenerateRing));
+        }
+        ring.reverse(); // the cap runs the free boundary backwards
+        loops.push(ring);
+    }
+
+    // Outer or hole. `loop_winding` answers about the **class root's** normal, and the cap's
+    // outward normal is `-keep` times it, so an outer ring winds `-keep`.
+    let mut outers: Vec<Vec<[usize; 3]>> = Vec::new();
+    let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
+    for ring in loops {
+        let w =
+            combinatorics::loop_winding(jd, split, &combinatorics::ring_from_names(split, &ring)?)?;
+        if w == -keep {
+            outers.push(ring)
+        } else {
+            holes.push(ring)
+        }
+    }
+    let mut pieces: Vec<ClipPiece> = outers.into_iter().map(|o| (o, Vec::new())).collect();
+    for hole in holes {
+        let probe = hole[0];
+        let mut owner = None;
+        for (i, (outer, _)) in pieces.iter().enumerate() {
+            let r = combinatorics::ring_from_names(split, outer)?;
+            if combinatorics::point_in_ring(jd, split, probe, &r)? {
+                if owner.is_some() {
+                    return Err(reject(RejectReason::HoleDepth));
+                }
+                owner = Some(i);
+            }
+        }
+        pieces[owner.ok_or_else(|| reject(RejectReason::HoleRoots))?]
+            .1
+            .push(hole);
+    }
+    Ok(pieces)
+}
+
+/// The `FaceInfo` a cap piece is traced as: the split plane, facing **out of** the clipped solid.
+///
+/// `collect_planes` guards `|plane.normal · n_out| ≈ 1` and `orient_sign = sign(that)` with
+/// `debug_assert`s that only run for real faces, so a synthetic one has to uphold them here.
+#[cfg(test)]
+fn cap_face_info(class: &PlaneGeom, keep: i8) -> FaceInfo {
+    let flip = keep > 0; // keeping the +side means the cap faces -normal
+    let n_out = class.plane.normal() * if flip { -1.0 } else { 1.0 };
+    let order = |mut t: [Point3; 3]| {
+        if flip {
+            t.swap(1, 2); // wind the witness to the cap's own outward normal
+        }
+        t
+    };
+    let mut tri_pt3 = class.tri_pt3.clone();
+    if flip {
+        tri_pt3.swap(1, 2);
+    }
+    FaceInfo {
+        surf: class.surf,
+        face: None,
+        plane: class.plane,
+        tri: order(class.tri),
+        n_out,
+        orient_sign: -keep,
+        tri_pt3,
+        motion: None,
+        rotated: false,
+    }
+}
+
 /// The regions one boolean is arranged over.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn regions_for(
@@ -1976,7 +2101,7 @@ pub(crate) fn regions_for(
             let mut halves = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
             for (side, slots) in input.side_faces.iter().enumerate() {
                 for &fp in slots {
-                    let (lo, hi) = face_span(model, faces[fp].face, axis);
+                    let (lo, hi) = face_span(model, faces[fp].face.expect("a real face"), axis);
                     assert!(
                         hi <= at || lo >= at,
                         "the split plane {axis}={at} cuts face slot {fp} (span {lo}..{hi}); \
@@ -5381,5 +5506,207 @@ mod tests {
         }
         // ★ Not vacuous: some face has to actually be cut, or the loop asserted nothing.
         assert!(fired >= 4, "only {fired} rotated faces were cut");
+    }
+
+    // ── C2: the cap ───────────────────────────────────────────────────────────────────────────
+
+    /// Clip every face of one operand by a half-space and cap the result: the pieces (with the
+    /// plane class each sits on) and the cap's own pieces.
+    fn clip_and_cap(
+        jd: &Judge<'_, PlaneGeom>,
+        input: &combinatorics::TraceInput,
+        side: usize,
+        plane_ix: &[usize],
+        split: usize,
+        keep: i8,
+    ) -> (Vec<(usize, ClipPiece)>, Vec<ClipPiece>) {
+        let mut pieces = Vec::new();
+        let mut cap_edges = Vec::new();
+        for &fp in &input.side_faces[side] {
+            let fl = &input.loops[fp];
+            let Some(outer) = fl.outer.as_ref() else {
+                continue;
+            };
+            let mut rings: Vec<&[[usize; 3]]> = vec![outer];
+            if let Some(hs) = fl.holes.as_ref() {
+                rings.extend(hs.iter().map(Vec::as_slice));
+            }
+            let fc = plane_ix[fp];
+            let c = clip_face(jd, fc, split, keep, &rings).expect("clip");
+            cap_edges.extend(c.cap_edges);
+            pieces.extend(c.pieces.into_iter().map(|p| (fc, p)));
+        }
+        let caps = cap_rings(jd, split, keep, &cap_edges).expect("cap");
+        (pieces, caps)
+    }
+
+    /// Every directed ring edge of a face set, holes included.
+    fn directed_edges(rings: &[&[[usize; 3]]]) -> Vec<([usize; 3], [usize; 3])> {
+        rings
+            .iter()
+            .flat_map(|r| (0..r.len()).map(move |i| (r[i], r[(i + 1) % r.len()])))
+            .collect()
+    }
+
+    /// How many directed ring edges of a face set fail the closed-oriented-surface rule — every
+    /// edge used exactly once, and its reverse exactly once.
+    fn closure_violations(pieces: &[(usize, ClipPiece)], caps: &[ClipPiece]) -> usize {
+        let mut edges: Vec<([usize; 3], [usize; 3])> = Vec::new();
+        for (_, (outer, holes)) in pieces {
+            let mut rs: Vec<&[[usize; 3]]> = vec![outer];
+            rs.extend(holes.iter().map(Vec::as_slice));
+            edges.extend(directed_edges(&rs));
+        }
+        for (outer, holes) in caps {
+            let mut rs: Vec<&[[usize; 3]]> = vec![outer];
+            rs.extend(holes.iter().map(Vec::as_slice));
+            edges.extend(directed_edges(&rs));
+        }
+        let mut once: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
+        for e in &edges {
+            *once.entry(*e).or_default() += 1;
+        }
+        once.iter()
+            .filter(|&(e, &n)| n != 1 || once.get(&(e.1, e.0)).copied().unwrap_or(0) != 1)
+            .count()
+    }
+
+    /// The trace input of one solid against a far-away second operand, plus a split class.
+    fn one_solid_setup(
+        m: &mut Model,
+        s: Handle<Solid>,
+        far: Handle<Solid>,
+        axis: usize,
+        at: f64,
+    ) -> (
+        Vec<PlaneGeom>,
+        Vec<usize>,
+        nacre_cip::Standard,
+        Notes,
+        combinatorics::TraceInput,
+    ) {
+        let PlaneSetup {
+            planes: faces_tab,
+            surf_ix,
+            inc_a,
+            inc_b,
+            geom,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(m, s, far).unwrap();
+        let mut geom = geom;
+        geom.push(split_plane_class(m, axis, at));
+        let jd = Judge::new(&geom, standard, &notes);
+        let input = combinatorics::trace_input(
+            m,
+            [(s, &inc_a), (far, &inc_b)],
+            &surf_ix,
+            faces_tab.len(),
+            &jd,
+            &plane_ix,
+        );
+        (geom, plane_ix, standard, notes, input)
+    }
+
+    /// A cube, a non-convex U-prism, a holed slab and a rotated U — clipped by a plane through
+    /// material, each side capped, each required to close.
+    #[test]
+    fn a_clipped_and_capped_operand_is_a_closed_surface() {
+        let cases: Vec<ClipCase> = vec![
+            (
+                "cube",
+                |m| {
+                    let c = m.add_cuboid(
+                        Point3::from_array([0.0; 3]),
+                        Point3::from_array([1.0, 1.0, 1.0]),
+                    );
+                    let far = m.add_cuboid(
+                        Point3::from_array([10.0; 3]),
+                        Point3::from_array([11.0, 11.0, 11.0]),
+                    );
+                    m.rebuild_adjacency();
+                    (c, far)
+                },
+                0,
+                0.25,
+            ),
+            ("u-prism", |m| u_prism_and_far(m), 1, 1.5),
+            ("holed slab", |m| holed_slab_and_far(m), 0, 2.0),
+            (
+                "rotated u",
+                |m| {
+                    let (u, far) = u_prism_and_far(m);
+                    let u = tilt(m, u, &[nacre_scalar::Axis::Z]);
+                    (u, far)
+                },
+                1,
+                1.25,
+            ),
+        ];
+        for (what, build, axis, at) in cases {
+            for keep in [1i8, -1] {
+                let mut m = Model::new();
+                let (s, far) = build(&mut m);
+                let (geom, plane_ix, standard, notes, input) =
+                    one_solid_setup(&mut m, s, far, axis, at);
+                let split = geom.len() - 1;
+                let jd = Judge::new(&geom, standard, &notes);
+                let (pieces, caps) = clip_and_cap(&jd, &input, 0, &plane_ix, split, keep);
+                assert_eq!(
+                    closure_violations(&pieces, &caps),
+                    0,
+                    "{what} keep {keep}: the clipped, capped operand is not closed"
+                );
+                // ★ Negative control: the cap runs the free boundary **backwards**. Put it back
+                // the way the faces minted it and the same check must fail — otherwise "it closes"
+                // would pass for a cap of any orientation.
+                let unreversed: Vec<ClipPiece> = caps
+                    .iter()
+                    .map(|(o, h)| {
+                        let rev = |r: &Vec<[usize; 3]>| r.iter().rev().copied().collect();
+                        (rev(o), h.iter().map(rev).collect())
+                    })
+                    .collect();
+                assert!(
+                    closure_violations(&pieces, &unreversed) > 0,
+                    "{what} keep {keep}: closure passed with the cap wound the other way, so it \
+                     is not testing the orientation"
+                );
+                assert!(!caps.is_empty(), "{what} keep {keep}: no cap was built");
+            }
+        }
+    }
+
+    /// A closed-surface fixture: what to build, and where to cut it.
+    type ClipCase = (
+        &'static str,
+        fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
+        usize,
+        f64,
+    );
+
+    /// ★ The synthetic cap's `FaceInfo` upholds what `collect_planes` asserts for real ones.
+    ///
+    /// Those are `debug_assert`s **inside** `collect_planes`, so they never run for a hand-built
+    /// entry — the invariant is real, the guard is not, and this is the guard.
+    #[test]
+    fn a_cap_face_info_upholds_what_real_faces_are_asserted_to() {
+        let mut m = Model::new();
+        for axis in 0..3 {
+            let class = split_plane_class(&mut m, axis, 0.5);
+            for keep in [1i8, -1] {
+                let fi = cap_face_info(&class, keep);
+                let dot = fi.plane.normal().dot(fi.n_out);
+                assert!(dot.abs() > 0.5, "the plane's normal is parallel to n_out");
+                assert_eq!(dot > 0.0, fi.orient_sign > 0, "orient_sign is that sign");
+                let n = (fi.tri[1] - fi.tri[0]).cross(fi.tri[2] - fi.tri[0]);
+                assert!(n.dot(fi.n_out) > 0.0, "the witness winds to n_out");
+                assert!(fi.face.is_none(), "a cap has no face in the model");
+                // The cap faces **out of** the kept side: keeping `+` puts its normal on `-`.
+                assert_eq!(fi.n_out.dot(class.plane.normal()) > 0.0, keep < 0);
+            }
+        }
     }
 }
