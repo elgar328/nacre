@@ -198,7 +198,11 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     let mut parent: Vec<usize> = (0..faces.len()).collect();
     let mut owner: HashMap<Node, usize> = HashMap::new();
     for (i, lf) in faces.iter().enumerate() {
-        for &nd in lf.loop_nodes.iter().chain(lf.inner.iter().flatten()) {
+        for &nd in lf
+            .loop_nodes
+            .iter()
+            .chain(lf.inner.iter().flat_map(|r| r.iter()))
+        {
             match owner.entry(nd) {
                 std::collections::hash_map::Entry::Occupied(e) => {
                     let (ra, rb) = (find(&mut parent, *e.get()), find(&mut parent, i));
@@ -447,15 +451,74 @@ pub(crate) enum Node {
     Seam([usize; 3]), // sorted triple (key into the seam map)
 }
 
+/// One ring of a result face: its nodes, and **the plane each edge rides**.
+///
+/// ★ **The walls are carried, not derived.** Reading an edge's supporting plane back out of its two
+/// endpoint names is sound only while every vertex lies on exactly three planes — see
+/// [`combinatorics::ring_edges_with_walls`]. Every producer here knows the wall (the arrangement's
+/// half-edge was told it; a pass-through face reads it off the edge's other face), so it hands it
+/// over instead of leaving it to be guessed.
+///
+/// Derefs to its nodes, so the many places that only walk the ring read unchanged.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Ring {
+    pub(crate) nodes: Vec<Node>,
+    /// `walls[i]` is the plane class the edge `nodes[i] -> nodes[i+1]` rides.
+    pub(crate) walls: Vec<usize>,
+}
+
+impl Ring {
+    /// A ring whose walls are **derived from the node names** — for hand-built fixtures, where
+    /// every vertex is a clean three-plane point so "the class the two names share besides `p`" is
+    /// well defined. Production never derives; see the type's note.
+    #[cfg(test)]
+    pub(crate) fn from_clean_names(p: usize, nodes: Vec<Node>) -> Ring {
+        let k = nodes.len();
+        let walls = (0..k)
+            .map(|i| {
+                let (Node::Seam(a), Node::Seam(b)) = (nodes[i], nodes[(i + 1) % k]);
+                a.iter()
+                    .copied()
+                    .find(|&c| c != p && b.contains(&c))
+                    .expect("a clean fixture ring edge rides one wall")
+            })
+            .collect();
+        Ring { nodes, walls }
+    }
+}
+
+impl std::ops::Deref for Ring {
+    type Target = [Node];
+    fn deref(&self) -> &[Node] {
+        &self.nodes
+    }
+}
+
+impl Ring {
+    pub(crate) fn new(nodes: Vec<Node>, walls: Vec<usize>) -> Ring {
+        debug_assert_eq!(nodes.len(), walls.len(), "one wall per edge");
+        Ring { nodes, walls }
+    }
+
+    /// This ring's edges, ready for the exact predicates.
+    pub(crate) fn edges(
+        &self,
+        jd: &Judge<'_, PlaneGeom>,
+        p: usize,
+    ) -> Result<Vec<combinatorics::RingEdge>, BoolError> {
+        combinatorics::ring_edges_with_walls(jd, p, &seam_ring(&self.nodes), &self.walls)
+    }
+}
+
 /// A reconstructed result face: which combined plane it is on, its loop as
 /// nodes, and whether to flip it (cut's inside-A B-pieces).
 #[derive(Clone)]
 pub(crate) struct LocalFace {
     pub(crate) plane_idx: usize,
-    pub(crate) loop_nodes: Vec<Node>,
+    pub(crate) loop_nodes: Ring,
     /// Hole rings, each already wound so the kept material stays on its left
     /// about the face's outward normal. Only the non-convex path ever fills this.
-    pub(crate) inner: Vec<Vec<Node>>,
+    pub(crate) inner: Vec<Ring>,
     pub(crate) flip: bool,
 }
 
@@ -513,7 +576,11 @@ pub(crate) fn assemble_fuse_cut(
     // Materialize all vertex handles first. Outer then inner, rings in order: `vh`'s
     // first-appearance order fixes the vertex handles, and replay depends on it.
     for lf in faces {
-        for &node in lf.loop_nodes.iter().chain(lf.inner.iter().flatten()) {
+        for &node in lf
+            .loop_nodes
+            .iter()
+            .chain(lf.inner.iter().flat_map(|r| r.iter()))
+        {
             node_handle(model, node)?;
         }
     }
@@ -689,13 +756,16 @@ pub(crate) fn assemble_fuse_cut(
             // material whose outer shell nests it — the innermost, if materials themselves nest —
             // by the exact point-in-solid `point_in_component`. With no cavity this loop is empty
             // and every material emits cavity-free (the plain sever, unchanged).
-            let comp_faces = |c: usize| -> Vec<(usize, Vec<Vec<[usize; 3]>>)> {
+            // ★ The rings hand over their walls; nothing here derives one from a name.
+            let comp_faces = |c: usize| -> Result<combinatorics::ComponentFaces, BoolError> {
                 by_comp_lf[c]
                     .iter()
                     .map(|lf| {
-                        let mut rings = vec![seam_ring(&lf.loop_nodes)];
-                        rings.extend(lf.inner.iter().map(|h| seam_ring(h)));
-                        (lf.plane_idx, rings)
+                        let mut rings = vec![lf.loop_nodes.edges(jd, lf.plane_idx)?];
+                        for h in &lf.inner {
+                            rings.push(h.edges(jd, lf.plane_idx)?);
+                        }
+                        Ok((lf.plane_idx, rings))
                     })
                     .collect()
             };
@@ -713,7 +783,9 @@ pub(crate) fn assemble_fuse_cut(
                 let containers = nodes_of(d).iter().find_map(|&x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match combinatorics::point_in_component(jd, x, &comp_faces(m)) {
+                        match comp_faces(m)
+                            .and_then(|f| combinatorics::point_in_component(jd, x, &f))
+                        {
                             Ok(true) => cs.push(m),
                             Ok(false) => {}
                             Err(_) => return None, // grazed against a material — try next node
@@ -734,7 +806,10 @@ pub(crate) fn assemble_fuse_cut(
                                     || nodes_of(c)
                                         .iter()
                                         .find_map(|&x| {
-                                            combinatorics::point_in_component(jd, x, &comp_faces(o))
+                                            comp_faces(o)
+                                                .and_then(|f| {
+                                                    combinatorics::point_in_component(jd, x, &f)
+                                                })
                                                 .ok()
                                         })
                                         .unwrap_or(false)
@@ -880,6 +955,16 @@ fn ring_edges(ring: &[Node]) -> impl Iterator<Item = (Node, Node)> + '_ {
     (0..ring.len()).map(move |i| (ring[i], ring[(i + 1) % ring.len()]))
 }
 
+/// A ring's directed edges **with the wall each rides**.
+fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((Node, Node), usize)> + '_ {
+    (0..ring.len()).map(move |i| {
+        (
+            (ring.nodes[i], ring.nodes[(i + 1) % ring.len()]),
+            ring.walls[i],
+        )
+    })
+}
+
 /// The `[usize; 3]` form a ring's nodes carry, for the exact predicates.
 fn seam_ring(ring: &[Node]) -> Vec<[usize; 3]> {
     ring.iter().map(|Node::Seam(t)| *t).collect()
@@ -887,7 +972,7 @@ fn seam_ring(ring: &[Node]) -> Vec<[usize; 3]> {
 
 /// An outer ring with the holes that belong to it — what one merged region looks like before it
 /// becomes a `LocalFace`.
-type RegionRings = (Vec<Node>, Vec<Vec<Node>>);
+type RegionRings = (Ring, Vec<Ring>);
 
 /// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
 /// the holes that belong to it.
@@ -895,16 +980,19 @@ fn merge_component(
     group: &[&LocalFace],
     jd: &Judge<'_, PlaneGeom>,
 ) -> Result<Vec<RegionRings>, BoolError> {
-    // 1. Collect directed edges. A repeat in the same direction means two faces claim the same side.
-    let mut dirs: HashMap<(Node, Node), usize> = HashMap::new();
+    // 1. Collect directed edges **with their walls**. A repeat in the same direction means two
+    //    faces claim the same side.
+    // One map, `(count, wall)` — the wall rides along rather than in a second table.
+    let mut dirs: HashMap<(Node, Node), (usize, usize)> = HashMap::new();
     for lf in group {
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
-            for e in ring_edges(ring) {
-                *dirs.entry(e).or_insert(0) += 1;
+            for (e, wall) in ring_edges_walled(ring) {
+                let slot = dirs.entry(e).or_insert((0, wall));
+                slot.0 += 1;
             }
         }
     }
-    if dirs.values().any(|&c| c > 1) {
+    if dirs.values().any(|&(c, _)| c > 1) {
         return Err(reject(RejectReason::CoplanarMerge));
     }
     // 2. An edge carried in both directions is interior — it separates nothing. Anything carried
@@ -930,27 +1018,32 @@ fn merge_component(
     let mut starts: Vec<Node> = next.keys().copied().collect();
     starts.sort_unstable();
     let mut seen: HashSet<Node> = HashSet::new();
-    let mut cycles: Vec<Vec<Node>> = Vec::new();
+    let mut cycles: Vec<Ring> = Vec::new();
     for start in starts {
         if seen.contains(&start) {
             continue;
         }
-        let mut cyc = vec![start];
+        // ★ The threaded cycle keeps each surviving edge's own wall, so the merged ring never has
+        // to have it read back out of the node names.
+        let mut nodes = vec![start];
+        let mut walls = vec![dirs[&(start, next[&start])].1];
         seen.insert(start);
         let mut cur = next[&start];
         while cur != start {
             if !seen.insert(cur) {
                 return Err(reject(RejectReason::CoplanarMerge)); // walk re-entered another cycle
             }
-            cyc.push(cur);
-            cur = *next
+            let nx = *next
                 .get(&cur)
                 .ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
+            nodes.push(cur);
+            walls.push(dirs[&(cur, nx)].1);
+            cur = nx;
         }
-        if cyc.len() < 3 {
+        if nodes.len() < 3 {
             return Err(reject(RejectReason::CoplanarMerge));
         }
-        cycles.push(cyc);
+        cycles.push(Ring::new(nodes, walls));
     }
     if cycles.is_empty() {
         return Err(reject(RejectReason::CoplanarMerge)); // everything erased: not a region
@@ -958,12 +1051,13 @@ fn merge_component(
     // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in. (This
     // used to canon the index first — `plane_idx` names a plane now, so there is nothing to fold.)
     let wc = group[0].plane_idx;
-    let mut outers: Vec<Vec<Node>> = Vec::new();
-    let mut holes: Vec<Vec<Node>> = Vec::new();
+    let mut outers: Vec<Ring> = Vec::new();
+    let mut holes: Vec<Ring> = Vec::new();
     for cyc in cycles {
-        // These cycles are built from node names alone (no DCEL here), so their edges are the
-        // derived kind — see `RingEdge`.
-        let ring = combinatorics::ring_from_names(wc, &seam_ring(&cyc))?;
+        // ★ Built from the walls the cycle carries, not from the node names. This is where a
+        // four-plane concurrency used to break the merge: a canonical name need not mention the
+        // plane its edge rides, and two names can share nothing but `wc`.
+        let ring = cyc.edges(jd, wc)?;
         match combinatorics::loop_winding(jd, wc, &ring)? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
@@ -974,10 +1068,10 @@ fn merge_component(
     //    of the arrangement's cells, answered by the same predicate.
     let mut faces: Vec<RegionRings> = outers.into_iter().map(|o| (o, Vec::new())).collect();
     for hole in holes {
-        let probe = seam_ring(&hole)[0];
+        let Node::Seam(probe) = hole.nodes[0];
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            let ring = combinatorics::ring_from_names(wc, &seam_ring(outer))?;
+            let ring = outer.edges(jd, wc)?;
             if combinatorics::point_in_ring(jd, wc, probe, &ring)? {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
@@ -992,34 +1086,53 @@ fn merge_component(
     Ok(faces)
 }
 
-/// Drop straight-angle vertices: a node whose only two neighbours across **all** rings lie with it
-/// on one line. Every node is a `Seam` triple `{p, q, r}`, so the test is combinatorial and exact —
-/// the node is on a line iff some pair of its planes is shared by both neighbours. Dropping from
-/// every incident ring at once keeps a vertex that is a real corner somewhere (degree > 2), which is
-/// what stops a T-junction from opening.
+/// Drop straight-angle vertices: a node whose only two neighbours across **all** rings continue
+/// along the same line.
+///
+/// ★ **The test is the two incident edges' walls**, which the rings carry. It used to be
+/// combinatorial on the names — "the node is on a line iff some pair of its planes is shared by
+/// both neighbours" — which is sound only while every vertex lies on exactly three planes, the same
+/// assumption that broke the merge under a four-plane concurrency. The walls say it outright.
+///
+/// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
+/// (degree > 2), which is what stops a T-junction from opening.
 fn dissolve_straight_angles(out: &mut [LocalFace]) {
+    // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
+    // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
+    // that edge always sees two walls overall and would never dissolve. On each face separately it
+    // sees one, which is exactly "the ring runs straight through here".
+    // Per node: its neighbours, and whether any face bends there. `first_wall` remembers one wall
+    // per `(node, face)` and `bent` records the first disagreement — flat maps, because a nested
+    // one per node costs more than the whole pass is worth (measured: 4% of a fold).
     let mut nbrs: HashMap<Node, HashSet<Node>> = HashMap::new();
+    let mut first_wall: HashMap<(Node, usize), usize> = HashMap::new();
+    let mut bent: HashSet<Node> = HashSet::new();
     for lf in out.iter() {
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
-            for (a, b) in ring_edges(ring) {
+            let k = ring.len();
+            for i in 0..k {
+                let (a, b) = (ring.nodes[i], ring.nodes[(i + 1) % k]);
                 nbrs.entry(a).or_default().insert(b);
                 nbrs.entry(b).or_default().insert(a);
+                for nd in [a, b] {
+                    match first_wall.entry((nd, lf.plane_idx)) {
+                        std::collections::hash_map::Entry::Occupied(e) => {
+                            if *e.get() != ring.walls[i] {
+                                bent.insert(nd);
+                            }
+                        }
+                        std::collections::hash_map::Entry::Vacant(e) => {
+                            e.insert(ring.walls[i]);
+                        }
+                    }
+                }
             }
         }
     }
     let mut drop: HashSet<Node> = HashSet::new();
     for (&node, ns) in &nbrs {
-        let Node::Seam(t) = node;
-        if ns.len() != 2 {
-            continue;
-        }
-        let mut it = ns.iter();
-        let (Node::Seam(a), Node::Seam(b)) = (*it.next().unwrap(), *it.next().unwrap());
-        let both_have = |p: usize| a.contains(&p) && b.contains(&p);
-        if (both_have(t[0]) && both_have(t[1]))
-            || (both_have(t[0]) && both_have(t[2]))
-            || (both_have(t[1]) && both_have(t[2]))
-        {
+        // Exactly two neighbours, and on **every** face it appears in the two edges ride one wall.
+        if ns.len() == 2 && !bent.contains(&node) {
             drop.insert(node);
         }
     }
@@ -1027,9 +1140,21 @@ fn dissolve_straight_angles(out: &mut [LocalFace]) {
         return;
     }
     for lf in out.iter_mut() {
-        lf.loop_nodes.retain(|nd| !drop.contains(nd));
-        for ring in &mut lf.inner {
-            ring.retain(|nd| !drop.contains(nd));
+        for ring in std::iter::once(&mut lf.loop_nodes).chain(lf.inner.iter_mut()) {
+            if !ring.nodes.iter().any(|nd| drop.contains(nd)) {
+                continue; // untouched rings keep their allocation
+            }
+            let k = ring.len();
+            let mut nodes = Vec::with_capacity(k);
+            let mut walls = Vec::with_capacity(k);
+            for i in 0..k {
+                if drop.contains(&ring.nodes[i]) {
+                    continue; // its two edges are one; keep the wall of the one that survives
+                }
+                nodes.push(ring.nodes[i]);
+                walls.push(ring.walls[i]);
+            }
+            *ring = Ring::new(nodes, walls);
         }
     }
 }

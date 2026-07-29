@@ -4244,8 +4244,11 @@ pub mod tests {
     fn face(plane_idx: usize, nodes: Vec<Node>, inner: Vec<Vec<Node>>) -> LocalFace {
         LocalFace {
             plane_idx,
-            loop_nodes: nodes,
-            inner,
+            loop_nodes: crate::boolean::Ring::from_clean_names(plane_idx, nodes),
+            inner: inner
+                .into_iter()
+                .map(|r| crate::boolean::Ring::from_clean_names(plane_idx, r))
+                .collect(),
             flip: false,
         }
     }

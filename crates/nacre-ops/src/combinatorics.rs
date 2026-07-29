@@ -121,6 +121,54 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
         .collect()
 }
 
+/// A ring's edges from its nodes and the **carried** wall of each edge.
+///
+/// ★ **This is the sound twin of [`ring_from_names`].** That one reads an edge's supporting plane
+/// back out of its two endpoint names — "the class they share besides `P`" — which works only while
+/// every vertex lies on exactly three planes. Let four meet at a point, give it one canonical name,
+/// and the name need not mention the plane the edge rides at all; the two names can even share
+/// nothing but `P`. Measured: a subdivided boolean whose split plane passed through an arrangement
+/// vertex produced exactly that, and `ring_from_names` declined `RingNaming`.
+///
+/// The **handle** is still derived, and soundly: it only has to be *some* plane through the node
+/// that cuts the line `P ∩ wall`, which is what `order_along` asks of it. Under a concurrency there
+/// are several and any will do, so the smallest is taken and the answer stays replay-stable. This is
+/// the same rule `trace_transversal_face`'s `third_on_l` uses.
+pub(crate) fn ring_edges_with_walls(
+    jd: &Judge<'_, PlaneGeom>,
+    p: usize,
+    nodes: &[[usize; 3]],
+    walls: &[usize],
+) -> Result<Vec<RingEdge>, BoolError> {
+    if nodes.len() != walls.len() {
+        return Err(reject(RejectReason::RingNaming));
+    }
+    let handle = |t: [usize; 3], wall: usize| -> Option<usize> {
+        let mut cs: Vec<usize> = t
+            .iter()
+            .copied()
+            .filter(|&c| c != p && c != wall && jd.plane_pair_dir_sign(p, wall, c) != 0)
+            .collect();
+        cs.sort_unstable();
+        cs.first().copied()
+    };
+    (0..nodes.len())
+        .map(|i| {
+            let (a, b) = (nodes[i], nodes[(i + 1) % nodes.len()]);
+            let wall = walls[i];
+            let (Some(from_h), Some(to_h)) = (handle(a, wall), handle(b, wall)) else {
+                return Err(reject(RejectReason::RingNaming));
+            };
+            Ok(RingEdge {
+                node: a,
+                wall,
+                from_h,
+                to_h,
+            })
+        })
+        .collect()
+}
+
 /// `+1` when the ring's edge `i → i+1` runs along `d = n_P × n_Q`, `-1` against it.
 fn edge_sign(jd: &Judge<'_, PlaneGeom>, p: usize, e: &RingEdge) -> Result<i8, BoolError> {
     // `order_along` is `sign((V_i − V_j)·d)`, so `-1` — `V_i` precedes `V_j` — is the edge
@@ -550,20 +598,14 @@ fn point_on_ring(
 ///
 /// A ray grazing a face boundary, or an undecidable in-face containment, is abandoned for the
 /// query's next plane pair; if every pair is blocked the answer is honestly `NO_CLEAR_RAY`.
+/// A component as `(plane, rings)` per face, each ring already carrying its edges' walls.
+pub(crate) type ComponentFaces = Vec<(usize, Vec<Vec<RingEdge>>)>;
+
 pub(crate) fn point_in_component(
     jd: &Judge<'_, PlaneGeom>,
     query: [usize; 3],
-    faces: &[(usize, Vec<Vec<[usize; 3]>>)],
+    faces: &[(usize, Vec<Vec<RingEdge>>)],
 ) -> Result<bool, BoolError> {
-    // Result-face rings arrive as names, so their edges are derived here, once, up front.
-    let faces: Vec<(usize, Vec<Vec<RingEdge>>)> = faces
-        .iter()
-        .map(|(q, rings)| {
-            let rs: Result<Vec<_>, _> = rings.iter().map(|r| ring_from_names(*q, r)).collect();
-            Ok((*q, rs?))
-        })
-        .collect::<Result<_, BoolError>>()?;
-    let faces = &faces;
     let mut vplanes = query.to_vec();
     vplanes.sort_unstable();
     vplanes.dedup();

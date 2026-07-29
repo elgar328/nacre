@@ -175,7 +175,12 @@ pub(crate) fn class_plans(
 /// The arrangement names a vertex `sorted3([w, f, third])`: the three plane classes that meet
 /// there. A vertex of a solid meets exactly the classes of the faces around it, so the same name
 /// is available without arranging anything.
-pub(crate) struct VertexClasses(HashMap<Handle<Vertex>, Vec<usize>>);
+pub(crate) struct VertexClasses {
+    vertices: HashMap<Handle<Vertex>, Vec<usize>>,
+    /// Each edge's two plane classes — **the wall a ring edge rides**, from the incidence rather
+    /// than from the endpoint names (see `boolean::Ring`). Built in the same walk.
+    edges: HashMap<Handle<nacre_topo::Edge>, Vec<usize>>,
+}
 
 impl VertexClasses {
     /// Over the faces of one operand — `faces[range]` — collect each vertex's plane classes.
@@ -185,7 +190,8 @@ impl VertexClasses {
         plane_ix: &[usize],
         range: std::ops::Range<usize>,
     ) -> VertexClasses {
-        let mut map: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
+        let mut vertices: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
+        let mut edges: HashMap<Handle<nacre_topo::Edge>, Vec<usize>> = HashMap::new();
         for fi in range {
             let wc = plane_ix[fi];
             let f = model
@@ -193,14 +199,25 @@ impl VertexClasses {
                 .get(faces[fi].face.expect("reuse only sees real faces"));
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for &he in &lp.half_edges {
-                    let e = map.entry(he_start(model, he)).or_default();
+                    let e = vertices.entry(he_start(model, he)).or_default();
+                    if !e.contains(&wc) {
+                        e.push(wc);
+                    }
+                    let e = edges.entry(he.edge).or_default();
                     if !e.contains(&wc) {
                         e.push(wc);
                     }
                 }
             }
         }
-        VertexClasses(map)
+        VertexClasses { vertices, edges }
+    }
+
+    /// The class on the other side of `e` from `wc` — the wall a ring edge on `wc` rides.
+    fn wall(&self, e: Handle<nacre_topo::Edge>, wc: usize) -> Option<usize> {
+        let cs = self.edges.get(&e)?;
+        let [a, b] = cs[..] else { return None };
+        Some(if a == wc { b } else { a })
     }
 
     /// The vertex's triple, or `None` when it is not three planes.
@@ -210,7 +227,7 @@ impl VertexClasses {
     /// choice this cannot reproduce from the solid alone. So the class is arranged instead, which
     /// is always right and merely slower.
     fn triple(&self, v: Handle<Vertex>) -> Option<[usize; 3]> {
-        let c = self.0.get(&v)?;
+        let c = self.vertices.get(&v)?;
         let [a, b, d] = c[..] else { return None };
         let mut t = [a, b, d];
         t.sort_unstable();
@@ -286,19 +303,30 @@ pub(crate) fn pass_through(
             return None;
         }
         let same = d > 0.0;
-        let ring = |lp: &nacre_topo::Loop| -> Option<Vec<Node>> {
+        let ring = |lp: &nacre_topo::Loop| -> Option<crate::boolean::Ring> {
             let mut r: Vec<Node> = lp
                 .half_edges
                 .iter()
                 .map(|&he| Some(Node::Seam(canon(vc.triple(he_start(model, he))?))))
+                .collect::<Option<_>>()?;
+            // ★ The wall of the edge leaving vertex `i` is the plane of the face on the other side
+            // of that edge — carried, not derived (see `boolean::Ring`).
+            let mut walls: Vec<usize> = lp
+                .half_edges
+                .iter()
+                .map(|he| vc.wall(he.edge, wc))
                 .collect::<Option<_>>()?;
             // Rings are emitted CCW about the *class*'s outward normal (`emit_faces`), and `flip`
             // alone carries which chamber is material. A face wound against the class frame is
             // therefore reversed here rather than signalled downstream.
             if !same {
                 r.reverse();
+                // Edge `i` leaves node `i`; reversing the nodes re-pairs them, so the walls follow
+                // the same permutation shifted by one.
+                walls.reverse();
+                walls.rotate_left(1);
             }
-            Some(r)
+            Some(crate::boolean::Ring::new(r, walls))
         };
         let f = model
             .faces

@@ -1581,11 +1581,19 @@ fn emit_faces(
     let planes = jd.planes;
     // `crate::boolean::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
     // three-valued-scan struct) shadows it here.
-    let ring_of = |cell: &Cell| -> Vec<crate::boolean::Node> {
-        cell.half_edges
-            .iter()
-            .map(|&he| crate::boolean::Node::Seam(segs[he / 2].end[he % 2]))
-            .collect()
+    // ★ The wall travels with the ring. A half-edge was *told* which plane its edge rides, and
+    // that is the one fact a name cannot always give back (see `boolean::Ring`).
+    let ring_of = |cell: &Cell| -> crate::boolean::Ring {
+        crate::boolean::Ring::new(
+            cell.half_edges
+                .iter()
+                .map(|&he| crate::boolean::Node::Seam(segs[he / 2].end[he % 2]))
+                .collect(),
+            cell.half_edges
+                .iter()
+                .map(|&he| segs[he / 2].wall)
+                .collect(),
+        )
     };
     let mut out = Vec::new();
     for (c, cell) in cells.iter().enumerate() {
@@ -1599,7 +1607,7 @@ fn emit_faces(
             continue; // material the same on both sides ⇒ not a result face here
         }
         let flip = keep_above == (planes[wc].frame_sign > 0);
-        let inner: Vec<Vec<crate::boolean::Node>> = holes
+        let inner: Vec<crate::boolean::Ring> = holes
             .get(&c)
             .map(|hs| hs.iter().map(|&h| ring_of(&cells[h])).collect())
             .unwrap_or_default();
@@ -2319,7 +2327,7 @@ fn insert_t_vertices(faces: &mut [LocalFace], jd: &Judge<'_, PlaneGeom>) -> usiz
     for lf in faces.iter() {
         let w = lf.plane_idx;
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
-            for &crate::boolean::Node::Seam(t) in ring {
+            for &crate::boolean::Node::Seam(t) in ring.iter() {
                 let others: Vec<usize> = t.iter().copied().filter(|&c| c != w).collect();
                 if let [q1, q2] = others[..] {
                     on_line.entry((w, q1)).or_default().push(q2);
@@ -2338,19 +2346,21 @@ fn insert_t_vertices(faces: &mut [LocalFace], jd: &Judge<'_, PlaneGeom>) -> usiz
         let w = lf.plane_idx;
         for ring in std::iter::once(&mut lf.loop_nodes).chain(lf.inner.iter_mut()) {
             let n = ring.len();
-            let mut out: Vec<crate::boolean::Node> = Vec::with_capacity(n);
+            let mut nodes: Vec<crate::boolean::Node> = Vec::with_capacity(n);
+            let mut walls: Vec<usize> = Vec::with_capacity(n);
             for i in 0..n {
                 let (crate::boolean::Node::Seam(a), crate::boolean::Node::Seam(b)) =
-                    (ring[i], ring[(i + 1) % n]);
-                out.push(ring[i]);
-                // The wall this edge rides, and each endpoint's handle on it.
-                let shared: Vec<usize> = a
-                    .iter()
-                    .copied()
-                    .filter(|&c| c != w && b.contains(&c))
-                    .collect();
-                let [q] = shared[..] else { continue };
-                let third = |t: [usize; 3]| t.iter().copied().find(|&c| c != w && c != q);
+                    (ring.nodes[i], ring.nodes[(i + 1) % n]);
+                nodes.push(ring.nodes[i]);
+                walls.push(ring.walls[i]);
+                // ★ The wall is the one the ring carries — not the class the two names happen to
+                // share, which under a concurrency need not be it at all.
+                let q = ring.walls[i];
+                let third = |t: [usize; 3]| {
+                    t.iter()
+                        .copied()
+                        .find(|&c| c != w && c != q && jd.plane_pair_dir_sign(w, q, c) != 0)
+                };
                 let (Some(ha), Some(hb)) = (third(a), third(b)) else {
                     continue;
                 };
@@ -2379,11 +2389,13 @@ fn insert_t_vertices(faces: &mut [LocalFace], jd: &Judge<'_, PlaneGeom>) -> usiz
                     o.cmp(&0)
                 });
                 for r in between {
-                    out.push(crate::boolean::Node::Seam(sorted3([w, q, r])));
+                    // The split pieces ride the same wall the edge did.
+                    nodes.push(crate::boolean::Node::Seam(sorted3([w, q, r])));
+                    walls.push(q);
                     inserted += 1;
                 }
             }
-            *ring = out;
+            *ring = crate::boolean::Ring::new(nodes, walls);
         }
     }
     inserted
@@ -2994,7 +3006,7 @@ pub(crate) fn boolean_over(
         let mut seen: HashMap<[usize; 3], ()> = HashMap::new();
         for f in &faces {
             for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
-                for node in loop_ {
+                for node in loop_.iter() {
                     let crate::boolean::Node::Seam(t) = node;
                     if seen.insert(*t, ()).is_some() {
                         continue;
@@ -6293,28 +6305,27 @@ mod tests {
         hits
     }
 
-    /// ★ **A split plane through an arrangement vertex is what breaks, and it is a rule about
-    /// where to cut — not a defect in the clip, the cap, or the T-vertex pass.**
+    /// ★ **A split plane straight through an arrangement vertex — and it agrees.**
     ///
     /// Tilting this fixture by 30° puts the meet of `A`'s `x=1` wall and `B`'s `y=1.5` wall at
     /// `x = 1 − ½ sin θ`, which for `sin 30° = ½` is **exactly `0.75`**. Cutting there makes four
-    /// planes concurrent, and the alias table then canonicalises the point onto a triple whose
-    /// planes the edge does not ride — the hazard [`combinatorics::RingEdge`] documents. The
-    /// engine declines (`RingNaming`); it does **not** answer differently.
+    /// planes concurrent, and the alias table then names the point by a triple whose planes the
+    /// edge does not ride.
     ///
-    /// Note the vertex belongs to neither operand: it is a vertex the boolean *discovers*, from
-    /// planes of both. So "avoid the operands' own vertex coordinates" would not have caught it,
-    /// and enumerating the discovered ones is cubic — which is why production's answer is to
-    /// decline and re-choose rather than to prove a position generic up front.
+    /// That used to decline `RingNaming`, because the merge read an edge's wall back out of its two
+    /// endpoint names. **The rings carry their walls now**, so the concurrency is ordinary. This
+    /// test is the acceptance criterion that repair was built against: it asserts the four-plane
+    /// case is *exercised* (a triple scan finds four on `x=0.75` and none on `0.7`) and that the
+    /// answer matches the whole-model engine anyway.
     #[test]
-    fn a_split_through_an_arrangement_vertex_declines_and_a_generic_one_does_not() {
-        let build = |m: &mut Model| {
+    fn a_split_through_an_arrangement_vertex_agrees_now_that_rings_carry_their_walls() {
+        // First: 0.75 really is concurrent here and 0.7 really is not.
+        fn build(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
             let (a, b) = overlapping_cubes(m);
             let a = tilt(m, a, &[nacre_scalar::Axis::Z]);
             let b = tilt(m, b, &[nacre_scalar::Axis::Z]);
             (a, b)
-        };
-        // First: 0.75 really is concurrent here and 0.7 really is not.
+        }
         let mut m = Model::new();
         let (a, b) = build(&mut m);
         let PlaneSetup {
@@ -6348,39 +6359,12 @@ mod tests {
             "y=0.7"
         );
 
-        // Then: cutting at the concurrent position declines rather than disagreeing …
-        let concurrent = lopsided_tree();
-        let mut declined = 0usize;
-        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-            let mut m1 = Model::new();
-            let (a1, b1) = build(&mut m1);
-            let whole = super::boolean(&mut m1, kind, a1, b1).map(|(s, _)| s);
-            let mut m2 = Model::new();
-            let (a2, b2) = build(&mut m2);
-            let split = boolean_over(
-                &mut m2,
-                kind,
-                a2,
-                b2,
-                &Subdivision::Tree(concurrent.clone()),
-            )
-            .map(|(s, _)| s);
-            match (&whole, &split) {
-                (Ok(w), Ok(c)) => {
-                    m1.rebuild_adjacency();
-                    m2.rebuild_adjacency();
-                    same_shape(&m1, w, &m2, c, &format!("concurrent {kind:?}"));
-                }
-                (Ok(_), Err(_)) => declined += 1,
-                _ => panic!("concurrent {kind:?}: {whole:?} vs {split:?}"),
-            }
-        }
-        assert!(declined > 0, "the concurrency has to actually bite");
+        // Then: cutting straight through them gives the whole-model answer anyway.
+        tree_agrees("through a concurrency", build, lopsided_tree());
     }
 
-    /// … and the same tree moved off the concurrency agrees exactly. **This is the gate**: the
-    /// rotated, lopsided case is not a limitation of the subdivision, it is a rule about where to
-    /// cut.
+    /// And a **generic** position on the same rotated, lopsided tree — the case that first went
+    /// wrong, kept because it is the one that used to fail.
     #[test]
     fn a_rotated_model_under_a_lopsided_tree_agrees_at_a_generic_position() {
         tree_agrees(
