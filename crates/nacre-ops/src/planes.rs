@@ -705,8 +705,44 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
     let planes = jd.planes;
     let n = planes.len();
     let mut parent: Vec<usize> = (0..n).collect();
-    for i in 0..n {
-        for j in (i + 1)..n {
+
+    // **Merge by `Surface` handle first, then compare only one face per distinct surface.**
+    //
+    // Coplanarity is an equivalence, and a shared handle *is* the same plane — exactly, by
+    // identity, in O(1). So faces that share one are already one class, and asking the
+    // geometric question of each of them separately asks the same question many times.
+    //
+    // The answer cannot move: union-find's result is the transitive closure of the pairs it was
+    // given, and a class's root stays its minimum index, so dropping *redundant* pairs leaves
+    // the partition and its roots alone. No tolerance is involved — a shared handle is identity.
+    //
+    // **Measured, and smaller than the pair count suggests.** On the 80-fin fold's largest
+    // boolean, 406 faces carry 172 distinct surfaces: 82,215 pairs become 14,706, and over the
+    // fold 7.52M become 2.30M — 3.3x fewer. But the scan only got ~1.4x faster (0.96s → 0.69s
+    // over the fold, ~1.03x end to end), because **the pairs this drops are the cheapest ones**:
+    // they matched on the handle and returned at the first `||`. What is left is the
+    // geometrically distinct pairs, which are the ones that were expensive all along. Counting
+    // removed operations overstates the saving whenever the removed ones are the cheap ones.
+    let mut rep: HashMap<Handle<Surface>, usize> = HashMap::new();
+    let mut reps: Vec<usize> = Vec::new();
+    for (i, p) in planes.iter().enumerate() {
+        match rep.get(&p.surf) {
+            Some(&r) => {
+                let (ri, rj) = (uf_find(&mut parent, r), uf_find(&mut parent, i));
+                if ri != rj {
+                    parent[ri.max(rj)] = ri.min(rj);
+                }
+            }
+            None => {
+                rep.insert(p.surf, i);
+                reps.push(i);
+            }
+        }
+    }
+
+    for a in 0..reps.len() {
+        for b in (a + 1)..reps.len() {
+            let (i, j) = (reps[a], reps[b]);
             if shares_or_coplanar(jd, i, j) {
                 let (ri, rj) = (uf_find(&mut parent, i), uf_find(&mut parent, j));
                 if ri != rj {
