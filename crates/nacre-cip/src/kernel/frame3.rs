@@ -1055,6 +1055,31 @@ fn cramer_iv(planes: [[Iv; 4]; 3]) -> (Iv, [Iv; 3]) {
     (d, dvec)
 }
 
+/// The Cramer `D` **alone** — the determinant of the three planes' normals.
+///
+/// ★ **A caller that wants only `D` must not go through [`cramer_iv`]**, which builds four
+/// determinants and the `h` column for the three it does not need. [`dir_sign_judge`] asks exactly
+/// this question ("how does the line `a ∩ b` run relative to `c`"), and it used to throw away
+/// three-quarters of the work on every call.
+fn normals_det_iv(planes: [[Iv; 4]; 3]) -> Iv {
+    let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
+    det3_iv([n(0), n(1), n(2)])
+}
+
+/// [`normals_det_iv`] at `prec` bits — the `d` half of [`cramer_hp`] without its `h` column or its
+/// three `Dvec` determinants. The escalation is where a wasted determinant costs the most.
+fn normals_det_hp(planes: &[[HpIv; 4]; 3], prec: usize) -> HpIv {
+    let n = |k: usize, j: usize| &planes[k][j];
+    det3_big(
+        [
+            [n(0, 0), n(0, 1), n(0, 2)],
+            [n(1, 0), n(1, 1), n(1, 2)],
+            [n(2, 0), n(2, 1), n(2, 2)],
+        ],
+        prec,
+    )
+}
+
 /// The interval f64 filter for `orient3d(V, q, r, s)`, `V = ∩(planes)`. `None` if
 /// either `D` or `M` straddles 0 (escalate). Coefficient-direct (no division).
 fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> Option<Orient> {
@@ -1409,7 +1434,7 @@ pub fn dir_sign_judge(
     c: (&Pt3, &Pt3, &Pt3),
     j: Standard,
 ) -> Decision {
-    let (d, _) = cramer_iv([
+    let d = normals_det_iv([
         plane_iv(a.0, a.1, a.2),
         plane_iv(b.0, b.1, b.2),
         plane_iv(c.0, c.1, c.2),
@@ -1427,7 +1452,7 @@ pub fn dir_sign_judge(
     escalate(j, limit, |prec| {
         let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
         let planes = [ph(a), ph(b), ph(c)];
-        let (dh, _) = cramer_hp(&planes, prec);
+        let dh = normals_det_hp(&planes, prec);
         match dh.sign() {
             Some(pos) => Ok(orient_of(pos)),
             None => Err(dir_gap(&dh, &planes, prec)),
