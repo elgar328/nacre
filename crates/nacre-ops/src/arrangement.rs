@@ -1629,8 +1629,127 @@ fn emit_faces(
     out
 }
 
-/// Every result face across all plane classes, before assembly (the driver's risky half, testable
-/// by face count without mutating the model). A declining class aborts the whole boolean.
+/// One subproblem the arrangement runs over: the tracer's input, and what that input's unbounded
+/// cells are known to classify as.
+///
+/// A whole-model boolean is **one** region — every face, seed `[false; 4]`, which is true because
+/// the arrangement then covers all of space and its unbounded cells reach infinity, where neither
+/// solid is. Restricting the input to a region of space makes several; each is arranged
+/// independently and their result faces concatenated, and each has to be *told* its seed because
+/// its unbounded cells are an artifact of the restriction rather than a fact about the model.
+pub(crate) struct Region {
+    pub input: combinatorics::TraceInput,
+    pub seed: Label,
+}
+
+/// How space is divided before arranging.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Subdivision {
+    /// One region over everything — the arrangement as it has always been run.
+    Whole,
+    /// **V2a spike: partition the face set, without clipping.** Each face is dealt to one
+    /// half-space of `coord[axis] = at` by which side it lies wholly on, and the two halves are
+    /// arranged independently.
+    ///
+    /// It cuts nothing, so no new vertex is named and each half's outside is still genuinely void
+    /// — the seed stays `[false; 4]` and no classification machinery is needed. What it does prove
+    /// is the plumbing the subdivided engine rests on: that arranging a *subset* of the faces and
+    /// concatenating the result faces gives the same solid. A face straddling the plane cannot be
+    /// dealt, so a fixture must choose a plane that cuts none; it panics rather than guess.
+    #[cfg(test)]
+    SplitFaces { axis: usize, at: f64 },
+}
+
+/// The regions one boolean is arranged over.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn regions_for(
+    how: Subdivision,
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    faces: &[FaceInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    inc_a: &combinatorics::EdgeFaces,
+    inc_b: &combinatorics::EdgeFaces,
+    jd: &Judge<'_, PlaneGeom>,
+    plane_ix: &[usize],
+) -> Vec<Region> {
+    let input = combinatorics::trace_input(
+        model,
+        [(a, inc_a), (b, inc_b)],
+        surf_ix,
+        faces.len(),
+        jd,
+        plane_ix,
+    );
+    match how {
+        Subdivision::Whole => vec![Region {
+            input,
+            seed: [false; 4],
+        }],
+        #[cfg(test)]
+        Subdivision::SplitFaces { axis, at } => {
+            let mut halves = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
+            for (side, slots) in input.side_faces.iter().enumerate() {
+                for &fp in slots {
+                    let (lo, hi) = face_span(model, faces[fp].face, axis);
+                    assert!(
+                        hi <= at || lo >= at,
+                        "the split plane {axis}={at} cuts face slot {fp} (span {lo}..{hi}); \
+                         V2a partitions, it does not clip"
+                    );
+                    halves[usize::from(lo >= at)][side].push(fp);
+                }
+            }
+            let [low, high] = halves;
+            vec![
+                Region {
+                    input: combinatorics::TraceInput {
+                        loops: input.loops.clone(),
+                        side_faces: low,
+                    },
+                    seed: [false; 4],
+                },
+                Region {
+                    input: combinatorics::TraceInput {
+                        loops: input.loops,
+                        side_faces: high,
+                    },
+                    seed: [false; 4],
+                },
+            ]
+        }
+    }
+}
+
+/// A face's extent along one axis, from its vertices' cached coordinates.
+///
+/// f64 is enough for what it decides — *which* half-space to deal a face to — because the split
+/// plane is chosen away from every model coordinate. It decides nothing about the answer: a face
+/// dealt to the wrong half would show up as a wrong solid, not as a rounding error.
+#[cfg(test)]
+fn face_span(model: &Model, fh: Handle<Face>, axis: usize) -> (f64, f64) {
+    let f = model.faces.get(fh);
+    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+        for he in &lp.half_edges {
+            for &vh in model.edges.get(he.edge).bounds.iter().flatten() {
+                let c = model.vertices.get(vh).point.as_array()[axis];
+                lo = lo.min(c);
+                hi = hi.max(c);
+            }
+        }
+    }
+    (lo, hi)
+}
+
+/// Every result face across all plane classes **of every region**, before assembly (the driver's
+/// risky half, testable by face count without mutating the model). A declining class aborts the
+/// whole boolean.
+///
+/// Regions are visited in order, classes within a region in order, so the faces are produced in a
+/// sequence that is a function of the input — which is what keeps `assemble_fuse_cut`'s handle
+/// minting replayable.
 #[allow(clippy::too_many_arguments)]
 fn trace_result_faces(
     model: &Model,
@@ -1639,32 +1758,28 @@ fn trace_result_faces(
     b: Handle<Solid>,
     jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
-    surf_ix: &HashMap<Handle<Face>, usize>,
-    inc_a: &combinatorics::EdgeFaces,
-    inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
+    regions: &[Region],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let planes = jd.planes;
+    let n_classes = planes.len();
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
     // **What each class contributes, for the classes the other operand cannot reach.** Everything
     // else stays `Arrange`, which is the whole engine as it was.
+    //
+    // The shortcut is a statement about a class over the *whole model* — "the other operand cannot
+    // reach it, so its faces pass through unchanged" — which a region cannot make about its own
+    // slice. Subdivided runs arrange everything; V5 retires the shortcut outright.
+    let reuse = if regions.len() == 1 {
+        reuse
+    } else {
+        crate::reuse::ClassReuse::Off
+    };
     let plans = crate::reuse::class_plans(model, reuse, kind, a, b, planes, class_owner);
-
-    // Everything the tracer reads from the topology store, derived **once** — see
-    // [`combinatorics::TraceInput`]. Below this line the arrangement is a function of face tables
-    // and plane classes; `model` survives only for the reuse plan, which V5 retires.
-    let trace_in = combinatorics::trace_input(
-        model,
-        [(a, inc_a), (b, inc_b)],
-        surf_ix,
-        faces.len(),
-        jd,
-        plane_ix,
-    );
 
     // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
     // Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
@@ -1691,7 +1806,10 @@ fn trace_result_faces(
         // more round. The last round — the one whose splits are kept — runs on a table that
         // has stopped growing either way.
         let snapshot = aliases.clone();
-        let round = crate::par::try_map_range(planes.len(), |wc| {
+        // Flattened `(region, class)`, region-major — so a single region is exactly the old index
+        // space and the reject a decline raises is still the lowest-numbered class's.
+        let round = crate::par::try_map_range(regions.len() * n_classes, |k| {
+            let (trace_in, wc) = (&regions[k / n_classes].input, k % n_classes);
             // **Pass A runs for every class, including the ones pass B will not arrange.**
             //
             // It used to skip them, and that was unsound: pass B's reuse can *decline* — a vertex
@@ -1702,7 +1820,7 @@ fn trace_result_faces(
             // Nothing in the code stopped that; it simply needed a model with a concurrency in a
             // region the other operand cannot reach, and the corpus has none. The cheap repair is
             // to keep the fallback a real one, which is what this does.
-            let mut tr = trace_on_class(&trace_in, wc, jd, faces, plane_ix);
+            let mut tr = trace_on_class(trace_in, wc, jd, faces, plane_ix);
             let mut local = snapshot.clone();
             local.absorb(&std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
@@ -1741,12 +1859,22 @@ fn trace_result_faces(
         .contains(&crate::reuse::ClassPlan::PassThrough(SolidSide::B))
         .then(|| crate::reuse::VertexClasses::of(model, faces, plane_ix, n_a..faces.len()));
 
-    let per_class = crate::par::try_map_range(splits.len(), |wc| {
-        let split = &splits[wc];
+    let per_class = crate::par::try_map_range(splits.len(), |k| {
+        let (region, wc) = (&regions[k / n_classes], k % n_classes);
+        let split = &splits[k];
         let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
+            // ★ A region need not touch every class. One whose faces all lie elsewhere traces
+            // nothing here, and an empty arrangement has no cells, hence no unbounded contour and
+            // nothing to emit. `nest_cells` reads that as `HoleRoots` — "not a closed arrangement"
+            // — which is the right verdict for the whole model, where every class carries at least
+            // one face by construction and an empty trace really would be a defect, and the wrong
+            // one for a region. Whole-model runs never reach this line.
+            if split.is_empty() {
+                return Ok(Vec::new());
+            }
             let (cells, face_of) = extract_cells(jd, wc, split)?;
             let nesting = nest_cells(jd, wc, &cells, split)?;
-            let labels = label_cells(&cells, &face_of, split, &nesting, [false; 4])?;
+            let labels = label_cells(&cells, &face_of, split, &nesting, region.seed)?;
             Ok(emit_faces(
                 kind,
                 &labels,
@@ -2052,6 +2180,17 @@ pub(crate) fn boolean(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
+    boolean_over(model, kind, a, b, Subdivision::Whole)
+}
+
+/// [`boolean`], with the space division named — the seam the subdivided engine is built along.
+pub(crate) fn boolean_over(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    how: Subdivision,
+) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
     let PlaneSetup {
         planes: faces_tab,
         surf_ix,
@@ -2074,6 +2213,9 @@ pub(crate) fn boolean(
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
     let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
+        let whole = regions_for(
+            how, model, a, b, &faces_tab, &surf_ix, &inc_a, &inc_b, &jd, &plane_ix,
+        );
         let faces = trace_result_faces(
             model,
             kind,
@@ -2081,13 +2223,11 @@ pub(crate) fn boolean(
             b,
             &jd,
             &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
             &plane_ix,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
+            &whole,
         )?;
         // **Every debug run answers the same boolean twice and requires the same answer.**
         //
@@ -2103,6 +2243,9 @@ pub(crate) fn boolean(
         {
             let plain_notes = Notes::new();
             let plain_jd = Judge::new(&geom, standard, &plain_notes);
+            let whole = regions_for(
+                how, model, a, b, &faces_tab, &surf_ix, &inc_a, &inc_b, &plain_jd, &plane_ix,
+            );
             let plain = trace_result_faces(
                 model,
                 kind,
@@ -2110,13 +2253,11 @@ pub(crate) fn boolean(
                 b,
                 &plain_jd,
                 &faces_tab,
-                &surf_ix,
-                &inc_a,
-                &inc_b,
                 &plane_ix,
                 n_a,
                 &class_owner,
                 crate::reuse::ClassReuse::Off,
+                &whole,
             );
             match &plain {
                 Ok(p) => assert_eq!(
@@ -3327,6 +3468,18 @@ mod tests {
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let whole = regions_for(
+            Subdivision::Whole,
+            &m,
+            a,
+            b,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &jd,
+            &plane_ix,
+        );
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
@@ -3334,13 +3487,11 @@ mod tests {
             b,
             &jd,
             &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
             &plane_ix,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
+            &whole,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "z=0 + z=2 + 4 walls×2");
@@ -3529,6 +3680,18 @@ mod tests {
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let whole = regions_for(
+            Subdivision::Whole,
+            &m,
+            a,
+            b,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &jd,
+            &plane_ix,
+        );
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
@@ -3536,13 +3699,11 @@ mod tests {
             b,
             &jd,
             &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
             &plane_ix,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
+            &whole,
         )
         .unwrap();
         assert_eq!(
@@ -3630,6 +3791,18 @@ mod tests {
             ..
         } = plane_index_setup(&m, u, slab).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let whole = regions_for(
+            Subdivision::Whole,
+            &m,
+            u,
+            slab,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &jd,
+            &plane_ix,
+        );
         let faces = trace_result_faces(
             &m,
             BoolKind::Fuse,
@@ -3637,13 +3810,11 @@ mod tests {
             slab,
             &jd,
             &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
             &plane_ix,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
+            &whole,
         )
         .unwrap();
 
@@ -3889,6 +4060,18 @@ mod tests {
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let whole = regions_for(
+            Subdivision::Whole,
+            &m,
+            a,
+            b,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &jd,
+            &plane_ix,
+        );
         let faces = trace_result_faces(
             &m,
             BoolKind::Cut,
@@ -3896,13 +4079,11 @@ mod tests {
             b,
             &jd,
             &faces_tab,
-            &surf_ix,
-            &inc_a,
-            &inc_b,
             &plane_ix,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
+            &whole,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "rotated arrangement keeps 10 faces");
@@ -4112,6 +4293,175 @@ mod tests {
                 &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             assert!(tr.declined.is_empty(), "class {wc} declined: {tr:?}");
+        }
+    }
+
+    // ── V2a: the arrangement, run over two regions instead of one ─────────────────────────────
+    //
+    // The engine's work unit is an unbounded plane, so a plane class's arrangement has always
+    // needed the whole model. These prove the first half of undoing that: that the *same* engine,
+    // shown a **subset** of the faces and asked for its result faces, composes with a second run
+    // shown the rest.
+    //
+    // The split cuts nothing, which is what keeps this stage free of new machinery: no vertex is
+    // named that was not named before, and each half's outside is genuinely void, so the seed
+    // stays the constant `label_cells` always used. The seed itself is V2b's question and the
+    // clipping is V3's; what is on trial here is only the composition.
+
+    /// A solid's faces, and the coordinates it was built from, in a form two runs can be compared
+    /// by. Sorted by bits, so it depends on the geometry and not on handle order.
+    fn shape_digest(m: &Model, solids: &[Handle<Solid>]) -> Vec<(usize, f64, Vec<[u64; 3]>)> {
+        solids
+            .iter()
+            .map(|&s| {
+                let src = m.solids.get(s).clone();
+                let mut bits: Vec<[u64; 3]> = Vec::new();
+                let mut faces = 0usize;
+                for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
+                    for &fh in &m.shells.get(sh).faces {
+                        faces += 1;
+                        let face = m.faces.get(fh);
+                        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                            for he in &lp.half_edges {
+                                for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                                    let p = m.vertices.get(vh).point.as_array();
+                                    bits.push(p.map(f64::to_bits));
+                                }
+                            }
+                        }
+                    }
+                }
+                bits.sort_unstable();
+                bits.dedup();
+                let v = nacre_props::mass_props(m, s).expect("props").volume;
+                (faces, v, bits)
+            })
+            .collect()
+    }
+
+    /// Two boxes apart along x that **share four plane classes** (both span y,z ∈ [0,1]), so a
+    /// split between them gives each region a *part* of those classes rather than a class of its
+    /// own. That is the case the whole design turns on: a class's arrangement restricted to a
+    /// region of space.
+    fn two_bars(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([2.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        (a, b)
+    }
+
+    /// ★ The check is not vacuous: the split really does deal the faces into two non-empty halves,
+    /// and every face lands in exactly one of them. Without this, "the answers agree" would also
+    /// pass if `SplitFaces` quietly produced one whole region.
+    #[test]
+    fn splitting_the_face_set_deals_every_face_to_exactly_one_half() {
+        let mut m = Model::new();
+        let (a, b) = two_bars(&mut m);
+        let PlaneSetup {
+            planes: faces_tab,
+            surf_ix,
+            inc_a,
+            inc_b,
+            geom,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&geom, standard, &notes);
+        let regions = regions_for(
+            Subdivision::SplitFaces { axis: 0, at: 1.5 },
+            &m,
+            a,
+            b,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &jd,
+            &plane_ix,
+        );
+        assert_eq!(regions.len(), 2);
+        let count = |r: &Region| r.input.side_faces.iter().map(Vec::len).sum::<usize>();
+        assert_eq!(count(&regions[0]), 6, "a's six faces are below x=1.5");
+        assert_eq!(count(&regions[1]), 6, "b's six faces are above x=1.5");
+        // A shared class is *split* between the regions rather than owned by one of them — the
+        // property that makes this fixture worth more than two unrelated solids.
+        let classes = |r: &Region| -> Vec<usize> {
+            let mut c: Vec<usize> = r
+                .input
+                .side_faces
+                .iter()
+                .flatten()
+                .map(|&fp| plane_ix[fp])
+                .collect();
+            c.sort_unstable();
+            c.dedup();
+            c
+        };
+        let shared: Vec<usize> = classes(&regions[0])
+            .into_iter()
+            .filter(|c| classes(&regions[1]).contains(c))
+            .collect();
+        assert_eq!(shared.len(), 4, "z=0, z=1, y=0, y=1 are in both halves");
+    }
+
+    /// **The composition itself.** Every kind, answered twice — once by the engine over the whole
+    /// model, once over two regions — and required to agree down to the coordinate bits.
+    #[test]
+    fn arranging_two_regions_gives_the_same_solid_as_arranging_one() {
+        // `1.5` separates the two bars. `-5.0` and `9.0` put *everything* on one side, so the
+        // other region is empty — the degenerate end of the same mechanism, and the one that
+        // says an empty region contributes nothing rather than declining.
+        for at in [1.5, -5.0, 9.0] {
+            for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                one_split_agrees_with_the_whole(kind, at);
+            }
+        }
+    }
+
+    fn one_split_agrees_with_the_whole(kind: BoolKind, at: f64) {
+        {
+            let mut m1 = Model::new();
+            let (a1, b1) = two_bars(&mut m1);
+            let whole = super::boolean(&mut m1, kind, a1, b1).map(|(s, _)| s);
+
+            let mut m2 = Model::new();
+            let (a2, b2) = two_bars(&mut m2);
+            let split = boolean_over(
+                &mut m2,
+                kind,
+                a2,
+                b2,
+                Subdivision::SplitFaces { axis: 0, at },
+            )
+            .map(|(s, _)| s);
+
+            match (&whole, &split) {
+                (Ok(w), Ok(s)) => {
+                    m1.rebuild_adjacency();
+                    m2.rebuild_adjacency();
+                    assert_eq!(
+                        shape_digest(&m1, w),
+                        shape_digest(&m2, s),
+                        "{kind:?} at {at}: two regions disagreed with one"
+                    );
+                }
+                (Err(w), Err(s)) => assert_eq!(
+                    format!("{w:?}"),
+                    format!("{s:?}"),
+                    "{kind:?} at {at}: the two runs rejected differently"
+                ),
+                _ => panic!(
+                    "{kind:?} at {at}: one run answered and the other did not: {whole:?} vs {split:?}"
+                ),
+            }
         }
     }
 }
