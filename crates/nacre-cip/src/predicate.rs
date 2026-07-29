@@ -22,7 +22,7 @@
 
 use crate::kernel::frame3::{
     Decision, MoveNode, Pt3, Standard, dir_sign_judge, indirect_cmp_coord_judge,
-    indirect_orient3d_judge, orient3d_judge,
+    indirect_orient3d_judge_pre, orient3d_judge,
 };
 use nacre_math::Point3;
 use nacre_predicates::{
@@ -197,7 +197,26 @@ pub struct Judge<'a, W> {
     /// Where an inconclusive judgement's evidence is collected — diagnostic only; nothing read
     /// from here changes a sign, a merge or a coordinate.
     pub notes: &'a Notes,
+    /// ★ **Each plane's interval coefficients, built on first use and borrowed thereafter.**
+    ///
+    /// The same cache shape [`Witness::tri_pt3`] already documents, one level up: the filter every
+    /// certified judgement runs takes the planes as intervals, and those are a function of the
+    /// definitions alone. Rebuilding them per call is ~20-24% of a certified judgement, and the
+    /// arrangement's crossing collector hands in the same three definitions hundreds of times.
+    ///
+    /// It lives on the `Judge` rather than the witness because it is a property of *this*
+    /// operation's table, and because a `Judge` is made once per boolean while a witness outlives
+    /// it. Two workers racing to fill one cell compute the same value, so the answer does not
+    /// depend on who won — the same argument `HpCell` rests on.
+    iv: Vec<IvCell>,
 }
+
+/// Lazily-filled cell for one plane's interval coefficients — `OnceLock` under `parallel` because
+/// the boolean hands every worker the same `&Judge`, `OnceCell` otherwise.
+#[cfg(feature = "parallel")]
+type IvCell = std::sync::OnceLock<[crate::kernel::interval::Iv; 4]>;
+#[cfg(not(feature = "parallel"))]
+type IvCell = std::cell::OnceCell<[crate::kernel::interval::Iv; 4]>;
 
 impl<'a, W> Judge<'a, W> {
     pub fn new(planes: &'a [W], standard: Standard, notes: &'a Notes) -> Judge<'a, W> {
@@ -205,6 +224,7 @@ impl<'a, W> Judge<'a, W> {
             planes,
             standard,
             notes,
+            iv: (0..planes.len()).map(|_| IvCell::new()).collect(),
         }
     }
 
@@ -228,6 +248,20 @@ impl<'a, W> Judge<'a, W> {
 /// Each routes itself: all-axis-aligned planes take the exact path and never build a `Pt3`;
 /// any rotated plane goes to the kernel judges, under this operation's [`Standard`], with what
 /// it could not prove recorded in [`Judge::notes`].
+impl<W: Witness> Judge<'_, W> {
+    /// Plane `k`'s interval coefficients, built once and copied thereafter.
+    ///
+    /// Returns a copy rather than a borrow because `[Iv; 4]` is four pairs of `f64` — cheaper to
+    /// move than to keep a reference alive across the judge call, and it keeps the cell's borrow
+    /// from outliving the lookup.
+    fn plane_iv(&self, k: usize) -> [crate::kernel::interval::Iv; 4] {
+        *self.iv[k].get_or_init(|| {
+            let d = plane_def(self.planes, k);
+            crate::kernel::frame3::plane_iv(&d[0], &d[1], &d[2])
+        })
+    }
+}
+
 impl<W: PlaneWitness> Judge<'_, W> {
     /// The sign of `orient3d(V, tri_j)` where `V = ∩(planes p, q, r)` is an implicit point,
     /// matching `order_along`'s shape (`+1`/`-1`/`0`).
@@ -279,7 +313,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
         );
         self.record(
             Site::Orient3d { p, q, r, j },
-            indirect_orient3d_judge(
+            indirect_orient3d_judge_pre(
+                [self.plane_iv(p), self.plane_iv(q), self.plane_iv(r)],
                 borrow3(dp),
                 borrow3(dq),
                 borrow3(dr),

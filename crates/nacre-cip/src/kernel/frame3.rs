@@ -974,7 +974,7 @@ fn pt_iv(p: &Pt3) -> [Iv; 3] {
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
 /// (§CIP ②, design.md §539). Validated H-b.
-fn plane_iv(p0: &Pt3, p1: &Pt3, p2: &Pt3) -> [Iv; 4] {
+pub(crate) fn plane_iv(p0: &Pt3, p1: &Pt3, p2: &Pt3) -> [Iv; 4] {
     let (a, b, c) = (pt_iv(p0), pt_iv(p1), pt_iv(p2));
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];
     let e2 = [c[0].sub(a[0]), c[1].sub(a[1]), c[2].sub(a[2])];
@@ -1219,11 +1219,33 @@ pub fn indirect_orient3d_judge(
     s: &Pt3,
     j: Standard,
 ) -> Decision {
-    let planes = [
+    let iv = [
         plane_iv(plane_a.0, plane_a.1, plane_a.2),
         plane_iv(plane_b.0, plane_b.1, plane_b.2),
         plane_iv(plane_c.0, plane_c.1, plane_c.2),
     ];
+    indirect_orient3d_judge_pre(iv, plane_a, plane_b, plane_c, q, r, s, j)
+}
+
+/// [`indirect_orient3d_judge`] with the filter's three interval planes **already built**.
+///
+/// ★ The filter's inputs are a function of the three plane *definitions* alone, so a caller that
+/// asks about one implicit point against many query triangles rebuilds them every time. Measured on
+/// one rotated fixture, that rebuild is ~20-24% of a certified judgement, and in the arrangement's
+/// crossing collector the same three definitions are handed in hundreds of times over. The `Pt3`
+/// definitions stay in the signature because the escalation still needs them: `plane_hp` realizes
+/// the coefficients afresh at each precision, and an interval cannot be sharpened after the fact.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn indirect_orient3d_judge_pre(
+    planes: [[Iv; 4]; 3],
+    plane_a: (&Pt3, &Pt3, &Pt3),
+    plane_b: (&Pt3, &Pt3, &Pt3),
+    plane_c: (&Pt3, &Pt3, &Pt3),
+    q: &Pt3,
+    r: &Pt3,
+    s: &Pt3,
+    j: Standard,
+) -> Decision {
     if let Some(o) = indirect_filter(planes, pt_iv(q), pt_iv(r), pt_iv(s)) {
         return Decision::Sign(o);
     }
@@ -2487,6 +2509,114 @@ mod tests {
     /// Sanity: three coordinate planes meet at the origin `V=(0,0,0)`; `orient3d(V,q,r,s)`
     /// judges a known sign, flips on a q/r swap, is `Zero` when `s` is coplanar with
     /// `V,q,r`, and is invariant under a shared rotation (rotations preserve orientation).
+    /// SPIKE: how much of a certified `orient3d` is **rebuilding the three interval planes**?
+    ///
+    /// `indirect_orient3d_judge` calls `plane_iv` on every invocation, and a caller sweeping one
+    /// implicit point's planes against many query triangles hands it the *same* three definitions
+    /// each time. Same shape as the `plane_def` rebuild that once cost 77% of a rotated boolean —
+    /// so measure it before caching it.
+    ///
+    /// ★ **Every input goes through `black_box`.** The thing being measured is loop-invariant by
+    /// construction — that is exactly why caching it would pay — so without the barrier LLVM hoists
+    /// it out and the benchmark reports the saving as already taken. The first cut of this spike
+    /// did precisely that: its three timings did not add up (whole 28.1ms vs 5.7 + 9.3), and the
+    /// missing 47% was work the optimiser had lifted out of the loops.
+    #[test]
+    #[ignore = "spike"]
+    fn spike_plane_iv_share() {
+        use std::hint::black_box;
+        let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
+        // Rotated, so the points carry real tolerance and the filter has work to do.
+        let rot = |p: Pt3| p.rotate_about(Axis::Z, deg(37, 1), [ri(2, 1), ri(-1, 1), ri(0, 1)]);
+        let tri3 = |a: (i128, i128, i128), b: (i128, i128, i128), c: (i128, i128, i128)| {
+            (
+                rot(pt(a.0, a.1, a.2)),
+                rot(pt(b.0, b.1, b.2)),
+                rot(pt(c.0, c.1, c.2)),
+            )
+        };
+        let pa = tri3((0, 0, 0), (1, 0, 0), (0, 1, 0));
+        let pb = tri3((0, 0, 0), (1, 0, 0), (0, 0, 1));
+        let pc = tri3((0, 0, 0), (0, 1, 0), (0, 0, 1));
+        let (q, r, s) = (rot(pt(1, 0, 0)), rot(pt(0, 1, 0)), rot(pt(0, 0, 1)));
+        fn t3(t: &(Pt3, Pt3, Pt3)) -> (&Pt3, &Pt3, &Pt3) {
+            (&t.0, &t.1, &t.2)
+        }
+        let n = 200_000;
+
+        // Whole judgement, as production calls it.
+        let t = std::time::Instant::now();
+        let mut acc = 0i64;
+        for _ in 0..n {
+            acc += indirect_orient3d_judge(
+                t3(black_box(&pa)),
+                t3(black_box(&pb)),
+                t3(black_box(&pc)),
+                black_box(&q),
+                black_box(&r),
+                black_box(&s),
+                fixture(),
+            )
+            .orient() as i64;
+        }
+        let whole = t.elapsed();
+
+        // The three plane rebuilds alone — what a per-class cache would delete.
+        let t = std::time::Instant::now();
+        let mut sink = 0usize;
+        for _ in 0..n {
+            for tr in [&pa, &pb, &pc] {
+                let tr = black_box(tr);
+                sink += usize::from(
+                    black_box(plane_iv(&tr.0, &tr.1, &tr.2))[0]
+                        .sign()
+                        .unwrap_or(false),
+                );
+            }
+        }
+        let rebuild = t.elapsed();
+
+        // The filter with the planes already in hand — what a cached call would cost.
+        let planes = [
+            plane_iv(&pa.0, &pa.1, &pa.2),
+            plane_iv(&pb.0, &pb.1, &pb.2),
+            plane_iv(&pc.0, &pc.1, &pc.2),
+        ];
+        let t = std::time::Instant::now();
+        let mut hit = 0usize;
+        for _ in 0..n {
+            hit += usize::from(
+                indirect_filter(
+                    black_box(planes),
+                    pt_iv(black_box(&q)),
+                    pt_iv(black_box(&r)),
+                    pt_iv(black_box(&s)),
+                )
+                .is_some(),
+            );
+        }
+        let cached = t.elapsed();
+
+        println!(
+            "\n  {n} certified orient3d, one rotated fixture   (acc {acc}, sink {sink}, hit {hit})"
+        );
+        println!("    whole judgement           {whole:>9.1?}");
+        println!(
+            "    ★ three plane_iv rebuilds {rebuild:>9.1?}   {:.1}% of it",
+            100.0 * rebuild.as_nanos() as f64 / whole.as_nanos() as f64
+        );
+        println!(
+            "    filter with planes cached {cached:>9.1?}   {:.1}% of it  ⇒ caching buys {:.2}x",
+            100.0 * cached.as_nanos() as f64 / whole.as_nanos() as f64,
+            whole.as_nanos() as f64 / cached.as_nanos() as f64
+        );
+        println!(
+            "    accounted                 {:>9.1?}   {:.1}%",
+            rebuild + cached,
+            100.0 * (rebuild + cached).as_nanos() as f64 / whole.as_nanos() as f64
+        );
+    }
+
     #[test]
     fn indirect_sanity_and_rotation_invariance() {
         fn tri(t: &(Pt3, Pt3, Pt3)) -> (&Pt3, &Pt3, &Pt3) {
