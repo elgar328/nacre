@@ -135,6 +135,39 @@ fn fin_fold_full(n: i128) -> (std::time::Duration, usize, f64) {
     (spent, faces, volume)
 }
 
+/// The playground's fin model, folded **two ways**, because the order is a variable and
+/// `tools/occt-fins.tcl` found it to be a bigger one than n-ary.
+///
+/// - `hub_first = false` — the 80 fins fused to each other, nothing in the middle.
+/// - `hub_first = true`  — the hub fused first, which is what the script a person writes does.
+///
+/// Both produce the same fins; the hub only adds itself. Measured on OCCT, fusing the hub
+/// first makes the *pairwise* fold 2.3x faster and leaves n-ary buying 4% — so the cheap
+/// structure is already the one a `for` loop produces, and n-ary is not the lever it looked
+/// like. nacre shows the same effect, smaller.
+fn fin_ring(n: i128, hub_first: bool) -> (std::time::Duration, usize, f64) {
+    let mut m = Model::new();
+    let fin_ring =
+        |x0: f64, y0: f64, x1: f64, y1: f64| vec![p2(x0, y0), p2(x1, y0), p2(x1, y1), p2(x0, y1)];
+    let mut spent = std::time::Duration::ZERO;
+    let (mut acc, start) = if hub_first {
+        (extrude(&mut m, fin_ring(-1.0, -1.0, 1.0, 1.0), 3.0), 0)
+    } else {
+        (extrude(&mut m, fin_ring(0.5, -0.2, 4.0, 0.2), 1.0), 1)
+    };
+    for i in start..n {
+        let fin = extrude(&mut m, fin_ring(0.5, -0.2, 4.0, 0.2), 1.0);
+        let fin = turn(&mut m, fin, Rat::new(360 * i, n).expect("angle"));
+        let t = std::time::Instant::now();
+        acc = boolean(&mut m, BoolKind::Fuse, acc, fin).expect("fuse")[0];
+        spent += t.elapsed();
+        m.rebuild_adjacency();
+    }
+    let faces = m.shells.get(m.solids.get(acc).outer).faces.len();
+    let volume = nacre_props::mass_props(&m, acc).expect("props").volume;
+    (spent, faces, volume)
+}
+
 /// `reps` independent small axis-aligned fuses — the shape the census is full of, and the
 /// one where per-class work is smallest.
 fn small_booleans(reps: usize) -> std::time::Duration {
@@ -179,6 +212,16 @@ fn boolean_wall_clock() {
     println!(
         "  fold 80 answer : {faces} faces, volume {volume:.6}   (OCCT, same fixture: 1974 faces, 237.212)"
     );
+    // The order experiment, against `tools/occt-fins.tcl`'s OCCT numbers on the same shapes.
+    for (label, hub_first, occt) in [
+        ("fins only     ", false, "8.27s / n-ary 3.03s"),
+        ("hub first+fins", true, "3.64s / n-ary 3.49s"),
+    ] {
+        let (d, faces, v) = fin_ring(80, hub_first);
+        println!(
+            "  ring 80 {label} : {d:>9.2?}   {faces} faces, vol {v:.4}   (OCCT 1 thread: {occt})"
+        );
+    }
     let reps = 200;
     let d = small_booleans(reps);
     println!(
