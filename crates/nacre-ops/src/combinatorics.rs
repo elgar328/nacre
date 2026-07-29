@@ -219,11 +219,14 @@ pub(crate) struct FaceLoops {
 /// makes the tracer a function of a face table rather than of a topology store, and the 169×
 /// reduction comes along for free.
 pub(crate) struct TraceInput {
-    /// Indexed like `planes`/`FaceInfo`, so `loops[fp]` is face slot `fp`'s.
-    pub loops: Vec<FaceLoops>,
-    /// Each operand's face slots, in the order the shells list them — the walk `trace_one` used to
-    /// do over `Model`.
-    pub side_faces: [Vec<usize>; 2],
+    /// Each operand's faces: the `planes`-table slot and that face's loops, in the order the
+    /// shells list them — the walk `trace_one` used to do over `Model`.
+    ///
+    /// **Compact on purpose.** This was a full-length `Vec<FaceLoops>` beside a list of slots, which
+    /// is fine for one whole-model region and quadratic once space is subdivided: the face table
+    /// grows with every node of the subdivision tree, and each leaf would carry a row per slot in
+    /// it. A leaf carries only its own faces.
+    pub faces: [Vec<(usize, FaceLoops)>; 2],
 }
 
 /// Derive [`TraceInput`] for one boolean, once.
@@ -239,21 +242,23 @@ pub(crate) fn trace_input(
     jd: &Judge<'_, PlaneGeom>,
     plane_ix: &[usize],
 ) -> TraceInput {
-    let mut loops = vec![FaceLoops::default(); n_faces];
-    let mut side_faces = [Vec::new(), Vec::new()];
+    let _ = n_faces;
+    let mut faces = [Vec::new(), Vec::new()];
     for (side, (solid, inc)) in operands.into_iter().enumerate() {
         for sh in crate::planes::solid_shell_handles(model, solid) {
             for &fh in &model.shells.get(sh).faces {
                 let fp = surf_ix[&fh];
-                side_faces[side].push(fp);
-                loops[fp] = FaceLoops {
-                    outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix).ok(),
-                    holes: hole_rings(model, fh, fp, inc, jd, plane_ix).ok(),
-                };
+                faces[side].push((
+                    fp,
+                    FaceLoops {
+                        outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix).ok(),
+                        holes: hole_rings(model, fh, fp, inc, jd, plane_ix).ok(),
+                    },
+                ));
             }
         }
     }
-    TraceInput { loops, side_faces }
+    TraceInput { faces }
 }
 
 /// Each hole ring of face `f`, as three-plane triples.

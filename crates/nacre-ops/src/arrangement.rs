@@ -634,13 +634,12 @@ fn run_body_above(
 /// Trace one solid on plane class `wc` (a canon root, i.e. an index into `planes`). This brick:
 /// seated faces → their boundary as segments; every other face → `declined`.
 ///
-/// `side_faces` is that solid's face slots and `loops` every face's rings — see
-/// [`combinatorics::TraceInput`]. This walk used to read the shells out of the `Model` and derive
-/// the rings here, once per class; nothing about either depends on `wc`.
+/// `faces_in` is that solid's `(slot, rings)` pairs — see [`combinatorics::TraceInput`]. This walk
+/// used to read the shells out of the `Model` and derive the rings here, once per class; nothing
+/// about either depends on `wc`.
 #[allow(clippy::too_many_arguments)]
 fn trace_one(
-    side_faces: &[usize],
-    loops: &[combinatorics::FaceLoops],
+    faces_in: &[(usize, combinatorics::FaceLoops)],
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, PlaneGeom>,
@@ -650,8 +649,8 @@ fn trace_one(
 ) {
     let planes = jd.planes;
     let w_normal = planes[wc].plane.normal();
-    for &fp in side_faces {
-        let fl = &loops[fp];
+    for (fp, fl) in faces_in {
+        let fp = *fp;
         if plane_ix[fp] != wc {
             trace_transversal_face(fp, fl, which, wc, jd, faces, plane_ix, out);
             continue;
@@ -741,16 +740,7 @@ fn trace_on_class(
 ) -> Trace {
     let mut out = Trace::default();
     for (side, which) in [SolidSide::A, SolidSide::B].into_iter().enumerate() {
-        trace_one(
-            &input.side_faces[side],
-            &input.loops,
-            which,
-            wc,
-            jd,
-            faces,
-            plane_ix,
-            &mut out,
-        );
+        trace_one(&input.faces[side], which, wc, jd, faces, plane_ix, &mut out);
     }
     out
 }
@@ -784,7 +774,7 @@ fn trace_on_class_of(
 }
 
 /// One solid only — the second operand slot is filled with the same solid, whose loops are
-/// identical, and only `side_faces[0]` is read.
+/// identical, and only `faces[0]` is read.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn trace_one_of(
@@ -807,16 +797,7 @@ fn trace_one_of(
         jd,
         plane_ix,
     );
-    trace_one(
-        &input.side_faces[0],
-        &input.loops,
-        which,
-        wc,
-        jd,
-        faces,
-        plane_ix,
-        out,
-    );
+    trace_one(&input.faces[0], which, wc, jd, faces, plane_ix, out);
 }
 
 /// A coincident-merged arrangement edge on a plane class. When the cut plane is a solid's **cap
@@ -1646,6 +1627,9 @@ fn emit_faces(
 pub(crate) struct Region {
     pub input: combinatorics::TraceInput,
     pub seed: Label,
+    /// The plane classes this region arranges — the ones its own faces lie on, box classes
+    /// excluded. See `regions_for` for why that is the whole set it can contribute to.
+    pub classes: Vec<usize>,
 }
 
 /// How space is divided before arranging.
@@ -2068,21 +2052,24 @@ fn cap_face_info(class: &PlaneGeom, keep: i8) -> FaceInfo {
 }
 
 /// The regions one boolean is arranged over.
-#[allow(clippy::too_many_arguments)]
+///
+/// The tables are `&mut Vec` because a clipping subdivision **grows** them — a face that clips into
+/// several pieces gets a slot each, and every cap gets one. (Clippy asks for `&mut [_]`; it cannot
+/// see the pushes, which happen in `clip_region`.)
+#[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 pub(crate) fn regions_for(
     how: Subdivision,
     model: &Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    faces: &[FaceInfo],
+    faces: &mut Vec<FaceInfo>,
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &combinatorics::EdgeFaces,
     inc_b: &combinatorics::EdgeFaces,
     jd: &Judge<'_, PlaneGeom>,
-    plane_ix: &[usize],
+    plane_ix: &mut Vec<usize>,
     split_class: Option<usize>,
 ) -> Vec<Region> {
-    let _ = split_class;
     let input = combinatorics::trace_input(
         model,
         [(a, inc_a), (b, inc_b)],
@@ -2091,107 +2078,146 @@ pub(crate) fn regions_for(
         jd,
         plane_ix,
     );
+    // A region arranges only the classes its **own** faces lie on, and never a box class. A result
+    // face on `W` is part of `∂A` or `∂B`, so `W` carries an operand face; if none of them is in
+    // this region, neither is any result face on `W`. Without this the leaves would each walk the
+    // whole class table and the subdivision would buy almost nothing.
+    let classes_of = |input: &combinatorics::TraceInput, plane_ix: &[usize]| -> Vec<usize> {
+        let bound = split_class.unwrap_or(usize::MAX);
+        let mut c: Vec<usize> = input
+            .faces
+            .iter()
+            .flatten()
+            .map(|(fp, _)| plane_ix[*fp])
+            .filter(|&c| c < bound)
+            .collect();
+        c.sort_unstable();
+        c.dedup();
+        c
+    };
     match how {
-        Subdivision::Whole => vec![Region {
-            input,
-            seed: [false; 4],
-        }],
+        Subdivision::Whole => {
+            let classes = classes_of(&input, plane_ix);
+            vec![Region {
+                input,
+                seed: [false; 4],
+                classes,
+            }]
+        }
         #[cfg(test)]
         Subdivision::SplitFaces { axis, at } => {
-            let mut halves = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
-            for (side, slots) in input.side_faces.iter().enumerate() {
-                for &fp in slots {
+            let mut halves: [[Vec<(usize, combinatorics::FaceLoops)>; 2]; 2] = Default::default();
+            for (side, list) in input.faces.into_iter().enumerate() {
+                for (fp, fl) in list {
                     let (lo, hi) = face_span(model, faces[fp].face.expect("a real face"), axis);
                     assert!(
                         hi <= at || lo >= at,
                         "the split plane {axis}={at} cuts face slot {fp} (span {lo}..{hi}); \
                          V2a partitions, it does not clip"
                     );
-                    halves[usize::from(lo >= at)][side].push(fp);
+                    halves[usize::from(lo >= at)][side].push((fp, fl));
                 }
             }
-            let [low, high] = halves;
-            vec![
-                Region {
-                    input: combinatorics::TraceInput {
-                        loops: input.loops.clone(),
-                        side_faces: low,
-                    },
-                    seed: [false; 4],
-                },
-                Region {
-                    input: combinatorics::TraceInput {
-                        loops: input.loops,
-                        side_faces: high,
-                    },
-                    seed: [false; 4],
-                },
-            ]
+            halves
+                .into_iter()
+                .map(|faces_in| {
+                    let input = combinatorics::TraceInput { faces: faces_in };
+                    let classes = classes_of(&input, plane_ix);
+                    Region {
+                        input,
+                        seed: [false; 4],
+                        classes,
+                    }
+                })
+                .collect()
         }
         #[cfg(test)]
         Subdivision::ClipAt { .. } => {
             let split = split_class.expect("a clipping subdivision names its split class");
-            // ★ **The seed stays `[false; 4]`, and that is a claim the test is here to falsify.**
-            // A clipped ring closes along the split plane, so the restricted arrangement's
-            // unbounded cells are outside the *clipped* operand too — where it genuinely has no
-            // material. If that reasoning is wrong, it is wrong as a volume, not as a rounding
-            // error.
+            // ★ **The seed stays `[false; 4]`, and it is now a theorem rather than a hope**: the
+            // clipped operand is *capped*, hence a closed bounded solid, so the unbounded cells of
+            // its arrangement on any class really are outside it.
             [1i8, -1]
                 .into_iter()
-                .map(|keep| Region {
-                    input: clip_input(jd, &input, plane_ix, split, keep),
-                    seed: [false; 4],
+                .map(|keep| {
+                    let input = clip_region(jd, &input, faces, plane_ix, split, keep);
+                    let classes = classes_of(&input, plane_ix);
+                    Region {
+                        input,
+                        seed: [false; 4],
+                        classes,
+                    }
                 })
                 .collect()
         }
     }
 }
 
-/// Every face's loops, clipped to one side of `split`; faces left with nothing are dropped.
+/// Clip both operands to one half-space and cap them — the leaf's operands.
+///
+/// A face that clips into **several** pieces gets a `faces_tab` slot per piece (same plane, same
+/// `n_out`, same `orient_sign`), and each cap gets one too. That is why the tables are `&mut`:
+/// the subdivision adds faces, and every one of them is synthetic and gone when the boolean ends.
 #[cfg(test)]
-fn clip_input(
+#[allow(clippy::ptr_arg)] // it pushes; a slice will not do
+fn clip_region(
     jd: &Judge<'_, PlaneGeom>,
     input: &combinatorics::TraceInput,
-    plane_ix: &[usize],
+    faces: &mut Vec<FaceInfo>,
+    plane_ix: &mut Vec<usize>,
     split: usize,
     keep: i8,
 ) -> combinatorics::TraceInput {
-    let mut loops = vec![combinatorics::FaceLoops::default(); input.loops.len()];
-    let mut side_faces = [Vec::new(), Vec::new()];
-    for (side, slots) in input.side_faces.iter().enumerate() {
-        for &fp in slots {
-            let fc = plane_ix[fp];
-            let src = &input.loops[fp];
-            let Some(outer) = src.outer.as_ref() else {
+    let mut out: [Vec<(usize, combinatorics::FaceLoops)>; 2] = Default::default();
+    for (side_in, out_side) in input.faces.iter().zip(out.iter_mut()) {
+        let mut cap_edges: Vec<([usize; 3], [usize; 3])> = Vec::new();
+        for (fp, fl) in side_in {
+            let Some(outer) = fl.outer.as_ref() else {
                 // The whole-model run could not name this loop either; carry the failure through
                 // so the region declines for the same reason rather than for a missing face.
-                side_faces[side].push(fp);
-                loops[fp] = src.clone();
+                out_side.push((*fp, fl.clone()));
                 continue;
             };
             let mut rings: Vec<&[[usize; 3]]> = vec![outer];
-            if let Some(hs) = src.holes.as_ref() {
+            if let Some(hs) = fl.holes.as_ref() {
                 rings.extend(hs.iter().map(Vec::as_slice));
             }
+            let fc = plane_ix[*fp];
             let clipped = clip_face(jd, fc, split, keep, &rings)
                 .unwrap_or_else(|e| panic!("clip of face slot {fp} declined: {e:?}"));
-            let mut it = clipped.pieces.into_iter();
-            let Some((outer, holes)) = it.next() else {
-                continue; // wholly on the other side
-            };
-            assert!(
-                it.next().is_none(),
-                "face slot {fp} clipped into several pieces; each needs its own `faces_tab` slot, \
-                 which C3 adds — C1 only ships the clipper"
-            );
-            side_faces[side].push(fp);
-            loops[fp] = combinatorics::FaceLoops {
-                outer: Some(outer),
-                holes: Some(holes),
-            };
+            cap_edges.extend(clipped.cap_edges);
+            for (i, (o, h)) in clipped.pieces.into_iter().enumerate() {
+                let slot = if i == 0 {
+                    *fp
+                } else {
+                    let dup = faces[*fp].clone();
+                    faces.push(dup);
+                    plane_ix.push(fc);
+                    faces.len() - 1
+                };
+                out_side.push((
+                    slot,
+                    combinatorics::FaceLoops {
+                        outer: Some(o),
+                        holes: Some(h),
+                    },
+                ));
+            }
+        }
+        let caps = cap_rings(jd, split, keep, &cap_edges).expect("cap assembly");
+        for (o, h) in caps {
+            faces.push(cap_face_info(&jd.planes[split], keep));
+            plane_ix.push(split);
+            out_side.push((
+                faces.len() - 1,
+                combinatorics::FaceLoops {
+                    outer: Some(o),
+                    holes: Some(h),
+                },
+            ));
         }
     }
-    combinatorics::TraceInput { loops, side_faces }
+    combinatorics::TraceInput { faces: out }
 }
 
 /// A face's extent along one axis, from its vertices' cached coordinates.
@@ -2235,7 +2261,6 @@ fn trace_result_faces(
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
     regions: &[Region],
-    n_classes: usize,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
@@ -2264,6 +2289,15 @@ fn trace_result_faces(
     // during a split leaves the merge that ran before it stale, so pass A repeats until the table
     // stops growing. Discoveries only accumulate and are bounded, so this terminates; a model with
     // no concurrency at all makes exactly one round.
+    // ★ **Every (region, class) pair that has anything to arrange, in a fixed order.** A region
+    // arranges only the classes its own faces lie on: a result face on `W` is part of `∂A` or
+    // `∂B`, so `W` carries an operand face, and a region holding none of them holds no result face
+    // on `W` either. Region-major keeps the handle order a function of the input.
+    let work: Vec<(usize, usize)> = regions
+        .iter()
+        .enumerate()
+        .flat_map(|(r, reg)| reg.classes.iter().map(move |&wc| (r, wc)))
+        .collect();
     let mut aliases = Aliases::default();
     let mut splits: Vec<Vec<MergedSeg>> = Vec::new();
     loop {
@@ -2278,10 +2312,12 @@ fn trace_result_faces(
         // more round. The last round — the one whose splits are kept — runs on a table that
         // has stopped growing either way.
         let snapshot = aliases.clone();
-        // Flattened `(region, class)`, region-major — so a single region is exactly the old index
-        // space and the reject a decline raises is still the lowest-numbered class's.
-        let round = crate::par::try_map_range(regions.len() * n_classes, |k| {
-            let (trace_in, wc) = (&regions[k / n_classes].input, k % n_classes);
+        // Flattened `(region, class-of-that-region)`, region-major — a whole-model run has one
+        // region holding every class, so this is exactly the old index space and the reject a
+        // decline raises is still the lowest-numbered class's.
+        let round = crate::par::try_map_range(work.len(), |k| {
+            let (r, wc) = work[k];
+            let trace_in = &regions[r].input;
             // **Pass A runs for every class, including the ones pass B will not arrange.**
             //
             // It used to skip them, and that was unsound: pass B's reuse can *decline* — a vertex
@@ -2332,7 +2368,8 @@ fn trace_result_faces(
         .then(|| crate::reuse::VertexClasses::of(model, faces, plane_ix, n_a..faces.len()));
 
     let per_class = crate::par::try_map_range(splits.len(), |k| {
-        let (region, wc) = (&regions[k / n_classes], k % n_classes);
+        let (r, wc) = work[k];
+        let region = &regions[r];
         let split = &splits[k];
         let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
             // ★ A region need not touch every class. One whose faces all lie elsewhere traces
@@ -2681,7 +2718,6 @@ pub(crate) fn boolean_over(
     // **The classes the arrangement runs over.** A synthetic split plane is appended *after* them
     // and never arranged: it exists only to name the vertices clipping mints, and arranging it
     // would put a cap on every region boundary — the very thing the seed exists to avoid.
-    let n_model_classes = geom.len();
     let split_class = match how {
         Subdivision::Whole => None,
         #[cfg(test)]
@@ -2702,17 +2738,19 @@ pub(crate) fn boolean_over(
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
     let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let whole = regions_for(
             how,
             model,
             a,
             b,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             split_class,
         );
         let faces = trace_result_faces(
@@ -2721,13 +2759,12 @@ pub(crate) fn boolean_over(
             a,
             b,
             &jd,
-            &faces_tab,
-            &plane_ix,
+            &ftab,
+            &pix,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
             &whole,
-            n_model_classes,
         )?;
         // **Every debug run answers the same boolean twice and requires the same answer.**
         //
@@ -2743,17 +2780,19 @@ pub(crate) fn boolean_over(
         {
             let plain_notes = Notes::new();
             let plain_jd = Judge::new(&geom, standard, &plain_notes);
+            let mut ftab = faces_tab.clone();
+            let mut pix = plane_ix.clone();
             let whole = regions_for(
                 how,
                 model,
                 a,
                 b,
-                &faces_tab,
+                &mut ftab,
                 &surf_ix,
                 &inc_a,
                 &inc_b,
                 &plain_jd,
-                &plane_ix,
+                &mut pix,
                 split_class,
             );
             let plain = trace_result_faces(
@@ -2762,13 +2801,12 @@ pub(crate) fn boolean_over(
                 a,
                 b,
                 &plain_jd,
-                &faces_tab,
-                &plane_ix,
+                &ftab,
+                &pix,
                 n_a,
                 &class_owner,
                 crate::reuse::ClassReuse::Off,
                 &whole,
-                n_model_classes,
             );
             match &plain {
                 Ok(p) => assert_eq!(
@@ -3979,17 +4017,19 @@ mod tests {
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let whole = regions_for(
             Subdivision::Whole,
             &m,
             a,
             b,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             None,
         );
         let faces = trace_result_faces(
@@ -4004,7 +4044,6 @@ mod tests {
             &class_owner,
             crate::reuse::ClassReuse::Proved,
             &whole,
-            planes.len(),
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "z=0 + z=2 + 4 walls×2");
@@ -4193,17 +4232,19 @@ mod tests {
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let whole = regions_for(
             Subdivision::Whole,
             &m,
             a,
             b,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             None,
         );
         let faces = trace_result_faces(
@@ -4218,7 +4259,6 @@ mod tests {
             &class_owner,
             crate::reuse::ClassReuse::Proved,
             &whole,
-            planes.len(),
         )
         .unwrap();
         assert_eq!(
@@ -4306,17 +4346,19 @@ mod tests {
             ..
         } = plane_index_setup(&m, u, slab).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let whole = regions_for(
             Subdivision::Whole,
             &m,
             u,
             slab,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             None,
         );
         let faces = trace_result_faces(
@@ -4331,7 +4373,6 @@ mod tests {
             &class_owner,
             crate::reuse::ClassReuse::Proved,
             &whole,
-            planes.len(),
         )
         .unwrap();
 
@@ -4577,17 +4618,19 @@ mod tests {
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let whole = regions_for(
             Subdivision::Whole,
             &m,
             a,
             b,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             None,
         );
         let faces = trace_result_faces(
@@ -4602,7 +4645,6 @@ mod tests {
             &class_owner,
             crate::reuse::ClassReuse::Proved,
             &whole,
-            planes.len(),
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "rotated arrangement keeps 10 faces");
@@ -4827,9 +4869,16 @@ mod tests {
     // stays the constant `label_cells` always used. The seed itself is V2b's question and the
     // clipping is V3's; what is on trial here is only the composition.
 
-    /// A solid's faces, and the coordinates it was built from, in a form two runs can be compared
-    /// by. Sorted by bits, so it depends on the geometry and not on handle order.
-    fn shape_digest(m: &Model, solids: &[Handle<Solid>]) -> Vec<(usize, f64, Vec<[u64; 3]>)> {
+    /// A solid's faces and the coordinates it was built from — sorted by bits, so it depends on
+    /// the geometry and not on handle or face order. **This part must be bit-identical**: the
+    /// subdivision adds no vertex to the answer, so a difference means an artificial one survived.
+    ///
+    /// ★ Volume is deliberately *not* in here. `mass_props` sums a contribution per face, so it
+    /// depends on the order faces come out in, and subdivision changes that order — the rotated
+    /// fixture differs by 2 ULP with a bit-identical coordinate set. Asking for bit equality there
+    /// would be asking for something that cannot hold; [`same_shape`] checks it to a tolerance
+    /// instead.
+    fn shape_digest(m: &Model, solids: &[Handle<Solid>]) -> Vec<(usize, Vec<[u64; 3]>)> {
         solids
             .iter()
             .map(|&s| {
@@ -4852,10 +4901,25 @@ mod tests {
                 }
                 bits.sort_unstable();
                 bits.dedup();
-                let v = nacre_props::mass_props(m, s).expect("props").volume;
-                (faces, v, bits)
+                (faces, bits)
             })
             .collect()
+    }
+
+    /// Two answers agree: same bodies, same faces, same coordinate bits, and volumes within a few
+    /// ULP of each other.
+    fn same_shape(m1: &Model, w: &[Handle<Solid>], m2: &Model, c: &[Handle<Solid>], tag: &str) {
+        assert_eq!(shape_digest(m1, w), shape_digest(m2, c), "{tag}: geometry");
+        let vol = |m: &Model, ss: &[Handle<Solid>]| -> f64 {
+            ss.iter()
+                .map(|&s| nacre_props::mass_props(m, s).expect("props").volume)
+                .sum()
+        };
+        let (v1, v2) = (vol(m1, w), vol(m2, c));
+        assert!(
+            (v1 - v2).abs() <= 8.0 * f64::EPSILON * v1.abs().max(1.0),
+            "{tag}: volume {v1} vs {v2}"
+        );
     }
 
     /// Two boxes apart along x that **share four plane classes** (both span y,z ∈ [0,1]), so a
@@ -4894,21 +4958,23 @@ mod tests {
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&geom, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let regions = regions_for(
             Subdivision::SplitFaces { axis: 0, at: 1.5 },
             &m,
             a,
             b,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             None,
         );
         assert_eq!(regions.len(), 2);
-        let count = |r: &Region| r.input.side_faces.iter().map(Vec::len).sum::<usize>();
+        let count = |r: &Region| r.input.faces.iter().map(Vec::len).sum::<usize>();
         assert_eq!(count(&regions[0]), 6, "a's six faces are below x=1.5");
         assert_eq!(count(&regions[1]), 6, "b's six faces are above x=1.5");
         // A shared class is *split* between the regions rather than owned by one of them — the
@@ -4916,10 +4982,10 @@ mod tests {
         let classes = |r: &Region| -> Vec<usize> {
             let mut c: Vec<usize> = r
                 .input
-                .side_faces
+                .faces
                 .iter()
                 .flatten()
-                .map(|&fp| plane_ix[fp])
+                .map(|(fp, _)| pix[*fp])
                 .collect();
             c.sort_unstable();
             c.dedup();
@@ -4967,11 +5033,7 @@ mod tests {
                 (Ok(w), Ok(s)) => {
                     m1.rebuild_adjacency();
                     m2.rebuild_adjacency();
-                    assert_eq!(
-                        shape_digest(&m1, w),
-                        shape_digest(&m2, s),
-                        "{kind:?} at {at}: two regions disagreed with one"
-                    );
+                    same_shape(&m1, w, &m2, s, &format!("{kind:?} at {at}"));
                 }
                 (Err(w), Err(s)) => assert_eq!(
                     format!("{w:?}"),
@@ -5033,56 +5095,68 @@ mod tests {
         geom.push(split_plane_class(&mut m, 0, 0.75));
         let split = geom.len() - 1;
         let jd = Judge::new(&geom, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let regions = regions_for(
             Subdivision::ClipAt { axis: 0, at: 0.75 },
             &m,
             a,
             b,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             Some(split),
         );
         assert_eq!(regions.len(), 2);
         for (i, r) in regions.iter().enumerate() {
-            let slots: Vec<usize> = r.input.side_faces.iter().flatten().copied().collect();
-            // The two `x` walls of each cube lie wholly on one side; the other ten straddle.
+            let slots: Vec<usize> = r.input.faces.iter().flatten().map(|(fp, _)| *fp).collect();
+            // Ten of the twelve cube faces straddle x=0.75 (each cube's two x walls do not), and
+            // each operand gains **one cap** — the cross-section of its clipped self.
+            let caps = slots.iter().filter(|&&fp| pix[fp] == split).count();
+            assert_eq!(caps, 2, "half {i}: one cap per operand");
             assert!(
-                (10..=11).contains(&slots.len()),
+                (10..=13).contains(&slots.len()),
                 "half {i} kept {} faces",
                 slots.len()
             );
+            // A cap must not be counted as "cut": it *is* the cut.
+            let slots: Vec<usize> = slots.into_iter().filter(|&fp| pix[fp] != split).collect();
             let cut = slots
                 .iter()
                 .filter(|&&fp| {
-                    r.input.loops[fp]
-                        .outer
-                        .as_ref()
+                    r.input
+                        .faces
+                        .iter()
+                        .flatten()
+                        .find(|(q, _)| *q == fp)
+                        .and_then(|(_, fl)| fl.outer.as_ref())
                         .is_some_and(|o| o.iter().any(|t| t.contains(&split)))
                 })
                 .count();
             assert_eq!(cut, 8, "half {i}: eight faces carry split-plane vertices");
         }
         assert!(n_model_classes < geom.len(), "the split class is appended");
+        assert!(
+            ftab.len() > faces_tab.len(),
+            "the caps joined the face table"
+        );
     }
 
-    /// ★ **Why clipping alone does not work, as a property rather than an anecdote.**
+    /// ★ **Why clipping alone did not work, and that the cap fixes it — the same measurement,
+    /// now inverted.**
     ///
-    /// A face **seated** on class `W` closes by itself: its own ring was clipped, and
-    /// Sutherland-Hodgman put an edge on the split plane to close it. A solid that merely
-    /// **straddles** `W` does not: its footprint there is bounded by the chords of its walls, and
-    /// the wall at the split plane is the cap that "no caps" declined to make. So its trace is an
-    /// open chain, the cells do not close, and `label_cells` reports the contradiction it should.
+    /// Clipping without a cap left every class with a straddling operand **open**: exactly two
+    /// odd-degree nodes, both naming the split class (measured 2026-07-29, `LabelConflict`). A face
+    /// *seated* on a class closes itself when clipped; one that merely *straddles* has its
+    /// footprint bounded by the chords of its walls, and the wall at the split plane is the cap.
     ///
-    /// Measured on every class of the clipped fixture that has a straddling operand: **exactly two
-    /// odd-degree nodes, and both name the split class** — the two ends of the missing cap chord.
-    /// That is the shape of the repair, not just of the failure: one segment on `wall = split`
-    /// joining them, which is what tracing the clipped solid's cap face would have produced.
+    /// With the cap in place, **no class is left open** — and the fixture still contains the
+    /// classes that used to be, so this is the repair being observed and not the case going away.
     #[test]
-    fn clipping_leaves_a_straddling_operand_open() {
+    fn the_cap_closes_every_class_that_clipping_left_open() {
         let mut m = Model::new();
         let (a, b) = overlapping_cubes(&mut m);
         let PlaneSetup {
@@ -5101,63 +5175,63 @@ mod tests {
         geom.push(split_plane_class(&mut m, 0, 0.75));
         let split = geom.len() - 1;
         let jd = Judge::new(&geom, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
         let regions = regions_for(
             Subdivision::ClipAt { axis: 0, at: 0.75 },
             &m,
             a,
             b,
-            &faces_tab,
+            &mut ftab,
             &surf_ix,
             &inc_a,
             &inc_b,
             &jd,
-            &plane_ix,
+            &mut pix,
             Some(split),
         );
-        let mut open_classes = 0usize;
+        // ★ **The criterion is the labelling, not a degree count.** Counting odd-degree nodes was
+        // what *found* the missing cap, and it does not generalise: `merge_coincident` folds two
+        // solids' coincident contributions into one edge, so a node where one operand's corner
+        // meets the other's straight edge legitimately has degree three. What the failure actually
+        // was is `LabelConflict` — the flip relation not holding across the complex — so that is
+        // what this asks.
+        let mut straddled = 0usize;
         for (ri, r) in regions.iter().enumerate() {
             for wc in 0..n_model {
-                let tr = trace_on_class(&r.input, wc, &jd, &faces_tab, &plane_ix);
+                let tr = trace_on_class(&r.input, wc, &jd, &ftab, &pix);
+                assert!(
+                    tr.declined.is_empty(),
+                    "region {ri} class {wc} declined: {:?}",
+                    tr.declined
+                );
                 if tr.segs.is_empty() {
                     continue;
                 }
                 let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-                let Ok(sp) = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()) else {
-                    continue;
-                };
-                let mut deg: HashMap<[usize; 3], usize> = HashMap::new();
-                for s in &sp {
-                    for e in s.end {
-                        *deg.entry(sorted3(e)).or_default() += 1;
-                    }
-                }
-                let odd: Vec<[usize; 3]> = deg
-                    .iter()
-                    .filter(|&(_, &d)| d % 2 == 1)
-                    .map(|(n, _)| *n)
-                    .collect();
-                if odd.is_empty() {
-                    continue;
-                }
-                open_classes += 1;
-                assert_eq!(
-                    odd.len(),
-                    2,
-                    "region {ri} class {wc}: an open chain has two ends"
-                );
-                for n in &odd {
-                    assert!(
-                        n.contains(&split),
-                        "region {ri} class {wc}: the open end {n:?} is not on the split plane, \
-                         so the missing edge is not the cap chord"
-                    );
+                let sp = split_at_crossings(&jd, wc, &merged, &mut Aliases::default())
+                    .unwrap_or_else(|e| panic!("region {ri} class {wc} split: {e:?}"));
+                let (cells, face_of) = extract_cells(&jd, wc, &sp)
+                    .unwrap_or_else(|e| panic!("region {ri} class {wc} cells: {e:?}"));
+                let nesting = nest_cells(&jd, wc, &cells, &sp)
+                    .unwrap_or_else(|e| panic!("region {ri} class {wc} nesting: {e:?}"));
+                label_cells(&cells, &face_of, &sp, &nesting, r.seed).unwrap_or_else(|e| {
+                    panic!("region {ri} class {wc}: {e:?} — the cap did not close it")
+                });
+                // ★ Not vacuous: count the classes where an operand really does straddle, which
+                // are the ones that used to raise `LabelConflict`.
+                if sp.iter().any(|s| {
+                    s.merged
+                        .iter()
+                        .any(|(_, k)| matches!(k, SegKind::Transversal { .. }))
+                }) {
+                    straddled += 1;
                 }
             }
         }
-        // ★ Not vacuous: the failure has to actually occur, or the assertions above prove nothing.
         assert!(
-            open_classes >= 4,
-            "only {open_classes} classes were left open; the fixture stopped exercising the case"
+            straddled >= 4,
+            "only {straddled} classes had a straddling operand; the case is not being exercised"
         );
     }
 
@@ -5224,8 +5298,9 @@ mod tests {
             &plane_ix,
         );
         let mut out = Vec::new();
-        for &fp in &input.side_faces[0] {
-            let ring = input.loops[fp].outer.as_ref().unwrap();
+        for (fp, fl) in &input.faces[0] {
+            let fp = *fp;
+            let ring = fl.outer.as_ref().unwrap();
             if ring.len() != 8 {
                 continue; // only the two U caps are the eight-vertex non-convex rings
             }
@@ -5371,8 +5446,8 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        for &fp in &input.side_faces[0] {
-            let fl = &input.loops[fp];
+        for (fp, fl) in &input.faces[0] {
+            let fp = *fp;
             let (Some(outer), Some(holes)) = (fl.outer.as_ref(), fl.holes.as_ref()) else {
                 continue;
             };
@@ -5485,8 +5560,9 @@ mod tests {
         let mut fired = 0usize;
         for (k, at) in cuts.into_iter().enumerate() {
             let split = n_model + k;
-            for &fp in &input.side_faces[0] {
-                let Some(outer) = input.loops[fp].outer.as_ref() else {
+            for (fp, fl) in &input.faces[0] {
+                let fp = *fp;
+                let Some(outer) = fl.outer.as_ref() else {
                     continue;
                 };
                 let rings: Vec<&[[usize; 3]]> = vec![outer];
@@ -5522,8 +5598,8 @@ mod tests {
     ) -> (Vec<(usize, ClipPiece)>, Vec<ClipPiece>) {
         let mut pieces = Vec::new();
         let mut cap_edges = Vec::new();
-        for &fp in &input.side_faces[side] {
-            let fl = &input.loops[fp];
+        for (fp, fl) in &input.faces[side] {
+            let fp = *fp;
             let Some(outer) = fl.outer.as_ref() else {
                 continue;
             };
@@ -5708,5 +5784,153 @@ mod tests {
                 assert_eq!(fi.n_out.dot(class.plane.normal()) > 0.0, keep < 0);
             }
         }
+    }
+
+    /// ★ **C3, the acceptance test.** Clip through material, arrange the two halves, concatenate,
+    /// and require the answer the whole-model engine gives — down to the coordinate bits.
+    ///
+    /// This is the test V2b wrote and could not pass; the cap is what changed. Nothing here reads
+    /// the subdivision: it runs the ordinary `boolean` on one model and `boolean_over` on an
+    /// identical one, and compares the solids.
+    #[test]
+    fn clipping_through_material_gives_the_same_solid() {
+        type Fixture = (
+            &'static str,
+            fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
+        );
+        let cases: Vec<Fixture> = vec![
+            ("cubes", overlapping_cubes),
+            // Both operands tilted by the same isometry — the model is `Origin::Moved`, so every
+            // predicate leaves the axis-aligned path, while the split plane stays axis-aligned and
+            // shares no motion chain with it.
+            ("rotated cubes", |m| {
+                let (a, b) = overlapping_cubes(m);
+                let a = tilt(m, a, &[nacre_scalar::Axis::Z]);
+                let b = tilt(m, b, &[nacre_scalar::Axis::Z]);
+                (a, b)
+            }),
+            ("u+slab", |m| {
+                let (u, _) = u_prism_and_far(m);
+                let slab = m.add_cuboid(
+                    Point3::from_array([-0.5, 1.5, -0.5]),
+                    Point3::from_array([3.5, 2.5, 1.5]),
+                );
+                m.rebuild_adjacency();
+                (u, slab)
+            }),
+        ];
+        for (what, build) in cases {
+            for (axis, at) in [(0usize, 0.75f64), (0, 2.25), (1, 1.25), (2, 0.75)] {
+                for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                    let mut m1 = Model::new();
+                    let (a1, b1) = build(&mut m1);
+                    let whole = super::boolean(&mut m1, kind, a1, b1).map(|(s, _)| s);
+
+                    let mut m2 = Model::new();
+                    let (a2, b2) = build(&mut m2);
+                    let clipped =
+                        boolean_over(&mut m2, kind, a2, b2, Subdivision::ClipAt { axis, at })
+                            .map(|(s, _)| s);
+
+                    let tag = format!("{what} {kind:?} at axis {axis} = {at}");
+                    match (&whole, &clipped) {
+                        (Ok(w), Ok(c)) => {
+                            m1.rebuild_adjacency();
+                            m2.rebuild_adjacency();
+                            same_shape(&m1, w, &m2, c, &tag);
+                        }
+                        // A reject is an answer too, and the two paths must give the same one.
+                        (Err(w), Err(c)) => assert_eq!(
+                            format!("{w:?}"),
+                            format!("{c:?}"),
+                            "{tag}: the two paths rejected differently"
+                        ),
+                        _ => panic!("{tag}: {whole:?} vs {clipped:?}"),
+                    }
+                }
+            }
+        }
+    }
+
+    /// ★ **Class pruning changes nothing but the work.** A region arranges only the classes its own
+    /// faces lie on; the reference arranges every class in every region. Same faces, or the rule is
+    /// wrong — and skipping a class also skips the aliases it would have discovered, which is
+    /// exactly what `496ec74` had to revert once already.
+    #[test]
+    fn a_region_arranging_only_its_own_classes_emits_the_same_faces() {
+        let mut m = Model::new();
+        let (a, b) = overlapping_cubes(&mut m);
+        let PlaneSetup {
+            planes: faces_tab,
+            surf_ix,
+            inc_a,
+            inc_b,
+            n_a,
+            geom,
+            plane_ix,
+            class_owner,
+            standard,
+            notes,
+        } = plane_index_setup(&m, a, b).unwrap();
+        let mut geom = geom;
+        let n_model = geom.len();
+        geom.push(split_plane_class(&mut m, 0, 0.75));
+        let split = geom.len() - 1;
+        let jd = Judge::new(&geom, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
+        let pruned = regions_for(
+            Subdivision::ClipAt { axis: 0, at: 0.75 },
+            &m,
+            a,
+            b,
+            &mut ftab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &jd,
+            &mut pix,
+            Some(split),
+        );
+        // ★ Not vacuous: the pruning has to skip something, or "same answer" is trivial.
+        let skipped: usize = pruned
+            .iter()
+            .map(|r| n_model - r.classes.len())
+            .sum::<usize>();
+        assert!(
+            skipped > 0,
+            "no (region, class) pair was pruned; the gate is measuring nothing"
+        );
+        let all: Vec<Region> = pruned
+            .iter()
+            .map(|r| Region {
+                input: combinatorics::TraceInput {
+                    faces: [r.input.faces[0].clone(), r.input.faces[1].clone()],
+                },
+                seed: r.seed,
+                classes: (0..n_model).collect(),
+            })
+            .collect();
+        let run = |regions: &[Region]| {
+            trace_result_faces(
+                &m,
+                BoolKind::Fuse,
+                a,
+                b,
+                &jd,
+                &ftab,
+                &pix,
+                n_a,
+                &class_owner,
+                crate::reuse::ClassReuse::Off,
+                regions,
+            )
+            .expect("faces")
+        };
+        assert_eq!(
+            crate::reuse::canonical(&run(&pruned)),
+            crate::reuse::canonical(&run(&all)),
+            "pruning the class list changed the faces"
+        );
     }
 }

@@ -227,10 +227,10 @@ impl VertexClasses {
 /// rotated to begin at its least node and the faces are sorted.
 ///
 /// `(plane, flip, outer ring, hole rings)` — every field of a [`LocalFace`] but those freedoms.
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, test))]
 pub(crate) type CanonFace = (usize, bool, Vec<[usize; 3]>, Vec<Vec<[usize; 3]>>);
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, test))]
 pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
     let ring = |r: &[Node]| -> Vec<[usize; 3]> {
         let t: Vec<[usize; 3]> = r.iter().map(|Node::Seam(t)| *t).collect();

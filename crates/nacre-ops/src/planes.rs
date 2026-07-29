@@ -21,6 +21,7 @@ use std::collections::HashMap;
 /// only because `tri` is taken outer-CCW; `plane.normal()` is the *surface's*
 /// normal and may point inward on a `Reversed` face. Every sign test here reads
 /// `n_out` (or `tri`), and none reads `plane.normal()`.
+#[derive(Clone)]
 pub(crate) struct FaceInfo {
     pub(crate) surf: Handle<Surface>,
     /// The face this plane came from. Distinguishes two coplanar faces that share one
