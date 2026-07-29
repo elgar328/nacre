@@ -4381,23 +4381,58 @@ mod tests {
     #[test]
     #[ignore = "spike"]
     fn spike_where_the_boolean_spends_it() {
-        let n = 60i128;
+        for rotated in [true, false] {
+            spend(60, rotated);
+        }
+    }
+
+    /// One fold's phase breakdown. `rotated` picks which predicate routes the judgements take:
+    /// an axis-aligned fold answers on the exact path, a rotated one mostly on the certified one,
+    /// and the difference between the two breakdowns is what the certification actually costs.
+    fn spend(n: i128, rotated: bool) {
         let mut m = Model::new();
-        let mut acc = m.add_cuboid(
-            Point3::from_array([-3.0, -3.0, 0.0]),
-            Point3::from_array([3.0, 3.0, 2.0]),
-        );
+        // ★ **The two folds must be the same *shape* of work, not the same model minus a rotation.**
+        // Dropping the tilt stacks all 60 fins on one another — 7.6x fewer segments, a degenerate
+        // model, and a comparison that says nothing. The axis-aligned arm places each fin at its
+        // own x instead, so both arms fuse `n` distinct blades onto a growing solid and the only
+        // difference is which predicate route the judgements take.
+        let mut acc = if rotated {
+            m.add_cuboid(
+                Point3::from_array([-3.0, -3.0, 0.0]),
+                Point3::from_array([3.0, 3.0, 2.0]),
+            )
+        } else {
+            m.add_cuboid(
+                Point3::from_array([-1.0, -1.0, 0.0]),
+                Point3::from_array([n as f64 * 0.5 + 1.0, 1.0, 3.0]),
+            )
+        };
         m.rebuild_adjacency();
-        // Warm the code paths, then zero the counters: the first boolean pays for lazily-built
-        // caches that the other 59 do not.
-        {
-            let fin = m.add_cuboid(
-                Point3::from_array([2.0, -0.4, 0.0]),
-                Point3::from_array([8.0, 0.4, 1.0]),
-            );
+        let blade = |m: &mut Model, i: i128| {
+            let f = if rotated {
+                m.add_cuboid(
+                    Point3::from_array([2.0, -0.4, 0.0]),
+                    Point3::from_array([8.0, 0.4, 1.0]),
+                )
+            } else {
+                let x = i as f64 * 0.5;
+                m.add_cuboid(
+                    Point3::from_array([x, 0.5, 0.0]),
+                    Point3::from_array([x + 0.2, 4.0, 2.0]),
+                )
+            };
             m.rebuild_adjacency();
-            let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(1, 1).unwrap());
-            acc = super::boolean(&mut m, BoolKind::Fuse, acc, fin)
+            if rotated {
+                tilt_by(m, f, nacre_scalar::Rat::new(360 * i, n).unwrap())
+            } else {
+                f
+            }
+        };
+        // Warm the code paths, then zero the counters: the first boolean pays for lazily-built
+        // caches that the other n do not.
+        {
+            let f = blade(&mut m, if rotated { 1 } else { n });
+            acc = super::boolean(&mut m, BoolKind::Fuse, acc, f)
                 .expect("warm")
                 .0[0];
             m.rebuild_adjacency();
@@ -4407,12 +4442,7 @@ mod tests {
 
         let mut whole = std::time::Duration::ZERO;
         for i in 0..n {
-            let fin = m.add_cuboid(
-                Point3::from_array([2.0, -0.4, 0.0]),
-                Point3::from_array([8.0, 0.4, 1.0]),
-            );
-            m.rebuild_adjacency();
-            let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+            let fin = blade(&mut m, i);
             let t = std::time::Instant::now();
             acc = super::boolean(&mut m, BoolKind::Fuse, acc, fin)
                 .expect("fuse")
@@ -4433,7 +4463,10 @@ mod tests {
             .map(|(_, ns)| ns)
             .sum();
         let total = whole.as_nanos() as u64;
-        println!("\n{n}-fin fold, whole boolean, serial build:");
+        println!(
+            "\n{n}-fin fold ({}), whole boolean, serial build:",
+            if rotated { "rotated" } else { "axis-aligned" }
+        );
         for (label, ns) in &rows {
             println!(
                 "  {label:<32} {:>8.1?}  {:>5.1}%",
