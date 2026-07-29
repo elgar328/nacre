@@ -20,13 +20,10 @@ use crate::tolerant::Judge;
 #[cfg(test)]
 use crate::transform::transform;
 use nacre_cip::Decision;
-#[cfg(test)]
 use nacre_cip::Pt3;
 use nacre_cip::predicate::Notes;
-#[cfg(test)]
 use nacre_geom::Plane;
 use nacre_geom::intersect::three_planes;
-#[cfg(test)]
 use std::collections::HashSet;
 
 /// **Which arcs of the circle around an edge a wall fills**, over one sub-interval of that edge.
@@ -1633,7 +1630,7 @@ pub(crate) struct Region {
 }
 
 /// How space is divided before arranging.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum Subdivision {
     /// One region over everything — the arrangement as it has always been run.
     Whole,
@@ -1661,6 +1658,30 @@ pub(crate) enum Subdivision {
     /// `dissolve_straight_angles` could delete a genuine corner, silently.
     #[cfg(test)]
     ClipAt { axis: usize, at: f64 },
+    /// **A tree of half-space splits.**
+    ///
+    /// No production caller yet — `boolean` still runs `Whole`; the chooser that decides a tree
+    /// from the faces' boxes is the next step, and the rotated/lopsided gap below is why the
+    /// fallback comes with it. Each node clips its parent's *already clipped and capped*
+    /// operands by one more plane, so the six planes of a box never arrive at once — which is what
+    /// keeps every cap derivable from the split edges alone (a bounded solid cannot cover an
+    /// unbounded plane, so "no split edges" really is "no cap").
+    #[cfg_attr(not(test), allow(dead_code))]
+    Tree(SplitTree),
+}
+
+/// A binary subdivision of space by axis-aligned half-spaces.
+///
+/// The planes are decided **before** the judging context exists, from the faces' `f64` boxes — a
+/// scheduling decision, not an answer, and a deterministic function of the model's caches. They are
+/// then appended to the class table in this order, so node `p` uses class `box_base + p`.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SplitTree {
+    /// `(axis, coordinate)` per cutting plane.
+    pub planes: Vec<(usize, f64)>,
+    /// One entry per tree node, root first: `None` is a leaf, `Some((plane, low, high))` cuts by
+    /// `planes[plane]` into the child that keeps `coord < at` and the one that keeps `coord > at`.
+    pub nodes: Vec<Option<(usize, usize, usize)>>,
 }
 
 /// The split plane as a class of its own: axis-aligned, at `at`, its stored normal along `+axis`.
@@ -1668,7 +1689,6 @@ pub(crate) enum Subdivision {
 /// Wound so the witness triangle's right-hand normal **is** the stored normal, hence `frame_sign`
 /// `+1`. The base frame is the one an unmoved model plane already carries (`chain_id 0`), which is
 /// what a synthetic plane with no motion history is.
-#[cfg(test)]
 fn split_plane_class(model: &mut Model, axis: usize, at: f64) -> PlaneGeom {
     use nacre_math::Vector3;
     let e = |i: usize| {
@@ -1708,11 +1728,9 @@ fn split_plane_class(model: &mut Model, axis: usize, at: f64) -> PlaneGeom {
 }
 
 /// One surviving piece of a clipped face: its outer ring and its holes, in class-triple form.
-#[cfg(test)]
 pub(crate) type ClipPiece = (Vec<[usize; 3]>, Vec<Vec<[usize; 3]>>);
 
 /// One face's rings clipped to a half-space.
-#[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct Clipped {
     /// The surviving pieces — **there can be several**. Each is `(outer, holes)`.
@@ -1740,7 +1758,6 @@ pub(crate) struct Clipped {
 /// A vertex *on* `split` is declined (`FourPlane`): a named vertex lying on the split plane means
 /// four planes through one point, which this substrate cannot name — and the split position rule
 /// exists to prevent it, so a firing means the rule was not applied.
-#[cfg(test)]
 fn clip_face(
     jd: &Judge<'_, PlaneGeom>,
     fc: usize,
@@ -1848,7 +1865,9 @@ fn clip_face(
             match (p_start, q_start) {
                 (false, true) => cap_edges.push((*p, *q)),
                 (true, false) => cap_edges.push((*q, *p)),
-                _ => return Err(reject(RejectReason::RingNaming)),
+                _ => {
+                    return Err(reject(RejectReason::RingNaming));
+                }
             }
         }
         edges.extend(cap_edges.iter().copied());
@@ -1943,7 +1962,6 @@ fn clip_face(
 /// **The cap traverses each edge the other way from the face that minted it.** Those edges are the
 /// free boundary of the clipped, still-open surface; closing it means adding a face that runs them
 /// backwards, which is what makes every edge used once in each direction.
-#[cfg(test)]
 fn cap_rings(
     jd: &Judge<'_, PlaneGeom>,
     split: usize,
@@ -2024,7 +2042,6 @@ fn cap_rings(
 ///
 /// `collect_planes` guards `|plane.normal · n_out| ≈ 1` and `orient_sign = sign(that)` with
 /// `debug_assert`s that only run for real faces, so a synthetic one has to uphold them here.
-#[cfg(test)]
 fn cap_face_info(class: &PlaneGeom, keep: i8) -> FaceInfo {
     let flip = keep > 0; // keeping the +side means the cap faces -normal
     let n_out = class.plane.normal() * if flip { -1.0 } else { 1.0 };
@@ -2058,7 +2075,7 @@ fn cap_face_info(class: &PlaneGeom, keep: i8) -> FaceInfo {
 /// see the pushes, which happen in `clip_region`.)
 #[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 pub(crate) fn regions_for(
-    how: Subdivision,
+    how: &Subdivision,
     model: &Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
@@ -2105,7 +2122,7 @@ pub(crate) fn regions_for(
             }]
         }
         #[cfg(test)]
-        Subdivision::SplitFaces { axis, at } => {
+        &Subdivision::SplitFaces { axis, at } => {
             let mut halves: [[Vec<(usize, combinatorics::FaceLoops)>; 2]; 2] = Default::default();
             for (side, list) in input.faces.into_iter().enumerate() {
                 for (fp, fl) in list {
@@ -2131,8 +2148,48 @@ pub(crate) fn regions_for(
                 })
                 .collect()
         }
+        Subdivision::Tree(tree) => {
+            let base = split_class.expect("a subdivided run names where its box classes begin");
+            // Depth first, and the parent's tables are dropped as soon as its children hold
+            // theirs: what stays alive is the leaves' faces and one level of ancestry.
+            fn descend(
+                tree: &SplitTree,
+                node: usize,
+                input: combinatorics::TraceInput,
+                jd: &Judge<'_, PlaneGeom>,
+                faces: &mut Vec<FaceInfo>,
+                plane_ix: &mut Vec<usize>,
+                base: usize,
+                out: &mut Vec<combinatorics::TraceInput>,
+            ) {
+                match tree.nodes[node] {
+                    None => out.push(input),
+                    Some((plane, lo, hi)) => {
+                        let split = base + plane;
+                        let low = clip_region(jd, &input, faces, plane_ix, split, -1);
+                        let high = clip_region(jd, &input, faces, plane_ix, split, 1);
+                        drop(input);
+                        descend(tree, lo, low, jd, faces, plane_ix, base, out);
+                        descend(tree, hi, high, jd, faces, plane_ix, base, out);
+                    }
+                }
+            }
+            let mut leaves = Vec::new();
+            descend(tree, 0, input, jd, faces, plane_ix, base, &mut leaves);
+            leaves
+                .into_iter()
+                .map(|input| {
+                    let classes = classes_of(&input, plane_ix);
+                    Region {
+                        input,
+                        seed: [false; 4],
+                        classes,
+                    }
+                })
+                .collect()
+        }
         #[cfg(test)]
-        Subdivision::ClipAt { .. } => {
+        &Subdivision::ClipAt { .. } => {
             let split = split_class.expect("a clipping subdivision names its split class");
             // ★ **The seed stays `[false; 4]`, and it is now a theorem rather than a hope**: the
             // clipped operand is *capped*, hence a closed bounded solid, so the unbounded cells of
@@ -2158,7 +2215,6 @@ pub(crate) fn regions_for(
 /// A face that clips into **several** pieces gets a `faces_tab` slot per piece (same plane, same
 /// `n_out`, same `orient_sign`), and each cap gets one too. That is why the tables are `&mut`:
 /// the subdivision adds faces, and every one of them is synthetic and gone when the boolean ends.
-#[cfg(test)]
 #[allow(clippy::ptr_arg)] // it pushes; a slice will not do
 fn clip_region(
     jd: &Judge<'_, PlaneGeom>,
@@ -2239,6 +2295,98 @@ fn face_span(model: &Model, fh: Handle<Face>, axis: usize) -> (f64, f64) {
         }
     }
     (lo, hi)
+}
+
+/// ★ **Insert T-vertices.** Where one face's ring edge *contains* another ring's node, split it
+/// there.
+///
+/// Adaptive subdivision makes these: if `x < c` stays one leaf while `x > c` is cut again, the left
+/// leaf lays one edge along `x = c` where the two right leaves lay two, and `merge_component`
+/// cancels only by exact node pair — so the long edge finds no partner and the halves never become
+/// one face. (EMBER need not care: it emits a polygon soup. We weld vertices and share edges.)
+///
+/// The test is the substrate's own. A node `{W, q, r}` lies on the line the edge rides iff the edge
+/// rides `q`, and "strictly between the endpoints" is [`combinatorics::order_along`] — no new
+/// predicate, no coordinate. Grouping candidates by `(class, wall)` keeps it out of quadratic
+/// territory. Afterwards `unify_coplanar_faces` cancels as it always did and
+/// `dissolve_straight_angles` takes the inserted vertices back out.
+///
+/// Returns how many it inserted — a subdivided run that inserts none has either a uniform tree or
+/// a broken pass, and the caller says which it expected.
+fn insert_t_vertices(faces: &mut [LocalFace], jd: &Judge<'_, PlaneGeom>) -> usize {
+    // Every node of a class, indexed by the line it sits on: `(class, wall) -> the third plane`.
+    let mut on_line: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+    for lf in faces.iter() {
+        let w = lf.plane_idx;
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            for &crate::boolean::Node::Seam(t) in ring {
+                let others: Vec<usize> = t.iter().copied().filter(|&c| c != w).collect();
+                if let [q1, q2] = others[..] {
+                    on_line.entry((w, q1)).or_default().push(q2);
+                    on_line.entry((w, q2)).or_default().push(q1);
+                }
+            }
+        }
+    }
+    for v in on_line.values_mut() {
+        v.sort_unstable();
+        v.dedup();
+    }
+
+    let mut inserted = 0usize;
+    for lf in faces.iter_mut() {
+        let w = lf.plane_idx;
+        for ring in std::iter::once(&mut lf.loop_nodes).chain(lf.inner.iter_mut()) {
+            let n = ring.len();
+            let mut out: Vec<crate::boolean::Node> = Vec::with_capacity(n);
+            for i in 0..n {
+                let (crate::boolean::Node::Seam(a), crate::boolean::Node::Seam(b)) =
+                    (ring[i], ring[(i + 1) % n]);
+                out.push(ring[i]);
+                // The wall this edge rides, and each endpoint's handle on it.
+                let shared: Vec<usize> = a
+                    .iter()
+                    .copied()
+                    .filter(|&c| c != w && b.contains(&c))
+                    .collect();
+                let [q] = shared[..] else { continue };
+                let third = |t: [usize; 3]| t.iter().copied().find(|&c| c != w && c != q);
+                let (Some(ha), Some(hb)) = (third(a), third(b)) else {
+                    continue;
+                };
+                let Some(cands) = on_line.get(&(w, q)) else {
+                    continue;
+                };
+                let mut between: Vec<usize> = cands
+                    .iter()
+                    .copied()
+                    .filter(|&r| {
+                        r != ha
+                            && r != hb
+                            && combinatorics::order_along(jd, w, q, r, ha)
+                                * combinatorics::order_along(jd, w, q, r, hb)
+                                < 0
+                    })
+                    .collect();
+                if between.is_empty() {
+                    continue;
+                }
+                // In the edge's own direction, so the ring stays a walk.
+                let forward = combinatorics::order_along(jd, w, q, ha, hb) < 0;
+                between.sort_by(|&x, &y| {
+                    let o = combinatorics::order_along(jd, w, q, x, y);
+                    let o = if forward { o } else { -o };
+                    o.cmp(&0)
+                });
+                for r in between {
+                    out.push(crate::boolean::Node::Seam(sorted3([w, q, r])));
+                    inserted += 1;
+                }
+            }
+            *ring = out;
+        }
+    }
+    inserted
 }
 
 /// Every result face across all plane classes **of every region**, before assembly (the driver's
@@ -2689,7 +2837,7 @@ pub(crate) fn boolean(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
-    boolean_over(model, kind, a, b, Subdivision::Whole)
+    boolean_over(model, kind, a, b, &Subdivision::Whole)
 }
 
 /// [`boolean`], with the space division named — the seam the subdivided engine is built along.
@@ -2698,7 +2846,7 @@ pub(crate) fn boolean_over(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    how: Subdivision,
+    how: &Subdivision,
 ) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
     // `mut` only for the synthetic split class, which is a test-only subdivision today.
     #[allow(unused_mut)]
@@ -2724,9 +2872,17 @@ pub(crate) fn boolean_over(
         Subdivision::SplitFaces { .. } => None,
         #[cfg(test)]
         Subdivision::ClipAt { axis, at } => {
-            geom.push(split_plane_class(model, axis, at));
+            geom.push(split_plane_class(model, *axis, *at));
             class_owner.push(None);
             Some(geom.len() - 1)
+        }
+        Subdivision::Tree(tree) => {
+            let base = geom.len();
+            for &(axis, at) in &tree.planes {
+                geom.push(split_plane_class(model, axis, at));
+                class_owner.push(None);
+            }
+            Some(base)
         }
     };
     // The operation's judging, made once: the dense plane table, the standard it is held to, and
@@ -2819,6 +2975,13 @@ pub(crate) fn boolean_over(
                 // passing quietly.
                 Err(e) => panic!("reuse turned a {e:?} into a result"),
             }
+        }
+        // ★ A subdivided run leaves T-junctions wherever neighbouring leaves are cut to different
+        // depths; insert the missing vertices so the merge below can cancel. A whole-model run has
+        // none by construction, so it does not pay for the pass at all.
+        let mut faces = faces;
+        if !matches!(how, Subdivision::Whole) {
+            insert_t_vertices(&mut faces, &jd);
         }
         // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
         // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
@@ -4020,7 +4183,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let whole = regions_for(
-            Subdivision::Whole,
+            &Subdivision::Whole,
             &m,
             a,
             b,
@@ -4235,7 +4398,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let whole = regions_for(
-            Subdivision::Whole,
+            &Subdivision::Whole,
             &m,
             a,
             b,
@@ -4349,7 +4512,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let whole = regions_for(
-            Subdivision::Whole,
+            &Subdivision::Whole,
             &m,
             u,
             slab,
@@ -4621,7 +4784,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let whole = regions_for(
-            Subdivision::Whole,
+            &Subdivision::Whole,
             &m,
             a,
             b,
@@ -4961,7 +5124,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let regions = regions_for(
-            Subdivision::SplitFaces { axis: 0, at: 1.5 },
+            &Subdivision::SplitFaces { axis: 0, at: 1.5 },
             &m,
             a,
             b,
@@ -5025,7 +5188,7 @@ mod tests {
                 kind,
                 a2,
                 b2,
-                Subdivision::SplitFaces { axis: 0, at },
+                &Subdivision::SplitFaces { axis: 0, at },
             )
             .map(|(s, _)| s);
 
@@ -5098,7 +5261,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let regions = regions_for(
-            Subdivision::ClipAt { axis: 0, at: 0.75 },
+            &Subdivision::ClipAt { axis: 0, at: 0.75 },
             &m,
             a,
             b,
@@ -5178,7 +5341,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let regions = regions_for(
-            Subdivision::ClipAt { axis: 0, at: 0.75 },
+            &Subdivision::ClipAt { axis: 0, at: 0.75 },
             &m,
             a,
             b,
@@ -5829,7 +5992,7 @@ mod tests {
                     let mut m2 = Model::new();
                     let (a2, b2) = build(&mut m2);
                     let clipped =
-                        boolean_over(&mut m2, kind, a2, b2, Subdivision::ClipAt { axis, at })
+                        boolean_over(&mut m2, kind, a2, b2, &Subdivision::ClipAt { axis, at })
                             .map(|(s, _)| s);
 
                     let tag = format!("{what} {kind:?} at axis {axis} = {at}");
@@ -5880,7 +6043,7 @@ mod tests {
         let mut ftab = faces_tab.clone();
         let mut pix = plane_ix.clone();
         let pruned = regions_for(
-            Subdivision::ClipAt { axis: 0, at: 0.75 },
+            &Subdivision::ClipAt { axis: 0, at: 0.75 },
             &m,
             a,
             b,
@@ -5931,6 +6094,222 @@ mod tests {
             crate::reuse::canonical(&run(&pruned)),
             crate::reuse::canonical(&run(&all)),
             "pruning the class list changed the faces"
+        );
+    }
+
+    // ── C4: recursion, and the T-junctions it makes ───────────────────────────────────────────
+
+    /// ★ **A deliberately lopsided tree.** `x < 0.75` stays one leaf while `x > 0.75` is cut again
+    /// at `y = 0.75`, so on any class the left leaf lays **one** edge along `x = 0.75` where the
+    /// two right leaves lay **two**. `merge_component` cancels by exact node pair, so the long edge
+    /// has no partner: the classic T-junction of adaptive subdivision.
+    ///
+    /// EMBER can ignore this because it emits a polygon soup; we weld vertices and share edges, so
+    /// it is fatal — but loudly, not silently: `assemble_fuse_cut` counts edge uses.
+    fn lopsided_tree() -> SplitTree {
+        SplitTree {
+            planes: vec![(0, 0.75), (1, 0.75)],
+            nodes: vec![Some((0, 1, 2)), None, Some((1, 3, 4)), None, None],
+        }
+    }
+
+    /// A uniform tree first: both children of the root are cut by the same second plane, so every
+    /// leaf boundary matches its neighbour's and no T-junction can arise. This isolates recursion
+    /// from the T-junction problem.
+    fn uniform_tree() -> SplitTree {
+        SplitTree {
+            planes: vec![(0, 0.75), (1, 0.75)],
+            nodes: vec![
+                Some((0, 1, 2)),
+                Some((1, 3, 4)),
+                Some((1, 5, 6)),
+                None,
+                None,
+                None,
+                None,
+            ],
+        }
+    }
+
+    fn tree_agrees(
+        what: &str,
+        build: fn(&mut Model) -> (Handle<Solid>, Handle<Solid>),
+        tree: SplitTree,
+    ) {
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            let mut m1 = Model::new();
+            let (a1, b1) = build(&mut m1);
+            let whole = super::boolean(&mut m1, kind, a1, b1).map(|(s, _)| s);
+            let mut m2 = Model::new();
+            let (a2, b2) = build(&mut m2);
+            let split = boolean_over(&mut m2, kind, a2, b2, &Subdivision::Tree(tree.clone()))
+                .map(|(s, _)| s);
+            let tag = format!("{what} {kind:?}");
+            match (&whole, &split) {
+                (Ok(w), Ok(c)) => {
+                    m1.rebuild_adjacency();
+                    m2.rebuild_adjacency();
+                    same_shape(&m1, w, &m2, c, &tag);
+                }
+                (Err(w), Err(c)) => assert_eq!(format!("{w:?}"), format!("{c:?}"), "{tag}"),
+                _ => panic!("{tag}: {whole:?} vs {split:?}"),
+            }
+        }
+    }
+
+    /// One region per leaf of a **balanced** tree gives the whole-model answer.
+    #[test]
+    fn a_uniform_subdivision_tree_gives_the_same_solid() {
+        tree_agrees("cubes/uniform", overlapping_cubes, uniform_tree());
+    }
+
+    /// The same with an **unbalanced** tree, which is where T-junctions appear.
+    #[test]
+    fn a_lopsided_subdivision_tree_gives_the_same_solid() {
+        tree_agrees("cubes/lopsided", overlapping_cubes, lopsided_tree());
+    }
+
+    /// ★ The T-vertex pass is not vacuous, and it is what makes the lopsided tree work.
+    ///
+    /// It has to insert something (a uniform tree does not, and would pass the equality test
+    /// without exercising anything), and turning it off has to change the merged face set — which
+    /// is the same as saying the merge could not cancel the mismatched edges.
+    #[test]
+    fn the_t_vertex_pass_fires_and_is_what_repairs_the_lopsided_tree() {
+        let tree = lopsided_tree();
+        let mut m = Model::new();
+        let (a, b) = overlapping_cubes(&mut m);
+        let PlaneSetup {
+            planes: faces_tab,
+            surf_ix,
+            inc_a,
+            inc_b,
+            n_a,
+            geom,
+            plane_ix,
+            class_owner,
+            standard,
+            notes,
+        } = plane_index_setup(&m, a, b).unwrap();
+        let mut geom = geom;
+        let mut class_owner = class_owner;
+        let base = geom.len();
+        for &(axis, at) in &tree.planes {
+            geom.push(split_plane_class(&mut m, axis, at));
+            class_owner.push(None);
+        }
+        let jd = Judge::new(&geom, standard, &notes);
+        let mut ftab = faces_tab.clone();
+        let mut pix = plane_ix.clone();
+        let regions = regions_for(
+            &Subdivision::Tree(tree),
+            &m,
+            a,
+            b,
+            &mut ftab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &jd,
+            &mut pix,
+            Some(base),
+        );
+        assert_eq!(regions.len(), 3, "one leaf left of x=0.75, two right of it");
+        let raw = trace_result_faces(
+            &m,
+            BoolKind::Fuse,
+            a,
+            b,
+            &jd,
+            &ftab,
+            &pix,
+            n_a,
+            &class_owner,
+            crate::reuse::ClassReuse::Off,
+            &regions,
+        )
+        .expect("faces");
+
+        let without = crate::boolean::unify_coplanar_faces(raw.clone(), &jd).expect("merge");
+        let mut with = raw;
+        let n = insert_t_vertices(&mut with, &jd);
+        assert!(
+            n > 0,
+            "the lopsided tree must produce T-junctions to repair"
+        );
+        let with = crate::boolean::unify_coplanar_faces(with, &jd).expect("merge");
+        assert!(
+            with.len() < without.len(),
+            "the pass changed nothing: {} faces either way",
+            with.len()
+        );
+    }
+
+    /// The lopsided tree over the harder fixtures — a non-convex U with a slab, and a rotated pair.
+    #[test]
+    fn a_lopsided_tree_survives_non_convex_and_rotated_operands() {
+        tree_agrees(
+            "u+slab/lopsided",
+            |m| {
+                let (u, _) = u_prism_and_far(m);
+                let slab = m.add_cuboid(
+                    Point3::from_array([-0.5, 1.5, -0.5]),
+                    Point3::from_array([3.5, 2.5, 1.5]),
+                );
+                m.rebuild_adjacency();
+                (u, slab)
+            },
+            SplitTree {
+                planes: vec![(0, 1.25), (1, 1.75)],
+                nodes: vec![Some((0, 1, 2)), None, Some((1, 3, 4)), None, None],
+            },
+        );
+    }
+
+    /// ★ **A known gap, bounded by measurement.** A **rotated** model under a **lopsided** tree is
+    /// the one combination that does not yet reproduce the whole-model answer: it rejects
+    /// `RingNaming` from `ring_from_names`, on a merged cycle whose consecutive nodes share only
+    /// the plane — one leaf's face ends on a line where the neighbour's ends at the box corner
+    /// `{W, box0, box1}`, so the T-vertex pass has no partner to insert.
+    ///
+    /// Each half of the combination is fine alone: rotated + **uniform** agrees, and lopsided with
+    /// axis-aligned or non-convex operands agrees. So it is the interaction, not either part.
+    ///
+    /// What is asserted is the property that matters while it is open — **it never answers
+    /// differently, it declines.** Production does not reach it (`boolean` still runs `Whole`) and
+    /// C5's fallback is what will absorb it. The day the gap closes this test fails, which is how
+    /// it should be found.
+    #[test]
+    fn a_rotated_model_under_a_lopsided_tree_declines_rather_than_disagreeing() {
+        let build = |m: &mut Model| {
+            let (a, b) = overlapping_cubes(m);
+            let a = tilt(m, a, &[nacre_scalar::Axis::Z]);
+            let b = tilt(m, b, &[nacre_scalar::Axis::Z]);
+            (a, b)
+        };
+        let mut declined = 0usize;
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            let mut m1 = Model::new();
+            let (a1, b1) = build(&mut m1);
+            let whole = super::boolean(&mut m1, kind, a1, b1).map(|(s, _)| s);
+            let mut m2 = Model::new();
+            let (a2, b2) = build(&mut m2);
+            let split = boolean_over(&mut m2, kind, a2, b2, &Subdivision::Tree(lopsided_tree()))
+                .map(|(s, _)| s);
+            match (&whole, &split) {
+                (Ok(w), Ok(c)) => {
+                    m1.rebuild_adjacency();
+                    m2.rebuild_adjacency();
+                    same_shape(&m1, w, &m2, c, &format!("rotated/lopsided {kind:?}"));
+                }
+                (_, Err(_)) => declined += 1,
+                _ => panic!("rotated/lopsided {kind:?}: {whole:?} vs {split:?}"),
+            }
+        }
+        // ★ Not vacuous: the gap has to still be there, or this test describes nothing.
+        assert!(
+            declined > 0,
+            "the rotated/lopsided gap closed — fold this case back into `tree_agrees`"
         );
     }
 }

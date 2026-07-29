@@ -449,6 +449,7 @@ pub(crate) enum Node {
 
 /// A reconstructed result face: which combined plane it is on, its loop as
 /// nodes, and whether to flip it (cut's inside-A B-pieces).
+#[derive(Clone)]
 pub(crate) struct LocalFace {
     pub(crate) plane_idx: usize,
     pub(crate) loop_nodes: Vec<Node>,

@@ -472,8 +472,9 @@ pub(crate) struct BaseFrame {
 }
 
 impl BaseFrame {
-    /// No motion to cancel — for hand-built tables in tests.
-    #[cfg(test)]
+    /// No motion to cancel — for a plane with no history: a hand-built table in a test, or the
+    /// synthetic split plane a subdivided boolean cuts with. Identical to what `of` returns for an
+    /// unmoved face, so such a plane takes the same predicate routes an axis-aligned model does.
     pub(crate) fn none() -> Self {
         Self {
             chain_id: 0,
