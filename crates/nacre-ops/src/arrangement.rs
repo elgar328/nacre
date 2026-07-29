@@ -1627,12 +1627,16 @@ fn trace_result_faces(
         // has stopped growing either way.
         let snapshot = aliases.clone();
         let round = crate::par::try_map_range(planes.len(), |wc| {
-            // **Skipped inside the closure, never by shrinking the range.** The index space is what
-            // makes `try_map_range` report the lowest-numbered decline and what keeps the emitted
-            // order — and so the handles — the ones a single thread would have produced.
-            if plans[wc] != crate::reuse::ClassPlan::Arrange {
-                return Ok((Vec::new(), snapshot.clone()));
-            }
+            // **Pass A runs for every class, including the ones pass B will not arrange.**
+            //
+            // It used to skip them, and that was unsound: pass B's reuse can *decline* — a vertex
+            // where four planes meet has four possible names and only the alias table settles
+            // which, so the class falls back to arranging — and the fallback reads `splits[wc]`,
+            // which skipping pass A leaves empty. The class's faces would then vanish.
+            //
+            // Nothing in the code stopped that; it simply needed a model with a concurrency in a
+            // region the other operand cannot reach, and the corpus has none. The cheap repair is
+            // to keep the fallback a real one, which is what this does.
             let mut tr =
                 trace_on_class(model, a, b, wc, jd, faces, surf_ix, inc_a, inc_b, plane_ix);
             let mut local = snapshot.clone();
