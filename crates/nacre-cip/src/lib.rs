@@ -17,6 +17,6 @@ pub mod predicate;
 // vertex assembly, `dir_orient3d_judge` for a per-face normal sign).
 pub use kernel::frame3::{
     Decision, MoveNode, Pt3, Standard, chain_parity, dir_orient3d_judge, dir_sign_judge,
-    indirect_cmp_coord_judge, indirect_orient3d_judge, judge_precision, orient3d_judge,
-    precision_for, trial_bound,
+    indirect_cmp_coord_judge, indirect_orient3d_judge, judge_precision, orient3d_filter,
+    orient3d_judge, precision_for, trial_bound,
 };

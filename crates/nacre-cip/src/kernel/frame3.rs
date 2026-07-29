@@ -788,30 +788,49 @@ pub fn chain_parity(chain: &[MoveNode]) -> i8 {
     if mirrors % 2 == 0 { 1 } else { -1 }
 }
 
+/// **Everything [`orient3d_judge`] can answer without spending unbounded precision** — the f64
+/// filter, then the shared-motion exact path. `None` means "not settled here".
+///
+/// **It never escalates, and that is the point.** A caller that only wants to *skip work when it
+/// can prove the work is pointless* must not pay an astro-float climb to find out; and because
+/// `None` sends it back to doing the work, a missed proof costs time and nothing else. So this
+/// can only ever lose an optimization — never change an answer.
+///
+/// Split out of [`orient3d_judge`] rather than written beside it: two implementations of one
+/// filter would be two error budgets to keep in step, and this kernel has already been bitten
+/// twice by a question with two answering sites. The judge calls this, so they cannot drift, and
+/// soundness here is not a property to test but a consequence of being the same code.
+pub fn orient3d_filter(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Option<Orient> {
+    let (a, b, c, d) = (pa.coord, pb.coord, pc.coord, pd.coord);
+    let det = det3_f64(a, b, c, d);
+    let bound = det3_bound([a, b, c, d], [pa.tol, pb.tol, pc.tol, pd.tol]);
+    if det > bound {
+        return Some(Orient::Positive);
+    }
+    if det < -bound {
+        return Some(Orient::Negative);
+    }
+    // One shared rigid motion cancels out of `det[a−d, b−d, c−d]` (`det(R) = 1`), so the same
+    // question is answered exactly on the pre-rotation coordinates — no tolerance, no escalation.
+    // Its zero is a **proved** zero, which is why it is a sign and not a coincidence.
+    let base = shared_base(&[pa, pb, pc, pd])?;
+    Some(
+        match nacre_predicates::orient3d(base[0], base[1], base[2], base[3]) {
+            x if x > 0.0 => Orient::Positive,
+            x if x < 0.0 => Orient::Negative,
+            _ => Orient::Zero,
+        },
+    )
+}
+
 /// CIP `orient3d`: f64 filter (`|det| > bound` → trust the sign), else escalate to
 /// astro-float at the operation's precision; a determinant that still straddles zero there is
 /// turned into a distance and answered by [`escalate`]. Path-independent (a
 /// function of the four point definitions). This is the *tol > 0* path — a tol-0
 /// config is exact/faster via `nacre-predicates` (Shewchuk), routed above this crate.
 pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, j: Standard) -> Decision {
-    let (a, b, c, d) = (pa.coord, pb.coord, pc.coord, pd.coord);
-    let det = det3_f64(a, b, c, d);
-    let bound = det3_bound([a, b, c, d], [pa.tol, pb.tol, pc.tol, pd.tol]);
-    if det > bound {
-        return Decision::Sign(Orient::Positive);
-    }
-    if det < -bound {
-        return Decision::Sign(Orient::Negative);
-    }
-    // One shared rigid motion cancels out of `det[a−d, b−d, c−d]` (`det(R) = 1`), so the same
-    // question is answered exactly on the pre-rotation coordinates — no tolerance, no escalation.
-    // Its zero is a **proved** zero, which is why it is a `Sign` and not a coincidence.
-    if let Some(b) = shared_base(&[pa, pb, pc, pd]) {
-        return Decision::Sign(match nacre_predicates::orient3d(b[0], b[1], b[2], b[3]) {
-            x if x > 0.0 => Orient::Positive,
-            x if x < 0.0 => Orient::Negative,
-            _ => Orient::Zero,
-        });
+    if let Some(o) = orient3d_filter(pa, pb, pc, pd) {
+        return Decision::Sign(o);
     }
     escalate(j, j.coincidence, |prec| {
         let det = det3_hp(pa, pb, pc, pd, prec);
