@@ -28,9 +28,11 @@ pub(crate) struct FaceInfo {
     /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
     /// cell coplanar-narrow), which `surf` alone collapses. `surf_ix` keys on this.
     ///
-    /// **`None` for a synthetic face** — the cap a half-space clip puts on an operand, which has
-    /// no `Face` in the model and never will (it exists for the duration of one boolean and is
-    /// never emitted). The only thing that reads this is the decline report, which says so.
+    /// ★ **`None` has no producer today.** It was the cap a half-space clip put on an operand — a
+    /// face that lives for one boolean and is never emitted — and the subdivision that minted those
+    /// is gone (see `docs/dev-log.md`). Every constructor writes `Some`, so every read `expect`s.
+    /// Kept as an `Option` because the table is the natural home for a face the model does not own,
+    /// and the next engine that needs one should not have to re-thread the type.
     pub(crate) face: Option<Handle<Face>>,
     pub(crate) plane: Plane,
     /// Three non-collinear outer-loop points, **ordered so their RH normal is outward**.
@@ -475,6 +477,7 @@ impl BaseFrame {
     /// No motion to cancel — for a plane with no history: a hand-built table in a test, or the
     /// synthetic split plane a subdivided boolean cuts with. Identical to what `of` returns for an
     /// unmoved face, so such a plane takes the same predicate routes an axis-aligned model does.
+    #[cfg(test)]
     pub(crate) fn none() -> Self {
         Self {
             chain_id: 0,

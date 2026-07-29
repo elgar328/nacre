@@ -127,8 +127,8 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 /// back out of its two endpoint names — "the class they share besides `P`" — which works only while
 /// every vertex lies on exactly three planes. Let four meet at a point, give it one canonical name,
 /// and the name need not mention the plane the edge rides at all; the two names can even share
-/// nothing but `P`. Measured: a subdivided boolean whose split plane passed through an arrangement
-/// vertex produced exactly that, and `ring_from_names` declined `RingNaming`.
+/// nothing but `P`. Measured (2026-07, `docs/dev-log.md`): a boolean whose fourth plane fell on an
+/// arrangement vertex produced exactly that, and `ring_from_names` declined `RingNaming`.
 ///
 /// The **handle** is still derived, and soundly: it only has to be *some* plane through the node
 /// that cuts the line `P ∩ wall`, which is what `order_along` asks of it. Under a concurrency there
@@ -270,10 +270,10 @@ pub(crate) struct TraceInput {
     /// Each operand's faces: the `planes`-table slot and that face's loops, in the order the
     /// shells list them — the walk `trace_one` used to do over `Model`.
     ///
-    /// **Compact on purpose.** This was a full-length `Vec<FaceLoops>` beside a list of slots, which
-    /// is fine for one whole-model region and quadratic once space is subdivided: the face table
-    /// grows with every node of the subdivision tree, and each leaf would carry a row per slot in
-    /// it. A leaf carries only its own faces.
+    /// **Compact on purpose.** This was a full-length `Vec<FaceLoops>` beside a list of slots — one
+    /// row per table slot whether or not that slot's face was in the input. Pairing the slot with
+    /// its loops makes the length the number of faces actually traced, which is what lets a caller
+    /// hand the tracer a *subset* without the table's size leaking into the cost.
     pub faces: [Vec<(usize, FaceLoops)>; 2],
 }
 
