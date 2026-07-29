@@ -196,6 +196,66 @@ pub(crate) fn face_vertex_triples(
     loop_triples(&model.faces.get(f).outer, p, inc, jd, plane_ix)
 }
 
+/// Every loop of one face in class form — **the only thing the tracer needs from `Model`**.
+///
+/// A loop that could not be named is `None` rather than an error, because the two failures have
+/// *different names at the call site* (`OuterRing` vs `HoleRing`) and which one applies is the
+/// tracer's to say, not this table's.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FaceLoops {
+    /// The outer loop's vertices, or `None` if [`face_vertex_triples`] declined.
+    pub outer: Option<Vec<[usize; 3]>>,
+    /// One entry per hole ring, or `None` if [`hole_rings`] declined for **any** of them — a hole
+    /// that cannot be named is not "no hole".
+    pub holes: Option<Vec<Vec<[usize; 3]>>>,
+}
+
+/// What one boolean's tracer reads instead of the `Model`: every face's loops, plus which slots
+/// belong to which operand.
+///
+/// ★ **Both fields are independent of the plane being traced onto.** They were nevertheless
+/// re-derived once per plane class — measured on an 80-fin fold at **2,280,285** calls (one per
+/// face per class) for **13,492** distinct answers, 3.3% of the boolean. Hoisting them is what
+/// makes the tracer a function of a face table rather than of a topology store, and the 169×
+/// reduction comes along for free.
+pub(crate) struct TraceInput {
+    /// Indexed like `planes`/`FaceInfo`, so `loops[fp]` is face slot `fp`'s.
+    pub loops: Vec<FaceLoops>,
+    /// Each operand's face slots, in the order the shells list them — the walk `trace_one` used to
+    /// do over `Model`.
+    pub side_faces: [Vec<usize>; 2],
+}
+
+/// Derive [`TraceInput`] for one boolean, once.
+///
+/// Walked exactly as the tracer walked: shell by shell, `surf_ix` naming each face's slot. That is
+/// what keeps the table's index space the `planes` one — a face missing from `surf_ix` cannot
+/// happen, since `surf_ix` was built from the same two solids.
+pub(crate) fn trace_input(
+    model: &Model,
+    operands: [(Handle<Solid>, &EdgeFaces); 2],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    n_faces: usize,
+    jd: &Judge<'_, PlaneGeom>,
+    plane_ix: &[usize],
+) -> TraceInput {
+    let mut loops = vec![FaceLoops::default(); n_faces];
+    let mut side_faces = [Vec::new(), Vec::new()];
+    for (side, (solid, inc)) in operands.into_iter().enumerate() {
+        for sh in crate::planes::solid_shell_handles(model, solid) {
+            for &fh in &model.shells.get(sh).faces {
+                let fp = surf_ix[&fh];
+                side_faces[side].push(fp);
+                loops[fp] = FaceLoops {
+                    outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix).ok(),
+                    holes: hole_rings(model, fh, fp, inc, jd, plane_ix).ok(),
+                };
+            }
+        }
+    }
+    TraceInput { loops, side_faces }
+}
+
 /// Each hole ring of face `f`, as three-plane triples.
 ///
 /// A rim edge's incidence is `[p, wall]`, so the neighbour plane is the wall on the other

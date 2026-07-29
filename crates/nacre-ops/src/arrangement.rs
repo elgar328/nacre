@@ -291,30 +291,28 @@ struct Node {
 /// the third plane naming each endpoint. `mat = orient_sign(fp)` is a per-face constant.
 #[allow(clippy::too_many_arguments)]
 fn trace_transversal_face(
-    model: &Model,
-    fh: Handle<Face>,
     fp: usize,
+    loops: &combinatorics::FaceLoops,
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
-    inc: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
     out: &mut Trace,
 ) {
-    // `fp` names a *face* (`inc` matching, `n_out`, `orient`, the declined log); `fc` names the
-    // *plane class* it lies on (triples, comparisons, predicate arguments). Every ring below is in
-    // class form, so the two must not be confused — see `canon_ring`.
+    // `fp` names a *face* (`n_out`, `orient`, the declined log); `fc` names the *plane class* it
+    // lies on (triples, comparisons, predicate arguments). Every ring below is in class form, so
+    // the two must not be confused — see `canon_ring`.
     let fc = plane_ix[fp];
-    let outer = match combinatorics::face_vertex_triples(model, fh, fp, inc, jd, plane_ix) {
-        Ok(r) => match plane_ring(&r) {
+    let outer = match &loops.outer {
+        Some(r) => match plane_ring(r) {
             Some(r) => r,
             None => {
                 out.declined.push((fp, DeclineKind::CollapsedTriple));
                 return;
             }
         },
-        Err(_) => {
+        None => {
             out.declined.push((fp, DeclineKind::OuterRing));
             return;
         }
@@ -322,11 +320,11 @@ fn trace_transversal_face(
     let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
-    let Ok(raw_holes) = combinatorics::hole_rings(model, fh, fp, inc, jd, plane_ix) else {
+    let Some(raw_holes) = &loops.holes else {
         out.declined.push((fp, DeclineKind::HoleRing));
         return;
     };
-    for r in &raw_holes {
+    for r in raw_holes {
         match plane_ring(r) {
             Some(r) => holes.push(r),
             None => {
@@ -629,110 +627,134 @@ fn run_body_above(
 
 /// Trace one solid on plane class `wc` (a canon root, i.e. an index into `planes`). This brick:
 /// seated faces → their boundary as segments; every other face → `declined`.
+///
+/// `side_faces` is that solid's face slots and `loops` every face's rings — see
+/// [`combinatorics::TraceInput`]. This walk used to read the shells out of the `Model` and derive
+/// the rings here, once per class; nothing about either depends on `wc`.
 #[allow(clippy::too_many_arguments)]
 fn trace_one(
-    model: &Model,
-    solid: Handle<Solid>,
+    side_faces: &[usize],
+    loops: &[combinatorics::FaceLoops],
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, PlaneGeom>,
     faces: &[FaceInfo],
-    surf_ix: &HashMap<Handle<Face>, usize>,
-    inc: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
     out: &mut Trace,
 ) {
     let planes = jd.planes;
     let w_normal = planes[wc].plane.normal();
-    for sh in solid_shell_handles(model, solid) {
-        for &fh in &model.shells.get(sh).faces {
-            let fp = surf_ix[&fh];
-            if plane_ix[fp] != wc {
-                trace_transversal_face(model, fh, fp, which, wc, jd, faces, inc, plane_ix, out);
-                continue;
+    for &fp in side_faces {
+        let fl = &loops[fp];
+        if plane_ix[fp] != wc {
+            trace_transversal_face(fp, fl, which, wc, jd, faces, plane_ix, out);
+            continue;
+        }
+        // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
+        // side of W — `n_out` points away from the body, so the body is above W exactly when
+        // `n_out · n_W < 0`. The f64 sign is robust even rotated: seated means `canon[fp]==wc`,
+        // so `n_out ∥ n_W` (both unit) and the dot is ≈ ±1, a full unit from the sign boundary
+        // (the rotated-tunnel tests exercise this seated path through the cube's own caps).
+        let body_above = faces[fp].n_out.dot(w_normal) < 0.0;
+        let kind = SegKind::Seated { body_above };
+        // Collect every ring in class form first: a collapsed name declines the whole face, and
+        // deciding that before the emitting closure exists keeps the two borrows apart.
+        let Some(outer) = fl.outer.as_deref().and_then(plane_ring) else {
+            out.declined.push((fp, DeclineKind::OuterRing));
+            continue;
+        };
+        let mut rings = vec![outer];
+        let mut collapsed = false;
+        // As above: an unnameable hole is a reject, not "no hole".
+        let Some(raw) = &fl.holes else {
+            out.declined.push((fp, DeclineKind::HoleRing));
+            continue;
+        };
+        for r in raw {
+            match plane_ring(r) {
+                Some(r) => rings.push(r),
+                None => collapsed = true,
             }
-            // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
-            // side of W — `n_out` points away from the body, so the body is above W exactly when
-            // `n_out · n_W < 0`. The f64 sign is robust even rotated: seated means `canon[fp]==wc`,
-            // so `n_out ∥ n_W` (both unit) and the dot is ≈ ±1, a full unit from the sign boundary
-            // (the rotated-tunnel tests exercise this seated path through the cube's own caps).
-            let body_above = faces[fp].n_out.dot(w_normal) < 0.0;
-            let kind = SegKind::Seated { body_above };
-            // Collect every ring in class form first: a collapsed name declines the whole face, and
-            // deciding that before the emitting closure exists keeps the two borrows apart.
-            let Some(outer) = combinatorics::face_vertex_triples(model, fh, fp, inc, jd, plane_ix)
-                .ok()
-                .and_then(|ts| plane_ring(&ts))
-            else {
-                out.declined.push((fp, DeclineKind::OuterRing));
-                continue;
-            };
-            let mut rings = vec![outer];
-            let mut collapsed = false;
-            // As above: an unnameable hole is a reject, not "no hole".
-            let Ok(raw) = combinatorics::hole_rings(model, fh, fp, inc, jd, plane_ix) else {
-                out.declined.push((fp, DeclineKind::HoleRing));
-                continue;
-            };
-            for r in &raw {
-                match plane_ring(r) {
-                    Some(r) => rings.push(r),
-                    None => collapsed = true,
-                }
+        }
+        if collapsed {
+            out.declined.push((fp, DeclineKind::CollapsedTriple));
+            continue;
+        }
+        let fc = plane_ix[fp];
+        let mut emit_ring = |tris: &[[usize; 3]]| {
+            let n = tris.len();
+            for i in 0..n {
+                // Edge i runs vertex i → vertex i+1; the wall it rides is the plane the two
+                // endpoint triples share besides `fc`. The triples are already dense plane ids
+                // (`face_vertex_triples` mapped them through `plane_ix`), so this is a plain set
+                // intersection — no second remap, which under a non-idempotent `plane_ix` would
+                // index the table with a value that is already an index.
+                let (t0, t1) = (tris[i], tris[(i + 1) % n]);
+                let mut shared: Vec<usize> = t0
+                    .iter()
+                    .copied()
+                    .filter(|&c| c != fc && t1.contains(&c))
+                    .collect();
+                shared.sort_unstable();
+                shared.dedup();
+                let [wall] = shared[..] else {
+                    out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
+                    continue;
+                };
+                // The handle on `wc ∩ wall` is what the triple carries besides those two. A
+                // seated face lies in `wc`, so `fc == wc` here and `shared` being a singleton
+                // is the same fact as there being exactly one such element.
+                let handle = |t: [usize; 3]| {
+                    t.into_iter()
+                        .find(|&c| c != fc && c != wall)
+                        .expect("a seated edge's endpoint has a third plane")
+                };
+                out.segs.push(Seg {
+                    wall,
+                    end: [sorted3(t0), sorted3(t1)],
+                    end_h: [handle(t0), handle(t1)],
+                    solid: which,
+                    kind,
+                });
             }
-            if collapsed {
-                out.declined.push((fp, DeclineKind::CollapsedTriple));
-                continue;
-            }
-            let fc = plane_ix[fp];
-            let mut emit_ring = |tris: &[[usize; 3]]| {
-                let n = tris.len();
-                for i in 0..n {
-                    // Edge i runs vertex i → vertex i+1; the wall it rides is the plane the two
-                    // endpoint triples share besides `fc`. The triples are already dense plane ids
-                    // (`face_vertex_triples` mapped them through `plane_ix`), so this is a plain set
-                    // intersection — no second remap, which under a non-idempotent `plane_ix` would
-                    // index the table with a value that is already an index.
-                    let (t0, t1) = (tris[i], tris[(i + 1) % n]);
-                    let mut shared: Vec<usize> = t0
-                        .iter()
-                        .copied()
-                        .filter(|&c| c != fc && t1.contains(&c))
-                        .collect();
-                    shared.sort_unstable();
-                    shared.dedup();
-                    let [wall] = shared[..] else {
-                        out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
-                        continue;
-                    };
-                    // The handle on `wc ∩ wall` is what the triple carries besides those two. A
-                    // seated face lies in `wc`, so `fc == wc` here and `shared` being a singleton
-                    // is the same fact as there being exactly one such element.
-                    let handle = |t: [usize; 3]| {
-                        t.into_iter()
-                            .find(|&c| c != fc && c != wall)
-                            .expect("a seated edge's endpoint has a third plane")
-                    };
-                    out.segs.push(Seg {
-                        wall,
-                        end: [sorted3(t0), sorted3(t1)],
-                        end_h: [handle(t0), handle(t1)],
-                        solid: which,
-                        kind,
-                    });
-                }
-            };
-            for ring in &rings {
-                emit_ring(ring);
-            }
+        };
+        for ring in &rings {
+            emit_ring(ring);
         }
     }
 }
 
 /// Both operands' traces on plane class `wc`, merged into one `Trace` (segments keep their
 /// `solid` tag).
-#[allow(clippy::too_many_arguments)]
 fn trace_on_class(
+    input: &combinatorics::TraceInput,
+    wc: usize,
+    jd: &Judge<'_, PlaneGeom>,
+    faces: &[FaceInfo],
+    plane_ix: &[usize],
+) -> Trace {
+    let mut out = Trace::default();
+    for (side, which) in [SolidSide::A, SolidSide::B].into_iter().enumerate() {
+        trace_one(
+            &input.side_faces[side],
+            &input.loops,
+            which,
+            wc,
+            jd,
+            faces,
+            plane_ix,
+            &mut out,
+        );
+    }
+    out
+}
+
+/// Test shims: trace straight from the two solids, deriving [`combinatorics::TraceInput`] on the
+/// spot. Production derives it once per boolean (`trace_result_faces`) because it is the same for
+/// every class; a test that traces a single class should not have to say so.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn trace_on_class_of(
     model: &Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
@@ -744,32 +766,51 @@ fn trace_on_class(
     inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
 ) -> Trace {
-    let mut out = Trace::default();
-    trace_one(
+    let input = combinatorics::trace_input(
         model,
-        a,
-        SolidSide::A,
+        [(a, inc_a), (b, inc_b)],
+        surf_ix,
+        faces.len(),
+        jd,
+        plane_ix,
+    );
+    trace_on_class(&input, wc, jd, faces, plane_ix)
+}
+
+/// One solid only — the second operand slot is filled with the same solid, whose loops are
+/// identical, and only `side_faces[0]` is read.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn trace_one_of(
+    model: &Model,
+    solid: Handle<Solid>,
+    which: SolidSide,
+    wc: usize,
+    jd: &Judge<'_, PlaneGeom>,
+    faces: &[FaceInfo],
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    inc: &combinatorics::EdgeFaces,
+    plane_ix: &[usize],
+    out: &mut Trace,
+) {
+    let input = combinatorics::trace_input(
+        model,
+        [(solid, inc), (solid, inc)],
+        surf_ix,
+        faces.len(),
+        jd,
+        plane_ix,
+    );
+    trace_one(
+        &input.side_faces[0],
+        &input.loops,
+        which,
         wc,
         jd,
         faces,
-        surf_ix,
-        inc_a,
         plane_ix,
-        &mut out,
+        out,
     );
-    trace_one(
-        model,
-        b,
-        SolidSide::B,
-        wc,
-        jd,
-        faces,
-        surf_ix,
-        inc_b,
-        plane_ix,
-        &mut out,
-    );
-    out
 }
 
 /// A coincident-merged arrangement edge on a plane class. When the cut plane is a solid's **cap
@@ -1601,6 +1642,18 @@ fn trace_result_faces(
     // else stays `Arrange`, which is the whole engine as it was.
     let plans = crate::reuse::class_plans(model, reuse, kind, a, b, planes, class_owner);
 
+    // Everything the tracer reads from the topology store, derived **once** — see
+    // [`combinatorics::TraceInput`]. Below this line the arrangement is a function of face tables
+    // and plane classes; `model` survives only for the reuse plan, which V5 retires.
+    let trace_in = combinatorics::trace_input(
+        model,
+        [(a, inc_a), (b, inc_b)],
+        surf_ix,
+        faces.len(),
+        jd,
+        plane_ix,
+    );
+
     // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
     // Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
     // Doing both in one loop would key an early class's tables before a later class had reported
@@ -1637,8 +1690,7 @@ fn trace_result_faces(
             // Nothing in the code stopped that; it simply needed a model with a concurrency in a
             // region the other operand cannot reach, and the corpus has none. The cheap repair is
             // to keep the fallback a real one, which is what this does.
-            let mut tr =
-                trace_on_class(model, a, b, wc, jd, faces, surf_ix, inc_a, inc_b, plane_ix);
+            let mut tr = trace_on_class(&trace_in, wc, jd, faces, plane_ix);
             let mut local = snapshot.clone();
             local.absorb(&std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
@@ -1772,12 +1824,18 @@ pub(crate) fn concurrency_audit(
         ..
     } = plane_index_setup(model, a, b)?;
     let jd = Judge::new(&geom, standard, &notes);
+    let trace_in = combinatorics::trace_input(
+        model,
+        [(a, &inc_a), (b, &inc_b)],
+        &surf_ix,
+        faces_tab.len(),
+        &jd,
+        &plane_ix,
+    );
     let mut out = Vec::new();
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
-        let tr = trace_on_class(
-            model, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
-        );
+        let tr = trace_on_class(&trace_in, wc, &jd, &faces_tab, &plane_ix);
         // Names this class used: segment endpoints, single-point touches, and — since a crossing
         // the arrangement mints is a vertex too — the split's endpoints where it got that far.
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -1903,12 +1961,18 @@ pub(crate) fn frame_audit(
         ..
     } = plane_index_setup(model, a, b)?;
     let jd = Judge::new(&geom, standard, &notes);
+    let trace_in = combinatorics::trace_input(
+        model,
+        [(a, &inc_a), (b, &inc_b)],
+        &surf_ix,
+        faces_tab.len(),
+        &jd,
+        &plane_ix,
+    );
     let mut out = Vec::new();
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
-        let tr = trace_on_class(
-            model, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
-        );
+        let tr = trace_on_class(&trace_in, wc, &jd, &faces_tab, &plane_ix);
         let side = |f: fn(&SegKind) -> Option<bool>| -> Vec<bool> {
             tr.segs.iter().filter_map(|s| f(&s.kind)).collect()
         };
@@ -2205,7 +2269,7 @@ mod tests {
             })
             .expect("a shared cap class");
 
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         // Two seated caps × 4 edges each. (The side walls only *graze* z=1 — each cube's body is
@@ -2319,7 +2383,7 @@ mod tests {
             .expect("a y=1 class");
 
         let mut out = Trace::default();
-        trace_one(
+        trace_one_of(
             &m,
             a2,
             SolidSide::A,
@@ -2432,7 +2496,7 @@ mod tests {
             })
             .expect("a y=1 class");
         let mut out = Trace::default();
-        trace_one(
+        trace_one_of(
             &m,
             a2,
             SolidSide::A,
@@ -2624,7 +2688,7 @@ mod tests {
             } = plane_index_setup(&m, a, b).unwrap();
             let jd = Judge::new(&planes, standard, &notes);
             let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-            let tr = trace_on_class(
+            let tr = trace_on_class_of(
                 &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -2664,7 +2728,7 @@ mod tests {
             } = plane_index_setup(&m, a, b).unwrap();
             let jd = Judge::new(&planes, standard, &notes);
             let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-            let tr = trace_on_class(
+            let tr = trace_on_class_of(
                 &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -2712,7 +2776,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -2812,7 +2876,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -2878,7 +2942,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -2954,7 +3018,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -3028,7 +3092,7 @@ mod tests {
                 })
             })
             .expect("b's z=1 cap class");
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -3081,7 +3145,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -3910,7 +3974,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         for wc in 0..planes.len() {
-            let tr = trace_on_class(
+            let tr = trace_on_class_of(
                 &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             assert!(
@@ -3973,7 +4037,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
-        let tr = trace_on_class(
+        let tr = trace_on_class_of(
             &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
         );
         // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
@@ -4032,7 +4096,7 @@ mod tests {
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         for wc in 0..planes.len() {
-            let tr = trace_on_class(
+            let tr = trace_on_class_of(
                 &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
             );
             assert!(tr.declined.is_empty(), "class {wc} declined: {tr:?}");
