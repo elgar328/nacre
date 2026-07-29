@@ -72,22 +72,23 @@ pub(crate) fn order_along(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, i: usiz
     jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
-/// [`order_along`] with the `(p, q, j)` factor supplied — **`i` does not enter it.**
+/// [`order_along`] for **both ends of one segment at once**, with each end's direction sign supplied.
 ///
-/// ★ The two halves of `order_along` have different arities: the orientation is a fact about four
-/// planes, the direction sign only about three. A caller that sweeps `i` over a whole set while
-/// `(p, q, j)` stays put is recomputing the second half once per `i`. Measured on a 60-fin fold, one
-/// such sweep spent 52.8% of the boolean and asked for the same `dir_sign` 1.5 million times when
-/// 113 thousand would have done. Hand it in with [`dir_sign`] instead.
-pub(crate) fn order_along_with(
+/// ★ Two things are hoisted here. `order_along` factors into `orient3d × dir_sign(p, q, j)`, and the
+/// second factor does not mention `i` — for a segment's endpoints it is a property of the segment, so
+/// the caller computes it once and hands it in. And the two orderings share `(p, q, i)`, so they ask
+/// about the **same implicit point**, whose Cramer parts the certified filter would otherwise build
+/// twice; see [`nacre_cip::predicate::Judge::orient3d_pair`].
+pub(crate) fn order_along_pair(
     jd: &Judge<'_, PlaneGeom>,
     p: usize,
     q: usize,
     i: usize,
-    j: usize,
-    ds_j: i8,
-) -> i8 {
-    jd.orient3d(p, q, i, j) * ds_j
+    ends: [usize; 2],
+    ds: [i8; 2],
+) -> [i8; 2] {
+    let (a, b) = jd.orient3d_pair(p, q, i, ends[0], ends[1]);
+    [a * ds[0], b * ds[1]]
 }
 
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be

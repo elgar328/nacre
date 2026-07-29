@@ -1034,9 +1034,9 @@ fn split_at_crossings(
         if r == r0 || r == r1 {
             return true;
         }
-        let ds = end_ds[si];
-        let a = combinatorics::order_along_with(jd, wc, s.wall, r, r0, ds[0]);
-        let b = combinatorics::order_along_with(jd, wc, s.wall, r, r1, ds[1]);
+        // ★ **Both ends in one call.** They share `(wc, s.wall, r)`, so they ask about the same
+        // implicit point, whose Cramer parts the certified filter would otherwise build twice.
+        let [a, b] = combinatorics::order_along_pair(jd, wc, s.wall, r, [r0, r1], end_ds[si]);
         a == 0 || b == 0 || a != b
     };
 

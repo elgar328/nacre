@@ -22,7 +22,7 @@
 
 use crate::kernel::frame3::{
     Decision, MoveNode, Pt3, Standard, dir_sign_judge, indirect_cmp_coord_judge,
-    indirect_orient3d_judge_pre, orient3d_judge,
+    indirect_orient3d_judge_pre, indirect_orient3d2_judge_pre, orient3d_judge,
 };
 use nacre_math::Point3;
 use nacre_predicates::{
@@ -280,8 +280,22 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// so the sign is exactly `0` (a combinatorial identity) — decided before either numeric
     /// branch, exact and cheap for both.
     pub fn orient3d(&self, p: usize, q: usize, r: usize, j: usize) -> i8 {
+        match self.orient3d_cheap(p, q, r, j) {
+            Some(o) => o,
+            None => self.orient3d_certified(p, q, r, j),
+        }
+    }
+
+    /// Every route of [`Judge::orient3d`] **except** the certified one, or `None` when only that one
+    /// is left.
+    ///
+    /// ★ **The routing lives here and nowhere else.** [`Judge::orient3d_pair`] needs to know whether
+    /// two questions will both reach the certified path — that is the only branch with anything to
+    /// share — and asking it by re-testing `any_rotated`/`shared_motion` would put the route
+    /// selection in two places, free to drift into two different answers for one question.
+    fn orient3d_cheap(&self, p: usize, q: usize, r: usize, j: usize) -> Option<i8> {
         if j == p || j == q || j == r {
-            return 0;
+            return Some(0);
         }
         if !any_rotated(self.planes, &[p, q, r, j]) {
             let tp = ThreePlane([
@@ -290,7 +304,12 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 self.planes[r].coeffs(),
             ]);
             let tj = self.planes[j].tri();
-            return indirect_orient3d(&tp, tj[0].as_array(), tj[1].as_array(), tj[2].as_array());
+            return Some(indirect_orient3d(
+                &tp,
+                tj[0].as_array(),
+                tj[1].as_array(),
+                tj[2].as_array(),
+            ));
         }
         // One shared motion ⇒ the same question, exactly, on the canonicalised pre-motion data.
         if shared_motion(self.planes, &[p, q, r, j]) {
@@ -301,14 +320,19 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 self.planes[j].base_tri(),
             ) {
                 let tp = ThreePlane([cp, cq, cr]);
-                return indirect_orient3d(
+                return Some(indirect_orient3d(
                     &tp,
                     tj[0].as_array(),
                     tj[1].as_array(),
                     tj[2].as_array(),
-                );
+                ));
             }
         }
+        None
+    }
+
+    /// The certified route of [`Judge::orient3d`], reached only through [`Judge::orient3d_cheap`].
+    fn orient3d_certified(&self, p: usize, q: usize, r: usize, j: usize) -> i8 {
         let (dp, dq, dr, dj) = (
             plane_def(self.planes, p),
             plane_def(self.planes, q),
@@ -327,6 +351,46 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 &dj[2],
                 self.standard,
             ),
+        )
+    }
+
+    /// [`Judge::orient3d`] for **two query planes against one implicit point**.
+    ///
+    /// ★ The point `∩(p, q, r)` is the same for both, and on the certified path its Cramer parts
+    /// are four determinants that do not mention the query at all. Asking the two questions
+    /// together pays for them once. Any other route — an immediate zero, the exact path, the
+    /// shared-motion shortcut — has nothing to share, so each `j` simply falls through to
+    /// [`Judge::orient3d`]; the pairing is an optimisation of one branch, not a new predicate.
+    pub fn orient3d_pair(&self, p: usize, q: usize, r: usize, j0: usize, j1: usize) -> (i8, i8) {
+        // ★ One route selector for both, so the pair can never take a different path than the
+        // single would. A cheap answer for either end means there is nothing to share.
+        let (c0, c1) = (
+            self.orient3d_cheap(p, q, r, j0),
+            self.orient3d_cheap(p, q, r, j1),
+        );
+        let (None, None) = (c0, c1) else {
+            return (
+                c0.unwrap_or_else(|| self.orient3d_certified(p, q, r, j0)),
+                c1.unwrap_or_else(|| self.orient3d_certified(p, q, r, j1)),
+            );
+        };
+        let (dp, dq, dr) = (
+            plane_def(self.planes, p),
+            plane_def(self.planes, q),
+            plane_def(self.planes, r),
+        );
+        let (d0, d1) = indirect_orient3d2_judge_pre(
+            [self.plane_iv(p), self.plane_iv(q), self.plane_iv(r)],
+            borrow3(dp),
+            borrow3(dq),
+            borrow3(dr),
+            borrow3(plane_def(self.planes, j0)),
+            borrow3(plane_def(self.planes, j1)),
+            self.standard,
+        );
+        (
+            self.record(Site::Orient3d { p, q, r, j: j0 }, d0),
+            self.record(Site::Orient3d { p, q, r, j: j1 }, d1),
         )
     }
 
