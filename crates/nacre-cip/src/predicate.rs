@@ -204,10 +204,14 @@ pub struct Judge<'a, W> {
     /// definitions alone. Rebuilding them per call is ~20-24% of a certified judgement, and the
     /// arrangement's crossing collector hands in the same three definitions hundreds of times.
     ///
-    /// It lives on the `Judge` rather than the witness because it is a property of *this*
-    /// operation's table, and because a `Judge` is made once per boolean while a witness outlives
-    /// it. Two workers racing to fill one cell compute the same value, so the answer does not
-    /// depend on who won — the same argument `HpCell` rests on.
+    /// ★ **Why it is here and not on the witness, where [`Witness::tri_pt3`] says caches go.**
+    /// `Iv` is `pub(crate)`, and so is the module it lives in. A `PlaneWitness` method returning
+    /// `[Iv; 4]` would make the interval type — the precision kernel's working representation —
+    /// part of this crate's public API, for every consumer, forever. `frame_sign` and `coeffs` are
+    /// `i8` and `[f64; 4]`, so they *do* live on the witness; this one cannot follow them.
+    ///
+    /// Two workers racing to fill one cell compute the same value, so the answer does not depend on
+    /// who won — the same argument `HpCell` rests on.
     iv: Vec<IvCell>,
 }
 
