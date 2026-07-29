@@ -18,6 +18,7 @@ mod exact;
 mod ops;
 mod par;
 mod planes;
+mod reuse;
 mod rotated_vertex;
 mod sketch;
 mod tolerant;

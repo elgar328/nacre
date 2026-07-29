@@ -23,14 +23,6 @@ use nacre_cip::Decision;
 use nacre_cip::predicate::Notes;
 use nacre_geom::intersect::three_planes;
 
-/// Which operand a segment came from — the boolean's per-cell label needs both solids' material
-/// above and below, so provenance cannot be merged away.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SolidSide {
-    A,
-    B,
-}
-
 /// **Which arcs of the circle around an edge a wall fills**, over one sub-interval of that edge.
 ///
 /// An arrangement edge on plane class `W` is the meeting of `W` with one other plane, so the little
@@ -1598,9 +1590,15 @@ fn trace_result_faces(
     inc_a: &combinatorics::EdgeFaces,
     inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[usize],
+    n_a: usize,
+    class_owner: &[Option<SolidSide>],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
+
+    // **What each class contributes, for the classes the other operand cannot reach.** Everything
+    // else stays `Arrange`, which is the whole engine as it was.
+    let plans = crate::reuse::class_plans(model, kind, a, b, planes, class_owner);
 
     // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
     // Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
@@ -1660,20 +1658,72 @@ fn trace_result_faces(
     // `assemble_fuse_cut` mints are the ones a single thread would have minted, and a class
     // that declines surfaces the same rejection the sequential loop returned (the lowest
     // index, not whichever worker got there first).
+    // The vertex→class map of each operand, built once and only if some class needs it.
+    let vc_a = plans
+        .contains(&crate::reuse::ClassPlan::PassThrough(SolidSide::A))
+        .then(|| crate::reuse::VertexClasses::of(model, faces, plane_ix, 0..n_a));
+    let vc_b = plans
+        .contains(&crate::reuse::ClassPlan::PassThrough(SolidSide::B))
+        .then(|| crate::reuse::VertexClasses::of(model, faces, plane_ix, n_a..faces.len()));
+
     let per_class = crate::par::try_map_range(splits.len(), |wc| {
         let split = &splits[wc];
-        let (cells, face_of) = extract_cells(jd, wc, split)?;
-        let nesting = nest_cells(jd, wc, &cells, split)?;
-        let labels = label_cells(&cells, &face_of, split, &nesting)?;
-        Ok(emit_faces(
-            kind,
-            &labels,
-            &cells,
-            split,
-            jd,
-            wc,
-            &nesting.holes,
-        ))
+        let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
+            let (cells, face_of) = extract_cells(jd, wc, split)?;
+            let nesting = nest_cells(jd, wc, &cells, split)?;
+            let labels = label_cells(&cells, &face_of, split, &nesting)?;
+            Ok(emit_faces(
+                kind,
+                &labels,
+                &cells,
+                split,
+                jd,
+                wc,
+                &nesting.holes,
+            ))
+        };
+        // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
+        // its vertices falls back to arranging, so this can lose the shortcut but never the answer.
+        let reused = match plans[wc] {
+            crate::reuse::ClassPlan::Arrange => None,
+            crate::reuse::ClassPlan::Empty => Some(Vec::new()),
+            crate::reuse::ClassPlan::PassThrough(side) => {
+                let (vc, range) = match side {
+                    SolidSide::A => (vc_a.as_ref(), 0..n_a),
+                    SolidSide::B => (vc_b.as_ref(), n_a..faces.len()),
+                };
+                vc.and_then(|vc| {
+                    crate::reuse::pass_through(
+                        model,
+                        wc,
+                        &planes[wc],
+                        faces,
+                        plane_ix,
+                        range,
+                        vc,
+                        |t| aliases.canon_point(t),
+                    )
+                })
+            }
+        };
+        match reused {
+            Some(f) => {
+                // **The shortcut is checked against the thing it replaces, every debug run.**
+                // Both routes must name the same rings; only where each ring starts may differ,
+                // so the comparison is on a rotation- and order-independent form.
+                #[cfg(debug_assertions)]
+                if plans[wc] != crate::reuse::ClassPlan::Arrange {
+                    let truth = arrange(wc)?;
+                    assert_eq!(
+                        crate::reuse::canonical(&f),
+                        crate::reuse::canonical(&truth),
+                        "class {wc}: the reused faces are not the ones the arrangement emits"
+                    );
+                }
+                Ok(f)
+            }
+            None => arrange(wc),
+        }
     })?;
     for faces in per_class {
         local_faces.extend(faces);
@@ -1722,6 +1772,7 @@ pub(crate) fn concurrency_audit(
         plane_ix,
         standard,
         notes,
+        ..
     } = plane_index_setup(model, a, b)?;
     let jd = Judge::new(&geom, standard, &notes);
     let mut out = Vec::new();
@@ -1852,6 +1903,7 @@ pub(crate) fn frame_audit(
         plane_ix,
         standard,
         notes,
+        ..
     } = plane_index_setup(model, a, b)?;
     let jd = Judge::new(&geom, standard, &notes);
     let mut out = Vec::new();
@@ -1932,10 +1984,13 @@ pub(crate) fn boolean(
         surf_ix,
         inc_a,
         inc_b,
+        n_a,
         geom,
         plane_ix,
+        class_owner,
         standard,
         notes,
+        ..
     } = plane_index_setup(model, a, b)?;
     // The operation's judging, made once: the dense plane table, the standard it is held to, and
     // the collector. Everything below reaches predicates through this, so there is exactly one
@@ -1947,7 +2002,18 @@ pub(crate) fn boolean(
     undecided_reject(&notes)?;
     let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
         let faces = trace_result_faces(
-            model, kind, a, b, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            model,
+            kind,
+            a,
+            b,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            n_a,
+            &class_owner,
         )?;
         // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
         // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
@@ -3138,7 +3204,9 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
+            n_a,
             plane_ix,
+            class_owner,
             standard,
             notes,
             ..
@@ -3155,6 +3223,8 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            n_a,
+            &class_owner,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "z=0 + z=2 + 4 walls×2");
@@ -3335,7 +3405,9 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
+            n_a,
             plane_ix,
+            class_owner,
             standard,
             notes,
             ..
@@ -3352,6 +3424,8 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            n_a,
+            &class_owner,
         )
         .unwrap();
         assert_eq!(
@@ -3431,7 +3505,9 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
+            n_a,
             plane_ix,
+            class_owner,
             standard,
             notes,
             ..
@@ -3448,6 +3524,8 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            n_a,
+            &class_owner,
         )
         .unwrap();
 
@@ -3685,7 +3763,9 @@ mod tests {
             surf_ix,
             inc_a,
             inc_b,
+            n_a,
             plane_ix,
+            class_owner,
             standard,
             notes,
             ..
@@ -3702,6 +3782,8 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            n_a,
+            &class_owner,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "rotated arrangement keeps 10 faces");

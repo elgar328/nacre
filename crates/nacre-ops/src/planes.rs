@@ -216,6 +216,38 @@ pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
     tol
 }
 
+/// Which operand a face or segment came from — the boolean's per-cell label needs both solids'
+/// material above and below, so provenance cannot be merged away.
+///
+/// It lives with the plane table rather than with the arrangement because it labels **an
+/// operand**, not a segment: this is where the two solids first share one index space, so it is
+/// where "whose is this?" first has an answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SolidSide {
+    A,
+    B,
+}
+
+/// Whose faces each plane class carries: `Some(side)` when every face in the class is that
+/// operand's, `None` when both operands have one there.
+///
+/// **A `None` class is a coplanar contact** — the two solids meet on that plane — so nothing may
+/// treat it as belonging to one side.
+fn class_owners(plane_ix: &[usize], n_a: usize, n_class: usize) -> Vec<Option<SolidSide>> {
+    let mut out: Vec<Option<SolidSide>> = vec![None; n_class];
+    let mut seen = vec![false; n_class];
+    for (fi, &c) in plane_ix.iter().enumerate() {
+        let side = if fi < n_a { SolidSide::A } else { SolidSide::B };
+        if !seen[c] {
+            seen[c] = true;
+            out[c] = Some(side);
+        } else if out[c] != Some(side) {
+            out[c] = None;
+        }
+    }
+    out
+}
+
 /// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
 /// [`combinatorics::EdgeFaces`]. Built once and shared: indices into the returned `planes`/`surf_ix`
@@ -232,10 +264,16 @@ pub(crate) struct PlaneSetup {
     pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
     pub(crate) inc_a: combinatorics::EdgeFaces,
     pub(crate) inc_b: combinatorics::EdgeFaces,
+    /// Where `a`'s faces end and `b`'s begin in `planes`. The concatenation always created this
+    /// boundary; it was just never written down, so every later "whose face is this?" had to
+    /// rebuild it.
+    pub(crate) n_a: usize,
     /// The arrangement's planes, densely indexed — see [`dense_planes`].
     pub(crate) geom: Vec<PlaneGeom>,
     /// `plane_ix[face]` is that face's plane, as an index into `geom`.
     pub(crate) plane_ix: Vec<usize>,
+    /// Whose faces each plane class carries — see [`class_owners`].
+    pub(crate) class_owner: Vec<Option<SolidSide>>,
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
     /// operation rather than to any one plane. The caller pairs them with a table to make a
     /// [`Judge`].
@@ -249,6 +287,7 @@ pub(crate) fn plane_index_setup(
     b: Handle<Solid>,
 ) -> Result<PlaneSetup, BoolError> {
     let mut planes = collect_planes(model, a)?;
+    let n_a = planes.len();
     planes.extend(collect_planes(model, b)?);
     let standard = standard_for(&planes);
     let notes = Notes::new();
@@ -269,13 +308,16 @@ pub(crate) fn plane_index_setup(
     // classes), then the dense plane table inherits the same three.
     let canon = plane_classes(&Judge::new(&planes, standard, &notes));
     let (geom, plane_ix) = dense_planes(&planes, &canon);
+    let class_owner = class_owners(&plane_ix, n_a, geom.len());
     Ok(PlaneSetup {
         planes,
         surf_ix,
         inc_a,
         inc_b,
+        n_a,
         geom,
         plane_ix,
+        class_owner,
         standard,
         notes,
     })
@@ -531,6 +573,14 @@ pub(crate) struct PlaneGeom {
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
+}
+
+impl PlaneGeom {
+    /// The class's outward normal — the root face's, which is what `tri` is wound for and what
+    /// `emit_faces` winds its rings about. Not normalized: only its direction is ever read.
+    pub(crate) fn tri_n_out(&self) -> Vector3 {
+        (self.tri[1] - self.tri[0]).cross(self.tri[2] - self.tri[0])
+    }
 }
 
 /// Dense plane ids for a face table: `(geom, plane_ix)` where `plane_ix[face]` indexes `geom`.
