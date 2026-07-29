@@ -26,6 +26,8 @@ use nacre_cip::predicate::Notes;
 #[cfg(test)]
 use nacre_geom::Plane;
 use nacre_geom::intersect::three_planes;
+#[cfg(test)]
+use std::collections::HashSet;
 
 /// **Which arcs of the circle around an edge a wall fills**, over one sub-interval of that edge.
 ///
@@ -1721,56 +1723,223 @@ fn split_plane_class(model: &mut Model, axis: usize, at: f64) -> PlaneGeom {
     }
 }
 
-/// Clip one ring of plane class `fc` to one side of the class `split`, in the substrate's own
-/// language.
-///
-/// Sutherland-Hodgman with `side_of` — an exact predicate — deciding each vertex, and the crossing
-/// vertex's **name read straight off the two triples the edge already carries**: an edge between
-/// `t_i` and `t_{i+1}` rides the class they share besides `fc`, so the new point is
-/// `{fc, wall, split}`. No point is built and no coordinate is read; the geometry is only ever
-/// asked which side of `split` a name lies on.
-///
-/// `keep` is the sign of `split` to retain. `None` means the ring is wholly on the other side.
+/// One surviving piece of a clipped face: its outer ring and its holes, in class-triple form.
 #[cfg(test)]
-fn clip_ring(
+pub(crate) type ClipPiece = (Vec<[usize; 3]>, Vec<Vec<[usize; 3]>>);
+
+/// One face's rings clipped to a half-space.
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct Clipped {
+    /// The surviving pieces — **there can be several**. Each is `(outer, holes)`.
+    pub pieces: Vec<ClipPiece>,
+    /// The directed edges the clip laid **on the split plane**, oriented as this face's boundary
+    /// runs. Collected over a solid's faces they are the cap's edges — see `cap_rings`.
+    pub cap_edges: Vec<([usize; 3], [usize; 3])>,
+}
+
+/// Clip a face's rings (outer + holes, plane class `fc`) to the `keep` side of class `split`.
+///
+/// **Every decision is an existing exact predicate, and no point is built.** A vertex's side is
+/// [`combinatorics::side_of`]; a crossing's *name* is read straight off the two triples the edge
+/// already carries — an edge between `t_i` and `t_{i+1}` rides the class they share besides `fc`,
+/// so the new point is `{fc, wall, split}`; and the ordering along the clip line is
+/// [`combinatorics::order_along`].
+///
+/// ★ **The crossings are paired in *line* order, not in ring order.** Sutherland-Hodgman pairs them
+/// in ring order, which for a non-convex ring bridges two disjoint pieces along the clip line and
+/// swallows the gap between them — measured on the U-prism's cap, where it turned two rectangles
+/// into one eight-vertex ring covering the notch. That is a wrong answer, not a reject. Sorting the
+/// chain ends along the line and pairing consecutive ones is the standard fix, and it is exact here
+/// because `order_along` is.
+///
+/// A vertex *on* `split` is declined (`FourPlane`): a named vertex lying on the split plane means
+/// four planes through one point, which this substrate cannot name — and the split position rule
+/// exists to prevent it, so a firing means the rule was not applied.
+#[cfg(test)]
+fn clip_face(
     jd: &Judge<'_, PlaneGeom>,
     fc: usize,
     split: usize,
     keep: i8,
-    ring: &[[usize; 3]],
-) -> Option<Vec<[usize; 3]>> {
-    let n = ring.len();
-    let side: Vec<i8> = ring
-        .iter()
-        .map(|&t| combinatorics::side_of(jd, t, split) * keep)
-        .collect();
-    if side.iter().all(|&s| s >= 0) {
-        return Some(ring.to_vec());
-    }
-    if side.iter().all(|&s| s <= 0) {
-        return None;
-    }
-    let mut out: Vec<[usize; 3]> = Vec::with_capacity(n + 2);
-    for i in 0..n {
-        let j = (i + 1) % n;
-        if side[i] >= 0 {
-            out.push(ring[i]);
+    rings: &[&[[usize; 3]]],
+) -> Result<Clipped, BoolError> {
+    // Which class a ring edge rides: the one its two endpoint triples share besides `fc`.
+    let wall_of = |a: [usize; 3], b: [usize; 3]| -> Result<usize, BoolError> {
+        let mut shared: Vec<usize> = a
+            .iter()
+            .copied()
+            .filter(|&c| c != fc && b.contains(&c))
+            .collect();
+        shared.sort_unstable();
+        shared.dedup();
+        match shared[..] {
+            [w] => Ok(w),
+            _ => Err(reject(RejectReason::RingNaming)),
         }
-        if side[i] * side[j] < 0 {
-            let mut shared: Vec<usize> = ring[i]
-                .iter()
-                .copied()
-                .filter(|&c| c != fc && ring[j].contains(&c))
-                .collect();
-            shared.sort_unstable();
-            shared.dedup();
-            let [wall] = shared[..] else {
-                panic!("a ring edge rides exactly one wall besides its own plane");
+    };
+
+    let mut edges: Vec<([usize; 3], [usize; 3])> = Vec::new();
+    // Chain ends on the clip line: `(node, is_start)`. A chain *starts* where the ring re-enters
+    // the kept half and *ends* where it leaves.
+    let mut ends: Vec<([usize; 3], bool)> = Vec::new();
+
+    for ring in rings {
+        let n = ring.len();
+        if n < 3 {
+            return Err(reject(RejectReason::DegenerateRing));
+        }
+        let mut side = Vec::with_capacity(n);
+        for &t in ring.iter() {
+            match combinatorics::side_of(jd, t, split) * keep {
+                0 => return Err(reject(RejectReason::FourPlane)),
+                s => side.push(s),
+            }
+        }
+        if side.iter().all(|&s| s < 0) {
+            continue; // wholly on the far side
+        }
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (a, b) = (ring[i], ring[j]);
+            match (side[i] > 0, side[j] > 0) {
+                (true, true) => edges.push((a, b)),
+                (true, false) => {
+                    let x = sorted3([fc, wall_of(a, b)?, split]);
+                    edges.push((a, x));
+                    ends.push((x, false));
+                }
+                (false, true) => {
+                    let x = sorted3([fc, wall_of(a, b)?, split]);
+                    edges.push((x, b));
+                    ends.push((x, true));
+                }
+                (false, false) => {}
+            }
+        }
+    }
+
+    // ★ Pair the chain ends **along the line**. Every end is `{fc, w, split}`, so its position on
+    // `L = fc ∩ split` is named by `w` alone and `order_along` compares two of them exactly.
+    let mut cap_edges: Vec<([usize; 3], [usize; 3])> = Vec::new();
+    if !ends.is_empty() {
+        if ends.len() % 2 != 0 {
+            return Err(reject(RejectReason::RingNaming)); // a chain with no partner
+        }
+        let handle = |t: [usize; 3]| -> Result<usize, BoolError> {
+            t.into_iter()
+                .find(|&c| c != fc && c != split)
+                .ok_or_else(|| reject(RejectReason::RingNaming))
+        };
+        let mut order: Vec<(usize, ([usize; 3], bool))> = Vec::with_capacity(ends.len());
+        for &e in &ends {
+            order.push((handle(e.0)?, e));
+        }
+        // Two ends sharing a handle are one point reached twice — the ring pinches there and the
+        // order is not defined. Honest reject rather than an arbitrary tie-break.
+        let mut fail = None;
+        order.sort_by(|x, y| {
+            if x.0 == y.0 {
+                fail = Some(());
+                return std::cmp::Ordering::Equal;
+            }
+            match combinatorics::order_along(jd, fc, split, x.0, y.0) {
+                -1 => std::cmp::Ordering::Less,
+                1 => std::cmp::Ordering::Greater,
+                _ => {
+                    fail = Some(());
+                    std::cmp::Ordering::Equal
+                }
+            }
+        });
+        if fail.is_some() {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
+        for pair in order.chunks(2) {
+            let [(_, (p, p_start)), (_, (q, q_start))] = pair else {
+                unreachable!("even count, chunks of two")
             };
-            out.push(sorted3([fc, wall, split]));
+            // One of the two closes a chain and the other opens the next; the segment between them
+            // is inside the face, and it runs from the closing end to the opening one.
+            match (p_start, q_start) {
+                (false, true) => cap_edges.push((*p, *q)),
+                (true, false) => cap_edges.push((*q, *p)),
+                _ => return Err(reject(RejectReason::RingNaming)),
+            }
+        }
+        edges.extend(cap_edges.iter().copied());
+    }
+
+    // Thread the directed edges into cycles. Two edges leaving one node means the pieces meet at a
+    // point and the cycles are not determined.
+    let mut next: HashMap<[usize; 3], [usize; 3]> = HashMap::new();
+    for &(a, b) in &edges {
+        if next.insert(a, b).is_some() {
+            return Err(reject(RejectReason::CoincidentNodes));
         }
     }
-    (out.len() >= 3).then_some(out)
+    let mut starts: Vec<[usize; 3]> = next.keys().copied().collect();
+    starts.sort_unstable(); // deterministic cycle order
+    let mut seen: HashSet<[usize; 3]> = HashSet::new();
+    let mut cycles: Vec<Vec<[usize; 3]>> = Vec::new();
+    for start in starts {
+        if seen.contains(&start) {
+            continue;
+        }
+        let mut cyc = vec![start];
+        seen.insert(start);
+        let mut cur = start;
+        while let Some(&nx) = next.get(&cur) {
+            if nx == start {
+                break;
+            }
+            if !seen.insert(nx) {
+                return Err(reject(RejectReason::RingNaming)); // threads into another cycle
+            }
+            cyc.push(nx);
+            cur = nx;
+        }
+        if cyc.len() >= 3 {
+            cycles.push(cyc);
+        }
+    }
+    if cycles.is_empty() {
+        return Ok(Clipped::default());
+    }
+
+    // Outer or hole, by winding **against the input's own outer ring** — so this never has to know
+    // how the face is oriented against its plane class.
+    let winding = |ring: &[[usize; 3]]| -> Result<i8, BoolError> {
+        combinatorics::loop_winding(jd, fc, &combinatorics::ring_from_names(fc, ring)?)
+    };
+    let outward = winding(rings[0])?;
+    let mut outers: Vec<Vec<[usize; 3]>> = Vec::new();
+    let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
+    for cyc in cycles {
+        if winding(&cyc)? == outward {
+            outers.push(cyc);
+        } else {
+            holes.push(cyc);
+        }
+    }
+    let mut pieces: Vec<ClipPiece> = outers.into_iter().map(|o| (o, Vec::new())).collect();
+    for hole in holes {
+        let probe = hole[0];
+        let mut owner = None;
+        for (i, (outer, _)) in pieces.iter().enumerate() {
+            let ring = combinatorics::ring_from_names(fc, outer)?;
+            if combinatorics::point_in_ring(jd, fc, probe, &ring)? {
+                if owner.is_some() {
+                    return Err(reject(RejectReason::HoleDepth)); // nested deeper than one
+                }
+                owner = Some(i);
+            }
+        }
+        pieces[owner.ok_or_else(|| reject(RejectReason::HoleRoots))?]
+            .1
+            .push(hole);
+    }
+    Ok(Clipped { pieces, cap_edges })
 }
 
 /// The regions one boolean is arranged over.
@@ -1875,26 +2044,25 @@ fn clip_input(
                 loops[fp] = src.clone();
                 continue;
             };
-            let Some(outer) = clip_ring(jd, fc, split, keep, outer) else {
+            let mut rings: Vec<&[[usize; 3]]> = vec![outer];
+            if let Some(hs) = src.holes.as_ref() {
+                rings.extend(hs.iter().map(Vec::as_slice));
+            }
+            let clipped = clip_face(jd, fc, split, keep, &rings)
+                .unwrap_or_else(|e| panic!("clip of face slot {fp} declined: {e:?}"));
+            let mut it = clipped.pieces.into_iter();
+            let Some((outer, holes)) = it.next() else {
                 continue; // wholly on the other side
             };
-            let holes = src.holes.as_ref().map(|hs| {
-                hs.iter()
-                    .filter_map(|h| {
-                        let cut = clip_ring(jd, fc, split, keep, h);
-                        assert!(
-                            cut.as_ref().is_none_or(|c| c.len() == h.len()),
-                            "the split plane cuts a hole of face slot {fp}; a cut hole has to \
-                             merge with its outer ring, which this spike does not do"
-                        );
-                        cut
-                    })
-                    .collect::<Vec<_>>()
-            });
+            assert!(
+                it.next().is_none(),
+                "face slot {fp} clipped into several pieces; each needs its own `faces_tab` slot, \
+                 which C3 adds — C1 only ships the clipper"
+            );
             side_faces[side].push(fp);
             loops[fp] = combinatorics::FaceLoops {
                 outer: Some(outer),
-                holes,
+                holes: Some(holes),
             };
         }
     }
@@ -4866,5 +5034,352 @@ mod tests {
             open_classes >= 4,
             "only {open_classes} classes were left open; the fixture stopped exercising the case"
         );
+    }
+
+    // ── C1: the half-space clipper ────────────────────────────────────────────────────────────
+
+    /// A U-prism and a far-away box, so the plane table has two operands and the U's caps are
+    /// eight-vertex **non-convex** rings.
+    fn u_prism_and_far(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+        let u_profile = Profile2d::polygon(vec![
+            Point2::from_array([0.0, 0.0]),
+            Point2::from_array([3.0, 0.0]),
+            Point2::from_array([3.0, 2.3]),
+            Point2::from_array([2.0, 2.3]),
+            Point2::from_array([2.0, 1.0]),
+            Point2::from_array([1.0, 1.0]),
+            Point2::from_array([1.0, 2.0]),
+            Point2::from_array([0.0, 2.0]),
+        ]);
+        let out = apply(
+            m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: u_profile,
+                dist: 1.0,
+            },
+        )
+        .expect("extrude");
+        let OpOutput::Extrude { solid: u, .. } = out else {
+            unreachable!()
+        };
+        let far = m.add_cuboid(
+            Point3::from_array([10.0, 10.0, 10.0]),
+            Point3::from_array([11.0, 11.0, 11.0]),
+        );
+        m.rebuild_adjacency();
+        (u, far)
+    }
+
+    /// The clipper's answer for one of the U's caps, as rounded 2D vertex sets per piece.
+    fn clip_u_cap(at: f64, keep: i8) -> Vec<(Vec<[i64; 2]>, usize)> {
+        let mut m = Model::new();
+        let (u, far) = u_prism_and_far(&mut m);
+        let PlaneSetup {
+            planes: faces_tab,
+            surf_ix,
+            inc_a,
+            inc_b,
+            geom,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(&m, u, far).unwrap();
+        let mut geom = geom;
+        geom.push(split_plane_class(&mut m, 1, at));
+        let split = geom.len() - 1;
+        let jd = Judge::new(&geom, standard, &notes);
+        let input = combinatorics::trace_input(
+            &m,
+            [(u, &inc_a), (far, &inc_b)],
+            &surf_ix,
+            faces_tab.len(),
+            &jd,
+            &plane_ix,
+        );
+        let mut out = Vec::new();
+        for &fp in &input.side_faces[0] {
+            let ring = input.loops[fp].outer.as_ref().unwrap();
+            if ring.len() != 8 {
+                continue; // only the two U caps are the eight-vertex non-convex rings
+            }
+            let fc = plane_ix[fp];
+            let clipped = clip_face(&jd, fc, split, keep, &[ring]).expect("clip");
+            for (outer, holes) in &clipped.pieces {
+                assert!(holes.is_empty(), "a U cap clip has no holes");
+                let mut xy: Vec<[i64; 2]> = outer
+                    .iter()
+                    .map(|&t| {
+                        let p = pt(t, &jd);
+                        [
+                            (p[0] * 1000.0).round() as i64,
+                            (p[1] * 1000.0).round() as i64,
+                        ]
+                    })
+                    .collect();
+                xy.sort_unstable();
+                out.push((xy, clipped.cap_edges.len()));
+            }
+            // Both caps must answer identically; one sample is enough for the assertions below.
+            break;
+        }
+        out
+    }
+
+    /// ★ **The refutation, turned into a gate.** A line through the U's notch crosses its cap four
+    /// times, and the answer is two rectangles. Sutherland-Hodgman pairs the crossings in *ring*
+    /// order and returns one eight-vertex ring that swallows the notch — a wrong answer, not a
+    /// reject (measured 2026-07-29). Pairing along the **line** is what fixes it.
+    #[test]
+    fn clipping_a_non_convex_ring_gives_the_pieces_not_a_bridge() {
+        let pieces = clip_u_cap(1.5, 1);
+        assert_eq!(pieces.len(), 2, "the notch separates the two prongs");
+        let sets: Vec<Vec<[i64; 2]>> = pieces.iter().map(|(v, _)| v.clone()).collect();
+        let left = vec![[0, 1500], [0, 2000], [1000, 1500], [1000, 2000]];
+        let right = vec![[2000, 1500], [2000, 2300], [3000, 1500], [3000, 2300]];
+        assert!(sets.contains(&left), "left prong: {sets:?}");
+        assert!(sets.contains(&right), "right prong: {sets:?}");
+        // ★ Negative control: the answer Sutherland-Hodgman gave — one ring over all eight
+        // vertices, covering the notch — must not be reachable.
+        let bridged: Vec<[i64; 2]> = {
+            let mut v = left.clone();
+            v.extend(right.iter().copied());
+            v.sort_unstable();
+            v
+        };
+        assert!(
+            !sets.contains(&bridged),
+            "the bridged eight-vertex ring is the wrong answer this test exists to exclude"
+        );
+        // Two pieces are closed by two segments on the split plane — the cap's edges.
+        assert_eq!(pieces[0].1, 2, "one cap edge per piece");
+    }
+
+    /// The other side of the same cut is **connected** (the U's bar joins the prongs below the
+    /// notch), so the same machinery must give exactly one piece — while still laying **two**
+    /// segments on the split plane, because between `x=1` and `x=2` the boundary runs along the
+    /// notch floor at `y=1` and not along the cut. One piece and two cap edges is the pair of
+    /// facts that says the pairing is by position on the line and not by piece.
+    #[test]
+    fn the_connected_side_of_the_same_cut_stays_one_piece() {
+        let pieces = clip_u_cap(1.5, -1);
+        assert_eq!(pieces.len(), 1, "below y=1.5 the U is connected");
+        assert_eq!(
+            pieces[0].0,
+            vec![
+                [0, 0],
+                [0, 1500],
+                [1000, 1000],
+                [1000, 1500],
+                [2000, 1000],
+                [2000, 1500],
+                [3000, 0],
+                [3000, 1500],
+            ]
+        );
+        assert_eq!(
+            pieces[0].1, 2,
+            "two segments on the split plane, one per prong foot"
+        );
+    }
+
+    /// A cut that misses the ring entirely keeps it whole on one side and drops it on the other,
+    /// and lays no edge on the split plane either way.
+    #[test]
+    fn a_cut_that_misses_keeps_or_drops_the_whole_ring() {
+        let above = clip_u_cap(-1.0, 1);
+        assert_eq!(above.len(), 1, "wholly above y=-1");
+        assert_eq!(above[0].0.len(), 8, "untouched");
+        assert_eq!(above[0].1, 0, "no cap edge");
+        assert!(clip_u_cap(-1.0, -1).is_empty(), "nothing below y=-1");
+    }
+
+    /// A slab with a square hole bored through it, and a far box for the second operand. The
+    /// through-hole leaves the slab's two caps with an inner ring, which is what makes this the
+    /// holed-face fixture.
+    fn holed_slab_and_far(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+        let slab = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([4.0, 4.0, 1.0]),
+        );
+        let drill = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Point3::from_array([3.0, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let holed = boolean(m, BoolKind::Cut, slab, drill).expect("bore")[0];
+        m.rebuild_adjacency();
+        let far = m.add_cuboid(
+            Point3::from_array([10.0, 10.0, 10.0]),
+            Point3::from_array([11.0, 11.0, 11.0]),
+        );
+        m.rebuild_adjacency();
+        (holed, far)
+    }
+
+    /// Clip the holed slab's first holed cap at `x = at`, as `(outer vertex count, hole count)`
+    /// per piece plus the number of edges laid on the split plane.
+    fn clip_holed_cap(at: f64, keep: i8) -> (Vec<(usize, usize)>, usize) {
+        let mut m = Model::new();
+        let (holed, far) = holed_slab_and_far(&mut m);
+        let PlaneSetup {
+            planes: faces_tab,
+            surf_ix,
+            inc_a,
+            inc_b,
+            geom,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(&m, holed, far).unwrap();
+        let mut geom = geom;
+        geom.push(split_plane_class(&mut m, 0, at));
+        let split = geom.len() - 1;
+        let jd = Judge::new(&geom, standard, &notes);
+        let input = combinatorics::trace_input(
+            &m,
+            [(holed, &inc_a), (far, &inc_b)],
+            &surf_ix,
+            faces_tab.len(),
+            &jd,
+            &plane_ix,
+        );
+        for &fp in &input.side_faces[0] {
+            let fl = &input.loops[fp];
+            let (Some(outer), Some(holes)) = (fl.outer.as_ref(), fl.holes.as_ref()) else {
+                continue;
+            };
+            if holes.len() != 1 {
+                continue; // the two caps are the only holed faces
+            }
+            let mut rings: Vec<&[[usize; 3]]> = vec![outer];
+            rings.extend(holes.iter().map(Vec::as_slice));
+            let clipped = clip_face(&jd, plane_ix[fp], split, keep, &rings).expect("clip");
+            return (
+                clipped
+                    .pieces
+                    .iter()
+                    .map(|(o, h)| (o.len(), h.len()))
+                    .collect(),
+                clipped.cap_edges.len(),
+            );
+        }
+        panic!("the bored slab has a holed cap");
+    }
+
+    /// A cut that misses the hole leaves it whole on one side and gives a plain rectangle on the
+    /// other — the hole must not be dropped, duplicated, or promoted to an outer.
+    #[test]
+    fn clipping_beside_a_hole_keeps_it_on_the_side_it_belongs_to() {
+        assert_eq!(clip_holed_cap(0.5, -1), (vec![(4, 0)], 1), "x<0.5: no hole");
+        assert_eq!(clip_holed_cap(0.5, 1), (vec![(4, 1)], 1), "x>0.5: the hole");
+    }
+
+    /// ★ A cut **through** the hole: the inner ring stops being a hole and becomes part of the
+    /// outer boundary. This is the case a per-ring clipper cannot express — it has to see the
+    /// outer and the hole as one crossing set, which is why `clip_face` takes all the rings at
+    /// once and pairs across them.
+    #[test]
+    fn a_cut_through_a_hole_merges_it_into_the_outer_ring() {
+        let (pieces, cap_edges) = clip_holed_cap(2.0, -1);
+        assert_eq!(pieces, vec![(8, 0)], "a C shape: one ring, no hole");
+        assert_eq!(cap_edges, 2, "the cut meets material twice along x=2");
+    }
+
+    /// ★ **A conservation identity, stronger than a piece count.** Clipping a ring set by a plane
+    /// splits every crossed edge in two and gives each half a copy of the crossing vertex, so
+    ///
+    /// ```text
+    ///   verts(keep +1) + verts(keep -1) == verts(original) + 2 * crossings
+    /// ```
+    ///
+    /// and `crossings == 2 * cap_edges` on either side. It holds whatever the piece structure is,
+    /// which is what makes it usable on a rotated fixture where the answer's shape is not obvious
+    /// by hand.
+    fn clip_conserves_vertices(
+        jd: &Judge<'_, PlaneGeom>,
+        fc: usize,
+        split: usize,
+        rings: &[&[[usize; 3]]],
+    ) -> bool {
+        let original: usize = rings.iter().map(|r| r.len()).sum();
+        let mut total = 0usize;
+        let mut cap = [0usize; 2];
+        for (i, keep) in [1i8, -1].into_iter().enumerate() {
+            let c = clip_face(jd, fc, split, keep, rings).expect("clip");
+            total += c
+                .pieces
+                .iter()
+                .map(|(o, h)| o.len() + h.iter().map(Vec::len).sum::<usize>())
+                .sum::<usize>();
+            cap[i] = c.cap_edges.len();
+        }
+        assert_eq!(cap[0], cap[1], "both sides are closed by the same segments");
+        total == original + 4 * cap[0]
+    }
+
+    /// The clipper on a **rotated** solid: the split plane is axis-aligned but the model's planes
+    /// are not, so every `side_of` and `order_along` leaves the exact-shortcut path and is answered
+    /// by the toleranced kernel. Nothing may decline, and the conservation identity must hold at
+    /// every cut position that meets the solid.
+    #[test]
+    fn clipping_survives_a_rotated_model() {
+        let mut m = Model::new();
+        let (u, far) = u_prism_and_far(&mut m);
+        let u = tilt(&mut m, u, &[nacre_scalar::Axis::Z]);
+        let PlaneSetup {
+            planes: faces_tab,
+            surf_ix,
+            inc_a,
+            inc_b,
+            geom,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(&m, u, far).unwrap();
+        // All four cut positions join the table at once — `PlaneGeom` is not `Clone`, and one
+        // table is what production has anyway.
+        let cuts = [0.5f64, 1.25, 1.75, 2.5];
+        let mut geom = geom;
+        let n_model = geom.len();
+        for &at in &cuts {
+            geom.push(split_plane_class(&mut m, 1, at));
+        }
+        let jd = Judge::new(&geom, standard, &notes);
+        let input = combinatorics::trace_input(
+            &m,
+            [(u, &inc_a), (far, &inc_b)],
+            &surf_ix,
+            faces_tab.len(),
+            &jd,
+            &plane_ix,
+        );
+        let mut fired = 0usize;
+        for (k, at) in cuts.into_iter().enumerate() {
+            let split = n_model + k;
+            for &fp in &input.side_faces[0] {
+                let Some(outer) = input.loops[fp].outer.as_ref() else {
+                    continue;
+                };
+                let rings: Vec<&[[usize; 3]]> = vec![outer];
+                let sides: Vec<i8> = outer
+                    .iter()
+                    .map(|&t| combinatorics::side_of(&jd, t, split))
+                    .collect();
+                if sides.iter().all(|&s| s >= 0) || sides.iter().all(|&s| s <= 0) {
+                    continue; // this face is not cut here
+                }
+                fired += 1;
+                assert!(
+                    clip_conserves_vertices(&jd, plane_ix[fp], split, &rings),
+                    "rotated clip at y={at} lost or invented vertices on face slot {fp}"
+                );
+            }
+        }
+        // ★ Not vacuous: some face has to actually be cut, or the loop asserted nothing.
+        assert!(fired >= 4, "only {fired} rotated faces were cut");
     }
 }
