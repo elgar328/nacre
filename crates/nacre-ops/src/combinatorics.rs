@@ -72,6 +72,24 @@ pub(crate) fn order_along(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, i: usiz
     jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
+/// [`order_along`] with the `(p, q, j)` factor supplied — **`i` does not enter it.**
+///
+/// ★ The two halves of `order_along` have different arities: the orientation is a fact about four
+/// planes, the direction sign only about three. A caller that sweeps `i` over a whole set while
+/// `(p, q, j)` stays put is recomputing the second half once per `i`. Measured on a 60-fin fold, one
+/// such sweep spent 52.8% of the boolean and asked for the same `dir_sign` 1.5 million times when
+/// 113 thousand would have done. Hand it in with [`dir_sign`] instead.
+pub(crate) fn order_along_with(
+    jd: &Judge<'_, PlaneGeom>,
+    p: usize,
+    q: usize,
+    i: usize,
+    j: usize,
+    ds_j: i8,
+) -> i8 {
+    jd.orient3d(p, q, i, j) * ds_j
+}
+
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///
@@ -769,7 +787,7 @@ pub(crate) fn loop_winding(
 /// the predicate's convention is tied to `tri`'s RH normal by construction. Were the
 /// invariant to break, an `orient`-based order would reverse silently. Assert the
 /// agreement; do not depend on it.
-fn dir_sign(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, r: usize) -> i8 {
+pub(crate) fn dir_sign(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, r: usize) -> i8 {
     let planes = jd.planes;
     jd.plane_pair_dir_sign(p, q, r) * planes[r].frame_sign
 }

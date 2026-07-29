@@ -23,6 +23,119 @@ use nacre_cip::Decision;
 use nacre_cip::predicate::Notes;
 use nacre_geom::intersect::three_planes;
 
+/// **Phase timers, on the production path.**
+///
+/// ★ They live *inside* `boolean` rather than in a spike that replays it, because a replica measures
+/// the proposition next to the one that matters — the last profile of these phases was taken with
+/// `ClassReuse::Off` and read as if it were production's.
+///
+/// Read them with `--no-default-features`: parallel accumulation would sum CPU across threads, and a
+/// share of a wall-clock whole computed from a CPU sum is not a share of anything. (That mistake
+/// once made a part measure larger than its whole.) `cfg(test)` so release binaries carry nothing.
+#[cfg(test)]
+pub(crate) mod phase {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    macro_rules! counters {
+        ($($name:ident = $label:literal),+ $(,)?) => {
+            $(pub(crate) static $name: AtomicU64 = AtomicU64::new(0);)+
+            /// Every counter with its label, in report order.
+            pub(crate) fn all() -> Vec<(&'static str, u64)> {
+                vec![$(($label, $name.load(Ordering::Relaxed))),+]
+            }
+            pub(crate) fn reset() { $($name.store(0, Ordering::Relaxed);)+ }
+        };
+    }
+
+    counters! {
+        SETUP      = "plane_index_setup",
+        TRACE_IN   = "trace_input (face table)",
+        TRACE_ON   = "  trace_on_class",
+        MERGE      = "  merge_coincident",
+        SPLIT      = "  split_at_crossings",
+        COLLECT    = "    (1) collect crossings",
+        SORT       = "    (2) sort + flush groups",
+        COVER      = "    (3) cover sub-intervals",
+        CELLS      = "  cells + nest + label + emit",
+        REUSE      = "  reuse pass-through",
+        UNIFY      = "unify_coplanar_faces",
+        SEAM       = "seam table + alias scan",
+        ASSEMBLE   = "assemble_fuse_cut",
+    }
+
+    /// **Scale, not time.** The two ratios that decide whether S3b/S3c are worth building: how many
+    /// segments a wall carries (a hull test over wall *pairs* buys nothing at 1), and how big the
+    /// covering loop is against the collecting one.
+    pub(crate) mod scale {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        pub(crate) static SEGS: AtomicU64 = AtomicU64::new(0);
+        pub(crate) static WALLS: AtomicU64 = AtomicU64::new(0);
+        pub(crate) static PTS: AtomicU64 = AtomicU64::new(0);
+        /// `Σ_w |pts on w| × |segs on w|` — the covering loop's actual trip count.
+        pub(crate) static COVER_TRIPS: AtomicU64 = AtomicU64::new(0);
+        /// `Σ_w |segs|` — the collecting loop's actual trip count.
+        pub(crate) static COLLECT_TRIPS: AtomicU64 = AtomicU64::new(0);
+        pub(crate) fn add(c: &AtomicU64, n: usize) {
+            c.fetch_add(n as u64, Ordering::Relaxed);
+        }
+        pub(crate) fn get(c: &AtomicU64) -> u64 {
+            c.load(Ordering::Relaxed)
+        }
+        pub(crate) fn reset() {
+            for c in [&SEGS, &WALLS, &PTS, &COVER_TRIPS, &COLLECT_TRIPS] {
+                c.store(0, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Run `f`, adding its wall time to `c`. Returns what `f` returned.
+    pub(crate) fn timed<R>(c: &AtomicU64, f: impl FnOnce() -> R) -> R {
+        let t = std::time::Instant::now();
+        let r = f();
+        c.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        r
+    }
+
+    /// Charges the enclosing scope to `c` **on drop** — for a block whose `?` or early `return`
+    /// would jump past the end of a closure.
+    pub(crate) struct Watch(&'static AtomicU64, std::time::Instant);
+
+    impl Watch {
+        pub(crate) fn new(c: &'static AtomicU64) -> Self {
+            Self(c, std::time::Instant::now())
+        }
+    }
+
+    impl Drop for Watch {
+        fn drop(&mut self) {
+            self.0
+                .fetch_add(self.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+}
+
+/// `phase::timed` where the counters exist, and a plain call where they do not.
+macro_rules! timed {
+    ($c:ident, $e:expr) => {{
+        #[cfg(test)]
+        {
+            phase::timed(&phase::$c, || $e)
+        }
+        #[cfg(not(test))]
+        {
+            $e
+        }
+    }};
+}
+
+/// A [`phase::Watch`] over the rest of the enclosing scope, and nothing at all in a release build.
+macro_rules! watch {
+    ($c:ident) => {
+        #[cfg(test)]
+        let _w = phase::Watch::new(&phase::$c);
+    };
+}
+
 /// **Which arcs of the circle around an edge a wall fills**, over one sub-interval of that edge.
 ///
 /// An arrangement edge on plane class `W` is the meeting of `W` with one other plane, so the little
@@ -884,25 +997,41 @@ fn split_at_crossings(
     segs: &[MergedSeg],
     aliases: &mut Aliases,
 ) -> Result<Vec<MergedSeg>, BoolError> {
-    // Is the point named by plane class `r` on `s`'s line within `s`'s CLOSED extent (endpoints
-    // included)? On an endpoint (`r` is one of the two endpoint classes) it is contained — checked
-    // by integer identity, because `order_along(x, x)` is not defined to return 0 (the old
-    // `strictly_inside` never compared a class with itself). Otherwise it is contained iff it is
-    // strictly between the two endpoints (opposite `order_along` signs).
-    let closed_contains = |s: &MergedSeg, r: usize| -> Option<bool> {
+    // ★ **The direction sign of each endpoint, once per segment.** `order_along(wc, wall, i, j)`
+    // factors into `orient3d(wc, wall, i, j) × dir_sign(wc, wall, j)`, and the second factor does
+    // **not** mention `i` — for a segment's endpoints it is a property of the segment alone. The
+    // containment test below sweeps `i` over every wall, so leaving it inside asked the same
+    // question `|walls|` times over. (Measured: 1.5M `dir_sign` calls where 113k are distinct.)
+    let end_ds: Vec<[i8; 2]> = segs
+        .iter()
+        .map(|s| {
+            [
+                combinatorics::dir_sign(jd, wc, s.wall, s.end_h[0]),
+                combinatorics::dir_sign(jd, wc, s.wall, s.end_h[1]),
+            ]
+        })
+        .collect();
+
+    // Is the point named by plane class `r` on segment `si`'s line within its CLOSED extent
+    // (endpoints included)? On an endpoint (`r` is one of the two endpoint classes) it is
+    // contained — checked by integer identity, because `order_along(x, x)` is not defined to return
+    // 0 (the old `strictly_inside` never compared a class with itself). Otherwise it is contained
+    // iff it is strictly between the two endpoints (opposite `order_along` signs).
+    let closed_contains = |si: usize, r: usize| -> bool {
+        let s = &segs[si];
         let (r0, r1) = (s.end_h[0], s.end_h[1]);
-        let (a, b) = (
-            combinatorics::order_along(jd, wc, s.wall, r, r0),
-            combinatorics::order_along(jd, wc, s.wall, r, r1),
-        );
-        // An endpoint is contained. Integer identity is not the whole test: where four planes meet,
-        // one point wears two handles, and `r` may be the group's representative while the segment
-        // still remembers the other. Ordering equal is the test — and `order_along(x, x)` is 0 by
-        // the same predicate, so the integer check is subsumed, not dropped.
-        if r == r0 || r == r1 || a == 0 || b == 0 {
-            return Some(true);
+        // ★ **Asked before the predicates, not after.** Integer identity is a *sufficient* condition
+        // for containment, so answering it first skips both orientations. It is not the whole test:
+        // where four planes meet, one point wears two handles, and `r` may be the group's
+        // representative while the segment still remembers the other — which is what the `== 0`
+        // arms below catch. Subsumed, not dropped; the order between them is free.
+        if r == r0 || r == r1 {
+            return true;
         }
-        Some(a != b)
+        let ds = end_ds[si];
+        let a = combinatorics::order_along_with(jd, wc, s.wall, r, r0, ds[0]);
+        let b = combinatorics::order_along_with(jd, wc, s.wall, r, r1, ds[1]);
+        a == 0 || b == 0 || a != b
     };
 
     // Group segment indices by wall (walls in first-appearance order for deterministic output).
@@ -918,62 +1047,81 @@ fn split_at_crossings(
             .push(i);
     }
 
+    #[cfg(test)]
+    {
+        phase::scale::add(&phase::scale::SEGS, segs.len());
+        phase::scale::add(&phase::scale::WALLS, walls.len());
+    }
+
     let mut out = Vec::new();
     for &w in &walls {
         // Split-point plane classes on W's line: every W-segment endpoint, plus every real
         // different-wall crossing (a segment on `o.wall` whose closed extent reaches W's line).
         let mut pts: Vec<usize> = Vec::new();
-        for &i in &by_wall[&w] {
-            pts.extend(segs[i].end_h);
+        {
+            watch!(COLLECT);
+            #[cfg(test)]
+            phase::scale::add(&phase::scale::COLLECT_TRIPS, segs.len());
+            for &i in &by_wall[&w] {
+                pts.extend(segs[i].end_h);
+            }
+            // ★ **Wall-major, because the question is about walls.** What lands in `pts` is a *wall*
+            // — the class naming the crossing — so the loop that used to sweep every segment asked
+            // "is `w` parallel to this segment's wall?" once per segment when the answer depends
+            // only on the pair. And once one segment on `r` reaches `w`'s line, the rest cannot add
+            // anything: `r` is already a split point.
+            for &r in &walls {
+                if r == w {
+                    continue;
+                }
+                if jd.plane_pair_dir_sign(wc, w, r) == 0 {
+                    continue; // walls meet wc in no point (parallel)
+                }
+                if by_wall[&r].iter().any(|&i| closed_contains(i, w)) {
+                    pts.push(r);
+                }
+            }
         }
-        for o in segs {
-            if o.wall == w {
-                continue;
+        let pts = {
+            watch!(SORT);
+            // Distinct classes (same class = same point), then ordered along the line.
+            pts.sort_unstable();
+            pts.dedup();
+            pts.sort_by(|&x, &y| match combinatorics::order_along(jd, wc, w, x, y) {
+                -1 => std::cmp::Ordering::Less,
+                1 => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            });
+            // ★ Two DISTINCT classes ordering equal are one point wearing two handles — a four-plane
+            // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
+            // splitting at both would emit a zero-length piece between them.
+            let mut reps: Vec<usize> = Vec::with_capacity(pts.len());
+            let mut group: Vec<usize> = Vec::new();
+            let flush = |group: &mut Vec<usize>, reps: &mut Vec<usize>, al: &mut Aliases| {
+                if let Some(&rep) = group.first() {
+                    reps.push(rep);
+                }
+                if group.len() > 1 {
+                    let mut set: Vec<usize> = vec![wc, w];
+                    set.extend(group.iter().copied());
+                    set.sort_unstable();
+                    set.dedup();
+                    al.record(jd, &set);
+                }
+                group.clear();
+            };
+            for &r in &pts {
+                let same = group
+                    .first()
+                    .is_some_and(|&g| combinatorics::order_along(jd, wc, w, g, r) == 0);
+                if !same {
+                    flush(&mut group, &mut reps, aliases);
+                }
+                group.push(r);
             }
-            if jd.plane_pair_dir_sign(wc, w, o.wall) == 0 {
-                continue; // walls meet wc in no point (parallel)
-            }
-            if closed_contains(o, w) == Some(true) {
-                pts.push(o.wall);
-            }
-        }
-        // Distinct classes (same class = same point), then ordered along the line.
-        pts.sort_unstable();
-        pts.dedup();
-        pts.sort_by(|&x, &y| match combinatorics::order_along(jd, wc, w, x, y) {
-            -1 => std::cmp::Ordering::Less,
-            1 => std::cmp::Ordering::Greater,
-            _ => std::cmp::Ordering::Equal,
-        });
-        // ★ Two DISTINCT classes ordering equal are one point wearing two handles — a four-plane
-        // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
-        // splitting at both would emit a zero-length piece between them.
-        let mut reps: Vec<usize> = Vec::with_capacity(pts.len());
-        let mut group: Vec<usize> = Vec::new();
-        let flush = |group: &mut Vec<usize>, reps: &mut Vec<usize>, al: &mut Aliases| {
-            if let Some(&rep) = group.first() {
-                reps.push(rep);
-            }
-            if group.len() > 1 {
-                let mut set: Vec<usize> = vec![wc, w];
-                set.extend(group.iter().copied());
-                set.sort_unstable();
-                set.dedup();
-                al.record(jd, &set);
-            }
-            group.clear();
+            flush(&mut group, &mut reps, aliases);
+            reps
         };
-        for &r in &pts {
-            let same = group
-                .first()
-                .is_some_and(|&g| combinatorics::order_along(jd, wc, w, g, r) == 0);
-            if !same {
-                flush(&mut group, &mut reps, aliases);
-            }
-            group.push(r);
-        }
-        flush(&mut group, &mut reps, aliases);
-        let pts = reps;
         // A split point is named `{wc, w, third}` — then folded, because this rebuilds the name
         // from a handle and so would otherwise re-introduce the very alias `merge_coincident` just
         // removed. Canonicalizing here and in the merge means every name **downstream** is already
@@ -985,13 +1133,21 @@ fn split_at_crossings(
         };
         // Each sub-interval [p, q] carries the union of the W-segments that cover it. Every segment
         // endpoint is itself a split point, so "covers both ends" means "spans the whole interval".
+        watch!(COVER);
+        #[cfg(test)]
+        {
+            phase::scale::add(&phase::scale::PTS, pts.len());
+            phase::scale::add(
+                &phase::scale::COVER_TRIPS,
+                pts.len().saturating_sub(1) * by_wall[&w].len(),
+            );
+        }
         for pair in pts.windows(2) {
             let (p, q) = (pair[0], pair[1]);
             let mut merged: Vec<(SolidSide, SegKind)> = Vec::new();
             for &i in &by_wall[&w] {
-                let s = &segs[i];
-                if closed_contains(s, p) == Some(true) && closed_contains(s, q) == Some(true) {
-                    merged.extend(s.merged.iter().copied());
+                if closed_contains(i, p) && closed_contains(i, q) {
+                    merged.extend(segs[i].merged.iter().copied());
                 }
             }
             if !merged.is_empty() {
@@ -1727,7 +1883,7 @@ fn trace_result_faces(
             // Nothing in the code stopped that; it simply needed a model with a concurrency in a
             // region the other operand cannot reach, and the corpus has none. The cheap repair is
             // to keep the fallback a real one, which is what this does.
-            let mut tr = trace_on_class(trace_in, wc, jd, faces, plane_ix);
+            let mut tr = timed!(TRACE_ON, trace_on_class(trace_in, wc, jd, faces, plane_ix));
             let mut local = snapshot.clone();
             local.absorb(&std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
@@ -1737,8 +1893,8 @@ fn trace_result_faces(
             if let Some(&(fp, kind)) = tr.declined.first() {
                 return Err(reject(decline_to_reject(kind, faces[fp].face)));
             }
-            let merged = merge_coincident(&tr.segs, wc, &local);
-            let split = split_at_crossings(jd, wc, &merged, &mut local)?;
+            let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
+            let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
             Ok((split, local))
         })?;
         splits.clear();
@@ -1770,6 +1926,7 @@ fn trace_result_faces(
         let wc = work[k];
         let split = &splits[k];
         let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
+            watch!(CELLS);
             let (cells, face_of) = extract_cells(jd, wc, split)?;
             let nesting = nest_cells(jd, wc, &cells, split)?;
             // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
@@ -1794,6 +1951,7 @@ fn trace_result_faces(
             crate::reuse::ClassPlan::Arrange => None,
             crate::reuse::ClassPlan::Empty => Some(Vec::new()),
             crate::reuse::ClassPlan::PassThrough(side) => {
+                watch!(REUSE);
                 let (vc, range) = match side {
                     SolidSide::A => (vc_a.as_ref(), 0..n_a),
                     SolidSide::B => (vc_b.as_ref(), n_a..faces.len()),
@@ -2093,7 +2251,7 @@ pub(crate) fn boolean(
         standard,
         notes,
         ..
-    } = plane_index_setup(model, a, b)?;
+    } = timed!(SETUP, plane_index_setup(model, a, b))?;
     // The operation's judging, made once: the dense plane table, the standard it is held to, and
     // the collector. Everything below reaches predicates through this, so there is exactly one
     // place where "how this boolean judges" is decided.
@@ -2107,13 +2265,16 @@ pub(crate) fn boolean(
     // otherwise a symptom is reported where a precision failure is the cause. Returning early from
     // the function body would be exactly that bug.
     let run = |model: &mut Model| -> Result<Vec<Handle<Solid>>, BoolError> {
-        let trace_in = combinatorics::trace_input(
-            model,
-            [(a, &inc_a), (b, &inc_b)],
-            &surf_ix,
-            faces_tab.len(),
-            &jd,
-            &plane_ix,
+        let trace_in = timed!(
+            TRACE_IN,
+            combinatorics::trace_input(
+                model,
+                [(a, &inc_a), (b, &inc_b)],
+                &surf_ix,
+                faces_tab.len(),
+                &jd,
+                &plane_ix,
+            )
         );
         let faces = trace_result_faces(
             model,
@@ -2178,54 +2339,58 @@ pub(crate) fn boolean(
         // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
         // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
         // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-        let faces = crate::boolean::unify_coplanar_faces(faces, &jd)?;
+        let faces = timed!(UNIFY, crate::boolean::unify_coplanar_faces(faces, &jd))?;
 
         // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
         // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
-        let mut seam: Vec<SeamVertex> = Vec::new();
-        let mut seen: HashMap<[usize; 3], ()> = HashMap::new();
-        for f in &faces {
-            for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
-                for node in loop_.iter() {
-                    let crate::boolean::Node::Seam(t) = node;
-                    if seen.insert(*t, ()).is_some() {
-                        continue;
-                    }
-                    let point =
-                        three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
-                            .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-                    seam.push(SeamVertex {
-                        point,
-                        triple: *t,
-                        tol: vertex_tol(
+        let seam = {
+            watch!(SEAM);
+            let mut seam: Vec<SeamVertex> = Vec::new();
+            let mut seen: HashMap<[usize; 3], ()> = HashMap::new();
+            for f in &faces {
+                for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+                    for node in loop_.iter() {
+                        let crate::boolean::Node::Seam(t) = node;
+                        if seen.insert(*t, ()).is_some() {
+                            continue;
+                        }
+                        let point =
+                            three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
+                                .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
+                        seam.push(SeamVertex {
                             point,
-                            &geom[t[0]].plane,
-                            &geom[t[1]].plane,
-                            &geom[t[2]].plane,
-                        ),
-                    });
+                            triple: *t,
+                            tol: vertex_tol(
+                                point,
+                                &geom[t[0]].plane,
+                                &geom[t[1]].plane,
+                                &geom[t[2]].plane,
+                            ),
+                        });
+                    }
                 }
             }
-        }
-        // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
-        // materialized coordinate is only its cache — so two *different* triples landing on the same
-        // coordinate means the exact substrate and the f64 cache disagree about how many vertices
-        // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
-        // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
-        //
-        // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
-        // triples then name one point twice (measured 2026-07-22 — two `add_cuboid` walls at the same
-        // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
-        // are not exactly proportional). A genuine 4-plane concurrency does the same.
-        for (i, u) in seam.iter().enumerate() {
-            for v in &seam[i + 1..] {
-                if u.point == v.point {
-                    return Err(reject(RejectReason::SeamAlias));
+            // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
+            // materialized coordinate is only its cache — so two *different* triples landing on the same
+            // coordinate means the exact substrate and the f64 cache disagree about how many vertices
+            // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
+            // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
+            //
+            // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
+            // triples then name one point twice (measured 2026-07-22 — two `add_cuboid` walls at the same
+            // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
+            // are not exactly proportional). A genuine 4-plane concurrency does the same.
+            for (i, u) in seam.iter().enumerate() {
+                for v in &seam[i + 1..] {
+                    if u.point == v.point {
+                        return Err(reject(RejectReason::SeamAlias));
+                    }
                 }
             }
-        }
+            seam
+        };
 
-        assemble_fuse_cut(model, a, b, &jd, &seam, &faces)
+        timed!(ASSEMBLE, assemble_fuse_cut(model, a, b, &jd, &seam, &faces))
     };
     let out = run(model);
     // **The cause outranks the symptom, on both paths.** An undecided judgement has already been
@@ -4198,6 +4363,158 @@ mod tests {
         .unwrap();
         m.rebuild_adjacency();
         out
+    }
+
+    /// **S2a: where does a whole boolean's time go?** Every earlier profile answered a share *of a
+    /// phase* — and the one that mattered was never taken.
+    ///
+    /// ★ Two ways to be wrong that this is built against:
+    ///
+    /// 1. **Mixed clocks.** The last breakdown summed per-thread timers (CPU) and read the result
+    ///    against the fold's wall clock. The part came out larger than the whole — 3,719ms of a
+    ///    2,540ms fold — and the ratio it implied was meaningless. **Run this with
+    ///    `--no-default-features`**, where every phase and the total are the same clock.
+    /// 2. **Phases that do not add up.** The sum is printed against the measured whole, so anything
+    ///    unaccounted for shows as a gap rather than hiding inside a phase's share.
+    ///
+    /// Timers live on the production path (`phase::` in this module), not in a replica of it.
+    #[test]
+    #[ignore = "spike"]
+    fn spike_where_the_boolean_spends_it() {
+        let n = 60i128;
+        let mut m = Model::new();
+        let mut acc = m.add_cuboid(
+            Point3::from_array([-3.0, -3.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        // Warm the code paths, then zero the counters: the first boolean pays for lazily-built
+        // caches that the other 59 do not.
+        {
+            let fin = m.add_cuboid(
+                Point3::from_array([2.0, -0.4, 0.0]),
+                Point3::from_array([8.0, 0.4, 1.0]),
+            );
+            m.rebuild_adjacency();
+            let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(1, 1).unwrap());
+            acc = super::boolean(&mut m, BoolKind::Fuse, acc, fin)
+                .expect("warm")
+                .0[0];
+            m.rebuild_adjacency();
+        }
+        phase::reset();
+        phase::scale::reset();
+
+        let mut whole = std::time::Duration::ZERO;
+        for i in 0..n {
+            let fin = m.add_cuboid(
+                Point3::from_array([2.0, -0.4, 0.0]),
+                Point3::from_array([8.0, 0.4, 1.0]),
+            );
+            m.rebuild_adjacency();
+            let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+            let t = std::time::Instant::now();
+            acc = super::boolean(&mut m, BoolKind::Fuse, acc, fin)
+                .expect("fuse")
+                .0[0];
+            whole += t.elapsed();
+            m.rebuild_adjacency();
+        }
+
+        let rows = phase::all();
+        // ★ Indentation is nesting: depth 0 are `boolean`'s own phases, depth 1 the inside of
+        // `trace_result_faces`, depth 2 the inside of `split_at_crossings`. Depth 1 partitions the
+        // work depth 0 does not name, so 0 and 1 add to the whole — and adding depth 2 on top would
+        // count `split_at_crossings` twice.
+        let depth = |l: &str| (l.len() - l.trim_start().len()) / 2;
+        let sum: u64 = rows
+            .iter()
+            .filter(|(l, _)| depth(l) <= 1)
+            .map(|(_, ns)| ns)
+            .sum();
+        let total = whole.as_nanos() as u64;
+        println!("\n{n}-fin fold, whole boolean, serial build:");
+        for (label, ns) in &rows {
+            println!(
+                "  {label:<32} {:>8.1?}  {:>5.1}%",
+                std::time::Duration::from_nanos(*ns),
+                100.0 * *ns as f64 / total as f64
+            );
+        }
+        println!(
+            "  {:<32} {:>8.1?}  {:>5.1}%   ← accounted",
+            "sum of the above",
+            std::time::Duration::from_nanos(sum),
+            100.0 * sum as f64 / total as f64
+        );
+        println!("  {:<32} {whole:>8.1?}  100.0%   ← measured", "the fold");
+        println!(
+            "\n  ★ split_at_crossings is {:.1}% of the whole boolean. The plan continues at 25%.",
+            100.0
+                * rows
+                    .iter()
+                    .find(|(l, _)| l.trim() == "split_at_crossings")
+                    .map(|(_, ns)| *ns)
+                    .unwrap_or(0) as f64
+                / total as f64
+        );
+
+        // ★ **Scale, which decides whether the structural fixes are worth building.** A hull test
+        // over wall *pairs* replaces `2 × |segs on r|` predicate calls with `2` — worth nothing when
+        // a wall carries one segment, and worth the ratio when it carries many.
+        use phase::scale as sc;
+        let (segs, walls) = (sc::get(&sc::SEGS), sc::get(&sc::WALLS));
+        println!("\n  scale, summed over every class of every boolean:");
+        println!(
+            "    segments / walls        {segs:>10} / {walls:<10} = {:.2}   ← S3b lives or dies here",
+            segs as f64 / walls.max(1) as f64
+        );
+        println!("    split points (reps)     {:>10}", sc::get(&sc::PTS));
+        println!(
+            "    (1) collect trips       {:>10}",
+            sc::get(&sc::COLLECT_TRIPS)
+        );
+        println!(
+            "    (3) cover trips         {:>10}   = {:.2}x the collecting loop",
+            sc::get(&sc::COVER_TRIPS),
+            sc::get(&sc::COVER_TRIPS) as f64 / sc::get(&sc::COLLECT_TRIPS).max(1) as f64
+        );
+    }
+
+    /// S3a gate: **what did hoisting the loop invariant do to the evidence?** `plane_pair_dir_sign`
+    /// records on the rotated path, and `BoolReport::coincidences` is a *count*, so asking the same
+    /// question fewer times moves it. The answer must not move; the count may.
+    #[test]
+    #[ignore = "spike"]
+    fn spike_report_after_hoisting() {
+        let n = 24i128;
+        let mut m = Model::new();
+        let mut acc = m.add_cuboid(
+            Point3::from_array([-3.0, -3.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let (mut total, mut loosest) = (0usize, String::new());
+        for i in 0..n {
+            let fin = m.add_cuboid(
+                Point3::from_array([2.0, -0.4, 0.0]),
+                Point3::from_array([8.0, 0.4, 1.0]),
+            );
+            m.rebuild_adjacency();
+            let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+            let (solids, report) =
+                crate::boolean_with_report(&mut m, BoolKind::Fuse, acc, fin).unwrap();
+            total += report.coincidences;
+            if let Some(e) = &report.loosest {
+                loosest = format!("{e:?}");
+            }
+            acc = solids[0];
+            m.rebuild_adjacency();
+        }
+        let v = nacre_props::mass_props(&m, acc).unwrap().volume;
+        println!("\n  coincidences over {n} booleans : {total}");
+        println!("  loosest (last)                : {loosest}");
+        println!("  volume                        : {v:.9}");
     }
 
     /// B0: what is actually left to save, **in production's configuration**?
