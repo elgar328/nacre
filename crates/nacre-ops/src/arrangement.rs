@@ -16,7 +16,7 @@
 use super::*;
 use crate::boolean::*;
 use crate::planes::*;
-use crate::tolerant::Judge;
+use crate::tolerant::{ImplicitPoint, Judge};
 #[cfg(test)]
 use crate::transform::transform;
 use nacre_cip::Decision;
@@ -1023,7 +1023,12 @@ fn split_at_crossings(
     // contained — checked by integer identity, because `order_along(x, x)` is not defined to return
     // 0 (the old `strictly_inside` never compared a class with itself). Otherwise it is contained
     // iff it is strictly between the two endpoints (opposite `order_along` signs).
-    let closed_contains = |si: usize, r: usize| -> bool {
+    // ★ **The point is a parameter, and that is what lets the caller hoist it.** `r` is the class
+    // naming the crossing, and the point asked about is `{wc, segs[si].wall, r}` — constant for every
+    // segment on one wall, so the caller makes the handle once per **wall pair** and every segment
+    // there shares its Cramer parts. Taking `r` instead would cap the sharing at one segment's two
+    // endpoints, which is what a `_pair` predicate did.
+    let closed_contains = |si: usize, at: &ImplicitPoint<'_, PlaneGeom>, r: usize| -> bool {
         let s = &segs[si];
         let (r0, r1) = (s.end_h[0], s.end_h[1]);
         // ★ **Asked before the predicates, not after.** Integer identity is a *sufficient* condition
@@ -1034,9 +1039,8 @@ fn split_at_crossings(
         if r == r0 || r == r1 {
             return true;
         }
-        // ★ **Both ends in one call.** They share `(wc, s.wall, r)`, so they ask about the same
-        // implicit point, whose Cramer parts the certified filter would otherwise build twice.
-        let [a, b] = combinatorics::order_along_pair(jd, wc, s.wall, r, [r0, r1], end_ds[si]);
+        let ds = end_ds[si];
+        let (a, b) = (at.orient3d(r0) * ds[0], at.orient3d(r1) * ds[1]);
         a == 0 || b == 0 || a != b
     };
 
@@ -1083,7 +1087,9 @@ fn split_at_crossings(
                 if jd.plane_pair_dir_sign(wc, w, r) == 0 {
                     continue; // walls meet wc in no point (parallel)
                 }
-                if by_wall[&r].iter().any(|&i| closed_contains(i, w)) {
+                // ★ One handle per wall pair — `r`'s segments all ask about this same crossing.
+                let at = jd.point(wc, r, w);
+                if by_wall[&r].iter().any(|&i| closed_contains(i, &at, w)) {
                     pts.push(r);
                 }
             }
@@ -1151,8 +1157,10 @@ fn split_at_crossings(
         for pair in pts.windows(2) {
             let (p, q) = (pair[0], pair[1]);
             let mut merged: Vec<(SolidSide, SegKind)> = Vec::new();
+            // The same hoist as the collector: every `w`-segment asks about these two points.
+            let (at_p, at_q) = (jd.point(wc, w, p), jd.point(wc, w, q));
             for &i in &by_wall[&w] {
-                if closed_contains(i, p) && closed_contains(i, q) {
+                if closed_contains(i, &at_p, p) && closed_contains(i, &at_q, q) {
                     merged.extend(segs[i].merged.iter().copied());
                 }
             }

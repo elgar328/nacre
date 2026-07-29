@@ -21,8 +21,8 @@
 //! be proved, and the table itself. The predicates are its methods.
 
 use crate::kernel::frame3::{
-    Decision, MoveNode, Pt3, Standard, dir_sign_judge, indirect_cmp_coord_judge,
-    indirect_orient3d_judge_pre, indirect_orient3d2_judge_pre, orient3d_judge,
+    Decision, MoveNode, Pt3, Standard, cramer_iv, dir_sign_judge, indirect_cmp_coord_judge,
+    orient3d_from_cramer, orient3d_judge,
 };
 use nacre_math::Point3;
 use nacre_predicates::{
@@ -282,7 +282,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     pub fn orient3d(&self, p: usize, q: usize, r: usize, j: usize) -> i8 {
         match self.orient3d_cheap(p, q, r, j) {
             Some(o) => o,
-            None => self.orient3d_certified(p, q, r, j),
+            None => self.orient3d_given(self.cramer_of(p, q, r), p, q, r, j),
         }
     }
 
@@ -331,8 +331,14 @@ impl<W: PlaneWitness> Judge<'_, W> {
         None
     }
 
-    /// The certified route of [`Judge::orient3d`], reached only through [`Judge::orient3d_cheap`].
-    fn orient3d_certified(&self, p: usize, q: usize, r: usize, j: usize) -> i8 {
+    /// **The one body of the certified `orient3d`**, given the implicit point's Cramer parts.
+    ///
+    /// ★ Both entry points end here — [`Judge::orient3d`] builds the parts and throws them away,
+    /// [`ImplicitPoint::orient3d`] keeps them. Extracting it is not tidiness: a second copy of this
+    /// body is a second place for the escalation policy to live, free to drift into a different
+    /// answer for the same question. The route selection has the same hazard and the same answer,
+    /// [`Judge::orient3d_cheap`].
+    fn orient3d_given(&self, cr: CramerParts, p: usize, q: usize, r: usize, j: usize) -> i8 {
         let (dp, dq, dr, dj) = (
             plane_def(self.planes, p),
             plane_def(self.planes, q),
@@ -341,8 +347,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
         );
         self.record(
             Site::Orient3d { p, q, r, j },
-            indirect_orient3d_judge_pre(
-                [self.plane_iv(p), self.plane_iv(q), self.plane_iv(r)],
+            orient3d_from_cramer(
+                cr,
                 borrow3(dp),
                 borrow3(dq),
                 borrow3(dr),
@@ -354,44 +360,30 @@ impl<W: PlaneWitness> Judge<'_, W> {
         )
     }
 
-    /// [`Judge::orient3d`] for **two query planes against one implicit point**.
+    /// The interval planes of `∩(p, q, r)`, from the per-class cache.
+    fn cramer_of(&self, p: usize, q: usize, r: usize) -> CramerParts {
+        cramer_iv([self.plane_iv(p), self.plane_iv(q), self.plane_iv(r)])
+    }
+
+    /// **The implicit point `∩(p, q, r)`, as something you can ask questions of.**
     ///
-    /// ★ The point `∩(p, q, r)` is the same for both, and on the certified path its Cramer parts
-    /// are four determinants that do not mention the query at all. Asking the two questions
-    /// together pays for them once. Any other route — an immediate zero, the exact path, the
-    /// shared-motion shortcut — has nothing to share, so each `j` simply falls through to
-    /// [`Judge::orient3d`]; the pairing is an optimisation of one branch, not a new predicate.
-    pub fn orient3d_pair(&self, p: usize, q: usize, r: usize, j0: usize, j1: usize) -> (i8, i8) {
-        // ★ One route selector for both, so the pair can never take a different path than the
-        // single would. A cheap answer for either end means there is nothing to share.
-        let (c0, c1) = (
-            self.orient3d_cheap(p, q, r, j0),
-            self.orient3d_cheap(p, q, r, j1),
-        );
-        let (None, None) = (c0, c1) else {
-            return (
-                c0.unwrap_or_else(|| self.orient3d_certified(p, q, r, j0)),
-                c1.unwrap_or_else(|| self.orient3d_certified(p, q, r, j1)),
-            );
-        };
-        let (dp, dq, dr) = (
-            plane_def(self.planes, p),
-            plane_def(self.planes, q),
-            plane_def(self.planes, r),
-        );
-        let (d0, d1) = indirect_orient3d2_judge_pre(
-            [self.plane_iv(p), self.plane_iv(q), self.plane_iv(r)],
-            borrow3(dp),
-            borrow3(dq),
-            borrow3(dr),
-            borrow3(plane_def(self.planes, j0)),
-            borrow3(plane_def(self.planes, j1)),
-            self.standard,
-        );
-        (
-            self.record(Site::Orient3d { p, q, r, j: j0 }, d0),
-            self.record(Site::Orient3d { p, q, r, j: j1 }, d1),
-        )
+    /// ★ On the certified route a point's Cramer parts are four determinants that do not mention the
+    /// query at all — `(D, Dvec)` *is* the point. Naming the point makes sharing them a property of
+    /// the value, so a caller with several questions about one point needs no "pair" entry point at
+    /// every layer (there were three, one per crate boundary, and they capped the sharing at exactly
+    /// two questions).
+    ///
+    /// **Hoist the handle as far as the point is constant.** In the arrangement's crossing collector
+    /// that is the *wall pair*, so every segment on one wall shares it — not just one segment's two
+    /// endpoints.
+    pub fn point(&self, p: usize, q: usize, r: usize) -> ImplicitPoint<'_, W> {
+        ImplicitPoint {
+            jd: self,
+            p,
+            q,
+            r,
+            cramer: std::cell::OnceCell::new(),
+        }
     }
 
     /// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
@@ -458,6 +450,52 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 Site::DirSign { p, a, b },
                 dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db), self.standard),
             )
+    }
+}
+
+/// One implicit point of a plane table — `∩(p, q, r)` — and the questions asked of it.
+///
+/// Made by [`Judge::point`]. The Cramer parts are filled by the first question that reaches the
+/// certified route and reused by every later one.
+///
+/// ★ **`OnceCell`, not `Cell<Option<_>>`**: "filled once, never changes" is said by the type, the way
+/// [`Witness::tri_pt3`] and `Pt3`'s realization cell already say it. And a **cell rather than a
+/// lock** because the handle is a local value that never crosses a thread — the shared thing is the
+/// `Judge` behind it, borrowed immutably. (On the `Judge` this cache would need a lock, and a lock
+/// here would serialize the parallel arrangement.)
+///
+/// One lifetime suffices: `Judge`'s fields are `&'a [W]`, `Standard`, `&'a Notes` and an owned
+/// `Vec`, all covariant in `'a`, so `&'p Judge<'a, W>` coerces to `&'p Judge<'p, W>`.
+pub struct ImplicitPoint<'a, W> {
+    jd: &'a Judge<'a, W>,
+    p: usize,
+    q: usize,
+    r: usize,
+    cramer: std::cell::OnceCell<CramerParts>,
+}
+
+/// `(D, Dvec)`. ★ Kept out of every public signature because [`crate::kernel::interval::Iv`] is
+/// `pub(crate)` and must stay so — see [`Judge`]'s `iv` field for why.
+type CramerParts = (
+    crate::kernel::interval::Iv,
+    [crate::kernel::interval::Iv; 3],
+);
+
+impl<W: PlaneWitness> ImplicitPoint<'_, W> {
+    /// Which side of plane `j` this point lies on — [`Judge::orient3d`] for the same four planes,
+    /// sharing this point's Cramer parts with every other question asked of this handle.
+    ///
+    /// A cheap route answers without touching the cell, so a handle whose questions all take the
+    /// exact or shared-motion path costs nothing over calling [`Judge::orient3d`] directly.
+    pub fn orient3d(&self, j: usize) -> i8 {
+        let (p, q, r) = (self.p, self.q, self.r);
+        match self.jd.orient3d_cheap(p, q, r, j) {
+            Some(o) => o,
+            None => {
+                let cr = *self.cramer.get_or_init(|| self.jd.cramer_of(p, q, r));
+                self.jd.orient3d_given(cr, p, q, r, j)
+            }
+        }
     }
 }
 

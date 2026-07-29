@@ -1028,7 +1028,7 @@ fn combine(dsign: Option<bool>, msign: Option<bool>) -> Option<Orient> {
 /// and the numerator vector `Dvec` (column `j` replaced by `h = −d`), so `V[j] =
 /// Dvec[j]/D` (no division taken here). Shared by [`indirect_filter`] (orient3d) and
 /// [`cmp_filter`] (cmp_coord).
-fn cramer_iv(planes: [[Iv; 4]; 3]) -> (Iv, [Iv; 3]) {
+pub(crate) fn cramer_iv(planes: [[Iv; 4]; 3]) -> (Iv, [Iv; 3]) {
     let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
     let h = |k: usize| Iv::new(0.0, 0.0).sub(planes[k][3]); // n·X = h, h = −d
     let (n0, n1, n2) = (n(0), n(1), n(2));
@@ -1084,7 +1084,7 @@ fn normals_det_hp(planes: &[[HpIv; 4]; 3], prec: usize) -> HpIv {
 /// either `D` or `M` straddles 0 (escalate). Coefficient-direct (no division).
 #[cfg(test)]
 fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> Option<Orient> {
-    filter_rest(cramer_iv(planes), q, r, s)
+    filter_from_cramer(cramer_iv(planes), q, r, s)
 }
 
 /// [`indirect_filter`] with the implicit point's Cramer parts **already in hand**.
@@ -1092,8 +1092,13 @@ fn indirect_filter(planes: [[Iv; 4]; 3], q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> 
 /// ★ **The split exists because `(D, Dvec)` *is* the point** — it does not mention `q, r, s`, so a
 /// caller asking about one point against several query triangles pays for it once. The arrangement's
 /// crossing collector asks twice in a row (a segment's two endpoints), which is what
-/// [`indirect_orient3d2_judge_pre`] exploits.
-fn filter_rest((d, dvec): (Iv, [Iv; 3]), q: [Iv; 3], r: [Iv; 3], s: [Iv; 3]) -> Option<Orient> {
+/// [`crate::predicate::ImplicitPoint`] exploits.
+fn filter_from_cramer(
+    (d, dvec): (Iv, [Iv; 3]),
+    q: [Iv; 3],
+    r: [Iv; 3],
+    s: [Iv; 3],
+) -> Option<Orient> {
     // row1 = Dvec − D·s ; cross = (q−s)×(r−s) ; M = row1·cross.
     let row1 = [
         dvec[0].sub(d.mul(s[0])),
@@ -1259,57 +1264,18 @@ pub fn indirect_orient3d_judge(
         plane_iv(plane_b.0, plane_b.1, plane_b.2),
         plane_iv(plane_c.0, plane_c.1, plane_c.2),
     ];
-    indirect_orient3d_judge_pre(iv, plane_a, plane_b, plane_c, q, r, s, j)
+    orient3d_from_cramer(cramer_iv(iv), plane_a, plane_b, plane_c, q, r, s, j)
 }
 
-/// [`indirect_orient3d_judge`] with the filter's three interval planes **already built**.
+/// [`indirect_orient3d_judge`] with the implicit point's Cramer parts **already in hand** — the one
+/// body of the certified `orient3d`, reached by both [`crate::predicate::Judge::orient3d`] and
+/// [`crate::predicate::ImplicitPoint::orient3d`].
 ///
-/// ★ The filter's inputs are a function of the three plane *definitions* alone, so a caller that
-/// asks about one implicit point against many query triangles rebuilds them every time. Measured on
-/// one rotated fixture, that rebuild is ~20-24% of a certified judgement, and in the arrangement's
-/// crossing collector the same three definitions are handed in hundreds of times over. The `Pt3`
-/// definitions stay in the signature because the escalation still needs them: `plane_hp` realizes
-/// the coefficients afresh at each precision, and an interval cannot be sharpened after the fact.
+/// The `Pt3` definitions stay in the signature because the escalation still needs them: `plane_hp`
+/// realizes the coefficients afresh at each precision, and an interval cannot be sharpened after
+/// the fact.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn indirect_orient3d_judge_pre(
-    planes: [[Iv; 4]; 3],
-    plane_a: (&Pt3, &Pt3, &Pt3),
-    plane_b: (&Pt3, &Pt3, &Pt3),
-    plane_c: (&Pt3, &Pt3, &Pt3),
-    q: &Pt3,
-    r: &Pt3,
-    s: &Pt3,
-    j: Standard,
-) -> Decision {
-    orient3d_from_cramer(cramer_iv(planes), plane_a, plane_b, plane_c, q, r, s, j)
-}
-
-/// **Two query triangles against one implicit point, sharing its Cramer parts.**
-///
-/// `cramer_iv` is four `det3`s and does not mention the query, so asking about the same point twice
-/// paid for it twice. The collector's containment test is exactly that shape: a segment's two
-/// endpoints, both against the point where the query wall crosses the segment's line.
-///
-/// The caller's claim is only that the *three planes* are the same; that they name one point follows.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn indirect_orient3d2_judge_pre(
-    planes: [[Iv; 4]; 3],
-    plane_a: (&Pt3, &Pt3, &Pt3),
-    plane_b: (&Pt3, &Pt3, &Pt3),
-    plane_c: (&Pt3, &Pt3, &Pt3),
-    t0: (&Pt3, &Pt3, &Pt3),
-    t1: (&Pt3, &Pt3, &Pt3),
-    j: Standard,
-) -> (Decision, Decision) {
-    let cr = cramer_iv(planes);
-    let one = |t: (&Pt3, &Pt3, &Pt3)| {
-        orient3d_from_cramer(cr, plane_a, plane_b, plane_c, t.0, t.1, t.2, j)
-    };
-    (one(t0), one(t1))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn orient3d_from_cramer(
+pub(crate) fn orient3d_from_cramer(
     cr: (Iv, [Iv; 3]),
     plane_a: (&Pt3, &Pt3, &Pt3),
     plane_b: (&Pt3, &Pt3, &Pt3),
@@ -1319,7 +1285,7 @@ fn orient3d_from_cramer(
     s: &Pt3,
     j: Standard,
 ) -> Decision {
-    if let Some(o) = filter_rest(cr, pt_iv(q), pt_iv(r), pt_iv(s)) {
+    if let Some(o) = filter_from_cramer(cr, pt_iv(q), pt_iv(r), pt_iv(s)) {
         return Decision::Sign(o);
     }
     // Escalate: the same two determinants at prec, each carrying the radius accumulated

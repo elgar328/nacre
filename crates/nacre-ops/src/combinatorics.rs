@@ -72,25 +72,6 @@ pub(crate) fn order_along(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, i: usiz
     jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
-/// [`order_along`] for **both ends of one segment at once**, with each end's direction sign supplied.
-///
-/// ★ Two things are hoisted here. `order_along` factors into `orient3d × dir_sign(p, q, j)`, and the
-/// second factor does not mention `i` — for a segment's endpoints it is a property of the segment, so
-/// the caller computes it once and hands it in. And the two orderings share `(p, q, i)`, so they ask
-/// about the **same implicit point**, whose Cramer parts the certified filter would otherwise build
-/// twice; see [`nacre_cip::predicate::Judge::orient3d_pair`].
-pub(crate) fn order_along_pair(
-    jd: &Judge<'_, PlaneGeom>,
-    p: usize,
-    q: usize,
-    i: usize,
-    ends: [usize; 2],
-    ds: [i8; 2],
-) -> [i8; 2] {
-    let (a, b) = jd.orient3d_pair(p, q, i, ends[0], ends[1]);
-    [a * ds[0], b * ds[1]]
-}
-
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///
