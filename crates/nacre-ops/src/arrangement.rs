@@ -1592,13 +1592,14 @@ fn trace_result_faces(
     plane_ix: &[usize],
     n_a: usize,
     class_owner: &[Option<SolidSide>],
+    reuse: crate::reuse::ClassReuse,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
     // **What each class contributes, for the classes the other operand cannot reach.** Everything
     // else stays `Arrange`, which is the whole engine as it was.
-    let plans = crate::reuse::class_plans(model, kind, a, b, planes, class_owner);
+    let plans = crate::reuse::class_plans(model, reuse, kind, a, b, planes, class_owner);
 
     // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
     // Pass A traces and splits every class, learning aliases as it goes; pass B builds the cells.
@@ -1626,6 +1627,12 @@ fn trace_result_faces(
         // has stopped growing either way.
         let snapshot = aliases.clone();
         let round = crate::par::try_map_range(planes.len(), |wc| {
+            // **Skipped inside the closure, never by shrinking the range.** The index space is what
+            // makes `try_map_range` report the lowest-numbered decline and what keeps the emitted
+            // order — and so the handles — the ones a single thread would have produced.
+            if plans[wc] != crate::reuse::ClassPlan::Arrange {
+                return Ok((Vec::new(), snapshot.clone()));
+            }
             let mut tr =
                 trace_on_class(model, a, b, wc, jd, faces, surf_ix, inc_a, inc_b, plane_ix);
             let mut local = snapshot.clone();
@@ -1707,21 +1714,7 @@ fn trace_result_faces(
             }
         };
         match reused {
-            Some(f) => {
-                // **The shortcut is checked against the thing it replaces, every debug run.**
-                // Both routes must name the same rings; only where each ring starts may differ,
-                // so the comparison is on a rotation- and order-independent form.
-                #[cfg(debug_assertions)]
-                if plans[wc] != crate::reuse::ClassPlan::Arrange {
-                    let truth = arrange(wc)?;
-                    assert_eq!(
-                        crate::reuse::canonical(&f),
-                        crate::reuse::canonical(&truth),
-                        "class {wc}: the reused faces are not the ones the arrangement emits"
-                    );
-                }
-                Ok(f)
-            }
+            Some(f) => Ok(f),
             None => arrange(wc),
         }
     })?;
@@ -2014,7 +2007,49 @@ pub(crate) fn boolean(
             &plane_ix,
             n_a,
             &class_owner,
+            crate::reuse::ClassReuse::Proved,
         )?;
+        // **Every debug run answers the same boolean twice and requires the same answer.**
+        //
+        // Not tracing a class is the one thing here that changes what the engine *knows*: a class
+        // never traced never reports the concurrencies it would have found, and 17% of the alias
+        // table is discovered only in classes the other operand cannot reach. That those names are
+        // wanted by nobody is an argument, so it is checked rather than believed — and at the
+        // whole-boolean level, because per class there is no longer an arrangement to compare to.
+        //
+        // The reference gets its own `Notes`: evidence is a side effect `undecided_reject` reads,
+        // and a second run must not double it.
+        #[cfg(debug_assertions)]
+        {
+            let plain_notes = Notes::new();
+            let plain_jd = Judge::new(&geom, standard, &plain_notes);
+            let plain = trace_result_faces(
+                model,
+                kind,
+                a,
+                b,
+                &plain_jd,
+                &faces_tab,
+                &surf_ix,
+                &inc_a,
+                &inc_b,
+                &plane_ix,
+                n_a,
+                &class_owner,
+                crate::reuse::ClassReuse::Off,
+            );
+            match &plain {
+                Ok(p) => assert_eq!(
+                    crate::reuse::canonical(&faces),
+                    crate::reuse::canonical(p),
+                    "reuse changed the faces this boolean emits"
+                ),
+                // A reject only the reference reaches means reuse skipped the class that could not
+                // be judged. Arguably better, definitely a change — so it fails here rather than
+                // passing quietly.
+                Err(e) => panic!("reuse turned a {e:?} into a result"),
+            }
+        }
         // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
         // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
         // chainable solid — a second boolean on it then sees no redundant coplanar planes.
@@ -3225,6 +3260,7 @@ mod tests {
             &plane_ix,
             n_a,
             &class_owner,
+            crate::reuse::ClassReuse::Proved,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "z=0 + z=2 + 4 walls×2");
@@ -3426,6 +3462,7 @@ mod tests {
             &plane_ix,
             n_a,
             &class_owner,
+            crate::reuse::ClassReuse::Proved,
         )
         .unwrap();
         assert_eq!(
@@ -3526,6 +3563,7 @@ mod tests {
             &plane_ix,
             n_a,
             &class_owner,
+            crate::reuse::ClassReuse::Proved,
         )
         .unwrap();
 
@@ -3784,6 +3822,7 @@ mod tests {
             &plane_ix,
             n_a,
             &class_owner,
+            crate::reuse::ClassReuse::Proved,
         )
         .unwrap();
         assert_eq!(faces.len(), 10, "rotated arrangement keeps 10 faces");

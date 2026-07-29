@@ -25,6 +25,18 @@ use nacre_store::Handle;
 use nacre_topo::{Model, Origin, Solid, Vertex};
 use std::collections::HashMap;
 
+/// Whether a boolean may take the shortcut this module exists for.
+///
+/// **`Off` is not a fallback, it is the reference.** Debug builds run the boolean both ways and
+/// require the same answer, which is the only check that can see the one thing skipping the trace
+/// pass changes: the alias table. Keeping the switch permanent means the shortcut stays falsifiable
+/// after the engine around it moves on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClassReuse {
+    Off,
+    Proved,
+}
+
 /// What a plane class contributes to the result, once its relation to the other operand is known.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ClassPlan {
@@ -120,6 +132,7 @@ fn plane_misses(geom: &PlaneGeom, q: &[Pt3]) -> bool {
 /// arranged: the two solids meet there by definition.
 pub(crate) fn class_plans(
     model: &Model,
+    reuse: ClassReuse,
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
@@ -127,7 +140,7 @@ pub(crate) fn class_plans(
     class_owner: &[Option<SolidSide>],
 ) -> Vec<ClassPlan> {
     let mut plans = vec![ClassPlan::Arrange; geom.len()];
-    if !class_owner.iter().any(|o| o.is_some()) {
+    if reuse == ClassReuse::Off || !class_owner.iter().any(|o| o.is_some()) {
         return plans;
     }
     // Built lazily and once: the query set is the *other* operand's, so each is needed only if
