@@ -1489,16 +1489,26 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
     Ok(mask)
 }
 
-/// Label every cell by propagating from the unbounded cell (all void) across edges, flipping per
+/// Label every cell by propagating from the unbounded contours across edges, flipping per
 /// `edge_mask`. The cell interior cannot be point-queried (no plane-triple name), so propagation is
 /// the only route. After propagating, **every** edge's flip
 /// relation is verified (`label[c] XOR mask == label[neighbour]`); a violation means the trace was
 /// incomplete and is an honest reject.
+///
+/// ★ **`seed` is the one place global information enters the arrangement.** Everything else here
+/// is a flip relation between neighbours — purely local — so a plane's labelling is determined by
+/// its own segments *plus* one known classification to start from. Whole-model arrangements pass
+/// `[false; 4]`, which is the statement "the region outside every contour is void" and is true
+/// exactly because the arrangement covers the whole plane: `Nesting`'s unbounded region reaches
+/// infinity, where neither solid is. An arrangement restricted to a region of space cannot say
+/// that — its unbounded region is an artifact of the restriction — and must be told instead. That
+/// is the parameter's whole reason to exist; today's only caller still passes the old constant.
 fn label_cells(
     cells: &[Cell],
     face_of: &HashMap<usize, usize>,
     segs: &[MergedSeg],
     nesting: &Nesting,
+    seed: Label,
 ) -> Result<Vec<Label>, BoolError> {
     // A face-with-holes is one region: label its group as a unit. Group representative → members.
     let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
@@ -1507,10 +1517,12 @@ fn label_cells(
     }
     let mut label = vec![None; cells.len()];
     let mut queue = std::collections::VecDeque::new();
-    // Seed every unbounded contour's group with all-void, enqueuing every member.
+    // Seed every unbounded contour's group, enqueuing every member. The outside region may be
+    // bounded by more than one cycle, and they all describe the *same* region — so one seed serves
+    // them all, whatever it says.
     for g in &nesting.root_groups {
         for &i in &members[g] {
-            label[i] = Some([false; 4]);
+            label[i] = Some(seed);
             queue.push_back(i);
         }
     }
@@ -1734,7 +1746,7 @@ fn trace_result_faces(
         let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
             let (cells, face_of) = extract_cells(jd, wc, split)?;
             let nesting = nest_cells(jd, wc, &cells, split)?;
-            let labels = label_cells(&cells, &face_of, split, &nesting)?;
+            let labels = label_cells(&cells, &face_of, split, &nesting, [false; 4])?;
             Ok(emit_faces(
                 kind,
                 &labels,
@@ -2006,7 +2018,7 @@ pub(crate) fn frame_audit(
                 let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default())?;
                 let (cells, face_of) = extract_cells(&jd, wc, &split)?;
                 let nesting = nest_cells(&jd, wc, &cells, &split)?;
-                let labels = label_cells(&cells, &face_of, &split, &nesting)?;
+                let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4])?;
                 let _ = emit_faces(kind, &labels, &cells, &split, &jd, wc, &nesting.holes);
                 Ok(())
             };
@@ -3025,7 +3037,7 @@ mod tests {
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
         let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4]).unwrap();
 
         for (i, c) in cells.iter().enumerate() {
             if c.winding == -1 {
@@ -3099,7 +3111,7 @@ mod tests {
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
         let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4]).unwrap();
 
         assert_eq!(cells.len(), 2, "one square: inner + unbounded");
         let inner = cells.iter().position(|c| c.winding == 1).unwrap();
@@ -3152,7 +3164,7 @@ mod tests {
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
         let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &nesting).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4]).unwrap();
 
         // Centroid of a face's ring (convex cells here).
         let centroid = |f: &LocalFace| -> [f64; 2] {
