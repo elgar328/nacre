@@ -6266,27 +6266,90 @@ mod tests {
         );
     }
 
-    /// ★ **A known gap, bounded by measurement.** A **rotated** model under a **lopsided** tree is
-    /// the one combination that does not yet reproduce the whole-model answer: it rejects
-    /// `RingNaming` from `ring_from_names`, on a merged cycle whose consecutive nodes share only
-    /// the plane — one leaf's face ends on a line where the neighbour's ends at the box corner
-    /// `{W, box0, box1}`, so the T-vertex pass has no partner to insert.
+    /// Every triple of **model** classes that meets at a point lying **on** `box_c` — the
+    /// four-plane concurrencies that split plane would create.
     ///
-    /// Each half of the combination is fine alone: rotated + **uniform** agrees, and lopsided with
-    /// axis-aligned or non-convex operands agrees. So it is the interaction, not either part.
+    /// Cubic in the class count, so it is a fixture-scale instrument, not a production check; what
+    /// production does about concurrencies is decline and re-choose (C5). It exists to make the
+    /// test below say *why* rather than *that*.
+    fn concurrencies_on(
+        jd: &Judge<'_, PlaneGeom>,
+        n_model: usize,
+        box_c: usize,
+    ) -> Vec<[usize; 3]> {
+        let mut hits = Vec::new();
+        for i in 0..n_model {
+            for j in (i + 1)..n_model {
+                for l in (j + 1)..n_model {
+                    if jd.plane_pair_dir_sign(i, j, l) == 0 {
+                        continue; // those three share a line, not a point
+                    }
+                    if combinatorics::side_of(jd, [i, j, l], box_c) == 0 {
+                        hits.push([i, j, l]);
+                    }
+                }
+            }
+        }
+        hits
+    }
+
+    /// ★ **A split plane through an arrangement vertex is what breaks, and it is a rule about
+    /// where to cut — not a defect in the clip, the cap, or the T-vertex pass.**
     ///
-    /// What is asserted is the property that matters while it is open — **it never answers
-    /// differently, it declines.** Production does not reach it (`boolean` still runs `Whole`) and
-    /// C5's fallback is what will absorb it. The day the gap closes this test fails, which is how
-    /// it should be found.
+    /// Tilting this fixture by 30° puts the meet of `A`'s `x=1` wall and `B`'s `y=1.5` wall at
+    /// `x = 1 − ½ sin θ`, which for `sin 30° = ½` is **exactly `0.75`**. Cutting there makes four
+    /// planes concurrent, and the alias table then canonicalises the point onto a triple whose
+    /// planes the edge does not ride — the hazard [`combinatorics::RingEdge`] documents. The
+    /// engine declines (`RingNaming`); it does **not** answer differently.
+    ///
+    /// Note the vertex belongs to neither operand: it is a vertex the boolean *discovers*, from
+    /// planes of both. So "avoid the operands' own vertex coordinates" would not have caught it,
+    /// and enumerating the discovered ones is cubic — which is why production's answer is to
+    /// decline and re-choose rather than to prove a position generic up front.
     #[test]
-    fn a_rotated_model_under_a_lopsided_tree_declines_rather_than_disagreeing() {
+    fn a_split_through_an_arrangement_vertex_declines_and_a_generic_one_does_not() {
         let build = |m: &mut Model| {
             let (a, b) = overlapping_cubes(m);
             let a = tilt(m, a, &[nacre_scalar::Axis::Z]);
             let b = tilt(m, b, &[nacre_scalar::Axis::Z]);
             (a, b)
         };
+        // First: 0.75 really is concurrent here and 0.7 really is not.
+        let mut m = Model::new();
+        let (a, b) = build(&mut m);
+        let PlaneSetup {
+            geom,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
+        let n_model = geom.len();
+        let mut geom = geom;
+        for (axis, at) in [(0usize, 0.75f64), (1, 0.75), (0, 0.7), (1, 0.7)] {
+            geom.push(split_plane_class(&mut m, axis, at));
+        }
+        let jd = Judge::new(&geom, standard, &notes);
+        assert_eq!(
+            concurrencies_on(&jd, n_model, n_model).len(),
+            4,
+            "x=0.75 meets the A-x=1 / B-y=1.5 edge exactly"
+        );
+        assert_eq!(
+            concurrencies_on(&jd, n_model, n_model + 1).len(),
+            4,
+            "y=0.75"
+        );
+        assert!(
+            concurrencies_on(&jd, n_model, n_model + 2).is_empty(),
+            "x=0.7"
+        );
+        assert!(
+            concurrencies_on(&jd, n_model, n_model + 3).is_empty(),
+            "y=0.7"
+        );
+
+        // Then: cutting at the concurrent position declines rather than disagreeing …
+        let concurrent = lopsided_tree();
         let mut declined = 0usize;
         for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
             let mut m1 = Model::new();
@@ -6294,22 +6357,44 @@ mod tests {
             let whole = super::boolean(&mut m1, kind, a1, b1).map(|(s, _)| s);
             let mut m2 = Model::new();
             let (a2, b2) = build(&mut m2);
-            let split = boolean_over(&mut m2, kind, a2, b2, &Subdivision::Tree(lopsided_tree()))
-                .map(|(s, _)| s);
+            let split = boolean_over(
+                &mut m2,
+                kind,
+                a2,
+                b2,
+                &Subdivision::Tree(concurrent.clone()),
+            )
+            .map(|(s, _)| s);
             match (&whole, &split) {
                 (Ok(w), Ok(c)) => {
                     m1.rebuild_adjacency();
                     m2.rebuild_adjacency();
-                    same_shape(&m1, w, &m2, c, &format!("rotated/lopsided {kind:?}"));
+                    same_shape(&m1, w, &m2, c, &format!("concurrent {kind:?}"));
                 }
-                (_, Err(_)) => declined += 1,
-                _ => panic!("rotated/lopsided {kind:?}: {whole:?} vs {split:?}"),
+                (Ok(_), Err(_)) => declined += 1,
+                _ => panic!("concurrent {kind:?}: {whole:?} vs {split:?}"),
             }
         }
-        // ★ Not vacuous: the gap has to still be there, or this test describes nothing.
-        assert!(
-            declined > 0,
-            "the rotated/lopsided gap closed — fold this case back into `tree_agrees`"
+        assert!(declined > 0, "the concurrency has to actually bite");
+    }
+
+    /// … and the same tree moved off the concurrency agrees exactly. **This is the gate**: the
+    /// rotated, lopsided case is not a limitation of the subdivision, it is a rule about where to
+    /// cut.
+    #[test]
+    fn a_rotated_model_under_a_lopsided_tree_agrees_at_a_generic_position() {
+        tree_agrees(
+            "rotated/lopsided-generic",
+            |m| {
+                let (a, b) = overlapping_cubes(m);
+                let a = tilt(m, a, &[nacre_scalar::Axis::Z]);
+                let b = tilt(m, b, &[nacre_scalar::Axis::Z]);
+                (a, b)
+            },
+            SplitTree {
+                planes: vec![(0, 0.7), (1, 0.7)],
+                nodes: vec![Some((0, 1, 2)), None, Some((1, 3, 4)), None, None],
+            },
         );
     }
 }
