@@ -1785,6 +1785,7 @@ fn clip_face(
     split: usize,
     keep: i8,
     rings: &[&[[usize; 3]]],
+    outward: i8,
 ) -> Result<Clipped, BoolError> {
     // Which class a ring edge rides: the one its two endpoint triples share besides `fc`.
     let wall_of = |a: [usize; 3], b: [usize; 3]| -> Result<usize, BoolError> {
@@ -1933,10 +1934,20 @@ fn clip_face(
 
     // Outer or hole, by winding **against the input's own outer ring** — so this never has to know
     // how the face is oriented against its plane class.
+    // ★ **The input ring's winding is given, not measured.** It used to call `loop_winding` on it —
+    // once per face per tree level — and that walks the ring with `cmp_coord`, the priciest
+    // predicate there is. The caller knows the answer from a dot product of two near-parallel
+    // normals. Measured: this call was most of the clipping's cost.
     let winding = |ring: &[[usize; 3]]| -> Result<i8, BoolError> {
         combinatorics::loop_winding(jd, fc, &combinatorics::ring_from_names(fc, ring)?)
     };
-    let outward = winding(rings[0])?;
+    // One cycle out of a ring set with no holes can only be the outer one.
+    if cycles.len() == 1 && rings.len() == 1 {
+        return Ok(Clipped {
+            pieces: vec![(cycles.pop().expect("one"), Vec::new())],
+            cap_edges,
+        });
+    }
     let mut outers: Vec<Vec<[usize; 3]>> = Vec::new();
     let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
     for cyc in cycles {
@@ -2261,10 +2272,20 @@ fn clip_region(
                 rings.extend(hs.iter().map(Vec::as_slice));
             }
             let fc = plane_ix[*fp];
+            // Which way this face is wound in its class's frame: the two normals are parallel (the
+            // face *is* on the class), so their dot is ±1 and no rounding can move its sign. The
+            // test is on the **cosine** — the class's `tri_n_out` is a raw cross product — which is
+            // the line `reuse::pass_through` once got wrong and had to fix.
+            let n = jd.planes[fc].tri_n_out();
+            let d = faces[*fp].n_out.dot(n);
+            if d.abs() < 0.5 * n.norm() {
+                return Err(reject(RejectReason::DegenerateNormal));
+            }
+            let outward = if d > 0.0 { 1 } else { -1 };
             // ★ A decline here is honest and expected: the chooser reads the *operands'* vertex
             // coordinates, and a leaf also holds caps and clipped pieces whose vertices it never
             // saw. The caller falls back to the whole model rather than guess.
-            let clipped = clip_face(jd, fc, split, keep, &rings)?;
+            let clipped = clip_face(jd, fc, split, keep, &rings, outward)?;
             cap_edges.extend(clipped.cap_edges);
             for (i, (o, h)) in clipped.pieces.into_iter().enumerate() {
                 let slot = if i == 0 {
@@ -2349,19 +2370,21 @@ const MAX_LEAF_FACES: usize = 16;
 
 /// **Below this the whole model is one region — and today that is *every* model.**
 ///
-/// ★ The subdivision is correct (every gate green, zero fallbacks) and **slower**: the 80-fin fold
-/// goes 7.6s → 13.1s serial. The premise it was built on does not hold for this workload. Measured
-/// on the fold at 190 faces: duplication is fine (1.13–1.29×), but the **worst leaf still holds 91
-/// of the 190 faces**, where the plan projected ≤16. A radial fin array does not decompose along
-/// axis-aligned planes — the hub spans every cut, and so does every fin that crosses one.
+/// ★ The subdivision is correct (every gate green, zero fallbacks) and, on the fixtures that
+/// matter, still not a win: with it on, the 80-fin fold is 7.4s → 8.6s and the axis-aligned one
+/// 1.7s → 2.4s, while the fins-only ring goes 11.6s → 10.4s. Per boolean the arrangement itself
+/// *does* shrink — the last fuse of a 60-fin fold times at `trace 18.6ms → 11.7ms` — but the
+/// clipping and the leaves' overhead eat it.
 ///
 /// What is missing is the other half of EMBER's scheme, and it is not an optimisation: §4.5.3 says
 /// choose the cut that **separates the operands**, and §4.5.1 says a region holding one operand's
 /// faces needs no arrangement at all. This chooser balances face counts instead, so its leaves are
-/// large *and* still get arranged. Wiring the early-out needs `FaceLoops` to carry its rings' walls
-/// the way `boolean::Ring` now does.
+/// large *and* still get arranged. Simulated over a 60-fin fold, the separating criterion plus that
+/// early-out would leave **135,900 face-class pairs against 618,169 (4.55×)** where this one leaves
+/// 343,051 (1.80×), with **297 of 357 leaves holding a single operand**. Wiring it needs
+/// `FaceLoops` to carry its rings' walls the way `boolean::Ring` now does.
 ///
-/// So the threshold is the measurement: not yet. Flipping it back to a number is the experiment.
+/// So the threshold is the measurement: not yet. Flipping it to a number is the experiment.
 const MIN_FACES_TO_SUBDIVIDE: usize = usize::MAX;
 
 /// The deepest the tree may go, so a pathological model cannot make the plane table explode (every
@@ -5719,7 +5742,15 @@ mod tests {
                 continue; // only the two U caps are the eight-vertex non-convex rings
             }
             let fc = plane_ix[fp];
-            let clipped = clip_face(&jd, fc, split, keep, &[ring]).expect("clip");
+            let clipped = clip_face(
+                &jd,
+                fc,
+                split,
+                keep,
+                &[ring],
+                winding_of(&jd, &faces_tab, fp, fc),
+            )
+            .expect("clip");
             for (outer, holes) in &clipped.pieces {
                 assert!(holes.is_empty(), "a U cap clip has no holes");
                 let mut xy: Vec<[i64; 2]> = outer
@@ -5870,7 +5901,16 @@ mod tests {
             }
             let mut rings: Vec<&[[usize; 3]]> = vec![outer];
             rings.extend(holes.iter().map(Vec::as_slice));
-            let clipped = clip_face(&jd, plane_ix[fp], split, keep, &rings).expect("clip");
+            let fc = plane_ix[fp];
+            let clipped = clip_face(
+                &jd,
+                fc,
+                split,
+                keep,
+                &rings,
+                winding_of(&jd, &faces_tab, fp, fc),
+            )
+            .expect("clip");
             return (
                 clipped
                     .pieces
@@ -5917,12 +5957,13 @@ mod tests {
         fc: usize,
         split: usize,
         rings: &[&[[usize; 3]]],
+        outward: i8,
     ) -> bool {
         let original: usize = rings.iter().map(|r| r.len()).sum();
         let mut total = 0usize;
         let mut cap = [0usize; 2];
         for (i, keep) in [1i8, -1].into_iter().enumerate() {
-            let c = clip_face(jd, fc, split, keep, rings).expect("clip");
+            let c = clip_face(jd, fc, split, keep, rings, outward).expect("clip");
             total += c
                 .pieces
                 .iter()
@@ -5989,7 +6030,13 @@ mod tests {
                 }
                 fired += 1;
                 assert!(
-                    clip_conserves_vertices(&jd, plane_ix[fp], split, &rings),
+                    clip_conserves_vertices(
+                        &jd,
+                        plane_ix[fp],
+                        split,
+                        &rings,
+                        winding_of(&jd, &faces_tab, fp, plane_ix[fp])
+                    ),
                     "rotated clip at y={at} lost or invented vertices on face slot {fp}"
                 );
             }
@@ -6006,6 +6053,7 @@ mod tests {
         jd: &Judge<'_, PlaneGeom>,
         input: &combinatorics::TraceInput,
         side: usize,
+        faces: &[FaceInfo],
         plane_ix: &[usize],
         split: usize,
         keep: i8,
@@ -6022,12 +6070,20 @@ mod tests {
                 rings.extend(hs.iter().map(Vec::as_slice));
             }
             let fc = plane_ix[fp];
-            let c = clip_face(jd, fc, split, keep, &rings).expect("clip");
+            let c = clip_face(jd, fc, split, keep, &rings, winding_of(jd, faces, fp, fc))
+                .expect("clip");
             cap_edges.extend(c.cap_edges);
             pieces.extend(c.pieces.into_iter().map(|p| (fc, p)));
         }
         let caps = cap_rings(jd, split, keep, &cap_edges).expect("cap");
         (pieces, caps)
+    }
+
+    /// The sign a face's stored ring winds with in its class's frame — the caller-supplied half of
+    /// `clip_face`, spelled out once for the tests.
+    fn winding_of(jd: &Judge<'_, PlaneGeom>, faces: &[FaceInfo], fp: usize, fc: usize) -> i8 {
+        let n = jd.planes[fc].tri_n_out();
+        if faces[fp].n_out.dot(n) > 0.0 { 1 } else { -1 }
     }
 
     /// Every directed ring edge of a face set, holes included.
@@ -6074,6 +6130,7 @@ mod tests {
         nacre_cip::Standard,
         Notes,
         combinatorics::TraceInput,
+        Vec<FaceInfo>,
     ) {
         let PlaneSetup {
             planes: faces_tab,
@@ -6097,7 +6154,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        (geom, plane_ix, standard, notes, input)
+        (geom, plane_ix, standard, notes, input, faces_tab)
     }
 
     /// A cube, a non-convex U-prism, a holed slab and a rotated U — clipped by a plane through
@@ -6139,11 +6196,12 @@ mod tests {
             for keep in [1i8, -1] {
                 let mut m = Model::new();
                 let (s, far) = build(&mut m);
-                let (geom, plane_ix, standard, notes, input) =
+                let (geom, plane_ix, standard, notes, input, ftab_for_caps) =
                     one_solid_setup(&mut m, s, far, axis, at);
                 let split = geom.len() - 1;
                 let jd = Judge::new(&geom, standard, &notes);
-                let (pieces, caps) = clip_and_cap(&jd, &input, 0, &plane_ix, split, keep);
+                let (pieces, caps) =
+                    clip_and_cap(&jd, &input, 0, &ftab_for_caps, &plane_ix, split, keep);
                 assert_eq!(
                     closure_violations(&pieces, &caps),
                     0,
@@ -6757,5 +6815,365 @@ mod tests {
         .unwrap();
         m.rebuild_adjacency();
         out
+    }
+
+    /// SPIKE: is EMBER's other half worth building? Simulate two choosers against the same folds
+    /// and count the work each would leave, **before** writing either.
+    ///
+    /// The proxy is face-class pairs — a region's pass A and pass B each walk every face of the
+    /// region for every class it arranges, which is what the whole design exists to shrink.
+    #[test]
+    #[ignore = "spike"]
+    fn spike_separating_chooser() {
+        let n = 60i128;
+        let mut m = Model::new();
+        let mut acc = m.add_cuboid(
+            Point3::from_array([-3.0, -3.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let mut tot = [0usize; 3]; // whole, balance chooser, separating chooser + early-out
+        let mut worst = [0usize; 2];
+        let mut single_leaves = (0usize, 0usize);
+        for i in 0..n {
+            let fin = m.add_cuboid(
+                Point3::from_array([2.0, -0.4, 0.0]),
+                Point3::from_array([8.0, 0.4, 1.0]),
+            );
+            m.rebuild_adjacency();
+            let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+            let setup = plane_index_setup(&m, acc, fin).expect("setup");
+            let f = &setup.planes;
+            let boxes: Vec<[[f64; 2]; 3]> = f
+                .iter()
+                .map(|x| face_box(&m, x.face.expect("real")))
+                .collect();
+            let pts: Vec<Vec<[f64; 3]>> = f
+                .iter()
+                .map(|x| face_points(&m, x.face.expect("real")))
+                .collect();
+            let classes = |slots: &[usize]| -> usize {
+                let mut c: Vec<usize> = slots.iter().map(|&s| setup.plane_ix[s]).collect();
+                c.sort_unstable();
+                c.dedup();
+                c.len()
+            };
+            let all: Vec<usize> = (0..f.len()).collect();
+            tot[0] += all.len() * classes(&all);
+
+            // (1) the chooser as built.
+            let t = choose_tree(&m, f, setup.n_a, 0);
+            let mut leaves = Vec::new();
+            sim_walk(&t, 0, all.clone(), &boxes, &mut leaves);
+            for l in &leaves {
+                tot[1] += l.len() * classes(l);
+                worst[0] = worst[0].max(l.len());
+            }
+
+            // (2) separating chooser + single-operand early-out.
+            let mut leaves2 = Vec::new();
+            sep_build(
+                &boxes,
+                &pts,
+                setup.n_a,
+                &all,
+                root_box(&boxes),
+                0,
+                &mut leaves2,
+            );
+            for l in &leaves2 {
+                let one = l.iter().all(|&s| s < setup.n_a) || l.iter().all(|&s| s >= setup.n_a);
+                single_leaves.1 += 1;
+                if one {
+                    single_leaves.0 += 1;
+                    continue; // §4.5.1: no arrangement at all
+                }
+                tot[2] += l.len() * classes(l);
+                worst[1] = worst[1].max(l.len());
+            }
+            acc = super::boolean(&mut m, BoolKind::Fuse, acc, fin)
+                .expect("fuse")
+                .0[0];
+            m.rebuild_adjacency();
+        }
+        println!("face-class pairs over the fold:");
+        println!("  whole model            {:>10}", tot[0]);
+        println!(
+            "  balance chooser        {:>10}  ({:.2}x)   worst leaf {}",
+            tot[1],
+            tot[0] as f64 / tot[1] as f64,
+            worst[0]
+        );
+        println!(
+            "  separating + early-out {:>10}  ({:.2}x)   worst leaf {}",
+            tot[2],
+            tot[0] as f64 / tot[2].max(1) as f64,
+            worst[1]
+        );
+        println!(
+            "  single-operand leaves  {} of {}",
+            single_leaves.0, single_leaves.1
+        );
+    }
+
+    fn root_box(boxes: &[[[f64; 2]; 3]]) -> [[f64; 2]; 3] {
+        let mut r = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+        for b in boxes {
+            for k in 0..3 {
+                r[k][0] = r[k][0].min(b[k][0]);
+                r[k][1] = r[k][1].max(b[k][1]);
+            }
+        }
+        r
+    }
+
+    fn sim_walk(
+        t: &SplitTree,
+        node: usize,
+        slots: Vec<usize>,
+        boxes: &[[[f64; 2]; 3]],
+        out: &mut Vec<Vec<usize>>,
+    ) {
+        match t.nodes[node] {
+            None => out.push(slots),
+            Some((p, lo, hi)) => {
+                let (axis, at) = t.planes[p];
+                let l = slots
+                    .iter()
+                    .copied()
+                    .filter(|&s| boxes[s][axis][0] < at)
+                    .collect();
+                let h = slots
+                    .iter()
+                    .copied()
+                    .filter(|&s| boxes[s][axis][1] > at)
+                    .collect();
+                sim_walk(t, lo, l, boxes, out);
+                sim_walk(t, hi, h, boxes, out);
+            }
+        }
+    }
+
+    /// EMBER §4.5.3: cut where it **separates the operands**, so §4.5.1 can skip whole regions.
+    #[allow(clippy::too_many_arguments)]
+    fn sep_build(
+        boxes: &[[[f64; 2]; 3]],
+        pts: &[Vec<[f64; 3]>],
+        n_a: usize,
+        slots: &[usize],
+        node_box: [[f64; 2]; 3],
+        depth: usize,
+        out: &mut Vec<Vec<usize>>,
+    ) {
+        let one = slots.iter().all(|&s| s < n_a) || slots.iter().all(|&s| s >= n_a);
+        if one || depth >= 8 || slots.len() <= MAX_LEAF_FACES {
+            out.push(slots.to_vec());
+            return;
+        }
+        // The other operand's box within this node: cutting at its faces peels off regions that
+        // hold only one operand.
+        let mut bbox = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+        for &s in slots.iter().filter(|&&s| s >= n_a) {
+            for k in 0..3 {
+                bbox[k][0] = bbox[k][0].min(boxes[s][k][0]);
+                bbox[k][1] = bbox[k][1].max(boxes[s][k][1]);
+            }
+        }
+        // Candidates: the six sides of that box, kept strictly inside the node.
+        let mut best: Option<(usize, usize, f64)> = None; // (score, axis, at)
+        for axis in 0..3 {
+            for &c in &[bbox[axis][0], bbox[axis][1]] {
+                if !(node_box[axis][0] < c && c < node_box[axis][1]) {
+                    continue;
+                }
+                let at = snap(pts, slots, axis, c, node_box);
+                let Some(at) = at else { continue };
+                let l: Vec<usize> = slots
+                    .iter()
+                    .copied()
+                    .filter(|&s| boxes[s][axis][0] < at)
+                    .collect();
+                let h: Vec<usize> = slots
+                    .iter()
+                    .copied()
+                    .filter(|&s| boxes[s][axis][1] > at)
+                    .collect();
+                if l.is_empty() || h.is_empty() {
+                    continue;
+                }
+                // Score: how many faces land in a side that holds only one operand.
+                let solo = |v: &Vec<usize>| {
+                    if v.iter().all(|&s| s < n_a) || v.iter().all(|&s| s >= n_a) {
+                        v.len()
+                    } else {
+                        0
+                    }
+                };
+                let score = solo(&l) + solo(&h);
+                if best.is_none_or(|(b, _, _)| score > b) {
+                    best = Some((score, axis, at));
+                }
+            }
+        }
+        let Some((_, axis, at)) = best else {
+            out.push(slots.to_vec());
+            return;
+        };
+        let l: Vec<usize> = slots
+            .iter()
+            .copied()
+            .filter(|&s| boxes[s][axis][0] < at)
+            .collect();
+        let h: Vec<usize> = slots
+            .iter()
+            .copied()
+            .filter(|&s| boxes[s][axis][1] > at)
+            .collect();
+        let (mut lb, mut hb) = (node_box, node_box);
+        lb[axis][1] = at;
+        hb[axis][0] = at;
+        sep_build(boxes, pts, n_a, &l, lb, depth + 1, out);
+        sep_build(boxes, pts, n_a, &h, hb, depth + 1, out);
+    }
+
+    /// Move `want` to the nearest vertex-free spot inside the node.
+    fn snap(
+        pts: &[Vec<[f64; 3]>],
+        slots: &[usize],
+        axis: usize,
+        want: f64,
+        node_box: [[f64; 2]; 3],
+    ) -> Option<f64> {
+        let (lo, hi) = (node_box[axis][0], node_box[axis][1]);
+        let mut cs: Vec<f64> = slots
+            .iter()
+            .flat_map(|&s| pts[s].iter().map(move |p| p[axis]))
+            .filter(|c| (lo..=hi).contains(c))
+            .collect();
+        cs.push(lo);
+        cs.push(hi);
+        cs.sort_by(f64::total_cmp);
+        cs.dedup();
+        cs.windows(2)
+            .map(|w| (0.5 * (w[0] + w[1]), w[1] - w[0]))
+            .filter(|&(m, g)| g > 1e-9 * (hi - lo).abs() && lo < m && m < hi)
+            .min_by(|a, b| (a.0 - want).abs().total_cmp(&(b.0 - want).abs()))
+            .map(|(m, _)| m)
+    }
+
+    /// SPIKE: where does a subdivided boolean's time actually go? The face-class proxy said the
+    /// balance chooser should be 1.8x cheaper and it measured 1.7x *slower*, so the proxy is
+    /// missing the dominant term. This times the phases of one boolean, both ways.
+    #[test]
+    #[ignore = "spike"]
+    fn spike_where_the_time_goes() {
+        let n = 60i128;
+        let mut m = Model::new();
+        let mut acc = m.add_cuboid(
+            Point3::from_array([-3.0, -3.0, 0.0]),
+            Point3::from_array([3.0, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        for i in 0..n {
+            let fin = m.add_cuboid(
+                Point3::from_array([2.0, -0.4, 0.0]),
+                Point3::from_array([8.0, 0.4, 1.0]),
+            );
+            m.rebuild_adjacency();
+            let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+            if i + 1 == n {
+                // The last boolean, the expensive one.
+                for (tag, how) in [("whole", None), ("tree", Some(()))] {
+                    let t0 = std::time::Instant::now();
+                    let setup = plane_index_setup(&m, acc, fin).expect("setup");
+                    let t_setup = t0.elapsed();
+                    let PlaneSetup {
+                        planes: faces_tab,
+                        surf_ix,
+                        inc_a,
+                        inc_b,
+                        n_a,
+                        geom,
+                        plane_ix,
+                        class_owner,
+                        standard,
+                        notes,
+                    } = setup;
+                    let mut geom = geom;
+                    let mut class_owner = class_owner;
+                    let mut base = None;
+                    let sub = how.map(|()| {
+                        base = Some(geom.len());
+                        choose_tree(&m, &faces_tab, n_a, 0)
+                    });
+                    // The split classes need a `&mut Model` for their surfaces; use a scratch one.
+                    let mut scratch = Model::new();
+                    if let Some(tree) = &sub {
+                        for &(axis, at) in &tree.planes {
+                            geom.push(split_plane_class(&mut scratch, axis, at));
+                            class_owner.push(None);
+                        }
+                    }
+                    let jd = Judge::new(&geom, standard, &notes);
+                    let how = match &sub {
+                        Some(t) => Subdivision::Tree(t.clone()),
+                        None => Subdivision::Whole,
+                    };
+                    let t1 = std::time::Instant::now();
+                    let mut ftab = faces_tab.clone();
+                    let mut pix = plane_ix.clone();
+                    let regions = regions_for(
+                        &how, &m, acc, fin, &mut ftab, &surf_ix, &inc_a, &inc_b, &jd, &mut pix,
+                        base,
+                    )
+                    .expect("regions");
+                    let t_regions = t1.elapsed();
+                    let pairs: usize = regions
+                        .iter()
+                        .map(|r| {
+                            r.classes.len() * r.input.faces.iter().map(Vec::len).sum::<usize>()
+                        })
+                        .sum();
+                    let t2 = std::time::Instant::now();
+                    let faces = trace_result_faces(
+                        &m,
+                        BoolKind::Fuse,
+                        acc,
+                        fin,
+                        &jd,
+                        &ftab,
+                        &pix,
+                        n_a,
+                        &class_owner,
+                        crate::reuse::ClassReuse::Off,
+                        &regions,
+                    )
+                    .expect("faces");
+                    let t_trace = t2.elapsed();
+                    let t3 = std::time::Instant::now();
+                    let mut faces = faces;
+                    if sub.is_some() {
+                        insert_t_vertices(&mut faces, &jd);
+                    }
+                    let merged = crate::boolean::unify_coplanar_faces(faces, &jd).expect("merge");
+                    let t_merge = t3.elapsed();
+                    println!(
+                        "{tag:6}: setup {:>7.1?} regions {:>8.1?} trace {:>8.1?} merge {:>7.1?}  \
+                         | regions {:2} pairs {:6} local faces {}",
+                        t_setup,
+                        t_regions,
+                        t_trace,
+                        t_merge,
+                        regions.len(),
+                        pairs,
+                        merged.len()
+                    );
+                }
+            }
+            acc = super::boolean(&mut m, BoolKind::Fuse, acc, fin)
+                .expect("fuse")
+                .0[0];
+            m.rebuild_adjacency();
+        }
     }
 }
