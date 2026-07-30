@@ -107,6 +107,17 @@ impl Surface {
         }
     }
 
+    /// **The rounding [`distance`](Surface::distance) itself contributes**, for a caller comparing
+    /// that residual against a tolerance that describes only where `p` came from. See
+    /// `Plane::distance_eps`.
+    #[inline]
+    pub fn distance_eps(&self, p: Point3) -> f64 {
+        match self {
+            Surface::Plane(s) => s.distance_eps(p),
+            Surface::Cylinder(s) => s.distance_eps(p),
+        }
+    }
+
     /// Whether `p` lies on the surface within `tol` (a caller-supplied epsilon).
     #[inline]
     pub fn contains(&self, p: Point3, tol: f64) -> bool {

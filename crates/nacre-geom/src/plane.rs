@@ -111,6 +111,30 @@ impl Plane {
         self.signed_distance(p).abs()
     }
 
+    /// **What [`distance`](Plane::distance) can report for a point that is exactly on the plane** —
+    /// the f64 rounding of its own eight operations, and nothing about where `p` came from.
+    ///
+    /// A caller asking "is this vertex on this face?" compares a residual against a tolerance, and
+    /// the tolerance it has to hand is the *vertex's* — how far the point may sit from where it
+    /// should be. That says nothing about the arithmetic performed here, so a point that is exactly
+    /// on the plane can still produce a nonzero residual, and the comparison then fails for a
+    /// reason neither operand is responsible for. This is that missing term, derived where the
+    /// operations are rather than re-spelled at the call site.
+    ///
+    /// Three differences, three products and two sums, each round-to-nearest at `≤ ε/2` of its own
+    /// magnitude; with `|normal| = 1` an over-estimate of the whole is `3ε · Σ|pᵢ − oᵢ|`.
+    ///
+    /// ★ It went unnoticed while `Discovered` tolerances were loose enough to absorb it. The one
+    /// place it surfaced — a four-plane concurrency whose vertex is genuinely *on* the plane — had
+    /// been passing with the residual *exactly equal* to the claimed tolerance, saved only by the
+    /// comparison being strict.
+    #[inline]
+    pub fn distance_eps(self, p: Point3) -> f64 {
+        let d = p - self.origin;
+        let spread: f64 = (0..3).map(|i| d[i].abs()).sum();
+        3.0 * f64::EPSILON * spread
+    }
+
     /// Whether `p` lies on the plane within `tol` (a caller-supplied epsilon).
     #[inline]
     pub fn contains(self, p: Point3, tol: f64) -> bool {

@@ -591,7 +591,14 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                     let vh = if he.forward { a } else { b };
                     let vertex = m.vertices.get(vh);
                     let residual = surface.distance(vertex.point);
-                    let tol = tol_of(vertex.origin);
+                    // ★ Plus what the residual's *own* arithmetic can produce. `tol_of` describes
+                    // where the vertex may sit; it says nothing about `Surface::distance`, so a
+                    // vertex exactly on the surface can still report a machine-scale residual and
+                    // be flagged for it. Measured: a four-plane concurrency whose vertex is
+                    // genuinely on the plane sat at residual *exactly equal* to its tolerance, and
+                    // passed only because the comparison is strict — the slack that had been
+                    // covering this term was the loose `Discovered` tolerances of the day.
+                    let tol = tol_of(vertex.origin) + surface.distance_eps(vertex.point);
                     if residual > tol {
                         out.push(Violation::VertexOffSurface {
                             face: fh,

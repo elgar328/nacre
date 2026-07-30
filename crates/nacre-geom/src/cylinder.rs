@@ -132,6 +132,17 @@ impl Cylinder {
         (self.axis.distance(p) - self.radius).abs()
     }
 
+    /// What [`distance`](Cylinder::distance) can report for a point exactly on the surface — see
+    /// `Plane::distance_eps` for why the term exists at all.
+    ///
+    /// A cross product, its norm (a `sqrt`), and the subtraction of the radius. Bounding the lot by
+    /// `4ε` of the magnitudes that enter — the axis distance and the radius — is loose for a
+    /// `sqrt`, which is correctly rounded, and loose is the safe direction here.
+    #[inline]
+    pub fn distance_eps(self, p: Point3) -> f64 {
+        4.0 * f64::EPSILON * (self.axis.distance(p).abs() + self.radius.abs())
+    }
+
     /// Whether `p` lies on the surface within `tol` (a caller-supplied epsilon).
     #[inline]
     pub fn contains(self, p: Point3, tol: f64) -> bool {
