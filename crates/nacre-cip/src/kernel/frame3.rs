@@ -156,10 +156,13 @@ impl Pt3 {
         let (ci, cj) = (self.coord[i], self.coord[j]); // pre-rotation magnitudes for tol
         let (u, v) = (ci - px, cj - py);
         // cos/sin — exact (rational) for the 90°-family, else f64 (with realization tol).
-        let (c, s, exact) = match angle.try_exact_cos_sin() {
-            Some((cr, sr)) => (cr.to_f64(), sr.to_f64(), true),
-            None => (angle.cos(), angle.sin(), false),
-        };
+        //
+        // **Through `Angle`'s single entry point, not re-spelled here.** This function's contract
+        // is to redo the producer's f64 route operation for operation (`Isometry::apply_point`,
+        // which calls the same thing), and a second spelling of "how an angle becomes f64" is
+        // exactly how the two would drift — silently, at the 90°-family, where one route snaps to
+        // `0.0`/`±1.0` and the other lands `cos(90°) ≈ 6e-17`.
+        let (c, s, exact) = angle.cos_sin_f64();
         self.coord[i] = px + u * c - v * s;
         self.coord[j] = py + u * s + v * c;
         // Rotation-realization error (coordinate-mixing), 0 for an exact angle; plus

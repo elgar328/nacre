@@ -377,14 +377,23 @@ impl Angle {
         self.0
     }
 
-    /// cos, realized in f64 (deg→rad via π — the irrational boundary).
-    pub fn cos(self) -> f64 {
-        (self.0.to_f64() * PI / 180.0).cos()
-    }
-
-    /// sin, realized in f64.
-    pub fn sin(self) -> f64 {
-        (self.0.to_f64() * PI / 180.0).sin()
+    /// `(cos, sin)` realized in f64 the plain way — deg→rad via π, the irrational boundary.
+    ///
+    /// **Private, and a pair, because neither half is a rotation on its own.** Nothing in this
+    /// kernel turns a point by a cosine; the operation is *"realize this angle as a rotation's
+    /// `(cos, sin)`"*, and that is [`cos_sin_f64`](Self::cos_sin_f64) — which snaps the
+    /// 90°-family to exact `0`/`±1` where this does not (`cos(90°)` lands ~6e-17 here). Exposing
+    /// this would put the trap next to the safe door on the same public wall.
+    ///
+    /// The radian argument is built **once** for the pair. It used to be built twice — once in a
+    /// `cos()` and once in a `sin()` — two spellings of one expression that had to agree.
+    ///
+    /// **Its error is dominated by that argument, not by libm**: three roundings and a rounded
+    /// `PI` put ~3ε relative on it, and with `|θ| ≤ 2π` that is ~9ε absolute which `d cos =
+    /// −sin·dθ` carries straight through. See `nacre_cip`'s `DA_F64` for what charges it.
+    fn realize_f64(self) -> (f64, f64) {
+        let rad = self.0.to_f64() * PI / 180.0;
+        (rad.cos(), rad.sin())
     }
 
     /// `(cos, sin)` realized in arbitrary precision at `prec` bits — the judgment
@@ -503,16 +512,29 @@ impl Angle {
         }
     }
 
-    /// `(cos, sin)` realized in f64 — **exact** (`0.0`/`±1.0`) for the 90°-family,
-    /// plain [`cos`](Self::cos)/[`sin`](Self::sin) otherwise. The single source of
-    /// truth for realizing a rotation angle into f64: every path that turns a point or
-    /// direction by an angle must go through here, so the quadrantal case never
-    /// re-introduces the `cos(90°)≈6e-17` spurious cross-term (an axis-aligned rotation
-    /// then lands its coordinates exactly on the grid — a 90°-family rotation is tol 0).
-    pub fn cos_sin_f64(self) -> (f64, f64) {
+    /// `(cos, sin, exact)` realized in f64 — **exact** (`0.0`/`±1.0`) for the 90°-family,
+    /// [`realize_f64`](Self::realize_f64) otherwise. The single source of truth for realizing a
+    /// rotation angle into f64: every path that turns a point or direction by an angle must go
+    /// through here, so the quadrantal case never re-introduces the `cos(90°)≈6e-17` spurious
+    /// cross-term (an axis-aligned rotation then lands its coordinates exactly on the grid — a
+    /// 90°-family rotation is tol 0).
+    ///
+    /// **It is the only entry point, and that is enforced rather than asked for**: the plain
+    /// realization is private, so there is no second way to spell this. The declaration used to be
+    /// prose, and `nacre_cip`'s `Pt3::rotate_about` was quietly not honouring it — re-spelling this
+    /// match inline, on the one path whose job is to reproduce a producer's f64 route *bit for
+    /// bit*. The two agreed only because two places happened to say the same thing.
+    ///
+    /// **`exact` is the third value that split them.** A caller accounting for realization error
+    /// needs to know the 90°-family carries none, and returning it here is what removed the
+    /// caller's reason to reimplement the match.
+    pub fn cos_sin_f64(self) -> (f64, f64, bool) {
         match self.try_exact_cos_sin() {
-            Some((cr, sr)) => (cr.to_f64(), sr.to_f64()),
-            None => (self.cos(), self.sin()),
+            Some((cr, sr)) => (cr.to_f64(), sr.to_f64(), true),
+            None => {
+                let (c, s) = self.realize_f64();
+                (c, s, false)
+            }
         }
     }
 }
@@ -623,7 +645,7 @@ impl Isometry {
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
             let (px, py) = (r.point[i].to_f64(), r.point[j].to_f64());
-            let (c, s) = r.angle.cos_sin_f64();
+            let (c, s, _) = r.angle.cos_sin_f64();
             let (dx, dy) = (p[i] - px, p[j] - py);
             q[i] = px + dx * c - dy * s;
             q[j] = py + dx * s + dy * c;
@@ -637,7 +659,7 @@ impl Isometry {
         let mut q = d;
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
-            let (c, s) = r.angle.cos_sin_f64();
+            let (c, s, _) = r.angle.cos_sin_f64();
             let (dx, dy) = (d[i], d[j]);
             q[i] = dx * c - dy * s;
             q[j] = dx * s + dy * c;
@@ -976,11 +998,11 @@ mod tests {
     fn realization_is_f64_while_angle_stays_exact() {
         let a = Angle::from_deg(Rat::from_int(90)).unwrap();
         assert_eq!(a.deg(), Rat::from_int(90)); // angle exact
-        assert!(a.cos().abs() < 1e-15 && a.cos() != 0.0); // realized near 0, not exact
+        let (c, _) = a.realize_f64();
+        assert!(c.abs() < 1e-15 && c != 0.0); // realized near 0, not exact
 
         let z = Angle::from_deg(Rat::from_int(0)).unwrap();
-        assert_eq!(z.cos(), 1.0);
-        assert_eq!(z.sin(), 0.0);
+        assert_eq!(z.realize_f64(), (1.0, 0.0));
     }
 
     /// A 90°-family angle yields exact rational cos/sin, so rotating a rational
@@ -1012,21 +1034,24 @@ mod tests {
         // 45° has no exact rational realization → None (falls to f64/dd).
         let a45 = Angle::from_deg(Rat::from_int(45)).unwrap();
         assert!(a45.try_exact_cos_sin().is_none());
-        assert_ne!(a90.cos(), 0.0); // the general f64 path is not exact at 90°
+        assert_ne!(a90.realize_f64().0, 0.0); // the general f64 path is not exact at 90°
     }
 
-    /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0` (unlike `cos()`/`sin()`
-    /// which realize ~6e-17 at 90°), and falls through to `cos()`/`sin()` otherwise.
+    /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0` (unlike [`Angle::realize_f64`],
+    /// which lands ~6e-17 at 90°) and falls through to it otherwise — **and it says which of the
+    /// two happened**, because the caller accounting for realization error needs to know the
+    /// quadrantal case carries none.
     #[test]
     fn cos_sin_f64_is_exact_for_quadrantal() {
         let deg = |d| Angle::from_deg(Rat::from_int(d)).unwrap();
-        assert_eq!(deg(0).cos_sin_f64(), (1.0, 0.0));
-        assert_eq!(deg(90).cos_sin_f64(), (0.0, 1.0));
-        assert_eq!(deg(180).cos_sin_f64(), (-1.0, 0.0));
-        assert_eq!(deg(270).cos_sin_f64(), (0.0, -1.0));
-        // non-quadrantal: identical to the plain f64 realization.
+        assert_eq!(deg(0).cos_sin_f64(), (1.0, 0.0, true));
+        assert_eq!(deg(90).cos_sin_f64(), (0.0, 1.0, true));
+        assert_eq!(deg(180).cos_sin_f64(), (-1.0, 0.0, true));
+        assert_eq!(deg(270).cos_sin_f64(), (0.0, -1.0, true));
+        // non-quadrantal: identical to the plain f64 realization, and flagged inexact.
         let a45 = deg(45);
-        assert_eq!(a45.cos_sin_f64(), (a45.cos(), a45.sin()));
+        let (c, s) = a45.realize_f64();
+        assert_eq!(a45.cos_sin_f64(), (c, s, false));
     }
 
     /// `apply_point`/`apply_dir` realize a 90°-family rotation bit-exactly: no ~6e-17
@@ -1056,7 +1081,7 @@ mod tests {
 
         // Non-quadrantal: unchanged from the plain cos/sin realization.
         let a = Angle::from_deg(Rat::from_int(37)).unwrap();
-        let (c, s) = (a.cos(), a.sin());
+        let (c, s) = a.realize_f64();
         assert_eq!(
             iso(37).apply_point([3.0, 5.0, 0.0]),
             [3.0 * c - 5.0 * s, 3.0 * s + 5.0 * c, 0.0]
