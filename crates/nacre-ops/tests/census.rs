@@ -10,6 +10,17 @@
 //! ```text
 //! cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
 //! ```
+//!
+//! ★★★ **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same
+//! 130 lines must come out — they do, measured. That is not a formality: `Angle`'s f64 route is
+//! `(deg.to_f64() * PI / 180.0).cos()`, and LLVM evaluates that at compile time wherever it can see
+//! the angle, one ulp away from what libm returns at run time. Two builds disagreeing here would
+//! mean the coordinates a model stores depend on how it was compiled.
+//!
+//! ★★ **What keeps them equal is that an angle crosses the model store** before anything realizes
+//! it — written into an `Operation`, pushed, read back — and no optimiser propagates a constant
+//! through a heap structure. So this is a real check with a real way to fail, and no in-process
+//! test can express it: a test runs in one profile. It belongs here, next to the diff it extends.
 
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};

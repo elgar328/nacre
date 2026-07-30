@@ -413,8 +413,27 @@ impl Angle {
     ///
     /// **Its error is dominated by that argument, not by libm**: three roundings and a rounded
     /// `PI` put ~3ε relative on it, and with `|θ| ≤ 2π` that is ~9ε absolute which `d cos =
-    /// −sin·dθ` carries straight through. [`realization_error`](Self::realization_error) measures
-    /// the result rather than bounding the terms, so it captures this and libm together.
+    /// −sin·dθ` carries straight through. [`realization_error_of`](Self::realization_error_of)
+    /// measures the result rather than bounding the terms, so it captures this and libm together.
+    ///
+    /// ★★★ **It is not a function of `self` alone, and no amount of care here makes it one.**
+    /// Measured: `sin(27°)` comes out one ulp apart between a debug and a release build, and
+    /// between two call sites *within one release build* — LLVM evaluates this at compile time
+    /// wherever the angle is a visible constant, and its result differs from libm's. Callers that
+    /// must agree bit for bit therefore cannot rely on "we both called the same function".
+    ///
+    /// ★★ **What they can rely on is that the angle crossed the model store.** The kernel's two
+    /// realizing routes — `Isometry::apply_point` and `nacre_cip`'s `Pt3::rotate_about` — both read
+    /// their angle back out of a `Model` before realizing it, and no optimiser propagates a
+    /// constant through a heap structure, so both call libm and agree. Measured over the whole
+    /// census, which is bit-identical between the two profiles, and pinned per-vertex by
+    /// `nacre_ops`' `replay_reproduces_the_stored_coordinate`.
+    ///
+    /// ★ **So a new route that realizes an `Angle` it did not store is outside that argument.**
+    /// The way to stop needing the argument is to stop calling libm: realize `cos`/`sin` at
+    /// arbitrary precision and round *that* to f64, which is correctly rounded by contract and
+    /// identical on every platform and profile. That moves every stored rotated coordinate and is
+    /// its own cell.
     fn realize_f64(self) -> (f64, f64) {
         let rad = self.0.to_f64() * PI / 180.0;
         (rad.cos(), rad.sin())
@@ -536,12 +555,17 @@ impl Angle {
         }
     }
 
-    /// `(cos, sin, exact)` realized in f64 — **exact** (`0.0`/`±1.0`) for the 90°-family,
+    /// `(cos, sin)` realized in f64 — **exact** (`0.0`/`±1.0`) for the 90°-family,
     /// [`realize_f64`](Self::realize_f64) otherwise. The single source of truth for realizing a
     /// rotation angle into f64: every path that turns a point or direction by an angle must go
     /// through here, so the quadrantal case never re-introduces the `cos(90°)≈6e-17` spurious
     /// cross-term (an axis-aligned rotation then lands its coordinates exactly on the grid — a
     /// 90°-family rotation is tol 0).
+    ///
+    /// ★★ **"Single source" is about the spelling, and the spelling is not the whole story.** Two
+    /// callers of this function can still be handed values one ulp apart, because the compiler may
+    /// realize a visible constant angle itself — see [`realize_f64`](Self::realize_f64) for the
+    /// measurement and for what actually holds the kernel's two routes together.
     ///
     /// **It is the only entry point, and that is enforced rather than asked for**: the plain
     /// realization is private, so there is no second way to spell this. The declaration used to be

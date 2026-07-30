@@ -92,6 +92,44 @@ mod tests {
         })
     }
 
+    /// One step of a motion chain — the two operations that leave a `MotionNode` behind.
+    enum Step {
+        // Boxed: an `Isometry` dwarfs a `(Axis, Rat)`, and clippy is right that the unboxed
+        // variant would make every `Flip` in the array pay for it.
+        Move(Box<Isometry>),
+        Flip(Axis, R),
+    }
+
+    fn reflected(
+        m: &mut Model,
+        s: Handle<nacre_topo::Solid>,
+        axis: Axis,
+        offset: R,
+    ) -> Handle<nacre_topo::Solid> {
+        let OpOutput::Mirror { solid } = apply(
+            m,
+            &Operation::Mirror {
+                solid: s,
+                axis,
+                offset,
+            },
+        )
+        .unwrap() else {
+            panic!("expected Mirror");
+        };
+        m.rebuild_adjacency();
+        solid
+    }
+
+    /// A turn about `axis` through an integer pivot, by `n/d` degrees.
+    fn turn(axis: Axis, pivot: [i128; 3], (n, d): (i128, i128)) -> Isometry {
+        Isometry::rotation(SRot {
+            axis,
+            point: pivot.map(R::from_int),
+            angle: Angle::from_deg(R::new(n, d).unwrap()).unwrap(),
+        })
+    }
+
     fn transformed(
         m: &mut Model,
         s: Handle<nacre_topo::Solid>,
@@ -118,36 +156,84 @@ mod tests {
     /// the same order, that the producer did. Every motion node owes this, and `Mirror` is where
     /// it is easiest to lose — `Pt3::mirror` walks the same `2c − x` that `AxisMirror::point` did,
     /// rather than an algebraically equal rearrangement.
+    ///
+    /// ★★★ **It is also what stands between this kernel and a realization that is not a function
+    /// of its angle.** `Angle`'s f64 route is `(deg.to_f64() * PI / 180.0).cos()`, and that is
+    /// measured to give two answers one ulp apart — between a debug and a release build, and
+    /// between two call sites within one release build, where LLVM evaluates a literal-angle site
+    /// at compile time and leaves the other to libm. Both routes below realize the same angle, so a
+    /// producer and a consumer that folded differently would land different coordinates here.
+    ///
+    /// ★★ **What holds it is that the angle crosses the model store.** It is written into an
+    /// `Operation::Transform`, pushed, and read back out before either route realizes it — and no
+    /// optimiser propagates a constant through a heap structure. That is *why* this passes with a
+    /// literal angle, and it is worth knowing: a future route that realizes an `Angle` it never
+    /// stored is not covered by this argument, only by this test happening to exercise it.
+    ///
+    /// **Measured, not argued:** the whole census is bit-identical between a debug and a release
+    /// build (`tests/census.rs` documents the diff), which is the direct reading of the same claim
+    /// over 130 cases rather than one.
     #[test]
     fn replay_reproduces_the_stored_coordinate() {
-        let mut m = Model::new();
-        let s = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 3.0, 4.0]),
-        );
-        m.rebuild_adjacency();
-        let r = transformed(&mut m, s, &rot30z());
-        let sh = m.solids.get(r).outer;
+        // ★ A chain, not one turn, and none of it "nice": a pivot off the origin, an angle whose
+        // realization is nowhere near a quadrantal one, then a translate and a reflection. A single
+        // Z-turn about a rational pivot exercises one node and one of the two rotate axes.
+        let mv = |iso| Step::Move(Box::new(iso));
+        let chains: [Vec<Step>; 3] = [
+            vec![mv(rot30z())],
+            vec![
+                mv(turn(Axis::Z, [1, 1, 0], (2749, 71))),
+                mv(turn(Axis::X, [0, 3, 2], (617, 9))),
+            ],
+            vec![
+                mv(turn(Axis::Y, [5, 0, 1], (89999, 1000))),
+                mv(Isometry::translation([
+                    R::new(7, 3).unwrap(),
+                    R::from_int(-2),
+                    R::from_int(0),
+                ])),
+                // ★ A reflection between two turns, because this is the node the contract is
+                // easiest to lose on and the one whose parity the chain has to carry.
+                Step::Flip(Axis::X, R::new(1, 2).unwrap()),
+                mv(turn(Axis::Z, [0, 0, 0], (271, 4))),
+            ],
+        ];
         let mut checked = 0;
-        for &fh in &m.shells.get(sh).faces {
-            for he in &m.faces.get(fh).outer.half_edges {
-                for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
-                    let Origin::Moved {
-                        base,
-                        motion: rotation,
-                    } = m.vertices.get(vh).origin
-                    else {
-                        panic!("a rotated solid's vertices carry their rotation");
-                    };
-                    let replayed =
-                        replay_chain_coord(&m, m.vertices.get(base).point.as_array(), rotation)
-                            .unwrap();
-                    assert_eq!(replayed, m.vertices.get(vh).point.as_array());
-                    checked += 1;
+        for chain in &chains {
+            let mut m = Model::new();
+            let s = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([2.0, 3.0, 4.0]),
+            );
+            m.rebuild_adjacency();
+            let mut r = s;
+            for step in chain {
+                r = match step {
+                    Step::Move(iso) => transformed(&mut m, r, iso),
+                    Step::Flip(axis, offset) => reflected(&mut m, r, *axis, *offset),
+                };
+            }
+            let sh = m.solids.get(r).outer;
+            for &fh in &m.shells.get(sh).faces {
+                for he in &m.faces.get(fh).outer.half_edges {
+                    for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                        let Origin::Moved {
+                            base,
+                            motion: rotation,
+                        } = m.vertices.get(vh).origin
+                        else {
+                            panic!("a moved solid's vertices carry their motion");
+                        };
+                        let replayed =
+                            replay_chain_coord(&m, m.vertices.get(base).point.as_array(), rotation)
+                                .unwrap();
+                        assert_eq!(replayed, m.vertices.get(vh).point.as_array());
+                        checked += 1;
+                    }
                 }
             }
         }
-        assert!(checked > 0, "walked no vertices");
+        assert!(checked > 100, "walked only {checked} vertices");
     }
 
     /// A chain is read root-to-leaf, so replaying it applies the rotations in the order they
