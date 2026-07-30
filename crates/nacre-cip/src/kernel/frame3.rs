@@ -20,8 +20,8 @@
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
 use super::HP_RM;
-use super::interval::{DA_F64, bf_mag, rat_to_big, rat_to_hp};
 use super::interval::{HpIv, Iv};
+use super::interval::{bf_mag, rat_to_big, rat_to_hp};
 use astro_float::BigFloat;
 use nacre_scalar::{Angle, Axis, Bound, Orient, Rat};
 #[cfg(feature = "parallel")]
@@ -151,10 +151,19 @@ impl Pt3 {
     /// pivot adds its own f64 rounding (`coord − p`, `p + …`, the pivot's Rat→f64) —
     /// present even for an exact angle — covered by the `piv` term (validated H-f).
     ///
-    /// **Two error terms, and they are different kinds.** `rot` is the one thing here without a
-    /// rounding contract (`f64::cos`), so it takes the measured [`DA_F64`]. `piv` is nothing but
-    /// round-to-nearest steps and a rational's realization, so it is derived and measured the way
-    /// [`translate`](Self::translate) and [`mirror`](Self::mirror) derive and measure theirs.
+    /// **Two error terms, and neither is a guess.** `rot` carries the one input here without a
+    /// rounding contract (`f64::cos`) and charges what `Angle::realization_error_of` *measured* of
+    /// the very pair used below; `piv` is nothing but round-to-nearest steps and a realization, so it
+    /// is derived and measured the way [`translate`](Self::translate) and [`mirror`](Self::mirror)
+    /// derive and measure theirs.
+    ///
+    /// ★★ **`rot` is per axis, and it has to be.** The two coordinates are not the same expression:
+    /// `i` mixes `u·c − v·s` while `j` mixes `u·s + v·c`, so `u` pairs with `cos`'s error on one
+    /// and with `sin`'s on the other. A single shared term is only sound when the two errors are
+    /// charged the same amount — which a *constant* did, and a measurement does not. Measured on a
+    /// 356.65° turn, `sin` was eight times further out than `cos`, and the axis whose `u` met `sin`
+    /// needed 2.4× what the other did. The old shared charge hid that; the ground-truth test found
+    /// it the moment the constant left.
     pub fn rotate_about(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = axis.plane();
         let (px, py) = (point[i].to_f64(), point[j].to_f64());
@@ -167,19 +176,47 @@ impl Pt3 {
         // which calls the same thing), and a second spelling of "how an angle becomes f64" is
         // exactly how the two would drift — silently, at the 90°-family, where one route snaps to
         // `0.0`/`±1.0` and the other lands `cos(90°) ≈ 6e-17`.
-        let (c, s, exact) = angle.cos_sin_f64();
+        let (c, s) = angle.cos_sin_f64();
         self.coord[i] = px + u * c - v * s;
         self.coord[j] = py + u * s + v * c;
-        // Rotation-realization error (coordinate-mixing), 0 for an exact angle. This is the term
-        // `DA_F64` exists for: `cos`/`sin` are the one input here without a rounding contract.
-        let rot = if exact {
-            0.0
+        // **The rotation's own error — measured for this angle, not charged from a constant.**
+        //
+        // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth. That used to be a
+        // constant measured once and written into a doc: sound only on machines like the one it was
+        // taken on, which a kernel that ships to browsers cannot assume. Measured, a worse platform
+        // reports a bigger number and the tolerance grows to match.
+        //
+        // ★ **Per axis, because the two coordinates mix the pair differently** — `u` meets `c` on
+        // one and `s` on the other. See this function's doc for what that cost when it was shared.
+        //
+        // **The arithmetic of the products and their combination lives here too, and only here.**
+        // For an origin pivot `piv` below is skipped entirely, so nothing else would cover
+        // `fl(u·c)`, `fl(v·s)` and their combination. Each is `≤ ε/2` of a magnitude bounded by
+        // `|u| + |v|`, so `1·ε` of that sum covers all three.
+        //
+        // ★ **Both are gated on the realization being inexact, and that gate is the invariant.**
+        // When `cos`/`sin` are `0`/`±1` the products and their combination are *exact*, not merely
+        // small — so a quadrantal origin rotation contributes nothing at all, which is what keeps
+        // it at tol 0 (`quadrantal_origin_chain_is_tol_zero`) and keeps axis-aligned models on the
+        // exact predicate path. An unconditional arithmetic term would break that quietly.
+        //
+        // ★★★ **It measures `c` and `s` — the values three lines above — not the angle.** They are
+        // handed in rather than re-derived because a second realization of one angle is measured to
+        // be able to differ from the first (`Angle`'s `F64_ERR` says where and why). An error taken
+        // against a pair that never reached `coord` would bound a number this kernel never stored.
+        let (dc, ds) = angle.realization_error_of(c, s);
+        let (rot_i, rot_j) = if dc == 0.0 && ds == 0.0 {
+            (0.0, 0.0)
         } else {
-            (u.abs() + v.abs()) * DA_F64
+            let arith = f64::EPSILON * (u.abs() + v.abs());
+            (
+                u.abs() * dc + v.abs() * ds + arith,
+                u.abs() * ds + v.abs() * dc + arith,
+            )
         };
         // **The pivot arithmetic, charged the way `translate` and `mirror` charge theirs.**
         //
-        // It used to take `DA_F64` — the constant that exists *because `f64::cos` has no accuracy
+        // It used to take the trig constant — which existed *because `f64::cos` has no accuracy
         // contract* — for three operations that all do have one. Its two siblings in this `impl`
         // already do the right thing, and this now matches them: **measure** the rational's
         // realization, **count** the round-to-nearest steps.
@@ -191,26 +228,28 @@ impl Pt3 {
         //   `|s| ≤ 1` bound the pair plainly, and the outer `2.0` is the margin every sibling
         //   term carries. **Exactly zero for a dyadic pivot** — the common case, which the old
         //   lumped charge still billed.
-        // - Five contracted roundings build `px + u·c − v·s`: the two differences, the two
-        //   products, their difference, and the final sum. Each is `≤ ε/2` of a magnitude bounded
-        //   by `|ci| + |cj| + |px| + |py|`, so `2.5·ε` of that sum covers them; `5.0` is that with
-        //   the same doubling.
+        // - **The roundings the pivot itself adds are three**: the two differences `ci − px` and
+        //   `cj − py`, and the final sum `px + …`. (The products and their combination belong to
+        //   `rot` above — they happen whether or not there is a pivot.) Each is `≤ ε/2` of a
+        //   magnitude bounded by `|ci| + |cj| + |px| + |py|`, so `1.5·ε` of that sum covers them;
+        //   `3.0` is that with the same doubling.
         //
         // Origin pivot stays exactly 0: `ci − 0.0` and `0.0 + x` are exact, so there is nothing
-        // to charge — and the whole term is skipped rather than measured.
+        // to charge — and the whole term is skipped rather than measured. This term *is* symmetric
+        // in the two axes, unlike `rot`: it is built from magnitudes, not from which of `cos`/`sin`
+        // each coordinate met.
         let piv = if px != 0.0 || py != 0.0 {
             let realized = |r: Rat, f: f64| {
                 bf_mag(&rat_to_big(r, 120).sub(&BigFloat::from_f64(f, 120), 120, HP_RM)).abs()
             };
             2.0 * (2.0 * realized(point[i], px) + realized(point[j], py))
-                + 5.0 * f64::EPSILON * (ci.abs() + cj.abs() + px.abs() + py.abs())
+                + 3.0 * f64::EPSILON * (ci.abs() + cj.abs() + px.abs() + py.abs())
         } else {
             0.0
         };
-        let mix = rot + piv;
         let (ti, tj) = (self.tol[i], self.tol[j]);
-        self.tol[i] = c.abs() * ti + s.abs() * tj + mix;
-        self.tol[j] = s.abs() * ti + c.abs() * tj + mix;
+        self.tol[i] = c.abs() * ti + s.abs() * tj + rot_i + piv;
+        self.tol[j] = s.abs() * ti + c.abs() * tj + rot_j + piv;
         // Rebuild the shared slice with the new node appended. This runs when a solid is
         // *transformed*, never on the judgment path, so the copy is not hot — and in exchange
         // `clone` becomes a refcount bump instead of an allocation, which the judgment path
@@ -2310,10 +2349,16 @@ mod tests {
             let hp = p.hp_coord(GT);
             for (axis, hp_a) in hp.iter().enumerate() {
                 let err = abs_err(p.coord[axis], hp_a, GT);
+                // ★ **The chain belongs in the failure, not only in the summary below.** An
+                // exceeded bound means a term is missing, and the first thing needed is which
+                // links were involved — but the panic aborts before any summary prints, so the
+                // shape has to travel with the message. It is how the asymmetry in `rot` was
+                // found: the offending chain was `R M`, and nothing else was.
                 assert!(
                     err <= p.tol[axis] || err < 1e-100,
-                    "tol must bound the error: axis {axis}, err {err:e} > tol {:e}",
-                    p.tol[axis]
+                    "tol must bound the error: axis {axis}, err {err:e} > tol {:e}, links:{}",
+                    p.tol[axis],
+                    shape.desc
                 );
                 if p.tol[axis] > 0.0 {
                     let r = err / p.tol[axis];
@@ -2366,13 +2411,12 @@ mod tests {
             exact_seen && pivot_seen && translate_seen && mirror_seen,
             "corpus must mix exact angles, pivots, translations and reflections"
         );
-        // **How much of the bound the real error actually uses.** `DA_F64` is the one constant in
-        // this kernel that cannot be derived — `f64::cos`'s accuracy is not contracted by Rust or
-        // by any libm this runs on — so it rests on measurement, and this is the measurement.
+        // **How much of the bound the real error actually uses.** Every term feeding `tol` is now
+        // either derived from round-to-nearest or measured against arbitrary precision — no
+        // constant is left to justify — so this is what says the *assembly* of them holds.
         //
-        // ★ It is also the *live* figure: `DA_F64`'s doc points here rather than restating a
-        // number, because a number written beside the constant went stale the moment reflections
-        // joined this corpus and stayed wrong for two commits.
+        // ★ It stays a figure nobody writes down: a number pasted into a doc went stale the moment
+        // reflections joined this corpus, and was wrong for two commits.
         eprintln!(
             "[tol tightness] worst err/tol: {worst_ratio:.4} all, {worst_rot:.4} rotation-only"
         );
@@ -2425,12 +2469,18 @@ mod tests {
                 (3, 1),
             ] {
                 let base = [ri(bxn, bxd), ri(byn, byd), ri(0, 1)];
-                let p = Pt3::at(base).rotate(Axis::Z, deg(an, ad));
+                let angle = deg(an, ad);
+                let p = Pt3::at(base).rotate(Axis::Z, angle);
                 let hp = p.compute_hp(GT);
+                // The realization error this angle actually has — the same quantity `rotate_about`
+                // charges. Using it makes the refutation stronger than a constant would: even the
+                // *measured* trig error, applied tangentially, fails to bound.
+                let (c, s) = angle.cos_sin_f64();
+                let (dc, ds) = angle.realization_error_of(c, s);
                 for (k, hp_k) in hp.iter().enumerate().take(2) {
                     let err = abs_err(p.coord[k], hp_k, GT);
                     // (1) the refuted tangential prediction: the *other* coordinate's magnitude.
-                    if err > DA_F64 * p.coord[1 - k].abs() {
+                    if err > [dc, ds][k] * p.coord[1 - k].abs() {
                         tangential_sound = false;
                         first_break.get_or_insert((bxn, bxd, byn, byd, an, ad, k));
                     }

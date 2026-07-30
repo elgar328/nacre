@@ -76,10 +76,33 @@ thread_local! {
     /// so a model whose judging precision grows simply lands on a different entry rather than
     /// reading one realized at the wrong depth.
     static TRIG: RefCell<HashMap<(Angle, usize), TrigAt>> = RefCell::new(HashMap::new());
+
+    /// **How far this platform's `f64` cos/sin land from the truth** — see
+    /// [`Angle::realization_error_of`].
+    ///
+    /// ★ **No precision in the key, and that is the point.** [`TRIG`] is keyed by
+    /// `(angle, precision)` because it holds a value *realized at* a depth. This holds how wrong
+    /// the **f64** realization is, and f64 has one precision. The `P` used to measure it says how
+    /// finely the answer is read, not what the answer is.
+    ///
+    /// ★★★ **The realized pair is in the key, not just the angle.** The quantity is how far *this
+    /// `(cos, sin)`* sits from the truth, so the pair that was measured is part of the question.
+    /// Keying on the angle alone would hand a caller the error of a realization it did not use —
+    /// which is not hypothetical: `(deg.to_f64() * PI / 180.0).sin()` is measured to differ by
+    /// 1 ulp between a debug and a release build, and between two call sites within one release
+    /// build (LLVM folds the literal-angle site at compile time and leaves the other to libm).
+    ///
+    /// ★★ **So a second entry under one angle is a signal, not waste**: it says two realizations of
+    /// that angle are live in this process. The tests read the count for exactly that reason.
+    static F64_ERR: RefCell<HashMap<RealizedAt, (f64, f64)>> = RefCell::new(HashMap::new());
 }
 
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
 type TrigAt = (BigFloat, BigFloat, Bound, Bound);
+
+/// An angle **together with one f64 realization of it** — `(angle, cos.to_bits(), sin.to_bits())`.
+/// The bits, not the floats, because the key has to be `Hash` and `Eq`.
+type RealizedAt = (Angle, u64, u64);
 
 /// How many entries [`TRIG`] holds — for the tests that pin the memo actually memoizes.
 ///
@@ -390,7 +413,8 @@ impl Angle {
     ///
     /// **Its error is dominated by that argument, not by libm**: three roundings and a rounded
     /// `PI` put ~3ε relative on it, and with `|θ| ≤ 2π` that is ~9ε absolute which `d cos =
-    /// −sin·dθ` carries straight through. See `nacre_cip`'s `DA_F64` for what charges it.
+    /// −sin·dθ` carries straight through. [`realization_error`](Self::realization_error) measures
+    /// the result rather than bounding the terms, so it captures this and libm together.
     fn realize_f64(self) -> (f64, f64) {
         let rad = self.0.to_f64() * PI / 180.0;
         (rad.cos(), rad.sin())
@@ -525,17 +549,88 @@ impl Angle {
     /// match inline, on the one path whose job is to reproduce a producer's f64 route *bit for
     /// bit*. The two agreed only because two places happened to say the same thing.
     ///
-    /// **`exact` is the third value that split them.** A caller accounting for realization error
-    /// needs to know the 90°-family carries none, and returning it here is what removed the
-    /// caller's reason to reimplement the match.
-    pub fn cos_sin_f64(self) -> (f64, f64, bool) {
+    /// A caller accounting for the realization's *error* hands what it got back to
+    /// [`realization_error_of`](Self::realization_error_of), which returns zero for exactly this
+    /// family — so nothing here has to report which branch ran.
+    pub fn cos_sin_f64(self) -> (f64, f64) {
         match self.try_exact_cos_sin() {
-            Some((cr, sr)) => (cr.to_f64(), sr.to_f64(), true),
-            None => {
-                let (c, s) = self.realize_f64();
-                (c, s, false)
-            }
+            Some((cr, sr)) => (cr.to_f64(), sr.to_f64()),
+            None => self.realize_f64(),
         }
+    }
+
+    /// **How far the `(cos, sin)` the caller was handed sits from the true ones** — measured
+    /// against an arbitrary-precision realization, not assumed from a constant.
+    ///
+    /// `|f64 − true| ≤ |f64 − hp midpoint| + hp's own radius`, which is the ruler this kernel
+    /// already uses for a rational's realization in `Pt3`'s `translate`, `mirror` and pivot terms.
+    /// Memoized in [`F64_ERR`], keyed by the angle *and the pair* — see there for why the pair.
+    ///
+    /// ★★★ **The caller passes the values in rather than letting this re-realize them**, and that
+    /// is the whole soundness argument. The consumer is `Pt3::rotate_about`, whose `tol` must bound
+    /// the error in the `coord` it just wrote from *its* `cos_sin_f64()` result. An error measured
+    /// against a second, independent realization would bound a number nobody stored — and those two
+    /// realizations are measured to differ (see [`F64_ERR`]). Taking `c` and `s` as arguments makes
+    /// "the error describes the value that was used" hold by construction instead of by hope.
+    ///
+    /// ★★ **This is what lets the error accounting stop guessing.** `f64::cos` has no accuracy
+    /// contract — neither Rust nor any libm promises one — so the bound above it used to be a
+    /// measured-once constant with margin, sound only on platforms like the one it was taken on.
+    /// A kernel that ships to browsers cannot know that. Measuring instead means a worse libm
+    /// simply reports a larger error and the tolerance grows to match: **the kernel adapts rather
+    /// than assumes.**
+    ///
+    /// ★ **Exactly zero for the 90°-family**, because `cos_sin_f64` returns `0.0`/`±1.0` there and
+    /// those *are* the true values. Callers rely on that zero: a rotation whose realization carries
+    /// no error also performs no rounding downstream (`u·(±1)` and `u·0` are exact), which is what
+    /// keeps a quadrantal origin rotation at tol 0.
+    ///
+    /// ★ **An `f64`, not a [`Bound`].** `Bound` exists because a deep ladder's `2⁻ᵖʳᵉᶜ` underflows
+    /// `f64` to zero and a zero radius claims exactness; this quantity is always ε-scale, so that
+    /// hazard is absent — and the consumer is `Pt3::tol`, which is `f64`.
+    ///
+    /// The reading is at octave granularity (`bf_mag` is `2^exponent`), so it can sit up to 2×
+    /// above the true error. Conservative in the sound direction, and still a measurement.
+    pub fn realization_error_of(self, c: f64, s: f64) -> (f64, f64) {
+        let key = (self, c.to_bits(), s.to_bits());
+        if let Some(hit) = F64_ERR.with_borrow(|m| m.get(&key).copied()) {
+            return hit;
+        }
+        // Outside the borrow: the computation below takes `TRIG`'s and `HP_CONSTS`' in turn.
+        let out = self.measure_realization_error(c, s);
+        F64_ERR.with_borrow_mut(|m| m.insert(key, out));
+        out
+    }
+
+    /// [`realization_error_of`](Self::realization_error_of) without the memo — the measurement.
+    fn measure_realization_error(self, c: f64, s: f64) -> (f64, f64) {
+        const P: usize = 128; // the hp radius is then ~2⁻¹²⁸ against an ε-scale quantity
+        // ★ The zero is claimed of *these* values, not of the angle: the exactness that callers
+        // depend on is "the pair I am holding is the true cos/sin", and only comparing the pair
+        // says that. An angle in the family whose caller somehow realized it the general way is
+        // then measured like any other rather than being handed a zero it has not earned.
+        if self
+            .try_exact_cos_sin()
+            .is_some_and(|(cr, sr)| cr.to_f64() == c && sr.to_f64() == s)
+        {
+            return (0.0, 0.0);
+        }
+        let (hc, hs, rc, rs) = self.cos_sin_bounded(P);
+        let gap = |f: f64, h: &BigFloat, rad: Bound| {
+            let diff = BigFloat::from_f64(f, P).sub(h, P, HP_RM);
+            let mag = if diff.is_zero() {
+                0.0
+            } else {
+                2f64.powi(diff.exponent().unwrap_or(0))
+            };
+            // ★ **The sum is rounded *up*, and that is not pedantry.** `mag` is an octave bound, so
+            // it usually sits well above the truth — but when `|diff|` is itself a power of two the
+            // slack is exactly zero, and then `mag + rad` rounds back down to `mag` in f64 and the
+            // "bound" is short by the radius. `sin 30°` is that case: it misses 0.5 by exactly
+            // `2⁻⁵⁴`, and the ground-truth test caught the missing ulp the day this was written.
+            (mag + rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32))) * (1.0 + 2.0 * f64::EPSILON)
+        };
+        (gap(c, &hc, rc), gap(s, &hs, rs))
     }
 }
 
@@ -645,7 +740,7 @@ impl Isometry {
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
             let (px, py) = (r.point[i].to_f64(), r.point[j].to_f64());
-            let (c, s, _) = r.angle.cos_sin_f64();
+            let (c, s) = r.angle.cos_sin_f64();
             let (dx, dy) = (p[i] - px, p[j] - py);
             q[i] = px + dx * c - dy * s;
             q[j] = py + dx * s + dy * c;
@@ -659,7 +754,7 @@ impl Isometry {
         let mut q = d;
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
-            let (c, s, _) = r.angle.cos_sin_f64();
+            let (c, s) = r.angle.cos_sin_f64();
             let (dx, dy) = (d[i], d[j]);
             q[i] = dx * c - dy * s;
             q[j] = dx * s + dy * c;
@@ -1038,20 +1133,92 @@ mod tests {
     }
 
     /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0` (unlike [`Angle::realize_f64`],
-    /// which lands ~6e-17 at 90°) and falls through to it otherwise — **and it says which of the
-    /// two happened**, because the caller accounting for realization error needs to know the
-    /// quadrantal case carries none.
+    /// which lands ~6e-17 at 90°) and falls through to it otherwise.
     #[test]
     fn cos_sin_f64_is_exact_for_quadrantal() {
         let deg = |d| Angle::from_deg(Rat::from_int(d)).unwrap();
-        assert_eq!(deg(0).cos_sin_f64(), (1.0, 0.0, true));
-        assert_eq!(deg(90).cos_sin_f64(), (0.0, 1.0, true));
-        assert_eq!(deg(180).cos_sin_f64(), (-1.0, 0.0, true));
-        assert_eq!(deg(270).cos_sin_f64(), (0.0, -1.0, true));
-        // non-quadrantal: identical to the plain f64 realization, and flagged inexact.
+        assert_eq!(deg(0).cos_sin_f64(), (1.0, 0.0));
+        assert_eq!(deg(90).cos_sin_f64(), (0.0, 1.0));
+        assert_eq!(deg(180).cos_sin_f64(), (-1.0, 0.0));
+        assert_eq!(deg(270).cos_sin_f64(), (0.0, -1.0));
+        // non-quadrantal: identical to the plain f64 realization.
         let a45 = deg(45);
-        let (c, s) = a45.realize_f64();
-        assert_eq!(a45.cos_sin_f64(), (c, s, false));
+        assert_eq!(a45.cos_sin_f64(), a45.realize_f64());
+    }
+
+    /// **The 90°-family realizes with no error at all, and that zero is load-bearing.**
+    ///
+    /// `Pt3::rotate_about` reads [`Angle::realization_error_of`] to decide whether a rotation
+    /// contributes any tolerance. For `cos`/`sin` in `{0, ±1}` the f64 values *are* the true ones,
+    /// and every product and difference downstream is exact too — which is why a quadrantal origin
+    /// rotation stays at tol 0 and an axis-aligned model never leaves the exact predicate path.
+    /// A nonzero here would not fail loudly; it would quietly move those models.
+    ///
+    /// Everything else must report *something*: `f64::cos` has no accuracy contract, and a zero
+    /// would be a claim of exactness the platform never made.
+    #[test]
+    fn only_the_quadrantal_family_realizes_exactly() {
+        let deg = |n, d| Angle::from_deg(Rat::new(n, d).unwrap()).unwrap();
+        let err = |a: Angle| {
+            let (c, s) = a.cos_sin_f64();
+            a.realization_error_of(c, s)
+        };
+        for d in [0, 90, 180, 270] {
+            assert_eq!(err(deg(d, 1)), (0.0, 0.0), "{d} deg");
+        }
+        // ★ And the zero is of the *pair*, not of the angle: hand a 90°-family angle the general
+        // realization and it must be measured like anything else. Otherwise a caller that got its
+        // cos/sin from somewhere other than `cos_sin_f64` would be handed an exactness claim that
+        // does not hold of what it is holding.
+        let a90 = deg(90, 1);
+        let (gc, gs) = a90.realize_f64();
+        assert!(a90.realization_error_of(gc, gs).0 > 0.0);
+        for (n, d) in [(1, 1), (37, 1), (45, 1), (337, 1), (1, 3), (359999, 1000)] {
+            let (dc, ds) = err(deg(n, d));
+            assert!(
+                dc > 0.0 && ds > 0.0,
+                "{n}/{d} deg claimed an exact realization"
+            );
+            // ε-scale: a bound this large would mean the measurement, not the platform, is wrong.
+            assert!(
+                dc < 64.0 * f64::EPSILON && ds < 64.0 * f64::EPSILON,
+                "{n}/{d} deg: {dc:e}"
+            );
+        }
+    }
+
+    /// The memo answers the second ask, keys on the angle's *value* rather than its spelling — same
+    /// failure mode as [`TRIG`]'s, showing up as work done twice rather than a wrong answer — **and
+    /// keys on the realized pair**, which is the part that is about correctness rather than cost.
+    #[test]
+    fn the_realization_error_memo_keys_on_the_angle_and_the_pair() {
+        let deg = |n, d| Angle::from_deg(Rat::new(n, d).unwrap()).unwrap();
+        let entries = || F64_ERR.with_borrow(|m| m.len());
+        // An angle no other test in this thread asks for.
+        let a = deg(1234567, 9973);
+        let (c, s) = a.cos_sin_f64();
+        let before = entries();
+        let first = a.realization_error_of(c, s);
+        assert_eq!(entries(), before + 1, "the first ask must insert");
+        assert_eq!(a.realization_error_of(c, s), first);
+        assert_eq!(
+            entries(),
+            before + 1,
+            "the second ask must be answered, not recomputed"
+        );
+        // The same angle, unreduced, with the same pair, is the same entry.
+        assert_eq!(deg(2469134, 19946).realization_error_of(c, s), first);
+        assert_eq!(
+            entries(),
+            before + 1,
+            "the key is the angle, not its spelling"
+        );
+        // ★ A neighbouring realization of that same angle is a *different question* and must get
+        // its own answer — an entry keyed on the angle alone would hand back `first`, an error
+        // measured against a pair this caller is not holding.
+        let nudged = f64::from_bits(c.to_bits() + 1);
+        assert_ne!(a.realization_error_of(nudged, s), first);
+        assert_eq!(entries(), before + 2, "the pair is part of the key");
     }
 
     /// `apply_point`/`apply_dir` realize a 90°-family rotation bit-exactly: no ~6e-17

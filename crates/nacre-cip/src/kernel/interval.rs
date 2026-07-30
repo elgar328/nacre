@@ -27,37 +27,6 @@ use super::HP_RM;
 // They belong with the intervals: three of them are how an exact rational *enters* this machine,
 // and the fourth is the f64 rounding the filter charges per operation.
 
-/// f64 trig-realization error bound used by the directional tol formula — a conservative multiple
-/// of ulp covering cos/sin rounding, the deg→rad conversion, and the combining arithmetic.
-///
-/// **The one constant here that cannot be derived, and it is measured instead.** Everything else
-/// in this module charges round-to-nearest, which is contracted: `≤ ε/2` relative per operation.
-/// `f64::cos` has no such contract — neither Rust nor the platform libm promises an accuracy —
-/// so the only sound basis is measurement plus margin. Erring loose costs an escalation now and
-/// then; erring tight is a wrong sign on a platform whose trig is a little worse than this one's.
-///
-/// ★★ **And whether it holds *here* is checked, not assumed** —
-/// [`this_platforms_trig_stays_inside_the_charged_budget`] runs on every build and compares this
-/// platform's realization against arbitrary-precision truth, angle by angle. That test also prints
-/// the margin (`[trig budget]`), which is where the figure belongs: one pasted into this doc went
-/// stale the moment the corpus it described grew, and stayed wrong for two commits.
-///
-/// **The budget it checks is `DA_F64 − ε`, not `DA_F64`** — for an origin pivot `Pt3::rotate_about`
-/// has no `piv` term, so this one also carries the arithmetic of `fl(u·c) − fl(v·s)`. The
-/// derivation is written out there.
-///
-/// ★ **And the dominant term is not `f64::cos` itself.** `Angle`'s f64 route is
-/// `(deg.to_f64() * PI / 180.0).cos()`, so the *argument* already carries ~3ε relative from three
-/// roundings and a rounded `PI`; with `|θ| ≤ 2π` that is ~9ε absolute, and `d cos = −sin·dθ`
-/// carries it straight through. **The deg→rad conversion dominates, and libm is the small part** —
-/// so "measure libm per angle and tighten this" is aimed at the wrong term *if the goal is a
-/// tighter bound*. If the goal is **soundness**, measuring the realization per angle is exactly
-/// right: it captures the conversion and libm together, and the kernel would then adapt to a bad
-/// platform instead of assuming a good one. Removing the constant outright means realizing cos/sin
-/// at arbitrary precision and rounding *that* to f64 (≤ ε/2, contracted), which moves every stored
-/// rotated coordinate and needs its own cell.
-pub(crate) const DA_F64: f64 = 16.0 * f64::EPSILON;
-
 /// A rational as an arbitrary-precision float.
 ///
 /// **Numerator and denominator go in as `i128`, not through `f64`.** Routing them through `f64`
@@ -238,53 +207,45 @@ mod tests {
         BigFloat::from_f64(x, prec)
     }
 
-    /// **Does *this* platform's `f64` trig fit inside what [`DA_F64`] charges for it?**
+    /// **Does the error `Angle::realization_error_of` reports actually bound the real one?**
     ///
-    /// That constant is the one place the kernel's soundness rests on a measurement rather than a
-    /// theorem: every other term here charges round-to-nearest, which IEEE 754 contracts, while
-    /// neither Rust nor any libm promises an accuracy for `f64::cos`. The measurement used to live
-    /// only in prose beside the constant — so it was an assumption on every machine but the one it
-    /// was taken on, and this kernel ships to browsers, whose libm is not this one.
+    /// `Pt3::rotate_about` charges that number for the one input here without a rounding contract:
+    /// neither Rust nor any libm promises an accuracy for `f64::cos`. It used to charge a constant
+    /// measured once and written into a doc — sound only on machines like the one it was taken on,
+    /// which a kernel that ships to browsers cannot assume. Now it measures, so **a worse platform
+    /// reports a bigger number and the tolerance grows to match** rather than silently under-stating.
     ///
-    /// **Not `#[ignore]`d, and that is the point.** The slow astro-float suites are skipped by
-    /// default because they are slow; this one exists precisely so that *every build checks its own
-    /// platform*, and a few hundred angles is milliseconds.
+    /// That moves the question. There is no budget left to overrun; what has to hold is that the
+    /// measurement is an *upper* bound. So this compares production's answer — taken at 128 bits —
+    /// against a realization 384 bits deeper.
     ///
-    /// ## The budget is `DA_F64 − ε`, not `DA_F64`
+    /// **Not `#[ignore]`d, and that is the point.** The slow astro-float suites are skipped because
+    /// they are slow; this one exists so that *every build checks its own platform*, and a few
+    /// hundred angles is milliseconds.
     ///
-    /// `Pt3::rotate_about` charges `rot = (|u| + |v|)·DA_F64`, and for an **origin pivot** that term
-    /// is alone — `piv` is exactly zero there, so `rot` also has to cover the arithmetic of
-    /// `fl(u·c) − fl(v·s)`:
+    /// ★★★ **It asks about the pair, because that is what the answer is about.** The values go in
+    /// as arguments — the same ones `rotate_about` writes into `coord` — rather than being re-derived
+    /// inside. Written the other way, this test asked whether the error of *some* realization bounded
+    /// the error of *another*, and it failed at 27°: a debug and a release build realize `sin 27°`
+    /// one ulp apart, and so do two call sites within one release build. That divergence is a real
+    /// and separate defect in the kernel's determinism story; what this test now checks is the
+    /// property `tol` actually needs, which is about the pair in hand.
     ///
-    /// | | |
-    /// |---|---|
-    /// | trig realization | `\|u\|·dc + \|v\|·ds` |
-    /// | `fl(u·c)`, `fl(v·s)` | `≤ (ε/2)(\|u\| + \|v\|)` together |
-    /// | their difference | `≤ (ε/2)(\|u\| + \|v\|)` |
+    /// ★ **The 90°-family is included, not skipped, and that is the load-bearing part.** There
+    /// `realization_error_of` claims *exactly zero*, and `rotate_about` reads that zero to contribute
+    /// no tolerance at all — which is what keeps a quadrantal origin rotation at tol 0 and keeps
+    /// axis-aligned models on the exact predicate path. A claimed zero that was not really zero
+    /// would not fail loudly; it would quietly move those models. Here it has to be real.
     ///
-    /// Requiring the sum to stay under `(|u| + |v|)·DA_F64` and sending `|v|` (or `|u|`) to zero
-    /// gives `dc + ε ≤ DA_F64`. **Asserting `dc ≤ DA_F64` instead would pass a platform at `15.9ε`,
-    /// which is unsound** — a guard that only ever passes is the worst kind.
+    /// ★★ **It also still reports the worst error, though nothing depends on it.** Charging a
+    /// measured value means a degraded platform no longer fails anything — it just escalates more
+    /// and runs slower, invisibly. This line is what keeps that visible.
     ///
-    /// The 90°-family is excluded and that is not a gap: there `cos`/`sin` are exactly `0`/`±1`, so
-    /// `dc = ds = 0` *and* every product and their difference are exact — which is why
-    /// `rotate_about` sets `rot = 0` for them. `cos_sin_f64_is_exact_for_quadrantal` pins that.
-    ///
-    /// ## What this does *not* do
-    ///
-    /// It checks a **premise**. `frame3::tol_bounds_error_over_random_chains` checks the
-    /// **conclusion** — that `tol` really bounds the error, second-order terms and all — and both
-    /// are needed: that one is only sensitive to a libm ~4.5× worse (its rotation-only chains sit at
-    /// 0.2231 of their bound) while soundness is lost at ~1.9×, so there is a window where the
-    /// kernel is wrong and the end-to-end test is still green. This closes that window. It also
-    /// only protects *builds* — a released wasm binary on a bad platform is not checked by anything
-    /// here, which is what charging a *measured* per-angle error instead of a constant would fix.
+    /// What it does not do: it checks one input. `frame3::tol_bounds_error_over_random_chains`
+    /// checks the conclusion — that `tol` bounds the error, second-order terms and all.
     #[test]
-    fn this_platforms_trig_stays_inside_the_charged_budget() {
-        const P: usize = 128; // rad ≈ 2⁻¹²⁸ against an 8ε ≈ 2⁻⁴⁹ quantity: not a participant
-        let budget = Bound::of(DA_F64)
-            .minus(Bound::of(f64::EPSILON))
-            .expect("DA_F64 exceeds one epsilon");
+    fn the_measured_trig_error_bounds_the_real_one() {
+        const GT: usize = 512; // the reference it is checked against
         let mut st = 0x9E37_79B9_7F4A_7C15u64;
         let mut rng = |lo: i128, hi: i128| {
             st = st
@@ -299,62 +260,83 @@ mod tests {
             // refuted the tangential tol model, and where a relative error reads worst.
             angles.push((90 * rng(0, 4) * 1000 + rng(-3, 4), 1000));
             // ★ Past `2⁵³`, where `Rat::to_f64` leaves its fast path. The radian argument is what
-            // dominates `dc`, so an angle whose conversion takes the other route has to be here.
+            // dominates the error, so an angle whose conversion takes the other route has to be here.
             angles.push((rng(1, 1 << 62) * 360, rng(1 << 53, 1 << 62)));
         }
-        // ★ **Reported to the nearest ε, which needs a comparison rather than `bf_mag`.**
-        // `bf_mag` is `2^exponent` — an upper *octave*, up to 2× above the true magnitude — and
-        // `Bound` keeps that shape, so a ratio printed from either would blur exactly the range
-        // that matters here. The smallest integer `k` with `|diff| < k·ε` is one comparison per
-        // candidate and says the thing plainly.
-        let eps_multiple = |diff: &BigFloat| -> usize {
+        // ★ **Reported to the nearest ε, which needs a comparison rather than `bf_mag`.** `bf_mag`
+        // is `2^exponent` — an upper *octave*, up to 2× above the true magnitude — so a figure read
+        // from it blurs exactly the range that matters. The smallest integer `k` with `x < k·ε` is
+        // one comparison per candidate and says the thing plainly.
+        //
+        // ★★★ **The range starts at 1, and it must**: `0·ε` is `0.0`, and astro-float's `cmp`
+        // answers `Some(-1)` in *both* directions against a zero — so `x.cmp(&zero)` reports "less
+        // than" for a positive `x`, every inexact realization reads `k = 0`, and `worst_k` is then
+        // only ever raised by the *exact* ones, which read the floor. That prints a headline of
+        // "worst < 1ε" for a platform whose real figure is several times that. A `k` of 0 would be
+        // meaningless anyway — nothing is below `0·ε` — which is what makes the widening look free.
+        let eps_multiple = |x: &BigFloat| -> usize {
             (1..=64)
                 .find(|k| {
                     // astro-float's `cmp` yields a sign as `Option<i128>`, not an `Ordering`.
-                    diff.abs()
-                        .cmp(&big(*k as f64 * f64::EPSILON, P))
+                    x.abs()
+                        .cmp(&big(*k as f64 * f64::EPSILON, GT))
                         .is_some_and(|sign| sign < 0)
                 })
                 .unwrap_or(usize::MAX)
         };
+        // ★★★ **The reading is pinned before it is trusted.** Three separate figures in this
+        // kernel's error work turned out to be artefacts of how they were printed rather than of
+        // what was measured, and each time the tell was a number that would not move. A reading
+        // that cannot be shown to respond to a known input is not evidence.
+        assert_eq!(eps_multiple(&big(0.0, GT)), 1, "zero reads as the floor");
+        assert_eq!(eps_multiple(&big(3.5 * f64::EPSILON, GT)), 4);
+        assert_eq!(eps_multiple(&big(-9.0 * f64::EPSILON, GT)), 10);
+        assert_eq!(eps_multiple(&big(64.0 * f64::EPSILON, GT)), usize::MAX);
         let (mut worst_k, mut worst_at) = (0usize, (0i128, 1i128));
-        let mut checked = 0usize;
+        let (mut checked, mut exact_seen) = (0usize, 0usize);
         for (n, d) in angles {
             let Some(a) = Rat::new(n, d).and_then(Angle::from_deg) else {
                 continue; // outside Rat's range — `from_deg` declines, and so does the kernel
             };
-            let (c, s, exact) = a.cos_sin_f64();
-            if exact {
-                continue; // 90°-family: zero realization error, and the products are exact too
+            let (c, s) = a.cos_sin_f64();
+            let (dc, ds) = a.realization_error_of(c, s);
+            if dc == 0.0 && ds == 0.0 {
+                exact_seen += 1;
             }
-            let (hc, hs, rc, rs) = a.cos_sin_bounded(P);
-            for (f, h, rad) in [(c, &hc, rc), (s, &hs, rs)] {
-                // |f64 − true| ≤ |f64 − hp midpoint| + hp's own radius. The assertion runs on
-                // `Bound`, which never under-states; the reported `k` is the readable version.
-                let diff = big(f, P).sub(h, P, HP_RM);
-                let err = Bound::of(bf_mag(&diff).abs()).plus(rad);
-                assert!(
-                    err.lt(budget),
-                    "this platform's trig overruns the budget DA_F64 charges: \
-                     {n}/{d} deg, err {err:?} ≥ {budget:?}"
+            let (hc, hs, rc, rs) = a.cos_sin_bounded(GT);
+            for (which, f, h, rad, reported) in [("cos", c, &hc, rc, dc), ("sin", s, &hs, rs, ds)] {
+                // |f64 − true| ≤ |f64 − deep midpoint| + that realization's own radius.
+                let truth = big(f, GT).sub(h, GT, HP_RM).abs().add(
+                    &big(rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32)), GT),
+                    GT,
+                    HP_RM,
                 );
-                let k = eps_multiple(&diff);
-                if k > worst_k {
+                assert!(
+                    truth.cmp(&big(reported, GT)).is_some_and(|sign| sign <= 0),
+                    "realization_error_of under-states at {n}/{d} deg [{which}]: \
+                     f = {f:e}, reported {reported:e}, true error 2^{:?}",
+                    truth.exponent(),
+                );
+                // ★ The worst is tracked over the *inexact* realizations only. An exact one has
+                // error zero, which reads as the floor `k = 1` — and since the corpus opens at 0°,
+                // including them let the family claim the headline and named an angle with no
+                // error at all as this platform's worst case.
+                let k = eps_multiple(&truth);
+                if reported != 0.0 && k > worst_k {
                     (worst_k, worst_at) = (k, (n, d));
                 }
                 checked += 1;
             }
         }
         assert!(checked > 700, "corpus shrank to {checked} realizations");
-        // ★ The margin lives here, not in `DA_F64`'s doc — a figure written beside the constant
-        // went stale two commits after it was measured and stayed wrong.
-        let budget_k = (DA_F64 - f64::EPSILON) / f64::EPSILON;
+        assert!(
+            exact_seen > 0,
+            "no quadrantal angle reached the zero-error claim — the strongest case went untested"
+        );
         eprintln!(
-            "[trig budget] worst realization error < {worst_k}ε (at {}/{} deg) against a \
-             {budget_k:.0}ε budget — {:.2}x margin, over {checked} realizations",
-            worst_at.0,
-            worst_at.1,
-            budget_k / worst_k as f64,
+            "[trig realization] worst error < {worst_k}ε (at {}/{} deg), {exact_seen} exact, \
+             over {checked} realizations",
+            worst_at.0, worst_at.1,
         );
     }
 
