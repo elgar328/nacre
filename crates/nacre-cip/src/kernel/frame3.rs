@@ -2184,9 +2184,32 @@ mod tests {
         let (mut translate_seen, mut mirror_seen) = (false, false);
         let mut worst_ratio = 0.0_f64;
         let mut worst_rot = 0.0_f64;
+        // ★ **What the chain was made of, so a failure can be acted on.** A gate that only says
+        // "the bound was exceeded" cannot be debugged: the fix for an exceeded bound is to find
+        // the *missing term*, and that means knowing which links the offending chain had. The
+        // per-shape bests below also say where the bound is already tight and where it is not —
+        // which is what decides whether a given term is worth deriving more carefully.
+        #[derive(Default, Clone)]
+        struct Shape {
+            piv: usize,
+            tr: usize,
+            mir: usize,
+            desc: String,
+        }
+        // `(worst ratio, count, the chain that reached it)` per shape.
+        let mut by_shape: Vec<(&str, f64, usize, String)> = vec![
+            ("origin pivot only    ", 0.0, 0, String::new()),
+            ("has a non-origin pivot", 0.0, 0, String::new()),
+            ("no mirror            ", 0.0, 0, String::new()),
+            ("has a mirror         ", 0.0, 0, String::new()),
+            ("no translate         ", 0.0, 0, String::new()),
+            ("has a translate      ", 0.0, 0, String::new()),
+        ];
+        let mut worst_desc = String::new();
         for _ in 0..2000 {
             let base = rand_base(&mut st);
             let seed_free = Pt3::at(base).tol == [0.0; 3];
+            let mut shape = Shape::default();
             let mut p = Pt3::at(base);
             // **From one node, not two.** A single origin rotation of an exact base is the case
             // the deleted 2D frame validated on its own; sampling it here is what makes this test
@@ -2197,6 +2220,8 @@ mod tests {
                 match rng(&mut st, 0, 3) {
                     0 => {
                         translate_seen = true;
+                        shape.tr += 1;
+                        shape.desc.push_str(" T");
                         p = p.translate(rand_base(&mut st));
                         continue;
                     }
@@ -2207,6 +2232,10 @@ mod tests {
                         } else {
                             rand_base(&mut st)[0]
                         };
+                        shape.mir += 1;
+                        shape
+                            .desc
+                            .push_str(if off == Rat::from_int(0) { " M0" } else { " M" });
                         p = p.mirror(axis_of(rng(&mut st, 0, 2)), off);
                         continue;
                     }
@@ -2230,6 +2259,14 @@ mod tests {
                 } else {
                     deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 9973))
                 };
+                let at_origin = pivot.iter().all(|r| *r == Rat::from_int(0));
+                if !at_origin {
+                    shape.piv += 1;
+                }
+                shape.desc.push_str(if at_origin { " R" } else { " Rp" });
+                if ang.try_exact_cos_sin().is_some() {
+                    shape.desc.push('!'); // an exact angle: the rotation term is zero
+                }
                 p = p.rotate_about(ax, ang, pivot);
             }
             let hp = p.hp_coord(GT);
@@ -2241,10 +2278,45 @@ mod tests {
                     p.tol[axis]
                 );
                 if p.tol[axis] > 0.0 {
-                    worst_ratio = worst_ratio.max(err / p.tol[axis]);
-                    if seed_free {
-                        worst_rot = worst_rot.max(err / p.tol[axis]);
+                    let r = err / p.tol[axis];
+                    if r > worst_ratio {
+                        worst_ratio = r;
+                        worst_desc = format!("axis {axis}, links:{}", shape.desc);
                     }
+                    if seed_free {
+                        worst_rot = worst_rot.max(r);
+                    }
+                    for (i, hit) in [
+                        shape.piv == 0,
+                        shape.piv > 0,
+                        shape.mir == 0,
+                        shape.mir > 0,
+                        shape.tr == 0,
+                        shape.tr > 0,
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        if hit && r > by_shape[i].1 {
+                            by_shape[i].1 = r;
+                            by_shape[i].3 = shape.desc.clone();
+                        }
+                    }
+                }
+            }
+            for (i, hit) in [
+                shape.piv == 0,
+                shape.piv > 0,
+                shape.mir == 0,
+                shape.mir > 0,
+                shape.tr == 0,
+                shape.tr > 0,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if hit {
+                    by_shape[i].2 += 1;
                 }
             }
         }
@@ -2255,9 +2327,23 @@ mod tests {
         // **How much of the bound the real error actually uses.** `DA_F64` is the one constant in
         // this kernel that cannot be derived — `f64::cos`'s accuracy is not contracted by Rust or
         // by any libm this runs on — so it rests on measurement, and this is the measurement.
+        //
+        // ★ It is also the *live* figure: `DA_F64`'s doc points here rather than restating a
+        // number, because a number written beside the constant went stale the moment reflections
+        // joined this corpus and stayed wrong for two commits.
         eprintln!(
             "[tol tightness] worst err/tol: {worst_ratio:.4} all, {worst_rot:.4} rotation-only"
         );
+        // ★ **Which chain got closest, and which shapes are already tight.** The fix for an
+        // exceeded bound is to find the *missing term*, so the gate has to say what the offending
+        // chain was made of. The per-shape bests say the same thing in advance: a shape sitting
+        // near 1.0 is a term already derived tightly, and one sitting low is where a lumped charge
+        // still has slack. `R` a rotation about the origin, `Rp` about a pivot, `!` an exact angle,
+        // `T` a translation, `M` a reflection (`M0` a pure sign flip).
+        eprintln!("[tol worst chain]  {worst_ratio:.4}  {worst_desc}");
+        for (label, r, n, desc) in &by_shape {
+            eprintln!("[tol by shape]  {label}  worst {r:.4}  over {n:>4} chains  ←{desc}");
+        }
         assert!(
             worst_ratio < 1.0,
             "the bound was reached exactly, which leaves nothing for a platform whose trig is \
