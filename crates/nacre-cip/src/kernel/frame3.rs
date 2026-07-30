@@ -150,6 +150,11 @@ impl Pt3 {
     /// 90°-family angles about the origin rotate exactly (tol 0, Niven). A non-origin
     /// pivot adds its own f64 rounding (`coord − p`, `p + …`, the pivot's Rat→f64) —
     /// present even for an exact angle — covered by the `piv` term (validated H-f).
+    ///
+    /// **Two error terms, and they are different kinds.** `rot` is the one thing here without a
+    /// rounding contract (`f64::cos`), so it takes the measured [`DA_F64`]. `piv` is nothing but
+    /// round-to-nearest steps and a rational's realization, so it is derived and measured the way
+    /// [`translate`](Self::translate) and [`mirror`](Self::mirror) derive and measure theirs.
     pub fn rotate_about(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = axis.plane();
         let (px, py) = (point[i].to_f64(), point[j].to_f64());
@@ -165,16 +170,40 @@ impl Pt3 {
         let (c, s, exact) = angle.cos_sin_f64();
         self.coord[i] = px + u * c - v * s;
         self.coord[j] = py + u * s + v * c;
-        // Rotation-realization error (coordinate-mixing), 0 for an exact angle; plus
-        // the pivot arithmetic (subtract p, re-add p, the pivot's own rounding),
-        // exactly 0 for an origin pivot and present even for an exact angle otherwise.
+        // Rotation-realization error (coordinate-mixing), 0 for an exact angle. This is the term
+        // `DA_F64` exists for: `cos`/`sin` are the one input here without a rounding contract.
         let rot = if exact {
             0.0
         } else {
             (u.abs() + v.abs()) * DA_F64
         };
+        // **The pivot arithmetic, charged the way `translate` and `mirror` charge theirs.**
+        //
+        // It used to take `DA_F64` — the constant that exists *because `f64::cos` has no accuracy
+        // contract* — for three operations that all do have one. Its two siblings in this `impl`
+        // already do the right thing, and this now matches them: **measure** the rational's
+        // realization, **count** the round-to-nearest steps.
+        //
+        // - The pivot's `Rat → f64` is measured, not counted, for the same reason they measure it:
+        //   `Rat::to_f64` is one rounding for a numerator and denominator under `2⁵³` and takes
+        //   another path above, so counting would mean knowing which. It enters **twice per axis
+        //   with opposite signs** (`px + (ci − px)·c − …`) and partly cancels; `|1 − c| ≤ 2` and
+        //   `|s| ≤ 1` bound the pair plainly, and the outer `2.0` is the margin every sibling
+        //   term carries. **Exactly zero for a dyadic pivot** — the common case, which the old
+        //   lumped charge still billed.
+        // - Five contracted roundings build `px + u·c − v·s`: the two differences, the two
+        //   products, their difference, and the final sum. Each is `≤ ε/2` of a magnitude bounded
+        //   by `|ci| + |cj| + |px| + |py|`, so `2.5·ε` of that sum covers them; `5.0` is that with
+        //   the same doubling.
+        //
+        // Origin pivot stays exactly 0: `ci − 0.0` and `0.0 + x` are exact, so there is nothing
+        // to charge — and the whole term is skipped rather than measured.
         let piv = if px != 0.0 || py != 0.0 {
-            (ci.abs() + cj.abs() + px.abs() + py.abs()) * DA_F64
+            let realized = |r: Rat, f: f64| {
+                bf_mag(&rat_to_big(r, 120).sub(&BigFloat::from_f64(f, 120), 120, HP_RM)).abs()
+            };
+            2.0 * (2.0 * realized(point[i], px) + realized(point[j], py))
+                + 5.0 * f64::EPSILON * (ci.abs() + cj.abs() + px.abs() + py.abs())
         } else {
             0.0
         };
@@ -2198,13 +2227,22 @@ mod tests {
         }
         // `(worst ratio, count, the chain that reached it)` per shape.
         let mut by_shape: Vec<(&str, f64, usize, String)> = vec![
-            ("origin pivot only    ", 0.0, 0, String::new()),
+            ("origin pivot only     ", 0.0, 0, String::new()),
             ("has a non-origin pivot", 0.0, 0, String::new()),
-            ("no mirror            ", 0.0, 0, String::new()),
-            ("has a mirror         ", 0.0, 0, String::new()),
-            ("no translate         ", 0.0, 0, String::new()),
-            ("has a translate      ", 0.0, 0, String::new()),
+            ("no mirror             ", 0.0, 0, String::new()),
+            ("has a mirror          ", 0.0, 0, String::new()),
+            ("no translate          ", 0.0, 0, String::new()),
+            ("has a translate       ", 0.0, 0, String::new()),
+            // ★ **Pivot rotations and nothing else.** Added to isolate the `piv` term, and it
+            // showed something else instead: this row sits at **exactly 0.5000** and does not
+            // move when `piv` changes, because what dominates there is the *base seed* — `Pt3::at`
+            // measures the base's own rounding and charges twice it, so a chain that only rotates
+            // reports half its bound and nothing else can shift that. **A row that cannot move is
+            // reporting a different term than the one it was built for.**
+            ("pivot rotations only  ", 0.0, 0, String::new()),
         ];
+        // ★ And the **mean**, because a term that shrinks everywhere by a little moves no maximum.
+        let (mut ratio_sum, mut ratio_n) = (0.0_f64, 0usize);
         let mut worst_desc = String::new();
         for _ in 0..2000 {
             let base = rand_base(&mut st);
@@ -2279,6 +2317,8 @@ mod tests {
                 );
                 if p.tol[axis] > 0.0 {
                     let r = err / p.tol[axis];
+                    ratio_sum += r;
+                    ratio_n += 1;
                     if r > worst_ratio {
                         worst_ratio = r;
                         worst_desc = format!("axis {axis}, links:{}", shape.desc);
@@ -2293,6 +2333,7 @@ mod tests {
                         shape.mir > 0,
                         shape.tr == 0,
                         shape.tr > 0,
+                        shape.piv > 0 && shape.tr == 0 && shape.mir == 0,
                     ]
                     .into_iter()
                     .enumerate()
@@ -2311,6 +2352,7 @@ mod tests {
                 shape.mir > 0,
                 shape.tr == 0,
                 shape.tr > 0,
+                shape.piv > 0 && shape.tr == 0 && shape.mir == 0,
             ]
             .into_iter()
             .enumerate()
@@ -2340,7 +2382,10 @@ mod tests {
         // near 1.0 is a term already derived tightly, and one sitting low is where a lumped charge
         // still has slack. `R` a rotation about the origin, `Rp` about a pivot, `!` an exact angle,
         // `T` a translation, `M` a reflection (`M0` a pure sign flip).
-        eprintln!("[tol worst chain]  {worst_ratio:.4}  {worst_desc}");
+        eprintln!(
+            "[tol worst chain]  {worst_ratio:.4}  {worst_desc}   mean {:.4} over {ratio_n}",
+            ratio_sum / ratio_n.max(1) as f64
+        );
         for (label, r, n, desc) in &by_shape {
             eprintln!("[tol by shape]  {label}  worst {r:.4}  over {n:>4} chains  ←{desc}");
         }
