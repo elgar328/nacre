@@ -680,9 +680,57 @@ pub(crate) struct PlaneGeom {
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
+    /// ★★★ **The coefficients, but only where they describe the same plane as [`tri`](Self::tri).**
+    ///
+    /// A plane has two exact descriptions and they need not agree: `d` is the `f64` product
+    /// `raw·origin`, so a face at `y = −0.2` gets a coefficient plane `2⁻⁵⁴` from the one its own
+    /// witness spans (`Plane::coefficients` has the numbers). A predicate that describes one plane
+    /// by its coefficients in one question and by its triangle in the next composes answers about
+    /// **two different planes**, and what comes out is not even an order.
+    ///
+    /// So the disagreement is resolved here rather than guarded against at every call: when the
+    /// two do not agree, this is `None` and there is nothing to describe the plane with except its
+    /// triangle. **The same shape [`BaseFrame`] already uses** — a description that cannot be
+    /// trusted is not carried, so no consumer has to remember to check it.
+    ///
+    /// `None` for a rotated plane too: there are no exact `f64` coefficients for one.
+    pub(crate) exact_coeffs: Option<[f64; 4]>,
+    /// The **normal** under the weaker agreement — parallel to what `tri` spans, direction not
+    /// required (`frame_sign` records that separately).
+    ///
+    /// ★ `d` is where the two descriptions part, so a predicate that never reads it can keep its
+    /// exact route on a plane [`exact_coeffs`](Self::exact_coeffs) has to refuse. Measured:
+    /// demanding the full agreement for those cost 4.7x on the axis-aligned fold and bought
+    /// nothing.
+    pub(crate) exact_normal: Option<[f64; 3]>,
 }
 
 impl PlaneGeom {
+    /// **Reconcile a plane's two exact descriptions, once, at construction.**
+    ///
+    /// Returns what may be carried: the coefficients when they describe the same plane the witness
+    /// spans, and the normal under the weaker agreement (parallel — the direction is `frame_sign`'s
+    /// to record). `None` for a rotated plane, which has no exact `f64` coefficients at all.
+    ///
+    /// ★ **One function, so a test fixture cannot route differently from the arrangement.** Filling
+    /// the two fields by hand at a second construction site is how the fixture and the engine come
+    /// to disagree about which planes are describable — and this whole item exists because two
+    /// descriptions of one plane disagreed.
+    pub(crate) fn reconcile(
+        plane: &Plane,
+        tri: [Point3; 3],
+        rotated: bool,
+    ) -> (Option<[f64; 4]>, Option<[f64; 3]>) {
+        if rotated {
+            return (None, None);
+        }
+        let c = plane.coefficients();
+        (
+            plane.spans_exactly(tri).then_some(c),
+            plane.normal_spans(tri).then(|| [c[0], c[1], c[2]]),
+        )
+    }
+
     /// The class's outward normal — the root face's, which is what `tri` is wound for and what
     /// `emit_faces` winds its rings about. Not normalized: only its direction is ever read.
     pub(crate) fn tri_n_out(&self) -> Vector3 {
@@ -714,6 +762,11 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
         .iter()
         .map(|&r| {
             let pi = &planes[r];
+            // ★ The two descriptions are reconciled **here**, once, and a description that loses
+            // is simply not carried. A rotated plane has no exact `f64` coefficients at all, so
+            // both are `None` there — which is also what makes the predicates stop asking
+            // "is it rotated?" and ask "did I get coefficients?" instead.
+            let (exact_coeffs, exact_normal) = PlaneGeom::reconcile(&pi.plane, pi.tri, pi.rotated);
             PlaneGeom {
                 base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign),
                 plane: pi.plane,
@@ -722,6 +775,8 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
                 tri_pt3: pi.tri_pt3.clone(),
                 rotated: pi.rotated,
                 frame_sign: pi.orient_sign,
+                exact_coeffs,
+                exact_normal,
             }
         })
         .collect();

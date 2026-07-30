@@ -171,8 +171,42 @@ pub trait Witness {
 /// `coeffs` + `tri` by [`frame_sign`], not required from the impl.) A single face (which never
 /// plays a plane-class role) implements only [`Witness`].
 pub trait PlaneWitness: Witness {
-    /// The plane's exact (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`).
+    /// The plane's (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`) — **raw**.
+    ///
+    /// ★★★ **Raw means "not known to describe the same plane as [`tri`](Witness::tri)".** The two
+    /// are both exact descriptions and they need not agree: `d` is an `f64` product, so a face at
+    /// `y = −0.2` gets a coefficient plane `2⁻⁵⁴` from the one its own witness spans. A predicate
+    /// that answers one question from here and the next from `tri` is describing two planes, and
+    /// answers composed across them are not even an order — which is a defect this kernel has
+    /// already had.
+    ///
+    /// **So a predicate reads [`exact_coeffs`](Self::exact_coeffs) or
+    /// [`exact_normal`](Self::exact_normal) instead**, which are `None` exactly when the
+    /// descriptions part. This one is for a caller that means to *relate* the two rather than
+    /// choose between them.
     fn coeffs(&self) -> [f64; 4];
+
+    /// The coefficients **only when they describe the same plane as [`tri`](Witness::tri)** —
+    /// `None` when they do not, and for a rotated plane, which has no exact `f64` coefficients.
+    ///
+    /// A predicate that reads `d` needs this one: `d` is where the two descriptions part.
+    fn exact_coeffs(&self) -> Option<[f64; 4]>;
+
+    /// The **normal** under the weaker agreement — parallel to what `tri` spans, direction not
+    /// required (that is what `frame_sign` records).
+    ///
+    /// ★ A predicate that never reads `d` may use this and keep its exact route on a plane
+    /// [`exact_coeffs`](Self::exact_coeffs) has to refuse. Measured: requiring the full agreement
+    /// for those cost 4.7x on the axis-aligned fold and bought nothing.
+    fn exact_normal(&self) -> Option<[f64; 3]>;
+
+    /// `+1` when the stored normal agrees with the witness triangle's, `-1` when they oppose —
+    /// **the relation between the two descriptions**, not a choice between them.
+    ///
+    /// This is the one thing a caller legitimately wants both descriptions for, and the arrangement
+    /// already computes and stores it. It is exposed rather than re-derived here so there is one
+    /// spelling of it.
+    fn frame_sign(&self) -> i8;
 
     /// The plane's coefficients in the pre-motion frame — **derived from the canonicalised
     /// `base_tri`**, with all the handedness caveats there.
@@ -340,12 +374,17 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if j == p || j == q || j == r {
             return Some(0);
         }
-        if self.exact_route_ok(&[p, q, r, j]) {
-            let tp = ThreePlane([
-                self.planes[p].coeffs(),
-                self.planes[q].coeffs(),
-                self.planes[r].coeffs(),
-            ]);
+        // ★ **`j` is in the list although its coefficients are never read.** The query point comes
+        // from `j`'s *triangle*, so "asked with `j`'s triangle" and "asked with `j`'s coefficients"
+        // have to be the same question — which is exactly what `exact_coeffs` being `Some` says.
+        // Dropping `j` here because "its coefficients are unused" would reopen the defect.
+        if let (Some(cp), Some(cq), Some(cr), Some(_)) = (
+            self.planes[p].exact_coeffs(),
+            self.planes[q].exact_coeffs(),
+            self.planes[r].exact_coeffs(),
+            self.planes[j].exact_coeffs(),
+        ) {
+            let tp = ThreePlane([cp, cq, cr]);
             let tj = self.planes[j].tri();
             return Some(indirect_orient3d(
                 &tp,
@@ -435,15 +474,15 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// `Pt3` → [`indirect_cmp_coord_judge`].
     pub fn cmp_coord(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
         let planes = self.planes;
-        if self.exact_route_ok(&[a[0], a[1], a[2], b[0], b[1], b[2]]) {
-            let tp = |t: [usize; 3]| {
-                ThreePlane([
-                    planes[t[0]].coeffs(),
-                    planes[t[1]].coeffs(),
-                    planes[t[2]].coeffs(),
-                ])
-            };
-            return indirect_cmp_coord(&tp(a), &tp(b), axis);
+        let tp = |t: [usize; 3]| {
+            Some(ThreePlane([
+                planes[t[0]].exact_coeffs()?,
+                planes[t[1]].exact_coeffs()?,
+                planes[t[2]].exact_coeffs()?,
+            ]))
+        };
+        if let (Some(ta), Some(tb)) = (tp(a), tp(b)) {
+            return indirect_cmp_coord(&ta, &tb, axis);
         }
         if let Some(s) = cancel_cmp_coord(planes, a, b, axis) {
             return s;
@@ -467,12 +506,14 @@ impl<W: PlaneWitness> Judge<'_, W> {
         let planes = self.planes;
         // ★ **Only the normals are read below, so only they have to agree** — `d`'s rounding,
         // which is where the two descriptions actually part, never reaches this determinant.
-        if self.exact_normal_route_ok(&[p, a, b]) {
-            let row = |k: usize| {
-                let [x, y, z, _] = planes[k].coeffs();
-                [x, y, z]
-            };
-            return det3_sign([row(p), row(a), row(b)]);
+        // Only the normals are read, so only they have to agree — `d`, where the two descriptions
+        // actually part, never reaches this determinant.
+        if let (Some(np), Some(na), Some(nb)) = (
+            planes[p].exact_normal(),
+            planes[a].exact_normal(),
+            planes[b].exact_normal(),
+        ) {
+            return det3_sign([np, na, nb]);
         }
         // A determinant of normals: a motion multiplies it by `det(R)`, which the canonicalised
         // base frame has already made `+1` (see `Witness::base_tri`), so one shared motion means
@@ -488,9 +529,9 @@ impl<W: PlaneWitness> Judge<'_, W> {
             plane_def(planes, a),
             plane_def(planes, b),
         );
-        frame_sign(&planes[p])
-            * frame_sign(&planes[a])
-            * frame_sign(&planes[b])
+        planes[p].frame_sign()
+            * planes[a].frame_sign()
+            * planes[b].frame_sign()
             * self.record(
                 Site::DirSign { p, a, b },
                 dir_sign_judge(borrow3(dp), borrow3(da), borrow3(db), self.standard),
@@ -622,18 +663,16 @@ pub fn coeff_normal_ok<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
             .sign()
             == 0
     };
-    if !(ortho(t[1]) && ortho(t[2])) {
-        return false;
-    }
-    // Parallel and both non-zero, so this dot cannot cancel: its `f64` sign is the direction.
-    let e1 = [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]];
-    let e2 = [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]];
-    let n = [
-        e1[1] * e2[2] - e1[2] * e2[1],
-        e1[2] * e2[0] - e1[0] * e2[2],
-        e1[0] * e2[1] - e1[1] * e2[0],
-    ];
-    ca * n[0] + cb * n[1] + cc * n[2] > 0.0
+    // ★ **Parallel is the whole condition — the direction is not part of it.** The stored normal
+    // is allowed to *oppose* the triangle's, and `PlaneGeom::frame_sign` exists to record exactly
+    // that; both branches of `plane_pair_dir_sign` already carry the convention (the exact one
+    // takes the determinant of stored normals, the toleranced one multiplies the outward
+    // determinant by the three `frame_sign`s). An earlier spelling here also demanded
+    // `coeffs · cross(tri) > 0`, which would refuse every `frame_sign == -1` plane for a
+    // disagreement it does not have. Measured: no such plane exists in any model in the suite, so
+    // it was costing nothing — but a guard that is wrong for a reason nobody has hit yet is still
+    // wrong, and the next model to carry one would lose its fast route silently.
+    ortho(t[1]) && ortho(t[2])
 }
 
 /// Is plane `k`'s witness triangle exactly on its own stored coefficients? — the **full**
@@ -854,23 +893,6 @@ fn looser(d: Decision, best: Option<Decision>) -> bool {
     }
 }
 
-/// `+1` if plane `w`'s stored coefficient-normal points the same way as its outward `tri`
-/// normal, `-1` otherwise (`det(stored) = frame_sign · det(outward)`). Derived from the port's
-/// `coeffs` + `tri` alone: `n_out` is *defined* as `cross(tri)` and the stored normal is a
-/// positive multiple of `coeffs[0..3]`, so `sign(coeffs · cross(tri))` reproduces the
-/// arrangement's stored `frame_sign` exactly (the two are co-sourced from one face).
-fn frame_sign<W: PlaneWitness>(w: &W) -> i8 {
-    let t = w.tri();
-    let cross = (t[1] - t[0]).cross(t[2] - t[0]);
-    let c = w.coeffs();
-    let cx = cross.as_array();
-    if c[0] * cx[0] + c[1] * cx[1] + c[2] * cx[2] > 0.0 {
-        1
-    } else {
-        -1
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -923,6 +945,26 @@ mod tests {
     impl PlaneWitness for W {
         fn coeffs(&self) -> [f64; 4] {
             self.coeffs
+        }
+        fn frame_sign(&self) -> i8 {
+            let t = self.tri();
+            let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();
+            let c = self.coeffs;
+            if c[0] * x[0] + c[1] * x[1] + c[2] * x[2] > 0.0 {
+                1
+            } else {
+                -1
+            }
+        }
+        // The same rule the arrangement applies at construction — one implementation, so a test
+        // witness routes exactly as the real one would.
+        fn exact_coeffs(&self) -> Option<[f64; 4]> {
+            nacre_predicates::plane_spanned_by(self.coeffs, self.tri.map(|p| p.as_array()))
+                .then_some(self.coeffs)
+        }
+        fn exact_normal(&self) -> Option<[f64; 3]> {
+            nacre_predicates::plane_normal_spanned_by(self.coeffs, self.tri.map(|p| p.as_array()))
+                .then(|| [self.coeffs[0], self.coeffs[1], self.coeffs[2]])
         }
         fn base_coeffs(&self) -> Option<[f64; 4]> {
             None
@@ -1030,6 +1072,23 @@ mod tests {
     impl PlaneWitness for RW {
         fn coeffs(&self) -> [f64; 4] {
             self.coeffs
+        }
+        fn frame_sign(&self) -> i8 {
+            let t = self.tri();
+            let x = (t[1] - t[0]).cross(t[2] - t[0]).as_array();
+            let c = self.coeffs;
+            if c[0] * x[0] + c[1] * x[1] + c[2] * x[2] > 0.0 {
+                1
+            } else {
+                -1
+            }
+        }
+        // Rotated witnesses: no exact `f64` coefficients exist, as in the arrangement.
+        fn exact_coeffs(&self) -> Option<[f64; 4]> {
+            None
+        }
+        fn exact_normal(&self) -> Option<[f64; 3]> {
+            None
         }
         fn base_coeffs(&self) -> Option<[f64; 4]> {
             Some(self.base_coeffs)
@@ -1240,9 +1299,9 @@ mod tests {
     fn frame_sign_from_coeffs_and_tri() {
         let ps = cube_corner_planes();
         // x=1: tri wound so cross(tri) = +x, and the coeffs normal is +x → +1.
-        assert_eq!(frame_sign(&ps[0]), 1);
+        assert_eq!(ps[0].frame_sign(), 1);
         // reversing the tri winding flips cross(tri) → -1 (coeffs unchanged).
         let flipped = W::new([ps[0].tri[0], ps[0].tri[2], ps[0].tri[1]], ps[0].coeffs);
-        assert_eq!(frame_sign(&flipped), -1);
+        assert_eq!(flipped.frame_sign(), -1);
     }
 }

@@ -4236,6 +4236,8 @@ pub mod tests {
             tri_pt3: tri.map(|p| nacre_cip::Pt3::exact(p.as_array()).expect("exact")),
             rotated: false,
             frame_sign: 1, // `plane` is built from `normal`, so the two agree
+            exact_coeffs: PlaneGeom::reconcile(&plane, tri, false).0,
+            exact_normal: PlaneGeom::reconcile(&plane, tri, false).1,
         }
     }
 

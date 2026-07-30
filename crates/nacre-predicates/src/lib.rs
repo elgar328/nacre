@@ -199,6 +199,74 @@ pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
 /// scale-invariant (proportionality is unchanged by scaling either plane), so it
 /// neither false-merges near-but-distinct planes nor false-splits coincident ones.
 /// Each minor's exact sign comes from the same error-free `2×2` machinery as [`det3`].
+/// **Does `p` satisfy the plane `[a, b, c, d]` exactly?** — accumulated in expansion arithmetic,
+/// so a `true` is a fact about the plane and not about `f64`.
+pub fn plane_contains(c: [f64; 4], p: [f64; 3]) -> bool {
+    Expansion::two_product(c[0], p[0])
+        .add(&Expansion::two_product(c[1], p[1]))
+        .add(&Expansion::two_product(c[2], p[2]))
+        .add(&Expansion::two_product(c[3], 1.0))
+        .sign()
+        == 0
+}
+
+/// **Do these three points span exactly the plane `[a, b, c, d]`?**
+///
+/// The licence to describe one plane two ways — by these coefficients here and by these points
+/// there — and expect the same answers of both. Composing answers taken from two descriptions
+/// that are not the same plane produces relations that are not even orders, which is a defect
+/// this kernel has had.
+///
+/// **Both halves are needed.** Satisfying the form is not enough alone: three *collinear* points
+/// satisfy infinitely many planes, so they would license a description that is not this one.
+pub fn plane_spanned_by(c: [f64; 4], tri: [[f64; 3]; 3]) -> bool {
+    tri_spans(tri) && tri.iter().all(|&p| plane_contains(c, p))
+}
+
+/// **Is `[a, b, c]` parallel to what `tri` spans?** — the weaker licence, for a caller that reads
+/// only the direction.
+///
+/// ★ **Parallel, not co-directed.** A stored normal is allowed to oppose its witness triangle's;
+/// that relation is recorded separately (`nacre_ops`' `PlaneGeom::frame_sign`) and the predicates
+/// that care carry the convention. Demanding agreement of *direction* here would refuse planes
+/// that agree perfectly about where they are.
+///
+/// This is the half that survives `d` — and `d` is where two descriptions of one plane actually
+/// part, so a normals-only predicate keeps its exact route where the full test must refuse.
+pub fn plane_normal_spanned_by(c: [f64; 4], tri: [[f64; 3]; 3]) -> bool {
+    let e = |i: usize| {
+        [
+            tri[i][0] - tri[0][0],
+            tri[i][1] - tri[0][1],
+            tri[i][2] - tri[0][2],
+        ]
+    };
+    tri_spans(tri)
+        && [e(1), e(2)].iter().all(|v| {
+            // Orthogonal to both edges exactly <=> parallel to their cross product.
+            Expansion::two_product(c[0], v[0])
+                .add(&Expansion::two_product(c[1], v[1]))
+                .add(&Expansion::two_product(c[2], v[2]))
+                .sign()
+                == 0
+        })
+}
+
+/// Three points span a direction at all — without this, "satisfies the form" licenses nothing.
+fn tri_spans(t: [[f64; 3]; 3]) -> bool {
+    let (u, v) = (
+        [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]],
+        [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]],
+    );
+    [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]
+    .iter()
+    .any(|&x| x != 0.0)
+}
+
 pub fn planes_coplanar(a: [f64; 4], b: [f64; 4]) -> bool {
     // Exact zero-test of the 2×2 minor `a[i]·b[j] − a[j]·b[i]`.
     let minor_zero = |i: usize, j: usize| {

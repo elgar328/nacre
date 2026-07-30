@@ -59,6 +59,15 @@ impl PlaneWitness for PlaneGeom {
     fn coeffs(&self) -> [f64; 4] {
         self.plane.coefficients()
     }
+    fn exact_coeffs(&self) -> Option<[f64; 4]> {
+        self.exact_coeffs
+    }
+    fn exact_normal(&self) -> Option<[f64; 3]> {
+        self.exact_normal
+    }
+    fn frame_sign(&self) -> i8 {
+        self.frame_sign
+    }
     fn base_coeffs(&self) -> Option<[f64; 4]> {
         self.base.coeffs
     }
@@ -260,6 +269,20 @@ mod tests {
                 tri_pt3: std::array::from_fn(|_| Pt3::exact([k as f64, 0.0, 0.0]).expect("exact")),
                 rotated: false,
                 frame_sign: pu[0].frame_sign,
+                // Derived by the same rule the arrangement uses -- a fixture that routed
+                // differently would be testing a different engine.
+                exact_coeffs: PlaneGeom::reconcile(
+                    &pu[0].plane,
+                    [Point3::from_array([k as f64, 0.0, 0.0]); 3],
+                    false,
+                )
+                .0,
+                exact_normal: PlaneGeom::reconcile(
+                    &pu[0].plane,
+                    [Point3::from_array([k as f64, 0.0, 0.0]); 3],
+                    false,
+                )
+                .1,
             })
             .collect();
         assert!(
