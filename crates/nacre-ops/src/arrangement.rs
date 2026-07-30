@@ -4644,6 +4644,9 @@ mod tests {
         phase::scale::reset();
         crate::planes::MOVED_SURFS.with(|m| m.borrow_mut().clear());
         crate::planes::PREC_LOG.with(|l| l.borrow_mut().clear());
+        // Not the memo itself — the warm-up already filled it, and that is what the *n* booleans
+        // below see. Only the tally is zeroed, so the hit rate reported is the fold's own.
+        nacre_scalar::trig_stats::reset();
 
         let mut whole = std::time::Duration::ZERO;
         for i in 0..n {
@@ -4726,6 +4729,16 @@ mod tests {
             "    (3) cover trips         {:>10}   = {:.2}x the collecting loop",
             sc::get(&sc::COVER_TRIPS),
             sc::get(&sc::COVER_TRIPS) as f64 / sc::get(&sc::COLLECT_TRIPS).max(1) as f64
+        );
+
+        // ★ **The memo's hit rate is a gate, not a curiosity.** Misses must converge to the number
+        // of distinct `(angle, prec)` pairs this fold uses — `n` angles times the one or two
+        // precisions it judges at. More than that means the key is leaking (two spellings of one
+        // angle), and a low hit rate means the memo is pure overhead.
+        let (hit, miss) = nacre_scalar::trig_stats::get();
+        println!(
+            "    ★ cos/sin memo      hit {hit:>10}   miss {miss}   = {:.1}% hit",
+            100.0 * hit as f64 / (hit + miss).max(1) as f64
         );
 
         // ★ **The gate, not a curiosity.** A change to how `worst` is gathered can leave the census

@@ -41,6 +41,7 @@ use std::f64::consts::PI;
 
 use astro_float::{BigFloat, Consts, RoundingMode};
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// Rounding for the high-precision realization layer (astro-float).
 ///
@@ -52,7 +53,53 @@ pub(crate) const HP_RM: RoundingMode = RoundingMode::ToEven;
 
 thread_local! {
     /// Transcendental-constant cache (π, …) for the high-precision layer.
+    ///
+    /// **Constants, not results.** `astro_float::Consts` holds `pi/e/ln2/ln10/tenpowers` and
+    /// nothing else, and `cos`/`sin` take it only to reach π (degrees → radians, and argument
+    /// reduction). So it saves computing π once per call — a real saving, and orthogonal to
+    /// [`TRIG`] below, which is what saves the *evaluation*.
     static HP_CONSTS: RefCell<Consts> = RefCell::new(Consts::new().expect("astro-float consts"));
+
+    /// **Realized `cos`/`sin` per `(angle, precision)`** — see [`Angle::cos_sin_bounded`].
+    ///
+    /// A rotation's realization asks for the *same* angle once per point: a 60-fin fold evaluated
+    /// 29,037 of them for 110 distinct `(angle, prec)` pairs, and a solid turned 4,200 times
+    /// re-evaluated its one angle 4,200 times per point. astro-float's `cos`/`sin` run Ziv's loop
+    /// (a series, then a retry at more bits when the value sits too close to a rounding boundary),
+    /// which is what that repetition was paying for — measured, 22% of a rotated boolean.
+    ///
+    /// **The key is a value, not a handle**, which is what makes a process-wide memo sound here:
+    /// `Angle` is an exact rational number of degrees, so two models asking for the same angle are
+    /// asking the same question. (A cache keyed by a `Handle` could not be shared this way — a
+    /// handle is an index into *one* model's store.) And the result is a pure function of the key,
+    /// so the memo cannot move an answer; only how often Ziv's loop runs. `prec` is *in* the key,
+    /// so a model whose judging precision grows simply lands on a different entry rather than
+    /// reading one realized at the wrong depth.
+    static TRIG: RefCell<HashMap<(Angle, usize), TrigAt>> = RefCell::new(HashMap::new());
+}
+
+/// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
+type TrigAt = (BigFloat, BigFloat, Bound, Bound);
+
+/// How often [`TRIG`] answered, against how often it had to evaluate. Misses must converge to the
+/// number of distinct `(angle, prec)` pairs a run uses; anything more means the key is leaking
+/// (two spellings of one angle), and a low hit rate means the memo is pure overhead.
+///
+/// **Unconditional, not `cfg(test)`, and that is not laziness**: the consumer is `nacre-ops`' fold
+/// breakdown, and `cfg(test)` in *this* crate is off while *that* crate's tests build. Two relaxed
+/// atomic increments per call, against a `BigFloat` clone on the cheap path — measurement
+/// scaffolding for the memo's hit rate, removed once it has been read.
+pub mod trig_stats {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    pub static HIT: AtomicU64 = AtomicU64::new(0);
+    pub static MISS: AtomicU64 = AtomicU64::new(0);
+    pub fn get() -> (u64, u64) {
+        (HIT.load(Ordering::Relaxed), MISS.load(Ordering::Relaxed))
+    }
+    pub fn reset() {
+        HIT.store(0, Ordering::Relaxed);
+        MISS.store(0, Ordering::Relaxed);
+    }
 }
 
 /// The result of an orientation judgment (§CIP) — the shared sign vocabulary used by both
@@ -381,8 +428,29 @@ impl Angle {
     ///   does not document this, so `the_trig_bound_holds_against_a_far_deeper_realization` checks
     ///   it rather than trusting it.
     ///
+    /// **Memoized by `(self, prec)`** in [`TRIG`] — the value below is a pure function of those
+    /// two, and a rotation's realization asks for the same angle once per point. See [`TRIG`] for
+    /// why a process-wide memo is sound here and a handle-keyed one would not be.
+    ///
     /// Returns `(cos, sin, |Δcos|, |Δsin|)`.
     pub fn cos_sin_bounded(self, prec: usize) -> (BigFloat, BigFloat, Bound, Bound) {
+        use std::sync::atomic::Ordering::Relaxed;
+        if let Some(hit) = TRIG.with_borrow(|t| t.get(&(self, prec)).cloned()) {
+            trig_stats::HIT.fetch_add(1, Relaxed);
+            return hit;
+        }
+        trig_stats::MISS.fetch_add(1, Relaxed);
+        let out = self.realize_cos_sin(prec);
+        TRIG.with_borrow_mut(|t| t.insert((self, prec), out.clone()));
+        out
+    }
+
+    /// [`cos_sin_bounded`](Self::cos_sin_bounded) without the memo — the evaluation itself.
+    ///
+    /// **Separate so no `TRIG` borrow is held across it.** `HP_CONSTS` is borrowed for the whole
+    /// realization and the trig calls are the slow part; nesting the memo's borrow around that is
+    /// how a re-entrant call would panic rather than merely be slow.
+    fn realize_cos_sin(self, prec: usize) -> (BigFloat, BigFloat, Bound, Bound) {
         HP_CONSTS.with_borrow_mut(|cc| {
             let pi = cc.pi(prec, HP_RM);
             let d180 = BigFloat::from_f64(180.0, prec);
