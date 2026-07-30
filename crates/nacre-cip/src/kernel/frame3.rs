@@ -503,6 +503,17 @@ fn escalate(
 /// meaningful reading of `C` (see [`judge_precision`]), and cheap.
 const TRIAL_PREC: usize = 128;
 
+/// ★ **And deep enough that an exactly-representable point reads exactly zero.**
+///
+/// A second requirement, once a caller is allowed to *skip* [`trial_bound`] for a definition it
+/// knows is exact. `Pt3::exact`'s base is `Rat::try_from_f64` = `mantissa · 2^exp`, so the
+/// denominator is a power of two and the numerator is at most `Rat`'s own 127 bits — and
+/// `rat_to_hp` returns an exact interval exactly when both hold *at this precision*. Below 127 a
+/// large exact coordinate would start carrying a bound again, and a caller that skipped the call on
+/// the strength of the zero would read a precision the model had not earned.
+/// See `an_exact_point_demands_no_precision`.
+const _: () = assert!(TRIAL_PREC >= 127);
+
 /// Bits per word: astro-float allocates whole words, so asking for less than a multiple of 64
 /// pays for the round-up and then throws the difference away.
 const WORD: usize = 64;
@@ -2345,6 +2356,41 @@ mod tests {
                 "`at` must measure exactly zero for an f64-derived base: {c:?}"
             );
             assert_eq!(fast.tol, measured.tol, "same tol for {c:?}");
+        }
+    }
+
+    /// **An exactly-representable point demands no precision at all** — its trial bound is `0`.
+    ///
+    /// The twin of the test above, one level up: that one pins the `f64` tol, this one pins the
+    /// *realization* bound, which is what [`judge_precision`] reads to size a model. So a model
+    /// with no rotation history asks for nothing, and a caller that already knows a point is
+    /// `Constructed` can skip [`trial_bound`] rather than spend a realization computing a zero.
+    ///
+    /// Not an accident of small numbers. `Pt3::exact` builds its base with `Rat::try_from_f64` =
+    /// `mantissa · 2^exp`, so the **denominator is a power of two** and the **numerator fits
+    /// `i128`** — and `rat_to_hp` returns an exact interval exactly when those two hold at `prec`.
+    /// The corpus therefore reaches **both ends of `Rat`'s range**: where the numerator is widest
+    /// (a large integer, ~127 bits) and where the denominator is deepest (`2^126`).
+    ///
+    /// ★ The coupling this rests on — `TRIAL_PREC ≥ 127` — is asserted at the constant itself,
+    /// where lowering it fails the build rather than one test.
+    #[test]
+    fn an_exact_point_demands_no_precision() {
+        for c in [
+            [0.0, 1.0, -1.0],         // integers, both signs
+            [0.5, 0.25, -0.125],      // dyadic fractions
+            [4.0, 0.2, 3.0],          // 0.2 is not decimal-exact but *is* an exact f64
+            [1e18, -4e17, 3.5e19],    // large
+            [1e38, -1.5e38, 1.0],     // ★ near Rat's ceiling: the widest numerator, ~127 bits
+            [1e-20, -2.5e-21, 5e-18], // small
+            [1e-22, -2e-22, 1.0],     // ★ near Rat's floor (2^-74): the deepest denominator
+        ] {
+            let p = Pt3::exact(c).expect("representable");
+            assert!(
+                trial_bound(&p).is_zero(),
+                "an exact point must realize exactly: {c:?} gave {:?}",
+                trial_bound(&p)
+            );
         }
     }
 

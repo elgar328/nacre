@@ -4642,6 +4642,8 @@ mod tests {
         }
         phase::reset();
         phase::scale::reset();
+        crate::planes::MOVED_SURFS.with(|m| m.borrow_mut().clear());
+        crate::planes::PREC_LOG.with(|l| l.borrow_mut().clear());
 
         let mut whole = std::time::Duration::ZERO;
         for i in 0..n {
@@ -4723,6 +4725,31 @@ mod tests {
             sc::get(&sc::COVER_TRIPS),
             sc::get(&sc::COVER_TRIPS) as f64 / sc::get(&sc::COLLECT_TRIPS).max(1) as f64
         );
+
+        // ★ **The gate, not a curiosity.** A change to how `worst` is gathered can leave the census
+        // bit-identical and only lower the precision — `prec` is an estimate and every judgement
+        // re-checks its own interval. So this sequence is what says the same maximum was gathered
+        // the same way. Printed run-length encoded: `prec` moves a word every ~64 turns.
+        crate::planes::PREC_LOG.with(|l| {
+            let log = l.borrow();
+            println!(
+                "\n  ★ (log₂ worst trial, prec) per boolean, {} of them:",
+                log.len()
+            );
+            let mut runs: Vec<((Option<i64>, usize), usize)> = Vec::new();
+            for &e in log.iter() {
+                match runs.last_mut() {
+                    Some((prev, n)) if *prev == e => *n += 1,
+                    _ => runs.push((e, 1)),
+                }
+            }
+            for ((w, prec), n) in runs {
+                println!(
+                    "      w = {:>6}   prec = {prec:<5} × {n}",
+                    w.map_or("exact".to_string(), |w| w.to_string())
+                );
+            }
+        });
     }
 
     /// S3a gate: **what did hoisting the loop invariant do to the evidence?** `plane_pair_dir_sign`

@@ -339,6 +339,15 @@ thread_local! {
     pub(crate) static MOVED_SURFS: std::cell::RefCell<
         std::collections::HashSet<nacre_store::Handle<Surface>>,
     > = std::cell::RefCell::new(std::collections::HashSet::new());
+
+    /// `(log₂ worst trial bound, prec)` per boolean, in order.
+    ///
+    /// **The gate for any change to how `worst` is gathered.** A matching census is *not* evidence:
+    /// `prec` is an estimate and every judgement re-checks its own interval, so gathering `worst`
+    /// wrongly can leave the answers identical and only the precision lower. This sequence is the
+    /// direct evidence that the same maximum was gathered the same way.
+    pub(crate) static PREC_LOG: std::cell::RefCell<Vec<(Option<i64>, usize)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 pub(crate) fn plane_index_setup(
@@ -442,7 +451,12 @@ pub(crate) fn plane_index_setup(
 /// means a different physical thing in every model ("256 bits" is `1e-76` for a solid turned once
 /// and `1e+15` for one turned three hundred times).
 fn standard_for(planes: &[FaceInfo]) -> Standard {
-    standard_for_points(planes.iter().flat_map(|p| p.tri_pt3.iter()))
+    let pts = || planes.iter().flat_map(|p| p.tri_pt3.iter());
+    let worst = worst_trial(pts());
+    let standard = standard_from(pts(), worst);
+    #[cfg(test)]
+    PREC_LOG.with(|l| l.borrow_mut().push((worst.exp2(), standard.prec)));
+    standard
 }
 
 /// **How deep a model may be before the operation is rejected instead.**
@@ -497,11 +511,42 @@ pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
     )
 }
 
-/// [`standard_for`] over a bare set of definitions — for the places that must judge before a plane
-/// table exists (witness selection in [`crate::rotated_vertex`]).
+/// [`standard_for`] over a bare set of definitions, with no plane table — **a test helper.**
+///
+/// It once served witness selection in `rotated_vertex`; that consumer is gone, and splitting
+/// [`worst_trial`] out of [`standard_from`] is what surfaced it. Kept because a fixture that asks
+/// "what precision does *this* point demand" wants exactly the two halves in order, and spelling
+/// them out at every call site says less than the name does.
+#[cfg(test)]
 pub(crate) fn standard_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + Clone) -> Standard {
+    standard_from(pts.clone(), worst_trial(pts))
+}
+
+/// **The realization depth this set of definitions demands** — `max` over their trial bounds.
+///
+/// Split from [`standard_from`] because the two halves have nothing in common but the answer: this
+/// one is **all of the cost** (a full high-precision replay per point), and the other is f64
+/// arithmetic on already-known numbers. Keeping them apart is what lets a caller that already knows
+/// this maximum skip straight to the second half.
+///
+/// **This is where a boolean spends most of what is left after the arrangement went parallel**
+/// (measured: 76% of setup, and setup is 43% of the largest booleans once the trace is off the
+/// critical path). Each point's trial realization is independent and they combine by **maximum**,
+/// which is associative and exact — so evaluating them across cores cannot move the answer the way
+/// a reassociated sum would.
+fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a Pt3>) -> Bound {
+    let pts: Vec<&Pt3> = pts.into_iter().collect();
+    let bounds = crate::par::map_range(pts.len(), |i| nacre_cip::trial_bound(pts[i]));
+    bounds
+        .into_iter()
+        .fold(Bound::ZERO, |w, b| if w.lt(b) { b } else { w })
+}
+
+/// The standard for points whose worst trial bound is already known: `scale` off the f64
+/// coordinates, the coincidence limit derived from it, and the precision that reaches it.
+fn standard_from<'a>(pts: impl IntoIterator<Item = &'a Pt3>, worst: Bound) -> Standard {
     let mut scale = 1.0f64;
-    for p in pts.clone() {
+    for p in pts {
         for c in p.coord {
             scale = scale.max(c.abs());
         }
@@ -509,17 +554,6 @@ pub(crate) fn standard_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + C
     let scale = Bound::of(scale);
     let output_precision = scale.times(Bound::pow2(-52));
     let coincidence = output_precision.times(Bound::pow2(-128));
-    // **The model's precision is read from every point, and this is where a boolean spends
-    // most of what is left after the arrangement went parallel** (measured: 76% of setup,
-    // and setup is 43% of the largest booleans once the trace is off the critical path).
-    // Each point's trial realization is independent and they combine by **maximum**, which
-    // is associative and exact — so evaluating them across cores cannot move the answer the
-    // way a reassociated sum would. The fold stays here, sequential and in index order.
-    let pts: Vec<&Pt3> = pts.into_iter().collect();
-    let bounds = crate::par::map_range(pts.len(), |i| nacre_cip::trial_bound(pts[i]));
-    let worst = bounds
-        .into_iter()
-        .fold(Bound::ZERO, |w, b| if w.lt(b) { b } else { w });
     let prec = nacre_cip::precision_for(worst, coincidence);
     Standard {
         prec,
