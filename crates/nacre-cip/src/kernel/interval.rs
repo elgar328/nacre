@@ -33,14 +33,23 @@ use super::HP_RM;
 /// **The one constant here that cannot be derived, and it is measured instead.** Everything else
 /// in this module charges round-to-nearest, which is contracted: `≤ ε/2` relative per operation.
 /// `f64::cos` has no such contract — neither Rust nor the platform libm promises an accuracy —
-/// so the only sound basis is measurement plus margin.
+/// so the only sound basis is measurement plus margin. Erring loose costs an escalation now and
+/// then; erring tight is a wrong sign on a platform whose trig is a little worse than this one's.
 ///
-/// Measured (`frame3::tol_bounds_error_over_random_chains`, 2000 random chains, 512-bit ground
-/// truth): the real error uses **0.0374** of this bound at worst when the base contributes no
-/// rounding of its own — a **27× margin**, i.e. the observed realization error is about `0.6·ε`
-/// against the `16·ε` charged. The margin is left there on purpose: erring loose costs only an
-/// escalation now and then, while erring tight is a wrong sign on a platform whose trig is a
-/// little worse than this one's.
+/// **How much margin is left is a live number, not a number written here.**
+/// `frame3::tol_bounds_error_over_random_chains` prints it as `[tol tightness]` — run it. A figure
+/// pasted into this doc goes stale silently: the one that used to be here was measured before
+/// reflections joined that test's corpus, and two commits later it was wrong by ~6×. The corpus is
+/// what the figure describes, so the corpus is where it has to be read.
+///
+/// ★ **And the dominant term is not `f64::cos` itself** (measured: the whole realization is off by
+/// up to ~8ε, against the 16ε charged). `Angle`'s f64 route is
+/// `(deg.to_f64() * PI / 180.0).cos()`, so the *argument* already carries ~3ε relative from three
+/// roundings and a rounded `PI`; with `|θ| ≤ 2π` that is ~9ε absolute, and `d cos = −sin·dθ`
+/// carries it straight through. **The deg→rad conversion dominates, and libm is the small part** —
+/// so "measure libm per angle and tighten this" is aimed at the wrong term. What would actually
+/// remove this constant is realizing cos/sin at arbitrary precision and rounding *that* to f64
+/// (≤ ε/2, contracted), which moves every stored rotated coordinate and needs its own cell.
 pub(crate) const DA_F64: f64 = 16.0 * f64::EPSILON;
 
 /// A rational as an arbitrary-precision float.
