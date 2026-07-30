@@ -3532,3 +3532,108 @@ n=1000  tol 3.377e133      n=2000  tol 6.257e279      ★ non-finite at n = 2195
 ### 정리
 
 스파이크는 지웠다 — 질문에 답했고 답은 여기 있다. 이 셀에서 같은 이유로 셋(`spike_plane_iv_share`·`spike_separating_chooser`·`spike_where_the_time_goes`)을 이미 지웠고, 이것만 예외로 둘 근거가 없었다. **반증된 예측은 이 문서의 자산이고, 그 자리는 코드가 아니다.**
+
+## 22%는 삼각함수를 다시 계산하고 있었다 — 회전 불리언 1.79배 (2026-07-30)
+
+`standard_for`(22.0%)와 방향 분할(25.5%)이 둘 다 `Pt3::compute_hp`(astro-float 실현)로 수렴한다. **"실현을 어디에 보관할까"를 세 번 설계했고, 물어야 했던 것은 "실현이 왜 비싼가"였다.**
+
+### 먼저 (B) — `Constructed`의 시행 한계는 **구성상 0**이고, 그걸 계산하고 있었다
+
+`rat_to_hp`(interval.rs:71)는 `분모가 2ᵏ && 분자비트 ≤ prec`이면 **정확한 구간**을 돌려준다. `Constructed` 점은 `Pt3::exact` ⇒ `Rat::try_from_f64` = `mantissa·2^exp` ⇒ 분모가 2의 거듭제곱이고 분자는 `Rat`의 i128 범위(≤127비트) ≤ `TRIAL_PREC` = 128, 게다가 체인이 비었다. ⇒ **`trial_bound` = `Bound::ZERO`, 항상.**
+
+```
+축정렬 60핀 fold:  standard_for 15.7ms → 76.7µs   (205배)   ← 24,120번의 "0 계산"이 사라짐
+계측이 먼저 확인:  60번의 불리언 전부 w = exact, prec = 128
+```
+
+★★ **리포는 한 층 아래에서 똑같은 반-패턴을 이미 지웠다.** `Pt3::exact`의 doc: *"`at` measures the rounding at 120 bits; for this case that is **nine BigFloat operations to compute a zero**, and the boolean's hot path used to pay it hundreds of thousands of times."* — `standard_for`가 한 층 위에서 같은 짓을 하고 있었다. **리포가 이미 이름 붙인 반-패턴을 내 층에서 다시 찾아본다.**
+
+`TRIAL_PREC ≥ 127` 결합은 이제 상수 옆의 `const _: () = assert!(...)`이고, `an_exact_point_demands_no_precision`이 `Rat` 범위 양 끝(가장 넓은 분자 ~127비트, 가장 깊은 분모 2¹²⁶)에서 지킨다.
+
+### ★★★ 그리고 (A) — 구현했다가 **되돌렸다**
+
+*"서피스별로 시행 한계를 한 번만 재고 `SurfaceDef::Moved`에 적어둔다"* 를 `transform.rs`가 채우는 형태로 구현했다. 60핀 fold(transform 60·불리언 60)에는 맞았지만:
+
+```rust
+// coverage/rotation.rs:348
+for _ in 0..4200 { a = xf(&mut m, a, rot_iso(Axis::Z, 37)); }   // transform 4,200번
+boolean(&mut m, BoolKind::Cut, a, b)                            // 불리언 1번
+```
+
+| | |
+|---|---|
+| **비용** | 매 transform이 그때의 체인 길이로 실현 ⇒ `Σₜ 18·t ≈ 1.58억` 마디. **O(n²)** |
+| ★★ **버려지는 계산** | `transform`은 입력을 `live_solids`에서 지운다 ⇒ 4,200개 서피스 중 **판정에 닿는 것은 마지막 6개** |
+| ★★★ **깨진 설계 속성** | 그 테스트 doc: *"The reject must arrive **before** the work."* 내 변경이 일을 거절보다 **앞으로** 옮겼다 |
+
+★★★ **교훈 — "언제 계산하나"는 "누가 그 답을 실제로 읽나"로 답한다.** *"태어나는 자리에서 한 번"* 은 태어난 것 대부분이 읽히지 않으면 **최악의 자리**다. 그리고 **최적화가 어떤 테스트를 느리게 만들면 그 테스트가 문서화한 속성부터 읽는다** — 시간만 보면 "느려졌다"이지만 doc을 읽으면 설계 위반이다.
+
+### ★★★ 그러다 발견한 것 — cos/sin 결과가 메모되지 않고 있었다
+
+`cos_sin_bounded`는 `HP_CONSTS`(thread_local)를 쓰므로 "캐시가 있다"고 읽힌다. 그런데 `astro_float::Consts`의 필드는 이것뿐이다(레지스트리 소스 확인):
+
+```rust
+pub struct Consts { pi: PiCache, e: ECache, ln2: Ln2Cache, ln10: Ln10Cache, tenpowers: Vec<..> }
+```
+
+**결과를 담을 칸이 없다.** `cos(prec, rm, cc)`가 `cc`를 받는 이유는 **π가 필요해서**다(도→라디안, 인수 축약). ⇒ 캐시가 사는 값은 *π를 매번 대신 한 번 계산한다*는 것이고, **결과 캐싱과는 직교**하다. 그리고 `compute_hp`의 `Rotate` 팔은 이걸 **노드마다, 점마다** 부른다 — 매번 Ziv 루프(급수 + 반올림 경계에서 자리를 늘려 재시도)를 처음부터.
+
+```
+60핀 회전 fold:   cos/sin 호출 29,037번  ←  서로 다른 (각도, prec) 쌍은 112개   ⇒ 중복도 259배
+4,200회전 테스트:  같은 37°를 4,200번 × 점마다
+```
+
+`112 = 56 각도 × 2 정밀도`. 56은 `60 − {0°, 90°, 180°, 270°}`(그 넷은 계수를 정확히 유지하므로 모션 노드를 안 남긴다), 2는 시행 128과 판정 256이다. **수가 원리로 맞는다.**
+
+### 고친 방법 — `(Angle, prec)`로 메모, 약 20줄, API 변경 0
+
+★★ **키가 값이라서 프로세스 전역 메모가 건전하다.** `Angle`은 `[0,360)`으로 정규화된 **정확한 유리수 "도"**(`Angle(Rat)`, `Eq + Hash`)이므로 모델이 둘이어도 같은 각도는 같은 질문이다. 이 셀에서 **`Handle<Surface>`를 키로 하는 전역 캐시를 기각**했는데, 핸들은 *한* 모델 스토어의 인덱스라 모델 둘이 서로의 실현을 읽는 조용한 오답이 된다. ⇒ **값 키는 되고 핸들 키는 안 된다.**
+
+그리고 `prec`이 키에 있으므로, "실현된 점을 오래 보관하는" 안의 급소(모델의 `prec`이 자라면 `HpCell`이 어긋나 **영구 미스** — 예전 80회 불리언 1.6s→60s의 형태)가 **여기엔 없다.**
+
+★ 순수 함수의 메모라는 주장은 `PiCache::for_prec(k, rm)`이 이력에 의존하지 않을 때만 성립한다. 확인했다: 캐시값을 `try_set_precision(k, rm, p_wrk)`로 정확히 반올림하고 못 결판내면 자리를 늘려 재시도한다 — `k`비트로의 올바른 반올림은 **유일**하므로 먼저 어느 정밀도를 물었는지에 무관하다. **이 커널은 이미 그 성질에 기대고 있었다**(π를 여러 정밀도에 걸쳐 공유).
+
+### 측정
+
+```
+60핀 회전 fold             1.53s  →  856ms     1.79배   (적중률 99.6%)
+    standard_for            336ms →  21.3ms   15.8배
+    plane_index_setup       472ms →  85.2ms    5.5배
+    build the partition     392ms → 110.8ms    3.5배
+    plane_classes           107ms →  38.1ms    2.8배
+4,200회전 거절 테스트        3.73s →  2.24s     1.67배
+축정렬 60핀 fold            불변 (회전 노드가 없어 메모가 하는 일이 없다)
+```
+
+**음성 대조**: 조회만 끄면 `standard_for` **342.2ms / fold 1.6s**로 정확히 복귀하고, 적중 0%에 호출 수는 동일한 29,037. ⇒ 1.79배는 진짜로 메모의 것이다.
+
+★ 예측을 적지 않았고 그게 맞았다 — π가 이미 캐시된 상태에서 21µs 중 Ziv 루프 둘이 얼마인지는 **재봐야** 알았고, 답은 "대부분"이었다.
+
+### ★★ 그리고 이것이 (A)를 은퇴시켰다
+
+`standard_for`가 21.3ms이므로 서피스별 `trial` 기억은 이제 **그중 약 20ms**만 번다. `Model`의 파생 캐시든 `boolean`/`apply`에 인자 추가든 **배관이 이득보다 크다.** ⇒ **구조를 바꾸기 전에, 그 구조가 옮기려는 계산 자체가 싸질 수 있는지 본다.**
+
+### 관문
+
+대장 130행 비트 동일 · **`prec` 수열 양쪽 fold 완전 동일**(회전 `w = −122×3, −121×7, −120×10, −119×19, −118×21 / prec 256×60`, 축정렬 `w = exact / prec 128×60`) · OCCT 101/101 · cip·scalar 임의정밀도 지상진실 green · 디버그 이중 실행 · 클리피 0(기본·`--no-default-features`·`-p nacre-cip --no-default-features`).
+
+★★ **대장 동일만으로는 증거가 안 된다.** `judge_precision`의 doc: *"this is an **estimate**, and correctness does not rest on it — every judgement checks its own interval, so an under-estimate costs a re-run and never an answer."* `coincidence`는 `scale`만의 함수라 `prec`과 무관하고, `prec`이 답을 바꿀 수 있는 경로는 `cap`에 걸린 판정뿐인데 그건 측정상 발생하지 않는다. ⇒ `worst`를 잘못 모아도 답은 같고 정밀도만 낮아질 수 있으므로 **`prec` 수열 동일이 진짜 관문**이다.
+
+### 계측을 지우고, 불변식은 테스트로 승격했다
+
+`TRIAL_ALL`/`TRIAL_MOVED`/`MOVED_SURFS`/`PREC_LOG`는 질문에 답했으므로 지웠다(답은 위에 있다). **다만 메모의 적중률은 지우지 않고 테스트로 바꿨다** — 메모는 [[silent-fallback-optimizations]] 종류라서 망가져도 **답은 맞고 느려질 뿐**이다.
+
+★ 그리고 **적중률은 두 실패를 구별하지 못한다**: 같은 각도를 두 표기로 쓰는 런은 적중률이 높게 나오면서도 각도마다 두 번씩 계산한다. 모든 미스가 삽입하므로 **항목 수**가 직접적인 판독이다. `the_trig_memo_keys_on_the_angle_not_its_spelling`이 그 셋을 지킨다: 두 번째 질문은 삽입하지 않고, `74/2`는 `37/1`과 **한 항목**이며, 정밀도는 **키의 일부**다.
+
+### 남은 것 — 프로필의 1등이 바뀌었다
+
+```
+extract_cells 순회   174.5ms  20.4%   ┐ 둘 다 이전에 "접었다"고 판단한 것
+trace_on_class       239.7ms  28.0%   ┘
+build the partition  110.8ms  12.9%
+angular_order         67.8ms   7.9%
+```
+
+★ **후속 후보: 체인을 하나의 아핀 변환으로 접기.** `compute_hp`는 노드마다 BigFloat 곱·합을 한다. N개 축회전은 하나의 변환으로 합성되므로 **N에 무관하게 한 번의 행렬-벡터 곱**으로 줄 수 있다(4,200회전 케이스에는 이번 메모보다 크다). ✗ 다만 **반올림 순서가 달라져 `compute_hp`의 오차 회계가 바뀐다** ⇒ `trial_bound`가 다른 값을 내고 ⇒ `prec`이 움직이고 ⇒ `h_*` 지상진실을 다시 세워야 한다. **별개 셀.**
+
+★ 위의 *"삼각함수 오차를 각도별로 정확히 구하기"* 와 혼동하지 말 것: 그것은 **f64 `tol`**(`DA_F64`의 27배 여유)을 조이는 후보이고, 이번 것은 **임의정밀도 cos/sin 평가**의 반복이었다. 서로 독립이며 둘 다 유효하다.
