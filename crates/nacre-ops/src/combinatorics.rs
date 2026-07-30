@@ -719,6 +719,27 @@ pub(crate) fn loop_winding(
             lo = i;
         }
     }
+    // ★★★ **The scan above is only a minimum if the relation is an order, and that is an
+    // assumption about the predicates, not about this loop.** It composes per-axis comparisons
+    // lexicographically; a per-axis answer that is not a fact about the geometry — one plane
+    // described two ways, say — makes the composition intransitive, and then a forward scan can
+    // stop at a node with something smaller behind it. That node is not extreme, the turn read
+    // there is not the winding, and the wrong sign comes back **confident**: the engine noticed
+    // only two layers later, as "no outer contour", and named the symptom.
+    //
+    // ★ This is the postcondition the algorithm actually needs — cheaper than asking whether the
+    // relation is transitive (`O(n)` against `O(n³)`, and rings here reach 95 nodes) and closer to
+    // the point. **It holds however the predicates behave; it is the net under them.**
+    debug_assert!(
+        !ring.iter().enumerate().any(|(i, _)| {
+            i != lo
+                && (0..3)
+                    .map(|axis| jd.cmp_coord(ring[i].node, ring[lo].node, axis))
+                    .find(|&c| c != 0)
+                    == Some(-1)
+        }),
+        "the lexicographic scan did not find a minimum — the comparison is not an order here"
+    );
     // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
     // ambiguous — honest-reject rather than guess.
     let pinched_extreme = ring.iter().enumerate().any(|(i, _)| {

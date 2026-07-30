@@ -409,6 +409,20 @@ fn component_is_outward_tol(
             None => return Err(reject(RejectReason::CoincidentNodes)), // two distinct nodes coincide
         }
     }
+    // ★★ **Same postcondition as `loop_winding`'s scan, and here the stake is higher**: `v*`
+    // decides whether this shell is the outside or the inside, so a node that is not extreme
+    // turns the solid inside out. The forward scan finds a minimum only if the lexicographic
+    // relation is an order, which is a property of the predicates rather than of this loop.
+    debug_assert!(
+        !nodes.iter().any(|n| {
+            *n != lo
+                && (0..3)
+                    .map(|axis| jd.cmp_coord(triple_of[n], triple_of[&lo], axis))
+                    .find(|&c| c != 0)
+                    == Some(-1)
+        }),
+        "the lexicographic scan did not find a minimum — the comparison is not an order here"
+    );
 
     // Outward iff some outer face at v* has a result outward normal with n_x < 0. n_x's sign is
     // the RH-normal x-component (`dir_orient3d_judge` on the exact plane def), flipped by `flip`.
