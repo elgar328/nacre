@@ -4712,13 +4712,15 @@ mod tests {
             "    (1) collect trips       {:>10}",
             sc::get(&sc::COLLECT_TRIPS)
         );
+        // Points in the table, against the realizations actually performed: an unmoved face's bound
+        // is zero by construction and is not asked for. The last ratio is what a model-lifetime
+        // memo would still remove — the same surface realized once per boolean instead of once ever.
+        let (all, moved) = (sc::get(&sc::TRIAL_ALL), sc::get(&sc::TRIAL_MOVED));
+        let surfs = crate::planes::MOVED_SURFS.with(|m| m.borrow().len());
         println!(
-            "    ★ trial_bound now       {:>10}   of which moved {} · distinct moved surfaces {} ⇒ {:.1}x",
-            sc::get(&sc::TRIAL_ALL),
-            sc::get(&sc::TRIAL_MOVED),
-            crate::planes::MOVED_SURFS.with(|m| m.borrow().len()),
-            sc::get(&sc::TRIAL_ALL) as f64
-                / crate::planes::MOVED_SURFS.with(|m| m.borrow().len()).max(1) as f64
+            "    ★ trial points {all:>10}   realized {moved} ({:.0}% skipped) · distinct moved surfaces {surfs} ⇒ {:.1}x still repeated",
+            100.0 * (all - moved) as f64 / all.max(1) as f64,
+            moved as f64 / (surfs * 3).max(1) as f64
         );
         println!(
             "    (3) cover trips         {:>10}   = {:.2}x the collecting loop",

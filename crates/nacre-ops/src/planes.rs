@@ -366,10 +366,13 @@ pub(crate) fn plane_index_setup(
     #[cfg(test)]
     {
         use crate::arrangement::phase::scale;
+        // Points in the table, against the realizations `standard_for` actually performs — an
+        // unmoved face contributes a bound of zero without being asked, so the second number is
+        // the cost and the gap between them is what that skip removed.
         scale::add(&scale::TRIAL_ALL, planes.len() * 3);
         scale::add(
             &scale::TRIAL_MOVED,
-            planes.iter().filter(|p| p.motion.is_some()).count() * 3,
+            planes.iter().filter(|p| p.rotated).count() * 3,
         );
         // How many *distinct* moved surfaces this boolean touches — what a model-lifetime cache
         // would realize once ever, instead of once per boolean.
@@ -451,9 +454,30 @@ pub(crate) fn plane_index_setup(
 /// means a different physical thing in every model ("256 bits" is `1e-76` for a solid turned once
 /// and `1e+15` for one turned three hundred times).
 fn standard_for(planes: &[FaceInfo]) -> Standard {
-    let pts = || planes.iter().flat_map(|p| p.tri_pt3.iter());
-    let worst = worst_trial(pts());
-    let standard = standard_from(pts(), worst);
+    // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
+    //
+    // Its `tri_pt3` are `Pt3::exact` of the face's own f64 triangle: base = `mantissa · 2^exp`, so
+    // the denominator is a power of two and the numerator fits `Rat`'s 127 bits, and the chain is
+    // empty — which is precisely when `rat_to_hp` returns an *exact* interval. The realization has
+    // no error to report (`an_exact_point_demands_no_precision` in `nacre-cip`, and the const
+    // assert at `TRIAL_PREC` that keeps it true).
+    //
+    // So the loop below used to spend a full high-precision replay per point to compute a zero —
+    // measured, an axis-aligned 60-fin fold did that 24,120 times for 15.7ms and a `worst` of
+    // exactly `Bound::ZERO`. The same shape was removed one level down when `Pt3::exact` replaced
+    // `Pt3::at` for these points ("nine BigFloat operations to compute a zero").
+    //
+    // `max` over the empty set is `Bound::ZERO`, which is the right answer for a model with no
+    // rotation history — `precision_for` reads that as "nothing to size" and returns `TRIAL_PREC`.
+    let worst = worst_trial(
+        planes
+            .iter()
+            .filter(|p| p.rotated)
+            .flat_map(|p| p.tri_pt3.iter()),
+    );
+    // `scale`, by contrast, is every point's business: it is the model's size, and an unmoved face
+    // is as far from the origin as any other.
+    let standard = standard_from(planes.iter().flat_map(|p| p.tri_pt3.iter()), worst);
     #[cfg(test)]
     PREC_LOG.with(|l| l.borrow_mut().push((worst.exp2(), standard.prec)));
     standard
