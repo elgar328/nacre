@@ -332,6 +332,15 @@ impl Watch {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Every moved surface any boolean of this run touched — the size a model-lifetime trial-bound
+    /// cache would have to fill, measured against how many realizations happen today.
+    pub(crate) static MOVED_SURFS: std::cell::RefCell<
+        std::collections::HashSet<nacre_store::Handle<Surface>>,
+    > = std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
 pub(crate) fn plane_index_setup(
     model: &Model,
     a: Handle<Solid>,
@@ -345,6 +354,23 @@ pub(crate) fn plane_index_setup(
     let t = Watch::new();
     let standard = standard_for(&planes);
     t.charge(Sub::Std);
+    #[cfg(test)]
+    {
+        use crate::arrangement::phase::scale;
+        scale::add(&scale::TRIAL_ALL, planes.len() * 3);
+        scale::add(
+            &scale::TRIAL_MOVED,
+            planes.iter().filter(|p| p.motion.is_some()).count() * 3,
+        );
+        // How many *distinct* moved surfaces this boolean touches — what a model-lifetime cache
+        // would realize once ever, instead of once per boolean.
+        let surfs: std::collections::HashSet<_> = planes
+            .iter()
+            .filter(|p| p.motion.is_some())
+            .map(|p| p.surf)
+            .collect();
+        MOVED_SURFS.with(|m| m.borrow_mut().extend(surfs));
+    }
     let notes = Notes::new();
     if standard.prec > JUDGE_PREC_CAP {
         return Err(reject(RejectReason::PrecisionBudget {

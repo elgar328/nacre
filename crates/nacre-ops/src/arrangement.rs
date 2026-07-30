@@ -59,10 +59,18 @@ pub(crate) mod phase {
         TRACE_ON   = "  trace_on_class",
         MERGE      = "  merge_coincident",
         SPLIT      = "  split_at_crossings",
+        S_PART     = "    build the direction partition",
         COLLECT    = "    (1) collect crossings",
         SORT       = "    (2) sort + flush groups",
         COVER      = "    (3) cover sub-intervals",
         CELLS      = "  cells + nest + label + emit",
+        C_EXTRACT  = "    extract_cells",
+        E_ORDER    = "      per-half-edge order_along",
+        E_ANGULAR  = "      angular_order",
+        E_WALK     = "      the rest (walk + cells)",
+        C_NEST     = "    nest_cells",
+        C_LABEL    = "    label_cells",
+        C_EMIT     = "    emit_faces",
         REUSE      = "  reuse pass-through",
         UNIFY      = "unify_coplanar_faces",
         SEAM       = "seam table + alias scan",
@@ -81,6 +89,11 @@ pub(crate) mod phase {
         pub(crate) static COVER_TRIPS: AtomicU64 = AtomicU64::new(0);
         /// `Σ_w |segs|` — the collecting loop's actual trip count.
         pub(crate) static COLLECT_TRIPS: AtomicU64 = AtomicU64::new(0);
+        /// `trial_bound` calls `standard_for` makes now, and how many are on a *moved* definition
+        /// (the only ones that can be non-zero). A model-lifetime cache would pay the distinct
+        /// moved-surface count instead.
+        pub(crate) static TRIAL_ALL: AtomicU64 = AtomicU64::new(0);
+        pub(crate) static TRIAL_MOVED: AtomicU64 = AtomicU64::new(0);
         pub(crate) fn add(c: &AtomicU64, n: usize) {
             c.fetch_add(n as u64, Ordering::Relaxed);
         }
@@ -88,7 +101,15 @@ pub(crate) mod phase {
             c.load(Ordering::Relaxed)
         }
         pub(crate) fn reset() {
-            for c in [&SEGS, &WALLS, &PTS, &COVER_TRIPS, &COLLECT_TRIPS] {
+            for c in [
+                &SEGS,
+                &WALLS,
+                &PTS,
+                &COVER_TRIPS,
+                &COLLECT_TRIPS,
+                &TRIAL_ALL,
+                &TRIAL_MOVED,
+            ] {
                 c.store(0, Ordering::Relaxed);
             }
         }
@@ -1080,6 +1101,7 @@ fn split_at_crossings(
     // the whole point here is to **not ask** the pairs — transitivity is what lets one question per
     // family stand in for all of them.
     let walls: Vec<Wall> = {
+        watch!(S_PART);
         let mut walls: Vec<Wall> = Vec::new();
         // Class → its slot in `walls`, for construction only. Nothing below reads it: a wall's
         // segments and family travel with the wall, so the loops have one index space.
@@ -1350,19 +1372,23 @@ fn extract_cells(
     let mut cyclic: HashMap<[usize; 3], (Vec<usize>, Vec<usize>)> = HashMap::new();
     for (&v, outs) in &outgoing {
         let mut edges = Vec::with_capacity(outs.len());
-        for &he in outs {
-            let (rv, rf) = (origin_h(he), target_h(he));
-            // Direction sign away from v toward the far end (edge_sign convention).
-            let s = combinatorics::order_along(jd, wc, wall(he), rf, rv);
-            if s == 0 {
-                return Err(reject(RejectReason::CoincidentNodes));
+        {
+            watch!(E_ORDER);
+            for &he in outs {
+                let (rv, rf) = (origin_h(he), target_h(he));
+                // Direction sign away from v toward the far end (edge_sign convention).
+                let s = combinatorics::order_along(jd, wc, wall(he), rf, rv);
+                if s == 0 {
+                    return Err(reject(RejectReason::CoincidentNodes));
+                }
+                edges.push((wall(he), s));
             }
-            edges.push((wall(he), s));
         }
-        let ord = angular_order(jd, wc, &edges);
+        let ord = timed!(E_ANGULAR, angular_order(jd, wc, &edges));
         cyclic.insert(v, (outs.clone(), ord));
     }
 
+    watch!(E_WALK);
     let components = component_count(segs);
 
     // Try both step directions (predecessor / successor); keep the one whose bounded/outer split
@@ -1993,22 +2019,20 @@ fn trace_result_faces(
         let split = &splits[k];
         let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
             watch!(CELLS);
-            let (cells, face_of) = extract_cells(jd, wc, split)?;
-            let nesting = nest_cells(jd, wc, &cells, split)?;
+            let (cells, face_of) = timed!(C_EXTRACT, extract_cells(jd, wc, split))?;
+            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, split))?;
             // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
             // arrangement covers all of space, so its unbounded cells reach infinity, where neither
             // solid is. That is a fact about arranging the *whole* model — restrict the input to a
             // region of space and the unbounded cells become an artifact of the restriction, which
             // is what the parameter records.
-            let labels = label_cells(&cells, &face_of, split, &nesting, [false; 4])?;
-            Ok(emit_faces(
-                kind,
-                &labels,
-                &cells,
-                split,
-                jd,
-                wc,
-                &nesting.holes,
+            let labels = timed!(
+                C_LABEL,
+                label_cells(&cells, &face_of, split, &nesting, [false; 4])
+            )?;
+            Ok(timed!(
+                C_EMIT,
+                emit_faces(kind, &labels, &cells, split, jd, wc, &nesting.holes,)
             ))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
@@ -4685,6 +4709,14 @@ mod tests {
         println!(
             "    (1) collect trips       {:>10}",
             sc::get(&sc::COLLECT_TRIPS)
+        );
+        println!(
+            "    ★ trial_bound now       {:>10}   of which moved {} · distinct moved surfaces {} ⇒ {:.1}x",
+            sc::get(&sc::TRIAL_ALL),
+            sc::get(&sc::TRIAL_MOVED),
+            crate::planes::MOVED_SURFS.with(|m| m.borrow().len()),
+            sc::get(&sc::TRIAL_ALL) as f64
+                / crate::planes::MOVED_SURFS.with(|m| m.borrow().len()).max(1) as f64
         );
         println!(
             "    (3) cover trips         {:>10}   = {:.2}x the collecting loop",
