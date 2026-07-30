@@ -997,6 +997,23 @@ fn merge_coincident(segs: &[Seg], wc: usize, aliases: &Aliases) -> Vec<MergedSeg
 /// `Err` (honest reject) on: a degenerate endpoint name (`THREE_PLANES`), or two distinct plane
 /// classes coincident on a wall's line — a four-plane concurrency `{wc, W, a, b}` the 3-plane DCEL
 /// cannot name (`FOURPLANE`).
+/// One wall of a class's arrangement: which plane class it is, the **direction family** its line on
+/// that class falls in, and the segments riding it.
+///
+/// Two walls' lines meet in a point iff their families **differ**, which is why the crossing
+/// collector compares `dir` instead of asking a predicate per pair (see [`split_at_crossings`]).
+///
+/// ★ Everything a wall knows travels with it. The alternative — a `Vec<usize>` of classes beside a
+/// `HashMap<class, Vec<usize>>` of segments beside a `Vec<usize>` of families indexed by *position* —
+/// is two or three index spaces read in one breath, which is the shape this crate has been bitten by
+/// four times (`combinatorics`'s "One `usize`, two meanings"). Same rule as `boolean::Ring` carrying
+/// the wall each edge rides rather than deriving it.
+struct Wall {
+    class: usize,
+    dir: usize,
+    segs: Vec<usize>,
+}
+
 fn split_at_crossings(
     jd: &Judge<'_, PlaneGeom>,
     wc: usize,
@@ -1044,18 +1061,51 @@ fn split_at_crossings(
         a == 0 || b == 0 || a != b
     };
 
-    // Group segment indices by wall (walls in first-appearance order for deterministic output).
-    let mut walls: Vec<usize> = Vec::new();
-    let mut by_wall: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (i, s) in segs.iter().enumerate() {
-        by_wall
-            .entry(s.wall)
-            .or_insert_with(|| {
-                walls.push(s.wall);
-                Vec::new()
-            })
-            .push(i);
-    }
+    // The walls, in first-appearance order for deterministic output — each with its **direction
+    // family** and the segments riding it. See [`Wall`].
+    //
+    // ★ **The family replaces a predicate per wall pair, and that is `|W|²` of them.** Two walls'
+    // lines on `wc` meet in a point iff `plane_pair_dir_sign(wc, w, r) != 0`, which is the sign of
+    // `det(n_wc, n_w, n_r)` — zero exactly when `n_wc × n_w` lies in `r`, i.e. when `wc ∩ w` is
+    // **parallel** to `wc ∩ r`. Parallelism of two lines in one plane is an **equivalence relation**,
+    // so the walls partition, and each wall needs only to find its family: ask the representatives
+    // until one matches. `|W| × families` questions instead of `|W|²`, and the collector then asks
+    // none at all.
+    //
+    // ★ The relation needs `wc ∩ w` to *be* a line. It is: a wall comes from a `MergedSeg` that
+    // rides it, so the meet carries a segment by construction. (Were `n_w ∥ n_wc` the determinant
+    // would vanish against every `r` and the partition would collapse to one family.)
+    //
+    // ★ **Not union-find**, though `Aliases` next door is one. That structure merges *given* pairs;
+    // the whole point here is to **not ask** the pairs — transitivity is what lets one question per
+    // family stand in for all of them.
+    let walls: Vec<Wall> = {
+        let mut walls: Vec<Wall> = Vec::new();
+        // Class → its slot in `walls`, for construction only. Nothing below reads it: a wall's
+        // segments and family travel with the wall, so the loops have one index space.
+        let mut slot: HashMap<usize, usize> = HashMap::new();
+        // One representative class per direction family, in first-appearance order.
+        let mut reps: Vec<usize> = Vec::new();
+        for (i, s) in segs.iter().enumerate() {
+            let at = *slot.entry(s.wall).or_insert_with(|| {
+                let dir = reps
+                    .iter()
+                    .position(|&rep| jd.plane_pair_dir_sign(wc, rep, s.wall) == 0)
+                    .unwrap_or_else(|| {
+                        reps.push(s.wall);
+                        reps.len() - 1
+                    });
+                walls.push(Wall {
+                    class: s.wall,
+                    dir,
+                    segs: Vec::new(),
+                });
+                walls.len() - 1
+            });
+            walls[at].segs.push(i);
+        }
+        walls
+    };
 
     #[cfg(test)]
     {
@@ -1064,7 +1114,8 @@ fn split_at_crossings(
     }
 
     let mut out = Vec::new();
-    for &w in &walls {
+    for wall in &walls {
+        let w = wall.class;
         // Split-point plane classes on W's line: every W-segment endpoint, plus every real
         // different-wall crossing (a segment on `o.wall` whose closed extent reaches W's line).
         let mut pts: Vec<usize> = Vec::new();
@@ -1072,7 +1123,7 @@ fn split_at_crossings(
             watch!(COLLECT);
             #[cfg(test)]
             phase::scale::add(&phase::scale::COLLECT_TRIPS, segs.len());
-            for &i in &by_wall[&w] {
+            for &i in &wall.segs {
                 pts.extend(segs[i].end_h);
             }
             // ★ **Wall-major, because the question is about walls.** What lands in `pts` is a *wall*
@@ -1080,16 +1131,17 @@ fn split_at_crossings(
             // "is `w` parallel to this segment's wall?" once per segment when the answer depends
             // only on the pair. And once one segment on `r` reaches `w`'s line, the rest cannot add
             // anything: `r` is already a split point.
-            for &r in &walls {
-                if r == w {
+            for other in &walls {
+                // ★ Same family ⇒ the two lines are parallel and meet in no point. This also
+                // subsumes `other.class == w`: a wall is in its own family, so one test does what
+                // an identity check and a predicate call used to.
+                if other.dir == wall.dir {
                     continue;
                 }
-                if jd.plane_pair_dir_sign(wc, w, r) == 0 {
-                    continue; // walls meet wc in no point (parallel)
-                }
+                let r = other.class;
                 // ★ One handle per wall pair — `r`'s segments all ask about this same crossing.
                 let at = jd.point(wc, r, w);
-                if by_wall[&r].iter().any(|&i| closed_contains(i, &at, w)) {
+                if other.segs.iter().any(|&i| closed_contains(i, &at, w)) {
                     pts.push(r);
                 }
             }
@@ -1151,7 +1203,7 @@ fn split_at_crossings(
             phase::scale::add(&phase::scale::PTS, pts.len());
             phase::scale::add(
                 &phase::scale::COVER_TRIPS,
-                pts.len().saturating_sub(1) * by_wall[&w].len(),
+                pts.len().saturating_sub(1) * wall.segs.len(),
             );
         }
         for pair in pts.windows(2) {
@@ -1159,7 +1211,7 @@ fn split_at_crossings(
             let mut merged: Vec<(SolidSide, SegKind)> = Vec::new();
             // The same hoist as the collector: every `w`-segment asks about these two points.
             let (at_p, at_q) = (jd.point(wc, w, p), jd.point(wc, w, q));
-            for &i in &by_wall[&w] {
+            for &i in &wall.segs {
                 if closed_contains(i, &at_p, p) && closed_contains(i, &at_q, q) {
                     merged.extend(segs[i].merged.iter().copied());
                 }
@@ -4377,6 +4429,119 @@ mod tests {
         .unwrap();
         m.rebuild_adjacency();
         out
+    }
+
+    /// **The crossing collector's direction families really are equivalence classes.**
+    ///
+    /// ★ `split_at_crossings` replaced a predicate per wall pair with "same family?", which is sound
+    /// only because `wc ∩ w ∥ wc ∩ r` is transitive. The argument is in that function; this is the
+    /// **check**, over every wall pair of every class of a rotated and an axis-aligned fold: the
+    /// predicate's own answer must agree with the partition, everywhere.
+    ///
+    /// It matters that this is a test and not a spike. A violation would not reject or panic — it
+    /// would invent a crossing point where the lines never meet, or lose one where they do, and the
+    /// census would drift by one vertex somewhere. **A silent wrong answer is exactly what a corpus
+    /// this size can hide**, so the invariant is asserted rather than inspected.
+    ///
+    /// Separate from the timing spike on purpose: this asks the predicate about every pair, which
+    /// fills `Pt3`'s realization cells and would make the phase timers read the collector 1.76x
+    /// cheaper than it is.
+    #[test]
+    #[ignore = "slow: every wall pair of every class, two folds"]
+    fn direction_families_partition_the_walls() {
+        for rotated in [true, false] {
+            let n = 24i128;
+            let mut m = Model::new();
+            let mut acc = if rotated {
+                m.add_cuboid(
+                    Point3::from_array([-3.0, -3.0, 0.0]),
+                    Point3::from_array([3.0, 3.0, 2.0]),
+                )
+            } else {
+                m.add_cuboid(
+                    Point3::from_array([-1.0, -1.0, 0.0]),
+                    Point3::from_array([n as f64 * 0.5 + 1.0, 1.0, 3.0]),
+                )
+            };
+            m.rebuild_adjacency();
+            let mut pairs = 0usize;
+            for i in 0..n {
+                let fin = if rotated {
+                    let f = m.add_cuboid(
+                        Point3::from_array([2.0, -0.4, 0.0]),
+                        Point3::from_array([8.0, 0.4, 1.0]),
+                    );
+                    m.rebuild_adjacency();
+                    tilt_by(&mut m, f, nacre_scalar::Rat::new(360 * i, n).unwrap())
+                } else {
+                    let x = i as f64 * 0.5;
+                    let f = m.add_cuboid(
+                        Point3::from_array([x, 0.5, 0.0]),
+                        Point3::from_array([x + 0.2, 4.0, 2.0]),
+                    );
+                    m.rebuild_adjacency();
+                    f
+                };
+                // The audit needs the *same* judging context the boolean uses, and the walls of each
+                // class as the tracer finds them — so it re-runs the setup and the trace, then checks
+                // the partition the collector would build.
+                let setup = plane_index_setup(&m, acc, fin).expect("setup");
+                let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+                let trace_in = combinatorics::trace_input(
+                    &m,
+                    [(acc, &setup.inc_a), (fin, &setup.inc_b)],
+                    &setup.surf_ix,
+                    setup.planes.len(),
+                    &jd,
+                    &setup.plane_ix,
+                );
+                for wc in 0..setup.geom.len() {
+                    let tr = trace_on_class(&trace_in, wc, &jd, &setup.planes, &setup.plane_ix);
+                    let mut walls: Vec<usize> = Vec::new();
+                    for s in &tr.segs {
+                        if !walls.contains(&s.wall) {
+                            walls.push(s.wall);
+                        }
+                    }
+                    let par = |a: usize, b: usize| jd.plane_pair_dir_sign(wc, a, b) == 0;
+                    // The partition, exactly as `split_at_crossings` builds it.
+                    let mut reps: Vec<usize> = Vec::new();
+                    let dir: Vec<usize> = walls
+                        .iter()
+                        .map(|&w| {
+                            reps.iter().position(|&rep| par(rep, w)).unwrap_or_else(|| {
+                                reps.push(w);
+                                reps.len() - 1
+                            })
+                        })
+                        .collect();
+                    for (i, &a) in walls.iter().enumerate() {
+                        for (j, &b) in walls.iter().enumerate().skip(i + 1) {
+                            pairs += 1;
+                            assert_eq!(
+                                par(a, b),
+                                dir[i] == dir[j],
+                                "class {wc}: walls {a} and {b} — the predicate and the partition \
+                                 disagree, so parallelism is not transitive here"
+                            );
+                        }
+                    }
+                }
+                acc = super::boolean(&mut m, BoolKind::Fuse, acc, fin)
+                    .expect("fuse")
+                    .0[0];
+                m.rebuild_adjacency();
+            }
+            println!(
+                "  {} fold: {pairs} wall pairs audited, all agree",
+                if rotated { "rotated" } else { "axis-aligned" }
+            );
+            assert!(
+                pairs > 10_000,
+                "{} fold audited only {pairs} pairs — too few to mean anything",
+                if rotated { "rotated" } else { "axis-aligned" }
+            );
+        }
     }
 
     /// **S2a: where does a whole boolean's time go?** Every earlier profile answered a share *of a
