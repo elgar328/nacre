@@ -4737,8 +4737,9 @@ mod tests {
         // angle), and a low hit rate means the memo is pure overhead.
         let (hit, miss) = nacre_scalar::trig_stats::get();
         println!(
-            "    ★ cos/sin memo      hit {hit:>10}   miss {miss}   = {:.1}% hit",
-            100.0 * hit as f64 / (hit + miss).max(1) as f64
+            "    ★ cos/sin memo      hit {hit:>10}   miss {miss}   = {:.1}% hit · memo holds {} entries",
+            100.0 * hit as f64 / (hit + miss).max(1) as f64,
+            nacre_scalar::trig_stats::len()
         );
 
         // ★ **The gate, not a curiosity.** A change to how `worst` is gathered can leave the census

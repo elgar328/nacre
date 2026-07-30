@@ -96,6 +96,12 @@ pub mod trig_stats {
     pub fn get() -> (u64, u64) {
         (HIT.load(Ordering::Relaxed), MISS.load(Ordering::Relaxed))
     }
+    /// How many entries the memo actually holds. **The proof that the key does not leak**: every
+    /// miss inserts, so `len == misses` means every miss was a *distinct* `(angle, prec)` — the
+    /// floor, with nothing left to save. `len < misses` would mean two spellings of one angle.
+    pub fn len() -> usize {
+        super::TRIG.with_borrow(|t| t.len())
+    }
     pub fn reset() {
         HIT.store(0, Ordering::Relaxed);
         MISS.store(0, Ordering::Relaxed);
