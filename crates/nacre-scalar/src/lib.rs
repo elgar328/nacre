@@ -37,7 +37,6 @@ pub use bound::Bound;
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedMul, CheckedSub};
-use std::f64::consts::PI;
 
 use astro_float::{BigFloat, Consts, RoundingMode};
 use std::cell::RefCell;
@@ -95,10 +94,129 @@ thread_local! {
     /// ★★ **So a second entry under one angle is a signal, not waste**: it says two realizations of
     /// that angle are live in this process. The tests read the count for exactly that reason.
     static F64_ERR: RefCell<HashMap<RealizedAt, (f64, f64)>> = RefCell::new(HashMap::new());
+
+    /// **The f64 realization of an angle, keyed by the angle alone** — see [`Angle::cos_sin_f64`].
+    ///
+    /// ★ Unlike [`F64_ERR`], the pair is *not* in the key, and it must not be: the value here **is**
+    /// the pair, and it is the correctly rounded one, which is unique. This memo therefore cannot
+    /// change an answer — it only stops the arbitrary-precision realization from running per vertex.
+    ///
+    /// **Measured, which is why it is here from the start**: one realization costs ~32µs against
+    /// libm's 22ns, and `Isometry::apply_point` runs per vertex.
+    static F64_TRIG: RefCell<HashMap<Angle, (f64, f64)>> = RefCell::new(HashMap::new());
+
+    /// How often the f64 realization needed a second, deeper pass, and how often even that left
+    /// the rounding undecided — see [`Angle::cos_sin_f64`]. **Read by tests**: a checker that
+    /// never fires is indistinguishable from one that is not running.
+    static ROUND_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 }
 
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
 type TrigAt = (BigFloat, BigFloat, Bound, Bound);
+
+/// **The `f64` nearest the true value that `mid ± rad` encloses — or `None` when `mid ± rad` is
+/// not narrow enough to say.**
+///
+/// An arbitrary-precision realization is an *interval*, and rounding its midpoint to 53 bits is
+/// rounding an approximation: near a rounding boundary the answer would be the approximation's,
+/// not the truth's. So both ends are rounded and compared. Round-to-nearest is **monotonic**, so
+/// `lo ≤ v ≤ hi` gives `round(lo) ≤ round(v) ≤ round(hi)` — when the ends agree, the value between
+/// them cannot round anywhere else, whatever it is. `None` says "realize deeper and ask again",
+/// which is the same shape as `precision_for` escalating a judgement.
+///
+/// ★★★ **The ends are formed at `prec + 64`, and that line is load-bearing.** `rad` is about
+/// `2⁻ᵖʳᵉᶜ` of `mid`, so forming `mid ± rad` *at* `prec` rounds the radius away, both ends collapse
+/// onto `mid`, and the comparison then passes for every input — a check that runs, reports success,
+/// and verifies nothing. The guard digits keep the perturbation alive.
+///
+/// **Not for a value whose true magnitude may be zero.** `cos 90°` is exactly `0`, so its interval
+/// straddles zero, the two ends have opposite signs, and no precision ever makes them agree — this
+/// would return `None` forever. Callers must resolve the exactly-representable cases first;
+/// [`Angle::cos_sin_f64`] does that with `try_exact_cos_sin`.
+///
+/// `pub` because the coordinate arithmetic in `nacre-cip` will want the same rounding, and two
+/// implementations of "round this interval to f64" is exactly the drift this crate keeps deleting.
+pub fn round_to_f64(mid: &BigFloat, rad: Bound, prec: usize) -> Option<f64> {
+    if mid.is_nan() || mid.is_inf() {
+        return None;
+    }
+    let p = prec + 64;
+    let r = rad_upper_big(rad, p)?;
+    let (lo, hi) = (mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM));
+    let (rlo, rhi) = (to_f64_exact(&lo)?, to_f64_exact(&hi)?);
+    (rlo == rhi && !rlo.is_nan()).then_some(rlo)
+}
+
+/// `2^exp2()` as a `BigFloat` — an **upper bound** on the radius, exactly representable.
+///
+/// [`Bound`] is `m · 2^e` with `m ∈ [0.5, 1)`, so `2^e` is above it; the mantissa is left out
+/// because widening the interval can only cost an escalation, never buy a wrong acceptance, and
+/// `Bound` does not expose its mantissa. A power of two is exact in `BigFloat` at any precision.
+///
+/// `None` when `2^e` is outside `f64`'s range. That cannot happen for the radii this crate
+/// produces (`prec ≤ 256` against magnitudes above `2⁻¹³³`), and returning `None` rather than
+/// silently flushing to zero is what keeps a broken premise from reading as a *tighter* interval.
+fn rad_upper_big(rad: Bound, p: usize) -> Option<BigFloat> {
+    let Some(e) = rad.exp2() else {
+        return Some(BigFloat::from_f64(0.0, p)); // an exact realization: a zero radius is honest
+    };
+    if !(-1000..=1000).contains(&e) {
+        return None;
+    }
+    Some(BigFloat::from_f64(2f64.powi(e as i32), p))
+}
+
+/// `x` rounded to 53 significant bits and read out as the `f64` with those bits.
+///
+/// Two steps that must not be confused: `set_precision(53, ToEven)` performs the *rounding* (this
+/// is the only place a value loses bits), and the assembly below is a pure re-encoding of what
+/// that produced. Splitting them is why the caller can round two interval ends and compare.
+///
+/// Restricted to the normal range on purpose — every caller here holds a `cos`/`sin` of a
+/// non-quadrantal rational-degree angle, whose magnitude is between `2⁻¹³³` and `1`, so a subnormal
+/// or an overflow means a premise broke rather than an input being unusual. `None` says so.
+fn to_f64_exact(x: &BigFloat) -> Option<f64> {
+    if x.is_zero() {
+        return Some(0.0);
+    }
+    let mut v = x.clone();
+    v.set_precision(53, HP_RM).ok()?;
+    let (words, _bits, sign, e, _inexact) = v.as_raw_parts()?;
+    // Most significant word last (`Mantissa::to_u64` reads `m[len - 1]`), and the mantissa is
+    // normalized so that top bit is set. Assembled across words because `Word` is `u32` on
+    // 32-bit targets — wasm is one, and it is where this kernel actually ships.
+    const WB: u32 = astro_float::WORD_BIT_SIZE as u32;
+    let mut top: u64 = 0;
+    let mut filled = 0u32;
+    for w in words.iter().rev() {
+        if filled >= 64 {
+            break;
+        }
+        // `checked_shl` rather than `<<`: on a 64-bit target `WB` *is* 64, and the shift would be
+        // undefined. It cannot actually run there — `filled` reaches 64 after one word and the
+        // loop stops — but the expression still has to be well-formed for the compiler.
+        // The widening is a no-op where `Word` is already `u64` and required where it is `u32`;
+        // clippy sees only the target it is run on, and dropping it would fail to compile the
+        // other one.
+        #[allow(clippy::useless_conversion)]
+        {
+            top = top.checked_shl(WB).unwrap_or(0) | u64::from(*w);
+        }
+        filled += WB;
+    }
+    top <<= 64 - filled.min(64);
+    // `e` is astro-float's exponent for a mantissa in `[0.5, 1)`; f64's biased exponent for the
+    // same value is `e - 1 + 1023`. Anything outside the normal range is a broken premise.
+    let biased = i64::from(e) + 1022;
+    if !(1..=2046).contains(&biased) {
+        return None;
+    }
+    let sign_bit = u64::from(sign == astro_float::Sign::Neg) << 63;
+    // Drop the implicit leading 1, then take the 52 stored bits.
+    Some(f64::from_bits(
+        sign_bit | ((biased as u64) << 52) | ((top << 1) >> 12),
+    ))
+}
 
 /// An angle **together with one f64 realization of it** — `(angle, cos.to_bits(), sin.to_bits())`.
 /// The bits, not the floats, because the key has to be `Hash` and `Eq`.
@@ -400,45 +518,6 @@ impl Angle {
         self.0
     }
 
-    /// `(cos, sin)` realized in f64 the plain way — deg→rad via π, the irrational boundary.
-    ///
-    /// **Private, and a pair, because neither half is a rotation on its own.** Nothing in this
-    /// kernel turns a point by a cosine; the operation is *"realize this angle as a rotation's
-    /// `(cos, sin)`"*, and that is [`cos_sin_f64`](Self::cos_sin_f64) — which snaps the
-    /// 90°-family to exact `0`/`±1` where this does not (`cos(90°)` lands ~6e-17 here). Exposing
-    /// this would put the trap next to the safe door on the same public wall.
-    ///
-    /// The radian argument is built **once** for the pair. It used to be built twice — once in a
-    /// `cos()` and once in a `sin()` — two spellings of one expression that had to agree.
-    ///
-    /// **Its error is dominated by that argument, not by libm**: three roundings and a rounded
-    /// `PI` put ~3ε relative on it, and with `|θ| ≤ 2π` that is ~9ε absolute which `d cos =
-    /// −sin·dθ` carries straight through. [`realization_error_of`](Self::realization_error_of)
-    /// measures the result rather than bounding the terms, so it captures this and libm together.
-    ///
-    /// ★★★ **It is not a function of `self` alone, and no amount of care here makes it one.**
-    /// Measured: `sin(27°)` comes out one ulp apart between a debug and a release build, and
-    /// between two call sites *within one release build* — LLVM evaluates this at compile time
-    /// wherever the angle is a visible constant, and its result differs from libm's. Callers that
-    /// must agree bit for bit therefore cannot rely on "we both called the same function".
-    ///
-    /// ★★ **What they can rely on is that the angle crossed the model store.** The kernel's two
-    /// realizing routes — `Isometry::apply_point` and `nacre_cip`'s `Pt3::rotate_about` — both read
-    /// their angle back out of a `Model` before realizing it, and no optimiser propagates a
-    /// constant through a heap structure, so both call libm and agree. Measured over the whole
-    /// census, which is bit-identical between the two profiles, and pinned per-vertex by
-    /// `nacre_ops`' `replay_reproduces_the_stored_coordinate`.
-    ///
-    /// ★ **So a new route that realizes an `Angle` it did not store is outside that argument.**
-    /// The way to stop needing the argument is to stop calling libm: realize `cos`/`sin` at
-    /// arbitrary precision and round *that* to f64, which is correctly rounded by contract and
-    /// identical on every platform and profile. That moves every stored rotated coordinate and is
-    /// its own cell.
-    fn realize_f64(self) -> (f64, f64) {
-        let rad = self.0.to_f64() * PI / 180.0;
-        (rad.cos(), rad.sin())
-    }
-
     /// `(cos, sin)` realized in arbitrary precision at `prec` bits — the judgment
     /// path. astro-float replaces twofloat here (H1.5: twofloat's trig was
     /// f64-level near zero-crossings). The depth is the caller's: a judgement's precision is a
@@ -555,32 +634,84 @@ impl Angle {
         }
     }
 
-    /// `(cos, sin)` realized in f64 — **exact** (`0.0`/`±1.0`) for the 90°-family,
-    /// [`realize_f64`](Self::realize_f64) otherwise. The single source of truth for realizing a
-    /// rotation angle into f64: every path that turns a point or direction by an angle must go
-    /// through here, so the quadrantal case never re-introduces the `cos(90°)≈6e-17` spurious
-    /// cross-term (an axis-aligned rotation then lands its coordinates exactly on the grid — a
-    /// 90°-family rotation is tol 0).
+    /// `(cos, sin)` realized in f64 — **exact** (`0.0`/`±1.0`) for the 90°-family, and everywhere
+    /// else the arbitrary-precision value **correctly rounded**. The single source of truth for
+    /// realizing a rotation angle into f64: every path that turns a point or direction by an angle
+    /// goes through here.
     ///
-    /// ★★ **"Single source" is about the spelling, and the spelling is not the whole story.** Two
-    /// callers of this function can still be handed values one ulp apart, because the compiler may
-    /// realize a visible constant angle itself — see [`realize_f64`](Self::realize_f64) for the
-    /// measurement and for what actually holds the kernel's two routes together.
+    /// ★★★ **No libm.** This used to be `(deg.to_f64() * PI / 180.0).cos()`, and the error of that
+    /// is not something anyone contracts: neither Rust nor any platform promises an accuracy for
+    /// `f64::cos`, measured here at `< 5ε`. Worse, it was not a function of the angle — `sin 27°`
+    /// came out one ulp apart between a debug and a release build, and between two call sites
+    /// *within one release build*, because LLVM evaluates a visible constant angle at compile time
+    /// and its answer differs from the runtime library's. Rounding the high-precision realization
+    /// instead makes the result **unique**: the same bits on every platform, profile and call site.
     ///
-    /// **It is the only entry point, and that is enforced rather than asked for**: the plain
-    /// realization is private, so there is no second way to spell this. The declaration used to be
-    /// prose, and `nacre_cip`'s `Pt3::rotate_about` was quietly not honouring it — re-spelling this
-    /// match inline, on the one path whose job is to reproduce a producer's f64 route *bit for
-    /// bit*. The two agreed only because two places happened to say the same thing.
+    /// ★★ **The 90°-family branch is not an optimization, it is what makes this terminate.**
+    /// `cos 90°` is exactly `0`, so its interval straddles zero and the two ends never round to the
+    /// same f64 no matter how deep the realization goes — [`round_to_f64`] would answer `None`
+    /// forever. Niven's theorem says the only rational values are `{0, ±1/2, ±1}`, and only the
+    /// zeros have this problem; they are exactly the quadrantal ones caught here. (`±1/2` at 60°
+    /// and friends is exactly representable and comes out of the general path just fine.)
+    ///
+    /// **The realization is memoized per angle** ([`F64_TRIG`]), because one costs ~32µs against
+    /// libm's 22ns and `Isometry::apply_point` runs per vertex. The memo cannot change an answer —
+    /// a correctly rounded value is unique — so it is a cost question only.
     ///
     /// A caller accounting for the realization's *error* hands what it got back to
     /// [`realization_error_of`](Self::realization_error_of), which returns zero for exactly this
     /// family — so nothing here has to report which branch ran.
     pub fn cos_sin_f64(self) -> (f64, f64) {
-        match self.try_exact_cos_sin() {
-            Some((cr, sr)) => (cr.to_f64(), sr.to_f64()),
-            None => self.realize_f64(),
+        if let Some((cr, sr)) = self.try_exact_cos_sin() {
+            return (cr.to_f64(), sr.to_f64());
         }
+        if let Some(hit) = F64_TRIG.with_borrow(|m| m.get(&self).copied()) {
+            return hit;
+        }
+        // Outside the borrow: the realization below takes `TRIG`'s and `HP_CONSTS`' in turn.
+        let out = self.realize_rounded_f64();
+        F64_TRIG.with_borrow_mut(|m| m.insert(self, out));
+        out
+    }
+
+    /// [`cos_sin_f64`](Self::cos_sin_f64)'s general branch without the memo.
+    ///
+    /// **The ladder is `TRIAL_PREC` then twice that, and both rungs are derived rather than tried.**
+    /// The realization's error is dominated by the degrees→radians conversion, not by the cosine:
+    /// `≈ 30 · 2⁻ᵖʳᵉᶜ`. Against a result of magnitude `2^e` that has to clear a half-ulp of `2^(e-54)`,
+    /// so `prec > 54 - e + 5`.
+    ///
+    /// - **128** covers every `|cos| > 2⁻⁶⁹`, which is every angle a model has ever held. It is also
+    ///   `nacre_cip`'s trial precision, so a model that goes on to be judged **shares this exact
+    ///   realization** rather than paying for a second one at a different depth. That sharing is
+    ///   why the ladder does not start lower: 64 bits would satisfy the inequality and measured no
+    ///   cheaper (31.9µs against 32.3µs — the cost is setup, not bit count), but it would be a
+    ///   different `TRIG` key and so pure duplication for anything judged.
+    /// - **256** is the proven cap. An `Angle` holds `Ratio<i128>`, so a normalized angle cannot
+    ///   come closer to 90° than `1/denominator ≥ 5.9e-39` degrees; `|cos|` is therefore never
+    ///   below `~2⁻¹³³`, which needs `prec > 192`.
+    ///
+    /// ★ **If even 256 leaves it undecided the answer is still returned, not a panic.** The value is
+    /// then *faithfully* rounded (within an ulp) instead of correctly rounded, which stays sound
+    /// because [`realization_error_of`](Self::realization_error_of) measures the error that is
+    /// actually there and the tolerance grows to match — and it stays deterministic, because a
+    /// 256-bit midpoint is. It is counted so that "can't happen" does not quietly become "happens".
+    fn realize_rounded_f64(self) -> (f64, f64) {
+        for (i, prec) in [128usize, 256].into_iter().enumerate() {
+            let (c, s, rc, rs) = self.cos_sin_bounded(prec);
+            if let (Some(cf), Some(sf)) = (round_to_f64(&c, rc, prec), round_to_f64(&s, rs, prec)) {
+                if i > 0 {
+                    ROUND_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
+                }
+                return (cf, sf);
+            }
+        }
+        ROUND_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
+        let (c, s, _, _) = self.cos_sin_bounded(256);
+        (
+            to_f64_exact(&c).unwrap_or(f64::NAN),
+            to_f64_exact(&s).unwrap_or(f64::NAN),
+        )
     }
 
     /// **How far the `(cos, sin)` the caller was handed sits from the true ones** — measured
@@ -1110,18 +1241,33 @@ mod tests {
         assert_eq!(a, Angle::from_deg(Rat::from_int(0)).unwrap());
     }
 
-    /// The angle value stays exact, but its cos/sin *realization* is f64: `cos 90°`
-    /// is not exactly `0` (it is ~6e-17), showing the irrational-realization
-    /// boundary. `cos 0°`/`sin 0°` happen to be exact in f64.
+    /// The angle value stays exact, and its cos/sin realization is f64 — but a *correctly rounded*
+    /// one, so the irrational-realization boundary now costs at most half an ulp rather than
+    /// whatever the platform's libm happened to do.
+    ///
+    /// **`cos 45°` is the case to look at**: `√2/2` cannot be an f64, so the realization is
+    /// genuinely lossy, and it must land on the nearest f64 to the truth. Checked by asking a far
+    /// deeper realization whether anything is closer.
     #[test]
     fn realization_is_f64_while_angle_stays_exact() {
-        let a = Angle::from_deg(Rat::from_int(90)).unwrap();
-        assert_eq!(a.deg(), Rat::from_int(90)); // angle exact
-        let (c, _) = a.realize_f64();
-        assert!(c.abs() < 1e-15 && c != 0.0); // realized near 0, not exact
+        let a = Angle::from_deg(Rat::from_int(45)).unwrap();
+        assert_eq!(a.deg(), Rat::from_int(45)); // angle exact
+        let (c, _) = a.cos_sin_f64();
+        assert!(a.try_exact_cos_sin().is_none()); // √2/2 is not rational
 
-        let z = Angle::from_deg(Rat::from_int(0)).unwrap();
-        assert_eq!(z.realize_f64(), (1.0, 0.0));
+        // Nothing is nearer: both neighbours are further from the deep truth than `c` is.
+        let (deep, _) = a.cos_sin_at(512);
+        let dist = |f: f64| BigFloat::from_f64(f, 512).sub(&deep, 512, HP_RM).abs();
+        let here = dist(c);
+        for nb in [
+            f64::from_bits(c.to_bits() - 1),
+            f64::from_bits(c.to_bits() + 1),
+        ] {
+            assert!(
+                here.cmp(&dist(nb)).is_some_and(|s| s < 0),
+                "a neighbour of {c:e} is nearer the truth"
+            );
+        }
     }
 
     /// A 90°-family angle yields exact rational cos/sin, so rotating a rational
@@ -1150,24 +1296,34 @@ mod tests {
             .unwrap();
         assert_eq!((xr, yr), (Rat::from_int(-5), Rat::from_int(3)));
 
-        // 45° has no exact rational realization → None (falls to f64/dd).
+        // 45° has no exact rational realization → None (falls to the rounded high-precision path).
         let a45 = Angle::from_deg(Rat::from_int(45)).unwrap();
         assert!(a45.try_exact_cos_sin().is_none());
-        assert_ne!(a90.realize_f64().0, 0.0); // the general f64 path is not exact at 90°
+        // The high-precision realization of 90° is *not* zero either — it is ~2⁻¹²⁸ — which is
+        // exactly why the branch above exists rather than being an optimization.
+        assert!(!a90.cos_sin_at(128).0.is_zero());
     }
 
-    /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0` (unlike [`Angle::realize_f64`],
-    /// which lands ~6e-17 at 90°) and falls through to it otherwise.
+    /// `cos_sin_f64` snaps the 90°-family to exact `0.0`/`±1.0`, and the exactly-representable
+    /// values Niven allows off that family come out exact too.
+    ///
+    /// ★★ **`cos 60° == 0.5` is the visible proof that libm left.** `1/2` is one of the three
+    /// rational values a rational-degree cosine can take, and it *is* an f64 — but reaching it
+    /// through `(60.0 * PI / 180.0).cos()` does not land on it. Rounding the high-precision value
+    /// does.
     #[test]
-    fn cos_sin_f64_is_exact_for_quadrantal() {
+    fn cos_sin_f64_is_exact_where_the_true_value_is_representable() {
         let deg = |d| Angle::from_deg(Rat::from_int(d)).unwrap();
         assert_eq!(deg(0).cos_sin_f64(), (1.0, 0.0));
         assert_eq!(deg(90).cos_sin_f64(), (0.0, 1.0));
         assert_eq!(deg(180).cos_sin_f64(), (-1.0, 0.0));
         assert_eq!(deg(270).cos_sin_f64(), (0.0, -1.0));
-        // non-quadrantal: identical to the plain f64 realization.
-        let a45 = deg(45);
-        assert_eq!(a45.cos_sin_f64(), a45.realize_f64());
+        for (d, want) in [(60, 0.5), (120, -0.5), (240, -0.5), (300, 0.5)] {
+            assert_eq!(deg(d).cos_sin_f64().0, want, "cos {d}°");
+        }
+        for (d, want) in [(30, 0.5), (150, 0.5), (210, -0.5), (330, -0.5)] {
+            assert_eq!(deg(d).cos_sin_f64().1, want, "sin {d}°");
+        }
     }
 
     /// **The 90°-family realizes with no error at all, and that zero is load-bearing.**
@@ -1178,8 +1334,10 @@ mod tests {
     /// rotation stays at tol 0 and an axis-aligned model never leaves the exact predicate path.
     /// A nonzero here would not fail loudly; it would quietly move those models.
     ///
-    /// Everything else must report *something*: `f64::cos` has no accuracy contract, and a zero
-    /// would be a claim of exactness the platform never made.
+    /// Everything else must report *something* — but only where the true value is *not*
+    /// representable. Since the realization became correctly rounded, `cos 60°` really is `0.5`
+    /// exactly, so the corpus below has to avoid the four angles where that happens or it would be
+    /// asserting a nonzero error that does not exist.
     #[test]
     fn only_the_quadrantal_family_realizes_exactly() {
         let deg = |n, d| Angle::from_deg(Rat::new(n, d).unwrap()).unwrap();
@@ -1190,13 +1348,12 @@ mod tests {
         for d in [0, 90, 180, 270] {
             assert_eq!(err(deg(d, 1)), (0.0, 0.0), "{d} deg");
         }
-        // ★ And the zero is of the *pair*, not of the angle: hand a 90°-family angle the general
+        // ★ And the zero is of the *pair*, not of the angle: hand a 90°-family angle some other
         // realization and it must be measured like anything else. Otherwise a caller that got its
         // cos/sin from somewhere other than `cos_sin_f64` would be handed an exactness claim that
         // does not hold of what it is holding.
         let a90 = deg(90, 1);
-        let (gc, gs) = a90.realize_f64();
-        assert!(a90.realization_error_of(gc, gs).0 > 0.0);
+        assert!(a90.realization_error_of(1e-17, 1.0).0 > 0.0);
         for (n, d) in [(1, 1), (37, 1), (45, 1), (337, 1), (1, 3), (359999, 1000)] {
             let (dc, ds) = err(deg(n, d));
             assert!(
@@ -1209,6 +1366,118 @@ mod tests {
                 "{n}/{d} deg: {dc:e}"
             );
         }
+    }
+
+    /// **The f64 read-out is a re-encoding, not a computation — checked by round trip.**
+    ///
+    /// `set_precision(53, ToEven)` is where a value loses bits; everything after it is supposed to
+    /// be pure bookkeeping over the mantissa words. So any `f64` put in must come back out
+    /// unchanged. **The 32-bit-`Word` path is the one this is really for** — the mantissa is
+    /// assembled across two words there, wasm is a 32-bit target, and no amount of reading the
+    /// crate source substitutes for running it on the target that ships.
+    #[test]
+    fn the_f64_readout_round_trips() {
+        let mut cases = vec![
+            1.0,
+            0.5,
+            -0.5,
+            0.9999999999999999,
+            1e-300,
+            -3.7e17,
+            f64::MIN_POSITIVE,
+        ];
+        let mut st = 0x2545_F491_4F6C_DD1Du64;
+        for _ in 0..2000 {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            // Any finite normal double; the exponent is squeezed into the normal range.
+            let bits = (st & !(0x7ffu64 << 52)) | ((1 + (st >> 53) % 2045) << 52);
+            let x = f64::from_bits(bits);
+            if x.is_normal() {
+                cases.push(x);
+            }
+        }
+        for x in cases {
+            let back = to_f64_exact(&BigFloat::from_f64(x, 128));
+            assert_eq!(back, Some(x), "{x:e} did not survive the round trip");
+        }
+        assert_eq!(to_f64_exact(&BigFloat::from_f64(0.0, 128)), Some(0.0));
+    }
+
+    /// **The rounding check has to be able to say no.**
+    ///
+    /// [`round_to_f64`] answers `None` when the interval straddles a rounding boundary, and that
+    /// branch is the whole reason the function is not just "round the midpoint". A check that can
+    /// only say yes is indistinguishable from no check — and there is a specific way to build one
+    /// here, by forming `mid ± rad` at the realization's own precision so the radius rounds away.
+    /// So: a radius wide enough to be undecidable must be refused, and a tight one accepted.
+    #[test]
+    fn the_rounding_check_refuses_an_undecidable_interval() {
+        let a = Angle::from_deg(Rat::new(37, 1).unwrap()).unwrap();
+        let (c, _, rc, _) = a.cos_sin_bounded(128);
+        assert!(
+            round_to_f64(&c, rc, 128).is_some(),
+            "a 2^-128 radius is decidable"
+        );
+        // An ulp-wide radius cannot be: it reaches both neighbours.
+        assert!(round_to_f64(&c, Bound::pow2(-52), 128).is_none());
+        // And zero is the case no precision resolves — cos 90 is exactly 0, so its interval
+        // straddles zero forever. This is why `cos_sin_f64` resolves the family first.
+        let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
+        for prec in [128usize, 256, 512] {
+            let (c90, _, r90, _) = a90.cos_sin_bounded(prec);
+            assert!(
+                round_to_f64(&c90, r90, prec).is_none(),
+                "cos 90 became decidable at {prec}, which would make the quadrantal branch optional"
+            );
+        }
+    }
+
+    /// The escalation and fallback rungs, counted — over a corpus that reaches for them.
+    ///
+    /// Near an axis `|cos|` is tiny while its error bound is absolute, so the relative radius grows
+    /// and 128 bits stops being enough; that is the only place the second rung is reachable. **The
+    /// count is reported rather than asserted nonzero**: with `Rat` bounded by `i128` an angle
+    /// cannot get closer to 90° than ~6e-39 degrees, so it is entirely possible that nothing in a
+    /// finite corpus needs it — but a silent zero and an unreachable branch look identical, and
+    /// this at least says which corpus produced the zero.
+    #[test]
+    fn the_escalation_rung_is_reachable() {
+        let before = ROUND_ESCALATED.with_borrow(|c| *c);
+        let mut asked = 0usize;
+        for k in 1..400i128 {
+            // Just off 90 degrees, by ever smaller amounts.
+            for d in [
+                10i128.pow(9),
+                10i128.pow(18),
+                10i128.pow(30),
+                i128::MAX / 91,
+            ] {
+                if let Some(a) = Rat::new(90 * d + k, d).and_then(Angle::from_deg) {
+                    let (c, s) = a.cos_sin_f64();
+                    assert!(
+                        c.is_finite() && s.is_finite(),
+                        "{a:?} realized to a non-number"
+                    );
+                    // Whatever rung answered, the answer must still bound its own error.
+                    let (dc, ds) = a.realization_error_of(c, s);
+                    assert!(dc >= 0.0 && ds >= 0.0);
+                    asked += 1;
+                }
+            }
+        }
+        let after = ROUND_ESCALATED.with_borrow(|c| *c);
+        eprintln!(
+            "[round_to_f64] {} escalated to 256, {} fell back, over {asked} near-axis angles",
+            after.0 - before.0,
+            after.1 - before.1
+        );
+        assert!(asked > 500, "corpus shrank to {asked}");
+        assert_eq!(
+            after.1, before.1,
+            "the undecidable fallback fired, which is derived not to"
+        );
     }
 
     /// The memo answers the second ask, keys on the angle's *value* rather than its spelling — same
@@ -1270,9 +1539,10 @@ mod tests {
         });
         assert_eq!(piv.apply_point([3.0, 5.0, 0.0]), [-1.0, 3.0, 0.0]);
 
-        // Non-quadrantal: unchanged from the plain cos/sin realization.
+        // Non-quadrantal: the same arithmetic on the same realized pair, so this pins the *route*
+        // (`px + u·c − v·s`, in that order) rather than the values.
         let a = Angle::from_deg(Rat::from_int(37)).unwrap();
-        let (c, s) = a.realize_f64();
+        let (c, s) = a.cos_sin_f64();
         assert_eq!(
             iso(37).apply_point([3.0, 5.0, 0.0]),
             [3.0 * c - 5.0 * s, 3.0 * s + 5.0 * c, 0.0]
@@ -1545,6 +1815,25 @@ mod tests {
             let a = Angle::from_deg(Rat::from_int(deg)).unwrap();
             prop_assert!(a.deg() >= Rat::from_int(0));
             prop_assert!(a.deg() < Rat::from_int(360));
+        }
+    }
+}
+
+#[cfg(test)]
+mod symprobe {
+    use crate::{Angle, Rat};
+    #[test]
+    #[ignore = "probe"]
+    fn mirror_pairs() {
+        let a = |d: i128| Angle::from_deg(Rat::from_int(d)).unwrap();
+        for (x, y) in [(72i128, 288i128), (9, 351), (117, 243), (45, 315)] {
+            let (cx, sx) = a(x).cos_sin_f64();
+            let (cy, sy) = a(y).cos_sin_f64();
+            println!(
+                "[sym] {x} vs {y}: cos equal {}  sin negated {}   ({cx:.20e} / {cy:.20e})",
+                cx == cy,
+                sx == -sy
+            );
         }
     }
 }

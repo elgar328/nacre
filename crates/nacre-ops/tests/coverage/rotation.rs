@@ -363,3 +363,77 @@ fn a_rotation_history_past_the_budget_is_rejected_by_name() {
         other => panic!("expected a named precision-budget reject, got {other:?}"),
     }
 }
+
+/// **A 40-fin ring rejects, and the reason is that the model is now genuinely symmetric.**
+///
+/// `fin_fold(40)` in `tests/perf.rs` fuses fins at 9° apart and declines the 33rd (288°) with
+/// `RingOrientation`. It built before the trig realization became correctly rounded, and the
+/// difference is not noise: mirror-pair angles now realize to *exactly* mirrored coordinates
+/// (`cos 288° == cos 72°`, `sin 288° == −sin 72°`), where `libm` broke every such pair by an ulp.
+/// The model was always symmetric; the arrangement had simply never been handed the symmetry.
+///
+/// **What is wrong is the winding, not the walk.** The cell extraction produces a correct planar
+/// subdivision — 19 segments, 16 vertices, 5 faces, one component, `V − E + F = 2` — and then
+/// gives *every* ring the same winding, so neither step direction leaves exactly one outer
+/// contour. Reversing the direction flips all five together rather than separating them.
+///
+/// ★ **One hypothesis is already refuted**: that the new exact coincidences make `cmp_coord`
+/// answer "equal" and spoil the choice of extreme node. Measured — no ring has a node comparing
+/// equal to its running minimum, and the extreme nodes chosen are distinct and plausible. The
+/// fault is in the turn read *at* those nodes.
+///
+/// `#[ignore]`d because it asserts a defect. It fails the day the winding engine handles this,
+/// which is the notice this leaves behind.
+#[test]
+#[ignore = "documents an open defect: winding on an exactly symmetric fin ring"]
+fn a_forty_fin_ring_is_declined_for_its_own_symmetry() {
+    use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+    let mut m = Model::new();
+    let ring = |x0: f64, y0: f64, x1: f64, y1: f64| {
+        vec![
+            Point2::from_array([x0, y0]),
+            Point2::from_array([x1, y0]),
+            Point2::from_array([x1, y1]),
+            Point2::from_array([x0, y1]),
+        ]
+    };
+    let extrude = |m: &mut Model, prof: Vec<Point2>, dist: f64| {
+        let out = apply(
+            m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d::polygon(prof),
+                dist,
+            },
+        )
+        .expect("extrude");
+        m.rebuild_adjacency();
+        match out {
+            OpOutput::Extrude { solid, .. } => solid,
+            o => panic!("{o:?}"),
+        }
+    };
+    let mut acc = extrude(&mut m, ring(-3.0, -3.0, 3.0, 3.0), 2.0);
+    for i in 0..40i128 {
+        let fin = extrude(&mut m, ring(2.0, -0.4, 8.0, 0.4), 1.0);
+        let out = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: fin,
+                isometry: Isometry::rotation(Rotation {
+                    axis: Axis::Z,
+                    point: [Rat::from_int(0); 3],
+                    angle: Angle::from_deg(Rat::new(9 * i, 1).unwrap()).expect("angle"),
+                }),
+            },
+        )
+        .expect("rotate");
+        m.rebuild_adjacency();
+        let OpOutput::Transform { solid: fin } = out else {
+            unreachable!()
+        };
+        acc = boolean(&mut m, BoolKind::Fuse, acc, fin)
+            .unwrap_or_else(|e| panic!("fin {i} ({}deg) declined: {e:?}", 9 * i))[0];
+        m.rebuild_adjacency();
+    }
+}
