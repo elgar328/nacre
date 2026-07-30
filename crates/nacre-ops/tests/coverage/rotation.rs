@@ -364,29 +364,26 @@ fn a_rotation_history_past_the_budget_is_rejected_by_name() {
     }
 }
 
-/// **A 40-fin ring rejects, and the reason is that the model is now genuinely symmetric.**
+/// **A 40-fin ring, whose mirror-pair fins are exactly symmetric, builds.**
 ///
-/// `fin_fold(40)` in `tests/perf.rs` fuses fins at 9° apart and declines the 33rd (288°) with
-/// `RingOrientation`. It built before the trig realization became correctly rounded, and the
-/// difference is not noise: mirror-pair angles now realize to *exactly* mirrored coordinates
-/// (`cos 288° == cos 72°`, `sin 288° == −sin 72°`), where `libm` broke every such pair by an ulp.
-/// The model was always symmetric; the arrangement had simply never been handed the symmetry.
+/// It did not, once the trig realization became correctly rounded: `cos 288° == cos 72°` exactly,
+/// so mirror-pair fins landed on genuinely mirrored coordinates where `libm` had broken every such
+/// pair by an ulp, and the arrangement met the symmetry for the first time. What it met there was
+/// **not a symmetry problem** — it was a plane described two ways.
 ///
-/// **What is wrong is the winding, not the walk.** The cell extraction produces a correct planar
-/// subdivision — 19 segments, 16 vertices, 5 faces, one component, `V − E + F = 2` — and then
-/// gives *every* ring the same winding, so neither step direction leaves exactly one outer
-/// contour. Reversing the direction flips all five together rather than separating them.
+/// A `Constructed` plane carries its stored coefficients *and* a witness triangle, and the two need
+/// not describe the same plane: `d = −(raw·origin)` is an `f64` product, and `3.5 × 0.2` lands on
+/// `0.7000000000000001`. Predicates chose between the two descriptions by *the question* (does any
+/// plane in it rotate?), so one plane sat in two places depending on what was asked, and comparisons
+/// composed across the two were not even transitive. `loop_winding` then read its turn at a node
+/// that was not extreme and returned a **confident wrong winding**; the `RingOrientation` reject
+/// two layers later was the symptom.
 ///
-/// ★ **One hypothesis is already refuted**: that the new exact coincidences make `cmp_coord`
-/// answer "equal" and spoil the choice of extreme node. Measured — no ring has a node comparing
-/// equal to its running minimum, and the extreme nodes chosen are distinct and plausible. The
-/// fault is in the turn read *at* those nodes.
-///
-/// `#[ignore]`d because it asserts a defect. It fails the day the winding engine handles this,
-/// which is the notice this leaves behind.
+/// The route now requires the descriptions to agree, so this builds. **It is a regression test for
+/// the transitivity, not for the fins** — any model that puts two descriptions of one plane into a
+/// single ordering would fail the same way.
 #[test]
-#[ignore = "documents an open defect: winding on an exactly symmetric fin ring"]
-fn a_forty_fin_ring_is_declined_for_its_own_symmetry() {
+fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {
     use nacre_scalar::{Angle, Isometry, Rat, Rotation};
     let mut m = Model::new();
     let ring = |x0: f64, y0: f64, x1: f64, y1: f64| {

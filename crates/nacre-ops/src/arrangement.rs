@@ -3248,6 +3248,59 @@ mod tests {
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
 
         let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
+
+        // ★★★ **An independent reading of every winding: the shoelace sign.**
+        //
+        // `loop_winding` reads the turn at one extreme node, which is correct only if the
+        // comparison it picks that node with is an order. When it was not, exactly one ring of
+        // five came back with the wrong sign and stayed *confident* about it — the engine only
+        // noticed two layers later, as "no outer contour", and named the symptom. Realizing the
+        // nodes and summing cross products says the same thing directly, so a disagreement points
+        // at the ring rather than at the count.
+        {
+            let pl = &jd.planes[wc].plane;
+            let n = pl.normal();
+            let ax = if n[0].abs() < 0.9 {
+                Vector3::from_array([1.0, 0.0, 0.0])
+            } else {
+                Vector3::from_array([0.0, 1.0, 0.0])
+            };
+            let u = n.cross(ax).normalize().expect("in-plane axis");
+            let v = n.cross(u);
+            let o = Point3::from_array([0.0; 3]);
+            for c in &cells {
+                let pts: Vec<[f64; 2]> = c
+                    .half_edges
+                    .iter()
+                    .filter_map(|&h| {
+                        let t = split[h / 2].end[h % 2];
+                        three_planes(
+                            &jd.planes[t[0]].plane,
+                            &jd.planes[t[1]].plane,
+                            &jd.planes[t[2]].plane,
+                        )
+                        .map(|q| [u.dot(q - o), v.dot(q - o)])
+                    })
+                    .collect();
+                assert_eq!(pts.len(), c.half_edges.len(), "every node realizes");
+                let area: f64 = (0..pts.len())
+                    .map(|i| {
+                        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+                        a[0] * b[1] - b[0] * a[1]
+                    })
+                    .sum();
+                assert!(
+                    area.abs() > 1e-9,
+                    "a degenerate ring gives the oracle nothing to say"
+                );
+                assert_eq!(
+                    if area > 0.0 { 1i8 } else { -1 },
+                    c.winding,
+                    "shoelace {area:+.6e} disagrees with the reported winding {}",
+                    c.winding
+                );
+            }
+        }
         assert_eq!(cells.len(), 6, "1 outer + 5 bounded: {}", cells.len());
         assert_eq!(
             cells.iter().filter(|c| c.winding == -1).count(),

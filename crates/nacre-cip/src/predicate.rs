@@ -213,6 +213,19 @@ pub struct Judge<'a, W> {
     /// Two workers racing to fill one cell compute the same value, so the answer does not depend on
     /// who won — the same argument `HpCell` rests on.
     iv: Vec<IvCell>,
+    /// ★★★ **Whether each plane's stored coefficients and its witness triangle describe the same
+    /// plane** — the condition under which the exact route may be taken.
+    ///
+    /// The two are *both* exact descriptions, and they need not agree: `coefficients()` is exact
+    /// integer arithmetic only when the defining vertices are integers, and a face inherited
+    /// through a boolean has `Discovered` vertices that are not. Measured, the witness of such a
+    /// plane sits `2⁻⁵⁴` off its own coefficients. Routing by the *question* then describes one
+    /// plane two ways, and answers composed across the two are not even an order.
+    ///
+    /// Same cell shape and same race argument as [`Judge::iv`].
+    coeff_ok: Vec<OkCell>,
+    /// The weaker agreement — normals only. See [`coeff_normal_ok`].
+    normal_ok: Vec<OkCell>,
 }
 
 /// Lazily-filled cell for one plane's interval coefficients — `OnceLock` under `parallel` because
@@ -222,6 +235,11 @@ type IvCell = std::sync::OnceLock<[crate::kernel::interval::Iv; 4]>;
 #[cfg(not(feature = "parallel"))]
 type IvCell = std::cell::OnceCell<[crate::kernel::interval::Iv; 4]>;
 
+#[cfg(feature = "parallel")]
+type OkCell = std::sync::OnceLock<bool>;
+#[cfg(not(feature = "parallel"))]
+type OkCell = std::cell::OnceCell<bool>;
+
 impl<'a, W> Judge<'a, W> {
     pub fn new(planes: &'a [W], standard: Standard, notes: &'a Notes) -> Judge<'a, W> {
         Judge {
@@ -229,6 +247,8 @@ impl<'a, W> Judge<'a, W> {
             standard,
             notes,
             iv: (0..planes.len()).map(|_| IvCell::new()).collect(),
+            coeff_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
+            normal_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
         }
     }
 
@@ -293,11 +313,34 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// two questions will both reach the certified path — that is the only branch with anything to
     /// share — and asking it by re-testing `any_rotated`/`shared_motion` would put the route
     /// selection in two places, free to drift into two different answers for one question.
+    /// **May the exact route describe these planes?** — no rotation *and* every one of them
+    /// coefficient-exact, so both routes would be talking about the same geometry.
+    ///
+    /// The rotation test alone is what this replaced, and it is not enough: it says the toleranced
+    /// route is *needed*, not that the exact route is *equivalent*.
+    pub fn exact_route_ok(&self, idx: &[usize]) -> bool {
+        !any_rotated(self.planes, idx) && idx.iter().all(|&k| self.coeff_exact(k))
+    }
+
+    /// Plane `k`'s witness triangle sits exactly on its own stored coefficients — computed once.
+    fn coeff_exact(&self, k: usize) -> bool {
+        *self.coeff_ok[k].get_or_init(|| coeff_exact(self.planes, k))
+    }
+
+    /// **The route test for a predicate that reads only normals** — `d` cannot reach it, so the
+    /// weaker agreement is what has to hold.
+    pub fn exact_normal_route_ok(&self, idx: &[usize]) -> bool {
+        !any_rotated(self.planes, idx)
+            && idx
+                .iter()
+                .all(|&k| *self.normal_ok[k].get_or_init(|| coeff_normal_ok(self.planes, k)))
+    }
+
     fn orient3d_cheap(&self, p: usize, q: usize, r: usize, j: usize) -> Option<i8> {
         if j == p || j == q || j == r {
             return Some(0);
         }
-        if !any_rotated(self.planes, &[p, q, r, j]) {
+        if self.exact_route_ok(&[p, q, r, j]) {
             let tp = ThreePlane([
                 self.planes[p].coeffs(),
                 self.planes[q].coeffs(),
@@ -392,7 +435,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// `Pt3` → [`indirect_cmp_coord_judge`].
     pub fn cmp_coord(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
         let planes = self.planes;
-        if !any_rotated(planes, &[a[0], a[1], a[2], b[0], b[1], b[2]]) {
+        if self.exact_route_ok(&[a[0], a[1], a[2], b[0], b[1], b[2]]) {
             let tp = |t: [usize; 3]| {
                 ThreePlane([
                     planes[t[0]].coeffs(),
@@ -422,7 +465,9 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
     pub fn plane_pair_dir_sign(&self, p: usize, a: usize, b: usize) -> i8 {
         let planes = self.planes;
-        if !any_rotated(planes, &[p, a, b]) {
+        // ★ **Only the normals are read below, so only they have to agree** — `d`'s rounding,
+        // which is where the two descriptions actually part, never reaches this determinant.
+        if self.exact_normal_route_ok(&[p, a, b]) {
             let row = |k: usize| {
                 let [x, y, z, _] = planes[k].coeffs();
                 [x, y, z]
@@ -554,6 +599,59 @@ impl<W: Witness> Judge<'_, W> {
 /// Whether any of the named planes is rotated — the per-predicate routing signal. A predicate
 /// must escalate to the kernel if **any** — not all — of its planes is irrational: a single
 /// rounded coordinate can flip an f64 `orient3d`/`cmp`, whereas all-rational planes are exact.
+/// **Does plane `k`'s stored *normal* point the same way as its witness triangle's?**
+///
+/// The weaker of the two agreements, and the one a normals-only predicate needs. `[a, b, c]` is
+/// the triangle's normal exactly when it is orthogonal to both edges — two dot products, in
+/// `Expansion` so the test is exact rather than a rounding of one. The direction is then read from
+/// their dot product, whose sign is safe in `f64`: parallel non-zero vectors cannot cancel.
+///
+/// ★ **Worth separating from [`coeff_exact`] because `d` is where the disagreement lives.**
+/// Measured, the failures are all of the shape `raw·origin` rounding — `3.5 × 0.2` landing on
+/// `0.7000000000000001` — which moves the plane without turning it. Demanding the stronger
+/// agreement here cost 4.7x on the axis-aligned fold for nothing.
+pub fn coeff_normal_ok<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
+    use nacre_predicates::Expansion;
+    let [ca, cb, cc, _] = planes[k].coeffs();
+    let t = planes[k].tri().map(|p| p.as_array());
+    let ortho = |q: [f64; 3]| {
+        let e = [q[0] - t[0][0], q[1] - t[0][1], q[2] - t[0][2]];
+        Expansion::two_product(ca, e[0])
+            .add(&Expansion::two_product(cb, e[1]))
+            .add(&Expansion::two_product(cc, e[2]))
+            .sign()
+            == 0
+    };
+    if !(ortho(t[1]) && ortho(t[2])) {
+        return false;
+    }
+    // Parallel and both non-zero, so this dot cannot cancel: its `f64` sign is the direction.
+    let e1 = [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]];
+    let e2 = [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]];
+    let n = [
+        e1[1] * e2[2] - e1[2] * e2[1],
+        e1[2] * e2[0] - e1[0] * e2[2],
+        e1[0] * e2[1] - e1[1] * e2[0],
+    ];
+    ca * n[0] + cb * n[1] + cc * n[2] > 0.0
+}
+
+/// Is plane `k`'s witness triangle exactly on its own stored coefficients? — the **full**
+/// agreement, `d` included, which the predicates that build implicit points need.
+pub fn coeff_exact<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
+    use nacre_predicates::Expansion;
+    let [ca, cb, cc, cd] = planes[k].coeffs();
+    planes[k].tri().iter().all(|q| {
+        let [x, y, z] = q.as_array();
+        Expansion::two_product(ca, x)
+            .add(&Expansion::two_product(cb, y))
+            .add(&Expansion::two_product(cc, z))
+            .add(&Expansion::two_product(cd, 1.0))
+            .sign()
+            == 0
+    })
+}
+
 pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     idx.iter().any(|&k| planes[k].is_rotated())
 }
@@ -1092,6 +1190,41 @@ mod tests {
             !jd(&ps).planes_coplanar(0, 1),
             "x=1 and y=1 are distinct planes"
         );
+    }
+
+    /// **The two exact descriptions of one plane must agree, or the exact route must not be taken.**
+    ///
+    /// A plane carries stored coefficients `[a, b, c, d]` *and* a witness triangle, and both are
+    /// exact — of different planes. `d` is `−(raw·origin)`, an `f64` product: for a face at
+    /// `y = −0.2` with `raw = [0, −3.5, 0]` it lands on `0.7000000000000001`, which is a plane
+    /// `2⁻⁵⁴` away from the one the triangle spans.
+    ///
+    /// That is tolerable as long as one plane is never described *both* ways. It was not: the
+    /// route was chosen by the question — "does any plane here rotate?" — so a plane appeared at
+    /// one position in one comparison and another in the next, and answers composed across the two
+    /// were **not transitive**. `A == B`, `B < C`, `A > C` is what came out, and a lexicographic
+    /// scan over that lands on a node that is not extreme.
+    ///
+    /// So the invariant is: **`coeff_exact` ⟹ the two describe one plane**, and only then may the
+    /// exact route run. This pins the implication on a plane built to fail it.
+    #[test]
+    fn the_exact_route_is_refused_when_the_two_descriptions_disagree() {
+        // A face at y = −0.2 spanned by an integer-ish triangle: `raw·origin` cannot be exact.
+        let tri = [
+            Point3::from_array([-4.0, -0.2, 0.0]),
+            Point3::from_array([-0.5, -0.2, 0.0]),
+            Point3::from_array([-0.5, -0.2, 1.0]),
+        ];
+        let coeffs = [0.0, -3.5, 0.0, -0.7000000000000001];
+        // The witness is not on the coefficient plane: 3.5 × 0.2 is not 0.7000000000000001 / 1.
+        let ps = [W::new(tri, coeffs)];
+        assert!(
+            !coeff_exact(&ps, 0),
+            "the stored coefficients and the witness must be seen to disagree"
+        );
+        // ★ But their *directions* do agree — the rounding moved the plane, it did not turn it —
+        // so a predicate that reads only normals keeps its fast route.
+        assert!(coeff_normal_ok(&ps, 0));
     }
 
     /// `any_rotated` is false for axis-aligned witnesses (`tri_pt3` is `None`).
