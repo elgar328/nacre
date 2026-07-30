@@ -89,11 +89,6 @@ pub(crate) mod phase {
         pub(crate) static COVER_TRIPS: AtomicU64 = AtomicU64::new(0);
         /// `Σ_w |segs|` — the collecting loop's actual trip count.
         pub(crate) static COLLECT_TRIPS: AtomicU64 = AtomicU64::new(0);
-        /// `trial_bound` calls `standard_for` makes now, and how many are on a *moved* definition
-        /// (the only ones that can be non-zero). A model-lifetime cache would pay the distinct
-        /// moved-surface count instead.
-        pub(crate) static TRIAL_ALL: AtomicU64 = AtomicU64::new(0);
-        pub(crate) static TRIAL_MOVED: AtomicU64 = AtomicU64::new(0);
         pub(crate) fn add(c: &AtomicU64, n: usize) {
             c.fetch_add(n as u64, Ordering::Relaxed);
         }
@@ -101,15 +96,7 @@ pub(crate) mod phase {
             c.load(Ordering::Relaxed)
         }
         pub(crate) fn reset() {
-            for c in [
-                &SEGS,
-                &WALLS,
-                &PTS,
-                &COVER_TRIPS,
-                &COLLECT_TRIPS,
-                &TRIAL_ALL,
-                &TRIAL_MOVED,
-            ] {
+            for c in [&SEGS, &WALLS, &PTS, &COVER_TRIPS, &COLLECT_TRIPS] {
                 c.store(0, Ordering::Relaxed);
             }
         }
@@ -4642,11 +4629,6 @@ mod tests {
         }
         phase::reset();
         phase::scale::reset();
-        crate::planes::MOVED_SURFS.with(|m| m.borrow_mut().clear());
-        crate::planes::PREC_LOG.with(|l| l.borrow_mut().clear());
-        // Not the memo itself — the warm-up already filled it, and that is what the *n* booleans
-        // below see. Only the tally is zeroed, so the hit rate reported is the fold's own.
-        nacre_scalar::trig_stats::reset();
 
         let mut whole = std::time::Duration::ZERO;
         for i in 0..n {
@@ -4715,57 +4697,11 @@ mod tests {
             "    (1) collect trips       {:>10}",
             sc::get(&sc::COLLECT_TRIPS)
         );
-        // Points in the table, against the realizations actually performed: an unmoved face's bound
-        // is zero by construction and is not asked for. The last ratio is what a model-lifetime
-        // memo would still remove — the same surface realized once per boolean instead of once ever.
-        let (all, moved) = (sc::get(&sc::TRIAL_ALL), sc::get(&sc::TRIAL_MOVED));
-        let surfs = crate::planes::MOVED_SURFS.with(|m| m.borrow().len());
-        println!(
-            "    ★ trial points {all:>10}   realized {moved} ({:.0}% skipped) · distinct moved surfaces {surfs} ⇒ {:.1}x still repeated",
-            100.0 * (all - moved) as f64 / all.max(1) as f64,
-            moved as f64 / (surfs * 3).max(1) as f64
-        );
         println!(
             "    (3) cover trips         {:>10}   = {:.2}x the collecting loop",
             sc::get(&sc::COVER_TRIPS),
             sc::get(&sc::COVER_TRIPS) as f64 / sc::get(&sc::COLLECT_TRIPS).max(1) as f64
         );
-
-        // ★ **The memo's hit rate is a gate, not a curiosity.** Misses must converge to the number
-        // of distinct `(angle, prec)` pairs this fold uses — `n` angles times the one or two
-        // precisions it judges at. More than that means the key is leaking (two spellings of one
-        // angle), and a low hit rate means the memo is pure overhead.
-        let (hit, miss) = nacre_scalar::trig_stats::get();
-        println!(
-            "    ★ cos/sin memo      hit {hit:>10}   miss {miss}   = {:.1}% hit · memo holds {} entries",
-            100.0 * hit as f64 / (hit + miss).max(1) as f64,
-            nacre_scalar::trig_stats::len()
-        );
-
-        // ★ **The gate, not a curiosity.** A change to how `worst` is gathered can leave the census
-        // bit-identical and only lower the precision — `prec` is an estimate and every judgement
-        // re-checks its own interval. So this sequence is what says the same maximum was gathered
-        // the same way. Printed run-length encoded: `prec` moves a word every ~64 turns.
-        crate::planes::PREC_LOG.with(|l| {
-            let log = l.borrow();
-            println!(
-                "\n  ★ (log₂ worst trial, prec) per boolean, {} of them:",
-                log.len()
-            );
-            let mut runs: Vec<((Option<i64>, usize), usize)> = Vec::new();
-            for &e in log.iter() {
-                match runs.last_mut() {
-                    Some((prev, n)) if *prev == e => *n += 1,
-                    _ => runs.push((e, 1)),
-                }
-            }
-            for ((w, prec), n) in runs {
-                println!(
-                    "      w = {:>6}   prec = {prec:<5} × {n}",
-                    w.map_or("exact".to_string(), |w| w.to_string())
-                );
-            }
-        });
     }
 
     /// S3a gate: **what did hoisting the loop invariant do to the evidence?** `plane_pair_dir_sign`

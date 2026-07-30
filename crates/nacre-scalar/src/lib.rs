@@ -63,10 +63,10 @@ thread_local! {
     /// **Realized `cos`/`sin` per `(angle, precision)`** — see [`Angle::cos_sin_bounded`].
     ///
     /// A rotation's realization asks for the *same* angle once per point: a 60-fin fold evaluated
-    /// 29,037 of them for 110 distinct `(angle, prec)` pairs, and a solid turned 4,200 times
+    /// **29,037 of them for 112 distinct `(angle, prec)` pairs**, and a solid turned 4,200 times
     /// re-evaluated its one angle 4,200 times per point. astro-float's `cos`/`sin` run Ziv's loop
     /// (a series, then a retry at more bits when the value sits too close to a rounding boundary),
-    /// which is what that repetition was paying for — measured, 22% of a rotated boolean.
+    /// which is what that repetition was paying for — measured, **22% of a rotated boolean**.
     ///
     /// **The key is a value, not a handle**, which is what makes a process-wide memo sound here:
     /// `Angle` is an exact rational number of degrees, so two models asking for the same angle are
@@ -81,31 +81,14 @@ thread_local! {
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
 type TrigAt = (BigFloat, BigFloat, Bound, Bound);
 
-/// How often [`TRIG`] answered, against how often it had to evaluate. Misses must converge to the
-/// number of distinct `(angle, prec)` pairs a run uses; anything more means the key is leaking
-/// (two spellings of one angle), and a low hit rate means the memo is pure overhead.
+/// How many entries [`TRIG`] holds — for the tests that pin the memo actually memoizes.
 ///
-/// **Unconditional, not `cfg(test)`, and that is not laziness**: the consumer is `nacre-ops`' fold
-/// breakdown, and `cfg(test)` in *this* crate is off while *that* crate's tests build. Two relaxed
-/// atomic increments per call, against a `BigFloat` clone on the cheap path — measurement
-/// scaffolding for the memo's hit rate, removed once it has been read.
-pub mod trig_stats {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    pub static HIT: AtomicU64 = AtomicU64::new(0);
-    pub static MISS: AtomicU64 = AtomicU64::new(0);
-    pub fn get() -> (u64, u64) {
-        (HIT.load(Ordering::Relaxed), MISS.load(Ordering::Relaxed))
-    }
-    /// How many entries the memo actually holds. **The proof that the key does not leak**: every
-    /// miss inserts, so `len == misses` means every miss was a *distinct* `(angle, prec)` — the
-    /// floor, with nothing left to save. `len < misses` would mean two spellings of one angle.
-    pub fn len() -> usize {
-        super::TRIG.with_borrow(|t| t.len())
-    }
-    pub fn reset() {
-        HIT.store(0, Ordering::Relaxed);
-        MISS.store(0, Ordering::Relaxed);
-    }
+/// **The count, not a hit tally.** A hit rate cannot tell "the memo works" from "the memo is
+/// fragmenting": a caller that spelled one angle two ways would show high hits while paying twice
+/// for every angle. Every miss inserts, so the entry count is the direct reading.
+#[cfg(test)]
+fn trig_entries() -> usize {
+    TRIG.with_borrow(|t| t.len())
 }
 
 /// The result of an orientation judgment (§CIP) — the shared sign vocabulary used by both
@@ -440,12 +423,9 @@ impl Angle {
     ///
     /// Returns `(cos, sin, |Δcos|, |Δsin|)`.
     pub fn cos_sin_bounded(self, prec: usize) -> (BigFloat, BigFloat, Bound, Bound) {
-        use std::sync::atomic::Ordering::Relaxed;
         if let Some(hit) = TRIG.with_borrow(|t| t.get(&(self, prec)).cloned()) {
-            trig_stats::HIT.fetch_add(1, Relaxed);
             return hit;
         }
-        trig_stats::MISS.fetch_add(1, Relaxed);
         let out = self.realize_cos_sin(prec);
         TRIG.with_borrow_mut(|t| t.insert((self, prec), out.clone()));
         out
@@ -1142,6 +1122,61 @@ mod tests {
         assert_eq!(
             Angle::from_deg(Rat::new(-1, 2).unwrap()).unwrap().deg(),
             Rat::new(719, 2).unwrap()
+        );
+    }
+
+    /// **The memo memoizes, and its key is the *value* of the angle rather than its spelling.**
+    ///
+    /// Two failure modes, and neither shows up as a wrong answer — [`Angle::cos_sin_bounded`] is a
+    /// pure function either way, so a broken memo is only slow. That is exactly why it needs a
+    /// test: a rotated boolean spent 22% of its time re-running Ziv's loop for angles it had
+    /// already realized, and nothing but a measurement would say so.
+    ///
+    /// - **It does not memoize** (a rewrite drops the lookup): asking twice would insert twice.
+    /// - ★ **The key fragments**: `90/1` and `180/2` are the same angle. If they hashed apart the
+    ///   memo would still be *correct* and still show a high hit rate, while paying twice for every
+    ///   angle a caller happened to spell in two ways. `Angle::from_deg` reduces through
+    ///   `Rat::new`, so they are one entry — this is the guard on that.
+    ///
+    /// Deltas, not absolute counts: the memo is a `thread_local`, and the harness gives each test
+    /// its own thread, but nothing here should depend on which tests ran first.
+    #[test]
+    fn the_trig_memo_keys_on_the_angle_not_its_spelling() {
+        let deg = |n, d| Angle::from_deg(Rat::new(n, d).unwrap()).unwrap();
+        // A precision no other test asks for, so this thread's map cannot be pre-warmed for it.
+        let prec = 704;
+        let before = trig_entries();
+        let first = deg(37, 1).cos_sin_bounded(prec);
+        assert_eq!(trig_entries(), before + 1, "the first ask must insert");
+
+        let again = deg(37, 1).cos_sin_bounded(prec);
+        assert_eq!(
+            trig_entries(),
+            before + 1,
+            "the second ask must be answered, not recomputed"
+        );
+        assert_eq!(
+            (first.0.clone(), first.2),
+            (again.0.clone(), again.2),
+            "and answered with the same value"
+        );
+
+        // ★ The same angle, spelled as an unreduced ratio, is the same entry.
+        let spelled = deg(74, 2).cos_sin_bounded(prec);
+        assert_eq!(
+            trig_entries(),
+            before + 1,
+            "74/2 is 37/1: a second entry means the key is the spelling, not the angle"
+        );
+        assert_eq!((first.0, first.2), (spelled.0, spelled.2));
+
+        // …and precision *is* part of the key: a different depth is a different answer, so reusing
+        // an entry across depths would hand back coordinates realized at the wrong one.
+        let deeper = deg(37, 1).cos_sin_bounded(prec + 64);
+        assert_eq!(trig_entries(), before + 2, "precision must key the memo");
+        assert_ne!(
+            deeper.2, again.2,
+            "a deeper realization has a smaller bound"
         );
     }
 

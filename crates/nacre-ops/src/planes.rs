@@ -332,24 +332,6 @@ impl Watch {
     }
 }
 
-#[cfg(test)]
-thread_local! {
-    /// Every moved surface any boolean of this run touched — the size a model-lifetime trial-bound
-    /// cache would have to fill, measured against how many realizations happen today.
-    pub(crate) static MOVED_SURFS: std::cell::RefCell<
-        std::collections::HashSet<nacre_store::Handle<Surface>>,
-    > = std::cell::RefCell::new(std::collections::HashSet::new());
-
-    /// `(log₂ worst trial bound, prec)` per boolean, in order.
-    ///
-    /// **The gate for any change to how `worst` is gathered.** A matching census is *not* evidence:
-    /// `prec` is an estimate and every judgement re-checks its own interval, so gathering `worst`
-    /// wrongly can leave the answers identical and only the precision lower. This sequence is the
-    /// direct evidence that the same maximum was gathered the same way.
-    pub(crate) static PREC_LOG: std::cell::RefCell<Vec<(Option<i64>, usize)>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
 pub(crate) fn plane_index_setup(
     model: &Model,
     a: Handle<Solid>,
@@ -363,26 +345,6 @@ pub(crate) fn plane_index_setup(
     let t = Watch::new();
     let standard = standard_for(&planes);
     t.charge(Sub::Std);
-    #[cfg(test)]
-    {
-        use crate::arrangement::phase::scale;
-        // Points in the table, against the realizations `standard_for` actually performs — an
-        // unmoved face contributes a bound of zero without being asked, so the second number is
-        // the cost and the gap between them is what that skip removed.
-        scale::add(&scale::TRIAL_ALL, planes.len() * 3);
-        scale::add(
-            &scale::TRIAL_MOVED,
-            planes.iter().filter(|p| p.rotated).count() * 3,
-        );
-        // How many *distinct* moved surfaces this boolean touches — what a model-lifetime cache
-        // would realize once ever, instead of once per boolean.
-        let surfs: std::collections::HashSet<_> = planes
-            .iter()
-            .filter(|p| p.motion.is_some())
-            .map(|p| p.surf)
-            .collect();
-        MOVED_SURFS.with(|m| m.borrow_mut().extend(surfs));
-    }
     let notes = Notes::new();
     if standard.prec > JUDGE_PREC_CAP {
         return Err(reject(RejectReason::PrecisionBudget {
@@ -477,10 +439,7 @@ fn standard_for(planes: &[FaceInfo]) -> Standard {
     );
     // `scale`, by contrast, is every point's business: it is the model's size, and an unmoved face
     // is as far from the origin as any other.
-    let standard = standard_from(planes.iter().flat_map(|p| p.tri_pt3.iter()), worst);
-    #[cfg(test)]
-    PREC_LOG.with(|l| l.borrow_mut().push((worst.exp2(), standard.prec)));
-    standard
+    standard_from(planes.iter().flat_map(|p| p.tri_pt3.iter()), worst)
 }
 
 /// **How deep a model may be before the operation is rejected instead.**
