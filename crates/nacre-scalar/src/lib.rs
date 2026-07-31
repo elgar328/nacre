@@ -134,8 +134,22 @@ type TrigAt = (BigFloat, BigFloat, Bound, Bound);
 /// would return `None` forever. Callers must resolve the exactly-representable cases first;
 /// [`Angle::cos_sin_f64`] does that with `try_exact_cos_sin`.
 ///
-/// `pub` because the coordinate arithmetic in `nacre-cip` will want the same rounding, and two
-/// implementations of "round this interval to f64" is exactly the drift this crate keeps deleting.
+/// `pub` because **STEP export** will want the same rounding, and two implementations of "round
+/// this interval to f64" is exactly the drift this crate keeps deleting. STEP carries `f64`
+/// coordinates and nothing else — not the motion chain, not the three-plane definition — so export
+/// is the one place where a point's exact truth must be realized as well as `f64` allows, and it
+/// can be *verified* as it goes: this returning `Some` **is** the proof that the written coordinate
+/// is the nearest `f64` to the exact one.
+///
+/// ★★ **Not for the coordinates the kernel works with.** Rounding `px + u·c − v·s` as a whole
+/// would make every `Pt3::coord` literally `round(compute_hp)` and take `tol` to a half-ulp, and it
+/// was **declined**: that is arbitrary precision *per vertex*, where [`Angle::cos_sin_f64`]'s is
+/// per *angle* and memoised, so it would pay at construction for a precision that `Pt3`'s lazy
+/// `compute_hp` already buys **only where a judgement actually needs it**. (`nacre-cip` depends on
+/// this crate, so that type cannot be named here as a link.) Cheaper ways to shrink that
+/// arithmetic (an FMA, a compensated
+/// evaluation) stay in `f64` and keep the laziness, so they are the candidates if the term ever
+/// needs to move.
 pub fn round_to_f64(mid: &BigFloat, rad: Bound, prec: usize) -> Option<f64> {
     if mid.is_nan() || mid.is_inf() {
         return None;
