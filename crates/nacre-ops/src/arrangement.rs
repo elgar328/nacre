@@ -1250,11 +1250,24 @@ fn split_at_crossings(
 /// opposite `s` is angle π; otherwise angle 0. Each open bucket is then a real sort. Returned
 /// indices are the CCW order starting at `r`.
 ///
-/// **Coverage boundary — it does not handle the general case:** two *different* fp's whose lines
-/// are parallel (a `0`-turn that is not same-fp) fall into the angle-0 bucket unresolved, and
-/// collinear same-direction overlap (E5) is out of scope here. The corpus's arrangement vertices
-/// are degree ≥ 3 with distinct fp's per real direction, which is what this handles.
-fn angular_order(jd: &Judge<'_, PlaneGeom>, w: usize, edges: &[(usize, i8)]) -> Vec<usize> {
+/// **What it relies on, and who supplies it.** Two edges leaving one vertex with a `0` turn are on
+/// one line — parallel plus a shared point — and then they have no cyclic order to read. Upstream
+/// makes that impossible in two places: `merge_coincident` folds an edge traced twice (its own doc
+/// names this bucket as the reason), and `Aliases::union_wall` folds two walls that carry one line
+/// so they arrive under a single `fp`. Collinear same-direction overlap (E5) is resolved earlier
+/// still, by `split_at_crossings`.
+///
+/// ★ **That reliance is checked, not assumed.** `Aliases::record` only folds where four or more
+/// planes meet at a point, and that every same-line wall pair meets such a point is not
+/// established — so a `0` turn that survives to here is an honest `UnorderedEdges` reject rather
+/// than an order picked arbitrarily. Measured: it fires nowhere in the suite, and disabling
+/// `union_wall` makes the four-plane concurrency model reject, which is what says the reliance is
+/// real and the check reaches it.
+fn angular_order(
+    jd: &Judge<'_, PlaneGeom>,
+    w: usize,
+    edges: &[(usize, i8)],
+) -> Result<Vec<usize>, BoolError> {
     let planes = jd.planes;
     let os = planes[w].frame_sign;
     let cross = |i: usize, j: usize| -> i8 {
@@ -1270,14 +1283,51 @@ fn angular_order(jd: &Judge<'_, PlaneGeom>, w: usize, edges: &[(usize, i8)]) -> 
             _ => zero.push(i),
         }
     }
+    // ★★★ **The order below exists only if no two edges share an angle, and that is an
+    // assumption about *upstream*, not about this function.** Two edges leaving one vertex whose
+    // turn is zero are on one line — parallel plus a shared point — so their cyclic order has no
+    // answer, and `next` is built from exactly that order: a guess there is a wrong face, with
+    // nothing to say so.
+    //
+    // Upstream is supposed to make it impossible, in two places, and both are load-bearing:
+    // `merge_coincident` folds an edge that was traced twice (its own doc names this bucket as
+    // the reason), and `Aliases::union_wall` folds two walls that carry one line. Measured, the
+    // second fires 122 times over the coverage suite and this check never does.
+    //
+    // ★ **But "measured never" is not "cannot".** `Aliases::record` only folds where four or more
+    // planes meet at a point (`s.len() < 4` returns early), and that every same-line wall pair
+    // meets such a point is *not* established. So the assumption is checked rather than trusted,
+    // and a failure is an honest reject — this is the only thing standing where the argument
+    // stops.
+    //
+    // The pairs are checked before sorting rather than inside the comparator: `sort_by` does not
+    // compare every pair, so a tie it happens not to evaluate would slip through — and that is
+    // precisely the tie that reorders the result. At the degrees this sees (2-3 measured) a
+    // bucket holds at most two entries, so the check costs the one comparison the sort would
+    // have made anyway.
+    for b in [&pos, &neg] {
+        for x in 0..b.len() {
+            for y in (x + 1)..b.len() {
+                if cross(b[x], b[y]) == 0 {
+                    return Err(reject(RejectReason::UnorderedEdges));
+                }
+            }
+        }
+    }
+    // The reference's own bucket: anything else collinear with it that the pole test did not
+    // claim is the same ray, which is an overlap `split_at_crossings` should have resolved.
+    if zero.len() > 1 {
+        return Err(reject(RejectReason::UnorderedEdges));
+    }
     // Within an open half-plane, `a` precedes `b` (smaller angle) iff `d_a × d_b > 0`.
     let by_turn = |v: &mut Vec<usize>| {
-        v.sort_by(|&a, &b| {
-            if cross(a, b) > 0 {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            }
+        v.sort_by(|&a, &b| match cross(a, b) {
+            c if c > 0 => std::cmp::Ordering::Less,
+            c if c < 0 => std::cmp::Ordering::Greater,
+            // Unreachable after the check above, and spelled anyway: a comparator that answers
+            // `Greater` both ways is a contract violation, and `sort_by` is then free to produce
+            // any permutation.
+            _ => std::cmp::Ordering::Equal,
         })
     };
     by_turn(&mut pos);
@@ -1286,7 +1336,7 @@ fn angular_order(jd: &Judge<'_, PlaneGeom>, w: usize, edges: &[(usize, i8)]) -> 
     out.extend(pos);
     out.extend(pole);
     out.extend(neg);
-    out
+    Ok(out)
 }
 
 /// One face of the arrangement: the cyclic list of half-edges bounding it, and its winding
@@ -1371,7 +1421,7 @@ fn extract_cells(
                 edges.push((wall(he), s));
             }
         }
-        let ord = timed!(E_ANGULAR, angular_order(jd, wc, &edges));
+        let ord = timed!(E_ANGULAR, angular_order(jd, wc, &edges))?;
         cyclic.insert(v, (outs.clone(), ord));
     }
 
@@ -2908,7 +2958,8 @@ mod tests {
         // Five edges: both directions on the y-wall and x-wall lines, one on the diagonal.
         let edges = [(fpy, 1i8), (fpy, -1), (fpx, 1), (fpx, -1), (fpd, 1)];
 
-        let order = angular_order(&crate::planes::test_judge(&planes), w, &edges);
+        let order = angular_order(&crate::planes::test_judge(&planes), w, &edges)
+            .expect("five distinct directions leave one vertex — nothing to refuse here");
         assert_eq!(
             order.len(),
             edges.len(),

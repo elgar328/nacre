@@ -167,6 +167,15 @@ pub enum RejectReason {
     /// Two ring edges meet at more than one vertex, or at none, so which vertex the corner *is*
     /// cannot be decided (a two-gon, or a self-bounded rim).
     AmbiguousCorner,
+    /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
+    /// that vertex has no answer — and the face walk is built from exactly that order.
+    ///
+    /// Their lines are then identical (parallel plus a shared point), which upstream is supposed
+    /// to have already resolved: `merge_coincident` folds an edge traced twice, and `Aliases`
+    /// folds two walls that carry one line. Reaching here means one of those did not, and the
+    /// honest answer is that this arrangement cannot be ordered rather than an order picked
+    /// arbitrarily — the ordering feeds `next`, so a guess there is a wrong face, silently.
+    UnorderedEdges,
     /// A result face's edge is used by only one plane, so the boundary is open there. The
     /// under-used twin of [`Self::NonManifoldEdge`], which is the over-used case.
     UnpairedSeamEdge,
@@ -438,6 +447,7 @@ impl RejectReason {
             Self::DegenerateRing => "degenerate_ring",
             Self::StraightAngle => "straight_angle",
             Self::AmbiguousCorner => "ambiguous_corner",
+            Self::UnorderedEdges => "unordered_edges",
             Self::UnpairedSeamEdge => "unpaired_seam_edge",
             Self::EdgeOccupancyConflict => "edge_occupancy_conflict",
             Self::RingOrientation => "ring_orientation",
@@ -506,6 +516,7 @@ impl RejectReason {
             | Self::RingNaming
             | Self::StraightAngle
             | Self::AmbiguousCorner
+            | Self::UnorderedEdges
             | Self::EdgeOccupancyConflict
             | Self::NoClearRay
             | Self::PointOnRing
