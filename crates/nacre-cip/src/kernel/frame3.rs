@@ -1534,6 +1534,14 @@ pub fn dir_sign_judge(
     // bought 1.007x on the crossing collector: this judgement's cost is almost entirely the
     // escalation below, because a *true* zero — the walls meeting `wc` in no point, 8.9% of the
     // pairs the collector tests — can never be settled by an interval filter. See docs/dev-log.md.
+    //
+    // ★★★ **And this is where the kernel's escalations come from.** Measured on `fin_fold(80)`:
+    // this judgement is 5.4% of its own calls but **78% of every escalation in the boolean**, and
+    // **92.6% of those escalations have a midpoint of exactly `0.0`** — genuine degeneracies the
+    // arrangement builds by construction. That is why tightening a coordinate's tol does not buy
+    // speed: setting the rotation's whole tol contribution to zero left the escalation count here
+    // **bit-identical**. The lever, if one is ever wanted, is recognising a true zero *before*
+    // climbing — not more accurate coordinates.
     let d = normals_det_iv([
         plane_iv(a.0, a.1, a.2),
         plane_iv(b.0, b.1, b.2),
