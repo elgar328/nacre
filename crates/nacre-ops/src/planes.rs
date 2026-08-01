@@ -720,6 +720,8 @@ impl BaseFrame {
 
 pub(crate) struct PlaneGeom {
     pub(crate) plane: Plane,
+    /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
+    pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `VertexDef::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
@@ -825,6 +827,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
             // "is it rotated?" and ask "did I get coefficients?" instead.
             let (exact_coeffs, exact_normal) = PlaneGeom::reconcile(&pi.plane, pi.tri, pi.rotated);
             PlaneGeom {
+                base_rat: pi.base_rat,
                 base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign, pi.base_rat),
                 plane: pi.plane,
                 surf: pi.surf,

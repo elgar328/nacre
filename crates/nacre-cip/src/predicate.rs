@@ -29,7 +29,7 @@ use nacre_predicates::{
     ThreePlane, det3_sign, indirect_cmp_coord, indirect_orient3d, indirect_plane_side, orient2d,
     orient3d,
 };
-use nacre_scalar::Orient;
+use nacre_scalar::{Orient, Rat};
 
 /// **What a judgement was asked about**, in the only vocabulary this crate has: plane-table
 /// indices.
@@ -135,6 +135,12 @@ pub trait Witness {
     /// its plane through points with no chain, and a 90°-family rotation has tol exactly 0), so
     /// the answer is carried, not derived.
     fn is_rotated(&self) -> bool;
+
+    /// The plane's **exact rational coefficients in the frame its provenance names** — the world
+    /// when unmoved, the pre-motion frame when moved. `None` when the producer recorded none.
+    fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
+        None
+    }
 
     /// Identifies the motion this witness's definition carries — `0` for none, and equal values
     /// **only** for structurally identical chains (same nodes, order and pivots).
@@ -620,6 +626,13 @@ impl<W: Witness> Judge<'_, W> {
                 return tj.iter().all(|&q| plane_side_exact(ti, q) == 0);
             }
         }
+        // ★ Compose the two motions and compare the exact planes. This is the only route that can
+        // *prove* two differently-turned planes identical: everything below decides by narrowing
+        // intervals, which can refute equality but never establish it, so it lands on
+        // `Coincident` and records that it did.
+        if let Some(same) = coplanar_by_composed_rotation(planes, i, j) {
+            return same;
+        }
         let (di, dj) = (plane_def(planes, i), plane_def(planes, j));
         // Three point-on-plane judgements, and the answer is their conjunction. **The note belongs to
         // the merge, not to the points**: what a reader needs to know is "these two faces became one
@@ -816,6 +829,90 @@ fn cancel_cmp_coord<W: PlaneWitness>(
     //   deciding it exactly would need a predicate for `sign(d[i] − d[j])` that does not exist
     //   yet. Escalation answers it correctly; only the *proof* is missing.
     None
+}
+
+/// **The one rotation a chain amounts to** — axis, total angle and the pivot they share — or
+/// `None` when it is not of that shape.
+///
+/// The sibling of [`single_axis_motion`], and the difference is the **pivot**. That one runs on a
+/// *difference* of two points, where a pivot and a translation both cancel; this one is for
+/// planes, and a plane's `d` is a statement about position, so nothing cancels. Hence: one axis,
+/// one pivot, no translation, no reflection — anything else is `None` and the caller escalates.
+///
+/// `None` in the axis slot means the chain does not turn at all, which composes with anything.
+type OneRotation = (
+    Option<nacre_scalar::Axis>,
+    nacre_scalar::Angle,
+    Option<[Rat; 3]>,
+);
+
+fn single_rotation(def: &[Pt3; 3]) -> Option<OneRotation> {
+    let mut axis: Option<nacre_scalar::Axis> = None;
+    let mut pivot: Option<[Rat; 3]> = None;
+    let mut total = nacre_scalar::Angle::from_deg(Rat::from_int(0))?;
+    for n in def[0].chain.iter() {
+        match n {
+            MoveNode::Rotate {
+                axis: a,
+                angle,
+                point,
+            } => {
+                total = total.checked_add(angle.deg())?;
+                if *axis.get_or_insert(*a) != *a {
+                    return None;
+                }
+                if *pivot.get_or_insert(*point) != *point {
+                    return None;
+                }
+            }
+            // A translation moves a plane, so unlike `single_axis_motion` it cannot be skipped;
+            // a reflection is improper. Both are conservative misses rather than wrong answers.
+            MoveNode::Translate { .. } | MoveNode::Mirror { .. } => return None,
+        }
+    }
+    Some((axis, total, pivot))
+}
+
+/// **Are planes `i` and `j` the same plane, decided by composing their motions?** `None` when the
+/// two chains do not compose into something the rationals can state, which is the caller's cue to
+/// escalate.
+///
+/// Both planes state themselves exactly in their own pre-motion frame
+/// (`base_coeffs_rat`), so the question `M_A(P_A) = M_B(P_B)` becomes
+/// `M_B⁻¹M_A(P_A) = P_B`. When both chains turn about **the same axis through the same pivot**,
+/// rotations commute and their angles add, so `M_B⁻¹M_A` is exactly `Rotate(axis, θ_A − θ_B)` —
+/// and if that angle is one the rationals can state (the 90° family), carrying `P_A` across is
+/// exact. Both sides are canonical, so `==` *is* plane identity.
+///
+/// ★ **A `false` here is a proof too**, not a failure to prove: the transported coefficients are
+/// exact, so differing means the planes differ. That is what lets a non-coplanar pair skip the
+/// escalation entirely.
+///
+/// ★★ **The preconditions are what make the composition valid, not an optimisation.** Rotations
+/// about *different* axes or pivots compose into a motion whose translation part contains
+/// `R_B⁻¹p` — irrational — so dropping either check would answer confidently and wrongly.
+fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -> Option<bool> {
+    let (ca, cb) = (planes[i].base_coeffs_rat()?, planes[j].base_coeffs_rat()?);
+    let (axis_a, theta_a, pivot_a) = single_rotation(plane_def(planes, i))?;
+    let (axis_b, theta_b, pivot_b) = single_rotation(plane_def(planes, j))?;
+    let axis = match (axis_a, axis_b) {
+        (None, None) => return Some(ca == cb), // neither turns: the frames already coincide
+        (Some(a), None) | (None, Some(a)) => a,
+        (Some(a), Some(b)) if a == b => a,
+        _ => return None,
+    };
+    let pivot = match (pivot_a, pivot_b) {
+        (Some(p), Some(q)) if p != q => return None,
+        (Some(p), _) | (_, Some(p)) => p,
+        (None, None) => [Rat::from_int(0); 3],
+    };
+    let delta = theta_a.checked_add(Rat::from_int(0).checked_sub(theta_b.deg())?)?;
+    let iso = nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+        axis,
+        point: pivot,
+        angle: delta,
+    });
+    Some(iso.plane_coeffs(ca)? == cb)
 }
 
 /// The single rotation axis and total angle of a chain, or `None` if it turns about more than

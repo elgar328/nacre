@@ -18,6 +18,9 @@ use nacre_math::Point3;
 pub(crate) use nacre_cip::predicate::{ImplicitPoint, Judge, any_rotated, plane_def};
 
 impl Witness for PlaneGeom {
+    fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
+        self.base_rat
+    }
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
@@ -36,6 +39,9 @@ impl Witness for PlaneGeom {
 }
 
 impl Witness for FaceInfo {
+    fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
+        self.base_rat
+    }
     fn tri(&self) -> [Point3; 3] {
         self.tri
     }
@@ -262,6 +268,9 @@ mod tests {
         // (a) A hand-built degenerate pair: same-normal parallel planes, but `tri` is a point.
         let degenerate: Vec<PlaneGeom> = (0..2)
             .map(|k| PlaneGeom {
+                // A hand-built table has no recorded coefficients; the composed-rotation route
+                // declines and the fixture takes the same escalating path it always did.
+                base_rat: None,
                 base: crate::planes::BaseFrame::none(),
                 surf: pu[0].surf,
                 plane: pu[0].plane,

@@ -4242,6 +4242,9 @@ pub mod tests {
         let _ = face;
         let tri = [origin, step(i), step(j)];
         PlaneGeom {
+            // A hand-built table has no recorded coefficients; the composed-rotation route
+            // declines and the fixture takes the same escalating path it always did.
+            base_rat: None,
             base: crate::planes::BaseFrame::none(),
             surf,
             plane,
