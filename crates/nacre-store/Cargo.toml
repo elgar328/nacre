@@ -12,11 +12,9 @@ description = "typed-index append-only storage (Store<T>/Handle<T>) — geometry
 [dev-dependencies]
 proptest.workspace = true
 # Installs a git pre-commit hook on first `cargo test` (no extra install needed
-# on a fresh clone). Hook runs: cargo fmt --check, cargo clippy -- -D warnings,
-# cargo test.
+# on a fresh clone). The hook itself is `.cargo-husky/hooks/pre-commit`, checked
+# in and copied verbatim -- the built-in `run-cargo-clippy` feature lints only
+# the library target, leaving `#[cfg(test)]` code unchecked.
 cargo-husky = { version = "1", default-features = false, features = [
-    "precommit-hook",
-    "run-cargo-fmt",
-    "run-cargo-clippy",
-    "run-cargo-test",
+    "user-hooks",
 ] }

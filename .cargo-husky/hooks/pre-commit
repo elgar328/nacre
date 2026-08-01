@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Installed by cargo-husky's `user-hooks` feature: this file is copied verbatim to
+# `.git/hooks/pre-commit` on `cargo test`, so edit it here, not there.
+#
+# Why not the built-in `run-cargo-clippy` feature: it runs `cargo clippy -- -D warnings`, which
+# lints only the default target — the library. Anything under `#[cfg(test)]` is invisible to it,
+# and an `identity_op` warning rode into 878bb81 that way. Tests are a large share of this repo,
+# so they get linted on the same terms as the library.
+
+set -e
+
+echo '+cargo fmt --all -- --check'
+cargo fmt --all -- --check
+echo '+cargo clippy --workspace --all-targets -- -D warnings'
+cargo clippy --workspace --all-targets -- -D warnings
+echo '+cargo test --workspace'
+cargo test --workspace
