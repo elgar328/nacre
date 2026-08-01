@@ -422,6 +422,108 @@ impl Rat {
     }
 }
 
+/// The canonical rational plane with normal `n` through `point` — `n·x − n·point = 0`.
+///
+/// See [`canonical_plane_coeffs`] for why the result is canonicalized and why the inputs must be
+/// rational by construction rather than lifted from f64 coefficients. `None` on `i128` overflow.
+pub fn plane_from_point_normal(n: [Rat; 3], point: [Rat; 3]) -> Option<[Rat; 4]> {
+    let mut d = Rat::from_int(0);
+    for i in 0..3 {
+        d = d.checked_sub(n[i].checked_mul(point[i])?)?;
+    }
+    canonical_plane_coeffs([n[0], n[1], n[2], d])
+}
+
+/// The canonical rational plane through three points, normal `(b − a) × (c − a)` — the exact twin
+/// of `nacre_geom::Plane::through_points`, so the two describe the same plane with the same
+/// orientation. `None` if the points are collinear (no plane) or on `i128` overflow.
+pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4]> {
+    let d = |p: [Rat; 3], q: [Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            p[0].checked_sub(q[0])?,
+            p[1].checked_sub(q[1])?,
+            p[2].checked_sub(q[2])?,
+        ])
+    };
+    let (u, v) = (d(b, a)?, d(c, a)?);
+    let term = |i: usize, j: usize| u[i].checked_mul(v[j])?.checked_sub(u[j].checked_mul(v[i])?);
+    let n = [term(1, 2)?, term(2, 0)?, term(0, 1)?];
+    if n.iter().all(|c| *c == Rat::from_int(0)) {
+        return None; // collinear
+    }
+    plane_from_point_normal(n, a)
+}
+
+/// Greatest common divisor of two magnitudes, Euclid. `gcd(0, 0) == 0`.
+fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a
+}
+
+/// **The canonical representative of a rational plane** `a·x + b·y + c·z + d = 0`.
+///
+/// A plane is scale-invariant — `2x + 4y − 6 = 0` and `x + 2y − 3 = 0` are the same plane — so a
+/// family of coefficient vectors describes it and equality has to pick one of them. Three steps:
+/// clear the denominators, divide out the content, and fix the sign of the first nonzero component.
+/// What comes back is a **primitive integer vector**, and two vectors describing the same plane
+/// canonicalize to **bit-identical** arrays. That is what turns *"are these the same plane?"* from a
+/// predicate into `==`.
+///
+/// ★★ **Scale-independence is the whole point, and it is what f64 coefficients cannot give.**
+/// `nacre_geom::Plane` stores an un-normalized `raw` normal whose length follows the *face's size*,
+/// so two faces of the plane `x = 3` come out as `[2.2, 0, 0, −6.6000000000000005]` and
+/// `[13.2, 0, 0, −39.599999999999994]` — the same plane, not exactly proportional, because `d` was a
+/// rounded product. Measured: 18 pairs in the census are merged only because a *second* test looks at
+/// the faces' coordinates instead (`docs/dev-log.md`).
+///
+/// ★★★ **The input must be rational by construction, not lifted from those f64 coefficients.**
+/// Lifting is lossless but it preserves the drift: `2.2` and `6.6000000000000005` are different
+/// dyadics whose exact ratio is not 3, so canonicalizing them still gives two different vectors.
+/// Rationals here come from the dimensions the user *wrote* ([`Rat::from_decimal`]) carried through
+/// exact arithmetic — the same rule the construction path already follows.
+///
+/// `None` on `i128` overflow (the denominators' lcm, or a numerator scaled by it), which is the
+/// kernel's ordinary demotion signal: the caller keeps the plain rational and the geometric tests
+/// answer instead. Nothing is wrong, one shortcut is unavailable.
+///
+/// All-zero coefficients are not a plane; they canonicalize to themselves.
+pub fn canonical_plane_coeffs(coeffs: [Rat; 4]) -> Option<[Rat; 4]> {
+    // ① Clear the denominators: multiply through by their lcm.
+    let mut lcm: i128 = 1;
+    for c in coeffs {
+        let d = c.denom();
+        let g = gcd_u128(lcm.unsigned_abs(), d.unsigned_abs()) as i128;
+        lcm = lcm.checked_div(g)?.checked_mul(d)?;
+    }
+    let mut num = [0i128; 4];
+    for (i, c) in coeffs.iter().enumerate() {
+        // Exact: `lcm` is a multiple of every denominator, so the division has no remainder.
+        num[i] = c.numer().checked_mul(lcm.checked_div(c.denom())?)?;
+    }
+
+    // ② Divide out the content.
+    let g = num.iter().fold(0u128, |g, n| gcd_u128(g, n.unsigned_abs()));
+    if g == 0 {
+        return Some(coeffs); // the zero vector is not a plane
+    }
+    let g = g as i128;
+    for n in &mut num {
+        *n /= g;
+    }
+
+    // ③ Fix the sign: the first nonzero component is positive.
+    if num.iter().find(|n| **n != 0).is_some_and(|n| *n < 0) {
+        for n in &mut num {
+            *n = n.checked_neg()?;
+        }
+    }
+    Some(num.map(Rat::from_int))
+}
+
 /// The nearest f64 to `n / d`, ties to even. Both arguments are strictly positive and
 /// came from an `i128`, which is what closes every shift below — so this is a helper
 /// for [`Rat::to_f64`] and nothing else.
@@ -940,6 +1042,94 @@ mod tests {
     /// precision — it is computed from the model — so a constant here must not be reachable from
     /// outside the fixtures that chose it.
     const GT_PREC: usize = 160;
+
+    fn ints(v: [i128; 4]) -> [Rat; 4] {
+        v.map(Rat::from_int)
+    }
+
+    #[test]
+    fn one_plane_written_at_any_scale_canonicalizes_to_one_vector() {
+        let want = ints([1, 2, 0, -3]);
+        for scale in [1, 2, 7, -1, -13] {
+            let scaled = ints([1 * scale, 2 * scale, 0, -3 * scale]);
+            assert_eq!(canonical_plane_coeffs(scaled), Some(want), "scale {scale}");
+        }
+        // And with denominators: 11/10·x + 3/5·y − 7/2 = 0 is 11x + 6y − 35 = 0.
+        let fracs = [
+            Rat::new(11, 10).unwrap(),
+            Rat::new(3, 5).unwrap(),
+            Rat::from_int(0),
+            Rat::new(-7, 2).unwrap(),
+        ];
+        assert_eq!(
+            canonical_plane_coeffs(fracs),
+            Some(ints([11, 6, 0, -35])),
+            "denominators are cleared and the content divided out"
+        );
+    }
+
+    #[test]
+    fn the_sign_convention_picks_the_first_nonzero_component() {
+        assert_eq!(
+            canonical_plane_coeffs(ints([0, -2, 4, 6])),
+            Some(ints([0, 1, -2, -3])),
+            "a plane and its negation are one plane, so one of the two spellings wins"
+        );
+    }
+
+    /// ★★★ **The rule this function cannot enforce, made executable.**
+    ///
+    /// Two faces of the plane `x = 3` reach `nacre_geom::Plane::coefficients()` as these two f64
+    /// vectors, because the un-normalized normal scales with the face's size and `d` is a rounded
+    /// product. Lifting them is lossless — and still gives two different planes, because the
+    /// *values* differ: `2.2 × 3` is not `6.6000000000000005`. Canonicalization cannot undo a
+    /// rounding that already happened, so the coefficients have to be rational from construction.
+    #[test]
+    fn lifting_rounded_f64_coefficients_does_not_merge_them() {
+        let lift = |v: [f64; 4]| v.map(|x| Rat::try_from_f64(x).expect("finite"));
+        let a = canonical_plane_coeffs(lift([2.2, 0.0, 0.0, -6.6000000000000005])).unwrap();
+        let b = canonical_plane_coeffs(lift([13.2, 0.0, 0.0, -39.599999999999994])).unwrap();
+        assert_ne!(
+            a, b,
+            "lifting a rounded coefficient carries the rounding in"
+        );
+
+        // Built from what the user *wrote*, and multiplied **in the rationals**, the same two
+        // faces agree exactly.
+        //
+        // ★★ The `d` in `−3·k` has to be a `Rat` product. Writing `d(-3.0 * k)` instead puts the
+        // multiplication back in f64, `−3.0 × 2.2` comes out `−6.6000000000000005`, and its
+        // shortest decimal is that — not `−6.6`. A value the caller computed is not a value the
+        // caller wrote, and `from_decimal` cannot tell them apart.
+        let d = |x: f64| Rat::from_decimal(x).expect("decimal");
+        let by_hand = |k: f64| {
+            let k = d(k);
+            [
+                k,
+                Rat::from_int(0),
+                Rat::from_int(0),
+                k.checked_mul(Rat::from_int(-3)).expect("small"),
+            ]
+        };
+        assert_eq!(
+            canonical_plane_coeffs(by_hand(2.2)),
+            canonical_plane_coeffs(by_hand(13.2)),
+            "rational construction is scale-independent"
+        );
+    }
+
+    #[test]
+    fn overflow_demotes_instead_of_panicking() {
+        // Four coprime denominators near 10^10: their lcm is their product, ~10^40, past i128.
+        let r = |den| Rat::new(1, den).unwrap();
+        let coeffs = [
+            r(10_000_000_019),
+            r(10_000_000_033),
+            r(10_000_000_061),
+            r(10_000_000_069),
+        ];
+        assert_eq!(canonical_plane_coeffs(coeffs), None);
+    }
     use proptest::prelude::*;
 
     /// `try_from_f64` is the exact rational of the f64: it round-trips (`to_f64` gives

@@ -143,6 +143,24 @@ pub(crate) fn realize(pts: &[[Rat; 3]]) -> Vec<Point3> {
 pub(crate) struct Swept {
     pub base: Vec<Point3>,
     pub top: Vec<Point3>,
+    /// The same two rings **before** realization, when the exact path produced them, plus the
+    /// frame's normal. Carried so the prism's planes can state themselves in rationals — see
+    /// [`SweptRat`]. `None` on the f64 fallback.
+    pub exact: Option<SweptRat>,
+}
+
+/// A swept ring still in rationals: what the prism's faces are, before they are rounded.
+///
+/// The f64 realization is a cache. These are the numbers the planes come from, and computing a
+/// plane here rather than from the realized points is what makes two faces of one plane carry
+/// **the same coefficients** — see [`nacre_scalar::canonical_plane_coeffs`].
+#[derive(Clone, Debug)]
+pub(crate) struct SweptRat {
+    pub base: Vec<[Rat; 3]>,
+    pub top: Vec<[Rat; 3]>,
+    /// The frame's exact unit normal. The caps face `∓` this **regardless of the sweep's sign**,
+    /// which is why it is carried rather than recovered from `top − base`.
+    pub normal: [Rat; 3],
 }
 
 impl Swept {
@@ -150,14 +168,45 @@ impl Swept {
     /// dimension with no exact form, and what the builder did unconditionally before.
     pub(crate) fn along(base: Vec<Point3>, sweep: Vector3) -> Self {
         let top = base.iter().map(|b| *b + sweep).collect();
-        Swept { base, top }
+        Swept {
+            base,
+            top,
+            exact: None,
+        }
     }
 
     /// Reverse both rings, keeping them paired.
     pub(crate) fn reversed(mut self) -> Self {
         self.base.reverse();
         self.top.reverse();
+        if let Some(e) = self.exact.as_mut() {
+            e.base.reverse();
+            e.top.reverse();
+        }
         self
+    }
+}
+
+impl SweptRat {
+    /// The base cap (`−normal`) and the top cap (`+normal`).
+    pub(crate) fn cap_planes(&self) -> Option<([Rat; 4], [Rat; 4])> {
+        let zero = Rat::from_int(0);
+        let neg = [
+            zero.checked_sub(self.normal[0])?,
+            zero.checked_sub(self.normal[1])?,
+            zero.checked_sub(self.normal[2])?,
+        ];
+        Some((
+            nacre_scalar::plane_from_point_normal(neg, *self.base.first()?)?,
+            nacre_scalar::plane_from_point_normal(self.normal, *self.top.first()?)?,
+        ))
+    }
+
+    /// Segment `i → i+1`'s wall — the same three points `Plane::through_points` is given
+    /// (`base[i]`, `base[j]`, `top[i]`), so the normal points the same way.
+    pub(crate) fn wall_plane(&self, i: usize) -> Option<[Rat; 4]> {
+        let j = (i + 1) % self.base.len();
+        nacre_scalar::plane_through_points(self.base[i], self.base[j], self.top[i])
     }
 }
 
@@ -174,12 +223,14 @@ pub(crate) fn prism_rings(
 ) -> Option<(Swept, Vec<Swept>)> {
     let f = plane.exact()?;
     let sweep = f.sweep(dist)?;
+    let normal = f.normal()?;
     let ring = |r: &[Point2]| -> Option<Swept> {
         let base = f.ring(r)?;
         let top = swept(&base, &sweep)?;
         Some(Swept {
             base: realize(&base),
             top: realize(&top),
+            exact: Some(SweptRat { base, top, normal }),
         })
     };
     let outer = ring(profile.outer())?;

@@ -525,12 +525,16 @@ pub(crate) fn build_prism(
             (h, orient)
         }
         None => {
-            let s = model.push_surface(
+            // The two caps' rational coefficients come from the same frame normal the f64 pair
+            // above uses, so they agree with the walls that meet them.
+            let caps = outer.exact.as_ref().and_then(|e| e.cap_planes());
+            let s = model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::from_point_normal(outer.base_pts[0], -normal)
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
                 SurfaceDef::Constructed,
+                caps.map(|(base, _)| base),
             );
             (s, Orientation::Forward)
         }
@@ -543,12 +547,17 @@ pub(crate) fn build_prism(
     }));
 
     // Top cap: outward normal +N.
-    let top_surface = model.push_surface(
+    let top_surface = model.push_surface_with_coeffs(
         Surface::Plane(
             Plane::from_point_normal(outer.top_pts[0], normal)
                 .ok_or(OpError::DegenerateGeometry)?,
         ),
         SurfaceDef::Constructed,
+        outer
+            .exact
+            .as_ref()
+            .and_then(|e| e.cap_planes())
+            .map(|(_, top)| top),
     );
     faces.push(model.faces.push(Face {
         surface: top_surface,
@@ -585,6 +594,9 @@ enum Cap {
 struct RingCells {
     base_pts: Vec<Point3>,
     top_pts: Vec<Point3>,
+    /// The rings before realization, when the exact path produced them — the source the faces'
+    /// rational plane coefficients come from. `None` on the f64 fallback.
+    exact: Option<crate::exact::SweptRat>,
     be: Vec<Handle<Edge>>, // base  B_i -> B_{i+1}
     te: Vec<Handle<Edge>>, // top   T_i -> T_{i+1}
     ve: Vec<Handle<Edge>>, // riser B_i -> T_i
@@ -625,12 +637,15 @@ impl RingCells {
         let n = self.len();
         for i in 0..n {
             let j = (i + 1) % n;
-            let surface = model.push_surface(
+            let surface = model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::through_points(self.base_pts[i], self.base_pts[j], self.top_pts[i])
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
                 SurfaceDef::Constructed,
+                // Same three points, in rationals — so this wall and any other face of the same
+                // plane record one array. `None` here is the f64 path or an i128 overflow.
+                self.exact.as_ref().and_then(|e| e.wall_plane(i)),
             );
             let outer = Loop {
                 half_edges: vec![
@@ -727,6 +742,7 @@ fn sweep_ring(model: &mut Model, ring: &Swept) -> Result<RingCells, OpError> {
     Ok(RingCells {
         base_pts,
         top_pts,
+        exact: ring.exact.clone(),
         be,
         te,
         ve,

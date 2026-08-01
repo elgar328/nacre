@@ -172,6 +172,22 @@ pub struct Model {
     /// Iterate this **through the faces**, never over the map: a `HashMap`'s order is not
     /// deterministic and replay determinism (DNA 3) forbids letting it reach a result.
     pub surface_defs: HashMap<Handle<Surface>, SurfaceDef>,
+    /// Each surface's plane as **exact rational coefficients**, canonicalized — present only for
+    /// surfaces whose producer had a rational description to record.
+    ///
+    /// ★ **The point is that two faces of one plane get the same array.** `nacre_geom::Plane`
+    /// keeps an un-normalized normal whose length follows the *face's size*, so the same plane
+    /// reaches `coefficients()` as `[2.2, 0, 0, −6.6000000000000005]` from one face and
+    /// `[13.2, 0, 0, −39.599999999999994]` from another — not exactly proportional, because `d`
+    /// is a rounded product. Canonical rationals have no scale to disagree about.
+    ///
+    /// ★★ **These are built from the dimensions the user wrote, never lifted from the f64
+    /// coefficients above.** Lifting is lossless and useless here: it preserves the rounding, so
+    /// the two vectors stay different (`nacre_scalar::canonical_plane_coeffs`).
+    ///
+    /// Absent is ordinary — an f64 construction path, a rotated surface (whose world coefficients
+    /// are irrational), or `i128` overflow. Iterate through the faces, never over the map.
+    pub surface_coeffs: HashMap<Handle<Surface>, [nacre_scalar::Rat; 4]>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,
     pub edges: Store<Edge>,
@@ -297,6 +313,22 @@ impl Model {
     pub fn push_surface(&mut self, surface: Surface, def: SurfaceDef) -> Handle<Surface> {
         let h = self.surfaces.push(surface);
         self.surface_defs.insert(h, def);
+        h
+    }
+
+    /// [`Model::push_surface`], also recording the surface's exact rational coefficients when the
+    /// producer has them — see [`Model::surface_coeffs`]. `None` records nothing, which is what a
+    /// producer without a rational description passes.
+    pub fn push_surface_with_coeffs(
+        &mut self,
+        surface: Surface,
+        def: SurfaceDef,
+        coeffs: Option<[nacre_scalar::Rat; 4]>,
+    ) -> Handle<Surface> {
+        let h = self.push_surface(surface, def);
+        if let Some(c) = coeffs {
+            self.surface_coeffs.insert(h, c);
+        }
         h
     }
 
@@ -462,12 +494,31 @@ impl Model {
         ];
         let fh: [Handle<Face>; 6] = core::array::from_fn(|i| {
             let (tri, hes) = &faces_def[i];
-            let surface = self.push_surface(
+            // The same three corners in rationals. `from_decimal` because a corner is a value the
+            // caller *wrote* — lifting the f64 bit pattern instead would carry its drift in and
+            // defeat the whole point (see `Model::surface_coeffs`).
+            let rat_corner = |k: usize| -> Option<[nacre_scalar::Rat; 3]> {
+                let c = corners[k].as_array();
+                Some([
+                    nacre_scalar::Rat::from_decimal(c[0])?,
+                    nacre_scalar::Rat::from_decimal(c[1])?,
+                    nacre_scalar::Rat::from_decimal(c[2])?,
+                ])
+            };
+            let coeffs = (|| {
+                nacre_scalar::plane_through_points(
+                    rat_corner(tri[0])?,
+                    rat_corner(tri[1])?,
+                    rat_corner(tri[2])?,
+                )
+            })();
+            let surface = self.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
                         .expect("non-degenerate box"),
                 ),
                 SurfaceDef::Constructed,
+                coeffs,
             );
             let outer = Loop {
                 half_edges: hes
@@ -659,6 +710,72 @@ mod tests {
     use super::*;
     use nacre_math::Vector3;
     use proptest::prelude::*;
+
+    /// ★★★ **The defect the rational coefficients exist to remove, pinned from both sides.**
+    ///
+    /// Two boxes meet on the plane `x = 3` with faces of different size. `Plane` stores an
+    /// un-normalized normal whose length follows that size, so `d = −raw·origin` is a differently
+    /// rounded product on each side and the two coefficient vectors are **not exactly
+    /// proportional** — the f64 test says "different planes" about one plane. Measured across the
+    /// census, 18 pairs are merged only because a second test looks at the faces' coordinates
+    /// instead (`docs/dev-log.md`).
+    ///
+    /// The rational coefficients are built from the corners the caller wrote and canonicalized, so
+    /// they have no scale to disagree about and come out **equal**.
+    ///
+    /// Both halves are load-bearing. If the first assertion ever fails the f64 defect was fixed
+    /// somewhere else and this test should be re-read, not deleted; if the second fails the
+    /// rational path stopped reaching these surfaces.
+    #[test]
+    fn two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([3.0, 2.2, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([3.0, 0.0, 0.0]),
+            Point3::from_array([5.0, 13.2, 1.0]),
+        );
+        // Each solid's face on x = 3: a's outward +X, b's outward −X.
+        let face_on_x3 = |s: Handle<Solid>, want_x: f64| -> Handle<Surface> {
+            let shell = m.solids.get(s).outer;
+            *m.shells
+                .get(shell)
+                .faces
+                .iter()
+                .map(|&fh| &m.faces.get(fh).surface)
+                .find(|&&sh| match m.surfaces.get(sh) {
+                    Surface::Plane(p) => {
+                        let [a, b, c, d] = p.coefficients();
+                        b == 0.0 && c == 0.0 && a != 0.0 && (-d / a - want_x).abs() < 1e-12
+                    }
+                    Surface::Cylinder(_) => false,
+                })
+                .expect("a face on x = 3")
+        };
+        let (sa, sb) = (face_on_x3(a, 3.0), face_on_x3(b, 3.0));
+
+        let (Surface::Plane(pa), Surface::Plane(pb)) = (m.surfaces.get(sa), m.surfaces.get(sb))
+        else {
+            unreachable!("both are planes")
+        };
+        assert!(
+            !nacre_geom::intersect::planes_coplanar(pa, pb),
+            "the f64 coefficients of one plane's two faces are not exactly proportional: {:?} vs {:?}",
+            pa.coefficients(),
+            pb.coefficients()
+        );
+        assert_eq!(
+            m.surface_coeffs.get(&sa),
+            m.surface_coeffs.get(&sb),
+            "the rational coefficients are the same plane"
+        );
+        assert!(
+            m.surface_coeffs.contains_key(&sa),
+            "and they are actually recorded, not both absent"
+        );
+    }
 
     fn build(min: [f64; 3], max: [f64; 3]) -> Model {
         let mut m = Model::new();
