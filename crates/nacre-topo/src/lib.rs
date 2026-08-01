@@ -185,8 +185,15 @@ pub struct Model {
     /// coefficients above.** Lifting is lossless and useless here: it preserves the rounding, so
     /// the two vectors stay different (`nacre_scalar::canonical_plane_coeffs`).
     ///
-    /// Absent is ordinary — an f64 construction path, a rotated surface (whose world coefficients
-    /// are irrational), or `i128` overflow. Iterate through the faces, never over the map.
+    /// ★★★ **The coefficients are stated in the frame this surface's [`SurfaceDef`] names** —
+    /// the world for [`SurfaceDef::Constructed`], and the **pre-motion** frame for
+    /// [`SurfaceDef::Moved`], whose world coefficients are irrational and so cannot be written
+    /// down at all. A moved surface therefore inherits its source's array unchanged: the motion
+    /// is recorded beside it, not folded into it. (That pairing — exact coefficients plus a
+    /// motion — is the shape `docs/truth-and-cache.md` builds toward.)
+    ///
+    /// Absent is ordinary — an f64 construction path, or `i128` overflow.
+    /// Iterate through the faces, never over the map.
     pub surface_coeffs: HashMap<Handle<Surface>, [nacre_scalar::Rat; 4]>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,

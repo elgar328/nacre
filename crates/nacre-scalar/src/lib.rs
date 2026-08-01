@@ -1032,6 +1032,64 @@ impl Isometry {
         }
         q
     }
+
+    /// **This isometry applied to a rational plane**, exactly — the definition-level twin of
+    /// [`apply_point`](Isometry::apply_point).
+    ///
+    /// A plane is not a bag of points, so it does not go through `apply_point`: under
+    /// `x ↦ R(x − p) + p + t` the plane `n·x + d = 0` becomes
+    ///
+    /// ```text
+    /// n' = R·n            d' = d + n·p − n'·(p + t)
+    /// ```
+    ///
+    /// (For a pure translation that collapses to the familiar `d' = d − n·t`.)
+    ///
+    /// `None` unless the rotation is one the rationals can state — the 90°-family, where
+    /// [`Angle::try_exact_cos_sin`] gives `cos`/`sin` in `{0, ±1}` — or on `i128` overflow.
+    /// That is the same condition [`Isometry::is_exact`] reports, so a caller that already
+    /// checked it will not be surprised here.
+    ///
+    /// The result is canonicalized ([`canonical_plane_coeffs`]), so a plane reached by two
+    /// different routes lands on the **same array**.
+    pub fn plane_coeffs(&self, c: [Rat; 4]) -> Option<[Rat; 4]> {
+        let n = [c[0], c[1], c[2]];
+        let (n2, pivot) = match self.rotate {
+            None => (n, [Rat::from_int(0); 3]),
+            Some(r) => {
+                let (cos, sin) = r.angle.try_exact_cos_sin()?;
+                let (i, j) = r.axis.plane();
+                let mut m = n;
+                m[i] = n[i].checked_mul(cos)?.checked_sub(n[j].checked_mul(sin)?)?;
+                m[j] = n[i].checked_mul(sin)?.checked_add(n[j].checked_mul(cos)?)?;
+                (m, r.point)
+            }
+        };
+        // d' = d + n·p − n'·(p + t)
+        let mut d = c[3];
+        for k in 0..3 {
+            d = d.checked_add(n[k].checked_mul(pivot[k])?)?;
+            let q = pivot[k].checked_add(self.translate[k])?;
+            d = d.checked_sub(n2[k].checked_mul(q)?)?;
+        }
+        canonical_plane_coeffs([n2[0], n2[1], n2[2], d])
+    }
+}
+
+/// **A reflection in `axis = offset` applied to a rational plane**, exactly.
+///
+/// `x_a ↦ 2·offset − x_a` negates that component of the normal and shifts the offset:
+/// `n'_a = −n_a`, `d' = d + 2·offset·n_a`. The reflection is its own inverse, which is why the
+/// map and its transpose-inverse coincide and no case analysis is needed.
+///
+/// ★ **The determinant is `−1`.** A caller that relies on orientation being preserved has to
+/// account for that itself; this function states where the plane goes, nothing more.
+pub fn mirror_plane_coeffs(c: [Rat; 4], axis: Axis, offset: Rat) -> Option<[Rat; 4]> {
+    let a = axis.index();
+    let mut out = c;
+    out[a] = Rat::from_int(0).checked_sub(c[a])?;
+    out[3] = c[3].checked_add(offset.checked_mul(Rat::from_int(2))?.checked_mul(c[a])?)?;
+    canonical_plane_coeffs(out)
 }
 
 #[cfg(test)]
@@ -1116,6 +1174,116 @@ mod tests {
             canonical_plane_coeffs(by_hand(13.2)),
             "rational construction is scale-independent"
         );
+    }
+
+    /// The rational point transform the tests need, so the plane transform can be checked against
+    /// something other than itself. Mirrors [`Isometry::apply_point`] exactly, in `Rat`.
+    fn move_point(iso: &Isometry, p: [Rat; 3]) -> [Rat; 3] {
+        let mut q = p;
+        if let Some(r) = iso.rotate {
+            let (cos, sin) = r.angle.try_exact_cos_sin().expect("exact angle");
+            let (i, j) = r.axis.plane();
+            let (dx, dy) = (
+                p[i].checked_sub(r.point[i]).unwrap(),
+                p[j].checked_sub(r.point[j]).unwrap(),
+            );
+            q[i] = r.point[i]
+                .checked_add(dx.checked_mul(cos).unwrap())
+                .unwrap()
+                .checked_sub(dy.checked_mul(sin).unwrap())
+                .unwrap();
+            q[j] = r.point[j]
+                .checked_add(dx.checked_mul(sin).unwrap())
+                .unwrap()
+                .checked_add(dy.checked_mul(cos).unwrap())
+                .unwrap();
+        }
+        [
+            q[0].checked_add(iso.translate[0]).unwrap(),
+            q[1].checked_add(iso.translate[1]).unwrap(),
+            q[2].checked_add(iso.translate[2]).unwrap(),
+        ]
+    }
+
+    fn on_plane(c: [Rat; 4], p: [Rat; 3]) -> bool {
+        let mut acc = c[3];
+        for i in 0..3 {
+            acc = acc.checked_add(c[i].checked_mul(p[i]).unwrap()).unwrap();
+        }
+        acc == Rat::from_int(0)
+    }
+
+    /// ★ **The moved plane must contain the moved points** — checked against a *separate*
+    /// point transform, so this cannot pass by restating the plane formula.
+    #[test]
+    fn a_moved_plane_still_contains_its_moved_points() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        // A slanted plane, 2x − 3y + z − 6 = 0, and three points on it.
+        let plane = ints([2, -3, 1, -6]);
+        let pts = [
+            [r(3, 1), r(0, 1), r(0, 1)],
+            [r(0, 1), r(0, 1), r(6, 1)],
+            [r(1, 2), r(1, 1), r(8, 1)],
+        ];
+        for p in pts {
+            assert!(on_plane(plane, p), "fixture point is on the plane");
+        }
+
+        let cases = [
+            Isometry::translation([r(1, 2), r(-3, 1), r(7, 5)]),
+            Isometry::rotation(Rotation {
+                axis: Axis::X,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
+            }),
+            Isometry::rigid(
+                Rotation {
+                    axis: Axis::Z,
+                    point: [r(1, 1), r(2, 1), r(0, 1)],
+                    angle: Angle::from_deg(Rat::from_int(270)).unwrap(),
+                },
+                [r(0, 1), r(5, 1), r(-1, 2)],
+            ),
+        ];
+        for iso in cases {
+            let moved = iso.plane_coeffs(plane).expect("exact motion");
+            for p in pts {
+                assert!(
+                    on_plane(moved, move_point(&iso, p)),
+                    "moved plane {moved:?} must contain the moved point"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_mirrored_plane_still_contains_its_mirrored_points() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let plane = ints([2, -3, 1, -6]);
+        let (axis, offset) = (Axis::Z, r(5, 4));
+        let moved = mirror_plane_coeffs(plane, axis, offset).unwrap();
+        for p in [[r(3, 1), r(0, 1), r(0, 1)], [r(0, 1), r(0, 1), r(6, 1)]] {
+            let mut q = p;
+            let a = axis.index();
+            q[a] = offset
+                .checked_mul(Rat::from_int(2))
+                .unwrap()
+                .checked_sub(p[a])
+                .unwrap();
+            assert!(on_plane(moved, q), "mirrored plane must contain {q:?}");
+        }
+    }
+
+    /// A non-90° rotation has no rational `cos`/`sin`, so there is nothing exact to return.
+    #[test]
+    fn an_inexact_rotation_declines() {
+        let iso = Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+        });
+        assert!(!iso.is_exact());
+        assert_eq!(iso.plane_coeffs(ints([0, 0, 1, -3])), None);
     }
 
     #[test]

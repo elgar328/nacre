@@ -563,7 +563,27 @@ fn transform_solid(
             .surface(model.surfaces.get(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
         let def = moved_surface_def(model, s, fh, motion, exact, &mut surf_rot)?;
-        surf_map.insert(s, model.push_surface(moved, def));
+        // The rational coefficients follow the frame `def` names (`Model::surface_coeffs`).
+        //
+        // ★ `Moved` states its plane **before** the motion, and the base of the image is the base
+        // of the source — `moved_surface_def` chains from the source's own leaf for the same
+        // reason — so the array is inherited verbatim. `Constructed` states it in the world, so
+        // an exactness-preserving motion has to carry the plane along with it.
+        let coeffs = model
+            .surface_coeffs
+            .get(&s)
+            .copied()
+            .and_then(|c| match def {
+                SurfaceDef::Moved { .. } => Some(c),
+                SurfaceDef::Constructed => match motion {
+                    Xform::Rigid(iso) => iso.plane_coeffs(c),
+                    Xform::Mirror { axis, offset, .. } => {
+                        nacre_scalar::mirror_plane_coeffs(c, *axis, *offset)
+                    }
+                },
+                SurfaceDef::Inexact => None,
+            });
+        surf_map.insert(s, model.push_surface_with_coeffs(moved, def, coeffs));
     }
 
     // Edge order (deterministic dedup) — used by passes 2/3/4.
