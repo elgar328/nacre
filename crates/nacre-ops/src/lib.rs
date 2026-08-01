@@ -4527,9 +4527,16 @@ pub mod tests {
         }
     }
 
-    /// One geometric plane is one class **whatever the two faces' sizes**, and the coefficient test
-    /// alone still cannot say so — the two walls' un-normalized coefficient 4-vectors are not
-    /// exactly proportional. Pins that the coordinate branch is what earns the merge.
+    /// One geometric plane is one class **whatever the two faces' sizes**.
+    ///
+    /// ★ **The reason changed, and that is the news.** This used to assert that the coefficient
+    /// test *could not* prove these coplanar — two walls of one plane at different face sizes have
+    /// un-normalized 4-vectors that are not exactly proportional — and that the coordinate branch
+    /// was what earned the merge. Surfaces are interned on their canonical rational coefficients
+    /// now, so the two walls are handed **one handle**, and the merge is a handle comparison
+    /// before any geometry is asked. The f64 non-proportionality is still real and still pinned,
+    /// on the planes themselves, in `nacre_topo`'s
+    /// `two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals`.
     #[test]
     fn one_plane_is_one_class_whatever_the_face_size() {
         let (dx, dy) = (1.628165457453874f64, 0.5f64);
@@ -4560,15 +4567,69 @@ pub mod tests {
             .collect();
         assert_eq!(x_walls.len(), 2, "one wall from each box: {x_walls:?}");
         let (i, j) = (x_walls[0], x_walls[1]);
-        assert!(
-            !planes_coplanar(&faces_tab[i].plane, &faces_tab[j].plane),
-            "the coefficient test still cannot prove these coplanar — that is the whole point"
+        assert_eq!(
+            faces_tab[i].surf, faces_tab[j].surf,
+            "two faces, one surface — interning collapsed them at construction"
         );
         assert!(
             crate::planes::test_judge(&faces_tab).planes_coplanar(i, j),
-            "coordinates can"
+            "and the geometry agrees, so nothing rests on the handle alone"
         );
         assert_eq!(plane_ix[i], plane_ix[j], "so they are one plane-table row");
+    }
+
+    /// ★ **A profile with a collinear vertex makes its two walls one surface.**
+    ///
+    /// The two segments either side of a straight-through vertex lie on the *same* plane, so the
+    /// vertex they would define is named by two planes, not three — `[S, S, cap]` determines a
+    /// line, not a point. Interning is what makes that detectable at all: the two walls share one
+    /// handle, so the check is `s[i] == s[j]`, one comparison. Without it they are two handles
+    /// naming one plane and the test leaks silently.
+    ///
+    /// This is the secondary reason surfaces are interned (`docs/truth-and-cache.md`, 「남은 것」 3),
+    /// and it is worth pinning because nothing else in the suite builds such a profile.
+    #[test]
+    fn a_collinear_profile_vertex_gives_its_two_walls_one_surface() {
+        let mut m = Model::new();
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        // A unit square whose bottom edge carries a redundant midpoint.
+        let profile = Profile2d::polygon(vec![
+            p(0.0, 0.0),
+            p(0.5, 0.0), // collinear with its neighbours
+            p(1.0, 0.0),
+            p(1.0, 1.0),
+            p(0.0, 1.0),
+        ]);
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile,
+                dist: 1.0,
+            },
+        )
+        .expect("extrude") else {
+            unreachable!("extrude yields Extrude output")
+        };
+        m.rebuild_adjacency();
+        let shell = m.solids.get(solid).outer;
+        let surfaces: Vec<_> = m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .collect();
+        // Five profile points ⇒ five wall quads, plus two caps.
+        assert_eq!(surfaces.len(), 7, "five wall quads and two caps");
+        let mut distinct = surfaces.clone();
+        distinct.sort_unstable_by_key(|h| h.index());
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            6,
+            "the split bottom edge's two walls are one plane, so one handle: {surfaces:?}"
+        );
     }
 
     /// A vertex where one plane is split between two faces is named by **the planes that touch it**,

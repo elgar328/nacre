@@ -99,6 +99,12 @@ pub enum Origin {
     },
 }
 
+/// What makes two surfaces the same plane, for [`Model::surface_ids`]: the canonical rational
+/// coefficients and **the motion they are stated in**. Identical arrays under different motions
+/// are different planes, because `Constructed` coefficients speak about the world and `Moved`
+/// ones about the pre-motion frame.
+pub type SurfaceKey = ([nacre_scalar::Rat; 4], Option<Handle<MotionNode>>);
+
 /// Provenance of a **surface** — the same question [`Origin`] answers for a vertex.
 ///
 /// The kernel's rule is that exact geometry is the truth and f64 is a cache. A surface's
@@ -195,6 +201,19 @@ pub struct Model {
     /// Absent is ordinary — an f64 construction path, or `i128` overflow.
     /// Iterate through the faces, never over the map.
     pub surface_coeffs: HashMap<Handle<Surface>, [nacre_scalar::Rat; 4]>,
+    /// Interning table for [`Model::push_surface_with_coeffs`]: the handle already issued for a
+    /// plane, keyed by its canonical coefficients **and the motion they are stated in**. The twin
+    /// of [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result).
+    ///
+    /// ★ **The motion belongs in the key.** `Constructed` coefficients speak about the world and
+    /// `Moved` ones about the pre-motion frame, so two identical arrays under different motions
+    /// are different planes. `Inexact` has no coefficients and never interns.
+    ///
+    /// ★★ **The witness does not.** Two faces of one plane sharing one `SurfaceDef::Moved`
+    /// witness is already how this works — `collect_planes` says the witness "was captured from
+    /// whichever face first reached this surface" and winds it to *each* face's own outward
+    /// normal — so it is not part of what makes two planes the same.
+    pub surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,
     pub edges: Store<Edge>,
@@ -345,9 +364,35 @@ impl Model {
         def: SurfaceDef,
         coeffs: Option<[nacre_scalar::Rat; 4]>,
     ) -> (Handle<Surface>, bool) {
+        let key = coeffs.map(|c| {
+            let motion = match def {
+                SurfaceDef::Moved { motion, .. } => Some(motion),
+                _ => None,
+            };
+            (c, motion)
+        });
+        if let Some(k) = key {
+            if let Some(&h) = self.surface_ids.get(&k) {
+                // Same plane, already issued. The canonical form says nothing about direction, so
+                // report whether the survivor points the other way and let the caller spell its
+                // outward the other way round.
+                let dir = |s: &Surface| match s {
+                    Surface::Plane(p) => Some(p.normal()),
+                    Surface::Cylinder(_) => None,
+                };
+                let flipped = match (dir(self.surfaces.get(h)), dir(&surface)) {
+                    (Some(a), Some(b)) => a.dot(b) < 0.0,
+                    _ => false,
+                };
+                return (h, flipped);
+            }
+        }
         let h = self.push_surface(surface, def);
-        if let Some(c) = coeffs {
+        if let Some((c, _)) = key {
             self.surface_coeffs.insert(h, c);
+        }
+        if let Some(k) = key {
+            self.surface_ids.insert(k, h);
         }
         (h, false)
     }
@@ -783,25 +828,44 @@ mod tests {
         };
         let (sa, sb) = (face_on_x3(a, 3.0), face_on_x3(b, 3.0));
 
-        let (Surface::Plane(pa), Surface::Plane(pb)) = (m.surfaces.get(sa), m.surfaces.get(sb))
-        else {
-            unreachable!("both are planes")
+        // ★ **They are one handle now** — that is what the rational coefficients bought.
+        assert_eq!(sa, sb, "one plane, one surface");
+        assert!(m.surface_coeffs.contains_key(&sa), "and it is recorded");
+
+        // The f64 defect that made this necessary, shown on the planes themselves rather than
+        // through the model, since the model no longer holds two of them. `Plane` keeps an
+        // un-normalized normal whose length follows the face's size, so `d = −raw·origin` is a
+        // differently rounded product on each side and the two vectors are not exactly
+        // proportional — the f64 test says "different planes" about one plane.
+        let wall = |dy: f64| {
+            Plane::through_points(
+                Point3::from_array([3.0, 0.0, 0.0]),
+                Point3::from_array([3.0, dy, 0.0]),
+                Point3::from_array([3.0, 0.0, 1.0]),
+            )
+            .expect("non-degenerate")
         };
+        let (pa, pb) = (wall(2.2), wall(13.2));
         assert!(
-            !nacre_geom::intersect::planes_coplanar(pa, pb),
-            "the f64 coefficients of one plane's two faces are not exactly proportional: {:?} vs {:?}",
+            !nacre_geom::intersect::planes_coplanar(&pa, &pb),
+            "f64 coefficients of one plane at two face sizes: {:?} vs {:?}",
             pa.coefficients(),
             pb.coefficients()
         );
+        let rat = |dy: f64| {
+            let r = |x: f64| nacre_scalar::Rat::from_decimal(x).expect("decimal");
+            nacre_scalar::plane_through_points(
+                [r(3.0), r(0.0), r(0.0)],
+                [r(3.0), r(dy), r(0.0)],
+                [r(3.0), r(0.0), r(1.0)],
+            )
+        };
         assert_eq!(
-            m.surface_coeffs.get(&sa),
-            m.surface_coeffs.get(&sb),
-            "the rational coefficients are the same plane"
+            rat(2.2),
+            rat(13.2),
+            "the rationals have no scale to disagree about"
         );
-        assert!(
-            m.surface_coeffs.contains_key(&sa),
-            "and they are actually recorded, not both absent"
-        );
+        assert!(rat(2.2).is_some());
     }
 
     fn build(min: [f64; 3], max: [f64; 3]) -> Model {
