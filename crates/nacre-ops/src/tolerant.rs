@@ -521,6 +521,10 @@ mod tests {
         let mirrored: Vec<FaceInfo> = plain
             .iter()
             .map(|f| FaceInfo {
+                // A hand-built table has no surface to have recorded coefficients on, so the base
+                // frame derives as it always did. Filling this by hand is how a fixture and the
+                // engine come to route differently (see `PlaneGeom::reconcile`).
+                base_rat: None,
                 surf: f.surf,
                 face: f.face,
                 plane: f.plane,
@@ -580,10 +584,16 @@ mod tests {
 
     /// The three tests above compare a table that *offers* a base frame against one that does
     /// not — and agreement proves nothing unless the base frame is what answered. So corrupt it
-    /// and require the answers to **change**: reverse each base triangle (which reverses the
-    /// normal `orient3d`'s convention is tied to) and negate each base plane (which reverses the
-    /// determinant `plane_pair_dir_sign` takes). If either sweep ever stops disagreeing, the
-    /// shortcut has stopped firing and the tests above have gone vacuous.
+    /// and require the answers to **change**: negating a base plane reverses both the side
+    /// `indirect_plane_side` reports and the determinant `plane_pair_dir_sign` takes. If either
+    /// sweep ever stops disagreeing, the shortcut has stopped firing and the tests above have
+    /// gone vacuous.
+    ///
+    /// ★ **And the base *triangle* must now be inert.** `orient3d` used to ask the fourth plane
+    /// with its pre-motion triangle while the other three spoke in coefficients, so a plane whose
+    /// `d` was a rounded product was two planes inside one judgement. It asks all four in
+    /// coefficients now, and reversing the triangles has to change nothing — that is the property,
+    /// not an accident, so it is asserted rather than left untested.
     ///
     /// A caution the first draft of this test walked into: not every perturbation is detectable.
     /// Reflecting the base triangles *and* re-deriving their planes changes nothing at all — the
@@ -598,7 +608,12 @@ mod tests {
             let [a, b, c] = g.base.tri.unwrap();
             g.base.tri = Some([b, a, c]);
         }
+        let mut negated_planes = two_spellings().1;
+        for g in &mut negated_planes {
+            g.base.coeffs = g.base.coeffs.map(|c| c.map(|v| -v));
+        }
         let mut orient_changed = 0usize;
+        let mut tri_changed = 0usize;
         for p in 0..n {
             for q in (p + 1)..n {
                 for r in (q + 1)..n {
@@ -609,10 +624,12 @@ mod tests {
                         if j == p || j == q || j == r {
                             continue;
                         }
-                        if crate::planes::test_judge(&pb).orient3d(p, q, r, j)
-                            != crate::planes::test_judge(&reversed).orient3d(p, q, r, j)
-                        {
+                        let want = crate::planes::test_judge(&pb).orient3d(p, q, r, j);
+                        if want != crate::planes::test_judge(&negated_planes).orient3d(p, q, r, j) {
                             orient_changed += 1;
+                        }
+                        if want != crate::planes::test_judge(&reversed).orient3d(p, q, r, j) {
+                            tri_changed += 1;
                         }
                     }
                 }
@@ -620,7 +637,12 @@ mod tests {
         }
         assert!(
             orient_changed > 0,
-            "`orient3d` never read the base triangle"
+            "`orient3d` never read the base coefficients"
+        );
+        assert_eq!(
+            tri_changed, 0,
+            "`orient3d` still reads the base triangle — the fourth plane must be asked in \
+             coefficients, or one judgement holds two descriptions of it again"
         );
 
         let mut negated = two_spellings().1;

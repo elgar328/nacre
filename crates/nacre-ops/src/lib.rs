@@ -2556,6 +2556,8 @@ pub mod tests {
         // equal points) would make every `orient3d` vanish, so the coordinate branch would report
         // coplanar and this test would pass without the handle branch ever mattering.
         let mk = |plane, tri: [Point3; 3]| FaceInfo {
+            // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
+            base_rat: None,
             motion: None,
             surf: shared,
             face: Some(fh),

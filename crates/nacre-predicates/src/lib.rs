@@ -494,6 +494,37 @@ pub fn indirect_orient3d(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) 
     indirect_orient3d_exact(p, q, r, s)
 }
 
+/// **Which side of the plane `c` the implicit point `p` lies on** — `+1` on the side its normal
+/// `(c₀, c₁, c₂)` points to, `-1` on the other, `0` exactly on it.
+///
+/// The same question [`indirect_orient3d`] answers, asked with the fourth plane's **coefficients**
+/// instead of three of its points. That is not a convenience: a plane described twice — by
+/// coefficients and by a triangle — is described by two planes whenever `d` was a rounded product,
+/// and handing one predicate both descriptions is how a boolean comes to disagree with itself. With
+/// no triangle there is nothing left to disagree.
+///
+/// ★ **It is also cheaper.** `X = Dvec/D`, so
+///
+/// > `sign(c·X + c₃) = sign(c·Dvec + c₃·D) · sign(D)`
+///
+/// — a four-term dot product where the triangle form needs three differences, a cross product and
+/// another dot. Division-free and exact, through [`Expansion`].
+///
+/// ★★ **The sign is the plane's own, not a face's.** A face whose stored normal opposes its
+/// outward direction has to apply that relation itself (`nacre_ops`' `frame_sign`); this states
+/// where the point is relative to the coefficients it was given, and nothing else.
+///
+/// **Precondition:** the three planes meet in a point (`D ≠ 0`), as in [`indirect_orient3d`].
+pub fn indirect_plane_side(p: &ThreePlane, c: [f64; 4]) -> i8 {
+    let ([dx, dy, dz], d) = cramer(p);
+    let side = dx
+        .scale(c[0])
+        .add(&dy.scale(c[1]))
+        .add(&dz.scale(c[2]))
+        .add(&d.scale(c[3]));
+    side.sign() * d.sign()
+}
+
 /// [`indirect_orient3d`] with no filter: exact expansions, every time. The fallback,
 /// and the oracle its filter is tested against.
 fn indirect_orient3d_exact(p: &ThreePlane, q: [f64; 3], r: [f64; 3], s: [f64; 3]) -> i8 {
@@ -820,6 +851,78 @@ mod tests {
             let mf = e.map(|row| row.map(|v| v as f64));
             let mi = e.map(|row| row.map(|v| v as i128));
             prop_assert_eq!(det3_sign(mf), det3_i128(mi).signum() as i8);
+        }
+    }
+
+    // ---- indirect_plane_side ----
+
+    /// ★ **The coefficient form and the triangle form are the same question** — checked on a
+    /// fourth plane whose two descriptions genuinely agree, which is the only case where asking
+    /// both is meaningful. The triangle's right-hand normal is what `indirect_orient3d` measures
+    /// against, so the two agree when the triangle is wound to the coefficients' normal and
+    /// oppose when it is not. That relation is what a face's `frame_sign` records.
+    #[test]
+    fn the_coefficient_form_answers_what_the_triangle_form_does() {
+        // x = 1, y = 2, z = 3 meet at (1, 2, 3).
+        let tp = ThreePlane([
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, -2.0],
+            [0.0, 0.0, 1.0, -3.0],
+        ]);
+        // Fourth plane z = 0, normal +z. Its triangle, wound so the RH normal is +z.
+        let c = [0.0, 0.0, 1.0, 0.0];
+        let (t0, t1, t2) = ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        assert_eq!(
+            indirect_plane_side(&tp, c),
+            indirect_orient3d(&tp, t0, t1, t2),
+            "same winding ⇒ same sign"
+        );
+        assert_eq!(indirect_plane_side(&tp, c), 1, "(1,2,3) is above z = 0");
+        assert_eq!(
+            indirect_plane_side(&tp, c),
+            -indirect_orient3d(&tp, t0, t2, t1),
+            "reversed winding ⇒ opposite sign"
+        );
+        // Scaling the coefficients cannot move the point; negating them flips the side.
+        assert_eq!(indirect_plane_side(&tp, [0.0, 0.0, 7.0, 0.0]), 1);
+        assert_eq!(indirect_plane_side(&tp, [0.0, 0.0, -1.0, 0.0]), -1);
+    }
+
+    #[test]
+    fn a_point_on_the_plane_reads_zero() {
+        let tp = ThreePlane([
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, -2.0],
+            [0.0, 0.0, 1.0, -3.0],
+        ]);
+        // z = 3 passes through (1, 2, 3) exactly.
+        assert_eq!(indirect_plane_side(&tp, [0.0, 0.0, 1.0, -3.0]), 0);
+        // And so does a slanted plane through it: 2x − y + z − 3 = 0.
+        assert_eq!(indirect_plane_side(&tp, [2.0, -1.0, 1.0, -3.0]), 0);
+    }
+
+    /// The implicit point is a *ratio*, so a triple whose determinant is negative must not flip
+    /// the answer — that is what the `sign(D)` factor is for.
+    #[test]
+    fn a_negatively_oriented_triple_names_the_same_point() {
+        let a = ThreePlane([
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, -2.0],
+            [0.0, 0.0, 1.0, -3.0],
+        ]);
+        // The same three planes, two swapped: D changes sign, the point does not.
+        let b = ThreePlane([
+            [0.0, 1.0, 0.0, -2.0],
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0, -3.0],
+        ]);
+        for c in [
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [2.0, -1.0, 1.0, -3.0],
+            [1.0, 1.0, 1.0, -10.0],
+        ] {
+            assert_eq!(indirect_plane_side(&a, c), indirect_plane_side(&b, c));
         }
     }
 

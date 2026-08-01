@@ -56,6 +56,11 @@ pub(crate) struct FaceInfo {
     /// The motion-history leaf this face's plane was moved by, or `None` for a constructed one.
     /// **The canonical identity of "which motion"** — see [`BaseFrame`].
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
+    /// The surface's plane as **exact rational coefficients in the frame its `SurfaceDef` names**
+    /// (`Model::surface_coeffs`) — the world when unmoved, the pre-motion frame when moved.
+    /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
+    /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
+    pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
     /// the surface's own [`SurfaceDef`].
     ///
@@ -151,6 +156,7 @@ pub(crate) fn collect_planes(
                 "n_out's sign against the surface normal is the face's orientation"
             );
             out.push(FaceInfo {
+                base_rat: model.surface_coeffs.get(&face.surface).copied(),
                 surf: face.surface,
                 face: Some(fh),
                 plane,
@@ -587,6 +593,7 @@ impl BaseFrame {
         tri_pt3: &[Pt3; 3],
         motion: Option<Handle<nacre_topo::MotionNode>>,
         frame_sign: i8,
+        base_rat: Option<[nacre_scalar::Rat; 4]>,
     ) -> Self {
         // **Identity by handle, not by hash.** This used to fold the chain into a 64-bit
         // `DefaultHasher` digest and compare digests — and a collision does not make a judgement
@@ -625,7 +632,8 @@ impl BaseFrame {
         // is related to the moved frame by a *proper* motion again — which is what every consumer
         // of this struct assumes. A sign flip on x is exact for every finite `f64`, and it is the
         // same convention `nacre_cip::frame3::shared_base` applies to its own points.
-        let tri = if nacre_cip::chain_parity(&tri_pt3[0].chain) < 0 {
+        let improper = nacre_cip::chain_parity(&tri_pt3[0].chain) < 0;
+        let tri = if improper {
             tri.map(|p| {
                 let [x, y, z] = p.as_array();
                 Point3::from_array([-x, y, z])
@@ -648,11 +656,60 @@ impl BaseFrame {
         // the ordinary derivation from them. (The earlier spelling corrected the plane separately
         // and was off by that one sign; `a_reflected_spelling_takes_the_same_direction_signs`
         // is what found it.)
-        let coeffs = Plane::through_points(tri[0], tri[1], tri[2]).map(|pl| {
+        let derived = Plane::through_points(tri[0], tri[1], tri[2]).map(|pl| {
             let c = pl.coefficients();
             let k = f64::from(frame_sign);
             [c[0] * k, c[1] * k, c[2] * k, c[3] * k]
         });
+        // ★★★ **Take `d` from the record and the direction from the triangle.**
+        //
+        // The derivation above is the two-descriptions problem in miniature: `d` comes out of an
+        // f64 dot product, so the plane it names is not quite the one `tri` lies on — measured, for
+        // 27% of the census's rotated classes and 40% of the fin sweep's. The surface's recorded
+        // pre-motion coefficients (`Model::surface_coeffs`) *are* that plane, exactly, with no
+        // triangle in the derivation at all.
+        //
+        // ★ Only the **direction** still comes from the triangle, and that is deliberate. The
+        // record is canonicalized, so its sign is a normal form, not this face's outward sense;
+        // and the reflection correction above cannot simply be applied to a normal, because the
+        // cross product is a pseudovector and reflecting-then-deriving differs from
+        // deriving-then-reflecting by a global sign (the comment above, and the test
+        // `a_reflected_spelling_takes_the_same_direction_signs` that found it). Orienting the
+        // exact plane to agree with the derived one reproduces whatever convention the derivation
+        // had, without re-deriving the convention — and *direction* is the half where the two
+        // descriptions do not part.
+        let exact_coeffs = base_rat.and_then(|c| {
+            // ★ **The same correction, applied to the plane.** When the chain is improper the
+            // triangle above was reflected in `x`, so everything derived from it lives in the
+            // reflected base frame — and the record does not. Orienting the normals afterwards
+            // cannot repair that: an unreflected plane and a reflected one are *different planes*,
+            // not the same plane spelled with the opposite sign, so the two mirror fixtures fail
+            // outright. Reflect the plane, then let the orientation step below settle the sign
+            // (which is where reflecting-then-deriving and deriving-then-reflecting differ).
+            let c = if improper {
+                nacre_scalar::mirror_plane_coeffs(
+                    c,
+                    nacre_scalar::Axis::X,
+                    nacre_scalar::Rat::from_int(0),
+                )?
+            } else {
+                c
+            };
+            let f = c.map(|r| r.to_f64());
+            // A canonicalized vector is integral; if it does not survive the round trip the
+            // realization is a rounding and buys nothing over the derivation.
+            c.iter()
+                .zip(f)
+                .all(|(&r, x)| nacre_scalar::Rat::try_from_f64(x) == Some(r))
+                .then_some(f)
+        });
+        let coeffs = match (exact_coeffs, derived) {
+            (Some(e), Some(d)) => {
+                let dot = e[0] * d[0] + e[1] * d[1] + e[2] * d[2];
+                Some(if dot < 0.0 { e.map(|x| -x) } else { e })
+            }
+            _ => derived,
+        };
         Self {
             chain_id,
             tri: Some(tri),
@@ -768,7 +825,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
             // "is it rotated?" and ask "did I get coefficients?" instead.
             let (exact_coeffs, exact_normal) = PlaneGeom::reconcile(&pi.plane, pi.tri, pi.rotated);
             PlaneGeom {
-                base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign),
+                base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign, pi.base_rat),
                 plane: pi.plane,
                 surf: pi.surf,
                 tri: pi.tri,

@@ -26,7 +26,8 @@ use crate::kernel::frame3::{
 };
 use nacre_math::Point3;
 use nacre_predicates::{
-    ThreePlane, det3_sign, indirect_cmp_coord, indirect_orient3d, orient2d, orient3d,
+    ThreePlane, det3_sign, indirect_cmp_coord, indirect_orient3d, indirect_plane_side, orient2d,
+    orient3d,
 };
 use nacre_scalar::Orient;
 
@@ -394,20 +395,27 @@ impl<W: PlaneWitness> Judge<'_, W> {
             ));
         }
         // One shared motion ⇒ the same question, exactly, on the canonicalised pre-motion data.
+        //
+        // ★★★ **All four planes are asked for coefficients, `j` included** — the same discipline
+        // the branch above states, and for a stronger reason: here `j` has no triangle in the
+        // question at all. This used to read `j`'s pre-motion *triangle* while the other three
+        // spoke in coefficients, and the two descriptions of `j` part whenever its `d` was a
+        // rounded product — measured at 27% of the census's rotated classes and 40% of the fin
+        // sweep's, answering 30% and 75% of this branch's judgements under the mismatch. Asking
+        // `j` in the same vocabulary as the rest removes the mismatch instead of detecting it.
+        //
+        // ★ `frame_sign` is what carries the convention across: `indirect_plane_side` answers
+        // about the plane's own normal, while this predicate's contract is the *triangle's*
+        // right-hand normal, and `frame_sign` is exactly the relation between the two.
         if shared_motion(self.planes, &[p, q, r, j]) {
-            if let (Some(cp), Some(cq), Some(cr), Some(tj)) = (
+            if let (Some(cp), Some(cq), Some(cr), Some(cj)) = (
                 self.planes[p].base_coeffs(),
                 self.planes[q].base_coeffs(),
                 self.planes[r].base_coeffs(),
-                self.planes[j].base_tri(),
+                self.planes[j].base_coeffs(),
             ) {
                 let tp = ThreePlane([cp, cq, cr]);
-                return Some(indirect_orient3d(
-                    &tp,
-                    tj[0].as_array(),
-                    tj[1].as_array(),
-                    tj[2].as_array(),
-                ));
+                return Some(indirect_plane_side(&tp, cj) * self.planes[j].frame_sign());
             }
         }
         None
