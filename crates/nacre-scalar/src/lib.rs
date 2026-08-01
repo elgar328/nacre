@@ -1109,7 +1109,7 @@ mod tests {
     fn one_plane_written_at_any_scale_canonicalizes_to_one_vector() {
         let want = ints([1, 2, 0, -3]);
         for scale in [1, 2, 7, -1, -13] {
-            let scaled = ints([1 * scale, 2 * scale, 0, -3 * scale]);
+            let scaled = ints([scale, 2 * scale, 0, -3 * scale]);
             assert_eq!(canonical_plane_coeffs(scaled), Some(want), "scale {scale}");
         }
         // And with denominators: 11/10·x + 3/5·y − 7/2 = 0 is 11x + 6y − 35 = 0.
