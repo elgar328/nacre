@@ -495,15 +495,17 @@ pub(crate) fn build_prism(
     }
 
     let outer_pts = oriented_ring(outer_ring, normal, true);
-    let outer = sweep_ring(model, &outer_pts)?;
-    let holes: Vec<RingCells> = inner_rings
+    // `false` = opposite to the normalized outer ring, whichever way that ended up.
+    let hole_pts: Vec<Swept> = inner_rings
         .into_iter()
-        // `false` = opposite to the normalized outer ring, whichever way that ended up.
-        .map(|h| sweep_ring(model, &oriented_ring(h, normal, false)))
-        .collect::<Result<_, _>>()?;
+        .map(|h| oriented_ring(h, normal, false))
+        .collect();
 
-    let mut faces =
-        Vec::with_capacity(2 + outer.len() + holes.iter().map(|h| h.len()).sum::<usize>());
+    // ★★★ **Surfaces before topology.** A vertex is defined by the three faces that meet at it,
+    // and `Store` is append-only, so the handles have to exist before the vertex does. The two
+    // arenas are separate, so interleaving them differently does not shift either one's numbering
+    // — but the surfaces' order *among themselves* is what the numbering depends on, and it is
+    // preserved exactly: base cap, then top cap, then walls, outer ring before the holes.
 
     // Base cap: outward normal −N, loops reversed.
     // When padding/pocketing on a face, reuse that face's `Surface` handle (explicit sharing) so
@@ -527,10 +529,10 @@ pub(crate) fn build_prism(
         None => {
             // The two caps' rational coefficients come from the same frame normal the f64 pair
             // above uses, so they agree with the walls that meet them.
-            let caps = outer.exact.as_ref().and_then(|e| e.cap_planes());
+            let caps = outer_pts.exact.as_ref().and_then(|e| e.cap_planes());
             let (s, flipped) = model.push_surface_with_coeffs(
                 Surface::Plane(
-                    Plane::from_point_normal(outer.base_pts[0], -normal)
+                    Plane::from_point_normal(outer_pts.base[0], -normal)
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
                 SurfaceDef::Constructed,
@@ -546,40 +548,58 @@ pub(crate) fn build_prism(
             (s, orient)
         }
     };
+    // Top cap: outward normal +N.
+    let (top_surface, top_flipped) = model.push_surface_with_coeffs(
+        Surface::Plane(
+            Plane::from_point_normal(outer_pts.top[0], normal)
+                .ok_or(OpError::DegenerateGeometry)?,
+        ),
+        SurfaceDef::Constructed,
+        outer_pts
+            .exact
+            .as_ref()
+            .and_then(|e| e.cap_planes())
+            .map(|(_, top)| top),
+    );
+    let top_orient = if top_flipped {
+        Orientation::Forward.flipped()
+    } else {
+        Orientation::Forward
+    };
+
+    // Wall surfaces, in the same order the faces will be emitted: the outer ring's, then each
+    // hole's (facing into the hole).
+    let outer_walls = wall_surfaces(model, &outer_pts)?;
+    let hole_walls: Vec<Vec<(Handle<Surface>, bool)>> = hole_pts
+        .iter()
+        .map(|h| wall_surfaces(model, h))
+        .collect::<Result<_, _>>()?;
+
+    // ── Topology. Every surface it needs already exists.
+    let outer = sweep_ring(model, &outer_pts)?;
+    let holes: Vec<RingCells> = hole_pts
+        .iter()
+        .map(|h| sweep_ring(model, h))
+        .collect::<Result<_, _>>()?;
+
+    let mut faces =
+        Vec::with_capacity(2 + outer.len() + holes.iter().map(|h| h.len()).sum::<usize>());
     faces.push(model.faces.push(Face {
         surface: base_surface,
         outer: outer.cap_loop(Cap::Base),
         inner: holes.iter().map(|h| h.cap_loop(Cap::Base)).collect(),
         orientation: base_orient,
     }));
-
-    // Top cap: outward normal +N.
-    let (top_surface, top_flipped) = model.push_surface_with_coeffs(
-        Surface::Plane(
-            Plane::from_point_normal(outer.top_pts[0], normal)
-                .ok_or(OpError::DegenerateGeometry)?,
-        ),
-        SurfaceDef::Constructed,
-        outer
-            .exact
-            .as_ref()
-            .and_then(|e| e.cap_planes())
-            .map(|(_, top)| top),
-    );
     faces.push(model.faces.push(Face {
         surface: top_surface,
         outer: outer.cap_loop(Cap::Top),
         inner: holes.iter().map(|h| h.cap_loop(Cap::Top)).collect(),
-        orientation: if top_flipped {
-            Orientation::Forward.flipped()
-        } else {
-            Orientation::Forward
-        },
+        orientation: top_orient,
     }));
-
-    // Side walls — the outer ring's, then each hole's (facing into the hole).
-    for ring in std::iter::once(&outer).chain(holes.iter()) {
-        ring.push_walls(model, &mut faces)?;
+    for (ring, walls) in
+        std::iter::once((&outer, &outer_walls)).chain(holes.iter().zip(hole_walls.iter()))
+    {
+        ring.push_walls(model, walls, &mut faces);
     }
 
     let shell = model.shells.push(Shell {
@@ -603,11 +623,9 @@ enum Cap {
 /// them. Built the same way for the outer ring and for a hole — the difference is only which way
 /// the ring runs, which the caller has already decided.
 struct RingCells {
+    /// Kept for [`RingCells::len`]; the geometry itself is read off the `Swept` these came from,
+    /// which is also where the wall planes were built (`wall_surfaces`).
     base_pts: Vec<Point3>,
-    top_pts: Vec<Point3>,
-    /// The rings before realization, when the exact path produced them — the source the faces'
-    /// rational plane coefficients come from. `None` on the f64 fallback.
-    exact: Option<crate::exact::SweptRat>,
     be: Vec<Handle<Edge>>, // base  B_i -> B_{i+1}
     te: Vec<Handle<Edge>>, // top   T_i -> T_{i+1}
     ve: Vec<Handle<Edge>>, // riser B_i -> T_i
@@ -644,20 +662,15 @@ impl RingCells {
 
     /// One quad per ring segment. The quad's winding follows the ring's, so a ring wound against
     /// the outer one yields walls whose normals point into the hole.
-    fn push_walls(&self, model: &mut Model, faces: &mut Vec<Handle<Face>>) -> Result<(), OpError> {
+    fn push_walls(
+        &self,
+        model: &mut Model,
+        walls: &[(Handle<Surface>, bool)],
+        faces: &mut Vec<Handle<Face>>,
+    ) {
         let n = self.len();
-        for i in 0..n {
+        for (i, &(surface, flipped)) in walls.iter().enumerate().take(n) {
             let j = (i + 1) % n;
-            let (surface, flipped) = model.push_surface_with_coeffs(
-                Surface::Plane(
-                    Plane::through_points(self.base_pts[i], self.base_pts[j], self.top_pts[i])
-                        .ok_or(OpError::DegenerateGeometry)?,
-                ),
-                SurfaceDef::Constructed,
-                // Same three points, in rationals — so this wall and any other face of the same
-                // plane record one array. `None` here is the f64 path or an i128 overflow.
-                self.exact.as_ref().and_then(|e| e.wall_plane(i)),
-            );
             let outer = Loop {
                 half_edges: vec![
                     HalfEdge {
@@ -691,8 +704,29 @@ impl RingCells {
                 },
             }));
         }
-        Ok(())
     }
+}
+
+/// One plane per ring segment, pushed **before** any of the ring's topology exists — see
+/// `build_prism`. The same three points `push_walls` used to build them from, and in the same
+/// order, so the surface arena's numbering is untouched.
+fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>, bool)>, OpError> {
+    let n = ring.base.len();
+    (0..n)
+        .map(|i| {
+            let j = (i + 1) % n;
+            Ok(model.push_surface_with_coeffs(
+                Surface::Plane(
+                    Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
+                        .ok_or(OpError::DegenerateGeometry)?,
+                ),
+                SurfaceDef::Constructed,
+                // Same three points, in rationals — so this wall and any other face of the same
+                // plane record one array. `None` here is the f64 path or an i128 overflow.
+                ring.exact.as_ref().and_then(|e| e.wall_plane(i)),
+            ))
+        })
+        .collect()
 }
 
 /// `pts` wound counter-clockwise about `normal` when `ccw`, clockwise when not. The test is the
@@ -758,8 +792,6 @@ fn sweep_ring(model: &mut Model, ring: &Swept) -> Result<RingCells, OpError> {
     }
     Ok(RingCells {
         base_pts,
-        top_pts,
-        exact: ring.exact.clone(),
         be,
         te,
         ve,
