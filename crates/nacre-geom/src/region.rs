@@ -47,25 +47,86 @@ fn ring_area_centroid(points: &[Point3]) -> Option<(f64, Point3)> {
     for pair in points[1..].windows(2) {
         area_vec += (pair[0] - base).cross(pair[1] - base);
     }
-    let unit = area_vec.normalize()?;
+    if area_vec == Vector3::zero() {
+        return None;
+    }
 
     let mut weighted = Vector3::zero();
     let mut weight = 0.0;
     for pair in points[1..].windows(2) {
-        let signed = (pair[0] - base).cross(pair[1] - base).dot(unit);
-        let centroid_rel = ((pair[0] - base) + (pair[1] - base)) * (1.0 / 3.0);
-        weighted += centroid_rel * signed;
+        // ★ Weighted by the **un-normalized** area vector. `normalize` divides by a square root,
+        // so every `signed` carried that rounding; the centroid is a *ratio* of these weights, so
+        // the common `|area_vec|` factor cancels and the normalization only ever added error.
+        let signed = (pair[0] - base).cross(pair[1] - base).dot(area_vec);
+        // ★ The `1/3` is **not** applied here. `1.0 / 3.0` is not an exact `f64`, so folding it
+        // into every triangle rounds once per triangle and the terms of a symmetric ring stop
+        // cancelling — a rectangle centred on the origin came out at `−1.1e-16` instead of `0`,
+        // which then moved a sketch placed in that frame by one ulp. Factored out, the loop is
+        // exact for exactly-representable rings and one division does all the rounding.
+        weighted += ((pair[0] - base) + (pair[1] - base)) * signed;
         weight += signed;
     }
     if weight == 0.0 {
         return None;
     }
-    Some((0.5 * area_vec.norm(), base + weighted * (1.0 / weight)))
+    let d = 3.0 * weight;
+    let [wx, wy, wz] = weighted.as_array();
+    Some((
+        0.5 * area_vec.norm(),
+        base + Vector3::from_array([wx / d, wy / d, wz / d]),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★★★ **A ring symmetric about the origin has its centroid exactly at the origin.**
+    ///
+    /// It did not. `ring_area_centroid` folded `1.0 / 3.0` — not an exact `f64` — into every
+    /// triangle of its fan, and weighted each by a dot with the **normalized** area vector, so a
+    /// square root's rounding rode along too. The terms of a symmetric ring then failed to cancel
+    /// and the answer came out one ulp off zero.
+    ///
+    /// That is not cosmetic. `face_frame` uses this point as a sketch frame's **origin**, so a
+    /// profile placed on such a face lands one ulp away from where the same profile landed on the
+    /// face below it — and padding a footprint twice left two faces of area `2.2e-16` in the
+    /// result, which `validate` did not report.
+    ///
+    /// The `1/3` is factored out and the weights use the un-normalized area vector: the centroid
+    /// is a *ratio* of those weights, so the common `|area_vec|` cancels and normalizing only ever
+    /// added error.
+    ///
+    /// ★★★★ **Exactness here is not general and this test does not claim it is.** Removing two
+    /// roundings makes the answer exact whenever what remains is exactly representable — as it is
+    /// for the fixture that exposed the defect. `±0.1 × ±7.7` still lands one ulp off, because the
+    /// weighted sum itself rounds. Closing that needs the centroid derived in `Rat` from the face's
+    /// own exact vertices, not computed in `f64` and lifted.
+    #[test]
+    fn a_symmetric_ring_centroids_exactly_on_its_centre() {
+        let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
+        // (0.6, 1.0, 2.1) is the footprint and height that left the zero-area faces.
+        for (hx, hy, z) in [(0.6, 1.0, 2.1), (1.5, 1.5, 0.0), (0.25, 4.0, -3.5)] {
+            let ring = [p(-hx, -hy, z), p(hx, -hy, z), p(hx, hy, z), p(-hx, hy, z)];
+            let (area, c) = planar_region_area_centroid(&ring, &[]).expect("a real rectangle");
+            assert_eq!(
+                c.as_array(),
+                [0.0, 0.0, z],
+                "rectangle ±{hx}×±{hy} at z={z} centroids off-centre (area {area})"
+            );
+        }
+    }
+
+    /// The same, shifted off the origin: the centroid must be exactly the rectangle's own centre,
+    /// not merely close to it. Pins that the fix is not an accident of zeros cancelling.
+    #[test]
+    fn a_shifted_rectangle_centroids_exactly_on_its_centre() {
+        let p = |x: f64, y: f64| Point3::from_array([x, y, 0.0]);
+        let (x0, x1, y0, y1) = (1.25, 4.75, -2.5, 0.5);
+        let ring = [p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)];
+        let (_, c) = planar_region_area_centroid(&ring, &[]).expect("a real rectangle");
+        assert_eq!(c.as_array(), [(x0 + x1) / 2.0, (y0 + y1) / 2.0, 0.0]);
+    }
 
     fn pts(v: &[[f64; 3]]) -> Vec<Point3> {
         v.iter().map(|p| Point3::from_array(*p)).collect()

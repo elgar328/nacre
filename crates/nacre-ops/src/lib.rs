@@ -5192,4 +5192,82 @@ pub mod tests {
             );
         }
     }
+    /// ★★★★ **Padding the same footprint twice must not leave zero-area faces.**
+    ///
+    /// It did, and `validate` reported nothing. Padding `1.1` and then `6.6` on the top of a
+    /// cuboid left two faces of area `2.2e-16` on the plane `z = 2.1`, whose long edges sat one
+    /// ulp apart (`-0.6` against `-0.6000000000000001`).
+    ///
+    /// The ulp came from the sketch frame's **origin**. `face_frame` takes it from the face's area
+    /// centroid, and `ring_area_centroid` was rounding twice more than it needed to, so the first
+    /// pad's top face reported its centre as `-1.11e-16` instead of `0`. The second pad then placed
+    /// the same profile one ulp away from where the first had placed it, and the kernel — correctly
+    /// — built the one-ulp-wide faces that answer describes.
+    ///
+    /// ★ `SketchPlane::exact()` does not catch this: it checks only that the axes are orthonormal,
+    /// never the origin.
+    #[test]
+    fn padding_one_footprint_twice_leaves_no_zero_area_face() {
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let rect =
+            || Profile2d::polygon(vec![p(-1.0, -0.6), p(1.0, -0.6), p(1.0, 0.6), p(-1.0, 0.6)]);
+        let mut m = Model::new();
+        let mut solid = m.add_cuboid(
+            Point3::from_array([-2.0, -2.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        // The topmost face pointing up. Everything here is axis-aligned, so this is unambiguous.
+        let top = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
+            let shell = m.solids.get(s).outer;
+            *m.shells
+                .get(shell)
+                .faces
+                .iter()
+                .max_by(|&&a, &&b| {
+                    let h = |f: Handle<Face>| {
+                        crate::ops::face_plane(m, f)
+                            .ok()
+                            .filter(|sp| sp.normal().as_array()[2] > 0.5)
+                            .map(|sp| sp.origin.as_array()[2])
+                            .unwrap_or(f64::NEG_INFINITY)
+                    };
+                    h(a).partial_cmp(&h(b)).unwrap()
+                })
+                .expect("a face")
+        };
+        for dist in [1.1, 6.6] {
+            let face = top(&m, solid);
+            let OpOutput::PadOnFace { solid: out, .. } = apply(
+                &mut m,
+                &Operation::PadOnFace {
+                    face,
+                    profile: rect(),
+                    dist,
+                },
+            )
+            .expect("pad") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            solid = out;
+        }
+        let shell = m.solids.get(solid).outer;
+        let degenerate: Vec<_> = m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .filter_map(|&f| {
+                let area = nacre_props::face_props(&m, f).ok()?.area;
+                (area < 1e-9).then_some((f, area))
+            })
+            .collect();
+        assert!(
+            degenerate.is_empty(),
+            "zero-area faces survived: {degenerate:?}"
+        );
+        // A plain box with one rib on top: 6 + 5 walls/cap, no leftovers from the seam.
+        assert_eq!(m.shells.get(shell).faces.len(), 11);
+    }
 }
