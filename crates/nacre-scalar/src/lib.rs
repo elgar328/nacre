@@ -36,7 +36,7 @@ pub mod bound;
 pub use bound::Bound;
 
 use num_rational::Ratio;
-use num_traits::{CheckedAdd, CheckedMul, CheckedSub};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 
 use astro_float::{BigFloat, Consts, RoundingMode};
 use std::cell::RefCell;
@@ -452,6 +452,49 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
         return None; // collinear
     }
     plane_from_point_normal(n, a)
+}
+
+/// **The world origin projected onto a rational plane** — `p = (−d / n·n) · n` for
+/// `a·x + b·y + c·z + d = 0`.
+///
+/// This is the point of the plane closest to `(0, 0, 0)`, and it is what a face's sketch frame
+/// takes for its origin. The alternative — the face's area centroid — is computed in `f64` from the
+/// face's own vertices, and lifting *that* back into a rational makes a rounded cache into the
+/// truth, which is the one thing construction here must never do.
+///
+/// ★★★ **The answer does not depend on how the plane is spelled.** A plane has a family of
+/// coefficient vectors and this formula is invariant across all of them:
+///
+/// ```text
+/// sign:  ( −(−d) / n·n )·(−n)   =  ( −d / n·n )·n
+/// scale: ( −λd / λ²(n·n) )·λn   =  ( −d / n·n )·n
+/// ```
+///
+/// So it is a function of the *plane*, not of the vector describing it — which matters because
+/// [`canonical_plane_coeffs`] deliberately carries no direction (`[0,0,1,−3]` and `[0,0,−1,3]`
+/// canonicalize together), and because two faces of one plane may hold it either way round.
+/// Canonicalizing first is therefore not needed for correctness, only for overflow headroom.
+///
+/// `None` when `n·n = 0` — the coefficients are not a plane — or on `i128` overflow, which is the
+/// kernel's ordinary demotion signal: the caller keeps its f64 path.
+pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
+    let zero = Rat::from_int(0);
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let mut nn = zero;
+    for c in n {
+        nn = nn.checked_add(c.checked_mul(c)?)?;
+    }
+    if nn == zero {
+        return None;
+    }
+    let neg_d = zero.checked_sub(coeffs[3])?;
+    // `Rat` exposes no division — the sign and scale invariance above is what makes one here
+    // legitimate, and `Ratio`'s checked division reports the overflow the rest of the crate does.
+    let mut out = [zero; 3];
+    for i in 0..3 {
+        out[i] = Rat(neg_d.checked_mul(n[i])?.0.checked_div(&nn.0)?);
+    }
+    Some(out)
 }
 
 /// Greatest common divisor of two magnitudes, Euclid. `gcd(0, 0) == 0`.
@@ -1103,6 +1146,88 @@ mod tests {
 
     fn ints(v: [i128; 4]) -> [Rat; 4] {
         v.map(Rat::from_int)
+    }
+
+    /// The projection lands **exactly on** the plane it came from, tilted ones included — checked
+    /// as `n·p + d == 0` in rationals, not within a tolerance.
+    #[test]
+    fn the_projected_origin_lies_exactly_on_its_plane() {
+        for (raw, name) in [
+            ([0, 0, 1, -2], "z = 2"),
+            ([0, 0, 10, -21], "z = 2.1"),
+            ([3, 0, -4, -5], "3-4-5 tilt"),
+            ([1, 1, 1, -7], "diagonal"),
+            ([5, 12, 0, -13], "5-12-13"),
+            ([7, -13, 5, 91], "ugly"),
+            ([0, 0, 1, 0], "through the origin"),
+        ] {
+            let c = ints(raw);
+            let p = plane_origin_projection(c).unwrap_or_else(|| panic!("{name} has a projection"));
+            let on = (0..3).fold(c[3], |acc, i| {
+                acc.checked_add(c[i].checked_mul(p[i]).unwrap()).unwrap()
+            });
+            assert_eq!(
+                on,
+                Rat::from_int(0),
+                "{name}: p = {p:?} is off its own plane"
+            );
+        }
+    }
+
+    /// ★★★ **One plane, three spellings, one point.** The design rests on this: the canonical form
+    /// carries no direction (`push_surface_with_coeffs` returns a `flipped` flag for exactly that
+    /// reason), and a plane is scale-invariant, so an origin derived from the coefficients would be
+    /// worthless if it moved when the coefficients were negated or scaled.
+    #[test]
+    fn the_projection_does_not_depend_on_how_the_plane_is_spelled() {
+        let want = plane_origin_projection(ints([0, 0, 1, -3])).expect("a plane");
+        for raw in [[0, 0, -1, 3], [0, 0, 2, -6], [0, 0, -5, 15]] {
+            assert_eq!(plane_origin_projection(ints(raw)), Some(want), "{raw:?}");
+        }
+        // And with denominators: 11/10·x − 7/2 = 0 is 11x − 35 = 0, both giving p = (35/11, 0, 0).
+        let fracs = [
+            Rat::new(11, 10).unwrap(),
+            Rat::from_int(0),
+            Rat::from_int(0),
+            Rat::new(-7, 2).unwrap(),
+        ];
+        assert_eq!(
+            plane_origin_projection(fracs),
+            plane_origin_projection(ints([11, 0, 0, -35]))
+        );
+    }
+
+    /// The projection is the **nearest** point of the plane to the origin, which is what makes it a
+    /// sensible frame origin rather than merely a reproducible one: `p` is parallel to `n`, so no
+    /// other point of the plane is closer.
+    #[test]
+    fn the_projected_origin_is_the_nearest_point_of_its_plane() {
+        let c = ints([1, 1, 1, -7]);
+        let p = plane_origin_projection(c).expect("a plane");
+        let d2 = |q: [Rat; 3]| {
+            (0..3).fold(Rat::from_int(0), |a, i| {
+                a.checked_add(q[i].checked_mul(q[i]).unwrap()).unwrap()
+            })
+        };
+        // Step along an in-plane direction (n × ê is perpendicular to n) and the distance grows.
+        for step in [Rat::from_int(1), Rat::new(-3, 7).unwrap()] {
+            let dir = [Rat::from_int(1), Rat::from_int(-1), Rat::from_int(0)]; // ⊥ to (1,1,1)
+            let q = [0, 1, 2].map(|i| p[i].checked_add(dir[i].checked_mul(step).unwrap()).unwrap());
+            assert!(
+                d2(q) > d2(p),
+                "stepping by {step:?} did not move away from the origin"
+            );
+        }
+    }
+
+    /// Coefficients that are not a plane have no projection, and neither does an `i128` overflow —
+    /// both are the kernel's ordinary demotion, not a failure.
+    #[test]
+    fn a_non_plane_and_an_overflow_both_decline() {
+        assert_eq!(plane_origin_projection(ints([0, 0, 0, 5])), None);
+        assert_eq!(plane_origin_projection(ints([0, 0, 0, 0])), None);
+        let huge = i128::MAX / 3;
+        assert_eq!(plane_origin_projection(ints([huge, huge, huge, -1])), None);
     }
 
     #[test]
