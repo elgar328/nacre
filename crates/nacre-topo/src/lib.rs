@@ -326,17 +326,30 @@ impl Model {
     /// [`Model::push_surface`], also recording the surface's exact rational coefficients when the
     /// producer has them — see [`Model::surface_coeffs`]. `None` records nothing, which is what a
     /// producer without a rational description passes.
+    ///
+    /// ★ **The `bool` says the returned surface's normal points the *other* way** from the one
+    /// handed in, and a caller that meets it must record its face `Orientation::flipped()`.
+    /// It is always `false` today, because every call mints a fresh handle. It exists because a
+    /// plane's canonical form has no direction — `[0,0,1,−3]` and `[0,0,−1,3]` are one plane —
+    /// so once identical planes start sharing a handle the direction has to be reconciled
+    /// somewhere, and the honest place is where the caller still knows what it asked for.
+    ///
+    /// ★★ **The relative answer, not an absolute one.** A caller could instead read the returned
+    /// surface's normal and derive its orientation from its own outward direction, which is what
+    /// `extrude`'s pad-on-face path already does — but `transform_solid` *copies* faces without
+    /// recomputing an outward normal, so it has nothing to compare against. "Is it flipped from
+    /// what I asked for?" is the question every caller can answer.
     pub fn push_surface_with_coeffs(
         &mut self,
         surface: Surface,
         def: SurfaceDef,
         coeffs: Option<[nacre_scalar::Rat; 4]>,
-    ) -> Handle<Surface> {
+    ) -> (Handle<Surface>, bool) {
         let h = self.push_surface(surface, def);
         if let Some(c) = coeffs {
             self.surface_coeffs.insert(h, c);
         }
-        h
+        (h, false)
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals
@@ -519,7 +532,7 @@ impl Model {
                     rat_corner(tri[2])?,
                 )
             })();
-            let surface = self.push_surface_with_coeffs(
+            let (surface, flipped) = self.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
                         .expect("non-degenerate box"),
@@ -540,7 +553,14 @@ impl Model {
                 surface,
                 outer,
                 inner: vec![],
-                orientation: Orientation::Forward,
+                // The winding table below is written for a surface whose normal this face uses as-is;
+                // a shared surface may point the other way, and then the same outward direction is
+                // spelled `Reversed`.
+                orientation: if flipped {
+                    Orientation::Forward.flipped()
+                } else {
+                    Orientation::Forward
+                },
             })
         });
 

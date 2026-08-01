@@ -528,7 +528,7 @@ pub(crate) fn build_prism(
             // The two caps' rational coefficients come from the same frame normal the f64 pair
             // above uses, so they agree with the walls that meet them.
             let caps = outer.exact.as_ref().and_then(|e| e.cap_planes());
-            let s = model.push_surface_with_coeffs(
+            let (s, flipped) = model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::from_point_normal(outer.base_pts[0], -normal)
                         .ok_or(OpError::DegenerateGeometry)?,
@@ -536,7 +536,14 @@ pub(crate) fn build_prism(
                 SurfaceDef::Constructed,
                 caps.map(|(base, _)| base),
             );
-            (s, Orientation::Forward)
+            // The plane was built with `−N` as its normal, so `Forward` is what states an outward
+            // `−N` — unless a shared surface points the other way, which `flipped` reports.
+            let orient = if flipped {
+                Orientation::Forward.flipped()
+            } else {
+                Orientation::Forward
+            };
+            (s, orient)
         }
     };
     faces.push(model.faces.push(Face {
@@ -547,7 +554,7 @@ pub(crate) fn build_prism(
     }));
 
     // Top cap: outward normal +N.
-    let top_surface = model.push_surface_with_coeffs(
+    let (top_surface, top_flipped) = model.push_surface_with_coeffs(
         Surface::Plane(
             Plane::from_point_normal(outer.top_pts[0], normal)
                 .ok_or(OpError::DegenerateGeometry)?,
@@ -563,7 +570,11 @@ pub(crate) fn build_prism(
         surface: top_surface,
         outer: outer.cap_loop(Cap::Top),
         inner: holes.iter().map(|h| h.cap_loop(Cap::Top)).collect(),
-        orientation: Orientation::Forward,
+        orientation: if top_flipped {
+            Orientation::Forward.flipped()
+        } else {
+            Orientation::Forward
+        },
     }));
 
     // Side walls — the outer ring's, then each hole's (facing into the hole).
@@ -637,7 +648,7 @@ impl RingCells {
         let n = self.len();
         for i in 0..n {
             let j = (i + 1) % n;
-            let surface = model.push_surface_with_coeffs(
+            let (surface, flipped) = model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::through_points(self.base_pts[i], self.base_pts[j], self.top_pts[i])
                         .ok_or(OpError::DegenerateGeometry)?,
@@ -671,7 +682,13 @@ impl RingCells {
                 surface,
                 outer,
                 inner: vec![],
-                orientation: Orientation::Forward,
+                // The quad's winding is the ring's, which is what the plane above was built from;
+                // a shared surface pointing the other way spells the same outward as `Reversed`.
+                orientation: if flipped {
+                    Orientation::Forward.flipped()
+                } else {
+                    Orientation::Forward
+                },
             }));
         }
         Ok(())

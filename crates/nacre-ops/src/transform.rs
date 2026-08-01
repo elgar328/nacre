@@ -554,6 +554,12 @@ fn transform_solid(
     let mut surf_rot: HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>> =
         HashMap::new();
     let mut surf_map: HashMap<Handle<Surface>, Handle<Surface>> = HashMap::new();
+    // ★ Set when the surface the model handed back points the other way from the one built here.
+    // A copied face keeps its `Orientation` because its surface moved with it — but a *shared*
+    // surface did not, so the same outward direction has to be spelled the other way. This is a
+    // different field from the mirror's rewind below, which turns loop *winding*; the two do not
+    // interact (`Loop::reversed`'s doc spells out why a reflection touches only the winding).
+    let mut surf_flip: HashMap<Handle<Surface>, bool> = HashMap::new();
     for &fh in &face_order {
         let s = model.faces.get(fh).surface;
         if surf_map.contains_key(&s) {
@@ -583,7 +589,9 @@ fn transform_solid(
                 },
                 SurfaceDef::Inexact => None,
             });
-        surf_map.insert(s, model.push_surface_with_coeffs(moved, def, coeffs));
+        let (new_s, flipped) = model.push_surface_with_coeffs(moved, def, coeffs);
+        surf_map.insert(s, new_s);
+        surf_flip.insert(s, flipped);
     }
 
     // Edge order (deterministic dedup) — used by passes 2/3/4.
@@ -688,7 +696,11 @@ fn transform_solid(
             surface: surf_map[&face.surface],
             outer: map_loop(&face.outer),
             inner: face.inner.iter().map(&map_loop).collect(),
-            orientation: face.orientation,
+            orientation: if surf_flip[&face.surface] {
+                face.orientation.flipped()
+            } else {
+                face.orientation
+            },
         };
         face_map.insert(fh, model.faces.push(new_f));
     }
