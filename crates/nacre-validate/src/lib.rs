@@ -741,6 +741,7 @@ mod tests {
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]); // 6 surfaces, 8 vertices
         let vh = m.vertices.push(Vertex {
             point: Point3::origin(),
+            definition: None,
             origin: Origin::Discovered {
                 tol: 1e-9,
                 definition: VertexDef::ThreePlane([
@@ -782,6 +783,7 @@ mod tests {
         m.vertices.push(Vertex {
             point: Point3::origin(),
             origin: Origin::Constructed,
+            definition: None,
         });
         assert!(validate(&m).is_empty());
     }
@@ -925,6 +927,7 @@ mod tests {
                 m.vertices.push(Vertex {
                     point: Point3::from_array(p),
                     origin,
+                    definition: None,
                 })
             })
             .collect();

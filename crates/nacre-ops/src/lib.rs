@@ -4578,6 +4578,234 @@ pub mod tests {
         assert_eq!(plane_ix[i], plane_ix[j], "so they are one plane-table row");
     }
 
+    /// ★★★ **Solving a vertex's three planes lands on its coordinate.**
+    ///
+    /// This is the premise the whole of `docs/truth-and-cache.md` rests on: a point *is* the
+    /// meeting of three surfaces, and the stored coordinate is a rounded answer to that question.
+    /// Stage 0 measured it by reading the census; this asserts it on data the kernel itself built,
+    /// which is a different claim — the definitions have to be *right*, not merely present.
+    ///
+    /// ★ **Split by origin, because one row proves nothing.** A `Discovered` vertex's coordinate
+    /// was produced by solving exactly this triple, so agreement there is an identity. The rows
+    /// that carry weight are `Constructed` and `Moved`, where the coordinate came from somewhere
+    /// else entirely — construction arithmetic, or a motion replayed on a base point.
+    #[test]
+    fn a_vertex_definition_solves_to_its_own_coordinate() {
+        // ★ **Three solids, because one would not exercise three kinds of vertex.** The first
+        // draft of this test used a fused-then-turned-then-cut solid and reported
+        // `Constructed (0,0) Discovered (24,24) Moved (0,0)` with a worst error of exactly zero —
+        // a boolean recomputes every vertex it emits, so the only row present was the tautological
+        // one. A plain box keeps its constructed corners; a turned box keeps them as `Moved`.
+        let mut m = Model::new();
+        let plain = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let to_turn = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let OpOutput::Transform { solid: turned } = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: to_turn,
+                isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                    axis: nacre_scalar::Axis::Z,
+                    point: [nacre_scalar::Rat::from_int(0); 3],
+                    angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+                }),
+            },
+        )
+        .expect("turn") else {
+            unreachable!("transform yields Transform output")
+        };
+        m.rebuild_adjacency();
+        let a = m.add_cuboid(
+            Point3::from_array([10.0, 0.0, 0.0]),
+            Point3::from_array([12.0, 3.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([11.0, 1.0, 0.5]),
+            Point3::from_array([14.0, 2.0, 2.5]),
+        );
+        m.rebuild_adjacency();
+        let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse")[0];
+        m.rebuild_adjacency();
+
+        let mut counts = [(0usize, 0usize); 3]; // (with definition, total) by origin
+        let mut worst = [0.0f64; 3];
+        let mut diam = 0.0f64;
+        for solid in [plain, turned, fused] {
+            let shell = m.solids.get(solid).outer;
+            let mut seen: Vec<Handle<Vertex>> = Vec::new();
+            for &fh in &m.shells.get(shell).faces {
+                let face = m.faces.get(fh);
+                for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                    for he in &lp.half_edges {
+                        for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                            if !seen.contains(&vh) {
+                                seen.push(vh);
+                            }
+                        }
+                    }
+                }
+            }
+            for &vh in &seen {
+                let v = *m.vertices.get(vh);
+                for c in v.point.as_array() {
+                    diam = diam.max(c.abs());
+                }
+                let kind = match v.origin {
+                    Origin::Constructed => 0,
+                    Origin::Discovered { .. } => 1,
+                    Origin::Moved { .. } => 2,
+                };
+                counts[kind].1 += 1;
+                let Some(VertexDef::ThreePlane(planes)) = v.definition else {
+                    continue;
+                };
+                counts[kind].0 += 1;
+                // Free cross-check: where `Origin` carries the same answer, the two must agree.
+                if let Origin::Discovered {
+                    definition: VertexDef::ThreePlane(od),
+                    ..
+                } = v.origin
+                {
+                    assert_eq!(
+                        od, planes,
+                        "the two records of one vertex's planes disagree"
+                    );
+                }
+                let coeffs = planes.map(|s| match m.surfaces.get(s) {
+                    nacre_geom::Surface::Plane(p) => p.coefficients(),
+                    nacre_geom::Surface::Cylinder(_) => panic!("ThreePlane named a cylinder"),
+                });
+                let solved = solve_three_planes(coeffs).expect("three planes meeting at a point");
+                let d = solved
+                    .iter()
+                    .zip(v.point.as_array())
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0f64, f64::max);
+                worst[kind] = worst[kind].max(d);
+            }
+        }
+
+        let limit = diam * 2f64.powi(-40);
+        eprintln!(
+            "[definition coverage] Constructed {:?} worst {:e} | Discovered {:?} worst {:e} | \
+             Moved {:?} worst {:e} | limit {:e}",
+            counts[0], worst[0], counts[1], worst[1], counts[2], worst[2], limit
+        );
+        for (i, name) in ["Constructed", "Discovered", "Moved"].iter().enumerate() {
+            assert!(
+                counts[i].1 > 0,
+                "{name} is not exercised — the row proves nothing"
+            );
+            assert_eq!(
+                counts[i].0, counts[i].1,
+                "{name} vertices without a definition: {:?}",
+                counts[i]
+            );
+            assert!(
+                worst[i] <= limit,
+                "{name}: a definition solved {:e} away from its own coordinate (limit {limit:e})",
+                worst[i]
+            );
+        }
+        // ★ `Discovered` is the tautological row — its coordinate *came from* solving this very
+        // triple, so a zero there says nothing. `Constructed` and `Moved` are the claims.
+        assert_eq!(
+            worst[1], 0.0,
+            "a Discovered vertex is its own solve, exactly"
+        );
+    }
+
+    /// The negative control for the assertion above: point a definition at the wrong plane and the
+    /// solve must land somewhere else. Without this, an agreement test passes on any model whose
+    /// planes happen to be near each other.
+    #[test]
+    fn a_wrong_plane_in_a_definition_is_caught() {
+        let mut m = Model::new();
+        let s = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 1.0]),
+        );
+        let shell = m.solids.get(s).outer;
+        let surfaces: Vec<_> = m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .collect();
+        // Take a real corner's triple and swap one plane for another face of the same box.
+        let corner = m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .find_map(|&fh| {
+                let face = m.faces.get(fh);
+                m.edges.get(face.outer.half_edges[0].edge).bounds
+            })
+            .expect("a bounded edge")[0];
+        let Some(VertexDef::ThreePlane(mut planes)) = m.vertices.get(corner).definition else {
+            panic!("a constructed corner has a definition")
+        };
+        let good = solve_three_planes(planes.map(|h| match m.surfaces.get(h) {
+            nacre_geom::Surface::Plane(p) => p.coefficients(),
+            nacre_geom::Surface::Cylinder(_) => unreachable!(),
+        }))
+        .expect("meets at a point");
+        // Any face not already in the triple. Every one of them moves the point (or leaves the
+        // three not meeting at all, which is just as good a refutation).
+        let other = *surfaces
+            .iter()
+            .find(|h| !planes.contains(h))
+            .expect("a fourth face");
+        planes[0] = other;
+        let bad = solve_three_planes(planes.map(|h| match m.surfaces.get(h) {
+            nacre_geom::Surface::Plane(p) => p.coefficients(),
+            nacre_geom::Surface::Cylinder(_) => unreachable!(),
+        }));
+        let moved = bad.is_none_or(|bad| {
+            good.iter()
+                .zip(bad)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f64, f64::max)
+                > 0.1
+        });
+        assert!(
+            moved,
+            "swapping a plane must move the solved point, or the assertion above is vacuous"
+        );
+    }
+
+    /// Three planes by Cramer, or `None` when they do not meet in a point.
+    fn solve_three_planes(p: [[f64; 4]; 3]) -> Option<[f64; 3]> {
+        let n = |i: usize| [p[i][0], p[i][1], p[i][2]];
+        let (a, b, c) = (n(0), n(1), n(2));
+        let det3 = |m: [[f64; 3]; 3]| {
+            m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+        };
+        let d = det3([a, b, c]);
+        if d == 0.0 {
+            return None;
+        }
+        let rhs = [-p[0][3], -p[1][3], -p[2][3]];
+        Some(core::array::from_fn(|j| {
+            let mut m = [a, b, c];
+            for (row, r) in m.iter_mut().zip(rhs) {
+                row[j] = r;
+            }
+            det3(m) / d
+        }))
+    }
+
     /// ★ **A profile with a collinear vertex makes its two walls one surface.**
     ///
     /// The two segments either side of a straight-through vertex lie on the *same* plane, so the

@@ -657,6 +657,19 @@ fn transform_solid(
                 }
                 None => remap_origin(v.origin, &surf_map),
             },
+            // ★ **One rule, whatever the `Origin` is: map every plane, or record nothing.**
+            // `remap_origin` above `expect`s its lookups because `origins_are_remappable` cleared
+            // them first — but that gate only inspects `Discovered` vertices. Extending its reach
+            // to cover this field would either panic here or start rejecting transforms that work
+            // today, and both would make this commit change answers. A definition that cannot be
+            // re-pointed is simply absent, and the coverage count says how often.
+            definition: v.definition.and_then(|VertexDef::ThreePlane(planes)| {
+                let mut out = [planes[0]; 3];
+                for (o, s) in out.iter_mut().zip(planes) {
+                    *o = *surf_map.get(&s)?;
+                }
+                Some(VertexDef::ThreePlane(out))
+            }),
         };
         vert_map.insert(vh, model.vertices.push(new_v));
     }

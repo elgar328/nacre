@@ -581,6 +581,10 @@ pub(crate) fn assemble_fuse_cut(
                         tol: sv.tol,
                         definition: def,
                     },
+                    // The same triple. The boolean has always known which three planes make a
+                    // seam vertex; this is that answer in the field every producer fills, rather
+                    // than one only `Discovered` carries.
+                    definition: Some(def),
                 })
             }
         };

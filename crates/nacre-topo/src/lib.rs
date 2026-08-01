@@ -511,10 +511,67 @@ impl Model {
             Point3::from_array([x1, y1, z1]), // V6
             Point3::from_array([x0, y1, z1]), // V7
         ];
+        // 6 faces: (first 3 loop vertices for the outward plane, half-edges as
+        // (edge index, forward)). Loops wound CCW seen from outside → outward
+        // normal. See the design plan's winding table (hand-verified).
+        type FaceDef = ([usize; 3], [(usize, bool); 4]);
+        let faces_def: [FaceDef; 6] = [
+            ([0, 3, 2], [(3, false), (2, false), (1, false), (0, false)]), // Bottom −Z
+            ([4, 5, 6], [(4, true), (5, true), (6, true), (7, true)]),     // Top +Z
+            ([0, 1, 5], [(0, true), (9, true), (4, false), (8, false)]),   // Front −Y
+            ([2, 3, 7], [(2, true), (11, true), (6, false), (10, false)]), // Back +Y
+            ([0, 4, 7], [(8, true), (7, false), (11, false), (3, true)]),  // Left −X
+            ([1, 2, 6], [(1, true), (10, true), (5, false), (9, false)]),  // Right +X
+        ];
+        // ★ **Surfaces before vertices**, so each corner can name the three it lies on. Separate
+        // arenas, so the interleaving does not move any handle; the surfaces' order among
+        // themselves is what matters and it is unchanged.
+        let surf: [(Handle<Surface>, bool); 6] = core::array::from_fn(|i| {
+            let (tri, _) = &faces_def[i];
+            // The same three corners in rationals. `from_decimal` because a corner is a value the
+            // caller *wrote* — lifting the f64 bit pattern instead would carry its drift in and
+            // defeat the whole point (see `Model::surface_coeffs`).
+            let rat_corner = |k: usize| -> Option<[nacre_scalar::Rat; 3]> {
+                let c = corners[k].as_array();
+                Some([
+                    nacre_scalar::Rat::from_decimal(c[0])?,
+                    nacre_scalar::Rat::from_decimal(c[1])?,
+                    nacre_scalar::Rat::from_decimal(c[2])?,
+                ])
+            };
+            let coeffs = (|| {
+                nacre_scalar::plane_through_points(
+                    rat_corner(tri[0])?,
+                    rat_corner(tri[1])?,
+                    rat_corner(tri[2])?,
+                )
+            })();
+            self.push_surface_with_coeffs(
+                Surface::Plane(
+                    Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
+                        .expect("non-degenerate box"),
+                ),
+                SurfaceDef::Constructed,
+                coeffs,
+            )
+        });
+
         let vh: [Handle<Vertex>; 8] = core::array::from_fn(|i| {
+            // Which three of the six faces meet at corner `i`. The corner order is
+            // `V0..V3` round the bottom then `V4..V7` round the top, so the high bit picks the cap
+            // and the position round the ring picks the two walls.
+            let m = i % 4;
+            let cap = if i < 4 { 0 } else { 1 }; // Bottom −Z / Top +Z
+            let along_x = if m == 1 || m == 2 { 5 } else { 4 }; // Right +X / Left −X
+            let along_y = if m >= 2 { 3 } else { 2 }; // Back +Y / Front −Y
             self.vertices.push(Vertex {
                 point: corners[i],
                 origin: Origin::Constructed,
+                definition: Some(VertexDef::ThreePlane([
+                    surf[cap].0,
+                    surf[along_y].0,
+                    surf[along_x].0,
+                ])),
             })
         });
 
@@ -545,46 +602,9 @@ impl Model {
             })
         });
 
-        // 6 faces: (first 3 loop vertices for the outward plane, half-edges as
-        // (edge index, forward)). Loops wound CCW seen from outside → outward
-        // normal. See the design plan's winding table (hand-verified).
-        type FaceDef = ([usize; 3], [(usize, bool); 4]);
-        let faces_def: [FaceDef; 6] = [
-            ([0, 3, 2], [(3, false), (2, false), (1, false), (0, false)]), // Bottom −Z
-            ([4, 5, 6], [(4, true), (5, true), (6, true), (7, true)]),     // Top +Z
-            ([0, 1, 5], [(0, true), (9, true), (4, false), (8, false)]),   // Front −Y
-            ([2, 3, 7], [(2, true), (11, true), (6, false), (10, false)]), // Back +Y
-            ([0, 4, 7], [(8, true), (7, false), (11, false), (3, true)]),  // Left −X
-            ([1, 2, 6], [(1, true), (10, true), (5, false), (9, false)]),  // Right +X
-        ];
         let fh: [Handle<Face>; 6] = core::array::from_fn(|i| {
-            let (tri, hes) = &faces_def[i];
-            // The same three corners in rationals. `from_decimal` because a corner is a value the
-            // caller *wrote* — lifting the f64 bit pattern instead would carry its drift in and
-            // defeat the whole point (see `Model::surface_coeffs`).
-            let rat_corner = |k: usize| -> Option<[nacre_scalar::Rat; 3]> {
-                let c = corners[k].as_array();
-                Some([
-                    nacre_scalar::Rat::from_decimal(c[0])?,
-                    nacre_scalar::Rat::from_decimal(c[1])?,
-                    nacre_scalar::Rat::from_decimal(c[2])?,
-                ])
-            };
-            let coeffs = (|| {
-                nacre_scalar::plane_through_points(
-                    rat_corner(tri[0])?,
-                    rat_corner(tri[1])?,
-                    rat_corner(tri[2])?,
-                )
-            })();
-            let (surface, flipped) = self.push_surface_with_coeffs(
-                Surface::Plane(
-                    Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
-                        .expect("non-degenerate box"),
-                ),
-                SurfaceDef::Constructed,
-                coeffs,
-            );
+            let (_, hes) = &faces_def[i];
+            let (surface, flipped) = surf[i];
             let outer = Loop {
                 half_edges: hes
                     .iter()
@@ -654,10 +674,16 @@ impl Model {
         let v_bot = self.vertices.push(Vertex {
             point: p_bot,
             origin: Origin::Constructed,
+            // A cylinder's seam vertex sits on a curved surface, which `ThreePlane`
+            // cannot name (M6). Its coordinate stays the only description it has.
+            definition: None,
         });
         let v_top = self.vertices.push(Vertex {
             point: p_top,
             origin: Origin::Constructed,
+            // A cylinder's seam vertex sits on a curved surface, which `ThreePlane`
+            // cannot name (M6). Its coordinate stays the only description it has.
+            definition: None,
         });
 
         // Rims are full circles seamed at their vertex (start == end); the seam is

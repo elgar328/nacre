@@ -5,7 +5,7 @@
 //! `Eq`/`Hash` if it transitively holds an `f64` (a `Point3` or a
 //! `Origin::Discovered { tol, definition }`); those get `PartialEq` for tests only.
 
-use crate::{Orientation, Origin};
+use crate::{Orientation, Origin, VertexDef};
 use nacre_geom::{Curve, Surface};
 use nacre_math::Point3;
 use nacre_store::Handle;
@@ -16,6 +16,21 @@ use nacre_store::Handle;
 pub struct Vertex {
     pub point: Point3,
     pub origin: Origin,
+    /// **The three surfaces that meet here** — what actually decides where this point is, as
+    /// opposed to `point`, which is the rounded answer to that question.
+    ///
+    /// ★ Three planes meet in at most one point, so naming them names the vertex exactly, with no
+    /// tolerance anywhere; `point` is then a cache that could in principle be recomputed to any
+    /// precision. That inversion — definition first, coordinate second — is what
+    /// `docs/truth-and-cache.md` builds toward, and this field is the first half of it. Nothing
+    /// reads it yet.
+    ///
+    /// `None` where a producer could not name three planes: a curved surface (`ThreePlane` cannot
+    /// speak about a cylinder), a profile with a collinear vertex (its two walls are one plane, so
+    /// the triple names a line and not a point), or a transform whose re-pointing found a surface
+    /// it could not map. All three are counted rather than rejected — a missing definition costs
+    /// nothing today, and the count is what says whether `point` can ever be dropped.
+    pub definition: Option<VertexDef>,
 }
 
 /// A 1-cell: an unbounded [`Curve`] trimmed by its two endpoint vertices.
@@ -85,10 +100,14 @@ mod tests {
         let v0 = m.vertices.push(Vertex {
             point: Point3::origin(),
             origin: Origin::Constructed,
+            // A hand-built cell; nothing here names three planes.
+            definition: None,
         });
         let v1 = m.vertices.push(Vertex {
             point: Point3::from_array([1.0, 0.0, 0.0]),
             origin: Origin::Constructed,
+            // A hand-built cell; nothing here names three planes.
+            definition: None,
         });
         let curve = m.curves.push(Curve::Line(
             Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),

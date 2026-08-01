@@ -176,6 +176,8 @@ mod tests {
             m.vertices.push(Vertex {
                 point: Point3::origin(),
                 origin: Origin::Constructed,
+                // A hand-built cell; nothing here names three planes.
+                definition: None,
             })
         };
         let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
@@ -237,6 +239,8 @@ mod tests {
             m.vertices.push(Vertex {
                 point: Point3::from_array(p),
                 origin: Origin::Constructed,
+                // A hand-built cell; nothing here names three planes.
+                definition: None,
             })
         };
         let v0 = mk_v(&mut m, [0.0, 0.0, 0.0]);

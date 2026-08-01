@@ -16,6 +16,7 @@ use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, SurfaceDef, Vertex,
+    VertexDef,
 };
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
@@ -576,10 +577,12 @@ pub(crate) fn build_prism(
         .collect::<Result<_, _>>()?;
 
     // ── Topology. Every surface it needs already exists.
-    let outer = sweep_ring(model, &outer_pts)?;
+    let caps = (base_surface, top_surface);
+    let outer = sweep_ring(model, &outer_pts, &outer_walls, caps)?;
     let holes: Vec<RingCells> = hole_pts
         .iter()
-        .map(|h| sweep_ring(model, h))
+        .zip(hole_walls.iter())
+        .map(|(h, w)| sweep_ring(model, h, w, caps))
         .collect::<Result<_, _>>()?;
 
     let mut faces =
@@ -754,22 +757,42 @@ fn oriented_ring(ring: Swept, normal: Vector3, ccw: bool) -> Swept {
 /// `base + sweep`: where the frame allows it that arithmetic is done in exact rationals
 /// (see [`crate::exact`]), and a dimension split into two then lands on the same points
 /// as the undivided one instead of an ulp away.
-fn sweep_ring(model: &mut Model, ring: &Swept) -> Result<RingCells, OpError> {
+fn sweep_ring(
+    model: &mut Model,
+    ring: &Swept,
+    walls: &[(Handle<Surface>, bool)],
+    caps: (Handle<Surface>, Handle<Surface>),
+) -> Result<RingCells, OpError> {
     let n = ring.base.len();
     let base_pts: Vec<Point3> = ring.base.clone();
     let top_pts: Vec<Point3> = ring.top.clone();
-    let push_verts = |model: &mut Model, ps: &[Point3]| -> Vec<Handle<Vertex>> {
-        ps.iter()
-            .map(|p| {
-                model.vertices.push(Vertex {
-                    point: *p,
-                    origin: Origin::Constructed,
-                })
-            })
-            .collect()
+    // Corner `i` is where the wall before it, the wall after it, and the cap meet.
+    //
+    // ★ **Two walls that are one plane name a line, not a point.** A profile with a collinear
+    // vertex makes exactly that — and since surfaces are interned, "one plane" *is* "one handle",
+    // so the check is a comparison. Such a vertex has no three-plane definition, and saying so is
+    // more useful than inventing one.
+    let define = |i: usize, cap: Handle<Surface>| -> Option<VertexDef> {
+        let prev = walls[(i + n - 1) % n].0;
+        let here = walls[i].0;
+        (prev != here && prev != cap && here != cap)
+            .then_some(VertexDef::ThreePlane([prev, here, cap]))
     };
-    let bv = push_verts(model, &base_pts);
-    let tv = push_verts(model, &top_pts);
+    let push_verts =
+        |model: &mut Model, ps: &[Point3], cap: Handle<Surface>| -> Vec<Handle<Vertex>> {
+            ps.iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    model.vertices.push(Vertex {
+                        point: *p,
+                        origin: Origin::Constructed,
+                        definition: define(i, cap),
+                    })
+                })
+                .collect()
+        };
+    let bv = push_verts(model, &base_pts, caps.0);
+    let tv = push_verts(model, &top_pts, caps.1);
 
     let (mut be, mut te, mut ve) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
