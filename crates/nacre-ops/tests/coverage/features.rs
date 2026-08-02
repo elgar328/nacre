@@ -699,16 +699,10 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
     let (mut m, top) = cube_with_top();
     let plane = nacre_ops::face_plane(&m, top).unwrap();
 
-    // A square from (−0.4, 0.7) to (−0.2, 0.9) in face coordinates — asymmetric in both axes, so
-    // any origin or axis mismatch moves its centre. The lid's frame is not centred on the face
-    // (its origin is the world origin projected onto `z = 1`), which is why these are not the
-    // small numbers around zero one might expect; they put the boss inside the cube.
-    let profile = Profile2d::polygon(vec![
-        p2(-0.4, 0.7),
-        p2(-0.2, 0.7),
-        p2(-0.2, 0.9),
-        p2(-0.4, 0.9),
-    ]);
+    // A square from (0.7, 0.2) to (0.9, 0.4) in face coordinates — asymmetric in both axes, so any
+    // origin or axis mismatch moves its centre. On a lid these are world x and y, which is what
+    // puts the boss inside the cube.
+    let profile = Profile2d::polygon(vec![p2(0.7, 0.4), p2(0.7, 0.2), p2(0.9, 0.2), p2(0.9, 0.4)]);
     let dist = 0.5;
     let OpOutput::PadOnFace { top_face, .. } = apply(&mut m, &pad_op(top, profile, dist)).unwrap()
     else {
@@ -718,7 +712,7 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
 
     // Where the caller predicts the boss's cap centre is, from `face_plane` alone.
     let n = plane.x_axis.cross(plane.y_axis);
-    let want = plane.origin + plane.x_axis * -0.3 + plane.y_axis * 0.8 + n * dist;
+    let want = plane.origin + plane.x_axis * 0.8 + plane.y_axis * 0.3 + n * dist;
 
     let got = nacre_props::face_props(&m, top_face).unwrap().centroid;
     assert!(

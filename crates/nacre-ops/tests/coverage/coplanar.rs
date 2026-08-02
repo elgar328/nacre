@@ -210,15 +210,15 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
     // OCCT cannot score this directly — `pad` builds its tool prism internally, and rebuilding
     // it here would lean on the same frame mapping the assertion is testing.
     let (mut m, top) = cube_with_top();
-    // In the lid's own frame, whose origin is the world origin projected onto `z = 1` and whose
-    // axes are `u = −ŷ`, `v = +x̂`: a frame point `(a, b)` is world `(b, −a, 1)`.
+    // On the lid, frame coordinates are world x and y: the origin is the world origin projected
+    // onto `z = 1` and the axes are `u = +x̂`, `v = +ŷ`.
     let l_over = Profile2d::polygon(vec![
-        p2(-0.75, 0.25),
-        p2(0.25, 0.25),
         p2(0.25, 0.75),
-        p2(-0.25, 0.75),
-        p2(-0.25, 1.0),
-        p2(-0.75, 1.0),
+        p2(0.25, -0.25),
+        p2(0.75, -0.25),
+        p2(0.75, 0.25),
+        p2(1.0, 0.25),
+        p2(1.0, 0.75),
     ]);
     let OpOutput::PadOnFace { solid, top_face } =
         apply(&mut m, &pad_op(top, l_over, 1.0)).expect("the cantilevered L pad")

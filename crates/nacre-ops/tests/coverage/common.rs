@@ -433,20 +433,13 @@ pub fn cube_with_top() -> (Model, Handle<Face>) {
     (m, top)
 }
 
-/// The `0.4` boss/pocket footprint that lands on `[0.3, 0.7]²` of the unit cube's lid — **in that
-/// lid's own frame**, which is not centred on the face.
+/// The `0.4` boss/pocket footprint on `[0.3, 0.7]²` of the unit cube's lid.
 ///
-/// A face's sketch origin is the world origin projected onto its plane, so the lid's `(0, 0)` is
-/// world `(0, 0, 1)`; its axes are `u = −ŷ`, `v = +x̂` (`any_perpendicular` crosses the
-/// least-aligned world axis into the normal). A frame point `(a, b)` is therefore world
-/// `(b, −a, 1)`, which is what centres this ring on the lid.
+/// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
+/// onto the face's plane, and the axes are the arbitrary-axis convention's, which for `n = ẑ` are
+/// `u = +x̂`, `v = +ŷ` — so a frame point `(a, b)` is world `(a, b, 1)`, the identity.
 pub fn small_square() -> Profile2d {
-    Profile2d::polygon(vec![
-        p2(-0.7, 0.3),
-        p2(-0.3, 0.3),
-        p2(-0.3, 0.7),
-        p2(-0.7, 0.7),
-    ])
+    Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)])
 }
 
 pub fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
@@ -536,27 +529,24 @@ pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 }
 
 /// A slot that runs off **one** edge of the unit cube's lid — world `x ∈ [0.25, 0.75]`,
-/// `y ∈ [-0.25, 0.75]`.
-///
-/// The lid's frame is not centred on the face: its origin is the world origin projected onto
-/// `z = 1` and its axes are `u = −ŷ`, `v = +x̂`, so a frame point `(a, b)` is world `(b, −a, 1)`.
+/// `y ∈ [-0.25, 0.75]`. On a lid, frame coordinates are world coordinates (see [`small_square`]).
 pub fn edge_overhang_profile() -> Profile2d {
     Profile2d::polygon(vec![
-        p2(-0.75, 0.25),
-        p2(0.25, 0.25),
         p2(0.25, 0.75),
-        p2(-0.75, 0.75),
+        p2(0.25, -0.25),
+        p2(0.75, -0.25),
+        p2(0.75, 0.75),
     ])
 }
 
 /// A channel that runs off **both** opposite edges of the unit cube's lid — world
-/// `x ∈ [0.25, 0.75]`, `y ∈ [-0.25, 1.25]`. Same frame as [`edge_overhang_profile`].
+/// `x ∈ [0.25, 0.75]`, `y ∈ [-0.25, 1.25]`.
 pub fn spanning_slab_profile() -> Profile2d {
     Profile2d::polygon(vec![
-        p2(-1.25, 0.25),
-        p2(0.25, 0.25),
-        p2(0.25, 0.75),
-        p2(-1.25, 0.75),
+        p2(0.25, 1.25),
+        p2(0.25, -0.25),
+        p2(0.75, -0.25),
+        p2(0.75, 1.25),
     ])
 }
 

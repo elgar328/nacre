@@ -45,16 +45,20 @@ impl SketchPlane {
         }
     }
 
-    /// A plane through `origin` with the given `normal`; `x`/`y` axes are
-    /// synthesized (`x = n.any_perpendicular()`, `y = n × x`). `None` if `normal`
-    /// is zero.
+    /// A plane through `origin` with the given `normal`, its axes synthesized by the same
+    /// convention a face's frame uses (`ops::frame_axes` — cross the world `ẑ` into the normal,
+    /// or `ŷ` when the normal is vertical). `None` if `normal` is zero.
+    ///
+    /// ★ It has to be the same convention: this and [`face_plane`] answer the same question, and a
+    /// caller that builds a frame here and compares it with one read off a face would otherwise
+    /// find them ninety degrees apart.
     pub fn from_origin_normal(origin: Point3, normal: Vector3) -> Option<Self> {
         let n = normal.normalize()?;
-        let x = n.any_perpendicular()?;
+        let (x_axis, y_axis) = ops::frame_axes(n)?;
         Some(Self {
             origin,
-            x_axis: x,
-            y_axis: n.cross(x),
+            x_axis,
+            y_axis,
         })
     }
 
@@ -2424,20 +2428,13 @@ pub mod tests {
         (m, top)
     }
 
-    /// The `0.4` square that lands on `[0.3, 0.7]²` of the unit cube's lid — **in that lid's own
-    /// frame**, which is not centred on the face.
+    /// The `0.4` square on `[0.3, 0.7]²` of the unit cube's lid.
     ///
-    /// A face's sketch origin is the world origin projected onto its plane, so the lid's `(0, 0)`
-    /// is world `(0, 0, 1)`, and its axes are `u = −ŷ`, `v = +x̂` (`any_perpendicular` crosses the
-    /// least-aligned world axis into the normal). A frame point `(a, b)` is therefore world
-    /// `(b, −a, 1)`, which is what puts this ring at `[0.3, 0.7]²`.
+    /// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
+    /// onto the plane, and the arbitrary-axis convention gives `n = ẑ` the axes `u = +x̂, v = +ŷ`,
+    /// so a frame point `(a, b)` is world `(a, b, 1)`.
     fn small_square() -> Profile2d {
-        Profile2d::polygon(vec![
-            p2(-0.7, 0.3),
-            p2(-0.3, 0.3),
-            p2(-0.3, 0.7),
-            p2(-0.7, 0.7),
-        ])
+        Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)])
     }
 
     /// **Chaining onto a fused boss.** The fuse leaves the base's `z=1` face a *ring* — a face with
@@ -5291,14 +5288,15 @@ pub mod tests {
     #[test]
     fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
         let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-        // The lid's frame: origin (0, 0, z), u = −ŷ, v = +x̂ — so this ring is world
+        // On a lid, frame coordinates are world x and y — the origin is the world origin projected
+        // onto the plane and the axes are `u = +x̂`, `v = +ŷ`. So this ring is world
         // x ∈ [99, 101], y ∈ [99.4, 100.6].
         let rect = || {
             Profile2d::polygon(vec![
-                p(-100.6, 99.0),
-                p(-99.4, 99.0),
-                p(-99.4, 101.0),
-                p(-100.6, 101.0),
+                p(99.0, 100.6),
+                p(99.0, 99.4),
+                p(101.0, 99.4),
+                p(101.0, 100.6),
             ])
         };
         let top = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
@@ -5427,5 +5425,131 @@ pub mod tests {
             [0.0, 0.0, 1.0],
             "the lid's origin is the world origin projected"
         );
+    }
+    /// ★★★★★ **The convention, face by face.** This table *is* the rule — every property below is a
+    /// consequence of it, and pinning the consequences without pinning the table would let a
+    /// different rule that happens to satisfy them slip in.
+    #[test]
+    fn the_six_axis_directions_get_the_frames_the_convention_names() {
+        let v = |a: [f64; 3]| Vector3::from_array(a);
+        for (n, u, w) in [
+            // The lid: this is the row that must equal `SketchPlane::world_xy`.
+            ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            ([0.0, 0.0, -1.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            // Every wall: `v` is +ẑ.
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+            ([-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]),
+            ([0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+            ([0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        ] {
+            let (gu, gv) = crate::ops::frame_axes(v(n)).expect("a unit normal has frame axes");
+            assert_eq!(gu.as_array(), u, "u for normal {n:?}");
+            assert_eq!(gv.as_array(), w, "v for normal {n:?}");
+            // ★ And the axes stay exactly representable, so the rational construction path still
+            // fires — losing that would drop every axis-aligned model to f64 silently.
+            let plane = SketchPlane {
+                origin: Point3::origin(),
+                x_axis: gu,
+                y_axis: gv,
+            };
+            assert!(plane.exact().is_some(), "exact path lost for normal {n:?}");
+        }
+    }
+
+    /// The lid's frame and [`SketchPlane::world_xy`] name the same plane, so they must name it the
+    /// same way. They did not: `any_perpendicular` gave the lid `u = −ŷ, v = +x̂`, ninety degrees
+    /// round, and the kernel carried both spellings at once.
+    #[test]
+    fn a_lid_gets_the_same_frame_as_the_world_xy_plane() {
+        let up = Vector3::from_array([0.0, 0.0, 1.0]);
+        let (u, v) = crate::ops::frame_axes(up).unwrap();
+        let w = SketchPlane::world_xy();
+        assert_eq!(u.as_array(), w.x_axis.as_array());
+        assert_eq!(v.as_array(), w.y_axis.as_array());
+    }
+
+    /// **On anything but a horizontal face, `v` points up.** `u = ẑ × n` is horizontal, so
+    /// `v·ẑ = 1 − n_z² > 0` whenever `n` is not vertical — the reason a sketch on a wall has "up"
+    /// where a person expects it. Checked on tilts the axis-aligned table cannot reach.
+    #[test]
+    fn every_non_horizontal_face_has_its_v_pointing_up() {
+        for n in [
+            [1.0, 1.0, 0.0],
+            [0.6, 0.0, 0.8],
+            [-0.3, 0.5, -0.81],
+            [0.0, 1.0, 0.001],
+            [7.0, -13.0, 5.0],
+        ] {
+            let n = Vector3::from_array(n).normalize().unwrap();
+            let (u, v) = crate::ops::frame_axes(n).unwrap();
+            assert_eq!(u.as_array()[2], 0.0, "u must be horizontal for {n:?}");
+            assert!(v.as_array()[2] > 0.0, "v points down for {n:?}");
+        }
+    }
+
+    /// `u ⊥ n`, `|u| = 1`, and `(u, v, n)` right-handed — for the tilted normals too, where the
+    /// table above says nothing.
+    #[test]
+    fn the_reference_axis_is_a_unit_normal_perpendicular() {
+        for n in [
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 1.0, 1.0],
+            [-2.0, 0.5, 3.25],
+            [1e-9, 0.0, 1.0],
+        ] {
+            let n = Vector3::from_array(n).normalize().unwrap();
+            let (u, v) = crate::ops::frame_axes(n).unwrap();
+            assert!((u.norm() - 1.0).abs() < 1e-15, "|u| for {n:?}");
+            assert!(u.dot(n).abs() < 1e-15, "u·n for {n:?}");
+            assert!((u.cross(v) - n).norm() < 1e-15, "handedness for {n:?}");
+        }
+    }
+
+    /// ★★ **The jump at the poles is intended, not a bug to be fixed later.**
+    ///
+    /// No continuous tangent frame exists on the sphere, so some set of normals must jump; this
+    /// convention spends that budget on the two poles and nowhere else. A normal a billionth off
+    /// vertical takes the other branch and lands ninety degrees away — pinned here so the next
+    /// reader can see it was chosen.
+    #[test]
+    fn the_frame_jumps_at_the_poles_and_that_is_the_deal() {
+        let up = Vector3::from_array([0.0, 0.0, 1.0]);
+        let tilted = Vector3::from_array([1e-9, 0.0, 1.0]).normalize().unwrap();
+        assert_eq!(
+            crate::ops::frame_axes(up).unwrap().0.as_array(),
+            [1.0, 0.0, 0.0]
+        );
+        assert_eq!(
+            crate::ops::frame_axes(tilted).unwrap().0.as_array(),
+            [0.0, 1.0, 0.0]
+        );
+    }
+
+    /// No `-0.0` reaches a caller. It compares equal to `0.0` and lifts to the same rational, so
+    /// this is presentation only — but a frame printed as `[-0.0, 1.0, 0.0]` reads like a defect.
+    #[test]
+    fn no_axis_component_is_negative_zero() {
+        for n in [
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ] {
+            let n = Vector3::from_array(n);
+            let (u, v) = crate::ops::frame_axes(n).unwrap();
+            for c in u.as_array().iter().chain(v.as_array().iter()) {
+                assert!(
+                    !(*c == 0.0 && c.is_sign_negative()),
+                    "negative zero in {n:?}'s frame"
+                );
+            }
+        }
+    }
+
+    /// The zero vector has no frame — the only `None`.
+    #[test]
+    fn the_zero_vector_has_no_frame_axes() {
+        assert!(crate::ops::frame_axes(Vector3::zero()).is_none());
     }
 }

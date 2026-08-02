@@ -618,21 +618,19 @@ mod tests {
         assert!(close(mass_props(&m, s).unwrap().volume, 20.0 * PI));
     }
 
-    /// A `2·hw` square centred on a `size` cube's lid — **in that lid's own frame**, which is not
-    /// centred on the face.
+    /// A `2·hw` square centred on a `size` cube's lid.
     ///
-    /// A face's sketch origin is the world origin projected onto its plane, so the lid's `(0, 0)`
-    /// is world `(0, 0, size)`; its axes are `u = -y_hat`, `v = +x_hat`. A frame point `(a, b)` is
-    /// world `(b, -a, size)`, so the lid's centre `(size/2, size/2)` is the frame point
-    /// `(-size/2, size/2)`.
+    /// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
+    /// onto the face's plane and the axes are `u = +x_hat`, `v = +y_hat`, so a frame point `(a, b)`
+    /// is world `(a, b, size)`.
     fn centred_on_the_lid(size: f64, hw: f64) -> Profile2d {
-        let (cx, cy) = (-0.5 * size, 0.5 * size);
+        let (cx, cy) = (0.5 * size, 0.5 * size);
         Profile2d::polygon(
             [
+                [cx - hw, cy + hw],
                 [cx - hw, cy - hw],
                 [cx + hw, cy - hw],
                 [cx + hw, cy + hw],
-                [cx - hw, cy + hw],
             ]
             .iter()
             .map(|&p| Point2::from_array(p))

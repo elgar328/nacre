@@ -833,6 +833,56 @@ struct FaceFrame {
     origin: Point3, // face centroid
 }
 
+/// **Which way is "right" and "up" on a face pointing `n`** — the `(u, v)` a sketch frame takes.
+///
+/// This is the **arbitrary-axis convention** (DXF/AutoCAD, and what most CAD puts on a face):
+/// cross the world `ẑ` into the normal, unless the normal *is* vertical, in which case cross `ŷ`.
+///
+/// ★ **Not [`nacre_math::Vector::any_perpendicular`], and the difference is the point.** That one
+/// answers a question of fact — *"give me a unit vector perpendicular to this"* — by crossing in
+/// whichever world axis the normal is **least** aligned with, which keeps the cross far from zero
+/// and is exactly right for a cylinder's seam or a STEP `ref_dir`. It is the wrong answer for a
+/// frame a person draws in, because the axis it picks changes with the normal: a box lid comes out
+/// `u = −ŷ, v = +x̂`, ninety degrees from world XY and from [`SketchPlane::world_xy`] itself.
+///
+/// What this convention buys, on top of the lid agreeing with `world_xy`:
+///
+/// * **On every face that is not horizontal, `v` points up.** `u = ẑ × n` is horizontal, so
+///   `v·ẑ = (n × (ẑ × n))·ẑ = 1 − n_z²`, which is positive unless `n` is vertical. Sketching on a
+///   wall, "up" is up.
+/// * **Axis-aligned faces keep axes in `{0, ±1}`**, so `SketchPlane::exact` still fires and the
+///   rational construction path is not lost.
+///
+/// ★★ **The branch is exact, not toleranced.** DXF switches on `|n_x| < 1/64`, a threshold only a
+/// float-only kernel needs; `n_x == 0 && n_y == 0` is the real question and this kernel can ask it.
+/// Nor is the non-vertical branch fragile near vertical: `ẑ × n = (−n_y, n_x, 0)` is a plain
+/// rotation of `(n_x, n_y)` into the plane, with no cancellation to lose digits to.
+///
+/// ★ **A discontinuity is unavoidable and this convention chooses where to put it** — no continuous
+/// tangent frame exists on the sphere. `any_perpendicular` breaks along whole arcs (wherever two
+/// components tie for smallest, e.g. `(0.5, 0.5, 0.707)`, far from any pole); this breaks at the
+/// two poles only. It is not smooth *at* the poles either — approaching `+ẑ` from different sides
+/// gives different limits — but the set where that happens is two points instead of three arcs.
+///
+/// Returns both axes rather than just `u`, so the two call sites cannot disagree about which way
+/// `v` runs. `None` only for the zero vector.
+pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
+    let [nx, ny, nz] = n.as_array();
+    let raw = if nx == 0.0 && ny == 0.0 {
+        // ŷ × n for a vertical normal: (n_z, 0, 0).
+        Vector3::from_array([nz, 0.0, 0.0])
+    } else {
+        // ẑ × n.
+        Vector3::from_array([-ny, nx, 0.0])
+    };
+    // `-0.0` is worth nothing to keep: the negations above produce it whenever a component is
+    // zero, and a frame reported to a caller as `[-0.0, 1.0, 0.0]` invites a double-take for no
+    // reason. Adding zero is the identity on every other value.
+    let tidy = |v: Vector3| Vector3::from_array(v.as_array().map(|c| c + 0.0));
+    let u = tidy(raw.normalize()?);
+    Some((u, tidy(n.cross(u))))
+}
+
 /// The sketch plane of a planar face — **the very frame [`Operation::PadOnFace`] and
 /// [`Operation::PocketOnFace`] place their profile in**, so a caller can work out where its
 /// `(0, 0)` will land before it builds anything.
@@ -873,8 +923,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
         Orientation::Reversed => -1.0,
     };
     let n = plane.normal() * sign;
-    let x = n.any_perpendicular().ok_or(OpError::DegenerateGeometry)?;
-    let y = n.cross(x);
+    let (x, y) = frame_axes(n).ok_or(OpError::DegenerateGeometry)?;
     // ★ The origin is the **world origin projected onto the face's plane** — a property of the
     // plane, not of the face.
     //
