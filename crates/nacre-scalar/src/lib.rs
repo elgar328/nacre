@@ -497,6 +497,58 @@ pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
     Some(out)
 }
 
+/// **A plane pushed `t` along its own unit normal**, exactly — `d′ = d − t·|n|`.
+///
+/// What a prism's far cap *is*: the face it was raised from, moved out by the sweep. Deriving it
+/// this way rather than from the realized geometry is what lets two prisms raised to one height
+/// record **one plane** — `7.7` in a single step and `1.1` then `6.6` give the same `d′`, because
+/// `11/10 + 66/10` is `77/10` in rationals — and what lets the far cap of a face on a turned solid
+/// be exact at all: the coefficients live in that face's own pre-motion frame, where the rotation's
+/// irrational numbers never appear.
+///
+/// ★★ **`None` unless `|n|` is rational**, which is the one thing that can stop this: `n·n` must be
+/// a perfect square. It is `1` for a box face and `25` for a `3-4-5` normal; it is `3` for `[1,1,1]`,
+/// and there the caller keeps whatever path it had. Also `None` on `i128` overflow and for `n = 0`,
+/// which is not a plane.
+///
+/// The result is canonicalized, so it compares by `==` with any other exact description of the same
+/// plane — including the one the sketch frame produces when it is exact, which is what makes the
+/// two derivations checkable against each other.
+pub fn plane_offset(coeffs: [Rat; 4], t: Rat) -> Option<[Rat; 4]> {
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let mut nn = Rat::from_int(0);
+    for c in n {
+        nn = nn.checked_add(c.checked_mul(c)?)?;
+    }
+    if nn == Rat::from_int(0) {
+        return None; // not a plane
+    }
+    let len = rat_sqrt_exact(nn)?;
+    canonical_plane_coeffs([
+        n[0],
+        n[1],
+        n[2],
+        coeffs[3].checked_sub(t.checked_mul(len)?)?,
+    ])
+}
+
+/// The exact square root of a non-negative rational, or `None` when it is irrational.
+///
+/// A fraction in lowest terms is a perfect square exactly when its numerator and denominator both
+/// are — they share no factor to trade — so this is two integer square roots and two checks.
+fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
+    let (num, den) = (*v.0.numer(), *v.0.denom());
+    if num < 0 {
+        return None;
+    }
+    let root = |x: i128| -> Option<i128> {
+        let r = (x as f64).sqrt() as i128;
+        // `as f64` rounds past 2⁵³, so search a small neighbourhood rather than trusting it.
+        (r.saturating_sub(2).max(0)..=r.saturating_add(2)).find(|&c| c.checked_mul(c) == Some(x))
+    };
+    Rat::new(root(num)?, root(den)?)
+}
+
 /// Greatest common divisor of two magnitudes, Euclid. `gcd(0, 0) == 0`.
 fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
     while b != 0 {
@@ -1150,6 +1202,83 @@ mod tests {
 
     /// The projection lands **exactly on** the plane it came from, tilted ones included — checked
     /// as `n·p + d == 0` in rationals, not within a tolerance.
+    /// A plane pushed along its own normal lands where the distance says — checked by taking the
+    /// projected origin of the moved plane and measuring it against the original's.
+    #[test]
+    fn a_plane_pushed_along_its_normal_moves_by_that_distance() {
+        for (raw, name) in [
+            ([0, 0, 1, -2], "z = 2"),
+            ([0, 0, 10, -21], "z = 2.1"),
+            ([3, 0, -4, -5], "3-4-5 tilt"),
+            ([5, 12, 0, -13], "5-12-13"),
+        ] {
+            let c = ints(raw);
+            let t = Rat::from_decimal(7.7).unwrap();
+            let moved =
+                plane_offset(c, t).unwrap_or_else(|| panic!("{name} has a rational normal"));
+            // The two projected origins differ by exactly `t` along the shared unit normal.
+            let (p0, p1) = (
+                plane_origin_projection(c).unwrap(),
+                plane_origin_projection(moved).unwrap(),
+            );
+            let d2 = (0..3).fold(Rat::from_int(0), |a, i| {
+                let d = p1[i].checked_sub(p0[i]).unwrap();
+                a.checked_add(d.checked_mul(d).unwrap()).unwrap()
+            });
+            assert_eq!(
+                d2,
+                t.checked_mul(t).unwrap(),
+                "{name} moved the wrong distance"
+            );
+        }
+    }
+
+    /// ★★★ **Two steps compose into one, exactly.** This is the property the whole thing exists for:
+    /// a cap raised `7.7` and a cap raised `1.1` then `6.6` record the *same* plane, because
+    /// `11/10 + 66/10 = 77/10` holds in rationals where it does not in `f64`.
+    #[test]
+    fn pushing_twice_lands_where_pushing_once_does() {
+        let d = |x: f64| Rat::from_decimal(x).unwrap();
+        assert_ne!(1.1f64 + 6.6, 7.7, "the fixture must discriminate");
+        for raw in [[0, 0, 1, -2], [3, 0, -4, -5], [0, 0, 10, -21]] {
+            let c = ints(raw);
+            let once = plane_offset(c, d(7.7)).unwrap();
+            let twice = plane_offset(plane_offset(c, d(1.1)).unwrap(), d(6.6)).unwrap();
+            assert_eq!(once, twice, "{raw:?}");
+        }
+    }
+
+    /// Pushing by zero is the plane itself, and pushing back undoes it — the sign convention is the
+    /// one thing here a reader has to trust, so it is pinned in both directions.
+    #[test]
+    fn pushing_by_zero_and_pushing_back_are_identities() {
+        // Every normal here has a rational length; `[7,-13,5]` does not, and `plane_offset`
+        // declines it outright — that is the next test's business.
+        for raw in [[0, 0, 1, -2], [3, 0, -4, -5], [5, 12, 0, 91]] {
+            let c = canonical_plane_coeffs(ints(raw)).unwrap();
+            assert_eq!(plane_offset(c, Rat::from_int(0)), Some(c), "{raw:?}");
+            let t = Rat::new(-7, 2).unwrap();
+            let there = plane_offset(c, t).unwrap();
+            assert_eq!(
+                plane_offset(there, Rat::from_int(0).checked_sub(t).unwrap()),
+                Some(c),
+                "{raw:?} did not come back"
+            );
+        }
+    }
+
+    /// **An irrational normal has no exact offset** — `|n|` is what must be rational, and `[1,1,1]`
+    /// is the smallest thing that is not. The caller keeps its f64 path; nothing is approximated.
+    #[test]
+    fn a_plane_whose_normal_has_no_rational_length_declines() {
+        assert_eq!(plane_offset(ints([1, 1, 1, -7]), Rat::from_int(1)), None);
+        assert_eq!(plane_offset(ints([1, 2, 3, 0]), Rat::from_int(1)), None);
+        // A 3-4-5 direction does have one, so this is a statement about lengths, not about tilt.
+        assert!(plane_offset(ints([3, 4, 0, -5]), Rat::from_int(1)).is_some());
+        // Not a plane.
+        assert_eq!(plane_offset(ints([0, 0, 0, 1]), Rat::from_int(1)), None);
+    }
+
     #[test]
     fn the_projected_origin_lies_exactly_on_its_plane() {
         for (raw, name) in [
