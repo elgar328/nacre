@@ -1009,6 +1009,59 @@ fn looser(d: Decision, best: Option<Decision>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// ★★★★ **Nothing carries plane coefficients through a frame, and that is the design, not an
+    /// omission.**
+    ///
+    /// A plane that passes through a motion has two descriptions — coefficients and a witness
+    /// triangle — and mixing them is what once produced intransitive comparisons and a confident
+    /// wrong winding. The frame design sidesteps the whole question: a plane built in a frame
+    /// states itself **in that frame**, `BaseFrame` keeps its triangle and its coefficients in the
+    /// *same* frame, and every judgement downstream is a determinant question a rigid motion
+    /// preserves. So no `d` transformation term is needed anywhere.
+    ///
+    /// The one place that does transport coefficients is
+    /// [`coplanar_by_composed_rotation`](super::coplanar_by_composed_rotation), whose whole method
+    /// is composing two chains into a single coordinate-axis rotation and applying it to a
+    /// coefficient vector. A frame is not that, so it must decline — a conservative miss that
+    /// sends the pair to the interval path. This asks for that decline directly, because the
+    /// alternative is `Isometry::plane_coeffs` being handed a frame it cannot express and
+    /// answering anyway.
+    #[test]
+    fn a_chain_holding_a_frame_never_reaches_the_coefficient_transport() {
+        use super::{Pt3, single_rotation};
+        use nacre_scalar::{Angle, Axis, Rat};
+        let ri = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        // A tilted plane's frame: 2x - 3y + 7z + 11 = 0.
+        let (origin, u_raw, n) =
+            nacre_scalar::plane_frame([2, -3, 7, 11].map(Rat::from_int)).unwrap();
+        let framed = |u: i128, v: i128, w: i128| {
+            Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)])
+                .frame(origin, u_raw, n)
+                .unwrap()
+        };
+        let def = [framed(0, 0, 0), framed(1, 0, 0), framed(0, 1, 0)];
+        assert!(
+            single_rotation(&def).is_none(),
+            "a frame is not a rotation about a coordinate axis; transporting coefficients \
+             through it would answer with full confidence and be wrong"
+        );
+        // The same points with an ordinary rotation *are* accepted, so the decline above is the
+        // frame's doing and not a shortcut that never fires.
+        let turned = [
+            Pt3::at([ri(0, 1), ri(0, 1), ri(0, 1)]),
+            Pt3::at([ri(1, 1), ri(0, 1), ri(0, 1)]),
+            Pt3::at([ri(0, 1), ri(1, 1), ri(0, 1)]),
+        ]
+        .map(|p| {
+            p.rotate_about(
+                Axis::Z,
+                Angle::from_deg(Rat::from_int(30)).unwrap(),
+                [Rat::from_int(0); 3],
+            )
+        });
+        assert!(single_rotation(&turned).is_some());
+    }
+
     use super::*;
     use nacre_scalar::Bound;
 
