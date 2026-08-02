@@ -5552,4 +5552,119 @@ pub mod tests {
     fn the_zero_vector_has_no_frame_axes() {
         assert!(crate::ops::frame_axes(Vector3::zero()).is_none());
     }
+    /// ★★★★★ **A boss on a tilted face, and another beside it — `pad` used to lose the second one.**
+    ///
+    /// The prism's far cap and the first boss's cap are one plane, and the boolean says so: its
+    /// classes are decided with evidence, and on a tilted face that evidence is a composed-rotation
+    /// proof or a coincidence within the limit, never a handle match — the cap's surface has no
+    /// rational coefficients to intern by, so it is minted fresh.
+    ///
+    /// `find_face_coplanar_with` then had to guess which surface the class had collapsed to, from
+    /// handles and an exact `plane_side` on f64 points. Both miss: the survivor carries the *other*
+    /// operand's surface, and the two f64 planes sit `1.8e-15` apart. `pad` turned "cap not found"
+    /// into a hard error and **threw away a correct solid** — the volume was already right.
+    ///
+    /// Now it asks the boolean instead.
+    #[test]
+    fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let mut m = Model::new();
+        let mut s = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        // Two turns, so the face's normal is off every world axis and its frame is not exact.
+        for (axis, deg) in [(Axis::Y, 53i128), (Axis::Z, 17)] {
+            let OpOutput::Transform { solid } = apply(
+                &mut m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: Isometry::rotation(Rotation {
+                        axis,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+                    }),
+                },
+            )
+            .expect("turn") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            s = solid;
+        }
+        // Where the original +z went, so the face can be picked without a heuristic tie.
+        let (sy, cy) = (53f64).to_radians().sin_cos();
+        let (sz, cz) = (17f64).to_radians().sin_cos();
+        let up = Vector3::from_array([cz * sy, sz * sy, cy]);
+        // The **original** tilted face, not a boss raised on it: lowest along `up` among the faces
+        // that point that way. Taking the highest would stack the second boss on the first.
+        let facing = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
+            *m.shells
+                .get(m.solids.get(s).outer)
+                .faces
+                .iter()
+                .filter(|&&f| {
+                    crate::ops::face_plane(m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99)
+                })
+                .min_by(|&&a, &&b| {
+                    let h = |f: Handle<Face>| {
+                        (nacre_props::face_props(m, f).unwrap().centroid - Point3::origin()).dot(up)
+                    };
+                    h(a).partial_cmp(&h(b)).unwrap()
+                })
+                .expect("a face along up")
+        };
+        // The frame is a function of the plane, so it survives the face being reshaped by the first
+        // pad — both columns are placed from one reading.
+        let (cu, cv) = {
+            let f = facing(&m, s);
+            let sp = crate::ops::face_plane(&m, f).expect("planar");
+            let d = nacre_props::face_props(&m, f).unwrap().centroid - sp.origin;
+            (d.dot(sp.x_axis), d.dot(sp.y_axis))
+        };
+        let before = nacre_props::mass_props(&m, s).unwrap().volume;
+        let mut caps = Vec::new();
+        for (lo, hi) in [(-1.0f64, -0.4f64), (0.4, 1.0)] {
+            let f = facing(&m, s);
+            let profile = Profile2d::polygon(vec![
+                p(cu + lo, cv - 0.5),
+                p(cu + hi, cv - 0.5),
+                p(cu + hi, cv + 0.5),
+                p(cu + lo, cv + 0.5),
+            ]);
+            let OpOutput::PadOnFace { solid, top_face } = apply(
+                &mut m,
+                &Operation::PadOnFace {
+                    face: f,
+                    profile,
+                    dist: 7.7,
+                },
+            )
+            .expect("a boss on a tilted face keeps its cap") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            s = solid;
+            caps.push(top_face);
+        }
+        // Each column is 0.6 × 1.0 × 7.7 = 4.62 of material.
+        let after = nacre_props::mass_props(&m, s).unwrap().volume;
+        assert!(
+            (after - before - 2.0 * 4.62).abs() < 1e-9,
+            "volume {before} -> {after}"
+        );
+        // ★ And the handle it returned is the boss top, not some other face that happened to pass:
+        // area 0.6, outward along the face's normal.
+        for cap in caps {
+            let props = nacre_props::face_props(&m, cap).expect("a planar cap");
+            assert!((props.area - 0.6).abs() < 1e-9, "cap area {}", props.area);
+            assert!(
+                props.normal.is_some_and(|n| n.dot(up) > 0.99),
+                "cap faces the wrong way"
+            );
+        }
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
 }

@@ -54,7 +54,7 @@ pub fn boolean_with_report(
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
     let snapshot = model.live_solids.clone();
-    let (result, notes) = crate::arrangement::boolean(model, kind, a, b)?;
+    let (result, notes, _class_of) = crate::arrangement::boolean(model, kind, a, b)?;
     // Topological self-check on the assembled result (DNA: never return a malformed solid). Reject
     // rather than return, restoring the pre-op live set so the reject leaves the *live* model
     // untouched (orphaned result cells stay in the append-only arena, unreachable, as any superseded
@@ -65,6 +65,33 @@ pub fn boolean_with_report(
         return Err(reject(t));
     }
     Ok((result, BoolReport::of(&notes)))
+}
+
+/// [`boolean`], and **what each input face's plane became** — its plane class's representative
+/// surface, which is what every result face on that plane carries.
+///
+/// ★★★ A caller that needs to find *its own* face in the result must ask this rather than compare
+/// handles or coordinates afterwards. The engine settled "are these one plane?" with evidence —
+/// including for two faces turned by **different motion chains**, where only a composed-rotation
+/// proof or a coincidence within the limit can answer — and none of that is visible to a later
+/// geometric test. `ops::find_face_coplanar_with` is the one caller today.
+///
+/// A parallel entry point for the same reason [`boolean_with_report`] is one: the map is wanted by
+/// one caller, and widening `boolean`'s return would rewrite every other one for nothing.
+pub(crate) fn boolean_with_classes(
+    model: &mut Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<(Vec<Handle<Solid>>, crate::arrangement::ClassOf), BoolError> {
+    let snapshot = model.live_solids.clone();
+    let (result, notes, class_of) = crate::arrangement::boolean(model, kind, a, b)?;
+    if let Some(t) = check_result_topology(model, &result) {
+        model.live_solids = snapshot;
+        return Err(reject(t));
+    }
+    let _ = notes;
+    Ok((result, class_of))
 }
 
 /// **What the boolean had to take on faith**, so a user can see it and act on it.

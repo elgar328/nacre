@@ -1008,10 +1008,11 @@ fn extrude_and_boolean(
         n * signed.signum(),
         Some(frame.surface_h),
     )?;
-    let solids = boolean(model, kind, frame.solid_h, prism).map_err(|e| {
-        model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
-        OpError::Boolean(e)
-    })?;
+    let (solids, class_of) =
+        crate::boolean::boolean_with_classes(model, kind, frame.solid_h, prism).map_err(|e| {
+            model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
+            OpError::Boolean(e)
+        })?;
     // A pad's prism must actually meet the face. Two live solids are each one outer shell, so a
     // `Fuse` of them can only come back severed if they never touched — the footprint missed the
     // face entirely. Returning the piece that carries the cap would hand back a floating boss and
@@ -1034,9 +1035,19 @@ fn extrude_and_boolean(
     // `build_prism` returns the far cap as `faces[1]`; the store is append-only, so it is still
     // readable after the boolean retired the prism, and it names the cap plane exactly.
     let far_cap = prism_faces[1];
+    // ★★★ **Which surface the cap's plane became** — the boolean's own answer, not a guess made
+    // afterwards. Its plane classes are decided with evidence (an exact `orient3d`, a composed
+    // rotation proof, or a coincidence within the limit), and a later comparison of handles or
+    // coordinates can see none of that: on a tilted face the cap merges with a face of the other
+    // operand and the survivor carries *that* surface, which is exactly what `find_face_coplanar_with`
+    // was left to guess at. `pad` used to throw away a correct solid when the guess missed.
+    let want_surf = class_of
+        .get(&far_cap)
+        .copied()
+        .unwrap_or_else(|| model.faces.get(far_cap).surface);
     match solids
         .iter()
-        .find_map(|&s| find_face_coplanar_with(model, s, far_cap, n).map(|c| (s, c)))
+        .find_map(|&s| find_face_coplanar_with(model, s, far_cap, want_surf, n).map(|c| (s, c)))
     {
         Some((solid, cap)) => Ok((solid, Some(cap))),
         // Nothing carries the cap. If anything survived at all, hand it back capless and let
@@ -1119,9 +1130,9 @@ pub(crate) fn find_face_coplanar_with(
     model: &Model,
     solid: Handle<Solid>,
     reference: Handle<Face>,
+    ref_surf: Handle<Surface>,
     want: Vector3,
 ) -> Option<Handle<Face>> {
-    let ref_surf = model.faces.get(reference).surface;
     let ref_tri = outer_tri(model, model.faces.get(reference)).map(|(tri, _)| tri);
     let shell = model.solids.get(solid).outer;
     model.shells.get(shell).faces.iter().copied().find(|&fh| {

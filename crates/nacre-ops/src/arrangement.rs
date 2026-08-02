@@ -2360,12 +2360,16 @@ pub(crate) fn frame_audit(
 ///
 /// A class that declines (holes, degenerate) aborts the whole boolean: skipping it would drop real
 /// faces and silently produce a non-manifold or wrong-volume solid.
+/// What each input face's plane became: its **plane class's representative surface**, which is
+/// what every result face on that plane carries.
+pub(crate) type ClassOf = std::collections::HashMap<Handle<Face>, Handle<nacre_geom::Surface>>;
+
 pub(crate) fn boolean(
     model: &mut Model,
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<(Vec<Handle<Solid>>, Notes), BoolError> {
+) -> Result<(Vec<Handle<Solid>>, Notes, ClassOf), BoolError> {
     let PlaneSetup {
         planes: faces_tab,
         surf_ix,
@@ -2387,6 +2391,15 @@ pub(crate) fn boolean(
     // `Judge::planes_coplanar` to build them — so a judgement that could not be made has already
     // shaped everything downstream. Say so before doing the work it would invalidate.
     undecided_reject(&notes)?;
+    // ★★★ **What every input face's plane became.** The classes are decided by now, and
+    // `assemble_fuse_cut` gives each result face `geom[..].surf` — its class's representative — so
+    // this is the only honest answer to *"which surface did my face's plane end up as?"*. A caller
+    // that asks it afterwards, by comparing handles or coordinates, is re-deciding a question this
+    // engine already settled with evidence (see `ops::find_face_coplanar_with`).
+    let class_of: ClassOf = surf_ix
+        .iter()
+        .map(|(&f, &i)| (f, geom[plane_ix[i]].surf))
+        .collect();
     // ★ **A closure so a `?` inside cannot skip the evidence check below.** Everything from here on
     // may reject, and every one of those rejects has to pass through `undecided_reject` first —
     // otherwise a symptom is reported where a precision failure is the cause. Returning early from
@@ -2526,7 +2539,7 @@ pub(crate) fn boolean(
     // if it were the problem. That is the `LoopOrientMismatch`-hiding-precision-exhaustion trap,
     // and checking the evidence *before* returning the symptom is what keeps it shut.
     undecided_reject(&notes)?;
-    out.map(|solids| (solids, notes))
+    out.map(|solids| (solids, notes, class_of))
 }
 
 /// **A judgement that could not be made is a reject, not a zero.**
@@ -2559,7 +2572,7 @@ mod tests {
         a: Handle<Solid>,
         b: Handle<Solid>,
     ) -> Result<Vec<Handle<Solid>>, BoolError> {
-        super::boolean(model, kind, a, b).map(|(solids, _)| solids)
+        super::boolean(model, kind, a, b).map(|(solids, ..)| solids)
     }
 
     /// Point of a canon triple, for asserting geometry by hand.
