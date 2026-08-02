@@ -5667,4 +5667,230 @@ pub mod tests {
         }
         assert!(nacre_validate::validate(&m).is_empty());
     }
+
+    // ---- tilted-face sketches: what the kernel does today (2b's corpus) ----
+    //
+    // ★★★ These pin **today's** behaviour, not a wish. The suite had almost none of them, so the
+    // stage that makes tilted frames exact would otherwise be built with nothing to measure against.
+    // Each says which part 2b is expected to change and which part must not move.
+
+    /// A profile edge running `(1, 2)` sweeps a wall whose normal is `(2, 1, 0)` — and **no
+    /// rational-degree rotation reaches it** (the angle is `atan(1/2)`). That is the case
+    /// `docs/truth-and-cache.md` names for `Motion::Frame`.
+    ///
+    /// What holds today and must keep holding:
+    ///
+    /// * the wall's **world coefficients are rational** — `[2, 1, 0, −10]`, so a frame built on it
+    ///   has exact data to derive from;
+    /// * its sketch frame follows the arbitrary-axis convention — origin at the world origin's
+    ///   projection `(4, 2, 0) = (10/5)·(2,1,0)`, `u = ẑ × n` normalized, `v = +ẑ`;
+    /// * a pad on it **works**, through the f64 path.
+    ///
+    /// What 2b changes: `exact()` is `false` here, so the prism it raises records no rational
+    /// coefficients. ★ The axes must **not** move — this plane's own frame is the world, so
+    /// `ẑ × n` is the same vector before and after.
+    #[test]
+    fn a_sketch_on_a_prism_side_wall_takes_the_f64_path_today() {
+        let (m, wall) = prism_with_a_slanted_wall();
+        let sp = crate::ops::face_plane(&m, wall).expect("planar");
+        let c = m
+            .surface_coeffs
+            .get(&m.faces.get(wall).surface)
+            .expect("a world-frame wall has rational coefficients");
+        assert_eq!(c.map(|r| r.to_f64()), [2.0, 1.0, 0.0, -10.0]);
+        assert_eq!(
+            sp.origin.as_array(),
+            [4.0, 2.0, 0.0],
+            "the projected origin"
+        );
+        assert_eq!(
+            sp.y_axis.as_array(),
+            [0.0, 0.0, 1.0],
+            "v points up on a wall"
+        );
+        assert!(
+            (sp.x_axis - Vector3::from_array([-1.0, 2.0, 0.0]).normalize().unwrap()).norm() < 1e-15,
+            "u is ẑ × n normalized, got {:?}",
+            sp.x_axis.as_array()
+        );
+        // ★ The gap 2b closes: the frame is not exact, so nothing built here records coefficients.
+        assert!(
+            sp.exact().is_none(),
+            "a tilted frame has no rational form today"
+        );
+    }
+
+    /// The same wall, actually used: a boss on it comes out right through the f64 path. Pinned so
+    /// that making the frame exact cannot change the **answer**, only how it is recorded.
+    #[test]
+    fn a_boss_on_a_slanted_wall_is_correct_today() {
+        let (mut m, wall) = prism_with_a_slanted_wall();
+        let profile = centred_on(&m, wall, 0.5);
+        let OpOutput::PadOnFace { solid, top_face } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: wall,
+                profile,
+                dist: 1.0,
+            },
+        )
+        .expect("pad") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        // Base prism 15 × 3 = 45, plus a 1 × 1 × 1 boss.
+        let props = nacre_props::mass_props(&m, solid).unwrap();
+        assert!(
+            (props.volume - 46.0).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!(
+            (nacre_props::face_props(&m, top_face).unwrap().area - 1.0).abs() < 1e-9,
+            "the boss top is 1 × 1"
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
+
+    /// ★★★ **A sketch on a wall raised from a sketch on a wall** — the nesting `Motion::Frame` was
+    /// redesigned for. The second wall's *world* normal is irrational, so its frame cannot be
+    /// written down by naming a normal; only by naming the plane.
+    ///
+    /// It works today, through f64. Pinned because nesting is where a frame that names its plane
+    /// by handle must terminate its recursion.
+    #[test]
+    fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
+        let (mut m, wall) = prism_with_a_slanted_wall();
+        let profile = centred_on(&m, wall, 0.5);
+        let OpOutput::PadOnFace { solid, top_face } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: wall,
+                profile,
+                dist: 1.0,
+            },
+        )
+        .expect("pad") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        // A side face of that boss: not the cap, not on the original wall's plane.
+        let cap_n = nacre_props::face_props(&m, top_face)
+            .unwrap()
+            .normal
+            .unwrap();
+        let side = *m
+            .shells
+            .get(m.solids.get(solid).outer)
+            .faces
+            .iter()
+            .find(|&&f| {
+                f != top_face
+                    && nacre_props::face_props(&m, f).is_ok_and(|p| {
+                        (p.area - 1.0).abs() < 1e-9
+                            && p.normal.is_some_and(|n| n.dot(cap_n).abs() < 0.5)
+                    })
+            })
+            .expect("a boss side face");
+        let profile = centred_on(&m, side, 0.2);
+        let OpOutput::PadOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: side,
+                profile,
+                dist: 0.5,
+            },
+        )
+        .expect("nested pad") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let props = nacre_props::mass_props(&m, solid).unwrap();
+        // The nested boss is 0.4 × 0.4 × 0.5 = 0.08.
+        assert!(
+            (props.volume - 46.08).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
+
+    /// A pocket on the slanted wall — the other face-based operation, so the sweep runs inward.
+    #[test]
+    fn a_pocket_in_a_slanted_wall_is_correct_today() {
+        let (mut m, wall) = prism_with_a_slanted_wall();
+        let profile = centred_on(&m, wall, 0.5);
+        let OpOutput::PocketOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PocketOnFace {
+                face: wall,
+                profile,
+                dist: 0.5,
+            },
+        )
+        .expect("pocket") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let props = nacre_props::mass_props(&m, solid).unwrap();
+        assert!(
+            (props.volume - 44.5).abs() < 1e-9,
+            "volume {}",
+            props.volume
+        );
+        assert!(nacre_validate::validate(&m).is_empty());
+    }
+
+    /// A pentagonal prism whose fourth wall is slanted, and that wall's handle. Footprint area 15
+    /// (a 4×4 square less the 1×2 triangle the slant cuts off), swept 3.
+    fn prism_with_a_slanted_wall() -> (Model, Handle<Face>) {
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let mut m = Model::new();
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d::polygon(vec![
+                    p(0.0, 0.0),
+                    p(4.0, 0.0),
+                    p(4.0, 2.0),
+                    p(3.0, 4.0),
+                    p(0.0, 4.0),
+                ]),
+                dist: 3.0,
+            },
+        )
+        .expect("extrude") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let wall = *m
+            .shells
+            .get(m.solids.get(solid).outer)
+            .faces
+            .iter()
+            .find(|&&f| {
+                crate::ops::face_plane(&m, f).is_ok_and(|sp| {
+                    let n = sp.normal().as_array();
+                    n[0].abs() > 0.1 && n[1].abs() > 0.1 && n[2].abs() < 1e-12
+                })
+            })
+            .expect("a slanted wall");
+        (m, wall)
+    }
+
+    /// A `2·half` square centred on `face`, in that face's own sketch frame. The frame is a
+    /// function of the plane, so reading it once is enough even if the face is reshaped later.
+    fn centred_on(m: &Model, face: Handle<Face>, half: f64) -> Profile2d {
+        let sp = crate::ops::face_plane(m, face).expect("planar");
+        let d = nacre_props::face_props(m, face).unwrap().centroid - sp.origin;
+        let (cu, cv) = (d.dot(sp.x_axis), d.dot(sp.y_axis));
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        Profile2d::polygon(vec![
+            p(cu - half, cv - half),
+            p(cu + half, cv - half),
+            p(cu + half, cv + half),
+            p(cu - half, cv + half),
+        ])
+    }
 }
