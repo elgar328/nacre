@@ -76,10 +76,10 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
                         Origin::Constructed => Pt3::exact(v.point.as_array())?,
                         Origin::Discovered { .. } => return None,
                         Origin::Moved { base, motion } => {
-                            let chain = crate::rotated_vertex::motion_chain(model, motion);
+                            let chain = crate::rotated_vertex::motion_chain(model, motion)?;
                             let bp = model.vertices.get(base).point.as_array();
                             let base = crate::rotated_vertex::coord_rat(bp).ok()?;
-                            crate::rotated_vertex::replay(Pt3::at(base), &chain)
+                            crate::rotated_vertex::replay(Pt3::at(base), &chain)?
                         }
                     });
                 }

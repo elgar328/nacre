@@ -14,7 +14,7 @@
 use nacre_cip::{MoveNode, Pt3};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
-use nacre_topo::{Model, Motion, MotionNode};
+use nacre_topo::{Model, Motion, MotionNode, SurfaceDef};
 
 /// Why a coordinate could not be lifted to an exact rational.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,34 +38,79 @@ pub(crate) fn replay_chain_coord(
     base_point: [f64; 3],
     leaf: Handle<MotionNode>,
 ) -> Result<[f64; 3], Pt3Error> {
-    Ok(replay(Pt3::at(coord_rat(base_point)?), &motion_chain(model, leaf)).coord)
+    let chain = motion_chain(model, leaf).ok_or(Pt3Error::Downgrade)?;
+    Ok(replay(Pt3::at(coord_rat(base_point)?), &chain)
+        .ok_or(Pt3Error::Downgrade)?
+        .coord)
 }
 
 /// `p` carried through `chain`, in the producer's own order and float operations — the one
 /// definition of "replay" this crate has, so a coordinate and its definition cannot drift apart.
-pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Pt3 {
-    chain.iter().fold(p, |q, n| match *n {
-        MoveNode::Rotate { axis, angle, point } => q.rotate_about(axis, angle, point),
-        MoveNode::Translate { offset } => q.translate(offset),
-        MoveNode::Mirror { axis, offset } => q.mirror(axis, offset),
+///
+/// `None` only for a [`MoveNode::Frame`] whose squared lengths do not fit `i128`, which
+/// [`motion_chain`] already refuses to emit — so in practice this is infallible, and the `Option`
+/// is here so that "in practice" does not have to be an invariant spanning two crates.
+pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
+    chain.iter().try_fold(p, |q, n| match *n {
+        MoveNode::Rotate { axis, angle, point } => Some(q.rotate_about(axis, angle, point)),
+        MoveNode::Translate { offset } => Some(q.translate(offset)),
+        MoveNode::Mirror { axis, offset } => Some(q.mirror(axis, offset)),
+        MoveNode::Frame { origin, u_raw, n } => q.frame(origin, u_raw, n),
     })
 }
 
 /// The motion nodes from the root down to `leaf` (parent chain, reversed).
-pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Vec<MoveNode> {
+///
+/// ★★★ **A frame expands into more than one node, and that is the recursion.** `Motion::Frame`
+/// names a *plane*, not a basis, because a wall raised on a tilted face has no rational world
+/// normal to spell. Reading it means: take that plane's own rational coefficients, derive the
+/// frame from them ([`nacre_scalar::plane_frame`] — one spelling, so the exact route and the f64
+/// `frame_axes` cannot drift), and then keep going through **that plane's** motion, which is what
+/// carries the result out of its frame and into the next one down. The walk terminates at a plane
+/// with no frame, which is the world.
+///
+/// `None` when a frame cannot be built exactly — no coefficients recorded, a degenerate plane, or
+/// squared lengths past `i128`. That is a decline, not a reject: the caller falls back to the f64
+/// path it was on before frames existed.
+pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Vec<MoveNode>> {
     let mut chain = Vec::new();
     let mut cur = Some(leaf);
     while let Some(h) = cur {
         let n: &MotionNode = model.motions.get(h);
-        chain.push(match n.motion {
-            Motion::Rotate { axis, point, angle } => MoveNode::Rotate { axis, angle, point },
-            Motion::Translate { offset } => MoveNode::Translate { offset },
-            Motion::Mirror { axis, offset } => MoveNode::Mirror { axis, offset },
-        });
+        match n.motion {
+            Motion::Rotate { axis, point, angle } => {
+                chain.push(MoveNode::Rotate { axis, angle, point })
+            }
+            Motion::Translate { offset } => chain.push(MoveNode::Translate { offset }),
+            Motion::Mirror { axis, offset } => chain.push(MoveNode::Mirror { axis, offset }),
+            Motion::Frame { plane } => {
+                let c = *model.surface_coeffs.get(&plane)?;
+                let (origin, u_raw, fn_) = nacre_scalar::plane_frame(c)?;
+                chain.push(MoveNode::Frame {
+                    origin,
+                    u_raw,
+                    n: fn_,
+                });
+                // The plane states itself in *its* frame, so whatever moved that plane has to run
+                // after this node. `Constructed` planes state themselves in the world and end the
+                // walk; `Inexact` ones have no exact definition to continue with.
+                match model.surface_defs.get(&plane) {
+                    Some(SurfaceDef::Moved { motion, .. }) => {
+                        // The parent link belongs to this node's own history; the plane's motion
+                        // is spliced in ahead of it.
+                        let mut rest = motion_chain(model, *motion)?;
+                        rest.reverse();
+                        chain.append(&mut rest);
+                    }
+                    Some(SurfaceDef::Constructed) => {}
+                    _ => return None,
+                }
+            }
+        }
         cur = n.parent;
     }
     chain.reverse();
-    chain
+    Some(chain)
 }
 
 pub(crate) fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], Pt3Error> {
@@ -270,10 +315,13 @@ mod tests {
             panic!("rotated");
         };
         let axes: Vec<Axis> = motion_chain(&m, rotation)
+            .expect("an axis-aligned history holds no frame")
             .iter()
             .filter_map(|n| match n {
                 MoveNode::Rotate { axis, .. } => Some(*axis),
-                MoveNode::Translate { .. } | MoveNode::Mirror { .. } => None,
+                MoveNode::Translate { .. } | MoveNode::Mirror { .. } | MoveNode::Frame { .. } => {
+                    None
+                }
             })
             .collect();
         assert_eq!(axes, vec![Axis::Z, Axis::X]);

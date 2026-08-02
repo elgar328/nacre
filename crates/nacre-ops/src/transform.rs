@@ -824,6 +824,7 @@ mod tests {
                 Motion::Rotate { .. } => "Rotate",
                 Motion::Translate { .. } => "Translate",
                 Motion::Mirror { .. } => "Mirror",
+                Motion::Frame { .. } => "Frame",
             };
             assert_eq!(got, kind, "a {what} records a {kind} node");
         }

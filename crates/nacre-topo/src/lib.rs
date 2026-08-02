@@ -58,6 +58,30 @@ pub enum Motion {
     /// leaving them alone. Judgments that answer a determinant question in a shared pre-motion
     /// frame must account for that; see `nacre-ops`' `BaseFrame` and `nacre-cip`'s `shared_base`.
     Mirror { axis: Axis, offset: Rat },
+    /// A change of basis **into a plane's own frame** — what makes a sketch on a tilted face
+    /// exact. Coordinates written against this node are read as `(u, v, w)` in that plane's
+    /// frame; the motion carries them out into the frame the plane itself lives in.
+    ///
+    /// ★★★★ **The normal is named, not spelled.** A wall raised on a tilted face has an
+    /// irrational world normal — there is no `[Rat; 3]` for it — so the node points at the
+    /// *plane*, whose coefficients are rational **in its own frame**. The recursion terminates
+    /// because it walks down to a plane with no frame, which is where the world is.
+    ///
+    /// ★★★ **The frame is a function of the plane, so `plane` is the whole node.** Both of the
+    /// other things a frame needs are derived and neither is stored:
+    ///
+    /// ```text
+    /// origin  = the world origin projected onto the plane
+    /// ref_dir = ẑ × n   (ŷ × n when n is vertical — the arbitrary-axis branch)
+    /// ```
+    ///
+    /// That is what makes canonicalization unnecessary: one plane has one frame node, so a handle
+    /// is already the key. Widening to a user-named frame later means adding the fields back and
+    /// treating today's as the specialization.
+    ///
+    /// ★ **Proper** (`det = +1`) — `(u, v, w)` is right-handed by construction (`v = w × u`), so
+    /// unlike [`Mirror`](Self::Mirror) it contributes nothing to a chain's parity.
+    Frame { plane: Handle<Surface> },
 }
 
 /// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a

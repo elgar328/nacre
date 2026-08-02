@@ -866,8 +866,13 @@ fn single_rotation(def: &[Pt3; 3]) -> Option<OneRotation> {
                 }
             }
             // A translation moves a plane, so unlike `single_axis_motion` it cannot be skipped;
-            // a reflection is improper. Both are conservative misses rather than wrong answers.
-            MoveNode::Translate { .. } | MoveNode::Mirror { .. } => return None,
+            // a reflection is improper; and a frame is a rotation this shortcut cannot *state* —
+            // it is not about a coordinate axis, so there is no axis and angle to accumulate.
+            // All three are conservative misses rather than wrong answers: the caller escalates
+            // to the general path, which realizes the chain and does not care what shape it has.
+            MoveNode::Translate { .. } | MoveNode::Mirror { .. } | MoveNode::Frame { .. } => {
+                return None;
+            }
         }
     }
     Some((axis, total, pivot))
@@ -942,6 +947,10 @@ fn single_axis_motion(def: &[Pt3; 3]) -> Option<(nacre_scalar::Axis, nacre_scala
             }
             MoveNode::Translate { .. } => continue, // cancels in the difference
             MoveNode::Mirror { .. } => return None,
+            // A frame *is* a rotation, and it does act on a difference as its pure linear part —
+            // but this shortcut's answer is "which coordinate axis is preserved", and a frame
+            // preserves none. Escalating is the honest miss.
+            MoveNode::Frame { .. } => return None,
         };
         if *axis.get_or_insert(*a) != *a {
             return None;

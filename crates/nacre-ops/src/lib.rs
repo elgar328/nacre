@@ -308,6 +308,15 @@ pub enum RejectReason {
     /// kernel says so by name. (It used to panic on the mixed-rotation path and silently succeed
     /// on the axis-aligned one, because the definition was built lazily, per judgment.)
     CoordinateOutOfRange,
+    /// A plane's own frame cannot be stated exactly, so a sketch built in it has no exact
+    /// definition to judge from. Either the plane recorded no rational coefficients, or the
+    /// squared lengths the frame's realization divides by do not fit `i128`.
+    ///
+    /// ★ **Distinct from [`Self::InexactSurface`] on purpose.** Both end with "no exact
+    /// definition here", but they say different things about *why*: that one names a surface with
+    /// no provenance, this one names a frame the rationals cannot hold. Sharing a label would
+    /// leave a firing pointing at the wrong producer.
+    FrameOutOfRange,
     /// **The model's rotation history is longer than the judging budget.**
     ///
     /// A rotated point's realization carries an error `C · 2⁻ᵖʳᵉᶜ`, and `C` grows about one bit
@@ -472,6 +481,7 @@ impl RejectReason {
             Self::DegenerateFace => "degenerate_face",
             Self::DegenerateNormal => "degenerate_normal",
             Self::CoordinateOutOfRange => "coordinate_out_of_range",
+            Self::FrameOutOfRange => "frame_out_of_range",
             Self::PrecisionBudget { .. } => "precision_budget",
             Self::JudgeExhausted => "judge_exhausted",
             Self::DegenerateWitness => "degenerate_witness",
@@ -507,6 +517,8 @@ impl RejectReason {
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
             | Self::CoordinateOutOfRange
+            // Likewise a frame past `i128`: a wider rational would lift it.
+            | Self::FrameOutOfRange
             // A cost limit, not a resolution one: more bits would answer it.
             | Self::PrecisionBudget { .. }
             | Self::JudgeExhausted
@@ -3703,7 +3715,9 @@ pub mod tests {
                 panic!("a rotated result's walls must carry a rotation");
             };
             assert_eq!(
-                crate::rotated_vertex::motion_chain(&m, rotation).len(),
+                crate::rotated_vertex::motion_chain(&m, rotation)
+                    .expect("an axis-aligned history holds no frame")
+                    .len(),
                 2,
                 "both rotations, once each"
             );

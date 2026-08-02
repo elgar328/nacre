@@ -122,11 +122,13 @@ pub(crate) fn collect_planes(
                     let _t = Watch::new(); // charged at the arm's end
                     // The pre-motion witness, carried through the recorded chain — the same
                     // computation, in the same order, that a moved vertex's `Pt3` performs.
-                    let chain = crate::rotated_vertex::motion_chain(model, motion);
+                    let chain = crate::rotated_vertex::motion_chain(model, motion)
+                        .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
                     let turn = |p: Point3| -> Result<Pt3, BoolError> {
                         let base = crate::rotated_vertex::coord_rat(p.as_array())
                             .map_err(|_| reject(RejectReason::CoordinateOutOfRange))?;
-                        Ok(crate::rotated_vertex::replay(Pt3::at(base), &chain))
+                        crate::rotated_vertex::replay(Pt3::at(base), &chain)
+                            .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
                     };
                     let mut w = [turn(witness[0])?, turn(witness[1])?, turn(witness[2])?];
                     // `tri_pt3` is an *oriented* plane witness, but the witness was captured from

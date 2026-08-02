@@ -553,6 +553,79 @@ pub fn plane_offset(coeffs: [Rat; 4], t: Rat) -> Option<[Rat; 4]> {
     ])
 }
 
+/// **A plane's own frame, exactly** — the origin it is drawn from and the raw direction its `u`
+/// axis runs along, both rational, plus the normal reduced to its primitive direction.
+///
+/// ```text
+/// origin  = the world origin projected onto the plane
+/// n       = [a, b, c] divided by its content (sign kept)
+/// u_raw   = ẑ × n = (−b, a, 0),  or  ŷ × n = (c, 0, 0) when the normal is vertical
+/// ```
+///
+/// ★★★ **`u_raw` is not projected and need not be a unit vector.** The general recipe for laying
+/// a reference direction into a plane is `(n·n)·ref − (ref·n)·n`, and it is unnecessary here: a
+/// cross product is perpendicular to both its arguments, so `ẑ × n` is *already* in the plane.
+/// Skipping it is the difference between coefficients that grow cubically and ones that do not —
+/// measured over the faces a face-based operation actually targets, projecting left 21% of them
+/// inside `i128` and this leaves **100%**.
+///
+/// ★★★ **The sign is kept, unlike [`canonical_plane_coeffs`].** That function answers *"are these
+/// the same plane"*, where direction is noise. A frame's `n` **is** a direction: negating it
+/// negates `û` and `ŵ` together, which is a half-turn about `v` — a different frame, not the same
+/// one written differently.
+///
+/// ★★ **The branch is exact, not toleranced**, and it matches `nacre-ops`' f64 `frame_axes` term
+/// for term. DXF's arbitrary-axis convention switches on `|n_x| < 1/64` because a float-only
+/// kernel cannot ask the real question; `a == 0 && b == 0` is the real question.
+///
+/// `None` when the plane is degenerate, when the origin projection is not rational, or when the
+/// squared lengths the realization needs do not fit `i128` — all three are honest declines that
+/// leave a caller on the f64 path it was already on, never a reject.
+pub fn plane_frame(coeffs: [Rat; 4]) -> Option<([Rat; 3], [Rat; 3], [Rat; 3])> {
+    let origin = plane_origin_projection(coeffs)?;
+    let n = reduce_direction([coeffs[0], coeffs[1], coeffs[2]])?;
+    let zero = Rat::from_int(0);
+    let u_raw = if n[0] == zero && n[1] == zero {
+        [n[2], zero, zero]
+    } else {
+        [zero.checked_sub(n[1])?, n[0], zero]
+    };
+    // The realization divides by these two lengths; if they do not fit, the frame is not usable
+    // and saying so here is what keeps `Pt3::frame` from being handed one that cannot be built.
+    let fits = |a: &[Rat; 3]| {
+        (0..3)
+            .try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(a[k])?))
+            .is_some()
+    };
+    (fits(&n) && fits(&u_raw)).then_some((origin, u_raw, n))
+}
+
+/// A direction vector divided by its content — the **primitive** integer vector along it, with
+/// its sign kept. `None` for the zero vector or on overflow.
+///
+/// Steps ① and ② of [`canonical_plane_coeffs`] and deliberately not step ③: see [`plane_frame`]
+/// for why a direction may not have its sign normalized.
+fn reduce_direction(v: [Rat; 3]) -> Option<[Rat; 3]> {
+    let mut lcm: i128 = 1;
+    for c in v {
+        let d = c.denom();
+        let g = gcd_u128(lcm.unsigned_abs(), d.unsigned_abs()) as i128;
+        lcm = lcm.checked_div(g)?.checked_mul(d)?;
+    }
+    let mut num = [0i128; 3];
+    for (i, c) in v.iter().enumerate() {
+        num[i] = c.numer().checked_mul(lcm.checked_div(c.denom())?)?;
+    }
+    let g = num.iter().fold(0u128, |g, n| gcd_u128(g, n.unsigned_abs()));
+    if g == 0 {
+        return None; // the zero vector is not a direction
+    }
+    for n in &mut num {
+        *n /= g as i128;
+    }
+    Some(num.map(Rat::from_int))
+}
+
 /// The exact square root of a non-negative rational, or `None` when it is irrational.
 ///
 /// A fraction in lowest terms is a perfect square exactly when its numerator and denominator both
