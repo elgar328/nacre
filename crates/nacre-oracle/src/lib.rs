@@ -3597,7 +3597,10 @@ centroid 1 1.5 2
             &mut m,
             &Operation::PocketOnFace {
                 face: faces[1],
-                profile: sq(&[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]]),
+                // `[0.3, 0.7]²` of the lid, in the lid's own frame: its sketch origin is the
+                // world origin projected onto `z = 1`, and its axes are `u = −ŷ`, `v = +x̂`, so
+                // a frame point `(a, b)` is world `(b, −a, 1)`.
+                profile: sq(&[[-0.7, 0.3], [-0.3, 0.3], [-0.3, 0.7], [-0.7, 0.7]]),
                 dist: 0.5,
             },
         )

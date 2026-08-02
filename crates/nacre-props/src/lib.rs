@@ -618,6 +618,28 @@ mod tests {
         assert!(close(mass_props(&m, s).unwrap().volume, 20.0 * PI));
     }
 
+    /// A `2·hw` square centred on a `size` cube's lid — **in that lid's own frame**, which is not
+    /// centred on the face.
+    ///
+    /// A face's sketch origin is the world origin projected onto its plane, so the lid's `(0, 0)`
+    /// is world `(0, 0, size)`; its axes are `u = -y_hat`, `v = +x_hat`. A frame point `(a, b)` is
+    /// world `(b, -a, size)`, so the lid's centre `(size/2, size/2)` is the frame point
+    /// `(-size/2, size/2)`.
+    fn centred_on_the_lid(size: f64, hw: f64) -> Profile2d {
+        let (cx, cy) = (-0.5 * size, 0.5 * size);
+        Profile2d::polygon(
+            [
+                [cx - hw, cy - hw],
+                [cx + hw, cy - hw],
+                [cx + hw, cy + hw],
+                [cx - hw, cy + hw],
+            ]
+            .iter()
+            .map(|&p| Point2::from_array(p))
+            .collect(),
+        )
+    }
+
     /// Pad a `2·hw` square boss of height `dist` on a `size` cube's top face,
     /// returning the padded solid's mass.
     fn cube_then_pad(size: f64, hw: f64, dist: f64) -> MassProps {
@@ -641,12 +663,7 @@ mod tests {
         .unwrap() else {
             unreachable!()
         };
-        let boss = Profile2d::polygon(
-            [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
-                .iter()
-                .map(|&p| Point2::from_array(p))
-                .collect(),
-        );
+        let boss = centred_on_the_lid(size, hw);
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut m,
             &Operation::PadOnFace {
@@ -693,12 +710,7 @@ mod tests {
         .unwrap() else {
             unreachable!()
         };
-        let pocket = Profile2d::polygon(
-            [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]]
-                .iter()
-                .map(|&p| Point2::from_array(p))
-                .collect(),
-        );
+        let pocket = centred_on_the_lid(size, hw);
         let OpOutput::PocketOnFace { solid, .. } = apply(
             &mut m,
             &Operation::PocketOnFace {

@@ -433,13 +433,19 @@ pub fn cube_with_top() -> (Model, Handle<Face>) {
     (m, top)
 }
 
-/// A small square profile centred on the origin (a boss/pocket footprint).
+/// The `0.4` boss/pocket footprint that lands on `[0.3, 0.7]²` of the unit cube's lid — **in that
+/// lid's own frame**, which is not centred on the face.
+///
+/// A face's sketch origin is the world origin projected onto its plane, so the lid's `(0, 0)` is
+/// world `(0, 0, 1)`; its axes are `u = −ŷ`, `v = +x̂` (`any_perpendicular` crosses the
+/// least-aligned world axis into the normal). A frame point `(a, b)` is therefore world
+/// `(b, −a, 1)`, which is what centres this ring on the lid.
 pub fn small_square() -> Profile2d {
     Profile2d::polygon(vec![
-        p2(-0.2, -0.2),
-        p2(0.2, -0.2),
-        p2(0.2, 0.2),
-        p2(-0.2, 0.2),
+        p2(-0.7, 0.3),
+        p2(-0.3, 0.3),
+        p2(-0.3, 0.7),
+        p2(-0.7, 0.7),
     ])
 }
 
@@ -529,21 +535,28 @@ pub fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, slab, pc)
 }
 
+/// A slot that runs off **one** edge of the unit cube's lid — world `x ∈ [0.25, 0.75]`,
+/// `y ∈ [-0.25, 0.75]`.
+///
+/// The lid's frame is not centred on the face: its origin is the world origin projected onto
+/// `z = 1` and its axes are `u = −ŷ`, `v = +x̂`, so a frame point `(a, b)` is world `(b, −a, 1)`.
 pub fn edge_overhang_profile() -> Profile2d {
     Profile2d::polygon(vec![
-        p2(-0.25, -0.25),
-        p2(0.75, -0.25),
-        p2(0.75, 0.25),
-        p2(-0.25, 0.25),
+        p2(-0.75, 0.25),
+        p2(0.25, 0.25),
+        p2(0.25, 0.75),
+        p2(-0.75, 0.75),
     ])
 }
 
+/// A channel that runs off **both** opposite edges of the unit cube's lid — world
+/// `x ∈ [0.25, 0.75]`, `y ∈ [-0.25, 1.25]`. Same frame as [`edge_overhang_profile`].
 pub fn spanning_slab_profile() -> Profile2d {
     Profile2d::polygon(vec![
-        p2(-0.75, -0.25),
-        p2(0.75, -0.25),
-        p2(0.75, 0.25),
-        p2(-0.75, 0.25),
+        p2(-1.25, 0.25),
+        p2(0.25, 0.25),
+        p2(0.25, 0.75),
+        p2(-1.25, 0.75),
     ])
 }
 

@@ -2,11 +2,11 @@
 //! `replay` driver. The top layer — it composes the boolean engine ([`crate::boolean`]) and rigid
 //! transform ([`crate::transform`]) over the plane substrate below.
 
+use crate::BoolError;
 use crate::boolean::boolean;
 use crate::exact::Swept;
 use crate::planes::outer_tri;
 use crate::transform::transform;
-use crate::{BoolError, he_start};
 use nacre_geom::intersect::{
     RingSide, plane_side, point_in_ring_2d, ring_self_intersection, rings_cross,
 };
@@ -875,22 +875,35 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let n = plane.normal() * sign;
     let x = n.any_perpendicular().ok_or(OpError::DegenerateGeometry)?;
     let y = n.cross(x);
-    // The origin is the face **region's** area centroid, holes included in the
-    // subtraction. It was the mean of the outer loop's corners, which is not the same point on a
-    // reflex face and — worse — *moves when a vertex is added along a straight edge*, so the same
-    // shape could seat a boss in two different places. An area centroid is a property of the
-    // region, so it does not care how the boundary is subdivided.
-    let loop_pts = |lp: &Loop| -> Vec<Point3> {
-        lp.half_edges
-            .iter()
-            .map(|he| model.vertices.get(he_start(model, *he)).point)
-            .collect()
+    // ★ The origin is the **world origin projected onto the face's plane** — a property of the
+    // plane, not of the face.
+    //
+    // It used to be the face region's area centroid, chosen over the mean of the outer loop's
+    // corners because a centroid does not move when a vertex is added along a straight edge. Both
+    // are computed in `f64` from the face's own vertices, though, and `exact.rs` lifts the frame
+    // origin with `Rat::from_decimal` — so a rounded cache became the truth. Padding one footprint
+    // twice then placed the second profile an ulp from the first and left faces of area `2.2e-16`
+    // that `validate` did not report.
+    //
+    // The projection is `(−d / n·n)·n` from the plane's rational coefficients: one division, no
+    // f64 in the derivation, and invariant under negating or scaling those coefficients — so two
+    // faces of one plane cannot disagree about where `(0, 0)` is. Measured over the suite: for
+    // every `Constructed` surface the realized point lies on the f64 plane at distance exactly `0`
+    // (1121/1121), which the centroid did not always manage.
+    //
+    // Only `SurfaceDef::Constructed` coefficients are world truth. A `Moved` surface records its
+    // **pre-motion** frame, so projecting those gives a pre-motion point — measured `0.29` away
+    // from the world plane, not a rounding but a different place. Those keep the f64 projection,
+    // which is the same rule computed from the description that is available.
+    let origin = match (
+        model.surface_defs.get(&surface_h),
+        model.surface_coeffs.get(&surface_h),
+    ) {
+        (Some(SurfaceDef::Constructed), Some(&c)) => nacre_scalar::plane_origin_projection(c)
+            .map(|p| Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]))
+            .unwrap_or_else(|| plane.project(Point3::origin())),
+        _ => plane.project(Point3::origin()),
     };
-    let outer_pts = loop_pts(&f.outer);
-    let holes: Vec<Vec<Point3>> = f.inner.iter().map(&loop_pts).collect();
-    let hole_refs: Vec<&[Point3]> = holes.iter().map(|h| h.as_slice()).collect();
-    let (_, origin) = nacre_geom::planar_region_area_centroid(&outer_pts, &hole_refs)
-        .ok_or(OpError::DegenerateGeometry)?;
     Ok(FaceFrame {
         solid_h,
         surface_h,

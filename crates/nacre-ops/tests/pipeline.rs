@@ -194,14 +194,20 @@ fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)])
 }
 
-/// `PocketOnFace`'s profile lives in a frame **derived from the face** (design §6),
-/// centred on it — not in world coordinates. `±0.2` here is the `[0.3,0.7]²` void.
-fn centred_square(half: f64) -> Profile2d {
+/// `PocketOnFace`'s profile lives in a frame **derived from the face** (design §6), not in world
+/// coordinates — and that frame is **not centred on the face**.
+///
+/// A face's sketch origin is the world origin projected onto its plane, so the unit cube's lid has
+/// `(0, 0)` at world `(0, 0, 1)`; its axes are `u = −ŷ`, `v = +x̂`, making a frame point `(a, b)`
+/// world `(b, −a, 1)`. The lid's centre is therefore the frame point `(−0.5, 0.5)`, and
+/// `half = 0.2` here is still the `[0.3,0.7]²` void.
+fn centred_on_the_cube_lid(half: f64) -> Profile2d {
+    let (cx, cy) = (-0.5, 0.5);
     Profile2d::polygon(vec![
-        p2(-half, -half),
-        p2(half, -half),
-        p2(half, half),
-        p2(-half, half),
+        p2(cx - half, cy - half),
+        p2(cx + half, cy - half),
+        p2(cx + half, cy + half),
+        p2(cx - half, cy + half),
     ])
 }
 
@@ -259,7 +265,7 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
         &mut m,
         &Operation::PocketOnFace {
             face: top,
-            profile: centred_square(0.2),
+            profile: centred_on_the_cube_lid(0.2),
             dist: 0.5,
         },
     )
@@ -1194,13 +1200,24 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
             .max_by(|&&a, &&b| up(a).centroid[2].total_cmp(&up(b).centroid[2]))
             .expect("an upward face")
     }
+    /// A 4×4 boss on the 10×10 lid — **in the lid's own frame**, whose origin is the world origin
+    /// projected onto the plane and whose axes are `u = −ŷ`, `v = +x̂`. A frame point `(a, b)` is
+    /// world `(b, −a, z)`, so this ring is world `[3, 7]²`.
+    fn boss() -> Profile2d {
+        Profile2d::polygon(vec![
+            p2(-7.0, 3.0),
+            p2(-3.0, 3.0),
+            p2(-3.0, 7.0),
+            p2(-7.0, 7.0),
+        ])
+    }
     fn pad(m: &mut Model, s: Handle<Solid>, dist: f64) -> Handle<Solid> {
         let face = top_face(m, s);
         let OpOutput::PadOnFace { solid, .. } = nacre_ops::apply(
             m,
             &Operation::PadOnFace {
                 face,
-                profile: square(4.0),
+                profile: boss(),
                 dist,
             },
         )

@@ -2424,12 +2424,19 @@ pub mod tests {
         (m, top)
     }
 
+    /// The `0.4` square that lands on `[0.3, 0.7]²` of the unit cube's lid — **in that lid's own
+    /// frame**, which is not centred on the face.
+    ///
+    /// A face's sketch origin is the world origin projected onto its plane, so the lid's `(0, 0)`
+    /// is world `(0, 0, 1)`, and its axes are `u = −ŷ`, `v = +x̂` (`any_perpendicular` crosses the
+    /// least-aligned world axis into the normal). A frame point `(a, b)` is therefore world
+    /// `(b, −a, 1)`, which is what puts this ring at `[0.3, 0.7]²`.
     fn small_square() -> Profile2d {
         Profile2d::polygon(vec![
-            p2(-0.2, -0.2),
-            p2(0.2, -0.2),
-            p2(0.2, 0.2),
-            p2(-0.2, 0.2),
+            p2(-0.7, 0.3),
+            p2(-0.3, 0.3),
+            p2(-0.3, 0.7),
+            p2(-0.7, 0.7),
         ])
     }
 
@@ -5269,5 +5276,156 @@ pub mod tests {
         );
         // A plain box with one rib on top: 6 + 5 walls/cap, no leftovers from the seam.
         assert_eq!(m.shells.get(shell).faces.len(), 11);
+    }
+    /// ★★★★★ **The target: two ways of reaching one height land on one plane, far from the
+    /// origin.**
+    ///
+    /// The frame's origin is where the drift used to enter — `face_frame` took it from the face's
+    /// area centroid, computed in f64 from the face's own vertices, and `exact.rs` lifted that as
+    /// truth. Padding the same footprint `1.1` then `6.6` put the second profile an ulp from the
+    /// first and left faces of area `2.2e-16`.
+    ///
+    /// Placed **far from the world origin**, because that is where the projected origin is least
+    /// like the old centroid — if anything about the new rule were fragile with distance, a
+    /// hundred units of it would show here.
+    #[test]
+    fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        // The lid's frame: origin (0, 0, z), u = −ŷ, v = +x̂ — so this ring is world
+        // x ∈ [99, 101], y ∈ [99.4, 100.6].
+        let rect = || {
+            Profile2d::polygon(vec![
+                p(-100.6, 99.0),
+                p(-99.4, 99.0),
+                p(-99.4, 101.0),
+                p(-100.6, 101.0),
+            ])
+        };
+        let top = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
+            let shell = m.solids.get(s).outer;
+            *m.shells
+                .get(shell)
+                .faces
+                .iter()
+                .max_by(|&&a, &&b| {
+                    let h = |f: Handle<Face>| {
+                        crate::ops::face_plane(m, f)
+                            .ok()
+                            .filter(|sp| sp.normal().as_array()[2] > 0.5)
+                            .map(|sp| sp.origin.as_array()[2])
+                            .unwrap_or(f64::NEG_INFINITY)
+                    };
+                    h(a).partial_cmp(&h(b)).unwrap()
+                })
+                .expect("a face")
+        };
+        let build = |dists: &[f64]| -> (Model, Handle<Solid>) {
+            let mut m = Model::new();
+            let mut solid = m.add_cuboid(
+                Point3::from_array([98.0, 98.0, 0.0]),
+                Point3::from_array([102.0, 102.0, 1.0]),
+            );
+            m.rebuild_adjacency();
+            for &dist in dists {
+                let face = top(&m, solid);
+                let OpOutput::PadOnFace { solid: out, .. } = apply(
+                    &mut m,
+                    &Operation::PadOnFace {
+                        face,
+                        profile: rect(),
+                        dist,
+                    },
+                )
+                .expect("pad") else {
+                    unreachable!()
+                };
+                m.rebuild_adjacency();
+                solid = out;
+            }
+            (m, solid)
+        };
+        let (m1, one) = build(&[7.7]);
+        let (m2, two) = build(&[1.1, 6.6]);
+        // The two boss tops are the same plane, to the bit.
+        let z = |m: &Model, s| {
+            crate::ops::face_plane(m, top(m, s))
+                .unwrap()
+                .origin
+                .as_array()[2]
+        };
+        assert_eq!(
+            z(&m1, one),
+            z(&m2, two),
+            "7.7 and 1.1+6.6 disagree on the cap plane"
+        );
+        // And the two-step route left nothing degenerate behind.
+        let shell = m2.solids.get(two).outer;
+        let degenerate: Vec<_> = m2
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .filter_map(|&f| {
+                let area = nacre_props::face_props(&m2, f).ok()?.area;
+                (area < 1e-9).then_some((f, area))
+            })
+            .collect();
+        assert!(
+            degenerate.is_empty(),
+            "zero-area faces survived: {degenerate:?}"
+        );
+        assert_eq!(
+            m1.shells.get(m1.solids.get(one).outer).faces.len(),
+            m2.shells.get(shell).faces.len(),
+            "the two routes did not build the same solid"
+        );
+    }
+
+    /// ★★★ **One plane, one origin** — even when two faces of it were made by different operations.
+    ///
+    /// This is what the area centroid could not promise: it was a property of the *face*, so a
+    /// boolean that reshaped one face moved its sketch origin away from its coplanar neighbour's.
+    /// The projection is a property of the plane, and surfaces are interned, so the two cannot
+    /// disagree. Only the origin is asserted — the axes follow the face's `Orientation`, which is
+    /// today's behaviour and a separate question.
+    #[test]
+    fn two_faces_of_one_plane_share_a_sketch_origin() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 1.0]),
+        );
+        // A notch out of one end: the lid `z = 1` becomes two faces of the same plane.
+        let cutter = m.add_cuboid(
+            Point3::from_array([0.8, -1.0, 0.5]),
+            Point3::from_array([1.2, 3.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let r = boolean_one(&mut m, BoolKind::Cut, a, cutter).expect("cut");
+        m.rebuild_adjacency();
+        let lids: Vec<_> = m
+            .shells
+            .get(m.solids.get(r).outer)
+            .faces
+            .iter()
+            .filter(|&&f| {
+                crate::ops::face_plane(&m, f).is_ok_and(|sp| {
+                    sp.normal().as_array()[2] > 0.5 && sp.origin.as_array()[2] == 1.0
+                })
+            })
+            .copied()
+            .collect();
+        assert_eq!(lids.len(), 2, "the notch should leave two lid faces");
+        let o = |f| crate::ops::face_plane(&m, f).unwrap().origin.as_array();
+        assert_eq!(
+            o(lids[0]),
+            o(lids[1]),
+            "coplanar faces disagree on the origin"
+        );
+        assert_eq!(
+            o(lids[0]),
+            [0.0, 0.0, 1.0],
+            "the lid's origin is the world origin projected"
+        );
     }
 }

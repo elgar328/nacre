@@ -699,9 +699,16 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
     let (mut m, top) = cube_with_top();
     let plane = nacre_ops::face_plane(&m, top).unwrap();
 
-    // A square from (0.1, 0.2) to (0.3, 0.4) in face coordinates — asymmetric in
-    // both axes, so any origin or axis mismatch moves its centre.
-    let profile = Profile2d::polygon(vec![p2(0.1, 0.2), p2(0.3, 0.2), p2(0.3, 0.4), p2(0.1, 0.4)]);
+    // A square from (−0.4, 0.7) to (−0.2, 0.9) in face coordinates — asymmetric in both axes, so
+    // any origin or axis mismatch moves its centre. The lid's frame is not centred on the face
+    // (its origin is the world origin projected onto `z = 1`), which is why these are not the
+    // small numbers around zero one might expect; they put the boss inside the cube.
+    let profile = Profile2d::polygon(vec![
+        p2(-0.4, 0.7),
+        p2(-0.2, 0.7),
+        p2(-0.2, 0.9),
+        p2(-0.4, 0.9),
+    ]);
     let dist = 0.5;
     let OpOutput::PadOnFace { top_face, .. } = apply(&mut m, &pad_op(top, profile, dist)).unwrap()
     else {
@@ -711,7 +718,7 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
 
     // Where the caller predicts the boss's cap centre is, from `face_plane` alone.
     let n = plane.x_axis.cross(plane.y_axis);
-    let want = plane.origin + plane.x_axis * 0.2 + plane.y_axis * 0.3 + n * dist;
+    let want = plane.origin + plane.x_axis * -0.3 + plane.y_axis * 0.8 + n * dist;
 
     let got = nacre_props::face_props(&m, top_face).unwrap().centroid;
     assert!(
@@ -764,17 +771,25 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
     assert!((plane.x_axis.cross(plane.y_axis) - diag).norm() < 1e-12);
 }
 
-/// **Why the sketch origin is an area centroid and not a mean of the corners.**
+/// **Why the sketch origin does not come from the face at all.**
 ///
-/// The two rules agree on a rectangle, which is why every other fixture here is
-/// blind to the difference — the whole suite stayed green when the rule changed.
-/// They part on a reflex outline, and they part *catastrophically* on the case
-/// that matters: adding a vertex along a straight edge leaves the face's shape
-/// untouched but drags a vertex mean sideways, so the same face would seat a boss
-/// somewhere else. An area centroid is a property of the region and does not move.
+/// It used to be the face region's area centroid, itself chosen over a mean of the outer loop's
+/// corners because a mean drags sideways when a vertex is added along a straight edge — the same
+/// face would then seat a boss somewhere else. A centroid does not move under subdivision, so that
+/// much was fixed.
+///
+/// ★ Both rules read the face's `f64` vertices, though, and `exact.rs` lifts the frame origin with
+/// `Rat::from_decimal` — so a rounded cache became the truth, and padding one footprint twice left
+/// faces of area `2.2e-16`. The origin is now the **world origin projected onto the plane**, which
+/// does not read the face at all.
+///
+/// That is strictly stronger, and this test says so: subdividing an edge cannot move it, and
+/// neither can replacing the outline with a different shape on the same plane. The old rule fails
+/// the second of those, and a corner mean fails both.
 #[test]
-fn the_sketch_origin_does_not_depend_on_how_the_outline_is_subdivided() {
-    // An L, and the same L with two extra points along its bottom edge.
+fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
+    // An L, the same L with two extra points along its bottom edge, and a wholly different
+    // outline — all extruded to a cap on the plane `z = 1`.
     let l = vec![
         p2(0.0, 0.0),
         p2(4.0, 0.0),
@@ -793,6 +808,7 @@ fn the_sketch_origin_does_not_depend_on_how_the_outline_is_subdivided() {
         p2(2.0, 4.0),
         p2(0.0, 4.0),
     ];
+    let elsewhere = vec![p2(7.0, 7.0), p2(9.0, 7.0), p2(9.0, 9.5), p2(7.0, 9.5)];
 
     let top_origin = |pts: Vec<Point2>| {
         let mut m = Model::new();
@@ -806,35 +822,44 @@ fn the_sketch_origin_does_not_depend_on_how_the_outline_is_subdivided() {
     };
 
     let a = top_origin(l.clone());
-    let b = top_origin(subdivided.clone());
-    assert!(
-        (a - b).norm() < 1e-12,
-        "subdividing an edge moved the sketch origin: {a:?} vs {b:?}"
-    );
+    for (other, what) in [
+        (subdivided, "subdividing an edge"),
+        (elsewhere, "a different outline"),
+    ] {
+        assert_eq!(
+            a.as_array(),
+            top_origin(other).as_array(),
+            "{what} moved the sketch origin"
+        );
+    }
+    // It is the world origin projected onto the cap's plane — exactly, not nearly.
+    assert_eq!(a.as_array(), [0.0, 0.0, 1.0], "{a:?}");
 
-    // It is the region's centroid: area 12, centroid (5/3, 5/3) at the cap's height.
-    assert!(
-        (a[0] - 5.0 / 3.0).abs() < 1e-12 && (a[1] - 5.0 / 3.0).abs() < 1e-12,
-        "{a:?}"
-    );
-
-    // And the rule this replaced would have failed both assertions — the corner
-    // mean sits at (2, 2) on the plain L and moves to (1.75, 1.5) once subdivided.
+    // Both retired rules read the outline, so both would have failed above: the area centroid of
+    // the L is (5/3, 5/3) and of the far rectangle (8, 8.25); the corner mean sits at (2, 2) on
+    // the plain L and moves to (1.75, 1.5) once subdivided.
     let mean = |pts: &[Point2]| {
         let (sx, sy) = pts
             .iter()
             .fold((0.0, 0.0), |(x, y), p| (x + p[0], y + p[1]));
         [sx / pts.len() as f64, sy / pts.len() as f64]
     };
-    let (ma, mb) = (mean(&l), mean(&subdivided));
+    let (ma, mb) = (
+        mean(&l),
+        mean(&[
+            p2(0.0, 0.0),
+            p2(1.0, 0.0),
+            p2(3.0, 0.0),
+            p2(4.0, 0.0),
+            p2(4.0, 2.0),
+            p2(2.0, 2.0),
+            p2(2.0, 4.0),
+            p2(0.0, 4.0),
+        ]),
+    );
     let moved = ((ma[0] - mb[0]).powi(2) + (ma[1] - mb[1]).powi(2)).sqrt();
     assert!(
         moved > 0.2,
-        "the old rule must visibly move: {ma:?} vs {mb:?}"
-    );
-    let apart = ((ma[0] - a[0]).powi(2) + (ma[1] - a[1]).powi(2)).sqrt();
-    assert!(
-        apart > 0.3,
-        "the two rules must differ on an L: {ma:?} vs {a:?}"
+        "the corner-mean rule must visibly move: {ma:?} vs {mb:?}"
     );
 }

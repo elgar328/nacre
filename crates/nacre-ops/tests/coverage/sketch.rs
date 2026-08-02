@@ -233,15 +233,19 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
         .expect("top face");
 
     // An annular pocket: a square trench with an untouched island in the middle.
-    let sq = |a: f64, b: f64| {
+    //
+    // `sq` takes the square's **world** bounds and writes it in the lid's own frame, which is not
+    // centred on the face: the sketch origin is the world origin projected onto `z = 4` and the
+    // axes are `u = −ŷ`, `v = +x̂`, so a frame point `(a, b)` is world `(b, −a, 4)`.
+    let sq = |lo: f64, hi: f64| {
         vec![
-            Point2::from_array([a, a]),
-            Point2::from_array([b, a]),
-            Point2::from_array([b, b]),
-            Point2::from_array([a, b]),
+            Point2::from_array([-hi, lo]),
+            Point2::from_array([-lo, lo]),
+            Point2::from_array([-lo, hi]),
+            Point2::from_array([-hi, hi]),
         ]
     };
-    let profile = Profile2d::with_holes(sq(-4.0, 4.0), vec![sq(-2.0, 2.0)]);
+    let profile = Profile2d::with_holes(sq(1.0, 9.0), vec![sq(3.0, 7.0)]);
     let OpOutput::PocketOnFace { solid, .. } = apply(
         &mut m,
         &Operation::PocketOnFace {
