@@ -2806,6 +2806,71 @@ mod tests {
         assert_eq!(p.coord, [3.0, -7.0, 2.0]);
     }
 
+    /// ★★★★ **The prize: two points sketched in one frame are judged *exactly*.**
+    ///
+    /// `shared_base` cancels a motion every input carries and hands the exact predicate the
+    /// pre-motion coordinates. A frame is a rigid motion like any other, so a whole sketch on one
+    /// tilted face cancels down to its own rational `(u, v, w)` — and this asks for the answer only
+    /// an exact route can give: a **proved zero**. The f64 filter can prove a sign is nonzero; it
+    /// can never prove a determinant *is* zero, so `Some(Orient::Zero)` here is the cancellation
+    /// firing and nothing else.
+    ///
+    /// ★★ **`shared_base` needed no change for this**, and that is worth pinning rather than
+    /// leaving to luck: it was written against a *property* (all chains structurally equal, and
+    /// the motion preserves the determinant) rather than against a list of variants, so a new
+    /// proper motion joined it for free. A test is what tells "it is right" from "it happens to
+    /// be right".
+    #[test]
+    fn four_points_sharing_one_frame_are_judged_exactly() {
+        let (origin, u_raw, n) = frame_of([2, -3, 7, 11]);
+        let at = |u: i128, v: i128, w: i128| {
+            Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)])
+                .frame(origin, u_raw, n)
+                .unwrap()
+        };
+        // Four points on the sketch plane itself (`w = 0`) — exactly coplanar, by construction.
+        let (a, b, c, d) = (at(0, 0, 0), at(1, 0, 0), at(0, 1, 0), at(2, 3, 0));
+        assert_eq!(
+            orient3d_filter(&a, &b, &c, &d),
+            Some(Orient::Zero),
+            "a proved zero needs the exact route; the f64 filter cannot reach one"
+        );
+        // And a point off the plane still gets a sign, so the shortcut is not answering `Zero`
+        // to everything.
+        let e = at(2, 3, 1);
+        assert!(matches!(
+            orient3d_filter(&a, &b, &c, &e),
+            Some(Orient::Positive | Orient::Negative)
+        ));
+    }
+
+    /// ★★ **A frame is proper, so it must not touch the mirror parity** — the design says so
+    /// (`v̂ = ŵ × û` makes the basis right-handed) and `chain_parity` counts only reflections, so
+    /// this holds today by not being written. Pinned because the consequence of it changing is a
+    /// determinant handed back with the wrong sign, which is a confident wrong answer rather than
+    /// a slow one.
+    #[test]
+    fn a_frame_does_not_flip_the_chain_parity() {
+        let (origin, u_raw, n) = frame_of([3, 4, 0, -10]);
+        let framed = Pt3::at([ri(1, 1), ri(2, 1), ri(3, 1)])
+            .frame(origin, u_raw, n)
+            .unwrap();
+        assert_eq!(chain_parity(&framed.chain), 1);
+        let mirrored = framed.clone().mirror(Axis::X, Rat::from_int(0));
+        assert_eq!(
+            chain_parity(&mirrored.chain),
+            -1,
+            "the reflection still counts"
+        );
+        let (o2, u2, n2) = frame_of([1, 1, 1, -3]);
+        let twice = mirrored.frame(o2, u2, n2).unwrap();
+        assert_eq!(
+            chain_parity(&twice.chain),
+            -1,
+            "a second frame leaves the odd reflection odd"
+        );
+    }
+
     #[test]
     fn quadrantal_origin_chain_is_tol_zero() {
         let p = Pt3::at([ri(3, 1), ri(5, 1), ri(7, 1)])
