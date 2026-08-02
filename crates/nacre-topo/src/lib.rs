@@ -79,9 +79,22 @@ pub enum Motion {
     /// is already the key. Widening to a user-named frame later means adding the fields back and
     /// treating today's as the specialization.
     ///
+    /// ★★★ **`flip` is what makes the node a whole frame and not half of one.** Canonical plane
+    /// coefficients carry **no direction** — the first nonzero component is forced positive,
+    /// because their question is *"are these the same plane"*. A frame's `ŵ` is a direction, and
+    /// two faces of one plane can face opposite ways; `flip` says to negate the coefficients, so
+    /// the node names the sense as well as the plane. Without it a sketch on a reversed face comes
+    /// out mirrored in `u` with its sweep running inward (measured: a tilted second boss came back
+    /// `PadMissesFace`).
+    ///
+    /// It costs nothing that mattered: the frame is still a pure function of what the node holds,
+    /// so it is still reconstructible from the handle, and two sketches on **one face** still
+    /// intern to one node — which is the sharing the design needs.
+    ///
     /// ★ **Proper** (`det = +1`) — `(u, v, w)` is right-handed by construction (`v = w × u`), so
-    /// unlike [`Mirror`](Self::Mirror) it contributes nothing to a chain's parity.
-    Frame { plane: Handle<Surface> },
+    /// unlike [`Mirror`](Self::Mirror) it contributes nothing to a chain's parity. Negating the
+    /// coefficients flips `ŵ` and `û` together and leaves `v̂`, which is a half-turn: still proper.
+    Frame { plane: Handle<Surface>, flip: bool },
 }
 
 /// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a

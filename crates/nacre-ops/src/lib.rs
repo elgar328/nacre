@@ -5895,6 +5895,133 @@ pub mod tests {
 
     /// A `2·half` square centred on `face`, in that face's own sketch frame. The frame is a
     /// function of the plane, so reading it once is enough even if the face is reshaped later.
+    /// ★★★★★ **The payoff, and its limit — both measured.**
+    ///
+    /// Two bosses of the same height on one tilted face used to be two plane records that agreed
+    /// only if their f64 coefficients happened to. Written in the plane's own frame they are both
+    /// `w = 7.7`, and `SurfaceKey` is `(coefficients, motion)` — so they are **one
+    /// `Handle<Surface>` at construction**, before anything is compared. And every face of the
+    /// result states itself exactly, where before a tilted sketch recorded nothing at all.
+    ///
+    /// ★★★ **What this does *not* buy, stated plainly**: `7.7` against `1.1 + 6.6` — the target
+    /// the plan named. Stacking sketches the second boss on the **first boss's cap**, which is a
+    /// different plane and therefore a different frame, so the two caps come out `w = 7.7` and
+    /// `w = 6.6` — two exact descriptions of one plane that `SurfaceKey` cannot equate. That is
+    /// not a regression (before this they had no descriptions at all, and the merge still happens
+    /// through the judge), but the plan's headline claim only holds for sketches sharing a frame,
+    /// which is what this pins instead.
+    #[test]
+    fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        let mut m = Model::new();
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d::polygon(vec![
+                    p(0.0, 0.0),
+                    p(4.0, 0.0),
+                    p(4.0, 4.0),
+                    p(0.0, 4.0),
+                ]),
+                dist: 3.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let mut s = solid;
+        for (axis, deg) in [(Axis::Y, 53i128), (Axis::Z, 17)] {
+            let OpOutput::Transform { solid } = apply(
+                &mut m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: Isometry::rotation(Rotation {
+                        axis,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+                    }),
+                },
+            )
+            .unwrap() else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            s = solid;
+        }
+        let (sy, cy) = (53f64).to_radians().sin_cos();
+        let (sz, cz) = (17f64).to_radians().sin_cos();
+        let up = Vector3::from_array([cz * sy, sz * sy, cy]);
+        let facing = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
+            *m.shells
+                .get(m.solids.get(s).outer)
+                .faces
+                .iter()
+                .filter(|&&f| {
+                    crate::ops::face_plane(m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99)
+                })
+                .min_by(|&&a, &&b| {
+                    let h = |f: Handle<Face>| {
+                        (nacre_props::face_props(m, f).unwrap().centroid - Point3::origin()).dot(up)
+                    };
+                    h(a).partial_cmp(&h(b)).unwrap()
+                })
+                .unwrap()
+        };
+        let mut caps = Vec::new();
+        for (lo, hi) in [(-1.0f64, -0.4f64), (0.4, 1.0)] {
+            let f = facing(&m, s);
+            let sp = crate::ops::face_plane(&m, f).unwrap();
+            let d = nacre_props::face_props(&m, f).unwrap().centroid - sp.origin;
+            let (cu, cv) = (d.dot(sp.x_axis), d.dot(sp.y_axis));
+            let profile = Profile2d::polygon(vec![
+                p(cu + lo, cv - 0.5),
+                p(cu + hi, cv - 0.5),
+                p(cu + hi, cv + 0.5),
+                p(cu + lo, cv + 0.5),
+            ]);
+            let OpOutput::PadOnFace { solid, top_face } = apply(
+                &mut m,
+                &Operation::PadOnFace {
+                    face: f,
+                    profile,
+                    dist: 7.7,
+                },
+            )
+            .expect("boss") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            s = solid;
+            let su = m.faces.get(top_face).surface;
+            assert_eq!(
+                m.surface_coeffs.get(&su).map(|c| c.map(|r| r.to_f64())),
+                Some([0.0, 0.0, 10.0, -77.0]),
+                "★ a cap raised in a frame records `w = 7.7` there, exactly"
+            );
+            caps.push(su);
+        }
+        assert_eq!(caps[0], caps[1], "one plane, one handle, by name");
+        // Rule audit: how many of the result's face surfaces state themselves exactly.
+        let sh = m.solids.get(s).outer;
+        let (mut with, mut without) = (0, 0);
+        for &f in &m.shells.get(sh).faces {
+            let su = m.faces.get(f).surface;
+            if m.surface_coeffs.contains_key(&su) {
+                with += 1
+            } else {
+                without += 1
+            }
+        }
+        assert_eq!(
+            (with, without),
+            (16, 0),
+            "★ every face of a twice-turned, twice-bossed result states itself exactly"
+        );
+    }
+
     fn centred_on(m: &Model, face: Handle<Face>, half: f64) -> Profile2d {
         let sp = crate::ops::face_plane(m, face).expect("planar");
         let d = nacre_props::face_props(m, face).unwrap().centroid - sp.origin;

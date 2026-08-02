@@ -26,6 +26,8 @@
 use crate::ops::{Profile2d, SketchPlane};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::Rat;
+use nacre_store::Handle;
+use nacre_topo::{Model, MotionNode};
 
 /// A sketch frame whose origin and axes are exact rationals, with the axes proved
 /// orthonormal. Only [`SketchPlane::exact`] constructs one, so the proof cannot be
@@ -95,6 +97,26 @@ impl SketchPlane {
 }
 
 impl RatFrame {
+    /// ★★★★ **The sketch frame of a plane, read in that plane's own frame — where it is the
+    /// identity.**
+    ///
+    /// This is what makes a sketch on a *tilted* face exact. In world coordinates that face's
+    /// axes are irrational and [`SketchPlane::exact`] declines; inside the frame the very same
+    /// axes are `x̂` and `ŷ`, the origin is the origin, and orthonormality is not something to
+    /// check but something to read off. The prism is then built by the arithmetic that was
+    /// already here, on rationals that were already exact — the user's own profile decimals.
+    ///
+    /// What carries it back out to the world is the motion, not this frame: see
+    /// [`nacre_topo::Motion::Frame`].
+    pub(crate) fn identity() -> Self {
+        let (one, zero) = (Rat::from_int(1), Rat::from_int(0));
+        RatFrame {
+            origin: [zero; 3],
+            x: [one, zero, zero],
+            y: [zero, one, zero],
+        }
+    }
+
     /// The unit normal `x × y`, exactly.
     pub(crate) fn normal(&self) -> Option<[Rat; 3]> {
         cross(&self.x, &self.y)
@@ -161,6 +183,12 @@ pub(crate) struct SweptRat {
     /// The frame's exact unit normal. The caps face `∓` this **regardless of the sweep's sign**,
     /// which is why it is carried rather than recovered from `top − base`.
     pub normal: [Rat; 3],
+    /// ★★★ **Which frame the rationals above are written in.** `None` is the world, which is
+    /// every case that existed before tilted faces became exact. `Some` says they are the
+    /// coordinates of a plane's own frame, and that this motion is what carries them out — so
+    /// every plane derived from them states itself *in that frame* and every vertex is
+    /// `Origin::Moved` against it.
+    pub motion: Option<Handle<MotionNode>>,
 }
 
 impl Swept {
@@ -188,6 +216,32 @@ impl Swept {
 }
 
 impl SweptRat {
+    /// ★★★ **How a plane built here states its provenance.**
+    ///
+    /// In the world frame it is `Constructed`: the coefficients are world coefficients and the
+    /// face's own f64 triangle is the truth. Inside a plane's frame neither is so — the
+    /// coefficients are the frame's, and saying `Constructed` would let the judgment read them as
+    /// world coefficients, which is the *silent* half of getting this wrong. `Moved` names the
+    /// motion that carries them out, and the witness is the same triangle **in frame
+    /// coordinates**, which is where the replay starts.
+    pub(crate) fn surface_def(&self, witness: [Point3; 3]) -> nacre_topo::SurfaceDef {
+        match self.motion {
+            None => nacre_topo::SurfaceDef::Constructed,
+            Some(motion) => nacre_topo::SurfaceDef::Moved { witness, motion },
+        }
+    }
+
+    /// The frame-coordinate f64 image of a base ring point — the witness's own frame, and the
+    /// coordinate a vertex built here is defined against.
+    pub(crate) fn base_f64(&self, i: usize) -> Point3 {
+        realize(&self.base[i..=i])[0]
+    }
+
+    /// The same for a top ring point.
+    pub(crate) fn top_f64(&self, i: usize) -> Point3 {
+        realize(&self.top[i..=i])[0]
+    }
+
     /// The base cap (`−normal`) and the top cap (`+normal`).
     pub(crate) fn cap_planes(&self) -> Option<([Rat; 4], [Rat; 4])> {
         let zero = Rat::from_int(0);
@@ -213,24 +267,74 @@ impl SweptRat {
 /// Every ring of a prism — placed on the plane and swept along it — computed in exact
 /// rationals and realized once, at the end. Returns the outer ring and then the holes.
 ///
+/// **Two frames can serve, and `frame` picks which.** `None` means the world: the sketch plane
+/// has to lift to exact orthonormal rationals itself, which an axis-aligned face does and a
+/// tilted one does not. `Some(motion)` means the plane's **own** frame, where the sketch frame is
+/// the identity ([`RatFrame::identity`]) and the rationals below are its `(u, v, w)` — the same
+/// arithmetic, on numbers that are exact by construction rather than by luck.
+///
 /// `None` when there is no exact form to compute in: a frame that is not exactly
 /// orthonormal, a dimension outside the decimal window, or i128 overflow. All three
 /// mean the same thing to the caller, which is to keep its f64 path.
 pub(crate) fn prism_rings(
+    model: &Model,
     plane: &SketchPlane,
     profile: &Profile2d,
     dist: f64,
+    frame: Option<Handle<MotionNode>>,
 ) -> Option<(Swept, Vec<Swept>)> {
-    let f = plane.exact()?;
+    let f = match frame {
+        Some(_) => RatFrame::identity(),
+        None => plane.exact()?,
+    };
     let sweep = f.sweep(dist)?;
     let normal = f.normal()?;
+    // ★★★ **The realization must be the *definition's* own replay, not a second route to the
+    // same real number.** A vertex written here is `Origin::Moved` against `frame`, and a judge
+    // reads that definition back through `replay`; if this rounded the coordinates some other
+    // way the two would sit an ulp apart and the invariant that lets a coordinate be checked
+    // against its definition would be false. In the world frame there is no motion and `to_f64`
+    // *is* the replay, which is why that branch is the one that was always here.
+    let chain = match frame {
+        Some(leaf) => Some(crate::rotated_vertex::motion_chain(model, leaf)?),
+        None => None,
+    };
+    let out = |pts: &[[Rat; 3]]| -> Option<Vec<Point3>> {
+        match &chain {
+            None => Some(realize(pts)),
+            Some(c) => realize(pts)
+                .iter()
+                .map(|f| {
+                    // ★★★★ **Realize to the frame's f64 first, and define against *that*.**
+                    // The rationals here came from the user's written decimals, and `1/10` does
+                    // not round-trip through f64 — so a definition holding `1/10` and a
+                    // coordinate holding `0.1` would replay to different bits, and the invariant
+                    // that lets a coordinate be checked against its definition would be false.
+                    // The vertex's base is the f64 the frame coordinate realizes to, exactly as
+                    // the world path already keeps only the realized f64 in `Origin::Constructed`.
+                    //
+                    // ★ Nothing is lost where it matters: the *plane coefficients* are still
+                    // computed from the decimal rationals above, so `7.7` and `1.1 + 6.6` name
+                    // one plane however their vertices round.
+                    let b = crate::rotated_vertex::coord_rat(f.as_array()).ok()?;
+                    let q = crate::rotated_vertex::replay(nacre_cip::Pt3::at(b), c)?;
+                    Some(Point3::from_array(q.coord))
+                })
+                .collect(),
+        }
+    };
     let ring = |r: &[Point2]| -> Option<Swept> {
         let base = f.ring(r)?;
         let top = swept(&base, &sweep)?;
         Some(Swept {
-            base: realize(&base),
-            top: realize(&top),
-            exact: Some(SweptRat { base, top, normal }),
+            base: out(&base)?,
+            top: out(&top)?,
+            exact: Some(SweptRat {
+                base,
+                top,
+                normal,
+                motion: frame,
+            }),
         })
     };
     let outer = ring(profile.outer())?;

@@ -55,7 +55,7 @@ pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
         MoveNode::Rotate { axis, angle, point } => Some(q.rotate_about(axis, angle, point)),
         MoveNode::Translate { offset } => Some(q.translate(offset)),
         MoveNode::Mirror { axis, offset } => Some(q.mirror(axis, offset)),
-        MoveNode::Frame { origin, u_raw, n } => q.frame(origin, u_raw, n),
+        MoveNode::Frame { frame } => q.frame(frame),
     })
 }
 
@@ -83,34 +83,92 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
             }
             Motion::Translate { offset } => chain.push(MoveNode::Translate { offset }),
             Motion::Mirror { axis, offset } => chain.push(MoveNode::Mirror { axis, offset }),
-            Motion::Frame { plane } => {
-                let c = *model.surface_coeffs.get(&plane)?;
-                let (origin, u_raw, fn_) = nacre_scalar::plane_frame(c)?;
-                chain.push(MoveNode::Frame {
-                    origin,
-                    u_raw,
-                    n: fn_,
-                });
-                // The plane states itself in *its* frame, so whatever moved that plane has to run
-                // after this node. `Constructed` planes state themselves in the world and end the
-                // walk; `Inexact` ones have no exact definition to continue with.
-                match model.surface_defs.get(&plane) {
-                    Some(SurfaceDef::Moved { motion, .. }) => {
-                        // The parent link belongs to this node's own history; the plane's motion
-                        // is spliced in ahead of it.
-                        let mut rest = motion_chain(model, *motion)?;
-                        rest.reverse();
-                        chain.append(&mut rest);
-                    }
-                    Some(SurfaceDef::Constructed) => {}
-                    _ => return None,
-                }
+            Motion::Frame { plane, flip } => {
+                // Built root-to-leaf here and reversed at the end, so it goes on backwards.
+                let mut c = frame_chain(model, plane, flip)?;
+                c.reverse();
+                chain.append(&mut c);
             }
         }
         cur = n.parent;
     }
     chain.reverse();
     Some(chain)
+}
+
+/// **One plane's frame, as the motion nodes that carry it out to the world** — in reading order,
+/// root first.
+///
+/// ★★★ **The frame node and the plane's own motion are one chain, not two.** A plane states
+/// itself in *its* frame, so whatever moved that plane has to run after the frame — and the
+/// recursion ends at a `Constructed` plane, which states itself in the world.
+///
+/// The single spelling of that, so [`motion_chain`] and the sketch frame `nacre-ops` reports to a
+/// caller cannot describe different frames — which they must not, because `face_plane`'s contract
+/// is that it names the frame `PadOnFace` actually places a profile in.
+pub(crate) fn frame_chain(
+    model: &Model,
+    plane: Handle<nacre_geom::Surface>,
+    flip: bool,
+) -> Option<Vec<MoveNode>> {
+    // ★★★★ **Canonical coefficients carry no direction, and a frame needs one.**
+    // `canonical_plane_coeffs` forces the first nonzero component positive, because its question
+    // is *"are these the same plane"* — where direction is noise. A frame's `ŵ` **is** a
+    // direction, so the node carries the sense in `flip` and this is where it is spent.
+    let c = *model.surface_coeffs.get(&plane)?;
+    let zero = Rat::from_int(0);
+    let c = if flip {
+        let mut neg = [zero; 4];
+        for (k, x) in neg.iter_mut().enumerate() {
+            *x = zero.checked_sub(c[k])?;
+        }
+        neg
+    } else {
+        c
+    };
+    let mut chain = vec![MoveNode::Frame {
+        frame: nacre_scalar::plane_frame(c)?,
+    }];
+    match model.surface_defs.get(&plane) {
+        Some(SurfaceDef::Moved { motion, .. }) => chain.append(&mut motion_chain(model, *motion)?),
+        Some(SurfaceDef::Constructed) => {}
+        // `Inexact` has no exact definition to continue with, and an unrecorded surface has none
+        // at all — both are declines, not rejects.
+        _ => return None,
+    }
+    Some(chain)
+}
+
+/// A frame's origin and its three axes, realized in the world: `(origin, û, v̂, ŵ)`.
+pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
+
+/// **The world image of a frame's origin and axes** — what a caller sees as the sketch plane, and
+/// what the operation places its profile in. `(origin, û, v̂, ŵ)`.
+///
+/// ★★★★ **Realized, because the sign and the direction cannot be reasoned out from the
+/// coefficients.** They are canonical (no direction) *and* written in the plane's pre-motion
+/// frame, so a dot product against a world normal compares two different frames — the mistake
+/// that produced `PadMissesFace` on a twice-turned fixture, and one that reads as perfectly
+/// plausible right up until the plane has a motion. Replaying the axes and looking at where they
+/// land asks the question that is actually being asked.
+///
+/// The axes are differences of replayed points, so the origin and every translation cancel and
+/// only the linear part is left.
+pub(crate) fn frame_world_basis(
+    model: &Model,
+    plane: Handle<nacre_geom::Surface>,
+    flip: bool,
+) -> Option<WorldBasis> {
+    let chain = frame_chain(model, plane, flip)?;
+    let at = |p: [i128; 3]| -> Option<[f64; 3]> {
+        Some(replay(Pt3::at(p.map(Rat::from_int)), &chain)?.coord)
+    };
+    let o = at([0, 0, 0])?;
+    let axis = |p: [i128; 3]| -> Option<[f64; 3]> {
+        let q = at(p)?;
+        Some([q[0] - o[0], q[1] - o[1], q[2] - o[2]])
+    };
+    Some((o, axis([1, 0, 0])?, axis([0, 1, 0])?, axis([0, 0, 1])?))
 }
 
 pub(crate) fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], Pt3Error> {

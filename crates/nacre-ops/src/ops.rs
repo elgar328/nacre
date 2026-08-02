@@ -15,8 +15,8 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, SurfaceDef, Vertex,
-    VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Origin, Shell, Solid, SurfaceDef,
+    Vertex, VertexDef,
 };
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
@@ -435,7 +435,9 @@ pub(crate) fn extrude(
         return Err(OpError::NonPositiveDistance);
     }
     profile.check()?;
-    let (outer, holes) = swept_profile(plane, profile, dist);
+    // ★ No frame: a free-standing extrude has no face to take one from — the caller gave the
+    // plane directly, so the world is the only frame there is.
+    let (outer, holes) = swept_profile(model, plane, profile, dist, None);
     build_prism(model, outer, holes, plane.normal(), None)
 }
 
@@ -453,8 +455,14 @@ pub(crate) fn extrude(
 /// same way (the pocket case, where the sweep runs `−n` and flips the outer ring). A
 /// profile may also reach past the face boundary; an overhanging footprint routes to
 /// the overhang boolean sidecars, which reject honestly what they do not cover.
-fn swept_profile(plane: &SketchPlane, profile: &Profile2d, dist: f64) -> (Swept, Vec<Swept>) {
-    if let Some(rings) = crate::exact::prism_rings(plane, profile, dist) {
+fn swept_profile(
+    model: &Model,
+    plane: &SketchPlane,
+    profile: &Profile2d,
+    dist: f64,
+    frame: Option<Handle<MotionNode>>,
+) -> (Swept, Vec<Swept>) {
+    if let Some(rings) = crate::exact::prism_rings(model, plane, profile, dist, frame) {
         return rings;
     }
     let sweep = plane.normal() * dist;
@@ -550,12 +558,16 @@ pub(crate) fn build_prism(
         }
     };
     // Top cap: outward normal +N.
+    let top_def = match outer_pts.exact.as_ref() {
+        Some(e) if e.top.len() >= 3 => e.surface_def([e.top_f64(0), e.top_f64(1), e.top_f64(2)]),
+        _ => SurfaceDef::Constructed,
+    };
     let (top_surface, top_flipped) = model.push_surface_with_coeffs(
         Surface::Plane(
             Plane::from_point_normal(outer_pts.top[0], normal)
                 .ok_or(OpError::DegenerateGeometry)?,
         ),
-        SurfaceDef::Constructed,
+        top_def,
         outer_pts
             .exact
             .as_ref()
@@ -718,12 +730,18 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
     (0..n)
         .map(|i| {
             let j = (i + 1) % n;
+            // The witness is the same three points **in the frame the coefficients are written
+            // in** — the world's own points when there is no frame, so this is unchanged there.
+            let def = match ring.exact.as_ref() {
+                Some(e) => e.surface_def([e.base_f64(i), e.base_f64(j), e.top_f64(i)]),
+                None => SurfaceDef::Constructed,
+            };
             Ok(model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
-                SurfaceDef::Constructed,
+                def,
                 // Same three points, in rationals — so this wall and any other face of the same
                 // plane record one array. `None` here is the f64 path or an i128 overflow.
                 ring.exact.as_ref().and_then(|e| e.wall_plane(i)),
@@ -778,21 +796,48 @@ fn sweep_ring(
         (prev != here && prev != cap && here != cap)
             .then_some(VertexDef::ThreePlane([prev, here, cap]))
     };
-    let push_verts =
-        |model: &mut Model, ps: &[Point3], cap: Handle<Surface>| -> Vec<Handle<Vertex>> {
-            ps.iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    model.vertices.push(Vertex {
-                        point: *p,
-                        origin: Origin::Constructed,
-                        definition: define(i, cap),
-                    })
+    // ★★★★ **A vertex drawn in a frame is `Moved`, not `Constructed`.**
+    //
+    // `Constructed` means *"this f64 coordinate is the truth"*, which is exactly right in the
+    // world and exactly wrong here: the truth is a rational `(u, v, w)` in the plane's frame, and
+    // the world coordinate is what realizing it produced. Recording it as `Moved` against the
+    // frame is what lets a judge replay the definition and check the coordinate against it —
+    // and what lets `shared_base` cancel the whole sketch's frame and judge it *exactly*.
+    //
+    // The base vertex is the sketch point itself, at its frame coordinate. It belongs to no
+    // shell — the store is append-only and a vertex nothing references is simply a definition
+    // that outlives its use, which is what `Origin::Moved` needs one of.
+    let motion = ring.exact.as_ref().and_then(|e| e.motion);
+    let push_verts = |model: &mut Model,
+                      ps: &[Point3],
+                      frame_pt: &dyn Fn(usize) -> Option<Point3>,
+                      cap: Handle<Surface>|
+     -> Vec<Handle<Vertex>> {
+        ps.iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let origin = match (motion, frame_pt(i)) {
+                    (Some(m), Some(fp)) => {
+                        let base = model.vertices.push(Vertex {
+                            point: fp,
+                            origin: Origin::Constructed,
+                            definition: None,
+                        });
+                        Origin::Moved { base, motion: m }
+                    }
+                    _ => Origin::Constructed,
+                };
+                model.vertices.push(Vertex {
+                    point: *p,
+                    origin,
+                    definition: define(i, cap),
                 })
-                .collect()
-        };
-    let bv = push_verts(model, &base_pts, caps.0);
-    let tv = push_verts(model, &top_pts, caps.1);
+            })
+            .collect()
+    };
+    let ex = ring.exact.as_ref();
+    let bv = push_verts(model, &base_pts, &|i| ex.map(|e| e.base_f64(i)), caps.0);
+    let tv = push_verts(model, &top_pts, &|i| ex.map(|e| e.top_f64(i)), caps.1);
 
     let (mut be, mut te, mut ve) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
@@ -830,7 +875,11 @@ struct FaceFrame {
     n: Vector3, // outward normal
     x: Vector3,
     y: Vector3,
-    origin: Point3, // face centroid
+    origin: Point3,
+    /// ★ Set when this face's sketch lives in its plane's **own frame** rather than the world:
+    /// the plane to take the frame from, and which way round. `x`/`y`/`origin` above are then that
+    /// frame's, realized — so what a caller is told and what the operation builds are one thing.
+    sketch_frame: Option<(Handle<Surface>, bool)>,
 }
 
 /// **Which way is "right" and "up" on a face pointing `n`** — the `(u, v)` a sketch frame takes.
@@ -953,6 +1002,48 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
             .unwrap_or_else(|| plane.project(Point3::origin())),
         _ => plane.project(Point3::origin()),
     };
+    // ★★★★★ **When the operation will sketch in the plane's own frame, report *that* frame.**
+    //
+    // `face_plane`'s contract is that it names the frame `PadOnFace` places a profile in, and a
+    // tilted face is about to be sketched in its plane's frame rather than in world coordinates.
+    // Reporting the world axes here and using the frame's there would put a caller's profile a
+    // quarter turn from where it asked for it — measured, as a boss that missed its own face.
+    //
+    // ★★ **The gate is the same one the operation uses**, and it has to be the same expression,
+    // not the same intent: take the frame only when the world axes do not lift to exact
+    // orthonormal rationals. Axis-aligned faces therefore never go near it and are untouched.
+    //
+    // ★ **`flip` is measured, not derived** — see `frame_world_basis`. `flip = true` negates `ŵ`
+    // and `û` together and leaves `v̂`, so the second reading is a sign change rather than a
+    // second realization.
+    let world = SketchPlane {
+        origin,
+        x_axis: x,
+        y_axis: y,
+    };
+    let sketch = (world.exact().is_none())
+        .then(|| crate::rotated_vertex::frame_world_basis(model, surface_h, false))
+        .flatten()
+        .map(|(o, u, v, w)| {
+            // ★ `flip = true` negates `ŵ` and `û` together and leaves `v̂` — a half-turn about
+            // `v` — so the second reading is a sign change rather than a second realization.
+            let flip = (0..3).map(|k| w[k] * n.as_array()[k]).sum::<f64>() < 0.0;
+            let sgn = if flip { -1.0 } else { 1.0 };
+            (
+                flip,
+                Point3::from_array(o),
+                Vector3::from_array(u.map(|c| c * sgn)),
+                // ★★ **`v̂` as realized, not as `ŵ × û` recomputed here.** It has its own exact
+                // rational form (`plane_frame`), so realizing it costs one rounding where a cross
+                // product costs two that do not cancel — measured, a wall whose `v` is exactly
+                // `ẑ` came back three ulps short of `1.0` through the cross product.
+                Vector3::from_array(v),
+            )
+        });
+    let (x, y, origin, sketch_frame) = match sketch {
+        Some((flip, o, u, v)) => (u, v, o, Some((surface_h, flip))),
+        None => (x, y, origin, None),
+    };
     Ok(FaceFrame {
         solid_h,
         surface_h,
@@ -960,6 +1051,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
         x,
         y,
         origin,
+        sketch_frame,
     })
 }
 
@@ -1000,7 +1092,24 @@ fn extrude_and_boolean(
         x_axis: frame.x,
         y_axis: frame.y,
     };
-    let (outer, holes) = swept_profile(&plane, profile, signed);
+    // ★★★ **The frame is not decided here — `face_frame` already decided it**, and that is the
+    // point: `face_plane` promises a caller the frame this operation will use, so there must be
+    // exactly one place that picks it. All that is left is to name it as a motion node.
+    //
+    // ★★ **`push_motion` interns**, so two sketches on one face name the *same* node — which is
+    // what makes their surfaces intern too (`SurfaceKey` is `(coefficients, motion)`) and is the
+    // whole point of the exercise: two routes to one height become one `Handle<Surface>` at
+    // construction, with no f64 comparison anywhere.
+    let sketch_frame = frame.sketch_frame.map(|(plane_h, flip)| {
+        model.push_motion(
+            nacre_topo::Motion::Frame {
+                plane: plane_h,
+                flip,
+            },
+            None,
+        )
+    });
+    let (outer, holes) = swept_profile(model, &plane, profile, signed, sketch_frame);
     let (prism, prism_faces) = build_prism(
         model,
         outer,

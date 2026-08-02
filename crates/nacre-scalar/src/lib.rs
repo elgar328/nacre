@@ -581,7 +581,7 @@ pub fn plane_offset(coeffs: [Rat; 4], t: Rat) -> Option<[Rat; 4]> {
 /// `None` when the plane is degenerate, when the origin projection is not rational, or when the
 /// squared lengths the realization needs do not fit `i128` — all three are honest declines that
 /// leave a caller on the f64 path it was already on, never a reject.
-pub fn plane_frame(coeffs: [Rat; 4]) -> Option<([Rat; 3], [Rat; 3], [Rat; 3])> {
+pub fn plane_frame(coeffs: [Rat; 4]) -> Option<PlaneFrame> {
     let origin = plane_origin_projection(coeffs)?;
     let n = reduce_direction([coeffs[0], coeffs[1], coeffs[2]])?;
     let zero = Rat::from_int(0);
@@ -590,14 +590,49 @@ pub fn plane_frame(coeffs: [Rat; 4]) -> Option<([Rat; 3], [Rat; 3], [Rat; 3])> {
     } else {
         [zero.checked_sub(n[1])?, n[0], zero]
     };
-    // The realization divides by these two lengths; if they do not fit, the frame is not usable
-    // and saying so here is what keeps `Pt3::frame` from being handed one that cannot be built.
-    let fits = |a: &[Rat; 3]| {
-        (0..3)
-            .try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(a[k])?))
-            .is_some()
+    let dot =
+        |a: &[Rat; 3]| (0..3).try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(a[k])?));
+    let (uu, nn) = (dot(&u_raw)?, dot(&n)?);
+    // ★★★ **`v_raw` is exact, and taking it exactly is what makes the axes come out exactly.**
+    // Realizing `v̂` as `ŵ × û` in f64 costs two roundings that do not cancel: a plain wall whose
+    // `v` is exactly `ẑ` came out `0.999999999999999_7`, which is a frame that is not quite
+    // orthonormal and an exact path quietly lost. `n ⊥ u_raw` by construction, so
+    // `|v_raw|² = |n|²·|u_raw|²` — one inverse square root of an exact rational, and the same
+    // wall lands on `1.0`.
+    //
+    // ★ Its components are bounded by `|n|·|u_raw|`, so the one `checked_mul` below covers them:
+    // if the squared length fits, so does every component.
+    let vv = nn.checked_mul(uu)?;
+    let cx = |i: usize, j: usize| {
+        n[i].checked_mul(u_raw[j])?
+            .checked_sub(n[j].checked_mul(u_raw[i])?)
     };
-    (fits(&n) && fits(&u_raw)).then_some((origin, u_raw, n))
+    let v_raw = [cx(1, 2)?, cx(2, 0)?, cx(0, 1)?];
+    Some(PlaneFrame {
+        origin,
+        u_raw,
+        v_raw,
+        n,
+        uu,
+        vv,
+        nn,
+    })
+}
+
+/// A plane's own frame, exactly — what [`plane_frame`] derives.
+///
+/// The three `*_raw` vectors are rational and **not** unit length; `uu`/`vv`/`nn` are their
+/// squared lengths, carried because they are what the realization divides by and because
+/// computing them here is what proves the frame fits `i128` before anything tries to use it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PlaneFrame {
+    pub origin: [Rat; 3],
+    pub u_raw: [Rat; 3],
+    pub v_raw: [Rat; 3],
+    pub n: [Rat; 3],
+    pub uu: Rat,
+    pub vv: Rat,
+    pub nn: Rat,
 }
 
 /// A direction vector divided by its content — the **primitive** integer vector along it, with

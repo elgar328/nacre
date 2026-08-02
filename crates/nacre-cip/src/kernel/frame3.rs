@@ -45,6 +45,12 @@ type HpCell = HpRc<HpOnce<(usize, [HpIv; 3])>>;
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle` — `point = [0,0,0]` is the origin-pivot case.
 /// Motions do not commute, so the chain's **order is the definition**.
+/// ★ **`Frame` is the large variant and it is boxed nowhere.** It holds four rational vectors and
+/// three rational lengths against `Rotate`'s one vector — but a `MoveNode` lives in a shared
+/// `Rc<[MoveNode]>` that the judgment path clones by refcount, and a chain is a handful of nodes
+/// per point at most. Boxing would trade a flat read for a pointer chase on the hot path to save
+/// bytes nothing is short of.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveNode {
     Rotate {
@@ -75,17 +81,15 @@ pub enum MoveNode {
     /// So the whole realization is **two `1/√(rational)` scalars**
     /// ([`nacre_scalar::inv_sqrt_f64`]), which is why this can be judged at all.
     ///
-    /// ★★ **`v̂` is derived, not stored.** `n × u_raw` in exact rationals would be a product of
-    /// two already-wide coefficient vectors and could overflow `i128`; taking the cross product
-    /// **after** realizing puts it in the domain that carries its own error interval, and the
-    /// overflow disappears rather than being handled.
+    /// ★★ **`v̂` is exact too, and that matters.** Realizing it as `ŵ × û` in f64 costs two
+    /// roundings that do not cancel — a wall whose `v` is exactly `ẑ` came out three ulps short,
+    /// which is a frame that is not quite orthonormal. `n ⊥ u_raw` by construction, so
+    /// `|v_raw|² = |n|²·|u_raw|²` exactly, and one inverse square root of a rational lands it on
+    /// the nose. [`nacre_scalar::plane_frame`] checks that product fits `i128` before handing the
+    /// frame out, so the overflow is refused at the source rather than handled here.
     ///
     /// ★ **Proper** (`det = +1`), so it contributes nothing to a chain's mirror parity.
-    Frame {
-        origin: [Rat; 3],
-        u_raw: [Rat; 3],
-        n: [Rat; 3],
-    },
+    Frame { frame: nacre_scalar::PlaneFrame },
 }
 
 /// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
@@ -367,30 +371,21 @@ impl Pt3 {
     /// see there), and the f64 arithmetic that combines them. An axis-aligned frame has a signed
     /// permutation for a basis and every one of those terms vanishes: `±1` and `0` are exact, so
     /// the products are exact and the sums pick out one coordinate each.
-    pub fn frame(mut self, origin: [Rat; 3], u_raw: [Rat; 3], n: [Rat; 3]) -> Option<Self> {
-        let dot = |a: &[Rat; 3]| {
-            (0..3).try_fold(Rat::from_int(0), |acc, k| {
-                acc.checked_add(a[k].checked_mul(a[k])?)
-            })
+    pub fn frame(mut self, f: nacre_scalar::PlaneFrame) -> Option<Self> {
+        // One inverse square root per axis, each of an exact rational — see `plane_frame` for why
+        // `v̂` gets its own instead of being a cross product of the other two.
+        let inv = |v: Rat| -> Option<(f64, f64)> {
+            let x = nacre_scalar::inv_sqrt_f64(v)?;
+            Some((x, nacre_scalar::inv_sqrt_error_of(v, x)?))
         };
-        let (uu, nn) = (dot(&u_raw)?, dot(&n)?);
-        let (iu, iw) = (
-            nacre_scalar::inv_sqrt_f64(uu)?,
-            nacre_scalar::inv_sqrt_f64(nn)?,
-        );
-        // How far each realized `1/√` sits from the truth — zero exactly when the value is
-        // dyadic, which is every axis-aligned frame.
-        let (du, dw) = (
-            nacre_scalar::inv_sqrt_error_of(uu, iu)?,
-            nacre_scalar::inv_sqrt_error_of(nn, iw)?,
-        );
+        let ((iu, du), (iv, dv), (iw, dw)) = (inv(f.uu)?, inv(f.vv)?, inv(f.nn)?);
         // A basis vector's component, and a bound on how far it lands from the true one: the
         // rational's own rounding scaled by the length, the length's error scaled by the
         // rational, and the product's half-ulp. All three vanish for a `0`/`±1` component.
-        let axis_comp = |r: Rat, inv: f64, dinv: f64| {
+        let axis_comp = |r: Rat, s: f64, ds: f64| {
             let rf = r.to_f64();
-            let c = rf * inv;
-            let err = rat_round_tol(r, rf) * inv.abs() + rf.abs() * dinv;
+            let c = rf * s;
+            let err = rat_round_tol(r, rf) * s.abs() + rf.abs() * ds;
             (
                 c,
                 if err == 0.0 {
@@ -400,57 +395,37 @@ impl Pt3 {
                 },
             )
         };
-        let mut uh = [0.0; 3];
-        let mut wh = [0.0; 3];
-        let (mut eu, mut ew) = ([0.0; 3], [0.0; 3]);
-        for (k, (ur, nr)) in u_raw.iter().zip(&n).enumerate() {
-            (uh[k], eu[k]) = axis_comp(*ur, iu, du);
-            (wh[k], ew[k]) = axis_comp(*nr, iw, dw);
+        let (mut uh, mut vh, mut wh) = ([0.0; 3], [0.0; 3], [0.0; 3]);
+        let (mut eu, mut ev, mut ew) = ([0.0; 3], [0.0; 3], [0.0; 3]);
+        for k in 0..3 {
+            (uh[k], eu[k]) = axis_comp(f.u_raw[k], iu, du);
+            (vh[k], ev[k]) = axis_comp(f.v_raw[k], iv, dv);
+            (wh[k], ew[k]) = axis_comp(f.n[k], iw, dw);
         }
-        // `v̂ = ŵ × û`. Both factors have magnitude ≤ 1, so each of the four products carries the
-        // other factor's error at unit scale; `2·(max eu + max ew)` covers all four with room.
-        // The arithmetic term is gated on the basis being inexact, for the reason `rotate_about`
-        // gates its own: with `0`/`±1` factors the products *and* their differences are exact,
-        // not merely small, and an unconditional charge would quietly take an axis-aligned frame
-        // off the exact predicate path.
-        let (eu_max, ew_max) = (
-            eu.iter().fold(0.0f64, |a, &b| a.max(b)),
-            ew.iter().fold(0.0f64, |a, &b| a.max(b)),
-        );
-        let mut vh = [0.0; 3];
-        for (k, v) in vh.iter_mut().enumerate() {
-            let (i, j) = ((k + 1) % 3, (k + 2) % 3);
-            *v = wh[i] * uh[j] - wh[j] * uh[i];
-        }
-        let ev = if eu_max == 0.0 && ew_max == 0.0 {
-            0.0
-        } else {
-            2.0 * (eu_max + ew_max) + 3.0 * f64::EPSILON
-        };
         // The combination itself: three products and three sums per coordinate, each a
         // round-to-nearest of a magnitude bounded by the terms' sum — except where the basis is a
         // signed permutation *and* the frame sits on the origin, where every product is exact and
         // every sum picks out a single coordinate. That case is the axis-aligned sketch, and it
         // is the one that has to stay at tol 0.
-        let perm = eu_max == 0.0
-            && ew_max == 0.0
+        let exact_basis = eu.iter().chain(&ev).chain(&ew).all(|&e| e == 0.0);
+        let perm = exact_basis
             && uh
                 .iter()
-                .chain(&wh)
                 .chain(&vh)
+                .chain(&wh)
                 .all(|c| *c == 0.0 || c.abs() == 1.0);
         let p = self.coord;
         let t = self.tol;
         for k in 0..3 {
-            let ok = origin[k].to_f64();
+            let ok = f.origin[k].to_f64();
             let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
             // The incoming tol turned by the same basis, plus what this step adds.
             let carried = uh[k].abs() * t[0] + vh[k].abs() * t[1] + wh[k].abs() * t[2];
-            let realized = p[0].abs() * eu[k] + p[1].abs() * ev + p[2].abs() * ew[k];
+            let realized = p[0].abs() * eu[k] + p[1].abs() * ev[k] + p[2].abs() * ew[k];
             let arith = if perm && ok == 0.0 {
                 0.0
             } else {
-                rat_round_tol(origin[k], ok)
+                rat_round_tol(f.origin[k], ok)
                     + 3.0
                         * f64::EPSILON
                         * (ok.abs()
@@ -462,7 +437,7 @@ impl Pt3 {
             self.tol[k] = carried + realized + arith;
         }
         let mut nodes = self.chain.to_vec();
-        nodes.push(MoveNode::Frame { origin, u_raw, n });
+        nodes.push(MoveNode::Frame { frame: f });
         self.chain = HpRc::from(nodes);
         self.hp = HpCell::default();
         Some(self)
@@ -534,40 +509,29 @@ impl Pt3 {
                 //
                 // A degenerate frame cannot arise here: `Pt3::frame` is the only producer of this
                 // node and it refuses a non-positive squared length, so the chain never holds one.
-                MoveNode::Frame { origin, u_raw, n } => {
-                    let dot = |a: &[Rat; 3]| {
-                        (0..3).try_fold(Rat::from_int(0), |acc, k| {
-                            acc.checked_add(a[k].checked_mul(a[k])?)
-                        })
+                MoveNode::Frame { frame } => {
+                    let inv = |v: Rat| {
+                        nacre_scalar::inv_sqrt_bounded(v, prec).map(|(m, r)| HpIv::new(m, r))
                     };
-                    let inv = |v: Option<Rat>| {
-                        v.and_then(|v| nacre_scalar::inv_sqrt_bounded(v, prec))
-                            .map(|(m, r)| HpIv::new(m, r))
+                    let (Some(iu), Some(iv), Some(iw)) =
+                        (inv(frame.uu), inv(frame.vv), inv(frame.nn))
+                    else {
+                        continue; // unreachable — `plane_frame` refuses a non-positive length
                     };
-                    let (Some(iu), Some(iw)) = (inv(dot(u_raw)), inv(dot(n))) else {
-                        continue; // unreachable — see above; skipping beats a panic in a judge
+                    let scaled = |v: [Rat; 3], s: &HpIv| {
+                        [0, 1, 2].map(|k| rat_to_hp(v[k], prec).mul(s, prec))
                     };
-                    let mut uh = [const { None }; 3];
-                    let mut wh = [const { None }; 3];
-                    for k in 0..3 {
-                        uh[k] = Some(rat_to_hp(u_raw[k], prec).mul(&iu, prec));
-                        wh[k] = Some(rat_to_hp(n[k], prec).mul(&iw, prec));
-                    }
-                    let uh = uh.map(|x| x.unwrap());
-                    let wh = wh.map(|x| x.unwrap());
-                    let mut out = [const { None }; 3];
-                    for k in 0..3 {
-                        let (i, j) = ((k + 1) % 3, (k + 2) % 3);
-                        // `v̂ = ŵ × û`, component k.
-                        let vk = wh[i].mul(&uh[j], prec).sub(&wh[j].mul(&uh[i], prec), prec);
-                        out[k] = Some(
-                            rat_to_hp(origin[k], prec)
-                                .add(&p[0].mul(&uh[k], prec), prec)
-                                .add(&p[1].mul(&vk, prec), prec)
-                                .add(&p[2].mul(&wh[k], prec), prec),
-                        );
-                    }
-                    p = out.map(|x| x.unwrap());
+                    let (uh, vh, wh) = (
+                        scaled(frame.u_raw, &iu),
+                        scaled(frame.v_raw, &iv),
+                        scaled(frame.n, &iw),
+                    );
+                    p = [0, 1, 2].map(|k| {
+                        rat_to_hp(frame.origin[k], prec)
+                            .add(&p[0].mul(&uh[k], prec), prec)
+                            .add(&p[1].mul(&vh[k], prec), prec)
+                            .add(&p[2].mul(&wh[k], prec), prec)
+                    });
                 }
             }
         }
@@ -2712,7 +2676,7 @@ mod tests {
         [2, -3, 7, 11],
     ];
 
-    fn frame_of(c: [i128; 4]) -> ([Rat; 3], [Rat; 3], [Rat; 3]) {
+    fn frame_of(c: [i128; 4]) -> nacre_scalar::PlaneFrame {
         let coeffs = c.map(Rat::from_int);
         nacre_scalar::plane_frame(coeffs).expect("these planes all have exact frames")
     }
@@ -2728,11 +2692,11 @@ mod tests {
     fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
         const GT: usize = 512;
         for c in FRAME_PLANES {
-            let (origin, u_raw, n) = frame_of(c);
+            let fr = frame_of(c);
             for (u, v) in [(0, 0), (1, 0), (0, 1), (3, -7), (-2, 5)] {
                 let base = [ri(u, 1), ri(v, 1), Rat::from_int(0)];
                 let p = Pt3::at(base)
-                    .frame(origin, u_raw, n)
+                    .frame(fr)
                     .expect("a frame with positive lengths");
                 let hp = p.hp_coord(GT);
                 // a·x + b·y + c·z + d, realized — its interval must contain zero.
@@ -2758,10 +2722,10 @@ mod tests {
         const GT: usize = 512;
         let (mut worst, mut worst_at) = (0.0f64, String::new());
         for c in FRAME_PLANES {
-            let (origin, u_raw, n) = frame_of(c);
+            let fr = frame_of(c);
             for (u, v, w) in [(0, 0, 0), (1, 0, 0), (3, -7, 2), (-2, 5, -1), (11, 13, 17)] {
                 let base = [ri(u, 1), ri(v, 1), ri(w, 1)];
-                let p = Pt3::at(base).frame(origin, u_raw, n).unwrap();
+                let p = Pt3::at(base).frame(fr).unwrap();
                 let hp = p.hp_coord(GT);
                 for (k, h) in hp.iter().enumerate() {
                     let err = abs_err(p.coord[k], h, GT);
@@ -2790,19 +2754,15 @@ mod tests {
     #[test]
     fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {
         for c in [[0i128, 0, 1, 0], [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 2, 0]] {
-            let (origin, u_raw, n) = frame_of(c);
+            let fr = frame_of(c);
             for (u, v, w) in [(0, 0, 0), (3, -7, 2), (11, 13, 17)] {
-                let p = Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)])
-                    .frame(origin, u_raw, n)
-                    .unwrap();
+                let p = Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)]).frame(fr).unwrap();
                 assert_eq!(p.tol, [0.0; 3], "plane {c:?} at ({u},{v},{w})");
             }
         }
         // …and the world XY frame is the identity, which is what makes a frame on it harmless.
-        let (origin, u_raw, n) = frame_of([0, 0, 1, 0]);
-        let p = Pt3::at([ri(3, 1), ri(-7, 1), ri(2, 1)])
-            .frame(origin, u_raw, n)
-            .unwrap();
+        let fr = frame_of([0, 0, 1, 0]);
+        let p = Pt3::at([ri(3, 1), ri(-7, 1), ri(2, 1)]).frame(fr).unwrap();
         assert_eq!(p.coord, [3.0, -7.0, 2.0]);
     }
 
@@ -2822,12 +2782,9 @@ mod tests {
     /// be right".
     #[test]
     fn four_points_sharing_one_frame_are_judged_exactly() {
-        let (origin, u_raw, n) = frame_of([2, -3, 7, 11]);
-        let at = |u: i128, v: i128, w: i128| {
-            Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)])
-                .frame(origin, u_raw, n)
-                .unwrap()
-        };
+        let fr = frame_of([2, -3, 7, 11]);
+        let at =
+            |u: i128, v: i128, w: i128| Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)]).frame(fr).unwrap();
         // Four points on the sketch plane itself (`w = 0`) — exactly coplanar, by construction.
         let (a, b, c, d) = (at(0, 0, 0), at(1, 0, 0), at(0, 1, 0), at(2, 3, 0));
         assert_eq!(
@@ -2851,10 +2808,8 @@ mod tests {
     /// a slow one.
     #[test]
     fn a_frame_does_not_flip_the_chain_parity() {
-        let (origin, u_raw, n) = frame_of([3, 4, 0, -10]);
-        let framed = Pt3::at([ri(1, 1), ri(2, 1), ri(3, 1)])
-            .frame(origin, u_raw, n)
-            .unwrap();
+        let fr = frame_of([3, 4, 0, -10]);
+        let framed = Pt3::at([ri(1, 1), ri(2, 1), ri(3, 1)]).frame(fr).unwrap();
         assert_eq!(chain_parity(&framed.chain), 1);
         let mirrored = framed.clone().mirror(Axis::X, Rat::from_int(0));
         assert_eq!(
@@ -2862,8 +2817,8 @@ mod tests {
             -1,
             "the reflection still counts"
         );
-        let (o2, u2, n2) = frame_of([1, 1, 1, -3]);
-        let twice = mirrored.frame(o2, u2, n2).unwrap();
+        let fr2 = frame_of([1, 1, 1, -3]);
+        let twice = mirrored.frame(fr2).unwrap();
         assert_eq!(
             chain_parity(&twice.chain),
             -1,

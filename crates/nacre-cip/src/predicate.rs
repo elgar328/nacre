@@ -1032,13 +1032,9 @@ mod tests {
         use nacre_scalar::{Angle, Axis, Rat};
         let ri = |n: i128, d: i128| Rat::new(n, d).unwrap();
         // A tilted plane's frame: 2x - 3y + 7z + 11 = 0.
-        let (origin, u_raw, n) =
-            nacre_scalar::plane_frame([2, -3, 7, 11].map(Rat::from_int)).unwrap();
-        let framed = |u: i128, v: i128, w: i128| {
-            Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)])
-                .frame(origin, u_raw, n)
-                .unwrap()
-        };
+        let fr = nacre_scalar::plane_frame([2, -3, 7, 11].map(Rat::from_int)).unwrap();
+        let framed =
+            |u: i128, v: i128, w: i128| Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)]).frame(fr).unwrap();
         let def = [framed(0, 0, 0), framed(1, 0, 0), framed(0, 1, 0)];
         assert!(
             single_rotation(&def).is_none(),
