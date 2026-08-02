@@ -109,6 +109,27 @@ thread_local! {
     /// the rounding undecided — see [`Angle::cos_sin_f64`]. **Read by tests**: a checker that
     /// never fires is indistinguishable from one that is not running.
     static ROUND_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
+
+    /// **Realized `1/√v` per `(rational, precision)`** — see [`inv_sqrt_bounded`].
+    ///
+    /// The same argument that makes [`TRIG`] sound applies unchanged: the key is a *value*, not a
+    /// handle, so two models asking for the same squared length are asking the same question; the
+    /// result is a pure function of the key, so the memo cannot move an answer; and `prec` is in
+    /// the key, so a model judged more deeply lands on a different entry rather than reading one
+    /// realized too shallowly.
+    static INV_SQRT: RefCell<HashMap<(Rat, usize), (BigFloat, Bound)>> =
+        RefCell::new(HashMap::new());
+
+    /// **The f64 realization of `1/√v`, keyed by the rational alone** — see [`inv_sqrt_f64`].
+    ///
+    /// As with [`F64_TRIG`], the value is the correctly rounded one, which is unique, so this memo
+    /// is a cost question only.
+    static F64_INV_SQRT: RefCell<HashMap<Rat, f64>> = RefCell::new(HashMap::new());
+
+    /// How often `1/√v`'s f64 realization needed the deeper rung, and how often even that left the
+    /// rounding undecided — the counterpart of [`ROUND_ESCALATED`], read by tests for the same
+    /// reason.
+    static INV_SQRT_ESCALATED: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 }
 
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
@@ -547,6 +568,197 @@ fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
         (r.saturating_sub(2).max(0)..=r.saturating_add(2)).find(|&c| c.checked_mul(c) == Some(x))
     };
     Rat::new(root(num)?, root(den)?)
+}
+
+/// The exact `1/√v` of a positive rational, or `None` when it is irrational.
+///
+/// `1/√v = √(1/v)`, so this is [`rat_sqrt_exact`] of the reciprocal — and the test is symmetric
+/// under inversion (a fraction in lowest terms is a perfect square exactly when both of its parts
+/// are), so nothing is lost by asking it that way round.
+///
+/// ★ **This branch is why an axis-aligned model pays nothing.** A frame normal of `(0, 0, 1)` has
+/// `n·n = 1` and lands here with `1.0`, exactly, without touching arbitrary precision — the same
+/// role [`Angle::try_exact_cos_sin`] plays for a quadrantal rotation.
+pub fn inv_sqrt_exact(v: Rat) -> Option<Rat> {
+    if v <= Rat::from_int(0) {
+        return None;
+    }
+    rat_sqrt_exact(Rat::new(*v.0.denom(), *v.0.numer())?)
+}
+
+/// `1/√v` at `prec` bits **with an upper bound on how far it may be from the true value** — the
+/// seed for every error radius that a frame's realization grows from.
+///
+/// The bound is *derived*, term by term, in the shape [`Angle::cos_sin_bounded`] uses:
+///
+/// - `numer`/`denom` enter as `i128`, exactly. Routing them through `f64` would cost a relative
+///   `2⁻⁵³` past 2⁵³ that no working precision recovers.
+/// - `x = fl(n/d)` is one rounded operation: relative `u = 2⁻ᵖʳᵉᶜ`.
+/// - `√` **halves** a relative error (`d√x/√x = ½ · dx/x`), so the argument arrives as `u/2`, and
+///   the square root's own realization adds a half-ulp: `u`.
+/// - The reciprocal passes relative error through unchanged (`d(1/y)/(1/y) = −dy/y`) and adds its
+///   own `u`.
+///
+/// That totals `2.5u`; the bound below uses `4u`, and
+/// `the_inverse_sqrt_bound_holds_against_a_far_deeper_realization` checks it against a far deeper
+/// realization rather than trusting the arithmetic or astro-float's rounding contract.
+///
+/// **Memoized by `(v, prec)`** in [`INV_SQRT`], for the same reason [`TRIG`] exists: a frame's
+/// realization asks for the same `n·n` once per coordinate.
+///
+/// `None` when `v ≤ 0` — there is no frame normal with a non-positive squared length, so that is a
+/// broken premise rather than an unusual input.
+pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<(BigFloat, Bound)> {
+    if v <= Rat::from_int(0) {
+        return None;
+    }
+    if let Some(hit) = INV_SQRT.with_borrow(|t| t.get(&(v, prec)).cloned()) {
+        return Some(hit);
+    }
+    let out = realize_inv_sqrt(v, prec);
+    INV_SQRT.with_borrow_mut(|t| t.insert((v, prec), out.clone()));
+    Some(out)
+}
+
+/// [`inv_sqrt_bounded`] without the memo — the evaluation itself, kept separate so no `INV_SQRT`
+/// borrow is held across the arbitrary-precision work.
+fn realize_inv_sqrt(v: Rat, prec: usize) -> (BigFloat, Bound) {
+    // As `i128`, not through `f64`: the loss would happen before astro-float saw the value.
+    let ip = prec.max(128);
+    let n = BigFloat::from_i128(*v.0.numer(), ip);
+    let d = BigFloat::from_i128(*v.0.denom(), ip);
+    let one = BigFloat::from_i128(1, ip);
+    let x = n.div(&d, prec, HP_RM);
+    let z = one.div(&x.sqrt(prec, HP_RM), prec, HP_RM);
+    let u = Bound::pow2(-(prec as i64));
+    // `½ + 1 + 1 = 2.5`, rounded up. Relative, so it is scaled by the result's magnitude below.
+    let rel = u.times(Bound::of(4.0));
+    let mag = match z.exponent() {
+        Some(e) if !z.is_zero() => Bound::pow2(e as i64), // `|x| < 2^exponent`
+        _ => Bound::ZERO,
+    };
+    (z, mag.times(rel))
+}
+
+/// **`1/√v` as the `f64` nearest the true value**, or `None` when `v ≤ 0`.
+///
+/// ★★ **The exact branch runs first** ([`inv_sqrt_exact`]) and covers every axis-aligned frame,
+/// plus the Pythagorean ones a CAD user actually draws — a `(3, 4, 0)` normal has `n·n = 25` and
+/// `1/|n| = 1/5`. Only a genuinely irrational length reaches the ladder.
+///
+/// ★ **Exact does not mean free of rounding**: `1/5` is exactly rational and still not an `f64`,
+/// so that branch returns the *nearest* f64 to a known-exact value. [`inv_sqrt_error_of`] reports
+/// what that rounding cost, and returns a literal zero only where there was none.
+///
+/// **The ladder is 128 then 256 bits, and it terminates.** Unlike `cos 90°`, `1/√v` is never zero
+/// for a positive `v`, so its interval never straddles zero and [`round_to_f64`] cannot answer
+/// `None` forever. The rungs match [`Angle::realize_rounded_f64`]'s so a judgement at
+/// `nacre_cip`'s trial precision shares this realization instead of paying for a second one.
+///
+/// ★ **Correct rounding is what keeps debug and release the same.** A faithfully-rounded value
+/// would let the two builds disagree by an ulp, which is the failure this crate already paid for
+/// once in the trig path.
+///
+/// If even 256 bits leave the rounding undecided the midpoint is returned rather than a panic, and
+/// the event is counted — see [`INV_SQRT_ESCALATED`].
+pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
+    if v <= Rat::from_int(0) {
+        return None;
+    }
+    if let Some(r) = inv_sqrt_exact(v) {
+        return Some(r.to_f64());
+    }
+    if let Some(hit) = F64_INV_SQRT.with_borrow(|m| m.get(&v).copied()) {
+        return Some(hit);
+    }
+    // Outside the borrow: the realization below takes `INV_SQRT`'s in turn.
+    let out = realize_inv_sqrt_rounded(v);
+    F64_INV_SQRT.with_borrow_mut(|m| m.insert(v, out));
+    Some(out)
+}
+
+/// [`inv_sqrt_f64`]'s general branch without the memo or the exact test.
+fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
+    for (i, prec) in [128usize, 256].into_iter().enumerate() {
+        let (z, rad) = realize_inv_sqrt_memoized(v, prec);
+        if let Some(f) = round_to_f64(&z, rad, prec) {
+            if i > 0 {
+                INV_SQRT_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
+            }
+            return f;
+        }
+    }
+    INV_SQRT_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
+    let (z, _) = realize_inv_sqrt_memoized(v, 256);
+    to_f64_exact(&z).unwrap_or(f64::NAN)
+}
+
+/// [`inv_sqrt_bounded`] for a `v` already known positive.
+fn realize_inv_sqrt_memoized(v: Rat, prec: usize) -> (BigFloat, Bound) {
+    inv_sqrt_bounded(v, prec).expect("v > 0 checked by the caller")
+}
+
+/// **How far the `1/√v` the caller was handed sits from the true one** — measured against an
+/// arbitrary-precision realization, the twin of [`Angle::realization_error_of`].
+///
+/// ★★★ **The caller passes the value in rather than letting this re-realize it**, for the same
+/// reason the trig one does: the consumer is a frame's `tol`, which must bound the error in the
+/// `coord` it wrote from *its* `inv_sqrt_f64` result. An error measured against a second,
+/// independent realization would bound a number nobody stored.
+///
+/// ★★★★ **Exactly zero only when the exact value is also *dyadic*, which is not the same thing
+/// as being exact.** [`Angle::realization_error_of`] can return a flat `0` for its exact family
+/// because `{0, ±1}` are f64 values; `1/√v` cannot. A **Pythagorean** normal like `(3, 4, 0)` has
+/// `n·n = 25` and an exactly rational `1/|n| = 1/5` — which is *not* an f64, so the realization
+/// still rounds. Copying the trig zero here reported `0` for a real `2⁻⁵³` error, and
+/// `the_inverse_sqrt_realization_error_covers_the_error_that_is_there` caught it. So the exact
+/// branch **measures the rational's own rounding** instead, in exact arithmetic, and reaches `0`
+/// where it genuinely belongs: an axis-aligned frame, whose `1/|n|` is `1`, `½`, `¼`, …
+///
+/// Callers rely on that zero: a frame whose realization carries no error also performs no rounding
+/// downstream, which is what keeps an axis-aligned sketch at tol 0.
+///
+/// ★ **This measures rather than assumes even though [`inv_sqrt_f64`] is correctly rounded.**
+/// `round_to_f64` returning `Some` *is* a certificate, so `½ ulp` would be defensible — but the
+/// ladder has a documented fallback for an undecided rounding at 256 bits, and a term derived from
+/// a guarantee that has an escape hatch is exactly the kind that goes quietly wrong. Measuring
+/// covers the fallback for free.
+///
+/// The reading is at octave granularity, so it can sit up to 2× above the true error —
+/// conservative in the sound direction, and still a measurement. `None` when `v ≤ 0`.
+pub fn inv_sqrt_error_of(v: Rat, f: f64) -> Option<f64> {
+    if v <= Rat::from_int(0) {
+        return None;
+    }
+    // ★ The claim is made of *this* value, not of `v`: what a caller depends on is "the number I
+    // am holding is the realization of the true `1/√v`", and only comparing says that.
+    //
+    // The gap is taken in **exact rational arithmetic** — `try_from_f64` is exact, so `f − r` is
+    // exact and its being zero is a fact rather than a measurement below some resolution. That is
+    // what lets an axis-aligned frame reach a literal `0.0`; going through `inv_sqrt_bounded`
+    // would hand it the realization's own `2⁻¹²⁴` radius and no exact route would ever be taken.
+    if let Some(r) = inv_sqrt_exact(v) {
+        if r.to_f64() == f {
+            let d = Rat::try_from_f64(f).and_then(|fr| fr.checked_sub(r))?;
+            if d == Rat::from_int(0) {
+                return Some(0.0);
+            }
+            // `to_f64` rounds to nearest, so nudge up to keep the bound above the truth.
+            return Some(d.to_f64().abs() * (1.0 + 2.0 * f64::EPSILON));
+        }
+    }
+    const P: usize = 128; // the hp radius is then ~2⁻¹²⁸ against an ε-scale quantity
+    let (h, rad) = inv_sqrt_bounded(v, P)?;
+    let diff = BigFloat::from_f64(f, P).sub(&h, P, HP_RM);
+    let mag = if diff.is_zero() {
+        0.0
+    } else {
+        2f64.powi(diff.exponent().unwrap_or(0))
+    };
+    // Rounded up, for the reason `Angle::measure_realization_error` spells out: when `|diff|` is
+    // itself a power of two the octave bound has no slack, and `mag + rad` would round back down
+    // to `mag` in f64 — short by the radius.
+    Some((mag + rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32))) * (1.0 + 2.0 * f64::EPSILON))
 }
 
 /// Greatest common divisor of two magnitudes, Euclid. `gcd(0, 0) == 0`.
@@ -2397,6 +2609,230 @@ mod tests {
             (40..=80).contains(slack_200),
             "expected ~56 bits of unclaimed precision at 200 bits (the word-size round-up), got \
              2^{slack_200}"
+        );
+    }
+
+    /// Squared lengths a frame normal actually produces, plus awkward ones.
+    ///
+    /// `(0,0,1)` and `(1,1,0)` give `1` and `2`; a profile edge `(1,2)` gives a wall normal
+    /// `(2,−1,0)` and so `5`; the fractions are what a normal reduced by its own content leaves;
+    /// and the last two exercise the `i128 → f64` term at and past 2⁵³.
+    const INV_SQRT_CASES: [(i128, i128); 12] = [
+        (1, 1),
+        (2, 1),
+        (3, 1),
+        (5, 1),
+        (4, 1),
+        (9, 25),
+        (1, 2),
+        (13, 7),
+        (1_000_003, 3),
+        (1, 1_000_000),
+        (1, 1i128 << 60),
+        (1, (1i128 << 60) + 1),
+    ];
+
+    #[test]
+    fn the_inverse_sqrt_bound_holds_against_a_far_deeper_realization() {
+        let mut worst = std::collections::BTreeMap::<usize, (i64, String)>::new();
+        for prec in [128usize, 256, 512] {
+            for (num, den) in INV_SQRT_CASES {
+                let v = Rat::new(num, den).unwrap();
+                let (z, bound) = inv_sqrt_bounded(v, prec).unwrap();
+                let deep = prec + 512;
+                let (rz, _) = inv_sqrt_bounded(v, deep).unwrap();
+                let diff = z.sub(&rz, deep, HP_RM);
+                let Some(de) = (if diff.is_zero() {
+                    None
+                } else {
+                    diff.exponent()
+                }) else {
+                    continue; // exactly equal — nothing to bound
+                };
+                // `|diff| < 2^de`; the bound must be at least that.
+                assert!(
+                    !bound.lt(Bound::pow2(de as i64)),
+                    "1/sqrt({num}/{den}) at {prec} bits: error 2^{de} exceeds its bound 2^{:?}",
+                    bound.exp2()
+                );
+                // ★★ Slack is only meaningful where the observation actually *measures* this
+                // bound. A `prec`-bit realization of a value of magnitude `2^zexp` must carry an
+                // error near `2^(zexp − prec)`; when the observed gap is far below that, the two
+                // realizations agreed better than either one's own accuracy warrants — measured,
+                // `1/√(1/(2⁶⁰+1))` at 128 bits agrees to 154 bits where 98 is all that is earned,
+                // and `1/√(1/10⁶)` is exactly `1000` at every precision. Those samples understate
+                // the true error, so counting them would read a *lucky observation* as a loose
+                // bound. Same shape as the trig test's reference-noise filter.
+                let earned = z.exponent().unwrap_or(0) as i64 - prec as i64 - 8;
+                if let (Some(be), true) = (bound.exp2(), (de as i64) >= earned) {
+                    let slack = be - de as i64;
+                    let e = worst.entry(prec).or_insert((i64::MIN, String::new()));
+                    if slack > e.0 {
+                        *e = (slack, format!("{num}/{den}, bound 2^{be} vs error 2^{de}"));
+                    }
+                }
+            }
+        }
+        for (prec, (slack, at)) in &worst {
+            eprintln!("[cip] {prec}-bit inverse-sqrt bound slack: 2^{slack}  ({at})");
+        }
+        for (prec, (slack, at)) in &worst {
+            assert!(
+                *slack <= 8,
+                "at {prec} bits the bound is 2^{slack} above the worst observed error ({at}) — \
+                 that is a fudge factor wearing a derivation's clothes, not a tight bound"
+            );
+        }
+    }
+
+    /// ★ The claim the axis-aligned corpus rests on: a frame whose normal is a coordinate
+    /// direction realizes its `1/|n|` **exactly**, so it never reaches arbitrary precision and
+    /// carries no realization error at all.
+    #[test]
+    fn an_axis_aligned_frame_needs_no_arbitrary_precision() {
+        // `n·n` for (0,0,1) and (2,0,0) — an axis-aligned face and a wall — then the Pythagorean
+        // ones, where the answer is exactly rational but (`5/3`) need not be an f64.
+        for (v, want) in [
+            ((1, 1), 1.0),
+            ((4, 1), 0.5),
+            ((25, 1), 0.2),
+            ((9, 25), 5.0 / 3.0),
+        ] {
+            let r = Rat::new(v.0, v.1).unwrap();
+            assert_eq!(
+                inv_sqrt_exact(r).map(Rat::to_f64),
+                Some(want),
+                "1/sqrt{v:?}"
+            );
+            assert_eq!(inv_sqrt_f64(r), Some(want));
+        }
+        // …and a tilted one is honestly irrational, so it falls to the ladder.
+        for v in [(2, 1), (3, 1), (5, 1), (1, 2)] {
+            assert_eq!(inv_sqrt_exact(Rat::new(v.0, v.1).unwrap()), None, "{v:?}");
+        }
+        // There is no frame with a non-positive squared length; that is a broken premise.
+        for v in [(0, 1), (-1, 1)] {
+            let r = Rat::new(v.0, v.1).unwrap();
+            assert_eq!(inv_sqrt_exact(r), None);
+            assert_eq!(inv_sqrt_f64(r), None);
+            assert_eq!(inv_sqrt_bounded(r, 128), None);
+        }
+    }
+
+    /// **Correctly rounded, which is what keeps debug and release identical** — the failure this
+    /// crate already paid for once in the trig path. Checked against a realization deep enough
+    /// that its own rounding cannot reach the 53rd bit.
+    #[test]
+    fn inv_sqrt_f64_lands_on_the_nearest_f64() {
+        // Deltas, not absolute counts: the memo is a `thread_local` and the harness may have run
+        // other tests on this thread first.
+        let before = INV_SQRT_ESCALATED.with_borrow(|c| *c);
+        for (num, den) in INV_SQRT_CASES {
+            let v = Rat::new(num, den).unwrap();
+            let (deep, _) = inv_sqrt_bounded(v, 1024).unwrap();
+            let want = to_f64_exact(&deep).unwrap();
+            assert_eq!(
+                inv_sqrt_f64(v),
+                Some(want),
+                "1/sqrt({num}/{den}) is not the nearest f64"
+            );
+        }
+        let after = INV_SQRT_ESCALATED.with_borrow(|c| *c);
+        let (deeper, undecided) = (after.0 - before.0, after.1 - before.1);
+        eprintln!("[cip] inverse-sqrt escalations: {deeper} deeper, {undecided} undecided");
+        // ★ 128 bits sufficed for every case here, and the second rung is a proven cap rather
+        // than a rung anything reaches: `1/√v` is never zero for a positive `v`, so its interval
+        // cannot straddle zero the way `cos 90°`'s does and the rounding always decides.
+        assert_eq!(
+            (deeper, undecided),
+            (0, 0),
+            "a case escalated — the ladder's first rung no longer covers the population"
+        );
+    }
+
+    /// **The reported realization error really does cover the error that is there** — checked
+    /// against a realization far deeper than the one the measurement itself uses (128 bits), so
+    /// the ruler and the thing being measured are not the same instrument.
+    #[test]
+    fn the_inverse_sqrt_realization_error_covers_the_error_that_is_there() {
+        let mut worst = (i32::MIN, String::new());
+        for (num, den) in INV_SQRT_CASES {
+            let v = Rat::new(num, den).unwrap();
+            let f = inv_sqrt_f64(v).unwrap();
+            let reported = inv_sqrt_error_of(v, f).unwrap();
+            let (deep, deep_rad) = inv_sqrt_bounded(v, 1024).unwrap();
+            let true_err = hp_err_exp(&deep, f);
+            // A `BigFloat` is `m · 2^e` with `m ∈ [0.5, 1)`, so the exponent gives
+            // `2^(e−1) ≤ |f − deep| < 2^e` — the *lower* end is what a bound has to clear. Using
+            // `2^e` would demand the reported value exceed an over-estimate.
+            //
+            // ★ **And the reference is not exact either**, so its own radius comes off:
+            // `|f − true| ≥ |f − deep| − rad`. Without that, `1/√(1/10⁶)` — which is exactly
+            // `1000.0`, correctly reported as a zero error — fails against the 1024-bit
+            // realization's `2⁻¹⁰¹³` residue, and the test would be measuring its own ruler.
+            let ref_rad = deep_rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32));
+            let floor = if true_err == i32::MIN {
+                0.0
+            } else {
+                (2f64.powi(true_err - 1) - ref_rad).max(0.0)
+            };
+            assert!(
+                reported >= floor,
+                "1/sqrt({num}/{den}): reported {reported:e} is below the true error 2^{true_err}"
+            );
+            if true_err > worst.0 {
+                worst = (true_err, format!("{num}/{den}"));
+            }
+        }
+        // ★★★★ **Exact is not the same as dyadic, and only dyadic earns the zero.** An
+        // axis-aligned frame lands on `1`/`½` and must report a literal `0.0` — that is what keeps
+        // it on the exact predicate path. A Pythagorean one lands on `1/5` or `5/3`, which are
+        // exactly rational and still not f64, so they must report the rounding that really
+        // happened. Reporting `0` there (the shape the trig path can safely use) is the bug this
+        // pair of assertions exists to keep out.
+        // `1/9` is here rather than below because `1/√(1/9)` is `3` — an integer is dyadic too.
+        for (num, den) in [(1i128, 1i128), (4, 1), (1, 4), (1, 64), (1, 9)] {
+            let v = Rat::new(num, den).unwrap();
+            let f = inv_sqrt_f64(v).unwrap();
+            assert_eq!(inv_sqrt_error_of(v, f), Some(0.0), "1/sqrt({num}/{den})");
+        }
+        // `(3,4,0)` gives `n·n = 25` and `1/|n| = 1/5`; `(3,4,0)` scaled gives `9/25` and `5/3`.
+        for (num, den) in [(25i128, 1i128), (9, 25), (49, 1)] {
+            let v = Rat::new(num, den).unwrap();
+            let f = inv_sqrt_f64(v).unwrap();
+            assert!(
+                inv_sqrt_exact(v).is_some() && inv_sqrt_error_of(v, f).unwrap() > 0.0,
+                "1/sqrt({num}/{den}) is exactly rational but not an f64 — it must be charged"
+            );
+        }
+        eprintln!(
+            "[cip] worst inverse-sqrt f64 realization error: 2^{} ({})",
+            worst.0, worst.1
+        );
+    }
+
+    /// ★★ **The naive f64 route is not good enough, measured** — `1.0 / v.to_f64().sqrt()` is
+    /// three roundings and lands on the wrong `f64` often enough to see. Without a case that
+    /// actually differs, the exact realization above would be a cost with no effect, and this
+    /// test would be indistinguishable from one that is not running.
+    #[test]
+    fn the_naive_f64_route_gets_the_last_bit_wrong() {
+        let (mut n, mut differ) = (0usize, 0usize);
+        for num in 1i128..400 {
+            for den in 1i128..7 {
+                let v = Rat::new(num, den).unwrap();
+                let naive = 1.0 / v.to_f64().sqrt();
+                n += 1;
+                if inv_sqrt_f64(v) != Some(naive) {
+                    differ += 1;
+                }
+            }
+        }
+        eprintln!("[cip] naive 1/sqrt disagrees with the correctly rounded one: {differ}/{n}");
+        assert!(
+            differ > 0,
+            "the naive route agreed everywhere on {n} cases — either the correctly rounded path \
+             is not running, or this population cannot tell them apart"
         );
     }
 
