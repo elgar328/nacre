@@ -46,6 +46,11 @@ pub struct SketchPlane {
 
 /// **A sketch plane as its author stated it** — the exact truth behind [`SketchPlane`]'s f64 axes.
 ///
+/// ★★★ **Readable, not constructible from outside.** `SketchPlane`'s fields were closed so that
+/// nobody could hand in a plane whose parts disagree; leaving these open would reopen exactly that
+/// hole one level down — an `origin` that is not on `coeffs` is a definition describing two
+/// different planes, which cost 0.04 of volume the one time it happened.
+///
 /// ★ `ref_dir` is **not** a unit vector and is not projected: every constructor derives it from
 /// points that already lie in the plane (or from `ẑ × n`, which a cross product puts there), so
 /// the normalization a frame needs is exactly one `1/√(rational)` at realization time — never
@@ -54,11 +59,29 @@ pub struct SketchPlane {
 pub struct PlaneDef {
     /// Canonical rational plane coefficients — direction-free, so two spellings of one plane are
     /// the same array.
-    pub coeffs: [nacre_scalar::Rat; 4],
-    /// Where the sketch's `(0, 0)` sits.
-    pub origin: [nacre_scalar::Rat; 3],
+    pub(crate) coeffs: [nacre_scalar::Rat; 4],
+    /// Where the sketch's `(0, 0)` sits. **On the plane `coeffs` names** — the two halves of a
+    /// definition must not describe different planes, and every constructor is checked against it.
+    pub(crate) origin: [nacre_scalar::Rat; 3],
     /// The direction the sketch's `+u` runs, in the plane, any length.
-    pub ref_dir: [nacre_scalar::Rat; 3],
+    pub(crate) ref_dir: [nacre_scalar::Rat; 3],
+}
+
+impl PlaneDef {
+    /// The plane, as canonical rational coefficients.
+    pub fn coeffs(&self) -> [nacre_scalar::Rat; 4] {
+        self.coeffs
+    }
+
+    /// Where the sketch's `(0, 0)` sits — a point of the plane above.
+    pub fn origin(&self) -> [nacre_scalar::Rat; 3] {
+        self.origin
+    }
+
+    /// The `+u` direction, in the plane, not unit length.
+    pub fn ref_dir(&self) -> [nacre_scalar::Rat; 3] {
+        self.ref_dir
+    }
 }
 
 /// A closed planar region: one outer ring and any number of hole rings (straight segments only,
@@ -488,7 +511,16 @@ pub(crate) fn extrude(
     // the sketch's `(0, 0)` and `+u` land where they asked. `flip` is measured, not derived — the
     // plane's canonical coefficients carry no direction, and `ŵ` has to face the way the sweep does.
     let frame = plane.def.filter(|_| plane.exact().is_none()).and_then(|d| {
-        let pl = Plane::from_point_normal(plane.origin(), plane.normal())?;
+        // ★★ **Built with `−normal`, the sense `build_prism` gives a base cap.** The key is
+        // direction-free, so this surface and the base cap intern together — and matching the
+        // sense means the face does not have to be spelled `Reversed` to compensate. Measured:
+        // pushing `+normal` instead flipped the stored normal on 781 base caps, which
+        // `Face::orientation` absorbed correctly but for no reason.
+        //
+        // ★ Through the sketch origin rather than a ring point, which is also *more* accurate
+        // here: the caller's origin is exact, so `d` comes out exact where the ring point's dot
+        // product rounds (measured `5.55e-17` against `0`).
+        let pl = Plane::from_point_normal(plane.origin(), -plane.normal())?;
         let (h, _) = model.push_surface_with_coeffs(
             Surface::Plane(pl),
             SurfaceDef::Constructed,
