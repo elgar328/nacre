@@ -589,7 +589,21 @@ fn transform_solid(
                 },
                 SurfaceDef::Inexact => None,
             });
-        let (new_s, flipped) = model.push_surface_with_coeffs(moved, def, coeffs);
+        // ★ The points follow the same rule as the coefficients, one step short of it.
+        //
+        // `Moved` states its plane **before** the motion, so its points are inherited verbatim —
+        // that is the whole reason the image's chain hangs off the source's leaf.
+        //
+        // ★★ `Constructed` states the plane in the world, so its points would have to be carried
+        // there too, and there is no exact rational point image yet: `Isometry::plane_coeffs` has
+        // no `apply_point` twin in the rationals. The 90°-family condition that makes the plane
+        // exact would make the point exact as well, so this is a gap to fill and not a limit —
+        // recorded as `None` until then rather than transformed through f64.
+        let points = match def {
+            SurfaceDef::Moved { .. } => model.surface_points.get(&s).copied(),
+            SurfaceDef::Constructed | SurfaceDef::Inexact => None,
+        };
+        let (new_s, flipped) = model.push_surface_with_coeffs(moved, def, coeffs, points);
         surf_map.insert(s, new_s);
         surf_flip.insert(s, flipped);
     }

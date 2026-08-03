@@ -262,6 +262,52 @@ impl SweptRat {
         let j = (i + 1) % self.base.len();
         nacre_scalar::plane_through_points(self.base[i], self.base[j], self.top[i])
     }
+
+    /// The same three points, as the wall plane's **exact witness**.
+    ///
+    /// ★ Deliberately not gated on [`wall_plane`] succeeding: the coefficients are a product of
+    /// two point differences and overflow `i128` far sooner than the points themselves do
+    /// (measured — coefficients to 213 bits, ring coordinates to 107). A wall with no rational
+    /// coefficients still has an exact description, and this is it.
+    pub(crate) fn wall_points(&self, i: usize) -> [[Rat; 3]; 3] {
+        let j = (i + 1) % self.base.len();
+        [self.base[i], self.base[j], self.top[i]]
+    }
+
+    /// Three ring points spanning a cap — `base` when `top` is false, the top ring otherwise.
+    ///
+    /// ★ **The indices are chosen on the f64 realization, and that is not a compromise.** Whichever
+    /// three indices come out, the points recorded are the exact rationals; the realization only
+    /// answers *"which three are spread out"*, and a ring whose f64 image has no spread has no
+    /// plane in the first place (`Plane::through_points` would already have refused it). Picking
+    /// exactly, by rational cross products, would risk an `i128` overflow to answer a question
+    /// that does not need exactness.
+    pub(crate) fn cap_points(&self, top: bool) -> Option<[[Rat; 3]; 3]> {
+        let ring = if top { &self.top } else { &self.base };
+        if ring.len() < 3 {
+            return None;
+        }
+        let f = |p: &[Rat; 3]| [p[0].to_f64(), p[1].to_f64(), p[2].to_f64()];
+        let (a, b) = (f(&ring[0]), f(&ring[1]));
+        let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        // The widest turn away from `ring[0] → ring[1]`, so a nearly-collinear pair is not chosen
+        // when a better one exists.
+        let (mut best, mut best_k) = (0.0f64, None);
+        for (k, p) in ring.iter().enumerate().skip(2) {
+            let c = f(p);
+            let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let x = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+            let n = x[0].abs() + x[1].abs() + x[2].abs();
+            if n > best {
+                (best, best_k) = (n, Some(k));
+            }
+        }
+        best_k.map(|k| [ring[0], ring[1], ring[k]])
+    }
 }
 
 /// Every ring of a prism — placed on the plane and swept along it — computed in exact

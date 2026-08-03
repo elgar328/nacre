@@ -521,10 +521,37 @@ pub(crate) fn extrude(
         // here: the caller's origin is exact, so `d` comes out exact where the ring point's dot
         // product rounds (measured `5.55e-17` against `0`).
         let pl = Plane::from_point_normal(plane.origin(), -plane.normal())?;
+        // ★★★ **This plane's points come from what the caller wrote**, not from any face — it has
+        // none yet. `origin` is on the plane by `PlaneDef`'s own invariant, and `u_raw`/`v` are the
+        // frame's in-plane directions, exact rationals perpendicular to `n`. So the triple is
+        // exact, spans the plane, and lies on it by construction.
+        //
+        // ★★ It matters that this one is good: the base cap interns *into* this handle, so the
+        // triple recorded here is the one that survives for both.
+        let points = nacre_scalar::plane_frame_named(d.coeffs, d.origin, d.ref_dir).and_then(|f| {
+            let step = |v: [Rat; 3]| -> Option<[Rat; 3]> {
+                Some([
+                    f.origin[0].checked_add(v[0])?,
+                    f.origin[1].checked_add(v[1])?,
+                    f.origin[2].checked_add(v[2])?,
+                ])
+            };
+            let v = f.v.map(|(v_raw, _)| v_raw).or_else(|| {
+                // `v̂ = ŵ × û` when the stored `v` overflowed — the same fallback the realization
+                // takes.
+                let (n, u) = (f.n, f.u_raw);
+                let term = |i: usize, j: usize| {
+                    n[i].checked_mul(u[j])?.checked_sub(n[j].checked_mul(u[i])?)
+                };
+                Some([term(1, 2)?, term(2, 0)?, term(0, 1)?])
+            })?;
+            Some([f.origin, step(f.u_raw)?, step(v)?])
+        });
         let (h, _) = model.push_surface_with_coeffs(
             Surface::Plane(pl),
             SurfaceDef::Constructed,
             Some(d.coeffs),
+            points,
         );
         let node = |flip| nacre_topo::Motion::Frame {
             plane: h,
@@ -691,6 +718,7 @@ pub(crate) fn build_prism(
                 ),
                 SurfaceDef::Constructed,
                 caps,
+                outer_pts.exact.as_ref().and_then(|e| e.cap_points(false)),
             );
             // The plane was built with `−N` as its normal, so `Forward` is what states an outward
             // `−N` — unless a shared surface points the other way, which `flipped` reports.
@@ -707,6 +735,7 @@ pub(crate) fn build_prism(
         Some(e) if e.top.len() >= 3 => e.surface_def([e.top_f64(0), e.top_f64(1), e.top_f64(2)]),
         _ => SurfaceDef::Constructed,
     };
+    let top_points = outer_pts.exact.as_ref().and_then(|e| e.cap_points(true));
     let (top_surface, top_flipped) = model.push_surface_with_coeffs(
         Surface::Plane(
             Plane::from_point_normal(outer_pts.top[0], normal)
@@ -718,6 +747,7 @@ pub(crate) fn build_prism(
             .as_ref()
             .and_then(|e| e.cap_planes())
             .map(|(_, top)| top),
+        top_points,
     );
     let top_orient = if top_flipped {
         Orientation::Forward.flipped()
@@ -890,6 +920,9 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
                 // Same three points, in rationals — so this wall and any other face of the same
                 // plane record one array. `None` here is the f64 path or an i128 overflow.
                 ring.exact.as_ref().and_then(|e| e.wall_plane(i)),
+                // ★ And the points those coefficients came from. Recorded even when the line above
+                // overflowed: the coefficients are their cross product, which needs twice the bits.
+                ring.exact.as_ref().map(|e| e.wall_points(i)),
             ))
         })
         .collect()

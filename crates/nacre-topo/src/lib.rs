@@ -251,6 +251,28 @@ pub struct Model {
     /// Absent is ordinary — an f64 construction path, or `i128` overflow.
     /// Iterate through the faces, never over the map.
     pub surface_coeffs: HashMap<Handle<Surface>, [nacre_scalar::Rat; 4]>,
+    /// ★★★★★ **Three exact points the plane passes through** — stated in the same frame as
+    /// [`Model::surface_coeffs`], and carried out by the same [`SurfaceDef`] motion.
+    ///
+    /// **The coefficients cannot be the whole truth, and this is why.** A plane's exact
+    /// coefficients are a *product* of two point differences, so they need about twice the bits
+    /// the points do — measured, a wall plane's coefficients run to a median of 159 bits and a
+    /// maximum of 213, and only 25.8% fit `i128`, while the ring coordinates they come from top
+    /// out at **107** with 20 bits to spare. Points fit where their products do not, so the truth
+    /// stores points and the judging layer — already arbitrary-precision — does the products.
+    ///
+    /// ★★★ **The recursion has a base case**: a boolean never creates a surface (asserted by
+    /// `nacre-ops`), so a plane is never defined by discovered points, only by construction ones.
+    /// Points are defined by planes and planes by construction points — two levels, not a cycle.
+    ///
+    /// ★★ **Interning keeps the first pusher's triple.** Any non-collinear triple on the plane
+    /// names the same plane, so the survivor is as good a witness as the newcomer; and the
+    /// separate invariant that a *face's* vertices lie on its own plane is carried by
+    /// `outer_tri`, not by this.
+    ///
+    /// Absent is ordinary while the producers are still being wired, and permanently for a prism
+    /// whose ring is not rational at all. Iterate through the faces, never over the map.
+    pub surface_points: HashMap<Handle<Surface>, [[nacre_scalar::Rat; 3]; 3]>,
     /// Interning table for [`Model::push_surface_with_coeffs`]: the handle already issued for a
     /// plane, keyed by its canonical coefficients **and the motion they are stated in**. The twin
     /// of [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result).
@@ -392,9 +414,13 @@ impl Model {
         h
     }
 
-    /// [`Model::push_surface`], also recording the surface's exact rational coefficients when the
-    /// producer has them — see [`Model::surface_coeffs`]. `None` records nothing, which is what a
-    /// producer without a rational description passes.
+    /// [`Model::push_surface`], also recording the surface's exact rational description when the
+    /// producer has it: the canonical coefficients ([`Model::surface_coeffs`]) and the three
+    /// points the plane passes through ([`Model::surface_points`]). `None` records nothing, which
+    /// is what a producer without a rational description passes.
+    ///
+    /// ★ **Both are stated in the frame this `def` names**, and an interned plane keeps whichever
+    /// the first pusher supplied.
     ///
     /// ★ **The `bool` says the returned surface's normal points the *other* way** from the one
     /// handed in, and a caller that meets it must record its face `Orientation::flipped()`.
@@ -413,6 +439,7 @@ impl Model {
         surface: Surface,
         def: SurfaceDef,
         coeffs: Option<[nacre_scalar::Rat; 4]>,
+        points: Option<[[nacre_scalar::Rat; 3]; 3]>,
     ) -> (Handle<Surface>, bool) {
         let key = coeffs.map(|c| {
             let motion = match def {
@@ -440,6 +467,9 @@ impl Model {
         let h = self.push_surface(surface, def);
         if let Some((c, _)) = key {
             self.surface_coeffs.insert(h, c);
+        }
+        if let Some(p) = points {
+            self.surface_points.insert(h, p);
         }
         if let Some(k) = key {
             self.surface_ids.insert(k, h);
@@ -603,6 +633,16 @@ impl Model {
                 ),
                 SurfaceDef::Constructed,
                 coeffs,
+                // The same three corners, exactly — a box's corners are integers, so this is
+                // recorded even where `coeffs` overflows (it cannot here, but the rule is the
+                // rule: points are the truth, coefficients are the name).
+                (|| {
+                    Some([
+                        rat_corner(tri[0])?,
+                        rat_corner(tri[1])?,
+                        rat_corner(tri[2])?,
+                    ])
+                })(),
             )
         });
 

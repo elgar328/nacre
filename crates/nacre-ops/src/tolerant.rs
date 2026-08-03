@@ -1271,6 +1271,53 @@ mod tests {
         );
     }
 
+    /// ★ **How many planes now carry an exact point triple, and do the triples describe the
+    /// plane they are filed under?**
+    ///
+    /// The points are written but nothing reads them yet, so this is what says the producers were
+    /// wired — and the residual check is what says they were wired *correctly*: a triple filed
+    /// under the wrong surface would still be exact and still be three points.
+    #[test]
+    fn every_plane_that_can_records_its_three_exact_points() {
+        for (name, recipe) in [("split", Recipe::Split), ("single", Recipe::Single)] {
+            let (m, s, _) = two_caps_on_a_tilted_face(recipe);
+            let faces = collect_planes(&m, s).unwrap();
+            let (mut with, mut without) = (0usize, 0usize);
+            for fi in &faces {
+                let Some(pts) = m.surface_points.get(&fi.surf) else {
+                    without += 1;
+                    continue;
+                };
+                with += 1;
+                // ★ The points must satisfy the coefficients they are filed beside — both are
+                // stated in the same frame, so this is an exact rational identity with no
+                // tolerance anywhere.
+                if let Some(c) = m.surface_coeffs.get(&fi.surf) {
+                    for p in pts {
+                        let mut acc = c[3];
+                        for k in 0..3 {
+                            acc = acc
+                                .checked_add(c[k].checked_mul(p[k]).expect("no overflow"))
+                                .expect("no overflow");
+                        }
+                        assert_eq!(
+                            acc,
+                            Rat::from_int(0),
+                            "{name}: a recorded point is not on its own plane {:?}",
+                            fi.surf
+                        );
+                    }
+                }
+            }
+            println!("{name}: {with} planes with points, {without} without");
+            assert!(
+                with > 0 && without == 0,
+                "{name}: {without} of {} faces record no points",
+                with + without
+            );
+        }
+    }
+
     /// ★★★★★ **A boolean creates no surface — so a plane never comes from a discovered point.**
     ///
     /// This is the well-foundedness the whole "a plane's truth is three construction points"
