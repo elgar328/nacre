@@ -473,9 +473,40 @@ pub(crate) fn extrude(
         return Err(OpError::NonPositiveDistance);
     }
     profile.check()?;
-    // ★ No frame: a free-standing extrude has no face to take one from — the caller gave the
-    // plane directly, so the world is the only frame there is.
-    let (outer, holes) = swept_profile(model, plane, profile, dist, None);
+    // ★★★★★ **A plane the caller stated is drawn in its own frame.**
+    //
+    // In world coordinates a tilted plane's axes are irrational and `exact()` declines, so the
+    // whole prism used to drop to f64. Inside the plane's frame those axes are `x̂`/`ŷ` and the
+    // rational path applies unchanged — the walls come straight from the profile's decimals and
+    // the far cap is `w = dist`.
+    //
+    // ★★ **The gate is `plane.exact()`, the same expression the face path uses.** A plane that
+    // lifts in the world takes the world, definition or not; otherwise every axis-aligned model
+    // would gain motions it does not need and leave the exact predicate path for nothing.
+    //
+    // ★ **The frame is the caller's own**: `def.origin` and `def.ref_dir` are what they wrote, so
+    // the sketch's `(0, 0)` and `+u` land where they asked. `flip` is measured, not derived — the
+    // plane's canonical coefficients carry no direction, and `ŵ` has to face the way the sweep does.
+    let frame = plane.def.filter(|_| plane.exact().is_none()).and_then(|d| {
+        let pl = Plane::from_point_normal(plane.origin(), plane.normal())?;
+        let (h, _) = model.push_surface_with_coeffs(
+            Surface::Plane(pl),
+            SurfaceDef::Constructed,
+            Some(d.coeffs),
+        );
+        let node = |flip| nacre_topo::Motion::Frame {
+            plane: h,
+            origin: d.origin,
+            ref_dir: d.ref_dir,
+            flip,
+        };
+        let (_, _, _, w) =
+            crate::rotated_vertex::frame_world_basis(model, h, d.origin, d.ref_dir, false)?;
+        let n = plane.normal().as_array();
+        let flip = (0..3).map(|k| w[k] * n[k]).sum::<f64>() < 0.0;
+        Some(model.push_motion(node(flip), None))
+    });
+    let (outer, holes) = swept_profile(model, plane, profile, dist, frame);
     // ★★★★ **The base cap *is* the plane the caller named**, so where they stated it exactly
     // (`PlaneDef`) it can record its coefficients even when nothing else about the prism can —
     // the walls and far cap are irrational in the world unless `plane.exact()` allows.
@@ -594,14 +625,33 @@ pub(crate) fn build_prism(
         None => {
             // The two caps' rational coefficients come from the same frame normal the f64 pair
             // above uses, so they agree with the walls that meet them.
-            // ★ The frame's own answer when there is one; otherwise what the caller stated. Both
-            // canonicalize, so they agree wherever both exist.
-            let caps = outer_pts
-                .exact
-                .as_ref()
-                .and_then(|e| e.cap_planes())
-                .map(|(base, _)| base)
-                .or(base_cap_coeffs);
+            // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
+            //
+            // The base cap *is* the plane they named, and they named it in the world — so stating
+            // it that way keeps it `Constructed`, keeps its judgment exact, and lets two extrudes
+            // on one plane share it **whatever frames they chose**. Writing it as `[0,0,1,0]` in
+            // this prism's frame instead would be a second exact description of one plane, under a
+            // different `SurfaceKey` — the very duplication this work removes.
+            //
+            // The frame's answer is what a plane with no caller statement gets (an axis-aligned
+            // sketch, where the two agree anyway).
+            // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
+            //
+            // The base cap *is* the plane they named, and they named it in the world — so stating
+            // it that way keeps it `Constructed`, keeps its judgment exact, and lets two extrudes
+            // on one plane share it **whatever frames they chose**. Writing it as `[0,0,1,0]` in
+            // this prism's frame instead would be a second exact description of one plane, under a
+            // different `SurfaceKey` — the very duplication this work removes.
+            //
+            // The frame's answer is what a plane with no caller statement gets (an axis-aligned
+            // sketch, where the two agree anyway).
+            let caps = base_cap_coeffs.or_else(|| {
+                outer_pts
+                    .exact
+                    .as_ref()
+                    .and_then(|e| e.cap_planes())
+                    .map(|(base, _)| base)
+            });
             let (s, flipped) = model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::from_point_normal(outer_pts.base[0], -normal)

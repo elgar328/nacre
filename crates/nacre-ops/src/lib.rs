@@ -151,16 +151,29 @@ impl SketchPlane {
         })
     }
 
-    /// The same plane with its sketch `(0, 0)` moved to `p`. **`p` is not projected** — a caller
-    /// naming an origin off the plane gets a frame that does not sit on it, which is their
-    /// statement to make, not the kernel's to correct.
+    /// The same plane **moved to pass through `p`**, with `p` as the sketch's `(0, 0)`.
+    ///
+    /// ★★★★ **The plane travels with the origin** — `plane(ZX, { origin: … })` sets the position
+    /// as well as the 2-D origin, and `SketchPlane { origin, ..world_xy() }` always meant that.
+    /// Keeping the coefficients while moving the origin would leave the definition describing one
+    /// plane and its origin sitting on another: measured, `world_xy().with_origin([0, 0, 0.5])`
+    /// recorded `z = 0` for a cap at `z = 0.5`, and a boolean built on that lost 0.04 of volume.
+    /// The invariant that stops it — *the origin satisfies the coefficients* — is asserted in
+    /// `a_named_plane_records_what_its_caller_stated`.
+    ///
+    /// The direction is untouched: a translation does not turn `+u`.
     pub fn with_origin(mut self, p: Point3) -> Self {
         self.origin = p;
         self.def = self.def.and_then(|d| {
             let a = p.as_array().map(Rat::from_decimal);
+            let origin = [a[0]?, a[1]?, a[2]?];
             Some(PlaneDef {
-                origin: [a[0]?, a[1]?, a[2]?],
-                ..d
+                coeffs: nacre_scalar::plane_from_point_normal(
+                    [d.coeffs[0], d.coeffs[1], d.coeffs[2]],
+                    origin,
+                )?,
+                origin,
+                ref_dir: d.ref_dir,
             })
         });
         self
@@ -6210,6 +6223,39 @@ pub mod tests {
         let m = moved.def.unwrap();
         assert_eq!(f(&m), f(&d), "same plane");
         assert_eq!(m.origin.map(|r| r.to_f64()), [1.0, 5.0, 5.0]);
+        // ★★★★★ **The invariant that ties the two halves together: the origin is *on* the plane.**
+        // Without it a definition can describe one plane while its sketch sits on another —
+        // exactly what `with_origin` did until a boolean lost 0.04 of volume over it.
+        for p in [
+            SketchPlane::world_xy(),
+            SketchPlane::world_yz(),
+            SketchPlane::world_zx(),
+            SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
+            SketchPlane::world_zx().with_origin(Point3::from_array([10.0, 20.0, 5.0])),
+            SketchPlane::from_origin_normal(
+                Point3::from_array([0.0, 1.3, 0.0]),
+                Vector3::from_array([0.0, -1.0, 0.0]),
+            )
+            .unwrap(),
+            tilt,
+            tp,
+            moved,
+        ] {
+            let d = p.def.expect("stated");
+            let mut s = d.coeffs[3];
+            for k in 0..3 {
+                s = s
+                    .checked_add(d.coeffs[k].checked_mul(d.origin[k]).unwrap())
+                    .unwrap();
+            }
+            assert_eq!(
+                s,
+                nacre_scalar::Rat::from_int(0),
+                "the origin must lie on the plane it names: {:?} vs {:?}",
+                d.coeffs.map(|r| r.to_f64()),
+                d.origin.map(|r| r.to_f64())
+            );
+        }
         // ★ And the axes-only route is honest about having no definition.
         assert!(
             SketchPlane::from_axes(
@@ -6222,25 +6268,25 @@ pub mod tests {
         );
     }
 
-    /// ★★★★★ **A prism raised on a tilted plane records that plane exactly** — and nothing else
-    /// about it changes.
+    /// ★★★★★ **A prism raised on a named tilted plane states every one of its faces.**
     ///
-    /// The base cap *is* the plane the caller named, so a caller who stated it exactly gives the
-    /// kernel a plane it can write down, even though the same prism's walls and far cap are
-    /// irrational in world coordinates and stay on the f64 path. Measured over the suite:
-    /// coefficient-less fresh base caps went **782 → 2**.
+    /// In world coordinates that plane's axes are irrational, so the whole prism used to drop to
+    /// f64 and record nothing. Two things fixed it: the base cap **is** the plane the caller
+    /// named, so it states itself in the world; and the walls and far cap are built **inside that
+    /// plane's frame**, where the axes are `x̂`/`ŷ` and the profile's own decimals are the truth.
     ///
-    /// ★★ **And the judgment path is untouched**: no motion is created, so the vertices stay
-    /// `Constructed` and the surface stays `Constructed`. That is what separates this step from
-    /// the frame work — it is exactness with no toleranced-path cost.
+    /// ★★★ **The base cap stays in the world on purpose.** Writing it as `[0,0,1,0]` in this
+    /// prism's frame would be a second exact description of one plane under a different
+    /// `SurfaceKey` — the duplication this work exists to remove. Stated in the world it is
+    /// `Constructed`, its judgment stays exact, and two extrudes share it whatever frames they chose.
     #[test]
-    fn a_prism_on_a_named_tilted_plane_records_its_base_plane() {
+    fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
         let plane =
             SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
                 .unwrap();
         assert!(plane.exact().is_none(), "the axes have no exact form");
         let mut m = Model::new();
-        let OpOutput::Extrude { solid, faces } = apply(
+        let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
                 plane,
@@ -6251,28 +6297,54 @@ pub mod tests {
         .expect("extrude on a tilted plane") else {
             unreachable!()
         };
-        let base = m.faces.get(faces[0]).surface;
+        let coeffs = |f: Handle<Face>, m: &Model| {
+            m.surface_coeffs
+                .get(&m.faces.get(f).surface)
+                .map(|c| c.map(|r| r.to_f64()))
+        };
         assert_eq!(
-            m.surface_coeffs.get(&base).map(|c| c.map(|r| r.to_f64())),
+            coeffs(faces[0], &m),
             Some([1.0, 1.0, 1.0, 0.0]),
-            "★ the base cap is the caller's plane, written down"
+            "★ the base cap is the caller's plane, in the world"
         );
-        // ★ The far cap and the walls still cannot state themselves — that is the frame's job,
-        // and saying so here keeps this test from being read as more than it is.
         assert!(
-            !m.surface_coeffs
-                .contains_key(&m.faces.get(faces[1]).surface),
-            "the far cap is irrational in the world and stays so"
+            matches!(
+                m.surface_defs.get(&m.faces.get(faces[0]).surface),
+                Some(nacre_topo::SurfaceDef::Constructed)
+            ),
+            "★ and it carries no motion, so its judgment stays exact"
         );
-        // Nothing was moved: no motion, and every vertex is still constructed.
-        assert_eq!(m.motions.len(), 0, "W1 creates no motion");
-        let _ = solid;
-        for (_, v) in m.vertices.iter() {
-            assert!(
-                matches!(v.origin, nacre_topo::Origin::Constructed),
-                "the judgment path must not move"
-            );
+        assert_eq!(
+            coeffs(faces[1], &m),
+            Some([0.0, 0.0, 1.0, -1.0]),
+            "★ the far cap is `w = dist` in the frame"
+        );
+        // ★ Every face now states itself — that is the whole measurement.
+        for &f in &faces {
+            assert!(coeffs(f, &m).is_some(), "a face with no exact plane");
         }
+
+        // ★★★★★ **Two extrudes on one named plane put their far caps on one handle** — by name,
+        // at construction, with no f64 comparison. That is what the frame buys over the f64 path,
+        // where the two would agree only if their rounded coefficients happened to.
+        let cap_of = |m: &mut Model, d: f64| -> Handle<nacre_geom::Surface> {
+            let OpOutput::Extrude { faces, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    plane,
+                    profile: square(),
+                    dist: d,
+                },
+            )
+            .expect("extrude") else {
+                unreachable!()
+            };
+            m.faces.get(faces[1]).surface
+        };
+        let a = cap_of(&mut m, 2.5);
+        let b = cap_of(&mut m, 2.5);
+        assert_eq!(a, b, "one height on one plane is one plane");
+        assert_ne!(a, cap_of(&mut m, 2.6), "and a different height is not");
     }
 
     fn centred_on(m: &Model, face: Handle<Face>, half: f64) -> Profile2d {
