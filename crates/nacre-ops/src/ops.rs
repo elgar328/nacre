@@ -732,7 +732,7 @@ pub(crate) fn build_prism(
     };
     // Top cap: outward normal +N.
     let top_def = match outer_pts.exact.as_ref() {
-        Some(e) if e.top.len() >= 3 => e.surface_def([e.top_f64(0), e.top_f64(1), e.top_f64(2)]),
+        Some(e) if e.top.len() >= 3 => e.surface_def(),
         _ => SurfaceDef::Constructed,
     };
     let top_points = outer_pts.exact.as_ref().and_then(|e| e.cap_points(true));
@@ -908,7 +908,7 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
             // The witness is the same three points **in the frame the coefficients are written
             // in** — the world's own points when there is no frame, so this is unchanged there.
             let def = match ring.exact.as_ref() {
-                Some(e) => e.surface_def([e.base_f64(i), e.base_f64(j), e.top_f64(i)]),
+                Some(e) => e.surface_def(),
                 None => SurfaceDef::Constructed,
             };
             Ok(model.push_surface_with_coeffs(

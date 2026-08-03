@@ -169,7 +169,7 @@ pub(crate) fn collect_planes(
                     (w, false, None)
                 }
                 SurfaceDef::Inexact => return Err(reject(RejectReason::InexactSurface)),
-                SurfaceDef::Moved { witness, motion } => {
+                SurfaceDef::Moved { motion } => {
                     let _t = Watch::new(); // charged at the arm's end
                     // The pre-motion description, carried through the recorded chain — the same
                     // computation, in the same order, that a moved vertex's `Pt3` performs.
@@ -179,33 +179,23 @@ pub(crate) fn collect_planes(
                         crate::rotated_vertex::replay(Pt3::at(base), &chain)
                             .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
                     };
-                    // ★★★★★ **The exact points the plane was built from, when the producer
-                    // recorded them.**
+                    // ★★★★★ **The exact points the plane was built from — the only description.**
                     //
-                    // The `witness` beside them is those same points *realized* — and a third of
-                    // them do not survive the trip (measured 34.5%: `11/10` is not an f64, so
-                    // lifting the realization back with `try_from_f64` recovers a different
-                    // rational). The plane the judge then describes is the plane through three
-                    // rounded points, which is why two caps that are one plane could be told apart
-                    // with full confidence.
+                    // This arm used to fall back to a `witness: [Point3; 3]` beside the motion: the
+                    // same points *realized*, and a third of them do not survive the trip
+                    // (measured 34.5% — `11/10` is not an f64, so lifting the realization back
+                    // recovers a different rational). The judge then described the plane through
+                    // three rounded points, which is how two caps that are one plane were told
+                    // apart with full confidence.
                     //
-                    // ★ The f64 witness stays as the fallback for the surfaces no producer has
-                    // filled yet (measured 0.3% — a `Constructed` plane under a transform), so
-                    // this is strictly an improvement in what is described, never a new refusal.
-                    let mut w = match model.surface_points.get(&face.surface) {
-                        Some(pts) => [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?],
-                        None => {
-                            let lift = |p: Point3| -> Result<[nacre_scalar::Rat; 3], BoolError> {
-                                crate::rotated_vertex::coord_rat(p.as_array())
-                                    .map_err(|_| reject(RejectReason::CoordinateOutOfRange))
-                            };
-                            [
-                                turn(lift(witness[0])?)?,
-                                turn(lift(witness[1])?)?,
-                                turn(lift(witness[2])?)?,
-                            ]
-                        }
-                    };
+                    // ★ `Moved` now carries no fallback because it needs none: a source with no
+                    // exact points is recorded `Inexact` at the producer, so reaching here without
+                    // them is a producer that skipped `push_surface_with_coeffs`.
+                    let pts = model
+                        .surface_points
+                        .get(&face.surface)
+                        .ok_or_else(|| reject(RejectReason::InexactSurface))?;
+                    let mut w = [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?];
                     // `tri_pt3` is an *oriented* plane witness, but the witness was captured from
                     // whichever face first reached this surface — two faces can share it with
                     // opposite outward normals. Wind it to agree with *this* face's `n_out`, or

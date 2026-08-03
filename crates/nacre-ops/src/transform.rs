@@ -283,7 +283,6 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
 fn moved_surface_def(
     model: &mut Model,
     src: Handle<Surface>,
-    face: Handle<Face>,
     motion: &Xform<'_>,
     exact: bool,
     surf_rot: &mut HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>>,
@@ -313,21 +312,21 @@ fn moved_surface_def(
         // Nothing recorded: the motion kept the coefficients exact.
         return Ok(source);
     };
+    // ★★★★★ **A moved plane is `Moved` only if it has something exact to move.**
+    //
+    // This arm used to take the *face's* triangle as the new plane's witness. After a chain of
+    // booleans those corners are `Discovered` — points defined by planes — so the plane ended up
+    // described by its own derived intersections, rounded (measured: 75 of 1,883). What moves now
+    // is `Model::surface_points`, and a source with none has no exact description to carry, which
+    // is what `Inexact` says. The alternative — moving a rounded triangle and calling it exact —
+    // is the silent answer this whole item removes.
     Ok(match source {
         SurfaceDef::Inexact => SurfaceDef::Inexact,
-        SurfaceDef::Moved { witness, .. } => SurfaceDef::Moved {
-            witness,
-            motion: leaf,
-        },
-        SurfaceDef::Constructed => {
-            let f = model.faces.get(face);
-            let (witness, _) =
-                crate::planes::outer_tri(model, f).ok_or(OpError::DegenerateGeometry)?;
-            SurfaceDef::Moved {
-                witness,
-                motion: leaf,
-            }
+        SurfaceDef::Moved { .. } => SurfaceDef::Moved { motion: leaf },
+        SurfaceDef::Constructed if model.surface_points.contains_key(&src) => {
+            SurfaceDef::Moved { motion: leaf }
         }
+        SurfaceDef::Constructed => SurfaceDef::Inexact,
     })
 }
 
@@ -568,7 +567,7 @@ fn transform_solid(
         let moved = motion
             .surface(model.surfaces.get(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
-        let def = moved_surface_def(model, s, fh, motion, exact, &mut surf_rot)?;
+        let def = moved_surface_def(model, s, motion, exact, &mut surf_rot)?;
         // The rational coefficients follow the frame `def` names (`Model::surface_coeffs`).
         //
         // ★ `Moved` states its plane **before** the motion, and the base of the image is the base

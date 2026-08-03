@@ -174,14 +174,17 @@ pub enum SurfaceDef {
     /// The image of an exact surface under a motion history. The truth is `(witness, motion)`;
     /// the coefficients are a cache.
     ///
-    /// `witness` is three non-collinear points **before** the motion, exactly representable in
-    /// f64 (they are read off the pre-motion face, whose coordinates are exact by this same
-    /// invariant). `motion` is the leaf of the history in [`Model::motions`] — the chain lives in
-    /// the forest, exactly as [`Origin::Moved`] uses it.
-    Moved {
-        witness: [Point3; 3],
-        motion: Handle<MotionNode>,
-    },
+    /// `motion` is the leaf of the history in [`Model::motions`] — the chain lives in the forest,
+    /// exactly as [`Origin::Moved`] uses it. **What is moved** is the plane's own three points in
+    /// [`Model::surface_points`], stated in the pre-motion frame.
+    ///
+    /// ★★★★★ **This used to carry a `witness: [Point3; 3]` and it was the last place a rounded
+    /// coordinate served as a definition.** The doc claimed those three points were "exactly
+    /// representable in f64"; measured, a third of them were not — `11/10` is not an f64, so
+    /// lifting the realization back recovered a different rational and the judge described the
+    /// plane through three rounded points. A moved plane whose source has no exact points is now
+    /// [`Inexact`](Self::Inexact), which is what it always was.
+    Moved { motion: Handle<MotionNode> },
     /// **Not exactly describable** — a history the forest cannot express. The kernel does not
     /// pretend the coefficients are exact; consumers that need the truth reject honestly.
     Inexact,

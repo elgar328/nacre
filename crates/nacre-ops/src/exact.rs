@@ -222,12 +222,12 @@ impl SweptRat {
     /// face's own f64 triangle is the truth. Inside a plane's frame neither is so — the
     /// coefficients are the frame's, and saying `Constructed` would let the judgment read them as
     /// world coefficients, which is the *silent* half of getting this wrong. `Moved` names the
-    /// motion that carries them out, and the witness is the same triangle **in frame
-    /// coordinates**, which is where the replay starts.
-    pub(crate) fn surface_def(&self, witness: [Point3; 3]) -> nacre_topo::SurfaceDef {
+    /// motion that carries them out, and the plane's own points (`Model::surface_points`) are
+    /// written **in frame coordinates**, which is where the replay starts.
+    pub(crate) fn surface_def(&self) -> nacre_topo::SurfaceDef {
         match self.motion {
             None => nacre_topo::SurfaceDef::Constructed,
-            Some(motion) => nacre_topo::SurfaceDef::Moved { witness, motion },
+            Some(motion) => nacre_topo::SurfaceDef::Moved { motion },
         }
     }
 
