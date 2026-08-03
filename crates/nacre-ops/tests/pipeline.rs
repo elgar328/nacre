@@ -50,10 +50,7 @@ fn hexagon_extrude_exports_to_step_and_obj() {
 fn multi_op_log_composes_through_export() {
     // Two extrudes on parallel planes produce two independent solids that both
     // survive validation and export.
-    let far = SketchPlane {
-        origin: Point3::from_array([50.0, 0.0, 0.0]),
-        ..SketchPlane::world_xy()
-    };
+    let far = SketchPlane::world_xy().with_origin(Point3::from_array([50.0, 0.0, 0.0]));
     let model = replay(&[hex_extrude(SketchPlane::world_xy()), hex_extrude(far)]).unwrap();
 
     assert_eq!(model.solids.len(), 2);
@@ -357,10 +354,7 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
             dist: 1.0,
         },
         Operation::Extrude {
-            plane: SketchPlane {
-                origin: Point3::from_array([0.0, 0.0, 0.5]),
-                ..SketchPlane::world_xy()
-            },
+            plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
             profile: bar,
             dist: 1.0,
         },
@@ -398,10 +392,7 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
             dist: 1.0,
         },
         Operation::Extrude {
-            plane: SketchPlane {
-                origin: Point3::from_array([0.0, 0.0, 0.5]),
-                ..SketchPlane::world_xy()
-            },
+            plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
             profile: ell,
             dist: 1.0,
         },
@@ -456,11 +447,11 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
             dist: 1.0,
         },
         Operation::Extrude {
-            plane: SketchPlane {
-                origin: Point3::from_array([0.0, 1.3, 0.0]),
-                x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
-                y_axis: Vector3::from_array([0.0, 0.0, 1.0]),
-            },
+            plane: SketchPlane::from_origin_normal(
+                Point3::from_array([0.0, 1.3, 0.0]),
+                Vector3::from_array([0.0, -1.0, 0.0]),
+            )
+            .expect("a unit normal"),
             profile: staple,
             dist: 0.65,
         },
@@ -1109,10 +1100,7 @@ fn a_split_dimension_meets_the_undivided_one() {
         let out = nacre_ops::apply(
             m,
             &Operation::Extrude {
-                plane: SketchPlane {
-                    origin: Point3::from_array([0.0, 0.0, z]),
-                    ..SketchPlane::world_xy()
-                },
+                plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
                 profile: rect(x0, x1),
                 dist,
             },
@@ -1236,44 +1224,38 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
 
     let za = nacre_ops::face_plane(&m1, top_face(&m1, whole))
         .unwrap()
-        .origin[2];
+        .origin()[2];
     let zb = nacre_ops::face_plane(&m2, top_face(&m2, split))
         .unwrap()
-        .origin[2];
+        .origin()[2];
     assert_eq!(za, 1.2, "1.0 + 0.2");
     assert_eq!(za, zb, "the two pad paths reach different planes");
 }
 
-/// The prism builder used to reject a degenerate frame through `sweep.normalize()`, which
-/// the exact-dimension cell removed — it now takes the unit normal as an argument. The
-/// refusal survives, one layer further in (`Plane::from_point_normal`), and this says so
-/// rather than leaving the guard's disappearance to be noticed by a wrong answer.
+/// **A degenerate frame can no longer be handed in at all** — the refusal moved from the prism
+/// builder to the door.
+///
+/// It used to be built as three raw axes and rejected inside `Plane::from_point_normal`, one
+/// layer into `build_prism`. `SketchPlane`'s fields are private now and every public constructor
+/// states a *plane*, so the degeneracies a caller can express are the ones checked here: a normal
+/// with no direction, and three points that do not span one. The inner guard still stands for the
+/// crate's own `from_axes`, but nothing outside can reach it.
 #[test]
-fn a_degenerate_frame_is_still_refused() {
-    for (x, y) in [
-        ([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]), // no x axis
-        ([1.0, 0.0, 0.0], [0.0, 0.0, 0.0]), // no y axis
-        ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]), // parallel axes: no normal
-        ([1.0, 0.0, 0.0], [2.0, 0.0, 0.0]),
-    ] {
-        let mut m = Model::new();
-        let r = nacre_ops::apply(
-            &mut m,
-            &Operation::Extrude {
-                plane: SketchPlane {
-                    origin: Point3::origin(),
-                    x_axis: Vector3::from_array(x),
-                    y_axis: Vector3::from_array(y),
-                },
-                profile: Profile2d::polygon(vec![
-                    p2(0.0, 0.0),
-                    p2(2.0, 0.0),
-                    p2(2.0, 2.0),
-                    p2(0.0, 2.0),
-                ]),
-                dist: 1.0,
-            },
-        );
-        assert!(r.is_err(), "x={x:?} y={y:?} built a solid");
-    }
+fn a_degenerate_frame_cannot_be_built() {
+    let o = Point3::origin();
+    assert!(
+        SketchPlane::from_origin_normal(o, Vector3::from_array([0.0, 0.0, 0.0])).is_none(),
+        "a zero normal is not a plane"
+    );
+    // `x_point` on the origin: no `+u` direction.
+    assert!(SketchPlane::through_points(o, o, Point3::from_array([0.0, 1.0, 0.0])).is_none());
+    // `y_hint` collinear with `+u`: the three points span a line, not a plane.
+    assert!(
+        SketchPlane::through_points(
+            o,
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 0.0, 0.0]),
+        )
+        .is_none()
+    );
 }

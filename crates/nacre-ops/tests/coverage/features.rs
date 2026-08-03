@@ -711,8 +711,8 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
     m.rebuild_adjacency();
 
     // Where the caller predicts the boss's cap centre is, from `face_plane` alone.
-    let n = plane.x_axis.cross(plane.y_axis);
-    let want = plane.origin + plane.x_axis * 0.8 + plane.y_axis * 0.3 + n * dist;
+    let n = plane.x_axis().cross(plane.y_axis());
+    let want = plane.origin() + plane.x_axis() * 0.8 + plane.y_axis() * 0.3 + n * dist;
 
     let got = nacre_props::face_props(&m, top_face).unwrap().centroid;
     assert!(
@@ -757,12 +757,12 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
     // |n| = (0.707, 0.707, 0) — z is the least-aligned axis, so x = ẑ × n̂.
     let want = Vector3::from_array([0.0, 0.0, 1.0]).cross(diag);
     assert!(
-        (plane.x_axis - want).norm() < 1e-12,
+        (plane.x_axis() - want).norm() < 1e-12,
         "x axis {:?}, expected {want:?}",
-        plane.x_axis
+        plane.x_axis()
     );
     // And the frame stays right-handed about the face's outward normal.
-    assert!((plane.x_axis.cross(plane.y_axis) - diag).norm() < 1e-12);
+    assert!((plane.x_axis().cross(plane.y_axis()) - diag).norm() < 1e-12);
 }
 
 /// **Why the sketch origin does not come from the face at all.**
@@ -812,7 +812,7 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
             unreachable!()
         };
         m.rebuild_adjacency();
-        nacre_ops::face_plane(&m, faces[1]).unwrap().origin
+        nacre_ops::face_plane(&m, faces[1]).unwrap().origin()
     };
 
     let a = top_origin(l.clone());

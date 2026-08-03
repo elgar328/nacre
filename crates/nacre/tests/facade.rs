@@ -120,7 +120,11 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
 
     // And the sketch plane a pad/pocket would place a profile in.
     let plane = face_plane(&model, top).unwrap();
-    assert!((plane.origin[2] - 1.0).abs() < 1e-12, "{:?}", plane.origin);
+    assert!(
+        (plane.origin()[2] - 1.0).abs() < 1e-12,
+        "{:?}",
+        plane.origin()
+    );
 
     // A malformed sketch is refused by name, not silently built.
     let bowtie = from_edges(vec![

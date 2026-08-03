@@ -8,6 +8,7 @@
 //! `nacre-validate` applies fully.
 
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_scalar::Rat;
 use nacre_store::Handle;
 use nacre_topo::{Face, HalfEdge, Model, Solid, Vertex};
 
@@ -30,18 +31,45 @@ pub use boolean::{BoolReport, boolean, boolean_with_report};
 pub use nacre_cip::Decision;
 pub use nacre_cip::predicate::{Evidence, Site};
 pub use ops::{
-    BoolKind, OpError, OpOutput, Operation, Profile2d, ProfileRing, SketchPlane, apply, face_plane,
-    replay,
+    BoolKind, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing, SketchPlane, apply,
+    face_plane, replay,
 };
 pub use sketch::{Curve2d, Edge2d, SketchError, from_edges, from_rings};
 
 impl SketchPlane {
-    /// The world XY plane (normal +Z).
+    /// The world XY plane: `+u = x̂`, `+v = ŷ`, normal `+ẑ`.
     pub fn world_xy() -> Self {
+        Self::axis_plane([0, 0, 1], [1, 0, 0], [0, 1, 0])
+    }
+
+    /// The world YZ plane: `+u = ŷ`, `+v = ẑ`, normal `+x̂`.
+    pub fn world_yz() -> Self {
+        Self::axis_plane([1, 0, 0], [0, 1, 0], [0, 0, 1])
+    }
+
+    /// The world ZX plane: `+u = ẑ`, `+v = x̂`, normal `+ŷ`.
+    ///
+    /// ★★ **The axes are named, not derived.** `ẑ × n` would give `−x̂` here; the convention a
+    /// person expects (and the one the script layer documents) is `+u = ẑ`. A named plane gets to
+    /// say, which is exactly what [`PlaneDef::ref_dir`] is for.
+    pub fn world_zx() -> Self {
+        Self::axis_plane([0, 1, 0], [0, 0, 1], [1, 0, 0])
+    }
+
+    /// One of the three world planes, stated exactly: normal, `+u`, `+v` as integer triples.
+    fn axis_plane(n: [i128; 3], u: [i128; 3], v: [i128; 3]) -> Self {
+        let r = |a: [i128; 3]| a.map(Rat::from_int);
+        let f = |a: [i128; 3]| Vector3::from_array(a.map(|c| c as f64));
+        let zero = Rat::from_int(0);
         Self {
             origin: Point3::origin(),
-            x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
-            y_axis: Vector3::from_array([0.0, 1.0, 0.0]),
+            x_axis: f(u),
+            y_axis: f(v),
+            def: Some(PlaneDef {
+                coeffs: [r(n)[0], r(n)[1], r(n)[2], zero],
+                origin: [zero; 3],
+                ref_dir: r(u),
+            }),
         }
     }
 
@@ -52,6 +80,12 @@ impl SketchPlane {
     /// ★ It has to be the same convention: this and [`face_plane`] answer the same question, and a
     /// caller that builds a frame here and compares it with one read off a face would otherwise
     /// find them ninety degrees apart.
+    ///
+    /// ★★★★ **`normal` is kept, not just consumed.** Normalizing it is what destroys the exact
+    /// form — the caller's `(1, 1, 1)` is coefficients `[1, 1, 1, 0]`, while `normalize` of it
+    /// squares to `0.9999999999999999…`. The unit axes below stay the f64 cache; the definition
+    /// records what was handed in. A normal outside the decimal window simply leaves `def` empty,
+    /// so this constructor is **never stricter than it was**.
     pub fn from_origin_normal(origin: Point3, normal: Vector3) -> Option<Self> {
         let n = normal.normalize()?;
         let (x_axis, y_axis) = ops::frame_axes(n)?;
@@ -59,7 +93,110 @@ impl SketchPlane {
             origin,
             x_axis,
             y_axis,
+            def: Self::normal_def(origin, normal),
         })
+    }
+
+    /// `from_origin_normal`'s exact half: the plane through `origin` with normal `normal`, and the
+    /// same `ẑ × n` convention spelled in rationals (un-normalized — a cross product is already in
+    /// the plane, so nothing needs projecting).
+    fn normal_def(origin: Point3, normal: Vector3) -> Option<PlaneDef> {
+        let o = origin.as_array().map(Rat::from_decimal);
+        let n = normal.as_array().map(Rat::from_decimal);
+        let (o, n) = ([o[0]?, o[1]?, o[2]?], [n[0]?, n[1]?, n[2]?]);
+        let coeffs = nacre_scalar::plane_from_point_normal(n, o)?;
+        let zero = Rat::from_int(0);
+        let ref_dir = if n[0] == zero && n[1] == zero {
+            [n[2], zero, zero] // ŷ × n for a vertical normal
+        } else {
+            [zero.checked_sub(n[1])?, n[0], zero] // ẑ × n
+        };
+        Some(PlaneDef {
+            coeffs,
+            origin: o,
+            ref_dir,
+        })
+    }
+
+    /// **A plane through three written points**: `origin` is the sketch's `(0, 0)`, `+u` runs
+    /// toward `x_point`, and `+v` leans toward `y_hint`.
+    ///
+    /// ★★★ **Everything here is exact by construction.** The plane is
+    /// [`nacre_scalar::plane_through_points`] of the three; `ref_dir` is `x_point − origin`, a
+    /// difference of written points that **already lies in the plane**. `None` if the three are
+    /// collinear or fall outside the decimal window.
+    pub fn through_points(origin: Point3, x_point: Point3, y_hint: Point3) -> Option<Self> {
+        let x = (x_point - origin).normalize()?;
+        let v = y_hint - origin;
+        let y = (v - x * v.dot(x)).normalize()?;
+        let lift = |p: Point3| {
+            let a = p.as_array().map(Rat::from_decimal);
+            Some([a[0]?, a[1]?, a[2]?])
+        };
+        let def = (|| {
+            let (o, xp, yh) = (lift(origin)?, lift(x_point)?, lift(y_hint)?);
+            let coeffs = nacre_scalar::plane_through_points(o, xp, yh)?;
+            let d = |i: usize| xp[i].checked_sub(o[i]);
+            Some(PlaneDef {
+                coeffs,
+                origin: o,
+                ref_dir: [d(0)?, d(1)?, d(2)?],
+            })
+        })();
+        Some(Self {
+            origin,
+            x_axis: x,
+            y_axis: y,
+            def,
+        })
+    }
+
+    /// The same plane with its sketch `(0, 0)` moved to `p`. **`p` is not projected** — a caller
+    /// naming an origin off the plane gets a frame that does not sit on it, which is their
+    /// statement to make, not the kernel's to correct.
+    pub fn with_origin(mut self, p: Point3) -> Self {
+        self.origin = p;
+        self.def = self.def.and_then(|d| {
+            let a = p.as_array().map(Rat::from_decimal);
+            Some(PlaneDef {
+                origin: [a[0]?, a[1]?, a[2]?],
+                ..d
+            })
+        });
+        self
+    }
+
+    /// A frame from axes the caller already holds — **with no exact definition**, so anything
+    /// built on it takes the f64 path.
+    ///
+    /// ★ Not public. Normalized axes are exactly what this type exists to stop being handed, and
+    /// the callers that legitimately have only axes are internal: a face's own frame, and
+    /// `exact()`'s own tests.
+    pub(crate) fn from_axes(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Self {
+        Self {
+            origin,
+            x_axis,
+            y_axis,
+            def: None,
+        }
+    }
+
+    /// The sketch's `(0, 0)` in space.
+    #[inline]
+    pub fn origin(&self) -> Point3 {
+        self.origin
+    }
+
+    /// The `+u` direction.
+    #[inline]
+    pub fn x_axis(&self) -> Vector3 {
+        self.x_axis
+    }
+
+    /// The `+v` direction.
+    #[inline]
+    pub fn y_axis(&self) -> Vector3 {
+        self.y_axis
     }
 
     /// The 3-D point for sketch coordinates `p = (u, v)`.
@@ -1764,10 +1901,7 @@ pub mod tests {
         let OpOutput::Extrude { solid: b, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane {
-                    origin: Point3::from_array([0.0, 0.0, 0.5]),
-                    ..SketchPlane::world_xy()
-                },
+                plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
                 profile: bar,
                 dist: 1.0,
             },
@@ -1797,10 +1931,7 @@ pub mod tests {
         let OpOutput::Extrude { solid: stub, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane {
-                    origin: Point3::from_array([0.0, 0.0, 0.5]),
-                    ..SketchPlane::world_xy()
-                },
+                plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
                 profile: ell,
                 dist: 1.0,
             },
@@ -1979,11 +2110,11 @@ pub mod tests {
         let OpOutput::Extrude { solid: st, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane {
-                    origin: Point3::from_array([0.0, 1.3, 0.0]),
-                    x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
-                    y_axis: Vector3::from_array([0.0, 0.0, 1.0]),
-                },
+                plane: SketchPlane::from_origin_normal(
+                    Point3::from_array([0.0, 1.3, 0.0]),
+                    Vector3::from_array([0.0, -1.0, 0.0]),
+                )
+                .expect("a unit normal"),
                 profile: staple,
                 dist: 0.65,
             },
@@ -2412,10 +2543,7 @@ pub mod tests {
 
     #[test]
     fn two_extrudes_make_two_solids() {
-        let far = SketchPlane {
-            origin: Point3::from_array([5.0, 0.0, 0.0]),
-            ..SketchPlane::world_xy()
-        };
+        let far = SketchPlane::world_xy().with_origin(Point3::from_array([5.0, 0.0, 0.0]));
         let log = vec![
             extrude_op(square(), 1.0),
             Operation::Extrude {
@@ -5461,11 +5589,7 @@ pub mod tests {
             assert_eq!(gv.as_array(), w, "v for normal {n:?}");
             // ★ And the axes stay exactly representable, so the rational construction path still
             // fires — losing that would drop every axis-aligned model to f64 silently.
-            let plane = SketchPlane {
-                origin: Point3::origin(),
-                x_axis: gu,
-                y_axis: gv,
-            };
+            let plane = SketchPlane::from_axes(Point3::origin(), gu, gv);
             assert!(plane.exact().is_some(), "exact path lost for normal {n:?}");
         }
     }
@@ -6019,6 +6143,79 @@ pub mod tests {
             (with, without),
             (16, 0),
             "★ every face of a twice-turned, twice-bossed result states itself exactly"
+        );
+    }
+
+    /// ★★★★★ **A plane states itself exactly, and its f64 axes are the realization of that.**
+    ///
+    /// This is the whole point of closing the struct: `(1, 1, 1)` is coefficients `[1, 1, 1, 0]`,
+    /// three integers, while the unit axes derived from it square to `0.9999999999999999…`. The
+    /// old API stored only the axes and threw the normal away, so nothing exact survived the door.
+    #[test]
+    fn a_named_plane_records_what_its_caller_stated() {
+        let f = |d: &PlaneDef| d.coeffs.map(|r| r.to_f64());
+        // The three world planes, with the axes the script layer documents.
+        for (p, want, u) in [
+            (
+                SketchPlane::world_xy(),
+                [0.0, 0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+            ),
+            (
+                SketchPlane::world_yz(),
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ),
+            // ★ `ẑ × n` would give `−x̂` here; a named plane says `+u = ẑ` instead.
+            (
+                SketchPlane::world_zx(),
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ),
+        ] {
+            let d = p.def.expect("a world plane states itself");
+            assert_eq!(f(&d), want);
+            assert_eq!(d.ref_dir.map(|r| r.to_f64()), u);
+            assert_eq!(p.x_axis().as_array(), u, "the axis follows the definition");
+        }
+        // A tilted normal the caller wrote: exact coefficients, though its axes never can be.
+        let tilt =
+            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
+                .unwrap();
+        assert_eq!(f(&tilt.def.unwrap()), [1.0, 1.0, 1.0, 0.0]);
+        assert!(
+            tilt.exact().is_none(),
+            "★ the axes still have no exact form — that is what the definition exists to replace"
+        );
+        // Three written points: the plane is exact and `+u` runs toward `x_point`.
+        let tp = SketchPlane::through_points(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 2.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 3.0]),
+        )
+        .unwrap();
+        let d = tp.def.unwrap();
+        assert_eq!(f(&d), [1.0, 0.0, 0.0, -1.0], "the plane x = 1");
+        assert_eq!(
+            d.ref_dir.map(|r| r.to_f64()),
+            [0.0, 2.0, 0.0],
+            "x_point − origin"
+        );
+        assert_eq!(d.origin.map(|r| r.to_f64()), [1.0, 0.0, 0.0]);
+        // Moving the sketch origin keeps the plane and moves only `(0, 0)`.
+        let moved = tp.with_origin(Point3::from_array([1.0, 5.0, 5.0]));
+        let m = moved.def.unwrap();
+        assert_eq!(f(&m), f(&d), "same plane");
+        assert_eq!(m.origin.map(|r| r.to_f64()), [1.0, 5.0, 5.0]);
+        // ★ And the axes-only route is honest about having no definition.
+        assert!(
+            SketchPlane::from_axes(
+                Point3::origin(),
+                Vector3::from_array([1.0, 0.0, 0.0]),
+                Vector3::from_array([0.0, 1.0, 0.0]),
+            )
+            .def
+            .is_none()
         );
     }
 

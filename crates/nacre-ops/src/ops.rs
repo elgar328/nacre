@@ -20,13 +20,45 @@ use nacre_topo::{
 };
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
-/// `x_axis`/`y_axis` are assumed unit and orthogonal (the constructors ensure
-/// it); the plane normal is `x × y`.
+/// The axes are unit and orthogonal (the constructors ensure it); the normal is `x × y`.
+///
+/// ★★★★★ **The fields are private, and that is the whole point.** They used to be `pub`, so a
+/// caller handed the kernel three *normalized* f64 vectors — and normalizing is where the
+/// exactness dies: a plane with normal `(1, 1, 1)` has coefficients `[1, 1, 1, 0]`, three
+/// integers, but its unit axes square to `0.9999999999999999…` and no exact form survives. The
+/// kernel then had nothing to build on and dropped the whole prism to f64.
+///
+/// So a plane is built through a constructor that **keeps what the caller stated**
+/// ([`PlaneDef`]), and the axes below are the *realization* of that. The two cannot describe
+/// different planes because only one of them is written down.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SketchPlane {
-    pub origin: Point3,
-    pub x_axis: Vector3,
-    pub y_axis: Vector3,
+    // `pub(crate)`, not `pub`: the constructors live in this crate's `lib.rs`, and what has to be
+    // closed is the **public** surface — a caller outside must not be able to hand in three
+    // normalized axes and call that a plane.
+    pub(crate) origin: Point3,
+    pub(crate) x_axis: Vector3,
+    pub(crate) y_axis: Vector3,
+    /// What the caller stated, exactly — `None` when they stated only axes (a frame the kernel
+    /// cannot reconstruct, which then takes the f64 path it always took).
+    pub(crate) def: Option<PlaneDef>,
+}
+
+/// **A sketch plane as its author stated it** — the exact truth behind [`SketchPlane`]'s f64 axes.
+///
+/// ★ `ref_dir` is **not** a unit vector and is not projected: every constructor derives it from
+/// points that already lie in the plane (or from `ẑ × n`, which a cross product puts there), so
+/// the normalization a frame needs is exactly one `1/√(rational)` at realization time — never
+/// something stored.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlaneDef {
+    /// Canonical rational plane coefficients — direction-free, so two spellings of one plane are
+    /// the same array.
+    pub coeffs: [nacre_scalar::Rat; 4],
+    /// Where the sketch's `(0, 0)` sits.
+    pub origin: [nacre_scalar::Rat; 3],
+    /// The direction the sketch's `+u` runs, in the plane, any length.
+    pub ref_dir: [nacre_scalar::Rat; 3],
 }
 
 /// A closed planar region: one outer ring and any number of hole rings (straight segments only,
@@ -154,6 +186,12 @@ impl Profile2d {
 }
 
 /// A modelling operation.
+///
+/// ★ **`Extrude` is the large variant and it is not boxed.** It carries a [`SketchPlane`], which
+/// now holds the plane's exact rational definition (~400 bytes). An op log is tens of entries
+/// long and is walked once per replay, so the wasted space is measured in kilobytes; boxing would
+/// buy that back at the cost of an indirection on the one type a caller constructs by hand.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
     /// Extrude `profile` (on `plane`) by `dist` along the plane normal.
@@ -944,11 +982,7 @@ pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
 /// live solid's outer shell holds the face.
 pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpError> {
     let f = face_frame(model, face)?;
-    Ok(SketchPlane {
-        origin: f.origin,
-        x_axis: f.x,
-        y_axis: f.y,
-    })
+    Ok(SketchPlane::from_axes(f.origin, f.x, f.y))
 }
 
 /// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,
@@ -1016,11 +1050,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // ★ **`flip` is measured, not derived** — see `frame_world_basis`. `flip = true` negates `ŵ`
     // and `û` together and leaves `v̂`, so the second reading is a sign change rather than a
     // second realization.
-    let world = SketchPlane {
-        origin,
-        x_axis: x,
-        y_axis: y,
-    };
+    let world = SketchPlane::from_axes(origin, x, y);
     let sketch = (world.exact().is_none())
         .then(|| crate::rotated_vertex::frame_world_basis(model, surface_h, false))
         .flatten()
@@ -1087,11 +1117,7 @@ fn extrude_and_boolean(
     };
     // The face's own frame, so a pad or pocket takes the same exact-rational path an
     // extrude does: its axes are `{0, ±1}` exactly whenever the face is axis-aligned.
-    let plane = SketchPlane {
-        origin: frame.origin,
-        x_axis: frame.x,
-        y_axis: frame.y,
-    };
+    let plane = SketchPlane::from_axes(frame.origin, frame.x, frame.y);
     // ★★★ **The frame is not decided here — `face_frame` already decided it**, and that is the
     // point: `face_plane` promises a caller the frame this operation will use, so there must be
     // exactly one place that picks it. All that is left is to name it as a motion node.

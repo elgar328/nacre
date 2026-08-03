@@ -2892,10 +2892,7 @@ centroid 1 1.5 2
     /// ends biting the cap's convex corners. Two chords on one face (M5-d3 cell 3e-2).
     fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
-        let raised = SketchPlane {
-            origin: Point3::from_array([0.0, 0.0, 0.5]),
-            ..SketchPlane::world_xy()
-        };
+        let raised = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
         let bar = extrude(
             &mut m,
             raised,
@@ -2917,11 +2914,11 @@ centroid 1 1.5 2
     fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
         use nacre_math::Vector3;
         let (mut m, l) = l_prism();
-        let xz = SketchPlane {
-            origin: Point3::from_array([0.0, 1.3, 0.0]),
-            x_axis: Vector3::from_array([1.0, 0.0, 0.0]),
-            y_axis: Vector3::from_array([0.0, 0.0, 1.0]),
-        };
+        let xz = SketchPlane::from_origin_normal(
+            Point3::from_array([0.0, 1.3, 0.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
+        )
+        .expect("a unit normal");
         let st = extrude_dist(
             &mut m,
             xz,
@@ -3109,10 +3106,7 @@ centroid 1 1.5 2
     /// lid carries the suite's first **non-convex** inner loop (M5-d3 cell 3h).
     fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
-        let raised = SketchPlane {
-            origin: Point3::from_array([0.0, 0.0, 0.5]),
-            ..SketchPlane::world_xy()
-        };
+        let raised = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
         let stub = extrude(
             &mut m,
             raised,
@@ -3659,10 +3653,7 @@ centroid 1 1.5 2
             let out = apply(
                 m,
                 &Operation::Extrude {
-                    plane: SketchPlane {
-                        origin: Point3::from_array([0.0, 0.0, z]),
-                        ..SketchPlane::world_xy()
-                    },
+                    plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
                     profile: Profile2d::polygon(poly),
                     dist,
                 },

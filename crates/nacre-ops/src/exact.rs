@@ -85,9 +85,9 @@ impl SketchPlane {
     /// has exactly the length `dist` and the sweep lands where the dimension says.
     pub(crate) fn exact(&self) -> Option<RatFrame> {
         let f = RatFrame {
-            origin: lift(self.origin.as_array())?,
-            x: lift(self.x_axis.as_array())?,
-            y: lift(self.y_axis.as_array())?,
+            origin: lift(self.origin().as_array())?,
+            x: lift(self.x_axis().as_array())?,
+            y: lift(self.y_axis().as_array())?,
         };
         let one = Rat::from_int(1);
         let zero = Rat::from_int(0);
@@ -353,11 +353,11 @@ mod tests {
 
     fn rotated(deg: f64) -> SketchPlane {
         let (s, c) = deg.to_radians().sin_cos();
-        SketchPlane {
-            origin: Point3::origin(),
-            x_axis: Vector3::from_array([c, s, 0.0]),
-            y_axis: Vector3::from_array([-s, c, 0.0]),
-        }
+        SketchPlane::from_axes(
+            Point3::origin(),
+            Vector3::from_array([c, s, 0.0]),
+            Vector3::from_array([-s, c, 0.0]),
+        )
     }
 
     /// The axes a sketch plane actually gets in the common cases are `{0, ±1}`, which
@@ -389,11 +389,11 @@ mod tests {
         // Spelled exactly, the same rotation lifts.
         assert!(rotated(0.0).exact().is_some());
         assert!(
-            SketchPlane {
-                origin: Point3::origin(),
-                x_axis: Vector3::from_array([0.0, 1.0, 0.0]),
-                y_axis: Vector3::from_array([-1.0, 0.0, 0.0]),
-            }
+            SketchPlane::from_axes(
+                Point3::origin(),
+                Vector3::from_array([0.0, 1.0, 0.0]),
+                Vector3::from_array([-1.0, 0.0, 0.0]),
+            )
             .exact()
             .is_some(),
             "a quarter turn written down rather than computed"

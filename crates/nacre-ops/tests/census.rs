@@ -373,10 +373,8 @@ fn ex(m: &mut Model, z: f64, lo: [f64; 2], hi: [f64; 2], dist: f64) -> Handle<So
     let OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
-            plane: nacre_ops::SketchPlane {
-                origin: Point3::from_array([0.0, 0.0, z]),
-                ..nacre_ops::SketchPlane::world_xy()
-            },
+            plane: nacre_ops::SketchPlane::world_xy()
+                .with_origin(Point3::from_array([0.0, 0.0, z])),
             profile: nacre_ops::Profile2d::polygon(vec![
                 p(lo[0], lo[1]),
                 p(hi[0], lo[1]),
