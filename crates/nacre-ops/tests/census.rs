@@ -364,6 +364,15 @@ fn dump() {
             record(&format!("ex {kn} {i}"), &m, &inputs, &out);
         }
     }
+
+    // ★ **How many plane names went out unverified**, over everything above. Not a `c ` line —
+    // it is not a coordinate, and the diff above must not move when this does. It is here because
+    // this is the one run that covers the whole corpus in a single process, and the number decides
+    // whether the exact zero-test (a modular residue check) is worth building at all.
+    println!(
+        "stat inconclusive_names {}",
+        nacre_topo::INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed)
+    );
 }
 
 /// A rectangular prism raised from `z` by `dist` — the construction path production uses.

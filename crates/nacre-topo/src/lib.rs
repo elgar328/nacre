@@ -190,6 +190,18 @@ pub enum SurfaceDef {
     Inexact,
 }
 
+/// How many plane names [`Model::push_surface_with_coeffs`] has issued **without being able to
+/// verify them** — the `c · p` residual overflowed `Rat`, so the coefficients and the points were
+/// never actually compared.
+///
+/// ★ **In release, not behind `cfg(test)`.** The population it counts depends on the caller's
+/// numbers, not on the code path, so a build measured only under test measures the fixtures rather
+/// than the kernel. It costs one relaxed increment on a branch that is already rare.
+///
+/// ★★ **Observability only** — nothing reads it to decide anything, so it cannot affect a result
+/// or replay determinism. It is a `u64` a measurement can print and a test can bound.
+pub static INCONCLUSIVE_NAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped
 /// (`Reversed`). A pure tag — full derives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -453,31 +465,58 @@ impl Model {
         // crash**. A plane with no name still has its points, and every consumer of the name
         // already handles its absence.
         //
-        // ★★ **Inconclusive counts as "no".** `c · p` can overflow `Rat` when the coefficients are
-        // wide (measured 774 of 73,369 — the same "wide normal" population `plane_frame_named`
-        // already declines), and a check that could not be evaluated is not a check that passed.
+        // ★★★★★ **Only a demonstrated violation drops the name — inconclusive does not.**
+        // `c · p` overflows `Rat` whenever the coefficients are wide, and the first version of
+        // this filter read that as failure. It is not: an arithmetic that could not be carried out
+        // is an absence of evidence, and the name is *load-bearing* (`ops::frame_chain` requires
+        // it), so withholding it on no evidence is not the conservative choice — it is a
+        // destructive one.
         //
-        // ★★★ **Measured, and it caught one.** Across the suite: **0 violations**, and 1,546 of
-        // 76,135 (2.0%) inconclusive — the wide-coefficient population, whose names it therefore
-        // does not issue. That costs nothing observable: those planes already could not host a
-        // frame (`plane_frame_named` declines on the same width) and none of them interned with
-        // anything (census bit-identical).
+        // ★★★★★ **Measured, and that is not a hypothetical.** Reading inconclusive as failure
+        // dropped the name of essentially every arbitrarily-tilted plane (the check overflows at
+        // full-width decimals), which unhooked the sketch frame and sent the whole extrude down
+        // the f64 path — for five of a prism's six faces. Volume, face count, `validate` and a
+        // bit-identical coordinate census all stayed silent, because the answer was still right.
+        // `tolerant::a_prism_on_a_tilted_plane_takes_the_exact_road` is what says so now.
+        //
+        // ★★ [`INCONCLUSIVE_NAMES`] counts what is let through unverified, so the size of that
+        // population is a number rather than a guess. Across the suite: **1,551 of 83,813 names
+        // (1.85%)** unverified, **0 violations** by any producer.
+        //
+        // ★★★★★ And that number says exactly *which* point is the problem. Counting per point
+        // instead of per name gives the **same 1,551** — so an unverifiable plane has precisely one
+        // wide point, and `ops::named_plane_points` builds precisely one: its third, `n × u_raw`,
+        // whose components are the product of two coefficient-sized rationals. The width is a
+        // consequence of how the triple is *chosen*, not of what a plane is.
         //
         // ★★★★★ The violation it did catch was real and was **introduced by the points work
         // itself**: a prism's base cap recorded the ring in *frame* coordinates while its
         // coefficients spoke about the world. Axis-aligned models never showed it, because there
         // the frame **is** the world. See `ops::named_plane_points`.
-        let coeffs = coeffs.filter(|c| match points {
-            None => true,
-            Some(ps) => ps.iter().all(|p| {
-                (|| {
-                    let mut acc = c[3];
-                    for k in 0..3 {
-                        acc = acc.checked_add(c[k].checked_mul(p[k])?)?;
-                    }
-                    Some(acc == nacre_scalar::Rat::from_int(0))
-                })() == Some(true)
-            }),
+        let coeffs = coeffs.filter(|c| {
+            let Some(ps) = points else { return true };
+            // `None` = the residual overflowed and no verdict is reachable. Counted **once per
+            // name**, not once per point: the question the number answers is how many planes carry
+            // a name nothing checked.
+            let on_plane = |p: &[nacre_scalar::Rat; 3]| -> Option<bool> {
+                let mut acc = c[3];
+                for k in 0..3 {
+                    acc = acc.checked_add(c[k].checked_mul(p[k])?)?;
+                }
+                Some(acc == nacre_scalar::Rat::from_int(0))
+            };
+            let mut unverified = false;
+            for p in &ps {
+                match on_plane(p) {
+                    Some(false) => return false,
+                    None => unverified = true,
+                    Some(true) => {}
+                }
+            }
+            if unverified {
+                INCONCLUSIVE_NAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            true
         });
         let key = coeffs.map(|c| {
             let motion = match def {
@@ -1364,5 +1403,76 @@ mod tests {
             assert_eq!(uses.len(), 2);
             assert_ne!(uses[0].1, uses[1].1); // opposite forward
         }
+    }
+
+    /// ★★★★★ **The name is refused when the points *demonstrate* it is wrong, and only then.**
+    ///
+    /// Both halves are the point. The first says the guarantee is alive: a producer that states a
+    /// plane two ways gets no name for the second one, in release as well as under test. The
+    /// second says the guard is not destructive: coefficients so wide that `c · p` cannot be
+    /// evaluated are *not* evidence of anything, and reading them as failure silently closed the
+    /// exact road for every arbitrarily-tilted plane in the kernel.
+    #[test]
+    fn a_plane_is_named_unless_its_points_refute_the_name() {
+        use nacre_scalar::Rat;
+        let r = Rat::from_int;
+        let pl = |z: f64| {
+            Surface::Plane(
+                nacre_geom::Plane::from_point_normal(
+                    Point3::from_array([0.0, 0.0, z]),
+                    Vector3::from_array([0.0, 0.0, 1.0]),
+                )
+                .unwrap(),
+            )
+        };
+        // Three points of `z = 0`, which `[0,0,1,0]` names correctly and `[0,0,1,-1]` does not.
+        let pts = [[r(0), r(0), r(0)], [r(1), r(0), r(0)], [r(0), r(1), r(0)]];
+
+        let mut m = Model::new();
+        let (ok, _) = m.push_surface_with_coeffs(
+            pl(0.0),
+            SurfaceDef::Constructed,
+            Some([r(0), r(0), r(1), r(0)]),
+            Some(pts),
+        );
+        assert!(
+            m.surface_coeffs.contains_key(&ok),
+            "a name its points satisfy was not issued"
+        );
+
+        let (bad, _) = m.push_surface_with_coeffs(
+            pl(1.0),
+            SurfaceDef::Constructed,
+            Some([r(0), r(0), r(1), r(-1)]),
+            Some(pts),
+        );
+        assert!(
+            !m.surface_coeffs.contains_key(&bad),
+            "a name its own points refute was issued anyway — the guarantee is gone"
+        );
+        assert!(
+            m.surface_points.contains_key(&bad),
+            "the points are the truth and must be kept even when the name is refused"
+        );
+
+        // ★ Wide enough that `c · p` overflows `Rat`: no verdict is reachable, so the name stands
+        // and the counter — not the surface table — is where that shows up.
+        let big = Rat::from_int(i128::MAX / 3);
+        let wide_pts = [[big, r(0), r(0)], [big, r(1), r(0)], [big, r(0), r(1)]];
+        let before = INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed);
+        let (wide, _) = m.push_surface_with_coeffs(
+            pl(2.0),
+            SurfaceDef::Constructed,
+            Some([big, r(0), r(0), r(0)]),
+            Some(wide_pts),
+        );
+        assert!(
+            m.surface_coeffs.contains_key(&wide),
+            "an unverifiable name was dropped — that is the regression, not the guard"
+        );
+        assert!(
+            INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed) > before,
+            "the inconclusive case went uncounted, so its population cannot be measured"
+        );
     }
 }

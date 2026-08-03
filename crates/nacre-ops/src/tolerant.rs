@@ -1364,4 +1364,100 @@ mod tests {
             );
         }
     }
+
+    /// ★★★★★ **Did the operation take the exact road, or only arrive at the right answer?**
+    ///
+    /// Everything else in this suite checks the *answer*: a volume, a face count, a coordinate.
+    /// None of them can see a build that silently gave up on exact arithmetic and reached the
+    /// same number through f64 — and that is precisely the failure that has to be caught here,
+    /// because it does not misbehave until two such builds have to agree with each other.
+    ///
+    /// ★ **A prism on an arbitrarily tilted plane is the case that exercises it.** An axis-aligned
+    /// sketch lifts to exact rationals on its own (`SketchPlane::exact`), so it takes the exact
+    /// road even when everything else is broken. A tilted one can only get there through its own
+    /// frame — the caller's `PlaneDef`, its coefficients, `frame_chain`, `Motion::Frame` — and
+    /// every link in that chain is load-bearing. Break any one and the extrude quietly reverts to
+    /// the f64 path, still producing a prism of the right volume.
+    ///
+    /// ★★★★★ Written because that is what happened: teaching `push_surface_with_coeffs` to drop a
+    /// name it could not verify dropped it for *every* tilted plane (the check overflows on wide
+    /// coefficients), which unhooked the frame and closed this road — and the whole suite, plus a
+    /// bit-identical coordinate census, said nothing at all.
+    #[test]
+    fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
+        use crate::{OpOutput, Profile2d, SketchPlane};
+        use nacre_math::{Point2, Vector3};
+
+        // ★★ **A full-width direction, not a tidy one.** `[0.3, -0.2, 1.0]` is also tilted, but its
+        // decimals are three digits long, so every rational derived from it stays small and the
+        // road stays open however wide the arithmetic gets. The normals a real caller hands over —
+        // a slider, a computed draft angle, a proptest — carry seventeen digits, and those are what
+        // push the coefficients out to a hundred-odd bits. Both belong here.
+        for (name, n) in [
+            ("short decimals", [0.3, -0.2, 1.0]),
+            ("full-width", [0.3141592653589793, -0.2718281828459045, 1.0]),
+        ] {
+            let plane = SketchPlane::from_origin_normal(
+                Point3::from_array([0.25, -0.5, 1.5]),
+                Vector3::from_array(n),
+            )
+            .expect("a tilted plane");
+            let sq = Profile2d::polygon(vec![
+                Point2::from_array([-1.0, -1.0]),
+                Point2::from_array([1.0, -1.0]),
+                Point2::from_array([1.0, 1.0]),
+                Point2::from_array([-1.0, 1.0]),
+            ]);
+            let mut m = Model::new();
+            let out = apply(
+                &mut m,
+                &Operation::Extrude {
+                    plane,
+                    profile: sq,
+                    dist: 0.75,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{name}: the extrude must build, got {e:?}"));
+            let OpOutput::Extrude { solid: s, .. } = out else {
+                panic!("{name}: extrude returned no solid")
+            };
+            m.rebuild_adjacency();
+
+            let faces = collect_planes(&m, s).unwrap();
+            let (mut exact, mut f64_only) = (0usize, 0usize);
+            for fi in &faces {
+                // ★ **The points are the whole test.** A plane with an exact triple was reached by
+                // exact arithmetic; one without was computed in f64 and rounded. The `def` is a
+                // separate axis and both of its exact spellings are right here: the base cap is
+                // `Constructed` because it *is* the world plane the caller named exactly, and
+                // everything else is `Moved` against the sketch frame. Only `Inexact` — a plane
+                // the forest cannot replay — means the road was lost.
+                let ok = m.surface_points.contains_key(&fi.surf)
+                    && !matches!(
+                        m.surface_defs.get(&fi.surf),
+                        Some(nacre_topo::SurfaceDef::Inexact) | None
+                    );
+                if ok {
+                    exact += 1;
+                } else {
+                    f64_only += 1;
+                    println!(
+                        "  {name}: {:?} points={} coeffs={} def={:?}",
+                        fi.surf,
+                        m.surface_points.contains_key(&fi.surf),
+                        m.surface_coeffs.contains_key(&fi.surf),
+                        m.surface_defs.get(&fi.surf)
+                    );
+                }
+            }
+            println!("{name}: {exact} faces exact, {f64_only} on the f64 path");
+            assert_eq!(
+                f64_only,
+                0,
+                "{name}: {f64_only} of {} faces of a tilted prism fell to the f64 path — the \
+                 exact road is closed and no answer-checking test can see it",
+                exact + f64_only
+            );
+        }
+    }
 }
