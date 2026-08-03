@@ -521,37 +521,11 @@ pub(crate) fn extrude(
         // here: the caller's origin is exact, so `d` comes out exact where the ring point's dot
         // product rounds (measured `5.55e-17` against `0`).
         let pl = Plane::from_point_normal(plane.origin(), -plane.normal())?;
-        // ★★★ **This plane's points come from what the caller wrote**, not from any face — it has
-        // none yet. `origin` is on the plane by `PlaneDef`'s own invariant, and `u_raw`/`v` are the
-        // frame's in-plane directions, exact rationals perpendicular to `n`. So the triple is
-        // exact, spans the plane, and lies on it by construction.
-        //
-        // ★★ It matters that this one is good: the base cap interns *into* this handle, so the
-        // triple recorded here is the one that survives for both.
-        let points = nacre_scalar::plane_frame_named(d.coeffs, d.origin, d.ref_dir).and_then(|f| {
-            let step = |v: [Rat; 3]| -> Option<[Rat; 3]> {
-                Some([
-                    f.origin[0].checked_add(v[0])?,
-                    f.origin[1].checked_add(v[1])?,
-                    f.origin[2].checked_add(v[2])?,
-                ])
-            };
-            let v = f.v.map(|(v_raw, _)| v_raw).or_else(|| {
-                // `v̂ = ŵ × û` when the stored `v` overflowed — the same fallback the realization
-                // takes.
-                let (n, u) = (f.n, f.u_raw);
-                let term = |i: usize, j: usize| {
-                    n[i].checked_mul(u[j])?.checked_sub(n[j].checked_mul(u[i])?)
-                };
-                Some([term(1, 2)?, term(2, 0)?, term(0, 1)?])
-            })?;
-            Some([f.origin, step(f.u_raw)?, step(v)?])
-        });
         let (h, _) = model.push_surface_with_coeffs(
             Surface::Plane(pl),
             SurfaceDef::Constructed,
             Some(d.coeffs),
-            points,
+            named_plane_points(&d),
         );
         let node = |flip| nacre_topo::Motion::Frame {
             plane: h,
@@ -583,6 +557,7 @@ pub(crate) fn extrude(
         plane.normal(),
         None,
         plane.def.map(|d| d.coeffs),
+        plane.def.as_ref().and_then(named_plane_points),
     )
 }
 
@@ -637,6 +612,37 @@ fn swept_profile(
 /// All vertices are `Origin::Constructed`. Returns the solid and its faces: `faces[0]` = base cap
 /// (at the ring, normal `−ŝ`), `faces[1]` = far cap, then the outer walls, then each hole's walls.
 /// Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
+/// **Three exact world points of a plane the caller named**, or `None` if the frame overflows.
+///
+/// ★★★ The points come from **what the caller wrote**, not from any face — a plane stated through
+/// [`SketchPlane`] has none yet. `origin` is on the plane by `PlaneDef`'s own invariant, and
+/// `u_raw`/`v` are the frame's in-plane directions, exact rationals perpendicular to `n`, so the
+/// triple is exact, spans the plane, and lies on it by construction.
+///
+/// ★★★★★ **One function because two producers must agree.** The sketch plane's own surface and the
+/// prism's base cap are *the same plane* and intern to one handle; if they computed their points
+/// separately, one of them would eventually state that plane a second way. They did — the base cap
+/// used to record the ring in **frame** coordinates while its coefficients spoke about the world,
+/// which `Model::push_surface_with_coeffs`' agreement filter caught.
+pub(crate) fn named_plane_points(d: &PlaneDef) -> Option<[[Rat; 3]; 3]> {
+    let f = nacre_scalar::plane_frame_named(d.coeffs, d.origin, d.ref_dir)?;
+    let step = |v: [Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            f.origin[0].checked_add(v[0])?,
+            f.origin[1].checked_add(v[1])?,
+            f.origin[2].checked_add(v[2])?,
+        ])
+    };
+    // `v̂ = ŵ × û` when the stored `v` overflowed — the same fallback the realization takes.
+    let v = f.v.map(|(v_raw, _)| v_raw).or_else(|| {
+        let (n, u) = (f.n, f.u_raw);
+        let term =
+            |i: usize, j: usize| n[i].checked_mul(u[j])?.checked_sub(n[j].checked_mul(u[i])?);
+        Some([term(1, 2)?, term(2, 0)?, term(0, 1)?])
+    })?;
+    Some([f.origin, step(f.u_raw)?, step(v)?])
+}
+
 pub(crate) fn build_prism(
     model: &mut Model,
     outer_ring: Swept,
@@ -644,6 +650,8 @@ pub(crate) fn build_prism(
     normal: Vector3,
     base_cap_surface: Option<Handle<Surface>>,
     base_cap_coeffs: Option<[nacre_scalar::Rat; 4]>,
+    // ★ The world points of that same named plane — they travel together or not at all.
+    base_cap_points: Option<[[nacre_scalar::Rat; 3]; 3]>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
     if outer_ring.base.len() < 3 || inner_rings.iter().any(|h| h.base.len() < 3) {
         return Err(OpError::DegenerateProfile);
@@ -718,7 +726,13 @@ pub(crate) fn build_prism(
                 ),
                 SurfaceDef::Constructed,
                 caps,
-                outer_pts.exact.as_ref().and_then(|e| e.cap_points(false)),
+                // ★★★★★ **In the frame the coefficients are stated in, or not at all.** When the
+                // caller named the plane, `caps` speaks about the **world**, so the points must
+                // too — the ring below is in the prism's *frame*, and recording it here stated one
+                // plane two ways (caught by the agreement filter, on a tilted named plane). With no
+                // caller statement the frame *is* the world and the ring is right.
+                base_cap_points
+                    .or_else(|| outer_pts.exact.as_ref().and_then(|e| e.cap_points(false))),
             );
             // The plane was built with `−N` as its normal, so `Forward` is what states an outward
             // `−N` — unless a shared surface points the other way, which `flipped` reports.
@@ -1312,6 +1326,8 @@ fn extrude_and_boolean(
         holes,
         n * signed.signum(),
         Some(frame.surface_h),
+        None,
+        // The pad reuses the face's own surface, so it pushes no base cap and states nothing.
         None,
     )?;
     let (solids, class_of) =

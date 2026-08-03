@@ -2663,6 +2663,7 @@ pub mod tests {
             Vector3::from_array([0.0, 0.0, 1.0]),
             Some(sf),
             None,
+            None,
         )
         .unwrap();
         let cap = m.faces.get(faces[0]); // base cap is pushed first
@@ -4235,6 +4236,7 @@ pub mod tests {
             Vector3::from_array([0.0, 0.0, 1.0]),
             None,
             None,
+            None,
         )
         .unwrap();
         let r = boolean_one(&mut m, BoolKind::Fuse, cube, boss).unwrap();
@@ -4358,6 +4360,7 @@ pub mod tests {
             crate::exact::Swept::along(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
+            None,
             None,
             None,
         )

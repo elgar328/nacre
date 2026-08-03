@@ -444,6 +444,41 @@ impl Model {
         coeffs: Option<[nacre_scalar::Rat; 4]>,
         points: Option<[[nacre_scalar::Rat; 3]; 3]>,
     ) -> (Handle<Surface>, bool) {
+        // ★★★★★ **A plane may not be stated two ways.** The points are the truth; the
+        // coefficients are its *name*, and a name that does not fit the thing is not issued.
+        //
+        // ★ **Not a `debug_assert`.** A producer that disagreed would then be caught in tests and
+        // waved through in release — which is exactly the silence this kernel keeps closing. The
+        // established answer is the one used for `i128` overflow everywhere else: **demote, do not
+        // crash**. A plane with no name still has its points, and every consumer of the name
+        // already handles its absence.
+        //
+        // ★★ **Inconclusive counts as "no".** `c · p` can overflow `Rat` when the coefficients are
+        // wide (measured 774 of 73,369 — the same "wide normal" population `plane_frame_named`
+        // already declines), and a check that could not be evaluated is not a check that passed.
+        //
+        // ★★★ **Measured, and it caught one.** Across the suite: **0 violations**, and 1,546 of
+        // 76,135 (2.0%) inconclusive — the wide-coefficient population, whose names it therefore
+        // does not issue. That costs nothing observable: those planes already could not host a
+        // frame (`plane_frame_named` declines on the same width) and none of them interned with
+        // anything (census bit-identical).
+        //
+        // ★★★★★ The violation it did catch was real and was **introduced by the points work
+        // itself**: a prism's base cap recorded the ring in *frame* coordinates while its
+        // coefficients spoke about the world. Axis-aligned models never showed it, because there
+        // the frame **is** the world. See `ops::named_plane_points`.
+        let coeffs = coeffs.filter(|c| match points {
+            None => true,
+            Some(ps) => ps.iter().all(|p| {
+                (|| {
+                    let mut acc = c[3];
+                    for k in 0..3 {
+                        acc = acc.checked_add(c[k].checked_mul(p[k])?)?;
+                    }
+                    Some(acc == nacre_scalar::Rat::from_int(0))
+                })() == Some(true)
+            }),
+        });
         let key = coeffs.map(|c| {
             let motion = match def {
                 SurfaceDef::Moved { motion, .. } => Some(motion),
