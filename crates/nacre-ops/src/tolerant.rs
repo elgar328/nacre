@@ -1270,4 +1270,58 @@ mod tests {
              the sweep is not measuring the geometry"
         );
     }
+
+    /// ★★★★★ **A boolean creates no surface — so a plane never comes from a discovered point.**
+    ///
+    /// This is the well-foundedness the whole "a plane's truth is three construction points"
+    /// design rests on. If a boolean minted a plane, that plane's points would be seam vertices,
+    /// which are themselves defined *by planes* — and the two-level structure would become an
+    /// unbounded recursion with no base case.
+    ///
+    /// It holds because the arrangement reuses its operands' surface handles: the classes it
+    /// computes are over the planes it was handed, and a result face carries the handle of
+    /// whichever operand face it came from. Only `ops.rs` (construction) and `transform.rs`
+    /// (moving one) ever push.
+    ///
+    /// ★ Asserted rather than argued: the grep that says so today is not a thing the compiler
+    /// keeps true, and the failure it would hide is silent.
+    #[test]
+    fn a_boolean_mints_no_surface() {
+        use crate::BoolKind;
+        for (name, recipe) in [("split", Recipe::Split), ("single", Recipe::Single)] {
+            let (mut m, s, _) = two_caps_on_a_tilted_face(recipe);
+            // A second body to cut with, built before the count so its own construction does not
+            // land inside the window.
+            // The turns pivot on the origin, so the base cuboid's corner there does not move —
+            // a box straddling it bites the solid whatever the tilt.
+            let tool = m.add_cuboid(
+                Point3::from_array([-0.5, -0.5, -0.5]),
+                Point3::from_array([0.6, 0.6, 0.6]),
+            );
+            m.rebuild_adjacency();
+            let vol_before = nacre_props::mass_props(&m, s).unwrap().volume;
+            let before = m.surfaces.len();
+            let out = crate::boolean(&mut m, BoolKind::Cut, s, tool);
+            let after = m.surfaces.len();
+            let bodies = out.unwrap_or_else(|e| panic!("{name}: the cut must solve, got {e:?}"));
+            assert_eq!(
+                after,
+                before,
+                "{name}: the boolean minted {} surface(s) — a plane defined by discovered points \
+                 would break the design's base case",
+                after - before
+            );
+            // ★ And the cut actually cut: a boolean that missed would keep the arena still for
+            // the wrong reason.
+            m.rebuild_adjacency();
+            let vol_after: f64 = bodies
+                .iter()
+                .map(|&b| nacre_props::mass_props(&m, b).unwrap().volume)
+                .sum();
+            assert!(
+                vol_after < vol_before - 1e-9,
+                "{name}: the tool missed — {vol_before} -> {vol_after}"
+            );
+        }
+    }
 }
