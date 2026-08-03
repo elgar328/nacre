@@ -120,17 +120,41 @@ pub(crate) fn collect_planes(
                 SurfaceDef::Inexact => return Err(reject(RejectReason::InexactSurface)),
                 SurfaceDef::Moved { witness, motion } => {
                     let _t = Watch::new(); // charged at the arm's end
-                    // The pre-motion witness, carried through the recorded chain — the same
+                    // The pre-motion description, carried through the recorded chain — the same
                     // computation, in the same order, that a moved vertex's `Pt3` performs.
                     let chain = crate::rotated_vertex::motion_chain(model, motion)
                         .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                    let turn = |p: Point3| -> Result<Pt3, BoolError> {
-                        let base = crate::rotated_vertex::coord_rat(p.as_array())
-                            .map_err(|_| reject(RejectReason::CoordinateOutOfRange))?;
+                    let turn = |base: [nacre_scalar::Rat; 3]| -> Result<Pt3, BoolError> {
                         crate::rotated_vertex::replay(Pt3::at(base), &chain)
                             .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
                     };
-                    let mut w = [turn(witness[0])?, turn(witness[1])?, turn(witness[2])?];
+                    // ★★★★★ **The exact points the plane was built from, when the producer
+                    // recorded them.**
+                    //
+                    // The `witness` beside them is those same points *realized* — and a third of
+                    // them do not survive the trip (measured 34.5%: `11/10` is not an f64, so
+                    // lifting the realization back with `try_from_f64` recovers a different
+                    // rational). The plane the judge then describes is the plane through three
+                    // rounded points, which is why two caps that are one plane could be told apart
+                    // with full confidence.
+                    //
+                    // ★ The f64 witness stays as the fallback for the surfaces no producer has
+                    // filled yet (measured 0.3% — a `Constructed` plane under a transform), so
+                    // this is strictly an improvement in what is described, never a new refusal.
+                    let mut w = match model.surface_points.get(&face.surface) {
+                        Some(pts) => [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?],
+                        None => {
+                            let lift = |p: Point3| -> Result<[nacre_scalar::Rat; 3], BoolError> {
+                                crate::rotated_vertex::coord_rat(p.as_array())
+                                    .map_err(|_| reject(RejectReason::CoordinateOutOfRange))
+                            };
+                            [
+                                turn(lift(witness[0])?)?,
+                                turn(lift(witness[1])?)?,
+                                turn(lift(witness[2])?)?,
+                            ]
+                        }
+                    };
                     // `tri_pt3` is an *oriented* plane witness, but the witness was captured from
                     // whichever face first reached this surface — two faces can share it with
                     // opposite outward normals. Wind it to agree with *this* face's `n_out`, or

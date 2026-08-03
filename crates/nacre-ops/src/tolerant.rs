@@ -936,20 +936,22 @@ mod tests {
         (along[0].0, along[1].0)
     }
 
-    /// ★★★★★ **The defect, pinned.** Two bosses on a tilted face reach the same height by
-    /// different arithmetic, and the kernel calls their caps **different planes**.
+    /// ★★★★★ **Two bosses that reach one height by different arithmetic land on one plane.**
     ///
     /// The heights are `2.0 + 7.7` against `2.0 + 1.1 + 6.6`. In the rationals those are the same
-    /// number — `77/10` either way, which is why the axis-aligned path merges them — but on a
-    /// tilted face the cap is reached through an irrational frame, and what the judge compares is
-    /// the **witness triangle**, whose f64 coordinates land one ulp apart.
+    /// number — `77/10` either way — but on a tilted face the cap is reached through an irrational
+    /// frame, and the judge compares the plane's **witness**.
     ///
-    /// ★ The control run (`Single`, both columns raised in one pad) merges, so the split is the
-    /// arithmetic and not the tilt. What this test becomes once the witness is exact: `Split`
-    /// merges too. See `docs/dev-log.md`.
+    /// ★★★ **This used to answer `Sign(Negative)` — two planes, with full confidence.** The
+    /// witness was the exact ring points *realized*, and a third of those do not survive f64
+    /// (`11/10` is not one), so the judge was describing the plane through three rounded points
+    /// and answering correctly about the wrong plane. Now `Model::surface_points` carries the
+    /// exact triple and the two caps meet.
+    ///
+    /// The `Single` control (both columns raised in one pad) merged before and merges now.
     #[test]
-    fn two_caps_reached_by_different_arithmetic_are_two_planes_today() {
-        for (recipe, want_same) in [(Recipe::Split, false), (Recipe::Single, true)] {
+    fn two_caps_reached_by_different_arithmetic_are_one_plane() {
+        for (recipe, want_same) in [(Recipe::Split, true), (Recipe::Single, true)] {
             let (m, s, _) = two_caps_on_a_tilted_face(recipe);
             let faces = collect_planes(&m, s).unwrap();
             let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
@@ -974,34 +976,25 @@ mod tests {
                 want_same,
                 "{recipe:?}: the judge and the class assignment must agree"
             );
-            // ★ On its own the split costs nothing: the solid is right either way.
             assert!(nacre_validate::validate(&m).is_empty());
         }
     }
 
-    /// ★★★★★ **The split is not conservative — it builds a malformed solid, silently.**
+    /// ★★★★★ **A plate laid across both caps builds a well-formed solid.**
     ///
-    /// A plate laid across **both** caps asks the boolean a question it can only answer correctly
-    /// if the caps are one plane. With the caps split, the result comes back with a face whose
-    /// stored surface normal is **76° off its own outward normal** — `collect_planes` asserts
-    /// exactly that invariant, so the solid cannot be used as an operand again, and in release
-    /// `orient_sign` would be read off that dot.
+    /// This is what the split cost, and it is why the split was not merely conservative. With the
+    /// caps in different classes the result came back carrying a face whose stored surface normal
+    /// was **76° off its own outward normal** — the invariant `collect_planes` asserts, so the
+    /// solid could not be used as an operand again, and in release `orient_sign` would have been
+    /// read off that dot. **Nothing reported it**: the volume was right and `validate` was clean.
     ///
-    /// ★ **Nothing reports it**: the volume is right and `validate` is clean.
-    ///
-    /// The cause is isolated by three controls — the bad face appears only when a plate spans two
-    /// caps that are in different classes:
-    ///
-    /// | recipe | plate | malformed faces |
-    /// |---|---|---|
-    /// | `Split` | across both caps | **1** |
-    /// | `Split` | over one cap | 0 |
-    /// | `Single` | across both caps | 0 |
-    /// | `Single` | over one cap | 0 |
+    /// The cause was isolated with three controls, and the malformed face appeared only in the one
+    /// cell where a plate spanned two caps in different classes. All four are kept: they are what
+    /// says the fix closed the cause rather than the symptom.
     #[test]
-    fn a_plate_across_two_split_caps_builds_a_malformed_solid_today() {
+    fn a_plate_across_both_caps_builds_a_well_formed_solid() {
         for (recipe, span, want_bad) in [
-            (Recipe::Split, true, 1),
+            (Recipe::Split, true, 0),
             (Recipe::Split, false, 0),
             (Recipe::Single, true, 0),
             (Recipe::Single, false, 0),
