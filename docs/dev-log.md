@@ -5839,3 +5839,38 @@ census 130줄은 비트 동일이지만 — **대장은 이 경로를 아예 안
 회전 커버리지 release: 기준선 **4.5–5.0s** → **4.5s**. 유리수 base 의 tol 이 에스컬레이션을 늘릴 것으로
 예측했는데, 캡이 합쳐지며 평면 클래스가 줄어드는 이득이 상쇄한 것으로 보인다(둘을 분리해서 재지는
 않았다).
+
+## C1 의 후퇴 가지를 없앴다 — 그리고 필요한 함수는 **테스트 안에 이미 있었다** (2026-08-04)
+
+C1 이 남긴 f64 후퇴가 실제로 몇 번 도는지 물었더니 **9,008 회 중 10 회(0.11%)**, 서로 다른 표면 2개,
+테스트 하나(`parallel_boolean_is_thread_order_independent`)였다. 전부 *"계수는 있는데 점은 없는"*
+조합이었고, 그 조합을 만드는 생산자는 A·B 에서 **의도적으로 비워 둔 한 곳**뿐이다 — `transform.rs` 가
+`Constructed` 표면을 옮길 때. 계수는 `Isometry::plane_coeffs` 로 정확히 옮기는데 **점은 옮길 수단이
+없었다.**
+
+### ★★★★★ 그 수단이 **테스트 헬퍼로 이미 존재했다**
+
+```rust
+/// The rational point transform the tests need, so the plane transform can be checked against
+/// something other than itself. Mirrors `Isometry::apply_point` exactly, in `Rat`.
+fn move_point(iso: &Isometry, p: [Rat; 3]) -> [Rat; 3]      // ← nacre-scalar 의 #[cfg(test)] 안
+```
+
+두 번째 구현을 만들 뻔했다. **승격**했다: `Isometry::point_rat`(그리고 미러 쌍둥이
+`mirror_point_rat`), 테스트는 그것을 호출하도록 바꿔 구현이 하나만 남는다.
+
+★★ **`point_rat` 은 `plane_coeffs` 가 declined 하는 조건에서 똑같이 declined 한다** — 한 평면의 두 기술
+중 하나만 옮겨져 *"점이 자기 평면 위에 없는 평면"* 이 생기는 일이 원리적으로 불가능해진다.
+`an_inexact_rotation_declines` 가 이제 둘 다 검사한다.
+
+### 결과
+
+```
+Moved 팔 진입 9,003 회:  정확한 점 9,003,  ★ f64 후퇴 0
+```
+
+후퇴가 **0** 이 된 것이 진단의 증명이다. census 130줄 비트 동일, 워크스페이스 전체 초록.
+
+★ 교훈 하나: *"프로덕션에 없는 기능"* 을 만들기 전에 **테스트 안을 먼저 본다**. 이 커널은 플랜 A 를
+검증하려고 플랜 B 를 이미 구현해 두는 습관이 있고(여기서는 *"자기 자신이 아닌 것으로 검사"*),
+그것이 곧 필요한 프로덕션 코드일 때가 있다.

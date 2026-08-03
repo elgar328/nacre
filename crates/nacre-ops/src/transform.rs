@@ -589,20 +589,34 @@ fn transform_solid(
                 },
                 SurfaceDef::Inexact => None,
             });
-        // ★ The points follow the same rule as the coefficients, one step short of it.
+        // ★ The points follow **exactly** the rule the coefficients do, by the same two cases.
         //
-        // `Moved` states its plane **before** the motion, so its points are inherited verbatim —
-        // that is the whole reason the image's chain hangs off the source's leaf.
+        // `Moved` states its plane before the motion, so its points are inherited verbatim — that
+        // is the whole reason the image's chain hangs off the source's leaf. `Constructed` states
+        // it in the world, so the points are carried there with it.
         //
-        // ★★ `Constructed` states the plane in the world, so its points would have to be carried
-        // there too, and there is no exact rational point image yet: `Isometry::plane_coeffs` has
-        // no `apply_point` twin in the rationals. The 90°-family condition that makes the plane
-        // exact would make the point exact as well, so this is a gap to fill and not a limit —
-        // recorded as `None` until then rather than transformed through f64.
-        let points = match def {
-            SurfaceDef::Moved { .. } => model.surface_points.get(&s).copied(),
-            SurfaceDef::Constructed | SurfaceDef::Inexact => None,
-        };
+        // ★★ `Isometry::point_rat` declines exactly when `plane_coeffs` does, so the two
+        // descriptions of one plane can never be moved apart: either both survive or neither does.
+        let points = model
+            .surface_points
+            .get(&s)
+            .copied()
+            .and_then(|p| match def {
+                SurfaceDef::Moved { .. } => Some(p),
+                SurfaceDef::Constructed => {
+                    let each =
+                        |f: &dyn Fn([nacre_scalar::Rat; 3]) -> Option<[nacre_scalar::Rat; 3]>| {
+                            Some([f(p[0])?, f(p[1])?, f(p[2])?])
+                        };
+                    match motion {
+                        Xform::Rigid(iso) => each(&|q| iso.point_rat(q)),
+                        Xform::Mirror { axis, offset, .. } => {
+                            each(&|q| nacre_scalar::mirror_point_rat(q, *axis, *offset))
+                        }
+                    }
+                }
+                SurfaceDef::Inexact => None,
+            });
         let (new_s, flipped) = model.push_surface_with_coeffs(moved, def, coeffs, points);
         surf_map.insert(s, new_s);
         surf_flip.insert(s, flipped);
