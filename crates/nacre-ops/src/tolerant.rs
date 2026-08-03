@@ -1084,4 +1084,190 @@ mod tests {
             .count();
         (bad, volume_ok, valid)
     }
+
+    // ---- stage 0g: the prediction the whole plan rests on ----
+
+    /// ★★★★★ **Are the two caps *really* one plane?**
+    ///
+    /// The plan's premise is that describing each cap by **exact points** — rather than by the
+    /// rounded f64 witness — makes the judge see one plane. That is an algebraic claim about the
+    /// composed frames, and nothing has measured it.
+    ///
+    /// This measures it without changing any production type. Each cap already carries what the
+    /// plan would store: exact **frame** coefficients (`Model::surface_coeffs`) and the motion that
+    /// carries them out (`SurfaceDef::Moved`). Three exact points on that frame plane, replayed
+    /// through that motion, are the definition the plan proposes — for the *plane* question any
+    /// non-collinear triple on the plane is equivalent, so the synthetic triple answers it.
+    ///
+    /// The judge is then run with a **deliberately unreachable** coincidence limit, so it never
+    /// short-circuits and instead reports the bound it achieved. Reading that across precisions:
+    ///
+    /// * falling like `2^-prec` ⇒ the true value is **0** ⇒ the caps are one plane ⇒ premise holds;
+    /// * flattening at some nonzero value ⇒ they are genuinely different planes and the plan's
+    ///   diagnosis is wrong.
+    ///
+    /// ★★★★★ **Measured: it falls one bit per bit**, and the mantissa stays at `0.9338…` — the
+    /// bound is `C · 2^-prec` with a constant `C`, exactly the model `escalate` derives its jump
+    /// from. So the caps *are* one plane, and what splits them today is only the rounded witness.
+    ///
+    /// ```text
+    /// prec=128  within=2^-114
+    /// prec=192  within=2^-178   (-64)
+    /// prec=256  within=2^-242   (-64)
+    /// prec=384  within=2^-370   (-128)
+    /// prec=512  within=2^-498   (-128)
+    /// ```
+    #[test]
+    fn two_caps_described_exactly_are_one_plane() {
+        use nacre_cip::predicate::{Judge, Notes};
+        use nacre_cip::{Pt3, Standard};
+        use nacre_scalar::Bound;
+
+        let (m, s, _) = two_caps_on_a_tilted_face(Recipe::Split);
+        let faces = collect_planes(&m, s).unwrap();
+        let (ia, ib) = cap_pair(&m, &faces);
+
+        // The exact definition each cap already carries: frame coefficients + the motion.
+        // `nudge` offsets the cap's height inside its own frame — the negative control.
+        let define = |i: usize, nudge: Option<Rat>| -> [Pt3; 3] {
+            let surf = faces[i].surf;
+            let c = *m
+                .surface_coeffs
+                .get(&surf)
+                .expect("a frame cap records its coefficients");
+            let motion = match m.surface_defs.get(&surf) {
+                Some(nacre_topo::SurfaceDef::Moved { motion, .. }) => *motion,
+                other => panic!("cap {i} is not Moved: {other:?}"),
+            };
+            // A cap's frame coefficients are `[0, 0, ±1, ∓h]`, so `z = -d/c` and any two in-frame
+            // directions complete the triple.
+            assert!(
+                c[0] == Rat::from_int(0) && c[1] == Rat::from_int(0),
+                "cap {i} is not a frame cap: {c:?}"
+            );
+            // Canonicalisation divides the content, so `c[2]` is any nonzero integer — the height
+            // is `−d / c` exactly, as a rational.
+            let (dn, dd) = (c[3].numer(), c[3].denom());
+            let (cn, cd) = (c[2].numer(), c[2].denom());
+            let z = Rat::new(
+                dn.checked_mul(cd)
+                    .expect("no overflow")
+                    .checked_neg()
+                    .unwrap(),
+                dd.checked_mul(cn).expect("no overflow"),
+            )
+            .expect("a cap's height");
+            let z = match nudge {
+                Some(n) => z.checked_add(n).expect("nudge"),
+                None => z,
+            };
+            let zero = Rat::from_int(0);
+            let one = Rat::from_int(1);
+            let chain = crate::rotated_vertex::motion_chain(&m, motion).expect("chain");
+            [[zero, zero, z], [one, zero, z], [zero, one, z]]
+                .map(|b| crate::rotated_vertex::replay(Pt3::at(b), &chain).expect("replay"))
+        };
+        let (da, db) = (define(ia, None), define(ib, None));
+
+        // A two-plane table over those definitions. `base_rat: None` keeps the composed-rotation
+        // shortcut out of it, so what runs is the interval route the plan's stage C1 exercises.
+        let mk = |d: [Pt3; 3]| {
+            let tri = d.clone().map(|p| Point3::from_array(p.coord));
+            PlaneGeom {
+                base_rat: None,
+                base: crate::planes::BaseFrame::none(),
+                surf: faces[ia].surf,
+                plane: nacre_geom::Plane::through_points(tri[0], tri[1], tri[2])
+                    .expect("non-collinear"),
+                tri,
+                tri_pt3: d,
+                rotated: true,
+                frame_sign: 1,
+                exact_coeffs: None,
+                exact_normal: None,
+            }
+        };
+        let planes = vec![mk(da), mk(db)];
+
+        let mut prev: Option<(usize, i64)> = None;
+        for prec in [128usize, 192, 256, 384, 512] {
+            let notes = Notes::new();
+            // ★ A limit no realization can reach, so the judge never answers `Coincident` and has
+            // to report the bound it actually achieved.
+            let standard = Standard {
+                prec,
+                coincidence: Bound::pow2(-4000),
+                scale: Bound::of(16.0),
+                cap: prec,
+            };
+            let same = Judge::new(&planes, standard, &notes).planes_coplanar(0, 1);
+            let ev = notes.sorted();
+            let within = ev.first().and_then(|e| match e.outcome {
+                nacre_cip::Decision::Coincident { within } => Some(within),
+                nacre_cip::Decision::Exhausted { within, .. } => within,
+                _ => None,
+            });
+            assert!(same, "prec={prec}: no definite separation may be found");
+            // `Bound` is `m · 2^e`; the exponent is the reading that matters — a true zero makes it
+            // fall one per bit of precision, a real separation makes it flatten.
+            let w = within
+                .and_then(|b| b.exp2())
+                .unwrap_or_else(|| panic!("prec={prec}: no bound to read, outcome {ev:?}"));
+            if let Some((pp, pw)) = prev {
+                let gained = pw - w;
+                let spent = (prec - pp) as i64;
+                assert!(
+                    gained >= spent - 4,
+                    "prec {pp} -> {prec} spent {spent} bits and gained only {gained}: \
+                     the residual is flattening, so the two caps are not one plane"
+                );
+            }
+            prev = Some((prec, w));
+        }
+
+        // ★★★★ **The negative control — without it the loop above proves nothing.**
+        //
+        // Offset one cap by `1e-12` *inside its own frame* and the same sweep must stop gaining a
+        // bit per bit: a real separation is a floor the precision cannot go under. If this half
+        // passed too, the assertion above would be measuring the ladder rather than the geometry.
+        let off = Rat::new(1, 1_000_000_000_000).expect("1e-12");
+        let planes = vec![mk(define(ia, None)), mk(define(ib, Some(off)))];
+        let mut prev: Option<(usize, i64)> = None;
+        let mut flattened = false;
+        for prec in [128usize, 192, 256, 384, 512] {
+            let notes = Notes::new();
+            let standard = Standard {
+                prec,
+                coincidence: Bound::pow2(-4000),
+                scale: Bound::of(16.0),
+                cap: prec,
+            };
+            let same = Judge::new(&planes, standard, &notes).planes_coplanar(0, 1);
+            if !same {
+                flattened = true; // a definite separation — even better than a floor
+                break;
+            }
+            let ev = notes.sorted();
+            let w = match ev.first().and_then(|e| match e.outcome {
+                nacre_cip::Decision::Coincident { within } => Some(within),
+                nacre_cip::Decision::Exhausted { within, .. } => within,
+                _ => None,
+            }) {
+                Some(b) => b.exp2().expect("a bound"),
+                None => break,
+            };
+            if let Some((pp, pw)) = prev
+                && pw - w < (prec - pp) as i64 - 4
+            {
+                flattened = true;
+                break;
+            }
+            prev = Some((prec, w));
+        }
+        assert!(
+            flattened,
+            "a cap offset by 1e-12 still looked like the same plane at every precision — \
+             the sweep is not measuring the geometry"
+        );
+    }
 }
