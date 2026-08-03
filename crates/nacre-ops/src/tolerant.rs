@@ -1365,6 +1365,62 @@ mod tests {
         }
     }
 
+    /// ★★★★★ **A named plane's triple is narrow enough to compute with — both ways.**
+    ///
+    /// Two properties, and they are the reason the triple is chosen by solving an axis rather than
+    /// by walking the sketch frame's own directions:
+    ///
+    /// - ★ `c · p` is **computable**, so the name can be checked against the thing it names. The
+    ///   frame triple's third point is `n̂ × û`, a product of two coefficient-sized rationals, and
+    ///   at a full-width normal that check overflows for every plane (measured: 1,551 of 83,813
+    ///   names went out unverified, and each had exactly one wide point).
+    /// - ★★ The **coefficients come back out of the points**, exactly. That is what makes the
+    ///   coefficients a cache of the triple rather than a second, independent statement — and it is
+    ///   what would let the coefficient parameter be dropped altogether.
+    ///
+    /// ★★★ The normals here are the ones that break it. Short decimals (`0.3`) stay narrow whatever
+    /// the triple is, so a test built only on those passes while the property is false.
+    #[test]
+    fn a_named_planes_points_keep_their_own_name_computable() {
+        use crate::SketchPlane;
+        use nacre_math::Vector3;
+        for n in [
+            [0.3, -0.2, 1.0],
+            [0.3141592653589793, -0.2718281828459045, 1.0],
+            [1.0, 0.0, 0.0],
+            [-0.5773502691896258, 0.5773502691896258, 0.5773502691896258],
+            [0.1, 0.2, 0.30000000000000004],
+        ] {
+            let p = SketchPlane::from_origin_normal(
+                Point3::from_array([0.25, -0.5, 1.5]),
+                Vector3::from_array(n),
+            )
+            .expect("a plane");
+            let d = p.def.as_ref().expect("an exact definition");
+            let pts =
+                crate::ops::named_plane_points(d).unwrap_or_else(|| panic!("{n:?}: no triple"));
+            let c = d.coeffs();
+
+            for q in &pts {
+                let mut acc = c[3];
+                for k in 0..3 {
+                    acc = acc
+                        .checked_add(
+                            c[k].checked_mul(q[k])
+                                .unwrap_or_else(|| panic!("{n:?}: c · p overflowed")),
+                        )
+                        .unwrap_or_else(|| panic!("{n:?}: c · p overflowed"));
+                }
+                assert_eq!(acc, Rat::from_int(0), "{n:?}: a point is off its own plane");
+            }
+
+            let back = nacre_scalar::plane_through_points(pts[0], pts[1], pts[2])
+                .and_then(nacre_scalar::canonical_plane_coeffs)
+                .unwrap_or_else(|| panic!("{n:?}: the coefficients do not come back out"));
+            assert_eq!(back, c, "{n:?}: the points describe a different plane");
+        }
+    }
+
     /// ★★★★★ **Did the operation take the exact road, or only arrive at the right answer?**
     ///
     /// Everything else in this suite checks the *answer*: a volume, a face count, a coordinate.

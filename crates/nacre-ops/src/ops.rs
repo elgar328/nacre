@@ -612,12 +612,32 @@ fn swept_profile(
 /// All vertices are `Origin::Constructed`. Returns the solid and its faces: `faces[0]` = base cap
 /// (at the ring, normal `−ŝ`), `faces[1]` = far cap, then the outer walls, then each hole's walls.
 /// Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
-/// **Three exact world points of a plane the caller named**, or `None` if the frame overflows.
+/// **Three exact world points of a plane the caller named**, or `None` if the arithmetic overflows.
 ///
 /// ★★★ The points come from **what the caller wrote**, not from any face — a plane stated through
-/// [`SketchPlane`] has none yet. `origin` is on the plane by `PlaneDef`'s own invariant, and
-/// `u_raw`/`v` are the frame's in-plane directions, exact rationals perpendicular to `n`, so the
-/// triple is exact, spans the plane, and lies on it by construction.
+/// [`SketchPlane`] has none yet. They are read straight out of the plane equation: fix the two
+/// axes the plane is least steep along, solve the third, and the result is on the plane by
+/// construction with no tolerance anywhere.
+///
+/// ★★★★★ **The triple is chosen for its width, and that is the whole design.** The obvious triple —
+/// the sketch frame's `origin`, `origin + û`, `origin + (n̂ × û)` — is also exact and was what this
+/// used to return, but its third point is a **product of two coefficient-sized rationals**. At a
+/// full-width normal (a slider, a computed angle: seventeen significant digits) the coefficients run
+/// to a hundred-odd bits and that product runs to twice that, so every later use of the point
+/// overflows `Rat`. Measured, 1,551 planes carried exactly one such point and it was always the
+/// third. Solving an axis instead keeps every component **coefficient-sized**, which is what makes
+/// the agreement check computable and the coefficients derivable back from the points.
+///
+/// ★★ **Which axis matters.** Dividing by the largest coefficient is what keeps the solved
+/// component small; dividing by the smallest would put the width back a different way.
+///
+/// ★ **Non-collinear by construction**: two of the points differ from the first by one unit along
+/// each of the two fixed axes, which no plane can make parallel.
+///
+/// ★★★★ **And they now depend on the coefficients alone.** Two sketches naming one plane with
+/// different `ref_dir` used to compute different triples for it and interning kept whichever
+/// arrived first; now they compute the same one. One plane, one description, with nothing left to
+/// arrive first.
 ///
 /// ★★★★★ **One function because two producers must agree.** The sketch plane's own surface and the
 /// prism's base cap are *the same plane* and intern to one handle; if they computed their points
@@ -625,22 +645,49 @@ fn swept_profile(
 /// used to record the ring in **frame** coordinates while its coefficients spoke about the world,
 /// which `Model::push_surface_with_coeffs`' agreement filter caught.
 pub(crate) fn named_plane_points(d: &PlaneDef) -> Option<[[Rat; 3]; 3]> {
-    let f = nacre_scalar::plane_frame_named(d.coeffs, d.origin, d.ref_dir)?;
-    let step = |v: [Rat; 3]| -> Option<[Rat; 3]> {
-        Some([
-            f.origin[0].checked_add(v[0])?,
-            f.origin[1].checked_add(v[1])?,
-            f.origin[2].checked_add(v[2])?,
-        ])
+    let c = d.coeffs;
+    // The axis the plane is steepest along — the one whose coefficient divides best. Comparing
+    // `|n/d|` as `|n| · d'` against `|n'| · d` keeps it exact without a `Rat` division.
+    let heavier = |a: usize, b: usize| -> bool {
+        match (
+            c[a].numer()
+                .unsigned_abs()
+                .checked_mul(c[b].denom() as u128),
+            c[b].numer()
+                .unsigned_abs()
+                .checked_mul(c[a].denom() as u128),
+        ) {
+            (Some(x), Some(y)) => x > y,
+            // Unreachable for canonical coefficients (integers, denominator 1), and a wrong
+            // *choice* here costs width, never correctness — every axis solves the same plane.
+            _ => false,
+        }
     };
-    // `v̂ = ŵ × û` when the stored `v` overflowed — the same fallback the realization takes.
-    let v = f.v.map(|(v_raw, _)| v_raw).or_else(|| {
-        let (n, u) = (f.n, f.u_raw);
-        let term =
-            |i: usize, j: usize| n[i].checked_mul(u[j])?.checked_sub(n[j].checked_mul(u[i])?);
-        Some([term(1, 2)?, term(2, 0)?, term(0, 1)?])
-    })?;
-    Some([f.origin, step(f.u_raw)?, step(v)?])
+    let mut k = 0;
+    for a in 1..3 {
+        if heavier(a, k) {
+            k = a;
+        }
+    }
+    let (i, j) = match k {
+        0 => (1, 2),
+        1 => (0, 2),
+        _ => (0, 1),
+    };
+    // Zero even at the steepest axis means the coefficients name no plane at all.
+    let recip = Rat::new(c[k].denom(), c[k].numer())?;
+    let at = |u: Rat, v: Rat| -> Option<[Rat; 3]> {
+        let mut p = [Rat::from_int(0); 3];
+        p[i] = u;
+        p[j] = v;
+        let s = c[3]
+            .checked_add(c[i].checked_mul(u)?)?
+            .checked_add(c[j].checked_mul(v)?)?;
+        p[k] = Rat::from_int(0).checked_sub(s)?.checked_mul(recip)?;
+        Some(p)
+    };
+    let (zero, one) = (Rat::from_int(0), Rat::from_int(1));
+    Some([at(zero, zero)?, at(one, zero)?, at(zero, one)?])
 }
 
 pub(crate) fn build_prism(
