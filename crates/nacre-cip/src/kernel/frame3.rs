@@ -378,7 +378,7 @@ impl Pt3 {
             let x = nacre_scalar::inv_sqrt_f64(v)?;
             Some((x, nacre_scalar::inv_sqrt_error_of(v, x)?))
         };
-        let ((iu, du), (iv, dv), (iw, dw)) = (inv(f.uu)?, inv(f.vv)?, inv(f.nn)?);
+        let ((iu, du), (iw, dw)) = (inv(f.uu)?, inv(f.nn)?);
         // A basis vector's component, and a bound on how far it lands from the true one: the
         // rational's own rounding scaled by the length, the length's error scaled by the
         // rational, and the product's half-ulp. All three vanish for a `0`/`±1` component.
@@ -399,8 +399,39 @@ impl Pt3 {
         let (mut eu, mut ev, mut ew) = ([0.0; 3], [0.0; 3], [0.0; 3]);
         for k in 0..3 {
             (uh[k], eu[k]) = axis_comp(f.u_raw[k], iu, du);
-            (vh[k], ev[k]) = axis_comp(f.v_raw[k], iv, dv);
             (wh[k], ew[k]) = axis_comp(f.n[k], iw, dw);
+        }
+        // ★★ `v̂` exactly where the frame carries `v_raw`, and `ŵ × û` where it does not.
+        //
+        // The exact route is one rounding per component; the cross product is two that do not
+        // cancel — a wall whose `v` is exactly `ẑ` comes out three ulps short through it. Both are
+        // sound; the fallback is what this crate had before `v_raw` existed, and it is taken only
+        // when `|n|²·|u_raw|²` does not fit `i128` (see `nacre_scalar::plane_frame`).
+        match f.v {
+            Some((v_raw, vv)) => {
+                let (iv, dv) = inv(vv)?;
+                for k in 0..3 {
+                    (vh[k], ev[k]) = axis_comp(v_raw[k], iv, dv);
+                }
+            }
+            None => {
+                // `|ŵ|, |û| ≤ 1`, so each of the four products carries the other factor's error at
+                // unit scale; `2·(max eu + max ew)` covers all four with room. Gated on the basis
+                // being inexact for the reason `rotate_about` gates its own: with `0`/`±1` factors
+                // the products *and* their differences are exact, not merely small.
+                let mx = |e: [f64; 3]| e.iter().fold(0.0f64, |a, &b| a.max(b));
+                let (eu_max, ew_max) = (mx(eu), mx(ew));
+                let e = if eu_max == 0.0 && ew_max == 0.0 {
+                    0.0
+                } else {
+                    2.0 * (eu_max + ew_max) + 3.0 * f64::EPSILON
+                };
+                for k in 0..3 {
+                    let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+                    vh[k] = wh[i] * uh[j] - wh[j] * uh[i];
+                    ev[k] = e;
+                }
+            }
         }
         // The combination itself: three products and three sums per coordinate, each a
         // round-to-nearest of a magnitude bounded by the terms' sum — except where the basis is a
@@ -513,19 +544,22 @@ impl Pt3 {
                     let inv = |v: Rat| {
                         nacre_scalar::inv_sqrt_bounded(v, prec).map(|(m, r)| HpIv::new(m, r))
                     };
-                    let (Some(iu), Some(iv), Some(iw)) =
-                        (inv(frame.uu), inv(frame.vv), inv(frame.nn))
-                    else {
+                    let (Some(iu), Some(iw)) = (inv(frame.uu), inv(frame.nn)) else {
                         continue; // unreachable — `plane_frame` refuses a non-positive length
                     };
                     let scaled = |v: [Rat; 3], s: &HpIv| {
                         [0, 1, 2].map(|k| rat_to_hp(v[k], prec).mul(s, prec))
                     };
-                    let (uh, vh, wh) = (
-                        scaled(frame.u_raw, &iu),
-                        scaled(frame.v_raw, &iv),
-                        scaled(frame.n, &iw),
-                    );
+                    let (uh, wh) = (scaled(frame.u_raw, &iu), scaled(frame.n, &iw));
+                    // The same two routes `Pt3::frame` takes, in the domain that carries its own
+                    // error interval.
+                    let vh = match frame.v.and_then(|(v_raw, vv)| Some((v_raw, inv(vv)?))) {
+                        Some((v_raw, iv)) => scaled(v_raw, &iv),
+                        None => [0, 1, 2].map(|k| {
+                            let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+                            wh[i].mul(&uh[j], prec).sub(&wh[j].mul(&uh[i], prec), prec)
+                        }),
+                    };
                     p = [0, 1, 2].map(|k| {
                         rat_to_hp(frame.origin[k], prec)
                             .add(&p[0].mul(&uh[k], prec), prec)
@@ -2712,6 +2746,61 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// ★★★ **The `v̂` fallback is taken, and the frame is still a frame.**
+    ///
+    /// `|v_raw|² = |n|²·|u_raw|²` needs twice the width the lengths themselves do, so a plane with
+    /// wide coefficients cannot carry it — and the realization takes `v̂ = ŵ × û` instead. That
+    /// route is what this crate had before `v_raw` existed; what must not change is that the basis
+    /// is still a basis. Checked by the property that matters: a point drawn at `w = 0` is *on*
+    /// the plane, and `tol` still bounds the coordinate it wrote.
+    ///
+    /// ★ **A fallback nothing takes is indistinguishable from one that is not there**, so the
+    /// first assertion is that these planes really do decline the exact route.
+    #[test]
+    fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
+        const GT: usize = 512;
+        // Components near 2⁴⁰: the squared lengths fit, their product does not.
+        const WIDE: [[i128; 4]; 3] = [
+            [1_099_511_627_776, 1_099_511_627_791, 1_099_511_627_803, -7],
+            [999_999_999_989, -1_000_000_000_039, 1_000_000_000_061, 13],
+            [2_199_023_255_552, 3_298_534_883_329, -1_099_511_627_777, 0],
+        ];
+        for c in WIDE {
+            let fr = frame_of(c);
+            assert!(
+                fr.v.is_none(),
+                "plane {c:?} was expected to decline the exact v̂"
+            );
+            for (u, v) in [(0, 0), (1, 0), (0, 1), (3, -7)] {
+                let p = Pt3::at([ri(u, 1), ri(v, 1), Rat::from_int(0)])
+                    .frame(fr)
+                    .expect("a frame with positive lengths");
+                let hp = p.hp_coord(GT);
+                let mut e = HpIv::new(BigFloat::from_i128(c[3], GT), Bound::ZERO);
+                for k in 0..3 {
+                    e = e.add(&hp[k].mul(&rat_to_hp(Rat::from_int(c[k]), GT), GT), GT);
+                }
+                let mag = bf_mag(&e.mid.abs());
+                let rad = e.rad.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
+                assert!(
+                    mag <= rad || mag < 1e-100,
+                    "plane {c:?}, point ({u}, {v}): off the plane by {mag:e}, radius {rad:e}"
+                );
+                for (k, h) in hp.iter().enumerate() {
+                    let err = abs_err(p.coord[k], h, GT);
+                    assert!(
+                        err <= p.tol[k] || err < 1e-100,
+                        "plane {c:?} axis {k}: err {err:e} > tol {:e}",
+                        p.tol[k]
+                    );
+                }
+            }
+        }
+        // …and a narrow plane still takes the exact route, so the decline above is the width's
+        // doing and not something that turned the exact `v̂` off everywhere.
+        assert!(frame_of([2, -3, 7, 11]).v.is_some());
     }
 
     /// **`tol` bounds the error in the `coord` the frame actually wrote** — the same contract

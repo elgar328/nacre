@@ -602,37 +602,49 @@ pub fn plane_frame(coeffs: [Rat; 4]) -> Option<PlaneFrame> {
     //
     // ★ Its components are bounded by `|n|·|u_raw|`, so the one `checked_mul` below covers them:
     // if the squared length fits, so does every component.
-    let vv = nn.checked_mul(uu)?;
+    // ★★★ `v̂` exactly when it fits, and an honest fallback when it does not.
+    //
+    // `|v_raw|² = |n|²·|u_raw|²` is a product of two squared lengths, so it needs **twice** the
+    // width they do — measured, that halves the per-component budget from ~62 bits to ~31 and
+    // declines 774 of 780 planes built from a wide normal. When it does not fit, the realization
+    // falls back to `v̂ = ŵ × û`, which costs two roundings that do not cancel instead of one.
+    // ★ That is the accuracy this crate had before `v_raw` existed — a graceful step down, never
+    // a wrong frame. (Filling `vv` with something else would not be a fallback but a corruption:
+    // `v̂` would come out the wrong *length* and the basis would not be orthonormal.)
     let cx = |i: usize, j: usize| {
         n[i].checked_mul(u_raw[j])?
             .checked_sub(n[j].checked_mul(u_raw[i])?)
     };
-    let v_raw = [cx(1, 2)?, cx(2, 0)?, cx(0, 1)?];
+    let v = (|| {
+        let vv = nn.checked_mul(uu)?;
+        Some(([cx(1, 2)?, cx(2, 0)?, cx(0, 1)?], vv))
+    })();
     Some(PlaneFrame {
         origin,
         u_raw,
-        v_raw,
         n,
         uu,
-        vv,
         nn,
+        v,
     })
 }
 
 /// A plane's own frame, exactly — what [`plane_frame`] derives.
 ///
-/// The three `*_raw` vectors are rational and **not** unit length; `uu`/`vv`/`nn` are their
-/// squared lengths, carried because they are what the realization divides by and because
-/// computing them here is what proves the frame fits `i128` before anything tries to use it.
+/// The `*_raw` vectors are rational and **not** unit length; `uu`/`nn` are their squared lengths,
+/// carried because they are what the realization divides by and because computing them here is
+/// what proves the frame fits `i128` before anything tries to use it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PlaneFrame {
     pub origin: [Rat; 3],
     pub u_raw: [Rat; 3],
-    pub v_raw: [Rat; 3],
     pub n: [Rat; 3],
     pub uu: Rat,
-    pub vv: Rat,
     pub nn: Rat,
+    /// `(v_raw, |v_raw|²)` when both fit `i128` — `v̂` is then one inverse square root of an exact
+    /// rational, and a wall whose `v` is exactly `ẑ` lands on `1.0`. `None` when the product
+    /// `|n|²·|u_raw|²` overflows, and the realization takes `v̂ = ŵ × û` instead.
+    pub v: Option<([Rat; 3], Rat)>,
 }
 
 /// A direction vector divided by its content — the **primitive** integer vector along it, with
