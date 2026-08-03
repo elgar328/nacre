@@ -476,7 +476,24 @@ pub(crate) fn extrude(
     // ★ No frame: a free-standing extrude has no face to take one from — the caller gave the
     // plane directly, so the world is the only frame there is.
     let (outer, holes) = swept_profile(model, plane, profile, dist, None);
-    build_prism(model, outer, holes, plane.normal(), None)
+    // ★★★★ **The base cap *is* the plane the caller named**, so where they stated it exactly
+    // (`PlaneDef`) it can record its coefficients even when nothing else about the prism can —
+    // the walls and far cap are irrational in the world unless `plane.exact()` allows.
+    //
+    // ★★★ **The coefficients travel, not a `Surface`.** Pre-creating one here would have to guess
+    // the f64 plane `build_prism` builds, and it builds it through the *oriented* ring's first
+    // point — which reversing the ring can change. Two spellings of one plane whose `d` differs by
+    // an ulp is precisely the defect this whole line of work removes, so the geometry stays
+    // exactly where it was and only the exact record is added. (Measured: building it from the
+    // sketch origin instead moved a volume.)
+    build_prism(
+        model,
+        outer,
+        holes,
+        plane.normal(),
+        None,
+        plane.def.map(|d| d.coeffs),
+    )
 }
 
 /// Place a profile on its plane and sweep it — **exactly where the plane admits it**.
@@ -536,6 +553,7 @@ pub(crate) fn build_prism(
     inner_rings: Vec<Swept>,
     normal: Vector3,
     base_cap_surface: Option<Handle<Surface>>,
+    base_cap_coeffs: Option<[nacre_scalar::Rat; 4]>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
     if outer_ring.base.len() < 3 || inner_rings.iter().any(|h| h.base.len() < 3) {
         return Err(OpError::DegenerateProfile);
@@ -576,14 +594,21 @@ pub(crate) fn build_prism(
         None => {
             // The two caps' rational coefficients come from the same frame normal the f64 pair
             // above uses, so they agree with the walls that meet them.
-            let caps = outer_pts.exact.as_ref().and_then(|e| e.cap_planes());
+            // ★ The frame's own answer when there is one; otherwise what the caller stated. Both
+            // canonicalize, so they agree wherever both exist.
+            let caps = outer_pts
+                .exact
+                .as_ref()
+                .and_then(|e| e.cap_planes())
+                .map(|(base, _)| base)
+                .or(base_cap_coeffs);
             let (s, flipped) = model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::from_point_normal(outer_pts.base[0], -normal)
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
                 SurfaceDef::Constructed,
-                caps.map(|(base, _)| base),
+                caps,
             );
             // The plane was built with `−N` as its normal, so `Forward` is what states an outward
             // `−N` — unless a shared surface points the other way, which `flipped` reports.
@@ -1142,6 +1167,7 @@ fn extrude_and_boolean(
         holes,
         n * signed.signum(),
         Some(frame.surface_h),
+        None,
     )?;
     let (solids, class_of) =
         crate::boolean::boolean_with_classes(model, kind, frame.solid_h, prism).map_err(|e| {

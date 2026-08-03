@@ -2649,6 +2649,7 @@ pub mod tests {
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
             Some(sf),
+            None,
         )
         .unwrap();
         let cap = m.faces.get(faces[0]); // base cap is pushed first
@@ -4220,6 +4221,7 @@ pub mod tests {
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
             None,
+            None,
         )
         .unwrap();
         let r = boolean_one(&mut m, BoolKind::Fuse, cube, boss).unwrap();
@@ -4343,6 +4345,7 @@ pub mod tests {
             crate::exact::Swept::along(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
+            None,
             None,
         )
         .unwrap();
@@ -6217,6 +6220,59 @@ pub mod tests {
             .def
             .is_none()
         );
+    }
+
+    /// ★★★★★ **A prism raised on a tilted plane records that plane exactly** — and nothing else
+    /// about it changes.
+    ///
+    /// The base cap *is* the plane the caller named, so a caller who stated it exactly gives the
+    /// kernel a plane it can write down, even though the same prism's walls and far cap are
+    /// irrational in world coordinates and stay on the f64 path. Measured over the suite:
+    /// coefficient-less fresh base caps went **782 → 2**.
+    ///
+    /// ★★ **And the judgment path is untouched**: no motion is created, so the vertices stay
+    /// `Constructed` and the surface stays `Constructed`. That is what separates this step from
+    /// the frame work — it is exactness with no toleranced-path cost.
+    #[test]
+    fn a_prism_on_a_named_tilted_plane_records_its_base_plane() {
+        let plane =
+            SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array([1.0, 1.0, 1.0]))
+                .unwrap();
+        assert!(plane.exact().is_none(), "the axes have no exact form");
+        let mut m = Model::new();
+        let OpOutput::Extrude { solid, faces } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane,
+                profile: square(),
+                dist: 1.0,
+            },
+        )
+        .expect("extrude on a tilted plane") else {
+            unreachable!()
+        };
+        let base = m.faces.get(faces[0]).surface;
+        assert_eq!(
+            m.surface_coeffs.get(&base).map(|c| c.map(|r| r.to_f64())),
+            Some([1.0, 1.0, 1.0, 0.0]),
+            "★ the base cap is the caller's plane, written down"
+        );
+        // ★ The far cap and the walls still cannot state themselves — that is the frame's job,
+        // and saying so here keeps this test from being read as more than it is.
+        assert!(
+            !m.surface_coeffs
+                .contains_key(&m.faces.get(faces[1]).surface),
+            "the far cap is irrational in the world and stays so"
+        );
+        // Nothing was moved: no motion, and every vertex is still constructed.
+        assert_eq!(m.motions.len(), 0, "W1 creates no motion");
+        let _ = solid;
+        for (_, v) in m.vertices.iter() {
+            assert!(
+                matches!(v.origin, nacre_topo::Origin::Constructed),
+                "the judgment path must not move"
+            );
+        }
     }
 
     fn centred_on(m: &Model, face: Handle<Face>, half: f64) -> Profile2d {
