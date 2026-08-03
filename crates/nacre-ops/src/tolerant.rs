@@ -776,4 +776,312 @@ mod tests {
         }
         assert!(checked > 0, "no definite comparison in the corpus");
     }
+
+    // ---- stage 0b: does the two-caps defect reproduce, and is it wrong or conservative? ----
+
+    /// Two bosses on one tilted face, raised to the same height by different arithmetic —
+    /// `7.7` against `1.1` then `6.6`. Their caps are the same plane.
+    ///
+    /// Returns the model, the solid, and the two cap faces.
+    /// How each column reaches `7.7` — the only thing that varies between a run and its control.
+    ///
+    /// ★ **A shape-matched control is not available.** Raising *both* columns as `1.1 + 6.6` would
+    /// hold the shape fixed and change only the coincidence question, but it cannot be built: the
+    /// two columns' shoulders are then one plane and the second column's upper pad is refused with
+    /// `Unsupported { SeamAlias }` — the same family of defect, one level down. `Single` differs by
+    /// one shoulder at height `3.1`, which is nowhere near the caps at `9.7`, so the third control
+    /// (the plate over one cap only) carries the isolation instead.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Recipe {
+        /// A: one `7.7`. B: `1.1` then `6.6`. The caps land one ulp apart.
+        Split,
+        /// Both columns: one `7.7`. Caps agree, but B has no shoulder.
+        Single,
+    }
+
+    fn two_caps_on_a_tilted_face(
+        recipe: Recipe,
+    ) -> (Model, Handle<Solid>, [Handle<nacre_topo::Face>; 2]) {
+        use crate::{OpOutput, Profile2d};
+        use nacre_math::Vector3;
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let mut m = Model::new();
+        let mut s = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        // Two turns, so the face's normal is off every world axis and its frame is not exact.
+        for (axis, deg) in [(Axis::Y, 53i128), (Axis::Z, 17)] {
+            let OpOutput::Transform { solid } = apply(
+                &mut m,
+                &Operation::Transform {
+                    solid: s,
+                    isometry: Isometry::rotation(SRot {
+                        axis,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+                    }),
+                },
+            )
+            .expect("turn") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            s = solid;
+        }
+        let (sy, cy) = (53f64).to_radians().sin_cos();
+        let (sz, cz) = (17f64).to_radians().sin_cos();
+        let up = Vector3::from_array([cz * sy, sz * sy, cy]);
+        // The **original** tilted face — lowest along `up` among the faces that point that way,
+        // so the second boss is placed beside the first rather than on top of it.
+        let facing = |m: &Model, s: Handle<Solid>| -> Handle<nacre_topo::Face> {
+            *m.shells
+                .get(m.solids.get(s).outer)
+                .faces
+                .iter()
+                .filter(|&&f| {
+                    crate::ops::face_plane(m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99)
+                })
+                .min_by(|&&a, &&b| {
+                    let h = |f: Handle<nacre_topo::Face>| {
+                        (nacre_props::face_props(m, f).unwrap().centroid - Point3::origin()).dot(up)
+                    };
+                    h(a).partial_cmp(&h(b)).unwrap()
+                })
+                .expect("a face along up")
+        };
+        // A footprint in the face's own frame, centred on `(cu + lo … cu + hi, cv ± half)`.
+        let footprint = |m: &Model, f: Handle<nacre_topo::Face>, lo: f64, hi: f64, half: f64| {
+            let sp = crate::ops::face_plane(m, f).expect("planar");
+            let d = nacre_props::face_props(m, f).unwrap().centroid - sp.origin;
+            let (cu, cv) = (d.dot(sp.x_axis), d.dot(sp.y_axis));
+            Profile2d::polygon(vec![
+                p(cu + lo, cv - half),
+                p(cu + hi, cv - half),
+                p(cu + hi, cv + half),
+                p(cu + lo, cv + half),
+            ])
+        };
+        let pad = |m: &mut Model,
+                   f: Handle<nacre_topo::Face>,
+                   profile: Profile2d,
+                   dist: f64|
+         -> (Handle<Solid>, Handle<nacre_topo::Face>) {
+            let OpOutput::PadOnFace { solid, top_face } = apply(
+                m,
+                &Operation::PadOnFace {
+                    face: f,
+                    profile,
+                    dist,
+                },
+            )
+            .unwrap_or_else(|e| panic!("pad dist={dist} on {f:?}: {e:?}")) else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            (solid, top_face)
+        };
+        // One column, raised either in one pad or in two.
+        let column = |m: &mut Model,
+                      s: &mut Handle<Solid>,
+                      lo: f64,
+                      hi: f64,
+                      two_tier: bool|
+         -> Handle<nacre_topo::Face> {
+            let f = facing(m, *s);
+            let prof = footprint(m, f, lo, hi, 0.5);
+            if two_tier {
+                let (s1, low) = pad(m, f, prof, 1.1);
+                *s = s1;
+                let prof = footprint(m, low, -0.25, 0.25, 0.25);
+                let (s2, cap) = pad(m, low, prof, 6.6);
+                *s = s2;
+                cap
+            } else {
+                let (s1, cap) = pad(m, f, prof, 7.7);
+                *s = s1;
+                cap
+            }
+        };
+        let (a_two_tier, b_two_tier) = match recipe {
+            Recipe::Split => (false, true),
+            Recipe::Single => (false, false),
+        };
+        let cap_a = column(&mut m, &mut s, -1.0, -0.4, a_two_tier);
+        let cap_b = column(&mut m, &mut s, 0.4, 1.0, b_two_tier);
+        (m, s, [cap_a, cap_b])
+    }
+
+    /// The world direction the tilted face points, for both fixtures.
+    fn tilt_up() -> nacre_math::Vector3 {
+        let (sy, cy) = (53f64).to_radians().sin_cos();
+        let (sz, cz) = (17f64).to_radians().sin_cos();
+        nacre_math::Vector3::from_array([cz * sy, sz * sy, cy])
+    }
+
+    /// The two highest faces along the tilt — the caps — as indices into `faces`.
+    fn cap_pair(m: &Model, faces: &[FaceInfo]) -> (usize, usize) {
+        let up = tilt_up();
+        let mut along: Vec<(usize, f64)> = faces
+            .iter()
+            .enumerate()
+            .filter_map(|(i, fi)| {
+                let p = nacre_props::face_props(m, fi.face.expect("a face")).ok()?;
+                (p.normal?.dot(up) > 0.99).then(|| (i, (p.centroid - Point3::origin()).dot(up)))
+            })
+            .collect();
+        along.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        assert!(along.len() >= 2, "two caps point along the tilt");
+        (along[0].0, along[1].0)
+    }
+
+    /// ★★★★★ **The defect, pinned.** Two bosses on a tilted face reach the same height by
+    /// different arithmetic, and the kernel calls their caps **different planes**.
+    ///
+    /// The heights are `2.0 + 7.7` against `2.0 + 1.1 + 6.6`. In the rationals those are the same
+    /// number — `77/10` either way, which is why the axis-aligned path merges them — but on a
+    /// tilted face the cap is reached through an irrational frame, and what the judge compares is
+    /// the **witness triangle**, whose f64 coordinates land one ulp apart.
+    ///
+    /// ★ The control run (`Single`, both columns raised in one pad) merges, so the split is the
+    /// arithmetic and not the tilt. What this test becomes once the witness is exact: `Split`
+    /// merges too. See `docs/dev-log.md`.
+    #[test]
+    fn two_caps_reached_by_different_arithmetic_are_two_planes_today() {
+        for (recipe, want_same) in [(Recipe::Split, false), (Recipe::Single, true)] {
+            let (m, s, _) = two_caps_on_a_tilted_face(recipe);
+            let faces = collect_planes(&m, s).unwrap();
+            let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
+            let (ia, ib) = cap_pair(&m, &faces);
+            let ha = nacre_props::face_props(&m, faces[ia].face.unwrap())
+                .unwrap()
+                .centroid;
+            let hb = nacre_props::face_props(&m, faces[ib].face.unwrap())
+                .unwrap()
+                .centroid;
+            let (ha, hb) = (
+                (ha - Point3::origin()).dot(tilt_up()),
+                (hb - Point3::origin()).dot(tilt_up()),
+            );
+            assert_eq!(
+                canon[ia] == canon[ib],
+                want_same,
+                "{recipe:?}: caps at {ha:.17} and {hb:.17}"
+            );
+            assert_eq!(
+                crate::planes::test_judge(&faces).planes_coplanar(ia, ib),
+                want_same,
+                "{recipe:?}: the judge and the class assignment must agree"
+            );
+            // ★ On its own the split costs nothing: the solid is right either way.
+            assert!(nacre_validate::validate(&m).is_empty());
+        }
+    }
+
+    /// ★★★★★ **The split is not conservative — it builds a malformed solid, silently.**
+    ///
+    /// A plate laid across **both** caps asks the boolean a question it can only answer correctly
+    /// if the caps are one plane. With the caps split, the result comes back with a face whose
+    /// stored surface normal is **76° off its own outward normal** — `collect_planes` asserts
+    /// exactly that invariant, so the solid cannot be used as an operand again, and in release
+    /// `orient_sign` would be read off that dot.
+    ///
+    /// ★ **Nothing reports it**: the volume is right and `validate` is clean.
+    ///
+    /// The cause is isolated by three controls — the bad face appears only when a plate spans two
+    /// caps that are in different classes:
+    ///
+    /// | recipe | plate | malformed faces |
+    /// |---|---|---|
+    /// | `Split` | across both caps | **1** |
+    /// | `Split` | over one cap | 0 |
+    /// | `Single` | across both caps | 0 |
+    /// | `Single` | over one cap | 0 |
+    #[test]
+    fn a_plate_across_two_split_caps_builds_a_malformed_solid_today() {
+        for (recipe, span, want_bad) in [
+            (Recipe::Split, true, 1),
+            (Recipe::Split, false, 0),
+            (Recipe::Single, true, 0),
+            (Recipe::Single, false, 0),
+        ] {
+            let (bad, volume_ok, valid) = plate_across_caps(recipe, span);
+            assert_eq!(bad, want_bad, "{recipe:?} span={span}");
+            // ★ And the two things a caller would look at say nothing is wrong.
+            assert!(volume_ok, "{recipe:?} span={span}: volume");
+            assert!(valid, "{recipe:?} span={span}: validate");
+        }
+    }
+
+    /// Raise a plate from the taller cap — across both columns when `span`, over one otherwise —
+    /// and report `(faces whose stored normal is not parallel to their own outward normal,
+    /// volume is right, validate is clean)`.
+    fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
+        use crate::{OpOutput, Profile2d};
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let (mut m, s, _) = two_caps_on_a_tilted_face(recipe);
+        let up = tilt_up();
+        let before = nacre_props::mass_props(&m, s).unwrap().volume;
+        let cap = *m
+            .shells
+            .get(m.solids.get(s).outer)
+            .faces
+            .iter()
+            .filter(|&&f| crate::ops::face_plane(&m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99))
+            .max_by(|&&a, &&b| {
+                let h = |f: Handle<nacre_topo::Face>| {
+                    (nacre_props::face_props(&m, f).unwrap().centroid - Point3::origin()).dot(up)
+                };
+                h(a).partial_cmp(&h(b)).unwrap()
+            })
+            .expect("a cap");
+        let sp = crate::ops::face_plane(&m, cap).expect("planar");
+        let d = nacre_props::face_props(&m, cap).unwrap().centroid - sp.origin;
+        let (cu, cv) = (d.dot(sp.x_axis), d.dot(sp.y_axis));
+        // The columns sit at u ≈ ∓0.7 of the base face's centre; `-1.6` reaches the far one.
+        let lo = if span { -1.6 } else { -0.2 };
+        let profile = Profile2d::polygon(vec![
+            p(cu + lo, cv - 0.2),
+            p(cu + 0.4, cv - 0.2),
+            p(cu + 0.4, cv + 0.2),
+            p(cu + lo, cv + 0.2),
+        ]);
+        let OpOutput::PadOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: cap,
+                profile,
+                dist: 0.5,
+            },
+        )
+        .unwrap_or_else(|e| panic!("{recipe:?} span={span}: the plate must build, got {e:?}")) else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let after = nacre_props::mass_props(&m, solid).unwrap().volume;
+        let volume_ok = (after - before - (0.4 - lo) * 0.4 * 0.5).abs() < 1e-9;
+        let valid = nacre_validate::validate(&m).is_empty();
+        // `collect_planes` would assert on this; count it instead, so the test can say how many.
+        let bad = m
+            .shells
+            .get(m.solids.get(solid).outer)
+            .faces
+            .iter()
+            .filter(|&&f| {
+                let face = m.faces.get(f);
+                let Some((tri, _)) = crate::planes::outer_tri(&m, face) else {
+                    return false;
+                };
+                let Some(n_out) = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize() else {
+                    return false;
+                };
+                let nacre_geom::Surface::Plane(pl) = m.surfaces.get(face.surface) else {
+                    return false;
+                };
+                pl.normal().dot(n_out).abs() <= 0.5
+            })
+            .count();
+        (bad, volume_ok, valid)
+    }
 }
