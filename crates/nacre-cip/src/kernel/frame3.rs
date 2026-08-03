@@ -2748,6 +2748,53 @@ mod tests {
         }
     }
 
+    /// ★★★★ **A named frame is a frame the derivation cannot produce.**
+    ///
+    /// `plane_frame_default` gives the convention a *face* takes — origin at the world origin's
+    /// projection, `+u` along `ẑ × n`. A plane a caller **named** may want neither: the script
+    /// layer's `ZX` plane has `+u = +ẑ`, while `ẑ × n` there is `−x̂`. So the node carries the
+    /// pair, and this checks that naming them actually moves the frame — and that the frame is
+    /// still orthonormal when it does.
+    ///
+    /// ★★ **And two spellings of one direction are one frame.** `ref_dir` is reduced to its
+    /// primitive form, so `[0,0,1]` and `[0,0,5]` build the identical `PlaneFrame` — which is what
+    /// lets a motion node intern (the document's blocker 6).
+    #[test]
+    fn a_named_frame_takes_its_own_origin_and_u() {
+        let coeffs = [0, 1, 0, 0].map(Rat::from_int); // the ZX plane, y = 0
+        let (o_d, r_d) = nacre_scalar::plane_frame_default(coeffs).unwrap();
+        assert_eq!(
+            r_d.map(|r| r.to_f64()),
+            [-1.0, 0.0, 0.0],
+            "ẑ × n is −x̂ here"
+        );
+
+        let zhat = [0, 0, 1].map(Rat::from_int);
+        let named = nacre_scalar::plane_frame_named(coeffs, o_d, zhat).unwrap();
+        let derived = nacre_scalar::plane_frame(coeffs).unwrap();
+        assert_ne!(
+            named.u_raw, derived.u_raw,
+            "naming +u must actually move it"
+        );
+
+        // The named frame is still a frame: `+u` realizes to `ẑ`, and a point at `w = 0` is on
+        // the plane `y = 0`.
+        let p = Pt3::at([ri(3, 1), ri(-7, 1), Rat::from_int(0)])
+            .frame(named)
+            .unwrap();
+        let q = Pt3::at([Rat::from_int(0); 3]).frame(named).unwrap();
+        let u = [0, 1, 2].map(|k| p.coord[k] - q.coord[k]);
+        assert!(p.coord[1].abs() < 1e-15, "on the plane y = 0");
+        assert!((u[2] - 3.0).abs() < 1e-15, "+u ran along ẑ, got {u:?}");
+
+        // ★ Two spellings of one direction, one frame.
+        let long = [0, 0, 5].map(Rat::from_int);
+        assert_eq!(
+            nacre_scalar::plane_frame_named(coeffs, o_d, long),
+            Some(named)
+        );
+    }
+
     /// ★★★ **The `v̂` fallback is taken, and the frame is still a frame.**
     ///
     /// `|v_raw|² = |n|²·|u_raw|²` needs twice the width the lengths themselves do, so a plane with

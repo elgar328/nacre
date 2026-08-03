@@ -83,9 +83,14 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
             }
             Motion::Translate { offset } => chain.push(MoveNode::Translate { offset }),
             Motion::Mirror { axis, offset } => chain.push(MoveNode::Mirror { axis, offset }),
-            Motion::Frame { plane, flip } => {
+            Motion::Frame {
+                plane,
+                origin,
+                ref_dir,
+                flip,
+            } => {
                 // Built root-to-leaf here and reversed at the end, so it goes on backwards.
-                let mut c = frame_chain(model, plane, flip)?;
+                let mut c = frame_chain(model, plane, origin, ref_dir, flip)?;
                 c.reverse();
                 chain.append(&mut c);
             }
@@ -109,6 +114,8 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
 pub(crate) fn frame_chain(
     model: &Model,
     plane: Handle<nacre_geom::Surface>,
+    origin: [Rat; 3],
+    ref_dir: [Rat; 3],
     flip: bool,
 ) -> Option<Vec<MoveNode>> {
     // ★★★★ **Canonical coefficients carry no direction, and a frame needs one.**
@@ -127,7 +134,7 @@ pub(crate) fn frame_chain(
         c
     };
     let mut chain = vec![MoveNode::Frame {
-        frame: nacre_scalar::plane_frame(c)?,
+        frame: nacre_scalar::plane_frame_named(c, origin, ref_dir)?,
     }];
     match model.surface_defs.get(&plane) {
         Some(SurfaceDef::Moved { motion, .. }) => chain.append(&mut motion_chain(model, *motion)?),
@@ -157,9 +164,11 @@ pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 pub(crate) fn frame_world_basis(
     model: &Model,
     plane: Handle<nacre_geom::Surface>,
+    origin: [Rat; 3],
+    ref_dir: [Rat; 3],
     flip: bool,
 ) -> Option<WorldBasis> {
-    let chain = frame_chain(model, plane, flip)?;
+    let chain = frame_chain(model, plane, origin, ref_dir, flip)?;
     let at = |p: [i128; 3]| -> Option<[f64; 3]> {
         Some(replay(Pt3::at(p.map(Rat::from_int)), &chain)?.coord)
     };

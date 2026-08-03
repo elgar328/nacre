@@ -932,6 +932,17 @@ fn sweep_ring(
 /// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
 /// centroid so a profile's `(0,0)` lands there), and its loops — the shared setup for placing a
 /// profile on a face (pad / pocket).
+/// **Which frame a face's sketch lives in** — the plane, where its `(0, 0)` sits, which way `+u`
+/// runs, and whether the plane's canonical coefficients need negating to face the way the face
+/// does. Everything a [`nacre_topo::Motion::Frame`] node needs, before the model has one.
+#[derive(Clone, Copy, Debug)]
+struct SketchFrame {
+    plane: Handle<Surface>,
+    origin: [nacre_scalar::Rat; 3],
+    ref_dir: [nacre_scalar::Rat; 3],
+    flip: bool,
+}
+
 struct FaceFrame {
     solid_h: Handle<Solid>,
     surface_h: Handle<Surface>,
@@ -942,7 +953,7 @@ struct FaceFrame {
     /// ★ Set when this face's sketch lives in its plane's **own frame** rather than the world:
     /// the plane to take the frame from, and which way round. `x`/`y`/`origin` above are then that
     /// frame's, realized — so what a caller is told and what the operation builds are one thing.
-    sketch_frame: Option<(Handle<Surface>, bool)>,
+    sketch_frame: Option<SketchFrame>,
 }
 
 /// **Which way is "right" and "up" on a face pointing `n`** — the `(u, v)` a sketch frame takes.
@@ -1075,17 +1086,24 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // ★ **`flip` is measured, not derived** — see `frame_world_basis`. `flip = true` negates `ŵ`
     // and `û` together and leaves `v̂`, so the second reading is a sign change rather than a
     // second realization.
+    // ★★ A face has no name, so its frame is the **derived** one — and `Motion::Frame` now carries
+    // that pair explicitly, so a named plane can supply a different one without a second machine.
     let world = SketchPlane::from_axes(origin, x, y);
     let sketch = (world.exact().is_none())
-        .then(|| crate::rotated_vertex::frame_world_basis(model, surface_h, false))
+        .then(|| {
+            let c = *model.surface_coeffs.get(&surface_h)?;
+            let (o_r, r_r) = nacre_scalar::plane_frame_default(c)?;
+            let b = crate::rotated_vertex::frame_world_basis(model, surface_h, o_r, r_r, false)?;
+            Some((o_r, r_r, b))
+        })
         .flatten()
-        .map(|(o, u, v, w)| {
+        .map(|(o_r, r_r, (o, u, v, w))| {
             // ★ `flip = true` negates `ŵ` and `û` together and leaves `v̂` — a half-turn about
             // `v` — so the second reading is a sign change rather than a second realization.
             let flip = (0..3).map(|k| w[k] * n.as_array()[k]).sum::<f64>() < 0.0;
             let sgn = if flip { -1.0 } else { 1.0 };
             (
-                flip,
+                (o_r, r_r, flip),
                 Point3::from_array(o),
                 Vector3::from_array(u.map(|c| c * sgn)),
                 // ★★ **`v̂` as realized, not as `ŵ × û` recomputed here.** It has its own exact
@@ -1096,7 +1114,17 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
             )
         });
     let (x, y, origin, sketch_frame) = match sketch {
-        Some((flip, o, u, v)) => (u, v, o, Some((surface_h, flip))),
+        Some((f, o, u, v)) => (
+            u,
+            v,
+            o,
+            Some(SketchFrame {
+                plane: surface_h,
+                origin: f.0,
+                ref_dir: f.1,
+                flip: f.2,
+            }),
+        ),
         None => (x, y, origin, None),
     };
     Ok(FaceFrame {
@@ -1151,11 +1179,13 @@ fn extrude_and_boolean(
     // what makes their surfaces intern too (`SurfaceKey` is `(coefficients, motion)`) and is the
     // whole point of the exercise: two routes to one height become one `Handle<Surface>` at
     // construction, with no f64 comparison anywhere.
-    let sketch_frame = frame.sketch_frame.map(|(plane_h, flip)| {
+    let sketch_frame = frame.sketch_frame.map(|f| {
         model.push_motion(
             nacre_topo::Motion::Frame {
-                plane: plane_h,
-                flip,
+                plane: f.plane,
+                origin: f.origin,
+                ref_dir: f.ref_dir,
+                flip: f.flip,
             },
             None,
         )

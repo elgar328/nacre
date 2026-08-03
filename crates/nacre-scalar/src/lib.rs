@@ -582,14 +582,46 @@ pub fn plane_offset(coeffs: [Rat; 4], t: Rat) -> Option<[Rat; 4]> {
 /// squared lengths the realization needs do not fit `i128` — all three are honest declines that
 /// leave a caller on the f64 path it was already on, never a reject.
 pub fn plane_frame(coeffs: [Rat; 4]) -> Option<PlaneFrame> {
+    let (origin, ref_dir) = plane_frame_default(coeffs)?;
+    plane_frame_named(coeffs, origin, ref_dir)
+}
+
+/// **Where a plane's frame sits when nobody names it** — `(origin, ref_dir)`.
+///
+/// The origin is the world origin projected onto the plane and `ref_dir` is `ẑ × n`
+/// (`ŷ × n` when the normal is vertical), which is the arbitrary-axis convention a *face* takes.
+/// A caller who names their own sketch origin and `+u` passes those to [`plane_frame_named`]
+/// instead — a named plane can insist on axes no derivation would produce, and the script layer's
+/// `ZX` (whose `+u` is `+ẑ`, not `ẑ × n = −x̂`) is exactly such a case.
+pub fn plane_frame_default(coeffs: [Rat; 4]) -> Option<([Rat; 3], [Rat; 3])> {
     let origin = plane_origin_projection(coeffs)?;
     let n = reduce_direction([coeffs[0], coeffs[1], coeffs[2]])?;
     let zero = Rat::from_int(0);
-    let u_raw = if n[0] == zero && n[1] == zero {
+    let ref_dir = if n[0] == zero && n[1] == zero {
         [n[2], zero, zero]
     } else {
         [zero.checked_sub(n[1])?, n[0], zero]
     };
+    Some((origin, ref_dir))
+}
+
+/// **A plane's frame with the origin and `+u` direction its author chose.**
+///
+/// `ref_dir` must lie in the plane and not be zero; it need **not** be a unit vector, and it is
+/// reduced to its primitive form here so that two spellings of one direction (`[10,10,0]` and
+/// `[20,20,0]`) name **one** frame. That reduction is what makes a frame node interning-friendly
+/// — the document's blocker 6.
+///
+/// `None` on a degenerate plane or direction, when the origin projection is not rational, or when
+/// the squared lengths the realization divides by do not fit `i128`.
+pub fn plane_frame_named(
+    coeffs: [Rat; 4],
+    origin: [Rat; 3],
+    ref_dir: [Rat; 3],
+) -> Option<PlaneFrame> {
+    let zero = Rat::from_int(0);
+    let n = reduce_direction([coeffs[0], coeffs[1], coeffs[2]])?;
+    let u_raw = reduce_direction(ref_dir)?;
     let dot =
         |a: &[Rat; 3]| (0..3).try_fold(zero, |acc, k| acc.checked_add(a[k].checked_mul(a[k])?));
     let (uu, nn) = (dot(&u_raw)?, dot(&n)?);

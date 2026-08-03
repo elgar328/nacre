@@ -91,10 +91,23 @@ pub enum Motion {
     /// so it is still reconstructible from the handle, and two sketches on **one face** still
     /// intern to one node — which is the sharing the design needs.
     ///
+    /// ★★★ **`origin` and `ref_dir` are named, not derived.** A *face* has no name, so its frame
+    /// is derived by convention (`nacre_scalar::plane_frame_default` — the world origin projected
+    /// onto the plane, and `ẑ × n`). A plane a caller **named** can insist on something no
+    /// derivation produces: the script layer's `ZX` has `+u = +ẑ`, while `ẑ × n` there is `−x̂`.
+    /// So the node carries both, and the derived case is the one that fills them in from the
+    /// convention. `ref_dir` lies in the plane, need not be unit length, and is reduced to its
+    /// primitive form so two spellings of one direction name one node.
+    ///
     /// ★ **Proper** (`det = +1`) — `(u, v, w)` is right-handed by construction (`v = w × u`), so
     /// unlike [`Mirror`](Self::Mirror) it contributes nothing to a chain's parity. Negating the
     /// coefficients flips `ŵ` and `û` together and leaves `v̂`, which is a half-turn: still proper.
-    Frame { plane: Handle<Surface>, flip: bool },
+    Frame {
+        plane: Handle<Surface>,
+        origin: [Rat; 3],
+        ref_dir: [Rat; 3],
+        flip: bool,
+    },
 }
 
 /// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a
