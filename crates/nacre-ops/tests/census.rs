@@ -12,7 +12,7 @@
 //! ```
 //!
 //! ★★★ **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same
-//! 130 lines must come out — they do, measured. That is not a formality: `Angle`'s f64 route is
+//! 148 lines must come out — they do, measured. That is not a formality: `Angle`'s f64 route is
 //! `(deg.to_f64() * PI / 180.0).cos()`, and LLVM evaluates that at compile time wherever it can see
 //! the angle, one ulp away from what libm returns at run time. Two builds disagreeing here would
 //! mean the coordinates a model stores depend on how it was compiled.
@@ -21,6 +21,13 @@
 //! it — written into an `Operation`, pushed, read back — and no optimiser propagates a constant
 //! through a heap structure. So this is a real check with a real way to fail, and no in-process
 //! test can express it: a test runs in one profile. It belongs here, next to the diff it extends.
+//!
+//! ★★★★★ **What a census can and cannot see.** Every case is built from coordinates written here,
+//! so it sees a change that moves a coordinate — and it is **blind by construction** to a change in
+//! a population it does not contain. The first 130 lines are all *short* decimals, which is why a
+//! regression that closed the exact path for every arbitrarily-tilted plane crossed this file
+//! bit-identical, twice. The `fw` (full-width coordinates) and `tp` (tilted sketch plane) families
+//! exist for that reason. **Read "bit-identical" as evidence only about the population present.**
 
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
@@ -365,6 +372,76 @@ fn dump() {
         }
     }
 
+    // ── ★★★★★ **Full-width coordinates — the population every family above is blind to.**
+    //
+    // Every corner and dimension above is a *short* decimal (`0.5`, `2.5`, `7.7`), and every
+    // rational derived from one stays far inside `i128`. So a change to what the kernel can and
+    // cannot **name** leaves all 130 lines bit-identical, and this census reports nothing.
+    //
+    // ★★★★★ That is not hypothetical: a regression that closed the exact path for every
+    // arbitrarily-tilted plane shipped, and the census was bit-identical across it — **twice**,
+    // because the same blindness had already been recorded once.
+    //
+    // ★★ **Measured, and it picks the right target.** A cuboid on seventeen-digit corners has
+    // **6 faces of which only 4 carry a plane name** — the other two overflow `i128` in
+    // `plane_through_points` and are the very planes the derivation work is about. The proptests
+    // are where this population lives today (`stacked_boxes_merge_volumes` and friends generate
+    // arbitrary `f64`), and a proptest cannot be a census line: it has no fixed coordinates to
+    // diff. These constants are those coordinates, pinned.
+    let fw: [([f64; 3], [f64; 3]); 3] = [
+        (
+            [-2.8374652839472, 1.0937465283947, -0.5837465283947],
+            [1.4738264859372, 2.9384756293847, 0.8473625849372],
+        ),
+        // A stacked pair sharing one interface plane — the coplanar-contact route, on coordinates
+        // whose interface plane cannot be named today.
+        (
+            [-2.8374652839472, 1.0937465283947, 0.8473625849372],
+            [1.4738264859372, 2.9384756293847, 2.1937465283947],
+        ),
+        // Overlapping, so the result's planes come from both operands.
+        (
+            [-1.1937465283947, 1.9384756293847, -0.1837465283947],
+            [2.8473625849372, 3.4738264859372, 1.4937465283947],
+        ),
+    ];
+    for (kn, k) in KINDS {
+        for (i, (lo, hi)) in fw.iter().enumerate() {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array(fw[0].0), Point3::from_array(fw[0].1));
+            let b = m.add_cuboid(Point3::from_array(*lo), Point3::from_array(*hi));
+            m.rebuild_adjacency();
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("fw {kn} {i}"), &m, &inputs, &out);
+        }
+    }
+
+    // ── **A prism on a tilted sketch plane** — the `Motion::Frame` path, which no family above
+    // reaches either. Its ring lives in the plane's own frame, so its walls *are* nameable; what
+    // it exercises is the frame machinery, not the width limit.
+    for (i, n) in [
+        [0.3141592653589793, -0.2718281828459045, 1.0],
+        [-0.5773502691896258, 0.5773502691896258, 0.5773502691896258],
+        [0.1, 0.2, 0.30000000000000004],
+    ]
+    .iter()
+    .enumerate()
+    {
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let a = tilted_prism(&mut m, *n, 0.0, 1.0, 0.75);
+            // A second prism on the *same* tilted plane, offset in the sketch and raised further:
+            // its base cap and `a`'s are one plane, and its walls can be coplanar with `a`'s.
+            let b = tilted_prism(&mut m, *n, 0.5, 1.6, 1.25);
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("tp {kn} {i}"), &m, &inputs, &out);
+        }
+    }
+
     // ★ **How many plane names went out unverified**, over everything above. Not a `c ` line —
     // it is not a coordinate, and the diff above must not move when this does. It is here because
     // this is the one run that covers the whole corpus in a single process, and the number decides
@@ -373,6 +450,42 @@ fn dump() {
         "stat inconclusive_names {}",
         nacre_topo::INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed)
     );
+}
+
+/// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].
+///
+/// ★ The footprint is a **U** (a notched square), so two of its walls lie on one plane. Where the
+/// kernel can name that plane the two share a `Surface` handle; where it cannot they are two
+/// handles for one plane, which is the state this line of work removes.
+fn tilted_prism(m: &mut Model, n: [f64; 3], off: f64, size: f64, dist: f64) -> Handle<Solid> {
+    use nacre_math::{Point2, Vector3};
+    let p = |x: f64, y: f64| Point2::from_array([off + x * size, off + y * size]);
+    let plane =
+        nacre_ops::SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array(n))
+            .expect("a tilted plane");
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            plane,
+            // U-shaped: the notch's two side walls are the coplanar pair.
+            profile: nacre_ops::Profile2d::polygon(vec![
+                p(0.0, 0.0),
+                p(3.0, 0.0),
+                p(3.0, 2.0),
+                p(2.0, 2.0),
+                p(2.0, 1.0),
+                p(1.0, 1.0),
+                p(1.0, 2.0),
+                p(0.0, 2.0),
+            ]),
+            dist,
+        },
+    )
+    .expect("tilted extrude") else {
+        unreachable!("extrude yields Extrude output")
+    };
+    m.rebuild_adjacency();
+    solid
 }
 
 /// A rectangular prism raised from `z` by `dist` — the construction path production uses.
