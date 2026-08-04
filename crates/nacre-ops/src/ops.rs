@@ -737,8 +737,6 @@ pub(crate) fn build_prism(
             (h, orient)
         }
         None => {
-            // The two caps' rational coefficients come from the same frame normal the f64 pair
-            // above uses, so they agree with the walls that meet them.
             // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
             //
             // The base cap *is* the plane they named, and they named it in the world — so stating
@@ -749,37 +747,40 @@ pub(crate) fn build_prism(
             //
             // The frame's answer is what a plane with no caller statement gets (an axis-aligned
             // sketch, where the two agree anyway).
-            // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
             //
-            // The base cap *is* the plane they named, and they named it in the world — so stating
-            // it that way keeps it `Constructed`, keeps its judgment exact, and lets two extrudes
-            // on one plane share it **whatever frames they chose**. Writing it as `[0,0,1,0]` in
-            // this prism's frame instead would be a second exact description of one plane, under a
-            // different `SurfaceKey` — the very duplication this work removes.
+            // ★★★★★ **One frame or the other — never half of each, and the `def` goes with them.**
+            // The coefficients, the points and the `SurfaceDef` are three halves of one statement:
+            // `Constructed` means *"these speak about the world"* and `Moved` means *"about the
+            // pre-motion frame"*. This used to pick each of the first two with its **own**
+            // `or_else`, so a caller whose points overflowed while their coefficients did not got
+            // world coefficients beside the prism's **frame** ring — one plane stated two ways,
+            // which is the exact defect `push_surface_with_coeffs`' agreement filter was added to
+            // catch. That filter cannot be relied on for it either: on these widths the residual
+            // overflows, and an unevaluable check is (correctly) not treated as a violation.
             //
-            // The frame's answer is what a plane with no caller statement gets (an axis-aligned
-            // sketch, where the two agree anyway).
-            let caps = base_cap_coeffs.or_else(|| {
-                outer_pts
-                    .exact
-                    .as_ref()
-                    .and_then(|e| e.cap_planes())
-                    .map(|(base, _)| base)
-            });
+            // ★ So the choice is made **once**, over the whole statement. `Option::zip` is what
+            // says "both halves or neither"; the frame's `surface_def()` is the same one the top
+            // cap already takes, and it agrees with `Constructed` wherever there is no motion —
+            // which is every case a missing caller statement can produce.
+            let (base_def, caps, cap_pts) = match base_cap_coeffs.zip(base_cap_points) {
+                Some((c, p)) => (SurfaceDef::Constructed, Some(c), Some(p)),
+                None => {
+                    let e = outer_pts.exact.as_ref();
+                    (
+                        e.map_or(SurfaceDef::Constructed, |e| e.surface_def()),
+                        e.and_then(|e| e.cap_planes()).map(|(base, _)| base),
+                        e.and_then(|e| e.cap_points(false)),
+                    )
+                }
+            };
             let (s, flipped) = model.push_surface_with_coeffs(
                 Surface::Plane(
                     Plane::from_point_normal(outer_pts.base[0], -normal)
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
-                SurfaceDef::Constructed,
+                base_def,
                 caps,
-                // ★★★★★ **In the frame the coefficients are stated in, or not at all.** When the
-                // caller named the plane, `caps` speaks about the **world**, so the points must
-                // too — the ring below is in the prism's *frame*, and recording it here stated one
-                // plane two ways (caught by the agreement filter, on a tilted named plane). With no
-                // caller statement the frame *is* the world and the ring is right.
-                base_cap_points
-                    .or_else(|| outer_pts.exact.as_ref().and_then(|e| e.cap_points(false))),
+                cap_pts,
             );
             // The plane was built with `−N` as its normal, so `Forward` is what states an outward
             // `−N` — unless a shared surface points the other way, which `flipped` reports.

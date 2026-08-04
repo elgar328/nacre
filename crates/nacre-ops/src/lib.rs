@@ -2684,6 +2684,76 @@ pub mod tests {
         );
     }
 
+    /// ★★★★★ **Half a statement is not a statement.**
+    ///
+    /// A plane's coefficients, its three points and its [`SurfaceDef`] are three halves of one
+    /// description: `Constructed` means *"these speak about the world"*, `Moved` means *"about the
+    /// pre-motion frame"*. `build_prism` used to pick the first two with **separate** `or_else`
+    /// chains, so a caller whose points overflowed while their coefficients did not got world
+    /// coefficients recorded beside the prism's own **frame** ring.
+    ///
+    /// ★★ That is exactly the defect `Model::push_surface_with_coeffs`' agreement filter exists to
+    /// catch — and the filter cannot be relied on for it, because at these widths `c · p` overflows
+    /// and an unevaluable check is (correctly) not read as a violation. So the pairing has to hold
+    /// by construction, and this is what says it does.
+    #[test]
+    fn a_prisms_base_cap_takes_one_frames_statement_or_neither() {
+        let r = nacre_scalar::Rat::from_int;
+        let base_pts = [
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Point3::from_array([0.0, 1.0, 0.0]),
+        ];
+        // The plane `z = 3` — nowhere near the prism, so if it ever reached the record beside the
+        // prism's own points the two would describe visibly different planes.
+        let far = [r(0), r(0), r(1), r(-3)];
+        let far_pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
+
+        for (name, coeffs, points) in [
+            ("coefficients only", Some(far), None),
+            ("points only", None, Some(far_pts)),
+        ] {
+            let mut m = Model::new();
+            let (_prism, faces) = build_prism(
+                &mut m,
+                crate::exact::Swept::along(base_pts.to_vec(), Vector3::from_array([0.0, 0.0, 1.0])),
+                vec![],
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                None,
+                coeffs,
+                points,
+            )
+            .unwrap();
+            let surf = m.faces.get(faces[0]).surface; // base cap is pushed first
+            // ★ Neither half of the caller's statement may survive on its own. What the surface
+            // records instead is the frame's own answer, which for this prism is the world.
+            assert_ne!(
+                m.surface_coeffs.get(&surf),
+                Some(&far),
+                "{name}: the caller's coefficients were kept without their points"
+            );
+            assert_ne!(
+                m.surface_points.get(&surf),
+                Some(&far_pts),
+                "{name}: the caller's points were kept without their coefficients"
+            );
+            // ★★ And whatever it did record still describes the plane it is filed under, exactly.
+            if let (Some(c), Some(ps)) = (m.surface_coeffs.get(&surf), m.surface_points.get(&surf))
+            {
+                for p in ps {
+                    let mut acc = c[3];
+                    for k in 0..3 {
+                        acc = acc
+                            .checked_add(c[k].checked_mul(p[k]).expect("no overflow"))
+                            .expect("no overflow");
+                    }
+                    assert_eq!(acc, r(0), "{name}: a recorded point is off its own plane");
+                }
+            }
+        }
+    }
+
     /// The handle branch of `shares_or_coplanar` is load-bearing: a shared
     /// `Surface` handle reports coplanar even when the stored `plane` values are
     /// *not* geometrically coplanar (so the fallback would not fire). This is the
