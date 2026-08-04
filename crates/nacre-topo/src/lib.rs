@@ -202,6 +202,21 @@ pub enum SurfaceDef {
 /// or replay determinism. It is a `u64` a measurement can print and a test can bound.
 pub static INCONCLUSIVE_NAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// How many planes arrived with three exact points and still got **no name** — the derivation ran
+/// and the canonical answer did not fit `Rat`.
+///
+/// ★ **This is the remaining limit, stated as a number.** A plane with no name cannot intern, cannot
+/// host a sketch frame (`ops::frame_chain` requires it), and cannot be *proved* identical to a
+/// differently-turned copy of itself — the interval route can refute equality but never establish
+/// it. Everything else about it is unaffected: the non-rotated coplanarity test reads the faces'
+/// own triangles exactly and never looks at a name.
+///
+/// ★★ **Bounded by the type, not by the corpus.** A canonical name is a product of two point
+/// differences, so `Rat = Ratio<i128>` inputs admit answers to roughly `2^2291`; today's models
+/// stay far inside `i128` because they are written in short decimals, and the count reflects that
+/// rather than any guarantee.
+pub static UNNAMED_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped
 /// (`Reversed`). A pure tag — full derives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -498,6 +513,38 @@ impl Model {
         // itself**: a prism's base cap recorded the ring in *frame* coordinates while its
         // coefficients spoke about the world. Axis-aligned models never showed it, because there
         // the frame **is** the world. See `ops::named_plane_points`.
+        // ★★★★★ **A plane the producer could not name, the kernel names for itself.**
+        //
+        // The points determine the plane, so its canonical name is a *derivation*, not a second
+        // opinion — and [`nacre_scalar::plane_name_exact`] carries that derivation at unbounded
+        // precision, so it fails only when the answer itself is too wide for `Rat`. Measured across
+        // the suite, **38,661 pushes** arrive with points and no name where one exists; each is a
+        // plane that could not intern, could not host a sketch frame, and could not be *proved*
+        // identical to a differently-turned copy of itself.
+        //
+        // ★★★ **Only where the producer supplied nothing.** A supplied name is used as given: every
+        // producer was checked against this derivation first (83,883 agreements, 0 disagreements),
+        // so the two are the same value — deriving over the top would be the same answer for more
+        // work, and *silently* differing if that ever stopped holding.
+        //
+        // ★★★★★ **`Inexact` is excluded, and that is structural.** [`Model::surface_ids`]' key
+        // carries a motion only for [`SurfaceDef::Moved`], so an `Inexact` plane and a
+        // `Constructed` one with the same coefficients would intern **together** — merging a
+        // surface whose coefficients are declared *not* to be the truth with one whose are. It
+        // cannot arise today (`Inexact` is reached only when the source has no points, and then
+        // none are passed), but that is a convention holding, not a type; a derivation that ran
+        // unconditionally would put a silent wrong answer behind it.
+        let coeffs = match def {
+            SurfaceDef::Inexact => coeffs,
+            _ => coeffs.or_else(|| {
+                let p = points?;
+                let named = nacre_scalar::plane_name_exact(p[0], p[1], p[2]);
+                if named.is_none() {
+                    UNNAMED_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                named
+            }),
+        };
         let coeffs = coeffs.filter(|c| {
             let Some(ps) = points else { return true };
             // `None` = the residual overflowed and no verdict is reachable. Counted **once per

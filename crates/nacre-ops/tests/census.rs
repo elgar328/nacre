@@ -450,6 +450,15 @@ fn dump() {
         "stat inconclusive_names {}",
         nacre_topo::INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed)
     );
+    // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** When a
+    // change lets the kernel name planes it could not name before, the *only* way that reaches a
+    // coordinate is by merging surfaces — so a `c ` line that moves must come with a drop here. If
+    // the coordinates move and this does not, the cause is something else and the diff is not
+    // explained.
+    println!(
+        "stat unnamed_planes {}",
+        nacre_topo::UNNAMED_PLANES.load(std::sync::atomic::Ordering::Relaxed)
+    );
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

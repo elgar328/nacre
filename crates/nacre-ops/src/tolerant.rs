@@ -1516,4 +1516,67 @@ mod tests {
             );
         }
     }
+
+    /// ★★★★★ **One plane, one handle — the gain, stated as something that can fail.**
+    ///
+    /// Everything else in this suite says *"nothing broke"*. This says what the wide derivation
+    /// **bought**: a U-shaped footprint has two walls on one plane, and until the kernel could name
+    /// that plane they were two `Surface` handles for one thing. Handle identity is what
+    /// `plane_classes` merges on in O(1) and what a coplanar contact is recognised by, so a plane it
+    /// cannot name is a plane the engine has to rediscover geometrically every time.
+    ///
+    /// ★ **The coordinates have to be full-width.** On short decimals (`1.0`, `0.5`) the narrow
+    /// `Rat` route already names every wall and the two already share a handle — a version of this
+    /// test written that way passes before the change and proves nothing. These are seventeen
+    /// digits, which is what a slider, a computed dimension or a proptest actually produces.
+    #[test]
+    fn two_walls_of_one_plane_become_one_surface() {
+        use crate::{OpOutput, Profile2d, SketchPlane};
+        use nacre_math::Point2;
+        let t = 1.9384756293847; // the plane the notch's two arms share
+        let p = |x: f64, y: f64| Point2::from_array([x, y]);
+        let mut m = Model::new();
+        let out = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: Profile2d::polygon(vec![
+                    p(0.0, 0.0),
+                    p(2.8374652839472, 0.0),
+                    p(2.8374652839472, t),
+                    p(1.8473625849372, t),
+                    p(1.8473625849372, 0.9384756293847),
+                    p(0.9937465283947, 0.9384756293847),
+                    p(0.9937465283947, t),
+                    p(0.0, t),
+                ]),
+                dist: 0.8473625849372,
+            },
+        )
+        .expect("the extrude must build");
+        let OpOutput::Extrude { faces, .. } = out else {
+            panic!("extrude returned no faces")
+        };
+        let mut surfaces: Vec<_> = faces.iter().map(|&f| m.faces.get(f).surface).collect();
+        let named = faces
+            .iter()
+            .filter(|&&f| m.surface_coeffs.contains_key(&m.faces.get(f).surface))
+            .count();
+        let total = surfaces.len();
+        surfaces.sort_unstable();
+        surfaces.dedup();
+        assert_eq!(
+            named,
+            total,
+            "{} of {total} faces sit on an unnamed plane",
+            total - named
+        );
+        assert_eq!(
+            surfaces.len(),
+            total - 1,
+            "the notch's two arms are one plane and must share one surface handle \
+             ({total} faces, {} distinct surfaces)",
+            surfaces.len()
+        );
+    }
 }
