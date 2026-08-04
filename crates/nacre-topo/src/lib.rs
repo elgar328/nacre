@@ -439,10 +439,15 @@ impl Model {
     ///
     /// ★ **The `bool` says the returned surface's normal points the *other* way** from the one
     /// handed in, and a caller that meets it must record its face `Orientation::flipped()`.
-    /// It is always `false` today, because every call mints a fresh handle. It exists because a
-    /// plane's canonical form has no direction — `[0,0,1,−3]` and `[0,0,−1,3]` are one plane —
-    /// so once identical planes start sharing a handle the direction has to be reconciled
+    /// It exists because a plane's canonical form has no direction — `[0,0,1,−3]` and `[0,0,−1,3]`
+    /// are one plane — so once identical planes share a handle the direction has to be reconciled
     /// somewhere, and the honest place is where the caller still knows what it asked for.
+    ///
+    /// ★★ **It is not a dormant path.** This doc used to say *"always `false` today, because every
+    /// call mints a fresh handle"*, and that had stopped being true: measured across the suite,
+    /// interning hits 7,095 times and **1,916 of those report `flipped`** — a boss meeting the
+    /// plate it sits on is one plane approached from both sides, which is as ordinary as it sounds.
+    /// Recorded here because a claim about what never happens is exactly the kind that rots quietly.
     ///
     /// ★★ **The relative answer, not an absolute one.** A caller could instead read the returned
     /// surface's normal and derive its orientation from its own outward direction, which is what
@@ -1455,15 +1460,27 @@ mod tests {
             "the points are the truth and must be kept even when the name is refused"
         );
 
-        // ★ Wide enough that `c · p` overflows `Rat`: no verdict is reachable, so the name stands
-        // and the counter — not the surface table — is where that shows up.
-        let big = Rat::from_int(i128::MAX / 3);
-        let wide_pts = [[big, r(0), r(0)], [big, r(1), r(0)], [big, r(0), r(1)]];
+        // ★★★★★ **Unverifiable *and correct*, which is the case that matters.**
+        //
+        // The point of this third push is that a name nothing could check is still issued. It has
+        // to be a name the points genuinely satisfy, or it tests two things at once and passes for
+        // the wrong reason — an earlier spelling here used points that were simply *off* the plane,
+        // which is the very confusion between "unevaluable" and "refuted" this guard exists to keep
+        // apart. (Caught by comparing every supplied name against a wide re-derivation.)
+        //
+        // ★ Forcing the overflow while staying on the plane takes some care: for the coordinate the
+        // plane *solves*, `c · p` cancels its own denominator and cannot overflow. So the width has
+        // to come from two coefficients at once — `K·x + L·y = 0` with `K·L` past `i128`, met at
+        // the point `(L, −K, 0)` where the two products are `K·L` and `−L·K`.
+        let k = Rat::from_int(3i128.pow(40)); // 64 bits
+        let l = Rat::from_int((1i128 << 64) + 1); // 65 bits, coprime to k
+        let neg_k = Rat::from_int(-3i128.pow(40));
+        let wide_pts = [[r(0), r(0), r(0)], [l, neg_k, r(0)], [r(0), r(0), r(1)]];
         let before = INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed);
         let (wide, _) = m.push_surface_with_coeffs(
             pl(2.0),
             SurfaceDef::Constructed,
-            Some([big, r(0), r(0), r(0)]),
+            Some([k, l, r(0), r(0)]),
             Some(wide_pts),
         );
         assert!(
