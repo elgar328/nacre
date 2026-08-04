@@ -180,9 +180,6 @@ pub(crate) struct Swept {
 pub(crate) struct SweptRat {
     pub base: Vec<[Rat; 3]>,
     pub top: Vec<[Rat; 3]>,
-    /// The frame's exact unit normal. The caps face `∓` this **regardless of the sweep's sign**,
-    /// which is why it is carried rather than recovered from `top − base`.
-    pub normal: [Rat; 3],
     /// ★★★ **Which frame the rationals above are written in.** `None` is the world, which is
     /// every case that existed before tilted faces became exact. `Some` says they are the
     /// coordinates of a plane's own frame, and that this motion is what carries them out — so
@@ -242,33 +239,15 @@ impl SweptRat {
         realize(&self.top[i..=i])[0]
     }
 
-    /// The base cap (`−normal`) and the top cap (`+normal`).
-    pub(crate) fn cap_planes(&self) -> Option<([Rat; 4], [Rat; 4])> {
-        let zero = Rat::from_int(0);
-        let neg = [
-            zero.checked_sub(self.normal[0])?,
-            zero.checked_sub(self.normal[1])?,
-            zero.checked_sub(self.normal[2])?,
-        ];
-        Some((
-            nacre_scalar::plane_from_point_normal(neg, *self.base.first()?)?,
-            nacre_scalar::plane_from_point_normal(self.normal, *self.top.first()?)?,
-        ))
-    }
-
-    /// Segment `i → i+1`'s wall — the same three points `Plane::through_points` is given
-    /// (`base[i]`, `base[j]`, `top[i]`), so the normal points the same way.
-    pub(crate) fn wall_plane(&self, i: usize) -> Option<[Rat; 4]> {
-        let j = (i + 1) % self.base.len();
-        nacre_scalar::plane_through_points(self.base[i], self.base[j], self.top[i])
-    }
-
-    /// The same three points, as the wall plane's **exact witness**.
+    /// **Segment `i → i+1`'s wall, as the three points that define it** — `base[i]`, `base[j]`,
+    /// `top[i]`, the same three `Plane::through_points` is given, so the exact record and the f64
+    /// one describe the plane the same way round.
     ///
-    /// ★ Deliberately not gated on [`wall_plane`] succeeding: the coefficients are a product of
-    /// two point differences and overflow `i128` far sooner than the points themselves do
-    /// (measured — coefficients to 213 bits, ring coordinates to 107). A wall with no rational
-    /// coefficients still has an exact description, and this is it.
+    /// ★★★ **There is no coefficient twin of this any more.** There used to be a `wall_plane`
+    /// returning `(b − a) × (c − a)` canonicalized, which overflows `i128` far sooner than the
+    /// points themselves do (measured — coefficients to 213 bits, ring coordinates to 107) and so
+    /// left most walls unnamed. The name is now derived from these points where it is needed, at
+    /// whatever precision the derivation takes.
     pub(crate) fn wall_points(&self, i: usize) -> [[Rat; 3]; 3] {
         let j = (i + 1) % self.base.len();
         [self.base[i], self.base[j], self.top[i]]
@@ -334,7 +313,6 @@ pub(crate) fn prism_rings(
         None => plane.exact()?,
     };
     let sweep = f.sweep(dist)?;
-    let normal = f.normal()?;
     // ★★★ **The realization must be the *definition's* own replay, not a second route to the
     // same real number.** A vertex written here is `Origin::Moved` against `frame`, and a judge
     // reads that definition back through `replay`; if this rounded the coordinates some other
@@ -378,7 +356,6 @@ pub(crate) fn prism_rings(
             exact: Some(SweptRat {
                 base,
                 top,
-                normal,
                 motion: frame,
             }),
         })

@@ -521,10 +521,9 @@ pub(crate) fn extrude(
         // here: the caller's origin is exact, so `d` comes out exact where the ring point's dot
         // product rounds (measured `5.55e-17` against `0`).
         let pl = Plane::from_point_normal(plane.origin(), -plane.normal())?;
-        let (h, _) = model.push_surface_with_coeffs(
+        let (h, _) = model.push_surface_with_points(
             Surface::Plane(pl),
             SurfaceDef::Constructed,
-            Some(d.coeffs),
             named_plane_points(&d),
         );
         let node = |flip| nacre_topo::Motion::Frame {
@@ -541,22 +540,21 @@ pub(crate) fn extrude(
     });
     let (outer, holes) = swept_profile(model, plane, profile, dist, frame);
     // ★★★★ **The base cap *is* the plane the caller named**, so where they stated it exactly
-    // (`PlaneDef`) it can record its coefficients even when nothing else about the prism can —
-    // the walls and far cap are irrational in the world unless `plane.exact()` allows.
+    // (`PlaneDef`) it can record that plane's own points even when nothing else about the prism
+    // can — the walls and far cap are irrational in the world unless `plane.exact()` allows.
     //
-    // ★★★ **The coefficients travel, not a `Surface`.** Pre-creating one here would have to guess
-    // the f64 plane `build_prism` builds, and it builds it through the *oriented* ring's first
-    // point — which reversing the ring can change. Two spellings of one plane whose `d` differs by
-    // an ulp is precisely the defect this whole line of work removes, so the geometry stays
-    // exactly where it was and only the exact record is added. (Measured: building it from the
-    // sketch origin instead moved a volume.)
+    // ★★★ **The points travel, not a `Surface`.** Pre-creating one here would have to guess the
+    // f64 plane `build_prism` builds, and it builds it through the *oriented* ring's first point —
+    // which reversing the ring can change. Two spellings of one plane whose `d` differs by an ulp
+    // is precisely the defect this whole line of work removes, so the geometry stays exactly where
+    // it was and only the exact record is added. (Measured: building it from the sketch origin
+    // instead moved a volume.)
     build_prism(
         model,
         outer,
         holes,
         plane.normal(),
         None,
-        plane.def.map(|d| d.coeffs),
         plane.def.as_ref().and_then(named_plane_points),
     )
 }
@@ -642,8 +640,10 @@ fn swept_profile(
 /// ★★★★★ **One function because two producers must agree.** The sketch plane's own surface and the
 /// prism's base cap are *the same plane* and intern to one handle; if they computed their points
 /// separately, one of them would eventually state that plane a second way. They did — the base cap
-/// used to record the ring in **frame** coordinates while its coefficients spoke about the world,
-/// which `Model::push_surface_with_coeffs`' agreement filter caught.
+/// used to record the ring in **frame** coordinates while its coefficients spoke about the world.
+/// (Coefficients are no longer supplied at all — `Model::push_surface_with_points` derives the name
+/// from whichever triple is recorded — but two producers computing *different* triples for one
+/// plane would still leave whichever arrived first, so the single source still matters.)
 pub(crate) fn named_plane_points(d: &PlaneDef) -> Option<[[Rat; 3]; 3]> {
     let c = d.coeffs;
     // The axis the plane is steepest along — the one whose coefficient divides best. Comparing
@@ -696,8 +696,8 @@ pub(crate) fn build_prism(
     inner_rings: Vec<Swept>,
     normal: Vector3,
     base_cap_surface: Option<Handle<Surface>>,
-    base_cap_coeffs: Option<[nacre_scalar::Rat; 4]>,
-    // ★ The world points of that same named plane — they travel together or not at all.
+    // ★ The world points of the plane the caller named, when they named one. Its canonical name is
+    // derived from these, so there is no second half that could travel separately.
     base_cap_points: Option<[[nacre_scalar::Rat; 3]; 3]>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
     if outer_ring.base.len() < 3 || inner_rings.iter().any(|h| h.base.len() < 3) {
@@ -748,38 +748,33 @@ pub(crate) fn build_prism(
             // The frame's answer is what a plane with no caller statement gets (an axis-aligned
             // sketch, where the two agree anyway).
             //
-            // ★★★★★ **One frame or the other — never half of each, and the `def` goes with them.**
-            // The coefficients, the points and the `SurfaceDef` are three halves of one statement:
-            // `Constructed` means *"these speak about the world"* and `Moved` means *"about the
-            // pre-motion frame"*. This used to pick each of the first two with its **own**
-            // `or_else`, so a caller whose points overflowed while their coefficients did not got
-            // world coefficients beside the prism's **frame** ring — one plane stated two ways,
-            // which is the exact defect `push_surface_with_coeffs`' agreement filter was added to
-            // catch. That filter cannot be relied on for it either: on these widths the residual
-            // overflows, and an unevaluable check is (correctly) not treated as a violation.
+            // ★★★★★ **One frame or the other, and the `def` goes with the points.**
+            // A plane's points and its `SurfaceDef` are two halves of one statement: `Constructed`
+            // means *"these speak about the world"* and `Moved` means *"about the pre-motion
+            // frame"*. There used to be a third half — coefficients, chosen by their own `or_else`,
+            // so a caller whose points overflowed while their coefficients did not got world
+            // coefficients beside the prism's **frame** ring. That half no longer exists: the name
+            // is derived from whichever points are recorded, so the two can no longer come apart.
             //
-            // ★ So the choice is made **once**, over the whole statement. `Option::zip` is what
-            // says "both halves or neither"; the frame's `surface_def()` is the same one the top
-            // cap already takes, and it agrees with `Constructed` wherever there is no motion —
-            // which is every case a missing caller statement can produce.
-            let (base_def, caps, cap_pts) = match base_cap_coeffs.zip(base_cap_points) {
-                Some((c, p)) => (SurfaceDef::Constructed, Some(c), Some(p)),
+            // ★ The frame's `surface_def()` is the same one the top cap takes, and it agrees with
+            // `Constructed` wherever there is no motion — which is every case a missing caller
+            // statement can produce.
+            let (base_def, cap_pts) = match base_cap_points {
+                Some(p) => (SurfaceDef::Constructed, Some(p)),
                 None => {
                     let e = outer_pts.exact.as_ref();
                     (
                         e.map_or(SurfaceDef::Constructed, |e| e.surface_def()),
-                        e.and_then(|e| e.cap_planes()).map(|(base, _)| base),
                         e.and_then(|e| e.cap_points(false)),
                     )
                 }
             };
-            let (s, flipped) = model.push_surface_with_coeffs(
+            let (s, flipped) = model.push_surface_with_points(
                 Surface::Plane(
                     Plane::from_point_normal(outer_pts.base[0], -normal)
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
                 base_def,
-                caps,
                 cap_pts,
             );
             // The plane was built with `−N` as its normal, so `Forward` is what states an outward
@@ -798,17 +793,12 @@ pub(crate) fn build_prism(
         _ => SurfaceDef::Constructed,
     };
     let top_points = outer_pts.exact.as_ref().and_then(|e| e.cap_points(true));
-    let (top_surface, top_flipped) = model.push_surface_with_coeffs(
+    let (top_surface, top_flipped) = model.push_surface_with_points(
         Surface::Plane(
             Plane::from_point_normal(outer_pts.top[0], normal)
                 .ok_or(OpError::DegenerateGeometry)?,
         ),
         top_def,
-        outer_pts
-            .exact
-            .as_ref()
-            .and_then(|e| e.cap_planes())
-            .map(|(_, top)| top),
         top_points,
     );
     let top_orient = if top_flipped {
@@ -973,17 +963,15 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
                 Some(e) => e.surface_def(),
                 None => SurfaceDef::Constructed,
             };
-            Ok(model.push_surface_with_coeffs(
+            Ok(model.push_surface_with_points(
                 Surface::Plane(
                     Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
                         .ok_or(OpError::DegenerateGeometry)?,
                 ),
                 def,
-                // Same three points, in rationals — so this wall and any other face of the same
-                // plane record one array. `None` here is the f64 path or an i128 overflow.
-                ring.exact.as_ref().and_then(|e| e.wall_plane(i)),
-                // ★ And the points those coefficients came from. Recorded even when the line above
-                // overflowed: the coefficients are their cross product, which needs twice the bits.
+                // ★ The same three points the f64 plane above is built through, in rationals — so
+                // this wall and any other face of the same plane record one array and derive one
+                // name. `None` here is the f64 path, where there are no rationals at all.
                 ring.exact.as_ref().map(|e| e.wall_points(i)),
             ))
         })
@@ -1374,7 +1362,6 @@ fn extrude_and_boolean(
         holes,
         n * signed.signum(),
         Some(frame.surface_h),
-        None,
         // The pad reuses the face's own surface, so it pushes no base cap and states nothing.
         None,
     )?;

@@ -6351,3 +6351,50 @@ plane_name_big  20.6 µs/call      plane_through_points  1.8 µs/call   (릴리�
 스위트가 느껴지는 것은 그것이 38k 번 push 하기 때문이다.
 ★★ `Ratio<BigInt>` 은 연산마다 gcd 를 돈다 — 분모를 먼저 날린 **정수 형태**면 마지막 한 번으로
 끝난다. 그건 **성능 변경**이라 이 커밋에 섞지 않고 W6 으로 미룬다(책임 분리).
+
+## ★★★★★ W4+W5 — 계수 인자를 없앤다. 한 평면을 두 가지로 진술하는 것이 **불가능**해졌다 (2026-08-04)
+
+```rust
+pub fn push_surface_with_points(surface, def, points)   // ← coeffs 인자가 사라졌다
+```
+
+생산자가 진술하는 것은 **점 세 개**뿐이고, 이름은 거기서 **유도**된다. ⇒ 계수와 점이 어긋난 상태가
+검사로 막히는 게 아니라 **표현할 수 없다.** 이 작업 전체의 목적지다.
+
+★ 계획은 W4(인자 제거)와 W5(죽은 코드 삭제)를 나눴는데, 인자가 사라지면 그것을 먹이던 코드가
+**즉시 죽어** `clippy -D warnings` 가 막는다. 한 커밋이 될 수밖에 없다.
+
+### 사라진 것
+
+| | |
+|---|---|
+| `Model::push_surface_with_coeffs` 의 `coeffs` 인자 | → `push_surface_with_points` |
+| 합의 검사 + `INCONCLUSIVE_NAMES` | 유도된 이름은 구성상 점을 만족한다 |
+| `SweptRat::cap_planes` · `SweptRat::wall_plane` | 벽/캡의 계수 생산자 |
+| `SweptRat::normal` 필드 | `cap_planes` 만 쓰던 것 |
+| `build_prism` 의 `base_cap_coeffs` 인자 | |
+| `transform.rs` 의 `coeffs` 분기 전체 | `iso.plane_coeffs` / `mirror_plane_coeffs` 호출 |
+| `add_cuboid` 의 계수 계산 | |
+
+★ `Isometry::plane_coeffs` 는 남는다 — `cip::coplanar_by_composed_rotation` 이 쓴다.
+
+### 근거는 W2 가 미리 놓았다
+
+```
+공급 vs 유도       83,883 일치 · 0 불일치   (회전·거울 포함)
+계수만 있고 점 없음        0                ⇒ 인자가 사라져도 잃는 이름이 없다
+```
+
+### 관문 — 예측대로
+
+```
+census 148줄  ★ 비트 동일        OCCT --ignored  101/101        워크스페이스 전체 초록
+stat unnamed_planes 0
+```
+
+### ★★★★ 이 단계도 테스트의 명제를 하나 바로잡았다
+
+`a_plane_is_named_by_its_points` 를 쓰면서, *"넓어서 좁은 경로가 포기한다"* 를 시험하려고
+**옛 합의 검사(`c · p`)가 넘치도록** 만든 삼중을 그대로 썼다. 실행하니 **유도는 멀쩡히 됐다** —
+`c · p` 와 `(b−a) × (c−a)` 는 **다른 곱**이다. 또 인접한 명제였다([[adjacent-proposition-failure]]).
+⇒ 유도가 실제로 넘치는 삼중(2ᵃ·5ᵇ **서로소 분모**)으로 바꿨다.

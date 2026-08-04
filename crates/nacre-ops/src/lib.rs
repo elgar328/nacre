@@ -2663,7 +2663,6 @@ pub mod tests {
             Vector3::from_array([0.0, 0.0, 1.0]),
             Some(sf),
             None,
-            None,
         )
         .unwrap();
         let cap = m.faces.get(faces[0]); // base cap is pushed first
@@ -2684,20 +2683,22 @@ pub mod tests {
         );
     }
 
-    /// ★★★★★ **Half a statement is not a statement.**
+    /// ★★★★★ **A plane's record and its `SurfaceDef` are one statement.**
     ///
-    /// A plane's coefficients, its three points and its [`SurfaceDef`] are three halves of one
-    /// description: `Constructed` means *"these speak about the world"*, `Moved` means *"about the
-    /// pre-motion frame"*. `build_prism` used to pick the first two with **separate** `or_else`
-    /// chains, so a caller whose points overflowed while their coefficients did not got world
-    /// coefficients recorded beside the prism's own **frame** ring.
+    /// `Constructed` means *"these points speak about the world"*, `Moved` means *"about the
+    /// pre-motion frame"* — so a base cap that takes the caller's world triple must be
+    /// `Constructed`, and one that falls back to the prism's own ring must take the frame's `def`
+    /// with it. There is nothing else to keep in step: the plane's canonical name is derived from
+    /// whichever triple is recorded.
     ///
-    /// ★★ That is exactly the defect `Model::push_surface_with_coeffs`' agreement filter exists to
-    /// catch — and the filter cannot be relied on for it, because at these widths `c · p` overflows
-    /// and an unevaluable check is (correctly) not read as a violation. So the pairing has to hold
-    /// by construction, and this is what says it does.
+    /// ★★ **It used to be three halves and they could come apart.** Coefficients were supplied
+    /// beside the points and chosen by a **separate** `or_else`, so a caller whose points
+    /// overflowed while their coefficients did not got world coefficients recorded beside the
+    /// prism's own frame ring — one plane stated two ways. The agreement filter could not catch it
+    /// either, since `c · p` overflows at exactly those widths. Removing the coefficient parameter
+    /// is what made the pairing structural; this pins what is left of the choice.
     #[test]
-    fn a_prisms_base_cap_takes_one_frames_statement_or_neither() {
+    fn a_prisms_base_cap_records_the_frame_its_def_names() {
         let r = nacre_scalar::Rat::from_int;
         let base_pts = [
             Point3::from_array([0.0, 0.0, 0.0]),
@@ -2705,15 +2706,7 @@ pub mod tests {
             Point3::from_array([1.0, 1.0, 0.0]),
             Point3::from_array([0.0, 1.0, 0.0]),
         ];
-        // The plane `z = 3` — nowhere near the prism, so if it ever reached the record beside the
-        // prism's own points the two would describe visibly different planes.
-        let far = [r(0), r(0), r(1), r(-3)];
-        let far_pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
-
-        for (name, coeffs, points) in [
-            ("coefficients only", Some(far), None),
-            ("points only", None, Some(far_pts)),
-        ] {
+        let prism = |pts: Option<[[nacre_scalar::Rat; 3]; 3]>| {
             let mut m = Model::new();
             let (_prism, faces) = build_prism(
                 &mut m,
@@ -2721,37 +2714,37 @@ pub mod tests {
                 vec![],
                 Vector3::from_array([0.0, 0.0, 1.0]),
                 None,
-                coeffs,
-                points,
+                pts,
             )
             .unwrap();
             let surf = m.faces.get(faces[0]).surface; // base cap is pushed first
-            // ★ Neither half of the caller's statement may survive on its own. What the surface
-            // records instead is the frame's own answer, which for this prism is the world.
-            assert_ne!(
-                m.surface_coeffs.get(&surf),
-                Some(&far),
-                "{name}: the caller's coefficients were kept without their points"
-            );
-            assert_ne!(
-                m.surface_points.get(&surf),
-                Some(&far_pts),
-                "{name}: the caller's points were kept without their coefficients"
-            );
-            // ★★ And whatever it did record still describes the plane it is filed under, exactly.
-            if let (Some(c), Some(ps)) = (m.surface_coeffs.get(&surf), m.surface_points.get(&surf))
-            {
-                for p in ps {
-                    let mut acc = c[3];
-                    for k in 0..3 {
-                        acc = acc
-                            .checked_add(c[k].checked_mul(p[k]).expect("no overflow"))
-                            .expect("no overflow");
-                    }
-                    assert_eq!(acc, r(0), "{name}: a recorded point is off its own plane");
-                }
-            }
-        }
+            (m, surf)
+        };
+
+        // ★ The caller's triple, when there is one — here a plane nowhere near the prism, so a
+        // record that ignored it would be visibly different rather than coincidentally equal.
+        let far_pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
+        let (m, surf) = prism(Some(far_pts));
+        assert_eq!(
+            m.surface_points.get(&surf),
+            Some(&far_pts),
+            "the caller's triple was not the one recorded"
+        );
+        assert_eq!(
+            m.surface_coeffs.get(&surf),
+            Some(&[r(0), r(0), r(1), r(-3)]),
+            "the name was not derived from the triple that was recorded"
+        );
+        assert_eq!(
+            m.surface_defs.get(&surf),
+            Some(&nacre_topo::SurfaceDef::Constructed)
+        );
+
+        // ★ And with no caller statement, the ring answers — `Swept::along` carries no rationals,
+        // so there is nothing to record and no name to derive.
+        let (m, surf) = prism(None);
+        assert!(!m.surface_points.contains_key(&surf));
+        assert!(!m.surface_coeffs.contains_key(&surf));
     }
 
     /// The handle branch of `shares_or_coplanar` is load-bearing: a shared
@@ -4306,7 +4299,6 @@ pub mod tests {
             Vector3::from_array([0.0, 0.0, 1.0]),
             None,
             None,
-            None,
         )
         .unwrap();
         let r = boolean_one(&mut m, BoolKind::Fuse, cube, boss).unwrap();
@@ -4430,7 +4422,6 @@ pub mod tests {
             crate::exact::Swept::along(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
-            None,
             None,
             None,
         )

@@ -190,18 +190,6 @@ pub enum SurfaceDef {
     Inexact,
 }
 
-/// How many plane names [`Model::push_surface_with_coeffs`] has issued **without being able to
-/// verify them** — the `c · p` residual overflowed `Rat`, so the coefficients and the points were
-/// never actually compared.
-///
-/// ★ **In release, not behind `cfg(test)`.** The population it counts depends on the caller's
-/// numbers, not on the code path, so a build measured only under test measures the fixtures rather
-/// than the kernel. It costs one relaxed increment on a branch that is already rare.
-///
-/// ★★ **Observability only** — nothing reads it to decide anything, so it cannot affect a result
-/// or replay determinism. It is a `u64` a measurement can print and a test can bound.
-pub static INCONCLUSIVE_NAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 /// How many planes arrived with three exact points and still got **no name** — the derivation ran
 /// and the canonical answer did not fit `Rat`.
 ///
@@ -303,7 +291,7 @@ pub struct Model {
     /// Absent is ordinary while the producers are still being wired, and permanently for a prism
     /// whose ring is not rational at all. Iterate through the faces, never over the map.
     pub surface_points: HashMap<Handle<Surface>, [[nacre_scalar::Rat; 3]; 3]>,
-    /// Interning table for [`Model::push_surface_with_coeffs`]: the handle already issued for a
+    /// Interning table for [`Model::push_surface_with_points`]: the handle already issued for a
     /// plane, keyed by its canonical coefficients **and the motion they are stated in**. The twin
     /// of [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result).
     ///
@@ -445,12 +433,25 @@ impl Model {
     }
 
     /// [`Model::push_surface`], also recording the surface's exact rational description when the
-    /// producer has it: the canonical coefficients ([`Model::surface_coeffs`]) and the three
-    /// points the plane passes through ([`Model::surface_points`]). `None` records nothing, which
+    /// producer has one: **three points the plane passes through**. `None` records nothing, which
     /// is what a producer without a rational description passes.
     ///
-    /// ★ **Both are stated in the frame this `def` names**, and an interned plane keeps whichever
-    /// the first pusher supplied.
+    /// ★★★★★ **The points are the only thing a producer states.** Its canonical name
+    /// ([`Model::surface_coeffs`]) is *derived* here, from those points, by
+    /// [`nacre_scalar::plane_name_exact`] — so a plane cannot be described two ways, because there
+    /// is only one place to describe it. That is the invariant this whole line of work builds
+    /// toward, and it is now carried by the signature rather than by a check.
+    ///
+    /// ★★★ **What that replaced.** Producers used to hand in coefficients *beside* the points, and
+    /// a filter here refused a name the points did not satisfy. The filter was a watchman for a
+    /// state the type now cannot express — and it could not be relied on anyway, since `c · p`
+    /// overflows exactly on the wide planes where a mismatch would hurt most. Before removing it,
+    /// every producer was compared against this derivation across the suite: **83,883 agreements,
+    /// 0 disagreements**, and **0 pushes** carried coefficients without points (so nothing loses a
+    /// name by the parameter going away).
+    ///
+    /// ★ **Stated in the frame this `def` names** — the world for [`SurfaceDef::Constructed`], the
+    /// pre-motion frame for [`SurfaceDef::Moved`]. An interned plane keeps the first pusher's triple.
     ///
     /// ★ **The `bool` says the returned surface's normal points the *other* way** from the one
     /// handed in, and a caller that meets it must record its face `Orientation::flipped()`.
@@ -469,107 +470,38 @@ impl Model {
     /// `extrude`'s pad-on-face path already does — but `transform_solid` *copies* faces without
     /// recomputing an outward normal, so it has nothing to compare against. "Is it flipped from
     /// what I asked for?" is the question every caller can answer.
-    pub fn push_surface_with_coeffs(
+    pub fn push_surface_with_points(
         &mut self,
         surface: Surface,
         def: SurfaceDef,
-        coeffs: Option<[nacre_scalar::Rat; 4]>,
         points: Option<[[nacre_scalar::Rat; 3]; 3]>,
     ) -> (Handle<Surface>, bool) {
-        // ★★★★★ **A plane may not be stated two ways.** The points are the truth; the
-        // coefficients are its *name*, and a name that does not fit the thing is not issued.
+        // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
         //
-        // ★ **Not a `debug_assert`.** A producer that disagreed would then be caught in tests and
-        // waved through in release — which is exactly the silence this kernel keeps closing. The
-        // established answer is the one used for `i128` overflow everywhere else: **demote, do not
-        // crash**. A plane with no name still has its points, and every consumer of the name
-        // already handles its absence.
+        // Three non-collinear points determine a plane, and [`nacre_scalar::plane_name_exact`]
+        // computes its canonical form at unbounded precision — `None` only for collinear points or
+        // an answer too wide for `Rat`. Nothing is checked because there is nothing to check
+        // against: the coefficients and the points are no longer two statements.
         //
-        // ★★★★★ **Only a demonstrated violation drops the name — inconclusive does not.**
-        // `c · p` overflows `Rat` whenever the coefficients are wide, and the first version of
-        // this filter read that as failure. It is not: an arithmetic that could not be carried out
-        // is an absence of evidence, and the name is *load-bearing* (`ops::frame_chain` requires
-        // it), so withholding it on no evidence is not the conservative choice — it is a
-        // destructive one.
-        //
-        // ★★★★★ **Measured, and that is not a hypothetical.** Reading inconclusive as failure
-        // dropped the name of essentially every arbitrarily-tilted plane (the check overflows at
-        // full-width decimals), which unhooked the sketch frame and sent the whole extrude down
-        // the f64 path — for five of a prism's six faces. Volume, face count, `validate` and a
-        // bit-identical coordinate census all stayed silent, because the answer was still right.
-        // `tolerant::a_prism_on_a_tilted_plane_takes_the_exact_road` is what says so now.
-        //
-        // ★★ [`INCONCLUSIVE_NAMES`] counts what is let through unverified, so the size of that
-        // population is a number rather than a guess. Across the suite: **1,551 of 83,813 names
-        // (1.85%)** unverified, **0 violations** by any producer.
-        //
-        // ★★★★★ And that number says exactly *which* point is the problem. Counting per point
-        // instead of per name gives the **same 1,551** — so an unverifiable plane has precisely one
-        // wide point, and `ops::named_plane_points` builds precisely one: its third, `n × u_raw`,
-        // whose components are the product of two coefficient-sized rationals. The width is a
-        // consequence of how the triple is *chosen*, not of what a plane is.
-        //
-        // ★★★★★ The violation it did catch was real and was **introduced by the points work
-        // itself**: a prism's base cap recorded the ring in *frame* coordinates while its
-        // coefficients spoke about the world. Axis-aligned models never showed it, because there
-        // the frame **is** the world. See `ops::named_plane_points`.
-        // ★★★★★ **A plane the producer could not name, the kernel names for itself.**
-        //
-        // The points determine the plane, so its canonical name is a *derivation*, not a second
-        // opinion — and [`nacre_scalar::plane_name_exact`] carries that derivation at unbounded
-        // precision, so it fails only when the answer itself is too wide for `Rat`. Measured across
-        // the suite, **38,661 pushes** arrive with points and no name where one exists; each is a
-        // plane that could not intern, could not host a sketch frame, and could not be *proved*
-        // identical to a differently-turned copy of itself.
-        //
-        // ★★★ **Only where the producer supplied nothing.** A supplied name is used as given: every
-        // producer was checked against this derivation first (83,883 agreements, 0 disagreements),
-        // so the two are the same value — deriving over the top would be the same answer for more
-        // work, and *silently* differing if that ever stopped holding.
-        //
-        // ★★★★★ **`Inexact` is excluded, and that is structural.** [`Model::surface_ids`]' key
+        // ★★★ **`Inexact` is excluded, and that is structural.** [`Model::surface_ids`]' key
         // carries a motion only for [`SurfaceDef::Moved`], so an `Inexact` plane and a
         // `Constructed` one with the same coefficients would intern **together** — merging a
         // surface whose coefficients are declared *not* to be the truth with one whose are. It
         // cannot arise today (`Inexact` is reached only when the source has no points, and then
-        // none are passed), but that is a convention holding, not a type; a derivation that ran
-        // unconditionally would put a silent wrong answer behind it.
-        let coeffs = match def {
-            SurfaceDef::Inexact => coeffs,
-            _ => coeffs.or_else(|| {
-                let p = points?;
+        // none are passed), but that is a convention holding, not a type.
+        //
+        // ★★ [`UNNAMED_PLANES`] counts the planes this cannot name, which is the remaining limit
+        // stated as a number rather than a guess.
+        let coeffs = match (def, points) {
+            (SurfaceDef::Inexact, _) | (_, None) => None,
+            (_, Some(p)) => {
                 let named = nacre_scalar::plane_name_exact(p[0], p[1], p[2]);
                 if named.is_none() {
                     UNNAMED_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
                 named
-            }),
+            }
         };
-        let coeffs = coeffs.filter(|c| {
-            let Some(ps) = points else { return true };
-            // `None` = the residual overflowed and no verdict is reachable. Counted **once per
-            // name**, not once per point: the question the number answers is how many planes carry
-            // a name nothing checked.
-            let on_plane = |p: &[nacre_scalar::Rat; 3]| -> Option<bool> {
-                let mut acc = c[3];
-                for k in 0..3 {
-                    acc = acc.checked_add(c[k].checked_mul(p[k])?)?;
-                }
-                Some(acc == nacre_scalar::Rat::from_int(0))
-            };
-            let mut unverified = false;
-            for p in &ps {
-                match on_plane(p) {
-                    Some(false) => return false,
-                    None => unverified = true,
-                    Some(true) => {}
-                }
-            }
-            if unverified {
-                INCONCLUSIVE_NAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-            true
-        });
         let key = coeffs.map(|c| {
             let motion = match def {
                 SurfaceDef::Moved { motion, .. } => Some(motion),
@@ -748,23 +680,14 @@ impl Model {
                     nacre_scalar::Rat::from_decimal(c[2])?,
                 ])
             };
-            let coeffs = (|| {
-                nacre_scalar::plane_through_points(
-                    rat_corner(tri[0])?,
-                    rat_corner(tri[1])?,
-                    rat_corner(tri[2])?,
-                )
-            })();
-            self.push_surface_with_coeffs(
+            self.push_surface_with_points(
                 Surface::Plane(
                     Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
                         .expect("non-degenerate box"),
                 ),
                 SurfaceDef::Constructed,
-                coeffs,
-                // The same three corners, exactly — a box's corners are integers, so this is
-                // recorded even where `coeffs` overflows (it cannot here, but the rule is the
-                // rule: points are the truth, coefficients are the name).
+                // ★ The same three corners, exactly. The name is derived from them, so a corner
+                // whose decimals are wide enough to overflow the narrow derivation still gets one.
                 (|| {
                     Some([
                         rat_corner(tri[0])?,
@@ -1457,15 +1380,19 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **The name is refused when the points *demonstrate* it is wrong, and only then.**
+    /// ★★★★★ **A plane is named by its points, and by nothing else.**
     ///
-    /// Both halves are the point. The first says the guarantee is alive: a producer that states a
-    /// plane two ways gets no name for the second one, in release as well as under test. The
-    /// second says the guard is not destructive: coefficients so wide that `c · p` cannot be
-    /// evaluated are *not* evidence of anything, and reading them as failure silently closed the
-    /// exact road for every arbitrarily-tilted plane in the kernel.
+    /// The three assertions are the three ways this can go wrong. A name has to come out for an
+    /// ordinary plane; it has to be the plane the points are **on**, not some other; and it has to
+    /// come out even where the derivation's narrow route cannot reach — that last one is what a
+    /// producer used to lose a name to, and losing a name closes the exact road for everything
+    /// built on that plane.
+    ///
+    /// ★ There is no "wrong name" case left to test. Coefficients are no longer something a
+    /// producer can hand in, so a plane cannot be stated twice — the state the old agreement filter
+    /// watched for is now unspellable.
     #[test]
-    fn a_plane_is_named_unless_its_points_refute_the_name() {
+    fn a_plane_is_named_by_its_points() {
         use nacre_scalar::Rat;
         let r = Rat::from_int;
         let pl = |z: f64| {
@@ -1477,66 +1404,64 @@ mod tests {
                 .unwrap(),
             )
         };
-        // Three points of `z = 0`, which `[0,0,1,0]` names correctly and `[0,0,1,-1]` does not.
-        let pts = [[r(0), r(0), r(0)], [r(1), r(0), r(0)], [r(0), r(1), r(0)]];
 
         let mut m = Model::new();
-        let (ok, _) = m.push_surface_with_coeffs(
-            pl(0.0),
-            SurfaceDef::Constructed,
-            Some([r(0), r(0), r(1), r(0)]),
-            Some(pts),
-        );
-        assert!(
-            m.surface_coeffs.contains_key(&ok),
-            "a name its points satisfy was not issued"
+        let pts = [[r(0), r(0), r(0)], [r(1), r(0), r(0)], [r(0), r(1), r(0)]];
+        let (ok, _) = m.push_surface_with_points(pl(0.0), SurfaceDef::Constructed, Some(pts));
+        assert_eq!(
+            m.surface_coeffs.get(&ok),
+            Some(&[r(0), r(0), r(1), r(0)]),
+            "the plane z = 0 was not named, or was named as something else"
         );
 
-        let (bad, _) = m.push_surface_with_coeffs(
-            pl(1.0),
-            SurfaceDef::Constructed,
-            Some([r(0), r(0), r(1), r(-1)]),
-            Some(pts),
+        // ★★★★ **Wide enough that the narrow derivation gives up.** Decimal arithmetic reduces to
+        // denominators that are powers of two on one coordinate and powers of five on another, and
+        // a triple of *coprime* denominators needs their product to state its plane — which
+        // `(b − a) × (c − a)` then needs squared.
+        //
+        // ★ An earlier spelling here used points chosen to overflow the old **agreement check**
+        // (`c · p`) and asserted the derivation gave up on them too. It does not: those are
+        // different products, and the derivation went through. Two propositions, one fixture.
+        let q = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+        let wide_pts = [
+            [q(1, 1 << 53), r(0), r(0)],
+            [r(0), q(1, 5i128.pow(23)), r(0)],
+            [r(0), r(0), q(1, (1 << 40) * 5i128.pow(11))],
+        ];
+        assert_eq!(
+            nacre_scalar::plane_through_points(wide_pts[0], wide_pts[1], wide_pts[2]),
+            None,
+            "the narrow route was expected to overflow here — the case has stopped being the case"
         );
-        assert!(
-            !m.surface_coeffs.contains_key(&bad),
-            "a name its own points refute was issued anyway — the guarantee is gone"
+        let before = UNNAMED_PLANES.load(std::sync::atomic::Ordering::Relaxed);
+        let (wide, _) =
+            m.push_surface_with_points(pl(2.0), SurfaceDef::Constructed, Some(wide_pts));
+        let name = *m
+            .surface_coeffs
+            .get(&wide)
+            .expect("a plane the narrow route cannot reach went unnamed");
+        assert_eq!(
+            UNNAMED_PLANES.load(std::sync::atomic::Ordering::Relaxed),
+            before,
+            "a plane that *was* named must not be counted as unnamed"
         );
-        assert!(
-            m.surface_points.contains_key(&bad),
-            "the points are the truth and must be kept even when the name is refused"
-        );
+        // ★★ And it names *these* points' plane — exact rationals, no tolerance.
+        for p in &wide_pts {
+            let mut acc = name[3];
+            for k in 0..3 {
+                acc = acc
+                    .checked_add(name[k].checked_mul(p[k]).expect("no overflow"))
+                    .expect("no overflow");
+            }
+            assert_eq!(
+                acc,
+                r(0),
+                "a recorded point is off the name derived from it"
+            );
+        }
 
-        // ★★★★★ **Unverifiable *and correct*, which is the case that matters.**
-        //
-        // The point of this third push is that a name nothing could check is still issued. It has
-        // to be a name the points genuinely satisfy, or it tests two things at once and passes for
-        // the wrong reason — an earlier spelling here used points that were simply *off* the plane,
-        // which is the very confusion between "unevaluable" and "refuted" this guard exists to keep
-        // apart. (Caught by comparing every supplied name against a wide re-derivation.)
-        //
-        // ★ Forcing the overflow while staying on the plane takes some care: for the coordinate the
-        // plane *solves*, `c · p` cancels its own denominator and cannot overflow. So the width has
-        // to come from two coefficients at once — `K·x + L·y = 0` with `K·L` past `i128`, met at
-        // the point `(L, −K, 0)` where the two products are `K·L` and `−L·K`.
-        let k = Rat::from_int(3i128.pow(40)); // 64 bits
-        let l = Rat::from_int((1i128 << 64) + 1); // 65 bits, coprime to k
-        let neg_k = Rat::from_int(-3i128.pow(40));
-        let wide_pts = [[r(0), r(0), r(0)], [l, neg_k, r(0)], [r(0), r(0), r(1)]];
-        let before = INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed);
-        let (wide, _) = m.push_surface_with_coeffs(
-            pl(2.0),
-            SurfaceDef::Constructed,
-            Some([k, l, r(0), r(0)]),
-            Some(wide_pts),
-        );
-        assert!(
-            m.surface_coeffs.contains_key(&wide),
-            "an unverifiable name was dropped — that is the regression, not the guard"
-        );
-        assert!(
-            INCONCLUSIVE_NAMES.load(std::sync::atomic::Ordering::Relaxed) > before,
-            "the inconclusive case went uncounted, so its population cannot be measured"
-        );
+        // ★ And a plane with no points gets no name — there is nothing to derive one from.
+        let (none, _) = m.push_surface_with_points(pl(3.0), SurfaceDef::Constructed, None);
+        assert!(!m.surface_coeffs.contains_key(&none));
     }
 }

@@ -568,34 +568,17 @@ fn transform_solid(
             .surface(model.surfaces.get(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
         let def = moved_surface_def(model, s, motion, exact, &mut surf_rot)?;
-        // The rational coefficients follow the frame `def` names (`Model::surface_coeffs`).
+        // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
+        // `Model::push_surface_with_points`, so there is no second description to keep in step —
+        // this used to carry the coefficients through the *same* two cases beside the points, with
+        // a note that `Isometry::point_rat` "declines exactly when `plane_coeffs` does" holding the
+        // two together. That agreement was checked across the suite before the parameter went away
+        // (83,883 pushes, 0 disagreements, rotations and reflections both) and is now structural.
         //
-        // ★ `Moved` states its plane **before** the motion, and the base of the image is the base
-        // of the source — `moved_surface_def` chains from the source's own leaf for the same
-        // reason — so the array is inherited verbatim. `Constructed` states it in the world, so
-        // an exactness-preserving motion has to carry the plane along with it.
-        let coeffs = model
-            .surface_coeffs
-            .get(&s)
-            .copied()
-            .and_then(|c| match def {
-                SurfaceDef::Moved { .. } => Some(c),
-                SurfaceDef::Constructed => match motion {
-                    Xform::Rigid(iso) => iso.plane_coeffs(c),
-                    Xform::Mirror { axis, offset, .. } => {
-                        nacre_scalar::mirror_plane_coeffs(c, *axis, *offset)
-                    }
-                },
-                SurfaceDef::Inexact => None,
-            });
-        // ★ The points follow **exactly** the rule the coefficients do, by the same two cases.
-        //
-        // `Moved` states its plane before the motion, so its points are inherited verbatim — that
-        // is the whole reason the image's chain hangs off the source's leaf. `Constructed` states
-        // it in the world, so the points are carried there with it.
-        //
-        // ★★ `Isometry::point_rat` declines exactly when `plane_coeffs` does, so the two
-        // descriptions of one plane can never be moved apart: either both survive or neither does.
+        // `Moved` states its plane **before** the motion, and the base of the image is the base of
+        // the source — `moved_surface_def` chains from the source's own leaf for the same reason —
+        // so the triple is inherited verbatim. `Constructed` states it in the world, so the points
+        // are carried there with it.
         let points = model
             .surface_points
             .get(&s)
@@ -616,7 +599,7 @@ fn transform_solid(
                 }
                 SurfaceDef::Inexact => None,
             });
-        let (new_s, flipped) = model.push_surface_with_coeffs(moved, def, coeffs, points);
+        let (new_s, flipped) = model.push_surface_with_points(moved, def, points);
         surf_map.insert(s, new_s);
         surf_flip.insert(s, flipped);
     }
