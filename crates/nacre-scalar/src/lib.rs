@@ -475,6 +475,95 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
     plane_from_point_normal(n, a)
 }
 
+/// **The plane three points name, computed so that the arithmetic on the way cannot lose it.**
+///
+/// The same answer [`plane_through_points`] gives, but `None` means one of exactly two things:
+/// the points are collinear (they name no plane), or **the canonical answer itself** does not fit
+/// `Rat`. It is never a shrug about an intermediate.
+///
+/// ★★★★★ **The distinction is not academic — it was most of the failures.** `plane_through_points`
+/// works in `Rat`, so `(b − a) × (c − a)` multiplies the points' denominators together and
+/// `−n · a` multiplies once more. Measured on the failing cases, that peak needs **271 bits** while
+/// the canonical answer, after the content is divided out, comes back to about **50**. Recomputing
+/// those at unbounded precision reproduced the stored name **1,545 times out of 1,545** — the two
+/// vectors differ by a scalar factor and `canonical_plane_coeffs` removes exactly that freedom. So
+/// what overflowed was the road, not the destination.
+///
+/// ★★★ **Why a second function rather than widening the first.** `plane_through_points` is what a
+/// *caller* uses to state a plane they wrote down ([`crate::plane_frame`]'s callers, a sketch, a
+/// box's corners); this is what the kernel uses to **derive** the name of a plane it already holds
+/// three exact points for. Widening the shared one would change both at once, and they are
+/// different propositions with different evidence. (Making the caller's path exact too is worth
+/// doing and is its own measurement.)
+///
+/// ★ **Cost is paid only on the fallback.** The `Rat` route runs first and is the answer whenever
+/// it fits; `BigInt` is reached on the rest. Nothing here is on a boolean's inner loop — a plane is
+/// named once per `Model::push_surface_with_coeffs`.
+pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4]> {
+    plane_through_points(a, b, c).or_else(|| plane_name_big(a, b, c))
+}
+
+/// [`plane_name_exact`]'s unbounded arm, always taken — the differential test needs to call it on
+/// inputs the `Rat` route handles, which it cannot do through the filter.
+///
+/// **Deliberately the same expression as [`plane_through_points`]**, on a different integer type:
+/// the two answers agreeing is the correctness argument, and it is a weaker argument if the
+/// formulas differ. `None` is collinearity, or a canonical component that no longer fits `Rat`.
+pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4]> {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    use num_rational::Ratio;
+    use num_traits::{ToPrimitive, Zero};
+
+    type Big = Ratio<BigInt>;
+    let big = |r: Rat| Big::new(BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let (a, b, c) = (a.map(big), b.map(big), c.map(big));
+
+    let sub = |p: &[Big; 3], q: &[Big; 3]| [&p[0] - &q[0], &p[1] - &q[1], &p[2] - &q[2]];
+    let (u, v) = (sub(&b, &a), sub(&c, &a));
+    let term = |i: usize, j: usize| &u[i] * &v[j] - &u[j] * &v[i];
+    let n = [term(1, 2), term(2, 0), term(0, 1)];
+    if n.iter().all(Zero::is_zero) {
+        return None; // collinear
+    }
+    let mut d = Big::zero();
+    for i in 0..3 {
+        d -= &n[i] * &a[i];
+    }
+    let coeffs = [n[0].clone(), n[1].clone(), n[2].clone(), d];
+
+    // ① Clear the denominators, ② divide out the content, ③ fix the sign of the first nonzero —
+    // `canonical_plane_coeffs`' three steps, on integers that cannot overflow.
+    let lcm = coeffs.iter().fold(BigInt::from(1), |l, c| l.lcm(c.denom()));
+    let mut num: Vec<BigInt> = coeffs
+        .iter()
+        .map(|c| c.numer() * (&lcm / c.denom()))
+        .collect();
+    let g = num.iter().fold(BigInt::zero(), |g, n| g.gcd(n));
+    if g.is_zero() {
+        return None; // the zero vector is not a plane
+    }
+    for x in &mut num {
+        *x /= &g;
+    }
+    if num
+        .iter()
+        .find(|x| !x.is_zero())
+        .is_some_and(|x| *x < BigInt::zero())
+    {
+        for x in &mut num {
+            *x = -&*x;
+        }
+    }
+
+    // ★ The only honest failure left: the canonical answer is wider than `Rat` can hold.
+    let mut out = [Rat::from_int(0); 4];
+    for (o, x) in out.iter_mut().zip(&num) {
+        *o = Rat::from_int(x.to_i128()?);
+    }
+    Some(out)
+}
+
 /// **The world origin projected onto a rational plane** — `p = (−d / n·n) · n` for
 /// `a·x + b·y + c·z + d = 0`.
 ///
@@ -2129,6 +2218,86 @@ mod tests {
                     prop_assert!(here <= there, "{r:?}: {q:?} is not nearest ({nb:?} is closer)");
                 }
             }
+        }
+    }
+
+    proptest! {
+        /// ★★★★★ **The two derivations must be the same function.**
+        ///
+        /// `plane_name_exact` runs the `Rat` route first and only falls back, so wherever the
+        /// narrow one answers, the wide one is never consulted — and an error in it would sit
+        /// there unseen until the day it *is* consulted, on inputs no test covers. Calling both on
+        /// the same inputs is the only way to say they agree.
+        ///
+        /// ★ `plane_name_big` is `pub(crate)` for exactly this reason: a fallback hidden behind
+        /// its filter cannot be tested against it.
+        #[test]
+        fn the_wide_derivation_answers_what_the_narrow_one_does(
+            xs in prop::array::uniform9(-(1i64 << 20)..(1i64 << 20)),
+            ds in prop::array::uniform9(1i64..(1i64 << 20)),
+        ) {
+            let r = |i: usize| Rat::new(xs[i] as i128, ds[i] as i128).unwrap();
+            let (a, b, c) = (
+                [r(0), r(1), r(2)],
+                [r(3), r(4), r(5)],
+                [r(6), r(7), r(8)],
+            );
+            let narrow = plane_through_points(a, b, c);
+            let wide = plane_name_big(a, b, c);
+            if let Some(n) = narrow {
+                prop_assert_eq!(wide, Some(n), "narrow answered but wide disagrees");
+            }
+            // ★ And the wide one, whenever it answers at all, answers about a plane these points
+            // are actually on — checked in the rationals, no tolerance.
+            //
+            // ★★★★★ **The residual can overflow even when the name and the points both fit**, and
+            // this test found that by asserting it could not. `c · p` multiplies a canonical
+            // coefficient by a point coordinate, so it needs the *sum* of their widths — which is
+            // exactly the population `Model::push_surface_with_coeffs` cannot verify either. An
+            // unevaluable check is not a failed one, here as there: skip it, never fail on it.
+            if let Some(w) = wide {
+                for p in [a, b, c] {
+                    let residual = (|| {
+                        let mut acc = w[3];
+                        for k in 0..3 {
+                            acc = acc.checked_add(w[k].checked_mul(p[k])?)?;
+                        }
+                        Some(acc)
+                    })();
+                    if let Some(acc) = residual {
+                        prop_assert_eq!(acc, Rat::from_int(0), "a point is off the derived plane");
+                    }
+                }
+            }
+        }
+    }
+
+    /// ★★★★ **The width the narrow route cannot reach, and the wide one can.**
+    ///
+    /// A triple whose reduced denominators are coprime — one a power of two, one a power of five,
+    /// which is what decimal arithmetic produces once it reduces — needs their product to state
+    /// the plane, and `(b − a) × (c − a)` needs it squared. `plane_through_points` gives up there;
+    /// the answer is small, and this is the case that says so.
+    #[test]
+    fn a_plane_the_narrow_route_gives_up_on_is_still_named() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let a = [r(1, 1 << 53), r(0, 1), r(0, 1)];
+        let b = [r(0, 1), r(1, 5i128.pow(23)), r(0, 1)];
+        let c = [r(0, 1), r(0, 1), r(1, (1 << 40) * 5i128.pow(11))];
+        assert_eq!(
+            plane_through_points(a, b, c),
+            None,
+            "the narrow route was expected to overflow on coprime denominators"
+        );
+        let wide = plane_name_exact(a, b, c).expect("the wide route names it");
+        for p in [a, b, c] {
+            let mut acc = wide[3];
+            for k in 0..3 {
+                acc = acc
+                    .checked_add(wide[k].checked_mul(p[k]).expect("no overflow"))
+                    .expect("no overflow");
+            }
+            assert_eq!(acc, Rat::from_int(0), "a point is off the derived plane");
         }
     }
 

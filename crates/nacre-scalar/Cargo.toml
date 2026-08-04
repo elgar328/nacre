@@ -10,6 +10,11 @@ description = "Exact rational scalars (dimensions, angles) — the overhaul's ex
 [dependencies]
 num-rational = "0.4"
 num-traits = "0.2"
+# ★ Not a new crate in the trust base: `num-rational`'s default features already pull `num-bigint`
+# and `num-integer` in, so both are compiled into the product path today (`cargo tree`). Declaring
+# them is what lets `plane_name_exact` redo an overflowing derivation at unbounded precision.
+num-bigint = "0.4"
+num-integer = "0.1"
 astro-float = "0.9.5"
 
 [dev-dependencies]
