@@ -506,40 +506,47 @@ pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4
 /// [`plane_name_exact`]'s unbounded arm, always taken — the differential test needs to call it on
 /// inputs the `Rat` route handles, which it cannot do through the filter.
 ///
-/// **Deliberately the same expression as [`plane_through_points`]**, on a different integer type:
-/// the two answers agreeing is the correctness argument, and it is a weaker argument if the
-/// formulas differ. `None` is collinearity, or a canonical component that no longer fits `Rat`.
+/// **The same plane [`plane_through_points`] computes**, reached by clearing each point's
+/// denominators first so the arithmetic is integer throughout. The two agreeing wherever the narrow
+/// one answers is the correctness argument, and `the_wide_derivation_answers_what_the_narrow_one_does`
+/// is what holds it. `None` is collinearity, or a canonical component that no longer fits `Rat`.
 pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4]> {
     use num_bigint::BigInt;
     use num_integer::Integer;
-    use num_rational::Ratio;
     use num_traits::{ToPrimitive, Zero};
 
-    type Big = Ratio<BigInt>;
-    let big = |r: Rat| Big::new(BigInt::from(r.numer()), BigInt::from(r.denom()));
-    let (a, b, c) = (a.map(big), b.map(big), c.map(big));
-
-    let sub = |p: &[Big; 3], q: &[Big; 3]| [&p[0] - &q[0], &p[1] - &q[1], &p[2] - &q[2]];
-    let (u, v) = (sub(&b, &a), sub(&c, &a));
+    // ★★★★ **Integers, not rationals.** The obvious spelling is `Ratio<BigInt>`, mirroring
+    // `plane_through_points` term for term — and that is how this started. But `Ratio` reduces by a
+    // gcd on *every* multiply and subtract, and there are a dozen of them, so the reduction work
+    // dominates. Clearing each point's denominators once up front leaves plain integer arithmetic
+    // and exactly one gcd at the end, where the content has to come out anyway.
+    //
+    // ★ **A plane is scale-free, which is what makes this legal.** Each point is scaled by its own
+    // `D_k`, so `u'` and `v'` are the true edges times `D_a·D_b` and `D_a·D_c`; their cross product
+    // is the true normal times a positive factor, and the canonical form divides all of it out.
+    // The `d` term is `−N·a = −(N·P_a)/D_a`, so scaling the whole 4-vector by `D_a` clears it.
+    let lift = |p: [Rat; 3]| -> ([BigInt; 3], BigInt) {
+        let den = p.map(|r| BigInt::from(r.denom()));
+        let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+        let num = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&d / &den[i]));
+        (num, d)
+    };
+    let ((pa, da), (pb, db), (pc, dc)) = (lift(a), lift(b), lift(c));
+    let edge = |q: &[BigInt; 3], dq: &BigInt| -> [BigInt; 3] {
+        core::array::from_fn(|i| &q[i] * &da - &pa[i] * dq)
+    };
+    let (u, v) = (edge(&pb, &db), edge(&pc, &dc));
     let term = |i: usize, j: usize| &u[i] * &v[j] - &u[j] * &v[i];
     let n = [term(1, 2), term(2, 0), term(0, 1)];
     if n.iter().all(Zero::is_zero) {
         return None; // collinear
     }
-    let mut d = Big::zero();
-    for i in 0..3 {
-        d -= &n[i] * &a[i];
-    }
-    let coeffs = [n[0].clone(), n[1].clone(), n[2].clone(), d];
+    let dot: BigInt = (0..3).map(|i| &n[i] * &pa[i]).sum();
+    let mut num = [&n[0] * &da, &n[1] * &da, &n[2] * &da, -dot];
 
-    // ① Clear the denominators, ② divide out the content, ③ fix the sign of the first nonzero —
-    // `canonical_plane_coeffs`' three steps, on integers that cannot overflow.
-    let lcm = coeffs.iter().fold(BigInt::from(1), |l, c| l.lcm(c.denom()));
-    let mut num: Vec<BigInt> = coeffs
-        .iter()
-        .map(|c| c.numer() * (&lcm / c.denom()))
-        .collect();
-    let g = num.iter().fold(BigInt::zero(), |g, n| g.gcd(n));
+    // Divide out the content and fix the sign of the first nonzero — `canonical_plane_coeffs`'
+    // steps ② and ③; ① is already done, since these are integers.
+    let g = num.iter().fold(BigInt::zero(), |g, x| g.gcd(x));
     if g.is_zero() {
         return None; // the zero vector is not a plane
     }
