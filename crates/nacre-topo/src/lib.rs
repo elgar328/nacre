@@ -170,6 +170,12 @@ pub type SurfaceKey = (nacre_scalar::PlaneName, Option<Handle<MotionNode>>);
 /// rather than any guarantee.
 pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// How many pushes interned onto a **seeded world plane** (handles 0–2) — the census stat that
+/// explains a plane-digest diff the wide counter cannot (S9): a seeding-shaped change moves
+/// survivors by *name collision*, not by width, and a falsifiability bridge needs a number for
+/// that population too.
+pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped
 /// (`Reversed`). A pure tag — full derives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -233,7 +239,7 @@ pub enum PlanePoints {
 
 /// The truth-only aggregate: exact geometry + topology stores + the derived
 /// adjacency cache. No `tess`, no `ops` (see the crate docs).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Model {
     // exact geometry (truth)
     /// ★ Private (stage S1, `docs/truth-and-cache.md`): a surface can only enter through
@@ -252,6 +258,9 @@ pub struct Model {
     /// crate for a distinction the shared index already erases — the flip happens with the
     /// final rename, when `SurfaceCache` gets its real shape.)
     surface_truths: Vec<SurfaceTruth>,
+    /// The three seeded world planes, in normal-axis order Z(XY)·X(YZ)·Y(ZX) — captured at
+    /// [`Model::new`] so [`Model::world_plane`] needs no handle minting. Always length 3.
+    world_planes: Vec<Handle<Surface>>,
     pub curves: Store<Curve>,
     /// The motion-history forest (§CIP ⑦): motion definitions named by `Origin::Moved` vertices
     /// and moved surfaces. Not geometry — a definition store.
@@ -321,7 +330,9 @@ pub struct Model {
 ///
 /// Only the sets consumers need today: `validate`'s Euler counts vertices/edges/
 /// faces/shells, and `Adjacency`/loop/incidence walk faces/edges. Surfaces and
-/// curves are never orphaned by the M4 face ops, so they are not tracked.
+/// curves are not tracked: the M4 face ops never orphan a *used* one, and the three
+/// seeded world planes (S9) are deliberately face-less — traversal through
+/// definitions (world planes, datum references) is 열린 항목 4.
 #[derive(Debug, Default)]
 pub struct Reachable {
     pub vertices: HashSet<Handle<Vertex>>,
@@ -362,11 +373,79 @@ impl Loop {
     }
 }
 
+/// `Default` is [`Model::new`] — **seeded**. The derive used to hand out an *empty* model,
+/// which after S9 would be one without the world planes: a public back door to the state the
+/// seeding exists to remove. There is deliberately no unseeded constructor.
+impl Default for Model {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Model {
-    /// An empty model.
-    #[inline]
+    /// A model with the three **world axis planes pre-seeded** — surface handles 0 (XY, z = 0),
+    /// 1 (YZ, x = 0), 2 (ZX, y = 0), deterministic so a replayed log and a live session name the
+    /// same planes (`docs/truth-and-cache.md` rule: 세계 축 평면 셋은 `Model::new()` 가 심는다).
+    ///
+    /// Each seed's truth is the canonical triple `[0, u, v]` — the very points
+    /// `SketchPlane::world_*` states — so any later producer of the same plane (a cuboid face on
+    /// an axis, a `z = 0` sketch's base cap) **interns onto the seed**: one plane, one handle,
+    /// stated once.
+    ///
+    /// ★ **The seed's f64 cache points down the −axis**, not up. This is the sense the dominant
+    /// producers push — `extrude` builds base caps with `−normal` (its comment records that
+    /// pushing `+normal` "flipped the stored normal on 781 base caps … for no reason"), and an
+    /// origin cuboid's bottom/left/front faces cross to `−axis` raws — so a −axis seed keeps
+    /// their `flipped` bits false and their `Orientation` spellings unchanged. The *sketch*
+    /// convention ("`world_xy`'s normal is `+ẑ`") is about the frame, not the stored cache;
+    /// frame derivation goes through the canonical name plus a measured `flip`, so the cache's
+    /// direction never leaks to a caller.
     pub fn new() -> Self {
-        Self::default()
+        let mut m = Model {
+            surfaces: Store::default(),
+            surface_truths: Vec::new(),
+            curves: Store::default(),
+            motions: Store::default(),
+            motion_ids: HashMap::new(),
+            surface_name: HashMap::new(),
+            surface_ids: HashMap::new(),
+            vertices: Store::default(),
+            edges: Store::default(),
+            faces: Store::default(),
+            shells: Store::default(),
+            solids: Store::default(),
+            live_solids: Vec::new(),
+            adj: Adjacency::default(),
+            world_planes: Vec::new(),
+        };
+        let r = nacre_scalar::Rat::from_int;
+        // (normal axis, +u, +v) for XY / YZ / ZX — the `SketchPlane::axis_plane` triples.
+        let seeds: [([f64; 3], [i128; 3], [i128; 3]); 3] = [
+            ([0.0, 0.0, 1.0], [1, 0, 0], [0, 1, 0]),
+            ([1.0, 0.0, 0.0], [0, 1, 0], [0, 0, 1]),
+            ([0.0, 1.0, 0.0], [0, 0, 1], [1, 0, 0]),
+        ];
+        let world_planes: Vec<Handle<Surface>> = seeds
+            .into_iter()
+            .map(|(n, u, v)| {
+                let cache = nacre_geom::Plane::from_point_normal(
+                    nacre_math::Point3::origin(),
+                    nacre_math::Vector3::from_array(n.map(|c| -c)),
+                )
+                .expect("a unit axis");
+                let points = [[r(0); 3], u.map(r), v.map(r)];
+                let (h, flipped) = m.push_plane(cache, points, None);
+                debug_assert!(!flipped, "an empty model cannot intern a seed");
+                h
+            })
+            .collect();
+        m.world_planes = world_planes;
+        debug_assert_eq!(
+            m.world_planes.iter().map(|h| h.index()).collect::<Vec<_>>(),
+            [0, 1, 2],
+            "seed handles are deterministic"
+        );
+        m
     }
 
     /// Recompute the [`Adjacency`] cache from the current topology stores.
@@ -434,6 +513,26 @@ impl Model {
     #[inline]
     pub fn surface_truth(&self, h: Handle<Surface>) -> &SurfaceTruth {
         &self.surface_truths[h.index() as usize]
+    }
+
+    /// The seeded world plane whose **normal** runs along `axis` — `Z` names the XY plane
+    /// (z = 0), `X` the YZ plane, `Y` the ZX plane. Deterministic (handles 0–2, pushed by
+    /// [`Model::new`]), so a handle in an op log and one from a live session agree.
+    pub fn world_plane(&self, axis: nacre_scalar::Axis) -> Handle<Surface> {
+        let ix = match axis {
+            nacre_scalar::Axis::Z => 0usize,
+            nacre_scalar::Axis::X => 1,
+            nacre_scalar::Axis::Y => 2,
+        };
+        let h = self.world_planes[ix];
+        debug_assert!(
+            matches!(
+                self.surface_truth(h),
+                SurfaceTruth::Plane { motion: None, .. }
+            ),
+            "seed handles must stay the world planes"
+        );
+        h
     }
 
     /// The surface a handle names — the **f64 cache** of [`Model::surface_truth`]'s answer.
@@ -511,6 +610,9 @@ impl Model {
         let key = name.map(|n| (n, motion));
         if let Some(k) = &key {
             if let Some(&h) = self.surface_ids.get(k) {
+                if (h.index() as usize) < 3 {
+                    SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
                 // outward the other way round. The f64 cache dot is exact here: two caches of one
@@ -1145,6 +1247,10 @@ mod tests {
         assert_eq!(m.faces.len(), 6);
         assert_eq!(m.shells.len(), 1);
         assert_eq!(m.solids.len(), 1);
+        // Still 6 — but differently composed since S9: the origin box's bottom/left/front
+        // faces intern onto the three seeded world planes (same name, same handle), so the
+        // arena holds 3 seeds + 3 fresh (top/back/right). Seeding adds nothing here precisely
+        // because the seeds are these planes.
         assert_eq!(m.surfaces.len(), 6);
         assert_eq!(m.curves.len(), 12);
     }
@@ -1592,6 +1698,87 @@ mod tests {
             "two spellings of one wide plane must intern"
         );
     }
+
+    /// ★★★ S9: **the three world planes are born with the model** — deterministic handles,
+    /// canonical truth, −axis caches — and `Default` is the same seeded model (the unseeded
+    /// back door is closed).
+    #[test]
+    fn a_new_model_carries_the_three_world_planes() {
+        let r = nacre_scalar::Rat::from_int;
+        for m in [Model::new(), Model::default()] {
+            assert_eq!(m.surface_count(), 3);
+            let want = [
+                (
+                    nacre_scalar::Axis::Z,
+                    [r(0), r(0), r(1), r(0)],
+                    [0.0, 0.0, -1.0],
+                ),
+                (
+                    nacre_scalar::Axis::X,
+                    [r(1), r(0), r(0), r(0)],
+                    [-1.0, 0.0, 0.0],
+                ),
+                (
+                    nacre_scalar::Axis::Y,
+                    [r(0), r(1), r(0), r(0)],
+                    [0.0, -1.0, 0.0],
+                ),
+            ];
+            for (i, (axis, name, cache_n)) in want.into_iter().enumerate() {
+                let h = m.world_plane(axis);
+                assert_eq!(h.index() as usize, i, "deterministic seed handles");
+                assert_eq!(
+                    m.surface_name.get(&h),
+                    Some(&nacre_scalar::PlaneName::Narrow(name))
+                );
+                assert!(matches!(
+                    m.surface_truth(h),
+                    SurfaceTruth::Plane { motion: None, .. }
+                ));
+                let Surface::Plane(pl) = m.surface(h) else {
+                    panic!("a seed is a plane")
+                };
+                assert_eq!(
+                    pl.normal().as_array(),
+                    cache_n,
+                    "the cache points down the −axis (the base-cap sense)"
+                );
+            }
+        }
+    }
+
+    /// ★★ S9: the seeds are the interning survivors — an origin cuboid's bottom/left/front
+    /// faces carry the seed handles, so "the world plane" and "that face's plane" are one
+    /// surface, stated once.
+    #[test]
+    fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
+        let mut m = Model::new();
+        let s = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let face_surfaces: Vec<_> = m
+            .shells
+            .get(m.solids.get(s).outer)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .collect();
+        for axis in [
+            nacre_scalar::Axis::Z,
+            nacre_scalar::Axis::X,
+            nacre_scalar::Axis::Y,
+        ] {
+            assert!(
+                face_surfaces.contains(&m.world_plane(axis)),
+                "the {axis:?}-normal face at 0 must be the seed itself"
+            );
+        }
+        // And nothing pointless was minted: 3 seeds + the 3 off-origin faces.
+        assert_eq!(m.surface_count(), 6);
+    }
+
     /// ★★★ S6a: **a cylinder's caps record their three exact points** — the `add_cuboid`
     /// precedent applied to the last un-gated production path that minted point-less planes.
     /// The direct evidence that the record is a real name and not a dead entry: a cap that

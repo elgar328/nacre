@@ -189,3 +189,32 @@ fn every_live_planar_face_records_its_points() {
 
     let _ = mirrored;
 }
+
+/// ★★ S9: a `z = 0` sketch's base cap **is** the seeded XY plane — the operation and the
+/// pre-seeded vocabulary meet at one handle. And replay determinism holds with seeds included:
+/// the same log twice gives the same handles.
+#[test]
+fn a_world_sketch_base_cap_is_the_seeded_plane() {
+    let log = [Operation::Extrude {
+        plane: SketchPlane::world_xy(),
+        profile: square(0.0, 2.0),
+        dist: 1.0,
+    }];
+    let m1 = nacre_ops::replay(&log).unwrap();
+    let m2 = nacre_ops::replay(&log).unwrap();
+    let cap_surface = |m: &Model| {
+        let s = m.live_solids[0];
+        // faces[0] of the extrude output is the base cap; find via the z=0 name instead of
+        // output plumbing.
+        m.shells
+            .get(m.solids.get(s).outer)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .find(|su| su == &m.world_plane(nacre_scalar::Axis::Z))
+            .expect("the z = 0 base cap must intern onto the seed")
+    };
+    let (c1, c2) = (cap_surface(&m1), cap_surface(&m2));
+    assert_eq!(c1, m1.world_plane(nacre_scalar::Axis::Z));
+    assert_eq!(c1, c2, "replay is deterministic down to seeded handles");
+}

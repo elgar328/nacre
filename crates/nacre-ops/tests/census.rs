@@ -7,6 +7,13 @@
 //!
 //! Not an assertion — a dump. Run it on two commits and `diff`:
 //!
+//! ★ **Re-baselined once at S9** (world-plane seeding): the seeds intern with every
+//! origin-touching producer, so the survivor's f64 plane cache — and with it the `in:` plane
+//! digest — moved on the origin-touching lines. The switch was gated by an ε-equivalence check
+//! (topology exact, volumes/areas/centroids within 2⁻⁴⁰ relative, vertex hashes byte-equal) and
+//! the measured deviations are in `docs/dev-log.md`. `stat seeded_hits` below is the
+//! falsifiability bridge for that population.
+//!
 //! ```text
 //! cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
 //! ```
@@ -537,6 +544,13 @@ fn dump() {
     println!(
         "stat wide_planes {}",
         nacre_topo::WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed)
+    );
+    // S9: the falsifiability bridge for seeding-shaped changes. A `c ` diff that the wide
+    // counter cannot explain (name-collision populations are narrow) must come with a nonzero
+    // count here instead — pushes that interned onto a seeded world plane.
+    println!(
+        "stat seeded_hits {}",
+        nacre_topo::SEEDED_HITS.load(std::sync::atomic::Ordering::Relaxed)
     );
 }
 

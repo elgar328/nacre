@@ -176,31 +176,39 @@ mod tests {
     }
 
     /// `collect_planes` on a rotated solid fills each plane's exact `Pt3` triple, whose
-    /// coordinates match the stored `tri` and whose definition is rotated (tol > 0).
+    /// coordinates **span the face's own plane** and whose definition is rotated (tol > 0).
+    ///
+    /// ★ The witness is the surface's recorded triple, which is the *first pusher's* — since S9
+    /// an origin cuboid's axis faces intern onto the seeded world planes, so the witness is the
+    /// seed's `[0, u, v]` (rotated along), not this face's corners. "Matches `tri`" was a
+    /// first-push coincidence, never the contract; on-plane is.
     #[test]
     fn plane_def_from_face() {
+        let on_plane = |pi: &crate::planes::PlaneGeom| {
+            for d in &pi.tri_pt3 {
+                let dist = pi.plane.distance(Point3::from_array(d.coord));
+                assert!(dist < 1e-9, "a witness point sits {dist:e} off its plane");
+            }
+        };
         let (mut m, s) = cuboid();
         let r = rotated(&mut m, s);
         let planes = plane_table(&m, r);
         for pi in &planes {
             assert!(pi.rotated, "a rotated solid's planes are flagged rotated");
-            let def = &pi.tri_pt3;
-            for (d, t) in def.iter().zip(pi.tri.iter()) {
-                assert_eq!(d.coord, t.as_array(), "tri_pt3 matches tri");
-            }
+            on_plane(pi);
             assert!(
-                def.iter().any(|p| p.tol.iter().any(|&t| t > 0.0)),
+                pi.tri_pt3.iter().any(|p| p.tol.iter().any(|&t| t > 0.0)),
                 "a rotated plane's def carries rotation tol"
             );
         }
         // The axis-aligned original also carries a def now — that is the change this test used
-        // to forbid. What distinguishes it is the flag, not the presence of a definition, and its
-        // def is exact: tol 0 and coordinates equal to `tri`.
+        // to forbid. What distinguishes it is the flag, not the presence of a definition, and
+        // its def is exact: tol 0, on the plane.
         let pu = plane_table(&m, s);
         assert!(pu.iter().all(|pi| !pi.rotated));
         for pi in &pu {
-            for (d, t) in pi.tri_pt3.iter().zip(pi.tri.iter()) {
-                assert_eq!(d.coord, t.as_array(), "axis-aligned def matches tri");
+            on_plane(pi);
+            for d in &pi.tri_pt3 {
                 assert_eq!(d.tol, [0.0; 3], "axis-aligned def is exact");
             }
         }
