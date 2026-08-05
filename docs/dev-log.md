@@ -6684,3 +6684,43 @@ ops 잠금(그 중간점이 지워진다). 작성자가 쓴 수가 이긴다.
 gcd 약분 지배(이런 좌표는 전-narrow, BigInt 미도달). 손 스케치(수십 점)는 ms 미만이라 수용,
 후속 두 안(정확 bbox 선별 / f64 필터→Rat 상승)은 **그 인구가 생기기 전엔 짓지 않는다**
 (truth-and-cache §열린 항목 7). 스위트 그린(nacre-ops 379 + geom 96 + scalar 60).
+
+## S6a — 점 없는 평면의 소멸 (2026-08-05)
+
+S6(타입 교체)의 전제 단계. 조사(2 에이전트)로 점 없는 평면의 생산 경로 전량을 세었다:
+① from_axes(무-def 설계) ② from_origin_normal/through_points 의 좁은-계수 def 실패
+③ named_plane_points 넘침 ④ prism_rings i128 넘침 ⑤ add_cylinder 캡 ⑥ transform 의
+point_rat 넘침 팔 ⑦ 테스트 수동 push(→S6b). 네 커밋으로 ①②③⑤⑥ 소멸, ④는 폴백 잔존
+(S6b 에서 named reject), ⑦은 S6b 수술.
+
+★★ **#28 반증(축만 든 호출자)의 지반이 S2+S4 로 제거돼 있었다.** 축의 십진 진실을
+리프트하면 점 셋이 생기고(o, o+x, o+y — Rat 덧셈), 이름이 Wide(전폭 축의 교차곱 분모
+10^48 > i128)여도 S2 가 intern 하고 S4 의 `WideFrame::named_of` 가 프레임을 실현한다.
+45°급 기울어진 from_axes 평면의 프리즘이 f64 폴백 대신 정확 경로로 지어진다(종단 잠금:
+전 면 점 기록 + 부피 해석값 일치). "0.07%/25.8%" 반박 실측은 S2 이전 수치(원인 = 이름의
+i128 넘침, 사망) — 문서 열린 항목 8에 재측정 처분 기록.
+
+★★★ **공개 리프트 / 내부 무-def 분리가 이번 셀의 핵심 경계다.** `from_axes` 는 내부
+생산 3곳(face_plane 보고·face_frame·extrude_and_boolean)이 **실현된 기저**로도 부른다 —
+거기 리프트를 적용하면 이미 정확한 정의를 가진 벽 평면에 반올림-리프트된 둘째 "진실"이
+생긴다([[two-exact-descriptions]] 재발, 1e-16 어긋난 비-intern 평면). 내부는
+`realized_plane`(무-def)로 분리했다. 경계 규칙은 «사용자가 쓴 것만 진실이 된다»다.
+
+★★ **`PlaneDef` 는 점 셋 단일 필드가 됐다** — origin = points[0], ref_dir = points[1]−
+points[0], 극성 = 점 순서. "origin 이 평면 위인가" 검사가 구조로 소멸(다섯 생성자 전부
+자연스럽게 이 형태로 떨어짐 — axis_plane 의 zx «named +u = ẑ» 규약 포함, 극성 손검증).
+좁은-계수 def 실패 계급(plane_through_points/plane_from_point_normal 넘침)이 사망하고
+`named_plane_points` 가 은퇴했다. ★ 은퇴한 함수의 폭 교훈은 normal_def doc 에 보존:
+새 삼중의 셋째 점(v = n×u)은 곱-폭이지만 **정준 계수(~100비트)가 아니라 리프트된 십진
+법선(~57비트)의 곱**이라 ~114비트로 i128 에 들고, 넘치는 하류 유도는 wide 도로를 탄다.
+그 함수의 "c·p 가 i128 에서 계산 가능" 성질은 narrow-전용 파이프라인의 제약이라 함께
+은퇴(테스트 재작성: 이름 일치 + 극성).
+
+기타: 원통 캡이 점을 기록한다(add_cuboid 선례 — 실현 f64 의 십진 진실; 잠금 = 캡·상자
+면 coplanar interning). 넘침-이동은 `motion_is_exact` 프로브 확장으로 노드를 기록하고
+원본 점을 보존한다(픽스처 산술 손설계: 정점은 정확[1+2⁻³⁰]·표면 점만 넘침[분모 5⁴²,
+lcm ≈ 2.4e38 > i128]). Named×Wide 프레임 단위 잠금 신설 — S4 는 canonical 만 잠갔고,
+첫 픽스처(2^90 좌표)는 단위 축이 f64 ulp(6e10) 아래로 사라져 스스로 반박됐다(교훈:
+잠금 픽스처도 CAD 스케일로). 부수 수정: build_prism 의 doc 이 named_plane_points 에
+잘못 붙어 있던 잠복 결함. 전수 관문 `points_coverage` 신설(생산 경로별 6 모델 sweep —
+S6b 전제의 단언). census 150줄 비트 동일 ×3(커밋별). 스위트 33 타깃 그린.
