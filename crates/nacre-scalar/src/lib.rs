@@ -475,11 +475,43 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
     plane_from_point_normal(n, a)
 }
 
+/// The canonical name of a rational plane — primitive integer coefficients, sign-fixed
+/// (see [`canonical_plane_coeffs`] for the canonical form). One vessel, two widths.
+///
+/// ★ **Normalization invariant: a value that fits `i128` is ALWAYS stored `Narrow`** — the only
+/// constructor ([`plane_name_exact`]) enforces it, so two statements of one plane are
+/// structurally equal (`==`/`Hash`) across representations. That is what makes this the
+/// interning key: identity never depends on which route derived the name.
+///
+/// ★★ `Wide` carries **identity only**. Arithmetic shortcuts (frames, Shewchuk transports,
+/// `base_rat`) read [`PlaneName::narrow`] and decline on `None`, exactly as they declined on a
+/// missing name before — a wide name does not open a frame (measured refutation in
+/// `docs/truth-and-cache.md`'s refuted-answers table).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum PlaneName {
+    Narrow([Rat; 4]),
+    Wide([num_bigint::BigInt; 4]),
+}
+
+impl PlaneName {
+    /// The `i128` form when there is one — what the exact shortcuts (Shewchuk integer
+    /// predicates, frame derivation, `Isometry` transport) consume. `None` (`Wide`) means those
+    /// shortcuts decline and judgment takes the general route: slower, never wrong.
+    #[inline]
+    pub fn narrow(&self) -> Option<&[Rat; 4]> {
+        match self {
+            PlaneName::Narrow(c) => Some(c),
+            PlaneName::Wide(_) => None,
+        }
+    }
+}
+
 /// **The plane three points name, computed so that the arithmetic on the way cannot lose it.**
 ///
-/// The same answer [`plane_through_points`] gives, but `None` means one of exactly two things:
-/// the points are collinear (they name no plane), or **the canonical answer itself** does not fit
-/// `Rat`. It is never a shrug about an intermediate.
+/// The same answer [`plane_through_points`] gives, in a vessel that always holds it: `Narrow`
+/// when the canonical answer fits `i128`, `Wide` (arbitrary-precision integers) when it does
+/// not. `None` means exactly one thing — the points are collinear and name no plane. It is
+/// never a shrug about an intermediate, and no longer one about the answer's width either.
 ///
 /// ★★★★★ **The distinction is not academic — it was most of the failures.** `plane_through_points`
 /// works in `Rat`, so `(b − a) × (c − a)` multiplies the points' denominators together and
@@ -499,8 +531,10 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
 /// ★ **Cost is paid only on the fallback.** The `Rat` route runs first and is the answer whenever
 /// it fits; `BigInt` is reached on the rest. Nothing here is on a boolean's inner loop — a plane is
 /// named once per `Model::push_surface_with_coeffs`.
-pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4]> {
-    plane_through_points(a, b, c).or_else(|| plane_name_big(a, b, c))
+pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
+    plane_through_points(a, b, c)
+        .map(PlaneName::Narrow)
+        .or_else(|| plane_name_big(a, b, c))
 }
 
 /// [`plane_name_exact`]'s unbounded arm, always taken — the differential test needs to call it on
@@ -510,7 +544,7 @@ pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4
 /// denominators first so the arithmetic is integer throughout. The two agreeing wherever the narrow
 /// one answers is the correctness argument, and `the_wide_derivation_answers_what_the_narrow_one_does`
 /// is what holds it. `None` is collinearity, or a canonical component that no longer fits `Rat`.
-pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Rat; 4]> {
+pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
     use num_bigint::BigInt;
     use num_integer::Integer;
     use num_traits::{ToPrimitive, Zero};
@@ -563,12 +597,17 @@ pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[R
         }
     }
 
-    // ★ The only honest failure left: the canonical answer is wider than `Rat` can hold.
+    // ★ The normalization invariant lives here: narrow whenever the canonical answer fits
+    // `i128`, `Wide` only when it does not — so equal planes are structurally equal whichever
+    // route derived them. (This used to be the one honest failure; now it is the fork.)
     let mut out = [Rat::from_int(0); 4];
     for (o, x) in out.iter_mut().zip(&num) {
-        *o = Rat::from_int(x.to_i128()?);
+        match x.to_i128() {
+            Some(v) => *o = Rat::from_int(v),
+            None => return Some(PlaneName::Wide(num)),
+        }
     }
-    Some(out)
+    Some(PlaneName::Narrow(out))
 }
 
 /// **The world origin projected onto a rational plane** — `p = (−d / n·n) · n` for
@@ -2252,17 +2291,21 @@ mod tests {
             let narrow = plane_through_points(a, b, c);
             let wide = plane_name_big(a, b, c);
             if let Some(n) = narrow {
-                prop_assert_eq!(wide, Some(n), "narrow answered but wide disagrees");
+                // ★ The invariant rides along: an answer the narrow route reached fits `i128`
+                // by construction, so the wide route must store it `Narrow` — same value, same
+                // representation, structural equality.
+                prop_assert_eq!(wide.clone(), Some(PlaneName::Narrow(n)),
+                    "narrow answered but wide disagrees");
             }
-            // ★ And the wide one, whenever it answers at all, answers about a plane these points
-            // are actually on — checked in the rationals, no tolerance.
+            // ★ And the wide one, whenever it answers narrowly at all, answers about a plane
+            // these points are actually on — checked in the rationals, no tolerance.
             //
             // ★★★★★ **The residual can overflow even when the name and the points both fit**, and
             // this test found that by asserting it could not. `c · p` multiplies a canonical
             // coefficient by a point coordinate, so it needs the *sum* of their widths — which is
             // exactly the population `Model::push_surface_with_coeffs` cannot verify either. An
             // unevaluable check is not a failed one, here as there: skip it, never fail on it.
-            if let Some(w) = wide {
+            if let Some(w) = wide.as_ref().and_then(|n| n.narrow()) {
                 for p in [a, b, c] {
                     let residual = (|| {
                         let mut acc = w[3];
@@ -2296,7 +2339,10 @@ mod tests {
             None,
             "the narrow route was expected to overflow on coprime denominators"
         );
-        let wide = plane_name_exact(a, b, c).expect("the wide route names it");
+        let name = plane_name_exact(a, b, c).expect("the wide route names it");
+        // The canonical answer here is small (the doc above says so) — the invariant demands it
+        // come back `Narrow`.
+        let wide = name.narrow().expect("a small answer must be stored Narrow");
         for p in [a, b, c] {
             let mut acc = wide[3];
             for k in 0..3 {
@@ -2306,6 +2352,40 @@ mod tests {
             }
             assert_eq!(acc, Rat::from_int(0), "a point is off the derived plane");
         }
+    }
+
+    /// ★★★★★ **A canonical answer wider than `i128` is a name now, not a `None`** — and two
+    /// statements of that plane are one value. This is the S2 vessel change in miniature; the
+    /// interning consequence is locked on the model side
+    /// (`a_wide_plane_interns_but_opens_no_shortcut` in nacre-topo).
+    #[test]
+    fn a_plane_too_wide_for_i128_is_named_wide() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        // Cross-product terms multiply two coordinates' numerators, so two ~2^90 coprime
+        // numerators push the canonical coefficients past i128 with no content to divide out.
+        let big1 = (1i128 << 90) + 1;
+        let big2 = (1i128 << 90) + 3;
+        let a = [r(big1, 3), r(big2, 7), r(0, 1)];
+        let b = [r(-big2, 5), r(big1, 11), r(0, 1)];
+        let c = [r(1, 13), r(1, 17), r(1, 19)];
+        assert_eq!(
+            plane_through_points(a, b, c),
+            None,
+            "expected the narrow route to overflow"
+        );
+        let name = plane_name_exact(a, b, c).expect("collinear it is not — it must be named");
+        // ★ Wide carries identity only: the arithmetic shortcuts' door stays shut (S2/S4
+        // boundary — a wide name must NOT open a frame).
+        assert!(
+            name.narrow().is_none(),
+            "an answer past i128 must be stored Wide"
+        );
+        // ★ Same plane, two spellings (a permuted triple) — one value, structurally.
+        let permuted = plane_name_exact(b, c, a).expect("the same plane, permuted");
+        assert_eq!(
+            name, permuted,
+            "two statements of one wide plane must be one value"
+        );
     }
 
     /// The core rational-representation property in miniature: exact rational accumulation does not

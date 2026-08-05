@@ -2731,8 +2731,8 @@ pub mod tests {
             "the caller's triple was not the one recorded"
         );
         assert_eq!(
-            m.surface_coeffs.get(&surf),
-            Some(&[r(0), r(0), r(1), r(-3)]),
+            m.surface_name.get(&surf),
+            Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(-3)])),
             "the name was not derived from the triple that was recorded"
         );
         assert_eq!(
@@ -2744,7 +2744,7 @@ pub mod tests {
         // so there is nothing to record and no name to derive.
         let (m, surf) = prism(None);
         assert!(!m.surface_points.contains_key(&surf));
-        assert!(!m.surface_coeffs.contains_key(&surf));
+        assert!(!m.surface_name.contains_key(&surf));
     }
 
     /// The handle branch of `shares_or_coplanar` is load-bearing: a shared
@@ -5912,9 +5912,11 @@ pub mod tests {
         let (m, wall) = prism_with_a_slanted_wall();
         let sp = crate::ops::face_plane(&m, wall).expect("planar");
         let c = m
-            .surface_coeffs
+            .surface_name
             .get(&m.faces.get(wall).surface)
-            .expect("a world-frame wall has rational coefficients");
+            .expect("a world-frame wall has a name")
+            .narrow()
+            .expect("a world-frame wall's name is narrow");
         assert_eq!(c.map(|r| r.to_f64()), [2.0, 1.0, 0.0, -10.0]);
         assert_eq!(
             sp.origin.as_array(),
@@ -6201,7 +6203,10 @@ pub mod tests {
             s = solid;
             let su = m.faces.get(top_face).surface;
             assert_eq!(
-                m.surface_coeffs.get(&su).map(|c| c.map(|r| r.to_f64())),
+                m.surface_name
+                    .get(&su)
+                    .and_then(|n| n.narrow())
+                    .map(|c| c.map(|r| r.to_f64())),
                 Some([0.0, 0.0, 10.0, -77.0]),
                 "★ a cap raised in a frame records `w = 7.7` there, exactly"
             );
@@ -6213,7 +6218,7 @@ pub mod tests {
         let (mut with, mut without) = (0, 0);
         for &f in &m.shells.get(sh).faces {
             let su = m.faces.get(f).surface;
-            if m.surface_coeffs.contains_key(&su) {
+            if m.surface_name.contains_key(&su) {
                 with += 1
             } else {
                 without += 1
@@ -6362,8 +6367,9 @@ pub mod tests {
             unreachable!()
         };
         let coeffs = |f: Handle<Face>, m: &Model| {
-            m.surface_coeffs
+            m.surface_name
                 .get(&m.faces.get(f).surface)
+                .and_then(|n| n.narrow())
                 .map(|c| c.map(|r| r.to_f64()))
         };
         assert_eq!(

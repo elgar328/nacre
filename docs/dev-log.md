@@ -6587,3 +6587,36 @@ docs/truth-and-cache.md 의 "surface_points" 언급 횟수 :  0
 (전부 dev-dependencies 에서만 켜짐 — 전수 확인).
 
 스위트 749/749 그린(수치 무접촉 — 좌표를 건드리지 않는 가시성 리팩터).
+
+## S2 — 임의정밀 이름: `PlaneName{Narrow|Wide}`, 이름 실패의 소멸 (2026-08-05)
+
+`plane_name_big` 은 정준 답을 `[BigInt;4]` 로 **다 만들어 놓고** 마지막 `to_i128()` 에서만
+버리고 있었다 — S2 는 그 한 지점을 분기로 바꾼다: 들어가면 `Narrow`(불변식), 아니면 `Wide`.
+`surface_coeffs` → `surface_name`(`PlaneName`), `SurfaceKey` 교체, **Wide 도 intern**.
+소비자(프로덕션 3곳: `base_rat`·`frame_chain`·`face_frame`)는 `narrow()` 경유 — Wide 는
+오늘의 "이름 없음"과 동일하게 지름길에서 decline(S2/S4 경계: **Wide 는 프레임을 안 연다**).
+
+| 실측이 정한 것 | |
+|---|---|
+| `plane_name_exact` 프로덕션 호출자 | **1곳** (`push_surface_with_points`) — 시그니처 변경이 국소적 |
+| `surface_coeffs` 프로덕션 읽기 | **3곳**, 전부 `[Rat;4]` 산술 ⇒ `narrow()` 로 행동 보존 |
+| `Box<[BigInt;4]>` 안 | **기각** — BigInt≈32B 라 두 변종이 같은 128B, Box 는 할당+간접만 더한다 |
+
+★★★★ **구현이 계획의 픽스처를 반박했다 — census 의 fw 주석이 낡아 있었다.**
+계획은 fw 상자(17자리 코너)의 "6면 중 4면만 이름" 실측을 Wide 잠금 픽스처로 썼는데, 돌려보니
+**Wide 0개**: 그 주석은 `plane_name_big`(95743eb) 이전의 실측이고, 축 정렬 상자의 정준 답은
+작아서(`[10^13,0,0,−c]` 꼴) 넘치는 것은 **중간값뿐**이다 — big 경로가 이미 Narrow 로 명명한다.
+진짜 Wide 인구(§12 의 472)는 **계산된 링 좌표**(분모 10³², 곱이 쌓임)에 산다. 낡은 주석을
+정정하고(census.rs), 잠금 픽스처는 ~2^90 서로소 분자의 교차곱 삼중으로 교체했다.
+⇒ 교훈 재확인: 주석의 실측은 **측정 시점의 코퍼스** 이야기다 — 5차 계획 검토가 이걸 그대로
+믿었다([[adjacent-proposition-failure]] 의 변종: 명제 옆의 낡은 명제).
+
+★★ **전역 카운터 단언은 병렬 테스트와 경합한다.** `WIDE_PLANES` before/after 등식이 새 잠금
+테스트의 증가와 경합해 깨졌다 — 카운터가 아니라 **저장된 값**(`narrow().is_some()`)을 단언하는
+것으로 교체("값이 말한다"). 카운터는 census 의 stat 줄(`wide_planes`) 전용으로 남는다.
+
+잠금: 스칼라 `a_plane_too_wide_for_i128_is_named_wide`(Wide + 순열 동일성) ·
+`the_wide_derivation_answers_what_the_narrow_one_does`(Narrow 불변식이 합의 잠금에 편승) ·
+topo `a_wide_plane_interns_but_opens_no_shortcut`(두 진술 = 한 핸들, `narrow()==None`).
+스위트 751/751 그린(대장 비트 동일 — 전 인구 Narrow), census `stat wide_planes 0`(그 코퍼스에
+wide 없음 — 예상과 일치, 이름은 stat 만 개명).

@@ -382,12 +382,16 @@ fn dump() {
     // arbitrarily-tilted plane shipped, and the census was bit-identical across it — **twice**,
     // because the same blindness had already been recorded once.
     //
-    // ★★ **Measured, and it picks the right target.** A cuboid on seventeen-digit corners has
-    // **6 faces of which only 4 carry a plane name** — the other two overflow `i128` in
-    // `plane_through_points` and are the very planes the derivation work is about. The proptests
-    // are where this population lives today (`stacked_boxes_merge_volumes` and friends generate
-    // arbitrary `f64`), and a proptest cannot be a census line: it has no fixed coordinates to
-    // diff. These constants are those coordinates, pinned.
+    // ★★ **Measured, and it picks the right target.** A cuboid on seventeen-digit corners
+    // overflows `plane_through_points`' *intermediates* on two of its six faces — the
+    // narrow-route population the wide derivation (`plane_name_big`) names, since their
+    // canonical answers are small. (An earlier reading here claimed those two faces went
+    // *unnamed*; that stopped being true when the wide derivation landed — the genuinely
+    // wide-vessel population lives in computed ring coordinates and is counted by
+    // `WIDE_PLANES`.) The proptests are where this population lives today
+    // (`stacked_boxes_merge_volumes` and friends generate arbitrary `f64`), and a proptest
+    // cannot be a census line: it has no fixed coordinates to diff. These constants are those
+    // coordinates, pinned.
     let fw: [([f64; 3], [f64; 3]); 3] = [
         (
             [-2.8374652839472, 1.0937465283947, -0.5837465283947],
@@ -442,14 +446,14 @@ fn dump() {
         }
     }
 
-    // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** When a
-    // change lets the kernel name planes it could not name before, the *only* way that reaches a
-    // coordinate is by merging surfaces — so a `c ` line that moves must come with a drop here. If
-    // the coordinates move and this does not, the cause is something else and the diff is not
-    // explained.
+    // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** Since S2
+    // every plane with points is named (wide ones in the arbitrary-precision vessel), so a
+    // coordinate can move only when wide planes *merge* — a `c ` line that moves must come with
+    // a nonzero count here. If the coordinates move and this stays zero, the cause is something
+    // else and the diff is not explained.
     println!(
-        "stat unnamed_planes {}",
-        nacre_topo::UNNAMED_PLANES.load(std::sync::atomic::Ordering::Relaxed)
+        "stat wide_planes {}",
+        nacre_topo::WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed)
     );
 }
 

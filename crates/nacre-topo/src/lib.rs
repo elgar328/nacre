@@ -149,11 +149,11 @@ pub enum Origin {
     },
 }
 
-/// What makes two surfaces the same plane, for [`Model::surface_ids`]: the canonical rational
-/// coefficients and **the motion they are stated in**. Identical arrays under different motions
-/// are different planes, because `Constructed` coefficients speak about the world and `Moved`
-/// ones about the pre-motion frame.
-pub type SurfaceKey = ([nacre_scalar::Rat; 4], Option<Handle<MotionNode>>);
+/// What makes two surfaces the same plane, for `Model::surface_ids`: the canonical name
+/// ([`nacre_scalar::PlaneName`] — `Narrow | Wide`, S2) and **the motion it is stated in**.
+/// Identical names under different motions are different planes, because `Constructed` names
+/// speak about the world and `Moved` ones about the pre-motion frame.
+pub type SurfaceKey = (nacre_scalar::PlaneName, Option<Handle<MotionNode>>);
 
 /// Provenance of a **surface** — the same question [`Origin`] answers for a vertex.
 ///
@@ -190,20 +190,20 @@ pub enum SurfaceDef {
     Inexact,
 }
 
-/// How many planes arrived with three exact points and still got **no name** — the derivation ran
-/// and the canonical answer did not fit `Rat`.
+/// How many planes were named **`Wide`** — the canonical answer exceeded `i128` and took the
+/// arbitrary-precision vessel (S2). Before S2 these were the *unnamed* planes; now they intern
+/// and carry identity like any other.
 ///
-/// ★ **This is the remaining limit, stated as a number.** A plane with no name cannot intern, cannot
-/// host a sketch frame (`ops::frame_chain` requires it), and cannot be *proved* identical to a
-/// differently-turned copy of itself — the interval route can refute equality but never establish
-/// it. Everything else about it is unaffected: the non-rotated coplanarity test reads the faces'
-/// own triangles exactly and never looks at a name.
+/// ★ **What `Wide` still cannot do**: host a sketch frame (`ops::frame_chain` reads
+/// [`nacre_scalar::PlaneName::narrow`]) or ride the exact shortcuts — those decline exactly as
+/// they declined on a missing name, until S4's `Canonical` placement opens frames without names.
+/// The non-rotated coplanarity test reads the faces' own triangles and never looks at a name.
 ///
 /// ★★ **Bounded by the type, not by the corpus.** A canonical name is a product of two point
 /// differences, so `Rat = Ratio<i128>` inputs admit answers to roughly `2^2291`; today's models
 /// stay far inside `i128` because they are written in short decimals, and the count reflects that
 /// rather than any guarantee.
-pub static UNNAMED_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped
 /// (`Reversed`). A pure tag — full derives.
@@ -252,31 +252,33 @@ pub struct Model {
     /// Iterate this **through the faces**, never over the map: a `HashMap`'s order is not
     /// deterministic and replay determinism (DNA 3) forbids letting it reach a result.
     pub surface_defs: HashMap<Handle<Surface>, SurfaceDef>,
-    /// Each surface's plane as **exact rational coefficients**, canonicalized — present only for
-    /// surfaces whose producer had a rational description to record.
+    /// Each surface's **canonical name** ([`nacre_scalar::PlaneName`]), derived from its points —
+    /// present for every surface whose producer had a rational description to record.
     ///
-    /// ★ **The point is that two faces of one plane get the same array.** `nacre_geom::Plane`
+    /// ★ **The point is that two statements of one plane get the same value.** `nacre_geom::Plane`
     /// keeps an un-normalized normal whose length follows the *face's size*, so the same plane
     /// reaches `coefficients()` as `[2.2, 0, 0, −6.6000000000000005]` from one face and
     /// `[13.2, 0, 0, −39.599999999999994]` from another — not exactly proportional, because `d`
-    /// is a rounded product. Canonical rationals have no scale to disagree about.
+    /// is a rounded product. Canonical names have no scale to disagree about, and since S2 the
+    /// vessel is arbitrary-precision (`Narrow | Wide`) so **width cannot lose a name either**.
     ///
-    /// ★★ **These are built from the dimensions the user wrote, never lifted from the f64
-    /// coefficients above.** Lifting is lossless and useless here: it preserves the rounding, so
-    /// the two vectors stay different (`nacre_scalar::canonical_plane_coeffs`).
+    /// ★★ **Built from the dimensions the user wrote, never lifted from the f64 coefficients
+    /// above.** Lifting is lossless and useless here: it preserves the rounding, so the two
+    /// vectors stay different (`nacre_scalar::canonical_plane_coeffs`).
     ///
-    /// ★★★ **The coefficients are stated in the frame this surface's [`SurfaceDef`] names** —
+    /// ★★★ **The name is stated in the frame this surface's [`SurfaceDef`] names** —
     /// the world for [`SurfaceDef::Constructed`], and the **pre-motion** frame for
     /// [`SurfaceDef::Moved`], whose world coefficients are irrational and so cannot be written
-    /// down at all. A moved surface therefore inherits its source's array unchanged: the motion
-    /// is recorded beside it, not folded into it. (That pairing — exact coefficients plus a
+    /// down at all. A moved surface therefore inherits its source's name unchanged: the motion
+    /// is recorded beside it, not folded into it. (That pairing — an exact name plus a
     /// motion — is the shape `docs/truth-and-cache.md` builds toward.)
     ///
-    /// Absent is ordinary — an f64 construction path, or `i128` overflow.
-    /// Iterate through the faces, never over the map.
-    pub surface_coeffs: HashMap<Handle<Surface>, [nacre_scalar::Rat; 4]>,
+    /// Absent is ordinary — an f64 construction path (no points to derive from).
+    /// Iterate through the faces, never over the map. Arithmetic consumers (frames, `base_rat`,
+    /// exact transports) read [`nacre_scalar::PlaneName::narrow`]; `Wide` carries identity only.
+    pub surface_name: HashMap<Handle<Surface>, nacre_scalar::PlaneName>,
     /// ★★★★★ **Three exact points the plane passes through** — stated in the same frame as
-    /// [`Model::surface_coeffs`], and carried out by the same [`SurfaceDef`] motion.
+    /// [`Model::surface_name`], and carried out by the same [`SurfaceDef`] motion.
     ///
     /// **The coefficients cannot be the whole truth, and this is why.** A plane's exact
     /// coefficients are a *product* of two point differences, so they need about twice the bits
@@ -482,7 +484,7 @@ impl Model {
     /// is what a producer without a rational description passes.
     ///
     /// ★★★★★ **The points are the only thing a producer states.** Its canonical name
-    /// ([`Model::surface_coeffs`]) is *derived* here, from those points, by
+    /// ([`Model::surface_name`]) is *derived* here, from those points, by
     /// [`nacre_scalar::plane_name_exact`] — so a plane cannot be described two ways, because there
     /// is only one place to describe it. That is the invariant this whole line of work builds
     /// toward, and it is now carried by the signature rather than by a check.
@@ -524,38 +526,39 @@ impl Model {
         // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
         //
         // Three non-collinear points determine a plane, and [`nacre_scalar::plane_name_exact`]
-        // computes its canonical form at unbounded precision — `None` only for collinear points or
-        // an answer too wide for `Rat`. Nothing is checked because there is nothing to check
-        // against: the coefficients and the points are no longer two statements.
+        // computes its canonical form at unbounded precision — `None` only for collinear points;
+        // since S2 the vessel (`PlaneName::Narrow | Wide`) always holds the answer, so **every
+        // plane with points interns**, wide ones included. Nothing is checked because there is
+        // nothing to check against: the name and the points are no longer two statements.
         //
-        // ★★★ **`Inexact` is excluded, and that is structural.** [`Model::surface_ids`]' key
+        // ★★★ **`Inexact` is excluded, and that is structural.** `Model::surface_ids`' key
         // carries a motion only for [`SurfaceDef::Moved`], so an `Inexact` plane and a
-        // `Constructed` one with the same coefficients would intern **together** — merging a
+        // `Constructed` one with the same name would intern **together** — merging a
         // surface whose coefficients are declared *not* to be the truth with one whose are. It
         // cannot arise today (`Inexact` is reached only when the source has no points, and then
         // none are passed), but that is a convention holding, not a type.
         //
-        // ★★ [`UNNAMED_PLANES`] counts the planes this cannot name, which is the remaining limit
-        // stated as a number rather than a guess.
-        let coeffs = match (def, points) {
+        // ★★ [`WIDE_PLANES`] counts the names that took the wide vessel — the population that
+        // used to go unnamed, stated as a number rather than a guess.
+        let name = match (def, points) {
             (SurfaceDef::Inexact, _) | (_, None) => None,
             (_, Some(p)) => {
                 let named = nacre_scalar::plane_name_exact(p[0], p[1], p[2]);
-                if named.is_none() {
-                    UNNAMED_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if named.as_ref().is_some_and(|n| n.narrow().is_none()) {
+                    WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
                 named
             }
         };
-        let key = coeffs.map(|c| {
+        let key = name.map(|n| {
             let motion = match def {
                 SurfaceDef::Moved { motion, .. } => Some(motion),
                 _ => None,
             };
-            (c, motion)
+            (n, motion)
         });
-        if let Some(k) = key {
-            if let Some(&h) = self.surface_ids.get(&k) {
+        if let Some(k) = &key {
+            if let Some(&h) = self.surface_ids.get(k) {
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
                 // outward the other way round.
@@ -571,8 +574,9 @@ impl Model {
             }
         }
         let h = self.push_surface(surface, def);
-        if let Some((c, _)) = key {
-            self.surface_coeffs.insert(h, c);
+        if let Some((n, _)) = &key {
+            // One clone per push — the name is derived once here, never on a judging loop.
+            self.surface_name.insert(h, n.clone());
         }
         if let Some(p) = points {
             self.surface_points.insert(h, p);
@@ -716,7 +720,7 @@ impl Model {
             let (tri, _) = &faces_def[i];
             // The same three corners in rationals. `from_decimal` because a corner is a value the
             // caller *wrote* — lifting the f64 bit pattern instead would carry its drift in and
-            // defeat the whole point (see `Model::surface_coeffs`).
+            // defeat the whole point (see `Model::surface_name`).
             let rat_corner = |k: usize| -> Option<[nacre_scalar::Rat; 3]> {
                 let c = corners[k].as_array();
                 Some([
@@ -1043,7 +1047,7 @@ mod tests {
 
         // ★ **They are one handle now** — that is what the rational coefficients bought.
         assert_eq!(sa, sb, "one plane, one surface");
-        assert!(m.surface_coeffs.contains_key(&sa), "and it is recorded");
+        assert!(m.surface_name.contains_key(&sa), "and it is recorded");
 
         // The f64 defect that made this necessary, shown on the planes themselves rather than
         // through the model, since the model no longer holds two of them. `Plane` keeps an
@@ -1454,8 +1458,8 @@ mod tests {
         let pts = [[r(0), r(0), r(0)], [r(1), r(0), r(0)], [r(0), r(1), r(0)]];
         let (ok, _) = m.push_surface_with_points(pl(0.0), SurfaceDef::Constructed, Some(pts));
         assert_eq!(
-            m.surface_coeffs.get(&ok),
-            Some(&[r(0), r(0), r(1), r(0)]),
+            m.surface_name.get(&ok),
+            Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
             "the plane z = 0 was not named, or was named as something else"
         );
 
@@ -1478,18 +1482,17 @@ mod tests {
             None,
             "the narrow route was expected to overflow here — the case has stopped being the case"
         );
-        let before = UNNAMED_PLANES.load(std::sync::atomic::Ordering::Relaxed);
         let (wide, _) =
             m.push_surface_with_points(pl(2.0), SurfaceDef::Constructed, Some(wide_pts));
+        // ★ The stored value carries the proposition — `Narrow` says "fits i128" directly.
+        // (This used to compare the global counter before/after, which races against other
+        // tests pushing wide planes in parallel; the value cannot.)
         let name = *m
-            .surface_coeffs
+            .surface_name
             .get(&wide)
-            .expect("a plane the narrow route cannot reach went unnamed");
-        assert_eq!(
-            UNNAMED_PLANES.load(std::sync::atomic::Ordering::Relaxed),
-            before,
-            "a plane that *was* named must not be counted as unnamed"
-        );
+            .expect("a plane the narrow route cannot reach went unnamed")
+            .narrow()
+            .expect("this fixture's canonical answer is small — it must be stored Narrow");
         // ★★ And it names *these* points' plane — exact rationals, no tolerance.
         for p in &wide_pts {
             let mut acc = name[3];
@@ -1507,6 +1510,73 @@ mod tests {
 
         // ★ And a plane with no points gets no name — there is nothing to derive one from.
         let (none, _) = m.push_surface_with_points(pl(3.0), SurfaceDef::Constructed, None);
-        assert!(!m.surface_coeffs.contains_key(&none));
+        assert!(!m.surface_name.contains_key(&none));
+    }
+
+    /// ★★★★★ **A wide name interns — and opens no shortcut** (S2's whole behavioral change).
+    ///
+    /// The fixture is a triple whose **canonical answer** exceeds `i128` (cross-product terms
+    /// multiply two ~2^90 coprime numerators — the same triple `nacre-scalar` locks as `Wide`).
+    /// Before S2 such a plane got no name at all, so two statements of it were two handles;
+    /// now it interns like any other.
+    ///
+    /// ★ Note the population: an axis-aligned cuboid — even on seventeen-digit corners — is NOT
+    /// wide, because its canonical answers are tiny (`[10^13, 0, 0, −c]`); only the *narrow
+    /// route's intermediates* overflow there, and the big route has named those since it exists.
+    /// Wide answers come from computed coordinates whose products stack (ring coordinates of
+    /// framed sketches — the 472-push population `docs/truth-and-cache.md` §12 measured).
+    ///
+    /// What a wide name still does not do: `narrow()` is `None`, so frames and the exact
+    /// shortcuts decline exactly as they did on a missing name (the S2/S4 boundary — a wide
+    /// name carries identity, not arithmetic).
+    #[test]
+    fn a_wide_plane_interns_but_opens_no_shortcut() {
+        let q = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+        let big1 = (1i128 << 90) + 1;
+        let big2 = (1i128 << 90) + 3;
+        let a = [q(big1, 3), q(big2, 7), q(0, 1)];
+        let b = [q(-big2, 5), q(big1, 11), q(0, 1)];
+        let c = [q(1, 13), q(1, 17), q(1, 19)];
+        // Fixture qualification: the narrow route gives up on these points.
+        assert_eq!(
+            nacre_scalar::plane_through_points(a, b, c),
+            None,
+            "the narrow route was expected to overflow here — the case has stopped being the case"
+        );
+
+        let pl = Surface::Plane(
+            nacre_geom::Plane::from_point_normal(
+                Point3::from_array([0.0, 0.0, 0.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .unwrap(),
+        );
+        let mut m = Model::new();
+        let before = WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed);
+        let (first, _) =
+            m.push_surface_with_points(pl.clone(), SurfaceDef::Constructed, Some([a, b, c]));
+        assert!(
+            WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed) > before,
+            "an answer past i128 must be counted as wide"
+        );
+        let name = m
+            .surface_name
+            .get(&first)
+            .expect("a plane too wide for i128 must still be named");
+        assert!(
+            name.narrow().is_none(),
+            "a wide name must not open the narrow shortcuts (frames, base_rat)"
+        );
+
+        // ★ The same plane stated again — permuted, even — is the same handle now.
+        let (second, _) =
+            m.push_surface_with_points(pl.clone(), SurfaceDef::Constructed, Some([a, b, c]));
+        assert_eq!(first, second, "one wide plane, one handle");
+        let (permuted, _) =
+            m.push_surface_with_points(pl, SurfaceDef::Constructed, Some([b, c, a]));
+        assert_eq!(
+            first, permuted,
+            "two spellings of one wide plane must intern"
+        );
     }
 }

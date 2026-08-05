@@ -237,7 +237,8 @@ PlaneName = Narrow([Rat;4]) | Wide([BigInt;4])    ← 저장은 이것 하나
 /// 힙 없음)이고 Wide 는 ~1%.
 pub enum PlaneName {
     Narrow([Rat; 4]),
-    Wide(Box<[BigInt; 4]>),
+    Wide([BigInt; 4]),   // Box 없음 — BigInt≈32B 라 [BigInt;4]=128B=[Rat;4], enum 크기가
+                         // 같아 Box 는 할당+간접만 더한다 (S2 구현에서 실측)
 }
 impl PlaneName {
     /// Shewchuk 정확 술어(`Expansion` 조각)·프레임 유도·지름길이 읽는다.
@@ -462,16 +463,16 @@ pub enum Decision {
 | 1″ | 평면의 진실을 점 셋으로 (계수는 유도된 이름으로 강등) | ✔ 2026-08-04 |
 | 3b | 좌표 재생 — 재보고 보류: 공유 프레임 풀이 + 모션 재생 = 비트 동일(8/8)로 목적지와 `Pt3` 재생의 무충돌만 확인해 둠 | ⏸ |
 | S1 | `Store<Surface>`·`Store<MotionNode>` 봉인 — 좁은 접근자(`surface`/`surface_count`/`motion`) + `compile_fail,E0616` 잠금. 기록 없는 surface 는 크레이트 밖에서 표현 불가(테스트 전용 입구 `push_surface_unrecorded` 만 예외, `test-util` 게이트) | ✔ 2026-08-05 |
+| S2 | **임의정밀 이름** — `PlaneName{Narrow\|Wide}` 그릇(`plane_name_big` 꼬리의 `to_i128` 분기 하나), `surface_coeffs`→`surface_name` 개명, Wide 도 intern. **동일성 팔 절단**: 점 가진 평면의 이름 실패가 공선뿐이 됨 — ★ f64 폴백 연쇄의 **프레임 팔은 S4 몫**(Wide 는 `narrow()=None` 이라 프레임·지름길을 안 연다, 반증표 그대로). 잠금: 스칼라 2(`a_plane_too_wide…`·narrow/wide 합의) + topo 1(`a_wide_plane_interns_but_opens_no_shortcut`) | ✔ 2026-08-05 |
 
 ### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
 
 | | 항목 | 선행 |
 |---|---|---|
-| S2 | **임의정밀 이름** — `PlaneName` 그릇 교체 + `SurfaceKey`. 이름 실패 0.39% → 0, `이름 없음 → 프레임 없음 → f64 폴백` 연쇄의 뿌리 절단 | 없음 |
 | S3 | `Profile2d` 유리수화 + 공선 중간점 정리 패스 | 없음 |
-| S4 | `SketchFrame`·`Motion::Frame` 을 `FramePlacement`(Canonical\|Named) 로 통일 — world 평면 사전 심기 + 정확-유리수-프레임 노드 생략 | 없음 |
-| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | S2 권장 |
-| S6 | `1′`: `Surface::Plane{points, motion}` 갈아끼우기 — `SurfaceDef`·`surface_points`·`surface_coeffs` 통합, `Inexact` 소멸, `nacre_geom::Plane` 캐시 강등 | S2 (S1 ✔) |
+| S4 | `SketchFrame`·`Motion::Frame` 을 `FramePlacement`(Canonical\|Named) 로 통일 — world 평면 사전 심기 + 정확-유리수-프레임 노드 생략. ★ f64 폴백 연쇄의 **프레임 팔**을 여기서 끊는다(`Canonical` 은 이름 없이 실현으로 선다) | 없음 |
+| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | 없음 (S2 ✔) |
+| S6 | `1′`: `Surface::Plane{points, motion}` 갈아끼우기 — `SurfaceDef`·`surface_points`·`surface_name` 통합, `Inexact` 소멸, `nacre_geom::Plane` 캐시 강등 | 없음 (S1·S2 ✔) |
 | S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로) | S6 |
 | S8 | `Edge` 를 담체+경계로(`{surfaces:[2], vertices:[2]}`) — `Store<Curve>` → `EdgeCache`, 모서리의 `Origin` 도 여기서 소멸 | S6 |
 

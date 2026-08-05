@@ -122,7 +122,9 @@ pub(crate) fn frame_chain(
     // `canonical_plane_coeffs` forces the first nonzero component positive, because its question
     // is *"are these the same plane"* — where direction is noise. A frame's `ŵ` **is** a
     // direction, so the node carries the sense in `flip` and this is where it is spent.
-    let c = *model.surface_coeffs.get(&plane)?;
+    // `narrow()?` keeps the S2/S4 boundary: a `Wide` name (identity only) declines a frame
+    // exactly as a missing name did, until S4's `Canonical` placement opens frames without names.
+    let c = *model.surface_name.get(&plane)?.narrow()?;
     let zero = Rat::from_int(0);
     let c = if flip {
         let mut neg = [zero; 4];

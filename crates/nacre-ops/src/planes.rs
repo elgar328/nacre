@@ -57,7 +57,7 @@ pub(crate) struct FaceInfo {
     /// **The canonical identity of "which motion"** — see [`BaseFrame`].
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
     /// The surface's plane as **exact rational coefficients in the frame its `SurfaceDef` names**
-    /// (`Model::surface_coeffs`) — the world when unmoved, the pre-motion frame when moved.
+    /// (`Model::surface_name`) — the world when unmoved, the pre-motion frame when moved.
     /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
     /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
     pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
@@ -223,7 +223,11 @@ pub(crate) fn collect_planes(
                 "n_out's sign against the surface normal is the face's orientation"
             );
             out.push(FaceInfo {
-                base_rat: model.surface_coeffs.get(&face.surface).copied(),
+                base_rat: model
+                    .surface_name
+                    .get(&face.surface)
+                    .and_then(|n| n.narrow())
+                    .copied(),
                 surf: face.surface,
                 face: Some(fh),
                 plane,
@@ -733,7 +737,7 @@ impl BaseFrame {
         // The derivation above is the two-descriptions problem in miniature: `d` comes out of an
         // f64 dot product, so the plane it names is not quite the one `tri` lies on — measured, for
         // 27% of the census's rotated classes and 40% of the fin sweep's. The surface's recorded
-        // pre-motion coefficients (`Model::surface_coeffs`) *are* that plane, exactly, with no
+        // pre-motion coefficients (`Model::surface_name`) *are* that plane, exactly, with no
         // triangle in the derivation at all.
         //
         // ★ Only the **direction** still comes from the triangle, and that is deliberate. The

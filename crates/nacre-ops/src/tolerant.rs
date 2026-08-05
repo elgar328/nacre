@@ -1087,7 +1087,7 @@ mod tests {
     /// composed frames, and nothing has measured it.
     ///
     /// This measures it without changing any production type. Each cap already carries what the
-    /// plan would store: exact **frame** coefficients (`Model::surface_coeffs`) and the motion that
+    /// plan would store: exact **frame** coefficients (`Model::surface_name`) and the motion that
     /// carries them out (`SurfaceDef::Moved`). Three exact points on that frame plane, replayed
     /// through that motion, are the definition the plan proposes — for the *plane* question any
     /// non-collinear triple on the plane is equivalent, so the synthetic triple answers it.
@@ -1125,9 +1125,11 @@ mod tests {
         let define = |i: usize, nudge: Option<Rat>| -> [Pt3; 3] {
             let surf = faces[i].surf;
             let c = *m
-                .surface_coeffs
+                .surface_name
                 .get(&surf)
-                .expect("a frame cap records its coefficients");
+                .expect("a frame cap records its name")
+                .narrow()
+                .expect("a frame cap's name is narrow");
             let motion = match m.surface_defs.get(&surf) {
                 Some(nacre_topo::SurfaceDef::Moved { motion, .. }) => *motion,
                 other => panic!("cap {i} is not Moved: {other:?}"),
@@ -1285,7 +1287,7 @@ mod tests {
                 // ★ The points must satisfy the coefficients they are filed beside — both are
                 // stated in the same frame, so this is an exact rational identity with no
                 // tolerance anywhere.
-                if let Some(c) = m.surface_coeffs.get(&fi.surf) {
+                if let Some(c) = m.surface_name.get(&fi.surf).and_then(|n| n.narrow()) {
                     for p in pts {
                         let mut acc = c[3];
                         for k in 0..3 {
@@ -1501,7 +1503,7 @@ mod tests {
                         "  {name}: {:?} points={} coeffs={} def={:?}",
                         fi.surf,
                         m.surface_points.contains_key(&fi.surf),
-                        m.surface_coeffs.contains_key(&fi.surf),
+                        m.surface_name.contains_key(&fi.surf),
                         m.surface_defs.get(&fi.surf)
                     );
                 }
@@ -1560,7 +1562,7 @@ mod tests {
         let mut surfaces: Vec<_> = faces.iter().map(|&f| m.faces.get(f).surface).collect();
         let named = faces
             .iter()
-            .filter(|&&f| m.surface_coeffs.contains_key(&m.faces.get(f).surface))
+            .filter(|&&f| m.surface_name.contains_key(&m.faces.get(f).surface))
             .count();
         let total = surfaces.len();
         surfaces.sort_unstable();

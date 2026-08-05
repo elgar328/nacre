@@ -1228,9 +1228,11 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // **pre-motion** frame, so projecting those gives a pre-motion point — measured `0.29` away
     // from the world plane, not a rounding but a different place. Those keep the f64 projection,
     // which is the same rule computed from the description that is available.
+    // `narrow()` gates the wide vessel out: a `Wide` name (S2) carries identity only, so it
+    // keeps the f64 projection exactly as a missing name did.
     let origin = match (
         model.surface_defs.get(&surface_h),
-        model.surface_coeffs.get(&surface_h),
+        model.surface_name.get(&surface_h).and_then(|n| n.narrow()),
     ) {
         (Some(SurfaceDef::Constructed), Some(&c)) => nacre_scalar::plane_origin_projection(c)
             .map(|p| Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]))
@@ -1256,7 +1258,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let world = SketchPlane::from_axes(origin, x, y);
     let sketch = (world.exact().is_none())
         .then(|| {
-            let c = *model.surface_coeffs.get(&surface_h)?;
+            let c = *model.surface_name.get(&surface_h)?.narrow()?;
             let (o_r, r_r) = nacre_scalar::plane_frame_default(c)?;
             let b = crate::rotated_vertex::frame_world_basis(model, surface_h, o_r, r_r, false)?;
             Some((o_r, r_r, b))
