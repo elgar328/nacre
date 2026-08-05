@@ -61,6 +61,15 @@ pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpIv {
     HpIv::new(mid, rad)
 }
 
+/// An arbitrary-precision integer as an **exact** interval — the wide-frame (S4) entry point.
+///
+/// [`nacre_scalar::bigint_to_bigfloat`] converts at the integer's own bit length, so the value
+/// enters whole and the radius is genuinely zero; downstream operations charge their own
+/// rounding, exactly as [`rat_to_hp`]'s exact branch does.
+pub(crate) fn bigint_to_hp(x: &num_bigint::BigInt, prec: usize) -> HpIv {
+    HpIv::exact(nacre_scalar::bigint_to_bigfloat(x, prec))
+}
+
 /// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero).
 pub(crate) fn bf_mag(bf: &BigFloat) -> f64 {
     if bf.is_zero() {
@@ -185,6 +194,28 @@ impl HpIv {
             .plus(self.rad.times(o.rad))
             .plus(Self::round_off(&mid, prec));
         HpIv::new(mid, rad)
+    }
+
+    /// Division by an **exact** nonzero divisor — what a wide frame's origin (`num / den`)
+    /// realizes through (S4). The dividend's radius scales by `1/|b| ≤ 2^(1−e_b)` (from
+    /// `|b| ≥ 2^(e_b−1)`), and the division's own rounding is charged on top. The divisor
+    /// being exact is a premise (its producer is [`bigint_to_hp`]), so it is asserted rather
+    /// than handled.
+    pub fn div_exact(&self, b: &HpIv, prec: usize) -> Option<HpIv> {
+        debug_assert!(
+            b.rad.exp2().is_none(),
+            "div_exact's divisor must carry a zero radius"
+        );
+        if b.mid.is_zero() {
+            return None;
+        }
+        let e = b.mid.exponent()? as i64;
+        let mid = self.mid.div(&b.mid, prec, HP_RM);
+        let rad = self
+            .rad
+            .times(Bound::pow2(1 - e))
+            .plus(Self::round_off(&mid, prec));
+        Some(HpIv::new(mid, rad))
     }
 
     /// `Some(true)` if definitely positive, `Some(false)` if definitely negative, `None` if the

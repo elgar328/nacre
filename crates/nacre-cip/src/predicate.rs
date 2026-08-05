@@ -866,11 +866,14 @@ fn single_rotation(def: &[Pt3; 3]) -> Option<OneRotation> {
                 }
             }
             // A translation moves a plane, so unlike `single_axis_motion` it cannot be skipped;
-            // a reflection is improper; and a frame is a rotation this shortcut cannot *state* —
-            // it is not about a coordinate axis, so there is no axis and angle to accumulate.
-            // All three are conservative misses rather than wrong answers: the caller escalates
-            // to the general path, which realizes the chain and does not care what shape it has.
-            MoveNode::Translate { .. } | MoveNode::Mirror { .. } | MoveNode::Frame { .. } => {
+            // a reflection is improper; and a frame (narrow or wide) is a rotation this shortcut
+            // cannot *state* — it is not about a coordinate axis, so there is no axis and angle
+            // to accumulate. All are conservative misses rather than wrong answers: the caller
+            // escalates to the general path, which realizes the chain whatever its shape.
+            MoveNode::Translate { .. }
+            | MoveNode::Mirror { .. }
+            | MoveNode::Frame { .. }
+            | MoveNode::FrameWide(_) => {
                 return None;
             }
         }
@@ -949,8 +952,8 @@ fn single_axis_motion(def: &[Pt3; 3]) -> Option<(nacre_scalar::Axis, nacre_scala
             MoveNode::Mirror { .. } => return None,
             // A frame *is* a rotation, and it does act on a difference as its pure linear part —
             // but this shortcut's answer is "which coordinate axis is preserved", and a frame
-            // preserves none. Escalating is the honest miss.
-            MoveNode::Frame { .. } => return None,
+            // (narrow or wide) preserves none. Escalating is the honest miss.
+            MoveNode::Frame { .. } | MoveNode::FrameWide(_) => return None,
         };
         if *axis.get_or_insert(*a) != *a {
             return None;

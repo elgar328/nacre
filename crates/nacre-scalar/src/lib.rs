@@ -907,6 +907,57 @@ pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<(BigFloat, Bound)> {
     Some(out)
 }
 
+/// An arbitrary-precision integer as a `BigFloat`, **exactly** — the working precision is the
+/// integer's own bit length, so no digit is ever rounded away.
+///
+/// The wide-frame realization (S4) feeds plane data wider than `i128` through this; keeping the
+/// conversion exact is what keeps [`inv_sqrt_bigint_bounded`]'s error budget identical to
+/// [`inv_sqrt_bounded`]'s: every rounding still happens *after* the value has entered whole,
+/// exactly as the narrow twin's `i128`s do.
+///
+/// Horner over the base-2⁶⁴ digits: the scale multiply is an exponent shift (exact), and each
+/// add lands in a mantissa wide enough for the whole running value (exact).
+pub fn bigint_to_bigfloat(x: &num_bigint::BigInt, prec_floor: usize) -> BigFloat {
+    let bits = x.magnitude().bits() as usize;
+    let p = bits.max(prec_floor).max(128);
+    let scale = BigFloat::from_i128(1i128 << 64, p);
+    let mut acc = BigFloat::from_i128(0, p);
+    for d in x.magnitude().iter_u64_digits().rev() {
+        acc = acc.mul(&scale, p, HP_RM);
+        acc = acc.add(&BigFloat::from_i128(d as i128, p), p, HP_RM);
+    }
+    if x.sign() == num_bigint::Sign::Minus {
+        acc = acc.neg();
+    }
+    acc
+}
+
+/// [`inv_sqrt_bounded`] for a squared length wider than `i128` — the wide-frame (S4) twin.
+///
+/// Same ladder, same derived bound: the integer enters **exactly** ([`bigint_to_bigfloat`] at
+/// its own bit length), the square root rounds once (halving the incoming relative error, which
+/// is zero here) and the reciprocal rounds once — under the narrow twin's `4u`, which is kept
+/// for symmetry rather than tightened.
+///
+/// **Uncached** — the wide population is a fraction of a percent of pushes and the memo key
+/// would be a `BigInt`; measured before optimizing, per the cache philosophy.
+pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<(BigFloat, Bound)> {
+    if v.sign() != num_bigint::Sign::Plus {
+        return None;
+    }
+    let ip = prec.max(128);
+    let x = bigint_to_bigfloat(v, ip);
+    let one = BigFloat::from_i128(1, ip);
+    let z = one.div(&x.sqrt(prec, HP_RM), prec, HP_RM);
+    let u = Bound::pow2(-(prec as i64));
+    let rel = u.times(Bound::of(4.0));
+    let mag = match z.exponent() {
+        Some(e) if !z.is_zero() => Bound::pow2(e as i64),
+        _ => Bound::ZERO,
+    };
+    Some((z, mag.times(rel)))
+}
+
 /// [`inv_sqrt_bounded`] without the memo — the evaluation itself, kept separate so no `INV_SQRT`
 /// borrow is held across the arbitrary-precision work.
 fn realize_inv_sqrt(v: Rat, prec: usize) -> (BigFloat, Bound) {

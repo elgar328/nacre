@@ -51,11 +51,12 @@ pub(crate) fn replay_chain_coord(
 /// [`motion_chain`] already refuses to emit — so in practice this is infallible, and the `Option`
 /// is here so that "in practice" does not have to be an invariant spanning two crates.
 pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
-    chain.iter().try_fold(p, |q, n| match *n {
-        MoveNode::Rotate { axis, angle, point } => Some(q.rotate_about(axis, angle, point)),
-        MoveNode::Translate { offset } => Some(q.translate(offset)),
-        MoveNode::Mirror { axis, offset } => Some(q.mirror(axis, offset)),
-        MoveNode::Frame { frame } => q.frame(frame),
+    chain.iter().try_fold(p, |q, n| match n {
+        MoveNode::Rotate { axis, angle, point } => Some(q.rotate_about(*axis, *angle, *point)),
+        MoveNode::Translate { offset } => Some(q.translate(*offset)),
+        MoveNode::Mirror { axis, offset } => Some(q.mirror(*axis, *offset)),
+        MoveNode::Frame { frame } => q.frame(*frame),
+        MoveNode::FrameWide(f) => q.frame_wide(f),
     })
 }
 
@@ -388,9 +389,10 @@ mod tests {
             .iter()
             .filter_map(|n| match n {
                 MoveNode::Rotate { axis, .. } => Some(*axis),
-                MoveNode::Translate { .. } | MoveNode::Mirror { .. } | MoveNode::Frame { .. } => {
-                    None
-                }
+                MoveNode::Translate { .. }
+                | MoveNode::Mirror { .. }
+                | MoveNode::Frame { .. }
+                | MoveNode::FrameWide(_) => None,
             })
             .collect();
         assert_eq!(axes, vec![Axis::Z, Axis::X]);

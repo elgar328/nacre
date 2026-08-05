@@ -21,7 +21,7 @@
 
 use super::HP_RM;
 use super::interval::{HpIv, Iv};
-use super::interval::{bf_mag, rat_to_big, rat_to_hp};
+use super::interval::{bf_mag, bigint_to_hp, rat_to_big, rat_to_hp};
 use astro_float::BigFloat;
 use nacre_scalar::{Angle, Axis, Bound, Orient, Rat};
 #[cfg(feature = "parallel")]
@@ -51,7 +51,7 @@ type HpCell = HpRc<HpOnce<(usize, [HpIv; 3])>>;
 /// per point at most. Boxing would trade a flat read for a pointer chase on the hot path to save
 /// bytes nothing is short of.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MoveNode {
     Rotate {
         axis: Axis,
@@ -90,6 +90,85 @@ pub enum MoveNode {
     ///
     /// ★ **Proper** (`det = +1`), so it contributes nothing to a chain's mirror parity.
     Frame { frame: nacre_scalar::PlaneFrame },
+    /// [`MoveNode::Frame`] for a plane whose exact data does not fit `Rat` (S4) — a `Wide`
+    /// name, or a narrow one whose squared lengths overflow `i128`. Same realization shape,
+    /// arbitrary-precision integers instead: **nothing here can overflow**, so unlike
+    /// `PlaneFrame` there is no partial (`v: None`) form.
+    ///
+    /// ★ This variant is why `MoveNode` is no longer `Copy` — `BigInt` owns heap. The chain is
+    /// shared by `Rc`, so nothing hot copies nodes.
+    ///
+    /// ★ **Proper** (`det = +1`), like [`MoveNode::Frame`].
+    FrameWide(WideFrame),
+}
+
+/// The exact data of a wide sketch frame — [`nacre_scalar::PlaneFrame`]'s arbitrary-precision
+/// twin (S4). Built once when a motion chain is flattened; realized on demand.
+///
+/// `origin = origin_num / origin_den` (one exact rational, common denominator `n·n`); the
+/// `*_raw` vectors and squared lengths mirror `PlaneFrame` field for field. All integers, all
+/// exact — the constructor cannot fail, which is the point.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WideFrame {
+    pub origin_num: [num_bigint::BigInt; 3],
+    pub origin_den: num_bigint::BigInt,
+    pub u_raw: [num_bigint::BigInt; 3],
+    pub n: [num_bigint::BigInt; 3],
+    pub v_raw: [num_bigint::BigInt; 3],
+    pub uu: num_bigint::BigInt,
+    pub nn: num_bigint::BigInt,
+    pub vv: num_bigint::BigInt,
+}
+
+impl WideFrame {
+    /// The **canonical placement's** frame for the plane `n·x + d = 0`: origin at the world
+    /// origin's projection (`(−d/n·n)·n`, kept as `num/den`), axes by the arbitrary-axis
+    /// convention (`u_raw = ẑ×n`, or `ŷ×n` when the normal is exactly vertical — the same
+    /// exact branch [`nacre_scalar::plane_frame_default`] takes). The narrow twin of this
+    /// derivation is `plane_frame_default` + `plane_frame_named`; here nothing can overflow,
+    /// so unlike them this cannot decline on width.
+    ///
+    /// The realization is scale-free (each axis is divided by its own length; the origin uses
+    /// this `n` with this `n·n`), so `n` need not be primitive.
+    ///
+    /// `None` only for a zero normal — not a plane.
+    pub fn canonical(n: [num_bigint::BigInt; 3], d: &num_bigint::BigInt) -> Option<WideFrame> {
+        use num_bigint::BigInt;
+        let zero = BigInt::from(0);
+        if n.iter().all(|c| *c == zero) {
+            return None;
+        }
+        let u_raw = if n[0] == zero && n[1] == zero {
+            [n[2].clone(), zero.clone(), zero.clone()] // ŷ × n — the vertical-normal branch
+        } else {
+            [-&n[1], n[0].clone(), zero.clone()] // ẑ × n
+        };
+        let cross = |a: &[BigInt; 3], b: &[BigInt; 3]| -> [BigInt; 3] {
+            [
+                &a[1] * &b[2] - &a[2] * &b[1],
+                &a[2] * &b[0] - &a[0] * &b[2],
+                &a[0] * &b[1] - &a[1] * &b[0],
+            ]
+        };
+        let dot = |a: &[BigInt; 3]| -> BigInt { a.iter().map(|c| c * c).sum() };
+        let v_raw = cross(&n, &u_raw);
+        let (uu, nn) = (dot(&u_raw), dot(&n));
+        // `n ⊥ u_raw` by construction, so `|v_raw|² = |n|²·|u_raw|²` exactly — the same
+        // identity the narrow frame relies on.
+        let vv = &nn * &uu;
+        let neg_d = -d;
+        let origin_num = [&neg_d * &n[0], &neg_d * &n[1], &neg_d * &n[2]];
+        Some(WideFrame {
+            origin_num,
+            origin_den: nn.clone(),
+            u_raw,
+            n,
+            v_raw,
+            uu,
+            nn,
+            vv,
+        })
+    }
 }
 
 /// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
@@ -474,6 +553,61 @@ impl Pt3 {
         Some(self)
     }
 
+    /// [`Pt3::frame`] for a [`WideFrame`] (S4) — the same propagation, with the axis and origin
+    /// `(value, error)` pairs taken from a fixed-precision arbitrary-precision realization
+    /// instead of `inv_sqrt_f64`/`axis_comp`. No new f64 error derivation exists here: every
+    /// rounding on the way is inside an `HpIv`, and the final narrowing to f64 charges itself.
+    ///
+    /// ★ The axes are realized per applied point. The wide population is a fraction of a percent
+    /// of pushes, so that cost is accepted rather than memoized — a measure-later item.
+    ///
+    /// ★ No exact-permutation shortcut: a wide frame is never an axis permutation (its squared
+    /// lengths exceed `i128`), so the tol-0 branch `Pt3::frame` has cannot apply.
+    pub fn frame_wide(mut self, f: &WideFrame) -> Option<Self> {
+        // The fixed rung for the f64 cache of a wide frame — the ladder's first rung, the same
+        // one `inv_sqrt_f64` starts at. The judgment path re-realizes at its own precision.
+        const P: usize = 128;
+        let inv = |v: &num_bigint::BigInt| -> Option<HpIv> {
+            let (m, r) = nacre_scalar::inv_sqrt_bigint_bounded(v, P)?;
+            Some(HpIv::new(m, r))
+        };
+        let (iu, iv2, iw) = (inv(&f.uu)?, inv(&f.vv)?, inv(&f.nn)?);
+        let comp = |raw: &num_bigint::BigInt, s: &HpIv| narrow_hp(&bigint_to_hp(raw, P).mul(s, P));
+        let (mut uh, mut vh, mut wh) = ([0.0; 3], [0.0; 3], [0.0; 3]);
+        let (mut eu, mut ev, mut ew) = ([0.0; 3], [0.0; 3], [0.0; 3]);
+        let (mut oh, mut eo) = ([0.0; 3], [0.0; 3]);
+        let od = bigint_to_hp(&f.origin_den, P);
+        for k in 0..3 {
+            (uh[k], eu[k]) = comp(&f.u_raw[k], &iu);
+            (vh[k], ev[k]) = comp(&f.v_raw[k], &iv2);
+            (wh[k], ew[k]) = comp(&f.n[k], &iw);
+            (oh[k], eo[k]) = narrow_hp(&bigint_to_hp(&f.origin_num[k], P).div_exact(&od, P)?);
+        }
+        // The same propagation as `Pt3::frame`, with the realized origin's own error in place
+        // of `rat_round_tol`.
+        let p = self.coord;
+        let t = self.tol;
+        for k in 0..3 {
+            let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
+            let carried = uh[k].abs() * t[0] + vh[k].abs() * t[1] + wh[k].abs() * t[2];
+            let realized = p[0].abs() * eu[k] + p[1].abs() * ev[k] + p[2].abs() * ew[k];
+            let arith = eo[k]
+                + 3.0
+                    * f64::EPSILON
+                    * (oh[k].abs()
+                        + (p[0] * uh[k]).abs()
+                        + (p[1] * vh[k]).abs()
+                        + (p[2] * wh[k]).abs());
+            self.coord[k] = oh[k] + terms;
+            self.tol[k] = carried + realized + arith;
+        }
+        let mut nodes = self.chain.to_vec();
+        nodes.push(MoveNode::FrameWide(f.clone()));
+        self.chain = HpRc::from(nodes);
+        self.hp = HpCell::default();
+        Some(self)
+    }
+
     /// The coordinate realized at `prec` bits from the **definition** (base rotated
     /// through the chain, each node about its pivot) — path-independent ground truth /
     /// escalation realization. The result is memoized in
@@ -567,9 +701,68 @@ impl Pt3 {
                             .add(&p[2].mul(&wh[k], prec), prec)
                     });
                 }
+                // [`MoveNode::Frame`]'s wide twin — same shape, arbitrary-precision inputs.
+                // `v_raw`/`vv` always exist (nothing overflows a `BigInt`), so there is no
+                // cross-product fallback branch here.
+                MoveNode::FrameWide(f) => {
+                    let inv = |v: &num_bigint::BigInt| {
+                        let (m, r) = nacre_scalar::inv_sqrt_bigint_bounded(v, prec)?;
+                        Some(HpIv::new(m, r))
+                    };
+                    let (Some(iu), Some(iv2), Some(iw)) = (inv(&f.uu), inv(&f.vv), inv(&f.nn))
+                    else {
+                        continue; // unreachable — the builder derives positive squared lengths
+                    };
+                    let scaled = |v: &[num_bigint::BigInt; 3], s: &HpIv| {
+                        [0, 1, 2].map(|k| bigint_to_hp(&v[k], prec).mul(s, prec))
+                    };
+                    let (uh, vh, wh) = (
+                        scaled(&f.u_raw, &iu),
+                        scaled(&f.v_raw, &iv2),
+                        scaled(&f.n, &iw),
+                    );
+                    let od = bigint_to_hp(&f.origin_den, prec);
+                    let origin = (|| {
+                        let o =
+                            |k: usize| bigint_to_hp(&f.origin_num[k], prec).div_exact(&od, prec);
+                        Some([o(0)?, o(1)?, o(2)?])
+                    })();
+                    let Some(o) = origin else {
+                        continue; // unreachable — the builder's denominator is n·n > 0
+                    };
+                    p = [0, 1, 2].map(|k| {
+                        o[k].add(&p[0].mul(&uh[k], prec), prec)
+                            .add(&p[1].mul(&vh[k], prec), prec)
+                            .add(&p[2].mul(&wh[k], prec), prec)
+                    });
+                }
             }
         }
         p
+    }
+}
+
+/// A high-precision interval narrowed to an `(f64 value, f64 error)` pair — how a wide frame's
+/// realization reaches the f64 cache. Correctly rounded when the interval decides it (then the
+/// error is the radius plus the value's own half-ulp); an undecided or out-of-normal-range value
+/// flushes to zero with its whole magnitude charged — sound, and reachable only for axis
+/// components below f64's normal floor.
+fn narrow_hp(x: &HpIv) -> (f64, f64) {
+    match nacre_scalar::round_to_f64(&x.mid, x.rad, 128) {
+        Some(v) => (v, rad_f64(x.rad) + v.abs() * f64::EPSILON),
+        None => (0.0, rad_f64(x.rad) + bf_mag(&x.mid)),
+    }
+}
+
+/// An upper `f64` for a [`Bound`] radius: `2^e` from the exponent. Below f64's floor it lands on
+/// the smallest positive value rather than a zero that would claim exactness; above the range it
+/// is honestly infinite (an infinite tol declines, never lies).
+fn rad_f64(r: Bound) -> f64 {
+    match r.exp2() {
+        None => 0.0, // a genuinely zero radius
+        Some(e) if e < -1074 => f64::MIN_POSITIVE,
+        Some(e) if e > 1023 => f64::INFINITY,
+        Some(e) => 2f64.powi(e as i32),
     }
 }
 
@@ -2881,6 +3074,89 @@ mod tests {
         // A bound nothing ever approaches is a bound nobody derived — the rotation tests hold
         // themselves to the same reading.
         assert!(worst > 1e-6, "the frame tol is never approached: {worst:e}");
+    }
+
+    /// The S2 wide triple's plane — a canonical answer past `i128` — as its exact
+    /// arbitrary-precision coefficients and the canonical [`WideFrame`] built on them.
+    /// The width is **asserted**, not assumed (the S2 census lesson: qualify the fixture).
+    fn wide_fixture() -> ([num_bigint::BigInt; 4], WideFrame) {
+        let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let big1 = (1i128 << 90) + 1;
+        let big2 = (1i128 << 90) + 3;
+        let a = [q(big1, 3), q(big2, 7), q(0, 1)];
+        let b = [q(-big2, 5), q(big1, 11), q(0, 1)];
+        let c = [q(1, 13), q(1, 17), q(1, 19)];
+        let name = nacre_scalar::plane_name_exact(a, b, c).expect("not collinear");
+        assert!(
+            name.narrow().is_none(),
+            "the fixture must be genuinely wide"
+        );
+        let nacre_scalar::PlaneName::Wide(cs) = name else {
+            unreachable!("narrow() said Wide")
+        };
+        let n = [cs[0].clone(), cs[1].clone(), cs[2].clone()];
+        let fr = WideFrame::canonical(n, &cs[3]).expect("a nonzero normal");
+        (cs, fr)
+    }
+
+    /// ★★★★ **The wide twin of `a_point_drawn_in_a_frame_lies_on_that_frame_s_plane`** (S4):
+    /// a point drawn at `w = 0` in a [`WideFrame`] is *on* that plane, checked on the
+    /// high-precision realization against the exact arbitrary-precision coefficients. This is
+    /// the property that lets a sketch land on a plane whose data exceeds `i128` at all.
+    #[test]
+    fn a_point_drawn_in_a_wide_frame_lies_on_that_plane() {
+        const GT: usize = 512;
+        let (c, fr) = wide_fixture();
+        for (u, v) in [(0, 0), (1, 0), (0, 1), (3, -7), (-2, 5)] {
+            let base = [ri(u, 1), ri(v, 1), Rat::from_int(0)];
+            let p = Pt3::at(base)
+                .frame_wide(&fr)
+                .expect("a wide frame has positive lengths");
+            let hp = p.hp_coord(GT);
+            // a·x + b·y + c·z + d, realized — its interval must contain zero.
+            let mut e = HpIv::exact(nacre_scalar::bigint_to_bigfloat(&c[3], GT));
+            for k in 0..3 {
+                e = e.add(&hp[k].mul(&bigint_to_hp(&c[k], GT), GT), GT);
+            }
+            let mag = bf_mag(&e.mid.abs());
+            let rad = e.rad.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
+            assert!(
+                mag <= rad,
+                "wide plane, point ({u}, {v}): off the plane by {mag:e}, radius {rad:e}"
+            );
+        }
+    }
+
+    /// **The wide twin of `a_frame_s_tol_bounds_its_own_realization`** (S4): the f64 `coord`
+    /// a wide frame writes is within the `tol` it writes, measured against a far deeper
+    /// realization of the same definition.
+    #[test]
+    fn a_wide_frame_s_tol_bounds_its_own_realization() {
+        const GT: usize = 512;
+        let (_, fr) = wide_fixture();
+        let (mut worst, mut worst_at) = (0.0f64, String::new());
+        for (u, v, w) in [(0, 0, 0), (1, 0, 0), (3, -7, 2), (-2, 5, -1), (11, 13, 17)] {
+            let base = [ri(u, 1), ri(v, 1), ri(w, 1)];
+            let p = Pt3::at(base).frame_wide(&fr).unwrap();
+            let hp = p.hp_coord(GT);
+            for (k, h) in hp.iter().enumerate() {
+                let err = abs_err(p.coord[k], h, GT);
+                assert!(
+                    err <= p.tol[k] || err < 1e-100,
+                    "wide frame at ({u},{v},{w}) axis {k}: err {err:e} > tol {:e}",
+                    p.tol[k]
+                );
+                if p.tol[k] > 0.0 && err / p.tol[k] > worst {
+                    worst = err / p.tol[k];
+                    worst_at = format!("({u},{v},{w}) axis {k}");
+                }
+            }
+        }
+        eprintln!("[cip] worst wide-frame tol usage: {worst:.3} of the bound ({worst_at})");
+        assert!(
+            worst > 1e-6,
+            "the wide-frame tol is never approached: {worst:e}"
+        );
     }
 
     /// ★★★ **A frame on an axis-aligned plane through the origin costs nothing at all** — the
