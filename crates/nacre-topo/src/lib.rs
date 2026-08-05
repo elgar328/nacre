@@ -224,6 +224,48 @@ impl Orientation {
     }
 }
 
+/// **A surface's exact truth** — what the surface *is*, as opposed to the f64
+/// [`Surface`](nacre_geom::Surface) beside it, which is its realization (S6b,
+/// `docs/truth-and-cache.md`).
+///
+/// The `motion` field is what [`SurfaceDef`] used to say from a side table: `None` is the
+/// world (`Constructed`), `Some` names the motion history the data is stated *before*
+/// (`Moved`). Holding it inside the variant is the point — a surface whose provenance is
+/// unrecorded, or whose exact form does not exist (`Inexact`), is **unrepresentable** here,
+/// which is what retires both.
+/// ★ **`Plane` is the large variant and it is not boxed** (the `Operation::Extrude`
+/// precedent): planes dominate the arena — a prism is all planes, a cylinder contributes one
+/// curved surface — so boxing the points would put an allocation and a pointer chase on the
+/// common case to shrink the rare one.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SurfaceTruth {
+    Plane {
+        /// The plane's three exact points, stated in the frame `motion` names (the world when
+        /// `None`) — the value `Model::surface_points` used to carry.
+        points: PlanePoints,
+        /// The motion history carrying the points out to the world; `None` = the world itself.
+        motion: Option<Handle<MotionNode>>,
+    },
+    /// A cylinder's exact truth arrives with the curved-geometry milestone (M6); until then the
+    /// variant holds only the motion slot, symmetrically — so a *moved* cylinder records its
+    /// history instead of silently degrading (the old `SurfaceDef` path demoted it to
+    /// `Inexact`).
+    Cylinder {
+        /// See [`SurfaceTruth::Plane::motion`].
+        motion: Option<Handle<MotionNode>>,
+    },
+}
+
+/// A plane's three points — the kind of statement is the variant. `Known` carries values
+/// (construction planes — walls, caps, caller-stated planes); a `Through` variant pointing at
+/// model vertices arrives with datum planes (S5, `docs/truth-and-cache.md`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum PlanePoints {
+    /// Three exact rational points, non-collinear, in the pre-motion frame.
+    Known([[nacre_scalar::Rat; 3]; 3]),
+}
+
 /// The truth-only aggregate: exact geometry + topology stores + the derived
 /// adjacency cache. No `tess`, no `ops` (see the crate docs).
 #[derive(Debug, Default)]
@@ -235,6 +277,17 @@ pub struct Model {
     /// [`Model::surface`]/[`Model::surface_count`]; there is deliberately no whole-store
     /// iterator (the arena keeps superseded surfaces — consumers walk the live faces).
     surfaces: Store<Surface>,
+    /// ★★ **The truth beside the cache** (S6b): index-parallel to [`Model::surfaces`], so a
+    /// `Handle<Surface>` names both — the store above holds the f64 *realization*, this holds
+    /// what the surface *is*. `Option` is transitional scaffolding: a point-less plane can
+    /// still be pushed (test fixtures, the last f64-fallback arms) until the old push API dies,
+    /// at which point the `Option` comes off and a plane without points stops existing.
+    ///
+    /// (Why the truth is the `Vec` and the cache the `Store`, when the doc draws it the other
+    /// way: `Handle<T>`'s type parameter. Retyping `Face::surface` would ripple through every
+    /// crate for a distinction the shared index already erases — the flip happens with the
+    /// final rename, when `SurfaceCache` gets its real shape.)
+    surface_truths: Vec<Option<SurfaceTruth>>,
     pub curves: Store<Curve>,
     /// The motion-history forest (§CIP ⑦): motion definitions named by `Origin::Moved` vertices
     /// and `SurfaceDef::Moved` surfaces. Not geometry — a definition store.
@@ -436,9 +489,46 @@ impl Model {
     /// this crate; within it, pushing into `surfaces` directly leaves the surface undefined,
     /// which `nacre-validate` reports for any face that lands on it.
     pub fn push_surface(&mut self, surface: Surface, def: SurfaceDef) -> Handle<Surface> {
+        self.push_surface_recording(surface, def, None)
+    }
+
+    /// The one push that everything funnels through: store + truth, index-parallel (S6b).
+    ///
+    /// The truth entry mirrors what `def`/`points` say: a cylinder records its motion slot, a
+    /// plane records its points and motion, and a plane with **no** points — or an `Inexact`
+    /// def, whose exact form does not exist — records `None`. The `None` arm is transitional
+    /// scaffolding (see [`Model::surface_truths`]); it dies with the old push API.
+    fn push_surface_recording(
+        &mut self,
+        surface: Surface,
+        def: SurfaceDef,
+        points: Option<[[nacre_scalar::Rat; 3]; 3]>,
+    ) -> Handle<Surface> {
+        let motion = match def {
+            SurfaceDef::Moved { motion } => Some(motion),
+            SurfaceDef::Constructed | SurfaceDef::Inexact => None,
+        };
+        let truth = match (&surface, def, points) {
+            (Surface::Cylinder(_), _, _) => Some(SurfaceTruth::Cylinder { motion }),
+            (Surface::Plane(_), SurfaceDef::Inexact, _) | (Surface::Plane(_), _, None) => None,
+            (Surface::Plane(_), _, Some(p)) => Some(SurfaceTruth::Plane {
+                points: PlanePoints::Known(p),
+                motion,
+            }),
+        };
         let h = self.surfaces.push(surface);
+        self.surface_truths.push(truth);
+        debug_assert_eq!(self.surface_truths.len(), self.surfaces.len());
         self.surface_defs.insert(h, def);
         h
+    }
+
+    /// The surface's exact truth — what it *is*, beside the f64 realization
+    /// [`Model::surface`] returns. `None` is the transitional point-less population (old push
+    /// API only); it disappears with that API, and this then returns `&SurfaceTruth`.
+    #[inline]
+    pub fn surface_truth(&self, h: Handle<Surface>) -> Option<&SurfaceTruth> {
+        self.surface_truths[h.index() as usize].as_ref()
     }
 
     /// The surface a handle names.
@@ -476,7 +566,9 @@ impl Model {
     /// violation fixture.
     #[cfg(any(test, feature = "test-util"))]
     pub fn push_surface_unrecorded(&mut self, surface: Surface) -> Handle<Surface> {
-        self.surfaces.push(surface)
+        let h = self.surfaces.push(surface);
+        self.surface_truths.push(None);
+        h
     }
 
     /// [`Model::push_surface`], also recording the surface's exact rational description when the
@@ -573,7 +665,7 @@ impl Model {
                 return (h, flipped);
             }
         }
-        let h = self.push_surface(surface, def);
+        let h = self.push_surface_recording(surface, def, points);
         if let Some((n, _)) = &key {
             // One clone per push — the name is derived once here, never on a judging loop.
             self.surface_name.insert(h, n.clone());
@@ -585,6 +677,46 @@ impl Model {
             self.surface_ids.insert(k, h);
         }
         (h, false)
+    }
+
+    /// Push a **plane**, stating its truth outright: three exact points and the motion they are
+    /// written before (`None` = the world). The S6b successor of
+    /// [`Model::push_surface_with_points`] — the truth is not optional here, which is the whole
+    /// point. Interned; the `bool` says the surviving surface's cache normal points the other
+    /// way (see [`Model::push_surface_with_points`]).
+    pub fn push_plane(
+        &mut self,
+        cache: nacre_geom::Plane,
+        points: [[nacre_scalar::Rat; 3]; 3],
+        motion: Option<Handle<MotionNode>>,
+    ) -> (Handle<Surface>, bool) {
+        let def = match motion {
+            Some(m) => SurfaceDef::Moved { motion: m },
+            None => SurfaceDef::Constructed,
+        };
+        self.push_surface_with_points(Surface::Plane(cache), def, Some(points))
+    }
+
+    /// Push a **cylinder** — the lateral surface, whose exact truth arrives with M6. Until
+    /// then the truth records only the motion slot (`None` at construction).
+    pub fn push_cylinder(&mut self, cache: nacre_geom::Cylinder) -> Handle<Surface> {
+        self.push_surface(Surface::Cylinder(cache), SurfaceDef::Constructed)
+    }
+
+    /// Push a plane with truth but **no name and no interning** — test-only.
+    ///
+    /// Two fixture populations need this door: hand-built merge fixtures that deliberately hold
+    /// *one geometric plane as two handles* (interning would collapse them), and dummy planes
+    /// whose handles are never dereferenced. The successor of
+    /// [`Model::push_surface_unrecorded`], minus the unrecordedness — the truth is still stated,
+    /// so nothing point-less enters the arena even from tests.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn push_plane_unregistered(
+        &mut self,
+        cache: nacre_geom::Plane,
+        points: [[nacre_scalar::Rat; 3]; 3],
+    ) -> Handle<Surface> {
+        self.push_surface_recording(Surface::Plane(cache), SurfaceDef::Constructed, Some(points))
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals
