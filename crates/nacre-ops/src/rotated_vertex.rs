@@ -14,7 +14,7 @@
 use nacre_cip::{MoveNode, Pt3};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
-use nacre_topo::{Model, Motion, MotionNode, SurfaceDef};
+use nacre_topo::{Model, Motion, MotionNode};
 
 /// Why a coordinate could not be lifted to an exact rational.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,12 +166,20 @@ pub(crate) fn frame_chain(
         Some(MoveNode::FrameWide(wf))
     };
     let mut chain = vec![narrow_road().or_else(wide_road)?];
-    match model.surface_defs.get(&plane) {
-        Some(SurfaceDef::Moved { motion, .. }) => chain.append(&mut motion_chain(model, *motion)?),
-        Some(SurfaceDef::Constructed) => {}
-        // `Inexact` has no exact definition to continue with, and an unrecorded surface has none
-        // at all — both are declines, not rejects.
-        _ => return None,
+    match model.surface_truth(plane) {
+        Some(
+            nacre_topo::SurfaceTruth::Plane {
+                motion: Some(m), ..
+            }
+            | nacre_topo::SurfaceTruth::Cylinder { motion: Some(m) },
+        ) => chain.append(&mut motion_chain(model, *m)?),
+        Some(
+            nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+            | nacre_topo::SurfaceTruth::Cylinder { motion: None },
+        ) => {}
+        // Transitional (S6b): a point-less plane has no truth entry and therefore no exact
+        // definition to continue with — a decline, not a reject. Dies with the old push API.
+        None => return None,
     }
     Some(chain)
 }
@@ -433,7 +441,7 @@ mod tests {
             .expect("a non-degenerate triple");
         let (h, _) = m.push_surface_with_points(
             nacre_geom::Surface::Plane(pl),
-            SurfaceDef::Constructed,
+            nacre_topo::SurfaceDef::Constructed,
             Some(pts),
         );
         h

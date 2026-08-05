@@ -250,18 +250,16 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
     // triple as the pre-motion truth. The probe is per solid like everything here, so one
     // overflowing surface puts the whole solid on the recorded path rather than splitting it.
     let points_move = |s: Handle<Surface>| -> bool {
-        let Some(p) = model.surface_points.get(&s) else {
+        let Some(nacre_topo::SurfaceTruth::Plane {
+            points: nacre_topo::PlanePoints::Known(p),
+            ..
+        }) = model.surface_truth(s)
+        else {
             return true; // nothing to carry
         };
-        let each = |q: [Rat; 3]| -> Option<[Rat; 3]> {
-            match motion {
-                Xform::Rigid(iso) => iso.point_rat(q),
-                Xform::Mirror { axis, offset, .. } => {
-                    nacre_scalar::mirror_point_rat(q, *axis, *offset)
-                }
-            }
-        };
-        p.iter().all(|&q| each(q).is_some())
+        // The very function pass 1 will transport with — sharing it is what makes the probe's
+        // promise ("this will not overflow") structural rather than a parallel re-derivation.
+        transport_points(motion, *p).is_some()
     };
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &model.shells.get(sh).faces {
@@ -288,40 +286,53 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
     true
 }
 
-/// The provenance a moved surface inherits — the surface twin of the vertex `Origin` rules.
+/// A plane's exact triple carried through an **exact** (recorded-nothing) motion — the one
+/// transport both `motion_is_exact`'s probe and pass 1 use, so the probe's feasibility answer
+/// and the actual transport cannot disagree. `None` on `i128` overflow, which the probe turns
+/// into "record a node instead".
+fn transport_points(motion: &Xform<'_>, p: [[Rat; 3]; 3]) -> Option<[[Rat; 3]; 3]> {
+    let each = |q: [Rat; 3]| -> Option<[Rat; 3]> {
+        match motion {
+            Xform::Rigid(iso) => iso.point_rat(q),
+            Xform::Mirror { axis, offset, .. } => nacre_scalar::mirror_point_rat(q, *axis, *offset),
+        }
+    };
+    Some([each(p[0])?, each(p[1])?, each(p[2])?])
+}
+
+/// The motion history a moved surface's image carries — the surface twin of the vertex
+/// `Origin` rules, in S6b form (the old `SurfaceDef` table collapsed to one field):
 ///
-/// | source | motion records a node | motion records nothing |
+/// | source motion | motion records a node | motion records nothing |
 /// |---|---|---|
-/// | `Constructed` | `Moved { witness: this face's pre-motion triangle, leaf }` | `Constructed` |
-/// | `Moved { witness, .. }` | `Moved { witness, leaf }` — the new nodes hang off this surface's own leaf, so replaying from the root witness applies every motion once | unchanged (`copy`, or an exactness-preserving move of a history-free surface) |
-/// | `Inexact` | `Inexact` | `Inexact` |
+/// | `None` (world) | `Some(leaf)` — the points stay pre-motion | `None` (points transported exactly) |
+/// | `Some(m)` | `Some(leaf)`, hanging off `m` — replaying from the root applies every motion once | unreachable (the exceptions lapse once a history exists) |
 ///
 /// **One table for all three motions.** A reflection used to have its own column here, carrying a
 /// moved surface by conjugating its chain over a mirrored witness; it now appends a node like
 /// everything else, so the reflection is *in* the definition rather than folded into it.
 ///
-/// **`Inexact` has no producer here.** It used to be what a translation of an already-rotated
-/// surface became, because the history held rotations only and `R` then `T` had no node to name;
-/// the forest names it now. The variant stays as the honest reading of a surface pushed past
-/// `Model::push_surface`, which `nacre-validate` reports.
-fn moved_surface_def(
+/// A cylinder rides the same rows through its own motion slot — the old `SurfaceDef` path
+/// demoted a moved cylinder to `Inexact` (a `Constructed` source with no points to move); its
+/// history is simply recorded now.
+fn moved_surface_motion(
     model: &mut Model,
     src: Handle<Surface>,
     motion: &Xform<'_>,
     exact: bool,
     surf_rot: &mut HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>>,
-) -> Result<SurfaceDef, OpError> {
-    let source = model
-        .surface_defs
-        .get(&src)
-        .copied()
-        .unwrap_or(SurfaceDef::Inexact);
+) -> Option<Handle<MotionNode>> {
     // **Each surface chains from its own leaf, not the solid's.** One solid does not have one
     // history: a boolean between differently-moved operands hands back walls that came from
     // different ones. Memoized per distinct parent so surfaces that did share a history still do.
-    let parent = match source {
-        SurfaceDef::Moved { motion, .. } => Some(motion),
-        _ => None,
+    let parent = match model.surface_truth(src) {
+        Some(
+            nacre_topo::SurfaceTruth::Plane { motion, .. }
+            | nacre_topo::SurfaceTruth::Cylinder { motion },
+        ) => *motion,
+        // Transitional (S6b): a point-less plane — treated as world-stated, exactly as the old
+        // `Constructed`-without-points row was. Dies with the old push API.
+        None => None,
     };
     let leaf = match surf_rot.get(&parent) {
         Some(&h) => h,
@@ -332,26 +343,10 @@ fn moved_surface_def(
             h
         }
     };
-    let Some(leaf) = leaf else {
-        // Nothing recorded: the motion kept the coefficients exact.
-        return Ok(source);
-    };
-    // ★★★★★ **A moved plane is `Moved` only if it has something exact to move.**
-    //
-    // This arm used to take the *face's* triangle as the new plane's witness. After a chain of
-    // booleans those corners are `Discovered` — points defined by planes — so the plane ended up
-    // described by its own derived intersections, rounded (measured: 75 of 1,883). What moves now
-    // is `Model::surface_points`, and a source with none has no exact description to carry, which
-    // is what `Inexact` says. The alternative — moving a rounded triangle and calling it exact —
-    // is the silent answer this whole item removes.
-    Ok(match source {
-        SurfaceDef::Inexact => SurfaceDef::Inexact,
-        SurfaceDef::Moved { .. } => SurfaceDef::Moved { motion: leaf },
-        SurfaceDef::Constructed if model.surface_points.contains_key(&src) => {
-            SurfaceDef::Moved { motion: leaf }
-        }
-        SurfaceDef::Constructed => SurfaceDef::Inexact,
-    })
+    // Nothing recorded: the motion kept the data exact and the image keeps the source's own
+    // history. (`leaf` is always `Some` when `parent` is — the exceptions lapse once a history
+    // exists — so `or` never resurrects a stale parent past a recorded node.)
+    leaf.or(parent)
 }
 
 fn axis_index(axis: Axis) -> usize {
@@ -591,38 +586,35 @@ fn transform_solid(
         let moved = motion
             .surface(model.surface(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
-        let def = moved_surface_def(model, s, motion, exact, &mut surf_rot)?;
+        let src_truth = model.surface_truth(s).cloned();
+        let new_motion = moved_surface_motion(model, s, motion, exact, &mut surf_rot);
         // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
         // `Model::push_surface_with_points`, so there is no second description to keep in step —
-        // this used to carry the coefficients through the *same* two cases beside the points, with
-        // a note that `Isometry::point_rat` "declines exactly when `plane_coeffs` does" holding the
-        // two together. That agreement was checked across the suite before the parameter went away
-        // (83,883 pushes, 0 disagreements, rotations and reflections both) and is now structural.
+        // the agreement between points and coefficients was checked across the suite before the
+        // coefficient parameter went away (83,883 pushes, 0 disagreements) and is now structural.
         //
-        // `Moved` states its plane **before** the motion, and the base of the image is the base of
-        // the source — `moved_surface_def` chains from the source's own leaf for the same reason —
-        // so the triple is inherited verbatim. `Constructed` states it in the world, so the points
-        // are carried there with it.
-        let points = model
-            .surface_points
-            .get(&s)
-            .copied()
-            .and_then(|p| match def {
-                SurfaceDef::Moved { .. } => Some(p),
-                SurfaceDef::Constructed => {
-                    let each =
-                        |f: &dyn Fn([nacre_scalar::Rat; 3]) -> Option<[nacre_scalar::Rat; 3]>| {
-                            Some([f(p[0])?, f(p[1])?, f(p[2])?])
-                        };
-                    match motion {
-                        Xform::Rigid(iso) => each(&|q| iso.point_rat(q)),
-                        Xform::Mirror { axis, offset, .. } => {
-                            each(&|q| nacre_scalar::mirror_point_rat(q, *axis, *offset))
-                        }
-                    }
+        // A recorded node states its plane **before** the motion, and the image's base is the
+        // source's base — `moved_surface_motion` chains from the source's own leaf for the same
+        // reason — so the triple is inherited verbatim. With nothing recorded the motion kept
+        // everything exact, and the points are carried in the world with it; the transport is
+        // the very function `motion_is_exact` probed, so it cannot fail here.
+        let points = match &src_truth {
+            Some(nacre_topo::SurfaceTruth::Plane {
+                points: nacre_topo::PlanePoints::Known(p),
+                motion: src_m,
+            }) => {
+                if new_motion != *src_m {
+                    Some(*p)
+                } else {
+                    Some(transport_points(motion, *p).expect("probed by motion_is_exact"))
                 }
-                SurfaceDef::Inexact => None,
-            });
+            }
+            Some(nacre_topo::SurfaceTruth::Cylinder { .. }) | None => None,
+        };
+        let def = match new_motion {
+            Some(m) => SurfaceDef::Moved { motion: m },
+            None => SurfaceDef::Constructed,
+        };
         let (new_s, flipped) = model.push_surface_with_points(moved, def, points);
         surf_map.insert(s, new_s);
         surf_flip.insert(s, flipped);
@@ -889,7 +881,7 @@ mod tests {
             [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)],
             [Rat::from_int(0), Rat::from_int(1), Rat::from_int(0)],
         ];
-        m.surface_points.insert(surf, pts);
+        m.set_plane_points_for_test(surf, pts);
         // Fixture qualification: the f64 side is exact, the rational side overflows.
         let t = Rat::new(1, 1 << 30).unwrap();
         assert_eq!(
@@ -915,6 +907,44 @@ mod tests {
                 Some(SurfaceDef::Moved { .. })
             ),
             "the overflow must force the recorded path, not drop the points"
+        );
+    }
+
+    /// ★★ S6b: **a moved cylinder records its history instead of silently degrading.** The old
+    /// `SurfaceDef` path read the lateral surface as `Constructed`-without-points, so a rotated
+    /// cylinder's move demoted it to `Inexact` — reachable in production, pinned by nothing.
+    /// The truth variant has a motion slot of its own, and this is it working.
+    #[test]
+    fn a_rotated_cylinder_records_its_motion() {
+        let mut m = Model::new();
+        let s = m.add_cylinder(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.0,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let iso = Isometry::rotation(nacre_scalar::Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(0); 3],
+            angle: nacre_scalar::Angle::from_deg(Rat::from_int(31)).expect("angle"),
+        });
+        let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
+        m.rebuild_adjacency();
+        let lateral = m
+            .shells
+            .get(m.solids.get(turned).outer)
+            .faces
+            .iter()
+            .map(|&f| m.faces.get(f).surface)
+            .find(|&su| matches!(m.surface(su), Surface::Cylinder(_)))
+            .expect("a cylinder keeps its lateral face");
+        assert!(
+            matches!(
+                m.surface_truth(lateral),
+                Some(nacre_topo::SurfaceTruth::Cylinder { motion: Some(_) })
+            ),
+            "a moved cylinder's truth must carry the motion, not degrade"
         );
     }
 }

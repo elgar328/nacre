@@ -1259,17 +1259,21 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // every `Constructed` surface the realized point lies on the f64 plane at distance exactly `0`
     // (1121/1121), which the centroid did not always manage.
     //
-    // Only `SurfaceDef::Constructed` coefficients are world truth. A `Moved` surface records its
-    // **pre-motion** frame, so projecting those gives a pre-motion point — measured `0.29` away
-    // from the world plane, not a rounding but a different place. Those keep the f64 projection,
-    // which is the same rule computed from the description that is available.
+    // Only a world-stated plane's coefficients are world truth (`motion: None`). A moved
+    // surface records its **pre-motion** frame, so projecting those gives a pre-motion point —
+    // measured `0.29` away from the world plane, not a rounding but a different place. Those
+    // keep the f64 projection, which is the same rule computed from the description available.
     // `narrow()` gates the wide vessel out: a `Wide` name (S2) carries identity only, so it
     // keeps the f64 projection exactly as a missing name did.
+    let world_stated = matches!(
+        model.surface_truth(surface_h),
+        Some(nacre_topo::SurfaceTruth::Plane { motion: None, .. })
+    );
     let origin = match (
-        model.surface_defs.get(&surface_h),
+        world_stated,
         model.surface_name.get(&surface_h).and_then(|n| n.narrow()),
     ) {
-        (Some(SurfaceDef::Constructed), Some(&c)) => nacre_scalar::plane_origin_projection(c)
+        (true, Some(&c)) => nacre_scalar::plane_origin_projection(c)
             .map(|p| Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]))
             .unwrap_or_else(|| plane.project(Point3::origin())),
         _ => plane.project(Point3::origin()),

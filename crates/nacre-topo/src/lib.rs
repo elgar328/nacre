@@ -710,6 +710,33 @@ impl Model {
     /// whose handles are never dereferenced. The successor of
     /// [`Model::push_surface_unrecorded`], minus the unrecordedness — the truth is still stated,
     /// so nothing point-less enters the arena even from tests.
+    /// Overwrite a plane's truth points — **test-only**, and deliberately incoherence-capable:
+    /// the surface's derived name and interning key stay whatever the original points said, so
+    /// this door exists for fixtures that need adversarial point widths on an existing surface
+    /// (the overflowing-move probe) and must never grow a production caller. Keeps the
+    /// (transitional) `surface_points` table in step with the truth.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn set_plane_points_for_test(
+        &mut self,
+        h: Handle<Surface>,
+        pts: [[nacre_scalar::Rat; 3]; 3],
+    ) {
+        match &mut self.surface_truths[h.index() as usize] {
+            Some(SurfaceTruth::Plane { points, .. }) => *points = PlanePoints::Known(pts),
+            slot @ None => {
+                *slot = Some(SurfaceTruth::Plane {
+                    points: PlanePoints::Known(pts),
+                    motion: match self.surface_defs.get(&h) {
+                        Some(SurfaceDef::Moved { motion }) => Some(*motion),
+                        _ => None,
+                    },
+                });
+            }
+            Some(SurfaceTruth::Cylinder { .. }) => panic!("a cylinder has no plane points"),
+        }
+        self.surface_points.insert(h, pts);
+    }
+
     #[cfg(any(test, feature = "test-util"))]
     pub fn push_plane_unregistered(
         &mut self,

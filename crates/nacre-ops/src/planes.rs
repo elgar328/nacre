@@ -96,18 +96,23 @@ pub(crate) fn collect_planes(
             // Both used to be decided per *solid* ("is this solid rotated?"), which a boolean's
             // result cannot answer — it carries no rotation provenance, so every result face was
             // described by `Pt3::exact` of its rounded triangle and one wall became two plane
-            // classes on the next operation. The surface knows (`SurfaceDef`), and a result face
-            // reuses its operand's surface handle, so the answer now survives a chain of booleans.
+            // classes on the next operation. The surface knows (its truth — points + motion,
+            // S6b), and a result face reuses its operand's surface handle, so the answer
+            // survives a chain of booleans.
             //
-            // A missing definition is read as `Inexact`: a surface pushed past `Model::push_surface`
-            // says nothing about itself, and guessing "exact" is exactly the failure above.
-            // (`nacre-validate` reports that model, so it should not reach here.)
-            let (tri_pt3, rotated, motion) = match model
-                .surface_defs
-                .get(&face.surface)
-                .copied()
-                .unwrap_or(SurfaceDef::Inexact)
-            {
+            // `tri_pt3` is an *oriented* plane witness, but the recorded triple belongs to the
+            // *plane* — two faces sharing it can face opposite ways, and the implicit-point
+            // `orient3d` reads the side `tri_pt3` spans. So both arms wind it to agree with
+            // *this* face's `n_out`.
+            let wind = |mut w: [Pt3; 3]| -> [Pt3; 3] {
+                let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
+                let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
+                if e1.cross(e2).dot(n_out) < 0.0 {
+                    w.swap(1, 2);
+                }
+                w
+            };
+            let (tri_pt3, rotated, motion) = match model.surface_truth(face.surface) {
                 // ★★★★★ **The plane's own points state the plane — not the face's triangle.**
                 //
                 // The face's triangle is where this used to read from, and after a chain of
@@ -120,56 +125,44 @@ pub(crate) fn collect_planes(
                 // ★ `Pt3::exact` is kept for a point that **is** an f64: it states the same thing
                 // and skips the nine BigFloat operations `Pt3::at` spends measuring a zero. The
                 // round-trip test is the one `BaseFrame` already uses.
-                SurfaceDef::Constructed => {
-                    let mut w = match model.surface_points.get(&face.surface) {
-                        Some(pts) => pts.map(|b| {
-                            let f = b.map(|r| r.to_f64());
-                            match Pt3::exact(f).filter(|_| {
-                                b.iter()
-                                    .zip(f)
-                                    .all(|(&r, x)| nacre_scalar::Rat::try_from_f64(x) == Some(r))
-                            }) {
-                                Some(p) => p,
-                                // ★★★ **The bound is free; measuring it is not.** `Pt3::at` reads
-                                // the rounding at 120 bits — nine BigFloat operations per point,
-                                // and 38.3% of these points are not f64, so the suite paid 6% for
-                                // it. `Rat::to_f64` is documented as *"the **nearest** f64 … ties
-                                // to even"*, so `|r − to_f64(r)| ≤ ½ ulp` holds by its contract and
-                                // `|x|·2⁻⁵³` is an upper bound on that for every normal `x`.
-                                //
-                                // ★ The cost is looseness: a filter interval slightly wider than
-                                // the truth escalates slightly more often. Never unsound — a tol
-                                // that overstates the error can only make a definite answer
-                                // indefinite, never the other way round.
-                                None => {
-                                    let bound = |x: f64| {
-                                        (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
-                                    };
-                                    Pt3::at_with_tol(b, [bound(f[0]), bound(f[1]), bound(f[2])])
-                                }
+                Some(nacre_topo::SurfaceTruth::Plane {
+                    points: nacre_topo::PlanePoints::Known(pts),
+                    motion: None,
+                }) => {
+                    let w = pts.map(|b| {
+                        let f = b.map(|r| r.to_f64());
+                        match Pt3::exact(f).filter(|_| {
+                            b.iter()
+                                .zip(f)
+                                .all(|(&r, x)| nacre_scalar::Rat::try_from_f64(x) == Some(r))
+                        }) {
+                            Some(p) => p,
+                            // ★★★ **The bound is free; measuring it is not.** `Pt3::at` reads
+                            // the rounding at 120 bits — nine BigFloat operations per point,
+                            // and 38.3% of these points are not f64, so the suite paid 6% for
+                            // it. `Rat::to_f64` is documented as *"the **nearest** f64 … ties
+                            // to even"*, so `|r − to_f64(r)| ≤ ½ ulp` holds by its contract and
+                            // `|x|·2⁻⁵³` is an upper bound on that for every normal `x`.
+                            //
+                            // ★ The cost is looseness: a filter interval slightly wider than
+                            // the truth escalates slightly more often. Never unsound — a tol
+                            // that overstates the error can only make a definite answer
+                            // indefinite, never the other way round.
+                            None => {
+                                let bound = |x: f64| {
+                                    (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
+                                };
+                                Pt3::at_with_tol(b, [bound(f[0]), bound(f[1]), bound(f[2])])
                             }
-                        }),
-                        None => {
-                            let e = |p: Point3| {
-                                Pt3::exact(p.as_array())
-                                    .ok_or_else(|| reject(RejectReason::CoordinateOutOfRange))
-                            };
-                            [e(tri[0])?, e(tri[1])?, e(tri[2])?]
                         }
-                    };
-                    // The same winding fix the moved arm needs, and for the same reason: the
-                    // recorded triple belongs to the *plane*, so two faces sharing it can face
-                    // opposite ways, and the implicit-point `orient3d` reads the side `tri_pt3`
-                    // spans. (The old reading took `tri`, which `outer_tri` had already wound.)
-                    let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
-                    let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
-                    if e1.cross(e2).dot(n_out) < 0.0 {
-                        w.swap(1, 2);
-                    }
-                    (w, false, None)
+                    });
+                    (wind(w), false, None)
                 }
-                SurfaceDef::Inexact => return Err(reject(RejectReason::InexactSurface)),
-                SurfaceDef::Moved { motion } => {
+                Some(nacre_topo::SurfaceTruth::Plane {
+                    points: nacre_topo::PlanePoints::Known(pts),
+                    motion: Some(motion),
+                }) => {
+                    let motion = *motion;
                     let _t = Watch::new(); // charged at the arm's end
                     // The pre-motion description, carried through the recorded chain — the same
                     // computation, in the same order, that a moved vertex's `Pt3` performs.
@@ -187,28 +180,33 @@ pub(crate) fn collect_planes(
                     // recovers a different rational). The judge then described the plane through
                     // three rounded points, which is how two caps that are one plane were told
                     // apart with full confidence.
-                    //
-                    // ★ `Moved` now carries no fallback because it needs none: a source with no
-                    // exact points is recorded `Inexact` at the producer, so reaching here without
-                    // them is a producer that skipped `push_surface_with_coeffs`.
-                    let pts = model
-                        .surface_points
-                        .get(&face.surface)
-                        .ok_or_else(|| reject(RejectReason::InexactSurface))?;
-                    let mut w = [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?];
-                    // `tri_pt3` is an *oriented* plane witness, but the witness was captured from
-                    // whichever face first reached this surface — two faces can share it with
-                    // opposite outward normals. Wind it to agree with *this* face's `n_out`, or
-                    // the implicit-point `orient3d` reads the plane's other side and flips every
-                    // sign on it.
-                    let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
-                    let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
-                    if e1.cross(e2).dot(n_out) < 0.0 {
-                        w.swap(1, 2);
-                    }
+                    let w = [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?];
                     _t.charge(Sub::TriPt3);
-                    (w, true, Some(motion))
+                    (wind(w), true, Some(motion))
                 }
+                // The cache match above already rejected cylinders.
+                Some(nacre_topo::SurfaceTruth::Cylinder { .. }) => {
+                    return Err(reject(RejectReason::CylinderFace));
+                }
+                // Transitional (S6b): a point-less plane — the old push API's population, kept
+                // alive by test fixtures and the last f64-fallback arms until both die. The old
+                // side-table logic still answers for it: a point-less `Constructed` is described
+                // by its own realized triangle, anything else has no exact description.
+                None => match model
+                    .surface_defs
+                    .get(&face.surface)
+                    .copied()
+                    .unwrap_or(SurfaceDef::Inexact)
+                {
+                    SurfaceDef::Constructed => {
+                        let e = |p: Point3| {
+                            Pt3::exact(p.as_array())
+                                .ok_or_else(|| reject(RejectReason::CoordinateOutOfRange))
+                        };
+                        (wind([e(tri[0])?, e(tri[1])?, e(tri[2])?]), false, None)
+                    }
+                    _ => return Err(reject(RejectReason::InexactSurface)),
+                },
             };
             // `orient_sign`, precomputed: the two invariants it used to re-check on every call
             // are properties of this face, so they are decided once, here.
