@@ -267,6 +267,7 @@ dependencies = [
  "nacre-predicates",
  "nacre-scalar",
  "num-bigint",
+ "num-integer",
  "proptest",
 ]
 

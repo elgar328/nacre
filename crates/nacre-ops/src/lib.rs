@@ -179,13 +179,16 @@ impl SketchPlane {
         self
     }
 
-    /// A frame from axes the caller already holds — **with no exact definition**, so anything
-    /// built on it takes the f64 path.
+    /// A frame from axes the caller already holds — **with no exact definition** (`def: None`),
+    /// so the *named-plane* exact records (a stated base cap, a `Named` frame) do not apply.
     ///
-    /// ★ Not public. Normalized axes are exactly what this type exists to stop being handed, and
-    /// the callers that legitimately have only axes are internal: a face's own frame, and
-    /// `exact()`'s own tests.
-    pub(crate) fn from_axes(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Self {
+    /// ★ What still applies is the **world lift**: axes whose decimals square and cross to
+    /// exact `1`/`0` — a Pythagorean frame like `(0.6, 0.8, 0)`/`(−0.48, 0.36, 0.8)` — pass
+    /// `exact()` and take the world-rational path, definition or not. That population is how
+    /// the `n·n`-overflow walls (the S4 census `wf` family) are built, which is why this is
+    /// public: normalized axes are usually the wrong thing to hand a kernel, but a caller with
+    /// an exactly-orthonormal decimal frame legitimately has only axes.
+    pub fn from_axes(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Self {
         Self {
             origin,
             x_axis,
@@ -5902,11 +5905,14 @@ pub mod tests {
     ///   has exact data to derive from;
     /// * its sketch frame follows the arbitrary-axis convention — origin at the world origin's
     ///   projection `(4, 2, 0) = (10/5)·(2,1,0)`, `u = ẑ × n` normalized, `v = +ẑ`;
-    /// * a pad on it **works**, through the f64 path.
+    /// * a pad on it works — **through `Motion::Frame`**, since stage 2 (an earlier line here
+    ///   said "through the f64 path", which stopped being true then).
     ///
-    /// What 2b changes: `exact()` is `false` here, so the prism it raises records no rational
-    /// coefficients. ★ The axes must **not** move — this plane's own frame is the world, so
-    /// `ẑ × n` is the same vector before and after.
+    /// What the final assertion pins is narrower than the test's old name suggests: the
+    /// *reported* `SketchPlane`'s world axes are irrational, so `exact()` is `None` — true
+    /// before S4 and after, because it is about the world lift, not about the frame road the
+    /// operation actually takes. ★ The axes must **not** move — this plane's own frame is the
+    /// world, so `ẑ × n` is the same vector before and after.
     #[test]
     fn a_sketch_on_a_prism_side_wall_takes_the_f64_path_today() {
         let (m, wall) = prism_with_a_slanted_wall();
@@ -6415,6 +6421,95 @@ pub mod tests {
         let b = cap_of(&mut m, 2.5);
         assert_eq!(a, b, "one height on one plane is one plane");
         assert_ne!(a, cap_of(&mut m, 2.6), "and a different height is not");
+    }
+
+    /// ★★★★★ **S4's end-to-end lock: the f64-fallback chain is cut on the `n·n`-overflow
+    /// population** — the measured 1.6%, and the one today's producers actually reach.
+    ///
+    /// A prism raised on a fully tilted, exactly-orthonormal decimal frame from a 16-digit
+    /// profile has walls whose names run to ~110 bits: **narrow names whose squared lengths
+    /// (~2^220) overflow `i128`**, so `plane_frame_default`/`plane_frame_named` hard-declined
+    /// them and a pad on such a wall fell to `Swept::along` — every new face point-less, the
+    /// chain that keeps `SurfaceDef::Inexact` alive. Now the frame realizes through the wide
+    /// road and **every face of the result states its exact points**.
+    ///
+    /// ★ Probed while building this fixture: a sketch→extrude wall's canonical name caps out
+    /// around ~115 bits (the profile's decimal window bounds the products), so **`Wide`-named
+    /// faces do not arise from today's construction route at all** — the `Wide` opening is
+    /// locked at the basis level (`a_wide_plane_hosts_a_canonical_frame`) and the end-to-end
+    /// chain here on the population that exists. The fixture qualifies itself rather than
+    /// assuming its population (the S2 census lesson).
+    #[test]
+    fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let mut m = Model::new();
+        // A fully tilted, exactly-orthonormal decimal frame: u·u = v·v = 1 and u·v = 0 hold in
+        // the lifted rationals, and the normal u×v = (0.64, −0.48, 0.6) is not axis-aligned —
+        // so the walls' names mix all three coordinates.
+        let plane = crate::ops::SketchPlane::from_axes(
+            Point3::from_array([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
+            Vector3::from_array([0.6, 0.8, 0.0]),
+            Vector3::from_array([-0.48, 0.36, 0.8]),
+        );
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane,
+                profile: Profile2d::polygon(vec![
+                    p(0.1111111111111111, 0.1234567890123456),
+                    p(4.123456789012345, 0.2345678901234567),
+                    p(3.9876543210987654, 3.1234567890123459),
+                    p(0.2222222222222222, 2.765432109876543),
+                ]),
+                dist: 2.5,
+            },
+        )
+        .expect("extrude on a Pythagorean frame") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        // Fixture qualification: a wall whose name is narrow but whose squared lengths are not
+        // — the exact population the narrow frame derivation hard-declines.
+        let shell = m.solids.get(solid).outer;
+        let wall = *m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .find(|&&f| {
+                let s = m.faces.get(f).surface;
+                m.surface_name
+                    .get(&s)
+                    .and_then(|n| n.narrow())
+                    .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+            })
+            .expect("an nn-overflow wall — retune the fixture constants if this fails");
+        let profile = centred_on(&m, wall, 0.3);
+        let OpOutput::PadOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face: wall,
+                profile,
+                dist: 0.4,
+            },
+        )
+        .expect("S4: a pad on a wide-named wall must build") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        // The chain is cut: every face of the result states its exact points.
+        let mut missing = 0;
+        let mut total = 0;
+        for &f in &m.shells.get(m.solids.get(solid).outer).faces {
+            total += 1;
+            if !m.surface_points.contains_key(&m.faces.get(f).surface) {
+                missing += 1;
+            }
+        }
+        assert_eq!(
+            missing, 0,
+            "{missing} of {total} faces carry no exact points — the f64 fallback fired"
+        );
     }
 
     fn centred_on(m: &Model, face: Handle<Face>, half: f64) -> Profile2d {

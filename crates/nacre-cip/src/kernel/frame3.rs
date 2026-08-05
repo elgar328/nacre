@@ -169,6 +169,115 @@ impl WideFrame {
             vv,
         })
     }
+
+    /// A **named placement's** frame in arbitrary precision — the fallback for a caller-stated
+    /// `(origin, ref_dir)` whose narrow `PlaneFrame` overflows `i128` (its squared lengths do;
+    /// the caller's values themselves are `Rat` by construction).
+    ///
+    /// Unlike the arbitrary-axis `u_raw`, a general `ref_dir` may have a normal component, so
+    /// it is projected out exactly: `u_raw = (n·n)·r − (r·n)·n` — after which `n ⊥ u_raw` and
+    /// the `|v|² = |n|²·|u|²` identity holds as in [`WideFrame::canonical`].
+    ///
+    /// `None` for a zero normal or a `ref_dir` parallel to it — the same declines the narrow
+    /// route makes, never a width one.
+    pub fn named(
+        n: [num_bigint::BigInt; 3],
+        d: &num_bigint::BigInt,
+        origin: &[Rat; 3],
+        ref_dir: &[Rat; 3],
+    ) -> Option<WideFrame> {
+        use num_bigint::BigInt;
+        use num_integer::Integer;
+        let zero = BigInt::from(0);
+        if n.iter().all(|c| *c == zero) {
+            return None;
+        }
+        // Clear a rational vector's denominators — scale-free, so only the direction matters.
+        let lift = |v: &[Rat; 3]| -> ([BigInt; 3], BigInt) {
+            let den = [
+                BigInt::from(v[0].denom()),
+                BigInt::from(v[1].denom()),
+                BigInt::from(v[2].denom()),
+            ];
+            let l = den.iter().fold(BigInt::from(1), |acc, x| acc.lcm(x));
+            (
+                core::array::from_fn(|k| BigInt::from(v[k].numer()) * (&l / &den[k])),
+                l,
+            )
+        };
+        let (r, _) = lift(ref_dir);
+        let dot2 = |a: &[BigInt; 3], b: &[BigInt; 3]| -> BigInt {
+            a.iter().zip(b).map(|(x, y)| x * y).sum()
+        };
+        let nn = dot2(&n, &n);
+        let rn = dot2(&r, &n);
+        let u_raw: [BigInt; 3] = core::array::from_fn(|k| &nn * &r[k] - &rn * &n[k]);
+        if u_raw.iter().all(|c| *c == zero) {
+            return None; // ref_dir parallel to the normal
+        }
+        let cross = |a: &[BigInt; 3], b: &[BigInt; 3]| -> [BigInt; 3] {
+            [
+                &a[1] * &b[2] - &a[2] * &b[1],
+                &a[2] * &b[0] - &a[0] * &b[2],
+                &a[0] * &b[1] - &a[1] * &b[0],
+            ]
+        };
+        let v_raw = cross(&n, &u_raw);
+        let uu = dot2(&u_raw, &u_raw);
+        let vv = &nn * &uu;
+        // The caller's origin, over one common denominator. `d` is unused beyond the plane's
+        // identity — the origin is stated, not derived, and its on-plane invariant was checked
+        // where the pair was constructed (`PlaneDef`).
+        let _ = d;
+        let (origin_num, origin_den) = lift(origin);
+        Some(WideFrame {
+            origin_num,
+            origin_den,
+            u_raw,
+            n,
+            v_raw,
+            uu,
+            nn,
+            vv,
+        })
+    }
+
+    /// [`WideFrame::canonical`] from a plane's stored name, with the frame's `flip` spent here
+    /// (negating the coefficients — the same place the narrow route spends it). `Narrow` names
+    /// lift; `Wide` ones are already the right width.
+    pub fn canonical_of(name: &nacre_scalar::PlaneName, flip: bool) -> Option<WideFrame> {
+        let [c0, c1, c2, c3] = name_bigints(name, flip);
+        WideFrame::canonical([c0, c1, c2], &c3)
+    }
+
+    /// [`WideFrame::named`] from a plane's stored name — see [`WideFrame::canonical_of`].
+    pub fn named_of(
+        name: &nacre_scalar::PlaneName,
+        origin: &[Rat; 3],
+        ref_dir: &[Rat; 3],
+        flip: bool,
+    ) -> Option<WideFrame> {
+        let [c0, c1, c2, c3] = name_bigints(name, flip);
+        WideFrame::named([c0, c1, c2], &c3, origin, ref_dir)
+    }
+}
+
+/// A [`nacre_scalar::PlaneName`]'s coefficients as `BigInt`s, negated when `flip` — the sign a
+/// frame node carries is spent on the coefficients, exactly as the narrow route spends it
+/// before `plane_frame_named`.
+fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigInt; 4] {
+    use num_bigint::BigInt;
+    let mut cs: [BigInt; 4] = match name {
+        // A canonical narrow name is a primitive integer vector, so `numer()` is the value.
+        nacre_scalar::PlaneName::Narrow(c) => core::array::from_fn(|k| BigInt::from(c[k].numer())),
+        nacre_scalar::PlaneName::Wide(c) => c.clone(),
+    };
+    if flip {
+        for c in &mut cs {
+            *c = -&*c;
+        }
+    }
+    cs
 }
 
 /// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation

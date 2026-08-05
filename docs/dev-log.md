@@ -6620,3 +6620,32 @@ docs/truth-and-cache.md 의 "surface_points" 언급 횟수 :  0
 topo `a_wide_plane_interns_but_opens_no_shortcut`(두 진술 = 한 핸들, `narrow()==None`).
 스위트 751/751 그린(대장 비트 동일 — 전 인구 Narrow), census `stat wide_planes 0`(그 코퍼스에
 wide 없음 — 예상과 일치, 이름은 stat 만 개명).
+
+## S4 — 프레임 팔 절단: `FramePlacement(Canonical|Named)` + wide 프레임 실현 (2026-08-05)
+
+두 커밋. ① 판정층 기계(`MoveNode::FrameWide` = `PlaneFrame` 의 BigInt 쌍둥이 — 넘침이 존재하지
+않아 `v: None` 같은 부분형도 없다; 실현은 전 구간 `HpIv`, f64 캐시는 128비트 실현의 좁힘;
+`inv_sqrt_bigint_bounded` 는 기존 Ziv 사다리 재사용, 진입이 정확해 오차 예산 동일). ② 어휘 전환
+(`Motion::Frame{plane, placement, flip}`)과 개통 — `Canonical` 의 좁은 경로는 face_frame 유도의
+**이사**(같은 함수, 같은 값)라 대장·census 비트 동일이 구조적으로 성립했고 실측도 그랬다.
+
+| 열린 인구 | 잠금 |
+|---|---|
+| Wide 이름 | 단위: `a_wide_plane_hosts_a_canonical_frame`(기저 직교성·on-plane·ŵ∥n) |
+| 좁은 이름 + `n·n` > i128 (1.6%) | 단위: `a_narrow_name_with_wide_squares…` + ★ **종단**: `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road` — 기울어진 정확-직교 십진 프레임 위 16자리 프리즘의 벽(이름 ~110비트, nn ~2^220)에 PadOnFace → **결과의 모든 면이 점을 기록**(S4 전엔 전부 무점 f64 폴백) |
+
+★★★★ **픽스처가 계획을 두 번 반박했다 — 그리고 그 반박이 이번 셀의 실측이다.**
+① 계획의 L4 는 "3-4-5 프레임 벽 = Wide 이름"을 기대했는데, 프로브 결과 **스케치→돌출 벽의
+정준 이름은 ~115비트에 캡**된다(십진 창이 곱을 묶는다; 법선이 ẑ 인 프레임은 ~110도 못 감).
+⇒ Wide **이름**의 면은 오늘의 구성 경로에서 안 나온다 — 첫 생산자는 datum(S5)이고, L4 는
+실재하는 nn-넘침 인구로 재조준했다. ② 처음 픽스처(u×v=ẑ)는 벽이 수직이라 그 인구에도 못
+들었다 — 완전히 기운 정확-직교 십진 프레임 `(0.6,0.8,0)/(−0.48,0.36,0.8)` (법선 `(0.64,−0.48,0.6)`,
+손계산 검증)으로 교체. 픽스처 자격을 테스트가 단언하게 한 규칙이 두 번 다 잡았다.
+
+census: 새 `wf` 가족(그 프레임 + pad/pocket — 이 인구는 fw(전-narrow)·tp(in-frame) 어디에도
+없었다: 8b 세 번째 교훈). `from_axes` 를 pub 으로(정확-직교 십진 축은 def 없이 세계 리프트가
+성립 — wf 의 생산 경로). `FrameOutOfRange` 를 핀하는 테스트는 없음(전수 확인). S2 잠금은
+`opens_no_narrow_shortcut` 로 개명(프레임은 이제 열린다 — 닫힌 것은 좁은 지름길).
+계획 대비 범위 재조정: 심기+공개 SketchFrame 통일은 **S9 로 분리**(심은 평면이 원점 상자들과
+intern 되며 생존자 f64 기하를 바꾸는 전-스위트 파급 — 별도 관문 필요; `Model::default()` 구멍;
+수요자는 S5). 스위트 758/758 그린, census 기준선 갱신(`wf` 2줄 추가, 그 외 diff 없음).

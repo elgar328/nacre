@@ -64,20 +64,11 @@ pub enum Motion {
     ///
     /// ★★★★ **The normal is named, not spelled.** A wall raised on a tilted face has an
     /// irrational world normal — there is no `[Rat; 3]` for it — so the node points at the
-    /// *plane*, whose coefficients are rational **in its own frame**. The recursion terminates
+    /// *plane*, whose data is rational **in its own frame**. The recursion terminates
     /// because it walks down to a plane with no frame, which is where the world is.
     ///
-    /// ★★★ **The frame is a function of the plane, so `plane` is the whole node.** Both of the
-    /// other things a frame needs are derived and neither is stored:
-    ///
-    /// ```text
-    /// origin  = the world origin projected onto the plane
-    /// ref_dir = ẑ × n   (ŷ × n when n is vertical — the arbitrary-axis branch)
-    /// ```
-    ///
-    /// That is what makes canonicalization unnecessary: one plane has one frame node, so a handle
-    /// is already the key. Widening to a user-named frame later means adding the fields back and
-    /// treating today's as the specialization.
+    /// ★★★ **Where the frame sits on the plane is [`FramePlacement`]** (S4): the derived
+    /// `Canonical` convention by default, or the caller's `Named` values. See its own doc.
     ///
     /// ★★★ **`flip` is what makes the node a whole frame and not half of one.** Canonical plane
     /// coefficients carry **no direction** — the first nonzero component is forced positive,
@@ -85,29 +76,38 @@ pub enum Motion {
     /// two faces of one plane can face opposite ways; `flip` says to negate the coefficients, so
     /// the node names the sense as well as the plane. Without it a sketch on a reversed face comes
     /// out mirrored in `u` with its sweep running inward (measured: a tilted second boss came back
-    /// `PadMissesFace`).
-    ///
-    /// It costs nothing that mattered: the frame is still a pure function of what the node holds,
-    /// so it is still reconstructible from the handle, and two sketches on **one face** still
-    /// intern to one node — which is the sharing the design needs.
-    ///
-    /// ★★★ **`origin` and `ref_dir` are named, not derived.** A *face* has no name, so its frame
-    /// is derived by convention (`nacre_scalar::plane_frame_default` — the world origin projected
-    /// onto the plane, and `ẑ × n`). A plane a caller **named** can insist on something no
-    /// derivation produces: the script layer's `ZX` has `+u = +ẑ`, while `ẑ × n` there is `−x̂`.
-    /// So the node carries both, and the derived case is the one that fills them in from the
-    /// convention. `ref_dir` lies in the plane, need not be unit length, and is reduced to its
-    /// primitive form so two spellings of one direction name one node.
+    /// `PadMissesFace`). It is measured (realized `ŵ` against the face's outward normal), never
+    /// chosen by a caller.
     ///
     /// ★ **Proper** (`det = +1`) — `(u, v, w)` is right-handed by construction (`v = w × u`), so
     /// unlike [`Mirror`](Self::Mirror) it contributes nothing to a chain's parity. Negating the
     /// coefficients flips `ŵ` and `û` together and leaves `v̂`, which is a half-turn: still proper.
     Frame {
         plane: Handle<Surface>,
-        origin: [Rat; 3],
-        ref_dir: [Rat; 3],
+        placement: FramePlacement,
         flip: bool,
     },
+}
+
+/// Where a sketch frame sits on its plane — the derived convention, or the caller's values.
+/// The dichotomy mirrors `PlanePoints` (`docs/truth-and-cache.md`): state a value when it can
+/// be written, derive when it cannot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FramePlacement {
+    /// **The default.** The frame is a pure function of the plane — origin at the world
+    /// origin's projection (`(−d/n·n)·n`), axes by the arbitrary-axis convention (`u = ẑ × n`,
+    /// `ŷ × n` when the normal is exactly vertical) — derived when the chain is flattened and
+    /// stored nowhere. That is what lets a plane whose canonical values overflow `i128` (or
+    /// whose name is `Wide`, S2) take the **same convention through arbitrary-precision
+    /// realization** instead of falling to f64: the S4 opening. One plane, one node — sketches
+    /// on one face share it automatically. The derivation convention is frozen spec (changing
+    /// it would silently turn every stored sketch).
+    Canonical,
+    /// The caller's own origin and `+u` direction, stated in the frame the plane's data lives
+    /// in — what a caller-named plane (`PlaneDef`) supplies, validated at its construction
+    /// (origin on the plane, `ref_dir` not parallel to the normal). `ref_dir` need not be unit
+    /// length nor exactly in-plane; the realization projects it exactly.
+    Named { origin: [Rat; 3], ref_dir: [Rat; 3] },
 }
 
 /// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a
@@ -1523,14 +1523,18 @@ mod tests {
     /// ★ Note the population: an axis-aligned cuboid — even on seventeen-digit corners — is NOT
     /// wide, because its canonical answers are tiny (`[10^13, 0, 0, −c]`); only the *narrow
     /// route's intermediates* overflow there, and the big route has named those since it exists.
-    /// Wide answers come from computed coordinates whose products stack (ring coordinates of
-    /// framed sketches — the 472-push population `docs/truth-and-cache.md` §12 measured).
+    /// ★★ Measured while building S4's end-to-end lock: today's sketch→extrude walls cap out
+    /// around ~115 bits (the decimal window bounds the products), so a wide name currently
+    /// arises only from hand-stated triples like this one — datum planes (S5) are the coming
+    /// production source.
     ///
-    /// What a wide name still does not do: `narrow()` is `None`, so frames and the exact
-    /// shortcuts decline exactly as they did on a missing name (the S2/S4 boundary — a wide
-    /// name carries identity, not arithmetic).
+    /// What a wide name still does not do: `narrow()` is `None`, so the **narrow shortcuts**
+    /// (`base_rat`, integer Shewchuk, `Isometry` transport) decline exactly as they did on a
+    /// missing name. Since S4 a wide name **does** host a sketch frame — through the
+    /// arbitrary-precision road (`FramePlacement::Canonical`, locked in nacre-ops) — so what
+    /// this pins is the shortcut boundary, not a frame one.
     #[test]
-    fn a_wide_plane_interns_but_opens_no_shortcut() {
+    fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
         let q = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
         let big1 = (1i128 << 90) + 1;
         let big2 = (1i128 << 90) + 3;
@@ -1565,7 +1569,7 @@ mod tests {
             .expect("a plane too wide for i128 must still be named");
         assert!(
             name.narrow().is_none(),
-            "a wide name must not open the narrow shortcuts (frames, base_rat)"
+            "a wide name must not open the narrow shortcuts (base_rat, Shewchuk)"
         );
 
         // ★ The same plane stated again — permuted, even — is the same handle now.

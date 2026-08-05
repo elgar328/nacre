@@ -115,6 +115,8 @@ pub enum FramePlacement {
     /// 한 평면 위의 스케치들이 자동으로 한 노드를 공유한다.
     /// ★★ 유도 규약은 스펙으로 **동결**한다 — 바뀌면 기존 스케치가 조용히 돈다
     /// (수선의 발·Arbitrary Axis 는 이미 구현·테스트로 고정돼 있다: `c652ef4`·`20dae82`).
+    /// ★ 구현(S4 ✔): 좁으면 유리수 `PlaneFrame`(비트 보존), 넘치면 판정층의
+    /// `MoveNode::FrameWide`(BigInt 쌍둥이 — 넘침이 존재하지 않는 실현).
     Canonical,
     /// 호출자가 **명시적으로** 이름 붙인 값 — 정준 규약과 다른 프레임을 원할 때만
     /// (`world_zx` 의 `+u = ẑ` 처럼 유도값과 다른 규약, `through_points`·`with_origin`).
@@ -464,14 +466,15 @@ pub enum Decision {
 | 3b | 좌표 재생 — 재보고 보류: 공유 프레임 풀이 + 모션 재생 = 비트 동일(8/8)로 목적지와 `Pt3` 재생의 무충돌만 확인해 둠 | ⏸ |
 | S1 | `Store<Surface>`·`Store<MotionNode>` 봉인 — 좁은 접근자(`surface`/`surface_count`/`motion`) + `compile_fail,E0616` 잠금. 기록 없는 surface 는 크레이트 밖에서 표현 불가(테스트 전용 입구 `push_surface_unrecorded` 만 예외, `test-util` 게이트) | ✔ 2026-08-05 |
 | S2 | **임의정밀 이름** — `PlaneName{Narrow\|Wide}` 그릇(`plane_name_big` 꼬리의 `to_i128` 분기 하나), `surface_coeffs`→`surface_name` 개명, Wide 도 intern. **동일성 팔 절단**: 점 가진 평면의 이름 실패가 공선뿐이 됨 — ★ f64 폴백 연쇄의 **프레임 팔은 S4 몫**(Wide 는 `narrow()=None` 이라 프레임·지름길을 안 연다, 반증표 그대로). 잠금: 스칼라 2(`a_plane_too_wide…`·narrow/wide 합의) + topo 1(`a_wide_plane_interns_but_opens_no_shortcut`) | ✔ 2026-08-05 |
+| S4 | **프레임 팔 절단** — `Motion::Frame{plane, placement, flip}` + `FramePlacement{Canonical\|Named}`. `Canonical`(기본)은 사슬 펼침 시 유도: 좁으면 오늘의 `plane_frame_default` 그대로(비트 보존 — 유도의 이사), **넘치면 wide 도로**(`MoveNode::FrameWide` = `PlaneFrame` 의 BigInt 쌍둥이, 실현은 `HpIv` 전 구간 + f64 캐시는 128비트 실현의 좁힘). Wide 이름·`n·n` 넘침(1.6%) 인구의 프레임이 열려 §12 연쇄의 프레임 팔이 닫힘. 잠금: cip 2(on-plane·tol-bounds wide 쌍둥이) + ops 3(`a_wide_plane_hosts_a_canonical_frame`·nn-넘침 개통·**종단** `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`) + census `wf` 가족. ★ 계획의 "심기 + 공개 SketchFrame 통일"은 **S9 로 분리**(아래) | ✔ 2026-08-05 |
 
 ### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
 
 | | 항목 | 선행 |
 |---|---|---|
 | S3 | `Profile2d` 유리수화 + 공선 중간점 정리 패스 | 없음 |
-| S4 | `SketchFrame`·`Motion::Frame` 을 `FramePlacement`(Canonical\|Named) 로 통일 — world 평면 사전 심기 + 정확-유리수-프레임 노드 생략. ★ f64 폴백 연쇄의 **프레임 팔**을 여기서 끊는다(`Canonical` 은 이름 없이 실현으로 선다) | 없음 |
-| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | 없음 (S2 ✔) |
+| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | S9 권장(datum **위** 스케치가 평면-핸들 API 를 원한다) |
+| S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — 공개 `SketchFrame{plane, placement, flip}`, `Named` 구성 시점 거절(`OriginNotOnPlane` 등), `Model::new()` 의 세계 축 평면 셋(핸들 0·1·2), 정확-유리수 프레임의 노드 생략 정규화. ★ S4 에서 분리한 이유(실측): 심은 평면이 이후 원점 상자들과 **intern 되며 생존자 f64 기하·`flipped` 를 바꾼다**(census `in:` = f64 계수 digest — 전 스위트 파급, 별도 관문 필요), `Model` 의 `Default` 공개 derive 구멍, 그리고 진짜 수요자가 S5 다 | 없음 |
 | S6 | `1′`: `Surface::Plane{points, motion}` 갈아끼우기 — `SurfaceDef`·`surface_points`·`surface_name` 통합, `Inexact` 소멸, `nacre_geom::Plane` 캐시 강등 | 없음 (S1·S2 ✔) |
 | S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로) | S6 |
 | S8 | `Edge` 를 담체+경계로(`{surfaces:[2], vertices:[2]}`) — `Store<Curve>` → `EdgeCache`, 모서리의 `Origin` 도 여기서 소멸 | S6 |
@@ -521,6 +524,10 @@ STEP 출력, undo/replay.
    필터가 무력하면 `SurfaceCache` 선실현이 다음 수다.
 2. **무리수 모션이 낀 datum 은 이름이 없다** — interning 불가, 동일성은 술어가 매번(규칙 6 의
    한정). 느릴 뿐 틀리지 않는다.
+2b. **wide 프레임 실현 비용** — `FrameWide` 의 축 실현은 캐시 없이 점마다 돈다(인구가 작아
+   수용, S4). 그리고 S4 구현 중 실측 하나: **스케치→돌출 벽의 정준 이름은 ~115비트에 캡**
+   (십진 창이 곱을 묶는다) — `Wide` **이름**의 면은 오늘의 구성 경로에서 안 나오고, 첫 생산자는
+   datum(S5)이다. `n·n` 넘침(1.6%)은 그 경로에서 실재하며 S4 가 열었다(census `wf` 가족).
 3. **`from_decimal` 창 밖 치수** — S3 이후 구성 시점 에러가 된다. 기존 스위트에서 몇 건인지
    세어 폴백 의존 여부를 확인할 것.
 4. **정의만 가리키는 평면의 순회·직렬화** — `Model::reachable` 이 면을 통해서만 돈다. 세계 축

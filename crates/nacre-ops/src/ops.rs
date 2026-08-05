@@ -526,17 +526,23 @@ pub(crate) fn extrude(
             SurfaceDef::Constructed,
             named_plane_points(&d),
         );
-        let node = |flip| nacre_topo::Motion::Frame {
-            plane: h,
+        // The caller stated the pair, so the placement is `Named` (S4) — `Canonical` is for
+        // frames nobody named, like a face's.
+        let placement = nacre_topo::FramePlacement::Named {
             origin: d.origin,
             ref_dir: d.ref_dir,
-            flip,
         };
-        let (_, _, _, w) =
-            crate::rotated_vertex::frame_world_basis(model, h, d.origin, d.ref_dir, false)?;
+        let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(model, h, &placement, false)?;
         let n = plane.normal().as_array();
         let flip = (0..3).map(|k| w[k] * n[k]).sum::<f64>() < 0.0;
-        Some(model.push_motion(node(flip), None))
+        Some(model.push_motion(
+            nacre_topo::Motion::Frame {
+                plane: h,
+                placement,
+                flip,
+            },
+            None,
+        ))
     });
     let (outer, holes) = swept_profile(model, plane, profile, dist, frame);
     // ★★★★ **The base cap *is* the plane the caller named**, so where they stated it exactly
@@ -1097,14 +1103,14 @@ fn sweep_ring(
 /// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
 /// centroid so a profile's `(0,0)` lands there), and its loops — the shared setup for placing a
 /// profile on a face (pad / pocket).
-/// **Which frame a face's sketch lives in** — the plane, where its `(0, 0)` sits, which way `+u`
-/// runs, and whether the plane's canonical coefficients need negating to face the way the face
-/// does. Everything a [`nacre_topo::Motion::Frame`] node needs, before the model has one.
+/// **Which frame a face's sketch lives in** — the plane, its [`nacre_topo::FramePlacement`]
+/// (a face has no caller to name one, so it is always `Canonical` today), and whether the
+/// plane's canonical coefficients need negating to face the way the face does. Everything a
+/// [`nacre_topo::Motion::Frame`] node needs, before the model has one.
 #[derive(Clone, Copy, Debug)]
 struct SketchFrame {
     plane: Handle<Surface>,
-    origin: [nacre_scalar::Rat; 3],
-    ref_dir: [nacre_scalar::Rat; 3],
+    placement: nacre_topo::FramePlacement,
     flip: bool,
 }
 
@@ -1253,24 +1259,28 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // ★ **`flip` is measured, not derived** — see `frame_world_basis`. `flip = true` negates `ŵ`
     // and `û` together and leaves `v̂`, so the second reading is a sign change rather than a
     // second realization.
-    // ★★ A face has no name, so its frame is the **derived** one — and `Motion::Frame` now carries
-    // that pair explicitly, so a named plane can supply a different one without a second machine.
+    // ★★ A face has no caller to name a frame, so its placement is `Canonical` (S4) — derived
+    // when the chain is flattened, stored nowhere. That is also what opens this branch for a
+    // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`
+    // succeeds through the arbitrary-precision road where the old narrow derivation declined.
     let world = SketchPlane::from_axes(origin, x, y);
     let sketch = (world.exact().is_none())
         .then(|| {
-            let c = *model.surface_name.get(&surface_h)?.narrow()?;
-            let (o_r, r_r) = nacre_scalar::plane_frame_default(c)?;
-            let b = crate::rotated_vertex::frame_world_basis(model, surface_h, o_r, r_r, false)?;
-            Some((o_r, r_r, b))
+            crate::rotated_vertex::frame_world_basis(
+                model,
+                surface_h,
+                &nacre_topo::FramePlacement::Canonical,
+                false,
+            )
         })
         .flatten()
-        .map(|(o_r, r_r, (o, u, v, w))| {
+        .map(|(o, u, v, w)| {
             // ★ `flip = true` negates `ŵ` and `û` together and leaves `v̂` — a half-turn about
             // `v` — so the second reading is a sign change rather than a second realization.
             let flip = (0..3).map(|k| w[k] * n.as_array()[k]).sum::<f64>() < 0.0;
             let sgn = if flip { -1.0 } else { 1.0 };
             (
-                (o_r, r_r, flip),
+                flip,
                 Point3::from_array(o),
                 Vector3::from_array(u.map(|c| c * sgn)),
                 // ★★ **`v̂` as realized, not as `ŵ × û` recomputed here.** It has its own exact
@@ -1281,15 +1291,14 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
             )
         });
     let (x, y, origin, sketch_frame) = match sketch {
-        Some((f, o, u, v)) => (
+        Some((flip, o, u, v)) => (
             u,
             v,
             o,
             Some(SketchFrame {
                 plane: surface_h,
-                origin: f.0,
-                ref_dir: f.1,
-                flip: f.2,
+                placement: nacre_topo::FramePlacement::Canonical,
+                flip,
             }),
         ),
         None => (x, y, origin, None),
@@ -1343,15 +1352,15 @@ fn extrude_and_boolean(
     // exactly one place that picks it. All that is left is to name it as a motion node.
     //
     // ★★ **`push_motion` interns**, so two sketches on one face name the *same* node — which is
-    // what makes their surfaces intern too (`SurfaceKey` is `(coefficients, motion)`) and is the
+    // what makes their surfaces intern too (`SurfaceKey` is `(name, motion)`) and is the
     // whole point of the exercise: two routes to one height become one `Handle<Surface>` at
-    // construction, with no f64 comparison anywhere.
+    // construction, with no f64 comparison anywhere. With `Canonical` placement the node is
+    // `(plane, Canonical, flip)` — nothing per-sketch in the key at all.
     let sketch_frame = frame.sketch_frame.map(|f| {
         model.push_motion(
             nacre_topo::Motion::Frame {
                 plane: f.plane,
-                origin: f.origin,
-                ref_dir: f.ref_dir,
+                placement: f.placement,
                 flip: f.flip,
             },
             None,

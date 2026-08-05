@@ -446,6 +446,87 @@ fn dump() {
         }
     }
 
+    // ── **A framed sketch on an `n·n`-overflow wall** (`wf`) — the population S4 opens, which
+    // no family above contains: `fw` is all-narrow (measured at S2) and `tp`'s walls are
+    // in-frame narrow. A prism on a fully tilted, exactly-orthonormal *decimal* frame has walls
+    // whose names run ~110 bits — narrow, with squared lengths past `i128` — and a pad or
+    // pocket on such a wall used to fall to the f64 path. Without this family a regression in
+    // the wide-frame road would cross this file bit-identical (the 8b lesson, a third time).
+    {
+        use nacre_math::{Point2, Vector3};
+        let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+        for (kn, pad) in [("pocket", false), ("pad", true)] {
+            let mut m = Model::new();
+            let plane = nacre_ops::SketchPlane::from_axes(
+                Point3::from_array([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
+                Vector3::from_array([0.6, 0.8, 0.0]),
+                Vector3::from_array([-0.48, 0.36, 0.8]),
+            );
+            let OpOutput::Extrude { solid, .. } = apply(
+                &mut m,
+                &Operation::Extrude {
+                    plane,
+                    profile: nacre_ops::Profile2d::polygon(vec![
+                        p2(0.1111111111111111, 0.1234567890123456),
+                        p2(4.123456789012345, 0.2345678901234567),
+                        p2(3.9876543210987654, 3.1234567890123459),
+                        p2(0.2222222222222222, 2.765432109876543),
+                    ]),
+                    dist: 2.5,
+                },
+            )
+            .expect("the wf base prism") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            // The family qualifies itself: a wall whose name is narrow but whose squared
+            // lengths overflow — the exact population the narrow frame derivation declines.
+            let wall = *m
+                .shells
+                .get(m.solids.get(solid).outer)
+                .faces
+                .iter()
+                .find(|&&f| {
+                    let s = m.faces.get(f).surface;
+                    m.surface_name
+                        .get(&s)
+                        .and_then(|n| n.narrow())
+                        .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                })
+                .expect("the wf population vanished — retune the constants");
+            // A small square centred on the wall, in its own sketch frame.
+            let sp = nacre_ops::face_plane(&m, wall).expect("planar");
+            let d = nacre_props::face_props(&m, wall).unwrap().centroid - sp.origin();
+            let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
+            let profile = nacre_ops::Profile2d::polygon(vec![
+                p2(cu - 0.3, cv - 0.3),
+                p2(cu + 0.3, cv - 0.3),
+                p2(cu + 0.3, cv + 0.3),
+                p2(cu - 0.3, cv + 0.3),
+            ]);
+            let inputs = operands(&m, solid, solid);
+            let op = if pad {
+                Operation::PadOnFace {
+                    face: wall,
+                    profile,
+                    dist: 0.4,
+                }
+            } else {
+                Operation::PocketOnFace {
+                    face: wall,
+                    profile,
+                    dist: 0.4,
+                }
+            };
+            let out = match apply(&mut m, &op).expect("the wf feature must build (S4)") {
+                OpOutput::PadOnFace { solid, .. } | OpOutput::PocketOnFace { solid, .. } => solid,
+                _ => unreachable!(),
+            };
+            m.rebuild_adjacency();
+            record(&format!("wf {kn}"), &m, &inputs, &Ok(vec![out]));
+        }
+    }
+
     // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** Since S2
     // every plane with points is named (wide ones in the arbitrary-precision vessel), so a
     // coordinate can move only when wide planes *merge* — a `c ` line that moves must come with

@@ -70,9 +70,11 @@ pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
 /// carries the result out of its frame and into the next one down. The walk terminates at a plane
 /// with no frame, which is the world.
 ///
-/// `None` when a frame cannot be built exactly — no coefficients recorded, a degenerate plane, or
-/// squared lengths past `i128`. That is a decline, not a reject: the caller falls back to the f64
-/// path it was on before frames existed.
+/// `None` when a frame cannot be built exactly — no name recorded at all, a degenerate plane,
+/// or an `Inexact`/unrecorded `SurfaceDef`. That is a decline, not a reject: the caller falls
+/// back to the f64 path it was on before frames existed. ★ Width is **not** on that list since
+/// S4: a `Wide` name or overflowing squared lengths take the arbitrary-precision road
+/// (`MoveNode::FrameWide`) instead of declining.
 pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Vec<MoveNode>> {
     let mut chain = Vec::new();
     let mut cur = Some(leaf);
@@ -86,12 +88,11 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
             Motion::Mirror { axis, offset } => chain.push(MoveNode::Mirror { axis, offset }),
             Motion::Frame {
                 plane,
-                origin,
-                ref_dir,
+                placement,
                 flip,
             } => {
                 // Built root-to-leaf here and reversed at the end, so it goes on backwards.
-                let mut c = frame_chain(model, plane, origin, ref_dir, flip)?;
+                let mut c = frame_chain(model, plane, &placement, flip)?;
                 c.reverse();
                 chain.append(&mut c);
             }
@@ -115,30 +116,56 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
 pub(crate) fn frame_chain(
     model: &Model,
     plane: Handle<nacre_geom::Surface>,
-    origin: [Rat; 3],
-    ref_dir: [Rat; 3],
+    placement: &nacre_topo::FramePlacement,
     flip: bool,
 ) -> Option<Vec<MoveNode>> {
+    use nacre_topo::FramePlacement;
+    let name = model.surface_name.get(&plane)?;
+
     // ★★★★ **Canonical coefficients carry no direction, and a frame needs one.**
     // `canonical_plane_coeffs` forces the first nonzero component positive, because its question
     // is *"are these the same plane"* — where direction is noise. A frame's `ŵ` **is** a
-    // direction, so the node carries the sense in `flip` and this is where it is spent.
-    // `narrow()?` keeps the S2/S4 boundary: a `Wide` name (identity only) declines a frame
-    // exactly as a missing name did, until S4's `Canonical` placement opens frames without names.
-    let c = *model.surface_name.get(&plane)?.narrow()?;
-    let zero = Rat::from_int(0);
-    let c = if flip {
-        let mut neg = [zero; 4];
-        for (k, x) in neg.iter_mut().enumerate() {
-            *x = zero.checked_sub(c[k])?;
-        }
-        neg
-    } else {
-        c
+    // direction, so the node carries the sense in `flip`, and both roads below spend it on the
+    // coefficients just before building the frame.
+    //
+    // **The narrow road** — bit for bit the pre-S4 frame. For `Canonical` the placement pair is
+    // derived from the canonical (unflipped) coefficients first and the sign is applied after —
+    // the same split `face_frame`/`frame_chain` had before the derivation moved here, and a
+    // correctness condition: `ref_dir = ẑ × n` is sign-sensitive.
+    let narrow_road = || -> Option<MoveNode> {
+        let c = *name.narrow()?;
+        let (origin, ref_dir) = match placement {
+            FramePlacement::Named { origin, ref_dir } => (*origin, *ref_dir),
+            FramePlacement::Canonical => nacre_scalar::plane_frame_default(c)?,
+        };
+        let zero = Rat::from_int(0);
+        let c = if flip {
+            let mut neg = [zero; 4];
+            for (k, x) in neg.iter_mut().enumerate() {
+                *x = zero.checked_sub(c[k])?;
+            }
+            neg
+        } else {
+            c
+        };
+        Some(MoveNode::Frame {
+            frame: nacre_scalar::plane_frame_named(c, origin, ref_dir)?,
+        })
     };
-    let mut chain = vec![MoveNode::Frame {
-        frame: nacre_scalar::plane_frame_named(c, origin, ref_dir)?,
-    }];
+    // **The wide road** (S4) — the same convention through arbitrary precision, where nothing
+    // can overflow. Taken when the name is `Wide` or when any narrow derivation step hits
+    // `i128` (the measured 1.6% `n·n` population). This is the frame arm of the f64-fallback
+    // chain closing: a plane with a name can now always host a sketch.
+    let wide_road = || -> Option<MoveNode> {
+        let wf = match placement {
+            FramePlacement::Canonical => nacre_cip::WideFrame::canonical_of(name, flip)?,
+            FramePlacement::Named { origin, ref_dir } => {
+                nacre_cip::WideFrame::named_of(name, origin, ref_dir, flip)?
+            }
+        };
+        Some(MoveNode::FrameWide(wf))
+    };
+    let mut chain = vec![narrow_road().or_else(wide_road)?];
     match model.surface_defs.get(&plane) {
         Some(SurfaceDef::Moved { motion, .. }) => chain.append(&mut motion_chain(model, *motion)?),
         Some(SurfaceDef::Constructed) => {}
@@ -167,11 +194,10 @@ pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 pub(crate) fn frame_world_basis(
     model: &Model,
     plane: Handle<nacre_geom::Surface>,
-    origin: [Rat; 3],
-    ref_dir: [Rat; 3],
+    placement: &nacre_topo::FramePlacement,
     flip: bool,
 ) -> Option<WorldBasis> {
-    let chain = frame_chain(model, plane, origin, ref_dir, flip)?;
+    let chain = frame_chain(model, plane, placement, flip)?;
     let at = |p: [i128; 3]| -> Option<[f64; 3]> {
         Some(replay(Pt3::at(p.map(Rat::from_int)), &chain)?.coord)
     };
@@ -396,5 +422,107 @@ mod tests {
             })
             .collect();
         assert_eq!(axes, vec![Axis::Z, Axis::X]);
+    }
+
+    /// Push a plane whose exact triple is `pts`, with an f64 `Plane` **consistent with it**
+    /// (`Plane::through_points` of the realized corners) — the frame locks below ask about the
+    /// realized basis's geometry, so unlike the interning lock the f64 form has to match.
+    fn push_consistent(m: &mut Model, pts: [[R; 3]; 3]) -> Handle<nacre_geom::Surface> {
+        let f = |p: [R; 3]| Point3::from_array(p.map(|r| r.to_f64()));
+        let pl = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
+            .expect("a non-degenerate triple");
+        let (h, _) = m.push_surface_with_points(
+            nacre_geom::Surface::Plane(pl),
+            SurfaceDef::Constructed,
+            Some(pts),
+        );
+        h
+    }
+
+    /// The realized basis is a right-handed orthonormal frame whose origin sits on the plane
+    /// and whose `ŵ` is parallel to the plane's normal — the sanity every frame lock needs.
+    fn assert_frame_shape(m: &Model, h: Handle<nacre_geom::Surface>, what: &str) {
+        let (o, u, v, w) = frame_world_basis(m, h, &nacre_topo::FramePlacement::Canonical, false)
+            .unwrap_or_else(|| panic!("{what}: S4 must open this frame"));
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        for (name, a) in [("u", u), ("v", v), ("w", w)] {
+            assert!(
+                (dot(a, a) - 1.0).abs() < 1e-12,
+                "{what}: {name} is not unit ({:e})",
+                dot(a, a) - 1.0
+            );
+        }
+        assert!(dot(u, v).abs() < 1e-12, "{what}: u ⊥ v fails");
+        assert!(dot(u, w).abs() < 1e-12, "{what}: u ⊥ w fails");
+        assert!(dot(v, w).abs() < 1e-12, "{what}: v ⊥ w fails");
+        let nacre_geom::Surface::Plane(pl) = m.surface(h) else {
+            unreachable!()
+        };
+        assert!(
+            pl.distance(Point3::from_array(o)).abs() < 1e-9,
+            "{what}: the origin is off the plane by {:e}",
+            pl.distance(Point3::from_array(o))
+        );
+        let n = pl.normal().as_array();
+        let nn = dot(n, n).sqrt();
+        let cross = [
+            w[1] * n[2] - w[2] * n[1],
+            w[2] * n[0] - w[0] * n[2],
+            w[0] * n[1] - w[1] * n[0],
+        ];
+        assert!(
+            dot(cross, cross).sqrt() / nn < 1e-9,
+            "{what}: ŵ is not parallel to the plane normal"
+        );
+    }
+
+    /// ★★★★★ S4: **a `Wide` name opens a frame.** The population `frame_chain` declined at
+    /// `narrow()` — a plane whose canonical answer exceeds `i128` — now realizes its canonical
+    /// placement through the arbitrary-precision road, and the basis is a real frame on the
+    /// real plane. (What stays closed for `Wide` is the *narrow shortcuts* — `base_rat`,
+    /// Shewchuk, `Isometry` transport — locked on the topo side.)
+    #[test]
+    fn a_wide_plane_hosts_a_canonical_frame() {
+        let q = |n: i128, d: i128| R::new(n, d).unwrap();
+        let big1 = (1i128 << 90) + 1;
+        let big2 = (1i128 << 90) + 3;
+        let pts = [
+            [q(big1, 3), q(big2, 7), q(0, 1)],
+            [q(-big2, 5), q(big1, 11), q(0, 1)],
+            [q(1, 13), q(1, 17), q(1, 19)],
+        ];
+        // Fixture qualification (the S2 census lesson): genuinely wide.
+        let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
+        assert!(name.narrow().is_none(), "the fixture must be wide");
+        let mut m = Model::new();
+        let h = push_consistent(&mut m, pts);
+        assert_frame_shape(&m, h, "wide plane");
+    }
+
+    /// ★★★★ S4: **a narrow name whose squared lengths overflow `i128` opens too** — the
+    /// measured 1.6% population (`n·n` is a square, so it overflows long before the name).
+    /// Before S4 this was `plane_frame_named`'s hard `None`; the v-fallback never applied.
+    #[test]
+    fn a_narrow_name_with_wide_squares_hosts_a_frame() {
+        let q = |n: i128, d: i128| R::new(n, d).unwrap();
+        // Intercept form: the plane through (1/p, 0, 0), (0, 1/q, 0), (0, 0, 1/r) has the
+        // canonical name [p, q, r, −1] — narrow when p, q, r fit i128, while n·n = p²+q²+r²
+        // does not (~2^140).
+        let (p, q2, r) = ((1i128 << 70) + 1, (1i128 << 70) + 3, (1i128 << 70) + 7);
+        let pts = [
+            [q(1, p), q(0, 1), q(0, 1)],
+            [q(0, 1), q(1, q2), q(0, 1)],
+            [q(0, 1), q(0, 1), q(1, r)],
+        ];
+        // Fixture qualification: the name is narrow AND the narrow frame derivation dies on it.
+        let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
+        let c = *name.narrow().expect("the name itself fits i128");
+        assert!(
+            nacre_scalar::plane_frame_default(c).is_none(),
+            "the fixture must be in the nn-overflow population"
+        );
+        let mut m = Model::new();
+        let h = push_consistent(&mut m, pts);
+        assert_frame_shape(&m, h, "nn-overflow plane");
     }
 }
