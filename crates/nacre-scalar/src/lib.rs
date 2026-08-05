@@ -610,6 +610,68 @@ pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<Pl
     Some(PlaneName::Narrow(out))
 }
 
+/// The sign of the 2-D orientation determinant `(b − a) × (c − a)` — positive when `abc` turns
+/// counter-clockwise, zero when collinear. The exact-`Rat` twin of `nacre_predicates::orient2d`
+/// (same convention), for coordinates that *are* rational rather than f64.
+///
+/// ★ **Total.** Unlike every other `Rat` derivation here, this cannot decline: a sign consumed by
+/// a simplicity check that failed open on overflow would read "no intersection" where there is
+/// one — silent-wrong, the exact shape [`plane_name_exact`] was built to kill. So the `Rat` route
+/// runs first and an overflow falls through to integer arithmetic that cannot overflow.
+///
+/// ★ **The `BigInt` arm is load-bearing, not a corner case.** [`Rat::from_decimal`] denominators
+/// reach `10^38`, and the determinant multiplies two coordinate *differences* — two 17-digit
+/// dimensions already push the product denominator past `i128`. Same denominator-clearing shape
+/// as [`plane_name_big`]: each point is scaled by its own positive denominator, which multiplies
+/// the determinant by `Da²·Db·Dc > 0` and therefore cannot move the sign.
+pub fn orient2d_rat(a: [Rat; 2], b: [Rat; 2], c: [Rat; 2]) -> i8 {
+    let narrow = || -> Option<i8> {
+        let u = [b[0].checked_sub(a[0])?, b[1].checked_sub(a[1])?];
+        let v = [c[0].checked_sub(a[0])?, c[1].checked_sub(a[1])?];
+        let det = u[0]
+            .checked_mul(v[1])?
+            .checked_sub(u[1].checked_mul(v[0])?)?;
+        Some(rat_sign(det))
+    };
+    narrow().unwrap_or_else(|| orient2d_big(a, b, c))
+}
+
+/// `-1 / 0 / +1` of a rational.
+fn rat_sign(x: Rat) -> i8 {
+    match x.cmp(&Rat::from_int(0)) {
+        core::cmp::Ordering::Less => -1,
+        core::cmp::Ordering::Equal => 0,
+        core::cmp::Ordering::Greater => 1,
+    }
+}
+
+/// [`orient2d_rat`]'s unbounded arm, always taken — the differential test needs to call it on
+/// inputs the `Rat` route handles, which it cannot do through the filter (the 2-D analogue of
+/// [`plane_name_big`]'s arrangement).
+pub(crate) fn orient2d_big(a: [Rat; 2], b: [Rat; 2], c: [Rat; 2]) -> i8 {
+    use num_bigint::{BigInt, Sign};
+    use num_integer::Integer;
+
+    // Clear each point's denominators once (positive by `Ratio`'s reduction invariant), then the
+    // arithmetic is plain integers and the determinant is the true one times `Da²·Db·Dc`.
+    let lift = |p: [Rat; 2]| -> ([BigInt; 2], BigInt) {
+        let den = p.map(|r| BigInt::from(r.denom()));
+        let d = den[0].lcm(&den[1]);
+        let num = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&d / &den[i]));
+        (num, d)
+    };
+    let ((pa, da), (pb, db), (pc, dc)) = (lift(a), lift(b), lift(c));
+    let edge = |q: &[BigInt; 2], dq: &BigInt| -> [BigInt; 2] {
+        core::array::from_fn(|i| &q[i] * &da - &pa[i] * dq)
+    };
+    let (u, v) = (edge(&pb, &db), edge(&pc, &dc));
+    match (&u[0] * &v[1] - &u[1] * &v[0]).sign() {
+        Sign::Minus => -1,
+        Sign::NoSign => 0,
+        Sign::Plus => 1,
+    }
+}
+
 /// **The world origin projected onto a rational plane** — `p = (−d / n·n) · n` for
 /// `a·x + b·y + c·z + d = 0`.
 ///
@@ -2437,6 +2499,51 @@ mod tests {
             name, permuted,
             "two statements of one wide plane must be one value"
         );
+    }
+
+    proptest! {
+        /// **The two orientation arms must be the same function** — same argument as
+        /// `the_wide_derivation_answers_what_the_narrow_one_does`: `orient2d_rat` runs the `Rat`
+        /// route first, so wherever it answers the `BigInt` arm is never consulted, and an error
+        /// there would wait for the first overflowing input. `orient2d_big` is `pub(crate)` for
+        /// exactly this call.
+        #[test]
+        fn the_big_orientation_answers_what_the_narrow_one_does(
+            xs in prop::array::uniform6(-(1i64 << 20)..(1i64 << 20)),
+            ds in prop::array::uniform6(1i64..(1i64 << 20)),
+        ) {
+            let r = |i: usize| Rat::new(xs[i] as i128, ds[i] as i128).unwrap();
+            let (a, b, c) = ([r(0), r(1)], [r(2), r(3)], [r(4), r(5)]);
+            // Small operands: the narrow route always answers, so this compares the arms.
+            prop_assert_eq!(orient2d_rat(a, b, c), orient2d_big(a, b, c));
+        }
+    }
+
+    /// ★★ **The population the narrow route cannot reach — and the reason the sign is total.**
+    ///
+    /// Two decimal-window denominators of `10^22` put the determinant's product denominator at
+    /// `10^44`, past `i128` — precisely what `from_decimal`'d profile coordinates produce. The
+    /// answers are hand-computable: `(0,0) → (1/d,0) → (0,1/d)` turns counter-clockwise, its
+    /// mirror clockwise, and a doubled point on the same ray is collinear.
+    #[test]
+    fn an_orientation_past_i128_still_gets_its_sign() {
+        let d = 10i128.pow(22);
+        let r = |n: i128, den: i128| Rat::new(n, den).unwrap();
+        let (o, x, y) = (
+            [r(0, 1), r(0, 1)],
+            [r(1, d), r(0, 1)],
+            [r(0, 1), r(1, d + 1)],
+        );
+        // The narrow route must actually be dead here, or this pins nothing (self-qualification).
+        assert!(
+            r(1, d).checked_mul(r(1, d + 1)).is_none(),
+            "the product denominator was expected to overflow i128"
+        );
+        assert_eq!(orient2d_rat(o, x, y), 1, "counter-clockwise");
+        assert_eq!(orient2d_rat(o, y, x), -1, "clockwise");
+        let far = [r(2, d), r(2, d)];
+        let near = [r(1, d + 1), r(1, d + 1)];
+        assert_eq!(orient2d_rat(o, near, far), 0, "one ray, three points");
     }
 
     /// The core rational-representation property in miniature: exact rational accumulation does not
