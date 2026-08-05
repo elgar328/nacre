@@ -1218,7 +1218,7 @@ pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
 /// live solid's outer shell holds the face.
 pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpError> {
     let f = face_frame(model, face)?;
-    Ok(SketchPlane::from_axes(f.origin, f.x, f.y))
+    Ok(realized_plane(f.origin, f.x, f.y))
 }
 
 /// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,
@@ -1292,7 +1292,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // when the chain is flattened, stored nowhere. That is also what opens this branch for a
     // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`
     // succeeds through the arbitrary-precision road where the old narrow derivation declined.
-    let world = SketchPlane::from_axes(origin, x, y);
+    let world = realized_plane(origin, x, y);
     let sketch = (world.exact().is_none())
         .then(|| {
             crate::rotated_vertex::frame_world_basis(
@@ -1343,6 +1343,24 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     })
 }
 
+/// A [`SketchPlane`] from a **realized** (rounded) frame basis — kernel-internal, and
+/// deliberately without a definition.
+///
+/// ★★ **Do not lift these axes.** The public [`SketchPlane::from_axes`] lifts what a *caller*
+/// wrote, because written decimals are a statement. A realized basis is a cache of a plane that
+/// already has an exact definition (points + motion); lifting it would mint a second,
+/// ulp-different "truth" for the same wall — two exact descriptions of one plane, the defect
+/// class the frame work exists to remove — and a sketch built on that lift would land on a
+/// non-interned plane a hair off the face it means.
+fn realized_plane(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> SketchPlane {
+    SketchPlane {
+        origin,
+        x_axis,
+        y_axis,
+        def: None,
+    }
+}
+
 /// A face-local feature built as **tool body + boolean**: the profile
 /// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid.
 /// A **contained** footprint takes the contained-coplanar path (empty seam → all
@@ -1375,7 +1393,7 @@ fn extrude_and_boolean(
     };
     // The face's own frame, so a pad or pocket takes the same exact-rational path an
     // extrude does: its axes are `{0, ±1}` exactly whenever the face is axis-aligned.
-    let plane = SketchPlane::from_axes(frame.origin, frame.x, frame.y);
+    let plane = realized_plane(frame.origin, frame.x, frame.y);
     // ★★★ **The frame is not decided here — `face_frame` already decided it**, and that is the
     // point: `face_plane` promises a caller the frame this operation will use, so there must be
     // exactly one place that picks it. All that is left is to name it as a motion node.

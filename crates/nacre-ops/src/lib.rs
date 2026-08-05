@@ -219,21 +219,56 @@ impl SketchPlane {
         self
     }
 
-    /// A frame from axes the caller already holds — **with no exact definition** (`def: None`),
-    /// so the *named-plane* exact records (a stated base cap, a `Named` frame) do not apply.
+    /// A frame from axes the caller already holds — **and the axes' decimal truth is its
+    /// definition** (S6a). The boundary rule that `Profile2d` applies to coordinates applies to
+    /// axes too: what the caller wrote *is* the statement, so the plane through
+    /// `[o, o + x, o + y]` and the `+u` direction `x` are recorded exactly. A 45°-rotated frame
+    /// — whose axes never lift to exact orthonormal rationals — now extrudes through the frame
+    /// road (S4, wide names included) instead of falling silently to f64.
     ///
-    /// ★ What still applies is the **world lift**: axes whose decimals square and cross to
-    /// exact `1`/`0` — a Pythagorean frame like `(0.6, 0.8, 0)`/`(−0.48, 0.36, 0.8)` — pass
-    /// `exact()` and take the world-rational path, definition or not. That population is how
-    /// the `n·n`-overflow walls (the S4 census `wf` family) are built, which is why this is
-    /// public: normalized axes are usually the wrong thing to hand a kernel, but a caller with
-    /// an exactly-orthonormal decimal frame legitimately has only axes.
+    /// ★ The **world lift** still comes first: axes whose decimals square and cross to exact
+    /// `1`/`0` — a Pythagorean frame like `(0.6, 0.8, 0)`/`(−0.48, 0.36, 0.8)` — pass `exact()`
+    /// and take the world-rational path, definition or not. That population is how the
+    /// `n·n`-overflow walls (the S4 census `wf` family) are built.
+    ///
+    /// ★★ **What the definition states — and what it does not.** Three points, `+u`, and the
+    /// polarity (point order); the realized frame is *orthonormal*, exactly as for every other
+    /// definition (`ref_dir` is any length, `+v` is derived on `y`'s side). Exact decimal
+    /// orthogonality is deliberately **not** required — a rotated pair `[c, s, 0]/[−s, c, 0]`
+    /// cancels to exactly zero, but two independently rounded axes need not, and requiring it
+    /// would strand exactly the callers this lift exists for. A skewed (non-orthogonal) pair is
+    /// outside [`SketchPlane`]'s contract; the frame realization drops the skew.
+    ///
+    /// `def` stays `None` only for axes outside the decimal window or a degenerate pair
+    /// (`x × y = 0` in the decimals) — those keep the f64 path they had.
     pub fn from_axes(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Self {
+        let def = (|| {
+            let lift = |p: [f64; 3]| {
+                let a = p.map(Rat::from_decimal);
+                Some([a[0]?, a[1]?, a[2]?])
+            };
+            let o = lift(origin.as_array())?;
+            let add = |a: [Rat; 3], b: [Rat; 3]| -> Option<[Rat; 3]> {
+                Some([
+                    a[0].checked_add(b[0])?,
+                    a[1].checked_add(b[1])?,
+                    a[2].checked_add(b[2])?,
+                ])
+            };
+            let px = add(o, lift(x_axis.as_array())?)?;
+            let py = add(o, lift(y_axis.as_array())?)?;
+            // Total: `None` means exactly one thing — the axes are parallel (or zero) in their
+            // decimal truth, and name no plane.
+            nacre_scalar::plane_name_exact(o, px, py)?;
+            Some(PlaneDef {
+                points: [o, px, py],
+            })
+        })();
         Self {
             origin,
             x_axis,
             y_axis,
-            def: None,
+            def,
         }
     }
 
@@ -6463,15 +6498,30 @@ pub mod tests {
                 d.origin().map(|r| r.to_f64())
             );
         }
-        // ★ And the axes-only route is honest about having no definition.
+        // ★ And the axes-only route records the axes' decimal truth (S6a — this used to assert
+        // `def.is_none()`, "honest about having no definition"; the honest statement now is the
+        // definition itself, `[o, o + x, o + y]`).
+        let axes = SketchPlane::from_axes(
+            Point3::from_array([1.0, 2.0, 3.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 1.0, 0.0]),
+        );
+        let r = |v: [f64; 3]| v.map(|x| nacre_scalar::Rat::from_decimal(x).unwrap());
+        assert_eq!(
+            axes.def.expect("axes state their truth").points(),
+            [r([1.0, 2.0, 3.0]), r([2.0, 2.0, 3.0]), r([1.0, 3.0, 3.0])],
+            "o, o + x, o + y"
+        );
+        // A degenerate pair still names nothing.
         assert!(
             SketchPlane::from_axes(
                 Point3::origin(),
                 Vector3::from_array([1.0, 0.0, 0.0]),
-                Vector3::from_array([0.0, 1.0, 0.0]),
+                Vector3::from_array([2.0, 0.0, 0.0]),
             )
             .def
-            .is_none()
+            .is_none(),
+            "parallel axes name no plane"
         );
     }
 
@@ -6642,6 +6692,93 @@ pub mod tests {
         assert_eq!(
             missing, 0,
             "{missing} of {total} faces carry no exact points — the f64 fallback fired"
+        );
+    }
+
+    /// ★★★★★ S6a terminal lock: **an axes-only tilted frame extrudes on the exact road.**
+    ///
+    /// The sibling of `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`, for the
+    /// population that S4 could not reach: a `from_axes` plane whose axes never lift to exact
+    /// orthonormal rationals (a rotated frame — dev-log's "#28: the caller who only has axes",
+    /// the first refutation of `Inexact`'s removal). Before S6a its `def` was `None` by design
+    /// and the whole prism fell silently to f64 — every surface point-less, undemotable under
+    /// any later motion. Now the axes' decimal truth is the definition, the canonical name is
+    /// `Wide` (asserted — the full-width crosses exceed `i128`), `WideFrame::named_of` realizes
+    /// the frame, and **every face of the prism records its exact points**.
+    #[test]
+    fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
+        let mut m = Model::new();
+        let plane = crate::ops::SketchPlane::from_axes(
+            Point3::from_array([0.2547863291057384, -0.5123456789012345, 1.5432109876543211]),
+            Vector3::from_array([0.7123456789012345, 0.5876543210987654, 0.4098765432101234]),
+            Vector3::from_array([-0.5876543210987654, 0.7123456789012345, 0.1234567890123456]),
+        );
+        // Fixture qualification: no world lift (the frame road is the only exact road), the
+        // definition exists, and its name is genuinely Wide.
+        assert!(
+            plane.exact().is_none(),
+            "the axes must not lift orthonormal"
+        );
+        let d = plane.def.expect("S6a: axes state their decimal truth");
+        let pts = d.points();
+        assert!(
+            nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2])
+                .expect("a plane")
+                .narrow()
+                .is_none(),
+            "the fixture was chosen to have a Wide name — retune the axes if this fails"
+        );
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane,
+                profile: Profile2d::polygon(vec![
+                    p(0.1234567890123456, 0.2345678901234567),
+                    p(2.765432109876543, 0.3456789012345678),
+                    p(2.543210987654321, 1.9876543210987654),
+                    p(0.3456789012345678, 1.8765432109876543),
+                ])
+                .unwrap(),
+                dist: 1.3,
+            },
+        )
+        .expect("S6a: an axes-only tilted extrude must build exactly") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        // The end-to-end claim: nothing fell to f64 — every face states its exact points.
+        let mut missing = 0;
+        let mut total = 0;
+        for &f in &m.shells.get(m.solids.get(solid).outer).faces {
+            total += 1;
+            if !m.surface_points.contains_key(&m.faces.get(f).surface) {
+                missing += 1;
+            }
+        }
+        assert_eq!(
+            missing, 0,
+            "{missing} of {total} faces carry no exact points — the f64 fallback fired"
+        );
+        // Geometry check: the realized frame is orthonormal, so the prism's volume is the
+        // profile's own area times the sweep — independent of the tilt.
+        let props = nacre_props::mass_props(&m, solid).unwrap();
+        let ring = [
+            [0.1234567890123456, 0.2345678901234567],
+            [2.765432109876543, 0.3456789012345678],
+            [2.543210987654321, 1.9876543210987654],
+            [0.3456789012345678, 1.8765432109876543],
+        ];
+        let mut area2 = 0.0f64;
+        for i in 0..4 {
+            let (a, b) = (ring[i], ring[(i + 1) % 4]);
+            area2 += a[0] * b[1] - b[0] * a[1];
+        }
+        let want = (area2 / 2.0).abs() * 1.3;
+        assert!(
+            (props.volume - want).abs() < 1e-9,
+            "volume {} vs analytic {want}",
+            props.volume
         );
     }
 

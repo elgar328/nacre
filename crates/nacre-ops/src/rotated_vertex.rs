@@ -441,9 +441,14 @@ mod tests {
 
     /// The realized basis is a right-handed orthonormal frame whose origin sits on the plane
     /// and whose `ŵ` is parallel to the plane's normal — the sanity every frame lock needs.
-    fn assert_frame_shape(m: &Model, h: Handle<nacre_geom::Surface>, what: &str) {
-        let (o, u, v, w) = frame_world_basis(m, h, &nacre_topo::FramePlacement::Canonical, false)
-            .unwrap_or_else(|| panic!("{what}: S4 must open this frame"));
+    fn assert_frame_shape(
+        m: &Model,
+        h: Handle<nacre_geom::Surface>,
+        placement: &nacre_topo::FramePlacement,
+        what: &str,
+    ) {
+        let (o, u, v, w) = frame_world_basis(m, h, placement, false)
+            .unwrap_or_else(|| panic!("{what}: this frame must open"));
         let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
         for (name, a) in [("u", u), ("v", v), ("w", w)] {
             assert!(
@@ -496,7 +501,7 @@ mod tests {
         assert!(name.narrow().is_none(), "the fixture must be wide");
         let mut m = Model::new();
         let h = push_consistent(&mut m, pts);
-        assert_frame_shape(&m, h, "wide plane");
+        assert_frame_shape(&m, h, &nacre_topo::FramePlacement::Canonical, "wide plane");
     }
 
     /// ★★★★ S4: **a narrow name whose squared lengths overflow `i128` opens too** — the
@@ -523,6 +528,68 @@ mod tests {
         );
         let mut m = Model::new();
         let h = push_consistent(&mut m, pts);
-        assert_frame_shape(&m, h, "nn-overflow plane");
+        assert_frame_shape(
+            &m,
+            h,
+            &nacre_topo::FramePlacement::Canonical,
+            "nn-overflow plane",
+        );
+    }
+
+    /// ★★★ S6a: **a `Named` placement opens on a `Wide` name too.** S4's locks covered the
+    /// canonical road; the axes-only population (`from_axes`, a tilted full-width frame) is
+    /// exactly the other pairing — a caller-stated origin/`ref_dir` on a plane whose canonical
+    /// name exceeds `i128` — and it goes through `WideFrame::named_of`.
+    ///
+    /// ★ The fixture is that population, not the S2 `2^90` triple: full-width *decimal* axes at
+    /// CAD scale. Their cross runs the denominators to `10^48`, so the canonical name is
+    /// genuinely `Wide` (asserted), while the geometry stays near `1` — which matters, because
+    /// a frame's unit axes are invisible in f64 next to a `2^90` origin (an ulp there is
+    /// `~6e10`), and the first version of this test proved it by accident.
+    #[test]
+    fn a_wide_plane_hosts_a_named_frame() {
+        let d = |x: f64| R::from_decimal(x).unwrap();
+        let o = [
+            d(0.2547863291057384),
+            d(-0.5123456789012345),
+            d(1.5432109876543211),
+        ];
+        let x = [
+            d(0.7123456789012345),
+            d(0.5876543210987654),
+            d(0.4098765432101234),
+        ];
+        let y = [
+            d(-0.5876543210987654),
+            d(0.7123456789012345),
+            d(0.1234567890123456),
+        ];
+        let add = |a: [R; 3], b: [R; 3]| -> [R; 3] {
+            core::array::from_fn(|i| a[i].checked_add(b[i]).expect("decimal widths"))
+        };
+        let pts = [o, add(o, x), add(o, y)];
+        // Fixture qualification: genuinely wide, at unit scale.
+        let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
+        assert!(
+            name.narrow().is_none(),
+            "the fixture must be wide — full-width crosses were expected to exceed i128"
+        );
+        let mut m = Model::new();
+        let h = push_consistent(&mut m, pts);
+        // The caller's statement, `PlaneDef`-style: origin = first point, +u toward the second.
+        let placement = nacre_topo::FramePlacement::Named {
+            origin: o,
+            ref_dir: x,
+        };
+        assert_frame_shape(&m, h, &placement, "wide plane, named");
+        // And `û` runs along the stated `ref_dir`, not some canonical direction.
+        let (_, u, _, _) = frame_world_basis(&m, h, &placement, false).unwrap();
+        let rd = x.map(|r| r.to_f64());
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let cos = dot(u, rd) / dot(rd, rd).sqrt();
+        assert!(
+            (cos - 1.0).abs() < 1e-9,
+            "û does not follow the caller's ref_dir (cos = {cos})"
+        );
     }
 }
