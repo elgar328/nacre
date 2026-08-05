@@ -8,8 +8,7 @@ use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Origin, Shell, Solid, SurfaceDef,
-    Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Origin, Shell, Solid, Vertex, VertexDef,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -250,12 +249,12 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
     // triple as the pre-motion truth. The probe is per solid like everything here, so one
     // overflowing surface puts the whole solid on the recorded path rather than splitting it.
     let points_move = |s: Handle<Surface>| -> bool {
-        let Some(nacre_topo::SurfaceTruth::Plane {
+        let nacre_topo::SurfaceTruth::Plane {
             points: nacre_topo::PlanePoints::Known(p),
             ..
-        }) = model.surface_truth(s)
+        } = model.surface_truth(s)
         else {
-            return true; // nothing to carry
+            return true; // a cylinder carries no points
         };
         // The very function pass 1 will transport with — sharing it is what makes the probe's
         // promise ("this will not overflow") structural rather than a parallel re-derivation.
@@ -326,13 +325,8 @@ fn moved_surface_motion(
     // history: a boolean between differently-moved operands hands back walls that came from
     // different ones. Memoized per distinct parent so surfaces that did share a history still do.
     let parent = match model.surface_truth(src) {
-        Some(
-            nacre_topo::SurfaceTruth::Plane { motion, .. }
-            | nacre_topo::SurfaceTruth::Cylinder { motion },
-        ) => *motion,
-        // Transitional (S6b): a point-less plane — treated as world-stated, exactly as the old
-        // `Constructed`-without-points row was. Dies with the old push API.
-        None => None,
+        nacre_topo::SurfaceTruth::Plane { motion, .. }
+        | nacre_topo::SurfaceTruth::Cylinder { motion } => *motion,
     };
     let leaf = match surf_rot.get(&parent) {
         Some(&h) => h,
@@ -586,7 +580,7 @@ fn transform_solid(
         let moved = motion
             .surface(model.surface(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
-        let src_truth = model.surface_truth(s).cloned();
+        let src_truth = model.surface_truth(s).clone();
         let new_motion = moved_surface_motion(model, s, motion, exact, &mut surf_rot);
         // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
         // `Model::push_surface_with_points`, so there is no second description to keep in step —
@@ -599,23 +593,23 @@ fn transform_solid(
         // everything exact, and the points are carried in the world with it; the transport is
         // the very function `motion_is_exact` probed, so it cannot fail here.
         let points = match &src_truth {
-            Some(nacre_topo::SurfaceTruth::Plane {
+            nacre_topo::SurfaceTruth::Plane {
                 points: nacre_topo::PlanePoints::Known(p),
                 motion: src_m,
-            }) => {
+            } => {
                 if new_motion != *src_m {
                     Some(*p)
                 } else {
                     Some(transport_points(motion, *p).expect("probed by motion_is_exact"))
                 }
             }
-            Some(nacre_topo::SurfaceTruth::Cylinder { .. }) | None => None,
+            nacre_topo::SurfaceTruth::Cylinder { .. } => None,
         };
-        let def = match new_motion {
-            Some(m) => SurfaceDef::Moved { motion: m },
-            None => SurfaceDef::Constructed,
+        let (new_s, flipped) = match (moved, points) {
+            (Surface::Plane(pl), Some(p)) => model.push_plane(pl, p, new_motion),
+            (Surface::Cylinder(cy), _) => (model.push_cylinder(cy, new_motion), false),
+            (Surface::Plane(_), None) => unreachable!("a plane's truth always carries points"),
         };
-        let (new_s, flipped) = model.push_surface_with_points(moved, def, points);
         surf_map.insert(s, new_s);
         surf_flip.insert(s, flipped);
     }
@@ -899,12 +893,23 @@ mod tests {
             .faces
             .iter()
             .map(|&f| m.faces.get(f).surface)
-            .find(|s2| m.surface_points.get(s2) == Some(&pts))
+            .find(|&s2| {
+                matches!(
+                    m.surface_truth(s2),
+                    nacre_topo::SurfaceTruth::Plane {
+                        points: nacre_topo::PlanePoints::Known(p),
+                        ..
+                    } if *p == pts
+                )
+            })
             .expect("the deep triple must survive the move verbatim (pre-motion truth)");
         assert!(
             matches!(
-                m.surface_defs.get(&moved_surf),
-                Some(SurfaceDef::Moved { .. })
+                m.surface_truth(moved_surf),
+                nacre_topo::SurfaceTruth::Plane {
+                    motion: Some(_),
+                    ..
+                }
             ),
             "the overflow must force the recorded path, not drop the points"
         );
@@ -942,7 +947,7 @@ mod tests {
         assert!(
             matches!(
                 m.surface_truth(lateral),
-                Some(nacre_topo::SurfaceTruth::Cylinder { motion: Some(_) })
+                nacre_topo::SurfaceTruth::Cylinder { motion: Some(_) }
             ),
             "a moved cylinder's truth must carry the motion, not degrade"
         );

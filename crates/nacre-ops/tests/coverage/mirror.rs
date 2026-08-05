@@ -269,26 +269,25 @@ fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
         };
         m.rebuild_adjacency();
         let shell = m.solids.get(b).outer;
-        let mut defs = Vec::new();
+        let mut motions = Vec::new();
         for &fh in &m.shells.get(shell).faces {
-            defs.push(*m.surface_defs.get(&m.faces.get(fh).surface).expect("def"));
+            motions.push(match m.surface_truth(m.faces.get(fh).surface) {
+                nacre_topo::SurfaceTruth::Plane { motion, .. }
+                | nacre_topo::SurfaceTruth::Cylinder { motion } => motion.is_some(),
+            });
         }
-        assert!(!defs.is_empty(), "walked no faces");
-        defs
+        assert!(!motions.is_empty(), "walked no faces");
+        motions
     };
 
     for offset in [Rat::from_int(0), Rat::from_int(3), Rat::new(1, 2).unwrap()] {
         assert!(
-            exactness(offset)
-                .iter()
-                .all(|d| matches!(d, nacre_topo::SurfaceDef::Constructed)),
+            exactness(offset).iter().all(|recorded| !recorded),
             "a dyadic mirror plane keeps the coefficients true, so nothing is recorded"
         );
     }
     assert!(
-        exactness(Rat::new(1, 3).unwrap())
-            .iter()
-            .all(|d| matches!(d, nacre_topo::SurfaceDef::Moved { .. })),
+        exactness(Rat::new(1, 3).unwrap()).iter().all(|&r| r),
         "a mirror plane that cannot be realized must be recorded, not declared exact"
     );
 }

@@ -19,7 +19,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 ├── nacre-scalar     # exact 유리수 값 엔진: Rat·Angle·Axis/Rotation/Isometry·Orient
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone
 ├── nacre-cip        # toleranced 부호 술어(회전): kernel(Pt3 판정) + predicate(평면 배열 술어). predicates의 쌍둥이
-├── nacre-geom       # 정확 기하: Surface·Curve·교차(intersect 격리; scalar 의존 — Rat 링 술어 쌍둥이)
+├── nacre-geom       # f64 기하 캐시(Surface·Curve)·교차(intersect 격리; scalar 의존 — Rat 링 술어 쌍둥이). 평면의 진실은 topo 의 SurfaceTruth(S6b)
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model
 ├── nacre-tess       # tessellation: 출처 태그·증분 갱신
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
@@ -263,8 +263,8 @@ pub enum SurfaceDef {
     /// `motion`은 `Model::motions` 포리스트의 leaf(정점 `Origin::Moved`와 같은 포리스트).
     Moved { witness: [Point3; 3], motion: Handle<MotionNode> },
     /// **정확히 기술할 수 없다** — 오늘은 `push_surface`를 우회해 출처가 기록되지 않은 표면뿐이다.
-    /// 정확한 척하지 않고 정직하게 거절한다(`InexactSurface`).
-    Inexact,
+    /// (S6b 에서 소멸 — 정확한 형태가 없는 표면은 표현 불가능해졌고,
+    /// f64 폴백은 이름 붙은 거절이 됐다.)
 }
 
 pub struct Edge {

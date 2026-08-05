@@ -6724,3 +6724,34 @@ lcm ≈ 2.4e38 > i128]). Named×Wide 프레임 단위 잠금 신설 — S4 는 c
 잠금 픽스처도 CAD 스케일로). 부수 수정: build_prism 의 doc 이 named_plane_points 에
 잘못 붙어 있던 잠복 결함. 전수 관문 `points_coverage` 신설(생산 경로별 6 모델 sweep —
 S6b 전제의 단언). census 150줄 비트 동일 ×3(커밋별). 스위트 33 타깃 그린.
+
+## S6b — 타입 교체: 평면의 진실이 아레나로, `SurfaceDef`/`Inexact` 소멸 (2026-08-06)
+
+네 커밋(거울 → 소비자 전환 → 폴백 거절화 → 대청소). 진실 스토어
+`SurfaceTruth{Plane{points: PlanePoints::Known([[Rat;3];3]), motion} | Cylinder{motion}}` 가
+캐시 store(geom::Surface — f64)와 **인덱스-평행**으로 살고, `Handle<Surface>` 하나가 둘 다를
+가리킨다. `SurfaceDef`·`surface_defs`·`surface_points`·`push_surface` 일가·
+`UndefinedSurface`·`InexactSurface`·`CoordinateOutOfRange` 전부 사망 — grep 잔재 0(코드).
+push 는 `push_plane`(interning; flipped 는 f64 캐시 내적 유지 — 같은 평면끼리라 부호 정확)·
+`push_cylinder(motion)`·test-util 문 2개(`push_plane_unregistered` — 한 평면 두 핸들이 필요한
+merge 픽스처용 interning 우회, `set_plane_points_for_test` — 이름↔점 비정합을 의도로 여는
+넘침 픽스처용).
+
+★★★ **구현 중 반박: "normal_def 의 v=n×u 넘침은 희귀" 가 폴백 소멸 당일 무너졌다.**
+f64 폴백이 조용히 받아주는 동안 proptest 두 개가 그 인구(작은-지수 전폭 법선 — 분모 10²¹,
+곱 10⁴² > i128)를 통과시키고 있었다. 1차 수정(BigInt 원시 방향)도 반박 — 그 방향 자체가
+137비트다. 최종형: **셋째 방향도 기저-교차 셔플**(`w = x̂×n`, 항등식
+`(a×n)×(b×n) = det[a,b,n]·n` 으로 부호를 대수적으로 — 곱 0개, 나눗셈 0개, 전역).
+교훈 재확인([[silent-fallback-optimizations]] 계열): **조용한 폴백은 반증을 흡수한다** —
+거절로 바꾸는 순간이 실측이 도착하는 순간이다.
+
+f64 프리즘 폴백 → 이름 붙은 거절(`PlaneWithoutExactForm`, `DistOutsideDecimalWindow` —
+dist 는 마지막 무명 창 인구였다). `Swept::along` 삭제, `Swept.exact` 필수화, build_prism
+정확-전용. 직접-호출 테스트 4곳은 `swept_world` 헬퍼(정확 링)·공개 extrude 로 재구성,
+무점 부재-핀은 거절 핀으로 재핀. 부수 개선: **이동된 원통이 `Inexact` 강등 대신 모션을
+기록**(생산 도달 가능하던 조용한 결함 — 잠금 신설). transform 의 점 수송은 프로브와 같은
+함수를 공유(`transport_points`)해 "probed" expect 가 구조적으로 안전.
+
+아레나 반전(캐시가 Store·진실이 Vec)은 `Handle<T>` 타입 매개변수가 강제 — 공유 인덱스라
+의미 무손실이며, 최종 개명(진실→`Surface`, 캐시→`SurfaceCache{coeffs,tol,inv_norm}`)과
+함께 제자리로(문서 열린 항목 8). census 150줄 비트 동일 ×4(커밋별), 스위트 34 타깃 그린.

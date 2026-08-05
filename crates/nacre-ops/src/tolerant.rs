@@ -1132,9 +1132,12 @@ mod tests {
                 .expect("a frame cap records its name")
                 .narrow()
                 .expect("a frame cap's name is narrow");
-            let motion = match m.surface_defs.get(&surf) {
-                Some(nacre_topo::SurfaceDef::Moved { motion, .. }) => *motion,
-                other => panic!("cap {i} is not Moved: {other:?}"),
+            let motion = match m.surface_truth(surf) {
+                nacre_topo::SurfaceTruth::Plane {
+                    motion: Some(motion),
+                    ..
+                } => *motion,
+                other => panic!("cap {i} is not moved: {other:?}"),
             };
             // A cap's frame coefficients are `[0, 0, ±1, ∓h]`, so `z = -d/c` and any two in-frame
             // directions complete the triple.
@@ -1281,7 +1284,11 @@ mod tests {
             let faces = collect_planes(&m, s).unwrap();
             let (mut with, mut without) = (0usize, 0usize);
             for fi in &faces {
-                let Some(pts) = m.surface_points.get(&fi.surf) else {
+                let nacre_topo::SurfaceTruth::Plane {
+                    points: nacre_topo::PlanePoints::Known(pts),
+                    ..
+                } = m.surface_truth(fi.surf)
+                else {
                     without += 1;
                     continue;
                 };
@@ -1501,21 +1508,23 @@ mod tests {
                 // `Constructed` because it *is* the world plane the caller named exactly, and
                 // everything else is `Moved` against the sketch frame. Only `Inexact` — a plane
                 // the forest cannot replay — means the road was lost.
-                let ok = m.surface_points.contains_key(&fi.surf)
-                    && !matches!(
-                        m.surface_defs.get(&fi.surf),
-                        Some(nacre_topo::SurfaceDef::Inexact) | None
-                    );
+                // S6b: the truth is total — a planar surface always carries points, so the
+                // old "has points and is not Inexact" test collapses to "is a plane truth",
+                // which the type now guarantees. The sweep stays as the retrospective record
+                // of what this lock used to have to check.
+                let ok = matches!(
+                    m.surface_truth(fi.surf),
+                    nacre_topo::SurfaceTruth::Plane { .. }
+                );
                 if ok {
                     exact += 1;
                 } else {
                     f64_only += 1;
                     println!(
-                        "  {name}: {:?} points={} coeffs={} def={:?}",
+                        "  {name}: {:?} named={} truth={:?}",
                         fi.surf,
-                        m.surface_points.contains_key(&fi.surf),
                         m.surface_name.contains_key(&fi.surf),
-                        m.surface_defs.get(&fi.surf)
+                        m.surface_truth(fi.surf)
                     );
                 }
             }

@@ -858,13 +858,20 @@ mod tests {
         let sh: Vec<Handle<Surface>> = TETRA_FACES
             .iter()
             .map(|(tri, _)| {
-                m.push_surface(
-                    Surface::Plane(
-                        Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2]))
-                            .unwrap(),
-                    ),
-                    nacre_topo::SurfaceDef::Constructed,
-                )
+                let lift = |p: Point3| {
+                    p.as_array()
+                        .map(|x| nacre_scalar::Rat::from_decimal(x).expect("tetra corners"))
+                };
+                let (h, _) = m.push_plane(
+                    Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2])).unwrap(),
+                    [
+                        lift(corner(tri[0])),
+                        lift(corner(tri[1])),
+                        lift(corner(tri[2])),
+                    ],
+                    None,
+                );
+                h
             })
             .collect();
         let vh: Vec<Handle<Vertex>> = (0..4)

@@ -8,7 +8,8 @@
 //!
 //! It used to also *hunt* for a rotated face's exact plane, working back through vertices and
 //! their `Discovered` three-plane definitions, because a `Surface` said nothing about where it
-//! came from. Surfaces carry `SurfaceDef` now, so the plane is simply read (`crate::planes`) and
+//! came from. Surfaces carry their truth now (points + motion), so the plane is simply read
+//! (`crate::planes`) and
 //! the hunt is gone.
 
 use nacre_cip::{MoveNode, Pt3};
@@ -70,8 +71,8 @@ pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
 /// carries the result out of its frame and into the next one down. The walk terminates at a plane
 /// with no frame, which is the world.
 ///
-/// `None` when a frame cannot be built exactly — no name recorded at all, a degenerate plane,
-/// or an `Inexact`/unrecorded `SurfaceDef`. That is a decline, not a reject: the caller falls
+/// `None` when a frame cannot be built exactly — no name recorded at all, or a degenerate
+/// plane. That is a decline, not a reject: the caller falls
 /// back to the f64 path it was on before frames existed. ★ Width is **not** on that list since
 /// S4: a `Wide` name or overflowing squared lengths take the arbitrary-precision road
 /// (`MoveNode::FrameWide`) instead of declining.
@@ -167,19 +168,14 @@ pub(crate) fn frame_chain(
     };
     let mut chain = vec![narrow_road().or_else(wide_road)?];
     match model.surface_truth(plane) {
-        Some(
-            nacre_topo::SurfaceTruth::Plane {
-                motion: Some(m), ..
-            }
-            | nacre_topo::SurfaceTruth::Cylinder { motion: Some(m) },
-        ) => chain.append(&mut motion_chain(model, *m)?),
-        Some(
-            nacre_topo::SurfaceTruth::Plane { motion: None, .. }
-            | nacre_topo::SurfaceTruth::Cylinder { motion: None },
-        ) => {}
-        // Transitional (S6b): a point-less plane has no truth entry and therefore no exact
-        // definition to continue with — a decline, not a reject. Dies with the old push API.
-        None => return None,
+        nacre_topo::SurfaceTruth::Plane {
+            motion: Some(m), ..
+        }
+        | nacre_topo::SurfaceTruth::Cylinder { motion: Some(m) } => {
+            chain.append(&mut motion_chain(model, *m)?)
+        }
+        nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+        | nacre_topo::SurfaceTruth::Cylinder { motion: None } => {}
     }
     Some(chain)
 }
@@ -439,11 +435,7 @@ mod tests {
         let f = |p: [R; 3]| Point3::from_array(p.map(|r| r.to_f64()));
         let pl = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
             .expect("a non-degenerate triple");
-        let (h, _) = m.push_surface_with_points(
-            nacre_geom::Surface::Plane(pl),
-            nacre_topo::SurfaceDef::Constructed,
-            Some(pts),
-        );
+        let (h, _) = m.push_plane(pl, pts, None);
         h
     }
 

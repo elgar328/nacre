@@ -457,15 +457,6 @@ pub enum RejectReason {
     /// inward-oriented. Geometrically impossible for a real solid result; a defensive backstop
     /// with no firing test.
     NoOutwardShell,
-    /// A face lies on a surface whose exact definition the kernel cannot state
-    /// (`SurfaceDef::Inexact`). Judging on rounded coefficients is what produces two plane classes
-    /// for one wall, so the operation declines instead of pretending.
-    ///
-    /// **It no longer means "rotated, then translated"** — the motion history names that now. What
-    /// is left is a surface with no recorded provenance at all (`nacre-validate` reports such a
-    /// model) and one defensive branch in the mirror path, so a firing of this today points at a
-    /// producer that skipped `Model::push_surface`, not at a motion the kernel cannot describe.
-    InexactSurface,
     /// The assembled result has an **odd Euler characteristic** (`V − E + F − L_i`), which no
     /// closed 2-manifold can have (it must equal the even `2(S − G)`) — so the arrangement produced
     /// a malformed solid and the boolean rejects rather than return it (DNA: never silently wrong).
@@ -535,18 +526,11 @@ pub enum RejectReason {
     DegenerateFace,
     /// An operand face's outer triangle has a zero-length normal, so it has no outward direction.
     DegenerateNormal,
-    /// An operand coordinate lies outside the exact rational scalar's range, so its plane has no
-    /// exact definition to reason with. `Rat` is `Ratio<i128>`: the numerator `mantissa · 2^exp`
-    /// must fit (`|x| ≲ 1.7e38`) and so must the denominator `2^k` (`|x| ≳ 2^-74 ≈ 5.3e-23`);
-    /// exact zero is always fine. **No CAD model lives at either extreme** — this exists so the
-    /// kernel says so by name. (It used to panic on the mixed-rotation path and silently succeed
-    /// on the axis-aligned one, because the definition was built lazily, per judgment.)
-    CoordinateOutOfRange,
     /// A plane's own frame cannot be stated exactly, so a sketch built in it has no exact
     /// definition to judge from. Either the plane recorded no rational coefficients, or the
     /// squared lengths the frame's realization divides by do not fit `i128`.
     ///
-    /// ★ **Distinct from [`Self::InexactSurface`] on purpose.** Both end with "no exact
+    /// ★ **Distinct from the retired `InexactSurface` on purpose** (both ended with "no exact
     /// definition here", but they say different things about *why*: that one names a surface with
     /// no provenance, this one names a frame the rationals cannot hold. Sharing a label would
     /// leave a firing pointing at the wrong producer.
@@ -703,7 +687,6 @@ impl RejectReason {
             Self::TraceDeclined { .. } => "trace_declined",
             Self::CavityNoOwner => "cavity_no_owner",
             Self::NoOutwardShell => "no_outward_shell",
-            Self::InexactSurface => "inexact_surface",
             Self::EulerParity => "euler_parity",
             Self::NonManifoldVertex => "non_manifold_vertex",
             Self::NegativeGenus => "negative_genus",
@@ -714,7 +697,6 @@ impl RejectReason {
             Self::CylinderFace => "cylinder_face",
             Self::DegenerateFace => "degenerate_face",
             Self::DegenerateNormal => "degenerate_normal",
-            Self::CoordinateOutOfRange => "coordinate_out_of_range",
             Self::FrameOutOfRange => "frame_out_of_range",
             Self::PrecisionBudget { .. } => "precision_budget",
             Self::JudgeExhausted => "judge_exhausted",
@@ -744,13 +726,11 @@ impl RejectReason {
             // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate
             // arrangements the substrate cannot name yet.
             Self::TraceDeclined { .. }
-            | Self::InexactSurface
             | Self::ThreePlanes
             | Self::FourPlane
             | Self::CylinderFace
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
-            | Self::CoordinateOutOfRange
             // Likewise a frame past `i128`: a wider rational would lift it.
             | Self::FrameOutOfRange
             // A cost limit, not a resolution one: more bits would answer it.
@@ -2762,12 +2742,12 @@ pub mod tests {
     fn build_prism_base_cap_reuses_shared_surface() {
         let mut m = Model::new();
         // A face-plane surface with outward normal +z (as a face on the base solid).
-        let sf = m.push_surface(
-            Surface::Plane(
-                Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
-                    .unwrap(),
-            ),
-            nacre_topo::SurfaceDef::Constructed,
+        let r = nacre_scalar::Rat::from_int;
+        let (sf, _) = m.push_plane(
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0]))
+                .unwrap(),
+            [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
+            None,
         );
         let base_pts = [
             Point3::from_array([0.0, 0.0, 0.0]),
@@ -2802,7 +2782,7 @@ pub mod tests {
         );
     }
 
-    /// ★★★★★ **A plane's record and its `SurfaceDef` are one statement.**
+    /// ★★★★★ **A plane's record and its motion are one statement.**
     ///
     /// `Constructed` means *"these points speak about the world"*, `Moved` means *"about the
     /// pre-motion frame"* — so a base cap that takes the caller's world triple must be
@@ -2845,18 +2825,17 @@ pub mod tests {
         let far_pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
         let (m, surf) = prism(Some(far_pts));
         assert_eq!(
-            m.surface_points.get(&surf),
-            Some(&far_pts),
-            "the caller's triple was not the one recorded"
+            m.surface_truth(surf),
+            &nacre_topo::SurfaceTruth::Plane {
+                points: nacre_topo::PlanePoints::Known(far_pts),
+                motion: None,
+            },
+            "the caller's triple was not the one recorded (or gained a motion)"
         );
         assert_eq!(
             m.surface_name.get(&surf),
             Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(-3)])),
             "the name was not derived from the triple that was recorded"
-        );
-        assert_eq!(
-            m.surface_defs.get(&surf),
-            Some(&nacre_topo::SurfaceDef::Constructed)
         );
 
         // ★ And with no caller statement, the ring answers — its own exact cap triple, and the
@@ -2865,7 +2844,10 @@ pub mod tests {
         // fallback is gone (S6b): the negative pins live at the operation as named rejects now.
         let (m, surf) = prism(None);
         assert!(
-            m.surface_points.contains_key(&surf),
+            matches!(
+                m.surface_truth(surf),
+                nacre_topo::SurfaceTruth::Plane { .. }
+            ),
             "the ring's triple is recorded"
         );
         assert_eq!(
@@ -2883,12 +2865,11 @@ pub mod tests {
     #[test]
     fn shares_or_coplanar_uses_the_handle_branch() {
         let mut m = Model::new();
-        let shared = m.push_surface(
-            Surface::Plane(
-                Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0]))
-                    .unwrap(),
-            ),
-            nacre_topo::SurfaceDef::Constructed,
+        let r = nacre_scalar::Rat::from_int;
+        let shared = m.push_plane_unregistered(
+            Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0]))
+                .unwrap(),
+            [[r(0); 3], [r(0), r(1), r(0)], [r(0), r(0), r(1)]],
         );
         let fh = m.faces.push(Face {
             surface: shared,
@@ -3862,8 +3843,11 @@ pub mod tests {
     fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
         m.shells.get(m.solids.get(s).outer).faces.iter().any(|&fh| {
             matches!(
-                m.surface_defs.get(&m.faces.get(fh).surface),
-                Some(nacre_topo::SurfaceDef::Moved { .. })
+                m.surface_truth(m.faces.get(fh).surface),
+                nacre_topo::SurfaceTruth::Plane {
+                    motion: Some(_),
+                    ..
+                } | nacre_topo::SurfaceTruth::Cylinder { motion: Some(_) }
             )
         })
     }
@@ -4038,13 +4022,10 @@ pub mod tests {
         let sh = m.solids.get(r).outer;
         for &fh in &m.shells.get(sh).faces {
             let s = m.faces.get(fh).surface;
-            let nacre_topo::SurfaceDef::Moved {
-                motion: rotation, ..
-            } = m
-                .surface_defs
-                .get(&s)
-                .copied()
-                .expect("every face's surface is defined")
+            let &nacre_topo::SurfaceTruth::Plane {
+                motion: Some(rotation),
+                ..
+            } = m.surface_truth(s)
             else {
                 panic!("a rotated result's walls must carry a rotation");
             };
@@ -4578,7 +4559,22 @@ pub mod tests {
         at[axis] = d;
         let origin = Point3::from_array(at);
         let plane = Plane::from_point_normal(origin, normal).unwrap();
-        let surf = m.push_surface(Surface::Plane(plane), nacre_topo::SurfaceDef::Constructed);
+        // Unregistered on purpose: these fixtures push one geometric plane as *two* handles
+        // (`positive` both ways), which interning would collapse. The truth (the same tri
+        // computed below, lifted) is still stated — nothing point-less enters the arena.
+        let lift = |p: Point3| {
+            p.as_array()
+                .map(|x| nacre_scalar::Rat::from_decimal(x).unwrap())
+        };
+        let (ti, tj) = ((axis + 1) % 3, (axis + 2) % 3);
+        let (ti, tj) = if positive { (ti, tj) } else { (tj, ti) };
+        let stepr = |k: usize| {
+            let mut q = at;
+            q[k] += 1.0;
+            Point3::from_array(q)
+        };
+        let surf =
+            m.push_plane_unregistered(plane, [lift(origin), lift(stepr(ti)), lift(stepr(tj))]);
         let face = m.faces.push(Face {
             surface: surf,
             outer: Loop { half_edges: vec![] },
@@ -6607,8 +6603,8 @@ pub mod tests {
         );
         assert!(
             matches!(
-                m.surface_defs.get(&m.faces.get(faces[0]).surface),
-                Some(nacre_topo::SurfaceDef::Constructed)
+                m.surface_truth(m.faces.get(faces[0]).surface),
+                nacre_topo::SurfaceTruth::Plane { motion: None, .. }
             ),
             "★ and it carries no motion, so its judgment stays exact"
         );
@@ -6652,7 +6648,7 @@ pub mod tests {
     /// profile has walls whose names run to ~110 bits: **narrow names whose squared lengths
     /// (~2^220) overflow `i128`**, so `plane_frame_default`/`plane_frame_named` hard-declined
     /// them and a pad on such a wall fell to `Swept::along` — every new face point-less, the
-    /// chain that keeps `SurfaceDef::Inexact` alive. Now the frame realizes through the wide
+    /// chain that kept the `Inexact` state alive. Now the frame realizes through the wide
     /// road and **every face of the result states its exact points**.
     ///
     /// ★ Probed while building this fixture: a sketch→extrude wall's canonical name caps out
@@ -6725,7 +6721,10 @@ pub mod tests {
         let mut total = 0;
         for &f in &m.shells.get(m.solids.get(solid).outer).faces {
             total += 1;
-            if !m.surface_points.contains_key(&m.faces.get(f).surface) {
+            if !matches!(
+                m.surface_truth(m.faces.get(f).surface),
+                nacre_topo::SurfaceTruth::Plane { .. }
+            ) {
                 missing += 1;
             }
         }
@@ -6792,7 +6791,10 @@ pub mod tests {
         let mut total = 0;
         for &f in &m.shells.get(m.solids.get(solid).outer).faces {
             total += 1;
-            if !m.surface_points.contains_key(&m.faces.get(f).surface) {
+            if !matches!(
+                m.surface_truth(m.faces.get(f).surface),
+                nacre_topo::SurfaceTruth::Plane { .. }
+            ) {
                 missing += 1;
             }
         }

@@ -10,7 +10,7 @@ use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::Bound;
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Shell, Solid, SurfaceDef, Vertex};
+use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Shell, Solid, Vertex};
 use std::collections::HashMap;
 
 /// A face's supporting plane plus the exact in/out data the seam path needs.
@@ -56,13 +56,13 @@ pub(crate) struct FaceInfo {
     /// The motion-history leaf this face's plane was moved by, or `None` for a constructed one.
     /// **The canonical identity of "which motion"** — see [`BaseFrame`].
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
-    /// The surface's plane as **exact rational coefficients in the frame its `SurfaceDef` names**
+    /// The surface's plane as **exact rational coefficients in the frame its truth names**
     /// (`Model::surface_name`) — the world when unmoved, the pre-motion frame when moved.
     /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
     /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
     pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
-    /// the surface's own [`SurfaceDef`].
+    /// the surface's own truth (`Model::surface_truth`).
     ///
     /// **Set together with `tri_pt3`, and only here.** It used to be decided per solid, by asking
     /// the vertices — which a boolean's result cannot answer, since its vertices are all
@@ -125,10 +125,10 @@ pub(crate) fn collect_planes(
                 // ★ `Pt3::exact` is kept for a point that **is** an f64: it states the same thing
                 // and skips the nine BigFloat operations `Pt3::at` spends measuring a zero. The
                 // round-trip test is the one `BaseFrame` already uses.
-                Some(nacre_topo::SurfaceTruth::Plane {
+                nacre_topo::SurfaceTruth::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
                     motion: None,
-                }) => {
+                } => {
                     let w = pts.map(|b| {
                         let f = b.map(|r| r.to_f64());
                         match Pt3::exact(f).filter(|_| {
@@ -158,10 +158,10 @@ pub(crate) fn collect_planes(
                     });
                     (wind(w), false, None)
                 }
-                Some(nacre_topo::SurfaceTruth::Plane {
+                nacre_topo::SurfaceTruth::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
                     motion: Some(motion),
-                }) => {
+                } => {
                     let motion = *motion;
                     let _t = Watch::new(); // charged at the arm's end
                     // The pre-motion description, carried through the recorded chain — the same
@@ -185,28 +185,9 @@ pub(crate) fn collect_planes(
                     (wind(w), true, Some(motion))
                 }
                 // The cache match above already rejected cylinders.
-                Some(nacre_topo::SurfaceTruth::Cylinder { .. }) => {
+                nacre_topo::SurfaceTruth::Cylinder { .. } => {
                     return Err(reject(RejectReason::CylinderFace));
                 }
-                // Transitional (S6b): a point-less plane — the old push API's population, kept
-                // alive by test fixtures and the last f64-fallback arms until both die. The old
-                // side-table logic still answers for it: a point-less `Constructed` is described
-                // by its own realized triangle, anything else has no exact description.
-                None => match model
-                    .surface_defs
-                    .get(&face.surface)
-                    .copied()
-                    .unwrap_or(SurfaceDef::Inexact)
-                {
-                    SurfaceDef::Constructed => {
-                        let e = |p: Point3| {
-                            Pt3::exact(p.as_array())
-                                .ok_or_else(|| reject(RejectReason::CoordinateOutOfRange))
-                        };
-                        (wind([e(tri[0])?, e(tri[1])?, e(tri[2])?]), false, None)
-                    }
-                    _ => return Err(reject(RejectReason::InexactSurface)),
-                },
             };
             // `orient_sign`, precomputed: the two invariants it used to re-check on every call
             // are properties of this face, so they are decided once, here.
@@ -672,7 +653,7 @@ impl BaseFrame {
         // and two structurally-equal chains under different handles are a conservative miss.
         //
         // The three witnesses share one chain by construction — `collect_planes` builds all three
-        // from the same `SurfaceDef` — so there is nothing to cross-check here either.
+        // from the same surface truth — so there is nothing to cross-check here either.
         let Some(leaf) = motion else {
             return Self {
                 chain_id: 0,

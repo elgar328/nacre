@@ -114,7 +114,7 @@ pub enum FramePlacement {
 /// parent link so several points can share a history's tail.
 ///
 /// Stored in [`Model::motions`]; a moved vertex's [`Origin::Moved`] and a moved surface's
-/// [`SurfaceDef::Moved`] name their leaf node. The tol a motion contributes is
+/// moved surfaces name their leaf node ([`SurfaceTruth`]'s motion slot). The tol a motion contributes is
 /// application-point-dependent, so it is **not** stored here — judgment computes it by traversing
 /// to the root.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -155,41 +155,6 @@ pub enum Origin {
 /// speak about the world and `Moved` ones about the pre-motion frame.
 pub type SurfaceKey = (nacre_scalar::PlaneName, Option<Handle<MotionNode>>);
 
-/// Provenance of a **surface** — the same question [`Origin`] answers for a vertex.
-///
-/// The kernel's rule is that exact geometry is the truth and f64 is a cache. A surface's
-/// coefficients are that truth only while nothing irrational has been applied to them: a
-/// non-90° rotation turns a plane's normal into an irrational direction, and the stored
-/// coefficients become a *rounded copy*. Without this, the kernel has no way to tell the two
-/// apart, so it treats the copy as exact — and two rounded copies of one wall then fail to be
-/// the same plane, which is how a chained boolean loses a coplanar contact.
-///
-/// Recorded through [`Model::push_surface`] and enforced by `nacre-validate`: every face of a
-/// live solid must lie on a surface that has a definition.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SurfaceDef {
-    /// The coefficients **are** the truth — a constructed surface, or one moved by a motion
-    /// that preserves exactness (a translation, a 90°-family rotation).
-    Constructed,
-    /// The image of an exact surface under a motion history. The truth is `(witness, motion)`;
-    /// the coefficients are a cache.
-    ///
-    /// `motion` is the leaf of the history in [`Model::motions`] — the chain lives in the forest,
-    /// exactly as [`Origin::Moved`] uses it. **What is moved** is the plane's own three points in
-    /// [`Model::surface_points`], stated in the pre-motion frame.
-    ///
-    /// ★★★★★ **This used to carry a `witness: [Point3; 3]` and it was the last place a rounded
-    /// coordinate served as a definition.** The doc claimed those three points were "exactly
-    /// representable in f64"; measured, a third of them were not — `11/10` is not an f64, so
-    /// lifting the realization back recovered a different rational and the judge described the
-    /// plane through three rounded points. A moved plane whose source has no exact points is now
-    /// [`Inexact`](Self::Inexact), which is what it always was.
-    Moved { motion: Handle<MotionNode> },
-    /// **Not exactly describable** — a history the forest cannot express. The kernel does not
-    /// pretend the coefficients are exact; consumers that need the truth reject honestly.
-    Inexact,
-}
-
 /// How many planes were named **`Wide`** — the canonical answer exceeded `i128` and took the
 /// arbitrary-precision vessel (S2). Before S2 these were the *unnamed* planes; now they intern
 /// and carry identity like any other.
@@ -228,7 +193,7 @@ impl Orientation {
 /// [`Surface`](nacre_geom::Surface) beside it, which is its realization (S6b,
 /// `docs/truth-and-cache.md`).
 ///
-/// The `motion` field is what [`SurfaceDef`] used to say from a side table: `None` is the
+/// The `motion` field is what the retired `SurfaceDef` used to say from a side table: `None` is the
 /// world (`Constructed`), `Some` names the motion history the data is stated *before*
 /// (`Moved`). Holding it inside the variant is the point — a surface whose provenance is
 /// unrecorded, or whose exact form does not exist (`Inexact`), is **unrepresentable** here,
@@ -249,7 +214,7 @@ pub enum SurfaceTruth {
     },
     /// A cylinder's exact truth arrives with the curved-geometry milestone (M6); until then the
     /// variant holds only the motion slot, symmetrically — so a *moved* cylinder records its
-    /// history instead of silently degrading (the old `SurfaceDef` path demoted it to
+    /// history instead of silently degrading (the old side-table path demoted it to
     /// `Inexact`).
     Cylinder {
         /// See [`SurfaceTruth::Plane::motion`].
@@ -272,25 +237,24 @@ pub enum PlanePoints {
 pub struct Model {
     // exact geometry (truth)
     /// ★ Private (stage S1, `docs/truth-and-cache.md`): a surface can only enter through
-    /// [`Model::push_surface`]/[`Model::push_surface_with_points`], which record its provenance —
+    /// [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth —
     /// a surface **without** a record is unrepresentable from outside this crate. Read through
     /// [`Model::surface`]/[`Model::surface_count`]; there is deliberately no whole-store
     /// iterator (the arena keeps superseded surfaces — consumers walk the live faces).
     surfaces: Store<Surface>,
     /// ★★ **The truth beside the cache** (S6b): index-parallel to [`Model::surfaces`], so a
     /// `Handle<Surface>` names both — the store above holds the f64 *realization*, this holds
-    /// what the surface *is*. `Option` is transitional scaffolding: a point-less plane can
-    /// still be pushed (test fixtures, the last f64-fallback arms) until the old push API dies,
-    /// at which point the `Option` comes off and a plane without points stops existing.
+    /// what the surface *is*. Total: a surface cannot enter without its truth, which is what
+    /// retired `SurfaceDef`/`Inexact` and the point-less population.
     ///
     /// (Why the truth is the `Vec` and the cache the `Store`, when the doc draws it the other
     /// way: `Handle<T>`'s type parameter. Retyping `Face::surface` would ripple through every
     /// crate for a distinction the shared index already erases — the flip happens with the
     /// final rename, when `SurfaceCache` gets its real shape.)
-    surface_truths: Vec<Option<SurfaceTruth>>,
+    surface_truths: Vec<SurfaceTruth>,
     pub curves: Store<Curve>,
     /// The motion-history forest (§CIP ⑦): motion definitions named by `Origin::Moved` vertices
-    /// and `SurfaceDef::Moved` surfaces. Not geometry — a definition store.
+    /// and moved surfaces. Not geometry — a definition store.
     ///
     /// **Interned** — private (S1), so writing through [`Model::push_motion`] is enforced by the
     /// type, not by discipline. Read through [`Model::motion`].
@@ -298,13 +262,6 @@ pub struct Model {
     /// Interning table for [`Model::push_motion`]: the handle already issued for a given
     /// `(motion, parent)`. Not iterated (a `HashMap`'s order must never reach a result).
     motion_ids: HashMap<MotionNode, Handle<MotionNode>>,
-    /// Each surface's provenance, keyed by handle. Not geometry — the twin of the vertex
-    /// `Origin`, kept beside the store because [`Surface`] is a `nacre-geom` type and cannot
-    /// name a `Handle<MotionNode>`. Written only by [`Model::push_surface`].
-    ///
-    /// Iterate this **through the faces**, never over the map: a `HashMap`'s order is not
-    /// deterministic and replay determinism (DNA 3) forbids letting it reach a result.
-    pub surface_defs: HashMap<Handle<Surface>, SurfaceDef>,
     /// Each surface's **canonical name** ([`nacre_scalar::PlaneName`]), derived from its points —
     /// present for every surface whose producer had a rational description to record.
     ///
@@ -319,9 +276,9 @@ pub struct Model {
     /// above.** Lifting is lossless and useless here: it preserves the rounding, so the two
     /// vectors stay different (`nacre_scalar::canonical_plane_coeffs`).
     ///
-    /// ★★★ **The name is stated in the frame this surface's [`SurfaceDef`] names** —
-    /// the world for [`SurfaceDef::Constructed`], and the **pre-motion** frame for
-    /// [`SurfaceDef::Moved`], whose world coefficients are irrational and so cannot be written
+    /// ★★★ **The name is stated in the frame this surface's truth names** — the world for
+    /// `motion: None`, and the **pre-motion** frame for a moved surface, whose world
+    /// coefficients are irrational and so cannot be written
     /// down at all. A moved surface therefore inherits its source's name unchanged: the motion
     /// is recorded beside it, not folded into it. (That pairing — an exact name plus a
     /// motion — is the shape `docs/truth-and-cache.md` builds toward.)
@@ -330,29 +287,7 @@ pub struct Model {
     /// Iterate through the faces, never over the map. Arithmetic consumers (frames, `base_rat`,
     /// exact transports) read [`nacre_scalar::PlaneName::narrow`]; `Wide` carries identity only.
     pub surface_name: HashMap<Handle<Surface>, nacre_scalar::PlaneName>,
-    /// ★★★★★ **Three exact points the plane passes through** — stated in the same frame as
-    /// [`Model::surface_name`], and carried out by the same [`SurfaceDef`] motion.
-    ///
-    /// **The coefficients cannot be the whole truth, and this is why.** A plane's exact
-    /// coefficients are a *product* of two point differences, so they need about twice the bits
-    /// the points do — measured, a wall plane's coefficients run to a median of 159 bits and a
-    /// maximum of 213, and only 25.8% fit `i128`, while the ring coordinates they come from top
-    /// out at **107** with 20 bits to spare. Points fit where their products do not, so the truth
-    /// stores points and the judging layer — already arbitrary-precision — does the products.
-    ///
-    /// ★★★ **The recursion has a base case**: a boolean never creates a surface (asserted by
-    /// `nacre-ops`), so a plane is never defined by discovered points, only by construction ones.
-    /// Points are defined by planes and planes by construction points — two levels, not a cycle.
-    ///
-    /// ★★ **Interning keeps the first pusher's triple.** Any non-collinear triple on the plane
-    /// names the same plane, so the survivor is as good a witness as the newcomer; and the
-    /// separate invariant that a *face's* vertices lie on its own plane is carried by
-    /// `outer_tri`, not by this.
-    ///
-    /// Absent is ordinary while the producers are still being wired, and permanently for a prism
-    /// whose ring is not rational at all. Iterate through the faces, never over the map.
-    pub surface_points: HashMap<Handle<Surface>, [[nacre_scalar::Rat; 3]; 3]>,
-    /// Interning table for [`Model::push_surface_with_points`]: the handle already issued for a
+    /// Interning table for [`Model::push_plane`]: the handle already issued for a
     /// plane, keyed by its canonical coefficients **and the motion they are stated in**. The twin
     /// of [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result).
     ///
@@ -360,7 +295,7 @@ pub struct Model {
     /// `Moved` ones about the pre-motion frame, so two identical arrays under different motions
     /// are different planes. `Inexact` has no coefficients and never interns.
     ///
-    /// ★★ **The witness does not.** Two faces of one plane sharing one `SurfaceDef::Moved`
+    /// ★★ **The witness does not.** Two faces of one plane sharing one moved
     /// witness is already how this works — `collect_planes` says the witness "was captured from
     /// whichever face first reached this surface" and winds it to *each* face's own outward
     /// normal — so it is not part of what makes two planes the same.
@@ -484,58 +419,28 @@ impl Model {
         h
     }
 
-    /// Push a surface **and state its provenance** ([`SurfaceDef`]) — the blessed way to add
-    /// one. The store is private (S1), so a surface with no record cannot be made from outside
-    /// this crate; within it, pushing into `surfaces` directly leaves the surface undefined,
-    /// which `nacre-validate` reports for any face that lands on it.
-    pub fn push_surface(&mut self, surface: Surface, def: SurfaceDef) -> Handle<Surface> {
-        self.push_surface_recording(surface, def, None)
-    }
-
-    /// The one push that everything funnels through: store + truth, index-parallel (S6b).
-    ///
-    /// The truth entry mirrors what `def`/`points` say: a cylinder records its motion slot, a
-    /// plane records its points and motion, and a plane with **no** points — or an `Inexact`
-    /// def, whose exact form does not exist — records `None`. The `None` arm is transitional
-    /// scaffolding (see [`Model::surface_truths`]); it dies with the old push API.
-    fn push_surface_recording(
-        &mut self,
-        surface: Surface,
-        def: SurfaceDef,
-        points: Option<[[nacre_scalar::Rat; 3]; 3]>,
-    ) -> Handle<Surface> {
-        let motion = match def {
-            SurfaceDef::Moved { motion } => Some(motion),
-            SurfaceDef::Constructed | SurfaceDef::Inexact => None,
-        };
-        let truth = match (&surface, def, points) {
-            (Surface::Cylinder(_), _, _) => Some(SurfaceTruth::Cylinder { motion }),
-            (Surface::Plane(_), SurfaceDef::Inexact, _) | (Surface::Plane(_), _, None) => None,
-            (Surface::Plane(_), _, Some(p)) => Some(SurfaceTruth::Plane {
-                points: PlanePoints::Known(p),
-                motion,
-            }),
-        };
+    /// The one push everything funnels through (private): the f64 cache and the exact truth,
+    /// index-parallel, in one motion — so the two stores cannot come apart.
+    fn push_raw(&mut self, surface: Surface, truth: SurfaceTruth) -> Handle<Surface> {
         let h = self.surfaces.push(surface);
         self.surface_truths.push(truth);
         debug_assert_eq!(self.surface_truths.len(), self.surfaces.len());
-        self.surface_defs.insert(h, def);
         h
     }
 
     /// The surface's exact truth — what it *is*, beside the f64 realization
-    /// [`Model::surface`] returns. `None` is the transitional point-less population (old push
-    /// API only); it disappears with that API, and this then returns `&SurfaceTruth`.
+    /// [`Model::surface`] returns. Total: a surface without a truth entry is unrepresentable
+    /// (S6b), which is what retired `SurfaceDef::Inexact` and the `UndefinedSurface` violation.
     #[inline]
-    pub fn surface_truth(&self, h: Handle<Surface>) -> Option<&SurfaceTruth> {
-        self.surface_truths[h.index() as usize].as_ref()
+    pub fn surface_truth(&self, h: Handle<Surface>) -> &SurfaceTruth {
+        &self.surface_truths[h.index() as usize]
     }
 
-    /// The surface a handle names.
+    /// The surface a handle names — the **f64 cache** of [`Model::surface_truth`]'s answer.
     ///
     /// Reading is open; **writing is not** — the store is private (S1), so a surface can only
-    /// enter through [`Model::push_surface`]/[`Model::push_surface_with_points`], which record
-    /// its provenance. The lock:
+    /// enter through [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth. The
+    /// lock:
     ///
     /// ```compile_fail,E0616
     /// let m = nacre_topo::Model::new();
@@ -561,117 +466,76 @@ impl Model {
         self.motions.get(h)
     }
 
-    /// Push a surface with **no** def/points record — the exact state [`Model::push_surface`]
-    /// exists to prevent. Test-only: lets `nacre-validate` build the `UndefinedSurface`
-    /// violation fixture.
-    #[cfg(any(test, feature = "test-util"))]
-    pub fn push_surface_unrecorded(&mut self, surface: Surface) -> Handle<Surface> {
-        let h = self.surfaces.push(surface);
-        self.surface_truths.push(None);
-        h
-    }
-
-    /// [`Model::push_surface`], also recording the surface's exact rational description when the
-    /// producer has one: **three points the plane passes through**. `None` records nothing, which
-    /// is what a producer without a rational description passes.
+    /// Push a **plane**, stating its truth outright: the f64 cache, three exact points, and the
+    /// motion they are written before (`None` = the world). The truth is not optional — that is
+    /// the S6b point: a point-less plane, and with it `SurfaceDef::Inexact`, stopped existing.
     ///
-    /// ★★★★★ **The points are the only thing a producer states.** Its canonical name
+    /// ★★★★★ **The points are the only thing a producer states.** The canonical name
     /// ([`Model::surface_name`]) is *derived* here, from those points, by
     /// [`nacre_scalar::plane_name_exact`] — so a plane cannot be described two ways, because there
-    /// is only one place to describe it. That is the invariant this whole line of work builds
-    /// toward, and it is now carried by the signature rather than by a check.
+    /// is only one place to describe it. (Producers used to hand in coefficients beside the
+    /// points; before that parameter went away, every producer was compared against this
+    /// derivation across the suite: **83,883 agreements, 0 disagreements**.)
     ///
-    /// ★★★ **What that replaced.** Producers used to hand in coefficients *beside* the points, and
-    /// a filter here refused a name the points did not satisfy. The filter was a watchman for a
-    /// state the type now cannot express — and it could not be relied on anyway, since `c · p`
-    /// overflows exactly on the wide planes where a mismatch would hurt most. Before removing it,
-    /// every producer was compared against this derivation across the suite: **83,883 agreements,
-    /// 0 disagreements**, and **0 pushes** carried coefficients without points (so nothing loses a
-    /// name by the parameter going away).
+    /// ★ **Stated in the frame `motion` names** — the world for `None`, the pre-motion frame
+    /// otherwise. An interned plane keeps the first pusher's triple.
     ///
-    /// ★ **Stated in the frame this `def` names** — the world for [`SurfaceDef::Constructed`], the
-    /// pre-motion frame for [`SurfaceDef::Moved`]. An interned plane keeps the first pusher's triple.
+    /// ★ **The `bool` says the returned surface's cache normal points the *other* way** from the
+    /// one handed in, and a caller that meets it must record its face `Orientation::flipped()`.
+    /// It exists because a plane's canonical form has no direction — `[0,0,1,−3]` and
+    /// `[0,0,−1,3]` are one plane — so once identical planes share a handle the direction has to
+    /// be reconciled somewhere, and the honest place is where the caller still knows what it
+    /// asked for.
     ///
-    /// ★ **The `bool` says the returned surface's normal points the *other* way** from the one
-    /// handed in, and a caller that meets it must record its face `Orientation::flipped()`.
-    /// It exists because a plane's canonical form has no direction — `[0,0,1,−3]` and `[0,0,−1,3]`
-    /// are one plane — so once identical planes share a handle the direction has to be reconciled
-    /// somewhere, and the honest place is where the caller still knows what it asked for.
-    ///
-    /// ★★ **It is not a dormant path.** This doc used to say *"always `false` today, because every
-    /// call mints a fresh handle"*, and that had stopped being true: measured across the suite,
-    /// interning hits 7,095 times and **1,916 of those report `flipped`** — a boss meeting the
-    /// plate it sits on is one plane approached from both sides, which is as ordinary as it sounds.
-    /// Recorded here because a claim about what never happens is exactly the kind that rots quietly.
-    ///
-    /// ★★ **The relative answer, not an absolute one.** A caller could instead read the returned
-    /// surface's normal and derive its orientation from its own outward direction, which is what
-    /// `extrude`'s pad-on-face path already does — but `transform_solid` *copies* faces without
-    /// recomputing an outward normal, so it has nothing to compare against. "Is it flipped from
-    /// what I asked for?" is the question every caller can answer.
-    pub fn push_surface_with_points(
+    /// ★★ **It is not a dormant path.** Measured across the suite, interning hits 7,095 times
+    /// and **1,916 of those report `flipped`** — a boss meeting the plate it sits on is one
+    /// plane approached from both sides, which is as ordinary as it sounds.
+    pub fn push_plane(
         &mut self,
-        surface: Surface,
-        def: SurfaceDef,
-        points: Option<[[nacre_scalar::Rat; 3]; 3]>,
+        cache: nacre_geom::Plane,
+        points: [[nacre_scalar::Rat; 3]; 3],
+        motion: Option<Handle<MotionNode>>,
     ) -> (Handle<Surface>, bool) {
         // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
-        //
-        // Three non-collinear points determine a plane, and [`nacre_scalar::plane_name_exact`]
-        // computes its canonical form at unbounded precision — `None` only for collinear points;
-        // since S2 the vessel (`PlaneName::Narrow | Wide`) always holds the answer, so **every
-        // plane with points interns**, wide ones included. Nothing is checked because there is
-        // nothing to check against: the name and the points are no longer two statements.
-        //
-        // ★★★ **`Inexact` is excluded, and that is structural.** `Model::surface_ids`' key
-        // carries a motion only for [`SurfaceDef::Moved`], so an `Inexact` plane and a
-        // `Constructed` one with the same name would intern **together** — merging a
-        // surface whose coefficients are declared *not* to be the truth with one whose are. It
-        // cannot arise today (`Inexact` is reached only when the source has no points, and then
-        // none are passed), but that is a convention holding, not a type.
-        //
-        // ★★ [`WIDE_PLANES`] counts the names that took the wide vessel — the population that
-        // used to go unnamed, stated as a number rather than a guess.
-        let name = match (def, points) {
-            (SurfaceDef::Inexact, _) | (_, None) => None,
-            (_, Some(p)) => {
-                let named = nacre_scalar::plane_name_exact(p[0], p[1], p[2]);
-                if named.as_ref().is_some_and(|n| n.narrow().is_none()) {
-                    WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-                named
+        // `plane_name_exact` computes the canonical form at unbounded precision — `None` only
+        // for collinear points (which no production `PlaneDef` can supply); since S2 the vessel
+        // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
+        // ones included. [`WIDE_PLANES`] counts the names that took the wide vessel.
+        let name = {
+            let named = nacre_scalar::plane_name_exact(points[0], points[1], points[2]);
+            if named.as_ref().is_some_and(|n| n.narrow().is_none()) {
+                WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
+            named
         };
-        let key = name.map(|n| {
-            let motion = match def {
-                SurfaceDef::Moved { motion, .. } => Some(motion),
-                _ => None,
-            };
-            (n, motion)
-        });
+        let key = name.map(|n| (n, motion));
         if let Some(k) = &key {
             if let Some(&h) = self.surface_ids.get(k) {
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
-                // outward the other way round.
+                // outward the other way round. The f64 cache dot is exact here: two caches of one
+                // plane have parallel normals, so the sign cannot be lost to rounding.
                 let dir = |s: &Surface| match s {
                     Surface::Plane(p) => Some(p.normal()),
                     Surface::Cylinder(_) => None,
                 };
-                let flipped = match (dir(self.surfaces.get(h)), dir(&surface)) {
+                let flipped = match (dir(self.surfaces.get(h)), dir(&Surface::Plane(cache))) {
                     (Some(a), Some(b)) => a.dot(b) < 0.0,
                     _ => false,
                 };
                 return (h, flipped);
             }
         }
-        let h = self.push_surface_recording(surface, def, points);
+        let h = self.push_raw(
+            Surface::Plane(cache),
+            SurfaceTruth::Plane {
+                points: PlanePoints::Known(points),
+                motion,
+            },
+        );
         if let Some((n, _)) = &key {
             // One clone per push — the name is derived once here, never on a judging loop.
             self.surface_name.insert(h, n.clone());
-        }
-        if let Some(p) = points {
-            self.surface_points.insert(h, p);
         }
         if let Some(k) = key {
             self.surface_ids.insert(k, h);
@@ -679,42 +543,43 @@ impl Model {
         (h, false)
     }
 
-    /// Push a **plane**, stating its truth outright: three exact points and the motion they are
-    /// written before (`None` = the world). The S6b successor of
-    /// [`Model::push_surface_with_points`] — the truth is not optional here, which is the whole
-    /// point. Interned; the `bool` says the surviving surface's cache normal points the other
-    /// way (see [`Model::push_surface_with_points`]).
-    pub fn push_plane(
-        &mut self,
-        cache: nacre_geom::Plane,
-        points: [[nacre_scalar::Rat; 3]; 3],
-        motion: Option<Handle<MotionNode>>,
-    ) -> (Handle<Surface>, bool) {
-        let def = match motion {
-            Some(m) => SurfaceDef::Moved { motion: m },
-            None => SurfaceDef::Constructed,
-        };
-        self.push_surface_with_points(Surface::Plane(cache), def, Some(points))
-    }
-
     /// Push a **cylinder** — the lateral surface, whose exact truth arrives with M6. Until
-    /// then the truth records only the motion slot (`None` at construction).
-    pub fn push_cylinder(&mut self, cache: nacre_geom::Cylinder) -> Handle<Surface> {
-        self.push_surface(Surface::Cylinder(cache), SurfaceDef::Constructed)
+    /// then the truth records only the motion slot (`None` at construction; a move records its
+    /// node there instead of degrading, as the old side-table path did).
+    pub fn push_cylinder(
+        &mut self,
+        cache: nacre_geom::Cylinder,
+        motion: Option<Handle<MotionNode>>,
+    ) -> Handle<Surface> {
+        self.push_raw(Surface::Cylinder(cache), SurfaceTruth::Cylinder { motion })
     }
 
     /// Push a plane with truth but **no name and no interning** — test-only.
     ///
     /// Two fixture populations need this door: hand-built merge fixtures that deliberately hold
     /// *one geometric plane as two handles* (interning would collapse them), and dummy planes
-    /// whose handles are never dereferenced. The successor of
-    /// [`Model::push_surface_unrecorded`], minus the unrecordedness — the truth is still stated,
-    /// so nothing point-less enters the arena even from tests.
+    /// whose handles are never dereferenced. The successor of the retired
+    /// `push_surface_unrecorded`, minus the unrecordedness — the truth is still stated, so
+    /// nothing point-less enters the arena even from tests.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn push_plane_unregistered(
+        &mut self,
+        cache: nacre_geom::Plane,
+        points: [[nacre_scalar::Rat; 3]; 3],
+    ) -> Handle<Surface> {
+        self.push_raw(
+            Surface::Plane(cache),
+            SurfaceTruth::Plane {
+                points: PlanePoints::Known(points),
+                motion: None,
+            },
+        )
+    }
+
     /// Overwrite a plane's truth points — **test-only**, and deliberately incoherence-capable:
     /// the surface's derived name and interning key stay whatever the original points said, so
     /// this door exists for fixtures that need adversarial point widths on an existing surface
-    /// (the overflowing-move probe) and must never grow a production caller. Keeps the
-    /// (transitional) `surface_points` table in step with the truth.
+    /// (the overflowing-move probe) and must never grow a production caller.
     #[cfg(any(test, feature = "test-util"))]
     pub fn set_plane_points_for_test(
         &mut self,
@@ -722,28 +587,9 @@ impl Model {
         pts: [[nacre_scalar::Rat; 3]; 3],
     ) {
         match &mut self.surface_truths[h.index() as usize] {
-            Some(SurfaceTruth::Plane { points, .. }) => *points = PlanePoints::Known(pts),
-            slot @ None => {
-                *slot = Some(SurfaceTruth::Plane {
-                    points: PlanePoints::Known(pts),
-                    motion: match self.surface_defs.get(&h) {
-                        Some(SurfaceDef::Moved { motion }) => Some(*motion),
-                        _ => None,
-                    },
-                });
-            }
-            Some(SurfaceTruth::Cylinder { .. }) => panic!("a cylinder has no plane points"),
+            SurfaceTruth::Plane { points, .. } => *points = PlanePoints::Known(pts),
+            SurfaceTruth::Cylinder { .. } => panic!("a cylinder has no plane points"),
         }
-        self.surface_points.insert(h, pts);
-    }
-
-    #[cfg(any(test, feature = "test-util"))]
-    pub fn push_plane_unregistered(
-        &mut self,
-        cache: nacre_geom::Plane,
-        points: [[nacre_scalar::Rat; 3]; 3],
-    ) -> Handle<Surface> {
-        self.push_surface_recording(Surface::Plane(cache), SurfaceDef::Constructed, Some(points))
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals
@@ -888,21 +734,17 @@ impl Model {
                     nacre_scalar::Rat::from_decimal(c[2])?,
                 ])
             };
-            self.push_surface_with_points(
-                Surface::Plane(
-                    Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
-                        .expect("non-degenerate box"),
-                ),
-                SurfaceDef::Constructed,
+            self.push_plane(
+                Plane::through_points(corners[tri[0]], corners[tri[1]], corners[tri[2]])
+                    .expect("non-degenerate box"),
                 // ★ The same three corners, exactly. The name is derived from them, so a corner
-                // whose decimals are wide enough to overflow the narrow derivation still gets one.
-                (|| {
-                    Some([
-                        rat_corner(tri[0])?,
-                        rat_corner(tri[1])?,
-                        rat_corner(tri[2])?,
-                    ])
-                })(),
+                // whose decimals are wide enough to overflow the narrow derivation still gets
+                // one. A corner outside the decimal window is a caller bug (the radius/height
+                // precedent in `add_cylinder`): the truth is not optional any more.
+                core::array::from_fn(|k| {
+                    rat_corner(tri[k]).expect("cuboid corners inside the decimal window")
+                }),
+                None,
             )
         });
 
@@ -1071,11 +913,9 @@ impl Model {
 
         // Lateral cylindrical face: one loop wrapping the seam twice (opposite).
         let lateral = {
-            let surface = self.push_surface(
-                Surface::Cylinder(
-                    Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
-                ),
-                SurfaceDef::Constructed,
+            let surface = self.push_cylinder(
+                Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
+                None,
             );
             let outer = Loop {
                 half_edges: vec![
@@ -1109,25 +949,24 @@ impl Model {
         // the producer's own f64 is its statement). For an axis whose normalization is exact
         // (`ẑ`, a Pythagorean triple) these are exact by construction; for an irrational axis
         // they are the truth of what was *built*, which is all a `Constructed` surface ever
-        // claims. `None` only outside the decimal window.
+        // claims. A cap outside the decimal window is a caller bug (the radius/height
+        // precedent above): the truth is not optional any more.
         let w = d.cross(u);
-        let cap_points = |c: Point3| -> Option<[[nacre_scalar::Rat; 3]; 3]> {
-            let lift = |p: Point3| -> Option<[nacre_scalar::Rat; 3]> {
-                let a = p.as_array();
-                Some([
-                    nacre_scalar::Rat::from_decimal(a[0])?,
-                    nacre_scalar::Rat::from_decimal(a[1])?,
-                    nacre_scalar::Rat::from_decimal(a[2])?,
-                ])
+        let cap_points = |c: Point3| -> [[nacre_scalar::Rat; 3]; 3] {
+            let lift = |p: Point3| -> [nacre_scalar::Rat; 3] {
+                p.as_array().map(|x| {
+                    nacre_scalar::Rat::from_decimal(x)
+                        .expect("cylinder caps inside the decimal window")
+                })
             };
-            Some([lift(c)?, lift(c + u * radius)?, lift(c + w * radius)?])
+            [lift(c), lift(c + u * radius), lift(c + w * radius)]
         };
         // Bottom cap: outward normal −d, the bottom rim reversed.
         let bottom_cap = {
-            let (surface, _) = self.push_surface_with_points(
-                Surface::Plane(Plane::from_point_normal(c0, -d).expect("nonzero axis")),
-                SurfaceDef::Constructed,
+            let (surface, _) = self.push_plane(
+                Plane::from_point_normal(c0, -d).expect("nonzero axis"),
                 cap_points(c0),
+                None,
             );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
@@ -1144,10 +983,10 @@ impl Model {
         };
         // Top cap: outward normal +d, the top rim forward.
         let top_cap = {
-            let (surface, _) = self.push_surface_with_points(
-                Surface::Plane(Plane::from_point_normal(c1, d).expect("nonzero axis")),
-                SurfaceDef::Constructed,
+            let (surface, _) = self.push_plane(
+                Plane::from_point_normal(c1, d).expect("nonzero axis"),
                 cap_points(c1),
+                None,
             );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
@@ -1624,18 +1463,16 @@ mod tests {
         use nacre_scalar::Rat;
         let r = Rat::from_int;
         let pl = |z: f64| {
-            Surface::Plane(
-                nacre_geom::Plane::from_point_normal(
-                    Point3::from_array([0.0, 0.0, z]),
-                    Vector3::from_array([0.0, 0.0, 1.0]),
-                )
-                .unwrap(),
+            nacre_geom::Plane::from_point_normal(
+                Point3::from_array([0.0, 0.0, z]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
             )
+            .unwrap()
         };
 
         let mut m = Model::new();
         let pts = [[r(0), r(0), r(0)], [r(1), r(0), r(0)], [r(0), r(1), r(0)]];
-        let (ok, _) = m.push_surface_with_points(pl(0.0), SurfaceDef::Constructed, Some(pts));
+        let (ok, _) = m.push_plane(pl(0.0), pts, None);
         assert_eq!(
             m.surface_name.get(&ok),
             Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
@@ -1661,8 +1498,7 @@ mod tests {
             None,
             "the narrow route was expected to overflow here — the case has stopped being the case"
         );
-        let (wide, _) =
-            m.push_surface_with_points(pl(2.0), SurfaceDef::Constructed, Some(wide_pts));
+        let (wide, _) = m.push_plane(pl(2.0), wide_pts, None);
         // ★ The stored value carries the proposition — `Narrow` says "fits i128" directly.
         // (This used to compare the global counter before/after, which races against other
         // tests pushing wide planes in parallel; the value cannot.)
@@ -1687,9 +1523,8 @@ mod tests {
             );
         }
 
-        // ★ And a plane with no points gets no name — there is nothing to derive one from.
-        let (none, _) = m.push_surface_with_points(pl(3.0), SurfaceDef::Constructed, None);
-        assert!(!m.surface_name.contains_key(&none));
+        // ★ (A plane with no points cannot be pushed at all any more — the "no points, no
+        // name" arm retired with the old API; the type is the assertion now.)
     }
 
     /// ★★★★★ **A wide name interns — and opens no shortcut** (S2's whole behavioral change).
@@ -1727,17 +1562,14 @@ mod tests {
             "the narrow route was expected to overflow here — the case has stopped being the case"
         );
 
-        let pl = Surface::Plane(
-            nacre_geom::Plane::from_point_normal(
-                Point3::from_array([0.0, 0.0, 0.0]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
-            )
-            .unwrap(),
-        );
+        let pl = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+        )
+        .unwrap();
         let mut m = Model::new();
         let before = WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed);
-        let (first, _) =
-            m.push_surface_with_points(pl.clone(), SurfaceDef::Constructed, Some([a, b, c]));
+        let (first, _) = m.push_plane(pl, [a, b, c], None);
         assert!(
             WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed) > before,
             "an answer past i128 must be counted as wide"
@@ -1752,11 +1584,9 @@ mod tests {
         );
 
         // ★ The same plane stated again — permuted, even — is the same handle now.
-        let (second, _) =
-            m.push_surface_with_points(pl.clone(), SurfaceDef::Constructed, Some([a, b, c]));
+        let (second, _) = m.push_plane(pl, [a, b, c], None);
         assert_eq!(first, second, "one wide plane, one handle");
-        let (permuted, _) =
-            m.push_surface_with_points(pl, SurfaceDef::Constructed, Some([b, c, a]));
+        let (permuted, _) = m.push_plane(pl, [b, c, a], None);
         assert_eq!(
             first, permuted,
             "two spellings of one wide plane must intern"
@@ -1792,7 +1622,10 @@ mod tests {
             .collect();
         assert_eq!(planar.len(), 2, "two caps");
         for s in &planar {
-            assert!(m.surface_points.contains_key(s), "a cap without points");
+            assert!(
+                matches!(m.surface_truth(*s), SurfaceTruth::Plane { .. }),
+                "a cap without truth"
+            );
             assert!(m.surface_name.contains_key(s), "a cap without a name");
         }
         // The top cap lies on `z = 2`, the same plane as the box's top face — one plane, one

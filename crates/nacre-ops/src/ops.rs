@@ -16,8 +16,8 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Origin, Shell, Solid, SurfaceDef,
-    Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Origin, Shell, Solid, Vertex,
+    VertexDef,
 };
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
@@ -639,11 +639,7 @@ pub(crate) fn extrude(
         // here: the caller's origin is exact, so `d` comes out exact where the ring point's dot
         // product rounds (measured `5.55e-17` against `0`).
         let pl = Plane::from_point_normal(plane.origin(), -plane.normal())?;
-        let (h, _) = model.push_surface_with_points(
-            Surface::Plane(pl),
-            SurfaceDef::Constructed,
-            Some(d.points()),
-        );
+        let (h, _) = model.push_plane(pl, d.points(), None);
         // The caller stated the pair, so the placement is `Named` (S4) — `Canonical` is for
         // frames nobody named, like a face's.
         let placement = nacre_topo::FramePlacement::Named {
@@ -798,20 +794,21 @@ pub(crate) fn build_prism(
             // ★ The frame's `surface_def()` is the same one the top cap takes, and it agrees with
             // `Constructed` wherever there is no motion — which is every case a missing caller
             // statement can produce.
-            let (base_def, cap_pts) = match base_cap_points {
-                Some(p) => (SurfaceDef::Constructed, Some(p)),
+            let (base_motion, cap_pts) = match base_cap_points {
+                Some(p) => (None, p),
                 None => {
                     let e = &outer_pts.exact;
-                    (e.surface_def(), e.cap_points(false))
+                    (
+                        e.motion,
+                        e.cap_points(false).ok_or(OpError::DegenerateGeometry)?,
+                    )
                 }
             };
-            let (s, flipped) = model.push_surface_with_points(
-                Surface::Plane(
-                    Plane::from_point_normal(outer_pts.base[0], -normal)
-                        .ok_or(OpError::DegenerateGeometry)?,
-                ),
-                base_def,
+            let (s, flipped) = model.push_plane(
+                Plane::from_point_normal(outer_pts.base[0], -normal)
+                    .ok_or(OpError::DegenerateGeometry)?,
                 cap_pts,
+                base_motion,
             );
             // The plane was built with `−N` as its normal, so `Forward` is what states an outward
             // `−N` — unless a shared surface points the other way, which `flipped` reports.
@@ -824,19 +821,15 @@ pub(crate) fn build_prism(
         }
     };
     // Top cap: outward normal +N.
-    let top_def = if outer_pts.exact.top.len() >= 3 {
-        outer_pts.exact.surface_def()
-    } else {
-        SurfaceDef::Constructed
-    };
-    let top_points = outer_pts.exact.cap_points(true);
-    let (top_surface, top_flipped) = model.push_surface_with_points(
-        Surface::Plane(
-            Plane::from_point_normal(outer_pts.top[0], normal)
-                .ok_or(OpError::DegenerateGeometry)?,
-        ),
-        top_def,
+    let top_motion = outer_pts.exact.motion;
+    let top_points = outer_pts
+        .exact
+        .cap_points(true)
+        .ok_or(OpError::DegenerateGeometry)?;
+    let (top_surface, top_flipped) = model.push_plane(
+        Plane::from_point_normal(outer_pts.top[0], normal).ok_or(OpError::DegenerateGeometry)?,
         top_points,
+        top_motion,
     );
     let top_orient = if top_flipped {
         Orientation::Forward.flipped()
@@ -996,17 +989,14 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
             let j = (i + 1) % n;
             // The witness is the same three points **in the frame the coefficients are written
             // in** — the world's own points when there is no frame, so this is unchanged there.
-            let def = ring.exact.surface_def();
-            Ok(model.push_surface_with_points(
-                Surface::Plane(
-                    Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
-                        .ok_or(OpError::DegenerateGeometry)?,
-                ),
-                def,
+            Ok(model.push_plane(
+                Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
+                    .ok_or(OpError::DegenerateGeometry)?,
                 // ★ The same three points the f64 plane above is built through, in rationals — so
                 // this wall and any other face of the same plane record one array and derive one
-                // name.
-                Some(ring.exact.wall_points(i)),
+                // name, stated in the frame `motion` names.
+                ring.exact.wall_points(i),
+                ring.exact.motion,
             ))
         })
         .collect()
@@ -1269,7 +1259,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // keeps the f64 projection exactly as a missing name did.
     let world_stated = matches!(
         model.surface_truth(surface_h),
-        Some(nacre_topo::SurfaceTruth::Plane { motion: None, .. })
+        nacre_topo::SurfaceTruth::Plane { motion: None, .. }
     );
     let origin = match (
         world_stated,

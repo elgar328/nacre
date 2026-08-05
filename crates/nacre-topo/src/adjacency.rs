@@ -148,7 +148,7 @@ mod tests {
     use super::nonmanifold_vertices;
     use crate::topology::{Edge, Face, HalfEdge, Loop};
     use crate::{Handle, Model, Orientation, Origin, Shell, Solid, Vertex};
-    use nacre_geom::{Curve, Line, Plane, Surface};
+    use nacre_geom::{Curve, Line, Plane};
     use nacre_math::Point3;
     use std::collections::HashMap;
 
@@ -162,15 +162,14 @@ mod tests {
         let curve = m.curves.push(Curve::Line(
             Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
         ));
-        let surface = m.push_surface(
-            Surface::Plane(
-                Plane::from_point_normal(
-                    Point3::origin(),
-                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
-                )
-                .unwrap(),
-            ),
-            crate::SurfaceDef::Constructed,
+        let r = nacre_scalar::Rat::from_int;
+        let surface = m.push_plane_unregistered(
+            Plane::from_point_normal(
+                Point3::origin(),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .unwrap(),
+            [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
         );
         let mk_v = |m: &mut Model| {
             m.vertices.push(Vertex {
@@ -253,15 +252,14 @@ mod tests {
         let curve = m.curves.push(Curve::Line(
             Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
         ));
-        let surface = m.push_surface(
-            Surface::Plane(
-                Plane::from_point_normal(
-                    Point3::origin(),
-                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
-                )
-                .unwrap(),
-            ),
-            crate::SurfaceDef::Constructed,
+        let r = nacre_scalar::Rat::from_int;
+        let surface = m.push_plane_unregistered(
+            Plane::from_point_normal(
+                Point3::origin(),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .unwrap(),
+            [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
         );
         let mk_e = |m: &mut Model, a, b| {
             m.edges.push(Edge {
