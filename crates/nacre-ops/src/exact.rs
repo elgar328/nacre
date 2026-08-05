@@ -24,7 +24,7 @@
 //! the same answer for the same reason.
 
 use crate::ops::{Profile2d, SketchPlane};
-use nacre_math::{Point3, Vector3};
+use nacre_math::Point3;
 use nacre_scalar::Rat;
 use nacre_store::Handle;
 use nacre_topo::{Model, MotionNode};
@@ -169,10 +169,11 @@ pub(crate) fn realize(pts: &[[Rat; 3]]) -> Vec<Point3> {
 pub(crate) struct Swept {
     pub base: Vec<Point3>,
     pub top: Vec<Point3>,
-    /// The same two rings **before** realization, when the exact path produced them, plus the
-    /// frame's normal. Carried so the prism's planes can state themselves in rationals — see
-    /// [`SweptRat`]. `None` on the f64 fallback.
-    pub exact: Option<SweptRat>,
+    /// The same two rings **before** realization — the truth the f64 above is a cache of.
+    /// Carried so the prism's planes can state themselves in rationals ([`SweptRat`]).
+    /// Not optional since S6b: the f64 fallback (`Swept::along`) is gone — a prism the exact
+    /// arithmetic cannot state is a named reject at the operation, not a point-less build.
+    pub exact: SweptRat,
 }
 
 /// A swept ring still in rationals: what the prism's faces are, before they are rounded.
@@ -193,25 +194,12 @@ pub(crate) struct SweptRat {
 }
 
 impl Swept {
-    /// A ring translated by a sweep vector, in f64 — the fallback for a frame or a
-    /// dimension with no exact form, and what the builder did unconditionally before.
-    pub(crate) fn along(base: Vec<Point3>, sweep: Vector3) -> Self {
-        let top = base.iter().map(|b| *b + sweep).collect();
-        Swept {
-            base,
-            top,
-            exact: None,
-        }
-    }
-
     /// Reverse both rings, keeping them paired.
     pub(crate) fn reversed(mut self) -> Self {
         self.base.reverse();
         self.top.reverse();
-        if let Some(e) = self.exact.as_mut() {
-            e.base.reverse();
-            e.top.reverse();
-        }
+        self.exact.base.reverse();
+        self.exact.top.reverse();
         self
     }
 }
@@ -358,11 +346,11 @@ pub(crate) fn prism_rings(
         Some(Swept {
             base: out(&base)?,
             top: out(&top)?,
-            exact: Some(SweptRat {
+            exact: SweptRat {
                 base,
                 top,
                 motion: frame,
-            }),
+            },
         })
     };
     let outer = ring(profile.outer().points())?;

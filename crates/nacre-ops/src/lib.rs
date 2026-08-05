@@ -109,41 +109,47 @@ impl SketchPlane {
     /// same `ẑ × n` convention spelled in rationals (un-normalized — a cross product is already in
     /// the plane, so nothing needs projecting).
     ///
-    /// The definition is the three points `[o, o + u, o + v]` with `u = ẑ × n` (or `ŷ × n` for a
-    /// vertical normal) and `v = n × u` — `u × v = |u|²·n`, so the point order carries the
-    /// caller's normal, both signs (checked for `n₂ < 0` too). Stating points instead of solving
-    /// canonical coefficients is what removed the old "coefficients do not fit `i128`" failure:
-    /// the only declines left are a coordinate outside the decimal window and a zero normal.
+    /// The definition is the three points `[o, o + u, o + w]`, and **both in-plane directions are
+    /// basis crosses** — `u = ẑ × n` (or `ŷ × n` for a vertical normal), `w = x̂ × n` (or a
+    /// sibling), which are component *shuffles* of the written decimals: no products, no
+    /// divisions, nothing to overflow. The only declines left are a coordinate outside the
+    /// decimal window and a zero normal.
     ///
-    /// ★★ **Width: `v` is a product, and that is fine — because `n` is a lifted decimal, not a
-    /// canonical coefficient.** The retired `named_plane_points` solved the plane equation
-    /// instead of using this "obvious triple", because *its* input was the canonical
-    /// coefficients (~100 bits at a full-width normal) and the product point then overflowed
-    /// `Rat` downstream (measured: 1,551 planes, always the third point). Here `v = n × u`
-    /// multiplies the *written decimals* (≤ 57-bit numerators), landing near 114 bits with the
-    /// checked arithmetic as the honest guard — and any later derivation that does overflow
-    /// narrow arithmetic takes the wide road (S2 names, S4 frames) instead of failing.
+    /// ★★ **Polarity is algebraic**: `(a × n) × (b × n) = det[a, b, n] · n`, so `u × w` is a
+    /// *known scalar* times `n` — `n₁` for the `(ẑ, x̂)` pair — and flipping `w`'s sign when that
+    /// scalar is negative makes the point order face the caller's normal, both signs, exactly.
+    ///
+    /// ★★★ **Why not `w = n × u`, the "obvious" second direction: its components are products.**
+    /// S6a shipped that and the checked arithmetic looked like a formality; the day the silent
+    /// f64 fallback stopped absorbing failures (S6b), a proptest found the window's
+    /// small-exponent corner — a `10²¹` denominator squares to `10⁴²`, and even the *primitive*
+    /// direction of that cross needs 137 bits. The retired `named_plane_points` solved an axis
+    /// for the same reason. Basis crosses stay inside the inputs' own widths.
     fn normal_def(origin: Point3, normal: Vector3) -> Option<PlaneDef> {
         let o = origin.as_array().map(Rat::from_decimal);
         let n = normal.as_array().map(Rat::from_decimal);
         let (o, n) = ([o[0]?, o[1]?, o[2]?], [n[0]?, n[1]?, n[2]?]);
         let zero = Rat::from_int(0);
-        let u = if n[0] == zero && n[1] == zero {
+        let neg = |x: Rat| {
+            zero.checked_sub(x)
+                .expect("negation cannot overflow a lifted decimal")
+        };
+        // (u, w0, s): two independent in-plane basis crosses and the scalar with
+        // `u × w0 = s · n`, per the identity above (arms chosen so `s ≠ 0`).
+        let (u, w0, s) = if n[0] == zero && n[1] == zero {
             if n[2] == zero {
                 return None; // a zero normal names no plane
             }
-            [n[2], zero, zero] // ŷ × n for a vertical normal
+            // Vertical: u = ŷ × n, w0 = x̂ × n; det[ŷ, x̂, n] = −n₂.
+            ([n[2], zero, zero], [zero, neg(n[2]), zero], neg(n[2]))
+        } else if n[1] != zero {
+            // The stated convention: u = ẑ × n; w0 = x̂ × n; det[ẑ, x̂, n] = n₁.
+            ([neg(n[1]), n[0], zero], [zero, neg(n[2]), n[1]], n[1])
         } else {
-            [zero.checked_sub(n[1])?, n[0], zero] // ẑ × n
+            // n₁ = 0, n₀ ≠ 0: u = ẑ × n; w0 = ŷ × n; det[ẑ, ŷ, n] = −n₀.
+            ([neg(n[1]), n[0], zero], [n[2], zero, neg(n[0])], neg(n[0]))
         };
-        let v = [
-            n[1].checked_mul(u[2])?
-                .checked_sub(n[2].checked_mul(u[1])?)?,
-            n[2].checked_mul(u[0])?
-                .checked_sub(n[0].checked_mul(u[2])?)?,
-            n[0].checked_mul(u[1])?
-                .checked_sub(n[1].checked_mul(u[0])?)?,
-        ];
+        let w = if s > zero { w0 } else { w0.map(neg) };
         let add = |a: [Rat; 3], b: [Rat; 3]| -> Option<[Rat; 3]> {
             Some([
                 a[0].checked_add(b[0])?,
@@ -152,7 +158,7 @@ impl SketchPlane {
             ])
         };
         Some(PlaneDef {
-            points: [o, add(o, u)?, add(o, v)?],
+            points: [o, add(o, u)?, add(o, w)?],
         })
     }
 
@@ -2724,6 +2730,31 @@ pub mod tests {
         );
     }
 
+    /// An exact world-frame `Swept` from decimal f64 points — the truth-stating successor of the
+    /// retired `Swept::along` (S6b): the fallback is gone, so a test states its rings the way a
+    /// producer does. The f64 base is kept as handed in (decimals realize back bit-identically);
+    /// the top is the realization of the exact sum.
+    fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
+        let lift =
+            |p: [f64; 3]| p.map(|x| nacre_scalar::Rat::from_decimal(x).expect("decimal fixture"));
+        let sv = lift(sweep.as_array());
+        let rb: Vec<[nacre_scalar::Rat; 3]> = base.iter().map(|p| lift(p.as_array())).collect();
+        let rt: Vec<[nacre_scalar::Rat; 3]> = rb
+            .iter()
+            .map(|b| core::array::from_fn(|i| b[i].checked_add(sv[i]).expect("fixture widths")))
+            .collect();
+        let top = crate::exact::realize(&rt);
+        crate::exact::Swept {
+            base,
+            top,
+            exact: crate::exact::SweptRat {
+                base: rb,
+                top: rt,
+                motion: None,
+            },
+        }
+    }
+
     /// explicit sharing (overhaul #3): a prism built with a shared base-cap
     /// surface reuses that `Surface` handle for its flush cap, and reconciles the
     /// cap's face orientation so the materialized outward normal stays `−sweep`.
@@ -2746,7 +2777,7 @@ pub mod tests {
         ];
         let (_prism, faces) = build_prism(
             &mut m,
-            crate::exact::Swept::along(base_pts.to_vec(), Vector3::from_array([0.0, 0.0, 1.0])),
+            swept_world(base_pts.to_vec(), Vector3::from_array([0.0, 0.0, 1.0])),
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
             Some(sf),
@@ -2798,7 +2829,7 @@ pub mod tests {
             let mut m = Model::new();
             let (_prism, faces) = build_prism(
                 &mut m,
-                crate::exact::Swept::along(base_pts.to_vec(), Vector3::from_array([0.0, 0.0, 1.0])),
+                swept_world(base_pts.to_vec(), Vector3::from_array([0.0, 0.0, 1.0])),
                 vec![],
                 Vector3::from_array([0.0, 0.0, 1.0]),
                 None,
@@ -2828,11 +2859,20 @@ pub mod tests {
             Some(&nacre_topo::SurfaceDef::Constructed)
         );
 
-        // ★ And with no caller statement, the ring answers — `Swept::along` carries no rationals,
-        // so there is nothing to record and no name to derive.
+        // ★ And with no caller statement, the ring answers — its own exact cap triple, and the
+        // name derived from it (`z = 0`, visibly different from the caller's `z = 3` above).
+        // This used to pin the *absence* of both — the f64 fallback's point-less cap — and the
+        // fallback is gone (S6b): the negative pins live at the operation as named rejects now.
         let (m, surf) = prism(None);
-        assert!(!m.surface_points.contains_key(&surf));
-        assert!(!m.surface_name.contains_key(&surf));
+        assert!(
+            m.surface_points.contains_key(&surf),
+            "the ring's triple is recorded"
+        );
+        assert_eq!(
+            m.surface_name.get(&surf),
+            Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
+            "the name is derived from the ring's own plane"
+        );
     }
 
     /// The handle branch of `shares_or_coplanar` is load-bearing: a shared
@@ -4382,7 +4422,7 @@ pub mod tests {
         .collect();
         let (boss, _) = build_prism(
             &mut m,
-            crate::exact::Swept::along(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
+            swept_world(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
             None,
@@ -4507,7 +4547,7 @@ pub mod tests {
         .collect();
         let (l_tool, _) = build_prism(
             &mut m,
-            crate::exact::Swept::along(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
+            swept_world(l_base, Vector3::from_array([0.0, 0.0, 0.4])),
             vec![],
             Vector3::from_array([0.0, 0.0, 1.0]),
             None,
@@ -6779,6 +6819,52 @@ pub mod tests {
             (props.volume - want).abs() < 1e-9,
             "volume {} vs analytic {want}",
             props.volume
+        );
+    }
+
+    /// ★★★ S6b: **what the f64 fallback used to build silently is a named reject now.** A plane
+    /// with no exact statement — axes outside the decimal window — and a sweep distance the
+    /// window cannot hold each get their own name at the operation's door. The prisms these
+    /// used to build recorded no exact points and could not survive a motion; the reject is the
+    /// honest form of the same fact.
+    #[test]
+    fn a_prism_the_exact_arithmetic_cannot_state_is_refused_by_name() {
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let square = || {
+            Profile2d::polygon(vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]).unwrap()
+        };
+        // ① Axes outside the decimal window: no def, no world lift — no exact form at all.
+        let far = crate::ops::SketchPlane::from_axes(
+            Point3::origin(),
+            Vector3::from_array([1e300, 0.0, 0.0]),
+            Vector3::from_array([0.0, 1e300, 0.0]),
+        );
+        assert!(
+            far.exact().is_none() && far.def.is_none(),
+            "fixture: no exact statement"
+        );
+        assert_eq!(
+            apply(
+                &mut Model::new(),
+                &Operation::Extrude {
+                    plane: far,
+                    profile: square(),
+                    dist: 1.0,
+                },
+            ),
+            Err(OpError::PlaneWithoutExactForm)
+        );
+        // ② A sweep distance outside the window — the profile-coordinate rule's sibling.
+        assert_eq!(
+            apply(
+                &mut Model::new(),
+                &Operation::Extrude {
+                    plane: SketchPlane::world_xy(),
+                    profile: square(),
+                    dist: 1e300,
+                },
+            ),
+            Err(OpError::DistOutsideDecimalWindow)
         );
     }
 

@@ -438,6 +438,17 @@ pub enum OpError {
     },
     /// A non-positive extrusion distance.
     NonPositiveDistance,
+    /// An extrusion distance outside the decimal window (`Rat::from_decimal` — `~1e38` above,
+    /// `~1e-22` below for a full-width value): it has no rational truth for the sweep to be
+    /// computed in. The sibling of [`OpError::ProfileOutsideDecimalWindow`], named at the
+    /// operation's door — this used to fall silently to a point-less f64 prism.
+    DistOutsideDecimalWindow,
+    /// The sketch plane (or the frame chain carrying it) has no exact form to build in: its
+    /// axes fell outside the decimal window or were degenerate, or the placement arithmetic
+    /// overflowed `i128`. The prism this used to build silently in f64 recorded no exact
+    /// points, could not survive a motion, and is the population `Inexact` grew from — a named
+    /// reject is the honest answer (S6b).
+    PlaneWithoutExactForm,
     /// A curve/surface construction collapsed (collinear/coincident points, a
     /// zero-length profile edge).
     DegenerateGeometry,
@@ -596,6 +607,12 @@ pub(crate) fn extrude(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
+    // The last silently-unnamed window population (S6b): a sweep distance the decimal window
+    // cannot hold used to drop the whole prism to f64 inside `prism_rings`. Named here, at the
+    // door, like its profile-coordinate sibling.
+    if nacre_scalar::Rat::from_decimal(dist).is_none() {
+        return Err(OpError::DistOutsideDecimalWindow);
+    }
     profile.check()?;
     // ★★★★★ **A plane the caller stated is drawn in its own frame.**
     //
@@ -645,7 +662,7 @@ pub(crate) fn extrude(
             None,
         ))
     });
-    let (outer, holes) = swept_profile(model, plane, profile, dist, frame);
+    let (outer, holes) = swept_profile(model, plane, profile, dist, frame)?;
     // ★★★★ **The base cap *is* the plane the caller named**, so where they stated it exactly
     // (`PlaneDef`) it can record that plane's own points even when nothing else about the prism
     // can — the walls and far cap are irrational in the world unless `plane.exact()` allows.
@@ -666,14 +683,16 @@ pub(crate) fn extrude(
     )
 }
 
-/// Place a profile on its plane and sweep it — **exactly where the plane admits it**.
+/// Place a profile on its plane and sweep it — **exactly, or not at all** (S6b).
 ///
 /// The rational path is not an optimization: it is what makes `extrude(7.7)` and
 /// `extrude(1.1)` then `extrude(6.6)` put their caps on the same plane rather than an
-/// ulp apart. Where it does not apply — a frame without an exact form, an i128 overflow
-/// in the ring arithmetic — this falls back to the f64 arithmetic that was here before,
-/// which is no worse than it was. (A dimension outside the decimal window no longer
-/// arrives here at all: the profile constructor names it.)
+/// ulp apart. Where it does not apply — a plane with no exact statement (axes outside the
+/// decimal window, a degenerate pair), a frame the chain cannot realize, an i128 overflow in
+/// the placement arithmetic — the answer is a **named reject**, not the silent f64 prism this
+/// used to build: a point-less solid cannot state itself, cannot survive a motion, and is the
+/// population `Inexact` grew from. (Profile coordinates and `dist` outside the decimal window
+/// are named before this runs.)
 ///
 /// **Mapping only — no winding decision, and no containment check.** Forcing the outer
 /// ring CCW here would be a second opinion on a question `build_prism` already answers
@@ -687,21 +706,9 @@ fn swept_profile(
     profile: &Profile2d,
     dist: f64,
     frame: Option<Handle<MotionNode>>,
-) -> (Swept, Vec<Swept>) {
-    if let Some(rings) = crate::exact::prism_rings(model, plane, profile, dist, frame) {
-        return rings;
-    }
-    let sweep = plane.normal() * dist;
-    let place = |ring: &Ring2d| {
-        Swept::along(
-            ring.realized().iter().map(|p| plane.point(*p)).collect(),
-            sweep,
-        )
-    };
-    (
-        place(profile.outer()),
-        profile.holes().iter().map(place).collect(),
-    )
+) -> Result<(Swept, Vec<Swept>), OpError> {
+    crate::exact::prism_rings(model, plane, profile, dist, frame)
+        .ok_or(OpError::PlaneWithoutExactForm)
 }
 
 /// Sweep a profile's rings along `sweep` into a prism solid: caps, side walls, and — for each
@@ -794,11 +801,8 @@ pub(crate) fn build_prism(
             let (base_def, cap_pts) = match base_cap_points {
                 Some(p) => (SurfaceDef::Constructed, Some(p)),
                 None => {
-                    let e = outer_pts.exact.as_ref();
-                    (
-                        e.map_or(SurfaceDef::Constructed, |e| e.surface_def()),
-                        e.and_then(|e| e.cap_points(false)),
-                    )
+                    let e = &outer_pts.exact;
+                    (e.surface_def(), e.cap_points(false))
                 }
             };
             let (s, flipped) = model.push_surface_with_points(
@@ -820,11 +824,12 @@ pub(crate) fn build_prism(
         }
     };
     // Top cap: outward normal +N.
-    let top_def = match outer_pts.exact.as_ref() {
-        Some(e) if e.top.len() >= 3 => e.surface_def(),
-        _ => SurfaceDef::Constructed,
+    let top_def = if outer_pts.exact.top.len() >= 3 {
+        outer_pts.exact.surface_def()
+    } else {
+        SurfaceDef::Constructed
     };
-    let top_points = outer_pts.exact.as_ref().and_then(|e| e.cap_points(true));
+    let top_points = outer_pts.exact.cap_points(true);
     let (top_surface, top_flipped) = model.push_surface_with_points(
         Surface::Plane(
             Plane::from_point_normal(outer_pts.top[0], normal)
@@ -991,10 +996,7 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
             let j = (i + 1) % n;
             // The witness is the same three points **in the frame the coefficients are written
             // in** — the world's own points when there is no frame, so this is unchanged there.
-            let def = match ring.exact.as_ref() {
-                Some(e) => e.surface_def(),
-                None => SurfaceDef::Constructed,
-            };
+            let def = ring.exact.surface_def();
             Ok(model.push_surface_with_points(
                 Surface::Plane(
                     Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
@@ -1003,8 +1005,8 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
                 def,
                 // ★ The same three points the f64 plane above is built through, in rationals — so
                 // this wall and any other face of the same plane record one array and derive one
-                // name. `None` here is the f64 path, where there are no rationals at all.
-                ring.exact.as_ref().map(|e| e.wall_points(i)),
+                // name.
+                Some(ring.exact.wall_points(i)),
             ))
         })
         .collect()
@@ -1070,7 +1072,7 @@ fn sweep_ring(
     // The base vertex is the sketch point itself, at its frame coordinate. It belongs to no
     // shell — the store is append-only and a vertex nothing references is simply a definition
     // that outlives its use, which is what `Origin::Moved` needs one of.
-    let motion = ring.exact.as_ref().and_then(|e| e.motion);
+    let motion = ring.exact.motion;
     let push_verts = |model: &mut Model,
                       ps: &[Point3],
                       frame_pt: &dyn Fn(usize) -> Option<Point3>,
@@ -1098,9 +1100,9 @@ fn sweep_ring(
             })
             .collect()
     };
-    let ex = ring.exact.as_ref();
-    let bv = push_verts(model, &base_pts, &|i| ex.map(|e| e.base_f64(i)), caps.0);
-    let tv = push_verts(model, &top_pts, &|i| ex.map(|e| e.top_f64(i)), caps.1);
+    let ex = &ring.exact;
+    let bv = push_verts(model, &base_pts, &|i| Some(ex.base_f64(i)), caps.0);
+    let tv = push_verts(model, &top_pts, &|i| Some(ex.top_f64(i)), caps.1);
 
     let (mut be, mut te, mut ve) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
@@ -1385,6 +1387,9 @@ fn extrude_and_boolean(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
+    if nacre_scalar::Rat::from_decimal(dist).is_none() {
+        return Err(OpError::DistOutsideDecimalWindow);
+    }
     profile.check()?;
     let frame = face_frame(model, face)?;
     // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
@@ -1417,7 +1422,7 @@ fn extrude_and_boolean(
             None,
         )
     });
-    let (outer, holes) = swept_profile(model, &plane, profile, signed, sketch_frame);
+    let (outer, holes) = swept_profile(model, &plane, profile, signed, sketch_frame)?;
     let (prism, prism_faces) = build_prism(
         model,
         outer,
