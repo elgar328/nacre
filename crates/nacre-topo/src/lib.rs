@@ -945,11 +945,30 @@ impl Model {
                 orientation: Orientation::Forward,
             })
         };
+        // A cap plane's three exact points: the decimal truth of the realized center and two
+        // rim-direction offsets the construction already computed (the `add_cuboid` precedent —
+        // the producer's own f64 is its statement). For an axis whose normalization is exact
+        // (`ẑ`, a Pythagorean triple) these are exact by construction; for an irrational axis
+        // they are the truth of what was *built*, which is all a `Constructed` surface ever
+        // claims. `None` only outside the decimal window.
+        let w = d.cross(u);
+        let cap_points = |c: Point3| -> Option<[[nacre_scalar::Rat; 3]; 3]> {
+            let lift = |p: Point3| -> Option<[nacre_scalar::Rat; 3]> {
+                let a = p.as_array();
+                Some([
+                    nacre_scalar::Rat::from_decimal(a[0])?,
+                    nacre_scalar::Rat::from_decimal(a[1])?,
+                    nacre_scalar::Rat::from_decimal(a[2])?,
+                ])
+            };
+            Some([lift(c)?, lift(c + u * radius)?, lift(c + w * radius)?])
+        };
         // Bottom cap: outward normal −d, the bottom rim reversed.
         let bottom_cap = {
-            let surface = self.push_surface(
+            let (surface, _) = self.push_surface_with_points(
                 Surface::Plane(Plane::from_point_normal(c0, -d).expect("nonzero axis")),
                 SurfaceDef::Constructed,
+                cap_points(c0),
             );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
@@ -966,9 +985,10 @@ impl Model {
         };
         // Top cap: outward normal +d, the top rim forward.
         let top_cap = {
-            let surface = self.push_surface(
+            let (surface, _) = self.push_surface_with_points(
                 Surface::Plane(Plane::from_point_normal(c1, d).expect("nonzero axis")),
                 SurfaceDef::Constructed,
+                cap_points(c1),
             );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
@@ -1581,6 +1601,59 @@ mod tests {
         assert_eq!(
             first, permuted,
             "two spellings of one wide plane must intern"
+        );
+    }
+    /// ★★★ S6a: **a cylinder's caps record their three exact points** — the `add_cuboid`
+    /// precedent applied to the last un-gated production path that minted point-less planes.
+    /// The direct evidence that the record is a real name and not a dead entry: a cap that
+    /// shares a plane with a box face **interns to the same handle**, which no point-less
+    /// surface could ever do.
+    #[test]
+    fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
+        let mut m = Model::new();
+        let cuboid = m.add_cuboid(
+            Point3::from_array([-3.0, -3.0, 0.0]),
+            Point3::from_array([-1.0, -1.0, 2.0]),
+        );
+        let cyl = m.add_cylinder(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.0,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        // Every planar face of the cylinder carries points and a derived name.
+        let planar: Vec<_> = m
+            .shells
+            .get(m.solids.get(cyl).outer)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .filter(|&s| matches!(m.surface(s), Surface::Plane(_)))
+            .collect();
+        assert_eq!(planar.len(), 2, "two caps");
+        for s in &planar {
+            assert!(m.surface_points.contains_key(s), "a cap without points");
+            assert!(m.surface_name.contains_key(s), "a cap without a name");
+        }
+        // The top cap lies on `z = 2`, the same plane as the box's top face — one plane, one
+        // handle, across two producers.
+        let box_top = m
+            .shells
+            .get(m.solids.get(cuboid).outer)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .find(|s| {
+                m.surface_name
+                    .get(s)
+                    .and_then(|n| n.narrow())
+                    .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -2.0])
+            })
+            .expect("the box top names z = 2");
+        assert!(
+            planar.contains(&box_top),
+            "the coplanar cap and box face must intern to one handle"
         );
     }
 }

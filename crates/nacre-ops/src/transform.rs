@@ -242,6 +242,27 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
         Xform::Mirror { axis, offset, .. } => reflected(p.as_array()[axis_index(*axis)], *offset),
     };
     let src = model.solids.get(solid);
+    // ★ S6a: the surfaces' exact points must survive the no-node path too. An exact motion
+    // carries a `Constructed` surface's rational triple through `point_rat`/`mirror_point_rat`,
+    // and that arithmetic can overflow `i128` even when every f64 above is exact (the two
+    // conditions are independent). Dropping the points — the old behaviour — is what minted the
+    // point-less population `Inexact` grows from; recording a node instead keeps the original
+    // triple as the pre-motion truth. The probe is per solid like everything here, so one
+    // overflowing surface puts the whole solid on the recorded path rather than splitting it.
+    let points_move = |s: Handle<Surface>| -> bool {
+        let Some(p) = model.surface_points.get(&s) else {
+            return true; // nothing to carry
+        };
+        let each = |q: [Rat; 3]| -> Option<[Rat; 3]> {
+            match motion {
+                Xform::Rigid(iso) => iso.point_rat(q),
+                Xform::Mirror { axis, offset, .. } => {
+                    nacre_scalar::mirror_point_rat(q, *axis, *offset)
+                }
+            }
+        };
+        p.iter().all(|&q| each(q).is_some())
+    };
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
@@ -249,6 +270,9 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
                 if !all(pl.origin()) {
                     return false;
                 }
+            }
+            if !points_move(face.surface) {
+                return false;
             }
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
@@ -838,5 +862,59 @@ mod tests {
             };
             assert_eq!(got, kind, "a {what} records a {kind} node");
         }
+    }
+    /// ★★★ S6a: **an exact move whose rational point transport would overflow records a node
+    /// instead of dropping the points.** The two exactness conditions are independent — every
+    /// f64 here lands exactly (`t = 2⁻³⁰` on unit-scale corners), while one surface's stored
+    /// triple has a `5⁴²` denominator, so `q + t` needs `lcm(5⁴², 2³⁰) ≈ 2.4e38 > i128`. The
+    /// old behaviour kept the no-node path and silently pushed the moved surface point-less —
+    /// the very population `Inexact` grows from; the `motion_is_exact` probe now puts the whole
+    /// solid on the recorded path, and the original triple survives verbatim as the pre-motion
+    /// truth.
+    #[test]
+    fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
+        let mut m = Model::new();
+        let s = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        // Make one surface's triple adversarially deep: a 5⁴² denominator no dyadic translation
+        // can share. (The map is data here — the mechanism under test reads it, nothing else.)
+        let fh = m.shells.get(m.solids.get(s).outer).faces[0];
+        let surf = m.faces.get(fh).surface;
+        let deep = Rat::new(1, 5i128.pow(42)).unwrap();
+        let pts = [
+            [deep, Rat::from_int(0), Rat::from_int(0)],
+            [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)],
+            [Rat::from_int(0), Rat::from_int(1), Rat::from_int(0)],
+        ];
+        m.surface_points.insert(surf, pts);
+        // Fixture qualification: the f64 side is exact, the rational side overflows.
+        let t = Rat::new(1, 1 << 30).unwrap();
+        assert_eq!(
+            1.0f64 + t.to_f64(),
+            (Rat::from_int(1).checked_add(t)).unwrap().to_f64()
+        );
+        assert!(deep.checked_add(t).is_none(), "the transport must overflow");
+
+        let iso = Isometry::translation([t, Rat::from_int(0), Rat::from_int(0)]);
+        let moved = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
+        m.rebuild_adjacency();
+        let moved_surf = m
+            .shells
+            .get(m.solids.get(moved).outer)
+            .faces
+            .iter()
+            .map(|&f| m.faces.get(f).surface)
+            .find(|s2| m.surface_points.get(s2) == Some(&pts))
+            .expect("the deep triple must survive the move verbatim (pre-motion truth)");
+        assert!(
+            matches!(
+                m.surface_defs.get(&moved_surf),
+                Some(SurfaceDef::Moved { .. })
+            ),
+            "the overflow must force the recorded path, not drop the points"
+        );
     }
 }
