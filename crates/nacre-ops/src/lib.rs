@@ -57,18 +57,26 @@ impl SketchPlane {
     }
 
     /// One of the three world planes, stated exactly: normal, `+u`, `+v` as integer triples.
+    /// The defining points are `[0, u, v]` — `u × v = n` for all three world planes, so the
+    /// point order carries the same normal the coefficients used to state, and `points[1]`
+    /// carries the *named* `+u` (the `world_zx` convention `+u = ẑ` included).
     fn axis_plane(n: [i128; 3], u: [i128; 3], v: [i128; 3]) -> Self {
         let r = |a: [i128; 3]| a.map(Rat::from_int);
         let f = |a: [i128; 3]| Vector3::from_array(a.map(|c| c as f64));
-        let zero = Rat::from_int(0);
+        debug_assert_eq!(
+            {
+                let (u, v) = (f(u), f(v));
+                u.cross(v).as_array()
+            },
+            f(n).as_array(),
+            "axis_plane point order must reproduce the stated normal"
+        );
         Self {
             origin: Point3::origin(),
             x_axis: f(u),
             y_axis: f(v),
             def: Some(PlaneDef {
-                coeffs: [r(n)[0], r(n)[1], r(n)[2], zero],
-                origin: [zero; 3],
-                ref_dir: r(u),
+                points: [[Rat::from_int(0); 3], r(u), r(v)],
             }),
         }
     }
@@ -100,30 +108,60 @@ impl SketchPlane {
     /// `from_origin_normal`'s exact half: the plane through `origin` with normal `normal`, and the
     /// same `ẑ × n` convention spelled in rationals (un-normalized — a cross product is already in
     /// the plane, so nothing needs projecting).
+    ///
+    /// The definition is the three points `[o, o + u, o + v]` with `u = ẑ × n` (or `ŷ × n` for a
+    /// vertical normal) and `v = n × u` — `u × v = |u|²·n`, so the point order carries the
+    /// caller's normal, both signs (checked for `n₂ < 0` too). Stating points instead of solving
+    /// canonical coefficients is what removed the old "coefficients do not fit `i128`" failure:
+    /// the only declines left are a coordinate outside the decimal window and a zero normal.
+    ///
+    /// ★★ **Width: `v` is a product, and that is fine — because `n` is a lifted decimal, not a
+    /// canonical coefficient.** The retired `named_plane_points` solved the plane equation
+    /// instead of using this "obvious triple", because *its* input was the canonical
+    /// coefficients (~100 bits at a full-width normal) and the product point then overflowed
+    /// `Rat` downstream (measured: 1,551 planes, always the third point). Here `v = n × u`
+    /// multiplies the *written decimals* (≤ 57-bit numerators), landing near 114 bits with the
+    /// checked arithmetic as the honest guard — and any later derivation that does overflow
+    /// narrow arithmetic takes the wide road (S2 names, S4 frames) instead of failing.
     fn normal_def(origin: Point3, normal: Vector3) -> Option<PlaneDef> {
         let o = origin.as_array().map(Rat::from_decimal);
         let n = normal.as_array().map(Rat::from_decimal);
         let (o, n) = ([o[0]?, o[1]?, o[2]?], [n[0]?, n[1]?, n[2]?]);
-        let coeffs = nacre_scalar::plane_from_point_normal(n, o)?;
         let zero = Rat::from_int(0);
-        let ref_dir = if n[0] == zero && n[1] == zero {
+        let u = if n[0] == zero && n[1] == zero {
+            if n[2] == zero {
+                return None; // a zero normal names no plane
+            }
             [n[2], zero, zero] // ŷ × n for a vertical normal
         } else {
             [zero.checked_sub(n[1])?, n[0], zero] // ẑ × n
         };
+        let v = [
+            n[1].checked_mul(u[2])?
+                .checked_sub(n[2].checked_mul(u[1])?)?,
+            n[2].checked_mul(u[0])?
+                .checked_sub(n[0].checked_mul(u[2])?)?,
+            n[0].checked_mul(u[1])?
+                .checked_sub(n[1].checked_mul(u[0])?)?,
+        ];
+        let add = |a: [Rat; 3], b: [Rat; 3]| -> Option<[Rat; 3]> {
+            Some([
+                a[0].checked_add(b[0])?,
+                a[1].checked_add(b[1])?,
+                a[2].checked_add(b[2])?,
+            ])
+        };
         Some(PlaneDef {
-            coeffs,
-            origin: o,
-            ref_dir,
+            points: [o, add(o, u)?, add(o, v)?],
         })
     }
 
     /// **A plane through three written points**: `origin` is the sketch's `(0, 0)`, `+u` runs
     /// toward `x_point`, and `+v` leans toward `y_hint`.
     ///
-    /// ★★★ **Everything here is exact by construction.** The plane is
-    /// [`nacre_scalar::plane_through_points`] of the three; `ref_dir` is `x_point − origin`, a
-    /// difference of written points that **already lies in the plane**. `None` if the three are
+    /// ★★★ **Everything here is exact by construction.** The written points, lifted to their
+    /// decimal truth, **are** the definition — origin first, so the sketch `(0, 0)` and the `+u`
+    /// direction (`x_point − origin`) fall out of the structure. `None` if the three are
     /// collinear or fall outside the decimal window.
     pub fn through_points(origin: Point3, x_point: Point3, y_hint: Point3) -> Option<Self> {
         let x = (x_point - origin).normalize()?;
@@ -135,12 +173,13 @@ impl SketchPlane {
         };
         let def = (|| {
             let (o, xp, yh) = (lift(origin)?, lift(x_point)?, lift(y_hint)?);
-            let coeffs = nacre_scalar::plane_through_points(o, xp, yh)?;
-            let d = |i: usize| xp[i].checked_sub(o[i]);
+            // The written points ARE the definition; the only thing to verify is that they name
+            // a plane at all. `plane_name_exact` is total (Narrow | Wide — S2), so `None` means
+            // exactly one thing: collinear. The old canonical-coefficient solve, and its
+            // "answer does not fit i128" failure class, are gone.
+            nacre_scalar::plane_name_exact(o, xp, yh)?;
             Some(PlaneDef {
-                coeffs,
-                origin: o,
-                ref_dir: [d(0)?, d(1)?, d(2)?],
+                points: [o, xp, yh],
             })
         })();
         Some(Self {
@@ -155,25 +194,26 @@ impl SketchPlane {
     ///
     /// ★★★★ **The plane travels with the origin** — `plane(ZX, { origin: … })` sets the position
     /// as well as the 2-D origin, and `SketchPlane { origin, ..world_xy() }` always meant that.
-    /// Keeping the coefficients while moving the origin would leave the definition describing one
-    /// plane and its origin sitting on another: measured, `world_xy().with_origin([0, 0, 0.5])`
+    /// Keeping the plane in place while moving the origin would leave the definition describing
+    /// one plane and its origin sitting on another: measured, `world_xy().with_origin([0, 0, 0.5])`
     /// recorded `z = 0` for a cap at `z = 0.5`, and a boolean built on that lost 0.04 of volume.
-    /// The invariant that stops it — *the origin satisfies the coefficients* — is asserted in
-    /// `a_named_plane_records_what_its_caller_stated`.
-    ///
-    /// The direction is untouched: a translation does not turn `+u`.
+    /// Since the definition is three points and the origin is the first of them, the move is a
+    /// translation of the whole triple: differences (`ref_dir`) and the normal are untouched,
+    /// exactly the "translation does not turn `+u`" the old form promised.
     pub fn with_origin(mut self, p: Point3) -> Self {
         self.origin = p;
         self.def = self.def.and_then(|d| {
             let a = p.as_array().map(Rat::from_decimal);
             let origin = [a[0]?, a[1]?, a[2]?];
+            let shift = |q: [Rat; 3]| -> Option<[Rat; 3]> {
+                Some([
+                    q[0].checked_sub(d.points[0][0])?.checked_add(origin[0])?,
+                    q[1].checked_sub(d.points[0][1])?.checked_add(origin[1])?,
+                    q[2].checked_sub(d.points[0][2])?.checked_add(origin[2])?,
+                ])
+            };
             Some(PlaneDef {
-                coeffs: nacre_scalar::plane_from_point_normal(
-                    [d.coeffs[0], d.coeffs[1], d.coeffs[2]],
-                    origin,
-                )?,
-                origin,
-                ref_dir: d.ref_dir,
+                points: [origin, shift(d.points[1])?, shift(d.points[2])?],
             })
         });
         self
@@ -6321,7 +6361,16 @@ pub mod tests {
     /// old API stored only the axes and threw the normal away, so nothing exact survived the door.
     #[test]
     fn a_named_plane_records_what_its_caller_stated() {
-        let f = |d: &PlaneDef| d.coeffs.map(|r| r.to_f64());
+        // The canonical name is *derived* from the definition's points now; reading it back is
+        // how the old coefficient assertions keep their meaning.
+        let f = |d: &PlaneDef| {
+            let p = d.points();
+            nacre_scalar::plane_name_exact(p[0], p[1], p[2])
+                .expect("a definition names a plane")
+                .narrow()
+                .expect("these fixtures are narrow")
+                .map(|r| r.to_f64())
+        };
         // The three world planes, with the axes the script layer documents.
         for (p, want, u) in [
             (
@@ -6343,7 +6392,7 @@ pub mod tests {
         ] {
             let d = p.def.expect("a world plane states itself");
             assert_eq!(f(&d), want);
-            assert_eq!(d.ref_dir.map(|r| r.to_f64()), u);
+            assert_eq!(d.ref_dir().map(|r| r.to_f64()), u);
             assert_eq!(p.x_axis().as_array(), u, "the axis follows the definition");
         }
         // A tilted normal the caller wrote: exact coefficients, though its axes never can be.
@@ -6365,19 +6414,21 @@ pub mod tests {
         let d = tp.def.unwrap();
         assert_eq!(f(&d), [1.0, 0.0, 0.0, -1.0], "the plane x = 1");
         assert_eq!(
-            d.ref_dir.map(|r| r.to_f64()),
+            d.ref_dir().map(|r| r.to_f64()),
             [0.0, 2.0, 0.0],
             "x_point − origin"
         );
-        assert_eq!(d.origin.map(|r| r.to_f64()), [1.0, 0.0, 0.0]);
+        assert_eq!(d.origin().map(|r| r.to_f64()), [1.0, 0.0, 0.0]);
         // Moving the sketch origin keeps the plane and moves only `(0, 0)`.
         let moved = tp.with_origin(Point3::from_array([1.0, 5.0, 5.0]));
         let m = moved.def.unwrap();
         assert_eq!(f(&m), f(&d), "same plane");
-        assert_eq!(m.origin.map(|r| r.to_f64()), [1.0, 5.0, 5.0]);
-        // ★★★★★ **The invariant that ties the two halves together: the origin is *on* the plane.**
-        // Without it a definition can describe one plane while its sketch sits on another —
-        // exactly what `with_origin` did until a boolean lost 0.04 of volume over it.
+        assert_eq!(m.origin().map(|r| r.to_f64()), [1.0, 5.0, 5.0]);
+        // ★★★★★ **The invariant that used to tie the two halves together — the origin is *on*
+        // the plane — is structural now: the origin IS `points[0]`, so there are no halves to
+        // disagree (the failure this guards against cost a boolean 0.04 of volume once). The
+        // loop keeps the check as a derivation audit: substituting the origin into the *derived*
+        // name must still give zero, or the derivation itself is wrong.
         for p in [
             SketchPlane::world_xy(),
             SketchPlane::world_yz(),
@@ -6394,18 +6445,22 @@ pub mod tests {
             moved,
         ] {
             let d = p.def.expect("stated");
-            let mut s = d.coeffs[3];
-            for k in 0..3 {
-                s = s
-                    .checked_add(d.coeffs[k].checked_mul(d.origin[k]).unwrap())
-                    .unwrap();
+            let pts = d.points();
+            let c = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2])
+                .expect("a definition names a plane")
+                .narrow()
+                .copied()
+                .expect("these fixtures are narrow");
+            let mut s = c[3];
+            for (ck, ok) in c.iter().zip(d.origin()) {
+                s = s.checked_add(ck.checked_mul(ok).unwrap()).unwrap();
             }
             assert_eq!(
                 s,
                 nacre_scalar::Rat::from_int(0),
-                "the origin must lie on the plane it names: {:?} vs {:?}",
-                d.coeffs.map(|r| r.to_f64()),
-                d.origin.map(|r| r.to_f64())
+                "the origin must lie on the plane its points name: {:?} vs {:?}",
+                c.map(|r| r.to_f64()),
+                d.origin().map(|r| r.to_f64())
             );
         }
         // ★ And the axes-only route is honest about having no definition.

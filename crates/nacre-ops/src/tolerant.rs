@@ -1369,23 +1369,26 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **A named plane's triple is narrow enough to compute with — both ways.**
+    /// ★★★★ **A named plane's triple names the caller's plane, full-width normals included —
+    /// and the point order carries the caller's polarity.**
     ///
-    /// Two properties, and they are the reason the triple is chosen by solving an axis rather than
-    /// by walking the sketch frame's own directions:
+    /// History: this used to pin *"`c · p` is computable in `i128`"* and chose an axis-solved
+    /// triple to keep every point coefficient-sized (a frame-walk triple's third point is
+    /// `n × u`, a product, and 1,551 of 83,813 names went out unverified over it). That
+    /// computability was a design constraint of the narrow-only pipeline; since S2 (wide names)
+    /// and S4 (wide frames) an overflowing narrow derivation takes the arbitrary-precision road
+    /// instead of failing, so `PlaneDef` states the *structural* triple `[o, o+u, o+v]` and the
+    /// old property is retired. What must still hold, and is pinned here on the very normals
+    /// whose widths used to break things:
     ///
-    /// - ★ `c · p` is **computable**, so the name can be checked against the thing it names. The
-    ///   frame triple's third point is `n̂ × û`, a product of two coefficient-sized rationals, and
-    ///   at a full-width normal that check overflows for every plane (measured: 1,551 of 83,813
-    ///   names went out unverified, and each had exactly one wide point).
-    /// - ★★ The **coefficients come back out of the points**, exactly. That is what makes the
-    ///   coefficients a cache of the triple rather than a second, independent statement — and it is
-    ///   what would let the coefficient parameter be dropped altogether.
-    ///
-    /// ★★★ The normals here are the ones that break it. Short decimals (`0.3`) stay narrow whatever
-    /// the triple is, so a test built only on those passes while the property is false.
+    /// - the definition **exists** (no width-based decline is left in `normal_def`),
+    /// - the triple **names a plane** (`plane_name_exact` — total, `None ⇔ collinear`),
+    /// - the derived name is the same one the retired coefficient route computed
+    ///   (`plane_from_point_normal` on the lifted normal — same plane, one name),
+    /// - the point order faces the **caller's** normal (`u × v = |u|²·n` — checked through the
+    ///   realization, far from degenerate, so the f64 sign is exact here).
     #[test]
-    fn a_named_planes_points_keep_their_own_name_computable() {
+    fn a_named_planes_points_name_the_callers_plane() {
         use crate::SketchPlane;
         use nacre_math::Vector3;
         for n in [
@@ -1395,33 +1398,38 @@ mod tests {
             [-0.5773502691896258, 0.5773502691896258, 0.5773502691896258],
             [0.1, 0.2, 0.30000000000000004],
         ] {
-            let p = SketchPlane::from_origin_normal(
-                Point3::from_array([0.25, -0.5, 1.5]),
-                Vector3::from_array(n),
-            )
-            .expect("a plane");
+            let o = Point3::from_array([0.25, -0.5, 1.5]);
+            let p = SketchPlane::from_origin_normal(o, Vector3::from_array(n)).expect("a plane");
             let d = p.def.as_ref().expect("an exact definition");
-            let pts =
-                crate::ops::named_plane_points(d).unwrap_or_else(|| panic!("{n:?}: no triple"));
-            let c = d.coeffs();
+            let pts = d.points();
+            let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2])
+                .unwrap_or_else(|| panic!("{n:?}: the triple is collinear"));
 
-            for q in &pts {
-                let mut acc = c[3];
-                for k in 0..3 {
-                    acc = acc
-                        .checked_add(
-                            c[k].checked_mul(q[k])
-                                .unwrap_or_else(|| panic!("{n:?}: c · p overflowed")),
-                        )
-                        .unwrap_or_else(|| panic!("{n:?}: c · p overflowed"));
-                }
-                assert_eq!(acc, Rat::from_int(0), "{n:?}: a point is off its own plane");
-            }
+            // Same plane as the coefficient route would have stated (both from the same lifts).
+            let lift = |v: [f64; 3]| v.map(|x| Rat::from_decimal(x).unwrap());
+            let coeffs = nacre_scalar::plane_from_point_normal(lift(n), lift(o.as_array()))
+                .unwrap_or_else(|| panic!("{n:?}: the reference route overflowed"));
+            assert_eq!(
+                name,
+                nacre_scalar::PlaneName::Narrow(coeffs),
+                "{n:?}: the points name a different plane than the caller's normal"
+            );
 
-            let back = nacre_scalar::plane_through_points(pts[0], pts[1], pts[2])
-                .and_then(nacre_scalar::canonical_plane_coeffs)
-                .unwrap_or_else(|| panic!("{n:?}: the coefficients do not come back out"));
-            assert_eq!(back, c, "{n:?}: the points describe a different plane");
+            // Polarity: (p1−p0) × (p2−p0) must face the caller's n, not its negation.
+            let f = |q: [Rat; 3]| q.map(|r| r.to_f64());
+            let (a, b, c) = (f(pts[0]), f(pts[1]), f(pts[2]));
+            let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let cross = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let dot: f64 = (0..3).map(|k| cross[k] * n[k]).sum();
+            assert!(
+                dot > 0.0,
+                "{n:?}: the point order faces away from the caller"
+            );
         }
     }
 

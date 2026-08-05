@@ -47,41 +47,54 @@ pub struct SketchPlane {
 
 /// **A sketch plane as its author stated it** — the exact truth behind [`SketchPlane`]'s f64 axes.
 ///
-/// ★★★ **Readable, not constructible from outside.** `SketchPlane`'s fields were closed so that
-/// nobody could hand in a plane whose parts disagree; leaving these open would reopen exactly that
-/// hole one level down — an `origin` that is not on `coeffs` is a definition describing two
-/// different planes, which cost 0.04 of volume the one time it happened.
+/// ★★★ **One field, and the invariants are structural.** This used to carry coefficients, an
+/// origin, and a reference direction as three halves that every constructor had to keep agreeing
+/// ("an origin that is not on `coeffs` is a definition describing two different planes", which
+/// cost 0.04 of volume the one time it happened). Now the definition is the three points alone:
 ///
-/// ★ `ref_dir` is **not** a unit vector and is not projected: every constructor derives it from
-/// points that already lie in the plane (or from `ẑ × n`, which a cross product puts there), so
-/// the normalization a frame needs is exactly one `1/√(rational)` at realization time — never
-/// something stored.
+/// - the sketch's `(0, 0)` **is** `points[0]`,
+/// - `+u` **is** `points[1] − points[0]` — a difference of two points of the plane, so it lies in
+///   the plane by definition,
+/// - the normal's direction is `(p1 − p0) × (p2 − p0)` — the point order carries the polarity.
+///
+/// Nothing is left to check, and nothing can disagree. The canonical coefficients are *derived*
+/// (`nacre_scalar::plane_name_exact` — total since S2, `Narrow | Wide`), which also removes the
+/// old constructors' failure class "the coefficients do not fit `i128`": three in-window points
+/// always name their plane, however wide its canonical form.
+///
+/// ★ `ref_dir()` is **not** a unit vector and is not projected; the normalization a frame needs
+/// is exactly one `1/√(rational)` at realization time — never something stored.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlaneDef {
-    /// Canonical rational plane coefficients — direction-free, so two spellings of one plane are
-    /// the same array.
-    pub(crate) coeffs: [nacre_scalar::Rat; 4],
-    /// Where the sketch's `(0, 0)` sits. **On the plane `coeffs` names** — the two halves of a
-    /// definition must not describe different planes, and every constructor is checked against it.
-    pub(crate) origin: [nacre_scalar::Rat; 3],
-    /// The direction the sketch's `+u` runs, in the plane, any length.
-    pub(crate) ref_dir: [nacre_scalar::Rat; 3],
+    /// Three points of the plane, non-collinear (`plane_name_exact` is what verified it — every
+    /// constructor rejects a collinear triple as "no plane"). `points[0]` is the sketch origin,
+    /// `points[1] − points[0]` the `+u` direction, and the order fixes the normal's sign.
+    pub(crate) points: [[nacre_scalar::Rat; 3]; 3],
 }
 
 impl PlaneDef {
-    /// The plane, as canonical rational coefficients.
-    pub fn coeffs(&self) -> [nacre_scalar::Rat; 4] {
-        self.coeffs
+    /// The three defining points — the sketch origin first, then the point `+u` runs toward,
+    /// then the point fixing the normal's side.
+    pub fn points(&self) -> [[nacre_scalar::Rat; 3]; 3] {
+        self.points
     }
 
-    /// Where the sketch's `(0, 0)` sits — a point of the plane above.
+    /// Where the sketch's `(0, 0)` sits — the first defining point.
     pub fn origin(&self) -> [nacre_scalar::Rat; 3] {
-        self.origin
+        self.points[0]
     }
 
-    /// The `+u` direction, in the plane, not unit length.
+    /// The `+u` direction, in the plane, not unit length — `points[1] − points[0]`.
+    ///
+    /// The subtraction cannot overflow: both points passed through a constructor, and every
+    /// constructor either lifted decimals (narrow) or added one lifted decimal to another —
+    /// widths nowhere near `i128`'s ceiling.
     pub fn ref_dir(&self) -> [nacre_scalar::Rat; 3] {
-        self.ref_dir
+        core::array::from_fn(|i| {
+            self.points[1][i]
+                .checked_sub(self.points[0][i])
+                .expect("constructor-bounded widths")
+        })
     }
 }
 
@@ -612,13 +625,13 @@ pub(crate) fn extrude(
         let (h, _) = model.push_surface_with_points(
             Surface::Plane(pl),
             SurfaceDef::Constructed,
-            named_plane_points(&d),
+            Some(d.points()),
         );
         // The caller stated the pair, so the placement is `Named` (S4) — `Canonical` is for
         // frames nobody named, like a face's.
         let placement = nacre_topo::FramePlacement::Named {
-            origin: d.origin,
-            ref_dir: d.ref_dir,
+            origin: d.origin(),
+            ref_dir: d.ref_dir(),
         };
         let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(model, h, &placement, false)?;
         let n = plane.normal().as_array();
@@ -649,7 +662,7 @@ pub(crate) fn extrude(
         holes,
         plane.normal(),
         None,
-        plane.def.as_ref().and_then(named_plane_points),
+        plane.def.as_ref().map(|d| d.points()),
     )
 }
 
@@ -709,86 +722,6 @@ fn swept_profile(
 /// All vertices are `Origin::Constructed`. Returns the solid and its faces: `faces[0]` = base cap
 /// (at the ring, normal `−ŝ`), `faces[1]` = far cap, then the outer walls, then each hole's walls.
 /// Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
-/// **Three exact world points of a plane the caller named**, or `None` if the arithmetic overflows.
-///
-/// ★★★ The points come from **what the caller wrote**, not from any face — a plane stated through
-/// [`SketchPlane`] has none yet. They are read straight out of the plane equation: fix the two
-/// axes the plane is least steep along, solve the third, and the result is on the plane by
-/// construction with no tolerance anywhere.
-///
-/// ★★★★★ **The triple is chosen for its width, and that is the whole design.** The obvious triple —
-/// the sketch frame's `origin`, `origin + û`, `origin + (n̂ × û)` — is also exact and was what this
-/// used to return, but its third point is a **product of two coefficient-sized rationals**. At a
-/// full-width normal (a slider, a computed angle: seventeen significant digits) the coefficients run
-/// to a hundred-odd bits and that product runs to twice that, so every later use of the point
-/// overflows `Rat`. Measured, 1,551 planes carried exactly one such point and it was always the
-/// third. Solving an axis instead keeps every component **coefficient-sized**, which is what makes
-/// the agreement check computable and the coefficients derivable back from the points.
-///
-/// ★★ **Which axis matters.** Dividing by the largest coefficient is what keeps the solved
-/// component small; dividing by the smallest would put the width back a different way.
-///
-/// ★ **Non-collinear by construction**: two of the points differ from the first by one unit along
-/// each of the two fixed axes, which no plane can make parallel.
-///
-/// ★★★★ **And they now depend on the coefficients alone.** Two sketches naming one plane with
-/// different `ref_dir` used to compute different triples for it and interning kept whichever
-/// arrived first; now they compute the same one. One plane, one description, with nothing left to
-/// arrive first.
-///
-/// ★★★★★ **One function because two producers must agree.** The sketch plane's own surface and the
-/// prism's base cap are *the same plane* and intern to one handle; if they computed their points
-/// separately, one of them would eventually state that plane a second way. They did — the base cap
-/// used to record the ring in **frame** coordinates while its coefficients spoke about the world.
-/// (Coefficients are no longer supplied at all — `Model::push_surface_with_points` derives the name
-/// from whichever triple is recorded — but two producers computing *different* triples for one
-/// plane would still leave whichever arrived first, so the single source still matters.)
-pub(crate) fn named_plane_points(d: &PlaneDef) -> Option<[[Rat; 3]; 3]> {
-    let c = d.coeffs;
-    // The axis the plane is steepest along — the one whose coefficient divides best. Comparing
-    // `|n/d|` as `|n| · d'` against `|n'| · d` keeps it exact without a `Rat` division.
-    let heavier = |a: usize, b: usize| -> bool {
-        match (
-            c[a].numer()
-                .unsigned_abs()
-                .checked_mul(c[b].denom() as u128),
-            c[b].numer()
-                .unsigned_abs()
-                .checked_mul(c[a].denom() as u128),
-        ) {
-            (Some(x), Some(y)) => x > y,
-            // Unreachable for canonical coefficients (integers, denominator 1), and a wrong
-            // *choice* here costs width, never correctness — every axis solves the same plane.
-            _ => false,
-        }
-    };
-    let mut k = 0;
-    for a in 1..3 {
-        if heavier(a, k) {
-            k = a;
-        }
-    }
-    let (i, j) = match k {
-        0 => (1, 2),
-        1 => (0, 2),
-        _ => (0, 1),
-    };
-    // Zero even at the steepest axis means the coefficients name no plane at all.
-    let recip = Rat::new(c[k].denom(), c[k].numer())?;
-    let at = |u: Rat, v: Rat| -> Option<[Rat; 3]> {
-        let mut p = [Rat::from_int(0); 3];
-        p[i] = u;
-        p[j] = v;
-        let s = c[3]
-            .checked_add(c[i].checked_mul(u)?)?
-            .checked_add(c[j].checked_mul(v)?)?;
-        p[k] = Rat::from_int(0).checked_sub(s)?.checked_mul(recip)?;
-        Some(p)
-    };
-    let (zero, one) = (Rat::from_int(0), Rat::from_int(1));
-    Some([at(zero, zero)?, at(one, zero)?, at(zero, one)?])
-}
-
 pub(crate) fn build_prism(
     model: &mut Model,
     outer_ring: Swept,
