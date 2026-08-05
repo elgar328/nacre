@@ -15,6 +15,9 @@ use nacre_math::{Point2, Point3, Vector3};
 /// directly (the same `topo → geom → predicates` layering as the surface
 /// handoffs).
 pub use nacre_predicates::{RayCross, SegCross, orient2d};
+// Re-exported for the same reason: `nacre-ops` consumes the rational ring predicates below and
+// states their coordinates in `Rat` without needing its own view of the sign primitive.
+pub use nacre_scalar::{Rat, orient2d_rat};
 
 /// `sin²θ` below which two plane normals count as parallel. Unit normals make
 /// `‖n1 × n2‖² = sin²θ ∈ [0, 1]`, so this absolute cutoff is scale-free.
@@ -402,6 +405,165 @@ fn segments_meet_2d(p1: [f64; 2], p2: [f64; 2], q1: [f64; 2], q2: [f64; 2]) -> b
 /// Whether the **collinear** point `p` lies within segment `ab`'s extent (callers check
 /// collinearity with `orient2d` first, so this is a bounding-box question only).
 fn on_segment_2d(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> bool {
+    p[0] >= a[0].min(b[0])
+        && p[0] <= a[0].max(b[0])
+        && p[1] >= a[1].min(b[1])
+        && p[1] <= a[1].max(b[1])
+}
+
+// ---------------------------------------------------------------------------
+// Rational twins of the ring predicates.
+//
+// A profile's truth is the rational the author's decimal spelled (`Rat::from_decimal`), and the
+// f64 realization can carry a *different sign*: three points collinear in decimal land a hair off
+// the line in binary. `Profile2d::check` and `sketch::from_rings` therefore judge the truth, and
+// these are the predicates they do it with — verbatim ports of the f64 versions above (which stay:
+// tessellation and the f64 fallback path still consume them), with `orient2d` swapped for the
+// total `nacre_scalar::orient2d_rat` and f64 comparisons for `Rat`'s exact `Ord`. Everything
+// else in the originals is comparison, min/max, and array equality, so nothing changes meaning.
+// ---------------------------------------------------------------------------
+
+/// [`point_in_ring_2d`] over the ring's rational truth. Same crossing-parity contract, including
+/// the assumption that the ring is simple.
+pub fn point_in_ring_2d_rat(p: [Rat; 2], ring: &[[Rat; 2]]) -> RingSide {
+    let n = ring.len();
+    if n < 3 {
+        return RingSide::Outside;
+    }
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        let side = orient2d_rat(a, b, p);
+        if side == 0 && on_segment_2d_rat(a, b, p) {
+            return RingSide::OnBoundary;
+        }
+        // Half-open in y so a vertex on the ray counts for exactly one of its two edges.
+        if (a[1] > p[1]) != (b[1] > p[1]) {
+            let upward = b[1] > a[1];
+            if (side > 0) == upward {
+                inside = !inside;
+            }
+        }
+    }
+    if inside {
+        RingSide::Inside
+    } else {
+        RingSide::Outside
+    }
+}
+
+/// [`rings_cross`] over the rings' rational truth — any contact at all, proper or touching.
+pub fn rings_cross_rat(a: &[[Rat; 2]], b: &[[Rat; 2]]) -> bool {
+    let (n, m) = (a.len(), b.len());
+    if n < 2 || m < 2 {
+        return false;
+    }
+    for i in 0..n {
+        let (p1, p2) = (a[i], a[(i + 1) % n]);
+        for j in 0..m {
+            if segments_meet_2d_rat(p1, p2, b[j], b[(j + 1) % m]) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// [`ring_self_intersection`] over the ring's rational truth — same case split (zero-length
+/// edge first, then cyclic-adjacent spikes, then any contact between non-adjacent edges), same
+/// "a flat corner is not an error" stance.
+pub fn ring_self_intersection_rat(ring: &[[Rat; 2]]) -> Option<(usize, usize)> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let pt = |i: usize| ring[i % n];
+    for i in 0..n {
+        if pt(i) == pt(i + 1) {
+            return Some((i, i));
+        }
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let hit = if j == i + 1 {
+                spike_rat(pt(i), pt(i + 1), pt(i + 2))
+            } else if i == 0 && j == n - 1 {
+                spike_rat(pt(1), pt(0), pt(n - 1))
+            } else {
+                segments_meet_2d_rat(pt(i), pt(i + 1), pt(j), pt(j + 1))
+            };
+            if hit {
+                return Some((i, j));
+            }
+        }
+    }
+    None
+}
+
+/// The ring with every flat corner dissolved — the profile constructor's lossless
+/// normalization pass (`docs/truth-and-cache.md`: a collinear vertex's two walls are one plane,
+/// so the vertex has no three-plane definition; deleting it changes no geometry).
+///
+/// A vertex dissolves only when it is **strictly interior** to the segment its neighbours span:
+/// collinear, and equal to neither neighbour. That strictness is load-bearing —
+/// - a **repeated point** (`p == prev`) must survive, so `check` can still name it
+///   `ZeroLengthProfileEdge` ("you typed the same point twice" is an author's mistake to report,
+///   not to erase);
+/// - a **spike** (collinear but past the far neighbour) must survive, so `check` still reports
+///   the self-intersection.
+///
+/// Removal can make the two ex-neighbours' own corners newly flat (four points on one line), so
+/// the scan repeats to a fixpoint. A ring that collapses below three points is returned as-is
+/// for `check` to reject as degenerate — that a fully-collinear "ring" encloses nothing is the
+/// honest report.
+pub fn drop_collinear_midpoints(mut ring: Vec<[Rat; 2]>) -> Vec<[Rat; 2]> {
+    loop {
+        let n = ring.len();
+        if n < 3 {
+            return ring;
+        }
+        let flat = (0..n).find(|&i| {
+            let (prev, p, next) = (ring[(i + n - 1) % n], ring[i], ring[(i + 1) % n]);
+            // Collinear + inside the neighbours' box + distinct from both = strictly between.
+            // Reusing `on_segment_2d_rat` alone would be wrong: it includes the endpoints, and
+            // an endpoint hit here is a zero-length edge that must survive to be reported.
+            p != prev
+                && p != next
+                && orient2d_rat(prev, p, next) == 0
+                && on_segment_2d_rat(prev, next, p)
+        });
+        match flat {
+            Some(i) => {
+                ring.remove(i);
+            }
+            None => return ring,
+        }
+    }
+}
+
+/// [`spike`]'s rational twin.
+fn spike_rat(u: [Rat; 2], s: [Rat; 2], v: [Rat; 2]) -> bool {
+    orient2d_rat(u, s, v) == 0 && (on_segment_2d_rat(u, s, v) || on_segment_2d_rat(s, v, u))
+}
+
+/// [`segments_meet_2d`]'s rational twin: proper crossing or any touching contact.
+fn segments_meet_2d_rat(p1: [Rat; 2], p2: [Rat; 2], q1: [Rat; 2], q2: [Rat; 2]) -> bool {
+    let d1 = orient2d_rat(q1, q2, p1);
+    let d2 = orient2d_rat(q1, q2, p2);
+    let d3 = orient2d_rat(p1, p2, q1);
+    let d4 = orient2d_rat(p1, p2, q2);
+    if ((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0)) && d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0
+    {
+        return true;
+    }
+    (d1 == 0 && on_segment_2d_rat(q1, q2, p1))
+        || (d2 == 0 && on_segment_2d_rat(q1, q2, p2))
+        || (d3 == 0 && on_segment_2d_rat(p1, p2, q1))
+        || (d4 == 0 && on_segment_2d_rat(p1, p2, q2))
+}
+
+/// [`on_segment_2d`]'s rational twin — the **collinear** point `p` within `ab`'s box.
+fn on_segment_2d_rat(a: [Rat; 2], b: [Rat; 2], p: [Rat; 2]) -> bool {
     p[0] >= a[0].min(b[0])
         && p[0] <= a[0].max(b[0])
         && p[1] >= a[1].min(b[1])
@@ -974,5 +1136,118 @@ mod tests {
     fn a_zero_area_ring_is_rejected() {
         let flat = ring(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]);
         assert!(ring_self_intersection(&flat).is_some());
+    }
+
+    // --- the rational twins ---
+
+    /// Lift literal coordinates into the truth the twins judge. `unwrap` is fine here: every
+    /// fixture coordinate is a short decimal, comfortably inside the window.
+    fn rring(pts: &[[f64; 2]]) -> Vec<[Rat; 2]> {
+        pts.iter().map(|p| [d(p[0]), d(p[1])]).collect()
+    }
+
+    fn d(x: f64) -> Rat {
+        Rat::from_decimal(x).unwrap()
+    }
+
+    proptest! {
+        /// The sign primitive agrees with the f64 predicate wherever both are exact — integer
+        /// coordinates are exact in both worlds, so a disagreement is a bug in one of them.
+        #[test]
+        fn the_rational_orientation_agrees_with_shewchuk_on_exact_input(
+            xs in prop::array::uniform6(-64i32..64),
+        ) {
+            let f = |i: usize| [xs[2 * i] as f64, xs[2 * i + 1] as f64];
+            let r = |i: usize| [Rat::from_int(xs[2 * i] as i128), Rat::from_int(xs[2 * i + 1] as i128)];
+            let sign = orient2d(f(0), f(1), f(2));
+            let sign = (sign > 0.0) as i8 - (sign < 0.0) as i8;
+            prop_assert_eq!(sign, orient2d_rat(r(0), r(1), r(2)));
+        }
+
+        /// The twins are the same walkers. On exact (integer) coordinates every branch condition
+        /// evaluates identically in f64 and in `Rat`, so all three must return the very same
+        /// values — indices included — on any input, simple or not.
+        #[test]
+        fn the_rational_walkers_answer_what_the_f64_walkers_do(
+            pts in prop::collection::vec(prop::array::uniform2(-8i32..8), 3..7),
+            probe in prop::array::uniform2(-8i32..8),
+        ) {
+            let f: Vec<Point2> = pts.iter().map(|p| Point2::from_array([p[0] as f64, p[1] as f64])).collect();
+            let r: Vec<[Rat; 2]> = pts.iter().map(|p| [Rat::from_int(p[0] as i128), Rat::from_int(p[1] as i128)]).collect();
+            prop_assert_eq!(ring_self_intersection(&f), ring_self_intersection_rat(&r));
+            let (fa, fb) = f.split_at(f.len() / 2);
+            let (ra, rb) = r.split_at(r.len() / 2);
+            prop_assert_eq!(rings_cross(fa, fb), rings_cross_rat(ra, rb));
+            let fp = Point2::from_array([probe[0] as f64, probe[1] as f64]);
+            let rp = [Rat::from_int(probe[0] as i128), Rat::from_int(probe[1] as i128)];
+            prop_assert_eq!(point_in_ring_2d(fp, &f), point_in_ring_2d_rat(rp, &r));
+        }
+    }
+
+    /// The fixture gallery above, re-judged on the truth — same verdicts, same indices.
+    #[test]
+    fn the_rational_self_intersection_matches_the_gallery() {
+        let flat = rring(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
+        assert_eq!(
+            ring_self_intersection_rat(&flat),
+            None,
+            "a flat corner is legal"
+        );
+        let bowtie = rring(&[[0.0, 0.0], [4.0, 4.0], [4.0, 0.0], [0.0, 4.0]]);
+        assert_eq!(ring_self_intersection_rat(&bowtie), Some((0, 2)));
+        let dup = rring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
+        assert_eq!(ring_self_intersection_rat(&dup), Some((1, 1)));
+        let spike = rring(&[[0.0, 0.0], [4.0, 0.0], [2.0, 0.0], [2.0, 4.0]]);
+        assert!(ring_self_intersection_rat(&spike).is_some());
+    }
+
+    /// ★★ **The twins exist because the two worlds disagree — here is the disagreement.**
+    ///
+    /// `(0, 0.1) → (0.1, 0.2) → (0.2, 0.3)` is collinear in the decimals the author wrote
+    /// (slope one), but not in the binary values the f64s hold: `0.2` is exactly `2·0.1bin`,
+    /// while `0.3bin ≠ 3·0.1bin`, so Shewchuk's exact sign of the *binary* points is nonzero.
+    /// The truth is what was written (`docs/truth-and-cache.md`), which is why `Profile2d`
+    /// judges the rational side of this fork.
+    #[test]
+    fn a_decimal_collinearity_the_binary_points_do_not_have() {
+        let (a, b, c) = ([0.0, 0.1], [0.1, 0.2], [0.2, 0.3]);
+        assert_ne!(orient2d(a, b, c), 0.0, "binary: a hair off the line");
+        let lift = |p: [f64; 2]| [d(p[0]), d(p[1])];
+        assert_eq!(orient2d_rat(lift(a), lift(b), lift(c)), 0, "decimal: on it");
+    }
+
+    /// The dissolve pass: flat corners go, everything `check` must still see survives.
+    #[test]
+    fn dissolving_flat_corners_keeps_every_reportable_defect() {
+        // A flat corner dissolves, leaving the plain square.
+        let flat = rring(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
+        let square = rring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]);
+        assert_eq!(drop_collinear_midpoints(flat), square);
+        // A clean ring is untouched.
+        assert_eq!(drop_collinear_midpoints(square.clone()), square);
+        // A repeated point is NOT a flat corner — it must survive to be reported as a
+        // zero-length edge, not silently erased as if the author had drawn it once.
+        let dup = rring(&[[0.0, 0.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]]);
+        assert_eq!(drop_collinear_midpoints(dup.clone()), dup);
+        // A spike's tip is collinear but not between its neighbours — it survives for the
+        // self-intersection report.
+        let spike = rring(&[[0.0, 0.0], [4.0, 0.0], [2.0, 0.0], [2.0, 4.0]]);
+        assert_eq!(drop_collinear_midpoints(spike.clone()), spike);
+        // Four points on one line: removing one midpoint makes the next one flat — the scan
+        // repeats to a fixpoint.
+        let run = rring(&[
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.0],
+            [3.0, 3.0],
+            [0.0, 3.0],
+        ]);
+        let clean = rring(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0]]);
+        assert_eq!(drop_collinear_midpoints(run), clean);
+        // A fully-collinear ring collapses below three points and is returned for `check` to
+        // reject as degenerate.
+        let line = rring(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]);
+        assert_eq!(drop_collinear_midpoints(line).len(), 2);
     }
 }
