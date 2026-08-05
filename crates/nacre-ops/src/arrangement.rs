@@ -2707,7 +2707,8 @@ mod tests {
             Point2::from_array([1.0, 1.0]),
             Point2::from_array([1.0, 2.0]),
             Point2::from_array([0.0, 2.0]),
-        ]);
+        ])
+        .unwrap();
         let mut m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile,
@@ -2824,7 +2825,8 @@ mod tests {
             Point2::from_array([1.0, 1.0]),
             Point2::from_array([1.0, 2.0]),
             Point2::from_array([0.0, 2.0]),
-        ]);
+        ])
+        .unwrap();
         let mut m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile,
@@ -2933,7 +2935,8 @@ mod tests {
             Point2::from_array([3.0, 3.0]), // (3,3)-(2,3): y=3
             Point2::from_array([2.0, 3.0]), // (2,3)-(0,1): diagonal y=x+1
             Point2::from_array([0.0, 1.0]), // (0,1)-(0,0): x=0
-        ]);
+        ])
+        .unwrap();
         let m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile,
@@ -4019,7 +4022,8 @@ mod tests {
             Point2::from_array([1.0, 1.0]),
             Point2::from_array([1.0, 2.0]),
             Point2::from_array([0.0, 2.0]),
-        ]);
+        ])
+        .unwrap();
         let mut m = replay(&[Operation::Extrude {
             plane: SketchPlane::world_xy(),
             profile: u_profile,

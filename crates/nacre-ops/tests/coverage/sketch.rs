@@ -24,7 +24,7 @@ fn donut_profile() -> Profile2d {
             Point2::from_array([a, b]),
         ]
     };
-    Profile2d::with_holes(sq(0.0, 4.0), vec![sq(1.0, 3.0)])
+    Profile2d::with_holes(sq(0.0, 4.0), vec![sq(1.0, 3.0)]).unwrap()
 }
 
 fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
@@ -155,7 +155,8 @@ fn a_profile_with_two_holes() {
     let p = Profile2d::with_holes(
         sq(0.0, 0.0, 6.0, 3.0),
         vec![sq(1.0, 1.0, 2.0, 2.0), sq(4.0, 1.0, 5.0, 2.0)],
-    );
+    )
+    .unwrap();
     let d = extrude(&mut m, p, 1.0);
 
     assert!(nacre_validate::validate(&m).is_empty());
@@ -245,7 +246,7 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
             Point2::from_array([hi, hi]),
         ]
     };
-    let profile = Profile2d::with_holes(sq(1.0, 9.0), vec![sq(3.0, 7.0)]);
+    let profile = Profile2d::with_holes(sq(1.0, 9.0), vec![sq(3.0, 7.0)]).unwrap();
     let OpOutput::PocketOnFace { solid, .. } = apply(
         &mut m,
         &Operation::PocketOnFace {
@@ -388,20 +389,19 @@ fn profiles_the_kernel_used_to_build_silently_wrong_are_now_refused() {
         Point2::from_array([0.0, 4.0]),
     ];
     assert!(matches!(
-        try_extrude(Profile2d::polygon(bowtie)),
+        try_extrude(Profile2d::polygon(bowtie).unwrap()),
         Err(nacre_ops::OpError::SelfIntersectingProfile { .. })
     ));
     // A hole that misses the outline entirely: it used to be subtracted anyway.
     assert!(matches!(
-        try_extrude(Profile2d::with_holes(sq(0.0, 4.0), vec![sq(10.0, 12.0)])),
+        try_extrude(Profile2d::with_holes(sq(0.0, 4.0), vec![sq(10.0, 12.0)]).unwrap()),
         Err(nacre_ops::OpError::HoleNotInsideOuter { hole: 0 })
     ));
     // A hole inside a hole is an island — material, not a second subtraction.
     assert!(matches!(
-        try_extrude(Profile2d::with_holes(
-            sq(0.0, 10.0),
-            vec![sq(1.0, 9.0), sq(3.0, 7.0)]
-        )),
+        try_extrude(
+            Profile2d::with_holes(sq(0.0, 10.0), vec![sq(1.0, 9.0), sq(3.0, 7.0)]).unwrap()
+        ),
         Err(nacre_ops::OpError::NestedHole { .. })
     ));
 }
@@ -419,7 +419,7 @@ fn a_pinched_ring_is_refused() {
         Point2::from_array([0.0, 4.0]),
     ];
     assert!(matches!(
-        try_extrude(Profile2d::polygon(pinch)),
+        try_extrude(Profile2d::polygon(pinch).unwrap()),
         Err(nacre_ops::OpError::SelfIntersectingProfile { .. })
     ));
 }
@@ -428,7 +428,7 @@ fn a_pinched_ring_is_refused() {
 /// pocket path shares the same gate, so it refuses them too.
 #[test]
 fn touching_rings_are_refused_on_every_profile_entry_point() {
-    let touching = Profile2d::with_holes(sq(0.0, 4.0), vec![sq(0.0, 2.0)]);
+    let touching = Profile2d::with_holes(sq(0.0, 4.0), vec![sq(0.0, 2.0)]).unwrap();
     assert!(matches!(
         try_extrude(touching.clone()),
         Err(nacre_ops::OpError::ProfileRingsMeet { .. })
@@ -491,7 +491,9 @@ fn a_self_crossing_outline_is_refused_before_the_rings_are_sorted() {
 }
 
 /// The other half of the contract: everything legitimate still goes through. A reflex outline, a
-/// donut, and a flat (collinear) corner are all simple polygons, and `check` must not touch them.
+/// donut, and a flat (collinear) corner are all simple polygons, and `check` must not reject
+/// them. The flat corner does not survive as *data* — construction dissolves it (that is S3's
+/// normalization, asserted below so the `Ok` is not vacuous) — but the author's input is legal.
 #[test]
 fn the_contract_does_not_bite_legitimate_profiles() {
     let l = vec![
@@ -502,7 +504,7 @@ fn the_contract_does_not_bite_legitimate_profiles() {
         Point2::from_array([2.0, 4.0]),
         Point2::from_array([0.0, 4.0]),
     ];
-    assert_eq!(Profile2d::polygon(l).check(), Ok(()));
+    assert_eq!(Profile2d::polygon(l).unwrap().check(), Ok(()));
     assert_eq!(donut_profile().check(), Ok(()));
     let flat = vec![
         Point2::from_array([0.0, 0.0]),
@@ -511,5 +513,61 @@ fn the_contract_does_not_bite_legitimate_profiles() {
         Point2::from_array([4.0, 4.0]),
         Point2::from_array([0.0, 4.0]),
     ];
-    assert_eq!(Profile2d::polygon(flat).check(), Ok(()));
+    let p = Profile2d::polygon(flat).unwrap();
+    assert_eq!(p.check(), Ok(()));
+    assert_eq!(
+        p.outer().points().len(),
+        4,
+        "the flat corner is dissolved at construction, not merely tolerated"
+    );
+}
+
+/// ★ **A coordinate outside the decimal window is a named error at construction** — S3's other
+/// half. It used to fall silently to the f64 path: the prism still built, but recorded no exact
+/// points, and its surfaces could not survive a motion undemoted. Both profile entry points name
+/// it now.
+#[test]
+fn a_dimension_outside_the_decimal_window_is_refused_at_construction() {
+    let ring = vec![
+        Point2::from_array([0.0, 0.0]),
+        Point2::from_array([1e300, 0.0]), // no decimal this side of i128 spells it
+        Point2::from_array([0.0, 4.0]),
+    ];
+    assert_eq!(
+        Profile2d::polygon(ring.clone()).unwrap_err(),
+        nacre_ops::OpError::ProfileOutsideDecimalWindow {
+            ring: nacre_ops::ProfileRing::Outer,
+            point: 1,
+        }
+    );
+    assert_eq!(
+        from_rings(vec![ring]).unwrap_err(),
+        nacre_ops::SketchError::OutsideDecimalWindow {
+            ring: 0,
+            at: [1e300, 0.0],
+        }
+    );
+}
+
+/// ★ **The truth is the decimal the author wrote, and it wins over the binary carrier.**
+///
+/// `(0, 0.1) → (0.1, 0.2) → (0.2, 0.3)` is collinear in decimal (slope one) but *not* in the f64
+/// binary values (`0.3` is not exactly `3 × 0.1bin`), so an f64-exact orient2d calls the corner
+/// a real one. Construction judges the rational truth and dissolves it — the profile the kernel
+/// keeps is what the author meant, not what the carrier rounded to.
+#[test]
+fn a_corner_flat_in_decimal_but_not_in_binary_is_dissolved() {
+    let p = Profile2d::polygon(vec![
+        Point2::from_array([0.0, 0.1]),
+        Point2::from_array([0.1, 0.2]), // decimal-collinear midpoint, binary-bent corner
+        Point2::from_array([0.2, 0.3]),
+        Point2::from_array([0.2, 4.0]),
+        Point2::from_array([-4.0, 4.0]),
+    ])
+    .unwrap();
+    assert_eq!(
+        p.outer().points().len(),
+        4,
+        "the decimal truth decided, so the midpoint is gone"
+    );
 }

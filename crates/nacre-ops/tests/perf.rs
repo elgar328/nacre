@@ -39,7 +39,7 @@ fn extrude(m: &mut Model, ring: Vec<Point2>, dist: f64) -> Handle<Solid> {
         m,
         &Operation::Extrude {
             plane: SketchPlane::world_xy(),
-            profile: Profile2d::polygon(ring),
+            profile: Profile2d::polygon(ring).unwrap(),
             dist,
         },
     )
@@ -228,4 +228,30 @@ fn boolean_wall_clock() {
         "  axis-aligned small   : {d:>12.2?} over {reps} booleans ({:.1?} each)",
         d / reps as u32
     );
+}
+
+/// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
+/// short-circuits — and since S3 the predicates run on the rational truth (`orient2d_rat`,
+/// narrow-first), so this is the price of exactness-on-the-truth over the old f64 signs.
+#[test]
+#[ignore]
+fn profile_check_wall_clock() {
+    for n in [100usize, 1_000, 5_000] {
+        let ring: Vec<Point2> = (0..n)
+            .map(|i| {
+                let a = std::f64::consts::TAU * (i as f64) / (n as f64);
+                p2(10.0 * a.cos(), 10.0 * a.sin())
+            })
+            .collect();
+        let profile = Profile2d::polygon(ring).unwrap();
+        let best = (0..3)
+            .map(|_| {
+                let t = std::time::Instant::now();
+                profile.check().expect("a convex ring is clean");
+                t.elapsed()
+            })
+            .min()
+            .unwrap();
+        println!("  check {n:>5} points : {best:>10.2?}");
+    }
 }

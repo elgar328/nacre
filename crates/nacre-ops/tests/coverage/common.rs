@@ -48,7 +48,7 @@ pub fn p2(x: f64, y: f64) -> Point2 {
 }
 
 pub fn square() -> Profile2d {
-    Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)])
+    Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)]).unwrap()
 }
 
 pub fn regular_ngon(n: usize, r: f64) -> Profile2d {
@@ -58,7 +58,7 @@ pub fn regular_ngon(n: usize, r: f64) -> Profile2d {
             p2(r * a.cos(), r * a.sin())
         })
         .collect();
-    Profile2d::polygon(points)
+    Profile2d::polygon(points).unwrap()
 }
 
 pub fn extrude_op(profile: Profile2d, dist: f64) -> Operation {
@@ -170,7 +170,8 @@ pub fn l_prism() -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let m = replay(&[extrude_op(l, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
@@ -186,7 +187,8 @@ pub fn rotated_l_prism() -> (Model, Handle<Solid>) {
         p2(0.0, 2.0),
         p2(0.0, 0.0),
         p2(2.0, 0.0),
-    ]);
+    ])
+    .unwrap();
     let m = replay(&[extrude_op(l, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
@@ -260,7 +262,8 @@ pub fn u_prism() -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let m = replay(&[extrude_op(u, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
@@ -345,7 +348,8 @@ pub fn cube_and_spun_bar_x(
         p2(x_hi, -0.5),
         p2(x_hi, 1.5),
         p2(0.3, 1.5),
-    ]);
+    ])
+    .unwrap();
     let bar = extrude_at_z(&mut m, bar, 1.0 - half_z, 2.0 * half_z);
     m.rebuild_adjacency();
     let bar = xf(
@@ -369,7 +373,8 @@ pub fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
         p2(0.8, 2.1),
         p2(0.8, 1.8),
         p2(1.8, 1.8),
-    ]);
+    ])
+    .unwrap();
     let b = extrude_at_z(&mut m, bar, 0.5, 1.0);
     (m, l, b)
 }
@@ -383,7 +388,8 @@ pub fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
         p2(0.35, 0.4), // reflex
         p2(0.35, 0.9),
         p2(0.2, 0.9),
-    ]);
+    ])
+    .unwrap();
     let stub = extrude_at_z(&mut m, ell, 0.5, 1.0);
     (m, l, stub)
 }
@@ -399,7 +405,8 @@ pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
         p2(1.4, 0.45),
         p2(1.4, 1.5),
         p2(0.1, 1.5),
-    ]);
+    ])
+    .unwrap();
     let OpOutput::Extrude { solid: st, .. } = apply(
         &mut m,
         &Operation::Extrude {
@@ -436,7 +443,7 @@ pub fn cube_with_top() -> (Model, Handle<Face>) {
 /// onto the face's plane, and the axes are the arbitrary-axis convention's, which for `n = ẑ` are
 /// `u = +x̂`, `v = +ŷ` — so a frame point `(a, b)` is world `(a, b, 1)`, the identity.
 pub fn small_square() -> Profile2d {
-    Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)])
+    Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)]).unwrap()
 }
 
 pub fn pad_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
@@ -534,6 +541,7 @@ pub fn edge_overhang_profile() -> Profile2d {
         p2(0.75, -0.25),
         p2(0.75, 0.75),
     ])
+    .unwrap()
 }
 
 /// A channel that runs off **both** opposite edges of the unit cube's lid — world
@@ -545,6 +553,7 @@ pub fn spanning_slab_profile() -> Profile2d {
         p2(0.75, -0.25),
         p2(0.75, 1.25),
     ])
+    .unwrap()
 }
 
 /// f64 approximate equality for coordinate/volume comparisons.

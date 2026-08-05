@@ -16,7 +16,7 @@ fn hexagon(r: f64) -> Profile2d {
             Point2::from_array([r * a.cos(), r * a.sin()])
         })
         .collect();
-    Profile2d::polygon(points)
+    Profile2d::polygon(points).unwrap()
 }
 
 fn hex_extrude(plane: SketchPlane) -> Operation {
@@ -188,7 +188,7 @@ fn assert_agrees(g: &Gate, what: &str) {
 }
 
 fn square(a: f64, b: f64) -> Profile2d {
-    Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)])
+    Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)]).unwrap()
 }
 
 /// `PocketOnFace`'s profile lives in a frame **derived from the face** (design §6), not in world
@@ -205,6 +205,7 @@ fn centred_on_the_cube_lid(half: f64) -> Profile2d {
         p2(cx + half, cy - half),
         p2(cx + half, cy + half),
     ])
+    .unwrap()
 }
 
 fn p2(x: f64, y: f64) -> Point2 {
@@ -223,7 +224,8 @@ fn u_prism() -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: u,
@@ -283,7 +285,8 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let mut m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: l,
@@ -311,7 +314,8 @@ fn island_cut() -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let mut m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: l,
@@ -338,7 +342,8 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let bar = Profile2d::polygon(vec![
         p2(1.8, 0.8),
         p2(2.1, 0.8),
@@ -346,7 +351,8 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
         p2(0.8, 2.1),
         p2(0.8, 1.8),
         p2(1.8, 1.8),
-    ]);
+    ])
+    .unwrap();
     let mut m = replay(&[
         Operation::Extrude {
             plane: SketchPlane::world_xy(),
@@ -376,7 +382,8 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let ell = Profile2d::polygon(vec![
         p2(0.2, 0.25),
         p2(0.85, 0.25),
@@ -384,7 +391,8 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
         p2(0.35, 0.4),
         p2(0.35, 0.9),
         p2(0.2, 0.9),
-    ]);
+    ])
+    .unwrap();
     let mut m = replay(&[
         Operation::Extrude {
             plane: SketchPlane::world_xy(),
@@ -429,7 +437,8 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let staple = Profile2d::polygon(vec![
         p2(0.1, 0.5),
         p2(0.6, 0.5),
@@ -439,7 +448,8 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
         p2(1.4, 0.45),
         p2(1.4, 1.5),
         p2(0.1, 1.5),
-    ]);
+    ])
+    .unwrap();
     let mut m = replay(&[
         Operation::Extrude {
             plane: SketchPlane::world_xy(),
@@ -914,7 +924,8 @@ fn a_drilled_solid_meshes_watertight() {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let mut m = replay(&[Operation::Extrude {
         plane: SketchPlane::world_xy(),
         profile: l,
@@ -1094,7 +1105,7 @@ fn the_fin_array_with_a_star_bore_meshes() {
 #[test]
 fn a_split_dimension_meets_the_undivided_one() {
     fn rect(x0: f64, x1: f64) -> Profile2d {
-        Profile2d::polygon(vec![p2(x0, 0.0), p2(x1, 0.0), p2(x1, 1.0), p2(x0, 1.0)])
+        Profile2d::polygon(vec![p2(x0, 0.0), p2(x1, 0.0), p2(x1, 1.0), p2(x0, 1.0)]).unwrap()
     }
     fn raise(m: &mut Model, z: f64, x0: f64, x1: f64, dist: f64) -> Handle<Solid> {
         let out = nacre_ops::apply(
@@ -1174,7 +1185,7 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
         solid
     }
     fn square(n: f64) -> Profile2d {
-        Profile2d::polygon(vec![p2(0.0, 0.0), p2(n, 0.0), p2(n, n), p2(0.0, n)])
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(n, 0.0), p2(n, n), p2(0.0, n)]).unwrap()
     }
     fn top_face(m: &Model, s: Handle<Solid>) -> Handle<Face> {
         let shell = m.solids.get(s).outer;
@@ -1190,7 +1201,7 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
     /// A 4×4 boss on the 10×10 lid — world `[3, 7]²`, which on a lid is also its frame
     /// coordinates (origin at the world origin's projection, `u = +x̂`, `v = +ŷ`).
     fn boss() -> Profile2d {
-        Profile2d::polygon(vec![p2(3.0, 7.0), p2(3.0, 3.0), p2(7.0, 3.0), p2(7.0, 7.0)])
+        Profile2d::polygon(vec![p2(3.0, 7.0), p2(3.0, 3.0), p2(7.0, 3.0), p2(7.0, 7.0)]).unwrap()
     }
     fn pad(m: &mut Model, s: Handle<Solid>, dist: f64) -> Handle<Solid> {
         let face = top_face(m, s);

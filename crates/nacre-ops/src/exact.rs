@@ -24,7 +24,7 @@
 //! the same answer for the same reason.
 
 use crate::ops::{Profile2d, SketchPlane};
-use nacre_math::{Point2, Point3, Vector3};
+use nacre_math::{Point3, Vector3};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
 use nacre_topo::{Model, MotionNode};
@@ -130,11 +130,15 @@ impl RatFrame {
 
     /// A ring's sketch coordinates placed in space: `origin + x·u + y·v`, the first of
     /// the two steps.
-    pub(crate) fn ring(&self, ring: &[Point2]) -> Option<Vec<[Rat; 3]>> {
+    ///
+    /// The coordinates arrive as the profile's stored rational truth — the decimal lift
+    /// happened once, in `Profile2d`'s constructor. `None` here is i128 overflow in the
+    /// placement arithmetic only.
+    pub(crate) fn ring(&self, ring: &[[Rat; 2]]) -> Option<Vec<[Rat; 3]>> {
         ring.iter()
             .map(|p| {
-                let u = scale(&self.x, Rat::from_decimal(p[0])?)?;
-                let v = scale(&self.y, Rat::from_decimal(p[1])?)?;
+                let u = scale(&self.x, p[0])?;
+                let v = scale(&self.y, p[1])?;
                 add(&add(&self.origin, &u)?, &v)
             })
             .collect()
@@ -299,8 +303,9 @@ impl SweptRat {
 /// arithmetic, on numbers that are exact by construction rather than by luck.
 ///
 /// `None` when there is no exact form to compute in: a frame that is not exactly
-/// orthonormal, a dimension outside the decimal window, or i128 overflow. All three
-/// mean the same thing to the caller, which is to keep its f64 path.
+/// orthonormal, or i128 overflow in the placement arithmetic. Both mean the same thing
+/// to the caller, which is to keep its f64 path. (A dimension outside the decimal window
+/// used to be a third reason; the profile constructor now names it before it gets here.)
 pub(crate) fn prism_rings(
     model: &Model,
     plane: &SketchPlane,
@@ -347,7 +352,7 @@ pub(crate) fn prism_rings(
                 .collect(),
         }
     };
-    let ring = |r: &[Point2]| -> Option<Swept> {
+    let ring = |r: &[[Rat; 2]]| -> Option<Swept> {
         let base = f.ring(r)?;
         let top = swept(&base, &sweep)?;
         Some(Swept {
@@ -360,11 +365,11 @@ pub(crate) fn prism_rings(
             }),
         })
     };
-    let outer = ring(profile.outer())?;
+    let outer = ring(profile.outer().points())?;
     let holes = profile
-        .inners()
+        .holes()
         .iter()
-        .map(|h| ring(h))
+        .map(|h| ring(h.points()))
         .collect::<Option<Vec<_>>>()?;
     Some((outer, holes))
 }
@@ -440,12 +445,13 @@ mod tests {
     #[test]
     fn a_split_sweep_lands_on_the_same_points_as_the_whole_one() {
         let f = SketchPlane::world_xy().exact().unwrap();
+        let d = |x: f64| Rat::from_decimal(x).unwrap();
         let ring = f
             .ring(&[
-                Point2::from_array([0.0, 0.0]),
-                Point2::from_array([3.3, 0.0]),
-                Point2::from_array([3.3, 2.2]),
-                Point2::from_array([0.0, 2.2]),
+                [d(0.0), d(0.0)],
+                [d(3.3), d(0.0)],
+                [d(3.3), d(2.2)],
+                [d(0.0), d(2.2)],
             ])
             .unwrap();
 
@@ -466,9 +472,19 @@ mod tests {
     #[test]
     fn a_frame_that_cannot_be_lifted_declines_before_any_arithmetic() {
         assert!(rotated(45.0).exact().is_none());
-        // And so does a dimension outside the decimal window (design: i128).
+        // And so does a sweep distance outside the decimal window (design: i128) — the one
+        // decimal lift still performed here. (A profile coordinate out of window no longer
+        // reaches this module: `Profile2d`'s constructor names it.)
         let f = SketchPlane::world_xy().exact().unwrap();
         assert!(f.sweep(1e300).is_none());
-        assert!(f.ring(&[Point2::from_array([1e300, 0.0])]).is_none());
+        // Placement arithmetic that overflows i128 declines the same way: two in-window
+        // factors (10^37 each) whose product (10^74) has no exact form to keep.
+        let huge = Rat::from_decimal(1e37).unwrap();
+        let stretched = RatFrame {
+            origin: [Rat::from_int(0); 3],
+            x: [huge, Rat::from_int(0), Rat::from_int(0)],
+            y: [Rat::from_int(0), huge, Rat::from_int(0)],
+        };
+        assert!(stretched.ring(&[[huge, huge]]).is_none());
     }
 }

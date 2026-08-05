@@ -19,7 +19,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 ├── nacre-scalar     # exact 유리수 값 엔진: Rat·Angle·Axis/Rotation/Isometry·Orient
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone
 ├── nacre-cip        # toleranced 부호 술어(회전): kernel(Pt3 판정) + predicate(평면 배열 술어). predicates의 쌍둥이
-├── nacre-geom       # 정확 기하: Surface·Curve·교차(intersect 격리)
+├── nacre-geom       # 정확 기하: Surface·Curve·교차(intersect 격리; scalar 의존 — Rat 링 술어 쌍둥이)
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model
 ├── nacre-tess       # tessellation: 출처 태그·증분 갱신
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
@@ -406,7 +406,7 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 
 검산: 도넛 각기둥은 V16 − E24 + F10 − L_i 2 = 0 = 2(S−G), genus 1 — **오일러의 `L_i` 항이 처음으로 실제로 필요한 형상**이다.
 
-**프로파일 계약은 커널이 검사한다 — `Profile2d::check` (2026-07-26).** 생성자(`polygon`/`with_holes`)는 여전히 무비용·무검사지만, **프로파일을 소비하는 모든 연산이 먼저 `check()`를 통과시킨다**(진입점은 `extrude`와 pad·pocket이 공유하는 `extrude_and_boolean` 둘뿐). 계약은 넷: 모든 링이 **단순 다각형**, 링끼리 서로소, 구멍은 외곽 안, 구멍 속 구멍 없음(그건 섬이고 `from_rings`가 갈라낸다).
+**프로파일 계약은 커널이 검사한다 — `Profile2d::check` (2026-07-26; S3 개정 2026-08-05).** 생성자(`polygon`/`with_holes`)는 S3부터 **진실을 잡는다**: 각 좌표를 `Rat::from_decimal`로 리프트해 `Ring2d{points: Vec<[Rat;2]>}`에 보관하고(십진 창 밖 = `ProfileOutsideDecimalWindow` 구성 시점 에러 — 과거의 조용한 f64 폴백 폐지), **공선 중간점을 소멸**시킨다(엄격 내부만 — 무손실 정규화; 중복점·스파이크는 생존해 제 이름의 에러로 보고된다. 이로써 모든 프리즘 코너가 3-평면 정의를 보유한다 — truth-and-cache Q2 ②). *계약*(단순성·서로소·포함)은 여전히 생성자가 아니라 **프로파일을 소비하는 모든 연산이 먼저 `check()`를 통과시킨다**(진입점은 `extrude`와 pad·pocket이 공유하는 `extrude_and_boolean` 둘뿐). 계약은 넷: 모든 링이 **단순 다각형**, 링끼리 서로소, 구멍은 외곽 안, 구멍 속 구멍 없음(그건 섬이고 `from_rings`가 갈라낸다). 판정은 전부 **저장된 유리수 진실 위**에서다 — f64 이진값의 정확 부호와 십진 진실의 부호는 퇴화 근처에서 실제로 갈리고(0.1·0.2·0.3 공선이 이진에선 굽음), 작성자가 쓴 수가 이긴다.
 
 **왜 "호출자의 약속"으로 둘 수 없었나 — 실측.** 계약을 어긴 프로파일은 전부 `extrude` 성공 · `validate` 위반 0건 · STEP 내보내기 성공이었다. 나비넥타이는 부피가 `NaN`이었지만, **구멍이 외곽 밖이면 12.0(정답 16), 구멍 속 구멍이면 20.0(짝-홀 정답 52)** — 눈치챌 단서가 없는 그럴듯한 숫자다. 조용히 틀린 답은 약속으로 둘 수 있는 종류가 아니다.
 
@@ -416,7 +416,7 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 
 **링 중첩 판정 — `from_rings` (2026-07-26 구현).** 사용자는 닫힌 경로만 그리고 무엇이 구멍인지 말하지 않는다. `ops::sketch::from_rings`가 포함 **깊이**로 정한다: **짝수 = 재료, 홀수 = 구멍**(그래서 구멍 속 링은 다시 재료 = 섬이고 자기 몫의 profile이 된다), 구멍은 **가장 깊은 포함자**(직계)에 붙는다. 채우기 규칙 파라미터는 두지 않는다 — 짝수-홀수가 유일한 규칙이다.
 
-**분류 술어는 `geom::intersect`에 있다**(§1의 격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). ops에는 **정책(깊이 패리티)과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet`으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다).
+**분류 술어는 `geom::intersect`에 있다**(§1의 격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). S3부터 각 워커에 **Rat 쌍둥이**(`_rat` 접미 + `drop_collinear_midpoints`)가 같은 모듈에 나란히 산다 — 부호 원시는 `nacre_scalar::orient2d_rat`(narrow 우선 → BigInt 전역, 분모 청소로 부호 보존), geom이 scalar 의존을 얻었다(최하단 토대라 순환 없음). f64 판은 tess·f64 폴백이 계속 쓴다. ops에는 **정책(깊이 패리티)과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet`으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다).
 
 **자기교차는 중첩 분류보다 먼저 본다** — 메시지 품질이 아니라 전제조건이다: `point_in_ring_2d`는 짝-홀 패리티로 답하고, 그건 단순한 링에서만 "안쪽"을 뜻한다. 술어는 `geom::intersect::ring_self_intersection`(인접하지 않은 변은 접촉만으로 실격, 인접한 변은 공선-겹침일 때만 = 되짚는 스파이크, 인접은 **순환**으로 판정). 스케치 층은 `RingSelfIntersects { ring, at }`로 **점**을 돌려준다 — `from_edges`는 순회 순서로 링을 만들어 변 인덱스가 작성자의 입력과 무관하기 때문이다(`OpenChain`·`BranchingVertex`와 같은 규약).
 

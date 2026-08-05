@@ -201,8 +201,8 @@ pub struct SketchFrame {
 
 | 규칙 | |
 |---|---|
-| **경계는 f64, 진실은 구성 시점에** | 공개 API 는 f64 그대로(§design 6.0). `Rat::from_decimal` 왕복을 `Profile2d` **생성자**에서 한다 — `check()`(자기교차·중첩·포함)가 진실 위에서 정확 술어로 돌고, 십진 창(1e38/1e-22) 밖 치수가 구성 시점의 이름 붙은 에러가 된다(지금은 조용한 f64 폴백) |
-| **공선 중간점은 생성자가 지운다** | 공선 정점의 양옆 벽은 한 평면 → 교차가 직선이라 정의 불가, 그리고 비-2-manifold 퇴화다. 제거는 형상 불변(무손실 정규화, 거절 아님). 판정은 Rat 위 정확 orient2d |
+| **경계는 f64, 진실은 구성 시점에** ✔S3 | 공개 API 는 f64 그대로(§design 6.0). `Rat::from_decimal` 왕복을 `Profile2d` **생성자**에서 한다 — `check()`(자기교차·중첩·포함)가 진실 위에서 정확 술어로 돌고(`orient2d_rat`: narrow 우선 → BigInt 전역 부호, geom 의 `_rat` 워커 쌍둥이), 십진 창(1e38/1e-22) 밖 치수가 구성 시점의 이름 붙은 에러다(`ProfileOutsideDecimalWindow` / sketch 층 `OutsideDecimalWindow`). ★ f64 부호 ≠ 십진 부호가 실측 사실이라(0.1·0.2·0.3 공선이 이진에선 굽음) check 를 진실 위로 옮긴 것이 정확성 변경이고, 그 방향은 항상 "작성자가 쓴 수가 이긴다" |
+| **공선 중간점은 생성자가 지운다** ✔S3 | 공선 정점의 양옆 벽은 한 평면 → 교차가 직선이라 정의 불가, 그리고 비-2-manifold 퇴화다. 제거는 형상 불변(무손실 정규화, 거절 아님 — 정리된 프로파일의 프리즘은 깨끗한 쌍둥이와 비트 동일, 모든 코너가 3-평면 정의 보유 = Q2 ② 닫힘). 판정은 Rat 위 정확 orient2d, 제거 조건은 **엄격 내부**(중복점·스파이크는 생존해 각자의 이름 붙은 에러로 보고된다 — 경계 포함 판정을 재사용하면 작성자의 실수를 조용히 지운다) |
 | **프레임은 평면에서 뜨지 않는다** | `Named` 의 `origin` 은 참조 평면 **위**의 점(정확 검사 — C1). ★ 좌표계에 주의: «정의하려는 프레임의 (u,v,w)» 가 아니라 **그 평면의 `points` 가 적힌 좌표계**의 3D 점이다(모션 없으면 세계 — 상자 윗면 z=1 이면 origin 은 `[1,1,1]` 같은 점이지 셋째 성분 0 이 아니다). "평면 위" 는 성분이 아니라 **방정식 대입**(`a·x+b·y+c·z+d = 0`, 정확)으로 검사한다. `Canonical` 은 유도라 검사할 것이 없다. 면 위 스케치의 밑캡이 대상 면의 surface 핸들을 공유하는(flush 접촉 = 핸들 비교) 전제이기도 하다. 평면에서 d 떨어진 스케치가 필요하면 origin 을 띄우는 것이 아니라 **오프셋 평면**을 만든다 — 같은 프레임 안 `(0,0,d),(1,0,d),(0,1,d)` 유리수 세 점의 `Known` 평면(datum 가족, S5). 담체가 실제 평면 핸들로 남아 이름·interning·flush 규칙이 그대로 성립한다 |
 | **정확 유리수 프레임은 노드를 만들지 않는다** | 평면에 모션이 없고 실현된 원점·축이 **정확 유리수 직교**로 증명되면(오늘의 `RatFrame` 게이트 — 세계 축 평면 셋이 전부 여기 든다, `Canonical` 이든 `world_zx` 의 `Named` 든) `Motion::Frame` 노드를 생성하지 않고 세계 유리수 산술로 구성한다(모션 = None) — 빈 사슬 지름길(`shared_base` 상쇄·축별 tol 0·정수 Shewchuk)이 그대로 산다. 미러의 *"정확한 f64 에 남으면 노드를 안 만든다"* 와 같은 구성 시점 정규화다 |
 | **세계 축 평면 셋은 `Model::new()` 가 심는다** | 핸들이 결정적(0·1·2)이라 replay 가 자명하다. 정의·프레임만 가리키는 평면을 순회·직렬화가 따라가야 한다(§열린 항목) |
@@ -467,12 +467,12 @@ pub enum Decision {
 | S1 | `Store<Surface>`·`Store<MotionNode>` 봉인 — 좁은 접근자(`surface`/`surface_count`/`motion`) + `compile_fail,E0616` 잠금. 기록 없는 surface 는 크레이트 밖에서 표현 불가(테스트 전용 입구 `push_surface_unrecorded` 만 예외, `test-util` 게이트) | ✔ 2026-08-05 |
 | S2 | **임의정밀 이름** — `PlaneName{Narrow\|Wide}` 그릇(`plane_name_big` 꼬리의 `to_i128` 분기 하나), `surface_coeffs`→`surface_name` 개명, Wide 도 intern. **동일성 팔 절단**: 점 가진 평면의 이름 실패가 공선뿐이 됨 — ★ f64 폴백 연쇄의 **프레임 팔은 S4 몫**(Wide 는 `narrow()=None` 이라 프레임·지름길을 안 연다, 반증표 그대로). 잠금: 스칼라 2(`a_plane_too_wide…`·narrow/wide 합의) + topo 1(`a_wide_plane_interns_but_opens_no_shortcut`) | ✔ 2026-08-05 |
 | S4 | **프레임 팔 절단** — `Motion::Frame{plane, placement, flip}` + `FramePlacement{Canonical\|Named}`. `Canonical`(기본)은 사슬 펼침 시 유도: 좁으면 오늘의 `plane_frame_default` 그대로(비트 보존 — 유도의 이사), **넘치면 wide 도로**(`MoveNode::FrameWide` = `PlaneFrame` 의 BigInt 쌍둥이, 실현은 `HpIv` 전 구간 + f64 캐시는 128비트 실현의 좁힘). Wide 이름·`n·n` 넘침(1.6%) 인구의 프레임이 열려 §12 연쇄의 프레임 팔이 닫힘. 잠금: cip 2(on-plane·tol-bounds wide 쌍둥이) + ops 3(`a_wide_plane_hosts_a_canonical_frame`·nn-넘침 개통·**종단** `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`) + census `wf` 가족. ★ 계획의 "심기 + 공개 SketchFrame 통일"은 **S9 로 분리**(아래) | ✔ 2026-08-05 |
+| S3 | **`Profile2d` 유리수화 + 공선 중간점 정리** — `Profile2d{outer: Ring2d, holes}`·`Ring2d{points: Vec<[Rat;2]>}`, 생성자가 리프트(창 밖 = `ProfileOutsideDecimalWindow` 구성 시점 에러) + 공선 중간점 소멸(엄격 내부만 — 중복점·스파이크는 생존해 제 이름으로 보고). `check()`·`from_rings` 분류가 진실 위 정확 술어로(`orient2d_rat` scalar + geom `_rat` 쌍둥이 — geom 이 scalar 의존 획득, §design 1 격리 규칙 준수). 잠금: 쌍둥이 프리즘 비트 동일+전 코너 3-평면 정의(Q2 ② 닫힘), 창 에러 2, 십진-이진 부호 분기(십진이 이긴다), 비인접 공선 벽 interning 재핀. census 150줄 비트 동일. ★ 실측: check 는 34ms@100점(호출당 ~1.7µs, gcd 지배 — §열린 항목 7) | ✔ 2026-08-05 |
 
 ### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
 
 | | 항목 | 선행 |
 |---|---|---|
-| S3 | `Profile2d` 유리수화 + 공선 중간점 정리 패스 | 없음 |
 | S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | S9 권장(datum **위** 스케치가 평면-핸들 API 를 원한다) |
 | S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — 공개 `SketchFrame{plane, placement, flip}`, `Named` 구성 시점 거절(`OriginNotOnPlane` 등), `Model::new()` 의 세계 축 평면 셋(핸들 0·1·2), 정확-유리수 프레임의 노드 생략 정규화. ★ S4 에서 분리한 이유(실측): 심은 평면이 이후 원점 상자들과 **intern 되며 생존자 f64 기하·`flipped` 를 바꾼다**(census `in:` = f64 계수 digest — 전 스위트 파급, 별도 관문 필요), `Model` 의 `Default` 공개 derive 구멍, 그리고 진짜 수요자가 S5 다 | 없음 |
 | S6 | `1′`: `Surface::Plane{points, motion}` 갈아끼우기 — `SurfaceDef`·`surface_points`·`surface_name` 통합, `Inexact` 소멸, `nacre_geom::Plane` 캐시 강등 | 없음 (S1·S2 ✔) |
@@ -528,8 +528,9 @@ STEP 출력, undo/replay.
    수용, S4). 그리고 S4 구현 중 실측 하나: **스케치→돌출 벽의 정준 이름은 ~115비트에 캡**
    (십진 창이 곱을 묶는다) — `Wide` **이름**의 면은 오늘의 구성 경로에서 안 나오고, 첫 생산자는
    datum(S5)이다. `n·n` 넘침(1.6%)은 그 경로에서 실재하며 S4 가 열었다(census `wf` 가족).
-3. **`from_decimal` 창 밖 치수** — S3 이후 구성 시점 에러가 된다. 기존 스위트에서 몇 건인지
-   세어 폴백 의존 여부를 확인할 것.
+3. ~~**`from_decimal` 창 밖 치수**~~ — 셌다(S3): 폴백에 기대던 프로파일은 스위트 전체에서
+   **0건**(유일한 창 밖 좌표는 의도적 부정 테스트 하나였고 구성 시점 에러 잠금으로 대체).
+   전 스위트 그린 + census 150줄 비트 동일이 증거.
 4. **정의만 가리키는 평면의 순회·직렬화** — `Model::reachable` 이 면을 통해서만 돈다. 세계 축
    평면·datum 이 가리키는 평면·이동본을 정의 경유로도 따라가야 한다.
 5. **M6 절벽** — 이차곡면 셋은 최대 8점에서 만나 `[Handle; 3]` 이 «어느 점»을 못 말한다. 가지
@@ -540,3 +541,11 @@ STEP 출력, undo/replay.
    대상으로 하고, seam 의 담체 표현은 M6 에서 원통의 진실(`ref_dir`)과 함께 결정한다.
 6. **폭 주장은 타입 경계에서만 보장이다** — 이 문서의 백분율(0.39%·1.6%·25.8%·71.9%…)은 전부
    **코퍼스 수치**다. 상한이 필요한 자리에는 타입에서 유도한 값을 쓴다.
+7. **`check()` 의 진실-위 비용** — 실측(S3, 볼록 링·17자리 좌표): 34ms@100점·3.2s@1000점·
+   78s@5000점, 호출당 ~1.7µs(narrow 경로의 gcd 약분이 지배; 이런 좌표는 전-narrow).
+   손 스케치(수십 점)는 ms 미만이라 수용, 수천 점 생성기가 실재해지면 그때의 수: (a) Rat
+   비교 기반 정확 bbox 선별(교차쌍 대부분 기각), (b) 실현 f64 + 건전 오차 한계 필터 → Rat
+   상승(CIP 필터 철학의 2D 판). **둘 다 그 인구가 생기기 전엔 짓지 않는다.**
+8. **감김(`oriented_ring`)은 아직 f64 다** — 배치된 3D 점의 면적벡터·법선 내적(ops).
+   `check()` 가 단순성(≠0 면적)을 진실 위에서 보증하므로 지금은 건전하지만, f64 폴백 소멸
+   (S6 이후)과 함께 재검할 것.

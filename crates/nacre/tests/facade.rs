@@ -13,6 +13,7 @@ fn square(a: f64, b: f64) -> Profile2d {
         Point2::from_array([b, b]),
         Point2::from_array([a, b]),
     ])
+    .unwrap()
 }
 
 fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {

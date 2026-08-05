@@ -8,7 +8,8 @@ use crate::exact::Swept;
 use crate::planes::outer_tri;
 use crate::transform::transform;
 use nacre_geom::intersect::{
-    RingSide, plane_side, point_in_ring_2d, ring_self_intersection, rings_cross,
+    RingSide, drop_collinear_midpoints, plane_side, point_in_ring_2d_rat,
+    ring_self_intersection_rat, rings_cross_rat,
 };
 use nacre_geom::{Curve, Line, Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
@@ -84,22 +85,60 @@ impl PlaneDef {
     }
 }
 
+/// One closed ring of a [`Profile2d`], stored as its rational truth.
+///
+/// The coordinates are what the author's decimals *spelled* (`Rat::from_decimal`), not the f64s
+/// that carried them — the same truth/cache split every dimension in the kernel gets
+/// (`docs/truth-and-cache.md`). [`Ring2d::realized`] is the f64 cache, and the round-trip is
+/// bit-preserving (`from_decimal(x).to_f64() == x`), so the realization is exactly the f64 the
+/// caller handed in.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ring2d {
+    points: Vec<[Rat; 2]>,
+}
+
+impl Ring2d {
+    /// The ring's rational truth — normalized (flat corners dissolved), in author order.
+    pub fn points(&self) -> &[[Rat; 2]] {
+        &self.points
+    }
+
+    /// The f64 realization of [`points`](Ring2d::points) — the cache the fallback placement and
+    /// diagnostics consume. Bit-identical to what the caller passed, point for point that
+    /// survived normalization.
+    pub fn realized(&self) -> Vec<Point2> {
+        self.points
+            .iter()
+            .map(|p| Point2::from_array([p[0].to_f64(), p[1].to_f64()]))
+            .collect()
+    }
+}
+
 /// A closed planar region: one outer ring and any number of hole rings (straight segments only,
 /// at least 3 points each).
 ///
-/// **Winding is not the caller's business, and not this type's either.** The rings are stored as
-/// given; the prism builder is the single place that decides orientation, because it is the only
-/// one that knows the sweep direction (a pocket sweeps *into* a face, which flips what
+/// **Winding is not the caller's business, and not this type's either.** The rings are stored in
+/// author order; the prism builder is the single place that decides orientation, because it is
+/// the only one that knows the sweep direction (a pocket sweeps *into* a face, which flips what
 /// "counter-clockwise" means). Fixing the winding here as well would put that decision in two
 /// places, which is exactly how the holes and the outer ring come to disagree.
 ///
-/// The constructors cost nothing and check nothing; [`Profile2d::check`] states the contract and
-/// **every operation that consumes a profile runs it first**, so the kernel never works from an
-/// unverified one. `sketch::from_rings` is the checking constructor for loose rings.
+/// **The constructors take the boundary f64s and keep the truth** (`docs/truth-and-cache.md`):
+/// each coordinate becomes the rational its shortest decimal spells, a dimension outside the
+/// decimal window (`~1e38` above, `~1e-22` below for a 17-digit value) is a named error
+/// **at construction** rather than a silent f64 fallback downstream, and every **flat corner**
+/// (a vertex strictly mid-run on a straight edge) is dissolved — its two walls would be one
+/// plane, so the corner it names has no three-plane definition, and deleting it changes no
+/// geometry. What survives construction is the profile's normal form.
+///
+/// The constructors do **not** run [`Profile2d::check`]; that contract (simplicity, disjoint
+/// rings, hole containment) is `O(n²)` and **every operation that consumes a profile runs it
+/// first**, so the kernel never works from an unverified one. `sketch::from_rings` is the
+/// checking constructor for loose rings.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Profile2d {
-    outer: Vec<Point2>,
-    inners: Vec<Vec<Point2>>,
+    outer: Ring2d,
+    holes: Vec<Ring2d>,
 }
 
 /// Which ring of a [`Profile2d`] an error is about.
@@ -107,23 +146,53 @@ pub struct Profile2d {
 pub enum ProfileRing {
     /// The outer ring.
     Outer,
-    /// The hole at this index in [`Profile2d::inners`].
+    /// The hole at this index in [`Profile2d::holes`].
     Hole(usize),
 }
 
 impl Profile2d {
-    /// A simple polygon — no holes.
-    pub fn polygon(points: Vec<Point2>) -> Profile2d {
-        Profile2d {
-            outer: points,
-            inners: Vec::new(),
-        }
+    /// A simple polygon — no holes. `Err` when a coordinate has no rational truth (outside the
+    /// decimal window); see the type doc.
+    pub fn polygon(points: Vec<Point2>) -> Result<Profile2d, OpError> {
+        Profile2d::with_holes(points, Vec::new())
     }
 
-    /// An outer ring with holes. Nothing is verified here; [`Profile2d::check`] is where the
-    /// contract is enforced, and every operation that consumes a profile runs it.
-    pub fn with_holes(outer: Vec<Point2>, inners: Vec<Vec<Point2>>) -> Profile2d {
-        Profile2d { outer, inners }
+    /// An outer ring with holes. Lifts every coordinate to its rational truth and dissolves flat
+    /// corners; the *contract* ([`Profile2d::check`]) is still enforced by every operation that
+    /// consumes the profile.
+    pub fn with_holes(outer: Vec<Point2>, inners: Vec<Vec<Point2>>) -> Result<Profile2d, OpError> {
+        let lift = |ring: &[Point2], id: ProfileRing| -> Result<Vec<[Rat; 2]>, OpError> {
+            ring.iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let point = |x: f64| Rat::from_decimal(x);
+                    match (point(p[0]), point(p[1])) {
+                        (Some(x), Some(y)) => Ok([x, y]),
+                        _ => Err(OpError::ProfileOutsideDecimalWindow { ring: id, point: i }),
+                    }
+                })
+                .collect()
+        };
+        let outer = lift(&outer, ProfileRing::Outer)?;
+        let holes = inners
+            .iter()
+            .enumerate()
+            .map(|(h, ring)| lift(ring, ProfileRing::Hole(h)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Profile2d::from_rat_rings(outer, holes))
+    }
+
+    /// The constructor behind the f64 boundary — rings already in their rational truth
+    /// (`sketch::from_rings` arrives here after lifting and classifying on that truth).
+    /// Normalization (the flat-corner dissolve) happens here, once, for every entry path.
+    pub(crate) fn from_rat_rings(outer: Vec<[Rat; 2]>, holes: Vec<Vec<[Rat; 2]>>) -> Profile2d {
+        let ring = |points: Vec<[Rat; 2]>| Ring2d {
+            points: drop_collinear_midpoints(points),
+        };
+        Profile2d {
+            outer: ring(outer),
+            holes: holes.into_iter().map(ring).collect(),
+        }
     }
 
     /// Verify the contract: every ring is a **simple polygon** of at least three points, the rings
@@ -137,32 +206,38 @@ impl Profile2d {
     /// contours a boolean produces get their inside from the arrangement instead, and those may
     /// legitimately be non-simple (a figure-8 pinch — see `loop_winding`). Do not "unify" the two.
     ///
-    /// Exact: every decision is an `orient2d` sign on the coordinates as written. The 2-D ring is
-    /// then placed into 3-D in `f64`, which is a separate exactness question (the same one every
-    /// constructed coordinate has), so this rejects what the *author* drew, not every ring that
-    /// could conceivably self-intersect after placement.
+    /// Exact — on the truth: every decision is an `orient2d` sign on the rationals the author's
+    /// decimals spelled, not on their f64 carriers. The two can disagree (three points collinear
+    /// in decimal sit a hair off the line in binary), and it is the decimal that is the author's
+    /// meaning. Edge indices in the errors refer to the normalized rings [`outer`](Profile2d::outer)
+    /// returns — construction dissolved flat corners first.
     ///
     /// `O(n²)` in the ring size, and it runs on every extrude and every replay of one. Measured
-    /// on a convex ring (the worst case — nothing short-circuits): 47 µs at 100 points, 4.6 ms at
-    /// 1 000, 115 ms at 5 000. Hand-written sketches are nowhere near that; a generator or an
-    /// import that emits thousands of points per ring would feel it, and that is when a
-    /// sweep-line is worth its robustness cost — not before.
+    /// on a convex ring of 17-digit coordinates (the worst case — nothing short-circuits;
+    /// `profile_check_wall_clock` in `tests/perf.rs`): **34 ms at 100 points, 3.2 s at 1 000** —
+    /// each rational sign costs ~1.7 µs (the narrow route's gcd reductions; such coordinates stay
+    /// inside `i128`) against the old f64 predicate's nanoseconds. Hand-drawn sketches are tens
+    /// of points and pay well under a millisecond; a generator emitting thousands of points per
+    /// ring is now firmly outside this function's comfort, and the named follow-ups — an exact
+    /// bounding-box prefilter for the segment pairs, or an f64 filter with a sound error bound
+    /// escalating to `Rat` — live in `docs/truth-and-cache.md`'s open items, deliberately
+    /// unbuilt until that population exists.
     pub fn check(&self) -> Result<(), OpError> {
         let rings = || {
             std::iter::once((ProfileRing::Outer, &self.outer)).chain(
-                self.inners
+                self.holes
                     .iter()
                     .enumerate()
                     .map(|(i, r)| (ProfileRing::Hole(i), r)),
             )
         };
         for (id, r) in rings() {
-            if r.len() < 3 {
+            if r.points().len() < 3 {
                 return Err(OpError::DegenerateProfile);
             }
-            // Simplicity first: `point_in_ring_2d` below is only meaningful on a simple ring.
-            // The predicate reports a zero-length edge as a pair with itself.
-            if let Some((a, b)) = ring_self_intersection(r) {
+            // Simplicity first: `point_in_ring_2d_rat` below is only meaningful on a simple
+            // ring. The predicate reports a zero-length edge as a pair with itself.
+            if let Some((a, b)) = ring_self_intersection_rat(r.points()) {
                 return Err(if a == b {
                     OpError::ZeroLengthProfileEdge { ring: id, edge: a }
                 } else {
@@ -173,21 +248,23 @@ impl Profile2d {
                 });
             }
         }
-        let all: Vec<(ProfileRing, &Vec<Point2>)> = rings().collect();
+        let all: Vec<(ProfileRing, &Ring2d)> = rings().collect();
         for (i, (ida, a)) in all.iter().enumerate() {
             for (idb, b) in &all[i + 1..] {
-                if rings_cross(a, b) {
+                if rings_cross_rat(a.points(), b.points()) {
                     return Err(OpError::ProfileRingsMeet { a: *ida, b: *idb });
                 }
             }
         }
         // The rings are disjoint, so any one vertex answers for a whole ring.
-        for (h, hole) in self.inners.iter().enumerate() {
-            if point_in_ring_2d(hole[0], &self.outer) != RingSide::Inside {
+        for (h, hole) in self.holes.iter().enumerate() {
+            if point_in_ring_2d_rat(hole.points()[0], self.outer.points()) != RingSide::Inside {
                 return Err(OpError::HoleNotInsideOuter { hole: h });
             }
-            for (k, other) in self.inners.iter().enumerate() {
-                if k != h && point_in_ring_2d(hole[0], other) == RingSide::Inside {
+            for (k, other) in self.holes.iter().enumerate() {
+                if k != h
+                    && point_in_ring_2d_rat(hole.points()[0], other.points()) == RingSide::Inside
+                {
                     // A ring inside a hole is an island — material again, so it belongs to a
                     // profile of its own. `sketch::from_rings` is what splits those out.
                     return Err(OpError::NestedHole { outer: k, inner: h });
@@ -197,14 +274,14 @@ impl Profile2d {
         Ok(())
     }
 
-    /// The outer ring, as given.
-    pub fn outer(&self) -> &[Point2] {
+    /// The outer ring — the normalized rational truth.
+    pub fn outer(&self) -> &Ring2d {
         &self.outer
     }
 
-    /// The hole rings, as given.
-    pub fn inners(&self) -> &[Vec<Point2>] {
-        &self.inners
+    /// The hole rings — the normalized rational truth.
+    pub fn holes(&self) -> &[Ring2d] {
+        &self.holes
     }
 }
 
@@ -291,6 +368,17 @@ pub enum BoolKind {
 pub enum OpError {
     /// A profile ring with fewer than 3 points.
     DegenerateProfile,
+    /// A profile coordinate outside the decimal window (`Rat::from_decimal` — `~1e38` above,
+    /// `~1e-22` below for a full-width value), so it has no rational truth for the kernel to
+    /// keep. Named **at construction**: the alternative was a silent fall to the f64 path, whose
+    /// prism records no exact points and whose surfaces cannot survive a motion undemoted.
+    /// CAD dimensions live nowhere near the window's edges; reaching this is an input mistake.
+    ProfileOutsideDecimalWindow {
+        /// Which ring of the profile.
+        ring: ProfileRing,
+        /// The offending point's index within that ring, as given.
+        point: usize,
+    },
     /// A profile ring meets itself — it crosses, touches, doubles back over one of its own edges,
     /// or doubles back over one of its own edges. Such a ring has no unambiguous inside, so the
     /// region it is supposed to bound is undefined. `edges` are the two offending edge indices
@@ -324,7 +412,7 @@ pub enum OpError {
     /// *silent* wrong: the prism builds, `validate` is clean, and the volume comes out reduced by
     /// a hole that is not there.
     HoleNotInsideOuter {
-        /// The index in [`Profile2d::inners`].
+        /// The index in [`Profile2d::holes`].
         hole: usize,
     },
     /// A hole ring lies inside another hole. That region is material again — an island — and
@@ -569,9 +657,10 @@ pub(crate) fn extrude(
 ///
 /// The rational path is not an optimization: it is what makes `extrude(7.7)` and
 /// `extrude(1.1)` then `extrude(6.6)` put their caps on the same plane rather than an
-/// ulp apart. Where it does not apply — a rotated frame, a dimension outside the
-/// decimal window — this falls back to the f64 arithmetic that was here before, which
-/// is no worse than it was.
+/// ulp apart. Where it does not apply — a frame without an exact form, an i128 overflow
+/// in the ring arithmetic — this falls back to the f64 arithmetic that was here before,
+/// which is no worse than it was. (A dimension outside the decimal window no longer
+/// arrives here at all: the profile constructor names it.)
 ///
 /// **Mapping only — no winding decision, and no containment check.** Forcing the outer
 /// ring CCW here would be a second opinion on a question `build_prism` already answers
@@ -590,11 +679,15 @@ fn swept_profile(
         return rings;
     }
     let sweep = plane.normal() * dist;
-    let place =
-        |ring: &[Point2]| Swept::along(ring.iter().map(|p| plane.point(*p)).collect(), sweep);
+    let place = |ring: &Ring2d| {
+        Swept::along(
+            ring.realized().iter().map(|p| plane.point(*p)).collect(),
+            sweep,
+        )
+    };
     (
         place(profile.outer()),
-        profile.inners().iter().map(|h| place(h)).collect(),
+        profile.holes().iter().map(place).collect(),
     )
 }
 
@@ -1020,10 +1113,13 @@ fn sweep_ring(
     let top_pts: Vec<Point3> = ring.top.clone();
     // Corner `i` is where the wall before it, the wall after it, and the cap meet.
     //
-    // ★ **Two walls that are one plane name a line, not a point.** A profile with a collinear
-    // vertex makes exactly that — and since surfaces are interned, "one plane" *is* "one handle",
-    // so the check is a comparison. Such a vertex has no three-plane definition, and saying so is
-    // more useful than inventing one.
+    // ★ **Two walls that are one plane would name a line, not a point** — and since surfaces are
+    // interned, "one plane" *is* "one handle", so the check is a comparison. Since S3 this is a
+    // guard on an invariant, not a live case: the only producer of adjacent same-plane walls was
+    // a profile with a collinear midpoint, and `Profile2d`'s constructor now dissolves those, so
+    // every corner gets its three-plane definition (locked by
+    // `a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit`). Non-adjacent walls may
+    // still legitimately share a plane (a notch), which never lands `prev == here`.
     let define = |i: usize, cap: Handle<Surface>| -> Option<VertexDef> {
         let prev = walls[(i + n - 1) % n].0;
         let here = walls[i].0;

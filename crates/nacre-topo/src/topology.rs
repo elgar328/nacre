@@ -26,10 +26,12 @@ pub struct Vertex {
     /// reads it yet.
     ///
     /// `None` where a producer could not name three planes: a curved surface (`ThreePlane` cannot
-    /// speak about a cylinder), a profile with a collinear vertex (its two walls are one plane, so
-    /// the triple names a line and not a point), or a transform whose re-pointing found a surface
-    /// it could not map. All three are counted rather than rejected — a missing definition costs
-    /// nothing today, and the count is what says whether `point` can ever be dropped.
+    /// speak about a cylinder), or a transform whose re-pointing found a surface it could not
+    /// map. (A profile with a collinear vertex used to be a third cause — its two walls are one
+    /// plane, so the triple names a line and not a point — but since S3 the profile constructor
+    /// dissolves such corners, so that population no longer reaches the topology.) The rest are
+    /// counted rather than rejected — a missing definition costs nothing today, and the count is
+    /// what says whether `point` can ever be dropped.
     pub definition: Option<VertexDef>,
 }
 

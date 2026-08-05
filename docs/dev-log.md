@@ -6649,3 +6649,38 @@ census: 새 `wf` 가족(그 프레임 + pad/pocket — 이 인구는 fw(전-narr
 계획 대비 범위 재조정: 심기+공개 SketchFrame 통일은 **S9 로 분리**(심은 평면이 원점 상자들과
 intern 되며 생존자 f64 기하를 바꾸는 전-스위트 파급 — 별도 관문 필요; `Model::default()` 구멍;
 수요자는 S5). 스위트 758/758 그린, census 기준선 갱신(`wf` 2줄 추가, 그 외 diff 없음).
+
+## S3 — `Profile2d` 유리수화 + 공선 중간점 정리 (2026-08-05)
+
+세 커밋. ① scalar `orient2d_rat` — 전역(total) 2D 방향 부호: narrow(Rat checked) 우선 →
+넘치면 BigInt 분모 청소(`plane_name_big` 의 2D 판 — 점별 분모가 양수라 배율 `Da²·Db·Dc > 0`,
+부호 추적 불요). **BigInt 팔은 장식이 아니라 필수**: `from_decimal` 분모가 10^22 급이면 차분
+곱 분모 10^44 > i128 — 두 17자리 치수만으로 닿는다. 자기교차 검사에서 fail-open(넘침→false)은
+silent-wrong 이므로 부호 함수에서 넘침이라는 실패 모드 자체를 없앴다.
+② geom `_rat` 쌍둥이 — f64 링 워커 3종의 축자 포트(orient2d 외 f64 산술이 원본에 0 이라
+기계적) + `drop_collinear_midpoints`(고정점 반복). geom 이 **scalar 의존을 얻었다** — 초안은
+ops 에 두려 했으나 §design 1 "첨예한 교차·분류는 geom::intersect 격리" 문언 위반(검토가 잡음).
+③ ops — `Ring2d{points: Vec<[Rat;2]>}` 진실 저장, 생성자 Result 화(~129곳 기계적 unwrap),
+`check()`/`from_rings` 분류를 진실 위로, `RatFrame::ring` 의 리프트 삭제(창 실패의 이사).
+
+★★ **정리 규칙의 전부는 "엄격 내부"다.** 제거 = 공선 ∧ 양 이웃과 다름 ∧ 이웃 상자 안.
+경계 포함 판정(`on_segment`)을 재사용하면 중복점이 "공선 중간점"으로 조용히 지워져
+`ZeroLengthProfileEdge` 가 소멸한다 — 작성자의 실수는 지우는 게 아니라 보고한다. 중복점·
+스파이크·2점 링의 기존 에러 핀이 전부 이 조건 하나로 보존됐다(완전 공선 링만
+`SelfIntersectingProfile`→`DegenerateProfile` 로 — 핀 없음 확인, 더 정직한 이름).
+
+★★ **f64 부호 ≠ 십진 부호가 check 를 진실 위로 옮기는 실질 이유다.** `(0,0.1)(0.1,0.2)
+(0.2,0.3)` 은 십진으로 공선(기울기 1), 이진으로는 굽음(0.2bin = 2·0.1bin 정확하지만
+0.3bin ≠ 3·0.1bin) — geom 잠금 `a_decimal_collinearity_the_binary_points_do_not_have` +
+ops 잠금(그 중간점이 지워진다). 작성자가 쓴 수가 이긴다.
+
+잠금: 쌍둥이 프리즘 **비트 동일** + 전 코너 `ThreePlane` 정의(Q2 ② 종단 증거) · 창 밖 좌표
+구성 시점 에러 2종 · 비인접 공선 벽 interning 재핀(요철 픽스처 — 옛
+`a_collinear_profile_vertex…` 는 주제가 소멸해 대체). census **150줄 비트 동일**(6a6449c
+워크트리 대조 실측 — 기존 가족에 공선 중간점·창 밖 인구 없음: 예상과 일치).
+
+★ **실측 — check 의 진실-위 가격은 예측(수백 µs@100)보다 두 자릿수 컸다**: 34ms@100점·
+3.2s@1000점(볼록 링·17자리, `profile_check_wall_clock`). 호출당 ~1.7µs — narrow 경로의
+gcd 약분 지배(이런 좌표는 전-narrow, BigInt 미도달). 손 스케치(수십 점)는 ms 미만이라 수용,
+후속 두 안(정확 bbox 선별 / f64 필터→Rat 상승)은 **그 인구가 생기기 전엔 짓지 않는다**
+(truth-and-cache §열린 항목 7). 스위트 그린(nacre-ops 379 + geom 96 + scalar 60).

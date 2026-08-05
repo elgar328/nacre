@@ -471,7 +471,8 @@ fn dump() {
                         p2(4.123456789012345, 0.2345678901234567),
                         p2(3.9876543210987654, 3.1234567890123459),
                         p2(0.2222222222222222, 2.765432109876543),
-                    ]),
+                    ])
+                    .unwrap(),
                     dist: 2.5,
                 },
             )
@@ -503,7 +504,8 @@ fn dump() {
                 p2(cu + 0.3, cv - 0.3),
                 p2(cu + 0.3, cv + 0.3),
                 p2(cu - 0.3, cv + 0.3),
-            ]);
+            ])
+            .unwrap();
             let inputs = operands(&m, solid, solid);
             let op = if pad {
                 Operation::PadOnFace {
@@ -563,7 +565,8 @@ fn tilted_prism(m: &mut Model, n: [f64; 3], off: f64, size: f64, dist: f64) -> H
                 p(1.0, 1.0),
                 p(1.0, 2.0),
                 p(0.0, 2.0),
-            ]),
+            ])
+            .unwrap(),
             dist,
         },
     )
@@ -588,7 +591,8 @@ fn ex(m: &mut Model, z: f64, lo: [f64; 2], hi: [f64; 2], dist: f64) -> Handle<So
                 p(hi[0], lo[1]),
                 p(hi[0], hi[1]),
                 p(lo[0], hi[1]),
-            ]),
+            ])
+            .unwrap(),
             dist,
         },
     )

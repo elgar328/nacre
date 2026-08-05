@@ -370,7 +370,8 @@ centroid 1 1.5 2
         let mut model = Model::new();
         let op = Operation::Extrude {
             plane: SketchPlane::world_xy(),
-            profile: Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()),
+            profile: Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect())
+                .unwrap(),
             dist: 3.0,
         };
         apply(&mut model, &op).unwrap();
@@ -471,7 +472,7 @@ centroid 1 1.5 2
             &mut model,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d::with_holes(sq(0.0, 4.0), vec![sq(1.0, 3.0)]),
+                profile: Profile2d::with_holes(sq(0.0, 4.0), vec![sq(1.0, 3.0)]).unwrap(),
                 dist: 1.0,
             },
         )
@@ -506,7 +507,8 @@ centroid 1 1.5 2
             Point2::from_array([1.0, 1.0]),
             Point2::from_array([1.0, 3.0]),
             Point2::from_array([0.0, 3.0]),
-        ]);
+        ])
+        .unwrap();
         let OpOutput::Extrude { solid, .. } = apply(
             &mut model,
             &Operation::Extrude {
@@ -681,6 +683,7 @@ centroid 1 1.5 2
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
             )
+            .unwrap()
         };
         let mut model = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -699,7 +702,8 @@ centroid 1 1.5 2
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        );
+        )
+        .unwrap();
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PadOnFace {
@@ -743,6 +747,7 @@ centroid 1 1.5 2
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
             )
+            .unwrap()
         };
         let mut model = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -761,7 +766,8 @@ centroid 1 1.5 2
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        );
+        )
+        .unwrap();
         let OpOutput::PocketOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PocketOnFace {
@@ -807,7 +813,8 @@ centroid 1 1.5 2
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                ),
+                )
+                .unwrap(),
                 dist: 1.0,
             },
         )
@@ -820,7 +827,8 @@ centroid 1 1.5 2
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        );
+        )
+        .unwrap();
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PadOnFace {
@@ -859,7 +867,8 @@ centroid 1 1.5 2
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                ),
+                )
+                .unwrap(),
                 dist: 1.0,
             },
         )
@@ -871,7 +880,8 @@ centroid 1 1.5 2
                 .iter()
                 .map(|&p| nacre_math::Point2::from_array(p))
                 .collect(),
-        );
+        )
+        .unwrap();
         let OpOutput::PocketOnFace { solid, .. } = apply(
             &mut model,
             &Operation::PocketOnFace {
@@ -1568,7 +1578,8 @@ centroid 1 1.5 2
                     .iter()
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
-                ),
+                )
+                .unwrap(),
                 dist: 1.0,
             },
         )
@@ -1739,7 +1750,8 @@ centroid 1 1.5 2
             .iter()
             .map(|&p| Point2::from_array(p))
             .collect(),
-        );
+        )
+        .unwrap();
         let OpOutput::Extrude { solid: l, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -1803,7 +1815,8 @@ centroid 1 1.5 2
     ) -> Handle<Solid> {
         use nacre_math::Point2;
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-        let profile = Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect());
+        let profile =
+            Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap();
         let OpOutput::Extrude { solid, .. } = apply(
             m,
             &Operation::Extrude {
@@ -2397,7 +2410,8 @@ centroid 1 1.5 2
             .iter()
             .map(|&p| nacre_math::Point2::from_array(p))
             .collect(),
-        );
+        )
+        .unwrap();
         let OpOutput::Extrude { solid: lp, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -2436,7 +2450,8 @@ centroid 1 1.5 2
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                ),
+                )
+                .unwrap(),
                 dist: 1.0,
             },
         )
@@ -2452,7 +2467,8 @@ centroid 1 1.5 2
                         .iter()
                         .map(|&p| nacre_math::Point2::from_array(p))
                         .collect(),
-                ),
+                )
+                .unwrap(),
                 dist: 0.5,
             },
         )
@@ -2498,7 +2514,8 @@ centroid 1 1.5 2
             .iter()
             .map(|&p| nacre_math::Point2::from_array(p))
             .collect(),
-        );
+        )
+        .unwrap();
         let OpOutput::Extrude { solid: lb, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -2539,7 +2556,8 @@ centroid 1 1.5 2
                     p2(1.0, 0.0),
                     p2(1.0, 1.0),
                     p2(0.0, 1.0),
-                ]),
+                ])
+                .unwrap(),
                 dist: 1.0,
             },
         )
@@ -2555,7 +2573,8 @@ centroid 1 1.5 2
                     p2(0.2, -0.2),
                     p2(0.2, 0.2),
                     p2(-0.2, 0.2),
-                ]),
+                ])
+                .unwrap(),
                 dist: 0.5,
             },
         )
@@ -2601,7 +2620,8 @@ centroid 1 1.5 2
                     .iter()
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
-                ),
+                )
+                .unwrap(),
                 dist: 1.0,
             },
         )
@@ -3242,7 +3262,7 @@ centroid 1 1.5 2
         use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
         let mut m = Model::new();
         let sq = |pts: [[f64; 2]; 4]| {
-            Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect())
+            Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap()
         };
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
@@ -3318,6 +3338,7 @@ centroid 1 1.5 2
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
             )
+            .unwrap()
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -3574,6 +3595,7 @@ centroid 1 1.5 2
                     .map(|&p| nacre_math::Point2::from_array(p))
                     .collect(),
             )
+            .unwrap()
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -3654,7 +3676,7 @@ centroid 1 1.5 2
                 m,
                 &Operation::Extrude {
                     plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
-                    profile: Profile2d::polygon(poly),
+                    profile: Profile2d::polygon(poly).unwrap(),
                     dist,
                 },
             )

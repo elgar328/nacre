@@ -862,6 +862,7 @@ mod tests {
                 p(cu + hi, cv + half),
                 p(cu + lo, cv + half),
             ])
+            .unwrap()
         };
         let pad = |m: &mut Model,
                    f: Handle<nacre_topo::Face>,
@@ -1039,7 +1040,8 @@ mod tests {
             p(cu + 0.4, cv - 0.2),
             p(cu + 0.4, cv + 0.2),
             p(cu + lo, cv + 0.2),
-        ]);
+        ])
+        .unwrap();
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut m,
             &Operation::PadOnFace {
@@ -1465,7 +1467,8 @@ mod tests {
                 Point2::from_array([1.0, -1.0]),
                 Point2::from_array([1.0, 1.0]),
                 Point2::from_array([-1.0, 1.0]),
-            ]);
+            ])
+            .unwrap();
             let mut m = Model::new();
             let out = apply(
                 &mut m,
@@ -1551,7 +1554,8 @@ mod tests {
                     p(0.9937465283947, 0.9384756293847),
                     p(0.9937465283947, t),
                     p(0.0, t),
-                ]),
+                ])
+                .unwrap(),
                 dist: 0.8473625849372,
             },
         )

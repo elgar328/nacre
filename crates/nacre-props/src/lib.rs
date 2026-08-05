@@ -418,7 +418,8 @@ mod tests {
             [1.0, 2.0],
             [0.0, 2.0],
         ];
-        let profile = Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect());
+        let profile =
+            Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap();
         let dist = 3.0;
         let mut m = Model::new();
         let op = Operation::Extrude {
@@ -533,7 +534,7 @@ mod tests {
         let mut m = Model::new();
         let op = Operation::Extrude {
             plane: SketchPlane::world_xy(),
-            profile: Profile2d::with_holes(sq(0.0, 10.0), vec![sq(1.0, 3.0)]),
+            profile: Profile2d::with_holes(sq(0.0, 10.0), vec![sq(1.0, 3.0)]).unwrap(),
             dist: 1.0,
         };
         let OpOutput::Extrude { faces, .. } = apply(&mut m, &op).unwrap() else {
@@ -565,7 +566,8 @@ mod tests {
         let mut m = Model::new();
         let op = Operation::Extrude {
             plane: SketchPlane::world_xy(),
-            profile: Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()),
+            profile: Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect())
+                .unwrap(),
             dist: 3.0,
         };
         let OpOutput::Extrude { solid: s, .. } = apply(&mut m, &op).unwrap() else {
@@ -636,6 +638,7 @@ mod tests {
             .map(|&p| Point2::from_array(p))
             .collect(),
         )
+        .unwrap()
     }
 
     /// Pad a `2·hw` square boss of height `dist` on a `size` cube's top face,
@@ -648,6 +651,7 @@ mod tests {
                     .map(|&p| Point2::from_array(p))
                     .collect(),
             )
+            .unwrap()
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(
@@ -695,6 +699,7 @@ mod tests {
                     .map(|&p| Point2::from_array(p))
                     .collect(),
             )
+            .unwrap()
         };
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } = apply(

@@ -46,7 +46,7 @@
 //!         Point2::from_array([b, a]),
 //!         Point2::from_array([b, b]),
 //!         Point2::from_array([a, b]),
-//!     ])
+//!     ]).unwrap()
 //! };
 //! let extrude = |m: &mut Model, profile, dist| match apply(
 //!     m,

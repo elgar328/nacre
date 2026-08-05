@@ -52,7 +52,8 @@ fn ell(m: &mut Model) -> Handle<Solid> {
                 p2(1.0, 1.0),
                 p2(1.0, 3.0),
                 p2(0.0, 3.0),
-            ]),
+            ])
+            .unwrap(),
             dist: 1.0,
         },
     )

@@ -399,7 +399,7 @@ fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {
             m,
             &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
-                profile: Profile2d::polygon(prof),
+                profile: Profile2d::polygon(prof).unwrap(),
                 dist,
             },
         )

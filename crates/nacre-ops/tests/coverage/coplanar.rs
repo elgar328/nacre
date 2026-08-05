@@ -219,7 +219,8 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
         p2(0.75, 0.25),
         p2(1.0, 0.25),
         p2(1.0, 0.75),
-    ]);
+    ])
+    .unwrap();
     let OpOutput::PadOnFace { solid, top_face } =
         apply(&mut m, &pad_op(top, l_over, 1.0)).expect("the cantilevered L pad")
     else {
@@ -258,7 +259,8 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
         p2(1.0, 1.0),
         p2(1.0, 2.0),
         p2(0.0, 2.0),
-    ]);
+    ])
+    .unwrap();
     let mut m = replay(&[extrude_op(l, 1.0)]).unwrap();
     let lsolid = *m.live_solids.first().unwrap();
     let b = m.add_cuboid(

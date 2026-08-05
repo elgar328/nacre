@@ -30,6 +30,7 @@ fn l_profile(w: i64, h: i64, nx: i64, ny: i64) -> Profile2d {
         p(nx, h),
         p(0, h),
     ])
+    .unwrap()
 }
 
 /// A cuboid from integer grid coordinates.

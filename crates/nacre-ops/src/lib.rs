@@ -31,8 +31,8 @@ pub use boolean::{BoolReport, boolean, boolean_with_report};
 pub use nacre_cip::Decision;
 pub use nacre_cip::predicate::{Evidence, Site};
 pub use ops::{
-    BoolKind, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing, SketchPlane, apply,
-    face_plane, replay,
+    BoolKind, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing, Ring2d, SketchPlane,
+    apply, face_plane, replay,
 };
 pub use sketch::{Curve2d, Edge2d, SketchError, from_edges, from_rings};
 
@@ -815,7 +815,7 @@ pub mod tests {
     }
 
     fn square() -> Profile2d {
-        Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)])
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)]).unwrap()
     }
 
     fn extrude_op(profile: Profile2d, dist: f64) -> Operation {
@@ -833,7 +833,7 @@ pub mod tests {
                 p2(r * a.cos(), r * a.sin())
             })
             .collect();
-        Profile2d::polygon(points)
+        Profile2d::polygon(points).unwrap()
     }
 
     #[test]
@@ -864,7 +864,7 @@ pub mod tests {
 
     #[test]
     fn triangle_extrudes_to_a_prism() {
-        let tri = Profile2d::polygon(vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(1.0, 1.5)]);
+        let tri = Profile2d::polygon(vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(1.0, 1.5)]).unwrap();
         let m = replay(&[extrude_op(tri, 3.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 6);
@@ -890,7 +890,8 @@ pub mod tests {
             p2(1.0, 1.0),
             p2(1.0, 2.0),
             p2(0.0, 2.0),
-        ]);
+        ])
+        .unwrap();
         let m = replay(&[extrude_op(l, 1.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 12);
@@ -908,7 +909,8 @@ pub mod tests {
             p2(1.0, 1.0),
             p2(1.0, 2.0),
             p2(0.0, 2.0),
-        ]);
+        ])
+        .unwrap();
         let m = replay(&[extrude_op(l, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
@@ -924,7 +926,8 @@ pub mod tests {
             p2(0.0, 2.0),
             p2(0.0, 0.0),
             p2(2.0, 0.0),
-        ]);
+        ])
+        .unwrap();
         let m = replay(&[extrude_op(l, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
@@ -1581,7 +1584,8 @@ pub mod tests {
                     p2(3.0, -3.0),
                     p2(3.0, 3.0),
                     p2(-3.0, 3.0),
-                ]),
+                ])
+                .unwrap(),
                 2.0,
             )])
             .unwrap();
@@ -1598,7 +1602,8 @@ pub mod tests {
                                 p2(8.0, -0.4),
                                 p2(8.0, 0.4),
                                 p2(2.0, 0.4),
-                            ]),
+                            ])
+                            .unwrap(),
                             dist: 1.0,
                         },
                     )
@@ -1648,6 +1653,7 @@ pub mod tests {
                         })
                         .collect(),
                 )
+                .unwrap()
             };
             let mut m = replay(&[
                 extrude_op(ngon(16, 2.0, 0.0, 0.0), 3.0),
@@ -1729,7 +1735,8 @@ pub mod tests {
             p2(1.0, 1.0),
             p2(1.0, 2.0),
             p2(0.0, 2.0),
-        ]);
+        ])
+        .unwrap();
         let m = replay(&[extrude_op(u, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
@@ -1913,7 +1920,8 @@ pub mod tests {
             p2(0.8, 2.1),
             p2(0.8, 1.8),
             p2(1.8, 1.8),
-        ]);
+        ])
+        .unwrap();
         let OpOutput::Extrude { solid: b, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -1943,7 +1951,8 @@ pub mod tests {
             p2(0.35, 0.4), // reflex
             p2(0.35, 0.9),
             p2(0.2, 0.9),
-        ]);
+        ])
+        .unwrap();
         let OpOutput::Extrude { solid: stub, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -2122,7 +2131,8 @@ pub mod tests {
             p2(1.4, 0.45),
             p2(1.4, 1.5),
             p2(0.1, 1.5),
-        ]);
+        ])
+        .unwrap();
         let OpOutput::Extrude { solid: st, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -2590,7 +2600,7 @@ pub mod tests {
     /// onto the plane, and the arbitrary-axis convention gives `n = ẑ` the axes `u = +x̂, v = +ŷ`,
     /// so a frame point `(a, b)` is world `(a, b, 1)`.
     fn small_square() -> Profile2d {
-        Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)])
+        Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)]).unwrap()
     }
 
     /// **Chaining onto a fused boss.** The fuse leaves the base's `z=1` face a *ring* — a face with
@@ -2871,7 +2881,7 @@ pub mod tests {
             prop_assume!(normal.norm() > 0.3);
             let plane = SketchPlane::from_origin_normal(Point3::origin(), normal).unwrap();
             let mut m = Model::new();
-            let big = Profile2d::polygon(vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)]);
+            let big = Profile2d::polygon(vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)]).unwrap();
             let OpOutput::Extrude { faces, .. } =
                 apply(&mut m, &Operation::Extrude { plane, profile: big, dist: 2.0 }).unwrap()
             else { unreachable!() };
@@ -2897,14 +2907,14 @@ pub mod tests {
             h in 0.05f64..0.15,
             dist in 0.1f64..5.0,
         ) {
-            let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]);
+            let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]).unwrap();
             let mut m = Model::new();
             let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
                 profile: rect,
                 dist: sz,
             }).unwrap() else { unreachable!() };
-            let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]);
+            let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]).unwrap();
             apply(&mut m, &Operation::PadOnFace { face: faces[1], profile: hole, dist }).unwrap();
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
@@ -2920,14 +2930,14 @@ pub mod tests {
             h in 0.05f64..0.15,
             dist in 0.1f64..0.8,
         ) {
-            let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]);
+            let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]).unwrap();
             let mut m = Model::new();
             let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
                 plane: SketchPlane::world_xy(),
                 profile: rect,
                 dist: sz,
             }).unwrap() else { unreachable!() };
-            let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]);
+            let hole = Profile2d::polygon(vec![p2(-h, -h), p2(h, -h), p2(h, h), p2(-h, h)]).unwrap();
             apply(&mut m, &Operation::PocketOnFace { face: faces[1], profile: hole, dist }).unwrap();
             m.rebuild_adjacency();
             prop_assert!(nacre_validate::validate(&m).is_empty());
@@ -5035,28 +5045,88 @@ pub mod tests {
         }))
     }
 
-    /// ★ **A profile with a collinear vertex makes its two walls one surface.**
+    /// ★ **A collinear midpoint is dissolved at construction, so the prism it builds is its
+    /// clean twin's, bit for bit — and every corner keeps a three-plane definition** (S3; the
+    /// last piece of `docs/truth-and-cache.md` Q2 ②).
     ///
-    /// The two segments either side of a straight-through vertex lie on the *same* plane, so the
-    /// vertex they would define is named by two planes, not three — `[S, S, cap]` determines a
-    /// line, not a point. Interning is what makes that detectable at all: the two walls share one
-    /// handle, so the check is `s[i] == s[j]`, one comparison. Without it they are two handles
-    /// naming one plane and the test leaks silently.
-    ///
-    /// This is the secondary reason surfaces are interned (`docs/truth-and-cache.md`, 「남은 것」 3),
-    /// and it is worth pinning because nothing else in the suite builds such a profile.
+    /// Before S3 this profile built *seven* faces whose split bottom edge's two walls interned to
+    /// one surface handle — a vertex named `[S, S, cap]`, a line and not a point, `definition:
+    /// None`. The constructor now deletes the flat corner (a lossless normalization: the shape is
+    /// identical), so that population cannot reach the topology at all.
     #[test]
-    fn a_collinear_profile_vertex_gives_its_two_walls_one_surface() {
+    fn a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit() {
+        let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let build = |profile: Profile2d| {
+            let mut m = Model::new();
+            apply(
+                &mut m,
+                &Operation::Extrude {
+                    plane: SketchPlane::world_xy(),
+                    profile,
+                    dist: 1.0,
+                },
+            )
+            .expect("extrude");
+            m
+        };
+        // A unit square whose bottom edge carries a redundant midpoint — and the square itself.
+        let split = build(
+            Profile2d::polygon(vec![
+                p(0.0, 0.0),
+                p(0.5, 0.0), // collinear with its neighbours — dissolved at construction
+                p(1.0, 0.0),
+                p(1.0, 1.0),
+                p(0.0, 1.0),
+            ])
+            .unwrap(),
+        );
+        let clean = build(
+            Profile2d::polygon(vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]).unwrap(),
+        );
+        // Bit-for-bit the same model: same counts, same coordinates, same surface wiring.
+        assert_eq!(split.faces.len(), clean.faces.len(), "6 faces, not 7");
+        assert_eq!(split.vertices.len(), clean.vertices.len());
+        for ((_, s), (_, c)) in split.vertices.iter().zip(clean.vertices.iter()) {
+            assert_eq!(s.point.as_array(), c.point.as_array(), "coordinates");
+        }
+        for ((_, s), (_, c)) in split.faces.iter().zip(clean.faces.iter()) {
+            assert_eq!(s.surface, c.surface, "surface wiring");
+        }
+        // And the corner population is whole: every vertex holds a three-plane definition.
+        for (_, v) in split.vertices.iter() {
+            assert!(
+                matches!(v.definition, Some(VertexDef::ThreePlane(_))),
+                "a corner without a three-plane definition survived: {v:?}"
+            );
+        }
+    }
+
+    /// ★ **Two *separated* collinear walls still intern to one surface** — the re-pin of what
+    /// `a_collinear_profile_vertex_gives_its_two_walls_one_surface` used to hold.
+    ///
+    /// The dissolve pass only deletes flat corners (adjacent same-plane walls); two edges of a
+    /// notched profile lying on one line are legitimate geometry, their walls are two statements
+    /// of one plane, and interning makes them one handle (`docs/truth-and-cache.md`, 「남은 것」 3).
+    /// Adjacent walls can no longer collide, so this is where "same plane = same handle" stays
+    /// pinned.
+    #[test]
+    fn two_separated_collinear_walls_intern_to_one_surface() {
         let mut m = Model::new();
         let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-        // A unit square whose bottom edge carries a redundant midpoint.
+        // A right-edge notch: the two vertical segments at `x = 4` are collinear, not adjacent.
         let profile = Profile2d::polygon(vec![
             p(0.0, 0.0),
-            p(0.5, 0.0), // collinear with its neighbours
-            p(1.0, 0.0),
-            p(1.0, 1.0),
-            p(0.0, 1.0),
-        ]);
+            p(4.0, 0.0),
+            p(4.0, 1.0),
+            p(3.0, 1.0),
+            p(3.0, 2.0),
+            p(4.0, 2.0),
+            p(4.0, 3.0),
+            p(0.0, 3.0),
+        ])
+        .unwrap();
+        // Self-qualification: the dissolve pass must have left all eight corners standing.
+        assert_eq!(profile.outer().points().len(), 8, "no corner is flat");
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
@@ -5077,15 +5147,15 @@ pub mod tests {
             .iter()
             .map(|&fh| m.faces.get(fh).surface)
             .collect();
-        // Five profile points ⇒ five wall quads, plus two caps.
-        assert_eq!(surfaces.len(), 7, "five wall quads and two caps");
+        // Eight profile points ⇒ eight wall quads, plus two caps.
+        assert_eq!(surfaces.len(), 10, "eight walls and two caps");
         let mut distinct = surfaces.clone();
         distinct.sort_unstable_by_key(|h| h.index());
         distinct.dedup();
         assert_eq!(
             distinct.len(),
-            6,
-            "the split bottom edge's two walls are one plane, so one handle: {surfaces:?}"
+            9,
+            "the notch's two x=4 walls are one plane, so one handle: {surfaces:?}"
         );
     }
 
@@ -5438,8 +5508,10 @@ pub mod tests {
     #[test]
     fn padding_one_footprint_twice_leaves_no_zero_area_face() {
         let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-        let rect =
-            || Profile2d::polygon(vec![p(-1.0, -0.6), p(1.0, -0.6), p(1.0, 0.6), p(-1.0, 0.6)]);
+        let rect = || {
+            Profile2d::polygon(vec![p(-1.0, -0.6), p(1.0, -0.6), p(1.0, 0.6), p(-1.0, 0.6)])
+                .unwrap()
+        };
         let mut m = Model::new();
         let mut solid = m.add_cuboid(
             Point3::from_array([-2.0, -2.0, 0.0]),
@@ -5523,6 +5595,7 @@ pub mod tests {
                 p(101.0, 99.4),
                 p(101.0, 100.6),
             ])
+            .unwrap()
         };
         let top = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
             let shell = m.solids.get(s).outer;
@@ -5854,7 +5927,8 @@ pub mod tests {
                 p(cu + hi, cv - 0.5),
                 p(cu + hi, cv + 0.5),
                 p(cu + lo, cv + 0.5),
-            ]);
+            ])
+            .unwrap();
             let OpOutput::PadOnFace { solid, top_face } = apply(
                 &mut m,
                 &Operation::PadOnFace {
@@ -6082,7 +6156,8 @@ pub mod tests {
                     p(4.0, 2.0),
                     p(3.0, 4.0),
                     p(0.0, 4.0),
-                ]),
+                ])
+                .unwrap(),
                 dist: 3.0,
             },
         )
@@ -6136,7 +6211,8 @@ pub mod tests {
                     p(4.0, 0.0),
                     p(4.0, 4.0),
                     p(0.0, 4.0),
-                ]),
+                ])
+                .unwrap(),
                 dist: 3.0,
             },
         )
@@ -6193,7 +6269,8 @@ pub mod tests {
                 p(cu + hi, cv - 0.5),
                 p(cu + hi, cv + 0.5),
                 p(cu + lo, cv + 0.5),
-            ]);
+            ])
+            .unwrap();
             let OpOutput::PadOnFace { solid, top_face } = apply(
                 &mut m,
                 &Operation::PadOnFace {
@@ -6460,7 +6537,8 @@ pub mod tests {
                     p(4.123456789012345, 0.2345678901234567),
                     p(3.9876543210987654, 3.1234567890123459),
                     p(0.2222222222222222, 2.765432109876543),
-                ]),
+                ])
+                .unwrap(),
                 dist: 2.5,
             },
         )
@@ -6523,5 +6601,6 @@ pub mod tests {
             p(cu + half, cv + half),
             p(cu - half, cv + half),
         ])
+        .unwrap()
     }
 }

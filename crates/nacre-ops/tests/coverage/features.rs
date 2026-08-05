@@ -118,7 +118,7 @@ fn pocket_rejects_nonpositive_dist() {
 #[test]
 fn pad_rejects_degenerate_profile() {
     let (mut m, top) = cube_with_top();
-    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]);
+    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]).unwrap();
     assert!(matches!(
         apply(&mut m, &pad_op(top, two, 0.5)),
         Err(OpError::DegenerateProfile)
@@ -128,7 +128,7 @@ fn pad_rejects_degenerate_profile() {
 #[test]
 fn pocket_rejects_degenerate_profile() {
     let (mut m, top) = cube_with_top();
-    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]);
+    let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.1, 0.0)]).unwrap();
     assert!(matches!(
         apply(&mut m, &pocket_op(top, two, 0.5)),
         Err(OpError::DegenerateProfile)
@@ -235,7 +235,8 @@ fn pad_overhang_off_the_face_is_rejected() {
     // `a_touchless_boss_fuses_into_two_solids`). What breaks is the *pad's* premise, so the
     // error names that, and the model the caller is left holding is the one it started with.
     let (mut m, top) = cube_with_top();
-    let far = Profile2d::polygon(vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)]);
+    let far =
+        Profile2d::polygon(vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)]).unwrap();
     let before = m.live_solids.clone();
     assert_eq!(
         apply(&mut m, &pad_op(top, far, 0.3)),
@@ -318,7 +319,8 @@ fn a_pocket_on_a_slanted_face() {
         p2(1.0, -1.0),
         p2(1.0, 1.0),
         p2(-1.0, 1.0),
-    ]);
+    ])
+    .unwrap();
     let OpOutput::Extrude { faces, .. } = apply(
         &mut m,
         &Operation::Extrude {
@@ -353,7 +355,8 @@ fn a_pad_on_a_slanted_face() {
         p2(1.0, -1.0),
         p2(1.0, 1.0),
         p2(-1.0, 1.0),
-    ]);
+    ])
+    .unwrap();
     let OpOutput::Extrude { faces, .. } = apply(
         &mut m,
         &Operation::Extrude {
@@ -591,7 +594,8 @@ fn cut_a_non_convex_blind_pocket() {
         p2(0.0, 0.0),
         p2(0.0, 0.3),
         p2(-0.3, 0.3),
-    ]);
+    ])
+    .unwrap();
     let OpOutput::Extrude { solid: lp, .. } = apply(&mut m, &extrude_op(l, 0.5)).unwrap() else {
         unreachable!()
     };
@@ -697,7 +701,8 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
     // A square from (0.7, 0.2) to (0.9, 0.4) in face coordinates — asymmetric in both axes, so any
     // origin or axis mismatch moves its centre. On a lid these are world x and y, which is what
     // puts the boss inside the cube.
-    let profile = Profile2d::polygon(vec![p2(0.7, 0.4), p2(0.7, 0.2), p2(0.9, 0.2), p2(0.9, 0.4)]);
+    let profile =
+        Profile2d::polygon(vec![p2(0.7, 0.4), p2(0.7, 0.2), p2(0.9, 0.2), p2(0.9, 0.4)]).unwrap();
     let dist = 0.5;
     let OpOutput::PadOnFace { top_face, .. } = apply(&mut m, &pad_op(top, profile, dist)).unwrap()
     else {
@@ -802,7 +807,7 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
     let top_origin = |pts: Vec<Point2>| {
         let mut m = Model::new();
         let OpOutput::Extrude { faces, .. } =
-            apply(&mut m, &extrude_op(Profile2d::polygon(pts), 1.0)).unwrap()
+            apply(&mut m, &extrude_op(Profile2d::polygon(pts).unwrap(), 1.0)).unwrap()
         else {
             unreachable!()
         };

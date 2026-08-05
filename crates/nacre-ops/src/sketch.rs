@@ -7,8 +7,11 @@
 //! (design §1 isolates that); what is here is the policy — depth parity — and the assembly.
 
 use crate::Profile2d;
-use nacre_geom::intersect::{RingSide, point_in_ring_2d, ring_self_intersection, rings_cross};
+use nacre_geom::intersect::{
+    RingSide, point_in_ring_2d_rat, ring_self_intersection_rat, rings_cross_rat,
+};
 use nacre_math::Point2;
+use nacre_scalar::Rat;
 
 /// Why a set of rings or edges is not a valid set of profiles.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +40,11 @@ pub enum SketchError {
     /// the edges into rings in walk order, so a ring's edge index says nothing about where the
     /// author's input went wrong. Points are what the rest of this enum reports too.
     RingSelfIntersects { ring: usize, at: [[f64; 2]; 2] },
+    /// A coordinate outside the decimal window (`~1e38` above, `~1e-22` below for a full-width
+    /// value) has no rational truth for the kernel to keep — the sketch-layer twin of
+    /// `OpError::ProfileOutsideDecimalWindow`. `at` is the offending point, in the style of the
+    /// rest of this enum.
+    OutsideDecimalWindow { ring: usize, at: [f64; 2] },
 }
 
 /// Sort closed rings into profiles by containment depth.
@@ -54,12 +62,34 @@ pub fn from_rings(rings: Vec<Vec<Point2>>) -> Result<Vec<Profile2d>, SketchError
             return Err(SketchError::DegenerateRing { ring: i });
         }
     }
-    // Simplicity comes before nesting, and not merely for a better message: `point_in_ring_2d`
+    // Lift to the rational truth first: classification judges the decimals the author wrote,
+    // the same truth `Profile2d` stores — the f64 carriers can hold a *different* sign near
+    // degeneracy, and it is the decimal that is the author's meaning.
+    let lifted: Vec<Vec<[Rat; 2]>> = rings
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            r.iter()
+                .map(
+                    |p| match (Rat::from_decimal(p[0]), Rat::from_decimal(p[1])) {
+                        (Some(x), Some(y)) => Ok([x, y]),
+                        _ => Err(SketchError::OutsideDecimalWindow {
+                            ring: i,
+                            at: p.as_array(),
+                        }),
+                    },
+                )
+                .collect()
+        })
+        .collect::<Result<_, _>>()?;
+    // Simplicity comes before nesting, and not merely for a better message: `point_in_ring_2d_rat`
     // decides containment by even-odd parity, which only means "inside" on a simple ring.
-    for (i, r) in rings.iter().enumerate() {
-        if let Some((a, b)) = ring_self_intersection(r) {
+    for (i, r) in lifted.iter().enumerate() {
+        if let Some((a, b)) = ring_self_intersection_rat(r) {
+            // The midpoint is diagnostic only, so the f64 input points are the right material.
+            let f = &rings[i];
             let mid = |e: usize| {
-                let (p, q) = (r[e], r[(e + 1) % r.len()]);
+                let (p, q) = (f[e], f[(e + 1) % f.len()]);
                 [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0]
             };
             return Err(SketchError::RingSelfIntersects {
@@ -68,10 +98,10 @@ pub fn from_rings(rings: Vec<Vec<Point2>>) -> Result<Vec<Profile2d>, SketchError
             });
         }
     }
-    let n = rings.len();
+    let n = lifted.len();
     for i in 0..n {
         for j in (i + 1)..n {
-            if rings_cross(&rings[i], &rings[j]) {
+            if rings_cross_rat(&lifted[i], &lifted[j]) {
                 return Err(SketchError::RingsMeet { a: i, b: j });
             }
         }
@@ -82,7 +112,9 @@ pub fn from_rings(rings: Vec<Vec<Point2>>) -> Result<Vec<Profile2d>, SketchError
     let inside: Vec<Vec<usize>> = (0..n)
         .map(|i| {
             (0..n)
-                .filter(|&j| j != i && point_in_ring_2d(rings[i][0], &rings[j]) == RingSide::Inside)
+                .filter(|&j| {
+                    j != i && point_in_ring_2d_rat(lifted[i][0], &lifted[j]) == RingSide::Inside
+                })
                 .collect()
         })
         .collect();
@@ -99,11 +131,11 @@ pub fn from_rings(rings: Vec<Vec<Point2>>) -> Result<Vec<Profile2d>, SketchError
         if depth(i) % 2 != 0 {
             continue; // odd depth: a hole, carried by its parent below
         }
-        let holes: Vec<Vec<Point2>> = (0..n)
+        let holes: Vec<Vec<[Rat; 2]>> = (0..n)
             .filter(|&h| depth(h) % 2 == 1 && parent[h] == Some(i))
-            .map(|h| rings[h].clone())
+            .map(|h| lifted[h].clone())
             .collect();
-        out.push(Profile2d::with_holes(rings[i].clone(), holes));
+        out.push(Profile2d::from_rat_rings(lifted[i].clone(), holes));
     }
     Ok(out)
 }
@@ -248,7 +280,7 @@ mod tests {
     fn a_lone_ring_is_one_profile() {
         let p = from_rings(vec![sq(0.0, 4.0)]).unwrap();
         assert_eq!(p.len(), 1);
-        assert!(p[0].inners().is_empty());
+        assert!(p[0].holes().is_empty());
     }
 
     /// The ring order must not matter: the hole is recognised by containment, not by position.
@@ -260,8 +292,8 @@ mod tests {
         ] {
             let p = from_rings(rings).unwrap();
             assert_eq!(p.len(), 1, "one body");
-            assert_eq!(p[0].inners().len(), 1, "one hole");
-            assert_eq!(p[0].outer().len(), 4);
+            assert_eq!(p[0].holes().len(), 1, "one hole");
+            assert_eq!(p[0].outer().points().len(), 4);
         }
     }
 
@@ -271,10 +303,16 @@ mod tests {
     fn a_ring_inside_a_hole_is_an_island() {
         let p = from_rings(vec![sq(0.0, 9.0), sq(1.0, 8.0), sq(2.0, 7.0)]).unwrap();
         assert_eq!(p.len(), 2, "outer body + island");
-        let outer = p.iter().find(|q| q.outer()[0][0] == 0.0).unwrap();
-        let island = p.iter().find(|q| q.outer()[0][0] == 2.0).unwrap();
-        assert_eq!(outer.inners().len(), 1, "the depth-1 ring is its hole");
-        assert!(island.inners().is_empty(), "nothing inside the island");
+        let outer = p
+            .iter()
+            .find(|q| q.outer().points()[0][0] == Rat::from_int(0))
+            .unwrap();
+        let island = p
+            .iter()
+            .find(|q| q.outer().points()[0][0] == Rat::from_int(2))
+            .unwrap();
+        assert_eq!(outer.holes().len(), 1, "the depth-1 ring is its hole");
+        assert!(island.holes().is_empty(), "nothing inside the island");
     }
 
     /// A hole belongs to the ring it is actually cut from, not to a distant ancestor.
@@ -283,9 +321,12 @@ mod tests {
         // outer(0..9) ⊃ hole(1..8) ⊃ island(2..7) ⊃ island-hole(3..6)
         let p = from_rings(vec![sq(0.0, 9.0), sq(1.0, 8.0), sq(2.0, 7.0), sq(3.0, 6.0)]).unwrap();
         assert_eq!(p.len(), 2);
-        let island = p.iter().find(|q| q.outer()[0][0] == 2.0).unwrap();
-        assert_eq!(island.inners().len(), 1, "the depth-3 ring is the island's");
-        assert_eq!(island.inners()[0][0][0], 3.0);
+        let island = p
+            .iter()
+            .find(|q| q.outer().points()[0][0] == Rat::from_int(2))
+            .unwrap();
+        assert_eq!(island.holes().len(), 1, "the depth-3 ring is the island's");
+        assert_eq!(island.holes()[0].points()[0][0], Rat::from_int(3));
     }
 
     /// Two separate bodies, neither inside the other.
@@ -293,7 +334,7 @@ mod tests {
     fn disjoint_rings_are_separate_bodies() {
         let p = from_rings(vec![sq(0.0, 1.0), sq(5.0, 6.0)]).unwrap();
         assert_eq!(p.len(), 2);
-        assert!(p.iter().all(|q| q.inners().is_empty()));
+        assert!(p.iter().all(|q| q.holes().is_empty()));
     }
 
     #[test]
@@ -334,8 +375,8 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(p.len(), 1);
-        assert_eq!(p[0].outer().len(), 4);
-        assert!(p[0].inners().is_empty());
+        assert_eq!(p[0].outer().points().len(), 4);
+        assert!(p[0].holes().is_empty());
     }
 
     /// Two cycles at once, one inside the other: chaining and nesting compose.
@@ -353,7 +394,7 @@ mod tests {
         edges.extend(ring(1.0, 3.0));
         let p = from_edges(edges).unwrap();
         assert_eq!(p.len(), 1);
-        assert_eq!(p[0].inners().len(), 1);
+        assert_eq!(p[0].holes().len(), 1);
     }
 
     /// A gap is not closed for the author — it is measured and handed back.
@@ -412,6 +453,6 @@ mod tests {
         hole.reverse();
         let p = from_rings(vec![sq(0.0, 4.0), hole]).unwrap();
         assert_eq!(p.len(), 1);
-        assert_eq!(p[0].inners().len(), 1);
+        assert_eq!(p[0].holes().len(), 1);
     }
 }
