@@ -156,7 +156,7 @@ pub struct MotionNode {
   정점을 미리 만들면 같은 점이 아레나에 둘(진술본+위상본), 위상이 재사용하면 «정점 = 세 면의
   교점» 통일이 깨진다.
 - 정점은 술어·validate·배열이 가장 많이 소비하는 타입 — 단일형의 가치가 평면 단일형보다 크다.
-  평면의 두 변종은 "세 점을 `Pt3` 로 달라" 한 함수 안의 `match` 하나다.
+  평면의 두 변종은 판정층 거울(`WorkingPlaneDef`)의 `match` 하나로 흡수된다.
 - 저장 증가·재사용률 질문이 통째로 사라지고, `Known` 은 오늘 동작하는 코드 그대로다.
 
 ### 정점 — interning 하지 않는다
@@ -312,23 +312,69 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 
 ## 판정 (연산 동안만 산다 — nacre-cip)
 
+이름 규칙 셋: ① **`Working*` = 모델 타입의 판정층 쌍둥이이자 표의 뿌리**(수명 = 연산 하나 —
+`Model` 에 `Working…` 이 담기면 읽는 즉시 이상해 보여야 한다). ★ 접두사는 **수명 표식이
+아니라 뿌리 표식**이다 — 부품(`WitnessPoint`·`MoveNode`·캐시들)은 `Working*` 컨테이너 안에
+살며 수명을 상속하므로 접두사를 반복하지 않고, 이름은 역할을 말한다(캐시 타입은 모델 쪽과
+일부러 공유된다 — 반올림 사본임이 타입에 보이도록). ② **거울의 변종 이름은 진실과 같다**
+(`Known`/`Through`). ③ 평면 정의를 이루는 유리수 점은 **증인 점 `WitnessPoint`** 다.
+오늘 코드와의 대응(이행 중 개명): `Pt3` → `WitnessPoint`, `WorkingPoint` → `WorkingVertex`,
+`PlaneGeom`/`FaceInfo` → `WorkingPlane`, `tri_pt3` → `def`, `HpIv` → `HpApprox`
+(스칼라 구간 — 점 실현 묶음은 `HpPointCache`).
+
 ```rust
-/// 판정용 평면 — 정의(점 셋)를 펼쳐 들고 두 실현을 메모한다. 층은 평면 한 곳에만 있다.
+/// 판정용 평면 — `Surface::Plane` 의 쌍둥이. 정의를 펼쳐 들고 두 실현을 메모한다.
 pub struct WorkingPlane {
-    pub points: [Pt3; 3],                     // 정의 — Known 은 그대로 싣는다. ★ Through 의
-                                              // 정점은 유리수 base 가 없는 암시점이라 [Pt3;3]
-                                              // 에 못 실린다 — 동차 정의로 층이 하나 더 필요
-                                              // (차수 ~12, §열린 항목 1 이 그 설계·측정 자리다)
-    pub name: Option<[Rat; 4]>,               // 좁은 이름 — 있으면 지름길
-    pub chain: Rc<[Motion]>,                  // 사슬을 펼친 것
-    pub cache: SurfaceCache,                  // 실현 1 — f64, 항상
+    pub def: WorkingPlaneDef,                 // 정의 — 진실의 두 변종을 그대로 비춘다
+    pub name: Option<PlaneName>,              // 이름 — Narrow 는 Shewchuk, Wide 는 Expansion
+    pub chain: Rc<[MoveNode]>,                // 사슬을 펼친 것. MoveNode = Motion 의 판정층
+                                              // 펼침 — 핸들 숲은 판정층이 못 푸므로 경계에서
+                                              // 핸들을 해소한다(Frame{plane} → PlaneFrame).
+                                              // ★ 평면당 한 번 펼치고, Known 의 증인 점 셋은
+                                              // 이 **같은 Rc 를 복제**해 든다(할당 하나,
+                                              // 포인터 넷 — 두 번 펼치지 않으므로 어긋날 수
+                                              // 없다). 점이 드는 이유: 자기완결 판정
+                                              // (shared_base·realize 는 점만 받는다). 평면이
+                                              // 드는 이유: Through 는 증인 점이 없고, 평면
+                                              // 수준 질문(합성 회전 증명·구조 검사·계수 tol)
+                                              // 이 있다.
+    pub cache: SurfaceCache,                  // 실현 1 — f64 필터, 항상
     hp: Rc<OnceCell<(usize, HpSurfaceCache)>>,// 실현 2 — 고정밀, 필요할 때만
 }
 
-/// 판정용 점 — 세 평면을 가리키기만 한다. 좌표를 만들지 않는다.
-/// 캐시하는 것은 나누지 않은 동차좌표 [X:Y:Z:W] — 나누면 무리수가 되고 오차가 낀다.
-/// 부호 질문은 sign(X − …·W)·sign(W) 처럼 곱셈·뺄셈만으로 답한다 (indirect predicates).
-pub struct WorkingPoint<'a> {
+/// `PlanePoints` 의 쌍둥이 — 변종 이름까지 1:1.
+pub enum WorkingPlaneDef {
+    /// 증인 삼각형 — 유리수 base + 사슬. 오늘의 `tri_pt3` 그대로.
+    Known([WitnessPoint; 3]),
+    /// 정하는 정점 셋 — 각 정점을 **평면 표의 인덱스 셋**으로 지목한다(= `WorkingVertex`
+    /// 의 저장 철자 — 표 안에 저장되므로 자기참조를 피해 인덱스로 적는다. 기계는 한 벌).
+    /// ★ 유리수 닫힘 datum 의 판정은 `name` 의 **Wide 정확 경로가 먼저** 받으므로,
+    /// 이 동차 상승(차수 ~12)은 무리수 모션 datum 의 **최종 심급**이다(§열린 항목 1).
+    Through([[usize; 3]; 3]),
+}
+
+/// 증인 점 — 유리수 base 를 모션 사슬로 나른다. base + chain 이 정의, coord/tol 은
+/// f64 캐시(= `PointCache` 모양), hp 는 고정밀 메모(= 평면의 `HpSurfaceCache` 와 대칭).
+/// 같은 정의는 같은 실현(경로 무관)이다.
+pub struct WitnessPoint {
+    pub base: [Rat; 3],
+    pub chain: Rc<[MoveNode]>,
+    pub coord: [f64; 3],
+    pub tol: [f64; 3],
+    hp: Rc<OnceCell<(usize, HpPointCache)>>,
+}
+
+/// 판정용 정점 — `Vertex { surfaces: [3] }` 의 쌍둥이. 세 평면을 가리키기만 하고
+/// 좌표를 만들지 않는다. 캐시하는 것은 나누지 않은 동차좌표 [X:Y:Z:W] — 나누면 무리수가
+/// 되고 오차가 낀다. 부호 질문은 sign(X − …·W)·sign(W) 처럼 곱셈·뺄셈만으로 답한다
+/// (indirect predicates).
+///
+/// ★ 판정층의 점이 둘(`WitnessPoint`·`WorkingVertex`)인 것은 질문이 둘이기 때문이다 —
+/// «값을 실현해 달라»(정의가 값) vs «좌표 없이 부호만 답해 달라»(정의가 교차).
+/// 메모 규칙도 여기서 갈린다: **메모는 정의에만 붙는다** — `WitnessPoint`·`WorkingPlane` 은
+/// 원천이라 HP 메모를 갖고, `WorkingVertex` 는 파생이라 f64 층만 두고 고정밀은 평면
+/// 메모에서 재계산한다(두 번째 원천을 만들면 어긋날 수 있다).
+pub struct WorkingVertex<'a> {
     pub planes: [&'a WorkingPlane; 3],
     homog: OnceCell<[Approx; 4]>,             // f64 층만 — 고정밀은 평면 메모에서 재계산
 }
@@ -357,8 +403,11 @@ pub enum Decision {
 - 모션이 계수에 하는 일: `Translate` 는 `d' = d − n·t`(유리수면 정확), 축과 나란한 법선은
   `R·n = n`(구조적 검사 가능), 그 밖은 실현에 tol. 진실 쪽에는 오차가 없다 — 오차는 실현할 때
   생기고, 그것이 `tol` 이다.
-- `Through` 평면의 판정은 차수가 오른다(정점 셋이 각각 차수 3 동차좌표 → orient 행렬식 차수
-  ~12) — 정확성 위험이 아니라 비용 위험이고, §열린 항목의 측정 대상이다.
+- `Through` 평면의 판정은 두 갈래다. ★ **유리수 닫힘이면 `Wide` 이름이 곧 정확 계수**라
+  분모 털어 `Expansion` 으로 정확 판정 — interning 이 어차피 만들어 두는 값이라 공짜고,
+  증인 점이 필요 없다. **무리수 모션이 낀 datum 만** 실현 상승 전용이다: 정점을 자기 세 평면의
+  고정밀 실현에서 동차좌표로 만들고 그 위에서 계수를 구간으로 유도한다(차수 ~12) —
+  정확성 위험이 아니라 비용 위험이고, §열린 항목의 측정 대상이다.
 
 ---
 
@@ -369,7 +418,7 @@ pub enum Decision {
 | C1 | 진실은 하나, 나머지는 캐시 | 생산자는 점(또는 정점 핸들)만 진술, 이름·좌표·계수는 전부 유도 |
 | C2 | base case 는 «수» | `PlanePoints::Known` — 모든 사슬이 유리수 세 점에서 끝난다 |
 | C3 | 발견된 좌표는 `Rat` 에 안 들어간다 → 가리킨다 | `PlanePoints::Through` |
-| C4 | 모션 섞인 판정은 f64 필터 + 상승 | `WorkingPoint` 동차좌표 + `Decision` — 기존 규칙 그대로 |
+| C4 | 모션 섞인 판정은 f64 필터 + 상승 | `WorkingVertex` 동차좌표 + `Decision` — 기존 규칙 그대로 |
 | C5 | append-only ⇒ 참조는 과거로만 (DAG) | Through(평면→정점)는 datum 이 정점보다 나중이라 성립; 벽은 값(`Known`)이라 순환 자체가 없다 |
 | C6 | 깊이는 사용자 조작당 1단 | 불리언은 평면을 만들지 않는다 — Frame·Through 재귀가 그래서 유계다 |
 | C7 | 거절은 정직하게, 이름 붙여 | 규칙 5 의 3갈래 |
@@ -419,10 +468,14 @@ pub enum Decision {
 | S2 | **임의정밀 이름** — `PlaneName` 그릇 교체 + `SurfaceKey`. 이름 실패 0.39% → 0, `이름 없음 → 프레임 없음 → f64 폴백` 연쇄의 뿌리 절단 | 없음 |
 | S3 | `Profile2d` 유리수화 + 공선 중간점 정리 패스 | 없음 |
 | S4 | `SketchFrame`·`Motion::Frame` 을 `FramePlacement`(Canonical\|Named) 로 통일 — world 평면 사전 심기 + 정확-유리수-프레임 노드 생략 | 없음 |
-| S5 | datum 평면 연산 + `PlanePoints::Through` (M5) | S2 권장 |
+| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | S2 권장 |
 | S6 | `1′`: `Surface::Plane{points, motion}` 갈아끼우기 — `SurfaceDef`·`surface_points`·`surface_coeffs` 통합, `Inexact` 소멸, `nacre_geom::Plane` 캐시 강등 | S1·S2 |
 | S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로) | S6 |
 | S8 | `Edge` 를 담체+경계로(`{surfaces:[2], vertices:[2]}`) — `Store<Curve>` → `EdgeCache`, 모서리의 `Origin` 도 여기서 소멸 | S6 |
+
+★ 판정층 개명(`Pt3`→`WitnessPoint`·`WorkingPoint`→`WorkingVertex`·`PlaneGeom`→`WorkingPlane`,
+§판정 이름 규칙)은 별도 단계가 아니라 **각 타입을 처음 만지는 단계에 얹는다** — 기계적 개명이라
+관문은 컴파일이다.
 
 ### 관문 규칙
 
@@ -459,8 +512,10 @@ STEP 출력, undo/replay.
 
 ## 열린 항목 — 측정할 것과 알려진 절벽
 
-1. **`Through` 판정 비용** — 차수 ~12 로 f64 필터 폭이 넓어진다. 잴 것: datum 이 낀 불리언의
-   필터 통과율·상승 빈도. 필터가 무력하면 `SurfaceCache` 선실현이 다음 수다.
+1. **`Through` 판정 비용** — 유리수 닫힘 datum 은 `Wide` 이름으로 정확 판정이 서지만
+   `Expansion` 조각 수가 크고, **무리수 모션 datum** 은 동차 상승 전용(차수 ~12)이라 f64 필터
+   폭이 넓어진다. 잴 것: datum 이 낀 불리언의 필터 통과율·상승 빈도·조각 수 분포.
+   필터가 무력하면 `SurfaceCache` 선실현이 다음 수다.
 2. **무리수 모션이 낀 datum 은 이름이 없다** — interning 불가, 동일성은 술어가 매번(규칙 6 의
    한정). 느릴 뿐 틀리지 않는다.
 3. **`from_decimal` 창 밖 치수** — S3 이후 구성 시점 에러가 된다. 기존 스위트에서 몇 건인지
