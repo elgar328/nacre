@@ -672,6 +672,56 @@ pub(crate) fn orient2d_big(a: [Rat; 2], b: [Rat; 2], c: [Rat; 2]) -> i8 {
     }
 }
 
+/// **The sign of a plane's residual at a rational point** — `sign(a·x + b·y + c·z + d)` for the
+/// plane a [`PlaneName`] names. `0` means the point lies exactly on the plane.
+///
+/// ★ **Total**, like [`orient2d_rat`] and for the same reason: this is what a *validating
+/// constructor* consumes (is a caller's stated sketch origin on the plane they picked?), and a
+/// check that failed open on overflow would accept an off-plane origin — silent-wrong. The `Rat`
+/// route runs first; an overflow, or a `Wide` name, falls through to integer arithmetic that
+/// cannot overflow.
+///
+/// The sign convention is the name's own: which side is positive depends on how the canonical
+/// coefficients came out, so callers should compare against `0`, not against each other across
+/// planes.
+pub fn plane_residual_sign(name: &PlaneName, p: [Rat; 3]) -> i8 {
+    match name {
+        PlaneName::Narrow(c) => {
+            let narrow = || -> Option<i8> {
+                let mut acc = c[3];
+                for k in 0..3 {
+                    acc = acc.checked_add(c[k].checked_mul(p[k])?)?;
+                }
+                Some(rat_sign(acc))
+            };
+            narrow().unwrap_or_else(|| {
+                // A canonical narrow name is a primitive integer vector (the invariant
+                // `plane_name_exact` normalizes to), so `numer()` is the value.
+                debug_assert!(c.iter().all(|r| r.denom() == 1));
+                residual_sign_big(&c.map(|x| num_bigint::BigInt::from(x.numer())), p)
+            })
+        }
+        PlaneName::Wide(c) => residual_sign_big(c, p),
+    }
+}
+
+/// [`plane_residual_sign`]'s unbounded arm — integer coefficients (which both name forms reduce
+/// to), a rational point. Clearing the point's denominators multiplies the residual by a
+/// positive factor, which cannot move the sign.
+fn residual_sign_big(ci: &[num_bigint::BigInt; 4], p: [Rat; 3]) -> i8 {
+    use num_bigint::{BigInt, Sign};
+    use num_integer::Integer;
+    let den = p.map(|r| BigInt::from(r.denom()));
+    let l = den.iter().fold(BigInt::from(1), |acc, x| acc.lcm(x));
+    let num: [BigInt; 3] = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&l / &den[i]));
+    let res: BigInt = (0..3).map(|i| &ci[i] * &num[i]).sum::<BigInt>() + &ci[3] * &l;
+    match res.sign() {
+        Sign::Minus => -1,
+        Sign::NoSign => 0,
+        Sign::Plus => 1,
+    }
+}
+
 /// **The world origin projected onto a rational plane** — `p = (−d / n·n) · n` for
 /// `a·x + b·y + c·z + d = 0`.
 ///
@@ -2544,6 +2594,75 @@ mod tests {
         let far = [r(2, d), r(2, d)];
         let near = [r(1, d + 1), r(1, d + 1)];
         assert_eq!(orient2d_rat(o, near, far), 0, "one ray, three points");
+    }
+
+    proptest! {
+        /// **The residual's two arms must be the same function** — `plane_residual_sign` runs the
+        /// `Rat` substitution first, so wherever it answers the `BigInt` arm is never consulted
+        /// (the `orient2d` arrangement, one dimension up).
+        #[test]
+        fn the_big_residual_answers_what_the_narrow_one_does(
+            // Small enough that the canonical name always fits i128 (the lifted integers stay
+            // near 2^40 and the derivation's peak near 2^122), so `narrow()` below cannot shrug.
+            xs in prop::array::uniform9(-(1i64 << 10)..(1i64 << 10)),
+            ds in prop::array::uniform9(1i64..(1i64 << 10)),
+        ) {
+            let r = |i: usize| Rat::new(xs[i] as i128, ds[i] as i128).unwrap();
+            let (a, b, c) = ([r(0), r(1), r(2)], [r(3), r(4), r(5)], [r(6), r(7), r(8)]);
+            if let Some(name) = plane_name_exact(a, b, c) {
+                let coeffs = name.narrow().expect("small operands stay narrow");
+                let ci = coeffs.map(|x| num_bigint::BigInt::from(x.numer()));
+                // The naming points themselves: both arms must call them on-plane...
+                for p in [a, b, c] {
+                    prop_assert_eq!(plane_residual_sign(&name, p), 0);
+                    prop_assert_eq!(residual_sign_big(&ci, p), 0);
+                }
+                // ...and an off-plane probe (a naming point pushed along the normal) must get
+                // the same nonzero sign from both.
+                let n = [coeffs[0], coeffs[1], coeffs[2]];
+                if let Some(q) = (|| -> Option<[Rat; 3]> {
+                    Some([
+                        a[0].checked_add(n[0])?,
+                        a[1].checked_add(n[1])?,
+                        a[2].checked_add(n[2])?,
+                    ])
+                })() {
+                    let s = plane_residual_sign(&name, q);
+                    prop_assert_eq!(s, 1, "n·n > 0: the push is to the positive side");
+                    prop_assert_eq!(residual_sign_big(&ci, q), s);
+                }
+            }
+        }
+    }
+
+    /// ★★ **A `Wide` name still judges its point** — the population `plane_residual_sign` exists
+    /// for. Same fixture as `a_plane_too_wide_for_i128_is_named_wide`: canonical coefficients
+    /// past `i128`, no `Rat` route to fall back on.
+    #[test]
+    fn a_residual_against_a_wide_name_still_gets_its_sign() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let big1 = (1i128 << 90) + 1;
+        let big2 = (1i128 << 90) + 3;
+        let a = [r(big1, 3), r(big2, 7), r(0, 1)];
+        let b = [r(-big2, 5), r(big1, 11), r(0, 1)];
+        let c = [r(1, 13), r(1, 17), r(1, 19)];
+        let name = plane_name_exact(a, b, c).expect("a genuine plane");
+        assert!(name.narrow().is_none(), "the fixture must actually be Wide");
+        for p in [a, b, c] {
+            assert_eq!(plane_residual_sign(&name, p), 0, "a naming point is on it");
+        }
+        // A point off the plane along ±z (the naming triangle is not vertical: a and b span
+        // z = 0 and c leaves it, so the normal has a z-component): opposite pushes must get
+        // opposite, nonzero signs.
+        let one = Rat::from_int(1);
+        let up = [c[0], c[1], c[2].checked_add(one).unwrap()];
+        let down = [c[0], c[1], c[2].checked_sub(one).unwrap()];
+        let (su, sd) = (
+            plane_residual_sign(&name, up),
+            plane_residual_sign(&name, down),
+        );
+        assert_ne!(su, 0);
+        assert_eq!(su, -sd, "opposite sides, opposite signs");
     }
 
     /// The core rational-representation property in miniature: exact rational accumulation does not

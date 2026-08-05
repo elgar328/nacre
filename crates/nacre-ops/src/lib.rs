@@ -31,8 +31,8 @@ pub use boolean::{BoolReport, boolean, boolean_with_report};
 pub use nacre_cip::Decision;
 pub use nacre_cip::predicate::{Evidence, Site};
 pub use ops::{
-    BoolKind, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing, Ring2d, SketchPlane,
-    apply, face_plane, replay,
+    BoolKind, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing, Ring2d, SketchFrame,
+    SketchPlane, apply, face_plane, face_sketch_frame, replay,
 };
 pub use sketch::{Curve2d, Edge2d, SketchError, from_edges, from_rings};
 

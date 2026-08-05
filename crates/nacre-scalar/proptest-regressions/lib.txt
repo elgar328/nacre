@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 2f9413e8d2aa2be431dfc7b6d662225fe62caefdc4e33db1c45022a8e503efd6 # shrinks to xs = [-100832, 44920, 1034573, 617, 182385, -1, -27489, -176817, -2762], ds = [705853, 697320, 216150, 135294, 386127, 22374, 490934, 679379, 729025]
+cc 15637b086e19b9068d4c2de6cf40a1282791b0b59a749553d8e7623614810ad5 # shrinks to xs = [0, 1, -1, -1, -1, 25, -300235, 15710, 3007], ds = [1, 566411, 109213, 898129, 500137, 464831, 1, 9573, 179896]

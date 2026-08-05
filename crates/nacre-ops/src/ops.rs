@@ -449,6 +449,17 @@ pub enum OpError {
     /// points, could not survive a motion, and is the population `Inexact` grew from — a named
     /// reject is the honest answer (S6b).
     PlaneWithoutExactForm,
+    /// A [`SketchFrame::named`] coordinate (origin or `ref_dir`) outside the decimal window
+    /// (`Rat::from_decimal`), so the frame claim has no exact statement to check. The frame
+    /// sibling of [`OpError::ProfileOutsideDecimalWindow`] and [`OpError::DistOutsideDecimalWindow`].
+    FrameOutsideDecimalWindow,
+    /// A [`SketchFrame::named`] origin whose exact residual against the plane's name is nonzero —
+    /// the stated sketch origin does not lie on the stated plane. Rejected at construction:
+    /// silently projecting it (or falling back to `Canonical`) would move the caller's sketch.
+    OriginNotOnPlane,
+    /// A [`SketchFrame::named`] `ref_dir` whose projection into the plane vanishes (parallel to
+    /// the normal, or zero), so it names no `+u` direction.
+    RefDirParallelToNormal,
     /// A curve/surface construction collapsed (collinear/coincident points, a
     /// zero-length profile edge).
     DegenerateGeometry,
@@ -1124,15 +1135,110 @@ fn sweep_ring(
 /// A planar face's live solid, its in-plane right-handed frame (`x × y = n`, centred on the face
 /// centroid so a profile's `(0,0)` lands there), and its loops — the shared setup for placing a
 /// profile on a face (pad / pocket).
-/// **Which frame a face's sketch lives in** — the plane, its [`nacre_topo::FramePlacement`]
-/// (a face has no caller to name one, so it is always `Canonical` today), and whether the
-/// plane's canonical coefficients need negating to face the way the face does. Everything a
-/// [`nacre_topo::Motion::Frame`] node needs, before the model has one.
-#[derive(Clone, Copy, Debug)]
-struct SketchFrame {
+/// **Which frame a sketch lives in** — the plane (a handle: one statement of the plane, shared
+/// with every face on it), its [`nacre_topo::FramePlacement`], and whether the plane's canonical
+/// coefficients need negating to face the way the sketch does. Everything a
+/// [`nacre_topo::Motion::Frame`] node needs, before the model has one (S9).
+///
+/// ★★ **The fields are private and the constructors validate** — the reason this type is not a
+/// plain record. A `Named` placement is a *claim*: "this origin lies on that plane, this
+/// direction crosses its normal". [`SketchFrame::named`] checks the claim exactly, at
+/// construction, and rejects by name — silently substituting `Canonical` would move a caller's
+/// sketch and answer a question they did not ask (`docs/truth-and-cache.md`'s rule). A public
+/// field would let a literal walk around the check.
+///
+/// ★ **`flip` is not the caller's to state** — the canonical coefficients carry no direction, so
+/// which way `ŵ` must face is a fact about the *use* (a sweep's sense, a face's outward normal),
+/// measured by the consuming operation against the realized basis. Constructors set `false`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SketchFrame {
     plane: Handle<Surface>,
     placement: nacre_topo::FramePlacement,
     flip: bool,
+}
+
+impl SketchFrame {
+    /// The frame nobody named: origin at the world origin's projection, axes by the
+    /// arbitrary-axis convention — derived from the plane when the chain is flattened, stored
+    /// nowhere. No claim is made, so there is nothing to validate.
+    pub fn canonical(plane: Handle<Surface>) -> SketchFrame {
+        SketchFrame {
+            plane,
+            placement: nacre_topo::FramePlacement::Canonical,
+            flip: false,
+        }
+    }
+
+    /// A frame whose origin and `+u` direction the caller states — validated **now**, against
+    /// the plane's exact name, so a bad claim is a named reject at the door rather than a sketch
+    /// somewhere else:
+    ///
+    /// * [`OpError::FrameOutsideDecimalWindow`] — a coordinate of `origin`/`ref_dir` has no
+    ///   decimal truth (`Rat::from_decimal` — `~1e38` above, `~1e-22` below for a full-width
+    ///   value); the claim cannot even be stated exactly.
+    /// * [`OpError::PlaneWithoutExactForm`] — the plane carries no name (a test-only
+    ///   unregistered surface): the same proposition as everywhere this error fires, "there is
+    ///   no exact statement to check against".
+    /// * [`OpError::OriginNotOnPlane`] — the stated origin's residual against the plane's name
+    ///   is nonzero. Exact, total ([`nacre_scalar::plane_residual_sign`]): a `Wide` name checks
+    ///   through arbitrary precision, never a shrug.
+    /// * [`OpError::RefDirParallelToNormal`] — `ref_dir`'s projection into the plane vanishes
+    ///   (parallel to the normal, or zero), so it picks no `+u`.
+    ///
+    /// `ref_dir` need not lie in the plane — its in-plane part is what names `+u` (projected
+    /// exactly where the frame is built). It need not be unit either; only its direction speaks.
+    pub fn named(
+        model: &Model,
+        plane: Handle<Surface>,
+        origin: Point3,
+        ref_dir: Vector3,
+    ) -> Result<SketchFrame, OpError> {
+        let lift = |v: [f64; 3]| -> Result<[nacre_scalar::Rat; 3], OpError> {
+            let mut out = [nacre_scalar::Rat::from_int(0); 3];
+            for (o, c) in out.iter_mut().zip(v) {
+                *o =
+                    nacre_scalar::Rat::from_decimal(c).ok_or(OpError::FrameOutsideDecimalWindow)?;
+            }
+            Ok(out)
+        };
+        let (origin, ref_dir) = (lift(origin.as_array())?, lift(ref_dir.as_array())?);
+        let name = model
+            .surface_name
+            .get(&plane)
+            .ok_or(OpError::PlaneWithoutExactForm)?;
+        if nacre_scalar::plane_residual_sign(name, origin) != 0 {
+            return Err(OpError::OriginNotOnPlane);
+        }
+        // The existing frame machinery is the judge — `WideFrame::named_of` is total in width
+        // (arbitrary precision), so its only `None` is the projected `u_raw` vanishing: exactly
+        // the parallel-or-zero claim this constructor rejects. (The narrow `plane_frame_named`
+        // is not consulted here: its `None` can mean `i128` overflow, which is a width fact,
+        // not a defect in the claim.)
+        if nacre_cip::WideFrame::named_of(name, &origin, &ref_dir, false).is_none() {
+            return Err(OpError::RefDirParallelToNormal);
+        }
+        Ok(SketchFrame {
+            plane,
+            placement: nacre_topo::FramePlacement::Named { origin, ref_dir },
+            flip: false,
+        })
+    }
+
+    /// The plane this frame sketches on — one handle, shared with every face on that plane.
+    pub fn plane(&self) -> Handle<Surface> {
+        self.plane
+    }
+
+    /// Where the frame's origin and `+u` come from: `Canonical` (derived) or `Named` (stated).
+    pub fn placement(&self) -> &nacre_topo::FramePlacement {
+        &self.placement
+    }
+
+    /// Whether the plane's canonical coefficients are negated to face the way the sketch does —
+    /// measured by the consuming operation, `false` as constructed.
+    pub fn flip(&self) -> bool {
+        self.flip
+    }
 }
 
 struct FaceFrame {
@@ -1211,6 +1317,42 @@ pub(crate) fn frame_axes(n: Vector3) -> Option<(Vector3, Vector3)> {
 pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpError> {
     let f = face_frame(model, face)?;
     Ok(realized_plane(f.origin, f.x, f.y))
+}
+
+/// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and
+/// measured flip that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in. Where
+/// [`face_plane`] projects that frame to realized f64 axes for a caller to *look at*, this is
+/// the exact vocabulary itself (S9): the same value `face_frame` builds internally, no longer
+/// thrown away at the boundary.
+///
+/// A face has no caller to name a placement, so it is always `Canonical`. For a face whose world
+/// axes lift exactly (axis-aligned), the operation *elides* the frame node — the canonical frame
+/// of the plane realizes to those same world axes, so the frame returned here is the same frame
+/// by the node-omission normalization, not a second opinion.
+///
+/// Errors as [`face_plane`]: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when
+/// the plane carries no name to derive a frame from (a test-only unregistered surface).
+pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFrame, OpError> {
+    let f = face_frame(model, face)?;
+    if let Some(sf) = f.sketch_frame {
+        return Ok(sf);
+    }
+    // The world-liftable population: `face_frame` skipped the derivation because the operation
+    // will not build a node. The frame is still well-defined — measure `flip` the same way the
+    // tilted branch does, against the face's outward normal.
+    let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(
+        model,
+        f.surface_h,
+        &nacre_topo::FramePlacement::Canonical,
+        false,
+    )
+    .ok_or(OpError::PlaneWithoutExactForm)?;
+    let flip = (0..3).map(|k| w[k] * f.n.as_array()[k]).sum::<f64>() < 0.0;
+    Ok(SketchFrame {
+        plane: f.surface_h,
+        placement: nacre_topo::FramePlacement::Canonical,
+        flip,
+    })
 }
 
 /// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,

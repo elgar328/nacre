@@ -226,8 +226,10 @@ impl WideFrame {
         let uu = dot2(&u_raw, &u_raw);
         let vv = &nn * &uu;
         // The caller's origin, over one common denominator. `d` is unused beyond the plane's
-        // identity — the origin is stated, not derived, and its on-plane invariant was checked
-        // where the pair was constructed (`PlaneDef`).
+        // identity — the origin is stated, not derived, and its on-plane invariant is checked
+        // where the claim is made: `SketchFrame::named` rejects an off-plane origin by exact
+        // residual (`plane_residual_sign`) before any frame is built, and `PlaneDef` holds it
+        // structurally (`origin = points[0]`).
         let _ = d;
         let (origin_num, origin_den) = lift(origin);
         Some(WideFrame {
