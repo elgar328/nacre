@@ -81,7 +81,7 @@ pub(crate) fn collect_planes(
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
-            let plane = match model.surfaces.get(face.surface) {
+            let plane = match model.surface(face.surface) {
                 Surface::Plane(p) => *p,
                 Surface::Cylinder(_) => return Err(reject(RejectReason::CylinderFace)),
             };

@@ -319,7 +319,7 @@ pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
         {
             continue;
         }
-        let Surface::Plane(plane) = model.surfaces.get(face.surface) else {
+        let Surface::Plane(plane) = model.surface(face.surface) else {
             continue;
         };
         let sign = match face.orientation {

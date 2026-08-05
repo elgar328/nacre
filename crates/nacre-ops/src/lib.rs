@@ -800,7 +800,7 @@ pub mod tests {
         let shell = m.solids.get(solid).outer;
         m.shells.get(shell).faces.iter().any(|&fh| {
             let f = m.faces.get(fh);
-            let Surface::Plane(plane) = m.surfaces.get(f.surface) else {
+            let Surface::Plane(plane) = m.surface(f.surface) else {
                 return false;
             };
             let sign = match f.orientation {
@@ -2669,7 +2669,7 @@ pub mod tests {
         // Shared handle (was a fresh push before overhaul #3).
         assert_eq!(cap.surface, sf, "base cap reuses the shared surface handle");
         // Orientation reconciled: materialized outward normal is −sweep (−z).
-        let Surface::Plane(p) = m.surfaces.get(cap.surface) else {
+        let Surface::Plane(p) = m.surface(cap.surface) else {
             unreachable!()
         };
         let sign = match cap.orientation {
@@ -3764,7 +3764,7 @@ pub mod tests {
         let mut axes = Vec::new();
         let mut cur = Some(rotation);
         while let Some(h) = cur {
-            let n = m.motions.get(h);
+            let n = m.motion(h);
             if let nacre_topo::Motion::Rotate { axis, .. } = n.motion {
                 axes.push(axis);
             }
@@ -4904,7 +4904,7 @@ pub mod tests {
                         "the two records of one vertex's planes disagree"
                     );
                 }
-                let coeffs = planes.map(|s| match m.surfaces.get(s) {
+                let coeffs = planes.map(|s| match m.surface(s) {
                     nacre_geom::Surface::Plane(p) => p.coefficients(),
                     nacre_geom::Surface::Cylinder(_) => panic!("ThreePlane named a cylinder"),
                 });
@@ -4980,7 +4980,7 @@ pub mod tests {
         let Some(VertexDef::ThreePlane(mut planes)) = m.vertices.get(corner).definition else {
             panic!("a constructed corner has a definition")
         };
-        let good = solve_three_planes(planes.map(|h| match m.surfaces.get(h) {
+        let good = solve_three_planes(planes.map(|h| match m.surface(h) {
             nacre_geom::Surface::Plane(p) => p.coefficients(),
             nacre_geom::Surface::Cylinder(_) => unreachable!(),
         }))
@@ -4992,7 +4992,7 @@ pub mod tests {
             .find(|h| !planes.contains(h))
             .expect("a fourth face");
         planes[0] = other;
-        let bad = solve_three_planes(planes.map(|h| match m.surfaces.get(h) {
+        let bad = solve_three_planes(planes.map(|h| match m.surface(h) {
             nacre_geom::Surface::Plane(p) => p.coefficients(),
             nacre_geom::Surface::Cylinder(_) => unreachable!(),
         }));

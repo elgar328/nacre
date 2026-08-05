@@ -6559,3 +6559,31 @@ docs/truth-and-cache.md 의 "surface_points" 언급 횟수 :  0
 **대장이 비트 동일인데 아무것도 보증하지 않는 경우**. 그 절을 새로 넣었다(8b), 그리고
 *"어느 population 인지는 추측하지 말고 계측이 이름을 대게 하라"* 를 함께 적었다
 (이번에 그 부류를 짚는 데 두 번 헛나갔다).
+
+## S1 — surface·motion 스토어 봉인: 기록 없는 surface 가 크레이트 밖에서 표현 불가 (2026-08-05)
+
+`docs/truth-and-cache.md` 이행 첫 항목. `Model.surfaces`·`motions`·`motion_ids`·`surface_ids`
+필드 비공개화 + 좁은 읽기 접근자 셋(`surface(h)`·`surface_count()`·`motion(h)`).
+
+**착수 전 실측이 범위를 정했다:**
+
+```
+직접 surfaces.push        프로덕션 0곳  (유일한 외부 raw push = validate 의 위반 픽스처 1곳)
+곁표 4개의 외부 쓰기        0곳          (“push_surface 만 쓴다” 는 문서 주장의 실측 확인)
+외부 읽기                 ~40곳         전부 get/len — 전량 순회 0곳
+자매 리포 필드 접근         0곳
+```
+
+| 결정 | 근거 |
+|---|---|
+| ★ `&Store` getter 기각 → **좁은 접근자** | `iter()` 노출은 아레나 **전량 순회**(superseded 포함 — "live 도달분만" 규율 위반)를 초대한다. 순회 소비자가 0인 지금이 막을 시점 |
+| `push_surface` 는 pub 유지 | 항상 def 를 기록하는 정직한 입구 — 봉인 목표를 훼손하지 않는다 |
+| 곁표 3개(defs/points/coeffs)는 보류 | 외부 **쓰기** 0 실측, S6 이 변종 안으로 흡수하며 사라질 층 |
+| `curves` 는 제외 | ops 가 프로덕션에서 정당하게 직접 push — 그 정리는 S8 의 몫 |
+
+**잠금 둘:** `compile_fail,E0616` doctest(외부 raw push 가 privacy 위반으로 컴파일 불가 —
+코드 고정은 nightly 에서 검사되고 stable 에선 일반 compile_fail 로 동작), 그리고 validate 의
+`UndefinedSurface` 픽스처는 기존 `test-util` 패턴의 `push_surface_unrecorded` 로 이전
+(전부 dev-dependencies 에서만 켜짐 — 전수 확인).
+
+스위트 749/749 그린(수치 무접촉 — 좌표를 건드리지 않는 가시성 리팩터).

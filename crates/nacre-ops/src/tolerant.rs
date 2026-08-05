@@ -1069,7 +1069,7 @@ mod tests {
                 let Some(n_out) = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize() else {
                     return false;
                 };
-                let nacre_geom::Surface::Plane(pl) = m.surfaces.get(face.surface) else {
+                let nacre_geom::Surface::Plane(pl) = m.surface(face.surface) else {
                     return false;
                 };
                 pl.normal().dot(n_out).abs() <= 0.5
@@ -1340,9 +1340,9 @@ mod tests {
             );
             m.rebuild_adjacency();
             let vol_before = nacre_props::mass_props(&m, s).unwrap().volume;
-            let before = m.surfaces.len();
+            let before = m.surface_count();
             let out = crate::boolean(&mut m, BoolKind::Cut, s, tool);
-            let after = m.surfaces.len();
+            let after = m.surface_count();
             let bodies = out.unwrap_or_else(|e| panic!("{name}: the cut must solve, got {e:?}"));
             assert_eq!(
                 after,

@@ -250,12 +250,13 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     }
 
     for (fh, face) in m.faces.iter() {
-        if !in_bounds(face.surface, &m.surfaces) {
+        // The surfaces store is private (S1) — bounds-check against its count.
+        if face.surface.index() as usize >= m.surface_count() {
             out.push(Violation::DanglingReference {
                 kind: RefKind::FaceSurface,
                 owner_index: fh.index(),
                 target_index: face.surface.index(),
-                target_len: m.surfaces.len() as u32,
+                target_len: m.surface_count() as u32,
             });
         }
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
@@ -303,12 +304,12 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
         if let Origin::Discovered { definition, .. } = vertex.origin {
             let VertexDef::ThreePlane(surfaces) = definition;
             for s in surfaces {
-                if !in_bounds(s, &m.surfaces) {
+                if s.index() as usize >= m.surface_count() {
                     out.push(Violation::DanglingReference {
                         kind: RefKind::VertexDefSurface,
                         owner_index: vh.index(),
                         target_index: s.index(),
-                        target_len: m.surfaces.len() as u32,
+                        target_len: m.surface_count() as u32,
                     });
                 }
             }
@@ -475,7 +476,7 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     let mut flux = 0.0;
     for &fh in faces {
         let face = m.faces.get(fh);
-        let Surface::Plane(plane) = m.surfaces.get(face.surface) else {
+        let Surface::Plane(plane) = m.surface(face.surface) else {
             return None;
         };
         let sign = match face.orientation {
@@ -584,7 +585,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         if !reach.faces.contains(&fh) {
             continue;
         }
-        let surface = m.surfaces.get(face.surface);
+        let surface = m.surface(face.surface);
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
                 if let Some([a, b]) = m.edges.get(he.edge).bounds {
@@ -626,7 +627,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         } = vertex.origin
         {
             for sh in surfaces {
-                let residual = m.surfaces.get(sh).distance(vertex.point);
+                let residual = m.surface(sh).distance(vertex.point);
                 if residual > tol {
                     out.push(Violation::VertexOffDefinition {
                         vertex: vh,
@@ -1208,11 +1209,11 @@ mod tests {
             .faces
             .clone();
         let old = m.faces.get(faces[0]).clone();
-        let plane = match m.surfaces.get(old.surface) {
+        let plane = match m.surface(old.surface) {
             Surface::Plane(p) => *p,
             Surface::Cylinder(_) => unreachable!("a cuboid has no cylinder"),
         };
-        let raw = m.surfaces.push(Surface::Plane(plane));
+        let raw = m.push_surface_unrecorded(Surface::Plane(plane));
         faces[0] = m.faces.push(Face {
             surface: raw,
             ..old

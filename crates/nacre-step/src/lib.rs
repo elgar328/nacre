@@ -126,7 +126,7 @@ fn build_shell_faces(
 
         // Surface → step-io SurfaceInput. Exhaustive match: future variants
         // (sphere, NURBS) must be handled here (else compile error).
-        let surface = match model.surfaces.get(face.surface) {
+        let surface = match model.surface(face.surface) {
             // ref_dir is cosmetic for a bounded planar face — any perpendicular.
             Surface::Plane(p) => SurfaceInput::Plane(frame(
                 p.origin(),

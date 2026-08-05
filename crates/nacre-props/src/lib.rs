@@ -127,7 +127,7 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
         Orientation::Forward => 1.0,
         Orientation::Reversed => -1.0,
     };
-    match model.surfaces.get(face.surface) {
+    match model.surface(face.surface) {
         Surface::Plane(plane) => {
             let (area, centroid) = planar_region(model, face)?;
             Ok(FaceProps {
@@ -251,7 +251,7 @@ fn face_contribution(
         Orientation::Forward => 1.0,
         Orientation::Reversed => -1.0,
     };
-    match model.surfaces.get(face.surface) {
+    match model.surface(face.surface) {
         Surface::Plane(plane) => {
             // Outer boundary, minus each inner loop (a hole): area and first
             // moment are additive, so both the area and the flux subtract the

@@ -76,7 +76,7 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
     let mut chain = Vec::new();
     let mut cur = Some(leaf);
     while let Some(h) = cur {
-        let n: &MotionNode = model.motions.get(h);
+        let n: &MotionNode = model.motion(h);
         match n.motion {
             Motion::Rotate { axis, point, angle } => {
                 chain.push(MoveNode::Rotate { axis, angle, point })

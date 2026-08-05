@@ -93,7 +93,7 @@ pub fn to_obj(model: &Model) -> Result<String, TessError> {
         if !reach.faces.contains(&fh) {
             continue;
         }
-        if !matches!(model.surfaces.get(face.surface), Surface::Plane(_)) {
+        if !matches!(model.surface(face.surface), Surface::Plane(_)) {
             return Err(TessError::NonPlanarFace);
         }
         let outer = ring(model, &face.outer);
@@ -217,7 +217,7 @@ pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessE
         if !reach.faces.contains(&fh) {
             continue;
         }
-        match model.surfaces.get(face.surface) {
+        match model.surface(face.surface) {
             Surface::Plane(_) => triangulate_planar(&mut t, fh, face)?,
             Surface::Cylinder(cyl) => triangulate_cylinder(&mut t, model, fh, face, cyl),
         }

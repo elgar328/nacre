@@ -80,7 +80,7 @@ pub fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3
     let shell = m.solids.get(solid).outer;
     m.shells.get(shell).faces.iter().any(|&fh| {
         let f = m.faces.get(fh);
-        let Surface::Plane(plane) = m.surfaces.get(f.surface) else {
+        let Surface::Plane(plane) = m.surface(f.surface) else {
             return false;
         };
         let sign = match f.orientation {

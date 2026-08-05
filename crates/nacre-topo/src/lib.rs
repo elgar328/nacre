@@ -229,16 +229,22 @@ impl Orientation {
 #[derive(Debug, Default)]
 pub struct Model {
     // exact geometry (truth)
-    pub surfaces: Store<Surface>,
+    /// ★ Private (stage S1, `docs/truth-and-cache.md`): a surface can only enter through
+    /// [`Model::push_surface`]/[`Model::push_surface_with_points`], which record its provenance —
+    /// a surface **without** a record is unrepresentable from outside this crate. Read through
+    /// [`Model::surface`]/[`Model::surface_count`]; there is deliberately no whole-store
+    /// iterator (the arena keeps superseded surfaces — consumers walk the live faces).
+    surfaces: Store<Surface>,
     pub curves: Store<Curve>,
     /// The motion-history forest (§CIP ⑦): motion definitions named by `Origin::Moved` vertices
     /// and `SurfaceDef::Moved` surfaces. Not geometry — a definition store.
     ///
-    /// **Interned** — see [`Model::push_motion`]; write through it, never through `Store::push`.
-    pub motions: Store<MotionNode>,
+    /// **Interned** — private (S1), so writing through [`Model::push_motion`] is enforced by the
+    /// type, not by discipline. Read through [`Model::motion`].
+    motions: Store<MotionNode>,
     /// Interning table for [`Model::push_motion`]: the handle already issued for a given
     /// `(motion, parent)`. Not iterated (a `HashMap`'s order must never reach a result).
-    pub motion_ids: HashMap<MotionNode, Handle<MotionNode>>,
+    motion_ids: HashMap<MotionNode, Handle<MotionNode>>,
     /// Each surface's provenance, keyed by handle. Not geometry — the twin of the vertex
     /// `Origin`, kept beside the store because [`Surface`] is a `nacre-geom` type and cannot
     /// name a `Handle<MotionNode>`. Written only by [`Model::push_surface`].
@@ -303,7 +309,7 @@ pub struct Model {
     /// witness is already how this works — `collect_planes` says the witness "was captured from
     /// whichever face first reached this surface" and winds it to *each* face's own outward
     /// normal — so it is not part of what makes two planes the same.
-    pub surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
+    surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,
     pub edges: Store<Edge>,
@@ -424,12 +430,51 @@ impl Model {
     }
 
     /// Push a surface **and state its provenance** ([`SurfaceDef`]) — the blessed way to add
-    /// one. Pushing into `surfaces` directly leaves the surface undefined, which
-    /// `nacre-validate` reports for any face that lands on it.
+    /// one. The store is private (S1), so a surface with no record cannot be made from outside
+    /// this crate; within it, pushing into `surfaces` directly leaves the surface undefined,
+    /// which `nacre-validate` reports for any face that lands on it.
     pub fn push_surface(&mut self, surface: Surface, def: SurfaceDef) -> Handle<Surface> {
         let h = self.surfaces.push(surface);
         self.surface_defs.insert(h, def);
         h
+    }
+
+    /// The surface a handle names.
+    ///
+    /// Reading is open; **writing is not** — the store is private (S1), so a surface can only
+    /// enter through [`Model::push_surface`]/[`Model::push_surface_with_points`], which record
+    /// its provenance. The lock:
+    ///
+    /// ```compile_fail,E0616
+    /// let m = nacre_topo::Model::new();
+    /// let _ = m.surfaces.len(); // private field — read through `surface`/`surface_count`
+    /// ```
+    #[inline]
+    pub fn surface(&self, h: Handle<Surface>) -> &Surface {
+        self.surfaces.get(h)
+    }
+
+    /// How many surfaces the arena holds — live and superseded alike. Handle-validity checks
+    /// and the `a_boolean_mints_no_surface` lock read this; nothing iterates the store
+    /// (superseded surfaces are still in it — consumers walk the live faces).
+    #[inline]
+    pub fn surface_count(&self) -> usize {
+        self.surfaces.len()
+    }
+
+    /// The motion node a handle names. Same seal as [`Model::surface`]: writing goes through
+    /// [`Model::push_motion`] (interned), reading through here.
+    #[inline]
+    pub fn motion(&self, h: Handle<MotionNode>) -> &MotionNode {
+        self.motions.get(h)
+    }
+
+    /// Push a surface with **no** def/points record — the exact state [`Model::push_surface`]
+    /// exists to prevent. Test-only: lets `nacre-validate` build the `UndefinedSurface`
+    /// violation fixture.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn push_surface_unrecorded(&mut self, surface: Surface) -> Handle<Surface> {
+        self.surfaces.push(surface)
     }
 
     /// [`Model::push_surface`], also recording the surface's exact rational description when the

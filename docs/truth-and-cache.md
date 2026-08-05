@@ -270,7 +270,9 @@ pub type SurfaceKey = (PlaneName, Option<Handle<MotionNode>>);
 ```rust
 pub struct Model {
     // 진실 — append-only
-    surfaces: Store<Surface>,                 // ★ 비공개(S1) — push 는 생성자 경유만. 읽기는 getter
+    surfaces: Store<Surface>,                 // ★ 비공개(S1 ✔) — push 는 생성자 경유만, 읽기는
+                                              //   좁은 접근자(surface/surface_count/motion —
+                                              //   전량 순회 없음: 아레나엔 superseded 도 있다)
     pub vertices: Store<Vertex>,
     pub edges:    Store<Edge>,
     pub motions:  Store<MotionNode>,          // interned
@@ -459,17 +461,17 @@ pub enum Decision {
 | 2 | `Motion::Frame` — 기울어진 면 위 스케치가 그 평면 자신의 프레임에서 | ✔ 2026-08-03 |
 | 1″ | 평면의 진실을 점 셋으로 (계수는 유도된 이름으로 강등) | ✔ 2026-08-04 |
 | 3b | 좌표 재생 — 재보고 보류: 공유 프레임 풀이 + 모션 재생 = 비트 동일(8/8)로 목적지와 `Pt3` 재생의 무충돌만 확인해 둠 | ⏸ |
+| S1 | `Store<Surface>`·`Store<MotionNode>` 봉인 — 좁은 접근자(`surface`/`surface_count`/`motion`) + `compile_fail,E0616` 잠금. 기록 없는 surface 는 크레이트 밖에서 표현 불가(테스트 전용 입구 `push_surface_unrecorded` 만 예외, `test-util` 게이트) | ✔ 2026-08-05 |
 
 ### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
 
 | | 항목 | 선행 |
 |---|---|---|
-| S1 | `pub surfaces: Store<Surface>` 봉인 — 기록 없는 surface 를 만들 수 없게 | 없음 (독립) |
 | S2 | **임의정밀 이름** — `PlaneName` 그릇 교체 + `SurfaceKey`. 이름 실패 0.39% → 0, `이름 없음 → 프레임 없음 → f64 폴백` 연쇄의 뿌리 절단 | 없음 |
 | S3 | `Profile2d` 유리수화 + 공선 중간점 정리 패스 | 없음 |
 | S4 | `SketchFrame`·`Motion::Frame` 을 `FramePlacement`(Canonical\|Named) 로 통일 — world 평면 사전 심기 + 정확-유리수-프레임 노드 생략 | 없음 |
 | S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | S2 권장 |
-| S6 | `1′`: `Surface::Plane{points, motion}` 갈아끼우기 — `SurfaceDef`·`surface_points`·`surface_coeffs` 통합, `Inexact` 소멸, `nacre_geom::Plane` 캐시 강등 | S1·S2 |
+| S6 | `1′`: `Surface::Plane{points, motion}` 갈아끼우기 — `SurfaceDef`·`surface_points`·`surface_coeffs` 통합, `Inexact` 소멸, `nacre_geom::Plane` 캐시 강등 | S2 (S1 ✔) |
 | S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로) | S6 |
 | S8 | `Edge` 를 담체+경계로(`{surfaces:[2], vertices:[2]}`) — `Store<Curve>` → `EdgeCache`, 모서리의 `Origin` 도 여기서 소멸 | S6 |
 

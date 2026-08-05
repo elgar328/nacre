@@ -725,7 +725,7 @@ pub(crate) fn build_prism(
     // `orientation` travel together, and the reconstruction copies both.
     let (base_surface, base_orient) = match base_cap_surface {
         Some(h) => {
-            let n_h = match model.surfaces.get(h) {
+            let n_h = match model.surface(h) {
                 Surface::Plane(p) => p.normal(),
                 Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
             };
@@ -1198,7 +1198,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let f = model.faces.get(face);
     let surface_h = f.surface;
     let orientation = f.orientation;
-    let plane = match model.surfaces.get(surface_h) {
+    let plane = match model.surface(surface_h) {
         Surface::Plane(p) => *p,
         Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
     };

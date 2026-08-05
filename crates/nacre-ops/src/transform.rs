@@ -245,7 +245,7 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
-            if let Surface::Plane(pl) = model.surfaces.get(face.surface) {
+            if let Surface::Plane(pl) = model.surface(face.surface) {
                 if !all(pl.origin()) {
                     return false;
                 }
@@ -565,7 +565,7 @@ fn transform_solid(
             continue;
         }
         let moved = motion
-            .surface(model.surfaces.get(s), offset)
+            .surface(model.surface(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
         let def = moved_surface_def(model, s, motion, exact, &mut surf_rot)?;
         // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
@@ -827,10 +827,10 @@ mod tests {
             let leaf = chain_motion(&mut m, Some(root), motion, true)
                 .unwrap_or_else(|| panic!("a {what} over a history is always recorded"));
             assert_ne!(leaf, root);
-            assert_eq!(m.motions.get(leaf).parent, Some(root));
+            assert_eq!(m.motion(leaf).parent, Some(root));
             // And it records **this** motion — a chain that keeps the wrong kind of node
             // reproduces the wrong datum just as silently as one that keeps none.
-            let got = match m.motions.get(leaf).motion {
+            let got = match m.motion(leaf).motion {
                 Motion::Rotate { .. } => "Rotate",
                 Motion::Translate { .. } => "Translate",
                 Motion::Mirror { .. } => "Mirror",
