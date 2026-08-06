@@ -2,37 +2,22 @@
 //!
 //! Every cell references exact geometry only by `Handle` — the topology never
 //! looks at coordinates. Identity is by `Handle`, so nothing here derives
-//! `Eq`/`Hash` if it transitively holds an `f64` (a `Point3` or a
-//! `Origin::Discovered { tol, definition }`); those get `PartialEq` for tests only.
+//! `Eq`/`Hash` if it transitively holds an `f64` (a `Point3`); those get
+//! `PartialEq` for tests only.
 
-use crate::{Orientation, Origin, VertexDef};
+use crate::{Orientation, VertexDef};
 use nacre_geom::Surface;
-use nacre_math::Point3;
 use nacre_store::Handle;
 
-/// A 0-cell. The point is inlined — there is no point store (design §2: two
-/// vertices never share a point by design, and `Point3` is small).
+/// A 0-cell: **its definition is all it is** (S7). The realized coordinate and its measured
+/// tolerance live in the index-parallel point cache (`Model::vertex_point` /
+/// `Model::vertex_tol`), filled by `Model::push_vertex` — definition first, coordinate second,
+/// the inversion `docs/truth-and-cache.md` builds toward. `Origin` (Constructed / Discovered /
+/// Moved) died here: the tag never meant exactness, the measured tolerance moved to the cache,
+/// and a moved vertex's motion was always the *faces'* motion (they record it themselves).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vertex {
-    pub point: Point3,
-    pub origin: Origin,
-    /// **The three surfaces that meet here** — what actually decides where this point is, as
-    /// opposed to `point`, which is the rounded answer to that question.
-    ///
-    /// ★ Three planes meet in at most one point, so naming them names the vertex exactly, with no
-    /// tolerance anywhere; `point` is then a cache that could in principle be recomputed to any
-    /// precision. That inversion — definition first, coordinate second — is what
-    /// `docs/truth-and-cache.md` builds toward, and this field is the first half of it. Nothing
-    /// reads it yet.
-    ///
-    /// `None` where a producer could not name three planes: a curved surface (`ThreePlane` cannot
-    /// speak about a cylinder), or a transform whose re-pointing found a surface it could not
-    /// map. (A profile with a collinear vertex used to be a third cause — its two walls are one
-    /// plane, so the triple names a line and not a point — but since S3 the profile constructor
-    /// dissolves such corners, so that population no longer reaches the topology.) The rest are
-    /// counted rather than rejected — a missing definition costs nothing today, and the count is
-    /// what says whether `point` can ever be dropped.
-    pub definition: Option<VertexDef>,
+    pub def: VertexDef,
 }
 
 /// A 1-cell: a segment of the carriers' intersection, trimmed by its two endpoint vertices.
@@ -123,22 +108,18 @@ pub struct Solid {
 mod tests {
     use super::*;
     use crate::Model;
+    use nacre_math::Point3;
 
     #[test]
     fn cells_round_trip_their_fields() {
         let mut m = Model::new();
-        let v0 = m.vertices.push(Vertex {
-            point: Point3::origin(),
-            origin: Origin::Constructed,
-            // A hand-built cell; nothing here names three planes.
-            definition: None,
-        });
-        let v1 = m.vertices.push(Vertex {
-            point: Point3::from_array([1.0, 0.0, 0.0]),
-            origin: Origin::Constructed,
-            // A hand-built cell; nothing here names three planes.
-            definition: None,
-        });
+        let seeds = crate::VertexDef::ThreePlane([
+            m.world_plane(nacre_scalar::Axis::Z),
+            m.world_plane(nacre_scalar::Axis::X),
+            m.world_plane(nacre_scalar::Axis::Y),
+        ]);
+        let v0 = m.push_vertex(seeds, Point3::origin(), None);
+        let v1 = m.push_vertex(seeds, Point3::from_array([1.0, 0.0, 0.0]), None);
         let r = nacre_scalar::Rat::from_int;
         let sa = m.push_plane_unregistered(
             nacre_geom::Plane::from_point_normal(

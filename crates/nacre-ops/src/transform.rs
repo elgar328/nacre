@@ -8,7 +8,7 @@ use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Origin, Shell, Solid, Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Shell, Solid, Vertex, VertexDef,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -40,10 +40,10 @@ pub(crate) fn transform(
 /// must not share cells — a shared edge would read as four face uses and break the manifold check)
 /// while the geometry is rebuilt bit-for-bit (a pure translation keeps a plane's exact `raw`).
 ///
-/// **The carried `Origin::Discovered { tol }` is exact here, not provisional.** `remap_origin`
-/// keeps `tol` unchanged, which for a *rotated* move is a stage-1 debt that tol transport must
-/// later repay; for a copy the point and its three planes are bit-identical, so the measured
-/// residual cannot have changed. Tol transport will have nothing to fix here.
+/// **The carried measured tolerance is exact here, not provisional.** A copy keeps `tol`
+/// unchanged, and its point and three planes are bit-identical, so the measured residual
+/// cannot have changed. (A *recorded* move re-realizes coordinates and drops the measurement
+/// instead — see the tol rule in pass 3.)
 ///
 /// A non-live input is rejected rather than resurrected: reusing a superseded handle is a caller
 /// bug, and letting it succeed would hide it.
@@ -66,7 +66,7 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
 /// its own naming failure), so the three entry points check first and reject.
 ///
 /// ★ **Widened from `Discovered`-only to every `Some(definition)` (S7)** — the old gate
-/// inspected `Origin::Discovered` because only that road panicked; with the definition becoming
+/// inspected discovered vertices because only that road panicked; with the definition becoming
 /// the vertex's identity, every def must remap. The widening is expected to fire **zero** times
 /// (every producer writes definitions from its own face surfaces — the coverage gate measures
 /// 100%), and the suite staying green is that evidence: a firing here is a new rejection, which
@@ -83,10 +83,9 @@ fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
             surfs.insert(model.faces.get(fh).surface);
         }
     }
-    let named = |definition: &Option<VertexDef>| match definition {
-        None => true,
-        Some(VertexDef::ThreePlane(planes)) => planes.iter().all(|s| surfs.contains(s)),
-        Some(VertexDef::OnSeam(pair)) => pair.iter().all(|s| surfs.contains(s)),
+    let named = |def: &VertexDef| match def {
+        VertexDef::ThreePlane(planes) => planes.iter().all(|s| surfs.contains(s)),
+        VertexDef::OnSeam(pair) => pair.iter().all(|s| surfs.contains(s)),
     };
     for &sh in &shells {
         for &fh in &model.shells.get(sh).faces {
@@ -95,7 +94,7 @@ fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
                 for he in &lp.half_edges {
                     let edge = model.edges.get(he.edge);
                     for vh in edge.vertices.iter() {
-                        if !named(&model.vertices.get(*vh).definition) {
+                        if !named(&model.vertices.get(*vh).def) {
                             return false;
                         }
                     }
@@ -273,7 +272,7 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
                     for &vh in model.edges.get(he.edge).vertices.iter() {
-                        if !all(model.vertices.get(vh).point) {
+                        if !all(model.vertex_point(vh)) {
                             return false;
                         }
                     }
@@ -413,35 +412,6 @@ impl Xform<'_> {
     }
 }
 
-/// A vertex/edge `Origin` with any `Discovered` `ThreePlane` definition remapped
-/// onto the moved surfaces. Constructed stays constructed; the `tol` is unchanged
-/// (a rigid move; stage 1 records tol but never judges on it — for [`copy`] it is exact,
-/// since the point and its planes are bit-identical). The `expect` below is unreachable:
-/// both callers run [`origins_are_remappable`] first and reject when it fails.
-fn remap_origin(origin: Origin, surf_map: &HashMap<Handle<Surface>, Handle<Surface>>) -> Origin {
-    match origin {
-        Origin::Constructed => Origin::Constructed,
-        Origin::Discovered { tol, definition } => {
-            let remap = |s: Handle<Surface>| {
-                *surf_map
-                    .get(&s)
-                    .expect("a Discovered definition's surface must be a face surface of the solid")
-            };
-            let definition = match definition {
-                VertexDef::ThreePlane(planes) => VertexDef::ThreePlane(planes.map(remap)),
-                VertexDef::OnSeam(pair) => VertexDef::OnSeam(pair.map(remap)),
-            };
-            Origin::Discovered { tol, definition }
-        }
-        // Reached only for an *exact* move of an already-rotated solid — a translation
-        // or a 90°-family rotation, which take the no-node path. Keep the rotation
-        // definition: its `base`/`rotation` name arena ancestors unaffected by a
-        // translation. (An *inexact* re-rotation instead records a chain node and is
-        // handled in `transform_solid` pass 3, not here.)
-        Origin::Moved { .. } => origin,
-    }
-}
-
 /// A surface moved by `isometry`. A pure translation uses `translated` (the normal —
 /// and its exact `raw` — is unchanged). A rotation rebuilds from the moved
 /// origin/normal via the constructor (rotation makes `raw` irrational, as expected —
@@ -497,15 +467,28 @@ fn transform_solid(
         .unwrap_or_else(Vector3::zero);
     let src = model.solids.get(solid).clone();
 
-    // The forest nodes this transform appends (§CIP ⑦), one shared leaf named by every moved
-    // vertex. `chain_motion` decides what is worth recording: a zero translation, a 90°-family
-    // rotation of a still-exact datum, and an exactness-preserving reflection record nothing, and
-    // every exception lapses once the solid already has a history — then every motion is recorded
-    // or the chain would not reproduce the result.
-    let input_leaf = solid_motion(model, solid);
     // Decided once, for the whole solid — see [`motion_is_exact`].
     let exact = motion_is_exact(model, solid, motion);
-    let move_node: Option<Handle<MotionNode>> = chain_motion(model, input_leaf, motion, exact);
+    // Whether the source already carries a motion history (any face surface's truth records
+    // one). With the vertex-side motion gone (S7 — the faces record it themselves, and a
+    // vertex's motion was always its faces'), this is what remains of the old
+    // "exceptions lapse once the solid has a history" test: an exact move of a fresh solid
+    // records nothing and keeps the measured tolerances verbatim; anything else re-realizes
+    // coordinates, so a measured tolerance no longer describes them.
+    let prior_history = {
+        let src = model.solids.get(solid);
+        std::iter::once(src.outer)
+            .chain(src.cavities.iter().copied())
+            .flat_map(|sh| model.shells.get(sh).faces.clone())
+            .any(|fh| {
+                !matches!(
+                    model.surface_truth(model.faces.get(fh).surface),
+                    nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+                        | nacre_topo::SurfaceTruth::Cylinder { motion: None }
+                )
+            })
+    };
+    let keeps_tol = exact && !prior_history;
 
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
@@ -597,7 +580,8 @@ fn transform_solid(
     // (The old pass 2 — moving curves — died with `Store<Curve>` (S8): the moved edge's
     // curve now derives from its moved carriers and endpoints in pass 4's `push_edge`.)
 
-    // Pass 3 — vertices (dedup, moved point + Origin preserved/remapped).
+    // Pass 3 — vertices (dedup): the definition's handles re-pointed onto the moved surfaces,
+    // the coordinate moved, the measured tolerance kept only when nothing was re-realized.
     let mut vert_order: Vec<Handle<Vertex>> = Vec::new();
     let mut vert_seen: HashSet<Handle<Vertex>> = HashSet::new();
     for &eh in &edge_order {
@@ -609,55 +593,26 @@ fn transform_solid(
     }
     let mut vert_map: HashMap<Handle<Vertex>, Handle<Vertex>> = HashMap::new();
     for &vh in &vert_order {
-        let v = *model.vertices.get(vh);
-        let new_v = Vertex {
-            point: motion.point(v.point),
-            // A recorded motion marks the vertex `Moved`; `base` is the **root** — the
-            // non-`Moved` (Constructed/Discovered) ancestor whose exact definition the chain
-            // moves. A fresh move's input is itself the root; a re-move chases one hop to the
-            // input's own root (the invariant keeps `base` pointing at a root, never at another
-            // `Moved` vertex, so a replay never applies the same motion twice). No node → remap.
-            //
-            // **A reflection needs nothing more.** It used to conjugate the chain onto a mirrored
-            // copy of the root and replay the coordinate from there, because the chain had no way
-            // to say "and then reflect"; now it does, `Pt3::mirror` walks the same `2c − x` the
-            // producer just walked, and the root stays the root.
-            origin: match move_node {
-                Some(node) => {
-                    let base = match v.origin {
-                        Origin::Moved { base, .. } => base,
-                        _ => vh,
-                    };
-                    Origin::Moved { base, motion: node }
-                }
-                None => remap_origin(v.origin, &surf_map),
-            },
-            // ★ **One rule, whatever the `Origin` is: map every plane, or record nothing.**
-            // `remap_origin` above `expect`s its lookups because `origins_are_remappable` cleared
-            // them first — but that gate only inspects `Discovered` vertices. Extending its reach
-            // to cover this field would either panic here or start rejecting transforms that work
-            // today, and both would make this commit change answers. A definition that cannot be
-            // re-pointed is simply absent, and the coverage count says how often.
-            definition: v.definition.and_then(|def| match def {
-                VertexDef::ThreePlane(planes) => {
-                    let mut out = [planes[0]; 3];
-                    for (o, s) in out.iter_mut().zip(planes) {
-                        *o = *surf_map.get(&s)?;
-                    }
-                    Some(VertexDef::ThreePlane(out))
-                }
-                // Same rule: a seam vertex's carriers (lateral + its cap) are both face
-                // surfaces of this solid, so the lookups always hit.
-                VertexDef::OnSeam(pair) => {
-                    let mut out = pair;
-                    for (o, s) in out.iter_mut().zip(pair) {
-                        *o = *surf_map.get(&s)?;
-                    }
-                    Some(VertexDef::OnSeam(out))
-                }
-            }),
+        // `defs_are_remappable` cleared every definition handle before the walk began.
+        let remap = |s: Handle<Surface>| {
+            *surf_map
+                .get(&s)
+                .expect("a definition's surface must be a face surface of the solid")
         };
-        vert_map.insert(vh, model.vertices.push(new_v));
+        let def = match model.vertices.get(vh).def {
+            VertexDef::ThreePlane(planes) => VertexDef::ThreePlane(planes.map(remap)),
+            VertexDef::OnSeam(pair) => VertexDef::OnSeam(pair.map(remap)),
+        };
+        let coord = motion.point(model.vertex_point(vh));
+        // Tolerance rule (S7, letter-preserving): an exact move of a history-less solid used to
+        // keep `Discovered { tol }` verbatim (`remap_origin`); a recorded move used to demote to
+        // `Moved` (checker epsilon — now `None`).
+        let tol = if keeps_tol {
+            model.vertex_tol(vh)
+        } else {
+            None
+        };
+        vert_map.insert(vh, model.push_vertex(def, coord, tol));
     }
 
     // Pass 4 — edges (carrier/vertex handles remapped; the curve cache derives from them).
@@ -726,41 +681,6 @@ fn transform_solid(
         cavities: src.cavities.iter().map(|sh| shell_map[sh]).collect(),
     };
     Ok(model.push_solid(new_solid))
-}
-
-/// The shared rotation-forest leaf that every boundary vertex of a rotated `solid`
-/// names (`None` if the solid is not rotated) — the input side of the re-rotation
-/// decision in [`transform_solid`]. All boundary vertices share one leaf, and that
-/// invariant is `debug_assert`ed here (fail-loud if a future change ever produces a
-/// solid with mixed rotation provenance).
-///
-/// Two things keep it true. A `Transform` rotates a solid uniformly, so its own output is
-/// uniform. And a *boolean* output cannot mix provenance either — not because rotated inputs
-/// are refused (that guard, `ROTATED_UNSUPPORTED`, was retired when rotated booleans went live)
-/// but because `assemble_fuse_cut` names every result vertex through `Node::Seam`, the enum's
-/// only variant: even a corner that survived untouched is rebuilt as a seam vertex, so a result
-/// is uniformly `Discovered` and carries no `Rotated` at all.
-fn solid_motion(model: &Model, solid: Handle<Solid>) -> Option<Handle<MotionNode>> {
-    let sh = model.solids.get(solid).outer;
-    let mut seen: Option<Option<Handle<MotionNode>>> = None;
-    for &fh in &model.shells.get(sh).faces {
-        for he in &model.faces.get(fh).outer.half_edges {
-            for &vh in &model.edges.get(he.edge).vertices {
-                let leaf = match model.vertices.get(vh).origin {
-                    Origin::Moved { motion, .. } => Some(motion),
-                    _ => None,
-                };
-                match seen {
-                    None => seen = Some(leaf),
-                    Some(established) => debug_assert_eq!(
-                        established, leaf,
-                        "a solid's boundary vertices must share one rotation node (uniform rotation)"
-                    ),
-                }
-            }
-        }
-    }
-    seen.flatten()
 }
 
 #[cfg(test)]
@@ -916,13 +836,8 @@ mod tests {
             m.world_plane(Axis::X),
             m.world_plane(Axis::Y),
         ]);
-        let mk_v = |m: &mut Model, x: f64| {
-            m.vertices.push(Vertex {
-                point: Point3::from_array([x, 0.0, 9.0]),
-                origin: Origin::Constructed,
-                definition: Some(foreign),
-            })
-        };
+        let mk_v =
+            |m: &mut Model, x: f64| m.push_vertex(foreign, Point3::from_array([x, 0.0, 9.0]), None);
         let v0 = mk_v(&mut m, 0.0);
         let v1 = mk_v(&mut m, 1.0);
         let e = m
@@ -980,7 +895,7 @@ mod tests {
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
                     for &vh in &m.edges.get(he.edge).vertices {
-                        if let Some(VertexDef::OnSeam(pair)) = m.vertices.get(vh).definition {
+                        if let VertexDef::OnSeam(pair) = m.vertices.get(vh).def {
                             seams += 1;
                             assert!(
                                 pair.iter().all(|c| twin_surfs.contains(c)),

@@ -4114,10 +4114,10 @@ mod tests {
 
     // --- Rotation-generality: the trace engine's decisions are coordinate-free. Rigidly rotating
     // both operands by the same isometry must leave the result invariant. A non-90° angle flags the
-    // solid `Origin::Moved`, routing every predicate to the exact frame3 backend. `rot30` (lib.rs)
+    // solid, whose faces record the motion, routing every predicate to the exact frame3 backend. `rot30` (lib.rs)
     // is in a sibling test module and unreachable here, so the isometries are built inline.
 
-    /// 30° about `axis` through (1,1,0) — non-90°, so `Origin::Moved` (exact frame3 path).
+    /// 30° about `axis` through (1,1,0) — non-90°, so the motion is recorded (exact frame3 path).
     fn rot_iso(axis: nacre_scalar::Axis) -> nacre_scalar::Isometry {
         use nacre_scalar::{Angle, Isometry, Rat, Rotation};
         Isometry::rotation(Rotation {

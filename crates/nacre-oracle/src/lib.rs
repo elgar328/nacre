@@ -1361,7 +1361,7 @@ centroid 1 1.5 2
     // bug that invariance alone could miss.
 
     /// An axis-aligned rotation about the line through `(1,1,0)` by `deg` degrees (a non-90°
-    /// degree makes cos/sin irrational, so the realization is `Origin::Moved`).
+    /// degree makes cos/sin irrational, so the surfaces record the motion).
     fn rot_about(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
         use nacre_scalar::{Angle, Isometry, Rat, Rotation};
         Isometry::rotation(Rotation {

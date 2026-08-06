@@ -227,7 +227,6 @@ mod tests {
     use crate::{OpOutput, Operation, apply};
     use nacre_math::Point3;
     use nacre_scalar::{Angle, Axis, Isometry, Rat as R, Rotation as SRot};
-    use nacre_topo::Origin;
 
     fn rot30z() -> Isometry {
         Isometry::rotation(SRot {
@@ -362,17 +361,37 @@ mod tests {
             for &fh in &m.shells.get(sh).faces {
                 for he in &m.faces.get(fh).outer.half_edges {
                     for &vh in m.edges.get(he.edge).vertices.iter() {
-                        let Origin::Moved {
-                            base,
-                            motion: rotation,
-                        } = m.vertices.get(vh).origin
-                        else {
-                            panic!("a moved solid's vertices carry their motion");
+                        // ★★ S7 promoted this from "replay the stored base vertex" to
+                        // **"solve the definition"**: the corner's three planes share one
+                        // motion, so solving their pre-motion names exactly (rational Cramer)
+                        // and replaying that chain must reproduce the stored coordinate — the
+                        // 8/8 measurement that let the base vertex die, now a permanent lock
+                        // over every chain shape in this table.
+                        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                            panic!("a cuboid corner is a three-plane point");
                         };
-                        let replayed =
-                            replay_chain_coord(&m, m.vertices.get(base).point.as_array(), rotation)
-                                .unwrap();
-                        assert_eq!(replayed, m.vertices.get(vh).point.as_array());
+                        let motion_of = |h| match m.surface_truth(h) {
+                            nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
+                            nacre_topo::SurfaceTruth::Cylinder { motion } => *motion,
+                        };
+                        let leaf = motion_of(tri[0]);
+                        assert!(
+                            leaf.is_some() && tri.iter().all(|&h| motion_of(h) == leaf),
+                            "a moved solid's faces share one motion leaf"
+                        );
+                        let mut coeffs = [[R::from_int(0); 4]; 3];
+                        for (o, h) in coeffs.iter_mut().zip(tri) {
+                            *o = *m.surface_name.get(&h).unwrap().narrow().unwrap();
+                        }
+                        let base = nacre_scalar::three_planes_rat(coeffs)
+                            .expect("three distinct planes of a cuboid corner meet");
+                        let replayed = replay_chain_coord(
+                            &m,
+                            [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
+                            leaf.unwrap(),
+                        )
+                        .unwrap();
+                        assert_eq!(replayed, m.vertex_point(vh).as_array());
                         checked += 1;
                     }
                 }
@@ -403,15 +422,13 @@ mod tests {
         );
         let sh = m.solids.get(r).outer;
         let fh = m.shells.get(sh).faces[0];
-        let vh = m
-            .edges
-            .get(m.faces.get(fh).outer.half_edges[0].edge)
-            .vertices[0];
-        let Origin::Moved {
-            motion: rotation, ..
-        } = m.vertices.get(vh).origin
+        // The motion is the *face's* (S7: surfaces record it; vertices follow their planes).
+        let &nacre_topo::SurfaceTruth::Plane {
+            motion: Some(rotation),
+            ..
+        } = m.surface_truth(m.faces.get(fh).surface)
         else {
-            panic!("rotated");
+            panic!("a rotated face records its motion");
         };
         let axes: Vec<Axis> = motion_chain(&m, rotation)
             .expect("an axis-aligned history holds no frame")

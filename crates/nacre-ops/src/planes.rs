@@ -267,7 +267,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
 }
 
 /// Max distance of `p` to its 3 planes and 3 pairwise lines (the measured
-/// `Origin::Discovered` tolerance).
+/// vertex cache's measured tolerance).
 pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
     let mut tol = a.distance(p).max(b.distance(p)).max(c.distance(p));
     for (x, y) in [(a, b), (a, c), (b, c)] {

@@ -123,7 +123,7 @@ pub enum FramePlacement {
 /// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a
 /// parent link so several points can share a history's tail.
 ///
-/// Stored in [`Model::motions`]; a moved vertex's [`Origin::Moved`] and a moved surface's
+/// Stored in [`Model::motions`]; a moved surface's
 /// moved surfaces name their leaf node ([`SurfaceTruth`]'s motion slot). The tol a motion contributes is
 /// application-point-dependent, so it is **not** stored here — judgment computes it by traversing
 /// to the root.
@@ -131,32 +131,6 @@ pub enum FramePlacement {
 pub struct MotionNode {
     pub motion: Motion,
     pub parent: Option<Handle<MotionNode>>,
-}
-
-/// Provenance of a vertex or edge (design §4, overview 절대원칙 4).
-///
-/// `Constructed` elements know their identity by construction and carry no
-/// tolerance; `Discovered` elements come from an intersection and hold both the
-/// [`VertexDef`] that defines them (the truth) and the *measured* accuracy the
-/// relaxation/closed-form achieved (`tol` — the point is a within-`tol` cache of
-/// the definition). In M1–M4 every element is `Constructed`; M5's
-/// `PolyhedralBoolean` is the first `Discovered` producer. `Rotated` (overhaul stage
-/// 1b) names a vertex that is another vertex (`base`) moved by a motion node — its
-/// point is a cache; the tol is judgment-time (§CIP ⑦), so no tol slot here.
-///
-/// Holds an `f64`, so `PartialEq` only — no `Eq`/`Hash` (identity is by
-/// `Handle`, never by value).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Origin {
-    Constructed,
-    Discovered {
-        tol: f64,
-        definition: VertexDef,
-    },
-    Moved {
-        base: Handle<Vertex>,
-        motion: Handle<MotionNode>,
-    },
 }
 
 /// What makes two surfaces the same plane, for `Model::surface_ids`: the canonical name
@@ -278,8 +252,13 @@ pub struct Model {
     /// cache entry desyncs the two — the accessor's debug_assert and validate's parallelism
     /// check watch for that (the store stays `pub` per the doc's final shape).
     edge_cache: Vec<EdgeCache>,
-    /// The motion-history forest (§CIP ⑦): motion definitions named by `Origin::Moved` vertices
-    /// and moved surfaces. Not geometry — a definition store.
+    /// Per-vertex coordinate caches, index-parallel to `vertices` (S7) — the realized `coord`
+    /// and, for discovered vertices, the measured `tol`. Filled by [`Model::push_vertex`];
+    /// read through [`Model::vertex_point`] / [`Model::vertex_tol`]. No rebuild exists (3b ⏸):
+    /// for discovered and seam vertices the coordinate carries information the definition
+    /// cannot yet reproduce.
+    vertex_cache: Vec<PointCache>,
+    /// The motion-history forest (§CIP ⑦): motion definitions named by moved surfaces. Not geometry — a definition store.
     ///
     /// **Interned** — private (S1), so writing through [`Model::push_motion`] is enforced by the
     /// type, not by discipline. Read through [`Model::motion`].
@@ -340,6 +319,17 @@ pub struct Model {
     pub live_solids: Vec<Handle<Solid>>,
     // derived cache (rebuilt on demand)
     pub adj: Adjacency,
+}
+
+/// One vertex's realized coordinate and measured tolerance — a **cache** beside the vertex
+/// store (index-parallel), filled by [`Model::push_vertex`]. `tol: Some` is a discovered
+/// vertex's measured residual (kept exact — `0.0` means exactly zero); `None` is a constructed
+/// vertex (checkers apply their own epsilon). Unlike [`EdgeCache`] there is **no rebuild**:
+/// the coordinate is truth-bearing for seam vertices and hard-won for discovered ones (3b ⏸).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointCache {
+    coord: Point3,
+    tol: Option<f64>,
 }
 
 /// One edge's realized curve — a **cache** beside the edge store (index-parallel), derived
@@ -430,6 +420,7 @@ impl Model {
             surfaces: Store::default(),
             surface_truths: Vec::new(),
             edge_cache: Vec::new(),
+            vertex_cache: Vec::new(),
             motions: Store::default(),
             motion_ids: HashMap::new(),
             surface_name: HashMap::new(),
@@ -757,12 +748,51 @@ impl Model {
     /// `None` for an edge with no endpoints — the standalone full circle of §4,
     /// which is a legitimate form but has no start. Callers pick their own
     /// policy: a solid's loop edge is always bounded, so `nacre-ops` unwraps with
-    /// A vertex's realized coordinate — **the one road to a coordinate from a vertex** (S7).
-    /// Today it delegates to the `point` field; when the field dies the body becomes the
-    /// point-cache read, and no consumer moves again (the `edge_curve` precedent).
+    /// A vertex's realized coordinate — **the one road to a coordinate from a vertex** (S7),
+    /// read from the index-parallel cache [`Model::push_vertex`] fills.
     #[inline]
     pub fn vertex_point(&self, vh: Handle<Vertex>) -> Point3 {
-        self.vertices.get(vh).point
+        debug_assert_eq!(
+            self.vertex_cache.len(),
+            self.vertices.len(),
+            "vertex cache out of step with the vertex store — push vertices through Model::push_vertex"
+        );
+        self.vertex_cache[vh.index() as usize].coord
+    }
+
+    /// A vertex's measured coordinate tolerance: `Some` for a discovered vertex (the residual
+    /// the arrangement measured when it made the coordinate — `0.0` means exactly zero, kept
+    /// exact), `None` for a constructed one (no measurement — a checker applies its own
+    /// construction epsilon).
+    #[inline]
+    pub fn vertex_tol(&self, vh: Handle<Vertex>) -> Option<f64> {
+        debug_assert_eq!(self.vertex_cache.len(), self.vertices.len());
+        self.vertex_cache[vh.index() as usize].tol
+    }
+
+    /// Push a vertex: its definition (the truth) plus the realized coordinate and measured
+    /// tolerance (the cache, moved verbatim — S7 moves the field, it does not re-derive; the
+    /// coordinate re-derivation question is 3b, deliberately on hold). The one write road.
+    ///
+    /// ★ There is **no `rebuild_vertex_cache`**: a discovered coordinate is the arrangement's
+    /// carefully-made value (measured: 238 of 1,992 differ from a naive re-solve), and a seam
+    /// vertex's coordinate is load-bearing (M6). The «discard and regenerate» warrant S8 gave
+    /// edges is honestly absent here until then.
+    pub fn push_vertex(
+        &mut self,
+        def: VertexDef,
+        coord: Point3,
+        tol: Option<f64>,
+    ) -> Handle<Vertex> {
+        if let VertexDef::ThreePlane([a, b, c]) = def {
+            debug_assert!(
+                a != b && b != c && a != c,
+                "a three-plane definition needs three distinct planes"
+            );
+        }
+        let h = self.vertices.push(Vertex { def });
+        self.vertex_cache.push(PointCache { coord, tol });
+        h
     }
 
     /// An edge's curve — **the one road to a curve from an edge** (S8), read from the
@@ -915,7 +945,7 @@ impl Model {
     /// Add an axis-aligned box `min`..`max` to this model and return its solid.
     ///
     /// Requires `max[i] > min[i]` on every axis (a degenerate box is a caller
-    /// bug → panic). Every element is [`Origin::Constructed`] (design §8); each
+    /// bug → panic); each
     /// face is wound so its plane normal points outward, so all faces are
     /// [`Orientation::Forward`]. Does **not** rebuild adjacency — call
     /// [`Model::rebuild_adjacency`] once after all additions.
@@ -989,15 +1019,11 @@ impl Model {
             let cap = if i < 4 { 0 } else { 1 }; // Bottom −Z / Top +Z
             let along_x = if m == 1 || m == 2 { 5 } else { 4 }; // Right +X / Left −X
             let along_y = if m >= 2 { 3 } else { 2 }; // Back +Y / Front −Y
-            self.vertices.push(Vertex {
-                point: corners[i],
-                origin: Origin::Constructed,
-                definition: Some(VertexDef::ThreePlane([
-                    surf[cap].0,
-                    surf[along_y].0,
-                    surf[along_x].0,
-                ])),
-            })
+            self.push_vertex(
+                VertexDef::ThreePlane([surf[cap].0, surf[along_y].0, surf[along_x].0]),
+                corners[i],
+                None,
+            )
         });
 
         // 12 edges as (start, end) vertex indices plus the two faces each edge runs between
@@ -1077,7 +1103,7 @@ impl Model {
     /// `bounds: None` (that form is for a standalone full circle; §4).
     ///
     /// `radius`/`height` must be positive and `axis` nonzero (caller bug →
-    /// panic). Every element is [`Origin::Constructed`]. Does **not** rebuild
+    /// panic). Does **not** rebuild
     /// adjacency — call [`Model::rebuild_adjacency`] once after all additions.
     pub fn add_cylinder(
         &mut self,
@@ -1138,16 +1164,16 @@ impl Model {
         // A seam vertex lies on two surfaces only — the rim circle's `θ = 0` point. `OnSeam`
         // states exactly that (S7); the coordinate stays load-bearing until M6's `ref_dir`
         // truth (see `VertexDef::OnSeam`).
-        let v_bot = self.vertices.push(Vertex {
-            point: p_bot,
-            origin: Origin::Constructed,
-            definition: Some(VertexDef::OnSeam([lateral_surface, bottom_cap_surface])),
-        });
-        let v_top = self.vertices.push(Vertex {
-            point: p_top,
-            origin: Origin::Constructed,
-            definition: Some(VertexDef::OnSeam([lateral_surface, top_cap_surface])),
-        });
+        let v_bot = self.push_vertex(
+            VertexDef::OnSeam([lateral_surface, bottom_cap_surface]),
+            p_bot,
+            None,
+        );
+        let v_top = self.push_vertex(
+            VertexDef::OnSeam([lateral_surface, top_cap_surface]),
+            p_top,
+            None,
+        );
 
         // Rims are full circles seamed at their vertex (start == end); the seam is
         // a straight edge joining the two rim seam points.
@@ -1351,7 +1377,7 @@ mod tests {
             .outer
             .half_edges
             .iter()
-            .map(|he| m.vertices.get(he_start(m, *he)).point)
+            .map(|he| m.vertex_point(he_start(m, *he)))
             .collect();
         Point3::centroid(&pts).unwrap()
     }
@@ -1391,7 +1417,11 @@ mod tests {
             [3.0, 4.0, 10.0],
             [-2.0, 4.0, 10.0],
         ];
-        let got: Vec<[f64; 3]> = m.vertices.iter().map(|(_, v)| v.point.as_array()).collect();
+        let got: Vec<[f64; 3]> = m
+            .vertices
+            .iter()
+            .map(|(vh, _)| m.vertex_point(vh).as_array())
+            .collect();
         assert_eq!(got, expected);
     }
 
@@ -1473,8 +1503,8 @@ mod tests {
         for (eh, e) in m.edges.iter() {
             let curve = m.edge_curve(eh);
             let [a, b] = e.vertices;
-            assert!(curve.contains(m.vertices.get(a).point, 1e-9));
-            assert!(curve.contains(m.vertices.get(b).point, 1e-9));
+            assert!(curve.contains(m.vertex_point(a), 1e-9));
+            assert!(curve.contains(m.vertex_point(b), 1e-9));
         }
     }
 
@@ -1519,7 +1549,11 @@ mod tests {
     fn cylinder_geometry() {
         // +Z axis, r=2, h=5. Seam direction is X (least-aligned axis of +Z).
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let pts: Vec<[f64; 3]> = m.vertices.iter().map(|(_, v)| v.point.as_array()).collect();
+        let pts: Vec<[f64; 3]> = m
+            .vertices
+            .iter()
+            .map(|(vh, _)| m.vertex_point(vh).as_array())
+            .collect();
         // Seam direction for +Z is any_perpendicular([0,0,1]) = X×Z = [0,-1,0], so
         // the seam vertices sit at radius 2 along −Y, at z=0 and z=5.
         assert_eq!(pts, vec![[0.0, -2.0, 0.0], [0.0, -2.0, 5.0]]);
@@ -1556,14 +1590,14 @@ mod tests {
     #[test]
     fn a_seam_vertex_states_its_rim_carriers() {
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let defs: Vec<_> = m.vertices.iter().map(|(_, v)| v.definition).collect();
+        let defs: Vec<_> = m.vertices.iter().map(|(_, v)| v.def).collect();
         assert_eq!(
             defs.len(),
             2,
             "a cylinder has exactly its two seam vertices"
         );
         for (i, d) in defs.iter().enumerate() {
-            let Some(VertexDef::OnSeam([a, b])) = d else {
+            let VertexDef::OnSeam([a, b]) = d else {
                 panic!("a seam vertex carries OnSeam, got {d:?}")
             };
             assert!(
@@ -1646,8 +1680,8 @@ mod tests {
             for (eh, e) in m.edges.iter() {
                 let curve = m.edge_curve(eh);
                 let [a, b] = e.vertices;
-                prop_assert!(curve.contains(m.vertices.get(a).point, scale));
-                prop_assert!(curve.contains(m.vertices.get(b).point, scale));
+                prop_assert!(curve.contains(m.vertex_point(a), scale));
+                prop_assert!(curve.contains(m.vertex_point(b), scale));
             }
         }
 

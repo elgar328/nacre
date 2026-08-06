@@ -146,7 +146,7 @@ pub fn nonmanifold_vertices(
 mod tests {
     use super::nonmanifold_vertices;
     use crate::topology::{Edge, Face, HalfEdge, Loop};
-    use crate::{Handle, Model, Orientation, Origin, Shell, Solid, Vertex};
+    use crate::{Handle, Model, Orientation, Shell, Solid, Vertex};
     use nacre_geom::Plane;
     use nacre_math::Point3;
     use std::collections::HashMap;
@@ -167,13 +167,15 @@ mod tests {
             .unwrap(),
             [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
         );
+        // Hand-built cells: the def names the three world seeds — real, distinct planes the
+        // detector never dereferences (it reads only the maps).
         let mk_v = |m: &mut Model| {
-            m.vertices.push(Vertex {
-                point: Point3::origin(),
-                origin: Origin::Constructed,
-                // A hand-built cell; nothing here names three planes.
-                definition: None,
-            })
+            let def = crate::VertexDef::ThreePlane([
+                m.world_plane(nacre_scalar::Axis::Z),
+                m.world_plane(nacre_scalar::Axis::X),
+                m.world_plane(nacre_scalar::Axis::Y),
+            ]);
+            m.push_vertex(def, Point3::origin(), None)
         };
         let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
         let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
@@ -233,12 +235,12 @@ mod tests {
     fn rebuild_indexes_a_shared_edge() {
         let mut m = Model::new();
         let mk_v = |m: &mut Model, p: [f64; 3]| {
-            m.vertices.push(Vertex {
-                point: Point3::from_array(p),
-                origin: Origin::Constructed,
-                // A hand-built cell; nothing here names three planes.
-                definition: None,
-            })
+            let def = crate::VertexDef::ThreePlane([
+                m.world_plane(nacre_scalar::Axis::Z),
+                m.world_plane(nacre_scalar::Axis::X),
+                m.world_plane(nacre_scalar::Axis::Y),
+            ]);
+            m.push_vertex(def, Point3::from_array(p), None)
         };
         let v0 = mk_v(&mut m, [0.0, 0.0, 0.0]);
         let v1 = mk_v(&mut m, [1.0, 0.0, 0.0]);

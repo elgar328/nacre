@@ -823,7 +823,7 @@ pub mod tests {
     use nacre_cip::Pt3;
     use nacre_geom::intersect::{planes_coplanar, three_planes};
     use nacre_geom::{Plane, Surface};
-    use nacre_topo::{Loop, Orientation, Origin, VertexDef};
+    use nacre_topo::{Loop, Orientation, VertexDef};
     use proptest::prelude::*;
     use std::collections::HashMap;
 
@@ -903,7 +903,11 @@ pub mod tests {
         assert_eq!(m.faces.len(), 6);
         assert_eq!(m.solids.len(), 1);
 
-        let mut got: Vec<[f64; 3]> = m.vertices.iter().map(|(_, v)| v.point.as_array()).collect();
+        let mut got: Vec<[f64; 3]> = m
+            .vertices
+            .iter()
+            .map(|(vh, _)| m.vertex_point(vh).as_array())
+            .collect();
         let mut want = vec![
             [0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
@@ -1591,8 +1595,8 @@ pub mod tests {
         use std::fmt::Write;
         let mut s = String::new();
         let _ = write!(s, "S{}", solids.len());
-        for (_, v) in m.vertices.iter() {
-            let p = v.point.as_array();
+        for (vh, _) in m.vertices.iter() {
+            let p = m.vertex_point(vh).as_array();
             let _ = write!(
                 s,
                 "|{:x},{:x},{:x}",
@@ -2458,16 +2462,11 @@ pub mod tests {
                             continue;
                         }
                         assert!(
-                            matches!(
-                                m.vertices.get(vh).origin,
-                                Origin::Discovered {
-                                    definition: VertexDef::ThreePlane(_),
-                                    ..
-                                }
-                            ),
-                            "vertex {:?} is {:?}, not a plane triple",
-                            m.vertices.get(vh).point.as_array(),
-                            m.vertices.get(vh).origin
+                            matches!(m.vertices.get(vh).def, VertexDef::ThreePlane(_))
+                                && m.vertex_tol(vh).is_some(),
+                            "vertex {:?} is {:?}, not a measured plane triple",
+                            m.vertex_point(vh).as_array(),
+                            m.vertices.get(vh).def
                         );
                     }
                 }
@@ -2617,7 +2616,7 @@ pub mod tests {
         let pts = |m: &Model| {
             m.vertices
                 .iter()
-                .map(|(_, v)| v.point.as_array())
+                .map(|(vh, _)| m.vertex_point(vh).as_array())
                 .collect::<Vec<_>>()
         };
         assert_eq!(pts(&m1), pts(&m2));
@@ -3389,7 +3388,7 @@ pub mod tests {
             for he in &m.faces.get(fh).outer.half_edges {
                 {
                     for vh in m.edges.get(he.edge).vertices {
-                        let p = m.vertices.get(vh).point.as_array();
+                        let p = m.vertex_point(vh).as_array();
                         for k in 0..3 {
                             lo[k] = lo[k].min(p[k]);
                         }
@@ -3408,9 +3407,7 @@ pub mod tests {
             for he in &m.faces.get(fh).outer.half_edges {
                 {
                     for vh in m.edges.get(he.edge).vertices {
-                        if seen.insert(vh)
-                            && matches!(m.vertices.get(vh).origin, Origin::Discovered { .. })
-                        {
+                        if seen.insert(vh) && m.vertex_tol(vh).is_some() {
                             n += 1;
                         }
                     }
@@ -3501,13 +3498,10 @@ pub mod tests {
         // base of the motion that moved it. None fell back to `Constructed`.
         let named = boundary_verts(&m, r2)
             .into_iter()
-            .filter(|&vh| {
-                let root = match m.vertices.get(vh).origin {
-                    Origin::Moved { base, .. } => m.vertices.get(base).origin,
-                    other => other,
-                };
-                matches!(root, Origin::Discovered { .. })
-            })
+            // A measured tolerance survives an exact move and is dropped by a recorded one
+            // (S7's tol rule), so what "still named" means here is the definition: every seam
+            // vertex names three planes, whichever road it travelled.
+            .filter(|&vh| matches!(m.vertices.get(vh).def, VertexDef::ThreePlane(_)))
             .count();
         assert_eq!(named, disc, "seam definitions preserved");
         let after = nacre_props::mass_props(&m, r2).unwrap().volume;
@@ -3556,26 +3550,37 @@ pub mod tests {
         for &fh in &m.shells.get(shell).faces.clone() {
             for he in &m.faces.get(fh).outer.half_edges.clone() {
                 for vh in m.edges.get(he.edge).vertices.iter() {
-                    assert!(
-                        matches!(m.vertices.get(*vh).origin, Origin::Moved { .. }),
-                        "the image keeps its rotation definition"
-                    );
-                    let Origin::Moved {
-                        base,
-                        motion: rotation,
-                    } = m.vertices.get(*vh).origin
-                    else {
-                        unreachable!("just asserted Rotated")
+                    // The image keeps its definition, and the definition reproduces the
+                    // coordinate: solve the corner's three planes in the frame their names are
+                    // stated in, replay the chain the *faces* record (S7 — the vertex has no
+                    // motion of its own), and the answer is the stored coordinate bit for bit.
+                    let VertexDef::ThreePlane(tri) = m.vertices.get(*vh).def else {
+                        unreachable!("a cuboid corner is a three-plane point")
                     };
+                    let motion_of = |h| match m.surface_truth(h) {
+                        nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
+                        nacre_topo::SurfaceTruth::Cylinder { motion } => *motion,
+                    };
+                    let rotation = motion_of(tri[0]).expect("a mirrored image records its motion");
+                    assert!(
+                        tri.iter().all(|&h| motion_of(h) == Some(rotation)),
+                        "the corner's planes share one motion leaf"
+                    );
+                    let mut coeffs = [[Rat::from_int(0); 4]; 3];
+                    for (o, h) in coeffs.iter_mut().zip(tri) {
+                        *o = *m.surface_name.get(&h).unwrap().narrow().unwrap();
+                    }
+                    let base = nacre_scalar::three_planes_rat(coeffs)
+                        .expect("three distinct planes meet in a point");
                     let replayed = crate::rotated_vertex::replay_chain_coord(
                         &m,
-                        m.vertices.get(base).point.as_array(),
+                        [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
                         rotation,
                     )
                     .expect("the root coordinate lifts to an exact rational");
                     assert_eq!(
                         replayed,
-                        m.vertices.get(*vh).point.as_array(),
+                        m.vertex_point(*vh).as_array(),
                         "definition reproduces the stored coordinate bit for bit"
                     );
                     checked += 1;
@@ -3623,7 +3628,7 @@ pub mod tests {
                 {
                     for vh in m.edges.get(he.edge).vertices {
                         if seen.insert(vh) {
-                            pts.push(m.vertices.get(vh).point.as_array());
+                            pts.push(m.vertex_point(vh).as_array());
                         }
                     }
                 }
@@ -3634,7 +3639,7 @@ pub mod tests {
 
     /// A non-90° rotation genuinely tilts the solid: rigid (volume/area invariant),
     /// validate/tess/STEP clean, a known corner lands at its exact rotated image, the
-    /// vertices carry `Origin::Moved` (`solid_is_rotated`), and a boolean against it now
+    /// faces record their motion (`solid_is_rotated`), and a boolean against it now
     /// runs (a *mixed*-rotation cut: rotated `c2` minus an axis-aligned `d` it contains, so
     /// `d` becomes a cavity — overhaul 3d-i retired the `ROTATED_UNSUPPORTED` entry guard).
     #[test]
@@ -3664,7 +3669,7 @@ pub mod tests {
             "rotated solid exports to STEP"
         );
 
-        assert!(solid_is_rotated(&m, c2), "vertices carry Origin::Moved");
+        assert!(solid_is_rotated(&m, c2), "the faces record their rotation");
 
         // Corner (0,0,0) rotates about pivot (1,1) by 30°: dx=dy=-1, so
         // x' = 1 - cos30 + sin30, y' = 1 - sin30 - cos30, z' = 0.
@@ -3760,17 +3765,25 @@ pub mod tests {
         let after = nacre_props::mass_props(&m, r2).unwrap().volume;
         assert!((after - before).abs() < 1e-9, "volume invariant");
 
+        // A seam vertex of the *moved* result still names three planes, and those planes are
+        // the moved ones (S7: the vertex follows its faces' motion — there is no base vertex
+        // left to chase).
         let sh = m.solids.get(r2).outer;
         let mut found_disc_base = false;
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
-                {
-                    for vh in m.edges.get(he.edge).vertices {
-                        if let Origin::Moved { base, .. } = m.vertices.get(vh).origin {
-                            if matches!(m.vertices.get(base).origin, Origin::Discovered { .. }) {
-                                found_disc_base = true;
-                            }
-                        }
+                for vh in m.edges.get(he.edge).vertices {
+                    let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                        continue;
+                    };
+                    let moved = tri.iter().all(|&h| {
+                        !matches!(
+                            m.surface_truth(h),
+                            nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+                        )
+                    });
+                    if moved {
+                        found_disc_base = true;
                     }
                 }
             }
@@ -3858,18 +3871,23 @@ pub mod tests {
         })
     }
 
-    /// Chain: (leaf, base_is_rotated, node_count, axes-root-to-leaf) for the first
-    /// Rotated boundary vertex of `s`.
-    fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(bool, usize, Vec<nacre_scalar::Axis>)> {
-        let vh = *boundary_verts(m, s).first()?;
-        let Origin::Moved {
-            base,
-            motion: rotation,
-        } = m.vertices.get(vh).origin
+    /// Chain: `(node_count, axes-root-to-leaf)` for `s`'s first face's motion.
+    ///
+    /// ★ S7 dropped a third field, `base_is_rotated` — "does this vertex's base vertex itself
+    /// carry a motion?", the one-hop invariant that kept a replay from applying the same motion
+    /// twice. There is no base vertex any more (a moved corner is the intersection of its moved
+    /// planes), so double application is **unrepresentable** rather than merely untrue: the type
+    /// absorbed the invariant, and a probe field that could only ever read `false` would be
+    /// theatre.
+    fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar::Axis>)> {
+        let fh = m.shells.get(m.solids.get(s).outer).faces[0];
+        let &nacre_topo::SurfaceTruth::Plane {
+            motion: Some(rotation),
+            ..
+        } = m.surface_truth(m.faces.get(fh).surface)
         else {
             return None;
         };
-        let base_is_rotated = matches!(m.vertices.get(base).origin, Origin::Moved { .. });
         let mut axes = Vec::new();
         let mut cur = Some(rotation);
         while let Some(h) = cur {
@@ -3880,7 +3898,7 @@ pub mod tests {
             cur = n.parent;
         }
         axes.reverse();
-        Some((base_is_rotated, axes.len(), axes))
+        Some((axes.len(), axes))
     }
 
     /// **A chained boolean must not lose exactness.**
@@ -3958,13 +3976,12 @@ pub mod tests {
         fn leaf(m: &Model, s: Handle<Solid>) -> Handle<nacre_topo::MotionNode> {
             let sh = m.solids.get(s).outer;
             let fh = m.shells.get(sh).faces[0];
-            let vh = m
-                .edges
-                .get(m.faces.get(fh).outer.half_edges[0].edge)
-                .vertices[0];
-            match m.vertices.get(vh).origin {
-                Origin::Moved { motion, .. } => motion,
-                other => panic!("a rotated solid's vertices are moved, got {other:?}"),
+            match m.surface_truth(m.faces.get(fh).surface) {
+                nacre_topo::SurfaceTruth::Plane {
+                    motion: Some(motion),
+                    ..
+                } => *motion,
+                other => panic!("a rotated solid's faces record their motion, got {other:?}"),
             }
         }
         assert_eq!(leaf(&m, a), leaf(&m, b), "one motion, one node");
@@ -4162,7 +4179,7 @@ pub mod tests {
 
         assert_eq!(
             forest_probe(&m, c2),
-            Some((false, 2, vec![Axis::Z, Axis::Z])),
+            Some((2, vec![Axis::Z, Axis::Z])),
             "two Z nodes chained, base = the Constructed root"
         );
         assert!(nacre_validate::validate(&m).is_empty());
@@ -4208,8 +4225,8 @@ pub mod tests {
 
         assert_eq!(
             forest_probe(&m, c2),
-            Some((false, 2, vec![Axis::Z, Axis::X])),
-            "chain root→Z→X, base = root"
+            Some((2, vec![Axis::Z, Axis::X])),
+            "chain root→Z→X"
         );
         assert!(nacre_validate::validate(&m).is_empty());
         let after = nacre_props::mass_props(&m, c2).unwrap().volume;
@@ -4235,7 +4252,7 @@ pub mod tests {
 
         assert_eq!(
             forest_probe(&m, c2),
-            Some((false, 2, vec![Axis::Z, Axis::X])),
+            Some((2, vec![Axis::Z, Axis::X])),
             "the exact 90°X is recorded as a chain node, not dropped"
         );
         assert!(
@@ -4267,7 +4284,7 @@ pub mod tests {
 
         assert_eq!(
             forest_probe(&m, c3),
-            Some((false, 2, vec![Axis::Z, Axis::Z])),
+            Some((2, vec![Axis::Z, Axis::Z])),
             "both rotations recorded; the intervening translation is not in the forest"
         );
         assert!(nacre_validate::validate(&m).is_empty());
@@ -4293,7 +4310,7 @@ pub mod tests {
 
         assert_eq!(
             forest_probe(&m, c3),
-            Some((false, 3, vec![Axis::Z, Axis::X, Axis::Y])),
+            Some((3, vec![Axis::Z, Axis::X, Axis::Y])),
         );
         assert!(nacre_validate::validate(&m).is_empty());
     }
@@ -4309,7 +4326,7 @@ pub mod tests {
         let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
         m.rebuild_adjacency();
-        assert_eq!(forest_probe(&m, c1), Some((false, 1, vec![Axis::Z])));
+        assert_eq!(forest_probe(&m, c1), Some((1, vec![Axis::Z])));
 
         // exact 90° → Constructed (no node), boolean allowed.
         let mut m = Model::new();
@@ -4980,10 +4997,13 @@ pub mod tests {
         let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse")[0];
         m.rebuild_adjacency();
 
-        let mut counts = [(0usize, 0usize); 3]; // (with definition, total) by origin
+        // Rows by **producer family** (S7: `Origin`'s three tags are gone, and the families
+        // they used to stand in for are exactly these three fixtures — a plainly built box, a
+        // rotated one, a boolean result).
+        let mut counts = [(0usize, 0usize); 3]; // (with a three-plane definition, total)
         let mut worst = [0.0f64; 3];
         let mut diam = 0.0f64;
-        for solid in [plain, turned, fused] {
+        for (kind, solid) in [plain, turned, fused].into_iter().enumerate() {
             let shell = m.solids.get(solid).outer;
             let mut seen: Vec<Handle<Vertex>> = Vec::new();
             for &fh in &m.shells.get(shell).faces {
@@ -4999,31 +5019,15 @@ pub mod tests {
                 }
             }
             for &vh in &seen {
-                let v = *m.vertices.get(vh);
-                for c in v.point.as_array() {
+                let coord = m.vertex_point(vh);
+                for c in coord.as_array() {
                     diam = diam.max(c.abs());
                 }
-                let kind = match v.origin {
-                    Origin::Constructed => 0,
-                    Origin::Discovered { .. } => 1,
-                    Origin::Moved { .. } => 2,
-                };
                 counts[kind].1 += 1;
-                let Some(VertexDef::ThreePlane(planes)) = v.definition else {
-                    continue;
+                let VertexDef::ThreePlane(planes) = m.vertices.get(vh).def else {
+                    continue; // a seam vertex names a curve, not a point — no solve to check
                 };
                 counts[kind].0 += 1;
-                // Free cross-check: where `Origin` carries the same answer, the two must agree.
-                if let Origin::Discovered {
-                    definition: VertexDef::ThreePlane(od),
-                    ..
-                } = v.origin
-                {
-                    assert_eq!(
-                        od, planes,
-                        "the two records of one vertex's planes disagree"
-                    );
-                }
                 let coeffs = planes.map(|s| match m.surface(s) {
                     nacre_geom::Surface::Plane(p) => p.coefficients(),
                     nacre_geom::Surface::Cylinder(_) => panic!("ThreePlane named a cylinder"),
@@ -5031,7 +5035,7 @@ pub mod tests {
                 let solved = solve_three_planes(coeffs).expect("three planes meeting at a point");
                 let d = solved
                     .iter()
-                    .zip(v.point.as_array())
+                    .zip(coord.as_array())
                     .map(|(a, b)| (a - b).abs())
                     .fold(0.0f64, f64::max);
                 worst[kind] = worst[kind].max(d);
@@ -5040,11 +5044,11 @@ pub mod tests {
 
         let limit = diam * 2f64.powi(-40);
         eprintln!(
-            "[definition coverage] Constructed {:?} worst {:e} | Discovered {:?} worst {:e} | \
-             Moved {:?} worst {:e} | limit {:e}",
+            "[definition coverage] plain {:?} worst {:e} | turned {:?} worst {:e} | \
+             fused {:?} worst {:e} | limit {:e}",
             counts[0], worst[0], counts[1], worst[1], counts[2], worst[2], limit
         );
-        for (i, name) in ["Constructed", "Discovered", "Moved"].iter().enumerate() {
+        for (i, name) in ["plain", "turned", "fused"].iter().enumerate() {
             assert!(
                 counts[i].1 > 0,
                 "{name} is not exercised — the row proves nothing"
@@ -5060,12 +5064,10 @@ pub mod tests {
                 worst[i]
             );
         }
-        // ★ `Discovered` is the tautological row — its coordinate *came from* solving this very
-        // triple, so a zero there says nothing. `Constructed` and `Moved` are the claims.
-        assert_eq!(
-            worst[1], 0.0,
-            "a Discovered vertex is its own solve, exactly"
-        );
+        // ★ The **fused** row is the tautological one — a boolean vertex's coordinate *came
+        // from* solving this very triple, so a zero there says nothing. `plain` and `turned`
+        // are the claims. (Same argument as before S7; the row moved from a tag to a producer.)
+        assert_eq!(worst[2], 0.0, "a boolean vertex is its own solve, exactly");
     }
 
     /// The negative control for the assertion above: point a definition at the wrong plane and the
@@ -5097,7 +5099,7 @@ pub mod tests {
                 m.edges.get(face.outer.half_edges[0].edge).vertices
             })
             .expect("a face with a loop")[0];
-        let Some(VertexDef::ThreePlane(mut planes)) = m.vertices.get(corner).definition else {
+        let VertexDef::ThreePlane(mut planes) = m.vertices.get(corner).def else {
             panic!("a constructed corner has a definition")
         };
         let good = solve_three_planes(planes.map(|h| match m.surface(h) {
@@ -5193,8 +5195,12 @@ pub mod tests {
         // Bit-for-bit the same model: same counts, same coordinates, same surface wiring.
         assert_eq!(split.faces.len(), clean.faces.len(), "6 faces, not 7");
         assert_eq!(split.vertices.len(), clean.vertices.len());
-        for ((_, s), (_, c)) in split.vertices.iter().zip(clean.vertices.iter()) {
-            assert_eq!(s.point.as_array(), c.point.as_array(), "coordinates");
+        for ((sv, _), (cv, _)) in split.vertices.iter().zip(clean.vertices.iter()) {
+            assert_eq!(
+                split.vertex_point(sv).as_array(),
+                clean.vertex_point(cv).as_array(),
+                "coordinates"
+            );
         }
         for ((_, s), (_, c)) in split.faces.iter().zip(clean.faces.iter()) {
             assert_eq!(s.surface, c.surface, "surface wiring");
@@ -5202,7 +5208,7 @@ pub mod tests {
         // And the corner population is whole: every vertex holds a three-plane definition.
         for (_, v) in split.vertices.iter() {
             assert!(
-                matches!(v.definition, Some(VertexDef::ThreePlane(_))),
+                matches!(v.def, VertexDef::ThreePlane(_)),
                 "a corner without a three-plane definition survived: {v:?}"
             );
         }

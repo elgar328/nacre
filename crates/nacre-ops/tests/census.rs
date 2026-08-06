@@ -77,7 +77,7 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
 /// boolean actually reads.
 ///
 /// **Measured, not assumed:** a boolean's result vertices are all recomputed from plane triples
-/// (`Origin::Discovered { ThreePlane }`), so the result carries *no* trace of the operands' vertex
+/// (a measured `VertexDef::ThreePlane`), so the result carries *no* trace of the operands' vertex
 /// coordinates. A change that moves operand vertices but leaves the planes alone is therefore
 /// invisible in the result — which is exactly what happened the first time this census was used.
 /// Recording the operands is what makes the census see the change it exists to see.
@@ -124,7 +124,7 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
                     for &vh in m.edges.get(he.edge).vertices.iter() {
-                        let p = m.vertices.get(vh).point.as_array();
+                        let p = m.vertex_point(vh).as_array();
                         bits.push([p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]);
                     }
                 }

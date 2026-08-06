@@ -22,7 +22,7 @@ use crate::{BoolKind, he_start};
 use nacre_cip::{Pt3, orient3d_filter};
 use nacre_scalar::Orient;
 use nacre_store::Handle;
-use nacre_topo::{Model, Origin, Solid, Vertex};
+use nacre_topo::{Model, Solid, Vertex};
 use std::collections::HashMap;
 
 /// Whether a boolean may take the shortcut this module exists for.
@@ -48,54 +48,12 @@ pub(crate) enum ClassPlan {
     Empty,
 }
 
-/// Every vertex of a solid as an exact [`Pt3`], or `None` when one of them is `Discovered`.
+/// Every vertex of a solid as an exact [`Pt3`], from its **definition** — or `None` when one
+/// declines, and the class falls back to [`ClassPlan::Arrange`] (slower, never wrong).
 ///
-/// **A discovered vertex is an implicit point** — the meet of three surfaces — so it has no
-/// rational base to stand on. Handing [`Pt3`] the rounded coordinate as if it were the definition
-/// would make the shared-motion exact path answer about a point that is not the one asked for,
-/// which is a silent wrong answer rather than a slow one. So this declines instead, and the class
-/// falls back to [`ClassPlan::Arrange`].
-///
-/// This costs nothing where it matters: in a fold it is the *incoming* operand that is queried,
-/// and that one is freshly built.
-fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
-    let sol = model.solids.get(s);
-    let mut seen: std::collections::HashSet<Handle<Vertex>> = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-        for &fh in &model.shells.get(sh).faces {
-            let f = model.faces.get(fh);
-            for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
-                for &he in &lp.half_edges {
-                    let vh = he_start(model, he);
-                    if !seen.insert(vh) {
-                        continue;
-                    }
-                    let v = model.vertices.get(vh);
-                    out.push(match v.origin {
-                        Origin::Constructed => Pt3::exact(v.point.as_array())?,
-                        Origin::Discovered { .. } => return None,
-                        Origin::Moved { base, motion } => {
-                            let chain = crate::rotated_vertex::motion_chain(model, motion)?;
-                            let bp = model.vertices.get(base).point.as_array();
-                            let base = crate::rotated_vertex::coord_rat(bp).ok()?;
-                            crate::rotated_vertex::replay(Pt3::at(base), &chain)?
-                        }
-                    });
-                }
-            }
-        }
-    }
-    Some(out)
-}
-
-/// S7's def-road twin of [`solid_points`]: the same points, derived from each vertex's
-/// **definition** instead of its `Origin` — run beside the old road and measured against it
-/// (C2) before replacing it when `Origin` dies (C4).
-///
-/// Branches mirror the old road's three:
-/// * measured vertex (today `Origin::Discovered`; C4: `vertex_tol(vh).is_some()`) — decline,
-///   an implicit point has no rational base;
+/// Three branches (measured against the pre-S7 `Origin` road, bit-identical where both
+/// answered — the C2 differential):
+/// * measured vertex (`vertex_tol` Some) — decline, an implicit point has no rational base;
 /// * all three defining surfaces world-stated (`motion: None`) — the coordinate is the
 ///   statement, `Pt3::exact`, letter-identical to the old `Constructed` arm;
 /// * all three sharing one motion — solve the triple's **narrow names in their shared
@@ -107,8 +65,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
 /// (the frame realization is irrational). The old road answered these through the base
 /// vertex S7 dissolves; the decline is honest (Arrange — slower, never wrong) and C2's
 /// differential counts the population.
-#[cfg_attr(not(test), allow(dead_code))] // C2: measured against the old road; C4 switches the caller
-fn solid_points_from_defs(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
+fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
     use nacre_topo::{SurfaceTruth, VertexDef};
     let sol = model.solids.get(s);
     let mut seen: std::collections::HashSet<Handle<Vertex>> = std::collections::HashSet::new();
@@ -122,12 +79,10 @@ fn solid_points_from_defs(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
                     if !seen.insert(vh) {
                         continue;
                     }
-                    let v = model.vertices.get(vh);
-                    if matches!(v.origin, Origin::Discovered { .. }) {
-                        return None;
+                    if model.vertex_tol(vh).is_some() {
+                        return None; // measured — an implicit point has no rational base
                     }
-                    let def = v.definition?;
-                    let VertexDef::ThreePlane(tri) = def else {
+                    let VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
                         return None; // OnSeam: a cylinder never reaches a boolean anyway
                     };
                     let motion_of = |h| match model.surface_truth(h) {
@@ -136,7 +91,7 @@ fn solid_points_from_defs(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
                     };
                     out.push(
                         match (motion_of(tri[0]), motion_of(tri[1]), motion_of(tri[2])) {
-                            (None, None, None) => Pt3::exact(v.point.as_array())?,
+                            (None, None, None) => Pt3::exact(model.vertex_point(vh).as_array())?,
                             (Some(a), Some(b), Some(c)) if a == b && b == c => {
                                 let mut coeffs = [[nacre_scalar::Rat::from_int(0); 4]; 3];
                                 for (o, h) in coeffs.iter_mut().zip(tri) {
@@ -425,34 +380,35 @@ mod tests {
         .unwrap()
     }
 
-    /// Both roads' answers on one solid, compared: same Some/None shape, and where both
-    /// answer, **bit-identical realized coordinates** (the value the separation filter reads).
-    fn assert_roads_agree(m: &Model, s: Handle<Solid>, what: &str) {
-        let old = solid_points(m, s);
-        let new = solid_points_from_defs(m, s);
-        match (&old, &new) {
-            (None, None) => {}
-            (Some(a), Some(b)) => {
-                assert_eq!(a.len(), b.len(), "{what}: point counts differ");
-                for (x, y) in a.iter().zip(b) {
-                    assert_eq!(x.coord, y.coord, "{what}: realized coords differ");
+    /// The def road's answer on one solid: `Some` with every point realized finite, or `None`.
+    fn assert_answers(m: &Model, s: Handle<Solid>, want_some: bool, what: &str) {
+        match solid_points(m, s) {
+            Some(pts) => {
+                assert!(
+                    want_some,
+                    "{what}: expected a decline, got {} points",
+                    pts.len()
+                );
+                assert!(!pts.is_empty(), "{what}: answered with no points");
+                for p in &pts {
+                    assert!(
+                        p.coord.iter().all(|c| c.is_finite()),
+                        "{what}: a realized coordinate is not finite"
+                    );
                 }
             }
-            _ => panic!(
-                "{what}: Some/None shape differs: old={:?} new={:?}",
-                old.is_some(),
-                new.is_some()
-            ),
+            None => assert!(!want_some, "{what}: expected an answer, got a decline"),
         }
     }
 
-    /// ★★ S7 C2: **the def road answers what the Origin road does** — measured before the
-    /// switch. Constructed and moved populations must agree bit for bit; discovered declines
-    /// on both; the mixed-frame population (a tilted extrude's base ring under a world-stated
-    /// cap) is the **known, recorded difference**: the old road answered through the base
-    /// vertex S7 dissolves, the new road declines honestly to Arrange.
+    /// ★★ S7: **which populations the def road answers for**, pinned per producer. Measured
+    /// against the pre-S7 `Origin` road while both existed (C2): constructed and moved agree
+    /// **bit for bit**; discovered declines on both. The one recorded difference is the
+    /// mixed-frame population (④): the `Origin` road answered it through the sketch-frame base
+    /// vertex S7 dissolves, and the def road declines honestly — reuse falls back to Arrange,
+    /// which is slower and never wrong.
     #[test]
-    fn the_def_road_answers_what_the_origin_road_does() {
+    fn the_def_road_answers_for_the_populations_it_can_name() {
         let mut m = Model::new();
         // ① Constructed, decimal-friendly and decimal-unfriendly corners.
         let a = m.add_cuboid(
@@ -464,8 +420,8 @@ mod tests {
             Point3::from_array([1.7, 6.9, 2.2]),
         );
         m.rebuild_adjacency();
-        assert_roads_agree(&m, a, "constructed (integer corners)");
-        assert_roads_agree(&m, b, "constructed (decimal corners)");
+        assert_answers(&m, a, true, "constructed (integer corners)");
+        assert_answers(&m, b, true, "constructed (decimal corners)");
 
         // ② Moved: an inexact rotation records a chain — the 8/8 population, now suite-wide.
         let turned = {
@@ -486,7 +442,7 @@ mod tests {
             solid
         };
         m.rebuild_adjacency();
-        assert_roads_agree(&m, turned, "moved (rotated cuboid)");
+        assert_answers(&m, turned, true, "moved (rotated cuboid)");
 
         // ③ Discovered: a fuse's result declines on both roads.
         let c = m.add_cuboid(
@@ -509,18 +465,11 @@ mod tests {
             solids[0]
         };
         m.rebuild_adjacency();
-        assert!(
-            solid_points(&m, fused).is_none(),
-            "old road declines on discovered"
-        );
-        assert!(
-            solid_points_from_defs(&m, fused).is_none(),
-            "new road declines on discovered"
-        );
+        assert_answers(&m, fused, false, "discovered (a fused result)");
 
-        // ④ The known difference, pinned: a tilted-frame prism's base ring sits under a
-        //    world-stated cap (mixed frames), so the def road declines where the origin road
-        //    answered through the soon-to-die base vertex. Recorded, not hidden.
+        // ④ The recorded difference, pinned: a tilted-frame prism's base ring sits under a
+        //    world-stated cap (mixed frames), and no rational pullback exists — so the def road
+        //    declines where the `Origin` road answered through the base vertex S7 dissolved.
         let tilted = crate::SketchPlane::from_origin_normal(
             Point3::from_array([0.25, -0.5, 1.5]),
             Vector3::from_array([0.3141592653589793, -0.2718281828459045, 1.0]),
@@ -541,14 +490,11 @@ mod tests {
             solid
         };
         m.rebuild_adjacency();
-        assert!(
-            solid_points(&m, prism).is_some(),
-            "the old road answers a tilted prism (through its base vertices)"
-        );
-        assert!(
-            solid_points_from_defs(&m, prism).is_none(),
-            "the def road declines the mixed-frame population — the recorded C2 difference \
-             (its reuse falls back to Arrange: slower, never wrong)"
+        assert_answers(
+            &m,
+            prism,
+            false,
+            "mixed frames (a tilted prism's base ring)",
         );
     }
 }

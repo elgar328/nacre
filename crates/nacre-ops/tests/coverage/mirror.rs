@@ -318,7 +318,7 @@ fn mirroring_a_cylinder_is_declined() {
 }
 
 /// A rotated solid mirrors: the reflection extends the chain with a `Mirror` node, so the image
-/// keeps an exact `Origin::Moved` definition rather than degrading to bare coordinates.
+/// keeps an exact definition (its planes moved with it) rather than degrading to bare coordinates.
 #[test]
 fn a_rotated_solid_mirrors() {
     let mut m = Model::new();
@@ -338,7 +338,17 @@ fn a_rotated_solid_mirrors() {
         .iter()
         .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
         .flat_map(|he| m.edges.get(he.edge).vertices)
-        .filter(|&vh| matches!(m.vertices.get(vh).origin, nacre_topo::Origin::Moved { .. }))
+        .filter(|&vh| {
+            let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                return false;
+            };
+            tri.iter().all(|&h| {
+                !matches!(
+                    m.surface_truth(h),
+                    nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+                )
+            })
+        })
         .count();
     assert!(rotated_verts > 0, "the image keeps its rotation provenance");
     assert!(nacre_validate::validate(&m).is_empty());

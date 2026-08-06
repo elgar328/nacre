@@ -11,17 +11,15 @@ use nacre_geom::Surface;
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
 use nacre_topo::{
-    Adjacency, Edge, Face, Loop, Model, Orientation, Origin, Reachable, Shell, Solid, Vertex,
-    VertexDef,
+    Adjacency, Edge, Face, Loop, Model, Orientation, Reachable, Shell, Solid, Vertex, VertexDef,
 };
 
-/// Residual bound for a `Constructed` vertex lying on its reference
-/// curve/surface. Machine epsilon (~2.2e-16) is too tight — a `Constructed`
-/// coordinate is the output of a short floating-point construction chain
-/// (corner arithmetic, line/plane fitting), so its residual against its own
-/// fitted geometry is ~magnitude·(a few ULP) ≈ 1e-13 for coordinates up to
-/// ~1e3. `1e-9` sits comfortably above that floor yet ~7 orders below any
-/// `Discovered` tolerance.
+/// Residual bound for a vertex with **no measured tolerance** lying on its reference
+/// curve/surface. Machine epsilon (~2.2e-16) is too tight — such a coordinate is the
+/// output of a short floating-point construction chain (corner arithmetic, line/plane
+/// fitting), so its residual against its own fitted geometry is ~magnitude·(a few ULP)
+/// ≈ 1e-13 for coordinates up to ~1e3. `1e-9` sits comfortably above that floor yet
+/// ~7 orders below any measured tolerance.
 pub const EPS_CONSTRUCTED: f64 = 1e-9;
 
 /// Which reference edge in the topology graph a dangling handle sits on.
@@ -32,7 +30,7 @@ pub enum RefKind {
     HalfEdgeEdge,
     ShellFace,
     SolidShell,
-    /// A `Discovered` vertex's `VertexDef` surface handle.
+    /// A vertex definition's surface handle.
     VertexDefSurface,
 }
 
@@ -126,11 +124,11 @@ pub enum Violation {
         tol: f64,
     },
 
-    /// A `Discovered` vertex does not lie on one of its `VertexDef` planes within
-    /// its measured tolerance — the definition is the truth, so the cached point
-    /// must sit within `tol` of every plane it is defined as intersecting
-    /// (design §4). `surface_index` is type-erased (like [`Self::DanglingReference`]) so
-    /// the checker never names geom's `Surface` (geom stays a dev-dependency).
+    /// A **measured** vertex does not lie on one of its definition's surfaces within its
+    /// measured tolerance — the definition is the truth, so the cached point must sit within
+    /// `tol` of every surface it is defined as meeting (design §4). `surface_index` is
+    /// type-erased (like [`Self::DanglingReference`]) so the checker never names geom's
+    /// `Surface` (geom stays a dev-dependency).
     VertexOffDefinition {
         vertex: Handle<Vertex>,
         surface_index: u32,
@@ -205,18 +203,12 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     out
 }
 
-/// The tolerance an element's provenance grants: `Constructed` is exact to
-/// [`EPS_CONSTRUCTED`]; `Discovered` carries its own measured tolerance.
+/// The tolerance a vertex's provenance grants (S7: read from the point cache): a measured
+/// tolerance where one exists (`Some` — a discovered vertex, `0.0` kept exact), else the
+/// construction epsilon [`EPS_CONSTRUCTED`].
 #[inline]
-fn tol_of(o: Origin) -> f64 {
-    match o {
-        Origin::Constructed => EPS_CONSTRUCTED,
-        Origin::Discovered { tol, .. } => tol,
-        // A moved vertex's f64 cache is a rigid image of an exact point; its incidence residual
-        // is machine-scale (the motion history records the definition, judged later — §CIP ⑦),
-        // so the construction epsilon holds.
-        Origin::Moved { .. } => EPS_CONSTRUCTED,
-    }
+fn tol_of(m: &Model, vh: Handle<Vertex>) -> f64 {
+    m.vertex_tol(vh).unwrap_or(EPS_CONSTRUCTED)
 }
 
 #[inline]
@@ -292,22 +284,21 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
         }
     }
 
-    // A discovered vertex's definition references surfaces by handle.
+    // Every vertex's definition references surfaces by handle (S7: the definition is the
+    // vertex, so this covers all of them, not just the discovered population).
     for (vh, vertex) in m.vertices.iter() {
-        if let Origin::Discovered { definition, .. } = vertex.origin {
-            let surfaces: &[Handle<Surface>] = match &definition {
-                VertexDef::ThreePlane(s) => s,
-                VertexDef::OnSeam(s) => s,
-            };
-            for &s in surfaces {
-                if s.index() as usize >= m.surface_count() {
-                    out.push(Violation::DanglingReference {
-                        kind: RefKind::VertexDefSurface,
-                        owner_index: vh.index(),
-                        target_index: s.index(),
-                        target_len: m.surface_count() as u32,
-                    });
-                }
+        let surfaces: &[Handle<Surface>] = match &vertex.def {
+            VertexDef::ThreePlane(s) => s,
+            VertexDef::OnSeam(s) => s,
+        };
+        for &s in surfaces {
+            if s.index() as usize >= m.surface_count() {
+                out.push(Violation::DanglingReference {
+                    kind: RefKind::VertexDefSurface,
+                    owner_index: vh.index(),
+                    target_index: s.index(),
+                    target_len: m.surface_count() as u32,
+                });
             }
         }
     }
@@ -355,12 +346,11 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
 /// integrity (it dereferences surface handles).
 fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
     for (vh, vertex) in m.vertices.iter() {
-        let bad = match &vertex.definition {
-            None => false,
-            Some(VertexDef::ThreePlane(planes)) => planes
+        let bad = match &vertex.def {
+            VertexDef::ThreePlane(planes) => planes
                 .iter()
                 .any(|&s| !matches!(m.surface(s), Surface::Plane(_))),
-            Some(VertexDef::OnSeam(pair)) => pair
+            VertexDef::OnSeam(pair) => pair
                 .iter()
                 .all(|&s| matches!(m.surface(s), Surface::Plane(_))),
         };
@@ -573,7 +563,6 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             let [a, b] = edge.vertices;
             let curve = m.edge_curve(eh);
             for vh in [a, b] {
-                let vertex = m.vertices.get(vh);
                 let residual = curve.distance(m.vertex_point(vh));
                 // `.max(EPS_CONSTRUCTED)` is what `.max(tol_of(edge.origin))` always evaluated
                 // to (every producer wrote `Constructed`), spelled as the constant it was after
@@ -581,12 +570,12 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                 // `Discovered { tol: 0.0 }` vertex (an exact-zero measured residual — a real
                 // population) relies on this floor to absorb the distance computation's own
                 // machine-scale noise.
-                let tol = tol_of(vertex.origin).max(EPS_CONSTRUCTED);
+                let tol = tol_of(m, vh).max(EPS_CONSTRUCTED);
                 if residual > tol {
                     out.push(Violation::VertexOffCurve {
                         edge: eh,
                         vertex: vh,
-                        point: vertex.point,
+                        point: m.vertex_point(vh),
                         residual,
                         tol,
                     });
@@ -608,7 +597,6 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                 {
                     let [a, b] = m.edges.get(he.edge).vertices;
                     let vh = if he.forward { a } else { b };
-                    let vertex = m.vertices.get(vh);
                     let residual = surface.distance(m.vertex_point(vh));
                     // ★ Plus what the residual's *own* arithmetic can produce. `tol_of` describes
                     // where the vertex may sit; it says nothing about `Surface::distance`, so a
@@ -617,12 +605,12 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                     // genuinely on the plane sat at residual *exactly equal* to its tolerance, and
                     // passed only because the comparison is strict — the slack that had been
                     // covering this term was the loose `Discovered` tolerances of the day.
-                    let tol = tol_of(vertex.origin) + surface.distance_eps(vertex.point);
+                    let tol = tol_of(m, vh) + surface.distance_eps(m.vertex_point(vh));
                     if residual > tol {
                         out.push(Violation::VertexOffSurface {
                             face: fh,
                             vertex: vh,
-                            point: vertex.point,
+                            point: m.vertex_point(vh),
                             residual,
                             tol,
                         });
@@ -635,26 +623,29 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
     // definition claims it is the intersection of (design §4 — the definition is
     // the truth, the point is a within-tol cache). Reference integrity ran first,
     // so the definition's surface handles are in bounds.
+    // (Population letter-preserved in the S7 swap: measured — tol-Some — vertices only, the
+    // old `Discovered` set. The all-vertices extension is its own commit.)
     for (vh, vertex) in m.vertices.iter() {
         if !reach.vertices.contains(&vh) {
             continue;
         }
-        if let Origin::Discovered {
-            tol,
-            definition: VertexDef::ThreePlane(surfaces),
-        } = vertex.origin
-        {
-            for sh in surfaces {
-                let residual = m.surface(sh).distance(vertex.point);
-                if residual > tol {
-                    out.push(Violation::VertexOffDefinition {
-                        vertex: vh,
-                        surface_index: sh.index(),
-                        point: vertex.point,
-                        residual,
-                        tol,
-                    });
-                }
+        let Some(tol) = m.vertex_tol(vh) else {
+            continue;
+        };
+        let surfaces: &[Handle<Surface>] = match &vertex.def {
+            VertexDef::ThreePlane(s) => s,
+            VertexDef::OnSeam(s) => s,
+        };
+        for &sh in surfaces {
+            let residual = m.surface(sh).distance(m.vertex_point(vh));
+            if residual > tol {
+                out.push(Violation::VertexOffDefinition {
+                    vertex: vh,
+                    surface_index: sh.index(),
+                    point: m.vertex_point(vh),
+                    residual,
+                    tol,
+                });
             }
         }
     }
@@ -665,7 +656,7 @@ mod tests {
     use super::*;
     use nacre_geom::{Plane, Surface};
     use nacre_math::Vector3;
-    use nacre_topo::{HalfEdge, Orientation, Origin, Shell, Solid};
+    use nacre_topo::{HalfEdge, Orientation, Shell, Solid};
     use proptest::prelude::*;
 
     fn cuboid(min: [f64; 3], max: [f64; 3]) -> Model {
@@ -758,18 +749,15 @@ mod tests {
     fn dangling_reference_vertex_definition() {
         // A discovered vertex whose definition points past the surface store.
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]); // 6 surfaces, 8 vertices
-        let vh = m.vertices.push(Vertex {
-            point: Point3::origin(),
-            definition: None,
-            origin: Origin::Discovered {
-                tol: 1e-9,
-                definition: VertexDef::ThreePlane([
-                    surface_handle_at(0),
-                    surface_handle_at(1),
-                    surface_handle_at(9), // out of bounds — only 6 surfaces
-                ]),
-            },
-        });
+        let vh = m.push_vertex(
+            VertexDef::ThreePlane([
+                surface_handle_at(0),
+                surface_handle_at(1),
+                surface_handle_at(9), // out of bounds — only 6 surfaces
+            ]),
+            Point3::origin(),
+            Some(1e-9),
+        );
         assert_eq!(
             validate(&m),
             vec![Violation::DanglingReference {
@@ -782,15 +770,11 @@ mod tests {
     }
 
     #[test]
-    fn vertex_def_and_discovered_origin_are_copy() {
+    fn vertex_def_is_copy() {
         let d = VertexDef::ThreePlane([surface_handle_at(0); 3]);
-        let o = Origin::Discovered {
-            tol: 1e-9,
-            definition: d,
-        };
-        let copy = o; // move-or-copy
-        let _again = o; // still usable ⇒ Copy, not moved
-        assert_eq!(o, copy);
+        let copy = d; // move-or-copy
+        let _again = d; // still usable ⇒ Copy, not moved
+        assert_eq!(d, copy);
     }
 
     #[test]
@@ -799,11 +783,15 @@ mod tests {
         // is unreachable from the live cube, so validate ignores it (design §2).
         // (Under the old whole-store count this raised EulerParity{v:9}.)
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        m.vertices.push(Vertex {
-            point: Point3::origin(),
-            origin: Origin::Constructed,
-            definition: None,
-        });
+        m.push_vertex(
+            VertexDef::ThreePlane([
+                m.world_plane(nacre_scalar::Axis::Z),
+                m.world_plane(nacre_scalar::Axis::X),
+                m.world_plane(nacre_scalar::Axis::Y),
+            ]),
+            Point3::origin(),
+            None,
+        );
         assert!(validate(&m).is_empty());
     }
 
@@ -869,21 +857,12 @@ mod tests {
         ([1, 2, 3], [(3, true), (5, true), (4, false)]),
     ];
 
-    /// How a nudged vertex is tagged. A lightweight stand-in for [`Origin`]:
-    /// `push_tetra` fills in a `Discovered` vertex's [`VertexDef`] from the three
-    /// tetra faces incident to it (their surface handles are not known until the
-    /// surfaces are built).
-    #[derive(Clone, Copy)]
-    enum NudgeOrigin {
-        Constructed,
-        Discovered { tol: f64 },
-    }
-
     #[derive(Default)]
     struct TetraOpts {
-        /// (vertex index, coordinate delta, that vertex's origin) — moves a
-        /// vertex off its (un-moved) curves/surfaces.
-        nudge: Option<(usize, [f64; 3], NudgeOrigin)>,
+        /// (vertex index, coordinate delta, measured tol) — moves a vertex off its
+        /// (un-moved) surfaces; `Some(tol)` marks it measured (the old `Discovered`),
+        /// `None` constructed.
+        nudge: Option<(usize, [f64; 3], Option<f64>)>,
         drop_face: Option<usize>,
         flip_he: Option<(usize, usize)>, // (face, half-edge position)
         swap_he: Option<(usize, usize, usize)>, // (face, position a, position b)
@@ -925,35 +904,28 @@ mod tests {
         let vh: Vec<Handle<Vertex>> = (0..4)
             .map(|i| {
                 let mut p = corner(i).as_array();
-                let mut origin = Origin::Constructed;
-                if let Some((vi, d, o)) = opts.nudge {
+                let mut tol = None;
+                if let Some((vi, d, t)) = opts.nudge {
                     if vi == i {
                         p = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-                        origin = match o {
-                            NudgeOrigin::Constructed => Origin::Constructed,
-                            NudgeOrigin::Discovered { tol } => {
-                                // The three faces incident to vertex `i` define it.
-                                let incident: Vec<Handle<Surface>> = TETRA_FACES
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|(_, (tri, _))| tri.contains(&i))
-                                    .map(|(fi, _)| sh[fi])
-                                    .collect();
-                                Origin::Discovered {
-                                    tol,
-                                    definition: VertexDef::ThreePlane(
-                                        incident.try_into().expect("a tetra vertex is on 3 faces"),
-                                    ),
-                                }
-                            }
-                        };
+                        tol = t;
                     }
                 }
-                m.vertices.push(Vertex {
-                    point: Point3::from_array(p),
-                    origin,
-                    definition: None,
-                })
+                // Every vertex names the three tetra faces incident to it (S7: the
+                // definition is the vertex).
+                let incident: Vec<Handle<Surface>> = TETRA_FACES
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (tri, _))| tri.contains(&i))
+                    .map(|(fi, _)| sh[fi])
+                    .collect();
+                m.push_vertex(
+                    VertexDef::ThreePlane(
+                        incident.try_into().expect("a tetra vertex is on 3 faces"),
+                    ),
+                    Point3::from_array(p),
+                    tol,
+                )
             })
             .collect();
         let eh: Vec<Handle<Edge>> = (0..6)
@@ -1100,11 +1072,7 @@ mod tests {
         // construction — the check's remaining teeth are the circles, see
         // `vertex_off_its_rim_circle`.)
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((
-                0,
-                [0.0, 0.0, 2.0 * EPS_CONSTRUCTED],
-                NudgeOrigin::Constructed,
-            )),
+            nudge: Some((0, [0.0, 0.0, 2.0 * EPS_CONSTRUCTED], None)),
             ..Default::default()
         }));
         assert!(
@@ -1138,11 +1106,11 @@ mod tests {
         let sb = plane(&mut m, [0.0, 1.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, -1]]);
         let sc = plane(&mut m, [1.0, 0.0, 1.0], [[0, 0, 0], [0, 1, 0], [1, 0, -1]]);
         let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
-            m.vertices.push(Vertex {
-                point: Point3::from_array(p),
-                origin: Origin::Constructed,
-                definition: None,
-            })
+            m.push_vertex(
+                VertexDef::ThreePlane([sa, sb, sc]),
+                Point3::from_array(p),
+                None,
+            )
         };
         let v0 = v(&mut m, [0.0, 0.0, 0.0]);
         let v1 = v(&mut m, [1.0, 0.0, 0.0]);
@@ -1215,16 +1183,8 @@ mod tests {
             m.world_plane(nacre_scalar::Axis::Z),
             m.world_plane(nacre_scalar::Axis::X),
         );
-        let bad_three = m.vertices.push(Vertex {
-            point: Point3::origin(),
-            origin: Origin::Constructed,
-            definition: Some(VertexDef::ThreePlane([z0, x0, cyl])),
-        });
-        let bad_seam = m.vertices.push(Vertex {
-            point: Point3::origin(),
-            origin: Origin::Constructed,
-            definition: Some(VertexDef::OnSeam([z0, x0])),
-        });
+        let bad_three = m.push_vertex(VertexDef::ThreePlane([z0, x0, cyl]), Point3::origin(), None);
+        let bad_seam = m.push_vertex(VertexDef::OnSeam([z0, x0]), Point3::origin(), None);
         let vs = validate(&m);
         for bad in [bad_three, bad_seam] {
             assert!(
@@ -1263,12 +1223,14 @@ mod tests {
             .map(|(_, f)| f.surface)
             .find(|&h| h != lateral && !matches!(m.surface(h), Surface::Cylinder(_)))
             .expect("a cap plane");
-        // A seam vertex at radius 2 + 1e-3 — off the derived radius-2 rim circle.
-        let bad = m.vertices.push(nacre_topo::Vertex {
-            point: Point3::from_array([2.001, 0.0, 0.0]),
-            origin: Origin::Constructed,
-            definition: None,
-        });
+        // A seam vertex at radius 2 + 1e-3 — off the derived radius-2 rim circle. Its
+        // definition is `OnSeam` (the lateral cylinder and its cap), which is what a rim's
+        // endpoint always is; the coordinate is the part that lies.
+        let bad = m.push_vertex(
+            VertexDef::OnSeam([lateral, cap]),
+            Point3::from_array([2.001, 0.0, 0.0]),
+            None,
+        );
         let rim = m
             .push_edge([lateral, cap], [bad, bad])
             .expect("a rim derives from its carriers, not its vertices");
@@ -1300,7 +1262,7 @@ mod tests {
     fn discovered_vertex_within_tolerance_is_clean() {
         let tol = 1e-6;
         let m = tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 0.5 * tol], NudgeOrigin::Discovered { tol })),
+            nudge: Some((0, [0.0, 0.0, 0.5 * tol], Some(tol))),
             ..Default::default()
         });
         assert!(validate(&m).is_empty());
@@ -1310,7 +1272,7 @@ mod tests {
     fn discovered_vertex_outside_tolerance_flags() {
         let tol = 1e-6;
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 2.0 * tol], NudgeOrigin::Discovered { tol })),
+            nudge: Some((0, [0.0, 0.0, 2.0 * tol], Some(tol))),
             ..Default::default()
         }));
         assert!(vs.iter().any(|v| matches!(
@@ -1326,7 +1288,7 @@ mod tests {
         // fires — not merely "some violation" (which VertexOffSurface satisfies).
         let tol = 1e-6;
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 2.0 * tol], NudgeOrigin::Discovered { tol })),
+            nudge: Some((0, [0.0, 0.0, 2.0 * tol], Some(tol))),
             ..Default::default()
         }));
         assert!(

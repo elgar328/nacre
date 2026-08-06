@@ -16,8 +16,7 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Origin, Shell, Solid, Vertex,
-    VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Vertex, VertexDef,
 };
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
@@ -723,7 +722,7 @@ fn swept_profile(
 /// so a reversed ring yields walls facing into the hole (out of the material), and the cap loops
 /// come out opposed to the cap's outer loop, which is what makes them holes.
 ///
-/// All vertices are `Origin::Constructed`. Returns the solid and its faces: `faces[0]` = base cap
+/// No vertex carries a measured tolerance. Returns the solid and its faces: `faces[0]` = base cap
 /// (at the ring, normal `−ŝ`), `faces[1]` = far cap, then the outer walls, then each hole's walls.
 /// Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
 pub(crate) fn build_prism(
@@ -1046,54 +1045,35 @@ fn sweep_ring(
     // every corner gets its three-plane definition (locked by
     // `a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit`). Non-adjacent walls may
     // still legitimately share a plane (a notch), which never lands `prev == here`.
-    let define = |i: usize, cap: Handle<Surface>| -> Option<VertexDef> {
+    // ★ Total since S7: the guard's `None` (adjacent same-plane walls) is unreachable — S3's
+    // profile constructor dissolves collinear midpoints — and a wall can never equal a cap (a
+    // wall contains the sweep direction, a cap has it as normal). The honest reject stands in
+    // for the unreachable arm; the suite is what would refute "unreachable".
+    //
+    // (The frame base vertex died here (S7, Q2): a frame-drawn corner is the intersection of
+    // three planes sharing the frame's motion, and solving them in that frame and replaying
+    // the chain reproduces the stored coordinate bit for bit — measured 8/8, re-measured
+    // suite-wide by the reuse differential. The shell-less base-vertex scaffolding went
+    // with it.)
+    let define = |i: usize, cap: Handle<Surface>| -> Result<VertexDef, OpError> {
         let prev = walls[(i + n - 1) % n].0;
         let here = walls[i].0;
-        (prev != here && prev != cap && here != cap)
-            .then_some(VertexDef::ThreePlane([prev, here, cap]))
+        if prev == here || prev == cap || here == cap {
+            return Err(OpError::DegenerateGeometry);
+        }
+        Ok(VertexDef::ThreePlane([prev, here, cap]))
     };
-    // ★★★★ **A vertex drawn in a frame is `Moved`, not `Constructed`.**
-    //
-    // `Constructed` means *"this f64 coordinate is the truth"*, which is exactly right in the
-    // world and exactly wrong here: the truth is a rational `(u, v, w)` in the plane's frame, and
-    // the world coordinate is what realizing it produced. Recording it as `Moved` against the
-    // frame is what lets a judge replay the definition and check the coordinate against it —
-    // and what lets `shared_base` cancel the whole sketch's frame and judge it *exactly*.
-    //
-    // The base vertex is the sketch point itself, at its frame coordinate. It belongs to no
-    // shell — the store is append-only and a vertex nothing references is simply a definition
-    // that outlives its use, which is what `Origin::Moved` needs one of.
-    let motion = ring.exact.motion;
     let push_verts = |model: &mut Model,
                       ps: &[Point3],
-                      frame_pt: &dyn Fn(usize) -> Option<Point3>,
                       cap: Handle<Surface>|
-     -> Vec<Handle<Vertex>> {
+     -> Result<Vec<Handle<Vertex>>, OpError> {
         ps.iter()
             .enumerate()
-            .map(|(i, p)| {
-                let origin = match (motion, frame_pt(i)) {
-                    (Some(m), Some(fp)) => {
-                        let base = model.vertices.push(Vertex {
-                            point: fp,
-                            origin: Origin::Constructed,
-                            definition: None,
-                        });
-                        Origin::Moved { base, motion: m }
-                    }
-                    _ => Origin::Constructed,
-                };
-                model.vertices.push(Vertex {
-                    point: *p,
-                    origin,
-                    definition: define(i, cap),
-                })
-            })
+            .map(|(i, p)| Ok(model.push_vertex(define(i, cap)?, *p, None)))
             .collect()
     };
-    let ex = &ring.exact;
-    let bv = push_verts(model, &base_pts, &|i| Some(ex.base_f64(i)), caps.0);
-    let tv = push_verts(model, &top_pts, &|i| Some(ex.top_f64(i)), caps.1);
+    let bv = push_verts(model, &base_pts, caps.0)?;
+    let tv = push_verts(model, &top_pts, caps.1)?;
 
     let (mut be, mut te, mut ve) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
@@ -1507,7 +1487,7 @@ fn realized_plane(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> SketchPla
 /// A face-local feature built as **tool body + boolean**: the profile
 /// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid.
 /// A **contained** footprint takes the contained-coplanar path (empty seam → all
-/// `Origin::Constructed`); one that **reaches past the face** routes to the overhang boolean
+/// no measured tolerance); one that **reaches past the face** routes to the overhang boolean
 /// sidecars (a boss cantilever / an edge slot; Discovered seam vertices). `Fuse` sweeps **outward**
 /// (a boss); `Cut` sweeps **inward** (a blind pocket). Returns the result solid and the feature's
 /// exposed cap — the boss top or the pocket floor, the outer-shell face on the prism's far-cap plane

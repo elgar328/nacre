@@ -14,9 +14,7 @@ use nacre_cip::{Decision, dir_orient3d_judge};
 use nacre_geom::Surface;
 use nacre_math::Point3;
 use nacre_store::Handle;
-use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Orientation, Origin, Shell, Solid, Vertex, VertexDef,
-};
+use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, Vertex, VertexDef};
 use std::collections::{HashMap, HashSet};
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
@@ -601,17 +599,9 @@ pub(crate) fn assemble_fuse_cut(
                     planes[triple[1]].surf,
                     planes[triple[2]].surf,
                 ]);
-                model.vertices.push(Vertex {
-                    point: sv.point,
-                    origin: Origin::Discovered {
-                        tol: sv.tol,
-                        definition: def,
-                    },
-                    // The same triple. The boolean has always known which three planes make a
-                    // seam vertex; this is that answer in the field every producer fills, rather
-                    // than one only `Discovered` carries.
-                    definition: Some(def),
-                })
+                // The coordinate and its measured tolerance travel together into the cache
+                // (the arrangement made them as a pair — `three_planes` + `vertex_tol`).
+                model.push_vertex(def, sv.point, Some(sv.tol))
             }
         };
         vh.insert(node, handle);

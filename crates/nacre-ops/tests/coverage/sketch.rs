@@ -12,7 +12,7 @@ use nacre_ops::{
     BoolKind, Edge2d, OpOutput, Operation, Profile2d, SketchPlane, apply, from_edges, from_rings,
 };
 use nacre_store::Handle;
-use nacre_topo::{Model, Origin, Solid};
+use nacre_topo::{Model, Solid};
 
 /// `[0,4]²` with a `[1,3]²` hole, extruded 1 high: volume 16 − 4 = 12.
 fn donut_profile() -> Profile2d {
@@ -97,7 +97,7 @@ fn a_swept_hole_is_constructed_throughout() {
             for he in &lp.half_edges {
                 for vh in m.edges.get(he.edge).vertices.iter() {
                     assert!(
-                        matches!(m.vertices.get(*vh).origin, Origin::Constructed),
+                        m.vertex_tol(*vh).is_none(),
                         "a swept vertex carries no tolerance"
                     );
                 }
@@ -225,11 +225,7 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
                 Point3::from_array([5.0, 5.0, 4.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
             ) && m.faces.get(fh).outer.half_edges.len() == 4
-                && m.vertices
-                    .get(nacre_topo_first_vertex(&m, fh))
-                    .point
-                    .as_array()[2]
-                    == 4.0
+                && m.vertex_point(nacre_topo_first_vertex(&m, fh)).as_array()[2] == 4.0
         })
         .expect("top face");
 

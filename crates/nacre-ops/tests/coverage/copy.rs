@@ -3,13 +3,13 @@
 //! Driven through the public front door (`apply`), the way a consumer uses it: the kernel could
 //! *move* a solid but never *copy* one, so "cut with the same tool twice" and pattern/mirror sugar
 //! had no expression. What matters here is that the twin is genuinely independent (no shared
-//! cells) and that a vertex's exact `Origin` survives the duplication.
+//! cells) and that a vertex's exact definition survives the duplication.
 
 use crate::common::*;
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpError, OpOutput, Operation, apply, boolean};
 use nacre_store::Handle;
-use nacre_topo::{Model, Origin, Solid};
+use nacre_topo::{Model, Solid, VertexDef};
 
 /// `apply(Copy)` through the public API, asserting the output shape.
 fn copy_solid(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
@@ -24,16 +24,15 @@ fn unit_cube(m: &mut Model) -> Handle<Solid> {
     m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]))
 }
 
-/// Discovered vertices of a solid — the count is how the `ThreePlane` remap is observed.
+/// Measured (boolean-made) vertices of a solid — the count is how the `ThreePlane` remap is
+/// observed (S7: the measured tolerance is what "discovered" now means).
 fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
     let mut n = 0;
     for &fh in &m.shells.get(m.solids.get(s).outer).faces {
         for he in &m.faces.get(fh).outer.half_edges {
-            {
-                for vh in m.edges.get(he.edge).vertices {
-                    if matches!(m.vertices.get(vh).origin, Origin::Discovered { .. }) {
-                        n += 1;
-                    }
+            for vh in m.edges.get(he.edge).vertices {
+                if m.vertex_tol(vh).is_some() {
+                    n += 1;
                 }
             }
         }
@@ -147,9 +146,9 @@ fn a_boolean_result_copies_with_its_discovered_vertices() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A rotated solid's vertices are `Origin::Moved`, naming a base vertex and a rotation node.
-/// This is the only place that provenance is observable — a boolean *result* is uniformly
-/// `Discovered`, because every result vertex is rebuilt as a seam node.
+/// A rotated solid's vertices keep their definitions, and those definitions name the **moved**
+/// surfaces — so the twin's corners are defined against the twin's own planes (S7: the motion
+/// lives on the faces, and a vertex follows the planes it names).
 #[test]
 fn a_rotated_solid_copies_with_its_rotation_origin() {
     let mut m = Model::new();
@@ -167,10 +166,23 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
             .iter()
             .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
             .flat_map(|he| m.edges.get(he.edge).vertices)
-            .filter(|&vh| matches!(m.vertices.get(vh).origin, Origin::Moved { .. }))
+            .filter(|&vh| {
+                let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                    return false;
+                };
+                tri.iter().all(|&h| {
+                    !matches!(
+                        m.surface_truth(h),
+                        nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+                    )
+                })
+            })
             .count()
     };
-    assert!(rotated(r) > 0, "the rotated solid has Rotated vertices");
+    assert!(
+        rotated(r) > 0,
+        "the rotated solid's corners name moved planes"
+    );
     assert_eq!(rotated(twin), rotated(r), "provenance carried");
     assert!((volume(&m, twin) - volume(&m, r)).abs() < 1e-12);
     assert!(nacre_validate::validate(&m).is_empty());

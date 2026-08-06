@@ -7,7 +7,7 @@
 //!
 //! Everything decided here is decided by an exact predicate. Coordinates that
 //! appear (`three_planes`' cache) are never the basis of a decision — the truth of
-//! a seam point is its plane triple, as it is for `Origin::Discovered` (design §4).
+//! a seam point is its plane triple, as it is for a measured vertex (design §4).
 //!
 //! # One `usize`, two meanings — now two tables
 //!

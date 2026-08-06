@@ -228,7 +228,7 @@ pub fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
             {
                 for vh in m.edges.get(he.edge).vertices {
                     if seen.insert(vh) {
-                        pts.push(m.vertices.get(vh).point.as_array());
+                        pts.push(m.vertex_point(vh).as_array());
                     }
                 }
             }

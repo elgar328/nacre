@@ -86,7 +86,7 @@ const COPLANAR_DET_EPS: f64 = 1e-9;
 /// `[n1, n2, n3]`), `hᵢ = nᵢ·originᵢ`.
 ///
 /// The f64 coordinate is a **cache** — the three planes are the truth (design
-/// §3/§4). Its residual to the planes is the `Origin::Discovered` tolerance,
+/// §3/§4). Its residual to the planes is the vertex cache's measured tolerance,
 /// which the caller (M5-c) measures when it forms the vertex (closed-form
 /// residual is recomputable, unlike an iterative solve's, so it is not returned
 /// here). The gate is the conditioning threshold [`COPLANAR_DET_EPS`], not the
@@ -158,7 +158,7 @@ pub fn three_plane_orient3d(
 ///
 /// This is what decides whether a segment straddles a face's plane, and it is the only
 /// place a coordinate enters that decision. For a vertex the operations built, the
-/// coordinate *is* the truth; for a `Origin::Discovered` vertex it is a rounded cache of
+/// coordinate *is* the truth; for a measured (boolean-made) vertex it is a rounded cache of
 /// a plane triple, and an exact answer would come from [`three_plane_orient3d`] on that
 /// triple instead.
 pub fn plane_side(tri: [Point3; 3], p: Point3) -> i8 {

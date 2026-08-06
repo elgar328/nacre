@@ -189,7 +189,7 @@ pub(crate) struct SweptRat {
     /// every case that existed before tilted faces became exact. `Some` says they are the
     /// coordinates of a plane's own frame, and that this motion is what carries them out — so
     /// every plane derived from them states itself *in that frame* and every vertex is
-    /// `Origin::Moved` against it.
+    /// written against it (its planes record the motion).
     pub motion: Option<Handle<MotionNode>>,
 }
 
@@ -205,17 +205,6 @@ impl Swept {
 }
 
 impl SweptRat {
-    /// The frame-coordinate f64 image of a base ring point — the witness's own frame, and the
-    /// coordinate a vertex built here is defined against.
-    pub(crate) fn base_f64(&self, i: usize) -> Point3 {
-        realize(&self.base[i..=i])[0]
-    }
-
-    /// The same for a top ring point.
-    pub(crate) fn top_f64(&self, i: usize) -> Point3 {
-        realize(&self.top[i..=i])[0]
-    }
-
     /// **Segment `i → i+1`'s wall, as the three points that define it** — `base[i]`, `base[j]`,
     /// `top[i]`, the same three `Plane::through_points` is given, so the exact record and the f64
     /// one describe the plane the same way round.
@@ -292,7 +281,7 @@ pub(crate) fn prism_rings(
     };
     let sweep = f.sweep(dist)?;
     // ★★★ **The realization must be the *definition's* own replay, not a second route to the
-    // same real number.** A vertex written here is `Origin::Moved` against `frame`, and a judge
+    // same real number.** A vertex written here is defined against `frame`, and a judge
     // reads that definition back through `replay`; if this rounded the coordinates some other
     // way the two would sit an ulp apart and the invariant that lets a coordinate be checked
     // against its definition would be false. In the world frame there is no motion and `to_f64`
@@ -313,7 +302,7 @@ pub(crate) fn prism_rings(
                     // coordinate holding `0.1` would replay to different bits, and the invariant
                     // that lets a coordinate be checked against its definition would be false.
                     // The vertex's base is the f64 the frame coordinate realizes to, exactly as
-                    // the world path already keeps only the realized f64 in `Origin::Constructed`.
+                    // the world path already keeps only the realized f64 in the point cache.
                     //
                     // ★ Nothing is lost where it matters: the *plane coefficients* are still
                     // computed from the decimal rationals above, so `7.7` and `1.1 + 6.6` name

@@ -462,10 +462,11 @@ mod tests {
         // And the vertex hull really is smaller — otherwise this test proves nothing.
         let mut vlo = [f64::INFINITY; 3];
         let mut vhi = [f64::NEG_INFINITY; 3];
-        for (_, v) in m.vertices.iter() {
+        for (vh, _) in m.vertices.iter() {
+            let p = m.vertex_point(vh).as_array();
             for i in 0..3 {
-                vlo[i] = vlo[i].min(v.point.as_array()[i]);
-                vhi[i] = vhi[i].max(v.point.as_array()[i]);
+                vlo[i] = vlo[i].min(p[i]);
+                vhi[i] = vhi[i].max(p[i]);
             }
         }
         assert!(
