@@ -490,7 +490,9 @@ pub enum Decision {
 
 | | 항목 | 선행 |
 |---|---|---|
-| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5). **`Operation` 의 평면-핸들 어휘 교체도 여기다**(S9 에서 유예 — 사유는 S9 행). ★ 그 교체가 성립할 토대는 **R 에서 깔렸다**(2026-08-07): 로그 속 핸들은 인덱스 어휘이고 `replay` 가 재고정한다 — 그러므로 S5 는 `Model::surface_handle_at`(좁은 접근자 하나, 전체 순회자 아님 — S1 봉인 무손상)만 예약하면 되고, `rebind` 에 `Handle<Surface>` 갈래를 한 줄 더하는 일이 된다 | 없음(S9·R 완료) |
+| S5(i)-a ✔ | **datum 평면 연산** — `Operation::DatumPlane{def: DatumDef{Stated(SketchPlane) \| Offset{frame, dist}}}` + `OpOutput::DatumPlane{plane, frame}` + `Model::surface_handle_at`(좁은 읽기 접근자, S1 봉인 무손상) + `rebind` 의 `Handle<Surface>` 갈래(`LogCell::Surface`). 새 공개 생성자 없음 — 다섯 `SketchPlane` 생성자가 곧 datum 의 어휘다. 규약: 캐시 법선 `−(진술된 법선)`(근거 둘 — S9 의 781, `frame_sign`), 배치는 `Stated` 면 **무조건 `Named`**(ZX 의 `+u = +ẑ` 가 유도를 금지), `Offset` 은 push 전 3중 정규화(flip→부호 / 세계 되당김 / `dist == 0` 은 `ZeroOffset` 거절)로 «한 평면에 한 핸들»을 지킨다. ★ **앵커 실측**(`tests/plane_anchor.rs`): 기울어진 평면의 저장 `d` 는 앵커마다 최대 **22 ulp** 다르고 그 넷은 **링의 네 점**이라 이 흔들림은 datum 이전부터 있었다; `spans_exactly` 는 다섯 앵커 **전부 false** 라 판정 경로가 앵커를 읽지 않고, 최악 앵커에서도 위상 동일·부피 비트 동일·좌표 **1.1e-15**(ε 의 1/4400). 축 정렬 평면은 `d` 가 곱 하나라 앵커에 **무감각** — 그래서 «먼 원점 + world_xy» 픽스처는 아무것도 재지 못한다 | ✔ 2026-08-07 |
+| S5(i)-b | **`Operation::Extrude` 의 평면 어휘 교체** (`SketchPlane` 값 → `SketchFrame` 핸들). ★ 착수 전 읽을 것: (a) 위 앵커 실측 — «미리 존재하는 평면이 밑캡을 공급한다»는 이미 pad/pocket 의 프로덕션 도로이고 `build_prism` 의 `Some(h)`/`None` 두 갈래는 **결과가 동일**하다(방향은 `n_h·(−N)` 부호로 같은 답), (b) **경고**: `world_zx` 의 `+u = ẑ` 는 exact 갈래에서 `SketchFrame` 이 아니라 `RatFrame`(f64 축 리프트)으로 운반된다 — 교체는 그것을 `(평면 핸들, Named 배치)` 에서 다시 유도하고 실현 축의 비트 동일을 증명해야 한다, (c) C1 초록은 **밑캡 하나**에 대한 답이지 «프레임 노드 생성 여부»까지 덮지 않는다 | S5(i)-a ✔ |
+| S5(ii) | `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | S5(i)-b |
 
 ★ 판정층 개명(`Pt3`→`WitnessPoint`·`WorkingPoint`→`WorkingVertex`·`PlaneGeom`→`WorkingPlane`,
 §판정 이름 규칙)은 별도 단계가 아니라 **각 타입을 처음 만지는 단계에 얹는다** — 기계적 개명이라
@@ -547,7 +549,10 @@ STEP 출력, undo/replay.
 4. **정의만 가리키는 평면의 순회·직렬화** — `Model::reachable` 이 면을 통해서만 돈다. 세계 축
    평면·datum 이 가리키는 평면·이동본을 정의 경유로도 따라가야 한다. ★ S9 부로 실재 인구가
    생겼다: 씨앗 셋은 심긴 직후엔 어느 면도 참조하지 않는 orphan 이다(`Reachable` doc 정정
-   완료 — validate 는 도달 집합만 검사해 무위반). 직렬화·순회 일반화는 S5 가 강제할 때 함께.
+   완료 — validate 는 도달 집합만 검사해 무위반). ★★ **S5(i)-a 는 이것을 강제하지 않았다**
+   (확인, 2026-08-07): 스냅샷 포맷이 **존재하지 않고**, `nacre-step`·`nacre-tess` 는 surface
+   store 를 **아예 돌지 않으며**(둘 다 면 경유), validate 는 도달 집합만 센다 ⇒ 쓰이지 않는
+   datum 은 어디로도 새지 않는다. 일반화는 스냅샷 포맷이 생길 때다.
 5. **M6 절벽** — 이차곡면 셋은 최대 8점에서 만나 `[Handle; 3]` 이 «어느 점»을 못 말한다. 가지
    번호(`branch: u8`, 결정적이어야 함) 또는 재명명 — M6 에서 실제 형상을 만나 결정. 통일안을
    채택했으므로 이 문제는 모든 점에 걸린다 — M6 의 가장 큰 항목.

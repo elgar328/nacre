@@ -416,6 +416,11 @@ pub struct Tessellation {
 
 ```rust
 pub enum Operation {
+    // M5(S5(i)-a): 모델이 **호출자가 이름 붙인 평면**을 드는 유일한 연산. 로그가 이름 부를 수
+    // 있던 평면은 씨앗 셋과 «이미 만든 면의 평면» 둘뿐이었고, 그 밖은 전부 Extrude 안에 값으로
+    // 살았다. 평면을 로그 **밖**에서 만들면 그 모델은 자기완결적이지 않으므로 연산이어야 한다.
+    // 평면은 구성 시점 interning 대상이라 «이미 있으면 그 핸들»이 정답이다(아레나 안 자람).
+    DatumPlane { def: DatumDef },  // Stated(SketchPlane) | Offset { frame: SketchFrame, dist }
     // M2: 스케치 평면·프로파일 개념이 Extrude 인자로 흡수된다(별도 Sketch op 없음). Extrude는
     // 프로파일에서 새 솔리드를 만들므로 앞선 op의 면을 참조할 필연이 없다 — op간 Handle 참조는
     // 기존 면 위에 작업하는 M4(PadOnFace/PocketOnFace)에서 비로소 필연적으로 도입된다.
@@ -426,6 +431,32 @@ pub enum Operation {
     Boolean { kind: BoolKind, a: Handle<Solid>, b: Handle<Solid> },
     // ...
 }
+
+**datum 평면의 규칙 (S5(i)-a).** 평면을 만드는 연산은 `DatumPlane` **하나**이고, 불리언은
+여전히 평면을 만들지 않는다(C6 깊이 불변식 무손상, `a_boolean_mints_no_surface`).
+
+- **캐시 법선은 `−(진술된 법선)`** — 씨앗이 `−축`, extrude 밑캡이 `−plane.normal()` 인 그 규약.
+  근거 둘: S9 가 `+축` 씨앗으로 **781 캡의 저장 법선이 뒤집힘**을 실측했고, `PlaneGeom::
+  frame_sign` 이 «저장 법선 vs 루트 면의 바깥 법선» 인데 밑캡의 바깥이 `−N` 이다.
+- **연산은 호출자의 프레임을 함께 돌려준다**(`OpOutput::DatumPlane{plane, frame}`) — 편의가
+  아니라 **정확성**이다. 호출자가 `SketchFrame::named` 로 다시 말하면 f64 를 거쳐
+  `Rat::from_decimal` 을 두 번 타고 계산값은 다른 유리수로 떨어질 수 있다. `Stated` 의 배치는
+  **무조건 `Named`**: ZX 평면의 정준 `+u` 는 `−x̂` 인데 규약은 `+ẑ` 라, 유도로 흉내내면 그
+  스케치들이 조용히 돈다.
+- **`Offset` 은 push 전에 정규화한다 — 셋 다 «한 평면에 두 핸들»을 막는 조항이다.** 신원은
+  `(평면, 부호 있는 거리)` 의 순수 함수여야 한다(배치의 원점·`+u` 는 평행 평면을 옮기지 않는다):
+  ① `flip` 을 부호로 접고 **평면의 정준 프레임**에서 짓는다 ⇒ 한 평면의 다른 프레임을 든 두
+  호출자가 같은 핸들을 받는다. ② 정준 기저가 정확히 리프트되면 **세계로 말한다**(S9 의 노드
+  생략 규칙을 실현된 기저에 적용) — 프레임 노드 아래 두면 키가 `(이름, Some(노드))` 라 상자
+  캡의 같은 평면과 **interning 되지 않는다**. ③ **`dist == 0` 은 이름 붙은 거절**(`ZeroOffset`):
+  기울어진 프레임의 밑 평면은 세계에서 유리수라 ②가 안 걸리므로, 0 만이 남는 충돌이다. 0 이
+  아닌 오프셋은 계수가 `c ∓ d·√(n·n)` 이라 무리수여서 경쟁 진술 자체가 없다. 세계 되당김이
+  넘치면 **조용히 노드 도로로 가지 않고** 거절한다 — 그 도로가 곧 중복이 생기는 자리다.
+- **datum 은 솔리드 이동을 따라가지 않는다.** append-only 라 datum 이 가리키는 평면은 남고,
+  나중 `Transform` 은 새 평면을 만든다(의도된 동작 — datum 은 독립적인 기준이다).
+- **쓰이지 않는 datum 은 어디에서도 새지 않는다**: `validate` 는 live 도달 집합만 세고 surface
+  는 경계 검사만 받으며(씨앗 셋이 이미 영구 orphan), `nacre-step`·`nacre-tess` 는 surface
+  store 를 돌지 않는다(둘 다 면 경유).
 
 pub struct TessConfig { pub default_tol: f64 /* , 면별 override 등 */ }
 
