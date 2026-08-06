@@ -52,7 +52,7 @@ pub enum TessError {
 /// Every model vertex is still written, in store order, so an OBJ index stays a
 /// vertex handle's index; a superseded vertex simply goes unreferenced.
 ///
-/// Assumes every edge is bounded (M1); a closed edge (`bounds: None`, M3) would
+/// Every edge is bounded by type (S8); a boundless standalone circle would
 /// panic. Faces are emitted in their loop winding, which for M1's outward-wound
 /// `Orientation::Forward` faces yields outward-facing triangles.
 pub fn to_obj(model: &Model) -> Result<String, TessError> {
@@ -76,11 +76,7 @@ pub fn to_obj(model: &Model) -> Result<String, TessError> {
         lp.half_edges
             .iter()
             .map(|he| {
-                let bounds = model
-                    .edges
-                    .get(he.edge)
-                    .bounds
-                    .expect("M1: bounded edges only (closed edges arrive in M3)");
+                let bounds = model.edges.get(he.edge).vertices;
                 let start = if he.forward { bounds[0] } else { bounds[1] };
                 start.index() as usize
             })
@@ -254,9 +250,7 @@ fn sample_edge(
     eh: Handle<Edge>,
     edge: &Edge,
 ) -> Vec<Handle<TessVertex>> {
-    let [v0, v1] = edge
-        .bounds
-        .expect("M3 tess: bounded edges (a closed rim uses a seam vertex)");
+    let [v0, v1] = edge.vertices;
     match model.edge_curve(eh) {
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Circle(c) => {

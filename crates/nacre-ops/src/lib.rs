@@ -802,12 +802,9 @@ fn assert_rejects<T: std::fmt::Debug + PartialEq>(
     assert_eq!(f(), Err(BoolError::Unsupported { reason: expect }));
 }
 
-/// The start vertex of a half-edge (`bounds[0]` if forward, else `bounds[1]`).
-/// Every half-edge walked here belongs to a valid solid, so its edge is bounded.
+/// The start vertex of a half-edge (`vertices[0]` if forward, else `vertices[1]`).
 pub(crate) fn he_start(model: &Model, he: HalfEdge) -> Handle<Vertex> {
-    // A solid's loop edge is always bounded; only the standalone full circle of
-    // design §4 is not, and that is never part of a face's loop.
-    model.he_start(he).expect("a solid's loop edge is bounded")
+    model.he_start(he)
 }
 
 use std::collections::HashMap;
@@ -2456,7 +2453,7 @@ pub mod tests {
                 let face = m.faces.get(fh);
                 holed += usize::from(!face.inner.is_empty());
                 for he in face_half_edges(face) {
-                    for vh in m.edges.get(he.edge).bounds.into_iter().flatten() {
+                    for vh in m.edges.get(he.edge).vertices {
                         if !seen.insert(vh) {
                             continue;
                         }
@@ -3390,8 +3387,8 @@ pub mod tests {
         let sh = m.solids.get(s).outer;
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
-                if let Some(bd) = m.edges.get(he.edge).bounds {
-                    for vh in bd {
+                {
+                    for vh in m.edges.get(he.edge).vertices {
                         let p = m.vertices.get(vh).point.as_array();
                         for k in 0..3 {
                             lo[k] = lo[k].min(p[k]);
@@ -3409,8 +3406,8 @@ pub mod tests {
         let sh = m.solids.get(s).outer;
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
-                if let Some(bd) = m.edges.get(he.edge).bounds {
-                    for vh in bd {
+                {
+                    for vh in m.edges.get(he.edge).vertices {
                         if seen.insert(vh)
                             && matches!(m.vertices.get(vh).origin, Origin::Discovered { .. })
                         {
@@ -3558,7 +3555,7 @@ pub mod tests {
         let mut checked = 0;
         for &fh in &m.shells.get(shell).faces.clone() {
             for he in &m.faces.get(fh).outer.half_edges.clone() {
-                for vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                for vh in m.edges.get(he.edge).vertices.iter() {
                     assert!(
                         matches!(m.vertices.get(*vh).origin, Origin::Moved { .. }),
                         "the image keeps its rotation definition"
@@ -3623,8 +3620,8 @@ pub mod tests {
         let sh = m.solids.get(s).outer;
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
-                if let Some(bd) = m.edges.get(he.edge).bounds {
-                    for vh in bd {
+                {
+                    for vh in m.edges.get(he.edge).vertices {
                         if seen.insert(vh) {
                             pts.push(m.vertices.get(vh).point.as_array());
                         }
@@ -3767,8 +3764,8 @@ pub mod tests {
         let mut found_disc_base = false;
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
-                if let Some(bd) = m.edges.get(he.edge).bounds {
-                    for vh in bd {
+                {
+                    for vh in m.edges.get(he.edge).vertices {
                         if let Origin::Moved { base, .. } = m.vertices.get(vh).origin {
                             if matches!(m.vertices.get(base).origin, Origin::Discovered { .. }) {
                                 found_disc_base = true;
@@ -3826,8 +3823,8 @@ pub mod tests {
         let sh = m.solids.get(s).outer;
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
-                if let Some(bd) = m.edges.get(he.edge).bounds {
-                    for vh in bd {
+                {
+                    for vh in m.edges.get(he.edge).vertices {
                         if seen.insert(vh) {
                             vs.push(vh);
                         }
@@ -3964,8 +3961,7 @@ pub mod tests {
             let vh = m
                 .edges
                 .get(m.faces.get(fh).outer.half_edges[0].edge)
-                .bounds
-                .unwrap()[0];
+                .vertices[0];
             match m.vertices.get(vh).origin {
                 Origin::Moved { motion, .. } => motion,
                 other => panic!("a rotated solid's vertices are moved, got {other:?}"),
@@ -4994,7 +4990,7 @@ pub mod tests {
                 let face = m.faces.get(fh);
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
-                        for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                        for &vh in m.edges.get(he.edge).vertices.iter() {
                             if !seen.contains(&vh) {
                                 seen.push(vh);
                             }
@@ -5095,12 +5091,12 @@ pub mod tests {
             .shells
             .get(shell)
             .faces
-            .iter()
-            .find_map(|&fh| {
+            .first()
+            .map(|&fh| {
                 let face = m.faces.get(fh);
-                m.edges.get(face.outer.half_edges[0].edge).bounds
+                m.edges.get(face.outer.half_edges[0].edge).vertices
             })
-            .expect("a bounded edge")[0];
+            .expect("a face with a loop")[0];
         let Some(VertexDef::ThreePlane(mut planes)) = m.vertices.get(corner).definition else {
             panic!("a constructed corner has a definition")
         };

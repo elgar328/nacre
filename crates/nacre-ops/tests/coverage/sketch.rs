@@ -95,7 +95,7 @@ fn a_swept_hole_is_constructed_throughout() {
         let face = m.faces.get(fh).clone();
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
-                for vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                for vh in m.edges.get(he.edge).vertices.iter() {
                     assert!(
                         matches!(m.vertices.get(*vh).origin, Origin::Constructed),
                         "a swept vertex carries no tolerance"
@@ -274,7 +274,7 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
 /// the pocket fixture above needs it.
 fn nacre_topo_first_vertex(m: &Model, fh: Handle<nacre_topo::Face>) -> Handle<nacre_topo::Vertex> {
     let he = m.faces.get(fh).outer.half_edges[0];
-    let [a, b] = m.edges.get(he.edge).bounds.expect("bounded");
+    let [a, b] = m.edges.get(he.edge).vertices;
     if he.forward { a } else { b }
 }
 

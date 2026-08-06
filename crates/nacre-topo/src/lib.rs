@@ -721,7 +721,7 @@ impl Model {
         self.shells.push(Shell { faces })
     }
 
-    /// The vertex a half-edge starts at: its edge's `bounds[0]` when the use runs
+    /// The vertex a half-edge starts at: its edge's `vertices[0]` when the use runs
     /// forward, `bounds[1]` when it runs back.
     ///
     /// A traversal accessor, not an analysis — the same kind of thing as
@@ -742,9 +742,9 @@ impl Model {
 
     /// that invariant while `nacre-props` reports it as unsupported input.
     #[inline]
-    pub fn he_start(&self, he: HalfEdge) -> Option<Handle<Vertex>> {
-        let [a, b] = self.edges.get(he.edge).bounds?;
-        Some(if he.forward { a } else { b })
+    pub fn he_start(&self, he: HalfEdge) -> Handle<Vertex> {
+        let [a, b] = self.edges.get(he.edge).vertices;
+        if he.forward { a } else { b }
     }
 
     /// **An edge's curve, derived from what the model already holds** — the S8 shape of the
@@ -831,11 +831,9 @@ impl Model {
                             if !in_bounds(he.edge, &self.edges) || !r.edges.insert(he.edge) {
                                 continue;
                             }
-                            if let Some(bounds) = self.edges.get(he.edge).bounds {
-                                for v in bounds {
-                                    if in_bounds(v, &self.vertices) {
-                                        r.vertices.insert(v);
-                                    }
+                            for v in self.edges.get(he.edge).vertices {
+                                if in_bounds(v, &self.vertices) {
+                                    r.vertices.insert(v);
                                 }
                             }
                         }
@@ -966,8 +964,7 @@ impl Model {
             self.edges.push(Edge {
                 curve,
                 surfaces: Edge::carrier_pair(surf[fa].0, surf[fb].0),
-                bounds: Some([vh[a], vh[b]]),
-                origin: Origin::Constructed,
+                vertices: [vh[a], vh[b]],
             })
         });
 
@@ -1100,8 +1097,7 @@ impl Model {
             self.edges.push(Edge {
                 curve,
                 surfaces: Edge::carrier_pair(lateral_surface, bottom_cap_surface),
-                bounds: Some([v_bot, v_bot]),
-                origin: Origin::Constructed,
+                vertices: [v_bot, v_bot],
             })
         };
         let top = {
@@ -1111,8 +1107,7 @@ impl Model {
             self.edges.push(Edge {
                 curve,
                 surfaces: Edge::carrier_pair(lateral_surface, top_cap_surface),
-                bounds: Some([v_top, v_top]),
-                origin: Origin::Constructed,
+                vertices: [v_top, v_top],
             })
         };
         let seam = {
@@ -1124,8 +1119,7 @@ impl Model {
                 // Self-adjacent: a seam is a parameterization joint of ONE surface, not an
                 // intersection of two — the provisional S8 spelling (see `Edge::surfaces`).
                 surfaces: [lateral_surface, lateral_surface],
-                bounds: Some([v_bot, v_top]),
-                origin: Origin::Constructed,
+                vertices: [v_bot, v_top],
             })
         };
 
@@ -1298,11 +1292,11 @@ mod tests {
     }
 
     fn he_start(m: &Model, he: HalfEdge) -> Handle<Vertex> {
-        let [a, b] = m.edges.get(he.edge).bounds.unwrap();
+        let [a, b] = m.edges.get(he.edge).vertices;
         if he.forward { a } else { b }
     }
     fn he_end(m: &Model, he: HalfEdge) -> Handle<Vertex> {
-        let [a, b] = m.edges.get(he.edge).bounds.unwrap();
+        let [a, b] = m.edges.get(he.edge).vertices;
         if he.forward { b } else { a }
     }
     fn face_plane_normal(m: &Model, f: &Face) -> Vector3 {
@@ -1403,7 +1397,7 @@ mod tests {
         let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
         for (eh, e) in m.edges.iter() {
             let curve = m.edge_curve(eh);
-            let [a, b] = e.bounds.unwrap();
+            let [a, b] = e.vertices;
             assert!(curve.contains(m.vertices.get(a).point, 1e-9));
             assert!(curve.contains(m.vertices.get(b).point, 1e-9));
         }
@@ -1546,7 +1540,7 @@ mod tests {
             let scale = 1e-6 * (max.iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
             for (eh, e) in m.edges.iter() {
                 let curve = m.edge_curve(eh);
-                let [a, b] = e.bounds.unwrap();
+                let [a, b] = e.vertices;
                 prop_assert!(curve.contains(m.vertices.get(a).point, scale));
                 prop_assert!(curve.contains(m.vertices.get(b).point, scale));
             }

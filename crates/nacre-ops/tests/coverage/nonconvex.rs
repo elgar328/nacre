@@ -786,9 +786,7 @@ fn boolean_topology_is_the_same_on_untidy_coordinates() {
             for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &l.half_edges {
                     edges.insert(he.edge);
-                    if let Some(bd) = m.edges.get(he.edge).bounds {
-                        verts.extend(bd);
-                    }
+                    verts.extend(m.edges.get(he.edge).vertices);
                 }
             }
         }

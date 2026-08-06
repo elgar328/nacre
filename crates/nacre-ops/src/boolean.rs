@@ -182,10 +182,9 @@ fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<Reje
                     for he in &lp.half_edges {
                         edge_uses.entry(he.edge).or_default().push((fh, he.forward));
                         if edges_seen.insert(he.edge) {
-                            if let Some([va, vb]) = model.edges.get(he.edge).bounds {
-                                vertex_edges.entry(va).or_default().push(he.edge);
-                                vertex_edges.entry(vb).or_default().push(he.edge);
-                            }
+                            let [va, vb] = model.edges.get(he.edge).vertices;
+                            vertex_edges.entry(va).or_default().push(he.edge);
+                            vertex_edges.entry(vb).or_default().push(he.edge);
                         }
                     }
                 }
@@ -684,8 +683,7 @@ pub(crate) fn assemble_fuse_cut(
         let e = model.edges.push(Edge {
             curve,
             surfaces,
-            bounds: Some([va, vb]),
-            origin: Origin::Constructed,
+            vertices: [va, vb],
         });
         edge_of.insert(key, e);
         Ok(e)
@@ -701,7 +699,7 @@ pub(crate) fn assemble_fuse_cut(
                 .map(|t| {
                     let (va, vb) = (handles[t], handles[(t + 1) % k]);
                     let e = edge_for(model, va, vb, [planes[r.walls[t]].surf, face_surf])?;
-                    let forward = model.edges.get(e).bounds.expect("bounded")[0] == va;
+                    let forward = model.edges.get(e).vertices[0] == va;
                     Ok(HalfEdge { edge: e, forward })
                 })
                 .collect::<Result<Vec<_>, BoolError>>()?;

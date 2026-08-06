@@ -944,7 +944,7 @@ pub(crate) fn edge_incidence(
             let face = model.faces.get(fh);
             let pidx = surf_ix[&fh];
             for he in face_half_edges(face) {
-                let bounds = model.edges.get(he.edge).bounds.expect("bounded");
+                let bounds = model.edges.get(he.edge).vertices;
                 let entry = map.entry(he.edge).or_insert_with(|| {
                     order.push(he.edge);
                     (bounds, Vec::new())

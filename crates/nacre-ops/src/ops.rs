@@ -602,8 +602,7 @@ fn push_line_edge(
     Ok(model.edges.push(Edge {
         curve,
         surfaces: Edge::carrier_pair(carriers[0], carriers[1]),
-        bounds: Some([a, b]),
-        origin: Origin::Constructed,
+        vertices: [a, b],
     }))
 }
 

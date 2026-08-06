@@ -70,15 +70,6 @@ pub enum Violation {
         at: usize,
     },
 
-    /// A half-edge in a loop resolves to an edge with `bounds == None`. M1
-    /// expects every edge bounded; a closed edge (M3) here can't be checked for
-    /// closure and is reported (its continuity check is skipped, not assumed).
-    UnboundedEdgeInLoop {
-        face: Handle<Face>,
-        loop_kind: LoopKind,
-        edge: Handle<Edge>,
-    },
-
     /// An edge is used by a number of half-edges other than two. A closed
     /// 2-manifold uses every edge exactly twice. `use_count == 0` = orphan;
     /// `1` = boundary/open surface; `>= 3` = non-manifold.
@@ -224,8 +215,8 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
                 target_len: m.curves.len() as u32,
             });
         }
-        if let Some(bounds) = edge.bounds {
-            for v in bounds {
+        {
+            for v in edge.vertices {
                 if !in_bounds(v, &m.vertices) {
                     out.push(Violation::DanglingReference {
                         kind: RefKind::EdgeBoundVertex,
@@ -367,20 +358,13 @@ fn check_loop(m: &Model, fh: Handle<Face>, kind: LoopKind, lp: &Loop, out: &mut 
         });
         return;
     }
-    // Resolve each half-edge to (start, end); unbounded edges are reported and
-    // skipped in the continuity walk (not assumed closed).
+    // Resolve each half-edge to (start, end). (Every edge is bounded by type since S8 —
+    // the `UnboundedEdgeInLoop` arm died with the `Option`.)
     let ends: Vec<Option<(Handle<Vertex>, Handle<Vertex>)>> = hes
         .iter()
-        .map(|he| match m.edges.get(he.edge).bounds {
-            None => {
-                out.push(Violation::UnboundedEdgeInLoop {
-                    face: fh,
-                    loop_kind: kind,
-                    edge: he.edge,
-                });
-                None
-            }
-            Some([a, b]) => Some(if he.forward { (a, b) } else { (b, a) }),
+        .map(|he| {
+            let [a, b] = m.edges.get(he.edge).vertices;
+            Some(if he.forward { (a, b) } else { (b, a) })
         })
         .collect();
 
@@ -483,10 +467,10 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     Some(flux / 3.0)
 }
 
-/// The start vertex of a loop's first half-edge (`None` if unbounded).
+/// The start vertex of a loop's first half-edge (`None` for an empty loop).
 fn loop_start(m: &Model, lp: &Loop) -> Option<Handle<Vertex>> {
     let he = lp.half_edges.first()?;
-    let [a, b] = m.edges.get(he.edge).bounds?;
+    let [a, b] = m.edges.get(he.edge).vertices;
     Some(if he.forward { a } else { b })
 }
 
@@ -498,10 +482,10 @@ fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
         .half_edges
         .iter()
         .map(|he| {
-            let [a, b] = m.edges.get(he.edge).bounds?;
-            Some(m.vertices.get(if he.forward { a } else { b }).point)
+            let [a, b] = m.edges.get(he.edge).vertices;
+            m.vertices.get(if he.forward { a } else { b }).point
         })
-        .collect::<Option<_>>()?;
+        .collect();
     if pts.len() < 3 {
         return None;
     }
@@ -528,12 +512,19 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         if !reach.edges.contains(&eh) {
             continue;
         }
-        if let Some([a, b]) = edge.bounds {
+        {
+            let [a, b] = edge.vertices;
             let curve = m.edge_curve(eh);
             for vh in [a, b] {
                 let vertex = m.vertices.get(vh);
                 let residual = curve.distance(vertex.point);
-                let tol = tol_of(vertex.origin).max(tol_of(edge.origin));
+                // `.max(EPS_CONSTRUCTED)` is what `.max(tol_of(edge.origin))` always evaluated
+                // to (every producer wrote `Constructed`), spelled as the constant it was after
+                // `Edge.origin` died (S8). It is NOT redundant with the vertex term: a
+                // `Discovered { tol: 0.0 }` vertex (an exact-zero measured residual — a real
+                // population) relies on this floor to absorb the distance computation's own
+                // machine-scale noise.
+                let tol = tol_of(vertex.origin).max(EPS_CONSTRUCTED);
                 if residual > tol {
                     out.push(Violation::VertexOffCurve {
                         edge: eh,
@@ -557,7 +548,8 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         let surface = m.surface(face.surface);
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
-                if let Some([a, b]) = m.edges.get(he.edge).bounds {
+                {
+                    let [a, b] = m.edges.get(he.edge).vertices;
                     let vh = if he.forward { a } else { b };
                     let vertex = m.vertices.get(vh);
                     let residual = surface.distance(vertex.point);
@@ -836,7 +828,6 @@ mod tests {
         /// vertex off its (un-moved) curves/surfaces.
         nudge: Option<(usize, [f64; 3], NudgeOrigin)>,
         drop_face: Option<usize>,
-        unbind_edge: Option<usize>,
         flip_he: Option<(usize, usize)>, // (face, half-edge position)
         swap_he: Option<(usize, usize, usize)>, // (face, position a, position b)
     }
@@ -914,11 +905,6 @@ mod tests {
                 let curve = m.curves.push(Curve::Line(
                     Line::through_points(corner(a), corner(b)).unwrap(),
                 ));
-                let bounds = if opts.unbind_edge == Some(i) {
-                    None
-                } else {
-                    Some([vh[a], vh[b]])
-                };
                 // The two faces whose loops use edge `i` — its carriers, read off the same
                 // table the loops are built from.
                 let carriers: Vec<Handle<Surface>> = TETRA_FACES
@@ -933,8 +919,7 @@ mod tests {
                 m.edges.push(Edge {
                     curve,
                     surfaces: Edge::carrier_pair(ca, cb),
-                    bounds,
-                    origin: Origin::Constructed,
+                    vertices: [vh[a], vh[b]],
                 })
             })
             .collect();
@@ -1005,18 +990,6 @@ mod tests {
                 ..
             }
         )));
-    }
-
-    #[test]
-    fn unbounded_edge_in_loop() {
-        let vs = validate(&tetra_with(TetraOpts {
-            unbind_edge: Some(0),
-            ..Default::default()
-        }));
-        assert!(
-            vs.iter()
-                .any(|v| matches!(v, Violation::UnboundedEdgeInLoop { .. }))
-        );
     }
 
     #[test]

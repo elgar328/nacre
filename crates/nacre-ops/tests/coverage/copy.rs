@@ -29,8 +29,8 @@ fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
     let mut n = 0;
     for &fh in &m.shells.get(m.solids.get(s).outer).faces {
         for he in &m.faces.get(fh).outer.half_edges {
-            if let Some(bounds) = m.edges.get(he.edge).bounds {
-                for vh in bounds {
+            {
+                for vh in m.edges.get(he.edge).vertices {
                     if matches!(m.vertices.get(vh).origin, Origin::Discovered { .. }) {
                         n += 1;
                     }
@@ -166,8 +166,7 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
             .faces
             .iter()
             .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
-            .filter_map(|he| m.edges.get(he.edge).bounds)
-            .flatten()
+            .flat_map(|he| m.edges.get(he.edge).vertices)
             .filter(|&vh| matches!(m.vertices.get(vh).origin, Origin::Moved { .. }))
             .count()
     };

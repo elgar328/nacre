@@ -92,10 +92,7 @@ fn origins_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
                     let edge = model.edges.get(he.edge);
-                    if !named(&edge.origin) {
-                        return false;
-                    }
-                    for vh in edge.bounds.iter().flatten() {
+                    for vh in edge.vertices.iter() {
                         if !named(&model.vertices.get(*vh).origin) {
                             return false;
                         }
@@ -273,7 +270,7 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
             }
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    for &vh in model.edges.get(he.edge).bounds.iter().flatten() {
+                    for &vh in model.edges.get(he.edge).vertices.iter() {
                         if !all(model.vertices.get(vh).point) {
                             return false;
                         }
@@ -644,11 +641,9 @@ fn transform_solid(
     let mut vert_order: Vec<Handle<Vertex>> = Vec::new();
     let mut vert_seen: HashSet<Handle<Vertex>> = HashSet::new();
     for &eh in &edge_order {
-        if let Some(bounds) = model.edges.get(eh).bounds {
-            for vh in bounds {
-                if vert_seen.insert(vh) {
-                    vert_order.push(vh);
-                }
+        for vh in model.edges.get(eh).vertices {
+            if vert_seen.insert(vh) {
+                vert_order.push(vh);
             }
         }
     }
@@ -704,8 +699,7 @@ fn transform_solid(
             // lookups cannot miss). Re-canonicalized: the map need not preserve pairwise index
             // order.
             surfaces: Edge::carrier_pair(surf_map[&e.surfaces[0]], surf_map[&e.surfaces[1]]),
-            bounds: e.bounds.map(|[a, b]| [vert_map[&a], vert_map[&b]]),
-            origin: remap_origin(e.origin, &surf_map),
+            vertices: e.vertices.map(|v| vert_map[&v]),
         };
         edge_map.insert(eh, model.edges.push(new_e));
     }
@@ -778,10 +772,7 @@ fn solid_motion(model: &Model, solid: Handle<Solid>) -> Option<Handle<MotionNode
     let mut seen: Option<Option<Handle<MotionNode>>> = None;
     for &fh in &model.shells.get(sh).faces {
         for he in &model.faces.get(fh).outer.half_edges {
-            let Some(bounds) = model.edges.get(he.edge).bounds else {
-                continue;
-            };
-            for &vh in &bounds {
+            for &vh in &model.edges.get(he.edge).vertices {
                 let leaf = match model.vertices.get(vh).origin {
                     Origin::Moved { motion, .. } => Some(motion),
                     _ => None,

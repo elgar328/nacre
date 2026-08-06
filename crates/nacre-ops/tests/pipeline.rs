@@ -253,7 +253,7 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
         .iter()
         .find(|&&fh| {
             m.faces.get(fh).outer.half_edges.iter().all(|he| {
-                let b = m.edges.get(he.edge).bounds.unwrap();
+                let b = m.edges.get(he.edge).vertices;
                 b.iter()
                     .all(|&v| (m.vertices.get(v).point[2] - 1.0).abs() < 1e-9)
             })
@@ -789,7 +789,7 @@ fn a_flipped_island_loop_is_caught() {
         .copied()
         .filter(|&f| {
             m.faces.get(f).outer.half_edges.iter().all(|he| {
-                let b = m.edges.get(he.edge).bounds.unwrap();
+                let b = m.edges.get(he.edge).vertices;
                 b.iter()
                     .all(|&v| (m.vertices.get(v).point[2] - 1.0).abs() < 1e-9)
             })

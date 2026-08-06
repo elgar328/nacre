@@ -361,7 +361,7 @@ mod tests {
             let sh = m.solids.get(r).outer;
             for &fh in &m.shells.get(sh).faces {
                 for he in &m.faces.get(fh).outer.half_edges {
-                    for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                    for &vh in m.edges.get(he.edge).vertices.iter() {
                         let Origin::Moved {
                             base,
                             motion: rotation,
@@ -406,8 +406,7 @@ mod tests {
         let vh = m
             .edges
             .get(m.faces.get(fh).outer.half_edges[0].edge)
-            .bounds
-            .unwrap()[0];
+            .vertices[0];
         let Origin::Moved {
             motion: rotation, ..
         } = m.vertices.get(vh).origin

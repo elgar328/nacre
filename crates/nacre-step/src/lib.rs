@@ -26,9 +26,6 @@ use step_io::generated::model::{AdvancedFaceId, EdgeCurveId};
 /// A failure while translating a [`Model`] to STEP.
 #[derive(Debug)]
 pub enum StepError {
-    /// An edge has no endpoint vertices (a closed edge — M3). M2 expects all
-    /// edges bounded.
-    UnboundedEdge,
     /// The `step-io` backend rejected the entity graph (its `AuthorError`,
     /// stringified so the backend type does not leak into the public API).
     Backend(String),
@@ -44,8 +41,7 @@ impl From<step_io::AuthorError> for StepError {
 ///
 /// Planar and cylindrical faces (`Surface::{Plane, Cylinder}`) bounded by lines
 /// and full circles (`Curve::{Line, Circle}`); a full-circle rim is a seam edge
-/// (`bounds: Some([v, v])`, start == end) that emits a closed STEP circle.
-/// Rejects a truly closed edge ([`StepError::UnboundedEdge`], `bounds: None`). A
+/// (`vertices: [v, v]`, start == end) that emits a closed STEP circle. A
 /// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
 /// emitted in millimetres (nacre is unitless; STEP needs a unit).
 pub fn to_step(model: &Model) -> Result<String, StepError> {
@@ -187,7 +183,7 @@ fn build_edge(
         return Ok(id);
     }
     let edge = model.edges.get(eh);
-    let [v0, v1] = edge.bounds.ok_or(StepError::UnboundedEdge)?;
+    let [v0, v1] = edge.vertices;
     // CurveInput::Line derives geometry from the two vertices; a circle carries
     // its own frame. A seam rim has v0 == v1, giving a closed STEP circle.
     let curve = match model.edge_curve(eh) {

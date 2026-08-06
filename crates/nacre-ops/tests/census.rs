@@ -123,7 +123,7 @@ fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
             let face = m.faces.get(fh);
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    for &vh in m.edges.get(he.edge).bounds.iter().flatten() {
+                    for &vh in m.edges.get(he.edge).vertices.iter() {
                         let p = m.vertices.get(vh).point.as_array();
                         bits.push([p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]);
                     }

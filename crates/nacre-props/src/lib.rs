@@ -352,13 +352,13 @@ fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, PropsError> {
         .collect()
 }
 
-/// [`Model::he_start`] with this crate's failure policy: an unbounded loop edge
-/// is not a valid solid boundary, so it is unsupported input rather than a bug.
+/// [`Model::he_start`], kept as a local name. (Its `Result` wrapper died with S8: every edge
+/// is bounded by type, so the unsupported-boundary arm had nothing left to catch.)
 fn he_start(
     model: &Model,
     he: nacre_topo::HalfEdge,
 ) -> Result<Handle<nacre_topo::Vertex>, PropsError> {
-    model.he_start(he).ok_or(PropsError::UnsupportedBoundary)
+    Ok(model.he_start(he))
 }
 
 /// The `Curve` carried by a half-edge's edge.

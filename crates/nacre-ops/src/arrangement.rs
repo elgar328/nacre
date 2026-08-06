@@ -1927,7 +1927,7 @@ fn face_points(model: &Model, fh: Handle<Face>) -> Vec<[f64; 3]> {
     let mut out = Vec::new();
     for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
         for he in &lp.half_edges {
-            for &vh in model.edges.get(he.edge).bounds.iter().flatten() {
+            for &vh in model.edges.get(he.edge).vertices.iter() {
                 out.push(model.vertices.get(vh).point.as_array());
             }
         }

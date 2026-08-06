@@ -56,15 +56,14 @@ pub struct Edge {
     /// uses the seam edge twice) — a provisional spelling until M6 decides the seam's carrier
     /// representation together with the cylinder's truth (`docs/truth-and-cache.md` open item 5).
     pub surfaces: [Handle<Surface>; 2],
-    /// Endpoint vertices, or `None` for a truly closed edge (no endpoints).
+    /// Endpoint vertices — the boundary (S8: no longer `Option`).
     ///
-    /// A closed **solid**'s circular rim is *not* `None`: it carries a seam
-    /// vertex and is `Some([v, v])` (start == end), so the b-rep stays a valid
-    /// CW-complex (`add_cylinder`; design §4). `None` is reserved for a
-    /// standalone full circle with no seam — a wireframe/open-shell element,
-    /// which is a v1 non-goal (§9), so it is currently unused.
-    pub bounds: Option<[Handle<Vertex>; 2]>,
-    pub origin: Origin,
+    /// A closed **solid**'s circular rim carries a seam vertex and is `[v, v]` (start == end),
+    /// so the b-rep stays a valid CW-complex (`add_cylinder`; design §4). The old `None` was
+    /// reserved for a standalone full circle with no seam — a wireframe/open-shell element,
+    /// which is a v1 non-goal (§9) and had exactly one occupant: a validate fixture built to
+    /// test the reject. The type now says what the kernel always required.
+    pub vertices: [Handle<Vertex>; 2],
 }
 
 impl Edge {
@@ -81,7 +80,7 @@ impl Edge {
 
 /// A directed use of a shared [`Edge`] inside a [`Loop`].
 ///
-/// `forward == true` traverses the edge start→end (`bounds[0]` → `bounds[1]`);
+/// `forward == true` traverses the edge start→end (`vertices[0]` → `vertices[1]`);
 /// `false` traverses it in reverse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct HalfEdge {
@@ -163,15 +162,13 @@ mod tests {
         let e = m.edges.push(Edge {
             curve,
             surfaces: Edge::carrier_pair(sa, sb),
-            bounds: Some([v0, v1]),
-            origin: Origin::Constructed,
+            vertices: [v0, v1],
         });
 
         let stored = *m.edges.get(e);
         assert_eq!(stored.curve, curve);
         assert_eq!(stored.surfaces, [sa, sb], "already ascending — kept as-is");
-        assert_eq!(stored.bounds, Some([v0, v1]));
-        assert_eq!(stored.origin, Origin::Constructed);
+        assert_eq!(stored.vertices, [v0, v1]);
 
         // HalfEdge is Copy + Eq + Hash (Handle + bool only).
         let he = HalfEdge {

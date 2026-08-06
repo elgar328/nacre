@@ -47,10 +47,9 @@ impl Adjacency {
             if !reach.edges.contains(&eh) {
                 continue;
             }
-            if let Some([a, b]) = edge.bounds {
-                vertex_edges.entry(a).or_default().push(eh);
-                vertex_edges.entry(b).or_default().push(eh);
-            }
+            let [a, b] = edge.vertices;
+            vertex_edges.entry(a).or_default().push(eh);
+            vertex_edges.entry(b).or_default().push(eh);
         }
         Adjacency {
             edge_uses,
@@ -195,8 +194,7 @@ mod tests {
                             // The detector reads only the maps — a self-pair of the one dummy
                             // surface is enough (never dereferenced as adjacency here).
                             surfaces: [surface, surface],
-                            bounds: Some([apex, other]),
-                            origin: Origin::Constructed,
+                            vertices: [apex, other],
                         })
                     })
                     .collect();
@@ -270,8 +268,7 @@ mod tests {
                 // rebuild never dereferences carriers either — the dummy pair mirrors the
                 // dummy curve/surface above.
                 surfaces: [surface, surface],
-                bounds: Some([a, b]),
-                origin: Origin::Constructed,
+                vertices: [a, b],
             })
         };
         let e_shared = mk_e(&mut m, v0, v1);

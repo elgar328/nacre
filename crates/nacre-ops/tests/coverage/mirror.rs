@@ -337,8 +337,7 @@ fn a_rotated_solid_mirrors() {
         .faces
         .iter()
         .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
-        .filter_map(|he| m.edges.get(he.edge).bounds)
-        .flatten()
+        .flat_map(|he| m.edges.get(he.edge).vertices)
         .filter(|&vh| matches!(m.vertices.get(vh).origin, nacre_topo::Origin::Moved { .. }))
         .count();
     assert!(rotated_verts > 0, "the image keeps its rotation provenance");

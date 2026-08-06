@@ -225,8 +225,8 @@ pub fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
     let sh = m.solids.get(s).outer;
     for &fh in &m.shells.get(sh).faces {
         for he in &m.faces.get(fh).outer.half_edges {
-            if let Some(bd) = m.edges.get(he.edge).bounds {
-                for vh in bd {
+            {
+                for vh in m.edges.get(he.edge).vertices {
                     if seen.insert(vh) {
                         pts.push(m.vertices.get(vh).point.as_array());
                     }
