@@ -124,9 +124,10 @@ pub enum Violation {
         tol: f64,
     },
 
-    /// A **measured** vertex does not lie on one of its definition's surfaces within its
-    /// measured tolerance — the definition is the truth, so the cached point must sit within
-    /// `tol` of every surface it is defined as meeting (design §4). `surface_index` is
+    /// A vertex does not lie on one of its definition's surfaces within tolerance — the
+    /// definition is the truth, so the cached point must sit within `tol` of every surface it
+    /// is defined as meeting (design §4); `tol` is the measured one where there is one, else
+    /// [`EPS_CONSTRUCTED`]. Checked for **every** vertex since S7. `surface_index` is
     /// type-erased (like [`Self::DanglingReference`]) so the checker never names geom's
     /// `Surface` (geom stays a dev-dependency).
     VertexOffDefinition {
@@ -619,19 +620,22 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             }
         }
     }
-    // Each live discovered vertex must lie within its tol of every plane its
-    // definition claims it is the intersection of (design §4 — the definition is
-    // the truth, the point is a within-tol cache). Reference integrity ran first,
-    // so the definition's surface handles are in bounds.
-    // (Population letter-preserved in the S7 swap: measured — tol-Some — vertices only, the
-    // old `Discovered` set. The all-vertices extension is its own commit.)
+    // **Every** live vertex must lie within tolerance of every surface its definition claims
+    // it meets (design §4 — the definition is the truth, the point is a within-tol cache).
+    // Reference integrity ran first, so the definition's surface handles are in bounds.
+    //
+    // ★ S7 widened this from the measured population to all of them. Before, a definition was
+    // something only a discovered vertex carried, so a constructed corner's claim went
+    // unchecked; now the definition *is* the vertex, and the checker asks the same question of
+    // every one — with the tolerance the vertex has (measured) or the construction epsilon
+    // (built). The doctrine this serves is the document's: the surfaces a vertex is defined by
+    // are self-evidently near it, and the real question is whether the *coordinate* still
+    // matches the definition after everything that has happened to it.
     for (vh, vertex) in m.vertices.iter() {
         if !reach.vertices.contains(&vh) {
             continue;
         }
-        let Some(tol) = m.vertex_tol(vh) else {
-            continue;
-        };
+        let tol = tol_of(m, vh);
         let surfaces: &[Handle<Surface>] = match &vertex.def {
             VertexDef::ThreePlane(s) => s,
             VertexDef::OnSeam(s) => s,
@@ -1061,6 +1065,27 @@ mod tests {
                 inner_loops: 0,
                 genus: -1,
             }]
+        );
+    }
+
+    /// ★ S7 positive control for the **widened** definition check: a vertex with *no* measured
+    /// tolerance — the population that went entirely unchecked before — is caught when its
+    /// coordinate drifts off the surfaces its definition names. Without this, "the widening
+    /// fired zero times across the suite" could equally mean "the widening checks nothing".
+    #[test]
+    fn a_built_vertex_off_its_definition_is_caught() {
+        let m = tetra_with(TetraOpts {
+            // Constructed (tol `None` ⇒ EPS_CONSTRUCTED), nudged well past that epsilon.
+            nudge: Some((0, [0.0, 0.0, 1e-6], None)),
+            ..Default::default()
+        });
+        let vs = validate(&m);
+        assert!(
+            vs.iter().any(|v| matches!(
+                v,
+                Violation::VertexOffDefinition { tol, .. } if *tol == EPS_CONSTRUCTED
+            )),
+            "a built vertex off its own definition must be caught: {vs:?}"
         );
     }
 
