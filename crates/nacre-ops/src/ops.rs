@@ -307,6 +307,21 @@ impl Profile2d {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
+    /// **Put a plane in the model because the caller named it** — not because a face lies on it.
+    ///
+    /// Until this existed a log could name only two kinds of plane: the three seeded world planes
+    /// and the plane of a face it had already built ([`face_sketch_frame`]). Everything else was
+    /// stated *by value* inside [`Operation::Extrude`], which is why that variant is the last one
+    /// carrying a `SketchPlane` at all.
+    ///
+    /// ★ **It is an operation, not a plain function, because `replay` must reproduce the handle.**
+    /// A plane minted outside the log leaves a model that is not self-contained, and the
+    /// "handles in a log are index vocabulary" contract (`docs/design.md` §2) is false for it.
+    ///
+    /// The plane may already exist — planes are the one thing interned at construction — in which
+    /// case this returns the handle that exists and the arena does not grow. That is the intended
+    /// answer, not a special case: *same plane, same handle*.
+    DatumPlane { def: DatumDef },
     /// Extrude `profile` (on `plane`) by `dist` along the plane normal.
     Extrude {
         plane: SketchPlane,
@@ -521,7 +536,29 @@ pub enum LogCell {
     Solid,
 }
 
+/// **How a datum plane is stated** — the variant is the kind of statement, the way
+/// `PlanePoints` splits truth into what is written and what is pointed at.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum DatumDef {
+    /// **Stated in world coordinates.** Every [`SketchPlane`] constructor produces this, so the
+    /// vocabulary a caller already has — `world_xy`, `from_origin_normal`, `through_points`,
+    /// `from_axes`, `with_origin` — is the vocabulary of a datum, unchanged. It is also the whole
+    /// of today's population: every plane any operation states is a rational point triple.
+    ///
+    /// [`OpError::PlaneWithoutExactForm`] when the plane carries no exact statement (a coordinate
+    /// outside the decimal window, a zero normal) — the same proposition that error already names.
+    Stated(SketchPlane),
+}
+
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
+///
+/// ★ **`DatumPlane` is the large variant and it is not boxed**, for the same reason
+/// [`Operation::Extrude`] is not: it carries a [`SketchFrame`], whose `Named` placement is six
+/// `Rat`s. An `OpOutput` is a return value — one per `apply`, read and dropped, never accumulated
+/// — so the width costs a stack copy, and boxing would buy that back by putting an indirection on
+/// the value every caller destructures.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum OpOutput {
     /// The created solid and its faces in push order: `faces[0]` base cap,
@@ -549,12 +586,30 @@ pub enum OpOutput {
     Copy { solid: Handle<Solid> },
     /// The reflected solid (supersedes the input).
     Mirror { solid: Handle<Solid> },
+    /// The datum plane, and **the frame the caller's statement implies**.
+    ///
+    /// ★ The frame is not a convenience. A caller who had to rebuild it with
+    /// [`SketchFrame::named`] would hand back `f64`, taking `Rat::from_decimal` a second time —
+    /// and a computed value can lift to a different rational than the one the statement already
+    /// holds. Returning it keeps the caller's sketch origin and `+u` exact, which is what
+    /// `extrude` does internally today.
+    ///
+    /// `flip` is `false`: which way `ŵ` must face is measured by the operation that consumes the
+    /// frame, never stated here ([`SketchFrame`]'s constructor contract).
+    DatumPlane {
+        plane: Handle<Surface>,
+        frame: SketchFrame,
+    },
 }
 
 /// Apply one operation to `model`, returning the handles it created. Does not
 /// rebuild the adjacency cache (do that once after a batch — see [`replay`]).
 pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
     match op {
+        Operation::DatumPlane { def } => {
+            let (plane, frame) = datum_plane(model, def)?;
+            Ok(OpOutput::DatumPlane { plane, frame })
+        }
         Operation::Extrude {
             plane,
             profile,
@@ -698,6 +753,10 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
             offset: *offset,
         }),
         Operation::Copy { solid: s } => Cow::Owned(Operation::Copy { solid: solid(*s)? }),
+        // A `Stated` datum names no cell — it is three rational points and nothing else.
+        Operation::DatumPlane {
+            def: DatumDef::Stated(_),
+        } => Cow::Borrowed(op),
     })
 }
 
@@ -710,6 +769,49 @@ fn push_line_edge(
     model
         .push_edge(carriers, [a, b])
         .ok_or(OpError::DegenerateGeometry)
+}
+
+/// Put a stated plane in the arena and hand back its handle and the frame the statement implies.
+///
+/// ★★ **The cache faces `−normal`, and that is a convention with two independent reasons.**
+/// (i) It is the sense a base cap gets: `extrude` pushes `−plane.normal()` and `Model::new` seeds
+/// the world planes along `−axis`; S9 measured that seeding `+axis` instead flipped 781 stored
+/// cap normals for nothing. (ii) `PlaneGeom::frame_sign` records whether a plane's *stored* normal
+/// agrees with its root face's outward normal, and a base cap's outward is `−N` — so `−normal`
+/// leaves that sign exactly where it is today. A datum that later becomes a base cap therefore
+/// interns with `flipped == false` and nothing downstream has to compensate.
+///
+/// Which point anchors the cache is a choice the arena keeps (interning discards the newcomer's
+/// cache), and `tests/plane_anchor.rs` measures what that choice costs: on the tilted population
+/// where anchors can disagree at all, the judgment path does not read the disagreeing part and the
+/// result holds to 1.1e-15 at the worst anchor.
+fn datum_plane(
+    model: &mut Model,
+    def: &DatumDef,
+) -> Result<(Handle<Surface>, SketchFrame), OpError> {
+    match def {
+        DatumDef::Stated(sp) => {
+            let d = sp.def.as_ref().ok_or(OpError::PlaneWithoutExactForm)?;
+            let cache = Plane::from_point_normal(sp.origin(), -sp.normal())
+                .ok_or(OpError::DegenerateGeometry)?;
+            let (plane, _flipped) = model.push_plane(cache, d.points(), None);
+            // ★ `Named`, unconditionally — never derived. The canonical frame of the ZX plane has
+            // `+u = −x̂` while the script convention (and `SketchPlane::world_zx`) says `+ẑ`, so a
+            // placement inferred from the plane would silently turn some sketches. The values are
+            // the `PlaneDef`'s own rationals, and `SketchFrame::named`'s checks hold structurally:
+            // `origin = points[0]` is on the plane, and `ref_dir = points[1] − points[0]` lies in
+            // it and is nonzero because the triple is not collinear.
+            let frame = SketchFrame {
+                plane,
+                placement: nacre_topo::FramePlacement::Named {
+                    origin: d.origin(),
+                    ref_dir: d.ref_dir(),
+                },
+                flip: false,
+            };
+            Ok((plane, frame))
+        }
+    }
 }
 
 /// Build a prism: the profile forms the base and (translated by `normal·dist`)
