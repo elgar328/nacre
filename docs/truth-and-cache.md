@@ -490,7 +490,7 @@ pub enum Decision {
 
 | | 항목 | 선행 |
 |---|---|---|
-| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5). **`Operation` 의 평면-핸들 어휘 교체도 여기다**(S9 에서 유예 — 사유는 S9 행) | 없음(S9 완료) |
+| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5). **`Operation` 의 평면-핸들 어휘 교체도 여기다**(S9 에서 유예 — 사유는 S9 행). ★ 그 교체가 성립할 토대는 **R 에서 깔렸다**(2026-08-07): 로그 속 핸들은 인덱스 어휘이고 `replay` 가 재고정한다 — 그러므로 S5 는 `Model::surface_handle_at`(좁은 접근자 하나, 전체 순회자 아님 — S1 봉인 무손상)만 예약하면 되고, `rebind` 에 `Handle<Surface>` 갈래를 한 줄 더하는 일이 된다 | 없음(S9·R 완료) |
 
 ★ 판정층 개명(`Pt3`→`WitnessPoint`·`WorkingPoint`→`WorkingVertex`·`PlaneGeom`→`WorkingPlane`,
 §판정 이름 규칙)은 별도 단계가 아니라 **각 타입을 처음 만지는 단계에 얹는다** — 기계적 개명이라

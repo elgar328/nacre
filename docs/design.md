@@ -102,6 +102,47 @@ impl<T> Eq for Handle<T> {}
 
 주의: Handle의 유효성은 **자기 Model 안에서만** 성립한다. replay가 새 Model을 반환하므로 모델 두 개가 공존하는 순간이 실제로 생기고, A 모델의 Handle을 B에 쓰면 조용히 엉뚱한 객체가 나온다. 디버그 빌드에서 Handle에 model-id를 넣어 `get` 시 검사한다(릴리즈에서는 zero-cost로 제거). model-id는 프로세스 로컬 `AtomicU64` 카운터로 발급한다(replay마다 새 값). 따라서 **Handle 자체는 직렬화하지 않는다** — 영속화 대상은 연산 로그(§6)이고, replay가 인덱스를 결정적으로 재생성한다.
 
+**로그 속 핸들은 «인덱스 어휘»다.** `Operation` 7변종 중 6개가 핸들을 싣는데(`PadOnFace`·
+`PocketOnFace`·`Boolean`·`Transform`·`Mirror`·`Copy`), 그 핸들이 가리키는 셀은 로그가 기록된
+모델의 것이지 replay 가 짓고 있는 모델의 것이 아니다. 핸들에서 모델을 건너 살아남는 부분은
+**인덱스뿐**이므로, replay 는 op 를 적용하기 직전 그 인덱스를 **자기 아레나의 핸들로 재고정
+(rebind)** 한다. 범위 밖이면 `LogHandleOutOfRange { cell, index }` — **존재만** 답하고,
+live 여부·합법성은 여전히 op 자신의 `SolidNotLive`/`FaceNotInLiveSolid` 몫이다.
+
+재고정은 **op 단위 just-in-time** 이다(op N 의 핸들은 op N−1 이 만든 셀을 가리키므로 사전
+일괄 변환은 성립하지 않는다). 덕분에 원자성이 공짜로 따라온다: 재고정 실패는 그 op 가 아직
+아무것도 push 하기 전에 일어나고, 실패한 replay 의 지역 모델은 통째로 버려진다.
+
+**`apply` 는 재고정하지 않는다.** `apply` 의 모델은 호출자의 것이고 따라서 그 핸들도 호출자의
+것이다. 거기서 재고정하면 외래 핸들을 **조용히 세탁**해 위 model-id 가드의 가치를 파괴한다.
+재고정이 정당한 것은 「모델을 자기가 처음부터 짓는」 replay 하나뿐이다.
+
+**유효 범위 — 오독하기 쉬운 자리.** 인덱스 어휘가 성립하는 것은 **로그를 처음부터 통째로
+재생할 때**뿐이다(그때 인덱스는 재생이 스스로 만든 것이다). 로그 **중간을 수정한** 재생에는
+성립하지 않는다 — 상류 수정이 하류 인덱스를 밀어낸다(v1 비목표, §6 `OpRef` 참조). 그리고
+이것은 「핸들을 직렬화해도 된다」는 뜻이 **아니다**: 직렬화 대상은 여전히 로그이고, 그 안의
+참조가 인덱스일 뿐 핸들이 아니다(재생이 매번 새로 발급한다).
+
+**자기완결성 전제.** 재고정은 「로그가 그 모델의 전체 이력이다」를 **대체하지 않고 요구한다**.
+로그 밖에서 셀을 넣은 모델(예: 테스트 전용 `add_cuboid`)은 replay 로 재현되지 않으며,
+범위 검사는 인덱스가 **범위 안이면서 다른 셀**을 가리키는 경우를 잡지 못한다.
+
+**거절은 live 모델에 원자적이지만 아레나 인덱스에는 아니다.** 거절에는 두 종류가 있다:
+
+- **이른 거절** — 요청만 보고 판정(`NonPositiveDistance`, 창 밖, `Profile2d::check`,
+  `NonPlanarFace`, `SolidNotLive`…). 아레나 Δ = 0.
+- **늦은 거절** — 기하를 지어 봐야 알 수 있는 판정(`PadMissesFace`, `PocketNotBlind`,
+  `Boolean(_)`). 도구 프리즘의 셀이 **append-only 아레나에 남는다**. 실측(2026-08-07):
+  `PadMissesFace` +84 셀(v24/e36/f18/sh3/so3), `PocketNotBlind` +80(v24/e36/f16/sh2/so2),
+  `Boolean(NonManifoldVertex)` +63(v19/e30/f12/sh1/so1).
+
+live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋 후 거절은 없다. 그러나 아레나 길이는
+되돌지 않으므로, **거절 뒤에도 기록을 이어가려면 모델을 로그로 다시 지어야 한다**(`model =
+replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 인덱스를 적게 되고, 결과는
+**이름 붙은 거절이거나 발산**이며 — 패닉은 아니다(측정: `LogHandleOutOfRange{Solid, 4}`).
+
+이 절의 주장은 전부 `crates/nacre-ops/tests/replay.rs` 가 측정한다.
+
 저장소는 도메인별로 나눈다:
 
 ```rust
@@ -394,6 +435,8 @@ pub struct TessConfig { pub default_tol: f64 /* , 면별 override 등 */ }
 // §2에서 tess/ops를 Model 필드에서 뺀 것과 같은 층 위반이 된다.
 ///
 /// 로그를 처음부터 재생. 보장: 동일 로그·동일 cfg → 동일 (모델, tess) (인덱스까지 재현).
+/// 핸들을 싣는 6변종에서도 성립한다 — replay 가 로그의 인덱스를 자기 아레나에 재고정하기
+/// 때문이며(§2 「인덱스 어휘」), 측정은 `tests/replay.rs`(생성 세션 + 6변종 전수)다.
 /// 로그 중간 파라미터를 수정한 재생은 v1에서 미지원 — Operation이 원시 Handle을
 /// 참조하므로 상류 수정이 하류 Handle 번호를 밀어낸다 (topological naming 문제).
 /// 반환 쌍: 진실 Model + 함께 생성되는 tess 캐시(§5 커플링; Model은 tess를 필드로 담지 않으므로 §2).
@@ -429,7 +472,7 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 - `Profile2d::from_rings(rings, fill_rule) -> Vec<Profile2d>` — 링 목록의 중첩을 exact `point_in_ring`으로 판정해(술어이므로 커널) **덩어리(섬)별 프로파일 목록**을 돌려준다(짝수-홀수 깊이: 0=재료, 1=구멍, 2=구멍 속 섬…). 채우기 규칙 선택은 호출자.
 - **경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준). 그래서 `Extrude`의 다중 바디 출력은 필요 없다.
 
-**파라메트릭 편집의 진화 경로 (v2 이후, 지금은 기록만):** 연산이 원시 Handle 대신 계보 참조 `OpRef { op: usize, output_slot: usize }`("연산 N이 만든 k번째 면")를 담으면, 상류 수정 후에도 참조가 의미로 해석(resolve)되어 편집-재생이 가능해진다. v1에서 이를 구현하지 않되, 로그 직렬화 포맷을 설계할 때 이 확장이 포맷 파괴 없이 들어갈 자리를 남긴다. TessConfig의 tolerance도 같은 맥락에서 연산별 override(`Operation` 항목의 선택 필드)로 확장될 수 있다.
+**파라메트릭 편집의 진화 경로 (v2 이후, 지금은 기록만):** 연산이 원시 Handle 대신 계보 참조 `OpRef { op: usize, output_slot: usize }`("연산 N이 만든 k번째 면")를 담으면, 상류 수정 후에도 참조가 의미로 해석(resolve)되어 편집-재생이 가능해진다. v1에서 이를 구현하지 않되, 로그 직렬화 포맷을 설계할 때 이 확장이 포맷 파괴 없이 들어갈 자리를 남긴다. §2의 인덱스 어휘는 이를 **밀어내지 않는다** — 인덱스는 v1의 참조 기계이고 `OpRef`는 v2의 것이며, replay 안의 재고정 지점이 곧 `OpRef` 해석이 들어올 자리다(교체이지 경쟁이 아니다). TessConfig의 tolerance도 같은 맥락에서 연산별 override(`Operation` 항목의 선택 필드)로 확장될 수 있다.
 
 불리언은 처음부터 trait 뒤에 둔다 — 커버리지 사다리의 코드화:
 
@@ -564,7 +607,7 @@ pub fn validate(m: &Model) -> Vec<Violation>;
 
 **validate는 store 전체가 아니라 live 도달가능 셀을 센다(§2 supersede 의미론).** Euler의 V·E·F·S·L_i는 `store.len()`이 아니라 `live_solids`에서 도달 가능한 정점·엣지·면·셸·내부루프 수이고, manifold(엣지 정확히 2회)도 "전역 2회"가 아니라 "도달가능 집합 내 2회"다. 이유: supersede된 옛 셀이 아레나에 남으므로, store 길이로 세면 죽은 셀이 Euler를 깨고 죽은 면의 엣지가 manifold를 깬다. **참조 무결성 검사(dangling handle)만 store 전체를 훑는다** — 안전 게이트이자, 살아있든 죽었든 handle이 OOB면 버그이기 때문. 이 검사가 먼저 단락하므로 이후 도달가능성 순회는 항상 in-bounds라 안전하다. (부수효과: store에 떠 있는 stray 셀은 이제 불량이 아니라 "죽은 아레나 항목"으로 정당하게 무시된다 — M1~M3의 "stray → Euler 불량" 판정은 이 의미론으로 갱신된다.)
 
-속성 기반 테스트(proptest): 랜덤 유효 연산열을 생성해 (1) validate 통과, (2) replay 멱등성 — 같은 로그·같은 cfg → 동일 모델, (3) 변환 불변량 — 강체변환 후 부피·면적 보존, (4) 불리언 대수 — `A ∪ A = A`, `A ∩ ∅ = ∅`, `vol(A∪B) + vol(A∩B) = vol(A) + vol(B)`.
+속성 기반 테스트(proptest): 랜덤 유효 연산열을 생성해 (1) validate 통과, (2) replay 멱등성 — 같은 로그·같은 cfg → 동일 모델 **✔ 구현(`nacre-ops/tests/replay.rs`)**, 그리고 같은 자리에서 더 강한 「`replay(log)` == 세션 모델, 인덱스까지」까지 함께 건다, (3) 변환 불변량 — 강체변환 후 부피·면적 보존, (4) 불리언 대수 — `A ∪ A = A`, `A ∩ ∅ = ∅`, `vol(A∪B) + vol(A∩B) = vol(A) + vol(B)`.
 
 OCCT 오라클(`nacre-oracle`): 같은 연산열을 자체 커널과 OCCT에 병렬 실행하고 부피·면적·바운딩박스·(가능하면) 면 개수를 diff. 허용 편차를 넘으면 실패한 연산열을 최소화(shrink)해서 리포트. 정답지를 든 채 개발하는 장치이며, AI가 생성한 코드의 "그럴듯하지만 틀림"을 잡는 주 방어선. **nacre 쪽 부피·면적은 `nacre-props`(정확 기하 발산정리, 해석적)가 계산하고, 오라클이 그 값을 OCCT가 같은 STEP에서 독립 계산한 값과 diff한다** — 완전히 별개인 두 구현의 일치로 양쪽을 교차검증(M4 큐브·실린더부터 가동).
 

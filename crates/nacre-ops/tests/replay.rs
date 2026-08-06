@@ -834,7 +834,16 @@ fn a_late_reject_is_not_index_neutral() {
     let probe = |name: &str, setup: &dyn Fn() -> (Model, Operation)| -> Option<usize> {
         let (mut m, op) = setup();
         let before = arena_lengths(&m);
+        let live_before: Vec<_> = m.live_solids.to_vec();
         let err = apply(&mut m, &op).err()?;
+        // Every reject, early or late, leaves the live model exactly as it was — this is the
+        // half of the contract `ops.rs` names ("no reject-after-commit") and the half that is
+        // repaired. What follows measures the half that is not.
+        assert_eq!(
+            m.live_solids.to_vec(),
+            live_before,
+            "{name}: a reject must not change the live model"
+        );
         let after = arena_lengths(&m);
         let delta: usize = before.iter().zip(&after).map(|(b, a)| a - b).sum();
         let d: Vec<String> = before
@@ -929,6 +938,54 @@ fn a_late_reject_is_not_index_neutral() {
             "{name} is a late reject and is expected to leave residue"
         );
         late += 1;
+    }
+
+    // A boolean reject too, so all three late families back the "no reject-after-commit"
+    // claim rather than two of them. Corner coincidence is genuinely non-manifold and the
+    // engine declines it (cf. `a_corner_coincident_cut_is_rejected_not_silently_wrong`).
+    // `add_cuboid` puts cells in the arena outside any log, which is exactly why this probe is
+    // not a replay test — it only asks what a reject does to the model in front of it.
+    let boolean_setup = || {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            nacre_math::Point3::from_array([0.0; 3]),
+            nacre_math::Point3::from_array([2.0; 3]),
+        );
+        let b = m.add_cuboid(
+            nacre_math::Point3::from_array([1.0; 3]),
+            nacre_math::Point3::from_array([3.0; 3]),
+        );
+        let OpOutput::Boolean { solids } = apply(
+            &mut m,
+            &Operation::Boolean {
+                kind: BoolKind::Cut,
+                a,
+                b,
+            },
+        )
+        .expect("the first cut is fine") else {
+            unreachable!()
+        };
+        // C's + corner is R's concave corner: three shared planes meet there.
+        let c = m.add_cuboid(
+            nacre_math::Point3::from_array([-1.0; 3]),
+            nacre_math::Point3::from_array([1.0; 3]),
+        );
+        (
+            m,
+            Operation::Boolean {
+                kind: BoolKind::Cut,
+                a: solids[0],
+                b: c,
+            },
+        )
+    };
+    match probe("Boolean(corner-coincident Cut)", &boolean_setup) {
+        Some(d) => {
+            assert!(d > 0, "a boolean reject builds geometry before deciding");
+            late += 1;
+        }
+        None => panic!("the corner-coincident cut was supposed to be declined"),
     }
 
     println!("stat reject_delta_summary early={early} late={late}");
