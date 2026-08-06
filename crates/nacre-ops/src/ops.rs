@@ -18,6 +18,7 @@ use nacre_store::Handle;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Vertex, VertexDef,
 };
+use std::borrow::Cow;
 
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// The axes are unit and orthogonal (the constructors ensure it); the normal is `x × y`.
@@ -493,6 +494,31 @@ pub enum OpError {
     /// reflection reverses a circle's parametrisation, and which convention a mirrored quadric
     /// should take is a curved-geometry decision, so it is declined rather than guessed.
     MirrorNotPlanar,
+    /// The log names a cell this model does not have. A log's handles are an **index
+    /// vocabulary** (`docs/design.md` §2): [`replay`] re-anchors each one onto the model it is
+    /// building, and an index past the end of the store means the log is not the one that built
+    /// this arena — a hand-written handle, a truncated log, a log spliced from another session,
+    /// or a session that kept recording after a *late* reject left arena cells the log does not
+    /// account for (see [`replay`]'s note on self-containment).
+    ///
+    /// ★ **Existence, not legality.** Whether the cell is a *legal target* is still the
+    /// operation's own question — [`OpError::SolidNotLive`] / [`OpError::FaceNotInLiveSolid`].
+    /// And an index that is merely *wrong* rather than out of range cannot be caught here at
+    /// all: it names a real cell, just not the intended one. That is why re-anchoring requires
+    /// the self-containment premise rather than replacing it.
+    LogHandleOutOfRange {
+        /// Which store the index was meant for.
+        cell: LogCell,
+        /// The index the log named.
+        index: u32,
+    },
+}
+
+/// Which store an operation-log handle indexes. (`Surface` joins when datum ops arrive — S5.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogCell {
+    Face,
+    Solid,
 }
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
@@ -578,13 +604,101 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
 
 /// Replay an operation log into a fresh model. Deterministic: the same log
 /// reproduces the same model down to handle indices.
+///
+/// ★★ **A log's handles are an index vocabulary, and this is where they are re-anchored.**
+/// Six of [`Operation`]'s variants name a cell by `Handle`, and those handles belong to the
+/// model the log was *recorded* against — a different arena from the one being built here. A
+/// `Handle`'s identity is its index (`Store`'s manual `Eq`/`Hash` use nothing else), so the
+/// index is the part that carries meaning across models, and [`Store::handle_at`] turns it back
+/// into a handle of *this* model, one operation at a time.
+///
+/// **Why one operation at a time, and not a pre-pass**: operation *N*'s handle names a cell
+/// operation *N−1* created, so nothing can be checked before the walk. That also makes it
+/// atomic for free — a re-anchoring failure happens before the operation pushes anything, and
+/// the half-built `model` is local, so the caller never sees a partly-mutated arena.
+///
+/// ★ **The premise this rests on: the log is the whole history.** Cells put into a model
+/// outside the log (`Model::add_cuboid`, a direct `push_*`) shift every later index, and so
+/// does a *late* reject — one that pushed cells before declining (`PadMissesFace`,
+/// `PocketNotBlind`, a boolean's reject) leaves them in the append-only arena while the log has
+/// no entry for them. [`OpError::LogHandleOutOfRange`] catches only the case where the index
+/// runs off the end; an index that lands on a real-but-wrong cell cannot be detected here. So a
+/// session that keeps recording after a late reject must rebuild from its log first.
+///
+/// **`apply` does not re-anchor**, deliberately: its model belongs to the caller, so its
+/// handles do too, and quietly re-anchoring there would launder a genuinely foreign handle and
+/// destroy the cross-model guard that catches it.
 pub fn replay(ops: &[Operation]) -> Result<Model, OpError> {
     let mut model = Model::new();
     for op in ops {
-        apply(&mut model, op)?;
+        let op = rebind(&model, op)?;
+        apply(&mut model, &op)?;
     }
     model.rebuild_adjacency();
     Ok(model)
+}
+
+/// The operation with its handles re-anchored onto `model` — borrowed when there is nothing to
+/// re-anchor, which is every value-only `Extrude` (so today's logs clone nothing).
+fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, OpError> {
+    let face = |h: Handle<Face>| {
+        model
+            .faces
+            .handle_at(h.index())
+            .ok_or(OpError::LogHandleOutOfRange {
+                cell: LogCell::Face,
+                index: h.index(),
+            })
+    };
+    let solid = |h: Handle<Solid>| {
+        model
+            .solids
+            .handle_at(h.index())
+            .ok_or(OpError::LogHandleOutOfRange {
+                cell: LogCell::Solid,
+                index: h.index(),
+            })
+    };
+    Ok(match op {
+        Operation::Extrude { .. } => Cow::Borrowed(op),
+        Operation::PadOnFace {
+            face: f,
+            profile,
+            dist,
+        } => Cow::Owned(Operation::PadOnFace {
+            face: face(*f)?,
+            profile: profile.clone(),
+            dist: *dist,
+        }),
+        Operation::PocketOnFace {
+            face: f,
+            profile,
+            dist,
+        } => Cow::Owned(Operation::PocketOnFace {
+            face: face(*f)?,
+            profile: profile.clone(),
+            dist: *dist,
+        }),
+        Operation::Boolean { kind, a, b } => Cow::Owned(Operation::Boolean {
+            kind: *kind,
+            a: solid(*a)?,
+            b: solid(*b)?,
+        }),
+        Operation::Transform { solid: s, isometry } => Cow::Owned(Operation::Transform {
+            solid: solid(*s)?,
+            isometry: *isometry,
+        }),
+        Operation::Mirror {
+            solid: s,
+            axis,
+            offset,
+        } => Cow::Owned(Operation::Mirror {
+            solid: solid(*s)?,
+            axis: *axis,
+            offset: *offset,
+        }),
+        Operation::Copy { solid: s } => Cow::Owned(Operation::Copy { solid: solid(*s)? }),
+    })
 }
 
 fn push_line_edge(

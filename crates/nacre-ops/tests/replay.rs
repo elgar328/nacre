@@ -258,57 +258,49 @@ fn transform_log() -> (Vec<Operation>, Model) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The witnesses — what today actually does
+// The contract, now kept
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// These three pin the defect as a *fact*, not as a description. Each dies in
-// `nacre-store`'s `Store::get` guard (`"Handle was minted by a different Store"`), reached
-// through the op's first dereference: pad at `ops.rs`'s `shells.get(sh)`, boolean at
-// `planes.rs`'s `solids.get(solid)`, transform at `transform.rs`'s `solids.get(solid)`.
-// Note what gets *past* first: `live_solids.contains(&h)` and `faces.contains(&face)` compare
-// `Handle`s by index only, so a foreign handle answers "yes, I am live" — the guard is not the
-// door, it is one step inside it.
+// These three used to be `#[should_panic(expected = "different Store")]` witnesses: each log
+// died in `Store::get`'s guard, reached through the op's first dereference (pad at `shells.get`,
+// boolean and transform at `solids.get`). What got *past* first is worth remembering —
+// `live_solids.contains(&h)` and `faces.contains(&f)` compare handles by index only, so a
+// foreign handle answered "yes, I am live"; the guard was never the door, it was one step
+// inside it.
 //
-// The repair commit deletes these three and asserts success in their place.
+// `replay` now re-anchors the log's indices onto the model it is building, so the same three
+// logs reproduce their scratch-built twins — arena for arena, in both profiles.
 
-#[cfg(debug_assertions)]
 #[test]
-#[should_panic(expected = "different Store")]
-fn a_pad_log_cannot_replay_before_the_repair() {
-    let (log, _) = pad_log();
-    let _ = replay(&log);
+fn a_pad_log_replays() {
+    let (log, scratch) = pad_log();
+    let replayed = replay(&log).expect("a pad log replays");
+    assert_same_arena(&replayed, &scratch, "pad");
 }
 
-#[cfg(debug_assertions)]
 #[test]
-#[should_panic(expected = "different Store")]
-fn a_boolean_log_cannot_replay_before_the_repair() {
-    let (log, _) = boolean_log();
-    let _ = replay(&log);
+fn a_boolean_log_replays() {
+    let (log, scratch) = boolean_log();
+    let replayed = replay(&log).expect("a boolean log replays");
+    assert_same_arena(&replayed, &scratch, "boolean");
 }
 
-#[cfg(debug_assertions)]
 #[test]
-#[should_panic(expected = "different Store")]
-fn a_transform_log_cannot_replay_before_the_repair() {
-    let (log, _) = transform_log();
-    let _ = replay(&log);
+fn a_transform_log_replays() {
+    let (log, scratch) = transform_log();
+    let replayed = replay(&log).expect("a transform log replays");
+    assert_same_arena(&replayed, &scratch, "transform");
 }
 
-/// ★ **The profiles disagree**, and that is the sharpest statement of the defect.
+/// ★ **The profiles agree now** — and that is the whole shape of the repair.
 ///
-/// `StoreId` is `#[cfg(debug_assertions)]`, so in release the guard does not exist: the same
-/// log replays fine, because the index was right all along. Debug panics; release is quietly
-/// correct. The repair therefore does not *add* a capability — it makes debug agree with what
-/// release already does, by construction rather than by luck.
-///
-/// **Run this by hand** (`cargo test -p nacre-ops --release --test replay`) and record the
-/// numbers — it is a one-shot measurement, not a standing gate: the pre-commit hook runs debug
-/// only, the same way census runs `--release` separately. Once the repair lands, both profiles
-/// give the same answer and this twin is replaced by a profile-independent assertion.
-#[cfg(not(debug_assertions))]
+/// `StoreId` is `#[cfg(debug_assertions)]`, so before the repair release was quietly correct
+/// (the index had been right all along) while debug panicked. Re-anchoring makes debug reach
+/// the same answer *by construction* rather than by the guard happening to be compiled out, so
+/// this assertion is profile-independent and replaces the release-only twin that measured the
+/// divergence.
 #[test]
-fn in_release_a_handle_carrying_log_already_replays() {
+fn both_profiles_replay_a_handle_carrying_log_the_same_way() {
     for (name, (log, scratch)) in [
         ("pad", pad_log()),
         ("boolean", boolean_log()),
@@ -316,7 +308,39 @@ fn in_release_a_handle_carrying_log_already_replays() {
     ] {
         let replayed = replay(&log).unwrap_or_else(|e| panic!("{name}: replay failed: {e:?}"));
         assert_same_arena(&replayed, &scratch, name);
-        println!("stat release_replay {name} ok");
+    }
+}
+
+/// A log naming a cell this model does not have is a **named reject**, not a panic — and the
+/// same `Err` in both profiles. (Built with a handle taken from a *larger* model, which is how
+/// a truncated or spliced log looks from the inside.)
+#[test]
+fn a_log_naming_a_cell_that_does_not_exist_is_rejected_by_name() {
+    // A two-solid model, so its solid handle 1 exists…
+    let mut big = Model::new();
+    let e1 = extrude_op(0.0, 2.0, 1.0);
+    let e2 = extrude_op(5.0, 6.0, 1.0);
+    apply(&mut big, &e1).expect("first");
+    let OpOutput::Extrude { solid: second, .. } = apply(&mut big, &e2).expect("second") else {
+        unreachable!()
+    };
+    // …but a log with only the first extrude leaves the replayed model one solid short.
+    let log = vec![
+        e1,
+        Operation::Transform {
+            solid: second,
+            isometry: Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]),
+        },
+    ];
+    match replay(&log) {
+        Err(nacre_ops::OpError::LogHandleOutOfRange { cell, index }) => {
+            assert_eq!(cell, nacre_ops::LogCell::Solid);
+            assert_eq!(index, second.index());
+        }
+        other => panic!(
+            "expected a named reject, got {:?}",
+            other.map(|_| "a model")
+        ),
     }
 }
 
