@@ -639,6 +639,9 @@ pub(crate) fn extrude(
     // ★ **The frame is the caller's own**: `def.origin` and `def.ref_dir` are what they wrote, so
     // the sketch's `(0, 0)` and `+u` land where they asked. `flip` is measured, not derived — the
     // plane's canonical coefficients carry no direction, and `ŵ` has to face the way the sweep does.
+    //
+    // The road is the [`SketchFrame`] shape, the same one the face path walks (S9): state the
+    // plane, measure `flip` against the realized basis, name the frame as a node.
     let frame = plane.def.filter(|_| plane.exact().is_none()).and_then(|d| {
         // ★★ **Built with `−normal`, the sense `build_prism` gives a base cap.** The key is
         // direction-free, so this surface and the base cap intern together — and matching the
@@ -652,22 +655,15 @@ pub(crate) fn extrude(
         let pl = Plane::from_point_normal(plane.origin(), -plane.normal())?;
         let (h, _) = model.push_plane(pl, d.points(), None);
         // The caller stated the pair, so the placement is `Named` (S4) — `Canonical` is for
-        // frames nobody named, like a face's.
+        // frames nobody named, like a face's. (The values are `PlaneDef`'s own rationals, so
+        // the frame is built directly: `SketchFrame::named`'s decimal door is for a caller's
+        // f64, and its checks hold here structurally — `origin = points[0]` is on the plane.)
         let placement = nacre_topo::FramePlacement::Named {
             origin: d.origin(),
             ref_dir: d.ref_dir(),
         };
-        let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(model, h, &placement, false)?;
-        let n = plane.normal().as_array();
-        let flip = (0..3).map(|k| w[k] * n[k]).sum::<f64>() < 0.0;
-        Some(model.push_motion(
-            nacre_topo::Motion::Frame {
-                plane: h,
-                placement,
-                flip,
-            },
-            None,
-        ))
+        let (sf, _) = measured_frame(model, h, placement, plane.normal())?;
+        Some(push_frame_node(model, sf))
     });
     let (outer, holes) = swept_profile(model, plane, profile, dist, frame)?;
     // ★★★★ **The base cap *is* the plane the caller named**, so where they stated it exactly
@@ -1241,6 +1237,49 @@ impl SketchFrame {
     }
 }
 
+/// A [`SketchFrame`] with its `flip` measured — the placement's realized `ŵ` dotted against the
+/// direction the sketch must face (a sweep's sense, a face's outward normal). This is the one
+/// place `flip` is decided (S9): every road calls it, so no two can measure differently. The
+/// realized basis rides along for the caller who also needs the axes (`face_frame`), so deciding
+/// and looking cost one realization, not two. `None` when the chain cannot realize a basis (a
+/// plane with no name).
+fn measured_frame(
+    model: &Model,
+    plane: Handle<Surface>,
+    placement: nacre_topo::FramePlacement,
+    toward: Vector3,
+) -> Option<(SketchFrame, crate::rotated_vertex::WorldBasis)> {
+    let basis = crate::rotated_vertex::frame_world_basis(model, plane, &placement, false)?;
+    let n = toward.as_array();
+    let flip = (0..3).map(|k| basis.3[k] * n[k]).sum::<f64>() < 0.0;
+    Some((
+        SketchFrame {
+            plane,
+            placement,
+            flip,
+        },
+        basis,
+    ))
+}
+
+/// Name a [`SketchFrame`] as the [`nacre_topo::Motion::Frame`] node the sweep writes coordinates
+/// against — the one road from the frame value to a node, shared by the extrude and face paths.
+///
+/// ★★ **`push_motion` interns**, so two sketches in one frame name the *same* node — which is
+/// what makes their surfaces intern too (`SurfaceKey` is `(name, motion)`): two routes to one
+/// height become one `Handle<Surface>` at construction, with no f64 comparison anywhere. With
+/// `Canonical` placement the node is `(plane, Canonical, flip)` — nothing per-sketch in the key.
+fn push_frame_node(model: &mut Model, frame: SketchFrame) -> Handle<nacre_topo::MotionNode> {
+    model.push_motion(
+        nacre_topo::Motion::Frame {
+            plane: frame.plane,
+            placement: frame.placement,
+            flip: frame.flip,
+        },
+        None,
+    )
+}
+
 struct FaceFrame {
     solid_h: Handle<Solid>,
     surface_h: Handle<Surface>,
@@ -1340,19 +1379,14 @@ pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFram
     // The world-liftable population: `face_frame` skipped the derivation because the operation
     // will not build a node. The frame is still well-defined — measure `flip` the same way the
     // tilted branch does, against the face's outward normal.
-    let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(
+    measured_frame(
         model,
         f.surface_h,
-        &nacre_topo::FramePlacement::Canonical,
-        false,
+        nacre_topo::FramePlacement::Canonical,
+        f.n,
     )
-    .ok_or(OpError::PlaneWithoutExactForm)?;
-    let flip = (0..3).map(|k| w[k] * f.n.as_array()[k]).sum::<f64>() < 0.0;
-    Ok(SketchFrame {
-        plane: f.surface_h,
-        placement: nacre_topo::FramePlacement::Canonical,
-        flip,
-    })
+    .map(|(sf, _)| sf)
+    .ok_or(OpError::PlaneWithoutExactForm)
 }
 
 /// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,
@@ -1423,31 +1457,22 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // not the same intent: take the frame only when the world axes do not lift to exact
     // orthonormal rationals. Axis-aligned faces therefore never go near it and are untouched.
     //
-    // ★ **`flip` is measured, not derived** — see `frame_world_basis`. `flip = true` negates `ŵ`
-    // and `û` together and leaves `v̂`, so the second reading is a sign change rather than a
-    // second realization.
+    // ★ **`flip` is measured, not derived** — by `measured_frame`, the one measuring place (S9);
+    // the realized basis rides along so the axes below cost no second realization.
     // ★★ A face has no caller to name a frame, so its placement is `Canonical` (S4) — derived
     // when the chain is flattened, stored nowhere. That is also what opens this branch for a
     // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`
     // succeeds through the arbitrary-precision road where the old narrow derivation declined.
     let world = realized_plane(origin, x, y);
     let sketch = (world.exact().is_none())
-        .then(|| {
-            crate::rotated_vertex::frame_world_basis(
-                model,
-                surface_h,
-                &nacre_topo::FramePlacement::Canonical,
-                false,
-            )
-        })
+        .then(|| measured_frame(model, surface_h, nacre_topo::FramePlacement::Canonical, n))
         .flatten()
-        .map(|(o, u, v, w)| {
+        .map(|(sf, (o, u, v, _))| {
             // ★ `flip = true` negates `ŵ` and `û` together and leaves `v̂` — a half-turn about
             // `v` — so the second reading is a sign change rather than a second realization.
-            let flip = (0..3).map(|k| w[k] * n.as_array()[k]).sum::<f64>() < 0.0;
-            let sgn = if flip { -1.0 } else { 1.0 };
+            let sgn = if sf.flip { -1.0 } else { 1.0 };
             (
-                flip,
+                sf,
                 Point3::from_array(o),
                 Vector3::from_array(u.map(|c| c * sgn)),
                 // ★★ **`v̂` as realized, not as `ŵ × û` recomputed here.** It has its own exact
@@ -1458,16 +1483,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
             )
         });
     let (x, y, origin, sketch_frame) = match sketch {
-        Some((flip, o, u, v)) => (
-            u,
-            v,
-            o,
-            Some(SketchFrame {
-                plane: surface_h,
-                placement: nacre_topo::FramePlacement::Canonical,
-                flip,
-            }),
-        ),
+        Some((sf, o, u, v)) => (u, v, o, Some(sf)),
         None => (x, y, origin, None),
     };
     Ok(FaceFrame {
@@ -1539,21 +1555,7 @@ fn extrude_and_boolean(
     // point: `face_plane` promises a caller the frame this operation will use, so there must be
     // exactly one place that picks it. All that is left is to name it as a motion node.
     //
-    // ★★ **`push_motion` interns**, so two sketches on one face name the *same* node — which is
-    // what makes their surfaces intern too (`SurfaceKey` is `(name, motion)`) and is the
-    // whole point of the exercise: two routes to one height become one `Handle<Surface>` at
-    // construction, with no f64 comparison anywhere. With `Canonical` placement the node is
-    // `(plane, Canonical, flip)` — nothing per-sketch in the key at all.
-    let sketch_frame = frame.sketch_frame.map(|f| {
-        model.push_motion(
-            nacre_topo::Motion::Frame {
-                plane: f.plane,
-                placement: f.placement,
-                flip: f.flip,
-            },
-            None,
-        )
-    });
+    let sketch_frame = frame.sketch_frame.map(|f| push_frame_node(model, f));
     let (outer, holes) = swept_profile(model, &plane, profile, signed, sketch_frame)?;
     let (prism, prism_faces) = build_prism(
         model,

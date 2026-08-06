@@ -6883,4 +6883,41 @@ pub mod tests {
         ])
         .unwrap()
     }
+
+    /// ★★ S9, the node-omission normalization's ground: **a seeded world plane's canonical frame
+    /// realizes bit-exactly on the unit axes** — origin `(0,0,0)`, every axis component `0.0` or
+    /// `±1.0`, no rounding anywhere. Such a frame's axes lift to exact orthonormal rationals, so
+    /// the operation's `exact()` gate elides the node (rule 207's normalization) and loses
+    /// nothing: the frame the node would state is the world statement already made.
+    ///
+    /// The expected axes are the **arbitrary-axis convention's**, not `axis_plane`'s script
+    /// triples: for the ZX plane the convention's `+u` is `ẑ × ŷ = −x̂` where the script's is
+    /// `+ẑ` — the documented case a caller states through a `Named` placement instead. The seed
+    /// *points* carry the script triple; the *canonical frame* is the plane's own.
+    #[test]
+    fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
+        use nacre_scalar::Axis;
+        let m = Model::new();
+        // (axis, expected û, v̂, ŵ) — ŵ is the +axis (the canonical name's own sign).
+        let want = [
+            (Axis::Z, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+            (Axis::X, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            (Axis::Y, [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
+        ];
+        for (axis, u, v, w) in want {
+            let h = m.world_plane(axis);
+            let (o, ru, rv, rw) = crate::rotated_vertex::frame_world_basis(
+                &m,
+                h,
+                &nacre_topo::FramePlacement::Canonical,
+                false,
+            )
+            .expect("a seed always carries a name");
+            assert_eq!(
+                (o, ru, rv, rw),
+                ([0.0; 3], u, v, w),
+                "{axis:?}: not the world basis"
+            );
+        }
+    }
 }
