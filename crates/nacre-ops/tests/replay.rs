@@ -1021,29 +1021,28 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     }
 }
 
-/// ★ **A witness: `PocketNotBlind` rejects after committing.**
+/// ★ **A reject does not commit — including the one that used to.**
 ///
-/// `ops.rs` names the contract itself where `PadMissesFace` is raised — "restoring
-/// `live_solids` is what keeps the *no reject-after-commit* contract true from the outside: the
-/// model the caller sees is the one it had before". `PocketNotBlind` does not do that. It is
-/// raised in `pocket` *after* `extrude_and_boolean` returned `Ok`, by which point the boolean
-/// has already retired the input solid and installed the through-cut result in its place.
+/// `ops.rs` names this contract where `PadMissesFace` restores `live_solids`: "the model the
+/// caller sees is the one it had before". `PocketNotBlind` used to break it — it was raised in
+/// `pocket` *after* `extrude_and_boolean` returned `Ok`, by which point the boolean had already
+/// retired the caller's solid and installed the through-cut result in its place, so the caller
+/// got an `Err` **and** a different live model. Measured here first, then repaired by moving the
+/// missing-cap verdict into the scope that still holds the result solids.
 ///
-/// So the caller gets an `Err` **and** a different live model: the solid it named is gone, and a
-/// solid it never asked for is live. That is strictly worse than the arena residue this file
-/// otherwise measures — residue only moves future indices, this changes the answer to "what is
-/// my model right now".
-///
-/// This test asserts today's behaviour so the repair has something to flip.
+/// What a late reject still leaves is **arena residue** — the store is append-only and the
+/// prism's cells stay. That is the honest remainder, and the reason a session must rebuild from
+/// its log before recording again ([`a_session_that_keeps_recording_after_a_late_reject_diverges`]).
 #[test]
-fn a_pocket_that_is_not_blind_rejects_after_committing() {
+fn a_pocket_that_is_not_blind_leaves_the_live_model_alone() {
     let mut m = Model::new();
     let OpOutput::Extrude { solid, faces } =
         apply(&mut m, &extrude_op(0.0, 2.0, 1.0)).expect("seed")
     else {
         unreachable!()
     };
-    let before: Vec<_> = m.live_solids.to_vec();
+    let live_before: Vec<_> = m.live_solids.to_vec();
+    let arena_before = arena_lengths(&m);
 
     let err = apply(
         &mut m,
@@ -1057,12 +1056,33 @@ fn a_pocket_that_is_not_blind_rejects_after_committing() {
     assert!(matches!(err, nacre_ops::OpError::PocketNotBlind));
 
     assert!(
-        !m.live_solids.contains(&solid),
-        "TODAY: the declined pocket retired the solid the caller named"
+        m.live_solids.contains(&solid),
+        "the declined pocket must leave the caller's solid live"
     );
-    assert_ne!(
+    assert_eq!(
         m.live_solids.to_vec(),
-        before,
-        "TODAY: the live model the caller sees is not the one it had before the reject"
+        live_before,
+        "the live model after a reject is the one the caller had before it"
+    );
+    // The model still works: the solid can be pocketed for real.
+    apply(
+        &mut m,
+        &Operation::PocketOnFace {
+            face: faces[1],
+            profile: rect(0.5, 0.5, 1.5, 1.5),
+            dist: 0.5,
+        },
+    )
+    .expect("a blind pocket on the restored solid");
+
+    // The remainder that is *not* repaired, stated rather than implied.
+    let grew: usize = arena_lengths(&m)
+        .iter()
+        .zip(&arena_before)
+        .map(|(a, b)| a - b)
+        .sum();
+    assert!(
+        grew > 0,
+        "the append-only arena still keeps the declined prism's cells"
     );
 }

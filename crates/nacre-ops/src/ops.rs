@@ -1605,16 +1605,19 @@ fn realized_plane(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> SketchPla
 /// sidecars (a boss cantilever / an edge slot; Discovered seam vertices). `Fuse` sweeps **outward**
 /// (a boss); `Cut` sweeps **inward** (a blind pocket). Returns the result solid and the feature's
 /// exposed cap — the boss top or the pocket floor, the outer-shell face on the prism's far-cap plane
-/// with outward normal `+n`. `Option::None` there ⇒ the far cap did not survive (a through-cut with
-/// no floor); callers map it to their own error. `NonPositiveDistance`/`DegenerateProfile` propagate
-/// from the frame; overhang configurations the boolean does not cover surface as `Boolean(_)`.
+/// with outward normal `+n`. A cap that did not survive (a through-cut has no floor) is `no_cap`,
+/// **the caller's error raised here** rather than an `Option` the caller turns into one: only this
+/// scope holds the boolean's result solids, and restoring `live_solids` from them is what keeps a
+/// reject from committing. `NonPositiveDistance`/`DegenerateProfile` propagate from the frame;
+/// overhang configurations the boolean does not cover surface as `Boolean(_)`.
 fn extrude_and_boolean(
     model: &mut Model,
     face: Handle<Face>,
     profile: &Profile2d,
     dist: f64,
     kind: BoolKind,
-) -> Result<(Handle<Solid>, Option<Handle<Face>>), OpError> {
+    no_cap: OpError,
+) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
@@ -1690,21 +1693,27 @@ fn extrude_and_boolean(
         .iter()
         .find_map(|&s| find_face_coplanar_with(model, s, far_cap, want_surf, n).map(|c| (s, c)))
     {
-        Some((solid, cap)) => Ok((solid, Some(cap))),
-        // Nothing carries the cap. If anything survived at all, hand it back capless and let
-        // `pad`/`pocket` decide; if the boolean came back empty the prism removed the whole solid,
-        // which is `PocketNotBlind` taken to its limit — not merely floorless, but nothing left.
-        // Only `Cut` can empty a result: `Fuse` of two non-empty solids is never empty.
-        None => match solids.first() {
-            Some(&primary) => Ok((primary, None)),
-            None => {
-                debug_assert!(
-                    matches!(kind, BoolKind::Cut),
-                    "a Fuse cannot produce an empty result"
-                );
-                Err(OpError::PocketNotBlind)
-            }
-        },
+        Some((solid, cap)) => Ok((solid, cap)),
+        // Nothing carries the cap — either the prism reached through (a pocket with no floor) or
+        // it removed the solid outright, which is the same verdict taken to its limit. Only `Cut`
+        // can empty a result: a `Fuse` of two non-empty solids is never empty.
+        //
+        // ★ **The restore is the whole reason this arm lives here.** `assemble_fuse_cut` already
+        // retired the operand and installed its own results, so returning an error now would hand
+        // the caller a failure *and* a model it never asked for: its solid gone, a through-cut in
+        // its place. Putting `live_solids` back is what makes the reject true from the outside —
+        // the same move `PadMissesFace` makes above, for the same reason. (The arena keeps the
+        // prism's cells; the store is append-only. That residue is why a session must rebuild
+        // from its log before recording again — see `tests/replay.rs`.)
+        None => {
+            debug_assert!(
+                !solids.is_empty() || matches!(kind, BoolKind::Cut),
+                "a Fuse cannot produce an empty result"
+            );
+            model.live_solids.retain(|s| !solids.contains(s));
+            model.live_solids.push(frame.solid_h);
+            Err(no_cap)
+        }
     }
 }
 
@@ -1717,8 +1726,14 @@ pub(crate) fn pad(
     profile: &Profile2d,
     dist: f64,
 ) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
-    let (solid, top) = extrude_and_boolean(model, face, profile, dist, BoolKind::Fuse)?;
-    Ok((solid, top.ok_or(OpError::DegenerateGeometry)?))
+    extrude_and_boolean(
+        model,
+        face,
+        profile,
+        dist,
+        BoolKind::Fuse,
+        OpError::DegenerateGeometry,
+    )
 }
 
 /// Carve a blind pocket on a planar `face`: extrude the profile **inward** by `dist` and `Cut` it
@@ -1731,8 +1746,14 @@ pub(crate) fn pocket(
     profile: &Profile2d,
     dist: f64,
 ) -> Result<(Handle<Solid>, Handle<Face>), OpError> {
-    let (solid, floor) = extrude_and_boolean(model, face, profile, dist, BoolKind::Cut)?;
-    Ok((solid, floor.ok_or(OpError::PocketNotBlind)?))
+    extrude_and_boolean(
+        model,
+        face,
+        profile,
+        dist,
+        BoolKind::Cut,
+        OpError::PocketNotBlind,
+    )
 }
 
 /// The outer-shell face of `solid` that lies on `reference`'s plane with its outward normal on
