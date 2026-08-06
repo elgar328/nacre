@@ -6806,3 +6806,52 @@ on-plane 검사는 scalar 신설 `plane_residual_sign`(orient2d_rat 급 **전역
 기존 서술이 잠금을 얻었다).
 
 census: 커밋 1 재기준(ε-관문), 커밋 2·3 비트 동일. 스위트 34(+1) 타깃 그린.
+
+## S8 — Edge 최종형: 담체 두 면 + 경계 두 점, 곡선은 캐시로 (2026-08-06)
+
+여섯 커밋(담체 도착 → 파생 실측 → 접근자 → 개명/Option·Origin 소멸 → 캐시 교체 → 문서).
+`Edge{curve, bounds: Option, origin}` → `Edge{surfaces: [2], vertices: [2]}`. `Store<Curve>`
+(S1 봉인이 남긴 마지막 미봉인 store — "그 정리는 S8 의 몫" 회수) →
+`edge_cache: Vec<EdgeCache>` 인덱스-평행, 유일 입구 `push_edge`(eager 파생) +
+`rebuild_edge_cache`. **census 전 커밋 비트 동일**(S8 은 정점 좌표 생산에 무접촉 — 재기준
+없는 단계라는 계획의 전제가 실측으로 성립).
+
+★★★ **구현 중 반박 ①: "담체 = 내 평면 + 내 arrangement 의 wall" 이 4-평면 동시성에서
+무너졌다.** 커밋 1의 debug_assert 가 병렬 불리언 스위트에서 즉시 발화: 세 평면이 한 직선을
+공유하면, 모서리를 사이에 둔 두 면이 각자 **제3의 평면**을 wall 로 (각자 옳게) 지목한다 —
+wall 은 "어느 평면이 이 변을 잘랐나"지 "건너편 면이 무엇인가"가 아니다. 담체의 확정 의미론
+= **인접성의 답**(그 모서리를 쓰는 두 면의 surface): assemble 이 전 링을 선-주사해 정점쌍 →
+면-surface 다중집합을 만들고 edge_for 가 그걸 읽는다. `Ring.walls` 는 정확 술어용으로
+존치(용도가 다르다). 잠금 `edge_carriers_agree_with_adjacency` 가 정리 패스(coplanar
+fuse·severed cut) 포함 전 생산 경로에서 진술==관측을 못박는다.
+
+★★ **구현 중 반박 ②: "전 생산 직선 비트 동일" 이 이동 경로에서 깨졌다.** transform pass 2
+는 방향 벡터를 직접 회전하고, 파생은 이동된 끝점 차의 재정규화 — 이동된 seam 방향이
+~1 ulp(실측 2.8e-16). 계획은 첫-구성 생산자 4곳만 세고 이동자(pass 2)를 다섯째 생산자로
+안 세었다([[adjacent-proposition-failure]] 계열 — 구성 생산자를 측정하고 이동자를 빠뜨림).
+직선 기하는 어디서도 좌표로 관측되지 않아 무해(원점은 비트 동일). 커밋 2 실측(잠금
+`derived_curves_match_stored`, pass 2 가 살아있는 유일한 창): **직선 83/84 비트 동일**
+(예외 = 그 이동 seam), **원 최대 상대 편차 2.2e-16**(1 ulp — 이동·회전 원통, 기울인 축
+포함; 아래 rim 예측 "비트 정확" 적중, 위 rim 은 t 재계산 ulp). 미러 원통은 인구 없음
+(`MirrorNotPlanar` 거절 실측).
+
+★★ **구현 중 반박 ③: "edge 항 삭제는 무-행동" 이 아니었다.** `.max(tol_of(edge.origin))`
+은 상수 `EPS_CONSTRUCTED` 지만, `Discovered{tol: 0.0}` 정점([[escalations-are-true-zeros]]
+의 정확-영 인구)의 잔차 하한을 그 항이 받치고 있었다 — 삭제하자 5개 불리언 테스트가
+`tol: 0.0` 으로 즉사. 상수로 재철자(`.max(EPS_CONSTRUCTED)`)해 문자 그대로 행동 보존.
+"항등처럼 보이는 max" 는 다른 팔의 최소값 보증일 수 있다.
+
+**타입이 흡수한 검사들**: `VertexOffCurve` 의 직선 갈래는 항진이 됐다(끝점이 자기 파생
+직선 위 — 정확히 0). 검사는 rim 원으로 이빨 유지(`vertex_off_its_rim_circle` — 원은 담체
+파생이라 정점과 독립). `UnboundedEdgeInLoop`·`StepError::UnboundedEdge`·
+`RefKind::EdgeCurve`·tess expect 2·props 갈래 1 순삭(전부 `bounds: None` 픽스처 하나가
+유일 인구였음). 신설 `Violation::EdgeCarrierMismatch`(+ `[plane,plane]` 자기쌍 검출) +
+음성 테스트.
+
+seam 은 `[h_cyl, h_cyl]` 자기-인접 잠정 표기(루프 잠금이 이미 못박은 모양 — 판별자를
+`Curve::Line` 에서 `surfaces[0]==surfaces[1]` 로 교체해 새 불변식이 잠금 문장이 됐다).
+가지·매개 표현은 열린 항목 5 그대로 M6. rim 은 닫힌 모서리 `[v,v]` — 퇴화 검사는 팔별
+(전역 v0==v1 검사였다면 rim 전멸: 계획 검토가 미리 잡은 함정). add_cylinder 는 surface
+push 를 모서리 앞으로 재배치(상대 순서 유지 = 핸들 불변, census 가 감시해 통과).
+판정층 개명은 무의무(S8 이 스치는 판정 타입은 `PlaneGeom.surf` 읽기뿐 — 열린 항목 8 유예
+그대로). 스위트 36 타깃 그린, clippy 0.

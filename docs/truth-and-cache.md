@@ -471,14 +471,14 @@ pub enum Decision {
 | S6a | **점 없는 평면의 소멸** — `Inexact` 소멸(S6b 타입 교체)의 전제. `PlaneDef` 를 점 셋 단일 필드로(origin=points[0]·ref_dir=points[1]−points[0]·극성=점 순서 — 불변식이 구조, 좁은-계수 def 실패 계급 사망, `named_plane_points` 은퇴), **`from_axes` 가 축의 십진 진실을 정의로**(#28 «축만 든 호출자» 인구 개통 — 45°급 프레임의 프리즘이 `WideFrame::named_of` 로 정확 경로; 내부의 실현-기저 호출 3곳은 의도적 무-def `realized_plane` 분리 — 두-정확-기술 재발 방지), `add_cylinder` 캡 점 기록(add_cuboid 선례), 넘침-이동은 노드 기록(`motion_is_exact` 프로브에 점 수송 포함). 잠금: Named×Wide 프레임 단위 + 축-전용 기울어진 프리즘 종단 + 원통 캡 interning + 넘침-이동 + **전수 관문**(`points_coverage` — 생산 경로별 모델의 live 평면 face 전수가 점 보유). census 150줄 비트 동일 ×3회 | ✔ 2026-08-05 |
 | S6b | **타입 교체** — 진실 스토어(`SurfaceTruth{Plane{points: PlanePoints::Known, motion} \| Cylinder{motion}}`)가 캐시 store 와 인덱스-평행으로 탄생, `SurfaceDef`·`surface_defs`·`surface_points`·`push_surface(_with_points/_unrecorded)`·`Violation::UndefinedSurface`·`RejectReason::{InexactSurface, CoordinateOutOfRange}` **사망**. push 는 `push_plane`(interning, flipped 는 f64 캐시 내적 그대로 — 같은 평면이라 부호 정확)·`push_cylinder(motion)`·test-util `push_plane_unregistered`/`set_plane_points_for_test`. f64 프리즘 폴백 → **이름 붙은 거절**(`PlaneWithoutExactForm`·`DistOutsideDecimalWindow` — `Swept::along` 삭제, build_prism 정확-전용). 부수 개선: 이동된 원통이 `Inexact` 강등 대신 모션 기록. ★ 구현 중 반박 1건: normal_def 의 `v = n×u` 곱이 작은-지수 전폭 법선(분모 10²¹→10⁴²)에서 넘침 — proptest 가 폴백 소멸 당일 발견, 원시 방향조차 137비트라 **기저-교차 셔플**(`w = x̂×n` + 대수 부호 `det[ẑ,x̂,n]=n₁`)로 재구성(곱 0개, 전역). 아레나 반전(캐시가 Store·진실이 Vec — `Handle<T>` 타입 매개변수가 강제)은 최종 개명 시 제자리로(§열린 항목). census 150줄 비트 동일 ×4 | ✔ 2026-08-06 |
 | S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — ① `Model::new()` 가 세계 축 평면 셋을 심는다(핸들 0·1·2 = XY·YZ·ZX, points 는 `axis_plane` 삼중 `[0,u,v]`, **캐시 방향은 −축** — extrude 밑캡의 감각과 일치, +축이면 실측 781 캡 flip 재도입; `#[derive(Default)]` 제거 = 무씨앗 뒷문 폐쇄, `world_plane(Axis)` 접근자, `stat seeded_hits` 반증성 다리 신설 = 실측 455). census ε-재기준 1회: 평면 digest 이동 127/150줄, **결과는 143/150 비트 동일 + 나머지 7줄도 부피·면적·centroid 전부 비트 동일**(정점 해시만 이동 — Cramer 가 사실상 스케일-불변으로 반올림, 스칼라 최대 편차 정확히 0), ERR/EMPTY·피연산자 정점 해시 문자 동일. ② 공개 `SketchFrame{plane, placement, flip}`(필드 private + 검증 생성자 — 리터럴 우회 봉쇄): `named()` 가 구성 시점 거절 `FrameOutsideDecimalWindow`·`OriginNotOnPlane`(신규 scalar `plane_residual_sign` — orient2d_rat 급 **전역**, Wide 는 BigInt 팔)·`RefDirParallelToNormal`(판정은 `WideFrame::named_of` 재사용 — 폭에 전역이라 None = 평행뿐), 이름 없는 평면 = `PlaneWithoutExactForm` 재사용. `face_sketch_frame` 신설(이음새 — face_frame 이 만들던 값을 버리지 않고 공개). ③ 내부 통일: flip 측정은 `measured_frame` 한 곳, 노드 push 는 `push_frame_node` 한 곳(extrude·face 두 도로가 한 모양, 게이트 표현식 문자 유지, census 비트 동일). ★ **`Operation` 의 평면-핸들 어휘 교체는 S5 로 유예** — replay 자기완결성: 로그 속 핸들의 합법 표적은 씨앗·기존 면·datum 뿐인데 datum op 가 S5 에야 생긴다. ★ 잠금서 확정 둘: 씨앗 intern 직접 증거(원점 상자 바닥/왼쪽/앞 + z=0 밑캡 = 씨앗 핸들, 아레나 6 유지), ZX 의 canonical 프레임은 `−x̂`(스크립트 삼중과 다름 — Named 로 말할 사례임을 잠금이 명문화) | ✔ 2026-08-06 |
+| S8 | **Edge 최종형** — `Edge{surfaces: [Handle<Surface>;2], vertices: [Handle<Vertex>;2]}`: 담체 두 면(오름차순 정렬 쌍) + 경계 두 점, `curve`·`bounds: Option`·`origin` 사망. `Store<Curve>` → `edge_cache: Vec<EdgeCache>`(인덱스-평행 캐시): 유일 입구 `push_edge`(eager 파생, 퇴화 검사는 **팔별** — rim `[v,v]` 는 합법) + `rebuild_edge_cache`(«버리고 재생» 잠금이 비트 동일 증명) + `edge_curve` 접근자·`derive_edge_curve`(직선 = 끝점 through_points, rim 원 = 담체에서 — 신설 geom `line_plane`, seam = 자기-인접 `[cyl,cyl]` 잠정 표기). transform pass 2(곡선 이동) 통째 소멸. validate: 신설 `EdgeCarrierMismatch`(담체 ≠ 인접 관측, `[plane,plane]` 자기쌍 검출) + `UnboundedEdgeInLoop`·`RefKind::EdgeCurve`·`StepError::UnboundedEdge` 순삭. ★ 구현 중 발견 2건: ① **담체는 wall 로 추측하면 틀린다** — 세 평면이 한 직선을 공유하는 인구(해결된 4-평면 동시성)에서 각 면의 arrangement 는 제3의 평면을 wall 로 (옳게) 지목 — 담체는 **전 링 선-주사한 인접성**에서 읽는다(실측: debug_assert 발화가 잡음). ② «전 생산 직선 비트 동일» 주장이 이동 경로에서 반박 — pass 2 는 방향을 직접 회전, 파생은 끝점 차 재정규화라 방향 ~1 ulp(실측 2.8e-16, 직선 83/84 비트 동일, 원 최대 2.2e-16 — 직선 기하는 비관측이라 무해). ③ VertexOffCurve 의 직선 갈래는 **타입상 항진**이 됐다(끝점이 자기 직선 위) — 검사는 원(rim)으로 이빨 유지, `.max(tol_of(edge.origin))` 은 상수 `EPS_CONSTRUCTED` 로 재철자(**무-행동이 아니었다** — `Discovered{tol:0}` 정점의 하한을 edge 항이 받치고 있었음, 실측). census 전 커밋 비트 동일 | ✔ 2026-08-06 |
 
 ### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
 
 | | 항목 | 선행 |
 |---|---|---|
 | S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5). **`Operation` 의 평면-핸들 어휘 교체도 여기다**(S9 에서 유예 — 사유는 S9 행) | 없음(S9 완료) |
-| S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로) | S6b ✔ |
-| S8 | `Edge` 를 담체+경계로(`{surfaces:[2], vertices:[2]}`) — `Store<Curve>` → `EdgeCache`, 모서리의 `Origin` 도 여기서 소멸 | S6b ✔ |
+| S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로). 모서리 쪽 `Origin` 은 S8 이 이미 지워 정점만 남음 | S6b ✔ |
 
 ★ 판정층 개명(`Pt3`→`WitnessPoint`·`WorkingPoint`→`WorkingVertex`·`PlaneGeom`→`WorkingPlane`,
 §판정 이름 규칙)은 별도 단계가 아니라 **각 타입을 처음 만지는 단계에 얹는다** — 기계적 개명이라
@@ -540,7 +540,9 @@ STEP 출력, undo/replay.
    번호(`branch: u8`, 결정적이어야 함) 또는 재명명 — M6 에서 실제 형상을 만나 결정. 통일안을
    채택했으므로 이 문제는 모든 점에 걸린다 — M6 의 가장 큰 항목.
    ★ 모서리에도 같은 자리가 있다: 원통 **seam** 은 두 면의 교차가 아니라 **한 면의 매개화
-   이음매**라(양쪽이 같은 원통) `Edge{surfaces:[2]}` 담체로 적히지 않는다 — S8 은 평면 모서리를
+   이음매**라(양쪽이 같은 원통) 두-면 교차 담체로 적히지 않는다 — S8 은 잠정 표기
+   `[h_cyl, h_cyl]` 자기-인접으로 적었고 validate 가 «담체 동일 ⇔ 원통» 을 지킨다
+   (`EdgeCarrierMismatch`); 가지 번호·매개 표현은 여전히 M6. S8 은 평면 모서리를
    대상으로 하고, seam 의 담체 표현은 M6 에서 원통의 진실(`ref_dir`)과 함께 결정한다.
 6. **폭 주장은 타입 경계에서만 보장이다** — 이 문서의 백분율(0.39%·1.6%·25.8%·71.9%…)은 전부
    **코퍼스 수치**다. 상한이 필요한 자리에는 타입에서 유도한 값을 쓴다.
