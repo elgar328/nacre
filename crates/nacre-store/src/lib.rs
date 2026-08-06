@@ -140,6 +140,34 @@ impl<T> Store<T> {
         &self.items[h.index as usize]
     }
 
+    /// **This store's handle for a slot named by index** — `None` past the end.
+    ///
+    /// An operation log names cells by *index*, not by handle: a `Handle`'s identity is its
+    /// index (the `Eq`/`Hash` impls below use nothing else), and a log outlives the model it
+    /// was recorded against. So `replay`, which builds a fresh model from scratch, re-anchors
+    /// each of the log's indices onto the model it is building — this is that re-anchoring.
+    ///
+    /// **It does not weaken [`Store::get`]'s guard.** The handle returned is this store's by
+    /// construction, so nothing crosses models here; and the ability itself is not new —
+    /// `iter().nth(i)` already mints exactly this handle. What this adds is a name, `O(1)`,
+    /// an `Option` where `nth` gives one for a different reason, and somewhere to write the
+    /// contract down.
+    ///
+    /// **The one legitimate shape is "re-anchor a log's index onto the model I am building".**
+    /// Reaching for this because a cross-store panic fired is hiding the bug it caught. (The
+    /// throwaway-`Store` trick in `nacre-validate`'s fixtures is a *different* job — it needs
+    /// handles that point **past** the end, which this cannot make by construction.)
+    #[inline]
+    #[must_use]
+    pub fn handle_at(&self, index: u32) -> Option<Handle<T>> {
+        ((index as usize) < self.items.len()).then_some(Handle {
+            index,
+            #[cfg(debug_assertions)]
+            store: self.id,
+            _t: PhantomData,
+        })
+    }
+
     /// Number of items stored.
     #[inline]
     pub fn len(&self) -> usize {
@@ -283,7 +311,86 @@ mod tests {
         let _ = b.get(h);
     }
 
+    /// `handle_at` gives back exactly what `push` returned for that slot.
+    #[test]
+    fn handle_at_is_the_handle_push_returned() {
+        let mut s: Store<u32> = Store::new();
+        let handles: Vec<_> = (0..4).map(|v| s.push(v * 10)).collect();
+        for (i, &h) in handles.iter().enumerate() {
+            assert_eq!(s.handle_at(i as u32), Some(h));
+            assert_eq!(*s.get(s.handle_at(i as u32).unwrap()), (i as u32) * 10);
+        }
+    }
+
+    /// A slot that does not exist has no handle — the boundary is `len()`, and an empty store
+    /// has none at all. This `None` is what lets a caller reject a log naming a cell that this
+    /// model does not have, instead of fabricating a handle into thin air.
+    #[test]
+    fn handle_at_past_the_end_is_none() {
+        let empty: Store<u32> = Store::new();
+        assert_eq!(empty.handle_at(0), None);
+        let mut s: Store<u32> = Store::new();
+        s.push(1);
+        s.push(2);
+        assert!(s.handle_at(1).is_some());
+        assert_eq!(s.handle_at(2), None, "the boundary is len(), not len()+1");
+        assert_eq!(s.handle_at(u32::MAX), None);
+    }
+
+    /// ★ **The new door grants no new power** — `iter().nth(i)` already minted this handle, so
+    /// `handle_at` is a name and an `O(1)` path, not an escape hatch. If these two ever
+    /// disagree, one of them is lying about which store it belongs to.
+    #[test]
+    fn handle_at_agrees_with_iter() {
+        let mut s: Store<char> = Store::new();
+        for c in "nacre".chars() {
+            s.push(c);
+        }
+        for i in 0..s.len() {
+            assert_eq!(
+                s.handle_at(i as u32),
+                s.iter().nth(i).map(|(h, _)| h),
+                "slot {i}"
+            );
+        }
+    }
+
+    /// ★ **The positive control for re-anchoring**: an index taken from store A names *B's*
+    /// item when re-anchored on B — no panic, because the handle `handle_at` returns is B's by
+    /// construction. Its twin is [`cross_store_handle_panics_in_debug`] above: without the
+    /// re-anchoring the very same index still dies at the guard. (They cannot share a body —
+    /// `should_panic` needs the whole test to die.)
+    #[test]
+    fn handle_at_rebinds_to_this_store_not_the_other() {
+        let mut a: Store<&str> = Store::new();
+        let mut b: Store<&str> = Store::new();
+        a.push("from A");
+        b.push("from B");
+        let h_a = a.handle_at(0).expect("A has slot 0");
+        let rebound = b.handle_at(h_a.index()).expect("B has slot 0 too");
+        assert_eq!(*b.get(rebound), "from B");
+        assert_eq!(
+            h_a, rebound,
+            "handles compare by index — that is the vocabulary"
+        );
+    }
+
     proptest! {
+        /// `handle_at` and `iter` agree over arbitrary stores — the property form of
+        /// `handle_at_agrees_with_iter`, which is what makes «no new power» a claim about the
+        /// API rather than about one fixture.
+        #[test]
+        fn handle_at_agrees_with_iter_everywhere(items in prop::collection::vec(any::<i64>(), 0..64)) {
+            let mut s = Store::new();
+            for &v in &items {
+                s.push(v);
+            }
+            for i in 0..items.len() {
+                prop_assert_eq!(s.handle_at(i as u32), s.iter().nth(i).map(|(h, _)| h));
+            }
+            prop_assert_eq!(s.handle_at(items.len() as u32), None);
+        }
+
         /// Every handle retrieves exactly the item that was pushed at its slot,
         /// for an arbitrary sequence of pushes.
         #[test]
