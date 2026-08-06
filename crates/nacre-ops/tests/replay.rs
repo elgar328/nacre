@@ -378,3 +378,691 @@ fn the_comparator_notices_a_difference() {
         "a taller prism must first differ at a vertex coordinate"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The property that was promised — `docs/design.md` §7 (2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+use nacre_scalar::{Angle, Axis, Rotation};
+use nacre_store::Handle;
+use nacre_topo::{Face, Solid};
+use proptest::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Profile2d {
+    Profile2d::polygon(vec![
+        Point2::from_array([x0, y0]),
+        Point2::from_array([x1, y0]),
+        Point2::from_array([x1, y1]),
+        Point2::from_array([x0, y1]),
+    ])
+    .expect("an axis-aligned rectangle is a fair profile")
+}
+
+/// A **choice**, not an operation.
+///
+/// A generator cannot name a handle: the cell an operation refers to does not exist until the
+/// operations before it have run. So the generator emits ordinals — "the 2nd live solid, its
+/// 3rd face" — and [`run_recipe`] resolves them against the model as it grows. This is the
+/// same shape as a log: an index that only means something relative to the arena it is read in.
+#[derive(Clone, Debug)]
+enum Step {
+    Extrude {
+        x: i8,
+        y: i8,
+        w: u8,
+        dist: u8,
+    },
+    Pad {
+        solid: usize,
+        face: usize,
+        inset: u8,
+        dist: u8,
+    },
+    Pocket {
+        solid: usize,
+        face: usize,
+        inset: u8,
+        dist: u8,
+    },
+    Boolean {
+        kind: u8,
+        a: usize,
+        b: usize,
+    },
+    Translate {
+        solid: usize,
+        d: [i8; 3],
+    },
+    Rotate {
+        solid: usize,
+        axis: u8,
+        deg: u8,
+    },
+    Mirror {
+        solid: usize,
+        axis: u8,
+        offset: i8,
+    },
+    Copy {
+        solid: usize,
+    },
+}
+
+fn step_strategy() -> impl Strategy<Value = Step> {
+    prop_oneof![
+        4 => (-3i8..3, -3i8..3, 1u8..4, 1u8..4)
+            .prop_map(|(x, y, w, dist)| Step::Extrude { x, y, w, dist }),
+        3 => (0usize..4, 0usize..8, 0u8..3, 1u8..3)
+            .prop_map(|(solid, face, inset, dist)| Step::Pad { solid, face, inset, dist }),
+        3 => (0usize..4, 0usize..8, 0u8..3, 1u8..3)
+            .prop_map(|(solid, face, inset, dist)| Step::Pocket { solid, face, inset, dist }),
+        3 => (0u8..3, 0usize..4, 0usize..4)
+            .prop_map(|(kind, a, b)| Step::Boolean { kind, a, b }),
+        2 => (0usize..4, prop::array::uniform3(-3i8..3))
+            .prop_map(|(solid, d)| Step::Translate { solid, d }),
+        2 => (0usize..4, 0u8..3, 1u8..5)
+            .prop_map(|(solid, axis, deg)| Step::Rotate { solid, axis, deg }),
+        2 => (0usize..4, 0u8..3, -2i8..2)
+            .prop_map(|(solid, axis, offset)| Step::Mirror { solid, axis, offset }),
+        2 => (0usize..4).prop_map(|solid| Step::Copy { solid }),
+    ]
+}
+
+fn axis_of(k: u8) -> Axis {
+    match k % 3 {
+        0 => Axis::X,
+        1 => Axis::Y,
+        _ => Axis::Z,
+    }
+}
+
+/// Every face of a solid's outer shell, in shell order.
+fn faces_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<Face>> {
+    m.shells.get(m.solids.get(s).outer).faces.clone()
+}
+
+/// Turn a [`Step`] into a concrete `Operation` against **this** model, or `None` if the model
+/// cannot host it at all (no live solid to name). A step that resolves but will be *rejected*
+/// still resolves — the reject is the operation's answer to give, not the generator's.
+fn concretize(m: &Model, step: &Step) -> Option<Operation> {
+    let live: Vec<Handle<Solid>> = m.live_solids.to_vec();
+    let pick = |i: usize| live.get(i % live.len().max(1)).copied();
+    Some(match *step {
+        Step::Extrude { x, y, w, dist } => {
+            let (x, y, w) = (f64::from(x), f64::from(y), f64::from(w));
+            Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: rect(x, y, x + w, y + w),
+                dist: f64::from(dist),
+            }
+        }
+        Step::Pad {
+            solid,
+            face,
+            inset,
+            dist,
+        }
+        | Step::Pocket {
+            solid,
+            face,
+            inset,
+            dist,
+        } => {
+            let s = pick(solid)?;
+            let faces = faces_of(m, s);
+            let f = *faces.get(face % faces.len().max(1))?;
+            let i = f64::from(inset) * 0.25;
+            let profile = rect(i, i, i + 1.0, i + 1.0);
+            let dist = f64::from(dist);
+            if matches!(step, Step::Pad { .. }) {
+                Operation::PadOnFace {
+                    face: f,
+                    profile,
+                    dist,
+                }
+            } else {
+                Operation::PocketOnFace {
+                    face: f,
+                    profile,
+                    dist,
+                }
+            }
+        }
+        Step::Boolean { kind, a, b } => {
+            let (ha, hb) = (pick(a)?, pick(b)?);
+            if ha == hb {
+                return None; // a boolean of a solid with itself is not a case, it is a typo
+            }
+            Operation::Boolean {
+                kind: match kind % 3 {
+                    0 => BoolKind::Fuse,
+                    1 => BoolKind::Cut,
+                    _ => BoolKind::Common,
+                },
+                a: ha,
+                b: hb,
+            }
+        }
+        Step::Translate { solid, d } => Operation::Transform {
+            solid: pick(solid)?,
+            isometry: Isometry::translation([
+                Rat::from_int(i128::from(d[0])),
+                Rat::from_int(i128::from(d[1])),
+                Rat::from_int(i128::from(d[2])),
+            ]),
+        },
+        Step::Rotate { solid, axis, deg } => Operation::Transform {
+            solid: pick(solid)?,
+            isometry: Isometry::rotation(Rotation {
+                axis: axis_of(axis),
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(i128::from(deg) * 15))?,
+            }),
+        },
+        Step::Mirror {
+            solid,
+            axis,
+            offset,
+        } => Operation::Mirror {
+            solid: pick(solid)?,
+            axis: axis_of(axis),
+            offset: Rat::from_int(i128::from(offset)),
+        },
+        Step::Copy { solid } => Operation::Copy {
+            solid: pick(solid)?,
+        },
+    })
+}
+
+/// What a generated session did, so the population can be reported instead of guessed.
+#[derive(Default, Debug)]
+struct Stats {
+    attempted: usize,
+    accepted: usize,
+    rejected: usize,
+    unresolvable: usize,
+    handle_carrying: usize,
+}
+
+/// Interpret a recipe into `(log, model)` — **the discipline, executed.**
+///
+/// A rejected operation is not in the log, but it may already have pushed cells into the arena
+/// (see [`a_late_reject_is_not_index_neutral`]). So after any reject the session throws its
+/// model away and rebuilds it from the log. That is exactly the rule `docs/design.md` states
+/// for a session that keeps recording after a reject, and it is what makes property (3)
+/// (`replay(log)` reproduces the session) true rather than lucky.
+fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
+    let mut model = Model::new();
+    let mut log: Vec<Operation> = Vec::new();
+    let mut st = Stats::default();
+
+    // Seed: every session starts with something to name.
+    let seed = extrude_op(0.0, 2.0, 1.0);
+    apply(&mut model, &seed).expect("the seed extrude is unconditionally legal");
+    log.push(seed);
+
+    for step in steps {
+        let Some(op) = concretize(&model, step) else {
+            st.unresolvable += 1;
+            continue;
+        };
+        st.attempted += 1;
+        match apply(&mut model, &op) {
+            Ok(_) => {
+                if !matches!(op, Operation::Extrude { .. }) {
+                    st.handle_carrying += 1;
+                }
+                st.accepted += 1;
+                log.push(op);
+            }
+            Err(_) => {
+                st.rejected += 1;
+                // Re-sync: the arena may carry residue from the declined operation.
+                model = replay(&log).expect("a log of accepted operations replays");
+            }
+        }
+    }
+
+    // Property (4) is *structural*, not hoped for: if the recipe never landed a handle-carrying
+    // operation, close the session with one. `Copy` of a live solid has no other way to fail.
+    if st.handle_carrying == 0 {
+        let solid = *model.live_solids.first().expect("the seed is still live");
+        let op = Operation::Copy { solid };
+        apply(&mut model, &op).expect("copying a live solid is unconditionally legal");
+        st.handle_carrying += 1;
+        log.push(op);
+    }
+
+    model.rebuild_adjacency();
+    (log, model, st)
+}
+
+static CASES: AtomicUsize = AtomicUsize::new(0);
+static ATTEMPTED: AtomicUsize = AtomicUsize::new(0);
+static REJECTED: AtomicUsize = AtomicUsize::new(0);
+static HANDLED: AtomicUsize = AtomicUsize::new(0);
+const CASE_COUNT: u32 = 32;
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: CASE_COUNT, ..ProptestConfig::default() })]
+
+    /// ★ **The gate of this stage.** Four properties on one generated session:
+    ///
+    /// 1. the session model is a valid b-rep,
+    /// 2. `replay` is **idempotent** — replaying twice lands on the same arena
+    ///    (`docs/design.md` §7 (2), promised and until now unimplemented),
+    /// 3. ★ `replay(log)` reproduces the session **down to handle indices** — the property the
+    ///    contract advertised and no call site had ever exercised, because every log in the
+    ///    workspace was value-only,
+    /// 4. every case carries at least one handle-bearing operation, guaranteed by construction
+    ///    in [`run_recipe`], so (3) is never vacuously true.
+    ///
+    /// The population deliberately includes rotations and mirrors, i.e. widths that CIP has to
+    /// judge: property (5) is that such a step is either a valid result or a **named reject** —
+    /// never a panic, which the harness enforces for free.
+    #[test]
+    fn a_generated_session_replays_to_itself(steps in prop::collection::vec(step_strategy(), 1..5)) {
+        let (log, session, st) = run_recipe(&steps);
+
+        prop_assert!(st.handle_carrying >= 1, "a case with no handle-carrying op proves nothing");
+
+        let violations = nacre_validate::validate(&session);
+        prop_assert!(violations.is_empty(), "session model is invalid: {violations:?}");
+
+        let once = replay(&log).expect("the accepted log replays");
+        assert_same_arena(&once, &session, "replay(log) vs session");
+
+        let twice = replay(&log).expect("replaying again is still a replay");
+        assert_same_arena(&twice, &once, "replay idempotence");
+
+        ATTEMPTED.fetch_add(st.attempted, Ordering::Relaxed);
+        REJECTED.fetch_add(st.rejected, Ordering::Relaxed);
+        HANDLED.fetch_add(st.handle_carrying, Ordering::Relaxed);
+        if CASES.fetch_add(1, Ordering::Relaxed) + 1 == CASE_COUNT as usize {
+            // A population that rejects everything measures nothing; print it, do not assume it.
+            println!(
+                "stat generated_population cases={CASE_COUNT} attempted={} rejected={} handle_carrying={}",
+                ATTEMPTED.load(Ordering::Relaxed),
+                REJECTED.load(Ordering::Relaxed),
+                HANDLED.load(Ordering::Relaxed),
+            );
+        }
+    }
+}
+
+/// Property (6), in plain text: **all six** handle-carrying variants in one log.
+///
+/// The generator reaches them by chance; this reaches them by name, so a variant that silently
+/// stops being generated cannot take the coverage with it.
+#[test]
+fn a_log_using_every_handle_carrying_variant_replays() {
+    let mut m = Model::new();
+    let mut log = Vec::new();
+    let mut run = |m: &mut Model, op: Operation| {
+        let out = apply(m, &op).expect("each step of this fixture is legal");
+        log.push(op);
+        out
+    };
+
+    let OpOutput::Extrude { faces, .. } = run(&mut m, extrude_op(0.0, 2.0, 2.0)) else {
+        unreachable!()
+    };
+    let top = faces[1];
+    // Every edit but `Copy` supersedes its input, so the fixture threads the *new* handle on.
+    let OpOutput::PadOnFace { solid: a, .. } = run(
+        &mut m,
+        Operation::PadOnFace {
+            face: top,
+            profile: rect(0.25, 0.25, 1.75, 1.75),
+            dist: 1.0,
+        },
+    ) else {
+        unreachable!()
+    };
+    let OpOutput::Copy { solid: b } = run(&mut m, Operation::Copy { solid: a }) else {
+        unreachable!()
+    };
+    let OpOutput::Transform { solid: b } = run(
+        &mut m,
+        Operation::Transform {
+            solid: b,
+            isometry: Isometry::translation([Rat::from_int(5), Rat::from_int(0), Rat::from_int(0)]),
+        },
+    ) else {
+        unreachable!()
+    };
+    let OpOutput::Mirror { solid: b } = run(
+        &mut m,
+        Operation::Mirror {
+            solid: b,
+            axis: Axis::X,
+            offset: Rat::from_int(9),
+        },
+    ) else {
+        unreachable!()
+    };
+    // The boss's top cap, found by geometry rather than by index — the solid has been copied,
+    // translated and mirrored since it was built, so no remembered handle survives.
+    let corners = |f: Handle<Face>| -> Vec<[f64; 3]> {
+        m.faces
+            .get(f)
+            .outer
+            .half_edges
+            .iter()
+            .map(|he| m.vertex_point(m.edges.get(he.edge).vertices[0]).as_array())
+            .collect()
+    };
+    let cap = *faces_of(&m, b)
+        .iter()
+        .filter(|&&f| {
+            let c = corners(f);
+            let z = c[0][2];
+            c.iter().all(|p| p[2] == z)
+        })
+        .max_by(|&&x, &&y| corners(x)[0][2].total_cmp(&corners(y)[0][2]))
+        .expect("the boss has a top cap");
+    let c = corners(cap);
+    let (x0, x1) = (
+        c.iter().map(|p| p[0]).fold(f64::MAX, f64::min),
+        c.iter().map(|p| p[0]).fold(f64::MIN, f64::max),
+    );
+    let (y0, y1) = (
+        c.iter().map(|p| p[1]).fold(f64::MAX, f64::min),
+        c.iter().map(|p| p[1]).fold(f64::MIN, f64::max),
+    );
+    let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    run(
+        &mut m,
+        Operation::PocketOnFace {
+            face: cap,
+            profile: rect(mx - 0.25, my - 0.25, mx + 0.25, my + 0.25),
+            dist: 0.5, // into a 1-thick boss: blind
+        },
+    );
+    let live: Vec<_> = m.live_solids.to_vec();
+    run(
+        &mut m,
+        Operation::Boolean {
+            kind: BoolKind::Fuse,
+            a: live[0],
+            b: live[1],
+        },
+    );
+    m.rebuild_adjacency();
+
+    // All six carried a handle.
+    let carried = log
+        .iter()
+        .filter(|o| !matches!(o, Operation::Extrude { .. }))
+        .count();
+    assert_eq!(carried, 6, "this fixture is supposed to exercise all six");
+
+    let replayed = replay(&log).expect("a log of every handle-carrying variant replays");
+    assert_same_arena(&replayed, &m, "all-six");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// What a reject leaves behind
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn arena_lengths(m: &Model) -> [usize; 5] {
+    [
+        m.vertices.len(),
+        m.edges.len(),
+        m.faces.len(),
+        m.shells.len(),
+        m.solids.len(),
+    ]
+}
+
+/// ★ **A reject is atomic on the live model, but not on the arena.**
+///
+/// `ops.rs` says it in one line — "only `live_solids` is touched, the store stays append-only" —
+/// and that line is the whole hazard: an operation that builds a tool prism and *then* declines
+/// has already grown the stores. The declined operation is not in the log, so a session that
+/// keeps recording afterwards hands `replay` indices it can never reproduce.
+///
+/// This measures the boundary rather than asserting it from memory: early rejects (decided from
+/// the request alone) leave Δ = 0, late rejects (decided from geometry that had to be built)
+/// leave Δ > 0. The numbers print so `docs/dev-log.md` quotes a measurement, not a belief.
+#[test]
+fn a_late_reject_is_not_index_neutral() {
+    let mut early = 0usize;
+    let mut late = 0usize;
+
+    let probe = |name: &str, setup: &dyn Fn() -> (Model, Operation)| -> Option<usize> {
+        let (mut m, op) = setup();
+        let before = arena_lengths(&m);
+        let err = apply(&mut m, &op).err()?;
+        let after = arena_lengths(&m);
+        let delta: usize = before.iter().zip(&after).map(|(b, a)| a - b).sum();
+        let d: Vec<String> = before
+            .iter()
+            .zip(&after)
+            .map(|(b, a)| (a - b).to_string())
+            .collect();
+        println!(
+            "stat reject_delta {name} total={delta} v/e/f/sh/so=+{} err={err:?}",
+            d.join("/+")
+        );
+        Some(delta)
+    };
+
+    let seeded = || {
+        let mut m = Model::new();
+        let OpOutput::Extrude { solid, faces } =
+            apply(&mut m, &extrude_op(0.0, 2.0, 1.0)).expect("seed")
+        else {
+            unreachable!()
+        };
+        (m, solid, faces)
+    };
+
+    // ── Early: decided before any geometry is built ─────────────────────────
+    for (name, setup) in [
+        (
+            "NonPositiveDistance",
+            Box::new(|| (Model::new(), extrude_op(0.0, 2.0, 0.0))) as Box<dyn Fn() -> _>,
+        ),
+        (
+            "SolidNotLive",
+            Box::new(|| {
+                let (mut m, solid, _) = seeded();
+                apply(&mut m, &Operation::Copy { solid }).expect("copy");
+                apply(
+                    &mut m,
+                    &Operation::Transform {
+                        solid,
+                        isometry: Isometry::translation([Rat::from_int(1); 3]),
+                    },
+                )
+                .expect("supersede it");
+                (
+                    m,
+                    Operation::Transform {
+                        solid, // now superseded
+                        isometry: Isometry::translation([Rat::from_int(1); 3]),
+                    },
+                )
+            }),
+        ),
+    ] {
+        let d = probe(name, &setup).unwrap_or_else(|| panic!("{name} was supposed to reject"));
+        assert_eq!(
+            d, 0,
+            "{name} is an early reject and must not grow the arena"
+        );
+        early += 1;
+    }
+
+    // ── Late: the geometry had to exist before the answer was known ─────────
+    for (name, setup) in [
+        (
+            "PadMissesFace",
+            Box::new(|| {
+                let (m, _, faces) = seeded();
+                let op = Operation::PadOnFace {
+                    face: faces[1],
+                    profile: rect(20.0, 20.0, 21.0, 21.0), // nowhere near the cap
+                    dist: 1.0,
+                };
+                (m, op)
+            }) as Box<dyn Fn() -> _>,
+        ),
+        (
+            "PocketNotBlind",
+            Box::new(|| {
+                let (m, _, faces) = seeded();
+                let op = Operation::PocketOnFace {
+                    face: faces[1],
+                    profile: rect(0.5, 0.5, 1.5, 1.5),
+                    dist: 5.0, // straight through the 1-thick block
+                };
+                (m, op)
+            }),
+        ),
+    ] {
+        let d = probe(name, &setup).unwrap_or_else(|| panic!("{name} was supposed to reject"));
+        assert!(
+            d > 0,
+            "{name} is a late reject and is expected to leave residue"
+        );
+        late += 1;
+    }
+
+    println!("stat reject_delta_summary early={early} late={late}");
+}
+
+/// ★★ **The hazard, executed** — and the reason the re-sync in [`run_recipe`] is a rule and not
+/// a convenience.
+///
+/// A session that hits a late reject and keeps recording *without* rebuilding from its log is
+/// naming cells whose indices include residue the log does not contain. Exactly two outcomes
+/// are acceptable, and this test enumerates them: a **named reject**, or a **success whose arena
+/// diverges**. A panic is not on the list — the kernel declines what it cannot do (see
+/// `docs/overview.md`), and an off-by-a-few log is squarely "cannot do".
+#[test]
+fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
+    let mut m = Model::new();
+    let mut log = Vec::new();
+
+    let seed = extrude_op(0.0, 2.0, 1.0);
+    let OpOutput::Extrude { solid, faces } = apply(&mut m, &seed).expect("seed") else {
+        unreachable!()
+    };
+    log.push(seed);
+
+    // A late reject: builds the tool prism, then declines. Not recorded — but its cells stay.
+    let before = arena_lengths(&m);
+    // `PadMissesFace` is used deliberately: it is the late reject that *does* restore
+    // `live_solids` (`ops.rs`, "no reject-after-commit"), so what is left is arena residue and
+    // nothing else. The reject that fails to restore is a separate defect, witnessed by
+    // [`a_pocket_that_is_not_blind_rejects_after_committing`].
+    let declined = Operation::PadOnFace {
+        face: faces[1],
+        profile: rect(20.0, 20.0, 21.0, 21.0),
+        dist: 1.0,
+    };
+    let err = apply(&mut m, &declined).expect_err("this pad misses the face");
+    let residue: usize = arena_lengths(&m)
+        .iter()
+        .zip(&before)
+        .map(|(a, b)| a - b)
+        .sum();
+    assert!(
+        residue > 0,
+        "the premise of this test is residue; got none ({err:?})"
+    );
+
+    // The session keeps going *without* re-syncing, and records what follows.
+    let cp = Operation::Copy { solid };
+    let OpOutput::Copy { solid: copy } = apply(&mut m, &cp).expect("copy") else {
+        unreachable!()
+    };
+    log.push(cp);
+    let mv = Operation::Transform {
+        solid: copy,
+        isometry: Isometry::translation([Rat::from_int(5), Rat::from_int(0), Rat::from_int(0)]),
+    };
+    apply(&mut m, &mv).expect("move the copy");
+    log.push(mv);
+    m.rebuild_adjacency();
+
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| replay(&log)));
+    match outcome {
+        Err(_) => panic!(
+            "replaying a log recorded past a late reject PANICKED — the kernel must decline, \
+             not abort (docs/overview.md). This is a defect, not an acceptable outcome."
+        ),
+        Ok(Err(e)) => println!("stat past_reject_outcome named_reject {e:?}"),
+        Ok(Ok(r)) => {
+            let (sa, sb) = (arena_sig(&r), arena_sig(&m));
+            let first = sa.iter().zip(&sb).find(|(x, y)| x != y);
+            match first {
+                Some((x, y)) => println!(
+                    "stat past_reject_outcome diverged at {}[{}] {:?} vs {:?}",
+                    x.what, x.at, x.value, y.value
+                ),
+                None if sa.len() != sb.len() => {
+                    println!(
+                        "stat past_reject_outcome diverged in length {} vs {}",
+                        sa.len(),
+                        sb.len()
+                    )
+                }
+                None => panic!(
+                    "replay AGREED with a session that recorded past a late reject. That is a \
+                     finding, not a pass: the residue ({residue} cells) did not move any index \
+                     this log names. Narrow the claim in docs/design.md to what is measured."
+                ),
+            }
+        }
+    }
+}
+
+/// ★ **A witness: `PocketNotBlind` rejects after committing.**
+///
+/// `ops.rs` names the contract itself where `PadMissesFace` is raised — "restoring
+/// `live_solids` is what keeps the *no reject-after-commit* contract true from the outside: the
+/// model the caller sees is the one it had before". `PocketNotBlind` does not do that. It is
+/// raised in `pocket` *after* `extrude_and_boolean` returned `Ok`, by which point the boolean
+/// has already retired the input solid and installed the through-cut result in its place.
+///
+/// So the caller gets an `Err` **and** a different live model: the solid it named is gone, and a
+/// solid it never asked for is live. That is strictly worse than the arena residue this file
+/// otherwise measures — residue only moves future indices, this changes the answer to "what is
+/// my model right now".
+///
+/// This test asserts today's behaviour so the repair has something to flip.
+#[test]
+fn a_pocket_that_is_not_blind_rejects_after_committing() {
+    let mut m = Model::new();
+    let OpOutput::Extrude { solid, faces } =
+        apply(&mut m, &extrude_op(0.0, 2.0, 1.0)).expect("seed")
+    else {
+        unreachable!()
+    };
+    let before: Vec<_> = m.live_solids.to_vec();
+
+    let err = apply(
+        &mut m,
+        &Operation::PocketOnFace {
+            face: faces[1],
+            profile: rect(0.5, 0.5, 1.5, 1.5),
+            dist: 5.0, // straight through the 1-thick block
+        },
+    )
+    .expect_err("a through-cut is not a blind pocket");
+    assert!(matches!(err, nacre_ops::OpError::PocketNotBlind));
+
+    assert!(
+        !m.live_solids.contains(&solid),
+        "TODAY: the declined pocket retired the solid the caller named"
+    );
+    assert_ne!(
+        m.live_solids.to_vec(),
+        before,
+        "TODAY: the live model the caller sees is not the one it had before the reject"
+    );
+}

@@ -3510,6 +3510,10 @@ pub mod tests {
 
     /// Replay determinism (DNA 3): the same construction + transform reproduces the
     /// same geometry and the same handle down to the index.
+    ///
+    /// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
+    /// legal only because `Handle`'s equality is its index — the very premise `replay` now
+    /// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
     #[test]
     fn transform_is_deterministic() {
         let (iso, _) = test_iso();
@@ -3592,6 +3596,10 @@ pub mod tests {
 
     /// Replay determinism (DNA 3) for the one additive operation: a copy reproduces the same
     /// geometry *and* the same handle index, and leaves the same live set behind it.
+    ///
+    /// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
+    /// legal only because `Handle`'s equality is its index — the very premise `replay` now
+    /// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
     #[test]
     fn copy_is_deterministic() {
         let build = || {
@@ -3796,6 +3804,10 @@ pub mod tests {
 
     /// Replay determinism (DNA 3): the same construction + rotation reproduces the
     /// same geometry and the same handle.
+    ///
+    /// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
+    /// legal only because `Handle`'s equality is its index — the very premise `replay` now
+    /// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
     #[test]
     fn transform_rotate_is_deterministic() {
         let build = || {
@@ -4340,6 +4352,10 @@ pub mod tests {
 
     /// Replay determinism (DNA 3): a re-rotation sequence reproduces the same forest
     /// and handles.
+    ///
+    /// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
+    /// legal only because `Handle`'s equality is its index — the very premise `replay` now
+    /// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
     #[test]
     fn rerotate_is_deterministic() {
         use nacre_scalar::Axis;
