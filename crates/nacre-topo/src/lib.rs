@@ -35,6 +35,16 @@ use std::collections::{HashMap, HashSet};
 pub enum VertexDef {
     /// The intersection of three planes (their surface handles).
     ThreePlane([Handle<Surface>; 3]),
+    /// A point on the intersection **curve** of two surfaces — the M3 cylinder seam vertex:
+    /// the rim circle (lateral cylinder ∩ cap plane) at parameter `θ = 0` (S7).
+    ///
+    /// ★ The pair pins a curve, not a point. The datum that picks the point — the cylinder's
+    /// `ref_dir` — is not part of the cylinder's *truth* until M6; until then the vertex's
+    /// coordinate cache is load-bearing for this population (the one place a coordinate still
+    /// carries information the definition cannot reproduce — recorded honestly, not hidden).
+    /// M6 grows the vocabulary by variants (`Branch { surfaces, branch }`, an apex, …), each
+    /// stating its own truth — the invariants are per-variant (Q5's doctrine).
+    OnSeam([Handle<Surface>; 2]),
 }
 
 /// One motion in a history — what a [`MotionNode`] carries.
@@ -1117,19 +1127,18 @@ impl Model {
             None,
         );
 
+        // A seam vertex lies on two surfaces only — the rim circle's `θ = 0` point. `OnSeam`
+        // states exactly that (S7); the coordinate stays load-bearing until M6's `ref_dir`
+        // truth (see `VertexDef::OnSeam`).
         let v_bot = self.vertices.push(Vertex {
             point: p_bot,
             origin: Origin::Constructed,
-            // A cylinder's seam vertex sits on a curved surface, which `ThreePlane`
-            // cannot name (M6). Its coordinate stays the only description it has.
-            definition: None,
+            definition: Some(VertexDef::OnSeam([lateral_surface, bottom_cap_surface])),
         });
         let v_top = self.vertices.push(Vertex {
             point: p_top,
             origin: Origin::Constructed,
-            // A cylinder's seam vertex sits on a curved surface, which `ThreePlane`
-            // cannot name (M6). Its coordinate stays the only description it has.
-            definition: None,
+            definition: Some(VertexDef::OnSeam([lateral_surface, top_cap_surface])),
         });
 
         // Rims are full circles seamed at their vertex (start == end); the seam is
@@ -1531,6 +1540,35 @@ mod tests {
             }
         }
         assert_eq!(caps, 2);
+    }
+
+    /// ★★ S7: **a seam vertex states its two carriers** — `OnSeam([lateral, its own cap])`.
+    /// The pair pins the rim circle; the coordinate pins the point until M6's `ref_dir` truth
+    /// (see `VertexDef::OnSeam`). The lateral surface must be the cylinder, the other its cap.
+    #[test]
+    fn a_seam_vertex_states_its_rim_carriers() {
+        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        let defs: Vec<_> = m.vertices.iter().map(|(_, v)| v.definition).collect();
+        assert_eq!(
+            defs.len(),
+            2,
+            "a cylinder has exactly its two seam vertices"
+        );
+        for (i, d) in defs.iter().enumerate() {
+            let Some(VertexDef::OnSeam([a, b])) = d else {
+                panic!("a seam vertex carries OnSeam, got {d:?}")
+            };
+            assert!(
+                matches!(m.surface(*a), Surface::Cylinder(_)),
+                "first carrier is the lateral cylinder"
+            );
+            let Surface::Plane(p) = m.surface(*b) else {
+                panic!("second carrier is the cap plane")
+            };
+            // Bottom vertex names the bottom cap (through z = 0), top the top cap (z = 5).
+            let z = if i == 0 { 0.0 } else { 5.0 };
+            assert_eq!(p.distance(Point3::from_array([0.0, 0.0, z])), 0.0);
+        }
     }
 
     #[test]

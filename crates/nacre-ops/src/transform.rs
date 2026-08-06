@@ -80,10 +80,10 @@ fn origins_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
         }
     }
     let named = |origin: &Origin| match origin {
-        Origin::Discovered {
-            definition: VertexDef::ThreePlane(planes),
-            ..
-        } => planes.iter().all(|s| surfs.contains(s)),
+        Origin::Discovered { definition, .. } => match definition {
+            VertexDef::ThreePlane(planes) => planes.iter().all(|s| surfs.contains(s)),
+            VertexDef::OnSeam(pair) => pair.iter().all(|s| surfs.contains(s)),
+        },
         _ => true,
     };
     for &sh in &shells {
@@ -419,19 +419,17 @@ impl Xform<'_> {
 fn remap_origin(origin: Origin, surf_map: &HashMap<Handle<Surface>, Handle<Surface>>) -> Origin {
     match origin {
         Origin::Constructed => Origin::Constructed,
-        Origin::Discovered {
-            tol,
-            definition: VertexDef::ThreePlane(planes),
-        } => {
-            let mapped = planes.map(|s| {
+        Origin::Discovered { tol, definition } => {
+            let remap = |s: Handle<Surface>| {
                 *surf_map
                     .get(&s)
-                    .expect("Discovered ThreePlane surface must be a face surface of the solid")
-            });
-            Origin::Discovered {
-                tol,
-                definition: VertexDef::ThreePlane(mapped),
-            }
+                    .expect("a Discovered definition's surface must be a face surface of the solid")
+            };
+            let definition = match definition {
+                VertexDef::ThreePlane(planes) => VertexDef::ThreePlane(planes.map(remap)),
+                VertexDef::OnSeam(pair) => VertexDef::OnSeam(pair.map(remap)),
+            };
+            Origin::Discovered { tol, definition }
         }
         // Reached only for an *exact* move of an already-rotated solid — a translation
         // or a 90°-family rotation, which take the no-node path. Keep the rotation
@@ -638,12 +636,23 @@ fn transform_solid(
             // to cover this field would either panic here or start rejecting transforms that work
             // today, and both would make this commit change answers. A definition that cannot be
             // re-pointed is simply absent, and the coverage count says how often.
-            definition: v.definition.and_then(|VertexDef::ThreePlane(planes)| {
-                let mut out = [planes[0]; 3];
-                for (o, s) in out.iter_mut().zip(planes) {
-                    *o = *surf_map.get(&s)?;
+            definition: v.definition.and_then(|def| match def {
+                VertexDef::ThreePlane(planes) => {
+                    let mut out = [planes[0]; 3];
+                    for (o, s) in out.iter_mut().zip(planes) {
+                        *o = *surf_map.get(&s)?;
+                    }
+                    Some(VertexDef::ThreePlane(out))
                 }
-                Some(VertexDef::ThreePlane(out))
+                // Same rule: a seam vertex's carriers (lateral + its cap) are both face
+                // surfaces of this solid, so the lookups always hit.
+                VertexDef::OnSeam(pair) => {
+                    let mut out = pair;
+                    for (o, s) in out.iter_mut().zip(pair) {
+                        *o = *surf_map.get(&s)?;
+                    }
+                    Some(VertexDef::OnSeam(out))
+                }
             }),
         };
         vert_map.insert(vh, model.vertices.push(new_v));
@@ -876,6 +885,48 @@ mod tests {
     /// `SurfaceDef` path read the lateral surface as `Constructed`-without-points, so a rotated
     /// cylinder's move demoted it to `Inexact` — reachable in production, pinned by nothing.
     /// The truth variant has a motion slot of its own, and this is it working.
+    /// ★★ S7: a moved cylinder's seam vertices carry `OnSeam` re-pointed at the **twin's own**
+    /// surfaces — the carrier pair moves with the solid, like every other definition.
+    #[test]
+    fn a_moved_cylinders_seam_defs_repoint_to_the_twin() {
+        let mut m = Model::new();
+        let s = m.add_cylinder(
+            Point3::from_array([1.0, 2.0, 0.5]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.5,
+            3.0,
+        );
+        m.rebuild_adjacency();
+        let iso = Isometry::rotation(nacre_scalar::Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(0); 3],
+            angle: nacre_scalar::Angle::from_deg(Rat::from_int(31)).expect("angle"),
+        });
+        let out = transform(&mut m, s, &iso).expect("rotate the cylinder");
+        let mut twin_surfs = std::collections::HashSet::new();
+        for &fh in &m.shells.get(m.solids.get(out).outer).faces {
+            twin_surfs.insert(m.faces.get(fh).surface);
+        }
+        let mut seams = 0;
+        for &fh in &m.shells.get(m.solids.get(out).outer).faces {
+            let face = m.faces.get(fh);
+            for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                for he in &lp.half_edges {
+                    for &vh in &m.edges.get(he.edge).vertices {
+                        if let Some(VertexDef::OnSeam(pair)) = m.vertices.get(vh).definition {
+                            seams += 1;
+                            assert!(
+                                pair.iter().all(|c| twin_surfs.contains(c)),
+                                "a moved seam def must name the twin's own surfaces"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(seams > 0, "the sweep saw no seam vertices at all");
+    }
+
     #[test]
     fn a_rotated_cylinder_records_its_motion() {
         let mut m = Model::new();

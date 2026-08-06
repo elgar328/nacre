@@ -89,6 +89,14 @@ pub enum Violation {
     /// edge is manifold. Detected by [`nacre_topo::nonmanifold_vertices`].
     NonManifoldVertex { vertex: Handle<Vertex> },
 
+    /// A vertex definition whose carrier kinds contradict its variant (S7): a `ThreePlane`
+    /// naming a cylinder (three *planes* is the claim), or an `OnSeam` naming two planes
+    /// (two planes meet in a line — a line's point IS a three-plane intersection, so the
+    /// seam spelling would be hiding an expressible truth). The variants' invariants are
+    /// per-variant (Q5), and this is the checker that keeps them so — the vertex sibling of
+    /// [`Self::EdgeCarrierMismatch`].
+    VertexDefCarrierMismatch { vertex: Handle<Vertex> },
+
     /// An edge's stated carriers disagree with adjacency (S8): the multiset of the two face
     /// surfaces using the edge is not the stored `Edge::surfaces` pair — or the pair is
     /// self-adjacent (`[s, s]`) on a *plane*, a spelling reserved for a cylinder seam. The
@@ -188,6 +196,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     // short-circuited on a dangling handle), so this traversal is in-bounds.
     let reach = model.reachable();
     let adj = Adjacency::rebuild(model); // fresh; does not trust model.adj
+    check_vertex_def_carriers(model, &mut out);
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
     check_cavity_orientation(model, &mut out);
@@ -286,8 +295,11 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     // A discovered vertex's definition references surfaces by handle.
     for (vh, vertex) in m.vertices.iter() {
         if let Origin::Discovered { definition, .. } = vertex.origin {
-            let VertexDef::ThreePlane(surfaces) = definition;
-            for s in surfaces {
+            let surfaces: &[Handle<Surface>] = match &definition {
+                VertexDef::ThreePlane(s) => s,
+                VertexDef::OnSeam(s) => s,
+            };
+            for &s in surfaces {
                 if s.index() as usize >= m.surface_count() {
                     out.push(Violation::DanglingReference {
                         kind: RefKind::VertexDefSurface,
@@ -334,6 +346,26 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
                 inner_loops,
                 genus,
             });
+        }
+    }
+}
+
+/// S7 structural check: each vertex definition's carrier kinds must match its variant —
+/// `ThreePlane` names planes only, `OnSeam` includes a non-plane. Runs after reference
+/// integrity (it dereferences surface handles).
+fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
+    for (vh, vertex) in m.vertices.iter() {
+        let bad = match &vertex.definition {
+            None => false,
+            Some(VertexDef::ThreePlane(planes)) => planes
+                .iter()
+                .any(|&s| !matches!(m.surface(s), Surface::Plane(_))),
+            Some(VertexDef::OnSeam(pair)) => pair
+                .iter()
+                .all(|&s| matches!(m.surface(s), Surface::Plane(_))),
+        };
+        if bad {
+            out.push(Violation::VertexDefCarrierMismatch { vertex: vh });
         }
     }
 }
@@ -1160,6 +1192,48 @@ mod tests {
             vs.iter()
                 .any(|x| matches!(x, Violation::NonManifoldEdge { .. }))
         );
+    }
+
+    /// ★ S7 negative controls: a definition variant whose carrier kinds contradict it is
+    /// flagged — `ThreePlane` naming a cylinder, and `OnSeam` naming two planes.
+    #[test]
+    fn a_contradictory_vertex_def_is_flagged() {
+        let mut m = nacre_topo::Model::new();
+        m.add_cylinder(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        let cyl = m
+            .faces
+            .iter()
+            .map(|(_, f)| f.surface)
+            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .expect("the lateral cylinder");
+        let (z0, x0) = (
+            m.world_plane(nacre_scalar::Axis::Z),
+            m.world_plane(nacre_scalar::Axis::X),
+        );
+        let bad_three = m.vertices.push(Vertex {
+            point: Point3::origin(),
+            origin: Origin::Constructed,
+            definition: Some(VertexDef::ThreePlane([z0, x0, cyl])),
+        });
+        let bad_seam = m.vertices.push(Vertex {
+            point: Point3::origin(),
+            origin: Origin::Constructed,
+            definition: Some(VertexDef::OnSeam([z0, x0])),
+        });
+        let vs = validate(&m);
+        for bad in [bad_three, bad_seam] {
+            assert!(
+                vs.iter().any(
+                    |v| matches!(v, Violation::VertexDefCarrierMismatch { vertex } if *vertex == bad)
+                ),
+                "a contradictory def must be flagged: {vs:?}"
+            );
+        }
     }
 
     /// ★ S8: the check `VertexOffCurve` still has teeth where the curve does NOT derive from
