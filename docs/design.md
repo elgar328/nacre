@@ -46,7 +46,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 **편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포 — 2026-07-26 결정, 미착수).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). **Rust로 두는 이유:** 헤드리스 `cargo test`가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 교체해도 살아남고, wasm 경계가 함수 하나로 유지된다. 경계 규칙은 overview.md의 "설탕 vs 커널 판별 기준"이고, **문법·의미론과 그 결정 이유는 `nacre-kit` 리포의 `docs/syntax.md`·`docs/decisions.md`에 있다**(여기에 복사하지 않는다 — 두 곳에 같은 내용이 있으면 어긋난다). **전제였던 것 — ✅ 2026-07-27 해소:** 파사드 `nacre`가 채워져 소비자가 **한 줄**로 매단다(아래 §파사드).
 
 **공개 표면 조사 (2026-07-26, 코드 실측 — 다시 조사하지 말 것).** 외부 소비자 관점에서 무엇이 막혀 있는지 훑은 결과.
-- **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices → vertex.point`). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Origin::{Constructed, Discovered{tol,definition}, Moved{base,motion}}`·`VertexDef`·`Model::motions`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개. 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
+- **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices → vertex.point`). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Vertex::def`(=`VertexDef{ThreePlane|OnSeam}`)·`Model::{vertex_point, vertex_tol}`·`Model::motions`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개. 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
 - **파생 값과 에러 표면 — ✅ 2026-07-26 공개.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. §6의 거절 이유는 그 앞에 끝났다. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 미래.
   - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(실측 ~1e-7).
   - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).
@@ -198,7 +198,7 @@ pub enum Curve {
 
 ```rust
 /// cache 위 파라미터 t의 점을 실제 교차점으로 정련한다 — 적응 정밀도 사다리.
-/// 반환: 정련된 점과 "실제 달성한 정확도" (이 값이 Origin::Discovered{tol}의 근거가 된다).
+/// 반환: 정련된 점과 "실제 달성한 정확도" (이 값이 정점 캐시의 측정 tol 이 된다).
 pub fn relax_to_intersection(
     p0: Point<3>, s1: &Surface, s2: &Surface,
 ) -> Result<(Point<3>, f64), RelaxError>;
@@ -262,7 +262,7 @@ pub enum SurfaceDef {
     /// 모션 이력의 상. 진실은 `(witness, motion)`이고 계수는 캐시다.
     /// `witness`는 **회전 이전**의 비공선 세 점(그 면에서 그 자리에 붙잡는다 —
     /// 정의가 모델의 다른 부분이 살아남는 데 의존하면 안 된다),
-    /// `motion`은 `Model::motions` 포리스트의 leaf(정점 `Origin::Moved`와 같은 포리스트).
+    /// `motion`은 `Model::motions` 포리스트의 leaf — 모션은 면이 든다(정점은 자기 평면을 따라간다).
     Moved { witness: [Point3; 3], motion: Handle<MotionNode> },
     /// **정확히 기술할 수 없다** — 오늘은 `push_surface`를 우회해 출처가 기록되지 않은 표면뿐이다.
     /// (S6b 에서 소멸 — 정확한 형태가 없는 표면은 표현 불가능해졌고,
@@ -467,7 +467,7 @@ OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 �
 - **공개 API는 f64 그대로.** 호출부·TS/JSON 경계가 안 바뀐다. 커널이 받자마자 각 치수를 `Rat::from_decimal`로 **왕복하는 최단 십진수**로 잡는다. S3이 프로파일 좌표에, S6a가 스케치 평면의 축(`from_axes` — 정의는 점 셋 `[o, o+x, o+y]`, `PlaneDef`는 점 셋 단일 필드로 origin·ref_dir·극성이 구조에서 유도)에 이 규칙을 구현했다. ★ 단 **커널이 실현한(반올림된) 기저는 리프트하지 않는다**(내부 `realized_plane` — 이미 정확한 정의를 가진 평면에 두 번째 진실을 만드는 것이 두-정확-기술 결함의 재발이다). 의도에 대한 *추측*이 아니라 **결정적 정규형**이다(왕복이 보장되므로 서로 다른 f64는 서로 다른 유리수, 같은 f64는 항상 같은 유리수). 십진수를 고르는 이유는 하나 — **사람은 십진수를 타이핑한다**.
 - **전제조건: `Rat::to_f64`가 최근접 반올림이어야 한다.** 분자·분모를 각각 반올림한 뒤 나누면 유효숫자 17자리에서 1 ULP가 어긋나고, 그러면 십진수 복원이 **무손실이 아니다** — 고치려던 것은 어긋난 누적뿐인데 멀쩡한 입력까지 움직인다. 정수 장제법으로 54비트 몫을 뽑아 **끝에서 한 번만** 반올림한다(`Ratio<i128>`이라 두 항이 2¹²⁷ 미만인 게 모든 시프트를 닫는다).
 - **프레임이 유리수일 때만 이 경로를 탄다.** 축이 `{0, ±1}`이면(world·축정렬 면) 정확하다. 회전된 면은 축이 무리수라 못 든다 — 성분을 십진수로 잡으면 **단위벡터가 아니게 되어** `normal·dist`가 틀린 *길이*를 준다(고치려던 것보다 나쁜 오차). 그래서 진입점이 `x·x = y·y = 1`, `x·y = 0`을 **정확히** 검사하고 아니면 오늘의 f64 경로로 강등한다. i128 넘침도 같은 답이다.
-- **새 저장 구조가 필요 없다.** 같은 유리수는 항상 같은 f64로 실현되므로 두 경로의 좌표가 **비트 동일**해지고 평면 계수도 같아진다 — `Origin::Constructed`·`SurfaceDef::Constructed`("계수가 곧 진실")가 그대로 유효하다. 모션 셀처럼 provenance를 새로 다는 일이 없다.
+- **새 저장 구조가 필요 없다.** 같은 유리수는 항상 같은 f64로 실현되므로 두 경로의 좌표가 **비트 동일**해지고 평면 계수도 같아진다 — "계수가 곧 진실"이라는 그때의 서술이 그대로 유효하다. 모션 셀처럼 provenance를 새로 다는 일이 없다.
 
 **못 고치는 것 (비목표, 정직하게):**
 

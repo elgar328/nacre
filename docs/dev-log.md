@@ -6855,3 +6855,74 @@ seam 은 `[h_cyl, h_cyl]` 자기-인접 잠정 표기(루프 잠금이 이미 �
 push 를 모서리 앞으로 재배치(상대 순서 유지 = 핸들 불변, census 가 감시해 통과).
 판정층 개명은 무의무(S8 이 스치는 판정 타입은 `PlaneGeom.surf` 읽기뿐 — 열린 항목 8 유예
 그대로). 스위트 36 타깃 그린, clippy 0.
+
+## S7 — Origin 소멸: 정점은 자기 정의를 들고, 좌표는 캐시가 된다 (2026-08-07)
+
+여섯 커밋(OnSeam 도착 → 게이트 확장+def 경로 병행 실측 → 접근자 → 대교체 → 검사 확장 →
+문서). `Vertex{point, origin, definition: Option}` → **`Vertex{def: VertexDef}`**,
+`Origin`(3변종) 통삭제, `vertex_cache: Vec<PointCache{coord, tol: Option<f64>}>` 인덱스-평행
++ 유일 입구 `push_vertex` + 접근자 `vertex_point`/`vertex_tol`. **census 전 커밋 비트 동일**
+— S7 은 «필드 이사»지 «좌표 재파생»이 아니고(3b 는 여전히 ⏸), 좌표를 verbatim 옮기면 관문이
+그대로 선다는 계획의 전제가 실측으로 성립했다. 코드베이스의 `Origin::` 참조 0(주석 포함),
+스위트 36 타깃 그린, clippy 0.
+
+★★★ **사용자 판단이 설계를 바꿨다: 중복-표식 → 두 변종 enum.** 원통 seam 정점(원통 ∩ 캡 =
+테두리 **원 전체** 위의 한 점)은 세 평면으로 적히지 않는다. 첫 제안은 S8 의 seam 모서리
+표기를 본떠 `[원통, 캡, 원통]` 중복 슬롯을 쓰는 것이었는데, 사용자가 «땜빵 같다, 정석은
+무엇이냐»고 물었고 — 옳은 지적이었다. 중복 표기는 **타입이 참이 아닌 말을 하게** 만든다:
+`ThreePlane` 이라 적혀 있는데 세-평면 교점이 아니고, 미래의 소비자가 삼중을 순진하게
+소비하면(세 평면 행렬식) `D=0` 이 조용한 0으로 흐른다(`predicates` 가 명문화한 unspecified).
+채택안은 **두 변종 enum**(`ThreePlane([3]) | OnSeam([2])`): 각 변종이 자기 진실만 말하고,
+새 소비자는 `match` 를 컴파일 시점에 강제당하며, M6 확장(`Branch{surfaces, branch}` — 이차
+곡면 셋의 최대 8점, 원뿔 `Apex(Handle)`)이 **변종 추가**로 들어온다. 문서 Q3 의 «단일형»은
+반증표에 기록. 단일형의 원래 근거("정점은 술어가 가장 많이 소비")는 이미 소멸해 있었다 —
+S6b 이후 판정층은 정점을 읽지 않고 면에서 `Pt3` 를 만든다.
+
+**base 정점(Q2)의 소멸과 그 대체의 승격.** 프레임 스케치의 셸-무소속 base 정점이 죽었다
+(`sweep_ring` 한 덩어리 + `exact.rs::base_f64/top_f64` 死코드). 대체는 «프레임을 공유하는 세
+평면의 이름을 그 프레임에서 유리수로 풀고(신설 `nacre_scalar::three_planes_rat`, checked
+i128) 사슬을 재생»이고, 이것이 저장 좌표를 **비트 동일**로 재현한다 — 3b 때 8/8 로 측정된
+그 계산을, 이번에 `rotated_vertex` 와 mirror 잠금에서 **모든 체인 형태에 걸친 영구 잠금**으로
+승격시켰다(회전·평행이동·미러 혼합 체인 100+ 정점).
+
+**`solid_motion` 은 재배선이 아니라 소멸이었다.** 계획 검토 중 직접 확인: `move_node` 의
+유일한 소비처가 정점 origin 이었으므로, 정점 쪽이 죽으면 «솔리드 전체의 한 leaf» 를 정점
+균일성으로 구하던 기계가 통째로 불필요해진다. 면은 이미 `surf_rot` 로 자기 leaf 를 체이닝한다
+(규칙 3 «모션은 면이 든다»의 마지막 잔재 제거).
+
+**타입이 흡수한 불변식 하나 — 정직하게 필드를 없앴다.** `forest_probe` 의 첫 필드
+`base_is_rotated`("base 정점이 또 Moved 인가")는 한-홉 불변식(같은 모션을 두 번 적용하지
+않는다)의 관측창이었다. base 정점이 없어지면서 **중복 적용이 표현 불가능**해졌다 — 그래서
+필드를 상수 `false` 로 남기지 않고 제거했다(그런 필드는 관측이 아니라 연극이다). 대신
+"체인에 parent 가 있는가"로 재정의했다가 5개 테스트가 즉시 반박 — 그건 다른 질문이었다.
+
+**게이트 확장과 검사 확장, 둘 다 양성 대조와 함께.** `origins_are_remappable`(Discovered
+전용) → `defs_are_remappable`(전 정점): 발화 0(스위트 그린 자체가 그 증거 — 발화 = 거절 =
+실패)이고, 「게이트가 무엇도 검사하지 않아도 0 은 나온다」를 막기 위해 **외부 surface 를
+지목하는 def** 픽스처로 실제 거절을 확인(`a_foreign_definition_is_rejected`). validate 의
+`VertexOffDefinition` 도 측정 정점 전용 → **전 정점**으로 확장했고(구성 정점의 정의는 이전엔
+아무도 검사하지 않았다), 신규 위반 0 + 양성 대조(`a_built_vertex_off_its_definition_is_caught`).
+신설 `VertexDefCarrierMismatch`(변종 ⇔ 담체 종류: ThreePlane 이 원통을 지목하거나 OnSeam 이
+두 평면을 지목하면 위반) + 음성 대조 2종 — S8 의 `EdgeCarrierMismatch` 의 정점판.
+
+**reuse 의 def 경로: 인구별로 문자 보존, 차이 하나만 기록.** 구성(`Pt3::exact`)·발견(포기)은
+옛 road 와 문자 동일, 이동은 세 이름의 유리수 Cramer→replay. **혼합 프레임**(호출자가 세계
+좌표로 명시한 밑캡 위의 프레임 코너 — 담체 셋의 모션이 갈린다)은 유리수 pullback 이 없어
+정직하게 decline 한다: 옛 road 는 base 정점으로 답했고 그 정점이 죽었다. reuse 는 필터라
+정확성 무영향(Arrange 로 떨어질 뿐)이지만 **기록 없는 수용은 silent-fallback 함정**이므로
+차이를 테스트(④)로 핀하고 열린 항목에 남겼다.
+
+**tol 이사 규칙(4인구 등가).** boolean → `Some(sv.tol)`(좌표와 한 덩어리로 생산된 그 값);
+구성 → `None`; transform 은 «정확 이동 + 이력 없음»이면 이전값 verbatim(옛 `remap_origin` 의
+Discovered 유지와 동일), 그 외 `None`(옛 `Moved`→`EPS_CONSTRUCTED` 와 동일). validate 의
+`tol_of` 는 3갈래에서 `unwrap_or(EPS_CONSTRUCTED)` 한 식으로 접혔고, `Some(0.0)` 의 정확-영
+의미론은 유지된다(coverage 관문이 그 행의 편차 0 을 단언).
+
+**coverage 관문의 축 교체.** `Origin` 3종을 행 인덱스로 쓰던 definition-coverage 관문은
+**생산자 가족**(plain 상자 / 회전 상자 / 융합 결과)으로 축을 옮겼다 — 같은 3픽스처, 같은
+주장(정의가 자기 좌표를 `diam·2⁻⁴⁰` 안에서 풀어낸다), 그리고 «자기 자신을 푼 행은
+tautology» 라는 지적도 그대로(이제 `fused` 행).
+
+남은 기록: 정점 캐시엔 아직 «버리고 재생» 보증이 없다(열린 항목 12 — 3b ⏸, seam 좌표
+load-bearing), reuse 의 발견 갈래는 여전히 포기다(13 — `ImplicitPoint` 로 열 수 있으나 행동
+변화), 혼합 프레임 인구(14).

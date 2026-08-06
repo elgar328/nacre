@@ -79,10 +79,21 @@ pub enum PlanePoints {
     Through([Handle<Vertex>; 3]),
 }
 
-/// 정점 = 세 면이 만나는 곳 — b-rep 정의 그대로, 변종 없음.
-/// 좌표는 진실이 아니라 캐시다(PointCache). Origin·VertexDef·point 는 소멸한다.
+/// 정점 = 자기 **정의**. 좌표는 진실이 아니라 캐시다(PointCache). `Origin`·`point` 는 소멸.
+/// ★ 단일형이 아니라 **두 변종**이다(S7 에서 Q3 수정 — 아래 반증표): M5 에 원통 seam 정점이
+/// 실재하고 그 점은 «세 평면»으로 적을 수 없다. 변종별 불변식(Q5)이 이 구조의 근거다.
 pub struct Vertex {
-    pub surfaces: [Handle<Surface>; 3],       // D != 0 을 단언한다 (공짜 — 어차피 계산됨)
+    pub def: VertexDef,
+}
+
+pub enum VertexDef {
+    /// 세 평면의 교점 — 이름이 곧 점. (D != 0 은 좌표 재생이 생기는 자리에서 단언한다.)
+    ThreePlane([Handle<Surface>; 3]),
+    /// 두 곡면의 교차 «곡선» 위의 점 — M3 원통 seam(테두리 원의 θ=0). 점을 못 박는 매개
+    /// 정보(원통의 `ref_dir`)는 M6 의 원통 진실과 함께 오고, 그때까지 **좌표 캐시가
+    /// load-bearing** 이다(정직 기록). M6 는 변종을 더한다: `Branch{surfaces, branch}`
+    /// (이차곡면 셋의 최대 8점), 원뿔 꼭짓점 `Apex(Handle)` 등.
+    OnSeam([Handle<Surface>; 2]),
 }
 
 /// 곡면 집합은 「담체」를 정하고, 경계가 나머지를 정한다.
@@ -146,7 +157,7 @@ pub struct MotionNode {
 |---|---|
 | **Q1** 평면의 세 점 | **변종을 정점이 아니라 평면에 둔다.** 구성 평면 = `Known`(값 — 오늘 동작하는 `surface_points` 그대로), datum 평면만 `Through`(핸들). 핸들 쪽을 밀던 힘(발견 좌표는 가리켜야 한다)은 Through 가 받고, 값 쪽을 지키던 힘(좁고 종료 자명)은 Known 이 지킨다 |
 | **Q2** `VertexDef::At` | **불필요.** «교점이 아닌 정점» 두 자리가 둘 다 사라지기 때문이다: **스케치 프레임의 base 정점**은 `Origin::Moved` 와 함께 소멸하는 이행기 산물 — 프레임 안 코너는 프레임 모션을 공유하는 세 평면의 교점이고, «공유 프레임에서 풀고 모션 재생 = 비트 동일(8/8)»이 이미 실측됐다. **프로파일의 공선 정점**은 표현할 것이 아니라 **만들지 말 것** — 프로파일 생성자의 공선 중간점 제거(무손실 정규화)로 닫는다 |
-| **Q3** `Vertex` 최종형 | `{ surfaces: [Handle<Surface>; 3] }` 단일형. `Discovered{tol}` → `PointCache.tol`, `Moved` → 면의 모션, `Constructed` 태그는 정확성을 뜻한 적이 없어 잃는 정보가 없다 |
+| **Q3** `Vertex` 최종형 | `{ def: VertexDef }` — **두 변종**(`ThreePlane` \| `OnSeam`). `Discovered{tol}` → `PointCache.tol`, `Moved` → 면의 모션, `Constructed` 태그는 정확성을 뜻한 적이 없어 잃는 정보가 없다. ★ 원안의 «단일형»은 S7 구현 중 반박됐다(아래 반증표) — 원통 seam 정점이 M5 에 실재하고 세 평면으로 적히지 않는다 |
 | **Q4** `SurfaceDef` | `motion` 필드가 변종 안으로 — **«기록 없는 surface»가 표현 불가능**해져 극성 함정이 타입에서 소멸. 선행: `Store<Surface>` 봉인(§이행 S1) + `Inexact` 소멸은 임의정밀 이름(S2)이 선행 |
 | **Q5** 원통(M6) | 버틴다 — 불변식은 variant 별(*"모든 **평면**이 점을 갖는다"*), 원통의 진실은 자기 variant 안. `Through` 는 정점의 정의 방식과 무관하게 성립. 알려진 절벽은 정점 쪽(이차곡면 셋 = Bézout 최대 8점 → 가지 번호 `branch: u8` 후보)이고 M6 에서 결정한다 |
 
@@ -296,7 +307,7 @@ pub struct Model {
 pub struct Mag { m: f64, e: i64 }                                  // f64 밖 범위의 보수적 크기
 pub struct Approx        { value: f64,      error: f64 }           // 중간 스칼라
 pub struct HpApprox      { value: BigFloat, error: Mag }
-pub struct PointCache    { coord: Point3,        tol: [f64; 3] }
+pub struct PointCache    { coord: Point3,        tol: Option<f64> }  // S7 실형: 측정치 유무
 pub struct HpPointCache  { coord: [BigFloat; 3], tol: [Mag; 3] }
 pub struct SurfaceCache  { coeffs: [f64; 4], tol: [f64; 4], inv_norm: f64 }
 pub struct HpSurfaceCache{ coeffs: [BigFloat; 4], tol: [Mag; 4] }
@@ -437,6 +448,7 @@ pub enum Decision {
 
 | 제안 | 실제 |
 |---|---|
+| *"`Vertex` 는 세 평면 단일형(`{surfaces:[3]}`)"* (Q3 원안) | ✗ **S7 구현이 반박**: 원통 seam 정점은 «원통 ∩ 캡» = 테두리 **원 전체** 위의 한 점이라 세 평면이 없다. 슬롯을 중복으로 채우는 «잠정 표기»는 타입이 참이 아닌 말을 하게 만들고(세-평면 교점 아님) 판정의 `D=0` 을 조용한 0으로 흘린다 — 사용자 판단으로 **두 변종 enum**(`ThreePlane \| OnSeam`) 채택. 각 변종이 자기 진실을 말하고 불변식은 변종별(Q5), M6 확장(`Branch`·`Apex`)은 변종 추가로 받는다. 단일형의 원래 근거("정점은 술어가 가장 많이 소비")도 이미 소멸 — S6b 이후 판정층은 정점을 읽지 않는다 |
 | *"`Origin::Constructed` 에 가드를 달자"* | ✗ 그 태그는 정확성을 뜻하지 않는다 — 정확 경로로 만든 정점도 `Constructed` 이고 그 `point` 는 반올림이다 |
 | *"불리언 능력을 포기하자"* | ✗ 설계 위반 — 이 문서는 `Inexact` 를 지우기로 했다 |
 | *"평면의 진실을 계수로"* | ✗ 계수는 두 점 차의 **곱**이라 `i128` 적합 25.8%(점은 100%) — 담을 그릇이 없다 |
@@ -472,13 +484,13 @@ pub enum Decision {
 | S6b | **타입 교체** — 진실 스토어(`SurfaceTruth{Plane{points: PlanePoints::Known, motion} \| Cylinder{motion}}`)가 캐시 store 와 인덱스-평행으로 탄생, `SurfaceDef`·`surface_defs`·`surface_points`·`push_surface(_with_points/_unrecorded)`·`Violation::UndefinedSurface`·`RejectReason::{InexactSurface, CoordinateOutOfRange}` **사망**. push 는 `push_plane`(interning, flipped 는 f64 캐시 내적 그대로 — 같은 평면이라 부호 정확)·`push_cylinder(motion)`·test-util `push_plane_unregistered`/`set_plane_points_for_test`. f64 프리즘 폴백 → **이름 붙은 거절**(`PlaneWithoutExactForm`·`DistOutsideDecimalWindow` — `Swept::along` 삭제, build_prism 정확-전용). 부수 개선: 이동된 원통이 `Inexact` 강등 대신 모션 기록. ★ 구현 중 반박 1건: normal_def 의 `v = n×u` 곱이 작은-지수 전폭 법선(분모 10²¹→10⁴²)에서 넘침 — proptest 가 폴백 소멸 당일 발견, 원시 방향조차 137비트라 **기저-교차 셔플**(`w = x̂×n` + 대수 부호 `det[ẑ,x̂,n]=n₁`)로 재구성(곱 0개, 전역). 아레나 반전(캐시가 Store·진실이 Vec — `Handle<T>` 타입 매개변수가 강제)은 최종 개명 시 제자리로(§열린 항목). census 150줄 비트 동일 ×4 | ✔ 2026-08-06 |
 | S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — ① `Model::new()` 가 세계 축 평면 셋을 심는다(핸들 0·1·2 = XY·YZ·ZX, points 는 `axis_plane` 삼중 `[0,u,v]`, **캐시 방향은 −축** — extrude 밑캡의 감각과 일치, +축이면 실측 781 캡 flip 재도입; `#[derive(Default)]` 제거 = 무씨앗 뒷문 폐쇄, `world_plane(Axis)` 접근자, `stat seeded_hits` 반증성 다리 신설 = 실측 455). census ε-재기준 1회: 평면 digest 이동 127/150줄, **결과는 143/150 비트 동일 + 나머지 7줄도 부피·면적·centroid 전부 비트 동일**(정점 해시만 이동 — Cramer 가 사실상 스케일-불변으로 반올림, 스칼라 최대 편차 정확히 0), ERR/EMPTY·피연산자 정점 해시 문자 동일. ② 공개 `SketchFrame{plane, placement, flip}`(필드 private + 검증 생성자 — 리터럴 우회 봉쇄): `named()` 가 구성 시점 거절 `FrameOutsideDecimalWindow`·`OriginNotOnPlane`(신규 scalar `plane_residual_sign` — orient2d_rat 급 **전역**, Wide 는 BigInt 팔)·`RefDirParallelToNormal`(판정은 `WideFrame::named_of` 재사용 — 폭에 전역이라 None = 평행뿐), 이름 없는 평면 = `PlaneWithoutExactForm` 재사용. `face_sketch_frame` 신설(이음새 — face_frame 이 만들던 값을 버리지 않고 공개). ③ 내부 통일: flip 측정은 `measured_frame` 한 곳, 노드 push 는 `push_frame_node` 한 곳(extrude·face 두 도로가 한 모양, 게이트 표현식 문자 유지, census 비트 동일). ★ **`Operation` 의 평면-핸들 어휘 교체는 S5 로 유예** — replay 자기완결성: 로그 속 핸들의 합법 표적은 씨앗·기존 면·datum 뿐인데 datum op 가 S5 에야 생긴다. ★ 잠금서 확정 둘: 씨앗 intern 직접 증거(원점 상자 바닥/왼쪽/앞 + z=0 밑캡 = 씨앗 핸들, 아레나 6 유지), ZX 의 canonical 프레임은 `−x̂`(스크립트 삼중과 다름 — Named 로 말할 사례임을 잠금이 명문화) | ✔ 2026-08-06 |
 | S8 | **Edge 최종형** — `Edge{surfaces: [Handle<Surface>;2], vertices: [Handle<Vertex>;2]}`: 담체 두 면(오름차순 정렬 쌍) + 경계 두 점, `curve`·`bounds: Option`·`origin` 사망. `Store<Curve>` → `edge_cache: Vec<EdgeCache>`(인덱스-평행 캐시): 유일 입구 `push_edge`(eager 파생, 퇴화 검사는 **팔별** — rim `[v,v]` 는 합법) + `rebuild_edge_cache`(«버리고 재생» 잠금이 비트 동일 증명) + `edge_curve` 접근자·`derive_edge_curve`(직선 = 끝점 through_points, rim 원 = 담체에서 — 신설 geom `line_plane`, seam = 자기-인접 `[cyl,cyl]` 잠정 표기). transform pass 2(곡선 이동) 통째 소멸. validate: 신설 `EdgeCarrierMismatch`(담체 ≠ 인접 관측, `[plane,plane]` 자기쌍 검출) + `UnboundedEdgeInLoop`·`RefKind::EdgeCurve`·`StepError::UnboundedEdge` 순삭. ★ 구현 중 발견 2건: ① **담체는 wall 로 추측하면 틀린다** — 세 평면이 한 직선을 공유하는 인구(해결된 4-평면 동시성)에서 각 면의 arrangement 는 제3의 평면을 wall 로 (옳게) 지목 — 담체는 **전 링 선-주사한 인접성**에서 읽는다(실측: debug_assert 발화가 잡음). ② «전 생산 직선 비트 동일» 주장이 이동 경로에서 반박 — pass 2 는 방향을 직접 회전, 파생은 끝점 차 재정규화라 방향 ~1 ulp(실측 2.8e-16, 직선 83/84 비트 동일, 원 최대 2.2e-16 — 직선 기하는 비관측이라 무해). ③ VertexOffCurve 의 직선 갈래는 **타입상 항진**이 됐다(끝점이 자기 직선 위) — 검사는 원(rim)으로 이빨 유지, `.max(tol_of(edge.origin))` 은 상수 `EPS_CONSTRUCTED` 로 재철자(**무-행동이 아니었다** — `Discovered{tol:0}` 정점의 하한을 edge 항이 받치고 있었음, 실측). census 전 커밋 비트 동일 | ✔ 2026-08-06 |
+| S7 | **`Origin` 소멸 — 정점은 자기 정의를 들고, 좌표는 캐시가 된다** — `Vertex{def: VertexDef{ThreePlane([3]) \| OnSeam([2])}}`(Q3 수정: seam 정점이 단일형을 반박 — 반증표), `point`·`Origin`(3변종) 사망, `vertex_cache: Vec<PointCache{coord, tol: Option<f64>}>` 인덱스-평행 + 유일 입구 `push_vertex` + 접근자 `vertex_point`/`vertex_tol`. **`rebuild_vertex_cache` 는 없다**(3b ⏸ — 발견 좌표는 배열이 공들인 값 1992 중 238 이 순진 Cramer 와 다르고, seam 좌표는 load-bearing): S8 이 모서리에서 얻은 «버리고 재생» 보증은 정점엔 아직 없음을 정직 기록. 소멸한 기계: 스케치 프레임 base 정점(Q2 — 프레임 공유 세 평면의 유리수 Cramer + 사슬 재생이 저장 좌표를 **비트 동일**로 재현, 8/8 실측을 영구 잠금으로 승격)·`remap_origin`·`solid_motion`+정점용 `move_node`(면이 자기 leaf 를 든다 — 규칙 3)·한-홉 base 불변식(타입이 흡수: 중복 적용이 표현 불가)·`exact.rs::base_f64/top_f64`. reuse `solid_points` 는 def 경로로(구성=`Pt3::exact` 문자 동일, 발견=포기 문자 동일, 이동=세 이름의 checked-i128 Cramer→replay; **혼합 프레임은 정직한 decline** = 기록된 유일한 차이). 게이트 `origins_are_remappable`→`defs_are_remappable` 전 정점 확장(발화 0 + **양성 대조**), validate: `tol_of` 1식화·`VertexOffDefinition` **전 정점 확장**(+양성 대조)·신설 `VertexDefCarrierMismatch`(변종 ⇔ 담체 종류). 신설 `nacre_scalar::three_planes_rat`. census **전 커밋 비트 동일**(좌표 verbatim 이사 — 재기준 없음) | ✔ 2026-08-07 |
 
 ### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
 
 | | 항목 | 선행 |
 |---|---|---|
 | S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5). **`Operation` 의 평면-핸들 어휘 교체도 여기다**(S9 에서 유예 — 사유는 S9 행) | 없음(S9 완료) |
-| S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로). 모서리 쪽 `Origin` 은 S8 이 이미 지워 정점만 남음 | S6b ✔ |
 
 ★ 판정층 개명(`Pt3`→`WitnessPoint`·`WorkingPoint`→`WorkingVertex`·`PlaneGeom`→`WorkingPlane`,
 §판정 이름 규칙)은 별도 단계가 아니라 **각 타입을 처음 만지는 단계에 얹는다** — 기계적 개명이라
@@ -566,6 +578,19 @@ STEP 출력, undo/replay.
    리프트되는가)다. `PlaneFrame`+`inv_sqrt_exact` 로 «실현이 정확 f64 에 떨어지는가»를 직접
    묻는 더 강한 게이트가 가능하지만, **표현식을 바꾸면 노드 인구가 움직인다** — 두 ★★ 주석의
    경고 그대로, 교체는 census 관문 동반 필수(S9 에서 기록만).
+12. **정점 캐시엔 «버리고 재생» 보증이 없다(S7)** — `rebuild_edge_cache` 의 정점판을 짓지
+   않았다: 3b(좌표 재생)가 ⏸ 이고, 발견 좌표는 배열이 공들여 만든 값(1992 중 238 이 순진
+   Cramer 와 다름)이며 seam 좌표는 M6 까지 load-bearing 이다. 정점 `D≠0` 의 완전한 유리수
+   단언(문서 :85 의 «공짜 단언»)도 같은 이유로 유예 — 오늘은 `push_vertex` 의 핸들 상이성
+   debug_assert 까지. 좌표 재생이 생기는 자리(M6/판정 통합)에서 셋을 함께 연다.
+13. **reuse 의 발견-정점 갈래는 아직 포기다(S7)** — `solid_points` 는 측정 좌표를 만나면
+   `None`(→ Arrange). `nacre-cip` 의 `ImplicitPoint`(세 평면의 암시적 점)로 갈아타면 융합
+   fold 의 클래스 재사용이 불리언 **결과** 피연산자에도 걸린다 — 판정 기계 교체라 행동
+   변화이고, 별도 측정과 함께 여는 항목.
+14. **혼합-프레임 정점은 reuse 가 답하지 못한다(S7 기록)** — 호출자가 세계 좌표로 명시한
+   밑캡 위의 프레임-스케치 코너는 세 담체의 모션이 갈려(둘은 프레임, 하나는 세계) 유리수
+   pullback 이 없다. 옛 `Origin` 길은 base 정점으로 답했지만 그 정점이 S7 에서 소멸했다.
+   실측 인구는 `the_def_road_answers_for_the_populations_it_can_name` 의 ④ 가 핀한다.
 10. **감김(`oriented_ring`)은 아직 f64 다** — 배치된 3D 점의 면적벡터·법선 내적(ops).
    `check()` 가 단순성(≠0 면적)을 진실 위에서 보증하므로 지금은 건전하지만, f64 폴백 소멸
    (S6 이후)과 함께 재검할 것.
