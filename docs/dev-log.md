@@ -6755,3 +6755,54 @@ dist 는 마지막 무명 창 인구였다). `Swept::along` 삭제, `Swept.exact
 아레나 반전(캐시가 Store·진실이 Vec)은 `Handle<T>` 타입 매개변수가 강제 — 공유 인덱스라
 의미 무손실이며, 최종 개명(진실→`Surface`, 캐시→`SurfaceCache{coeffs,tol,inv_norm}`)과
 함께 제자리로(문서 열린 항목 8). census 150줄 비트 동일 ×4(커밋별), 스위트 34 타깃 그린.
+
+## S9 — 공개 스케치 API 통일 + world 평면 사전 심기 (2026-08-06)
+
+네 커밋(심기+ε-재기준 → SketchFrame 공개+거절 → 내부 통일 → 문서). `Model::new()` 가
+세계 축 평면 셋을 심는다: 핸들 0·1·2 = XY·YZ·ZX, points 는 `axis_plane` 삼중 `[0,u,v]`,
+`#[derive(Default)]` 제거(무씨앗 뒷문 폐쇄 — `Default` 는 `new()` 위임), `world_plane(Axis)`
+접근자, `SEEDED_HITS` 카운터(census `stat seeded_hits`) 신설 — `stat wide_planes` 는 이
+변화를 설명 못 하기 때문(씨앗은 전부 narrow).
+
+**캐시 방향은 −축.** extrude 밑캡의 감각(`from_point_normal(ring0, −normal)`)과 일치시켜
++축 씨앗이 재도입했을 실측 "781 캡 flip" 을 피했고, z=0 밑캡의 캐시 push 는 비트 동일
+(d = −0.0 포함)이 됐다. 사용자 가시 방향은 스케치 규약이지 캐시 저장 방향이 아니다 —
+프레임 유도는 정준 이름+측정 flip 경유라 캐시 방향이 새지 않는다.
+
+**심기 충돌 지도(예측→실측).** 씨앗과 intern 되는 생산자 3계보: 원점-접촉 `add_cuboid`
+면·z=0 world extrude 밑캡·축 위 프로파일 변의 벽. 예측 ~130줄 → 실측 평면 digest 이동
+127/150줄, `seeded_hits` 455. 파손 테스트는 예측 2(6→9 재핀) + 예상 밖 1
+(`plane_def_from_face` 의 증인 단언 — "witness == 면 모서리 tri" 는 계약이 아니라 첫-push
+우연이었다: on-plane 계약으로 재작성). 에이전트의 "cuboid_counts 6→9" 예측은 틀렸다 —
+원점 상자 3면이 씨앗에 intern 되므로 아레나는 6 그대로.
+
+**ε-관문 실측(재기준 1회).** 피연산자 정점 해시·ERR/EMPTY 문자 동일(전 줄), 결과는
+150줄 중 143줄 **비트 동일**, 나머지 7줄도 부피·면적·centroid **전부 비트 동일**(정점
+해시만 이동) — 스칼라 최대 상대 편차 **정확히 0**. "Cramer 가 스케일 불변으로 반올림될
+수도"(계획의 지켜볼 것)가 실측으로 확정된 셈. 관문 규칙의 2⁻⁴⁰ ε 은 한 번도 쓰이지 않았다.
+
+**공개 `SketchFrame`** — 필드 private + 검증 생성자(리터럴 우회 봉쇄). `named()` 의 구성
+시점 거절 3종: `FrameOutsideDecimalWindow`·`OriginNotOnPlane`·`RefDirParallelToNormal`.
+on-plane 검사는 scalar 신설 `plane_residual_sign`(orient2d_rat 급 **전역** — Narrow Rat
+대입 → 넘침 시 BigInt, Wide 는 BigInt 직행). 평행 판정은 `WideFrame::named_of` 재사용 —
+폭에 전역이라 None 은 정확히 «사영이 0»뿐(좁은 `plane_frame_named` 의 None 은 폭 사실이
+섞여 판정 부적격). 이름 없는 평면은 `PlaneWithoutExactForm` 재사용(같은 명제).
+`face_sketch_frame` 신설: `face_frame` 이 만들던 값을 버리지 않고 공개(이음새) —
+`face_plane` 은 같은 프레임의 f64 사영으로 호환 유지. flip 측정은 `measured_frame`,
+노드 push 는 `push_frame_node` 한 곳으로 — extrude·face 두 도로가 한 모양(게이트 표현식
+문자 유지, census 비트 동일).
+
+**`Operation` 어휘 교체는 S5 로 유예** — replay 자기완결성: 같은 로그 → 같은 모델이려면
+로그 속 평면 핸들의 표적이 로그 안에서 만들어져야 하고, 그 합법 표적(씨앗·기존 면·datum)
+중 datum op 가 S5 에야 생긴다. 오늘의 `Extrude{plane: SketchPlane}` 은 임의 평면 진술을
+나르므로 그때까지 대체 불가.
+
+픽스처 함정 둘(재발 방지): ① wide-이름 픽스처는 **원점도 전폭 십진**이어야 한다 — 정수
+원점(20,0,0)은 content 가 나눠져 canonical 이 Narrow 로 떨어졌다(S6a 종단 잠금의 원점을
+재사용해 해결, 자기검증 단언 필수). ② off-plane 프로브를 «마지막 십진 자리 하나»로 만들면
+1.5 근처 ulp(~2.2e-16)가 두 리터럴을 **같은 f64** 로 접어 프로브가 공허해진다 — 1e-9 이동
++ `assert_ne` 자기검증으로. 그리고 잠금이 명문화한 것: ZX 의 canonical 프레임 `+u` 는
+`ẑ×ŷ = −x̂` — 스크립트 삼중(`+ẑ`)과 다르며, 그쪽은 Named 로 말하는 사례다(scalar doc 의
+기존 서술이 잠금을 얻었다).
+
+census: 커밋 1 재기준(ε-관문), 커밋 2·3 비트 동일. 스위트 34(+1) 타깃 그린.

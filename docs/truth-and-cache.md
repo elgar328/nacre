@@ -203,9 +203,9 @@ pub struct SketchFrame {
 |---|---|
 | **경계는 f64, 진실은 구성 시점에** ✔S3 | 공개 API 는 f64 그대로(§design 6.0). `Rat::from_decimal` 왕복을 `Profile2d` **생성자**에서 한다 — `check()`(자기교차·중첩·포함)가 진실 위에서 정확 술어로 돌고(`orient2d_rat`: narrow 우선 → BigInt 전역 부호, geom 의 `_rat` 워커 쌍둥이), 십진 창(1e38/1e-22) 밖 치수가 구성 시점의 이름 붙은 에러다(`ProfileOutsideDecimalWindow` / sketch 층 `OutsideDecimalWindow`). ★ f64 부호 ≠ 십진 부호가 실측 사실이라(0.1·0.2·0.3 공선이 이진에선 굽음) check 를 진실 위로 옮긴 것이 정확성 변경이고, 그 방향은 항상 "작성자가 쓴 수가 이긴다" |
 | **공선 중간점은 생성자가 지운다** ✔S3 | 공선 정점의 양옆 벽은 한 평면 → 교차가 직선이라 정의 불가, 그리고 비-2-manifold 퇴화다. 제거는 형상 불변(무손실 정규화, 거절 아님 — 정리된 프로파일의 프리즘은 깨끗한 쌍둥이와 비트 동일, 모든 코너가 3-평면 정의 보유 = Q2 ② 닫힘). 판정은 Rat 위 정확 orient2d, 제거 조건은 **엄격 내부**(중복점·스파이크는 생존해 각자의 이름 붙은 에러로 보고된다 — 경계 포함 판정을 재사용하면 작성자의 실수를 조용히 지운다) |
-| **프레임은 평면에서 뜨지 않는다** | `Named` 의 `origin` 은 참조 평면 **위**의 점(정확 검사 — C1). ★ 좌표계에 주의: «정의하려는 프레임의 (u,v,w)» 가 아니라 **그 평면의 `points` 가 적힌 좌표계**의 3D 점이다(모션 없으면 세계 — 상자 윗면 z=1 이면 origin 은 `[1,1,1]` 같은 점이지 셋째 성분 0 이 아니다). "평면 위" 는 성분이 아니라 **방정식 대입**(`a·x+b·y+c·z+d = 0`, 정확)으로 검사한다. `Canonical` 은 유도라 검사할 것이 없다. 면 위 스케치의 밑캡이 대상 면의 surface 핸들을 공유하는(flush 접촉 = 핸들 비교) 전제이기도 하다. 평면에서 d 떨어진 스케치가 필요하면 origin 을 띄우는 것이 아니라 **오프셋 평면**을 만든다 — 같은 프레임 안 `(0,0,d),(1,0,d),(0,1,d)` 유리수 세 점의 `Known` 평면(datum 가족, S5). 담체가 실제 평면 핸들로 남아 이름·interning·flush 규칙이 그대로 성립한다 |
-| **정확 유리수 프레임은 노드를 만들지 않는다** | 평면에 모션이 없고 실현된 원점·축이 **정확 유리수 직교**로 증명되면(오늘의 `RatFrame` 게이트 — 세계 축 평면 셋이 전부 여기 든다, `Canonical` 이든 `world_zx` 의 `Named` 든) `Motion::Frame` 노드를 생성하지 않고 세계 유리수 산술로 구성한다(모션 = None) — 빈 사슬 지름길(`shared_base` 상쇄·축별 tol 0·정수 Shewchuk)이 그대로 산다. 미러의 *"정확한 f64 에 남으면 노드를 안 만든다"* 와 같은 구성 시점 정규화다 |
-| **세계 축 평면 셋은 `Model::new()` 가 심는다** | 핸들이 결정적(0·1·2)이라 replay 가 자명하다. 정의·프레임만 가리키는 평면을 순회·직렬화가 따라가야 한다(§열린 항목) |
+| **프레임은 평면에서 뜨지 않는다** ✔S9 | `Named` 의 `origin` 은 참조 평면 **위**의 점(정확 검사 — C1). ★ 구현: `SketchFrame::named` 가 구성 시점에 검사한다 — `plane_residual_sign`(scalar, **전역**: Narrow 는 Rat 대입 → 넘치면 BigInt, Wide 는 BigInt — fail-open 없음) ≠ 0 이면 `OriginNotOnPlane`, `WideFrame::named_of` None 이면 `RefDirParallelToNormal`(그 함수는 폭에 전역이라 None 은 평행/영벡터뿐), 십진 창 밖은 `FrameOutsideDecimalWindow`. ★ 좌표계에 주의: «정의하려는 프레임의 (u,v,w)» 가 아니라 **그 평면의 `points` 가 적힌 좌표계**의 3D 점이다(모션 없으면 세계 — 상자 윗면 z=1 이면 origin 은 `[1,1,1]` 같은 점이지 셋째 성분 0 이 아니다). "평면 위" 는 성분이 아니라 **방정식 대입**(`a·x+b·y+c·z+d = 0`, 정확)으로 검사한다. `Canonical` 은 유도라 검사할 것이 없다. 면 위 스케치의 밑캡이 대상 면의 surface 핸들을 공유하는(flush 접촉 = 핸들 비교) 전제이기도 하다. 평면에서 d 떨어진 스케치가 필요하면 origin 을 띄우는 것이 아니라 **오프셋 평면**을 만든다 — 같은 프레임 안 `(0,0,d),(1,0,d),(0,1,d)` 유리수 세 점의 `Known` 평면(datum 가족, S5). 담체가 실제 평면 핸들로 남아 이름·interning·flush 규칙이 그대로 성립한다 |
+| **정확 유리수 프레임은 노드를 만들지 않는다** ✔S9 잠금 | 평면에 모션이 없고 실현된 원점·축이 **정확 유리수 직교**로 증명되면(오늘의 `RatFrame` 게이트 — 세계 축 평면 셋이 전부 여기 든다, `Canonical` 이든 `world_zx` 의 `Named` 든) `Motion::Frame` 노드를 생성하지 않고 세계 유리수 산술로 구성한다(모션 = None) — 빈 사슬 지름길(`shared_base` 상쇄·축별 tol 0·정수 Shewchuk)이 그대로 산다. 미러의 *"정확한 f64 에 남으면 노드를 안 만든다"* 와 같은 구성 시점 정규화다. ★ 지반 잠금(S9): 씨앗 평면의 canonical 프레임이 단위축 위에 **비트 정확**으로 실현됨(`a_seeded_planes_canonical_frame_is_the_world_basis_exactly`) — 생략은 중복 제거지 값 손실이 아니다. 오늘의 게이트 표현식은 `exact()`(★★ 주석 동결 — 바꾸면 노드 인구가 움직인다); `PlaneFrame`+`inv_sqrt_exact` 기반의 더 강한 게이트는 §열린 항목 11 |
+| **세계 축 평면 셋은 `Model::new()` 가 심는다** ✔S9 | 핸들이 결정적(0·1·2)이라 replay 가 자명하다. 캐시 방향은 **−축**(밑캡의 감각 — S9 행), `Default` 는 `new()` 로 위임(무씨앗 뒷문 없음). 씨앗은 정의상 영구 orphan — 정의·프레임만 가리키는 평면을 순회·직렬화가 따라가야 한다(§열린 항목 4) |
 | **스케치는 모델에 저장되지 않는다** | 연산 로그가 스케치의 진실이고, 모델에 남는 것은 벽·캡 평면(`Known` 점 + 프레임 모션)이다. 치수의 흐름: 변 `(x1,y1)→(x2,y2)` + 스윕 → 벽의 세 점 `(x1,y1,0),(x2,y2,0),(x1,y1,d)` — 산술 없이 유리수 그대로. 계수(이름)에만 곱이 있고, 그것이 진실이 점이어야 하는 이유다(계수 `i128` 적합 25.8% vs 점 100%) |
 | **기본 프레임은 정준 유도(`Canonical`)다** | 원점 = 세계 원점의 수선의 발(부호·스케일 불변), 축 = Arbitrary Axis(DXF) — 사용자가 아무것도 안 정하면 이 규약이고, 규약은 스펙+테스트로 동결한다. 사용자가 명시한 프레임만 `Named` 로 **값을 저장**한다(유도값과 다른 규약을 유도로 흉내내면 규칙 변경에 조용히 돈다) |
 
@@ -470,13 +470,13 @@ pub enum Decision {
 | S3 | **`Profile2d` 유리수화 + 공선 중간점 정리** — `Profile2d{outer: Ring2d, holes}`·`Ring2d{points: Vec<[Rat;2]>}`, 생성자가 리프트(창 밖 = `ProfileOutsideDecimalWindow` 구성 시점 에러) + 공선 중간점 소멸(엄격 내부만 — 중복점·스파이크는 생존해 제 이름으로 보고). `check()`·`from_rings` 분류가 진실 위 정확 술어로(`orient2d_rat` scalar + geom `_rat` 쌍둥이 — geom 이 scalar 의존 획득, §design 1 격리 규칙 준수). 잠금: 쌍둥이 프리즘 비트 동일+전 코너 3-평면 정의(Q2 ② 닫힘), 창 에러 2, 십진-이진 부호 분기(십진이 이긴다), 비인접 공선 벽 interning 재핀. census 150줄 비트 동일. ★ 실측: check 는 34ms@100점(호출당 ~1.7µs, gcd 지배 — §열린 항목 7) | ✔ 2026-08-05 |
 | S6a | **점 없는 평면의 소멸** — `Inexact` 소멸(S6b 타입 교체)의 전제. `PlaneDef` 를 점 셋 단일 필드로(origin=points[0]·ref_dir=points[1]−points[0]·극성=점 순서 — 불변식이 구조, 좁은-계수 def 실패 계급 사망, `named_plane_points` 은퇴), **`from_axes` 가 축의 십진 진실을 정의로**(#28 «축만 든 호출자» 인구 개통 — 45°급 프레임의 프리즘이 `WideFrame::named_of` 로 정확 경로; 내부의 실현-기저 호출 3곳은 의도적 무-def `realized_plane` 분리 — 두-정확-기술 재발 방지), `add_cylinder` 캡 점 기록(add_cuboid 선례), 넘침-이동은 노드 기록(`motion_is_exact` 프로브에 점 수송 포함). 잠금: Named×Wide 프레임 단위 + 축-전용 기울어진 프리즘 종단 + 원통 캡 interning + 넘침-이동 + **전수 관문**(`points_coverage` — 생산 경로별 모델의 live 평면 face 전수가 점 보유). census 150줄 비트 동일 ×3회 | ✔ 2026-08-05 |
 | S6b | **타입 교체** — 진실 스토어(`SurfaceTruth{Plane{points: PlanePoints::Known, motion} \| Cylinder{motion}}`)가 캐시 store 와 인덱스-평행으로 탄생, `SurfaceDef`·`surface_defs`·`surface_points`·`push_surface(_with_points/_unrecorded)`·`Violation::UndefinedSurface`·`RejectReason::{InexactSurface, CoordinateOutOfRange}` **사망**. push 는 `push_plane`(interning, flipped 는 f64 캐시 내적 그대로 — 같은 평면이라 부호 정확)·`push_cylinder(motion)`·test-util `push_plane_unregistered`/`set_plane_points_for_test`. f64 프리즘 폴백 → **이름 붙은 거절**(`PlaneWithoutExactForm`·`DistOutsideDecimalWindow` — `Swept::along` 삭제, build_prism 정확-전용). 부수 개선: 이동된 원통이 `Inexact` 강등 대신 모션 기록. ★ 구현 중 반박 1건: normal_def 의 `v = n×u` 곱이 작은-지수 전폭 법선(분모 10²¹→10⁴²)에서 넘침 — proptest 가 폴백 소멸 당일 발견, 원시 방향조차 137비트라 **기저-교차 셔플**(`w = x̂×n` + 대수 부호 `det[ẑ,x̂,n]=n₁`)로 재구성(곱 0개, 전역). 아레나 반전(캐시가 Store·진실이 Vec — `Handle<T>` 타입 매개변수가 강제)은 최종 개명 시 제자리로(§열린 항목). census 150줄 비트 동일 ×4 | ✔ 2026-08-06 |
+| S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — ① `Model::new()` 가 세계 축 평면 셋을 심는다(핸들 0·1·2 = XY·YZ·ZX, points 는 `axis_plane` 삼중 `[0,u,v]`, **캐시 방향은 −축** — extrude 밑캡의 감각과 일치, +축이면 실측 781 캡 flip 재도입; `#[derive(Default)]` 제거 = 무씨앗 뒷문 폐쇄, `world_plane(Axis)` 접근자, `stat seeded_hits` 반증성 다리 신설 = 실측 455). census ε-재기준 1회: 평면 digest 이동 127/150줄, **결과는 143/150 비트 동일 + 나머지 7줄도 부피·면적·centroid 전부 비트 동일**(정점 해시만 이동 — Cramer 가 사실상 스케일-불변으로 반올림, 스칼라 최대 편차 정확히 0), ERR/EMPTY·피연산자 정점 해시 문자 동일. ② 공개 `SketchFrame{plane, placement, flip}`(필드 private + 검증 생성자 — 리터럴 우회 봉쇄): `named()` 가 구성 시점 거절 `FrameOutsideDecimalWindow`·`OriginNotOnPlane`(신규 scalar `plane_residual_sign` — orient2d_rat 급 **전역**, Wide 는 BigInt 팔)·`RefDirParallelToNormal`(판정은 `WideFrame::named_of` 재사용 — 폭에 전역이라 None = 평행뿐), 이름 없는 평면 = `PlaneWithoutExactForm` 재사용. `face_sketch_frame` 신설(이음새 — face_frame 이 만들던 값을 버리지 않고 공개). ③ 내부 통일: flip 측정은 `measured_frame` 한 곳, 노드 push 는 `push_frame_node` 한 곳(extrude·face 두 도로가 한 모양, 게이트 표현식 문자 유지, census 비트 동일). ★ **`Operation` 의 평면-핸들 어휘 교체는 S5 로 유예** — replay 자기완결성: 로그 속 핸들의 합법 표적은 씨앗·기존 면·datum 뿐인데 datum op 가 S5 에야 생긴다. ★ 잠금서 확정 둘: 씨앗 intern 직접 증거(원점 상자 바닥/왼쪽/앞 + z=0 밑캡 = 씨앗 핸들, 아레나 6 유지), ZX 의 canonical 프레임은 `−x̂`(스크립트 삼중과 다름 — Named 로 말할 사례임을 잠금이 명문화) | ✔ 2026-08-06 |
 
 ### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
 
 | | 항목 | 선행 |
 |---|---|---|
-| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5) | S9 권장(datum **위** 스케치가 평면-핸들 API 를 원한다) |
-| S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — 공개 `SketchFrame{plane, placement, flip}`, `Named` 구성 시점 거절(`OriginNotOnPlane` 등), `Model::new()` 의 세계 축 평면 셋(핸들 0·1·2), 정확-유리수 프레임의 노드 생략 정규화. ★ S4 에서 분리한 이유(실측): 심은 평면이 이후 원점 상자들과 **intern 되며 생존자 f64 기하·`flipped` 를 바꾼다**(census `in:` = f64 계수 digest — 전 스위트 파급, 별도 관문 필요), `Model` 의 `Default` 공개 derive 구멍, 그리고 진짜 수요자가 S5 다 | 없음 |
+| S5 | datum 평면 연산 + `PlanePoints::Through` + 판정층 `WorkingPlaneDef::Through`(무리수 datum 의 동차 상승) (M5). **`Operation` 의 평면-핸들 어휘 교체도 여기다**(S9 에서 유예 — 사유는 S9 행) | 없음(S9 완료) |
 | S7 | `Origin` 소멸 + `Vertex{surfaces}` + `PointCache` (`point` 삭제 — 소비자 ~27곳을 캐시 API 로) | S6b ✔ |
 | S8 | `Edge` 를 담체+경계로(`{surfaces:[2], vertices:[2]}`) — `Store<Curve>` → `EdgeCache`, 모서리의 `Origin` 도 여기서 소멸 | S6b ✔ |
 
@@ -533,7 +533,9 @@ STEP 출력, undo/replay.
    **0건**(유일한 창 밖 좌표는 의도적 부정 테스트 하나였고 구성 시점 에러 잠금으로 대체).
    전 스위트 그린 + census 150줄 비트 동일이 증거.
 4. **정의만 가리키는 평면의 순회·직렬화** — `Model::reachable` 이 면을 통해서만 돈다. 세계 축
-   평면·datum 이 가리키는 평면·이동본을 정의 경유로도 따라가야 한다.
+   평면·datum 이 가리키는 평면·이동본을 정의 경유로도 따라가야 한다. ★ S9 부로 실재 인구가
+   생겼다: 씨앗 셋은 심긴 직후엔 어느 면도 참조하지 않는 orphan 이다(`Reachable` doc 정정
+   완료 — validate 는 도달 집합만 검사해 무위반). 직렬화·순회 일반화는 S5 가 강제할 때 함께.
 5. **M6 절벽** — 이차곡면 셋은 최대 8점에서 만나 `[Handle; 3]` 이 «어느 점»을 못 말한다. 가지
    번호(`branch: u8`, 결정적이어야 함) 또는 재명명 — M6 에서 실제 형상을 만나 결정. 통일안을
    채택했으므로 이 문제는 모든 점에 걸린다 — M6 의 가장 큰 항목.
@@ -558,6 +560,10 @@ STEP 출력, undo/replay.
    죽었다)다. 스위트-내 재측정치는 `points_coverage` 관문의 0(생산 경로 전수에서 점 없는
    live 평면 face 없음); 코퍼스(OCCT 스위트) 규모의 재측정은 S6b 착수 시 한 번 더 돌려
    기록한다.
+11. **노드 생략의 더 강한 게이트** — 오늘의 게이트는 `exact()`(축이 정확 유리수 직교로
+   리프트되는가)다. `PlaneFrame`+`inv_sqrt_exact` 로 «실현이 정확 f64 에 떨어지는가»를 직접
+   묻는 더 강한 게이트가 가능하지만, **표현식을 바꾸면 노드 인구가 움직인다** — 두 ★★ 주석의
+   경고 그대로, 교체는 census 관문 동반 필수(S9 에서 기록만).
 10. **감김(`oriented_ring`)은 아직 f64 다** — 배치된 3D 점의 면적벡터·법선 내적(ops).
    `check()` 가 단순성(≠0 면적)을 진실 위에서 보증하므로 지금은 건전하지만, f64 폴백 소멸
    (S6 이후)과 함께 재검할 것.

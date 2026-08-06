@@ -55,6 +55,8 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 
 **면의 스케치 좌표계 — `face_plane` (2026-07-26).** `ops::face_frame`을 공개한 것이고, **`PadOnFace`/`PocketOnFace`가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 같은 함수의 사영 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다).
 
+**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame` (2026-08-06, S9).** 내부에만 있던 `SketchFrame{plane: Handle<Surface>, placement, flip}`이 공개됐다 — 필드는 비공개, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 전역 `plane_residual_sign` 신설, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 내부에서 이미 만들던 값을 버리지 않고 공개한 이음새다(`face_plane`은 같은 프레임의 f64 사영 — 호환 유지). flip 측정은 `measured_frame`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`이 평면 핸들을 싣는 어휘 교체는 S5(datum op)와 함께다 — replay 자기완결성: 로그 속 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다. 상세·관문 실측은 `docs/truth-and-cache.md` S9 행.
+
 **원점을 꼭짓점 평균에서 면의 *면적중심*으로 바꿨다.** 옛 규칙은 오목한 면에서 면적중심이 아니었고, 더 나쁘게는 **직선 도중에 꼭짓점이 하나 늘면 움직였다** — 면의 모양은 그대로인데 보스가 다른 자리에 앉는다. 면적중심은 **영역의 성질**이라 이산화에 무관하다. *(월드 원점 정사영(Onshape 방식)도 검토했으나 채택하지 않았다: 안정적이지만 원점에서 먼 면에 `pad`하면 프로파일이 면 밖에 앉아 대개 실패한다. Onshape는 사용자가 스케치를 모서리에 구속으로 붙이지만 스크립트엔 그 단계가 없다.)*
 
 X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onshape `perpendicularVector()`와 같은 규칙이다. 가장 작은 두 성분이 **동률일 때 불연속**이고(연속인 선택은 수학적으로 불가능), 그 타이브레이크는 `nacre-math`에서 테스트로 못 박혀 있다.
