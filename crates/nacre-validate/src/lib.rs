@@ -27,7 +27,6 @@ pub const EPS_CONSTRUCTED: f64 = 1e-9;
 /// Which reference edge in the topology graph a dangling handle sits on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefKind {
-    EdgeCurve,
     EdgeBoundVertex,
     FaceSurface,
     HalfEdgeEdge,
@@ -89,6 +88,17 @@ pub enum Violation {
     /// more face-fans meet at one point (two solids touching only at a corner), even though every
     /// edge is manifold. Detected by [`nacre_topo::nonmanifold_vertices`].
     NonManifoldVertex { vertex: Handle<Vertex> },
+
+    /// An edge's stated carriers disagree with adjacency (S8): the multiset of the two face
+    /// surfaces using the edge is not the stored `Edge::surfaces` pair — or the pair is
+    /// self-adjacent (`[s, s]`) on a *plane*, a spelling reserved for a cylinder seam. The
+    /// carriers are stated, never derived, so a mismatch is a producer bug, and the curve
+    /// cache derived from wrong carriers would be silently wrong geometry.
+    EdgeCarrierMismatch {
+        edge: Handle<Edge>,
+        stated: [u32; 2],
+        observed: [u32; 2],
+    },
 
     /// A bound vertex does not lie on its edge's curve within tolerance.
     VertexOffCurve {
@@ -207,14 +217,8 @@ fn in_bounds<T>(h: Handle<T>, store: &Store<T>) -> bool {
 
 fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     for (eh, edge) in m.edges.iter() {
-        if !in_bounds(edge.curve, &m.curves) {
-            out.push(Violation::DanglingReference {
-                kind: RefKind::EdgeCurve,
-                owner_index: eh.index(),
-                target_index: edge.curve.index(),
-                target_len: m.curves.len() as u32,
-            });
-        }
+        // (The curve handle's own check died with `Store<Curve>` (S8): the curve is a cache
+        // beside the store, not a reference an edge can dangle.)
         {
             for v in edge.vertices {
                 if !in_bounds(v, &m.vertices) {
@@ -395,11 +399,32 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
                 edge: eh,
                 use_count: uses.len(),
             });
-        } else if uses[0].1 == uses[1].1 {
-            out.push(Violation::NonOpposedEdge {
-                edge: eh,
-                faces: [uses[0].0, uses[1].0],
-            });
+        } else {
+            if uses[0].1 == uses[1].1 {
+                out.push(Violation::NonOpposedEdge {
+                    edge: eh,
+                    faces: [uses[0].0, uses[1].0],
+                });
+            }
+            // S8: the stated carrier pair must be the two using faces' surfaces (as a
+            // multiset), and `[s, s]` on a plane is a spelling reserved for cylinder seams.
+            let stated = _edge.surfaces;
+            let mut observed = [
+                m.faces.get(uses[0].0).surface,
+                m.faces.get(uses[1].0).surface,
+            ];
+            if observed[1].index() < observed[0].index() {
+                observed.swap(0, 1);
+            }
+            let plane_self_pair = stated[0] == stated[1]
+                && matches!(m.surface(stated[0]), nacre_geom::Surface::Plane(_));
+            if stated != observed || plane_self_pair {
+                out.push(Violation::EdgeCarrierMismatch {
+                    edge: eh,
+                    stated: [stated[0].index(), stated[1].index()],
+                    observed: [observed[0].index(), observed[1].index()],
+                });
+            }
         }
     }
     // Non-manifold *vertices* (pinch points) — every edge can be manifold yet two face-fans meet
@@ -606,7 +631,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nacre_geom::{Curve, Line, Plane, Surface};
+    use nacre_geom::{Plane, Surface};
     use nacre_math::Vector3;
     use nacre_topo::{HalfEdge, Orientation, Origin, Shell, Solid};
     use proptest::prelude::*;
@@ -902,11 +927,10 @@ mod tests {
         let eh: Vec<Handle<Edge>> = (0..6)
             .map(|i| {
                 let (a, b) = TETRA_EDGES[i];
-                let curve = m.curves.push(Curve::Line(
-                    Line::through_points(corner(a), corner(b)).unwrap(),
-                ));
                 // The two faces whose loops use edge `i` — its carriers, read off the same
-                // table the loops are built from.
+                // table the loops are built from. `push_edge` derives the curve through the
+                // (possibly nudged) vertex points — an endpoint can no longer sit off its own
+                // line, which is the S8 point (see `vertex_off_its_rim_circle`).
                 let carriers: Vec<Handle<Surface>> = TETRA_FACES
                     .iter()
                     .enumerate()
@@ -916,11 +940,8 @@ mod tests {
                 let [ca, cb] = carriers[..] else {
                     panic!("a tetra edge is on exactly 2 faces")
                 };
-                m.edges.push(Edge {
-                    curve,
-                    surfaces: Edge::carrier_pair(ca, cb),
-                    vertices: [vh[a], vh[b]],
-                })
+                m.push_edge([ca, cb], [vh[a], vh[b]])
+                    .expect("distinct tetra corners")
             })
             .collect();
         let mut faces = Vec::new();
@@ -1040,9 +1061,12 @@ mod tests {
     }
 
     #[test]
-    fn vertex_off_curve_and_surface_when_nudged() {
-        // Vertex 0 moved by 2·EPS_CONSTRUCTED; curves/planes stay on the
-        // un-moved corners, so the vertex is off some of them.
+    fn vertex_off_surface_when_nudged() {
+        // Vertex 0 moved by 2·EPS_CONSTRUCTED; the planes stay on the un-moved corners, so
+        // the vertex is off them. (`VertexOffCurve` cannot fire here since S8: a line edge's
+        // curve derives *through its endpoints*, so an endpoint is on its own line by
+        // construction — the check's remaining teeth are the circles, see
+        // `vertex_off_its_rim_circle`.)
         let vs = validate(&tetra_with(TetraOpts {
             nudge: Some((
                 0,
@@ -1056,8 +1080,145 @@ mod tests {
                 .any(|v| matches!(v, Violation::VertexOffSurface { .. }))
         );
         assert!(
+            !vs.iter()
+                .any(|v| matches!(v, Violation::VertexOffCurve { .. })),
+            "a line endpoint is on its own derived line by construction"
+        );
+    }
+
+    /// ★ S8 negative control: an edge whose stated carriers disagree with the two faces
+    /// actually using it is flagged — and so is a self-adjacent *plane* pair (a spelling
+    /// reserved for cylinder seams). Hand-built open surface: other violations fire too; the
+    /// assertion is only that the carrier one is among them.
+    #[test]
+    fn edge_carrier_mismatch_is_flagged() {
+        let mut m = nacre_topo::Model::new();
+        let r = nacre_scalar::Rat::from_int;
+        let plane = |m: &mut nacre_topo::Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
+            m.push_plane(
+                Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
+                pts.map(|p| p.map(r)),
+                None,
+            )
+            .0
+        };
+        let sa = plane(&mut m, [0.0, 0.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, 0]]);
+        let sb = plane(&mut m, [0.0, 1.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, -1]]);
+        let sc = plane(&mut m, [1.0, 0.0, 1.0], [[0, 0, 0], [0, 1, 0], [1, 0, -1]]);
+        let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
+            m.vertices.push(Vertex {
+                point: Point3::from_array(p),
+                origin: Origin::Constructed,
+                definition: None,
+            })
+        };
+        let v0 = v(&mut m, [0.0, 0.0, 0.0]);
+        let v1 = v(&mut m, [1.0, 0.0, 0.0]);
+        let v2 = v(&mut m, [0.0, 1.0, 0.0]);
+        let v3 = v(&mut m, [0.0, -1.0, 0.0]);
+        // The shared edge states carriers [sa, sc] — but the faces using it are on sa and sb.
+        let e_shared = m.push_edge([sa, sc], [v0, v1]).unwrap();
+        let ea1 = m.push_edge([sa, sb], [v1, v2]).unwrap();
+        let ea2 = m.push_edge([sa, sb], [v2, v0]).unwrap();
+        let eb1 = m.push_edge([sa, sb], [v1, v3]).unwrap();
+        let eb2 = m.push_edge([sa, sb], [v3, v0]).unwrap();
+        let he = |edge, forward| HalfEdge { edge, forward };
+        let face = |m: &mut nacre_topo::Model, surface, hes: Vec<HalfEdge>| {
+            m.faces.push(Face {
+                surface,
+                outer: Loop { half_edges: hes },
+                inner: vec![],
+                orientation: Orientation::Forward,
+            })
+        };
+        let fa = face(
+            &mut m,
+            sa,
+            vec![he(e_shared, true), he(ea1, true), he(ea2, true)],
+        );
+        let fb = face(
+            &mut m,
+            sb,
+            vec![he(e_shared, false), he(eb2, false), he(eb1, false)],
+        );
+        let shell = m.shells.push(Shell {
+            faces: vec![fa, fb],
+        });
+        m.push_solid(Solid {
+            outer: shell,
+            cavities: vec![],
+        });
+        let vs = validate(&m);
+        assert!(
+            vs.iter().any(
+                |x| matches!(x, Violation::EdgeCarrierMismatch { edge, .. } if *edge == e_shared)
+            ),
+            "stated [sa, sc] vs observed [sa, sb] must be flagged: {vs:?}"
+        );
+        // The other shared-plane edges (1 use each) are non-manifold, not carrier mismatches.
+        assert!(
             vs.iter()
-                .any(|v| matches!(v, Violation::VertexOffCurve { .. }))
+                .any(|x| matches!(x, Violation::NonManifoldEdge { .. }))
+        );
+    }
+
+    /// ★ S8: the check `VertexOffCurve` still has teeth where the curve does NOT derive from
+    /// the vertex — a rim circle comes from the carriers (cylinder axis × cap), so a seam
+    /// vertex off the rim is caught. The stores are sealed against mutation, so the defect is
+    /// *built*: a disk face whose rim edge carries a seam vertex at the wrong radius. (The
+    /// fixture is deliberately not a closed solid — other violations fire too; the assertion
+    /// is only that this one is among them.)
+    #[test]
+    fn vertex_off_its_rim_circle() {
+        let mut m = nacre_topo::Model::new();
+        m.add_cylinder(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        let lateral = m
+            .faces
+            .iter()
+            .map(|(_, f)| f.surface)
+            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .expect("the cylinder's lateral surface");
+        let cap = m
+            .faces
+            .iter()
+            .map(|(_, f)| f.surface)
+            .find(|&h| h != lateral && !matches!(m.surface(h), Surface::Cylinder(_)))
+            .expect("a cap plane");
+        // A seam vertex at radius 2 + 1e-3 — off the derived radius-2 rim circle.
+        let bad = m.vertices.push(nacre_topo::Vertex {
+            point: Point3::from_array([2.001, 0.0, 0.0]),
+            origin: Origin::Constructed,
+            definition: None,
+        });
+        let rim = m
+            .push_edge([lateral, cap], [bad, bad])
+            .expect("a rim derives from its carriers, not its vertices");
+        let face = m.faces.push(Face {
+            surface: cap,
+            outer: Loop {
+                half_edges: vec![HalfEdge {
+                    edge: rim,
+                    forward: true,
+                }],
+            },
+            inner: vec![],
+            orientation: Orientation::Forward,
+        });
+        let shell = m.shells.push(Shell { faces: vec![face] });
+        m.push_solid(Solid {
+            outer: shell,
+            cavities: vec![],
+        });
+        let vs = validate(&m);
+        assert!(
+            vs.iter()
+                .any(|v| matches!(v, Violation::VertexOffCurve { vertex, .. } if *vertex == bad)),
+            "a seam vertex off its rim circle must be caught: {vs:?}"
         );
     }
 

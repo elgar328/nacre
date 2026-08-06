@@ -261,7 +261,13 @@ pub struct Model {
     /// The three seeded world planes, in normal-axis order Z(XY)·X(YZ)·Y(ZX) — captured at
     /// [`Model::new`] so [`Model::world_plane`] needs no handle minting. Always length 3.
     world_planes: Vec<Handle<Surface>>,
-    pub curves: Store<Curve>,
+    /// Per-edge curve caches, index-parallel to `edges` (S8) — **cache, not truth**: the
+    /// carriers and endpoints decide the curve ([`Model::derive_edge_curve`]), and
+    /// [`Model::rebuild_edge_cache`] discards and regenerates the lot. Filled eagerly by
+    /// [`Model::push_edge`]; read through [`Model::edge_curve`]. A raw `edges.push` without a
+    /// cache entry desyncs the two — the accessor's debug_assert and validate's parallelism
+    /// check watch for that (the store stays `pub` per the doc's final shape).
+    edge_cache: Vec<EdgeCache>,
     /// The motion-history forest (§CIP ⑦): motion definitions named by `Origin::Moved` vertices
     /// and moved surfaces. Not geometry — a definition store.
     ///
@@ -324,6 +330,15 @@ pub struct Model {
     pub live_solids: Vec<Handle<Solid>>,
     // derived cache (rebuilt on demand)
     pub adj: Adjacency,
+}
+
+/// One edge's realized curve — a **cache** beside the edge store (index-parallel), derived
+/// from the edge's carriers and endpoints by [`Model::derive_edge_curve`]. Discard and
+/// regenerate with [`Model::rebuild_edge_cache`]; the field is private so the only writers
+/// are the derivation itself.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeCache {
+    curve: Curve,
 }
 
 /// The handles reachable from a model's live solids — the live model (design §2).
@@ -404,7 +419,7 @@ impl Model {
         let mut m = Model {
             surfaces: Store::default(),
             surface_truths: Vec::new(),
-            curves: Store::default(),
+            edge_cache: Vec::new(),
             motions: Store::default(),
             motion_ids: HashMap::new(),
             surface_name: HashMap::new(),
@@ -732,12 +747,47 @@ impl Model {
     /// `None` for an edge with no endpoints — the standalone full circle of §4,
     /// which is a legitimate form but has no start. Callers pick their own
     /// policy: a solid's loop edge is always bounded, so `nacre-ops` unwraps with
-    /// An edge's curve — **the one road to a curve from an edge** (S8). Today it delegates to
-    /// the `curves` store; when the store dies the body becomes the edge-cache read, and no
-    /// consumer moves again.
+    /// An edge's curve — **the one road to a curve from an edge** (S8), read from the
+    /// index-parallel cache [`Model::push_edge`] fills.
     #[inline]
     pub fn edge_curve(&self, e: Handle<Edge>) -> &Curve {
-        self.curves.get(self.edges.get(e).curve)
+        debug_assert_eq!(
+            self.edge_cache.len(),
+            self.edges.len(),
+            "edge cache out of step with the edge store — push edges through Model::push_edge"
+        );
+        &self.edge_cache[e.index() as usize].curve
+    }
+
+    /// Push an edge: canonicalize the carrier pair, derive its curve, fill the cache — the one
+    /// write road (S8). `None` when the curve does not derive, which for the line arms means
+    /// coincident endpoints (a zero-length edge); the caller maps that to its own reject
+    /// (`DegenerateGeometry` / `ZeroLengthEdge`). ★ A rim is `[v, v]` and NOT degenerate — the
+    /// circle arm never reads the endpoints (see [`Model::derive_edge_curve`]).
+    pub fn push_edge(
+        &mut self,
+        surfaces: [Handle<Surface>; 2],
+        vertices: [Handle<Vertex>; 2],
+    ) -> Option<Handle<Edge>> {
+        let surfaces = Edge::carrier_pair(surfaces[0], surfaces[1]);
+        let curve = self.derive_edge_curve(surfaces, vertices)?;
+        let h = self.edges.push(Edge { surfaces, vertices });
+        self.edge_cache.push(EdgeCache { curve });
+        Some(h)
+    }
+
+    /// Discard every edge-curve cache and derive it afresh — the «cache, not truth» warrant
+    /// (`docs/truth-and-cache.md`): nothing is lost, because nothing there was truth.
+    pub fn rebuild_edge_cache(&mut self) {
+        self.edge_cache = self
+            .edges
+            .iter()
+            .map(|(_, e)| EdgeCache {
+                curve: self
+                    .derive_edge_curve(e.surfaces, e.vertices)
+                    .expect("every stored edge derives its curve"),
+            })
+            .collect();
     }
 
     /// that invariant while `nacre-props` reports it as unsupported input.
@@ -958,14 +1008,8 @@ impl Model {
         }));
         let eh: [Handle<Edge>; 12] = core::array::from_fn(|i| {
             let (a, b, [fa, fb]) = EDGES[i];
-            let curve = self.curves.push(Curve::Line(
-                Line::through_points(corners[a], corners[b]).expect("non-degenerate box"),
-            ));
-            self.edges.push(Edge {
-                curve,
-                surfaces: Edge::carrier_pair(surf[fa].0, surf[fb].0),
-                vertices: [vh[a], vh[b]],
-            })
+            self.push_edge([surf[fa].0, surf[fb].0], [vh[a], vh[b]])
+                .expect("non-degenerate box")
         });
 
         let fh: [Handle<Face>; 6] = core::array::from_fn(|i| {
@@ -1090,38 +1134,17 @@ impl Model {
 
         // Rims are full circles seamed at their vertex (start == end); the seam is
         // a straight edge joining the two rim seam points.
-        let bottom = {
-            let curve = self.curves.push(Curve::Circle(
-                Circle::from_center_normal(c0, d, u, radius).expect("non-degenerate rim"),
-            ));
-            self.edges.push(Edge {
-                curve,
-                surfaces: Edge::carrier_pair(lateral_surface, bottom_cap_surface),
-                vertices: [v_bot, v_bot],
-            })
-        };
-        let top = {
-            let curve = self.curves.push(Curve::Circle(
-                Circle::from_center_normal(c1, d, u, radius).expect("non-degenerate rim"),
-            ));
-            self.edges.push(Edge {
-                curve,
-                surfaces: Edge::carrier_pair(lateral_surface, top_cap_surface),
-                vertices: [v_top, v_top],
-            })
-        };
-        let seam = {
-            let curve = self.curves.push(Curve::Line(
-                Line::through_points(p_bot, p_top).expect("positive height"),
-            ));
-            self.edges.push(Edge {
-                curve,
-                // Self-adjacent: a seam is a parameterization joint of ONE surface, not an
-                // intersection of two — the provisional S8 spelling (see `Edge::surfaces`).
-                surfaces: [lateral_surface, lateral_surface],
-                vertices: [v_bot, v_top],
-            })
-        };
+        let bottom = self
+            .push_edge([lateral_surface, bottom_cap_surface], [v_bot, v_bot])
+            .expect("a rim derives its circle from the cap and the cylinder");
+        let top = self
+            .push_edge([lateral_surface, top_cap_surface], [v_top, v_top])
+            .expect("a rim derives its circle from the cap and the cylinder");
+        // Self-adjacent: a seam is a parameterization joint of ONE surface, not an
+        // intersection of two — the provisional S8 spelling (see `Edge::surfaces`).
+        let seam = self
+            .push_edge([lateral_surface, lateral_surface], [v_bot, v_top])
+            .expect("positive height");
 
         // Lateral cylindrical face: one loop wrapping the seam twice (opposite).
         let lateral = {
@@ -1331,7 +1354,11 @@ mod tests {
         // arena holds 3 seeds + 3 fresh (top/back/right). Seeding adds nothing here precisely
         // because the seeds are these planes.
         assert_eq!(m.surfaces.len(), 6);
-        assert_eq!(m.curves.len(), 12);
+        assert_eq!(
+            m.edge_cache.len(),
+            m.edges.len(),
+            "the curve cache stays index-parallel"
+        );
     }
 
     #[test]
@@ -1390,6 +1417,37 @@ mod tests {
                 assert_eq!(he_end(&m, hes[i]), he_start(&m, hes[(i + 1) % hes.len()]));
             }
         }
+    }
+
+    /// ★★ S8, the «discard and regenerate» warrant: the edge-curve cache rebuilt from the
+    /// carriers and endpoints is bit-identical to the one `push_edge` filled eagerly — proof
+    /// that nothing in it was truth.
+    #[test]
+    fn edge_cache_discard_and_regenerate_bit_identical() {
+        let mut m = Model::new();
+        m.add_cuboid(
+            Point3::from_array([-2.0, 1.0, 0.0]),
+            Point3::from_array([3.0, 4.0, 10.0]),
+        );
+        m.add_cylinder(
+            Point3::from_array([8.0, 0.0, 0.0]),
+            Vector3::from_array([0.3, -0.4, 1.0]),
+            1.25,
+            2.5,
+        );
+        let snapshot = |m: &Model| -> Vec<Curve> {
+            m.edges
+                .iter()
+                .map(|(eh, _)| m.edge_curve(eh).clone())
+                .collect()
+        };
+        let before = snapshot(&m);
+        m.rebuild_edge_cache();
+        assert_eq!(
+            before,
+            snapshot(&m),
+            "regeneration must reproduce the cache bit for bit"
+        );
     }
 
     #[test]
@@ -1486,7 +1544,8 @@ mod tests {
             let uses = &m.adj.edge_uses[&eh];
             assert_eq!(uses.len(), 2);
             assert_ne!(uses[0].1, uses[1].1); // opposite orientation
-            if matches!(m.edge_curve(eh), Curve::Line(_)) {
+            // The seam's discriminator IS the new invariant: self-adjacent carriers (S8).
+            if m.edges.get(eh).surfaces[0] == m.edges.get(eh).surfaces[1] {
                 seam_uses = Some(uses.clone());
             }
         }

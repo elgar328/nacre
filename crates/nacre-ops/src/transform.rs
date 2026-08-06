@@ -3,7 +3,7 @@
 //! operand stays exactly defined. [`copy`] is the same walk with no motion at all.
 
 use crate::OpError;
-use nacre_geom::{AxisMirror, Circle, Curve, Cylinder, Line, Plane, Surface};
+use nacre_geom::{AxisMirror, Cylinder, Plane, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
@@ -395,13 +395,6 @@ impl Xform<'_> {
         }
     }
 
-    fn curve(&self, c: &Curve, offset: Vector3) -> Option<Curve> {
-        match self {
-            Xform::Rigid(iso) => Some(transform_curve(c, iso, offset)),
-            Xform::Mirror { m, .. } => c.mirrored(*m),
-        }
-    }
-
     /// A reflection negates the normal a loop's winding implies (`R(a) × R(b) = −R(a × b)`), so
     /// every loop is rewound to put it back — and then the `Orientation` flag needs no change,
     /// because a reflection preserves dot products.
@@ -476,30 +469,6 @@ fn transform_surface(s: &Surface, iso: &Isometry, offset: Vector3) -> Surface {
                 .expect("rotation preserves a valid cylinder"),
             )
         }
-    }
-}
-
-/// A curve moved by `isometry` (see [`transform_surface`]).
-fn transform_curve(c: &Curve, iso: &Isometry, offset: Vector3) -> Curve {
-    if iso.rotate.is_none() {
-        return c.translated(offset);
-    }
-    let p = |q: Point3| Point3::from_array(iso.apply_point(q.as_array()));
-    let d = |v: Vector3| Vector3::from_array(iso.apply_dir(v.as_array()));
-    match c {
-        Curve::Line(l) => Curve::Line(
-            Line::from_point_direction(p(l.origin()), d(l.direction()))
-                .expect("rotation preserves a nonzero direction"),
-        ),
-        Curve::Circle(ci) => Curve::Circle(
-            Circle::from_center_normal(
-                p(ci.center()),
-                d(ci.normal()),
-                d(ci.ref_dir()),
-                ci.radius(),
-            )
-            .expect("rotation preserves a valid circle"),
-        ),
     }
 }
 
@@ -625,17 +594,8 @@ fn transform_solid(
         }
     }
 
-    // Pass 2 — curves (dedup, moved).
-    let mut curve_map: HashMap<Handle<Curve>, Handle<Curve>> = HashMap::new();
-    for &eh in &edge_order {
-        let c = model.edges.get(eh).curve;
-        if let std::collections::hash_map::Entry::Vacant(e) = curve_map.entry(c) {
-            let moved = motion
-                .curve(model.curves.get(c), offset)
-                .ok_or(OpError::MirrorNotPlanar)?;
-            e.insert(model.curves.push(moved));
-        }
-    }
+    // (The old pass 2 — moving curves — died with `Store<Curve>` (S8): the moved edge's
+    // curve now derives from its moved carriers and endpoints in pass 4's `push_edge`.)
 
     // Pass 3 — vertices (dedup, moved point + Origin preserved/remapped).
     let mut vert_order: Vec<Handle<Vertex>> = Vec::new();
@@ -689,19 +649,21 @@ fn transform_solid(
         vert_map.insert(vh, model.vertices.push(new_v));
     }
 
-    // Pass 4 — edges (curve/vertex handles + Origin remapped).
+    // Pass 4 — edges (carrier/vertex handles remapped; the curve cache derives from them).
     let mut edge_map: HashMap<Handle<Edge>, Handle<Edge>> = HashMap::new();
     for &eh in &edge_order {
         let e = *model.edges.get(eh);
-        let new_e = Edge {
-            curve: curve_map[&e.curve],
-            // The carriers move with the surfaces (pass 1 mapped every reachable one, so the
-            // lookups cannot miss). Re-canonicalized: the map need not preserve pairwise index
-            // order.
-            surfaces: Edge::carrier_pair(surf_map[&e.surfaces[0]], surf_map[&e.surfaces[1]]),
-            vertices: e.vertices.map(|v| vert_map[&v]),
-        };
-        edge_map.insert(eh, model.edges.push(new_e));
+        // The carriers move with the surfaces (pass 1 mapped every reachable one, so the
+        // lookups cannot miss); `push_edge` re-canonicalizes the pair. A rigid image of a
+        // non-degenerate edge cannot degenerate, so the `None` is unreachable in practice —
+        // mapped to the honest reject rather than a panic all the same.
+        let new_e = model
+            .push_edge(
+                [surf_map[&e.surfaces[0]], surf_map[&e.surfaces[1]]],
+                e.vertices.map(|v| vert_map[&v]),
+            )
+            .ok_or(OpError::DegenerateGeometry)?;
+        edge_map.insert(eh, new_e);
     }
 
     // Pass 5 — faces (loops rebuilt onto the new edges; orientation unchanged).

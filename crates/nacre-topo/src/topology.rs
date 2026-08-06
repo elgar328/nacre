@@ -6,7 +6,7 @@
 //! `Origin::Discovered { tol, definition }`); those get `PartialEq` for tests only.
 
 use crate::{Orientation, Origin, VertexDef};
-use nacre_geom::{Curve, Surface};
+use nacre_geom::Surface;
 use nacre_math::Point3;
 use nacre_store::Handle;
 
@@ -35,10 +35,11 @@ pub struct Vertex {
     pub definition: Option<VertexDef>,
 }
 
-/// A 1-cell: an unbounded [`Curve`] trimmed by its two endpoint vertices.
+/// A 1-cell: a segment of the carriers' intersection, trimmed by its two endpoint vertices.
+/// The realized curve is a cache beside the store (`Model::edge_cache`), not a field — the
+/// carriers and endpoints decide it (S8).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Edge {
-    pub curve: Handle<Curve>,
     /// **The two surfaces whose faces this edge bounds** — the carriers (S8).
     ///
     /// ★ Not derivable from the endpoints' surface triples: where four planes pass through one
@@ -122,7 +123,6 @@ pub struct Solid {
 mod tests {
     use super::*;
     use crate::Model;
-    use nacre_geom::{Curve, Line};
 
     #[test]
     fn cells_round_trip_their_fields() {
@@ -139,9 +139,6 @@ mod tests {
             // A hand-built cell; nothing here names three planes.
             definition: None,
         });
-        let curve = m.curves.push(Curve::Line(
-            Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
-        ));
         let r = nacre_scalar::Rat::from_int;
         let sa = m.push_plane_unregistered(
             nacre_geom::Plane::from_point_normal(
@@ -159,14 +156,9 @@ mod tests {
             .unwrap(),
             [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(0), r(1)]],
         );
-        let e = m.edges.push(Edge {
-            curve,
-            surfaces: Edge::carrier_pair(sa, sb),
-            vertices: [v0, v1],
-        });
+        let e = m.push_edge([sb, sa], [v0, v1]).expect("distinct endpoints");
 
         let stored = *m.edges.get(e);
-        assert_eq!(stored.curve, curve);
         assert_eq!(stored.surfaces, [sa, sb], "already ascending — kept as-is");
         assert_eq!(stored.vertices, [v0, v1]);
 

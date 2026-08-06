@@ -11,7 +11,7 @@ use nacre_geom::intersect::{
     RingSide, drop_collinear_midpoints, plane_side, point_in_ring_2d_rat,
     ring_self_intersection_rat, rings_cross_rat,
 };
-use nacre_geom::{Curve, Line, Plane, Surface};
+use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
@@ -591,19 +591,12 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError> {
 fn push_line_edge(
     model: &mut Model,
     a: Handle<Vertex>,
-    ap: Point3,
     b: Handle<Vertex>,
-    bp: Point3,
     carriers: [Handle<Surface>; 2],
 ) -> Result<Handle<Edge>, OpError> {
-    let curve = model.curves.push(Curve::Line(
-        Line::through_points(ap, bp).ok_or(OpError::DegenerateGeometry)?,
-    ));
-    Ok(model.edges.push(Edge {
-        curve,
-        surfaces: Edge::carrier_pair(carriers[0], carriers[1]),
-        vertices: [a, b],
-    }))
+    model
+        .push_edge(carriers, [a, b])
+        .ok_or(OpError::DegenerateGeometry)
 }
 
 /// Build a prism: the profile forms the base and (translated by `normal·dist`)
@@ -1107,28 +1100,12 @@ fn sweep_ring(
         let j = (i + 1) % n;
         // Carriers: the same expression `define` uses for the corner triples — a base/top edge
         // runs between wall `i` and its cap, a riser between the walls either side of corner `i`.
-        be.push(push_line_edge(
-            model,
-            bv[i],
-            base_pts[i],
-            bv[j],
-            base_pts[j],
-            [walls[i].0, caps.0],
-        )?);
-        te.push(push_line_edge(
-            model,
-            tv[i],
-            top_pts[i],
-            tv[j],
-            top_pts[j],
-            [walls[i].0, caps.1],
-        )?);
+        be.push(push_line_edge(model, bv[i], bv[j], [walls[i].0, caps.0])?);
+        te.push(push_line_edge(model, tv[i], tv[j], [walls[i].0, caps.1])?);
         ve.push(push_line_edge(
             model,
             bv[i],
-            base_pts[i],
             tv[i],
-            top_pts[i],
             [walls[(i + n - 1) % n].0, walls[i].0],
         )?);
     }

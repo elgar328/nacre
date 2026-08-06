@@ -147,7 +147,7 @@ mod tests {
     use super::nonmanifold_vertices;
     use crate::topology::{Edge, Face, HalfEdge, Loop};
     use crate::{Handle, Model, Orientation, Origin, Shell, Solid, Vertex};
-    use nacre_geom::{Curve, Line, Plane};
+    use nacre_geom::Plane;
     use nacre_math::Point3;
     use std::collections::HashMap;
 
@@ -158,9 +158,6 @@ mod tests {
     #[test]
     fn nonmanifold_vertices_flags_each_pinch_even_count() {
         let mut m = Model::new();
-        let curve = m.curves.push(Curve::Line(
-            Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
-        ));
         let r = nacre_scalar::Rat::from_int;
         let surface = m.push_plane_unregistered(
             Plane::from_point_normal(
@@ -189,10 +186,10 @@ mod tests {
                 let e: Vec<Handle<Edge>> = (0..3)
                     .map(|_| {
                         let other = mk_v(m);
+                        // The detector reads only the maps — a self-pair of the one dummy
+                        // surface is enough (never dereferenced as adjacency here; a raw
+                        // `edges.push` skips the curve cache, which nothing here reads).
                         m.edges.push(Edge {
-                            curve,
-                            // The detector reads only the maps — a self-pair of the one dummy
-                            // surface is enough (never dereferenced as adjacency here).
                             surfaces: [surface, surface],
                             vertices: [apex, other],
                         })
@@ -248,11 +245,8 @@ mod tests {
         let v2 = mk_v(&mut m, [0.0, 1.0, 0.0]);
         let v3 = mk_v(&mut m, [0.0, -1.0, 0.0]);
 
-        // rebuild never dereferences curve/surface handles, so one dummy of each
-        // is enough for every edge/face.
-        let curve = m.curves.push(Curve::Line(
-            Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
-        ));
+        // rebuild never dereferences surface handles, so one dummy is enough for
+        // every edge/face (raw `edges.push` — nothing here reads the curve cache).
         let r = nacre_scalar::Rat::from_int;
         let surface = m.push_plane_unregistered(
             Plane::from_point_normal(
@@ -264,9 +258,8 @@ mod tests {
         );
         let mk_e = |m: &mut Model, a, b| {
             m.edges.push(Edge {
-                curve,
                 // rebuild never dereferences carriers either — the dummy pair mirrors the
-                // dummy curve/surface above.
+                // dummy surface above.
                 surfaces: [surface, surface],
                 vertices: [a, b],
             })

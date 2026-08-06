@@ -11,7 +11,7 @@ use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
 use nacre_cip::predicate::{Evidence, Notes, Site};
 use nacre_cip::{Decision, dir_orient3d_judge};
-use nacre_geom::{Curve, Line, Surface};
+use nacre_geom::Surface;
 use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::{
@@ -675,16 +675,9 @@ pub(crate) fn assemble_fuse_cut(
             [a, b] => Edge::carrier_pair(a, b),
             _ => Edge::carrier_pair(fallback[0], fallback[1]),
         };
-        let pa = model.vertices.get(va).point;
-        let pb = model.vertices.get(vb).point;
-        let line =
-            Line::through_points(pa, pb).ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
-        let curve = model.curves.push(Curve::Line(line));
-        let e = model.edges.push(Edge {
-            curve,
-            surfaces,
-            vertices: [va, vb],
-        });
+        let e = model
+            .push_edge(surfaces, [va, vb])
+            .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
         edge_of.insert(key, e);
         Ok(e)
     };
