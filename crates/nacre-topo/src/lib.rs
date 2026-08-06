@@ -574,6 +574,27 @@ impl Model {
         self.surfaces.len()
     }
 
+    /// The surface an **index** names — how a log's index vocabulary is re-anchored onto the model
+    /// being built (`docs/design.md` §2).
+    ///
+    /// A handle in an operation log carries only its index across models, so `replay` turns that
+    /// index back into a handle of its own arena before applying the operation. `None` past the
+    /// end: existence, not legality.
+    ///
+    /// **This does not open the store.** Reading was already open ([`Model::surface`],
+    /// [`Model::surface_count`]); writing still goes only through [`Model::push_plane`] /
+    /// [`Model::push_cylinder`], which state the truth. The `compile_fail` lock on
+    /// [`Model::surface`] is untouched.
+    ///
+    /// The one legitimate shape is "re-anchor a log's index onto the model I am building" — using
+    /// it to quiet a cross-model panic hides the bug instead of fixing it. Its consumer today is
+    /// `nacre-ops`' `rebind`, for the operations that name a plane.
+    #[inline]
+    #[must_use]
+    pub fn surface_handle_at(&self, index: u32) -> Option<Handle<Surface>> {
+        self.surfaces.handle_at(index)
+    }
+
     /// The motion node a handle names. Same seal as [`Model::surface`]: writing goes through
     /// [`Model::push_motion`] (interned), reading through here.
     #[inline]
@@ -2002,6 +2023,43 @@ mod tests {
     /// The direct evidence that the record is a real name and not a dead entry: a cap that
     /// shares a plane with a box face **interns to the same handle**, which no point-less
     /// surface could ever do.
+    /// `surface_handle_at` gives back the handle the arena already issued, and nothing more.
+    ///
+    /// The pair to this is [`Model::surface`]'s `compile_fail` lock, which still refuses to open
+    /// the store: this adds a *name* for an index round-trip that `iter`-style access could
+    /// already express, not a new power. Past the end is `None`, because the question it answers
+    /// is existence.
+    #[test]
+    fn surface_handle_at_is_the_handle_the_arena_issued() {
+        let mut m = Model::new();
+        for axis in [
+            nacre_scalar::Axis::Z,
+            nacre_scalar::Axis::X,
+            nacre_scalar::Axis::Y,
+        ] {
+            let h = m.world_plane(axis);
+            assert_eq!(
+                m.surface_handle_at(h.index()),
+                Some(h),
+                "a seeded plane's index names it back"
+            );
+        }
+        let n = m.surface_count() as u32;
+        assert_eq!(m.surface_handle_at(n), None, "past the end is None");
+        assert_eq!(m.surface_handle_at(u32::MAX), None);
+
+        // A surface pushed after the seeds is reachable by its own index too.
+        let cuboid = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let s = m
+            .faces
+            .get(m.shells.get(m.solids.get(cuboid).outer).faces[0])
+            .surface;
+        assert_eq!(m.surface_handle_at(s.index()), Some(s));
+    }
+
     #[test]
     fn a_cylinders_caps_record_points_and_intern_with_a_coplanar_face() {
         let mut m = Model::new();
