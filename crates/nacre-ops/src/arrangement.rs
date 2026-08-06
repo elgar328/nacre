@@ -1928,7 +1928,7 @@ fn face_points(model: &Model, fh: Handle<Face>) -> Vec<[f64; 3]> {
     for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
         for he in &lp.half_edges {
             for &vh in model.edges.get(he.edge).vertices.iter() {
-                out.push(model.vertices.get(vh).point.as_array());
+                out.push(model.vertex_point(vh).as_array());
             }
         }
     }

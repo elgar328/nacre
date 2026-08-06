@@ -208,7 +208,7 @@ fn build_vertex(
     if let Some(&v) = vmap.get(&vh) {
         return Ok(v);
     }
-    let v = b.vertex(model.vertices.get(vh).point.as_array())?;
+    let v = b.vertex(model.vertex_point(vh).as_array())?;
     vmap.insert(vh, v);
     Ok(v)
 }

@@ -80,10 +80,7 @@ pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, Prop
     // *full* boundary — outer shell plus every cavity shell — so V is
     // R-independent; keeping R on the outer shell keeps the numbers small.
     let first_face = model.faces.get(outer.faces[0]);
-    let reference = model
-        .vertices
-        .get(he_start(model, first_face.outer.half_edges[0])?)
-        .point;
+    let reference = model.vertex_point(he_start(model, first_face.outer.half_edges[0])?);
 
     let mut volume_flux = 0.0;
     let mut area = 0.0;
@@ -174,10 +171,7 @@ pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, PropsErro
     let solid = model.solids.get(solid);
     let outer = model.shells.get(solid.outer);
     let first_face = model.faces.get(outer.faces[0]);
-    let reference = model
-        .vertices
-        .get(he_start(model, first_face.outer.half_edges[0])?)
-        .point;
+    let reference = model.vertex_point(he_start(model, first_face.outer.half_edges[0])?);
 
     let mut volume = 0.0;
     let mut moment = Vector3::zero();
@@ -221,9 +215,7 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
         for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
             for &he in &lp.half_edges {
                 match edge_curve(model, he) {
-                    Curve::Line(_) => {
-                        grow(model.vertices.get(he_start(model, he)?).point, [0.0; 3])
-                    }
+                    Curve::Line(_) => grow(model.vertex_point(he_start(model, he)?), [0.0; 3]),
                     Curve::Circle(circle) => {
                         let n = circle.normal().as_array();
                         let r = circle.radius();
@@ -348,7 +340,7 @@ fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, PropsError> {
     outer
         .half_edges
         .iter()
-        .map(|&he| Ok(model.vertices.get(he_start(model, he)?).point))
+        .map(|&he| Ok(model.vertex_point(he_start(model, he)?)))
         .collect()
 }
 

@@ -65,7 +65,11 @@ pub fn to_obj(model: &Model) -> Result<String, TessError> {
     .unwrap();
 
     // Vertices in store order → OBJ indices 1..=n (matches each handle's index).
-    let pts: Vec<Point3> = model.vertices.iter().map(|(_, v)| v.point).collect();
+    let pts: Vec<Point3> = model
+        .vertices
+        .iter()
+        .map(|(vh, _)| model.vertex_point(vh))
+        .collect();
     for p in &pts {
         let [x, y, z] = p.as_array();
         writeln!(out, "v {} {} {}", x, y, z).unwrap();
@@ -232,7 +236,7 @@ fn vertex_of(
     if let Some(&h) = vmap.get(&v) {
         return h;
     }
-    let pos = model.vertices.get(v).point;
+    let pos = model.vertex_point(v);
     let h = t.vertices.push(TessVertex {
         pos,
         origin: TessOrigin::OnVertex(v),
@@ -525,7 +529,7 @@ mod tests {
         let t = tessellate(&m, &TessConfig::default()).unwrap();
         for (_, tv) in t.vertices.iter() {
             let expected = match tv.origin {
-                TessOrigin::OnVertex(v) => m.vertices.get(v).point,
+                TessOrigin::OnVertex(v) => m.vertex_point(v),
                 TessOrigin::OnEdge { edge, t: param } => match m.edge_curve(edge) {
                     Curve::Circle(c) => c.point_at(param),
                     Curve::Line(_) => unreachable!("cylinder rims are circles"),

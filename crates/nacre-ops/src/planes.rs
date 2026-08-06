@@ -243,10 +243,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
         .iter()
         .map(|&he| he_start(model, he))
         .collect();
-    let pts: Vec<Point3> = verts
-        .iter()
-        .map(|&vh| model.vertices.get(vh).point)
-        .collect();
+    let pts: Vec<Point3> = verts.iter().map(|&vh| model.vertex_point(vh)).collect();
     let n = pts.len();
     // The turn at one corner does not know which way the ring winds. Every b-rep loop is
     // CCW about its face's outward normal, but at a *reflex* corner the local turn

@@ -757,6 +757,14 @@ impl Model {
     /// `None` for an edge with no endpoints — the standalone full circle of §4,
     /// which is a legitimate form but has no start. Callers pick their own
     /// policy: a solid's loop edge is always bounded, so `nacre-ops` unwraps with
+    /// A vertex's realized coordinate — **the one road to a coordinate from a vertex** (S7).
+    /// Today it delegates to the `point` field; when the field dies the body becomes the
+    /// point-cache read, and no consumer moves again (the `edge_curve` precedent).
+    #[inline]
+    pub fn vertex_point(&self, vh: Handle<Vertex>) -> Point3 {
+        self.vertices.get(vh).point
+    }
+
     /// An edge's curve — **the one road to a curve from an edge** (S8), read from the
     /// index-parallel cache [`Model::push_edge`] fills.
     #[inline]
@@ -832,8 +840,8 @@ impl Model {
         vertices: [Handle<Vertex>; 2],
     ) -> Option<Curve> {
         let endpoints_line = || -> Option<Curve> {
-            let p0 = self.vertices.get(vertices[0]).point;
-            let p1 = self.vertices.get(vertices[1]).point;
+            let p0 = self.vertex_point(vertices[0]);
+            let p1 = self.vertex_point(vertices[1]);
             Some(Curve::Line(Line::through_points(p0, p1)?))
         };
         match (self.surface(surfaces[0]), self.surface(surfaces[1])) {

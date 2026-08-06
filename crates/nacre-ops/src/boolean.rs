@@ -262,7 +262,7 @@ fn comp_key(model: &Model, faces: &[Handle<Face>]) -> Vec<[f64; 3]> {
     let mut pts: Vec<[f64; 3]> = faces
         .iter()
         .flat_map(|&fh| model.faces.get(fh).outer.half_edges.iter().copied())
-        .map(|he| model.vertices.get(he_start(model, he)).point.as_array())
+        .map(|he| model.vertex_point(he_start(model, he)).as_array())
         .collect();
     pts.sort_by(|a, b| a.partial_cmp(b).expect("finite vertex coordinates"));
     pts
@@ -297,7 +297,7 @@ pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
     for &fh in faces {
         for &he in &model.faces.get(fh).outer.half_edges {
             let vh = he_start(model, he);
-            let p = model.vertices.get(vh).point.as_array();
+            let p = model.vertex_point(vh).as_array();
             if p < pstar {
                 pstar = p;
                 vstar = Some(vh);

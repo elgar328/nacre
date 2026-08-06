@@ -501,7 +501,7 @@ fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
 fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     let faces = &m.shells.get(shell).faces;
     let first = m.faces.get(*faces.first()?);
-    let reference = m.vertices.get(loop_start(m, &first.outer)?).point;
+    let reference = m.vertex_point(loop_start(m, &first.outer)?);
 
     let mut flux = 0.0;
     for &fh in faces {
@@ -540,7 +540,7 @@ fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
         .iter()
         .map(|he| {
             let [a, b] = m.edges.get(he.edge).vertices;
-            m.vertices.get(if he.forward { a } else { b }).point
+            m.vertex_point(if he.forward { a } else { b })
         })
         .collect();
     if pts.len() < 3 {
@@ -574,7 +574,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             let curve = m.edge_curve(eh);
             for vh in [a, b] {
                 let vertex = m.vertices.get(vh);
-                let residual = curve.distance(vertex.point);
+                let residual = curve.distance(m.vertex_point(vh));
                 // `.max(EPS_CONSTRUCTED)` is what `.max(tol_of(edge.origin))` always evaluated
                 // to (every producer wrote `Constructed`), spelled as the constant it was after
                 // `Edge.origin` died (S8). It is NOT redundant with the vertex term: a
@@ -609,7 +609,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                     let [a, b] = m.edges.get(he.edge).vertices;
                     let vh = if he.forward { a } else { b };
                     let vertex = m.vertices.get(vh);
-                    let residual = surface.distance(vertex.point);
+                    let residual = surface.distance(m.vertex_point(vh));
                     // ★ Plus what the residual's *own* arithmetic can produce. `tol_of` describes
                     // where the vertex may sit; it says nothing about `Surface::distance`, so a
                     // vertex exactly on the surface can still report a machine-scale residual and
