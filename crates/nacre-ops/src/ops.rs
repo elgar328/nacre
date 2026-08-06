@@ -1479,6 +1479,8 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
         .live_solids
         .iter()
         .map(|&s| (s, model.solids.get(s).outer))
+        // Index-only equality again: a face handle from another model can match here. The
+        // shell lookup that follows is where the cross-store guard fires.
         .find(|&(_, sh)| model.shells.get(sh).faces.contains(&face))
         .ok_or(OpError::FaceNotInLiveSolid)?;
     let f = model.faces.get(face);

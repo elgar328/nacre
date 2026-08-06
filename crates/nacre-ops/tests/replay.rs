@@ -1086,3 +1086,44 @@ fn a_pocket_that_is_not_blind_leaves_the_live_model_alone() {
         "the append-only arena still keeps the declined prism's cells"
     );
 }
+
+/// ★ **The positive control for the repair: re-anchoring did not weaken the door.**
+///
+/// `replay` now launders a log's indices into its own model on purpose. The risk of a laundering
+/// step is that it launders everything — so this checks the case it must *not* touch: a handle
+/// from another model handed straight to `apply` still dies in `Store::get`'s cross-store guard.
+/// `apply`'s model belongs to the caller, so its handles do too, and a re-anchor there would turn
+/// a caller bug into a silently different answer.
+///
+/// Note what this test is really pinning: the guard is not the first thing the handle meets.
+/// `live_solids.contains(&h)` compares by index and answers "yes, live" for the foreigner; the
+/// panic comes one step later, at the first dereference. That asymmetry is deliberate and is
+/// annotated at each `contains` site — `Handle` cannot carry the store in its `Eq` (it has no
+/// `T: Eq` to lean on), and every hashed-handle map in `nacre-topo` depends on that.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "different Store")]
+fn a_foreign_handle_still_dies_at_the_door() {
+    let mut a = Model::new();
+    let OpOutput::Extrude { solid, .. } = apply(&mut a, &extrude_op(0.0, 2.0, 1.0)).expect("a")
+    else {
+        unreachable!()
+    };
+
+    // `b` is built the same way, so `solid`'s *index* is live in `b` too — the handle is wrong
+    // only in the one way that matters, and `contains` cannot see it.
+    let mut b = Model::new();
+    apply(&mut b, &extrude_op(0.0, 2.0, 1.0)).expect("b");
+    assert!(
+        b.live_solids.contains(&solid),
+        "index-only equality: b agrees the foreign handle is live"
+    );
+
+    let _ = apply(
+        &mut b,
+        &Operation::Transform {
+            solid, // minted by `a`
+            isometry: Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]),
+        },
+    );
+}

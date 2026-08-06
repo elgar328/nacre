@@ -20,6 +20,10 @@ pub(crate) fn transform(
     solid: Handle<Solid>,
     isometry: &Isometry,
 ) -> Result<Handle<Solid>, OpError> {
+    // A foreign handle answers "yes" here: `Handle`'s equality is its index, deliberately (it has
+    // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
+    // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
+    // passed straight to `apply` from another model is a caller bug and stays one.
     if !model.live_solids.contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
@@ -48,6 +52,10 @@ pub(crate) fn transform(
 /// A non-live input is rejected rather than resurrected: reusing a superseded handle is a caller
 /// bug, and letting it succeed would hide it.
 pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Solid>, OpError> {
+    // A foreign handle answers "yes" here: `Handle`'s equality is its index, deliberately (it has
+    // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
+    // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
+    // passed straight to `apply` from another model is a caller bug and stays one.
     if !model.live_solids.contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
@@ -120,6 +128,10 @@ pub(crate) fn mirror(
     axis: Axis,
     offset: Rat,
 ) -> Result<Handle<Solid>, OpError> {
+    // A foreign handle answers "yes" here: `Handle`'s equality is its index, deliberately (it has
+    // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
+    // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
+    // passed straight to `apply` from another model is a caller bug and stays one.
     if !model.live_solids.contains(&solid) {
         return Err(OpError::SolidNotLive);
     }

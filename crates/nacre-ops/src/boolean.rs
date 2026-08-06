@@ -45,6 +45,10 @@ pub fn boolean_with_report(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<(Vec<Handle<Solid>>, BoolReport), BoolError> {
+    // A foreign handle answers "yes" here: `Handle`'s equality is its index, deliberately (it has
+    // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
+    // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
+    // passed straight to `apply` from another model is a caller bug and stays one.
     if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
         return Err(BoolError::InputNotLive);
     }
