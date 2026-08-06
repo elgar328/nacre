@@ -869,28 +869,38 @@ impl Model {
             })
         });
 
-        // 12 edges as (start, end) vertex indices: bottom ring, top ring, verticals.
-        const EDGES: [(usize, usize); 12] = [
-            (0, 1),
-            (1, 2),
-            (2, 3),
-            (3, 0),
-            (4, 5),
-            (5, 6),
-            (6, 7),
-            (7, 4),
-            (0, 4),
-            (1, 5),
-            (2, 6),
-            (3, 7),
+        // 12 edges as (start, end) vertex indices plus the two faces each edge runs between
+        // (indices into `faces_def` — its carriers): bottom ring, top ring, verticals.
+        const EDGES: [(usize, usize, [usize; 2]); 12] = [
+            (0, 1, [0, 2]), // Bottom·Front
+            (1, 2, [0, 5]), // Bottom·Right
+            (2, 3, [0, 3]), // Bottom·Back
+            (3, 0, [0, 4]), // Bottom·Left
+            (4, 5, [1, 2]), // Top·Front
+            (5, 6, [1, 5]), // Top·Right
+            (6, 7, [1, 3]), // Top·Back
+            (7, 4, [1, 4]), // Top·Left
+            (0, 4, [2, 4]), // Front·Left
+            (1, 5, [2, 5]), // Front·Right
+            (2, 6, [3, 5]), // Back·Right
+            (3, 7, [3, 4]), // Back·Left
         ];
+        // The carrier columns restate what `faces_def` already says (which loops use which
+        // edge) — keep the two tables from drifting apart.
+        debug_assert!(EDGES.iter().enumerate().all(|(e, &(_, _, fs))| {
+            faces_def
+                .iter()
+                .enumerate()
+                .all(|(f, (_, hes))| hes.iter().any(|&(he, _)| he == e) == fs.contains(&f))
+        }));
         let eh: [Handle<Edge>; 12] = core::array::from_fn(|i| {
-            let (a, b) = EDGES[i];
+            let (a, b, [fa, fb]) = EDGES[i];
             let curve = self.curves.push(Curve::Line(
                 Line::through_points(corners[a], corners[b]).expect("non-degenerate box"),
             ));
             self.edges.push(Edge {
                 curve,
+                surfaces: Edge::carrier_pair(surf[fa].0, surf[fb].0),
                 bounds: Some([vh[a], vh[b]]),
                 origin: Origin::Constructed,
             })
@@ -965,6 +975,42 @@ impl Model {
         let p_bot = c0 + u * radius; // seam point on the bottom rim (angle 0)
         let p_top = c1 + u * radius; // seam point on the top rim
 
+        // ★ **Surfaces before edges** (S8): an edge states its two carriers, so the lateral
+        // cylinder and both cap planes must exist first. Separate arenas — the interleaving
+        // moves no handle; the surfaces' order among themselves (lateral → bottom cap → top
+        // cap) is what matters and it is unchanged (the `add_cuboid` precedent).
+        let lateral_surface = self.push_cylinder(
+            Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
+            None,
+        );
+        // A cap plane's three exact points: the decimal truth of the realized center and two
+        // rim-direction offsets the construction already computed (the `add_cuboid` precedent —
+        // the producer's own f64 is its statement). For an axis whose normalization is exact
+        // (`ẑ`, a Pythagorean triple) these are exact by construction; for an irrational axis
+        // they are the truth of what was *built*, which is all a `Constructed` surface ever
+        // claims. A cap outside the decimal window is a caller bug (the radius/height
+        // precedent above): the truth is not optional any more.
+        let w = d.cross(u);
+        let cap_points = |c: Point3| -> [[nacre_scalar::Rat; 3]; 3] {
+            let lift = |p: Point3| -> [nacre_scalar::Rat; 3] {
+                p.as_array().map(|x| {
+                    nacre_scalar::Rat::from_decimal(x)
+                        .expect("cylinder caps inside the decimal window")
+                })
+            };
+            [lift(c), lift(c + u * radius), lift(c + w * radius)]
+        };
+        let (bottom_cap_surface, _) = self.push_plane(
+            Plane::from_point_normal(c0, -d).expect("nonzero axis"),
+            cap_points(c0),
+            None,
+        );
+        let (top_cap_surface, _) = self.push_plane(
+            Plane::from_point_normal(c1, d).expect("nonzero axis"),
+            cap_points(c1),
+            None,
+        );
+
         let v_bot = self.vertices.push(Vertex {
             point: p_bot,
             origin: Origin::Constructed,
@@ -988,6 +1034,7 @@ impl Model {
             ));
             self.edges.push(Edge {
                 curve,
+                surfaces: Edge::carrier_pair(lateral_surface, bottom_cap_surface),
                 bounds: Some([v_bot, v_bot]),
                 origin: Origin::Constructed,
             })
@@ -998,6 +1045,7 @@ impl Model {
             ));
             self.edges.push(Edge {
                 curve,
+                surfaces: Edge::carrier_pair(lateral_surface, top_cap_surface),
                 bounds: Some([v_top, v_top]),
                 origin: Origin::Constructed,
             })
@@ -1008,6 +1056,9 @@ impl Model {
             ));
             self.edges.push(Edge {
                 curve,
+                // Self-adjacent: a seam is a parameterization joint of ONE surface, not an
+                // intersection of two — the provisional S8 spelling (see `Edge::surfaces`).
+                surfaces: [lateral_surface, lateral_surface],
                 bounds: Some([v_bot, v_top]),
                 origin: Origin::Constructed,
             })
@@ -1015,10 +1066,6 @@ impl Model {
 
         // Lateral cylindrical face: one loop wrapping the seam twice (opposite).
         let lateral = {
-            let surface = self.push_cylinder(
-                Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
-                None,
-            );
             let outer = Loop {
                 half_edges: vec![
                     HalfEdge {
@@ -1040,36 +1087,14 @@ impl Model {
                 ],
             };
             self.faces.push(Face {
-                surface,
+                surface: lateral_surface,
                 outer,
                 inner: vec![],
                 orientation: Orientation::Forward,
             })
         };
-        // A cap plane's three exact points: the decimal truth of the realized center and two
-        // rim-direction offsets the construction already computed (the `add_cuboid` precedent —
-        // the producer's own f64 is its statement). For an axis whose normalization is exact
-        // (`ẑ`, a Pythagorean triple) these are exact by construction; for an irrational axis
-        // they are the truth of what was *built*, which is all a `Constructed` surface ever
-        // claims. A cap outside the decimal window is a caller bug (the radius/height
-        // precedent above): the truth is not optional any more.
-        let w = d.cross(u);
-        let cap_points = |c: Point3| -> [[nacre_scalar::Rat; 3]; 3] {
-            let lift = |p: Point3| -> [nacre_scalar::Rat; 3] {
-                p.as_array().map(|x| {
-                    nacre_scalar::Rat::from_decimal(x)
-                        .expect("cylinder caps inside the decimal window")
-                })
-            };
-            [lift(c), lift(c + u * radius), lift(c + w * radius)]
-        };
         // Bottom cap: outward normal −d, the bottom rim reversed.
         let bottom_cap = {
-            let (surface, _) = self.push_plane(
-                Plane::from_point_normal(c0, -d).expect("nonzero axis"),
-                cap_points(c0),
-                None,
-            );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
                     edge: bottom,
@@ -1077,7 +1102,7 @@ impl Model {
                 }],
             };
             self.faces.push(Face {
-                surface,
+                surface: bottom_cap_surface,
                 outer,
                 inner: vec![],
                 orientation: Orientation::Forward,
@@ -1085,11 +1110,6 @@ impl Model {
         };
         // Top cap: outward normal +d, the top rim forward.
         let top_cap = {
-            let (surface, _) = self.push_plane(
-                Plane::from_point_normal(c1, d).expect("nonzero axis"),
-                cap_points(c1),
-                None,
-            );
             let outer = Loop {
                 half_edges: vec![HalfEdge {
                     edge: top,
@@ -1097,7 +1117,7 @@ impl Model {
                 }],
             };
             self.faces.push(Face {
-                surface,
+                surface: top_cap_surface,
                 outer,
                 inner: vec![],
                 orientation: Orientation::Forward,

@@ -919,8 +919,20 @@ mod tests {
                 } else {
                     Some([vh[a], vh[b]])
                 };
+                // The two faces whose loops use edge `i` — its carriers, read off the same
+                // table the loops are built from.
+                let carriers: Vec<Handle<Surface>> = TETRA_FACES
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (_, hes))| hes.iter().any(|&(e, _)| e == i))
+                    .map(|(fi, _)| sh[fi])
+                    .collect();
+                let [ca, cb] = carriers[..] else {
+                    panic!("a tetra edge is on exactly 2 faces")
+                };
                 m.edges.push(Edge {
                     curve,
+                    surfaces: Edge::carrier_pair(ca, cb),
                     bounds,
                     origin: Origin::Constructed,
                 })

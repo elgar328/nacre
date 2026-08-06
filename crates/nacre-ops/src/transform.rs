@@ -700,6 +700,10 @@ fn transform_solid(
         let e = *model.edges.get(eh);
         let new_e = Edge {
             curve: curve_map[&e.curve],
+            // The carriers move with the surfaces (pass 1 mapped every reachable one, so the
+            // lookups cannot miss). Re-canonicalized: the map need not preserve pairwise index
+            // order.
+            surfaces: Edge::carrier_pair(surf_map[&e.surfaces[0]], surf_map[&e.surfaces[1]]),
             bounds: e.bounds.map(|[a, b]| [vert_map[&a], vert_map[&b]]),
             origin: remap_origin(e.origin, &surf_map),
         };

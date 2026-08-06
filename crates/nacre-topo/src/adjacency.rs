@@ -192,6 +192,9 @@ mod tests {
                         let other = mk_v(m);
                         m.edges.push(Edge {
                             curve,
+                            // The detector reads only the maps — a self-pair of the one dummy
+                            // surface is enough (never dereferenced as adjacency here).
+                            surfaces: [surface, surface],
                             bounds: Some([apex, other]),
                             origin: Origin::Constructed,
                         })
@@ -264,6 +267,9 @@ mod tests {
         let mk_e = |m: &mut Model, a, b| {
             m.edges.push(Edge {
                 curve,
+                // rebuild never dereferences carriers either — the dummy pair mirrors the
+                // dummy curve/surface above.
+                surfaces: [surface, surface],
                 bounds: Some([a, b]),
                 origin: Origin::Constructed,
             })

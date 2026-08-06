@@ -39,6 +39,23 @@ pub struct Vertex {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Edge {
     pub curve: Handle<Curve>,
+    /// **The two surfaces whose faces this edge bounds** — the carriers (S8).
+    ///
+    /// ★ Not derivable from the endpoints' surface triples: where four planes pass through one
+    /// point, the triples' intersection can name a plane the edge does *not* ride — silently
+    /// (the four-plane concurrency trap, `nacre-ops`' `RingEdge`/`Ring.walls` doc). Every
+    /// producer states the pair from the faces it is building, never derives it.
+    ///
+    /// ★ Nor is it "every plane containing the line": where three planes share a LINE (the
+    /// resolved four-plane concurrency), a third plane legitimately contains the edge without
+    /// bounding it here — measured, each side's arrangement named that third plane as its wall.
+    /// The pair is the *adjacency* answer: the two faces that use the edge.
+    ///
+    /// Stored in ascending handle-index order — the pair is a set, not a sequence.
+    /// A cylinder seam is self-adjacent: both entries are the lateral surface (its loop already
+    /// uses the seam edge twice) — a provisional spelling until M6 decides the seam's carrier
+    /// representation together with the cylinder's truth (`docs/truth-and-cache.md` open item 5).
+    pub surfaces: [Handle<Surface>; 2],
     /// Endpoint vertices, or `None` for a truly closed edge (no endpoints).
     ///
     /// A closed **solid**'s circular rim is *not* `None`: it carries a seam
@@ -48,6 +65,18 @@ pub struct Edge {
     /// which is a v1 non-goal (§9), so it is currently unused.
     pub bounds: Option<[Handle<Vertex>; 2]>,
     pub origin: Origin,
+}
+
+impl Edge {
+    /// The carrier pair in its stored (canonical, ascending handle-index) order — the pair is
+    /// a set, and one spelling keeps `==` on edges meaningful.
+    pub fn carrier_pair(a: Handle<Surface>, b: Handle<Surface>) -> [Handle<Surface>; 2] {
+        if b.index() < a.index() {
+            [b, a]
+        } else {
+            [a, b]
+        }
+    }
 }
 
 /// A directed use of a shared [`Edge`] inside a [`Loop`].
@@ -114,14 +143,33 @@ mod tests {
         let curve = m.curves.push(Curve::Line(
             Line::through_points(Point3::origin(), Point3::from_array([1.0, 0.0, 0.0])).unwrap(),
         ));
+        let r = nacre_scalar::Rat::from_int;
+        let sa = m.push_plane_unregistered(
+            nacre_geom::Plane::from_point_normal(
+                Point3::origin(),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .unwrap(),
+            [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
+        );
+        let sb = m.push_plane_unregistered(
+            nacre_geom::Plane::from_point_normal(
+                Point3::origin(),
+                nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+            )
+            .unwrap(),
+            [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(0), r(1)]],
+        );
         let e = m.edges.push(Edge {
             curve,
+            surfaces: Edge::carrier_pair(sa, sb),
             bounds: Some([v0, v1]),
             origin: Origin::Constructed,
         });
 
         let stored = *m.edges.get(e);
         assert_eq!(stored.curve, curve);
+        assert_eq!(stored.surfaces, [sa, sb], "already ascending — kept as-is");
         assert_eq!(stored.bounds, Some([v0, v1]));
         assert_eq!(stored.origin, Origin::Constructed);
 

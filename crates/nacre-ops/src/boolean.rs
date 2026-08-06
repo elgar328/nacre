@@ -630,6 +630,28 @@ pub(crate) fn assemble_fuse_cut(
         }
     }
 
+    // ★ **An edge's carriers are the two faces that use it — read off the whole result, not
+    // guessed from one side.** The obvious per-face answer ("my plane, plus the wall my
+    // arrangement says the edge rides") is wrong exactly where the resolved four-plane
+    // concurrency lives: three planes through one LINE make each face's wall a *third* plane
+    // that legitimately contains the edge but does not bound it here — measured, the two faces
+    // sharing such an edge named two different walls. The faces themselves are the ground
+    // truth, and every ring is already in hand, so one pre-scan reads it.
+    let mut pair_surfs: HashMap<(usize, usize), Vec<Handle<Surface>>> = HashMap::new();
+    for lf in faces {
+        let fsurf = planes[lf.plane_idx].surf;
+        for r in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            let k = r.nodes.len();
+            for t in 0..k {
+                let (va, vb) = (vh[&r.nodes[t]], vh[&r.nodes[(t + 1) % k]]);
+                pair_surfs
+                    .entry(unordered(va.index() as usize, vb.index() as usize))
+                    .or_default()
+                    .push(fsurf);
+            }
+        }
+    }
+
     // Edges keyed by unordered handle-index pair (lookup only).
     let mut edge_of: HashMap<(usize, usize), Handle<Edge>> = HashMap::new();
     // A ring's two consecutive nodes are distinct arrangement vertices, so their points differ and
@@ -639,12 +661,21 @@ pub(crate) fn assemble_fuse_cut(
     // names are still in hand, so this is a backstop with no firing test (cf. `NON_MANIFOLD_EDGE`).
     let mut edge_for = |model: &mut Model,
                         va: Handle<Vertex>,
-                        vb: Handle<Vertex>|
+                        vb: Handle<Vertex>,
+                        fallback: [Handle<Surface>; 2]|
      -> Result<Handle<Edge>, BoolError> {
         let key = unordered(va.index() as usize, vb.index() as usize);
         if let Some(&e) = edge_of.get(&key) {
             return Ok(e);
         }
+        // Manifold edges (everything a green result contains) have exactly two uses. Any other
+        // count is on its way to the existing non-manifold reject — the fallback (this face's
+        // wall + plane) keeps construction deterministic until that reject fires, deciding
+        // nothing new.
+        let surfaces = match pair_surfs[&key][..] {
+            [a, b] => Edge::carrier_pair(a, b),
+            _ => Edge::carrier_pair(fallback[0], fallback[1]),
+        };
         let pa = model.vertices.get(va).point;
         let pb = model.vertices.get(vb).point;
         let line =
@@ -652,6 +683,7 @@ pub(crate) fn assemble_fuse_cut(
         let curve = model.curves.push(Curve::Line(line));
         let e = model.edges.push(Edge {
             curve,
+            surfaces,
             bounds: Some([va, vb]),
             origin: Origin::Constructed,
         });
@@ -661,13 +693,14 @@ pub(crate) fn assemble_fuse_cut(
 
     let mut face_handles = Vec::new();
     for lf in faces {
-        let mut ring = |model: &mut Model, nodes: &[Node]| -> Result<Loop, BoolError> {
-            let handles: Vec<Handle<Vertex>> = nodes.iter().map(|nd| vh[nd]).collect();
+        let face_surf = planes[lf.plane_idx].surf;
+        let mut ring = |model: &mut Model, r: &Ring| -> Result<Loop, BoolError> {
+            let handles: Vec<Handle<Vertex>> = r.nodes.iter().map(|nd| vh[nd]).collect();
             let k = handles.len();
             let mut half_edges: Vec<HalfEdge> = (0..k)
                 .map(|t| {
                     let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                    let e = edge_for(model, va, vb)?;
+                    let e = edge_for(model, va, vb, [planes[r.walls[t]].surf, face_surf])?;
                     let forward = model.edges.get(e).bounds.expect("bounded")[0] == va;
                     Ok(HalfEdge { edge: e, forward })
                 })
