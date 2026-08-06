@@ -257,7 +257,7 @@ fn sample_edge(
     let [v0, v1] = edge
         .bounds
         .expect("M3 tess: bounded edges (a closed rim uses a seam vertex)");
-    match model.curves.get(edge.curve) {
+    match model.edge_curve(eh) {
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Circle(c) => {
             // Full-circle rim (v0 == v1 = seam): point 0 is the seam vertex at
@@ -382,10 +382,7 @@ fn triangulate_cylinder(
     // The two distinct circular rim edges in the loop (seam lines excluded).
     let mut rim_edges: Vec<Handle<Edge>> = Vec::new();
     for he in &face.outer.half_edges {
-        let is_circle = matches!(
-            model.curves.get(model.edges.get(he.edge).curve),
-            Curve::Circle(_)
-        );
+        let is_circle = matches!(model.edge_curve(he.edge), Curve::Circle(_));
         if is_circle && !rim_edges.contains(&he.edge) {
             rim_edges.push(he.edge);
         }
@@ -535,12 +532,10 @@ mod tests {
         for (_, tv) in t.vertices.iter() {
             let expected = match tv.origin {
                 TessOrigin::OnVertex(v) => m.vertices.get(v).point,
-                TessOrigin::OnEdge { edge, t: param } => {
-                    match m.curves.get(m.edges.get(edge).curve) {
-                        Curve::Circle(c) => c.point_at(param),
-                        Curve::Line(_) => unreachable!("cylinder rims are circles"),
-                    }
-                }
+                TessOrigin::OnEdge { edge, t: param } => match m.edge_curve(edge) {
+                    Curve::Circle(c) => c.point_at(param),
+                    Curve::Line(_) => unreachable!("cylinder rims are circles"),
+                },
                 TessOrigin::OnFace { .. } => unreachable!("cylinder uses no interior face samples"),
             };
             assert!((tv.pos - expected).norm() <= 1e-9);

@@ -529,7 +529,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             continue;
         }
         if let Some([a, b]) = edge.bounds {
-            let curve = m.curves.get(edge.curve);
+            let curve = m.edge_curve(eh);
             for vh in [a, b] {
                 let vertex = m.vertices.get(vh);
                 let residual = curve.distance(vertex.point);

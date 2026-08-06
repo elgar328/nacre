@@ -190,7 +190,7 @@ fn build_edge(
     let [v0, v1] = edge.bounds.ok_or(StepError::UnboundedEdge)?;
     // CurveInput::Line derives geometry from the two vertices; a circle carries
     // its own frame. A seam rim has v0 == v1, giving a closed STEP circle.
-    let curve = match model.curves.get(edge.curve) {
+    let curve = match model.edge_curve(eh) {
         Curve::Line(_) => CurveInput::Line,
         Curve::Circle(c) => {
             CurveInput::Circle(frame(c.center(), c.normal(), c.ref_dir()), c.radius())

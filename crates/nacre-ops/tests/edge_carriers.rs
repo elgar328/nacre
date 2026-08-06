@@ -101,7 +101,7 @@ fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
                     let derived = m
                         .derive_edge_curve(e.surfaces, e.bounds.expect("a live edge is bounded"))
                         .expect("a live edge's curve must derive");
-                    match (m.curves.get(e.curve), &derived) {
+                    match (m.edge_curve(he.edge), &derived) {
                         (Curve::Line(stored), Curve::Line(d)) => {
                             st.lines_total += 1;
                             assert_eq!(

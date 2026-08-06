@@ -363,7 +363,7 @@ fn he_start(
 
 /// The `Curve` carried by a half-edge's edge.
 fn edge_curve(model: &Model, he: nacre_topo::HalfEdge) -> &Curve {
-    model.curves.get(model.edges.get(he.edge).curve)
+    model.edge_curve(he.edge)
 }
 
 #[cfg(test)]

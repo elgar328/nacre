@@ -732,6 +732,14 @@ impl Model {
     /// `None` for an edge with no endpoints — the standalone full circle of §4,
     /// which is a legitimate form but has no start. Callers pick their own
     /// policy: a solid's loop edge is always bounded, so `nacre-ops` unwraps with
+    /// An edge's curve — **the one road to a curve from an edge** (S8). Today it delegates to
+    /// the `curves` store; when the store dies the body becomes the edge-cache read, and no
+    /// consumer moves again.
+    #[inline]
+    pub fn edge_curve(&self, e: Handle<Edge>) -> &Curve {
+        self.curves.get(self.edges.get(e).curve)
+    }
+
     /// that invariant while `nacre-props` reports it as unsupported input.
     #[inline]
     pub fn he_start(&self, he: HalfEdge) -> Option<Handle<Vertex>> {
@@ -1393,8 +1401,8 @@ mod tests {
     #[test]
     fn edge_endpoints_lie_on_their_curve() {
         let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
-        for (_, e) in m.edges.iter() {
-            let curve = m.curves.get(e.curve);
+        for (eh, e) in m.edges.iter() {
+            let curve = m.edge_curve(eh);
             let [a, b] = e.bounds.unwrap();
             assert!(curve.contains(m.vertices.get(a).point, 1e-9));
             assert!(curve.contains(m.vertices.get(b).point, 1e-9));
@@ -1448,8 +1456,8 @@ mod tests {
         assert_eq!(pts, vec![[0.0, -2.0, 0.0], [0.0, -2.0, 5.0]]);
         // Two rim circles carry a Circle; the straight seam a Line.
         let mut circles = 0;
-        for (_, e) in m.edges.iter() {
-            if let Curve::Circle(c) = m.curves.get(e.curve) {
+        for (eh, _) in m.edges.iter() {
+            if let Curve::Circle(c) = m.edge_curve(eh) {
                 assert_eq!(c.radius(), 2.0);
                 circles += 1;
             }
@@ -1480,11 +1488,11 @@ mod tests {
         // manifold seam). Every edge is still used exactly twice, opposite.
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
         let mut seam_uses = None;
-        for (eh, e) in m.edges.iter() {
+        for (eh, _) in m.edges.iter() {
             let uses = &m.adj.edge_uses[&eh];
             assert_eq!(uses.len(), 2);
             assert_ne!(uses[0].1, uses[1].1); // opposite orientation
-            if matches!(m.curves.get(e.curve), Curve::Line(_)) {
+            if matches!(m.edge_curve(eh), Curve::Line(_)) {
                 seam_uses = Some(uses.clone());
             }
         }
@@ -1536,8 +1544,8 @@ mod tests {
         fn prop_cuboid_endpoints_on_curves((min, max) in box_strategy()) {
             let m = build(min, max);
             let scale = 1e-6 * (max.iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
-            for (_, e) in m.edges.iter() {
-                let curve = m.curves.get(e.curve);
+            for (eh, e) in m.edges.iter() {
+                let curve = m.edge_curve(eh);
                 let [a, b] = e.bounds.unwrap();
                 prop_assert!(curve.contains(m.vertices.get(a).point, scale));
                 prop_assert!(curve.contains(m.vertices.get(b).point, scale));
