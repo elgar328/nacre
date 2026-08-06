@@ -250,3 +250,335 @@ fn a_log_with_a_datum_replays_and_validates() {
         "a plane nothing sits on is not a violation — the seeds are orphans too"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `Offset` — d away, said inside the plane's own frame
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn offset(frame: nacre_ops::SketchFrame, dist: f64) -> Operation {
+    Operation::DatumPlane {
+        def: DatumDef::Offset { frame, dist },
+    }
+}
+
+/// A box, and the frame of its top cap — a face frame, so `+d` means outward.
+fn box_top_frame(m: &mut Model) -> nacre_ops::SketchFrame {
+    let OpOutput::Extrude { faces, .. } = apply(
+        m,
+        &Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile: square(0.0, 2.0),
+            dist: 1.0,
+        },
+    )
+    .expect("a box") else {
+        unreachable!()
+    };
+    nacre_ops::face_sketch_frame(m, faces[1]).expect("the top cap has a frame")
+}
+
+/// ★★ **An offset of a world-liftable plane is said in the world, so it is the same handle as
+/// every other statement of that plane.**
+///
+/// This is the normalization that keeps "same plane, same handle" true. `push_plane` keys on
+/// `(name, motion)`, so stating `z = 1` under a frame node would file it away from the `z = 1` a
+/// box's cap already occupies — one geometry, two handles, and flush contact (which is decided by
+/// comparing handles) quietly stops recognizing itself.
+#[test]
+fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
+    let mut m = Model::new();
+    let frame = box_top_frame(&mut m); // the cap on z = 1
+    let cap_plane = frame.plane();
+
+    // Down by one: z = 0, which the box's own base cap already occupies (the seeded XY plane).
+    let OpOutput::DatumPlane { plane, .. } = apply(&mut m, &offset(frame, -1.0)).expect("offset")
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        plane,
+        m.world_plane(Axis::Z),
+        "z = 0 is the seeded XY plane, however it was reached"
+    );
+    let SurfaceTruth::Plane { motion, .. } = m.surface_truth(plane) else {
+        unreachable!()
+    };
+    assert_eq!(*motion, None, "a world-liftable offset makes no frame node");
+
+    // Up by one from the cap: a genuinely new plane at z = 2, still stated in the world.
+    let before = m.surface_count();
+    let OpOutput::DatumPlane { plane: up, .. } =
+        apply(&mut m, &offset(frame, 1.0)).expect("offset")
+    else {
+        unreachable!()
+    };
+    assert_eq!(m.surface_count(), before + 1, "z = 2 is new");
+    assert_ne!(up, cap_plane);
+    let SurfaceTruth::Plane { points, motion } = m.surface_truth(up) else {
+        unreachable!()
+    };
+    assert_eq!(*motion, None);
+    let PlanePoints::Known(pts) = points;
+    for p in pts {
+        assert_eq!(p[2].to_f64(), 2.0, "every recorded point is on z = 2");
+    }
+}
+
+/// **Zero is a named reject** — in *both* roads, which is the half that is easy to miss.
+///
+/// On a world-liftable frame a zero offset would simply intern back to its own plane and look
+/// harmless. On a genuinely tilted frame it would not: the base plane is rational in the world, so
+/// the node-omission road does not apply, and the offset would be filed under
+/// `([0,0,1,0], Some(node))` while the plane itself sits at `(name_world, None)` — the same
+/// geometry, two handles. Rejecting zero everywhere is what keeps the two roads honest with each
+/// other.
+#[test]
+fn a_zero_offset_is_rejected_on_both_roads() {
+    let mut m = Model::new();
+    let world = box_top_frame(&mut m);
+    assert!(matches!(
+        apply(&mut m, &offset(world, 0.0)),
+        Err(OpError::ZeroOffset)
+    ));
+
+    let tilted = tilted_face_frame(&mut m);
+    let before = m.surface_count();
+    assert!(matches!(
+        apply(&mut m, &offset(tilted, 0.0)),
+        Err(OpError::ZeroOffset)
+    ));
+    assert_eq!(m.surface_count(), before, "a rejected offset mints nothing");
+}
+
+/// A prism on a tilted plane, and the frame of the face the sketch sat on.
+fn tilted_face_frame(m: &mut Model) -> nacre_ops::SketchFrame {
+    let sp = SketchPlane::from_origin_normal(
+        Point3::from_array([10.0, 10.0, 10.0]),
+        Vector3::from_array([1.0, 1.0, 1.0]),
+    )
+    .expect("a tilted plane");
+    let OpOutput::Extrude { faces, .. } = apply(
+        m,
+        &Operation::Extrude {
+            plane: sp,
+            profile: square(0.0, 2.0),
+            dist: 1.0,
+        },
+    )
+    .expect("a tilted prism") else {
+        unreachable!()
+    };
+    nacre_ops::face_sketch_frame(m, faces[1]).expect("the far cap has a frame")
+}
+
+/// ★★ **On a tilted face the offset is stated in the frame, exactly** — the point of the whole
+/// variant. `p + d·n̂` is irrational in the world because `n̂` carries a square root; `w = d` in the
+/// frame is three written decimals.
+#[test]
+fn a_tilted_offset_is_exact_inside_the_frame() {
+    let mut m = Model::new();
+    let frame = tilted_face_frame(&mut m);
+    let OpOutput::DatumPlane { plane, frame: out } =
+        apply(&mut m, &offset(frame, 0.5)).expect("offset")
+    else {
+        unreachable!()
+    };
+
+    let SurfaceTruth::Plane { points, motion } = m.surface_truth(plane) else {
+        unreachable!()
+    };
+    assert!(
+        motion.is_some(),
+        "a tilted offset is written under a frame node"
+    );
+    let PlanePoints::Known(pts) = points;
+    let half = nacre_scalar::Rat::from_decimal(0.5).unwrap();
+    let (zero, one) = (
+        nacre_scalar::Rat::from_int(0),
+        nacre_scalar::Rat::from_int(1),
+    );
+    assert_eq!(
+        *pts,
+        [[zero, zero, half], [one, zero, half], [zero, one, half]],
+        "the frame coordinates are exactly (0,0,d),(1,0,d),(0,1,d)"
+    );
+
+    // The realized geometry is d away from the base plane, measured against the base's own cache.
+    let nacre_geom::Surface::Plane(base_pl) = m.surface(frame.plane()) else {
+        unreachable!()
+    };
+    let nacre_geom::Surface::Plane(off_pl) = m.surface(plane) else {
+        unreachable!()
+    };
+    let gap = base_pl.distance(off_pl.origin());
+    println!(
+        "stat tilted_offset requested=0.5 realized={gap:.17e} dev={:.3e}",
+        (gap - 0.5).abs()
+    );
+    assert!(
+        (gap - 0.5).abs() < 1e-12,
+        "the offset lands where it was asked: {gap}"
+    );
+
+    // ★ The offset plane's own frame is the base frame slid along ŵ: its coefficients in the base
+    // frame are `[0,0,1,−d]`, and the arbitrary-axis rule's vertical branch (`ŷ × ẑ = x̂`) hands
+    // back the base `û`. Without that, a sketch on an offset plane would find its `(0,0)`
+    // somewhere else entirely.
+    assert_eq!(out.plane(), plane);
+    assert!(matches!(out.placement(), FramePlacement::Canonical));
+}
+
+/// ★★ **Two positive controls for the normalization.**
+///
+/// (i) `flip` is folded into the sign, so the same `d` through frames facing opposite ways names
+/// the two *different* planes either side — proof the fold is load-bearing and not decoration.
+/// (ii) Two different frames of one plane, meaning the same side, name **one** handle — proof the
+/// identity is keyed on `(plane, signed distance)` and not on which frame happened to be held.
+#[test]
+fn an_offsets_identity_is_the_plane_and_the_signed_distance() {
+    let mut m = Model::new();
+    let frame = box_top_frame(&mut m);
+    let plane = frame.plane();
+
+    // (i) opposite sides are different planes.
+    let up = match apply(&mut m, &offset(frame, 1.0)).expect("up") {
+        OpOutput::DatumPlane { plane, .. } => plane,
+        _ => unreachable!(),
+    };
+    let down = match apply(&mut m, &offset(frame, -1.0)).expect("down") {
+        OpOutput::DatumPlane { plane, .. } => plane,
+        _ => unreachable!(),
+    };
+    assert_ne!(up, down, "±d must name the two sides, not one plane");
+
+    // (ii) a differently-placed frame on the same plane, same side, same distance.
+    let named = nacre_ops::SketchFrame::named(
+        &m,
+        plane,
+        Point3::from_array([2.0, 2.0, 1.0]),
+        Vector3::from_array([0.0, 1.0, 0.0]),
+    )
+    .expect("a named frame on the cap");
+    assert_ne!(
+        named.placement(),
+        frame.placement(),
+        "the control is vacuous unless the two frames really differ"
+    );
+    let before = m.surface_count();
+    let again = match apply(&mut m, &offset(named, 1.0)).expect("up again") {
+        OpOutput::DatumPlane { plane, .. } => plane,
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        again, up,
+        "one plane, one handle — an origin and a +u do not move a parallel plane"
+    );
+    assert_eq!(
+        m.surface_count(),
+        before,
+        "and nothing was minted to say it twice"
+    );
+}
+
+/// A log whose offset names a plane by handle replays — and a handle past the end is a named
+/// reject in both profiles, not a panic.
+#[test]
+fn an_offset_log_replays_and_a_stale_handle_is_rejected_by_name() {
+    let mut m = Model::new();
+    let frame = box_top_frame(&mut m);
+    let up = offset(frame, 1.0);
+    apply(&mut m, &up).expect("offset");
+    m.rebuild_adjacency();
+
+    let log = vec![
+        Operation::Extrude {
+            plane: SketchPlane::world_xy(),
+            profile: square(0.0, 2.0),
+            dist: 1.0,
+        },
+        up,
+    ];
+    let replayed = replay(&log).expect("an offset log replays");
+    assert_eq!(replayed.surface_count(), m.surface_count());
+    assert_eq!(replayed.live_solids.to_vec(), m.live_solids.to_vec());
+    assert!(nacre_validate::validate(&replayed).is_empty());
+
+    // The same operation with nothing built before it names a surface that does not exist.
+    let alone = replay(&log[1..]);
+    match alone {
+        Err(OpError::LogHandleOutOfRange { cell, .. }) => {
+            assert_eq!(cell, nacre_ops::LogCell::Surface)
+        }
+        other => panic!(
+            "expected a named reject, got {:?}",
+            other.map(|_| "a model")
+        ),
+    }
+}
+
+/// ★★ **The `flip` fold, proved load-bearing.**
+///
+/// Two boxes stacked on `z = 1` give two faces on **one plane** whose outward normals oppose: the
+/// lower box's top cap and the upper box's base cap. `face_sketch_frame` measures `flip` against
+/// each face's outward, so the two frames name the same `Handle<Surface>` and disagree about which
+/// way `ŵ` runs. The *same* `+d` through them must therefore name the two different planes either
+/// side — which is what "`+dist` runs along the frame's `ŵ`" promises a caller, and what folding
+/// `flip` into the sign is for.
+///
+/// Without the fold both would build in the canonical frame and land on the same plane, and a
+/// caller asking for "0.5 outward" from the underside would get 0.5 the other way. The pairing
+/// with [`an_offsets_identity_is_the_plane_and_the_signed_distance`] is deliberate: that one shows
+/// what must *not* distinguish two frames (origin, `+u`), this one shows what must.
+#[test]
+fn the_flip_fold_decides_which_side_and_it_bites() {
+    let mut m = Model::new();
+    let lower = box_top_frame(&mut m); // outward +z on z = 1
+    let OpOutput::Extrude { faces, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 1.0])),
+            profile: square(0.0, 2.0),
+            dist: 1.0,
+        },
+    )
+    .expect("a box stacked on the first") else {
+        unreachable!()
+    };
+    let upper = nacre_ops::face_sketch_frame(&m, faces[0]).expect("its base cap"); // outward −z
+
+    assert_eq!(
+        lower.plane(),
+        upper.plane(),
+        "the two faces share one plane handle, or the control proves nothing"
+    );
+    assert_ne!(
+        lower.flip(),
+        upper.flip(),
+        "their outward normals oppose, so the measured flips must differ"
+    );
+
+    let side = |f: nacre_ops::SketchFrame, m: &mut Model| match apply(m, &offset(f, 0.5)) {
+        Ok(OpOutput::DatumPlane { plane, .. }) => plane,
+        other => panic!("offset failed: {other:?}"),
+    };
+    let a = side(lower, &mut m);
+    let b = side(upper, &mut m);
+    assert_ne!(
+        a, b,
+        "the same +d through opposed frames must name the two sides — the fold is what does it"
+    );
+
+    // And the geometry says which is which: +d from the +z face is above, from the −z face below.
+    let z_of = |h| {
+        let nacre_geom::Surface::Plane(p) = m.surface(h) else {
+            unreachable!()
+        };
+        p.origin().as_array()[2]
+    };
+    assert!(z_of(a) > 1.0, "outward from the top cap is up: {}", z_of(a));
+    assert!(
+        z_of(b) < 1.0,
+        "outward from the base cap is down: {}",
+        z_of(b)
+    );
+}

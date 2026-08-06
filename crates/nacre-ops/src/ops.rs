@@ -521,6 +521,13 @@ pub enum OpError {
     /// And an index that is merely *wrong* rather than out of range cannot be caught here at
     /// all: it names a real cell, just not the intended one. That is why re-anchoring requires
     /// the self-containment premise rather than replacing it.
+    /// A datum offset of zero. **It is a reject, not a no-op**: the plane it names is one the
+    /// model already holds, but stated in a different coordinate system — and `push_plane` keys on
+    /// `(name, motion)`, so accepting it would hand that plane a *second* handle. Planes are the
+    /// one thing interned at construction precisely so that cannot happen, and flush contact is
+    /// decided by comparing handles. Every nonzero offset of a tilted plane is irrational in the
+    /// world and therefore has no rival statement; zero is the only case that collides.
+    ZeroOffset,
     LogHandleOutOfRange {
         /// Which store the index was meant for.
         cell: LogCell,
@@ -534,6 +541,7 @@ pub enum OpError {
 pub enum LogCell {
     Face,
     Solid,
+    Surface,
 }
 
 /// **How a datum plane is stated** — the variant is the kind of statement, the way
@@ -549,6 +557,27 @@ pub enum DatumDef {
     /// [`OpError::PlaneWithoutExactForm`] when the plane carries no exact statement (a coordinate
     /// outside the decimal window, a zero normal) — the same proposition that error already names.
     Stated(SketchPlane),
+    /// **`dist` away from a plane the model already holds**, stated inside that plane's own frame
+    /// as the rational triple `(0,0,d), (1,0,d), (0,1,d)`.
+    ///
+    /// ★ **This is the exact form of an offset, and the frame is why.** In the world, "d along the
+    /// normal" of a tilted plane is `p + d·n̂` — irrational, because `n̂` carries a square root.
+    /// Inside the frame the same plane is `w = d` and every coordinate is a written decimal; the
+    /// irrationality lives in the frame's realization, which is machinery the kernel already has.
+    /// It is also what `docs/truth-and-cache.md` prescribes instead of floating a sketch origin off
+    /// its plane.
+    ///
+    /// `frame` is taken rather than a bare handle so a caller can say **which side**: `+dist` runs
+    /// along the frame's `ŵ`, which for a face's frame is its outward normal. The plane's
+    /// *identity*, though, depends only on `(plane, signed distance)` — an origin and a `+u` do not
+    /// move a parallel plane — so the operation normalizes to the plane's canonical frame and
+    /// folds `flip` into the sign. Two callers holding different frames of one plane and meaning
+    /// the same side get **one handle**.
+    ///
+    /// Rejects: [`OpError::ZeroOffset`] (`dist == 0` names the plane you already hold),
+    /// [`OpError::DistOutsideDecimalWindow`], [`OpError::PlaneWithoutExactForm`] (the frame cannot
+    /// be realized exactly, or its world form overflows).
+    Offset { frame: SketchFrame, dist: f64 },
 }
 
 /// The handles an operation produced. Not `Copy`: `Extrude` carries a `Vec`.
@@ -757,6 +786,19 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
         Operation::DatumPlane {
             def: DatumDef::Stated(_),
         } => Cow::Borrowed(op),
+        Operation::DatumPlane {
+            def: DatumDef::Offset { frame, dist },
+        } => Cow::Owned(Operation::DatumPlane {
+            def: DatumDef::Offset {
+                frame: frame.rebound(model.surface_handle_at(frame.plane.index()).ok_or(
+                    OpError::LogHandleOutOfRange {
+                        cell: LogCell::Surface,
+                        index: frame.plane.index(),
+                    },
+                )?),
+                dist: *dist,
+            },
+        }),
     })
 }
 
@@ -810,6 +852,94 @@ fn datum_plane(
                 flip: false,
             };
             Ok((plane, frame))
+        }
+        DatumDef::Offset { frame, dist } => {
+            // ★ Zero is the one offset that would duplicate a plane the model already holds; see
+            // `OpError::ZeroOffset`. Checked before the lift so the reject names the real fault.
+            if *dist == 0.0 {
+                return Err(OpError::ZeroOffset);
+            }
+            let d =
+                nacre_scalar::Rat::from_decimal(*dist).ok_or(OpError::DistOutsideDecimalWindow)?;
+            let base = frame.plane;
+
+            // ★★ **Normalize to the plane's canonical frame, folding `flip` into the sign.** A
+            // parallel plane is fixed by `(plane, signed distance)` — a placement's origin and
+            // `+u` do not move it — so building in the caller's frame would give one geometric
+            // plane as many handles as there are frames naming it. The caller's `ŵ` is compared
+            // against the canonical one to recover which side they meant; the dot is between two
+            // realizations of the same unit normal, so it is a full magnitude from zero.
+            let canonical = nacre_topo::FramePlacement::Canonical;
+            let cb = crate::rotated_vertex::frame_world_basis(model, base, &canonical, false)
+                .ok_or(OpError::PlaneWithoutExactForm)?;
+            let sb = crate::rotated_vertex::frame_world_basis(
+                model,
+                base,
+                frame.placement(),
+                frame.flip(),
+            )
+            .ok_or(OpError::PlaneWithoutExactForm)?;
+            let same_side: f64 = (0..3).map(|k| cb.3[k] * sb.3[k]).sum();
+            let d = if same_side < 0.0 {
+                nacre_scalar::Rat::from_int(0)
+                    .checked_sub(d)
+                    .ok_or(OpError::DistOutsideDecimalWindow)?
+            } else {
+                d
+            };
+
+            // ★★ **Say it in the world when the world can hold it** — the same node-omission
+            // normalization S9 froze for frames. A plane stated under a frame node lives at the
+            // key `(name, Some(node))`, so an offset of the world XY plane would *not* intern with
+            // a box's cap on the same plane. Where the canonical basis lifts to exact rational
+            // orthonormal axes, the offset plane is rational in the world and is stated there.
+            // (The gate expression is `exact()`, the same one the extrude road uses — asked here
+            // of the *realized* basis. The existing call site is untouched, so no node population
+            // moves.)
+            let realized = realized_plane(
+                Point3::from_array(cb.0),
+                Vector3::from_array(cb.1),
+                Vector3::from_array(cb.2),
+            );
+            let (points, motion) = match realized.exact() {
+                // ★ An overflowing pullback is a **named reject**, not a quiet switch to the frame
+                // road — that switch is exactly where the duplicate handle would appear.
+                Some(rf) => (
+                    rf.offset_plane_points(d)
+                        .ok_or(OpError::PlaneWithoutExactForm)?,
+                    None,
+                ),
+                None => {
+                    let zero = nacre_scalar::Rat::from_int(0);
+                    let one = nacre_scalar::Rat::from_int(1);
+                    let node = push_frame_node(
+                        model,
+                        SketchFrame {
+                            plane: base,
+                            placement: canonical,
+                            flip: false,
+                        },
+                    );
+                    (
+                        [[zero, zero, d], [one, zero, d], [zero, one, d]],
+                        Some(node),
+                    )
+                }
+            };
+
+            // The cache rides the canonical realization: anchor `o + d·ŵ`, facing `−ŵ` — the same
+            // `−normal` convention `Stated` and every base cap keep.
+            //
+            // ★ **`d` here is the *signed* distance, not the caller's `dist`.** Using the raw one
+            // puts the cache on the far side of the plane its own truth names whenever the
+            // caller's frame is flipped — an incoherent surface, and one that a `flip` positive
+            // control caught rather than any amount of reading.
+            let signed = d.to_f64();
+            let anchor = Point3::from_array(core::array::from_fn(|k| cb.0[k] + signed * cb.3[k]));
+            let w = Vector3::from_array(cb.3);
+            let cache = Plane::from_point_normal(anchor, -w).ok_or(OpError::DegenerateGeometry)?;
+            let (plane, _flipped) = model.push_plane(cache, points, motion);
+            Ok((plane, SketchFrame::canonical(plane)))
         }
     }
 }
@@ -1403,6 +1533,13 @@ impl SketchFrame {
             placement: nacre_topo::FramePlacement::Named { origin, ref_dir },
             flip: false,
         })
+    }
+
+    /// The same frame, with its plane re-anchored onto another model's arena — `replay`'s index
+    /// vocabulary, and nothing else. Crate-private because it is not a claim a caller can make:
+    /// only the code that owns the model being built knows the index means anything there.
+    pub(crate) fn rebound(self, plane: Handle<Surface>) -> SketchFrame {
+        SketchFrame { plane, ..self }
     }
 
     /// The plane this frame sketches on — one handle, shared with every face on that plane.

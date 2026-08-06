@@ -122,6 +122,20 @@ impl RatFrame {
         cross(&self.x, &self.y)
     }
 
+    /// The three points of the parallel plane `w = d`, stated in **this frame's own coordinate
+    /// system** — the exact form of "d away, along the normal".
+    ///
+    /// ★ This is what a datum offset uses when the frame lifts to exact rationals: the plane can
+    /// then be said in the world, so it interns with every other statement of it (`push_plane`
+    /// keys on `(name, motion)`, and a frame node would put it under a different key). `None` on
+    /// `i128` overflow — which the caller must turn into a named reject rather than quietly taking
+    /// the frame-node road, because that road is where the duplicate would appear.
+    pub(crate) fn offset_plane_points(&self, d: Rat) -> Option<[[Rat; 3]; 3]> {
+        let w = self.normal()?;
+        let p0 = add(&self.origin, &scale(&w, d)?)?;
+        Some([p0, add(&p0, &self.x)?, add(&p0, &self.y)?])
+    }
+
     /// The sweep vector for a signed distance along the normal — the second of the two
     /// arithmetic steps a prism is built from.
     pub(crate) fn sweep(&self, dist: f64) -> Option<[Rat; 3]> {
