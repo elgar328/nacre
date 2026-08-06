@@ -23,7 +23,7 @@ pub(crate) fn transform(
     if !model.live_solids.contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
-    if !origins_are_remappable(model, solid) {
+    if !defs_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
     let out = transform_solid(model, solid, &Xform::Rigid(isometry))?;
@@ -51,7 +51,7 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
     if !model.live_solids.contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
-    if !origins_are_remappable(model, solid) {
+    if !defs_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
     let zero = Isometry::translation([Rat::from_int(0); 3]);
@@ -60,15 +60,19 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
     transform_solid(model, solid, &Xform::Rigid(&zero))
 }
 
-/// Whether every `Discovered` definition in `solid` names a surface the walk will remap — that is,
-/// a face surface of this solid. [`remap_origin`] cannot proceed otherwise, and a kernel must
-/// decline rather than abort ("honest-reject > silent-wrong"; `assemble_fuse_cut` takes the same
-/// line at its own naming failure), so the two entry points check first and reject.
+/// Whether every vertex **definition** in `solid` names surfaces the walk will remap — that is,
+/// face surfaces of this solid. The remap cannot proceed otherwise, and a kernel must decline
+/// rather than abort ("honest-reject > silent-wrong"; `assemble_fuse_cut` takes the same line at
+/// its own naming failure), so the three entry points check first and reject.
 ///
-/// The invariant is expected to hold — a boolean's result faces and its `VertexDef::ThreePlane`
-/// both name the *plane class representative* surface — but "expected" is not "proved" for severed
-/// results and post-cleaning face sets, and [`copy`] makes this path routine rather than rare.
-fn origins_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
+/// ★ **Widened from `Discovered`-only to every `Some(definition)` (S7)** — the old gate
+/// inspected `Origin::Discovered` because only that road panicked; with the definition becoming
+/// the vertex's identity, every def must remap. The widening is expected to fire **zero** times
+/// (every producer writes definitions from its own face surfaces — the coverage gate measures
+/// 100%), and the suite staying green is that evidence: a firing here is a new rejection, which
+/// is a failing test. The positive control (`a_foreign_definition_is_rejected`) shows the gate
+/// actually bites.
+fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
     let src = model.solids.get(solid);
     let shells: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
@@ -79,12 +83,10 @@ fn origins_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
             surfs.insert(model.faces.get(fh).surface);
         }
     }
-    let named = |origin: &Origin| match origin {
-        Origin::Discovered { definition, .. } => match definition {
-            VertexDef::ThreePlane(planes) => planes.iter().all(|s| surfs.contains(s)),
-            VertexDef::OnSeam(pair) => pair.iter().all(|s| surfs.contains(s)),
-        },
-        _ => true,
+    let named = |definition: &Option<VertexDef>| match definition {
+        None => true,
+        Some(VertexDef::ThreePlane(planes)) => planes.iter().all(|s| surfs.contains(s)),
+        Some(VertexDef::OnSeam(pair)) => pair.iter().all(|s| surfs.contains(s)),
     };
     for &sh in &shells {
         for &fh in &model.shells.get(sh).faces {
@@ -93,7 +95,7 @@ fn origins_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
                 for he in &lp.half_edges {
                     let edge = model.edges.get(he.edge);
                     for vh in edge.vertices.iter() {
-                        if !named(&model.vertices.get(*vh).origin) {
+                        if !named(&model.vertices.get(*vh).definition) {
                             return false;
                         }
                     }
@@ -122,7 +124,7 @@ pub(crate) fn mirror(
     if !model.live_solids.contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
-    if !origins_are_remappable(model, solid) {
+    if !defs_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
     let out = transform_solid(model, solid, &Xform::mirror(axis, offset))?;
@@ -885,6 +887,71 @@ mod tests {
     /// `SurfaceDef` path read the lateral surface as `Constructed`-without-points, so a rotated
     /// cylinder's move demoted it to `Inexact` — reachable in production, pinned by nothing.
     /// The truth variant has a motion slot of its own, and this is it working.
+    /// ★ S7 C2 positive control: the widened gate **bites** — a walkable solid whose vertex
+    /// definition names a foreign surface is rejected with `OriginNotOnSolid`. The old
+    /// (`Discovered`-only) gate passed this fixture (the vertex is `Constructed`), so this is
+    /// specifically the widening's teeth; without it, "the gate fired zero times across the
+    /// suite" would be indistinguishable from "the gate checks nothing".
+    #[test]
+    fn a_foreign_definition_is_rejected() {
+        let mut m = Model::new();
+        // A plane of this solid's own...
+        let (own, _) = m.push_plane(
+            Plane::from_point_normal(
+                Point3::from_array([0.0, 0.0, 9.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .unwrap(),
+            [
+                [Rat::from_int(0), Rat::from_int(0), Rat::from_int(9)],
+                [Rat::from_int(1), Rat::from_int(0), Rat::from_int(9)],
+                [Rat::from_int(0), Rat::from_int(1), Rat::from_int(9)],
+            ],
+            None,
+        );
+        // ...and a vertex whose definition names the world seeds — surfaces this solid's face
+        // set does not contain.
+        let foreign = VertexDef::ThreePlane([
+            m.world_plane(Axis::Z),
+            m.world_plane(Axis::X),
+            m.world_plane(Axis::Y),
+        ]);
+        let mk_v = |m: &mut Model, x: f64| {
+            m.vertices.push(Vertex {
+                point: Point3::from_array([x, 0.0, 9.0]),
+                origin: Origin::Constructed,
+                definition: Some(foreign),
+            })
+        };
+        let v0 = mk_v(&mut m, 0.0);
+        let v1 = mk_v(&mut m, 1.0);
+        let e = m
+            .push_edge([own, m.world_plane(Axis::Z)], [v0, v1])
+            .unwrap();
+        let f = m.faces.push(Face {
+            surface: own,
+            outer: Loop {
+                half_edges: vec![HalfEdge {
+                    edge: e,
+                    forward: true,
+                }],
+            },
+            inner: vec![],
+            orientation: nacre_topo::Orientation::Forward,
+        });
+        let sh = m.shells.push(Shell { faces: vec![f] });
+        let s = m.push_solid(Solid {
+            outer: sh,
+            cavities: vec![],
+        });
+        let zero = Isometry::translation([Rat::from_int(0); 3]);
+        assert_eq!(
+            transform(&mut m, s, &zero),
+            Err(OpError::OriginNotOnSolid),
+            "a foreign definition must be rejected before the walk"
+        );
+    }
+
     /// ★★ S7: a moved cylinder's seam vertices carry `OnSeam` re-pointed at the **twin's own**
     /// surfaces — the carrier pair moves with the solid, like every other definition.
     #[test]

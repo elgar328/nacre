@@ -765,6 +765,62 @@ pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
     Some(out)
 }
 
+/// **The point where three rational planes meet**, exactly — Cramer over `Rat` with checked
+/// arithmetic (S7). Input rows are `[a, b, c, d]` for `a·x + b·y + c·z + d = 0`.
+///
+/// `None` when the determinant is zero (no unique point — parallel or line-sharing planes) or
+/// when any intermediate overflows `i128` — the kernel's ordinary demotion signal: the caller
+/// keeps the road it was on (for `reuse`, the arrangement fallback — slower, never wrong).
+/// Division at the end is `Ratio`'s checked division, the [`plane_origin_projection`] precedent.
+///
+/// This is what replaces a dissolved sketch-frame base vertex: the frame-shared triple of a
+/// prism corner, solved in the frame the planes are stated in, is the corner's exact base —
+/// measured bit-identical to the stored base-and-replay road (8/8, `docs/dev-log.md`).
+pub fn three_planes_rat(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
+    let zero = Rat::from_int(0);
+    // 3×3 determinant by cofactor expansion, all checked.
+    let det3 = |m: [[Rat; 3]; 3]| -> Option<Rat> {
+        let minor = |r0: usize, r1: usize, c0: usize, c1: usize| -> Option<Rat> {
+            m[r0][c0]
+                .checked_mul(m[r1][c1])?
+                .checked_sub(m[r0][c1].checked_mul(m[r1][c0])?)
+        };
+        m[0][0]
+            .checked_mul(minor(1, 2, 1, 2)?)?
+            .checked_sub(m[0][1].checked_mul(minor(1, 2, 0, 2)?)?)?
+            .checked_add(m[0][2].checked_mul(minor(1, 2, 0, 1)?)?)
+    };
+    let rhs = [
+        zero.checked_sub(p[0][3])?,
+        zero.checked_sub(p[1][3])?,
+        zero.checked_sub(p[2][3])?,
+    ];
+    let d = det3([
+        [p[0][0], p[0][1], p[0][2]],
+        [p[1][0], p[1][1], p[1][2]],
+        [p[2][0], p[2][1], p[2][2]],
+    ])?;
+    if d == zero {
+        return None;
+    }
+    let with_col = |c: usize| -> [[Rat; 3]; 3] {
+        let mut m = [
+            [p[0][0], p[0][1], p[0][2]],
+            [p[1][0], p[1][1], p[1][2]],
+            [p[2][0], p[2][1], p[2][2]],
+        ];
+        for r in 0..3 {
+            m[r][c] = rhs[r];
+        }
+        m
+    };
+    let mut out = [zero; 3];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = Rat(det3(with_col(i))?.0.checked_div(&d.0)?);
+    }
+    Some(out)
+}
+
 /// **A plane pushed `t` along its own unit normal**, exactly — `d′ = d − t·|n|`.
 ///
 /// What a prism's far cap *is*: the face it was raised from, moved out by the sweep. Deriving it
@@ -2663,6 +2719,48 @@ mod tests {
         );
         assert_ne!(su, 0);
         assert_eq!(su, -sd, "opposite sides, opposite signs");
+    }
+
+    /// ★ S7: `three_planes_rat` — the exact corner of three rational planes. Hand-checkable
+    /// fixture, a degenerate (line-sharing) triple, and an i128-overflow decline.
+    #[test]
+    fn three_rational_planes_meet_where_they_should() {
+        let r = Rat::from_int;
+        // x = 2, y = 3, z = 5  (as a·x + d = 0 rows: [1,0,0,-2] etc.)
+        let pt = three_planes_rat([
+            [r(1), r(0), r(0), r(-2)],
+            [r(0), r(1), r(0), r(-3)],
+            [r(0), r(0), r(1), r(-5)],
+        ])
+        .expect("axis planes meet in one point");
+        assert_eq!(pt, [r(2), r(3), r(5)]);
+        // A tilted but exact triple: x+y=1, x−y=0, z=7 ⇒ (1/2, 1/2, 7).
+        let pt = three_planes_rat([
+            [r(1), r(1), r(0), r(-1)],
+            [r(1), r(-1), r(0), r(0)],
+            [r(0), r(0), r(1), r(-7)],
+        ])
+        .expect("a fair triple");
+        assert_eq!(pt, [Rat::new(1, 2).unwrap(), Rat::new(1, 2).unwrap(), r(7)]);
+        // Three planes through one line (z = 0, y = 0, y + z = 0): det = 0 — no unique point.
+        assert_eq!(
+            three_planes_rat([
+                [r(0), r(0), r(1), r(0)],
+                [r(0), r(1), r(0), r(0)],
+                [r(0), r(1), r(1), r(0)],
+            ]),
+            None
+        );
+        // Overflow declines honestly: coefficients near the i128 edge.
+        let big = Rat::from_int(1 << 126);
+        assert_eq!(
+            three_planes_rat([
+                [big, r(1), r(0), r(-1)],
+                [r(1), big, r(0), r(-1)],
+                [r(0), r(0), big, big],
+            ]),
+            None
+        );
     }
 
     /// The core rational-representation property in miniature: exact rational accumulation does not
