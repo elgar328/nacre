@@ -739,6 +739,63 @@ impl Model {
         Some(if he.forward { a } else { b })
     }
 
+    /// **An edge's curve, derived from what the model already holds** — the S8 shape of the
+    /// truth/cache split: the carriers and the endpoints decide the curve, so the stored one
+    /// is a cache that can be discarded and regenerated.
+    ///
+    /// Dispatch by carrier type:
+    /// * **Plane × Plane** (and the self-adjacent cylinder **seam**): the line through the two
+    ///   endpoint coordinates — the very expression every producer used to build the stored
+    ///   curve, so the derivation is bit-identical, and an endpoint pair that coincides is the
+    ///   `None` (a degenerate line — the check lives in this arm only).
+    /// * **Plane × Cylinder** (a rim): the circle centred where the cylinder's axis crosses the
+    ///   cap plane, with the **cylinder's** frame (`axis direction`, `ref_dir`, `radius`) — the
+    ///   same parameters `add_cylinder` builds the stored rims from, so tessellation's `θ`
+    ///   parameterization is preserved. The endpoints are not read: a rim is a closed edge
+    ///   (`[v, v]`), which is not a degeneracy.
+    /// * **Cylinder × Cylinder**: no producer builds one before M6 — `None`, honestly.
+    ///
+    /// ★ The M3 rim population is axis-perpendicular by construction; a *tilted* plane over a
+    /// cylinder would cross in an ellipse, which this arm cannot express (M6). The debug
+    /// assertion keeps that boundary visible.
+    pub fn derive_edge_curve(
+        &self,
+        surfaces: [Handle<Surface>; 2],
+        vertices: [Handle<Vertex>; 2],
+    ) -> Option<Curve> {
+        let endpoints_line = || -> Option<Curve> {
+            let p0 = self.vertices.get(vertices[0]).point;
+            let p1 = self.vertices.get(vertices[1]).point;
+            Some(Curve::Line(Line::through_points(p0, p1)?))
+        };
+        match (self.surface(surfaces[0]), self.surface(surfaces[1])) {
+            (Surface::Plane(_), Surface::Plane(_)) => endpoints_line(),
+            (Surface::Cylinder(_), Surface::Cylinder(_)) if surfaces[0] == surfaces[1] => {
+                endpoints_line() // the seam — a parameterization joint, straight along the axis
+            }
+            (Surface::Plane(p), Surface::Cylinder(c))
+            | (Surface::Cylinder(c), Surface::Plane(p)) => {
+                let axis = c.axis();
+                debug_assert!(
+                    {
+                        let n = p.normal();
+                        let d = axis.direction();
+                        n.cross(d).norm_squared() <= 1e-18 * n.norm_squared()
+                    },
+                    "a tilted plane over a cylinder crosses in an ellipse — M6, no producer yet"
+                );
+                let center = nacre_geom::intersect::line_plane(&axis, p)?;
+                Some(Curve::Circle(Circle::from_center_normal(
+                    center,
+                    axis.direction(),
+                    c.ref_dir(),
+                    c.radius(),
+                )?))
+            }
+            (Surface::Cylinder(_), Surface::Cylinder(_)) => None, // two distinct cylinders: M6
+        }
+    }
+
     /// The handles reachable from the live solids — the live model (design §2).
     ///
     /// Superseded cells left in the append-only arena are excluded (nothing live

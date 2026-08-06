@@ -69,6 +69,213 @@ fn assert_carriers_agree(m: &Model, what: &str) {
     assert!(seen > 0, "{what}: the sweep saw no half-edges at all");
 }
 
+/// S8 커밋-2 잠금: **파생 곡선 == 저장 곡선** — 담체·끝점에서 `derive_edge_curve` 로 다시
+/// 이끌어낸 곡선이, 생산자가 저장한 곡선과 일치한다.
+///
+/// * 직선: **원점 비트 동일** + 방향 상대 편차 ≤ 1e-12. 첫-구성 직선은 방향까지 비트
+///   동일하다(파생이 생산자와 같은 표현식·같은 끝점 순서 — 카운터가 센다). **이동된**
+///   직선은 다르다 — 실측 반박: transform pass 2 는 방향 벡터를 직접 회전하고 파생은
+///   이동된 끝점 차의 재정규화라 마지막 ulp 가 갈린다. 직선 기하는 어디서도 좌표로
+///   관측되지 않으므로(S8 조사) ulp 는 무해하고, 여기서 수치로 못박는다.
+/// * 원: 상대 편차 ≤ 1e-12 (코퍼스-수치 게이트; 최대 편차를 찍는다 — 관문 규칙).
+struct DeriveStats {
+    max_circle_dev: f64,
+    max_line_dir_dev: f64,
+    lines_bit_identical: usize,
+    lines_total: usize,
+}
+
+fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
+    use nacre_geom::Curve;
+    let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(b.abs()).max(1.0);
+    let mut seen = std::collections::HashSet::new();
+    for &s in &m.live_solids {
+        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
+            let f = m.faces.get(fh);
+            for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                for he in &lp.half_edges {
+                    if !seen.insert(he.edge) {
+                        continue;
+                    }
+                    let e = m.edges.get(he.edge);
+                    let derived = m
+                        .derive_edge_curve(e.surfaces, e.bounds.expect("a live edge is bounded"))
+                        .expect("a live edge's curve must derive");
+                    match (m.curves.get(e.curve), &derived) {
+                        (Curve::Line(stored), Curve::Line(d)) => {
+                            st.lines_total += 1;
+                            assert_eq!(
+                                stored.origin(),
+                                d.origin(),
+                                "{what}: a derived line's origin differs from the stored one"
+                            );
+                            let mut dev = 0.0f64;
+                            for k in 0..3 {
+                                dev = dev.max(rel(
+                                    stored.direction().as_array()[k],
+                                    d.direction().as_array()[k],
+                                ));
+                            }
+                            assert!(
+                                dev <= 1e-12,
+                                "{what}: a derived line's direction deviates {dev:e}"
+                            );
+                            st.max_line_dir_dev = st.max_line_dir_dev.max(dev);
+                            if dev == 0.0 {
+                                st.lines_bit_identical += 1;
+                            }
+                        }
+                        (Curve::Circle(stored), Curve::Circle(d)) => {
+                            let mut dev: f64 = rel(stored.radius(), d.radius());
+                            for k in 0..3 {
+                                dev = dev
+                                    .max(rel(
+                                        stored.center().as_array()[k],
+                                        d.center().as_array()[k],
+                                    ))
+                                    .max(rel(
+                                        stored.normal().as_array()[k],
+                                        d.normal().as_array()[k],
+                                    ))
+                                    .max(rel(
+                                        stored.ref_dir().as_array()[k],
+                                        d.ref_dir().as_array()[k],
+                                    ));
+                            }
+                            assert!(
+                                dev <= 1e-12,
+                                "{what}: a derived circle deviates {dev:e} from the stored one"
+                            );
+                            st.max_circle_dev = st.max_circle_dev.max(dev);
+                        }
+                        (stored, d) => {
+                            panic!("{what}: curve kind changed: {stored:?} vs {d:?}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(st.lines_total > 0, "{what}: the sweep derived no lines");
+}
+
+#[test]
+fn derived_curves_match_stored() {
+    let mut st = DeriveStats {
+        max_circle_dev: 0.0,
+        max_line_dir_dev: 0.0,
+        lines_bit_identical: 0,
+        lines_total: 0,
+    };
+
+    // ① Construction, including a tilted (irrational-normalization) cylinder axis.
+    let mut m = Model::new();
+    m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([4.0, 4.0, 1.0]),
+    );
+    m.add_cylinder(
+        Point3::from_array([10.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.5,
+        2.0,
+    );
+    let tilted_cyl = m.add_cylinder(
+        Point3::from_array([20.0, 1.0, 0.5]),
+        Vector3::from_array([0.3, -0.4, 1.0]),
+        0.7,
+        3.0,
+    );
+    m.rebuild_adjacency();
+    assert_derived_matches_stored(&m, "construction", &mut st);
+
+    // ② A tilted extrude and a boolean (Discovered edges).
+    let tilted = SketchPlane::from_origin_normal(
+        Point3::from_array([0.25, -0.5, 1.5]),
+        Vector3::from_array([0.3141592653589793, -0.2718281828459045, 1.0]),
+    )
+    .unwrap();
+    let prism = {
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: tilted,
+                profile: square(0.5, 2.5),
+                dist: 1.1,
+            },
+        )
+        .expect("tilted extrude") else {
+            unreachable!()
+        };
+        solid
+    };
+    let cutter = {
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                plane: SketchPlane::world_xy(),
+                profile: square(1.0, 2.0),
+                dist: 4.0,
+            },
+        )
+        .expect("cutter") else {
+            unreachable!()
+        };
+        solid
+    };
+    apply(
+        &mut m,
+        &Operation::Boolean {
+            kind: BoolKind::Cut,
+            a: prism,
+            b: cutter,
+        },
+    )
+    .expect("cut");
+    m.rebuild_adjacency();
+    assert_derived_matches_stored(&m, "extrude+cut", &mut st);
+
+    // ③ ★ Moved cylinders — the one commit where pass 2 (`transform_curve`) still exists, so
+    //    «derive from moved caches» vs «pass 2's directly-transformed circle» can be compared.
+    //    (A mirrored cylinder has no population: `MirrorNotPlanar` rejects it.)
+    let moved = {
+        let OpOutput::Transform { solid } = apply(
+            &mut m,
+            &Operation::Transform {
+                solid: tilted_cyl,
+                isometry: Isometry::translation([
+                    Rat::from_decimal(1.25).unwrap(),
+                    Rat::from_decimal(-0.5).unwrap(),
+                    Rat::from_decimal(2.0).unwrap(),
+                ]),
+            },
+        )
+        .expect("translate cylinder") else {
+            unreachable!()
+        };
+        solid
+    };
+    apply(
+        &mut m,
+        &Operation::Transform {
+            solid: moved,
+            isometry: Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+            }),
+        },
+    )
+    .expect("rotate cylinder");
+    m.rebuild_adjacency();
+    assert_derived_matches_stored(&m, "moved cylinders", &mut st);
+
+    println!(
+        "stat derived_curves lines {}/{} bit-identical, max line-dir dev {:e}, max circle dev {:e}",
+        st.lines_bit_identical, st.lines_total, st.max_line_dir_dev, st.max_circle_dev
+    );
+}
+
 #[test]
 fn edge_carriers_agree_with_adjacency() {
     // ① Plain construction: cuboid + cylinder.

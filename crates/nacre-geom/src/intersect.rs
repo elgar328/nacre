@@ -53,6 +53,24 @@ pub fn plane_plane(a: &Plane, b: &Plane) -> Option<Line> {
     Line::from_point_direction(base, d)
 }
 
+/// The point where a line crosses a plane — `p = l(t)` with
+/// `t = n·(o_p − o_l) / (n·d)`. `None` when `n·d` is exactly zero (the line runs in or
+/// parallel to the plane — no unique crossing).
+///
+/// ★ The parallel test is **exact**, not toleranced: the production caller (S8's rim-circle
+/// derivation, cylinder axis × cap plane) is perpendicular by construction, so `n·d ≈ ±|n|` is
+/// far from zero; a near-parallel pair would give a far-away but well-defined crossing, which
+/// is the honest answer to the question asked.
+pub fn line_plane(l: &Line, p: &Plane) -> Option<Point3> {
+    let n = p.normal();
+    let denom = n.dot(l.direction());
+    if denom == 0.0 {
+        return None;
+    }
+    let t = n.dot(p.origin() - l.origin()) / denom;
+    Some(l.point_at(t))
+}
+
 /// `|det|` below which three unit normals are too close to a common plane to
 /// yield a usable vertex coordinate. `det = n1·(n2×n3) ∈ [−1, 1]` for unit
 /// normals, so this is scale-free; and since the coordinate error is roughly
