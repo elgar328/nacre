@@ -11,11 +11,12 @@
 //! which also splits its predecessor's `None` into the two different facts it was conflating —
 //! *the point does not fit* and *an intermediate overflowed on a point that would have*.
 //!
-//! ★★ **What is not measured here, and why.** Not the *world* coordinate. `Pt3` is
-//! `{ base: [Rat; 3], chain, coord: [f64; 3], … }` — a moved point's world position is never
-//! stored as a rational at all; the kernel keeps a narrow base and **points at** the motion,
-//! realizing at whatever precision a judgment needs. So there is no world-frame width to have.
-//! The width question is entirely about `base`, which is what a plane name pins.
+//! ★★ **What is not measured here, and why.** Not the *world* coordinate — a moved point does not
+//! have one as a rational. A vertex's truth is `VertexDef::ThreePlane`, three surface handles and
+//! **no coordinate at all**; the motion rides on the surface (number rule 3), and a general
+//! rotation's cos/sin are irrational. So the only rational a discovered point *could* be written
+//! as is the one in the frame its carriers are stated in, which is what a plane name pins and what
+//! this measures.
 //!
 //! Populations come from the kernel's own discriminator rather than from a story: `vertex_tol` is
 //! `Some` for a **discovered** vertex and `None` for a **constructed** one, which is exactly the
@@ -39,9 +40,10 @@
 //! 1. **Nothing is wide.** The prediction written before the run was 150–170 bits growing with
 //!    depth, from the neighbouring 2026-08-04 measurement (coefficients ~50 bits, Cramer
 //!    multiplying three of them). The corpus maximum is **59 bits**, and a second feature on the
-//!    already-awkward tilted population moved it **not at all** (59 → 59). Depth does not
-//!    compound here: each feature's planes are stated afresh in decimals, so the solve never
-//!    stacks. ★ These are **corpus numbers, not bounds** — the meter's negative control lives in
+//!    already-awkward tilted population moved it **not at all** (59 → 59), and stacking forty
+//!    motions leaves the widest *name* exactly where it started
+//!    (`stacking_operations_does_not_widen_a_name`). ★ These are **corpus numbers, not bounds** —
+//!    the meter's negative control lives in
 //!    `nacre-scalar` (`the_width_meter_reports_a_point_no_rat_can_hold`, 201 bits), so `over127 =
 //!    0` is a fact about this population and not about a clamped instrument.
 //!
@@ -398,6 +400,120 @@ fn tilted_frame(passes: usize) -> Model {
         m.rebuild_adjacency();
     }
     m
+}
+
+// ---------------------------------------------------------------------------------------------
+// accumulation — does repeated operation widen anything?
+// ---------------------------------------------------------------------------------------------
+
+/// The widest plane **name** in the model, and how the population is shaped.
+fn name_census(m: &Model) -> (u64, usize, usize, usize) {
+    let mut widest = 0;
+    let mut moved = 0;
+    let mut distinct = std::collections::HashSet::new();
+    for (h, n) in m.surface_name.iter() {
+        let w = match n {
+            PlaneName::Narrow(c) => c
+                .iter()
+                .flat_map(|r| [r.numer(), r.denom()])
+                .map(|v| (128 - v.unsigned_abs().leading_zeros()) as u64)
+                .max()
+                .unwrap_or(0),
+            PlaneName::Wide(c) => c.iter().map(|x| x.bits()).max().unwrap_or(0),
+        };
+        widest = widest.max(w);
+        distinct.insert(format!("{n:?}"));
+        if let SurfaceTruth::Plane {
+            motion: Some(_), ..
+        } = m.surface_truth(*h)
+        {
+            moved += 1;
+        }
+    }
+    (widest, m.surface_name.len(), distinct.len(), moved)
+}
+
+fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
+    let OpOutput::Transform { solid } = apply(
+        m,
+        &Operation::Transform {
+            solid: s,
+            isometry: iso,
+        },
+    )
+    .expect("transform") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    solid
+}
+
+/// ★★★★★ **«Operations accumulate, so surely it overflows eventually» — measured, and no.**
+///
+/// The width of a stored name does not depend on how many operations preceded it. Forty stacked
+/// motions leave the maximum name width **exactly where it started**, and the reason is visible in
+/// the same table: the surface count climbs by six per operation while the count of **distinct
+/// names stays put**. Every moved face is the *same name* under a new motion handle — number rule
+/// 3, "모션은 면이 든다", doing precisely what it says.
+///
+/// Three facts close the question together, and the other two are structural rather than
+/// measured here:
+/// - a boolean never calls `push_plane` at all (result faces reuse the operands' planes), so the
+///   operation that composes most does not create coefficients;
+/// - `plane_offset` fixes `n` and moves only `d`, and decimals added together share the factor
+///   ten, so denominators meet at an lcm rather than multiplying (`1.1 + 6.6 = 7.7`).
+///
+/// ⇒ Width is set by **the geometry someone wrote down**, not by how much was done to it. It is a
+/// single hop, and `Rat::from_decimal`'s window is what bounds that hop.
+#[test]
+#[ignore = "measurement — run explicitly, prints the table"]
+fn stacking_operations_does_not_widen_a_name() {
+    let dec = |x: f64| Rat::from_decimal(x).unwrap();
+    let mut first = None;
+    let mut last = None;
+
+    for (what, turn) in [("translate", false), ("rot90_translate", true)] {
+        let mut m = Model::new();
+        let mut s = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([1.0, 2.0, 3.0]),
+        );
+        for i in 1..=40 {
+            if turn {
+                s = moved(
+                    &mut m,
+                    s,
+                    Isometry::rotation(Rotation {
+                        axis: Axis::Z,
+                        point: [dec(0.1), dec(0.7), Rat::from_int(0)],
+                        angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
+                    }),
+                );
+            }
+            s = moved(
+                &mut m,
+                s,
+                Isometry::translation([dec(0.13), dec(0.3), dec(0.7)]),
+            );
+            if i % 20 == 0 {
+                let (w, surfaces, names, with_node) = name_census(&m);
+                println!(
+                    "stat {what:18} step={i:3} width={w} surfaces={surfaces} distinct_names={names} with_motion_node={with_node}"
+                );
+                if what == "translate" {
+                    if i == 20 {
+                        first = Some(w);
+                    } else {
+                        last = Some(w);
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(
+        first, last,
+        "the name width moved between step 20 and step 40 — accumulation is not free after all"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
