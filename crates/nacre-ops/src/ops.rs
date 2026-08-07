@@ -954,6 +954,89 @@ fn datum_plane(
     }
 }
 
+/// **The frame's basis in exact rationals, when it has one** — the gate that decides whether a
+/// sketch is written in world coordinates or inside a motion node.
+///
+/// Only a frame on a plane with **no motion of its own** can be rational in the world: a moved
+/// plane's axes carry the motion's irrational part, which is precisely why that road exists. So a
+/// chain of one narrow frame node is the whole population, and anything longer (or wide) declines.
+///
+/// ★ Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
+// ★ **Dead until the next commit, deliberately.** The vocabulary swap moves 112 call sites at
+// once, so the road they will take is built and measured first — `frame_differential` exercises
+// it, but a `#[cfg(test)]` caller does not count for the lib build. The allow goes away with the
+// commit that gives it a real caller.
+#[allow(dead_code)]
+fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::exact::RatFrame> {
+    let chain =
+        crate::rotated_vertex::frame_chain(model, frame.plane(), frame.placement(), frame.flip())?;
+    match chain.as_slice() {
+        [nacre_cip::MoveNode::Frame { frame: pf }] => crate::exact::RatFrame::of_plane_frame(pf),
+        _ => None,
+    }
+}
+
+/// **Extrude a profile on a frame the model already holds** — the handle vocabulary of
+/// [`Operation::Extrude`], and the same three steps `extrude_and_boolean` takes for a pad.
+///
+/// The base cap **is** the frame's plane, so it is handed to [`build_prism`] as a surface rather
+/// than as points: the flush contact then reads as one shared handle, which is what the boolean
+/// recognizes. Nothing new is pushed for it.
+///
+/// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, measured by whoever built
+/// the frame (a datum against the caller's stated normal, a face against its outward). That is why
+/// this can take a frame where the operation used to take a plane and sweep the same way.
+#[allow(dead_code)]
+pub(crate) fn extrude_on_frame(
+    model: &mut Model,
+    frame: &SketchFrame,
+    profile: &Profile2d,
+    dist: f64,
+) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
+    if dist <= 0.0 {
+        return Err(OpError::NonPositiveDistance);
+    }
+    if nacre_scalar::Rat::from_decimal(dist).is_none() {
+        return Err(OpError::DistOutsideDecimalWindow);
+    }
+    profile.check()?;
+    // ★ A `SketchFrame` may name any surface — `SketchFrame::canonical` makes no claim and checks
+    // nothing — so a cylinder can reach here, which a `SketchPlane` never could. Reject it by name
+    // rather than letting the frame derivation fail later for a reason that reads as something
+    // else ("no exact form" when the truth is "not a plane").
+    match model.surface(frame.plane()) {
+        Surface::Plane(_) => {}
+        Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
+    }
+    let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(
+        model,
+        frame.plane(),
+        frame.placement(),
+        frame.flip(),
+    )
+    .ok_or(OpError::PlaneWithoutExactForm)?;
+
+    // World road when the frame's basis is rational, frame-node road otherwise — the same
+    // question `SketchPlane::exact` asks a caller's axes, asked of the frame in `Rat`.
+    let (rat, node) = match exact_frame(model, frame) {
+        Some(f) => (f, None),
+        None => (
+            crate::exact::RatFrame::identity(),
+            Some(push_frame_node(model, *frame)),
+        ),
+    };
+    let (outer, holes) = crate::exact::prism_rings_in(model, rat, profile, dist, node)
+        .ok_or(OpError::PlaneWithoutExactForm)?;
+    build_prism(
+        model,
+        outer,
+        holes,
+        Vector3::from_array(w),
+        Some(frame.plane()),
+        None,
+    )
+}
+
 /// Build a prism: the profile forms the base and (translated by `normal·dist`)
 /// the top; each profile edge grows a side quad. Winding generalizes the M1
 /// cuboid — base loop reversed (normal −N, outward), top forward (+N), side
@@ -2150,8 +2233,24 @@ mod frame_road {
             unreachable!()
         };
         let by_value = sp.exact();
-        let by_frame = realized(model, &frame).and_then(|p| p.exact());
+        // ★ The repaired road: ask in `Rat`, never realize.
+        let by_frame = exact_frame(model, &frame);
         (by_value, by_frame)
+    }
+
+    /// The road as it was before the repair — realize the axes, then lift them back. Kept so the
+    /// repair is visibly a different *question* rather than a refactor of the same one.
+    fn both_realized(model: &mut Model, sp: SketchPlane) -> (Option<RatFrame>, Option<RatFrame>) {
+        let OpOutput::DatumPlane { frame, .. } = apply(
+            model,
+            &Operation::DatumPlane {
+                def: DatumDef::Stated(sp),
+            },
+        )
+        .expect("every fixture here states a plane the kernel can hold") else {
+            unreachable!()
+        };
+        (sp.exact(), realized(model, &frame).and_then(|p| p.exact()))
     }
 
     fn population() -> Vec<(&'static str, SketchPlane)> {
@@ -2213,28 +2312,25 @@ mod frame_road {
         ]
     }
 
-    /// ★★★ **They do not, and the cause is the realization — not the exact machinery, and not
-    /// the origin.** Asserted as today's fact so the repair has something to flip (the shape R's
-    /// first commit used).
+    /// ★★ **They agree — once the question is asked in rationals.**
     ///
-    /// An axis survives the frame road **only when it needs no normalizing**
-    /// ([`probe_which_frames_lose_their_axis`] measures the four cases). `reduce_direction` turns
-    /// a `(0.6, 0.8, 0)` axis into the primitive `(3, 4, 0)` with `uu = 25`, and the realization
-    /// multiplies by a **numerically** computed `1/5`, which rounds: `0.6000000000000001`.
-    /// `Rat::from_decimal` then lifts *that*, orthonormality fails, and the plane would silently
-    /// take the frame-node road — a different arena, not an ulp.
+    /// Before the repair two families diverged (`rational_tilt_wf`, `rational_tilt_345`): an axis
+    /// survived the frame road only when it needed no normalizing, because `reduce_direction`
+    /// turns a `(0.6, 0.8, 0)` axis into the primitive `(3, 4, 0)` with `uu = 25` and a
+    /// *realization* multiplies by a numerically computed `1/5`, landing on `0.6000000000000001`.
+    /// `Rat::from_decimal` lifted that, orthonormality failed, and a perfectly rational plane
+    /// took the frame-node road — a different arena, not an ulp.
     ///
     /// ★ Two hypotheses died on the way, and both were mine. **Origin cancellation** (`1.6 − 1.0`)
-    /// is not the cause: a unit axis at `(1, 2, 3)` survives. And the planning argument
-    /// "`|u_raw|² = 1`, so `inv_sqrt_exact` returns exactly one" was true only for axes that are
-    /// *already* unit; I generalized it to every rational axis.
+    /// is not the cause: a unit axis at `(1, 2, 3)` survives, which
+    /// [`a_realized_axis_survives_only_when_it_needs_no_normalizing`] pins. And the planning
+    /// argument "`|u_raw|² = 1`, so `inv_sqrt_exact` returns exactly one" held only for axes that
+    /// are *already* unit; I generalized it to every rational axis and predicted agreement.
     ///
-    /// ★★ The repair is the one `nacre_scalar::plane_frame_named` already states for `v̂`: ask in
-    /// rationals rather than realizing. `PlaneFrame` carries the exact form (`origin`, `u_raw`,
-    /// `uu`, `n`, `nn`, `v`), and `inv_sqrt_exact` is precisely "does this land on a rational".
+    /// [`RatFrame::of_plane_frame`] asks in `Rat` and never realizes — the same rule
+    /// `plane_frame_named` already states for `v̂`, one level up.
     #[test]
-    fn the_frame_road_loses_an_axis_it_has_to_normalize() {
-        let mut diverged = Vec::new();
+    fn the_two_roads_take_the_same_road() {
         for (name, sp) in population() {
             let mut m = Model::new();
             let (by_value, by_frame) = both(&mut m, sp);
@@ -2243,28 +2339,46 @@ mod frame_road {
                 by_value.is_some(),
                 by_frame.is_some()
             );
-            if by_value.is_some() != by_frame.is_some() {
-                diverged.push(name);
+            assert_eq!(
+                by_value.is_some(),
+                by_frame.is_some(),
+                "{name}: the two roads disagree about whether the axes are rational. That is not \
+                 an ulp — it moves the plane between the world road and the frame-node road, and \
+                 the arena differs by whole motion nodes."
+            );
+        }
+    }
+
+    /// ★★ **The road the repair replaced, kept as a positive control.**
+    ///
+    /// Realizing the axes and lifting them back still loses exactly the two families whose axes
+    /// need normalizing. Without this the repair would read as a refactor of one question; with
+    /// it, the two routes are visibly different questions and the fix is visibly load-bearing.
+    #[test]
+    fn realizing_the_axes_first_still_loses_them() {
+        let mut lost = Vec::new();
+        for (name, sp) in population() {
+            let mut m = Model::new();
+            let (by_value, by_realized) = both_realized(&mut m, sp);
+            if by_value.is_some() != by_realized.is_some() {
+                lost.push(name);
             }
         }
         assert_eq!(
-            diverged,
+            lost,
             vec!["rational_tilt_wf", "rational_tilt_345"],
-            "the divergence moved: if it shrank the repair landed and this witness should be \
-             flipped; if it grew, a new family started losing its axes"
+            "the realized route is what the repair stopped using; if this list changed, the \
+             measurement the repair was built on moved with it"
         );
     }
 
-    /// The mechanism, isolated — so a repair can be checked against the cause and not the symptom.
-    /// The axis survives exactly when the frame's origin is the world origin, i.e. when the
-    /// subtraction has nothing to cancel.
-    /// **The mechanism, isolated** — so a repair is checked against the cause, not the symptom.
+    /// **The mechanism, isolated** — so the repair is checked against the cause, not the symptom.
     ///
-    /// The axis survives exactly when its reduced form is already unit. Moving the frame's origin
-    /// changes nothing, which is what rules out the "differencing two realized points cancels the
-    /// origin" explanation.
+    /// On the realized route an axis survives exactly when its reduced form is already unit;
+    /// moving the frame's origin changes nothing, which is what ruled out the "differencing two
+    /// realized points cancels the origin" explanation. Asked in `Rat`, all four are rational.
     #[test]
-    fn an_axis_survives_only_when_it_needs_no_normalizing() {
+    fn a_realized_axis_survives_only_when_it_needs_no_normalizing() {
         let p3 = Point3::from_array;
         let v3 = Vector3::from_array;
         for (name, origin, u) in [
@@ -2280,17 +2394,23 @@ mod frame_road {
             let mut m = Model::new();
             let sp = SketchPlane::from_axes(origin, u, v3([0.0, 0.0, 1.0]));
             assert!(sp.exact().is_some(), "{name}: caller axes lift");
-            let (_, by_frame) = both(&mut m, sp);
+            let (_, by_realized) = both_realized(&mut m, sp);
+            let (_, by_rat) = both(&mut m, sp);
             let unit_axis = u.as_array().iter().filter(|c| **c != 0.0).count() == 1;
             println!(
-                "stat frame_axis_loss {name} survives={}",
-                by_frame.is_some()
+                "stat frame_axis_loss {name} realized={} rational={}",
+                by_realized.is_some(),
+                by_rat.is_some()
+            );
+            assert!(
+                by_rat.is_some(),
+                "{name}: asked in Rat, every one of these frames is rational"
             );
             assert_eq!(
-                by_frame.is_some(),
+                by_realized.is_some(),
                 unit_axis,
-                "{name}: the frame road keeps an axis it does not have to normalize, and loses \
-                 one it does — whatever the origin is"
+                "{name}: the realized route keeps an axis it does not have to normalize and \
+                 loses one it does — whatever the origin is"
             );
         }
     }
@@ -2357,5 +2477,285 @@ mod frame_road {
                 );
             }
         }
+    }
+}
+
+/// **The handle road and the value road build the same prism.**
+///
+/// [`Operation::Extrude`] still carries a [`SketchPlane`]; [`extrude_on_frame`] is the road it is
+/// about to take, and nothing calls it yet. Before the call sites move, this asks the only
+/// question that matters: given the *same* plane said two ways, do the two roads leave the same
+/// arena behind?
+///
+/// ★ The first assertion is **which road was taken**, not whether the models match. A frame whose
+/// basis is not rational is written inside a motion node with its points in frame coordinates — a
+/// different but still valid model, and an equality check would report that without naming it.
+/// [`frame_road`] measured that this used to happen for rational-tilt planes; here it must not
+/// happen at all.
+#[cfg(test)]
+mod frame_differential {
+    use super::*;
+    use nacre_topo::SurfaceTruth;
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Profile2d {
+        Profile2d::polygon(vec![
+            Point2::from_array([x0, y0]),
+            Point2::from_array([x1, y0]),
+            Point2::from_array([x1, y1]),
+            Point2::from_array([x0, y1]),
+        ])
+        .expect("a rectangle")
+    }
+
+    /// A ring with a hole, so the differential covers the inner-loop plumbing too.
+    fn washer() -> Profile2d {
+        let ring = |a: f64, b: f64| {
+            vec![
+                Point2::from_array([a, a]),
+                Point2::from_array([b, a]),
+                Point2::from_array([b, b]),
+                Point2::from_array([a, b]),
+            ]
+        };
+        Profile2d::with_holes(ring(0.0, 4.0), vec![ring(1.0, 3.0)]).expect("a washer")
+    }
+
+    /// Everything about a model that a road could change, named and indexed.
+    fn arena(m: &Model) -> Vec<(String, String)> {
+        let mut out = vec![(
+            "len".into(),
+            format!(
+                "{} {} {} {} {} {}",
+                m.vertices.len(),
+                m.edges.len(),
+                m.faces.len(),
+                m.shells.len(),
+                m.solids.len(),
+                m.surface_count()
+            ),
+        )];
+        for (h, _) in m.vertices.iter() {
+            let p = m.vertex_point(h).as_array();
+            out.push((
+                format!("v{}", h.index()),
+                format!(
+                    "{:x},{:x},{:x}",
+                    p[0].to_bits(),
+                    p[1].to_bits(),
+                    p[2].to_bits()
+                ),
+            ));
+        }
+        for (h, e) in m.edges.iter() {
+            out.push((
+                format!("e{}", h.index()),
+                format!(
+                    "{},{} {},{}",
+                    e.surfaces[0].index(),
+                    e.surfaces[1].index(),
+                    e.vertices[0].index(),
+                    e.vertices[1].index()
+                ),
+            ));
+        }
+        for (h, f) in m.faces.iter() {
+            let loops: Vec<String> = std::iter::once(&f.outer)
+                .chain(f.inner.iter())
+                .map(|lp| {
+                    lp.half_edges
+                        .iter()
+                        .map(|he| {
+                            format!("{}{}", he.edge.index(), if he.forward { "+" } else { "-" })
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect();
+            out.push((
+                format!("f{}", h.index()),
+                format!(
+                    "s{} {:?} {}",
+                    f.surface.index(),
+                    f.orientation,
+                    loops.join(" | ")
+                ),
+            ));
+        }
+        out.push((
+            "live".into(),
+            m.live_solids
+                .iter()
+                .map(|h| h.index().to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ));
+        out
+    }
+
+    /// How many motion nodes a model holds — the "which road" signal. A world-road prism makes none.
+    fn nodes(m: &Model) -> usize {
+        // Motion handles are only reachable through surfaces' truth; count the distinct leaves.
+        let mut seen = std::collections::BTreeSet::new();
+        for i in 0..m.surface_count() as u32 {
+            let h = m.surface_handle_at(i).expect("in range");
+            let motion = match m.surface_truth(h) {
+                SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion } => *motion,
+            };
+            if let Some(node) = motion {
+                seen.insert(node.index());
+            }
+        }
+        seen.len()
+    }
+
+    fn population() -> Vec<(&'static str, SketchPlane)> {
+        let p3 = Point3::from_array;
+        let v3 = Vector3::from_array;
+        vec![
+            ("world_xy", SketchPlane::world_xy()),
+            ("world_yz", SketchPlane::world_yz()),
+            ("world_zx", SketchPlane::world_zx()),
+            (
+                "offset_xy",
+                SketchPlane::world_xy().with_origin(p3([0.0, 0.0, 0.5])),
+            ),
+            (
+                "far_offset_xy",
+                SketchPlane::world_xy().with_origin(p3([50.0, -37.25, 0.5])),
+            ),
+            (
+                "rational_tilt_wf",
+                SketchPlane::from_axes(
+                    p3([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
+                    v3([0.6, 0.8, 0.0]),
+                    v3([-0.48, 0.36, 0.8]),
+                ),
+            ),
+            (
+                "rational_tilt_345",
+                SketchPlane::from_axes(
+                    p3([1.0, 2.0, 3.0]),
+                    v3([0.6, 0.8, 0.0]),
+                    v3([0.0, 0.0, 1.0]),
+                ),
+            ),
+            (
+                "irrational_tilt",
+                SketchPlane::from_origin_normal(p3([0.0; 3]), v3([1.0, 1.0, 1.0]))
+                    .expect("a plane"),
+            ),
+            (
+                "negative_normal",
+                SketchPlane::from_origin_normal(p3([0.0, 1.3, 0.0]), v3([0.0, -1.0, 0.0]))
+                    .expect("a plane"),
+            ),
+        ]
+    }
+
+    /// ★★ **The gate.** Same plane, said two ways, one arena.
+    #[test]
+    fn the_two_roads_build_the_same_prism() {
+        for profile_name in ["rect", "washer"] {
+            for (name, sp) in population() {
+                let profile = || {
+                    if profile_name == "rect" {
+                        rect(0.1, 0.2, 2.3, 1.7)
+                    } else {
+                        washer()
+                    }
+                };
+                let what = format!("{name}/{profile_name}");
+
+                // The value road: today's operation.
+                let mut by_value = Model::new();
+                apply(
+                    &mut by_value,
+                    &Operation::Extrude {
+                        plane: sp,
+                        profile: profile(),
+                        dist: 1.5,
+                    },
+                )
+                .unwrap_or_else(|e| panic!("{what}: value road failed: {e:?}"));
+
+                // The handle road: state the plane, then extrude on the frame it hands back.
+                let mut by_frame = Model::new();
+                let OpOutput::DatumPlane { frame, .. } = apply(
+                    &mut by_frame,
+                    &Operation::DatumPlane {
+                        def: DatumDef::Stated(sp),
+                    },
+                )
+                .unwrap_or_else(|e| panic!("{what}: datum failed: {e:?}")) else {
+                    unreachable!()
+                };
+                extrude_on_frame(&mut by_frame, &frame, &profile(), 1.5)
+                    .unwrap_or_else(|e| panic!("{what}: frame road failed: {e:?}"));
+
+                // ★ Which road, first. A frame-node road is a valid model too, so an equality check
+                // alone would report the difference without naming its cause.
+                assert_eq!(
+                    nodes(&by_frame),
+                    nodes(&by_value),
+                    "{what}: the two roads disagree about whether a motion node is needed — the \
+                     arena differs by whole nodes, not by an ulp"
+                );
+
+                let (a, b) = (arena(&by_value), arena(&by_frame));
+                for (x, y) in a.iter().zip(&b) {
+                    assert_eq!(x, y, "{what}: arenas first differ at {}", x.0);
+                }
+                assert_eq!(a.len(), b.len(), "{what}: different cell counts");
+                println!(
+                    "stat frame_differential {what} identical nodes={}",
+                    nodes(&by_value)
+                );
+            }
+        }
+    }
+
+    /// ★★ **The negative control: the ZX trap is real, and the sugar is what avoids it.**
+    ///
+    /// The arbitrary-axis rule gives the ZX plane `+u = −x̂` while the convention — and
+    /// `SketchPlane::world_zx` — says `+u = +ẑ`. So reaching for `SketchFrame::canonical` on the
+    /// ZX seed puts a caller's profile a quarter turn from where they asked, and the test above,
+    /// which uses the datum's own `Named` frame, would never notice.
+    ///
+    /// Without this, "the sugar is just `canonical`" is a simplification that passes everything.
+    #[test]
+    fn the_zx_seed_without_the_sugar_turns_the_sketch() {
+        let profile = rect(0.0, 0.0, 2.0, 1.0);
+
+        let mut stated = Model::new();
+        apply(
+            &mut stated,
+            &Operation::Extrude {
+                plane: SketchPlane::world_zx(),
+                profile: profile.clone(),
+                dist: 1.0,
+            },
+        )
+        .expect("the convention");
+
+        let mut derived = Model::new();
+        let zx = derived.world_plane(nacre_scalar::Axis::Y);
+        extrude_on_frame(&mut derived, &SketchFrame::canonical(zx), &profile, 1.0)
+            .expect("the derivation is a perfectly good frame — it is just a different one");
+
+        let (a, b) = (arena(&stated), arena(&derived));
+        assert_ne!(
+            a, b,
+            "the derived ZX frame must differ from the convention — if these ever agree, either \
+             the seeding or the arbitrary-axis rule moved, and SketchFrame::world is dead weight"
+        );
+        // And the sugar is what closes it: same convention, same arena.
+        let mut sugared = Model::new();
+        let f = SketchFrame::world(&sugared, nacre_scalar::Axis::Y);
+        extrude_on_frame(&mut sugared, &f, &profile, 1.0).expect("the sugar");
+        let c = arena(&sugared);
+        for (x, y) in a.iter().zip(&c) {
+            assert_eq!(x, y, "the sugar must reproduce the convention: {}", x.0);
+        }
+        println!("stat frame_differential world_zx_without_sugar differs=true sugar_matches=true");
     }
 }

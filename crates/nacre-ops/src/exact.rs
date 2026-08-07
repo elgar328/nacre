@@ -97,6 +97,33 @@ impl SketchPlane {
 }
 
 impl RatFrame {
+    /// **A frame's basis asked in rationals, never realized** — the exact question behind
+    /// [`SketchPlane::exact`], put to a frame instead of to a caller's `f64` axes.
+    ///
+    /// ★★★ **Realizing the axes first and lifting them back does not answer it.** Measured
+    /// (`ops::frame_road`): `reduce_direction` turns a `(0.6, 0.8, 0)` axis into the primitive
+    /// `(3, 4, 0)` with `uu = 25`, and a realization multiplies by a *numerically* computed `1/5`,
+    /// landing on `0.6000000000000001`. `Rat::from_decimal` lifts that, orthonormality fails, and
+    /// a plane that is perfectly rational takes the frame-node road — a different arena, not an
+    /// ulp. Here `inv_sqrt_exact` answers in `Rat`: `Some` exactly when the axis lands on a
+    /// rational, which is the whole question.
+    ///
+    /// It is the same rule [`nacre_scalar::plane_frame_named`] states for `v̂`, applied one level
+    /// up: `v_raw` is carried exactly for this reason, so use it rather than crossing `ŵ × û`.
+    ///
+    /// `None` when either axis needs an irrational scale, when `v_raw` overflowed at construction
+    /// (`PlaneFrame::v` is `None`), or on `i128` overflow — all of which mean the same thing here:
+    /// this frame has no exact rational basis, so the sketch is written in the frame instead.
+    #[allow(dead_code)]
+    pub(crate) fn of_plane_frame(pf: &nacre_scalar::PlaneFrame) -> Option<RatFrame> {
+        let (v_raw, vv) = pf.v.as_ref()?;
+        Some(RatFrame {
+            origin: pf.origin,
+            x: scale(&pf.u_raw, nacre_scalar::inv_sqrt_exact(pf.uu)?)?,
+            y: scale(v_raw, nacre_scalar::inv_sqrt_exact(*vv)?)?,
+        })
+    }
+
     /// ★★★★ **The sketch frame of a plane, read in that plane's own frame — where it is the
     /// identity.**
     ///
@@ -293,6 +320,18 @@ pub(crate) fn prism_rings(
         Some(_) => RatFrame::identity(),
         None => plane.exact()?,
     };
+    prism_rings_in(model, f, profile, dist, frame)
+}
+
+/// [`prism_rings`] with the rational frame already in hand — for a caller that derived it from a
+/// [`crate::SketchFrame`] rather than from a caller's `f64` axes. One implementation, two doors.
+pub(crate) fn prism_rings_in(
+    model: &Model,
+    f: RatFrame,
+    profile: &Profile2d,
+    dist: f64,
+    frame: Option<Handle<MotionNode>>,
+) -> Option<(Swept, Vec<Swept>)> {
     let sweep = f.sweep(dist)?;
     // ★★★ **The realization must be the *definition's* own replay, not a second route to the
     // same real number.** A vertex written here is defined against `frame`, and a judge
