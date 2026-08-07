@@ -1840,7 +1840,7 @@ centroid 1 1.5 2
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
         let profile =
             Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap();
-        let __f108 = datum_frame(&mut Model::new(), plane);
+        let __f108 = datum_frame(m, plane);
         let OpOutput::Extrude { solid, .. } = apply(
             m,
             &Operation::Extrude {
