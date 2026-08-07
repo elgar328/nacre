@@ -53,9 +53,23 @@
 //!    own rational cofactor expansion overflowed, not that the coordinate is unstorable.
 //!
 //! ★ **The corpus is small** — five models, 108 vertices — where the adjacent measurement it is
-//! being compared against had 83,821 samples. It is enough to refute "everything is 160–480 bits"
-//! (one counterexample population does that) and enough to establish the decline split. It is not
-//! enough to say what the widest coordinate this kernel can produce is.
+//! being compared against had 83,821 samples. It is enough to establish the decline split and to
+//! exhibit counterexamples. It is **not** enough to say what the widest coordinate this kernel can
+//! produce is, and a corpus maximum is not a bound in any case: the width a `Rat` must hold is a
+//! property of the *type* (`PlaneName` is `Narrow | Wide`, so a solved coordinate can be
+//! arbitrarily wide), and these numbers only say which branch today's models take.
+//!
+//! # And what the f64 road does with those coordinates
+//!
+//! | population | solved | cache is exact | triples agreeing | **different plane** |
+//! |---|---|---|---|---|
+//! | `boolean_corner` | 16 | 16/16 | 552 | **0** (negative control) |
+//! | `tilted_frame`   | 12 | **0/12** | 0 | **220 — every one** |
+//!
+//! ★★★ Spelling "the plane through those three corners" in **coordinates** produces a plane with a
+//! **different name** on tilted geometry — a different handle, and exact identity answers "no".
+//! That is the capability gap a vertex-naming datum closes, and it is a fact about the population
+//! (the control shows the two roads agreeing wherever the cache is exact), not about the probe.
 
 use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
@@ -400,6 +414,115 @@ fn tilted_frame(passes: usize) -> Model {
         m.rebuild_adjacency();
     }
     m
+}
+
+// ---------------------------------------------------------------------------------------------
+// (ii) — is the f64 road a different plane?
+// ---------------------------------------------------------------------------------------------
+
+/// Every discovered vertex that solves to a `Rat` triple, paired with its handle.
+fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
+    let mut out = Vec::new();
+    for vh in live_vertices(m) {
+        if m.vertex_tol(vh).is_none() {
+            continue; // constructed — the control lives in its own fixture below
+        }
+        let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+            continue;
+        };
+        let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
+        if names.len() != 3 {
+            continue;
+        }
+        let ms = tri.map(|h| motion_of(m, h));
+        if !(ms[0] == ms[1] && ms[1] == ms[2]) {
+            continue; // mixed frames — no rational coordinate in any single frame
+        }
+        if let Some(p) = nacre_scalar::three_planes_big([names[0], names[1], names[2]]) {
+            if let Some(n) = p.narrow() {
+                out.push((*n, vh));
+            }
+        }
+    }
+    out
+}
+
+/// `(same, different)` over every non-degenerate triple: the plane through the vertices' **exact**
+/// coordinates vs the plane through their **f64 cache** coordinates lifted back by `from_decimal`.
+fn triple_verdicts(m: &Model, solved: &[([Rat; 3], Handle<Vertex>)]) -> (usize, usize) {
+    let lift = |vh: Handle<Vertex>| -> Option<[Rat; 3]> {
+        let a = m.vertex_point(vh).as_array().map(Rat::from_decimal);
+        Some([a[0]?, a[1]?, a[2]?])
+    };
+    let (mut same, mut diff) = (0, 0);
+    for i in 0..solved.len() {
+        for j in (i + 1)..solved.len() {
+            for k in (j + 1)..solved.len() {
+                let exact = nacre_scalar::plane_name_exact(solved[i].0, solved[j].0, solved[k].0);
+                let rounded = (|| {
+                    nacre_scalar::plane_name_exact(
+                        lift(solved[i].1)?,
+                        lift(solved[j].1)?,
+                        lift(solved[k].1)?,
+                    )
+                })();
+                match (exact, rounded) {
+                    (Some(a), Some(b)) if a == b => same += 1,
+                    (Some(_), Some(_)) => diff += 1,
+                    _ => {} // collinear either way — carries no verdict
+                }
+            }
+        }
+    }
+    (same, diff)
+}
+
+/// ★★★★★ **The capability gap, stated as a counterexample.**
+///
+/// "A plane through those three corners" is an ordinary CAD request, and today it can only be
+/// spelled in coordinates. Where a discovered vertex's cache is not its exact coordinate, the
+/// plane that spelling produces is **a different plane** — not a nearby one, a different name,
+/// which interns to a different handle and answers exact identity with "no".
+///
+/// ★ The assertion is **existence of a counterexample**, never "always different": a corpus
+/// cannot carry a universal. The axis-aligned fixture is the negative control that keeps the
+/// claim about the *population* rather than about the probe — there the two roads agree, because
+/// there the cache **is** the exact coordinate.
+#[test]
+fn the_f64_road_names_a_different_plane() {
+    let tilted = tilted_frame(1);
+    let solved = solved_discovered(&tilted);
+    let (same, diff) = triple_verdicts(&tilted, &solved);
+    let exact_cache = solved
+        .iter()
+        .filter(|(r, vh)| {
+            let c = tilted.vertex_point(*vh).as_array();
+            (0..3).all(|t| r[t].to_f64() == c[t])
+        })
+        .count();
+    println!(
+        "stat ii tilted_frame     solved={} cache_is_exact={exact_cache} same={same} DIFFERENT={diff}",
+        solved.len()
+    );
+    assert!(
+        diff > 0,
+        "no counterexample: every triple agreed, so this fixture cannot show the gap"
+    );
+
+    // ★ The negative control. Axis-aligned boolean corners land on exact f64s, so the same
+    // comparison must come back *agreeing* — otherwise "different" is a property of the probe.
+    let square = boolean_corner();
+    let solved = solved_discovered(&square);
+    let (same, diff) = triple_verdicts(&square, &solved);
+    println!(
+        "stat ii boolean_corner   solved={} same={same} DIFFERENT={diff}",
+        solved.len()
+    );
+    assert!(same > 0, "the control measured nothing");
+    assert_eq!(
+        diff, 0,
+        "the two roads disagreed where the cache is exact — the probe, not the population"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
