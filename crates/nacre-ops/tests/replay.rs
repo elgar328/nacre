@@ -7,14 +7,20 @@
 //! handles carry the *original* model's `StoreId` and `Store::get`'s debug guard fires before
 //! the index is ever used.
 //!
-//! Nothing noticed because nothing walks that path: all 46 `replay` call sites in the
-//! workspace pass value-only `Extrude` logs. So today's replay determinism rests entirely on
-//! `Extrude` stating its plane by value — and the migration is about to take that away.
+//! Nothing noticed because nothing walked that path: every `replay` call site in the workspace
+//! passed value-only `Extrude` logs, so replay determinism rested entirely on `Extrude` stating
+//! its plane by value.
+//!
+//! ★ **That sentence is now history.** S5(i)-b gave `Extrude` a `SketchFrame`, so **all seven
+//! variants carry a handle** and there is no value-only operation left. The premise this file was
+//! written to expose has been consumed; what it measures — that a log's indices are re-anchored
+//! onto the arena being built — is now load-bearing for every log there is.
 //!
 //! This file is where the contract is *measured* rather than asserted by documentation.
 
 use nacre_math::Point2;
-use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
+use nacre_ops::SketchFrame;
+use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, replay};
 use nacre_scalar::{Isometry, Rat};
 use nacre_topo::{Model, VertexDef};
 
@@ -28,9 +34,11 @@ fn square(a: f64, b: f64) -> Profile2d {
     .expect("a square is a fair profile")
 }
 
-fn extrude_op(a: f64, b: f64, dist: f64) -> Operation {
+/// A world-XY extrude **for `m`** — an extrude names its plane now, and a handle only means
+/// something in its own arena until `replay` re-anchors it.
+fn extrude_op(m: &Model, a: f64, b: f64, dist: f64) -> Operation {
     Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(m, Axis::Z),
         profile: square(a, b),
         dist,
     }
@@ -207,7 +215,7 @@ fn assert_same_arena(a: &Model, b: &Model, what: &str) {
 /// `[Extrude, PadOnFace]` — the log and a model built by applying it.
 fn pad_log() -> (Vec<Operation>, Model) {
     let mut m = Model::new();
-    let ex = extrude_op(0.0, 2.0, 1.0);
+    let ex = extrude_op(&m, 0.0, 2.0, 1.0);
     let OpOutput::Extrude { faces, .. } = apply(&mut m, &ex).expect("extrude") else {
         unreachable!()
     };
@@ -224,7 +232,7 @@ fn pad_log() -> (Vec<Operation>, Model) {
 /// `[Extrude, Extrude, Boolean]`.
 fn boolean_log() -> (Vec<Operation>, Model) {
     let mut m = Model::new();
-    let (e1, e2) = (extrude_op(0.0, 2.0, 1.0), extrude_op(1.0, 3.0, 1.0));
+    let (e1, e2) = (extrude_op(&m, 0.0, 2.0, 1.0), extrude_op(&m, 1.0, 3.0, 1.0));
     let OpOutput::Extrude { solid: a, .. } = apply(&mut m, &e1).expect("a") else {
         unreachable!()
     };
@@ -244,7 +252,7 @@ fn boolean_log() -> (Vec<Operation>, Model) {
 /// `[Extrude, Transform]`.
 fn transform_log() -> (Vec<Operation>, Model) {
     let mut m = Model::new();
-    let ex = extrude_op(0.0, 2.0, 1.0);
+    let ex = extrude_op(&m, 0.0, 2.0, 1.0);
     let OpOutput::Extrude { solid, .. } = apply(&mut m, &ex).expect("extrude") else {
         unreachable!()
     };
@@ -318,8 +326,8 @@ fn both_profiles_replay_a_handle_carrying_log_the_same_way() {
 fn a_log_naming_a_cell_that_does_not_exist_is_rejected_by_name() {
     // A two-solid model, so its solid handle 1 exists…
     let mut big = Model::new();
-    let e1 = extrude_op(0.0, 2.0, 1.0);
-    let e2 = extrude_op(5.0, 6.0, 1.0);
+    let e1 = extrude_op(&big, 0.0, 2.0, 1.0);
+    let e2 = extrude_op(&big, 5.0, 6.0, 1.0);
     apply(&mut big, &e1).expect("first");
     let OpOutput::Extrude { solid: second, .. } = apply(&mut big, &e2).expect("second") else {
         unreachable!()
@@ -348,8 +356,11 @@ fn a_log_naming_a_cell_that_does_not_exist_is_rejected_by_name() {
 /// reproduces its scratch-built twin item for item, and replaying twice is stable.
 #[test]
 fn the_comparator_agrees_on_a_value_only_log() {
-    let log = vec![extrude_op(0.0, 2.0, 1.0), extrude_op(3.0, 4.0, 0.5)];
     let mut scratch = Model::new();
+    let log = vec![
+        extrude_op(&scratch, 0.0, 2.0, 1.0),
+        extrude_op(&scratch, 3.0, 4.0, 0.5),
+    ];
     for op in &log {
         apply(&mut scratch, op).expect("apply");
     }
@@ -364,8 +375,8 @@ fn the_comparator_agrees_on_a_value_only_log() {
 /// And it is not vacuous: two different models must differ, at a named place.
 #[test]
 fn the_comparator_notices_a_difference() {
-    let a = replay(&[extrude_op(0.0, 2.0, 1.0)]).unwrap();
-    let b = replay(&[extrude_op(0.0, 2.0, 2.0)]).unwrap();
+    let a = replay(&[extrude_op(&Model::new(), 0.0, 2.0, 1.0)]).unwrap();
+    let b = replay(&[extrude_op(&Model::new(), 0.0, 2.0, 2.0)]).unwrap();
     let (sa, sb) = (arena_sig(&a), arena_sig(&b));
     let first = sa
         .iter()
@@ -492,7 +503,7 @@ fn concretize(m: &Model, step: &Step) -> Option<Operation> {
         Step::Extrude { x, y, w, dist } => {
             let (x, y, w) = (f64::from(x), f64::from(y), f64::from(w));
             Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: SketchFrame::world(m, Axis::Z),
                 profile: rect(x, y, x + w, y + w),
                 dist: f64::from(dist),
             }
@@ -598,7 +609,7 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
     let mut st = Stats::default();
 
     // Seed: every session starts with something to name.
-    let seed = extrude_op(0.0, 2.0, 1.0);
+    let seed = extrude_op(&model, 0.0, 2.0, 1.0);
     apply(&mut model, &seed).expect("the seed extrude is unconditionally legal");
     log.push(seed);
 
@@ -705,7 +716,8 @@ fn a_log_using_every_handle_carrying_variant_replays() {
         out
     };
 
-    let OpOutput::Extrude { faces, .. } = run(&mut m, extrude_op(0.0, 2.0, 2.0)) else {
+    let op = extrude_op(&m, 0.0, 2.0, 2.0);
+    let OpOutput::Extrude { faces, .. } = run(&mut m, op) else {
         unreachable!()
     };
     let top = faces[1];
@@ -860,9 +872,8 @@ fn a_late_reject_is_not_index_neutral() {
 
     let seeded = || {
         let mut m = Model::new();
-        let OpOutput::Extrude { solid, faces } =
-            apply(&mut m, &extrude_op(0.0, 2.0, 1.0)).expect("seed")
-        else {
+        let __seed = extrude_op(&m, 0.0, 2.0, 1.0);
+        let OpOutput::Extrude { solid, faces } = apply(&mut m, &__seed).expect("seed") else {
             unreachable!()
         };
         (m, solid, faces)
@@ -872,7 +883,11 @@ fn a_late_reject_is_not_index_neutral() {
     for (name, setup) in [
         (
             "NonPositiveDistance",
-            Box::new(|| (Model::new(), extrude_op(0.0, 2.0, 0.0))) as Box<dyn Fn() -> _>,
+            Box::new(|| {
+                let m = Model::new();
+                let op = extrude_op(&m, 0.0, 2.0, 0.0);
+                (m, op)
+            }) as Box<dyn Fn() -> _>,
         ),
         (
             "SolidNotLive",
@@ -1004,7 +1019,7 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     let mut m = Model::new();
     let mut log = Vec::new();
 
-    let seed = extrude_op(0.0, 2.0, 1.0);
+    let seed = extrude_op(&m, 0.0, 2.0, 1.0);
     let OpOutput::Extrude { solid, faces } = apply(&mut m, &seed).expect("seed") else {
         unreachable!()
     };
@@ -1093,9 +1108,8 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
 #[test]
 fn a_pocket_that_is_not_blind_leaves_the_live_model_alone() {
     let mut m = Model::new();
-    let OpOutput::Extrude { solid, faces } =
-        apply(&mut m, &extrude_op(0.0, 2.0, 1.0)).expect("seed")
-    else {
+    let __seed = extrude_op(&m, 0.0, 2.0, 1.0);
+    let OpOutput::Extrude { solid, faces } = apply(&mut m, &__seed).expect("seed") else {
         unreachable!()
     };
     let live_before: Vec<_> = m.live_solids.to_vec();
@@ -1162,15 +1176,16 @@ fn a_pocket_that_is_not_blind_leaves_the_live_model_alone() {
 #[should_panic(expected = "different Store")]
 fn a_foreign_handle_still_dies_at_the_door() {
     let mut a = Model::new();
-    let OpOutput::Extrude { solid, .. } = apply(&mut a, &extrude_op(0.0, 2.0, 1.0)).expect("a")
-    else {
+    let op_a = extrude_op(&a, 0.0, 2.0, 1.0);
+    let OpOutput::Extrude { solid, .. } = apply(&mut a, &op_a).expect("a") else {
         unreachable!()
     };
 
     // `b` is built the same way, so `solid`'s *index* is live in `b` too — the handle is wrong
     // only in the one way that matters, and `contains` cannot see it.
     let mut b = Model::new();
-    apply(&mut b, &extrude_op(0.0, 2.0, 1.0)).expect("b");
+    let op_b = extrude_op(&b, 0.0, 2.0, 1.0);
+    apply(&mut b, &op_b).expect("b");
     assert!(
         b.live_solids.contains(&solid),
         "index-only equality: b agrees the foreign handle is live"
@@ -1183,4 +1198,60 @@ fn a_foreign_handle_still_dies_at_the_door() {
             isometry: Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]),
         },
     );
+}
+
+/// ★ **An `Extrude` naming a surface that is not there is a named reject too.**
+///
+/// `Extrude` was the one variant `rebind` could borrow rather than re-anchor, because it carried
+/// no handle. Since S5(i)-b it carries a `SketchFrame`, and forgetting to re-anchor it would have
+/// put the defect R repaired back into the **most common** operation in any log. This is the test
+/// that would have caught that.
+#[test]
+fn an_extrude_naming_a_surface_that_does_not_exist_is_rejected_by_name() {
+    // A frame on a plane that only a datum creates — so a log that omits the datum names a
+    // surface index the replayed model never reaches.
+    let mut big = Model::new();
+    let sp = nacre_ops::SketchPlane::from_origin_normal(
+        nacre_math::Point3::from_array([0.0, 0.0, 1.0]),
+        nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+    )
+    .expect("a plane");
+    let datum = Operation::DatumPlane {
+        def: nacre_ops::DatumDef::Stated(sp),
+    };
+    let OpOutput::DatumPlane { plane, frame } = apply(&mut big, &datum).expect("stated") else {
+        unreachable!()
+    };
+    assert!(
+        plane.index() >= 3,
+        "the fixture needs a plane past the seeds, or the log would resolve by accident"
+    );
+
+    let orphan = vec![Operation::Extrude {
+        frame,
+        profile: square(0.0, 2.0),
+        dist: 1.0,
+    }];
+    match replay(&orphan) {
+        Err(nacre_ops::OpError::LogHandleOutOfRange { cell, index }) => {
+            assert_eq!(cell, nacre_ops::LogCell::Surface);
+            assert_eq!(index, plane.index());
+        }
+        other => panic!(
+            "expected a named reject, got {:?}",
+            other.map(|_| "a model")
+        ),
+    }
+
+    // With the datum in front of it, the same frame replays.
+    let full = vec![
+        datum,
+        Operation::Extrude {
+            frame,
+            profile: square(0.0, 2.0),
+            dist: 1.0,
+        },
+    ];
+    let replayed = replay(&full).expect("the whole log replays");
+    assert_eq!(replayed.live_solids.len(), 1);
 }

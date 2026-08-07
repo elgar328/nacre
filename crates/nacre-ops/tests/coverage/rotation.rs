@@ -4,6 +4,7 @@
 use crate::common::*;
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::SketchFrame;
 use nacre_ops::{
     BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean,
     replay,
@@ -398,7 +399,7 @@ fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {
         let out = apply(
             m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: SketchFrame::world(m, Axis::Z),
                 profile: Profile2d::polygon(prof).unwrap(),
                 dist,
             },

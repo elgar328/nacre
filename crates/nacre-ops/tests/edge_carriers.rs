@@ -9,6 +9,21 @@
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
+use nacre_ops::{DatumDef, SketchFrame};
+
+/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+/// when the plane is not one the model already holds (a seed, or a face's).
+fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+    match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating a plane: {other:?}"),
+    }
+}
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
 
@@ -87,6 +102,7 @@ struct DeriveStats {
 
 fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
     use nacre_geom::Curve;
+
     let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(b.abs()).max(1.0);
     let mut seen = std::collections::HashSet::new();
     for &s in &m.live_solids {
@@ -196,10 +212,11 @@ fn derived_curves_match_stored() {
     )
     .unwrap();
     let prism = {
+        let __frame1 = datum_frame(&mut m, tilted);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: tilted,
+                frame: __frame1,
                 profile: square(0.5, 2.5),
                 dist: 1.1,
             },
@@ -210,10 +227,11 @@ fn derived_curves_match_stored() {
         solid
     };
     let cutter = {
+        let __w2 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w2,
                 profile: square(1.0, 2.0),
                 dist: 4.0,
             },
@@ -299,10 +317,11 @@ fn edge_carriers_agree_with_adjacency() {
         Vector3::from_array([0.3141592653589793, -0.2718281828459045, 1.0]),
     )
     .unwrap();
+    let __frame0 = datum_frame(&mut m, tilted);
     apply(
         &mut m,
         &Operation::Extrude {
-            plane: tilted,
+            frame: __frame0,
             profile: square(0.5, 2.5),
             dist: 1.1,
         },
@@ -314,10 +333,11 @@ fn edge_carriers_agree_with_adjacency() {
     // ③ Booleans, including populations the cleaning pass actually rewrites:
     //    a coplanar fuse (shared plane, unify_coplanar_faces merges), then a severing cut.
     let other = {
+        let __w1 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w1,
                 profile: square(2.0, 6.0),
                 dist: 1.0,
             },
@@ -345,10 +365,11 @@ fn edge_carriers_agree_with_adjacency() {
     assert_carriers_agree(&m, "coplanar fuse (cleaned)");
 
     let cutter = {
+        let __w0 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w0,
                 profile: square(2.5, 3.5),
                 dist: 5.0,
             },

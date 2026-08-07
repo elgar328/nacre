@@ -11,9 +11,25 @@
 //! with M6, and booleans already reject it honestly (`CylinderFace`).
 
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::DatumDef;
+use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
+
+/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+/// when the plane is not one the model already holds (a seed, or a face's).
+fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+    match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating a plane: {other:?}"),
+    }
+}
 
 fn p2(x: f64, y: f64) -> Point2 {
     Point2::from_array([x, y])
@@ -24,10 +40,12 @@ fn square(a: f64, b: f64) -> Profile2d {
 }
 
 fn extrude(m: &mut Model, plane: SketchPlane, profile: Profile2d, dist: f64) {
+    // The plane is stated first — a sketch names a plane the model holds (S5(i)-b).
+    let frame = datum_frame(m, plane);
     let out = apply(
         m,
         &Operation::Extrude {
-            plane,
+            frame,
             profile,
             dist,
         },
@@ -190,13 +208,23 @@ fn every_live_planar_face_records_its_points() {
     let _ = mirrored;
 }
 
+/// **The world sugar names the seeded plane, and a sketch on it sits on that very handle.**
+///
+/// Before S5(i)-b this said something stronger: an extrude's base cap *interned onto* the seed,
+/// discovered after the fact by comparing names. Now the frame **names** the seed up front, so
+/// "the base cap is the seed" is true by construction and asserting it alone would be a
+/// tautology (the shape S8 met when `VertexOffCurve`'s line arm became one).
+///
+/// What still has teeth is the sugar: `SketchFrame::world` must name the seed the model planted,
+/// not some other plane on the same geometry — and a sketch placed through it must land on that
+/// handle. If the seeding or the arbitrary-axis convention moved, this is what notices.
 /// ★★ S9: a `z = 0` sketch's base cap **is** the seeded XY plane — the operation and the
 /// pre-seeded vocabulary meet at one handle. And replay determinism holds with seeds included:
 /// the same log twice gives the same handles.
 #[test]
-fn a_world_sketch_base_cap_is_the_seeded_plane() {
+fn the_world_sugar_names_the_seed_a_sketch_then_sits_on() {
     let log = [Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(&Model::new(), Axis::Z),
         profile: square(0.0, 2.0),
         dist: 1.0,
     }];

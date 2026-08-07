@@ -12,9 +12,24 @@
 
 use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::SketchFrame;
 use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
 use nacre_scalar::Axis;
 use nacre_topo::{FramePlacement, Model, PlanePoints, SurfaceTruth};
+
+/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+/// when the plane is not one the model already holds (a seed, or a face's).
+fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+    match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating a plane: {other:?}"),
+    }
+}
 
 fn datum(plane: SketchPlane) -> Operation {
     Operation::DatumPlane {
@@ -145,40 +160,32 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
     );
 }
 
-/// ★★ **The seam this whole stage exists to open**: a plane stated up front is the plane the
-/// extrude then builds on — one handle, and the arena no larger for having said it twice.
+/// ★★ **The seam this stage opened, now closed: an extrude's base cap *is* the frame's plane.**
 ///
-/// This is the direct evidence that the vocabulary swap ahead (`Extrude` naming a `SketchFrame`
-/// instead of carrying a `SketchPlane`) is not a change of population. `tests/plane_anchor.rs`
-/// measures the other half — that the *cache* the datum leaves behind does not move the result.
+/// Before S5(i)-b this compared two roads — "state the plane first" against "let the extrude
+/// create it" — and measured that they met at one handle. That comparison no longer exists,
+/// because an extrude names its plane and there is no road where the plane is absent. What
+/// remains, and is still not free, is the claim underneath it: the operation **reuses** the
+/// handle it was given rather than pushing a second plane on the same geometry, and stating that
+/// plane again afterwards mints nothing.
+///
+/// (The other half — that which point anchored the plane's cache does not move the result — is
+/// `tests/plane_anchor.rs`, where both arms are now production roads.)
 #[test]
-fn a_datum_is_the_plane_the_extrude_then_builds_on() {
+fn an_extrudes_base_cap_is_the_frame_it_was_given() {
     let sp = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
+    let mut m = Model::new();
 
-    let mut plain = Model::new();
-    let OpOutput::Extrude { faces, .. } = apply(
-        &mut plain,
-        &Operation::Extrude {
-            plane: sp,
-            profile: square(0.0, 2.0),
-            dist: 1.0,
-        },
-    )
-    .expect("plain extrude") else {
-        unreachable!()
-    };
-    let base_cap = plain.faces.get(faces[0]).surface;
-
-    let mut stated = Model::new();
-    let OpOutput::DatumPlane { plane: h, .. } = apply(&mut stated, &datum(sp)).expect("stated")
+    let OpOutput::DatumPlane { plane: h, frame } = apply(&mut m, &datum(sp)).expect("stated")
     else {
         unreachable!()
     };
-    let n_after_datum = stated.surface_count();
+    let after_datum = m.surface_count();
+
     let OpOutput::Extrude { faces, .. } = apply(
-        &mut stated,
+        &mut m,
         &Operation::Extrude {
-            plane: sp,
+            frame,
             profile: square(0.0, 2.0),
             dist: 1.0,
         },
@@ -187,19 +194,31 @@ fn a_datum_is_the_plane_the_extrude_then_builds_on() {
         unreachable!()
     };
     assert_eq!(
-        stated.faces.get(faces[0]).surface,
+        m.faces.get(faces[0]).surface,
         h,
-        "the base cap is the datum, not a second plane on the same geometry"
+        "the base cap is the plane the frame named, not a second one on the same geometry"
     );
+    // ★ Three, not six. The prism wants a base cap, a top cap and four walls; the base is the
+    // handle it was given, and two of the walls (`x = 0`, `y = 0`) are the **seeded** YZ and ZX
+    // planes. Interning answers for those the same way it answers for the base — which is the
+    // point: a plane is a thing the model has, not a thing each operation restates.
     assert_eq!(
-        base_cap.index(),
-        h.index(),
-        "and it lands at the index the plain extrude gave it"
+        m.surface_count() - after_datum,
+        3,
+        "top cap + two new walls; the base and the two axis walls were already there"
     );
+
+    // Saying the same plane again is interning's job, not the arena's.
+    let before = m.surface_count();
+    let OpOutput::DatumPlane { plane: again, .. } = apply(&mut m, &datum(sp)).expect("again")
+    else {
+        unreachable!()
+    };
+    assert_eq!(again, h);
     assert_eq!(
-        stated.surface_count() - n_after_datum,
-        plain.surface_count() - 3 - 1,
-        "the extrude minted the same surfaces either way, minus the one already stated"
+        m.surface_count(),
+        before,
+        "one plane, one handle, no growth"
     );
 }
 
@@ -216,16 +235,17 @@ fn a_log_with_a_datum_replays_and_validates() {
         Vector3::from_array([0.0, 0.0, 1.0]),
     )
     .expect("a plane");
+    // The log is assembled against the model it is applied to — a frame names a handle, and a
+    // handle only means something in its own arena until `replay` re-anchors it.
+    let mut scratch = Model::new();
     let log = vec![
         datum(sp),
         Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&scratch, Axis::Z),
             profile: square(0.0, 2.0),
             dist: 1.0,
         },
     ];
-
-    let mut scratch = Model::new();
     for op in &log {
         apply(&mut scratch, op).expect("each step is legal");
     }
@@ -266,7 +286,7 @@ fn box_top_frame(m: &mut Model) -> nacre_ops::SketchFrame {
     let OpOutput::Extrude { faces, .. } = apply(
         m,
         &Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(m, Axis::Z),
             profile: square(0.0, 2.0),
             dist: 1.0,
         },
@@ -357,10 +377,11 @@ fn tilted_face_frame(m: &mut Model) -> nacre_ops::SketchFrame {
         Vector3::from_array([1.0, 1.0, 1.0]),
     )
     .expect("a tilted plane");
+    let __g209 = datum_frame(m, sp);
     let OpOutput::Extrude { faces, .. } = apply(
         m,
         &Operation::Extrude {
-            plane: sp,
+            frame: __g209,
             profile: square(0.0, 2.0),
             dist: 1.0,
         },
@@ -492,7 +513,7 @@ fn an_offset_log_replays_and_a_stale_handle_is_rejected_by_name() {
 
     let log = vec![
         Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&m, Axis::Z),
             profile: square(0.0, 2.0),
             dist: 1.0,
         },
@@ -533,10 +554,14 @@ fn an_offset_log_replays_and_a_stale_handle_is_rejected_by_name() {
 fn the_flip_fold_decides_which_side_and_it_bites() {
     let mut m = Model::new();
     let lower = box_top_frame(&mut m); // outward +z on z = 1
+    let __f106 = datum_frame(
+        &mut m,
+        SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 1.0])),
+    );
     let OpOutput::Extrude { faces, .. } = apply(
         &mut m,
         &Operation::Extrude {
-            plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 1.0])),
+            frame: __f106,
             profile: square(0.0, 2.0),
             dist: 1.0,
         },

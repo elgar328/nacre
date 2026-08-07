@@ -67,6 +67,7 @@ pub(crate) enum ClassPlan {
 /// differential counts the population.
 fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
     use nacre_topo::{SurfaceTruth, VertexDef};
+
     let sol = model.solids.get(s);
     let mut seen: std::collections::HashSet<Handle<Vertex>> = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -366,6 +367,21 @@ pub(crate) fn pass_through(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+    /// when the plane is not one the model already holds (a seed, or a face's).
+    fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
+        match crate::apply(
+            m,
+            &crate::Operation::DatumPlane {
+                def: crate::DatumDef::Stated(plane),
+            },
+        ) {
+            Ok(crate::OpOutput::DatumPlane { frame, .. }) => frame,
+            other => panic!("stating a plane: {other:?}"),
+        }
+    }
+
     use crate::{OpOutput, Operation, apply};
     use nacre_math::{Point2, Point3, Vector3};
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
@@ -476,10 +492,11 @@ mod tests {
         )
         .unwrap();
         let prism = {
+            let __frame0 = datum_frame(&mut m, tilted);
             let OpOutput::Extrude { solid, .. } = apply(
                 &mut m,
                 &Operation::Extrude {
-                    plane: tilted,
+                    frame: __frame0,
                     profile: square(0.5, 2.5),
                     dist: 1.1,
                 },

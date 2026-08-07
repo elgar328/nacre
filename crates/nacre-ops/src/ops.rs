@@ -300,10 +300,12 @@ impl Profile2d {
 
 /// A modelling operation.
 ///
-/// ★ **`Extrude` is the large variant and it is not boxed.** It carries a [`SketchPlane`], which
-/// now holds the plane's exact rational definition (~400 bytes). An op log is tens of entries
-/// long and is walked once per replay, so the wasted space is measured in kilobytes; boxing would
-/// buy that back at the cost of an indirection on the one type a caller constructs by hand.
+/// ★ **`DatumPlane` is the large variant and it is not boxed.** It carries a [`SketchPlane`] in
+/// its `Stated` arm, which holds a plane's exact rational definition (~400 bytes). An op log is
+/// tens of entries long and is walked once per replay, so the wasted space is measured in
+/// kilobytes; boxing would buy that back at the cost of an indirection on the one type a caller
+/// constructs by hand. (`Extrude` used to be that variant; naming its plane instead of carrying
+/// it made it small.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
@@ -322,9 +324,19 @@ pub enum Operation {
     /// case this returns the handle that exists and the arena does not grow. That is the intended
     /// answer, not a special case: *same plane, same handle*.
     DatumPlane { def: DatumDef },
-    /// Extrude `profile` (on `plane`) by `dist` along the plane normal.
+    /// Extrude `profile`, drawn in `frame`, by `dist` along that frame's `ŵ`.
+    ///
+    /// ★ **The plane is named, not carried.** `frame` holds a `Handle<Surface>`, so the plane it
+    /// sketches on is one the model already has — a seeded world plane
+    /// ([`SketchFrame::world`]), the plane of a face ([`face_sketch_frame`]), or one a
+    /// [`Operation::DatumPlane`] put there. That is what makes the base cap a *shared* handle
+    /// rather than a second statement of the same plane.
+    ///
+    /// `dist` is a **thickness** and must be positive; which way it goes is the frame's, measured
+    /// by whoever built the frame. (Contrast [`DatumDef::Offset`], whose `dist` is a signed
+    /// displacement because there the sign is the only thing that says a side.)
     Extrude {
-        plane: SketchPlane,
+        frame: SketchFrame,
         profile: Profile2d,
         dist: f64,
     },
@@ -640,11 +652,11 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
             Ok(OpOutput::DatumPlane { plane, frame })
         }
         Operation::Extrude {
-            plane,
+            frame,
             profile,
             dist,
         } => {
-            let (solid, faces) = extrude(model, plane, profile, *dist)?;
+            let (solid, faces) = extrude_on_frame(model, frame, profile, *dist)?;
             Ok(OpOutput::Extrude { solid, faces })
         }
         Operation::PadOnFace {
@@ -723,8 +735,16 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError> {
 }
 
 /// The operation with its handles re-anchored onto `model` — borrowed when there is nothing to
-/// re-anchor, which is every value-only `Extrude` (so today's logs clone nothing).
+/// re-anchor, which since the plane-handle vocabulary landed is only a `Stated` datum.
 fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, OpError> {
+    let surface = |h: Handle<Surface>| {
+        model
+            .surface_handle_at(h.index())
+            .ok_or(OpError::LogHandleOutOfRange {
+                cell: LogCell::Surface,
+                index: h.index(),
+            })
+    };
     let face = |h: Handle<Face>| {
         model
             .faces
@@ -744,7 +764,16 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
             })
     };
     Ok(match op {
-        Operation::Extrude { .. } => Cow::Borrowed(op),
+        // ★ `Extrude` carries a handle now — it is no longer the one variant that does not.
+        Operation::Extrude {
+            frame,
+            profile,
+            dist,
+        } => Cow::Owned(Operation::Extrude {
+            frame: frame.rebound(surface(frame.plane())?),
+            profile: profile.clone(),
+            dist: *dist,
+        }),
         Operation::PadOnFace {
             face: f,
             profile,
@@ -962,11 +991,6 @@ fn datum_plane(
 /// chain of one narrow frame node is the whole population, and anything longer (or wide) declines.
 ///
 /// ★ Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
-// ★ **Dead until the next commit, deliberately.** The vocabulary swap moves 112 call sites at
-// once, so the road they will take is built and measured first — `frame_differential` exercises
-// it, but a `#[cfg(test)]` caller does not count for the lib build. The allow goes away with the
-// commit that gives it a real caller.
-#[allow(dead_code)]
 fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::exact::RatFrame> {
     let chain =
         crate::rotated_vertex::frame_chain(model, frame.plane(), frame.placement(), frame.flip())?;
@@ -986,7 +1010,6 @@ fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::exact::RatFr
 /// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, measured by whoever built
 /// the frame (a datum against the caller's stated normal, a face against its outward). That is why
 /// this can take a frame where the operation used to take a plane and sweep the same way.
-#[allow(dead_code)]
 pub(crate) fn extrude_on_frame(
     model: &mut Model,
     frame: &SketchFrame,
@@ -1034,87 +1057,6 @@ pub(crate) fn extrude_on_frame(
         Vector3::from_array(w),
         Some(frame.plane()),
         None,
-    )
-}
-
-/// Build a prism: the profile forms the base and (translated by `normal·dist`)
-/// the top; each profile edge grows a side quad. Winding generalizes the M1
-/// cuboid — base loop reversed (normal −N, outward), top forward (+N), side
-/// `(B_i, B_{i+1}, T_{i+1}, T_i)`; every edge is used twice with opposite flags.
-pub(crate) fn extrude(
-    model: &mut Model,
-    plane: &SketchPlane,
-    profile: &Profile2d,
-    dist: f64,
-) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
-    if dist <= 0.0 {
-        return Err(OpError::NonPositiveDistance);
-    }
-    // The last silently-unnamed window population (S6b): a sweep distance the decimal window
-    // cannot hold used to drop the whole prism to f64 inside `prism_rings`. Named here, at the
-    // door, like its profile-coordinate sibling.
-    if nacre_scalar::Rat::from_decimal(dist).is_none() {
-        return Err(OpError::DistOutsideDecimalWindow);
-    }
-    profile.check()?;
-    // ★★★★★ **A plane the caller stated is drawn in its own frame.**
-    //
-    // In world coordinates a tilted plane's axes are irrational and `exact()` declines, so the
-    // whole prism used to drop to f64. Inside the plane's frame those axes are `x̂`/`ŷ` and the
-    // rational path applies unchanged — the walls come straight from the profile's decimals and
-    // the far cap is `w = dist`.
-    //
-    // ★★ **The gate is `plane.exact()`, the same expression the face path uses.** A plane that
-    // lifts in the world takes the world, definition or not; otherwise every axis-aligned model
-    // would gain motions it does not need and leave the exact predicate path for nothing.
-    //
-    // ★ **The frame is the caller's own**: `def.origin` and `def.ref_dir` are what they wrote, so
-    // the sketch's `(0, 0)` and `+u` land where they asked. `flip` is measured, not derived — the
-    // plane's canonical coefficients carry no direction, and `ŵ` has to face the way the sweep does.
-    //
-    // The road is the [`SketchFrame`] shape, the same one the face path walks (S9): state the
-    // plane, measure `flip` against the realized basis, name the frame as a node.
-    let frame = plane.def.filter(|_| plane.exact().is_none()).and_then(|d| {
-        // ★★ **Built with `−normal`, the sense `build_prism` gives a base cap.** The key is
-        // direction-free, so this surface and the base cap intern together — and matching the
-        // sense means the face does not have to be spelled `Reversed` to compensate. Measured:
-        // pushing `+normal` instead flipped the stored normal on 781 base caps, which
-        // `Face::orientation` absorbed correctly but for no reason.
-        //
-        // ★ Through the sketch origin rather than a ring point, which is also *more* accurate
-        // here: the caller's origin is exact, so `d` comes out exact where the ring point's dot
-        // product rounds (measured `5.55e-17` against `0`).
-        let pl = Plane::from_point_normal(plane.origin(), -plane.normal())?;
-        let (h, _) = model.push_plane(pl, d.points(), None);
-        // The caller stated the pair, so the placement is `Named` (S4) — `Canonical` is for
-        // frames nobody named, like a face's. (The values are `PlaneDef`'s own rationals, so
-        // the frame is built directly: `SketchFrame::named`'s decimal door is for a caller's
-        // f64, and its checks hold here structurally — `origin = points[0]` is on the plane.)
-        let placement = nacre_topo::FramePlacement::Named {
-            origin: d.origin(),
-            ref_dir: d.ref_dir(),
-        };
-        let (sf, _) = measured_frame(model, h, placement, plane.normal())?;
-        Some(push_frame_node(model, sf))
-    });
-    let (outer, holes) = swept_profile(model, plane, profile, dist, frame)?;
-    // ★★★★ **The base cap *is* the plane the caller named**, so where they stated it exactly
-    // (`PlaneDef`) it can record that plane's own points even when nothing else about the prism
-    // can — the walls and far cap are irrational in the world unless `plane.exact()` allows.
-    //
-    // ★★★ **The points travel, not a `Surface`.** Pre-creating one here would have to guess the
-    // f64 plane `build_prism` builds, and it builds it through the *oriented* ring's first point —
-    // which reversing the ring can change. Two spellings of one plane whose `d` differs by an ulp
-    // is precisely the defect this whole line of work removes, so the geometry stays exactly where
-    // it was and only the exact record is added. (Measured: building it from the sketch origin
-    // instead moved a volume.)
-    build_prism(
-        model,
-        outer,
-        holes,
-        plane.normal(),
-        None,
-        plane.def.as_ref().map(|d| d.points()),
     )
 }
 
@@ -2495,6 +2437,20 @@ mod frame_road {
 #[cfg(test)]
 mod frame_differential {
     use super::*;
+
+    /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+    /// when the plane is not one the model already holds (a seed, or a face's).
+    fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+        match apply(
+            m,
+            &Operation::DatumPlane {
+                def: DatumDef::Stated(plane),
+            },
+        ) {
+            Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+            other => panic!("stating a plane: {other:?}"),
+        }
+    }
     use nacre_topo::SurfaceTruth;
 
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Profile2d {
@@ -2668,10 +2624,11 @@ mod frame_differential {
 
                 // The value road: today's operation.
                 let mut by_value = Model::new();
+                let __frame0 = datum_frame(&mut by_value, sp);
                 apply(
                     &mut by_value,
                     &Operation::Extrude {
-                        plane: sp,
+                        frame: __frame0,
                         profile: profile(),
                         dist: 1.5,
                     },
@@ -2727,10 +2684,11 @@ mod frame_differential {
         let profile = rect(0.0, 0.0, 2.0, 1.0);
 
         let mut stated = Model::new();
+        let __w0 = SketchFrame::world(&stated, Axis::Y);
         apply(
             &mut stated,
             &Operation::Extrude {
-                plane: SketchPlane::world_zx(),
+                frame: __w0,
                 profile: profile.clone(),
                 dist: 1.0,
             },

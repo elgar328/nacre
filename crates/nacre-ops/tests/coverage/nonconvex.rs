@@ -554,7 +554,7 @@ fn clockwise_input_is_auto_corrected() {
     // The square wound CW; auto-CCW makes it a valid cube anyway.
     let cw =
         Profile2d::polygon(vec![p2(0.0, 1.0), p2(1.0, 1.0), p2(1.0, 0.0), p2(0.0, 0.0)]).unwrap();
-    let m = replay(&[extrude_op(cw, 1.0)]).unwrap();
+    let m = replay(&[extrude_log_op(cw, 1.0)]).unwrap();
     assert!(nacre_validate::validate(&m).is_empty());
     assert_eq!(m.faces.len(), 6);
 }
@@ -563,11 +563,13 @@ fn clockwise_input_is_auto_corrected() {
 fn degenerate_inputs_are_rejected() {
     let plane = SketchPlane::world_xy();
     let two = Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0)]).unwrap();
+    let mut m = Model::new();
+    let frame = datum_frame(&mut m, plane);
     assert_eq!(
         apply(
-            &mut Model::new(),
+            &mut m,
             &Operation::Extrude {
-                plane,
+                frame,
                 profile: two,
                 dist: 1.0
             }
@@ -575,7 +577,7 @@ fn degenerate_inputs_are_rejected() {
         Err(OpError::DegenerateProfile)
     );
     assert_eq!(
-        apply(&mut Model::new(), &extrude_op(square(), 0.0)),
+        apply(&mut Model::new(), &extrude_op(&m, square(), 0.0)),
         Err(OpError::NonPositiveDistance)
     );
     // A repeated point. This used to surface as `DegenerateGeometry` from `Line::through_points`
@@ -583,9 +585,9 @@ fn degenerate_inputs_are_rejected() {
     let dup = Profile2d::polygon(vec![p2(0.0, 0.0), p2(0.0, 0.0), p2(1.0, 1.0)]).unwrap();
     assert_eq!(
         apply(
-            &mut Model::new(),
+            &mut m,
             &Operation::Extrude {
-                plane,
+                frame,
                 profile: dup,
                 dist: 1.0
             }

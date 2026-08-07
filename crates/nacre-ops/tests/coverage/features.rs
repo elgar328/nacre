@@ -321,10 +321,11 @@ fn a_pocket_on_a_slanted_face() {
         p2(-1.0, 1.0),
     ])
     .unwrap();
+    let __f101 = datum_frame(&mut m, plane);
     let OpOutput::Extrude { faces, .. } = apply(
         &mut m,
         &Operation::Extrude {
-            plane,
+            frame: __f101,
             profile: big,
             dist: 2.0,
         },
@@ -357,10 +358,11 @@ fn a_pad_on_a_slanted_face() {
         p2(-1.0, 1.0),
     ])
     .unwrap();
+    let __f100 = datum_frame(&mut m, plane);
     let OpOutput::Extrude { faces, .. } = apply(
         &mut m,
         &Operation::Extrude {
-            plane,
+            frame: __f100,
             profile: big,
             dist: 2.0,
         },
@@ -596,7 +598,8 @@ fn cut_a_non_convex_blind_pocket() {
         p2(-0.3, 0.3),
     ])
     .unwrap();
-    let OpOutput::Extrude { solid: lp, .. } = apply(&mut m, &extrude_op(l, 0.5)).unwrap() else {
+    let __op = extrude_op(&m, l, 0.5);
+    let OpOutput::Extrude { solid: lp, .. } = apply(&mut m, &__op).unwrap() else {
         unreachable!()
     };
     let r = boolean_one(&mut m, BoolKind::Cut, base, lp).unwrap();
@@ -806,9 +809,8 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
 
     let top_origin = |pts: Vec<Point2>| {
         let mut m = Model::new();
-        let OpOutput::Extrude { faces, .. } =
-            apply(&mut m, &extrude_op(Profile2d::polygon(pts).unwrap(), 1.0)).unwrap()
-        else {
+        let __op = extrude_op(&m, Profile2d::polygon(pts).unwrap(), 1.0);
+        let OpOutput::Extrude { faces, .. } = apply(&mut m, &__op).unwrap() else {
             unreachable!()
         };
         m.rebuild_adjacency();

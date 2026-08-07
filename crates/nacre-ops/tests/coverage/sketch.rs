@@ -8,9 +8,9 @@
 
 use crate::common::*;
 use nacre_math::{Point2, Point3};
-use nacre_ops::{
-    BoolKind, Edge2d, OpOutput, Operation, Profile2d, SketchPlane, apply, from_edges, from_rings,
-};
+use nacre_ops::SketchFrame;
+use nacre_ops::{BoolKind, Edge2d, OpOutput, Operation, Profile2d, apply, from_edges, from_rings};
+use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
@@ -31,7 +31,7 @@ fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
     let OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(m, Axis::Z),
             profile,
             dist,
         },
@@ -363,7 +363,7 @@ fn try_extrude(profile: Profile2d) -> Result<(), nacre_ops::OpError> {
     apply(
         &mut Model::new(),
         &Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&Model::new(), Axis::Z),
             profile,
             dist: 1.0,
         },

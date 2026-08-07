@@ -817,12 +817,27 @@ fn unordered(a: usize, b: usize) -> (usize, usize) {
 pub mod tests {
 
     use super::*;
+
+    /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+    /// when the plane is not one the model already holds (a seed, or a face's).
+    fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
+        match crate::apply(
+            m,
+            &crate::Operation::DatumPlane {
+                def: crate::DatumDef::Stated(plane),
+            },
+        ) {
+            Ok(crate::OpOutput::DatumPlane { frame, .. }) => frame,
+            other => panic!("stating a plane: {other:?}"),
+        }
+    }
     use crate::tolerant::Judge;
     use crate::transform::transform;
     use crate::{boolean::*, ops::*, planes::*};
     use nacre_cip::Pt3;
     use nacre_geom::intersect::{planes_coplanar, three_planes};
     use nacre_geom::{Plane, Surface};
+    use nacre_scalar::Axis;
     use nacre_topo::{Loop, Orientation, VertexDef};
     use proptest::prelude::*;
     use std::collections::HashMap;
@@ -876,9 +891,20 @@ pub mod tests {
         Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)]).unwrap()
     }
 
-    fn extrude_op(profile: Profile2d, dist: f64) -> Operation {
+    /// A world-XY extrude for a log that is **replayed** rather than applied to a live model.
+    ///
+    /// ★ Its frame names a plane in a *throwaway* model, and that is sound for one reason: a
+    /// log's handles are index vocabulary, and `replay` re-anchors them onto the model it builds
+    /// (`docs/design.md` §2). The world planes are seeded at fixed indices, so `world(Axis::Z)`
+    /// names the same plane in every model. Do **not** `apply` one of these to a live model —
+    /// that is the cross-model misuse `Store::get`'s debug guard exists to catch.
+    fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
+        extrude_op(&Model::new(), profile, dist)
+    }
+
+    fn extrude_op(m: &Model, profile: Profile2d, dist: f64) -> Operation {
         Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(m, Axis::Z),
             profile,
             dist,
         }
@@ -896,7 +922,7 @@ pub mod tests {
 
     #[test]
     fn square_extrudes_to_a_cube() {
-        let m = replay(&[extrude_op(square(), 1.0)]).unwrap();
+        let m = replay(&[extrude_log_op(square(), 1.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 8);
         assert_eq!(m.edges.len(), 12);
@@ -927,7 +953,7 @@ pub mod tests {
     #[test]
     fn triangle_extrudes_to_a_prism() {
         let tri = Profile2d::polygon(vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(1.0, 1.5)]).unwrap();
-        let m = replay(&[extrude_op(tri, 3.0)]).unwrap();
+        let m = replay(&[extrude_log_op(tri, 3.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 6);
         assert_eq!(m.edges.len(), 9);
@@ -936,7 +962,7 @@ pub mod tests {
 
     #[test]
     fn pentagon_extrudes_clean() {
-        let m = replay(&[extrude_op(regular_ngon(5, 2.0), 1.0)]).unwrap();
+        let m = replay(&[extrude_log_op(regular_ngon(5, 2.0), 1.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 10);
         assert_eq!(m.faces.len(), 7);
@@ -954,7 +980,7 @@ pub mod tests {
             p2(0.0, 2.0),
         ])
         .unwrap();
-        let m = replay(&[extrude_op(l, 1.0)]).unwrap();
+        let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
         assert!(nacre_validate::validate(&m).is_empty());
         assert_eq!(m.vertices.len(), 12);
         assert_eq!(m.faces.len(), 8);
@@ -973,7 +999,7 @@ pub mod tests {
             p2(0.0, 2.0),
         ])
         .unwrap();
-        let m = replay(&[extrude_op(l, 1.0)]).unwrap();
+        let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
     }
@@ -990,7 +1016,7 @@ pub mod tests {
             p2(2.0, 0.0),
         ])
         .unwrap();
-        let m = replay(&[extrude_op(l, 1.0)]).unwrap();
+        let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
     }
@@ -1640,7 +1666,7 @@ pub mod tests {
         // A hub with fins arrayed around it — every fin is turned by an angle with no exact
         // f64, so every judgement is on the toleranced path and the report is non-empty.
         let fin_fold = |n: i128| -> String {
-            let mut m = replay(&[extrude_op(
+            let mut m = replay(&[extrude_log_op(
                 Profile2d::polygon(vec![
                     p2(-3.0, -3.0),
                     p2(3.0, -3.0),
@@ -1655,10 +1681,11 @@ pub mod tests {
             let mut sig = String::new();
             for i in 0..n {
                 let fin = {
+                    let __w7 = SketchFrame::world(&m, Axis::Z);
                     let out = ops::apply(
                         &mut m,
                         &Operation::Extrude {
-                            plane: SketchPlane::world_xy(),
+                            frame: __w7,
                             profile: Profile2d::polygon(vec![
                                 p2(2.0, -0.4),
                                 p2(8.0, -0.4),
@@ -1718,8 +1745,8 @@ pub mod tests {
                 .unwrap()
             };
             let mut m = replay(&[
-                extrude_op(ngon(16, 2.0, 0.0, 0.0), 3.0),
-                extrude_op(ngon(16, 2.0, 2.5, 0.5), 3.0),
+                extrude_log_op(ngon(16, 2.0, 0.0, 0.0), 3.0),
+                extrude_log_op(ngon(16, 2.0, 2.5, 0.5), 3.0),
             ])
             .unwrap();
             let a = m.live_solids[0];
@@ -1799,7 +1826,7 @@ pub mod tests {
             p2(0.0, 2.0),
         ])
         .unwrap();
-        let m = replay(&[extrude_op(u, 1.0)]).unwrap();
+        let m = replay(&[extrude_log_op(u, 1.0)]).unwrap();
         let s = m.live_solids[0];
         (m, s)
     }
@@ -1984,10 +2011,11 @@ pub mod tests {
             p2(1.8, 1.8),
         ])
         .unwrap();
+        let __w6 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid: b, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
+                frame: __w6,
                 profile: bar,
                 dist: 1.0,
             },
@@ -2015,10 +2043,14 @@ pub mod tests {
             p2(0.2, 0.9),
         ])
         .unwrap();
+        let __f103 = datum_frame(
+            &mut m,
+            SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
+        );
         let OpOutput::Extrude { solid: stub, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
+                frame: __f103,
                 profile: ell,
                 dist: 1.0,
             },
@@ -2195,14 +2227,18 @@ pub mod tests {
             p2(0.1, 1.5),
         ])
         .unwrap();
+        let __frame0 = datum_frame(
+            &mut m,
+            SketchPlane::from_origin_normal(
+                Point3::from_array([0.0, 1.3, 0.0]),
+                Vector3::from_array([0.0, -1.0, 0.0]),
+            )
+            .expect("a unit normal"),
+        );
         let OpOutput::Extrude { solid: st, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::from_origin_normal(
-                    Point3::from_array([0.0, 1.3, 0.0]),
-                    Vector3::from_array([0.0, -1.0, 0.0]),
-                )
-                .expect("a unit normal"),
+                frame: __frame0,
                 profile: staple,
                 dist: 0.65,
             },
@@ -2610,7 +2646,7 @@ pub mod tests {
 
     #[test]
     fn replay_is_deterministic() {
-        let log = vec![extrude_op(square(), 1.0)];
+        let log = vec![extrude_log_op(square(), 1.0)];
         let m1 = replay(&log).unwrap();
         let m2 = replay(&log).unwrap();
         let pts = |m: &Model| {
@@ -2627,10 +2663,22 @@ pub mod tests {
     #[test]
     fn two_extrudes_make_two_solids() {
         let far = SketchPlane::world_xy().with_origin(Point3::from_array([5.0, 0.0, 0.0]));
+        // ★ The second plane is not a seed, so the log has to state it — and a datum's handle is
+        // not known until the datum runs. So the log is assembled against a **scratch model built
+        // the same way**: a frame that names surface *N* there names surface *N* in the replay,
+        // because `replay` re-anchors indices (`docs/design.md` §2). That is what a recording
+        // session does, and R is what makes it sound.
+        let mut scratch = Model::new();
+        let first = extrude_op(&scratch, square(), 1.0);
+        apply(&mut scratch, &first).unwrap();
+        let far_frame = datum_frame(&mut scratch, far);
         let log = vec![
-            extrude_op(square(), 1.0),
+            first,
+            Operation::DatumPlane {
+                def: DatumDef::Stated(far),
+            },
             Operation::Extrude {
-                plane: far,
+                frame: far_frame,
                 profile: square(),
                 dist: 1.0,
             },
@@ -2643,8 +2691,8 @@ pub mod tests {
     /// Extrude a unit cube and return `(model, top face handle)`.
     fn cube_with_top() -> (Model, Handle<Face>) {
         let mut m = Model::new();
-        let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
-        else {
+        let op = extrude_op(&m, square(), 1.0);
+        let OpOutput::Extrude { faces, .. } = apply(&mut m, &op).unwrap() else {
             unreachable!()
         };
         let top = faces[1]; // base, top, sides…
@@ -2928,7 +2976,7 @@ pub mod tests {
             r in 0.5f64..10.0,
             dist in 0.1f64..10.0,
         ) {
-            let m = replay(&[extrude_op(regular_ngon(n, r), dist)]).unwrap();
+            let m = replay(&[extrude_log_op(regular_ngon(n, r), dist)]).unwrap();
             prop_assert!(nacre_validate::validate(&m).is_empty());
             prop_assert_eq!(m.vertices.len(), 2 * n);
             prop_assert_eq!(m.faces.len(), n + 2);
@@ -2945,8 +2993,13 @@ pub mod tests {
             let normal = Vector3::from_array([nx, ny, nz]);
             prop_assume!(normal.norm() > 0.1); // skip near-zero normals
             let plane = SketchPlane::from_origin_normal(Point3::origin(), normal).unwrap();
-            let m = replay(&[Operation::Extrude {
-                plane,
+            let __plane = plane;
+            let mut __scratch205 = Model::new();
+            let __g204 = datum_frame(&mut __scratch205, __plane);
+            let m = replay(&[
+                Operation::DatumPlane { def: DatumDef::Stated(__plane) },
+                Operation::Extrude {
+                    frame: __g204,
                 profile: regular_ngon(n, 2.0),
                 dist,
             }])
@@ -2974,8 +3027,9 @@ pub mod tests {
             let plane = SketchPlane::from_origin_normal(Point3::origin(), normal).unwrap();
             let mut m = Model::new();
             let big = Profile2d::polygon(vec![p2(-1.0, -1.0), p2(1.0, -1.0), p2(1.0, 1.0), p2(-1.0, 1.0)]).unwrap();
+            let frame = datum_frame(&mut m, plane);
             let OpOutput::Extrude { faces, .. } =
-                apply(&mut m, &Operation::Extrude { plane, profile: big, dist: 2.0 }).unwrap()
+                apply(&mut m, &Operation::Extrude { frame, profile: big, dist: 2.0 }).unwrap()
             else { unreachable!() };
             match apply(&mut m, &pocket_op(faces[1], small_square(), 0.5)) {
                 Ok(OpOutput::PocketOnFace { solid, .. }) => {
@@ -3001,8 +3055,9 @@ pub mod tests {
         ) {
             let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]).unwrap();
             let mut m = Model::new();
+            let __w5 = SketchFrame::world(&m, Axis::Z);
             let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w5,
                 profile: rect,
                 dist: sz,
             }).unwrap() else { unreachable!() };
@@ -3024,8 +3079,9 @@ pub mod tests {
         ) {
             let rect = Profile2d::polygon(vec![p2(0.0, 0.0), p2(sx, 0.0), p2(sx, sy), p2(0.0, sy)]).unwrap();
             let mut m = Model::new();
+            let __w4 = SketchFrame::world(&m, Axis::Z);
             let OpOutput::Extrude { faces, .. } = apply(&mut m, &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w4,
                 profile: rect,
                 dist: sz,
             }).unwrap() else { unreachable!() };
@@ -5183,10 +5239,11 @@ pub mod tests {
         let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
         let build = |profile: Profile2d| {
             let mut m = Model::new();
+            let __w3 = SketchFrame::world(&m, Axis::Z);
             apply(
                 &mut m,
                 &Operation::Extrude {
-                    plane: SketchPlane::world_xy(),
+                    frame: __w3,
                     profile,
                     dist: 1.0,
                 },
@@ -5256,10 +5313,11 @@ pub mod tests {
         .unwrap();
         // Self-qualification: the dissolve pass must have left all eight corners standing.
         assert_eq!(profile.outer().points().len(), 8, "no corner is flat");
+        let __w2 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w2,
                 profile,
                 dist: 1.0,
             },
@@ -5599,8 +5657,13 @@ pub mod tests {
                 Vector3::from_array([nx, ny, 1.0]),
             )
             .unwrap();
-            let mut m = replay(&[Operation::Extrude {
-                plane,
+            let __plane = plane;
+            let mut __scratch203 = Model::new();
+            let __g202 = datum_frame(&mut __scratch203, __plane);
+            let mut m = replay(&[
+                Operation::DatumPlane { def: DatumDef::Stated(__plane) },
+                Operation::Extrude {
+                    frame: __g202,
                 profile: square(),
                 dist: 1.0,
             }])
@@ -6275,10 +6338,11 @@ pub mod tests {
     fn prism_with_a_slanted_wall() -> (Model, Handle<Face>) {
         let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
         let mut m = Model::new();
+        let __w1 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w1,
                 profile: Profile2d::polygon(vec![
                     p(0.0, 0.0),
                     p(4.0, 0.0),
@@ -6331,10 +6395,11 @@ pub mod tests {
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
         let mut m = Model::new();
         let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let __w0 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w0,
                 profile: Profile2d::polygon(vec![
                     p(0.0, 0.0),
                     p(4.0, 0.0),
@@ -6597,10 +6662,11 @@ pub mod tests {
                 .unwrap();
         assert!(plane.exact().is_none(), "the axes have no exact form");
         let mut m = Model::new();
+        let __f102 = datum_frame(&mut m, plane);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane,
+                frame: __f102,
                 profile: square(),
                 dist: 1.0,
             },
@@ -6640,10 +6706,11 @@ pub mod tests {
         // at construction, with no f64 comparison. That is what the frame buys over the f64 path,
         // where the two would agree only if their rounded coefficients happened to.
         let cap_of = |m: &mut Model, d: f64| -> Handle<nacre_geom::Surface> {
+            let __g201 = datum_frame(m, plane);
             let OpOutput::Extrude { faces, .. } = apply(
                 m,
                 &Operation::Extrude {
-                    plane,
+                    frame: __g201,
                     profile: square(),
                     dist: d,
                 },
@@ -6687,10 +6754,11 @@ pub mod tests {
             Vector3::from_array([0.6, 0.8, 0.0]),
             Vector3::from_array([-0.48, 0.36, 0.8]),
         );
+        let __f101 = datum_frame(&mut m, plane);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane,
+                frame: __f101,
                 profile: Profile2d::polygon(vec![
                     p(0.1111111111111111, 0.1234567890123456),
                     p(4.123456789012345, 0.2345678901234567),
@@ -6786,10 +6854,11 @@ pub mod tests {
             "the fixture was chosen to have a Wide name — retune the axes if this fails"
         );
         let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let __f100 = datum_frame(&mut m, plane);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane,
+                frame: __f100,
                 profile: Profile2d::polygon(vec![
                     p(0.1234567890123456, 0.2345678901234567),
                     p(2.765432109876543, 0.3456789012345678),
@@ -6863,13 +6932,13 @@ pub mod tests {
             far.exact().is_none() && far.def.is_none(),
             "fixture: no exact statement"
         );
+        // A plane with no exact statement cannot even be stated as a datum, which is where the
+        // rejection now lands — one step earlier than it used to, and by the same name.
         assert_eq!(
             apply(
                 &mut Model::new(),
-                &Operation::Extrude {
-                    plane: far,
-                    profile: square(),
-                    dist: 1.0,
+                &Operation::DatumPlane {
+                    def: DatumDef::Stated(far)
                 },
             ),
             Err(OpError::PlaneWithoutExactForm)
@@ -6879,7 +6948,7 @@ pub mod tests {
             apply(
                 &mut Model::new(),
                 &Operation::Extrude {
-                    plane: SketchPlane::world_xy(),
+                    frame: SketchFrame::world(&Model::new(), Axis::Z),
                     profile: square(),
                     dist: 1e300,
                 },

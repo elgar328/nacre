@@ -82,6 +82,20 @@ impl PlaneWitness for PlaneGeom {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+    /// when the plane is not one the model already holds (a seed, or a face's).
+    fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
+        match crate::apply(
+            m,
+            &crate::Operation::DatumPlane {
+                def: crate::DatumDef::Stated(plane),
+            },
+        ) {
+            Ok(crate::OpOutput::DatumPlane { frame, .. }) => frame,
+            other => panic!("stating a plane: {other:?}"),
+        }
+    }
     use crate::planes::collect_planes;
     use crate::{Operation, apply};
     // The exact geom predicates, used here as independent oracles for the `t_*` wrappers.
@@ -1493,10 +1507,11 @@ mod tests {
             ])
             .unwrap();
             let mut m = Model::new();
+            let __f104 = datum_frame(&mut m, plane);
             let out = apply(
                 &mut m,
                 &Operation::Extrude {
-                    plane,
+                    frame: __f104,
                     profile: sq,
                     dist: 0.75,
                 },
@@ -1561,15 +1576,16 @@ mod tests {
     /// digits, which is what a slider, a computed dimension or a proptest actually produces.
     #[test]
     fn two_walls_of_one_plane_become_one_surface() {
-        use crate::{OpOutput, Profile2d, SketchPlane};
+        use crate::{OpOutput, Profile2d, SketchFrame};
         use nacre_math::Point2;
         let t = 1.9384756293847; // the plane the notch's two arms share
         let p = |x: f64, y: f64| Point2::from_array([x, y]);
         let mut m = Model::new();
+        let __w0 = SketchFrame::world(&m, Axis::Z);
         let out = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w0,
                 profile: Profile2d::polygon(vec![
                     p(0.0, 0.0),
                     p(2.8374652839472, 0.0),

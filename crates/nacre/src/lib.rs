@@ -48,12 +48,14 @@
 //!         Point2::from_array([a, b]),
 //!     ]).unwrap()
 //! };
-//! let extrude = |m: &mut Model, profile, dist| match apply(
-//!     m,
-//!     &Operation::Extrude { plane: SketchPlane::world_xy(), profile, dist },
-//! ) {
-//!     Ok(OpOutput::Extrude { solid, .. }) => solid,
-//!     other => panic!("{other:?}"),
+//! // An extrude *names* the plane it sketches on — `SketchFrame::world` is the frame twin of
+//! // `SketchPlane::world_xy`, reading the plane `Model::new` already seeded.
+//! let extrude = |m: &mut Model, profile, dist| {
+//!     let frame = SketchFrame::world(m, Axis::Z);
+//!     match apply(m, &Operation::Extrude { frame, profile, dist }) {
+//!         Ok(OpOutput::Extrude { solid, .. }) => solid,
+//!         other => panic!("{other:?}"),
+//!     }
 //! };
 //!
 //! // Sweep a 4x4 plate 1 tall, then a 2x2 post 3 tall standing in the middle of it.

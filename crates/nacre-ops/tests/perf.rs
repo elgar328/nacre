@@ -25,7 +25,8 @@
 //! one concludes that parallelism is slow.
 
 use nacre_math::{Point2, Point3};
-use nacre_ops::{BoolKind, Operation, Profile2d, SketchPlane, apply, boolean};
+use nacre_ops::SketchFrame;
+use nacre_ops::{BoolKind, Operation, Profile2d, apply, boolean};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
@@ -38,7 +39,7 @@ fn extrude(m: &mut Model, ring: Vec<Point2>, dist: f64) -> Handle<Solid> {
     let out = apply(
         m,
         &Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(m, Axis::Z),
             profile: Profile2d::polygon(ring).unwrap(),
             dist,
         },

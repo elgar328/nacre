@@ -114,7 +114,6 @@ impl RatFrame {
     /// `None` when either axis needs an irrational scale, when `v_raw` overflowed at construction
     /// (`PlaneFrame::v` is `None`), or on `i128` overflow — all of which mean the same thing here:
     /// this frame has no exact rational basis, so the sketch is written in the frame instead.
-    #[allow(dead_code)]
     pub(crate) fn of_plane_frame(pf: &nacre_scalar::PlaneFrame) -> Option<RatFrame> {
         let (v_raw, vv) = pf.v.as_ref()?;
         Some(RatFrame {

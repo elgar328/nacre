@@ -2563,6 +2563,8 @@ fn undecided_reject(notes: &Notes) -> Result<(), BoolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SketchFrame;
+    use nacre_scalar::Axis;
 
     /// The engine entry with the evidence dropped — these tests assert geometry, and the report
     /// has its own tests. Shadows [`super::boolean`] so the call sites read as they always did.
@@ -2710,7 +2712,7 @@ mod tests {
         ])
         .unwrap();
         let mut m = replay(&[Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&Model::new(), Axis::Z),
             profile,
             dist: 1.0,
         }])
@@ -2828,7 +2830,7 @@ mod tests {
         ])
         .unwrap();
         let mut m = replay(&[Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&Model::new(), Axis::Z),
             profile,
             dist: 1.0,
         }])
@@ -2938,7 +2940,7 @@ mod tests {
         ])
         .unwrap();
         let m = replay(&[Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&Model::new(), Axis::Z),
             profile,
             dist: 1.0,
         }])
@@ -4025,7 +4027,7 @@ mod tests {
         ])
         .unwrap();
         let mut m = replay(&[Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&Model::new(), Axis::Z),
             profile: u_profile,
             dist: 1.0,
         }])

@@ -188,8 +188,9 @@ proptest! {
         let vl = (w * h - (w - nx) * (h - ny)) as f64 * d as f64;
         let build = || {
             let mut m = Model::new();
+            let __op = extrude_op(&m, l_profile(w, h, nx, ny), d as f64);
             let OpOutput::Extrude { solid: a, .. } =
-                apply(&mut m, &extrude_op(l_profile(w, h, nx, ny), d as f64)).unwrap()
+                apply(&mut m, &__op).unwrap()
             else {
                 unreachable!()
             };

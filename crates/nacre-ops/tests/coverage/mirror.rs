@@ -41,10 +41,11 @@ fn copy_solid(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
 /// An L-shaped prism in `x ∈ [0, 2]`, deliberately **not** symmetric about any coordinate plane —
 /// a symmetric fixture would let a broken mirror pass by doing nothing.
 fn ell(m: &mut Model) -> Handle<Solid> {
+    let __g201 = datum_frame(m, nacre_ops::SketchPlane::world_xy());
     let OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
-            plane: nacre_ops::SketchPlane::world_xy(),
+            frame: __g201,
             profile: nacre_ops::Profile2d::polygon(vec![
                 p2(0.0, 0.0),
                 p2(2.0, 0.0),

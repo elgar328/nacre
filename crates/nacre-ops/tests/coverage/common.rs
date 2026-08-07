@@ -11,12 +11,28 @@
 use nacre_geom::intersect::planes_coplanar;
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::DatumDef;
+use nacre_ops::SketchFrame;
 use nacre_ops::{
     BoolError, BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean, replay,
 };
 use nacre_scalar::{Axis, Isometry};
 use nacre_store::Handle;
 use nacre_topo::{Face, Model, Orientation, Solid};
+
+/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+/// when the plane is not one the model already holds (a seed, or a face's).
+pub fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+    match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating a plane: {other:?}"),
+    }
+}
 
 /// The signed volume of a solid, via the public mass-properties crate — the
 /// independent oracle every capability test asserts against.
@@ -61,12 +77,24 @@ pub fn regular_ngon(n: usize, r: f64) -> Profile2d {
     Profile2d::polygon(points).unwrap()
 }
 
-pub fn extrude_op(profile: Profile2d, dist: f64) -> Operation {
+/// A world-XY extrude **for `m`** — the frame names that model's seeded plane.
+///
+/// ★ It takes the model because an extrude now *names* its plane rather than carrying it, and a
+/// handle is only valid in its own arena. For a log that will be `replay`ed rather than applied,
+/// see [`extrude_log_op`].
+pub fn extrude_op(m: &Model, profile: Profile2d, dist: f64) -> Operation {
     Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(m, Axis::Z),
         profile,
         dist,
     }
+}
+
+/// The same, for a log that is **replayed**: the frame names a throwaway model's seed, which
+/// `replay` re-anchors onto the model it builds (`docs/design.md` §2). Applying one of these to a
+/// live model is the cross-model misuse the debug guard catches.
+pub fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
+    extrude_op(&Model::new(), profile, dist)
 }
 
 /// Is there an outer-shell face on the plane through `pt` with normal `n`,
@@ -172,7 +200,7 @@ pub fn l_prism() -> (Model, Handle<Solid>) {
         p2(0.0, 2.0),
     ])
     .unwrap();
-    let m = replay(&[extrude_op(l, 1.0)]).unwrap();
+    let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
 }
@@ -189,7 +217,7 @@ pub fn rotated_l_prism() -> (Model, Handle<Solid>) {
         p2(2.0, 0.0),
     ])
     .unwrap();
-    let m = replay(&[extrude_op(l, 1.0)]).unwrap();
+    let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
 }
@@ -264,7 +292,7 @@ pub fn u_prism() -> (Model, Handle<Solid>) {
         p2(0.0, 2.0),
     ])
     .unwrap();
-    let m = replay(&[extrude_op(u, 1.0)]).unwrap();
+    let m = replay(&[extrude_log_op(u, 1.0)]).unwrap();
     let s = m.live_solids[0];
     (m, s)
 }
@@ -280,10 +308,14 @@ pub fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
 
 /// Extrude a profile on a plane offset up the z-axis (a bar sitting above z=0.5).
 fn extrude_at_z(m: &mut Model, profile: Profile2d, z: f64, dist: f64) -> Handle<Solid> {
+    let __g200 = datum_frame(
+        m,
+        SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+    );
     let OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
-            plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+            frame: __g200,
             profile,
             dist,
         },
@@ -339,8 +371,8 @@ pub fn cube_and_spun_bar_x(
 ) -> (Model, Handle<Solid>, Handle<Solid>) {
     use nacre_scalar::{Angle, Rat, Rotation};
     let mut m = Model::new();
-    let OpOutput::Extrude { solid: cube, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap()
-    else {
+    let __op = extrude_op(&m, square(), 1.0);
+    let OpOutput::Extrude { solid: cube, .. } = apply(&mut m, &__op).unwrap() else {
         unreachable!("extrude yields Extrude output")
     };
     let bar = Profile2d::polygon(vec![
@@ -407,14 +439,18 @@ pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
         p2(0.1, 1.5),
     ])
     .unwrap();
+    let __frame0 = datum_frame(
+        &mut m,
+        SketchPlane::from_origin_normal(
+            Point3::from_array([0.0, 1.3, 0.0]),
+            Vector3::from_array([0.0, -1.0, 0.0]),
+        )
+        .expect("a unit normal"),
+    );
     let OpOutput::Extrude { solid: st, .. } = apply(
         &mut m,
         &Operation::Extrude {
-            plane: SketchPlane::from_origin_normal(
-                Point3::from_array([0.0, 1.3, 0.0]),
-                Vector3::from_array([0.0, -1.0, 0.0]),
-            )
-            .expect("a unit normal"),
+            frame: __frame0,
             profile: staple,
             dist: 0.65,
         },
@@ -430,7 +466,8 @@ pub fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// A unit cube with its top face handle — the standard target for pad/pocket.
 pub fn cube_with_top() -> (Model, Handle<Face>) {
     let mut m = Model::new();
-    let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap() else {
+    let __op = extrude_op(&m, square(), 1.0);
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &__op).unwrap() else {
         unreachable!()
     };
     let top = faces[1]; // base, top, sides…
@@ -512,7 +549,8 @@ pub fn pocketed_cube() -> (Model, Handle<Solid>) {
 
 pub fn top_pocketed_cube() -> (Model, Handle<Solid>) {
     let mut m = Model::new();
-    let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude_op(square(), 1.0)).unwrap() else {
+    let __op = extrude_op(&m, square(), 1.0);
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &__op).unwrap() else {
         unreachable!()
     };
     let OpOutput::PocketOnFace { solid, .. } =

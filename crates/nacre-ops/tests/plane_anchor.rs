@@ -27,9 +27,26 @@
 
 use nacre_geom::Plane;
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::DatumDef;
+use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
+use nacre_scalar::Axis;
 use nacre_scalar::Rat;
 use nacre_topo::Model;
+
+/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+/// when the plane is not one the model already holds (a seed, or a face's).
+fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+    match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating a plane: {other:?}"),
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The `wf` fixture — census.rs's tilted-decimal-frame family, restated
@@ -275,6 +292,11 @@ fn topo_sig(m: &Model) -> Vec<String> {
 fn wf_model(pre_state_at: Option<Point3>) -> Model {
     let mut m = Model::new();
     let sp = wf_plane();
+    // ★★ **Both arms now state the plane** — an extrude names its plane, so "without a
+    // pre-existing plane" stopped being expressible (S5(i)-b). What still varies, and what this
+    // file measures, is **which point anchors the cache**: `None` lets the datum anchor at the
+    // caller's sketch origin, `Some(p)` plants the same plane at `p` first so the datum interns
+    // onto it and inherits that anchor. Two production roads, one of them deliberately worse.
     if let Some(anchor) = pre_state_at {
         let (_h, flipped) = m.push_plane(
             Plane::from_point_normal(anchor, -sp.normal()).expect("nonzero normal"),
@@ -287,10 +309,11 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
              the anchor with the orientation"
         );
     }
+    let __frame0 = datum_frame(&mut m, sp);
     let OpOutput::Extrude { solid: a, .. } = apply(
         &mut m,
         &Operation::Extrude {
-            plane: sp,
+            frame: __frame0,
             profile: wf_profile(),
             dist: WF_DIST,
         },
@@ -300,10 +323,11 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
     };
     // A world-axis block through the tilted prism: transverse contact, so the arrangement has to
     // intersect planes from both frames and read their f64 caches.
+    let __w0 = SketchFrame::world(&m, Axis::Z);
     let OpOutput::Extrude { solid: b, .. } = apply(
         &mut m,
         &Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: __w0,
             profile: Profile2d::polygon(vec![
                 Point2::from_array([0.5, 0.5]),
                 Point2::from_array([2.5, 0.5]),
@@ -330,8 +354,13 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
     m
 }
 
-/// ★★ **The gate: stating a plane before the operation that would have created it does not move
-/// the model.**
+/// ★★ **The gate: which point anchors a plane's cache does not move the model.**
+///
+/// Since S5(i)-b an extrude *names* its plane, so "the plane did not exist yet" is no longer a
+/// thing that can happen — both arms below state it. What varies is the anchor: the datum's own
+/// (the caller's sketch origin) against one planted deliberately at the worst ring point. Both are
+/// production roads now, which makes this a stronger comparison than the one it replaced, not a
+/// weaker one.
 ///
 /// Topology must match exactly; coordinates and volume are held to the project's ε (model size ×
 /// `2⁻⁴⁰`), and the deviation is *printed* rather than merely passed, because a gate that only says

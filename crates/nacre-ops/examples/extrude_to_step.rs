@@ -14,7 +14,10 @@
 //! too. That was not true before the triangulator landed.
 
 use nacre_math::Point2;
-use nacre_ops::{Operation, Profile2d, SketchPlane, replay};
+use nacre_ops::SketchFrame;
+use nacre_ops::{Operation, Profile2d, replay};
+use nacre_scalar::Axis;
+use nacre_topo::Model;
 use std::f64::consts::TAU;
 
 /// A regular hexagon of the given radius, centred on the sketch origin.
@@ -30,7 +33,7 @@ fn hexagon(r: f64) -> Profile2d {
 
 fn main() {
     let op = Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(&Model::new(), Axis::Z),
         profile: hexagon(10.0),
         dist: 5.0,
     };

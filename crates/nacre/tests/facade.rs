@@ -5,6 +5,8 @@
 //! lines proves nothing by itself.
 
 use nacre::prelude::*;
+use nacre_ops::SketchFrame;
+use nacre_scalar::Axis;
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![
@@ -20,7 +22,7 @@ fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
     match apply(
         m,
         &Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(m, Axis::Z),
             profile,
             dist,
         },

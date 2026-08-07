@@ -38,9 +38,24 @@
 
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
+use nacre_ops::{DatumDef, SketchFrame, SketchPlane};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
+
+/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+/// when the plane is not one the model already holds (a seed, or a face's).
+fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+    match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating a plane: {other:?}"),
+    }
+}
 
 fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
     let OpOutput::Transform { solid } = apply(
@@ -469,10 +484,11 @@ fn dump() {
                 Vector3::from_array([0.6, 0.8, 0.0]),
                 Vector3::from_array([-0.48, 0.36, 0.8]),
             );
+            let __f105 = datum_frame(&mut m, plane);
             let OpOutput::Extrude { solid, .. } = apply(
                 &mut m,
                 &Operation::Extrude {
-                    plane,
+                    frame: __f105,
                     profile: nacre_ops::Profile2d::polygon(vec![
                         p2(0.1111111111111111, 0.1234567890123456),
                         p2(4.123456789012345, 0.2345678901234567),
@@ -565,10 +581,11 @@ fn tilted_prism(m: &mut Model, n: [f64; 3], off: f64, size: f64, dist: f64) -> H
     let plane =
         nacre_ops::SketchPlane::from_origin_normal(Point3::origin(), Vector3::from_array(n))
             .expect("a tilted plane");
+    let __g208 = datum_frame(m, plane);
     let OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
-            plane,
+            frame: __g208,
             // U-shaped: the notch's two side walls are the coplanar pair.
             profile: nacre_ops::Profile2d::polygon(vec![
                 p(0.0, 0.0),
@@ -595,11 +612,14 @@ fn tilted_prism(m: &mut Model, n: [f64; 3], off: f64, size: f64, dist: f64) -> H
 fn ex(m: &mut Model, z: f64, lo: [f64; 2], hi: [f64; 2], dist: f64) -> Handle<Solid> {
     use nacre_math::Point2;
     let p = |x: f64, y: f64| Point2::from_array([x, y]);
+    let __g207 = datum_frame(
+        m,
+        nacre_ops::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+    );
     let OpOutput::Extrude { solid, .. } = apply(
         m,
         &Operation::Extrude {
-            plane: nacre_ops::SketchPlane::world_xy()
-                .with_origin(Point3::from_array([0.0, 0.0, z])),
+            frame: __g207,
             profile: nacre_ops::Profile2d::polygon(vec![
                 p(lo[0], lo[1]),
                 p(hi[0], lo[1]),

@@ -258,8 +258,23 @@ pub fn occt_boolean_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nacre_ops::{DatumDef, OpOutput, Operation, SketchFrame, SketchPlane, apply};
+    use nacre_scalar::Axis;
+
+    /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+    /// when the plane is not one the model already holds (a seed, or a face's).
+    fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+        match apply(
+            m,
+            &Operation::DatumPlane {
+                def: DatumDef::Stated(plane),
+            },
+        ) {
+            Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+            other => panic!("stating a plane: {other:?}"),
+        }
+    }
     use nacre_math::{Point3, Vector3};
-    use nacre_ops::SketchPlane;
     use nacre_ops::boolean;
     use nacre_ops::{BoolError, BoolKind};
     use nacre_props::mass_props;
@@ -369,7 +384,7 @@ centroid 1 1.5 2
         ];
         let mut model = Model::new();
         let op = Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&model, Axis::Z),
             profile: Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect())
                 .unwrap(),
             dist: 3.0,
@@ -468,10 +483,11 @@ centroid 1 1.5 2
             ]
         };
         let mut model = Model::new();
+        let __w15 = SketchFrame::world(&model, Axis::Z);
         apply(
             &mut model,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w15,
                 profile: Profile2d::with_holes(sq(0.0, 4.0), vec![sq(1.0, 3.0)]).unwrap(),
                 dist: 1.0,
             },
@@ -509,10 +525,11 @@ centroid 1 1.5 2
             Point2::from_array([0.0, 3.0]),
         ])
         .unwrap();
+        let __w14 = SketchFrame::world(&model, Axis::Z);
         let OpOutput::Extrude { solid, .. } = apply(
             &mut model,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w14,
                 profile,
                 dist: 1.0,
             },
@@ -686,10 +703,11 @@ centroid 1 1.5 2
             .unwrap()
         };
         let mut model = Model::new();
+        let __w13 = SketchFrame::world(&model, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut model,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w13,
                 profile: sq(1.0),
                 dist: 1.0,
             },
@@ -750,10 +768,11 @@ centroid 1 1.5 2
             .unwrap()
         };
         let mut model = Model::new();
+        let __w12 = SketchFrame::world(&model, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut model,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w12,
                 profile: sq(1.0),
                 dist: 1.0,
             },
@@ -804,10 +823,11 @@ centroid 1 1.5 2
     fn overhang_pad_matches_occt() {
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
         let mut model = Model::new();
+        let __w11 = SketchFrame::world(&model, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut model,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w11,
                 profile: Profile2d::polygon(
                     [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
                         .iter()
@@ -858,10 +878,11 @@ centroid 1 1.5 2
     fn overhang_pocket_matches_occt() {
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
         let mut model = Model::new();
+        let __w10 = SketchFrame::world(&model, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut model,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w10,
                 profile: Profile2d::polygon(
                     [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
                         .iter()
@@ -1560,12 +1581,13 @@ centroid 1 1.5 2
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn corner_flush_common_matches_occt() {
-        use nacre_ops::{BoolKind, Operation, Profile2d, SketchPlane, apply};
+        use nacre_ops::{BoolKind, Operation, Profile2d, apply};
         let mut m = Model::new();
+        let __w9 = SketchFrame::world(&m, Axis::Z);
         apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w9,
                 profile: Profile2d::polygon(
                     [
                         [0.0, 0.0],
@@ -1732,7 +1754,7 @@ centroid 1 1.5 2
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn nonconvex_containment_cut_matches_occt() {
         use nacre_math::Point2;
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         // A concave L-prism with a box strictly inside its bottom bar — a
         // non-convex containment cut ⇒ the L with an internal box void. OCCT reads
         // both (concave) inputs and cuts them independently of nacre's
@@ -1752,10 +1774,11 @@ centroid 1 1.5 2
             .collect(),
         )
         .unwrap();
+        let __w8 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid: l, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w8,
                 profile: l_profile,
                 dist: 1.0,
             },
@@ -1817,10 +1840,11 @@ centroid 1 1.5 2
         use nacre_ops::{OpOutput, Operation, Profile2d, apply};
         let profile =
             Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap();
+        let __f108 = datum_frame(&mut Model::new(), plane);
         let OpOutput::Extrude { solid, .. } = apply(
             m,
             &Operation::Extrude {
-                plane,
+                frame: __f108,
                 profile,
                 dist,
             },
@@ -2412,10 +2436,11 @@ centroid 1 1.5 2
             .collect(),
         )
         .unwrap();
+        let __w7 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid: lp, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w7,
                 profile: l,
                 dist: 0.5,
             },
@@ -2441,10 +2466,11 @@ centroid 1 1.5 2
     fn pocket_into_non_convex_solid_matches_occt() {
         use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let mut m = Model::new();
+        let __w6 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w6,
                 profile: Profile2d::polygon(
                     [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
                         .iter()
@@ -2516,10 +2542,11 @@ centroid 1 1.5 2
             .collect(),
         )
         .unwrap();
+        let __w5 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid: lb, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w5,
                 profile: l,
                 dist: 0.5,
             },
@@ -2547,10 +2574,11 @@ centroid 1 1.5 2
         use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
         let mut m = Model::new();
+        let __w4 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w4,
                 profile: Profile2d::polygon(vec![
                     p2(0.0, 0.0),
                     p2(1.0, 0.0),
@@ -2604,10 +2632,11 @@ centroid 1 1.5 2
     fn boss_onto_non_convex_solid_matches_occt() {
         use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let mut m = Model::new();
+        let __w3 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { solid: l, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w3,
                 profile: Profile2d::polygon(
                     [
                         [0.0, 0.0],
@@ -3259,15 +3288,16 @@ centroid 1 1.5 2
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn pocketed_cut_in_the_void_matches_occt() {
         use nacre_math::Point2;
-        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply};
         let mut m = Model::new();
         let sq = |pts: [[f64; 2]; 4]| {
             Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap()
         };
+        let __w2 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w2,
                 profile: sq([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
                 dist: 1.0,
             },
@@ -3341,10 +3371,11 @@ centroid 1 1.5 2
             .unwrap()
         };
         let mut m = Model::new();
+        let __w1 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w1,
                 profile: prof(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
                 dist: 1.0,
             },
@@ -3598,10 +3629,11 @@ centroid 1 1.5 2
             .unwrap()
         };
         let mut m = Model::new();
+        let __w0 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w0,
                 profile: sq(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
                 dist: 1.0,
             },
@@ -3672,10 +3704,14 @@ centroid 1 1.5 2
 
         let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
         let extrude = |m: &mut Model, poly: Vec<Point2>, z: f64, dist: f64| {
+            let __g217 = datum_frame(
+                m,
+                SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+            );
             let out = apply(
                 m,
                 &Operation::Extrude {
-                    plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+                    frame: __g217,
                     profile: Profile2d::polygon(poly).unwrap(),
                     dist,
                 },

@@ -6,7 +6,9 @@
 //! a valid model through to real STEP/OBJ output.
 
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::SketchFrame;
 use nacre_ops::{Operation, Profile2d, SketchPlane, replay};
+use nacre_scalar::Axis;
 
 /// A regular hexagon of the given radius, centred on the sketch origin.
 fn hexagon(r: f64) -> Profile2d {
@@ -19,9 +21,9 @@ fn hexagon(r: f64) -> Profile2d {
     Profile2d::polygon(points).unwrap()
 }
 
-fn hex_extrude(plane: SketchPlane) -> Operation {
+fn hex_extrude(frame: SketchFrame) -> Operation {
     Operation::Extrude {
-        plane,
+        frame,
         profile: hexagon(10.0),
         dist: 5.0,
     }
@@ -29,7 +31,7 @@ fn hex_extrude(plane: SketchPlane) -> Operation {
 
 #[test]
 fn hexagon_extrude_exports_to_step_and_obj() {
-    let model = replay(&[hex_extrude(SketchPlane::world_xy())]).unwrap();
+    let model = replay(&[hex_extrude(SketchFrame::world(&Model::new(), Axis::Z))]).unwrap();
 
     // The pipeline yields a valid closed b-rep.
     assert!(nacre_validate::validate(&model).is_empty());
@@ -51,7 +53,11 @@ fn multi_op_log_composes_through_export() {
     // Two extrudes on parallel planes produce two independent solids that both
     // survive validation and export.
     let far = SketchPlane::world_xy().with_origin(Point3::from_array([50.0, 0.0, 0.0]));
-    let model = replay(&[hex_extrude(SketchPlane::world_xy()), hex_extrude(far)]).unwrap();
+    let model = replay(&[
+        hex_extrude(SketchFrame::world(&Model::new(), Axis::Z)),
+        hex_extrude(datum_frame(&mut Model::new(), far)),
+    ])
+    .unwrap();
 
     assert_eq!(model.solids.len(), 2);
     assert!(nacre_validate::validate(&model).is_empty());
@@ -90,10 +96,25 @@ fn multi_op_log_composes_through_export() {
 // than in a commit message (cf. `a_doubly_crossed_edge_breaks_the_transition_oracle`).
 // ---------------------------------------------------------------------------
 
+use nacre_ops::DatumDef;
 use nacre_ops::{BoolError, BoolKind, OpOutput, apply, boolean};
 use nacre_store::Handle;
 use nacre_tess::{TessConfig, Tessellation, tessellate};
 use nacre_topo::{Face, Model, Shell, Solid};
+
+/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
+/// when the plane is not one the model already holds (a seed, or a face's).
+fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
+    match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(plane),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
+        other => panic!("stating a plane: {other:?}"),
+    }
+}
 
 /// Test shim: a boolean whose result is exactly one solid (cell 0.4 multi-solid).
 fn boolean_one(
@@ -227,7 +248,7 @@ fn u_prism() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let m = replay(&[Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(&Model::new(), Axis::Z),
         profile: u,
         dist: 1.0,
     }])
@@ -239,7 +260,7 @@ fn u_prism() -> (Model, Handle<Solid>) {
 /// The unit cube with a `0.4`-square pocket `0.5` deep in its top face.
 fn pocketed_cube() -> (Model, Handle<Solid>) {
     let mut m = replay(&[Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(&Model::new(), Axis::Z),
         profile: square(0.0, 1.0),
         dist: 1.0,
     }])
@@ -287,7 +308,7 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let mut m = replay(&[Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(&Model::new(), Axis::Z),
         profile: l,
         dist: 1.0,
     }])
@@ -316,7 +337,7 @@ fn island_cut() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let mut m = replay(&[Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(&Model::new(), Axis::Z),
         profile: l,
         dist: 1.0,
     }])
@@ -352,14 +373,25 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
         p2(1.8, 1.8),
     ])
     .unwrap();
+    // The second sketch is on a plane the model does not hold, so the log states it. The log is
+    // assembled against a scratch model built the *same way*, because a datum's handle is not
+    // known until the datum runs — and `replay` re-anchors indices (design.md §2).
+    let __plane = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
+    let mut __scratch216 = Model::new();
+    let __first = Operation::Extrude {
+        frame: SketchFrame::world(&__scratch216, Axis::Z),
+        profile: l,
+        dist: 1.0,
+    };
+    apply(&mut __scratch216, &__first).unwrap();
+    let __g215 = datum_frame(&mut __scratch216, __plane);
     let mut m = replay(&[
-        Operation::Extrude {
-            plane: SketchPlane::world_xy(),
-            profile: l,
-            dist: 1.0,
+        __first,
+        Operation::DatumPlane {
+            def: DatumDef::Stated(__plane),
         },
         Operation::Extrude {
-            plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
+            frame: __g215,
             profile: bar,
             dist: 1.0,
         },
@@ -392,14 +424,25 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
         p2(0.2, 0.9),
     ])
     .unwrap();
+    // The second sketch is on a plane the model does not hold, so the log states it. The log is
+    // assembled against a scratch model built the *same way*, because a datum's handle is not
+    // known until the datum runs — and `replay` re-anchors indices (design.md §2).
+    let __plane = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
+    let mut __scratch214 = Model::new();
+    let __first = Operation::Extrude {
+        frame: SketchFrame::world(&__scratch214, Axis::Z),
+        profile: l,
+        dist: 1.0,
+    };
+    apply(&mut __scratch214, &__first).unwrap();
+    let __g213 = datum_frame(&mut __scratch214, __plane);
     let mut m = replay(&[
-        Operation::Extrude {
-            plane: SketchPlane::world_xy(),
-            profile: l,
-            dist: 1.0,
+        __first,
+        Operation::DatumPlane {
+            def: DatumDef::Stated(__plane),
         },
         Operation::Extrude {
-            plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5])),
+            frame: __g213,
             profile: ell,
             dist: 1.0,
         },
@@ -449,18 +492,29 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
         p2(0.1, 1.5),
     ])
     .unwrap();
+    // The second sketch is on a plane the model does not hold, so the log states it. The log is
+    // assembled against a scratch model built the *same way*, because a datum's handle is not
+    // known until the datum runs — and `replay` re-anchors indices (design.md §2).
+    let __plane = SketchPlane::from_origin_normal(
+        Point3::from_array([0.0, 1.3, 0.0]),
+        Vector3::from_array([0.0, -1.0, 0.0]),
+    )
+    .expect("a unit normal");
+    let mut __scratch212 = Model::new();
+    let __first = Operation::Extrude {
+        frame: SketchFrame::world(&__scratch212, Axis::Z),
+        profile: l,
+        dist: 1.0,
+    };
+    apply(&mut __scratch212, &__first).unwrap();
+    let __g211 = datum_frame(&mut __scratch212, __plane);
     let mut m = replay(&[
-        Operation::Extrude {
-            plane: SketchPlane::world_xy(),
-            profile: l,
-            dist: 1.0,
+        __first,
+        Operation::DatumPlane {
+            def: DatumDef::Stated(__plane),
         },
         Operation::Extrude {
-            plane: SketchPlane::from_origin_normal(
-                Point3::from_array([0.0, 1.3, 0.0]),
-                Vector3::from_array([0.0, -1.0, 0.0]),
-            )
-            .expect("a unit normal"),
+            frame: __g211,
             profile: staple,
             dist: 0.65,
         },
@@ -925,7 +979,7 @@ fn a_drilled_solid_meshes_watertight() {
     ])
     .unwrap();
     let mut m = replay(&[Operation::Extrude {
-        plane: SketchPlane::world_xy(),
+        frame: SketchFrame::world(&Model::new(), Axis::Z),
         profile: l,
         dist: 1.0,
     }])
@@ -1106,10 +1160,14 @@ fn a_split_dimension_meets_the_undivided_one() {
         Profile2d::polygon(vec![p2(x0, 0.0), p2(x1, 0.0), p2(x1, 1.0), p2(x0, 1.0)]).unwrap()
     }
     fn raise(m: &mut Model, z: f64, x0: f64, x1: f64, dist: f64) -> Handle<Solid> {
+        let __g210 = datum_frame(
+            m,
+            SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+        );
         let out = nacre_ops::apply(
             m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, z])),
+                frame: __g210,
                 profile: rect(x0, x1),
                 dist,
             },
@@ -1171,7 +1229,7 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
         let OpOutput::Extrude { solid, .. } = nacre_ops::apply(
             m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: SketchFrame::world(m, Axis::Z),
                 profile: square(10.0),
                 dist: 1.0,
             },

@@ -334,6 +334,7 @@ dependencies = [
  "nacre-geom",
  "nacre-math",
  "nacre-ops",
+ "nacre-scalar",
  "nacre-store",
  "nacre-topo",
  "proptest",

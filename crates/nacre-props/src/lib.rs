@@ -362,7 +362,9 @@ fn edge_curve(model: &Model, he: nacre_topo::HalfEdge) -> &Curve {
 mod tests {
     use super::*;
     use nacre_math::{Point2, Vector3};
-    use nacre_ops::{OpOutput, Operation, Profile2d, SketchPlane, apply};
+    use nacre_ops::SketchFrame;
+    use nacre_ops::{OpOutput, Operation, Profile2d, apply};
+    use nacre_scalar::Axis;
 
     /// Relative-or-absolute comparison sized for accumulated f64 error.
     fn close(got: f64, expected: f64) -> bool {
@@ -415,7 +417,7 @@ mod tests {
         let dist = 3.0;
         let mut m = Model::new();
         let op = Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&m, Axis::Z),
             profile,
             dist,
         };
@@ -526,7 +528,7 @@ mod tests {
         };
         let mut m = Model::new();
         let op = Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&m, Axis::Z),
             profile: Profile2d::with_holes(sq(0.0, 10.0), vec![sq(1.0, 3.0)]).unwrap(),
             dist: 1.0,
         };
@@ -558,7 +560,7 @@ mod tests {
         ];
         let mut m = Model::new();
         let op = Operation::Extrude {
-            plane: SketchPlane::world_xy(),
+            frame: SketchFrame::world(&m, Axis::Z),
             profile: Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect())
                 .unwrap(),
             dist: 3.0,
@@ -647,10 +649,11 @@ mod tests {
             .unwrap()
         };
         let mut m = Model::new();
+        let __w1 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w1,
                 profile: sq(size),
                 dist: size,
             },
@@ -695,10 +698,11 @@ mod tests {
             .unwrap()
         };
         let mut m = Model::new();
+        let __w0 = SketchFrame::world(&m, Axis::Z);
         let OpOutput::Extrude { faces, .. } = apply(
             &mut m,
             &Operation::Extrude {
-                plane: SketchPlane::world_xy(),
+                frame: __w0,
                 profile: sq(size),
                 dist: size,
             },
