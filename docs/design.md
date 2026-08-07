@@ -420,7 +420,7 @@ pub enum Operation {
     // 있던 평면은 씨앗 셋과 «이미 만든 면의 평면» 둘뿐이었고, 그 밖은 전부 Extrude 안에 값으로
     // 살았다. 평면을 로그 **밖**에서 만들면 그 모델은 자기완결적이지 않으므로 연산이어야 한다.
     // 평면은 구성 시점 interning 대상이라 «이미 있으면 그 핸들»이 정답이다(아레나 안 자람).
-    DatumPlane { def: DatumDef },  // Stated(SketchPlane) | Offset { frame: SketchFrame, dist }
+    DatumPlane { def: DatumDef },  // Stated(SketchPlane) | Offset { frame, dist } | ThroughVertices([Handle<Vertex>;3])
     // M2: 스케치 평면·프로파일 개념이 Extrude 인자로 흡수된다(별도 Sketch op 없음). Extrude는
     // 프로파일에서 새 솔리드를 만들므로 앞선 op의 면을 참조할 필연이 없다 — op간 Handle 참조는
     // 기존 면 위에 작업하는 M4(PadOnFace/PocketOnFace)에서 비로소 필연적으로 도입된다.
@@ -460,6 +460,28 @@ pub enum Operation {
 
 **datum 평면의 규칙 (S5(i)-a).** 평면을 만드는 연산은 `DatumPlane` **하나**이고, 불리언은
 여전히 평면을 만들지 않는다(C6 깊이 불변식 무손상, `a_boolean_mints_no_surface`).
+
+★★★ **정점을 이름 부르는 datum (S5(ii)-1, 2026-08-08).** `ThroughVertices([Handle<Vertex>;3])`
+는 값 어휘로는 말할 수 없는 하나다 — 발견 정점의 좌표는 반올림이라, 그 좌표로 평면을 지으면
+**다른 평면**이 나온다(기울어진 인구 **220/220**, 축정렬 음성 대조 552/0;
+`tests/point_width.rs`). 진실 쪽은 `PlanePoints::Through` 로 **핸들을 든다**.
+
+- **어휘가 여기서만 자란다** — S5(i)-a 의 «새 공개 생성자 없음» 은 *값으로 말할 수 있는 것*에
+  걸리는 원칙이고, 핸들은 순수 값 타입인 `SketchPlane` 에 들어갈 수 없다.
+- **정렬은 키에만, 방향은 호출자의 정점 순서.** `dist` 가 양수 전용이라 순서가 방향의 유일한
+  입구이고, 두 개를 바꾸면 «같은 핸들 + 반대 프레임» 이다(`measured_frame` 이 재는 것은
+  `Stated` 와 같은 기계).
+- **이동은 핸들을 그대로 두고 노드를 기록한다.** `transform_solid` 는 정점을 **복제**하므로
+  가리키던 datum 은 새 복사본을 안 따라간다; 정점이 base 를 정하고 모션이 옮기며 **더해질 뿐
+  곱해지지 않는다**. 대가로 그런 datum 위의 솔리드는 **정확한 강체 이동에도 노드를 얻는다**.
+- **거절은 원인별**(`VerticesInMixedFrames`·`CollinearVertices`·`DuplicateVertex`·
+  `VertexNotThreePlane`·`VertexPointTooWide`)이고, «담체 셋이 안 만난다» 는 거절이 아니라
+  **단언**이다 — 그 정점이 존재한다는 것이 곧 만났다는 뜻이므로 불변식 위반이지 사용자 오류가
+  아니다.
+- ★★★★ **가장 위험했던 자리는 컴파일러가 못 본 곳이다.** 변종 추가가 낸 비망라 에러는 2개뿐이고
+  `transform::points_move` 의 `let`-`else`(원통용 폴백)는 거기 없었다 — 원통은 진실이 기하를
+  안 들어 «나를 것 없음» 이 참이지만 `Through` 는 기하를 **참조로** 든다. 그대로 뒀다면 노드
+  없는 경로로 가 **캐시만 움직이고 진실은 제자리**에 남았을 것이다.
 
 - **캐시 법선은 `−(진술된 법선)`** — 씨앗이 `−축`, extrude 밑캡이 `−plane.normal()` 인 그 규약.
   근거 둘: S9 가 `+축` 씨앗으로 **781 캡의 저장 법선이 뒤집힘**을 실측했고, `PlaneGeom::
