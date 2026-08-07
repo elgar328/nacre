@@ -109,7 +109,9 @@ fn a_tilted_datum_records_the_points_the_caller_wrote() {
         unreachable!("a datum is a plane")
     };
     assert_eq!(*motion, None, "a world statement records no motion");
-    let PlanePoints::Known(pts) = points;
+    let PlanePoints::Known(pts) = points else {
+        panic!("a stated datum records its points by value, not by handle")
+    };
     // The first point is the sketch origin, exactly — the caller's decimals, lifted once.
     assert_eq!(
         pts[0].map(|r| r.to_f64()),
@@ -338,7 +340,9 @@ fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
         unreachable!()
     };
     assert_eq!(*motion, None);
-    let PlanePoints::Known(pts) = points;
+    let PlanePoints::Known(pts) = points else {
+        panic!("a stated datum records its points by value, not by handle")
+    };
     for p in pts {
         assert_eq!(p[2].to_f64(), 2.0, "every recorded point is on z = 2");
     }
@@ -412,7 +416,9 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
         motion.is_some(),
         "a tilted offset is written under a frame node"
     );
-    let PlanePoints::Known(pts) = points;
+    let PlanePoints::Known(pts) = points else {
+        panic!("a stated datum records its points by value, not by handle")
+    };
     let half = nacre_scalar::Rat::from_decimal(0.5).unwrap();
     let (zero, one) = (
         nacre_scalar::Rat::from_int(0),

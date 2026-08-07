@@ -259,10 +259,30 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
     // triple as the pre-motion truth. The probe is per solid like everything here, so one
     // overflowing surface puts the whole solid on the recorded path rather than splitting it.
     let points_move = |s: Handle<Surface>| -> bool {
+        // ★★★★★ **The `else` here is the most dangerous line in this file, and the compiler
+        // cannot see it.** A `let`-`else` is not a match: adding `PlanePoints::Through` produced
+        // exactly two non-exhaustive-match errors and **not** one here — this arm would have
+        // swallowed the new variant silently.
+        //
+        // A cylinder answering `true` is right because its truth carries *no geometry* (until M6
+        // it is `Cylinder { motion }`), so there is nothing a motion could fail to transport. A
+        // `Through` plane's truth **does** carry geometry — by reference — and the no-node path
+        // would transport nothing while the f64 cache moved, leaving truth and cache describing
+        // different planes. So it must refuse that path, which is what `false` says.
+        let truth = model.surface_truth(s);
+        if matches!(
+            truth,
+            nacre_topo::SurfaceTruth::Plane {
+                points: nacre_topo::PlanePoints::Through(_),
+                ..
+            }
+        ) {
+            return false;
+        }
         let nacre_topo::SurfaceTruth::Plane {
             points: nacre_topo::PlanePoints::Known(p),
             ..
-        } = model.surface_truth(s)
+        } = truth
         else {
             return true; // a cylinder carries no points
         };
@@ -553,23 +573,45 @@ fn transform_solid(
         // reason — so the triple is inherited verbatim. With nothing recorded the motion kept
         // everything exact, and the points are carried in the world with it; the transport is
         // the very function `motion_is_exact` probed, so it cannot fail here.
-        let points = match &src_truth {
-            nacre_topo::SurfaceTruth::Plane {
-                points: nacre_topo::PlanePoints::Known(p),
-                motion: src_m,
-            } => {
-                if new_motion != *src_m {
-                    Some(*p)
+        // ★★ A `Through` plane's statement is *handles*, and handles do not move. Its image keeps
+        // the same three vertices and gains the node — the definition composes as "the plane
+        // through those, then this motion". Transporting them is not an option (they may not even
+        // belong to this solid), and leaving them without a node would move the cache while the
+        // truth stayed put. `points_move` refuses the no-node path for exactly this reason, so
+        // `new_motion` is always `Some` here.
+        let (new_s, flipped) = match (moved, &src_truth) {
+            (
+                Surface::Plane(pl),
+                nacre_topo::SurfaceTruth::Plane {
+                    points: nacre_topo::PlanePoints::Known(p),
+                    motion: src_m,
+                },
+            ) => {
+                let carried = if new_motion != *src_m {
+                    *p
                 } else {
-                    Some(transport_points(motion, *p).expect("probed by motion_is_exact"))
-                }
+                    transport_points(motion, *p).expect("probed by motion_is_exact")
+                };
+                model.push_plane(pl, carried, new_motion)
             }
-            nacre_topo::SurfaceTruth::Cylinder { .. } => None,
-        };
-        let (new_s, flipped) = match (moved, points) {
-            (Surface::Plane(pl), Some(p)) => model.push_plane(pl, p, new_motion),
+            (
+                Surface::Plane(pl),
+                nacre_topo::SurfaceTruth::Plane {
+                    points: nacre_topo::PlanePoints::Through(vs),
+                    ..
+                },
+            ) => {
+                debug_assert!(
+                    new_motion.is_some(),
+                    "a Through plane on the no-node path would leave its truth behind — \
+                     `points_move` must refuse that path"
+                );
+                model.push_plane_through(pl, *vs, new_motion)
+            }
             (Surface::Cylinder(cy), _) => (model.push_cylinder(cy, new_motion), false),
-            (Surface::Plane(_), None) => unreachable!("a plane's truth always carries points"),
+            (Surface::Plane(_), nacre_topo::SurfaceTruth::Cylinder { .. }) => {
+                unreachable!("a plane's cache cannot carry a cylinder's truth")
+            }
         };
         surf_map.insert(s, new_s);
         surf_flip.insert(s, flipped);

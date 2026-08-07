@@ -184,6 +184,44 @@ pub(crate) fn collect_planes(
                     _t.charge(Sub::TriPt3);
                     (wind(w), true, Some(motion))
                 }
+                // ★★★ **A `Through` plane is solved into the same witness triangle here.**
+                //
+                // Its truth is handles, and the judging layer takes points — so the points are
+                // *derived* at the boundary, once per plane per operation, exactly like the name
+                // was derived once at push. That is not a rule-1 violation: this table lives for
+                // one operation and is a mirror, not truth.
+                //
+                // The rational-closure branch is the whole of stage 1: three vertices that solve
+                // to `Rat` give a triangle indistinguishable from a stated one, so every predicate
+                // below runs unchanged. The other branch — mixed frames, irrational motion — has
+                // no witness triangle at all and is what the homogeneous-lifting stage opens; the
+                // producer refuses to build such a plane, so reaching here means the invariant
+                // broke rather than the user asked for something unsupported.
+                nacre_topo::SurfaceTruth::Plane {
+                    points: nacre_topo::PlanePoints::Through(vs),
+                    motion,
+                } => {
+                    let motion = *motion;
+                    let _t = Watch::new();
+                    let base = model
+                        .through_points_rat(*vs)
+                        .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                    let w = match motion {
+                        None => base.map(Pt3::at),
+                        Some(m) => {
+                            let chain = crate::rotated_vertex::motion_chain(model, m)
+                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                            let mut out = [Pt3::at(base[0]), Pt3::at(base[1]), Pt3::at(base[2])];
+                            for (o, b) in out.iter_mut().zip(base) {
+                                *o = crate::rotated_vertex::replay(Pt3::at(b), &chain)
+                                    .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                            }
+                            out
+                        }
+                    };
+                    _t.charge(Sub::TriPt3);
+                    (wind(w), motion.is_some(), motion)
+                }
                 // The cache match above already rejected cylinders.
                 nacre_topo::SurfaceTruth::Cylinder { .. } => {
                     return Err(reject(RejectReason::CylinderFace));

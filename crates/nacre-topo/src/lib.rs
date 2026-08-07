@@ -213,12 +213,35 @@ pub enum SurfaceTruth {
 }
 
 /// A plane's three points — the kind of statement is the variant. `Known` carries values
-/// (construction planes — walls, caps, caller-stated planes); a `Through` variant pointing at
-/// model vertices arrives with datum planes (S5, `docs/truth-and-cache.md`).
+/// (construction planes — walls, caps, caller-stated planes); `Through` points at model vertices
+/// (datum planes — S5, `docs/truth-and-cache.md`).
+///
+/// ★ **`Known` is nine `Rat` (288 B) beside three handles (24 B), and it stays unboxed.** The
+/// size gap is not new — every plane already pays it — and `Known` is very nearly the whole
+/// population, so boxing it would put an allocation and an indirection on the common read in
+/// order to shrink the rare one. Same reasoning `PlaneName` records for keeping `Wide` inline.
+/// (Not measured; the shape of the trade is what decides it, as it did there.)
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlanePoints {
     /// Three exact rational points, non-collinear, in the pre-motion frame.
     Known([[nacre_scalar::Rat; 3]; 3]),
+    /// **Three model vertices the plane passes through.** What a caller means by "the plane
+    /// through those corners" — a coordinate read off a discovered vertex is rounded, and the
+    /// plane built from rounded coordinates is a *different* plane (measured: on tilted geometry
+    /// every one of 220 triples, `nacre-ops/tests/point_width.rs`).
+    ///
+    /// ★ **Sorted**, so that the same three vertices are the same statement whichever order they
+    /// arrive in. Direction is *not* lost by sorting: a plane's canonical name carries none
+    /// either, and the caller's order is measured into the frame's `flip` where every other
+    /// producer already puts it.
+    ///
+    /// ★★ **The motion composes rather than replacing.** The vertices pin the plane in the frame
+    /// they are stated in and `motion` carries it out — the two add, never multiply. A mover must
+    /// therefore keep these handles verbatim and record a node; transporting *and* keeping them
+    /// would move the plane twice, and doing neither would leave the truth behind while the cache
+    /// moved.
+    Through([nacre_store::Handle<Vertex>; 3]),
 }
 
 /// The truth-only aggregate: exact geometry + topology stores + the derived
@@ -680,6 +703,131 @@ impl Model {
             self.surface_ids.insert(k, h);
         }
         (h, false)
+    }
+
+    /// **Push a plane stated as the three vertices it passes through** — [`push_plane`]'s twin
+    /// for the datum vocabulary, with the same interning contract and the same `flipped` report.
+    ///
+    /// The name is derived the same way, one step further back: solve each vertex from its three
+    /// carriers, then take the canonical form of the plane through those points. So a `Through`
+    /// plane and a `Known` plane that *are* the same plane share one handle, which is the whole
+    /// point of interning — the variant records how this plane's existence is grounded, not who
+    /// asked for it first.
+    ///
+    /// ★ `vertices` is **sorted** by the caller before it gets here (the same three vertices are
+    /// the same statement in any order). Direction is not lost: it lives in the frame's measured
+    /// `flip`, exactly as it does for a stated plane.
+    ///
+    /// `None` when the plane cannot be named — the caller has already rejected those populations
+    /// by cause and must not reach this door with one ([`Model::plane_name_through`] is the
+    /// shared derivation, so the check and the push cannot drift).
+    ///
+    /// [`push_plane`]: Model::push_plane
+    pub fn push_plane_through(
+        &mut self,
+        cache: nacre_geom::Plane,
+        vertices: [Handle<Vertex>; 3],
+        motion: Option<Handle<MotionNode>>,
+    ) -> (Handle<Surface>, bool) {
+        debug_assert!(
+            vertices[0].index() < vertices[1].index() && vertices[1].index() < vertices[2].index(),
+            "a Through statement must arrive sorted and duplicate-free"
+        );
+        let name = self.plane_name_through(vertices);
+        debug_assert!(
+            name.is_some(),
+            "an unnameable Through plane must be rejected by cause before this door — \
+             storing one would revive the nameless-plane population S2 drained"
+        );
+        let key = name.clone().map(|n| (n, motion));
+        if let Some(k) = &key {
+            if let Some(&h) = self.surface_ids.get(k) {
+                let dir = |s: &Surface| match s {
+                    Surface::Plane(p) => Some(p.normal()),
+                    Surface::Cylinder(_) => None,
+                };
+                let flipped = match (dir(self.surfaces.get(h)), dir(&Surface::Plane(cache))) {
+                    (Some(a), Some(b)) => a.dot(b) < 0.0,
+                    _ => false,
+                };
+                return (h, flipped);
+            }
+        }
+        let h = self.push_raw(
+            Surface::Plane(cache),
+            SurfaceTruth::Plane {
+                points: PlanePoints::Through(vertices),
+                motion,
+            },
+        );
+        if let Some((n, _)) = &key {
+            self.surface_name.insert(h, n.clone());
+        }
+        if let Some(k) = key {
+            self.surface_ids.insert(k, h);
+        }
+        (h, false)
+    }
+
+    /// **The name a `Through` statement derives**, and the one place that derivation lives — the
+    /// producer's check and [`Model::push_plane_through`] read the same answer, so "we rejected
+    /// what we could not name" is structural rather than two functions agreeing by habit.
+    ///
+    /// `None` when any vertex is not a three-plane point, when the carriers do not share one
+    /// motion (no frame holds a rational coordinate then), when a solved point does not fit
+    /// `Rat`, or when the three points are collinear. The caller tells those apart by cause; this
+    /// answers only "is there a name".
+    pub fn plane_name_through(
+        &self,
+        vertices: [Handle<Vertex>; 3],
+    ) -> Option<nacre_scalar::PlaneName> {
+        let p = self.through_points_rat(vertices)?;
+        nacre_scalar::plane_name_exact(p[0], p[1], p[2])
+    }
+
+    /// **The three vertices' exact coordinates, in the one frame they share** — the single solve
+    /// behind both [`Model::plane_name_through`] (at push) and the judging table's witness
+    /// triangle (per operation). One spelling, so the name a plane interns under and the points a
+    /// predicate reasons about cannot describe different planes.
+    ///
+    /// `None` on any of: a vertex that is not a three-plane point, carriers that do not share one
+    /// motion (then no frame holds a rational coordinate at all), a carrier with no recorded name,
+    /// or a solved point too wide for `Rat`. The producer tells these apart by cause before a
+    /// plane is ever built; here they are one answer because the caller only needs "is there one".
+    pub fn through_points_rat(
+        &self,
+        vertices: [Handle<Vertex>; 3],
+    ) -> Option<[[nacre_scalar::Rat; 3]; 3]> {
+        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+        let mut frame = None;
+        for (i, vh) in vertices.iter().enumerate() {
+            let VertexDef::ThreePlane(tri) = self.vertices.get(*vh).def else {
+                return None; // OnSeam pins a curve, not a point
+            };
+            let mine = self.plane_motion(tri[0]);
+            if tri.iter().any(|h| self.plane_motion(*h) != mine) {
+                return None; // this vertex's carriers straddle frames
+            }
+            match frame {
+                None if i == 0 => frame = Some(mine),
+                f if f == Some(mine) => {}
+                _ => return None, // the three vertices do not share one frame
+            }
+            let names = tri.map(|h| self.surface_name.get(&h));
+            let [Some(a), Some(b), Some(c)] = names else {
+                return None;
+            };
+            pts[i] = *nacre_scalar::three_planes_big([a, b, c])?.narrow()?;
+        }
+        Some(pts)
+    }
+
+    /// The motion a surface's truth records, whichever variant it is.
+    #[inline]
+    pub fn plane_motion(&self, h: Handle<Surface>) -> Option<Handle<MotionNode>> {
+        match self.surface_truth(h) {
+            SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion } => *motion,
+        }
     }
 
     /// Push a **cylinder** — the lateral surface, whose exact truth arrives with M6. Until
@@ -2110,5 +2258,126 @@ mod tests {
             planar.contains(&box_top),
             "the coplanar cap and box face must intern to one handle"
         );
+    }
+    /// ★★★★★ **A plane can point at three vertices, and it is the same plane as the values.**
+    ///
+    /// The corners of a unit box name three coordinate planes each, so a datum through them is
+    /// derivable — and the plane through `(1,0,0)`, `(0,1,0)`, `(0,0,1)` has a name like any
+    /// other. That the name comes out at all is what makes every road below (frames, far caps,
+    /// predicates) work unchanged: they read the name, and the name arrives at push.
+    #[test]
+    fn a_plane_stated_through_vertices_is_named_like_any_other() {
+        let (mut m, vs) = box_corner_vertices();
+        let cache = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
+        )
+        .unwrap();
+        let (h, _) = m.push_plane_through(cache, vs, None);
+        let name = m
+            .surface_name
+            .get(&h)
+            .expect("a Through plane must be named");
+        assert_eq!(
+            name.narrow().map(|c| c.map(|r| r.to_f64())),
+            Some([1.0, 1.0, 1.0, -1.0]),
+            "x + y + z = 1 is the plane through those three corners"
+        );
+        assert!(matches!(
+            m.surface_truth(h),
+            SurfaceTruth::Plane {
+                points: PlanePoints::Through(_),
+                ..
+            }
+        ));
+    }
+
+    /// ★★ **Interning does not care which way the plane was stated.** A `Known` push of the same
+    /// plane returns the handle the `Through` push made — one plane, one handle, which is the
+    /// property `PlanePoints` must not break by adding a variant.
+    #[test]
+    fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
+        let (mut m, vs) = box_corner_vertices();
+        let cache = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
+        )
+        .unwrap();
+        let (through, _) = m.push_plane_through(cache, vs, None);
+        let r = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+        let (known, _) = m.push_plane(
+            cache,
+            [
+                [r(1, 1), r(0, 1), r(0, 1)],
+                [r(0, 1), r(1, 1), r(0, 1)],
+                [r(0, 1), r(0, 1), r(1, 1)],
+            ],
+            None,
+        );
+        assert_eq!(through, known, "one plane, two statements, one handle");
+        // ★ And the first statement wins, as interning is documented to: the truth still points
+        // at vertices. Which variant a plane ends up with is arena history, not a promise.
+        assert!(matches!(
+            m.surface_truth(known),
+            SurfaceTruth::Plane {
+                points: PlanePoints::Through(_),
+                ..
+            }
+        ));
+    }
+
+    /// ★★★ **The reference goes backwards in time only (C5).** A datum is pushed after the
+    /// vertices it names, and those vertices name surfaces pushed before *them* — so the walk
+    /// plane → vertex → surface strictly descends in index and cannot cycle.
+    #[test]
+    fn a_through_plane_points_only_at_older_cells() {
+        let (mut m, vs) = box_corner_vertices();
+        let cache = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
+        )
+        .unwrap();
+        let (h, _) = m.push_plane_through(cache, vs, None);
+        let SurfaceTruth::Plane {
+            points: PlanePoints::Through(named),
+            ..
+        } = m.surface_truth(h)
+        else {
+            unreachable!()
+        };
+        for v in named {
+            assert!(v.index() < m.vertices.len() as u32);
+            let VertexDef::ThreePlane(tri) = m.vertices.get(*v).def else {
+                unreachable!()
+            };
+            for s in tri {
+                assert!(
+                    s.index() < h.index(),
+                    "a vertex's carrier must be older than the datum that names the vertex"
+                );
+            }
+        }
+    }
+
+    /// Three corners of the unit box, sorted — each the meeting of three coordinate planes.
+    fn box_corner_vertices() -> (Model, [Handle<Vertex>; 3]) {
+        let mut m = Model::new();
+        m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let mut want = Vec::new();
+        for i in 0..m.vertices.len() as u32 {
+            let vh = m.vertices.handle_at(i).unwrap();
+            let c = m.vertex_point(vh).as_array();
+            if c.iter().filter(|x| **x == 1.0).count() == 1
+                && c.iter().all(|x| *x == 0.0 || *x == 1.0)
+            {
+                want.push(vh);
+            }
+        }
+        want.sort_by_key(|v| v.index());
+        let vs = [want[0], want[1], want[2]];
+        (m, vs)
     }
 }
