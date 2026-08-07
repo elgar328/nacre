@@ -821,6 +821,123 @@ pub fn three_planes_rat(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
     Some(out)
 }
 
+/// Where three planes meet, at whatever width the answer needs — [`three_planes_big`]'s result.
+///
+/// The fork mirrors [`PlaneName`]'s: `Narrow` **whenever the answer fits**, so two routes to one
+/// point are structurally equal.
+///
+/// ★ The reduction is **per coordinate**, because that is what `Rat` — a `Ratio<i128>` each — has
+/// to hold. Cramer hands back `detᵢ/det` sharing one denominator, and that shared form is
+/// systematically wider than the coordinates it names; measuring it would report the width of the
+/// *arithmetic* rather than of the point.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MeetPoint {
+    Narrow([Rat; 3]),
+    /// `(numerator, denominator)` per coordinate, each in lowest terms with a positive
+    /// denominator — at least one of which does not fit `i128`.
+    Wide([(num_bigint::BigInt, num_bigint::BigInt); 3]),
+}
+
+impl MeetPoint {
+    /// The `Rat` form when there is one — `None` (`Wide`) means the point cannot be a `Rat`
+    /// triple at all, which is a different fact from [`three_planes_rat`] declining.
+    #[inline]
+    pub fn narrow(&self) -> Option<&[Rat; 3]> {
+        match self {
+            MeetPoint::Narrow(p) => Some(p),
+            MeetPoint::Wide(_) => None,
+        }
+    }
+}
+
+/// **The same meeting point [`three_planes_rat`] computes, without the `i128` ceiling** — the
+/// wide twin that [`plane_name_exact`] has had on the plane-*name* side all along and the vertex
+/// solve did not.
+///
+/// [`three_planes_rat`] is `checked_*` throughout, so its `None` conflates two different facts:
+/// the point does not fit `Rat`, and an **intermediate** of the rational cofactor expansion
+/// overflowed while the point itself would have fit. Only a route without the ceiling can tell
+/// those apart — and telling them apart is what decides whether a limit belongs to the *type* or
+/// to the *arithmetic*.
+///
+/// **Integers, not rationals** — [`plane_name_big`]'s argument, applied per row instead of per
+/// point: clearing each row's denominators once up front leaves plain integer arithmetic, with
+/// the reductions at the end where the content has to come out anyway. ★ **A plane row is
+/// scale-free**, so scaling row `k` by its own denominators' lcm leaves the same plane, and
+/// scaling a row of a linear system leaves the same solution.
+///
+/// Takes [`PlaneName`]s rather than `[Rat; 4]` rows so a `Wide` carrier — one whose canonical
+/// name no longer fits `Rat` — is solvable too. That population is invisible to
+/// [`three_planes_rat`], which reads [`PlaneName::narrow`] and so never sees it.
+///
+/// `None` for a zero determinant only: parallel or line-sharing planes, no unique point.
+pub fn three_planes_big(p: [&PlaneName; 3]) -> Option<MeetPoint> {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    use num_traits::{Signed, ToPrimitive, Zero};
+
+    let row = |name: &PlaneName| -> [BigInt; 4] {
+        match name {
+            PlaneName::Wide(c) => c.clone(),
+            PlaneName::Narrow(c) => {
+                let den: [BigInt; 4] = core::array::from_fn(|i| BigInt::from(c[i].denom()));
+                let l = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+                core::array::from_fn(|i| BigInt::from(c[i].numer()) * (&l / &den[i]))
+            }
+        }
+    };
+    let m = [row(p[0]), row(p[1]), row(p[2])];
+
+    let det3 = |a: &[[BigInt; 3]; 3]| -> BigInt {
+        let minor = |r0: usize, r1: usize, c0: usize, c1: usize| -> BigInt {
+            &a[r0][c0] * &a[r1][c1] - &a[r0][c1] * &a[r1][c0]
+        };
+        &a[0][0] * minor(1, 2, 1, 2) - &a[0][1] * minor(1, 2, 0, 2) + &a[0][2] * minor(1, 2, 0, 1)
+    };
+
+    let base: [[BigInt; 3]; 3] =
+        core::array::from_fn(|r| core::array::from_fn(|c| m[r][c].clone()));
+    let rhs: [BigInt; 3] = core::array::from_fn(|r| -&m[r][3]);
+
+    let d = det3(&base);
+    if d.is_zero() {
+        return None; // no unique point — parallel or line-sharing planes
+    }
+
+    // Cramer, then **one reduction per coordinate**: `d` is nonzero, so every gcd here is at
+    // least 1 and the division is total.
+    let out: [(BigInt, BigInt); 3] = core::array::from_fn(|i| {
+        let mut a = base.clone();
+        for (r, x) in rhs.iter().enumerate() {
+            a[r][i] = x.clone();
+        }
+        let (mut n, mut q) = (det3(&a), d.clone());
+        let g = n.gcd(&q);
+        n /= &g;
+        q /= &g;
+        if q.is_negative() {
+            n = -n;
+            q = -q;
+        }
+        (n, q)
+    });
+
+    // ★ The same normalization invariant `plane_name_big` states: narrow whenever the canonical
+    // answer fits `i128`, `Wide` only when it does not — so equal points are structurally equal
+    // whichever route derived them.
+    let narrow = (|| {
+        let mut r = [Rat::from_int(0); 3];
+        for (o, (n, q)) in r.iter_mut().zip(&out) {
+            *o = Rat::new(n.to_i128()?, q.to_i128()?)?;
+        }
+        Some(r)
+    })();
+    Some(match narrow {
+        Some(r) => MeetPoint::Narrow(r),
+        None => MeetPoint::Wide(out),
+    })
+}
+
 /// **A plane pushed `t` along its own unit normal**, exactly — `d′ = d − t·|n|`.
 ///
 /// What a prism's far cap *is*: the face it was raised from, moved out by the sweep. Deriving it
@@ -2571,6 +2688,97 @@ mod tests {
             }
             assert_eq!(acc, Rat::from_int(0), "a point is off the derived plane");
         }
+    }
+
+    proptest! {
+        /// ★★★★★ **The two solves must be the same function** — the point-side twin of
+        /// `the_wide_derivation_answers_what_the_narrow_one_does`, and for the same reason: a
+        /// wide route that is only ever consulted where the narrow one declined would carry an
+        /// error unseen until the day it is consulted. Calling both on the same inputs is the
+        /// only way to say they agree.
+        #[test]
+        fn the_wide_solve_answers_what_the_narrow_one_does(
+            xs in prop::array::uniform12(-(1i64 << 20)..(1i64 << 20)),
+            ds in prop::array::uniform12(1i64..(1i64 << 20)),
+        ) {
+            let r = |i: usize| Rat::new(xs[i] as i128, ds[i] as i128).unwrap();
+            let rows: [[Rat; 4]; 3] =
+                core::array::from_fn(|k| core::array::from_fn(|j| r(4 * k + j)));
+            let names = rows.map(PlaneName::Narrow);
+            let wide = three_planes_big([&names[0], &names[1], &names[2]]);
+
+            if let Some(n) = three_planes_rat(rows) {
+                // ★ The invariant rides along: a point the narrow route reached fits `Rat` by
+                // construction, so the wide route must store it `Narrow` — same value, same
+                // representation, structural equality.
+                prop_assert_eq!(wide.clone(), Some(MeetPoint::Narrow(n)),
+                    "narrow answered but wide disagrees");
+            }
+
+            // ★★ And wherever the wide one answers **at all**, the point it names is on all three
+            // planes — checked in the rationals, no tolerance. This half covers the `Wide` arm,
+            // which the differential above cannot reach: the narrow route is silent there by
+            // definition, so agreement says nothing and only the residual does.
+            if let Some(w) = wide.as_ref() {
+                use num_bigint::BigInt;
+                use num_rational::Ratio;
+                use num_traits::Zero;
+                let big = |n: i128, d: i128| Ratio::new(BigInt::from(n), BigInt::from(d));
+                let coord = |i: usize| -> Ratio<BigInt> {
+                    match w {
+                        MeetPoint::Narrow(p) => big(p[i].numer(), p[i].denom()),
+                        MeetPoint::Wide(p) => Ratio::new(p[i].0.clone(), p[i].1.clone()),
+                    }
+                };
+                let point = [coord(0), coord(1), coord(2)];
+                for row in &rows {
+                    let mut acc = big(row[3].numer(), row[3].denom());
+                    for (j, x) in point.iter().enumerate() {
+                        acc += big(row[j].numer(), row[j].denom()) * x;
+                    }
+                    prop_assert!(acc.is_zero(), "the solved point is off one of the planes");
+                }
+            }
+        }
+    }
+
+    /// ★★★★★ **`three_planes_rat`'s `None` means two different things** — the point-side twin of
+    /// `a_plane_the_narrow_route_gives_up_on_is_still_named`.
+    ///
+    /// These three planes meet at `(1, 1, 1)`, which fits `Rat` with room to spare. But their
+    /// coefficients carry coprime denominators — a power of two and a power of five, what decimal
+    /// arithmetic produces once it reduces — and the determinant is their product: `2⁹³·5³⁴`, a
+    /// ~172-bit denominator. `three_planes_rat` multiplies before it can reduce, so it declines.
+    ///
+    /// ★ So a decline is **not** evidence that a coordinate is too wide to store. It can equally
+    /// be the arithmetic's ceiling on a value that fits. Nothing in the narrow route can tell the
+    /// two apart, which is what this twin exists to fix.
+    #[test]
+    fn a_point_the_narrow_solve_gives_up_on_is_still_found() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let rows = [
+            [r(1, 1 << 53), r(0, 1), r(0, 1), r(-1, 1 << 53)],
+            [r(0, 1), r(1, 5i128.pow(23)), r(0, 1), r(-1, 5i128.pow(23))],
+            [
+                r(0, 1),
+                r(0, 1),
+                r(1, (1 << 40) * 5i128.pow(11)),
+                r(-1, (1 << 40) * 5i128.pow(11)),
+            ],
+        ];
+        assert_eq!(
+            three_planes_rat(rows),
+            None,
+            "the narrow solve was expected to overflow on coprime denominators"
+        );
+        let names = rows.map(PlaneName::Narrow);
+        let found = three_planes_big([&names[0], &names[1], &names[2]])
+            .expect("the wide solve finds the point");
+        assert_eq!(
+            found,
+            MeetPoint::Narrow([Rat::from_int(1); 3]),
+            "the point fits `Rat` — the invariant demands it come back Narrow"
+        );
     }
 
     /// ★★★★★ **A canonical answer wider than `i128` is a name now, not a `None`** — and two
