@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc b64e5b368c466ee24400f92d41d826e380e89ea925a417fa7c9f0c2ad316f671 # shrinks to steps = [Extrude { x: 0, y: 0, w: 1, dist: 1 }]
 cc b9b510f06c4890c331392fdbaae9935b7ae5b5230009002f7b6302d15c471395 # shrinks to steps = [Extrude { x: 0, y: 0, w: 1, dist: 1 }]
+cc ae21d102c032611736021ea329b6da8ef0b094d12f177a9c8483e66b11d8db32 # shrinks to steps = [Boolean { kind: 0, a: 1, b: 1 }, Extrude { x: 2, y: 1, w: 1, dist: 1 }]

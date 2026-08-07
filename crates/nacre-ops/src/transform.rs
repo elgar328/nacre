@@ -601,12 +601,19 @@ fn transform_solid(
                     ..
                 },
             ) => {
+                // ★ `new_motion` may be `None`, and only for a motion that moves nothing —
+                // `Copy` is `transform_solid` with the identity. Then the plane is unchanged, the
+                // same statement re-pushed interns back onto the source handle, and that is the
+                // right answer. `points_move` refusing the transporting path is what rules out
+                // the other case, where a node is missing because the walk thought it could carry
+                // points that do not exist.
+                let out = model.push_plane_through(pl, *vs, new_motion);
                 debug_assert!(
-                    new_motion.is_some(),
-                    "a Through plane on the no-node path would leave its truth behind — \
-                     `points_move` must refuse that path"
+                    new_motion.is_some() || out.0 == s,
+                    "a Through plane gained no node yet changed handle — its truth would be \
+                     describing the plane it used to be"
                 );
-                model.push_plane_through(pl, *vs, new_motion)
+                out
             }
             (Surface::Cylinder(cy), _) => (model.push_cylinder(cy, new_motion), false),
             (Surface::Plane(_), nacre_topo::SurfaceTruth::Cylinder { .. }) => {

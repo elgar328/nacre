@@ -540,6 +540,28 @@ pub enum OpError {
     /// decided by comparing handles. Every nonzero offset of a tilted plane is irrational in the
     /// world and therefore has no rival statement; zero is the only case that collides.
     ZeroOffset,
+    /// A datum named the same vertex twice — sorting reveals it, and two points do not fix a
+    /// plane. Distinct from [`OpError::CollinearVertices`]: three different points on a line is a
+    /// different mistake from two points and a typo.
+    DuplicateVertex,
+    /// A datum named three vertices that lie on one line — no unique plane through them.
+    CollinearVertices,
+    /// A datum named a vertex that is not a three-plane point (today: a cylinder seam vertex,
+    /// whose pair pins a curve rather than a point). Its exact coordinate is not derivable from
+    /// its definition, so the plane through it would not be exact either.
+    VertexNotThreePlane,
+    /// **The named vertices' carriers do not all share one motion**, so no single frame holds a
+    /// rational coordinate for them: reaching the world means realizing a rotation, and cos/sin
+    /// are irrational.
+    ///
+    /// ★ This is not a caller mistake — it is the population the *next* stage opens (the judging
+    /// layer's homogeneous lift, `docs/truth-and-cache.md` open item 1). It is named separately
+    /// so that "how much does this cost us today" stays countable.
+    VerticesInMixedFrames,
+    /// A named vertex solves exactly, but its coordinate does not fit `Rat`. Stage-one only: the
+    /// plane through such points is derivable at arbitrary precision, and the stage that stops
+    /// requiring a name will stop requiring this.
+    VertexPointTooWide,
     LogHandleOutOfRange {
         /// Which store the index was meant for.
         cell: LogCell,
@@ -554,6 +576,7 @@ pub enum LogCell {
     Face,
     Solid,
     Surface,
+    Vertex,
 }
 
 /// **How a datum plane is stated** — the variant is the kind of statement, the way
@@ -569,6 +592,24 @@ pub enum DatumDef {
     /// [`OpError::PlaneWithoutExactForm`] when the plane carries no exact statement (a coordinate
     /// outside the decimal window, a zero normal) — the same proposition that error already names.
     Stated(SketchPlane),
+    /// **The plane through three vertices the model already holds** — named, not measured.
+    ///
+    /// This is the one thing the stated vocabulary cannot say. A caller who wants "the plane
+    /// through those three corners" can only read their coordinates today, and a discovered
+    /// vertex's coordinate is rounded: measured on tilted geometry, **every one of 220 triples**
+    /// produced a plane with a *different name* than the plane actually through them
+    /// (`tests/point_width.rs`). Naming the vertices keeps the statement exact.
+    ///
+    /// ★ **The order is the direction.** The three are sorted before they are stored — the same
+    /// vertices are the same plane in any order — but the caller's order fixes a normal by the
+    /// right-hand rule, and `flip` is measured against it exactly as it is for a stated plane.
+    /// Reversing two of them returns *the same handle with the opposite frame*, which is the only
+    /// way a caller can choose a side (`dist` is positive-only).
+    ///
+    /// Rejects by cause rather than by one blanket failure, because the causes have different
+    /// futures: [`OpError::VerticesInMixedFrames`] is what the next stage opens,
+    /// [`OpError::VertexPointTooWide`] is a limit of this one, and the rest are the caller's.
+    ThroughVertices([Handle<Vertex>; 3]),
     /// **`dist` away from a plane the model already holds**, stated inside that plane's own frame
     /// as the rational triple `(0,0,d), (1,0,d), (0,1,d)`.
     ///
@@ -745,6 +786,14 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
                 index: h.index(),
             })
     };
+    let vertex = |h: Handle<Vertex>| {
+        model
+            .vertex_handle_at(h.index())
+            .ok_or(OpError::LogHandleOutOfRange {
+                cell: LogCell::Vertex,
+                index: h.index(),
+            })
+    };
     let face = |h: Handle<Face>| {
         model
             .faces
@@ -816,6 +865,17 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
             def: DatumDef::Stated(_),
         } => Cow::Borrowed(op),
         Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        } => {
+            let mut out = *vs;
+            for v in out.iter_mut() {
+                *v = vertex(*v)?;
+            }
+            Cow::Owned(Operation::DatumPlane {
+                def: DatumDef::ThroughVertices(out),
+            })
+        }
+        Operation::DatumPlane {
             def: DatumDef::Offset { frame, dist },
         } => Cow::Owned(Operation::DatumPlane {
             def: DatumDef::Offset {
@@ -860,6 +920,56 @@ fn datum_plane(
     model: &mut Model,
     def: &DatumDef,
 ) -> Result<(Handle<Surface>, SketchFrame), OpError> {
+    /// The same solve `Model::through_points_rat` performs, with its single `None` split into the
+    /// causes that have different owners.
+    ///
+    /// ★ The split is the point. `three_planes_rat`'s one `None` hid two different facts for as
+    /// long as it existed, and the measurement that found it is the reason this variant is being
+    /// added at all — repeating the shape here would make the next stage unable to read how much
+    /// of the population it is opening.
+    ///
+    /// ★★ A carrier triple that does not meet is **not** on the list: those three planes met, or
+    /// the vertex would not exist. That is asserted, not rejected, so a broken invariant cannot
+    /// arrive disguised as a user error.
+    fn through_points_by_cause(
+        model: &Model,
+        vs: [Handle<Vertex>; 3],
+    ) -> Result<[[nacre_scalar::Rat; 3]; 3], OpError> {
+        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+        let mut frame = None;
+        for (i, vh) in vs.iter().enumerate() {
+            let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(*vh).def else {
+                return Err(OpError::VertexNotThreePlane);
+            };
+            let mine = model.plane_motion(tri[0]);
+            if tri.iter().any(|h| model.plane_motion(*h) != mine) {
+                return Err(OpError::VerticesInMixedFrames);
+            }
+            match frame {
+                None if i == 0 => frame = Some(mine),
+                f if f == Some(mine) => {}
+                _ => return Err(OpError::VerticesInMixedFrames),
+            }
+            let mut names = [None; 3];
+            for (o, h) in names.iter_mut().zip(tri) {
+                *o = model.surface_name.get(&h);
+            }
+            let [Some(a), Some(b), Some(c)] = names else {
+                // Unreachable since S2 — every plane interns with a name. Named rather than
+                // asserted because the claim spans two crates.
+                return Err(OpError::PlaneWithoutExactForm);
+            };
+            let meet = nacre_scalar::three_planes_big([a, b, c]).expect(
+                "a ThreePlane vertex's carriers meet — that is why the vertex exists (C2/S7)",
+            );
+            pts[i] = *meet.narrow().ok_or(OpError::VertexPointTooWide)?;
+        }
+        if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
+            return Err(OpError::CollinearVertices);
+        }
+        Ok(pts)
+    }
+
     match def {
         DatumDef::Stated(sp) => {
             let d = sp.def.as_ref().ok_or(OpError::PlaneWithoutExactForm)?;
@@ -890,6 +1000,40 @@ fn datum_plane(
             // and `measured_frame` is the one place that measures.
             let (frame, _) = measured_frame(model, plane, placement, sp.normal())
                 .ok_or(OpError::PlaneWithoutExactForm)?;
+            Ok((plane, frame))
+        }
+        DatumDef::ThroughVertices(vs) => {
+            // ★★★ **Every reject here happens before anything is pushed.** The causes are told
+            // apart first, then the plane is built — so a refusal leaves the model exactly as it
+            // found it, and the name of the refusal says which stage owns it.
+            let mut sorted = *vs;
+            sorted.sort_by_key(|v| v.index());
+            if sorted[0] == sorted[1] || sorted[1] == sorted[2] {
+                return Err(OpError::DuplicateVertex);
+            }
+            let pts = through_points_by_cause(model, sorted)?;
+
+            // ★ **The caller's order is the stated normal**, by the right-hand rule — the one
+            // place their choice of side can survive, since the stored triple is sorted and a
+            // canonical name carries no direction. `measured_frame` then measures `flip` against
+            // it, exactly as the `Stated` arm does against `sp.normal()`.
+            let world = vs.map(|v| model.vertex_point(v));
+            let stated = (world[1] - world[0])
+                .cross(world[2] - world[0])
+                .normalize()
+                .ok_or(OpError::CollinearVertices)?;
+
+            // ★★ **The cache comes from the solved points, not from the vertices' caches.** Those
+            // caches are the rounded coordinates this whole variant exists to avoid — on tilted
+            // geometry not one of them equals its exact value. The exact solve is already in hand
+            // for the name, so rounding *it* once is strictly closer than rounding three times.
+            let f = |p: [nacre_scalar::Rat; 3]| Point3::from_array(p.map(|r| r.to_f64()));
+            let cache =
+                Plane::from_point_normal(f(pts[0]), -stated).ok_or(OpError::DegenerateGeometry)?;
+            let (plane, _flipped) = model.push_plane_through(cache, sorted, None);
+            let (frame, _) =
+                measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
+                    .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
         }
         DatumDef::Offset { frame, dist } => {

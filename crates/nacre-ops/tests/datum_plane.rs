@@ -835,3 +835,542 @@ fn the_datums_flip_and_the_offsets_fold_agree() {
         "+dist from a downward-facing frame must go down: {d:?}"
     );
 }
+
+// =================================================================================================
+// A datum that names vertices instead of coordinates (S5(ii), stage 1)
+// =================================================================================================
+
+/// Three corners of a **tilted** prism whose vertices are discovered — the population where the
+/// coordinate road is measured to produce a different plane (`tests/point_width.rs`).
+fn tilted_prism_with_pocket() -> Model {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let plane = SketchPlane::from_axes(
+        Point3::from_array([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
+        Vector3::from_array([0.6, 0.8, 0.0]),
+        Vector3::from_array([-0.48, 0.36, 0.8]),
+    );
+    let frame = datum_frame(&mut m, plane);
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: Profile2d::polygon(vec![
+                p2(0.1111111111111111, 0.1234567890123456),
+                p2(4.123456789012345, 0.2345678901234567),
+                p2(3.9876543210987654, 3.1234567890123459),
+                p2(0.2222222222222222, 2.765432109876543),
+            ])
+            .unwrap(),
+            dist: 2.5,
+        },
+    )
+    .expect("the base prism") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let wall = *m
+        .shells
+        .get(m.solids.get(solid).outer)
+        .faces
+        .iter()
+        .find(|&&f| {
+            let s = m.faces.get(f).surface;
+            m.surface_name
+                .get(&s)
+                .and_then(|n| n.narrow())
+                .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+        })
+        .expect("the tilted-wall population");
+    let sp = nacre_ops::face_plane(&m, wall).expect("planar");
+    let d = nacre_props::face_props(&m, wall).unwrap().centroid - sp.origin();
+    let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
+    apply(
+        &mut m,
+        &Operation::PocketOnFace {
+            face: wall,
+            profile: Profile2d::polygon(vec![
+                p2(cu - 0.3, cv - 0.3),
+                p2(cu + 0.3, cv - 0.3),
+                p2(cu + 0.3, cv + 0.3),
+                p2(cu - 0.3, cv + 0.3),
+            ])
+            .unwrap(),
+            dist: 0.4,
+        },
+    )
+    .expect("the pocket");
+    m.rebuild_adjacency();
+    m
+}
+
+/// Every live vertex of `m`, in walk order.
+fn live_verts(m: &Model) -> Vec<nacre_store::Handle<nacre_topo::Vertex>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for &s in &m.live_solids {
+        let sol = m.solids.get(s);
+        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+            for &fh in &m.shells.get(sh).faces {
+                let f = m.faces.get(fh);
+                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for &he in &lp.half_edges {
+                        let vh = m.he_start(he);
+                        if seen.insert(vh) {
+                            out.push(vh);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Three vertices that share one frame, solve, **and name a plane the model does not already
+/// hold**.
+///
+/// ★★★ That last clause is not fussiness — without it the fixture measures nothing. Three corners
+/// of one face are coplanar with that face, so `push_plane_through` interns onto the existing
+/// handle and the stored truth stays `Known`: the datum works, but the storing path never runs.
+/// (Which is also the design saying what it says — *"interning is deterministic, the first pusher
+/// wins"* — so the fixture has to reach across faces to see the new variant at all.)
+fn three_solvable(m: &Model) -> [nacre_store::Handle<nacre_topo::Vertex>; 3] {
+    let mut ok = Vec::new();
+    for vh in live_verts(m) {
+        if m.through_points_rat([vh, vh, vh]).is_some() {
+            ok.push(vh);
+        }
+    }
+    for i in 0..ok.len() {
+        for j in (i + 1)..ok.len() {
+            for k in (j + 1)..ok.len() {
+                let t = [ok[i], ok[j], ok[k]];
+                let mut sorted = t;
+                sorted.sort_by_key(|v| v.index());
+                let Some(name) = m.plane_name_through(sorted) else {
+                    continue;
+                };
+                let mut n = 0u32;
+                let mut already = false;
+                while let Some(h) = m.surface_handle_at(n) {
+                    n += 1;
+                    already |= m.surface_name.get(&h) == Some(&name);
+                }
+                if !already {
+                    return t;
+                }
+            }
+        }
+    }
+    panic!("no solvable non-collinear triple in this fixture")
+}
+
+/// ★★★★★ **The capability, closed.** The datum built by *naming* three vertices is the plane
+/// actually through them — and it is **not** the plane their coordinates produce.
+///
+/// `tests/point_width.rs` measured the second half of that: on this population, all 220 triples
+/// spelled in coordinates name a different plane. This is the other side — the same three
+/// vertices, named, landing on the exact one.
+#[test]
+fn a_datum_through_vertices_is_the_plane_the_coordinates_miss() {
+    let mut m = tilted_prism_with_pocket();
+    let vs = three_solvable(&m);
+    let mut sorted = vs;
+    sorted.sort_by_key(|v| v.index());
+    let exact = m.plane_name_through(sorted).expect("nameable");
+
+    let OpOutput::DatumPlane { plane, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("a datum through three solvable vertices") else {
+        unreachable!()
+    };
+    assert_eq!(
+        m.surface_name.get(&plane),
+        Some(&exact),
+        "the datum must be the exact plane through those vertices"
+    );
+
+    // ★ The negative control that gives the assertion teeth: the same three vertices *spelled in
+    // coordinates* land somewhere else. Without this the test would pass on a kernel that quietly
+    // rounded, since both roads would then agree.
+    let lift = |vh| {
+        let a = m
+            .vertex_point(vh)
+            .as_array()
+            .map(nacre_scalar::Rat::from_decimal);
+        [a[0].unwrap(), a[1].unwrap(), a[2].unwrap()]
+    };
+    let rounded =
+        nacre_scalar::plane_name_exact(lift(vs[0]), lift(vs[1]), lift(vs[2])).expect("nameable");
+    assert_ne!(
+        exact, rounded,
+        "this fixture cannot show the gap — the coordinate road happened to agree"
+    );
+}
+
+/// ★★★ **One plane, two orders, opposite sides.** Sorting keeps identity; the caller's order
+/// keeps direction. Asserting only "one handle" would measure half of it and pass on a kernel
+/// where the caller cannot choose a side at all.
+#[test]
+fn reversing_the_vertex_order_keeps_the_handle_and_flips_the_frame() {
+    let mut m = tilted_prism_with_pocket();
+    let [a, b, c] = three_solvable(&m);
+
+    let datum = |m: &mut Model, vs: [nacre_store::Handle<nacre_topo::Vertex>; 3]| {
+        let OpOutput::DatumPlane { plane, frame } = apply(
+            m,
+            &Operation::DatumPlane {
+                def: DatumDef::ThroughVertices(vs),
+            },
+        )
+        .expect("datum") else {
+            unreachable!()
+        };
+        (plane, frame)
+    };
+    let (p1, f1) = datum(&mut m, [a, b, c]);
+    let (p2, f2) = datum(&mut m, [a, c, b]);
+    assert_eq!(p1, p2, "the same three vertices are one plane");
+    assert_ne!(
+        f1.flip(),
+        f2.flip(),
+        "the caller's order is the only place direction can live"
+    );
+}
+
+/// ★★ **Each refusal has its own name, and each name has a fixture that fires it.** A cause with
+/// no fixture is a cause that was never measured — and `VerticesInMixedFrames` in particular is
+/// how the next stage will count what it is opening.
+///
+/// ★ `VertexPointTooWide` is deliberately absent: reaching it needs a vertex whose carriers are
+/// all named yet whose meeting point leaves `Rat`, and this kernel's corpus produces no wide
+/// carrier at all (measured `wide_carrier = 0`). Recorded as unfired rather than faked — the
+/// stage that removes the requirement removes the variant with it.
+#[test]
+fn a_datum_through_vertices_refuses_by_cause() {
+    let mut m = tilted_prism_with_pocket();
+    let [a, b, _] = three_solvable(&m);
+    let before = m.live_solids.clone();
+    let through = |m: &mut Model, vs: [nacre_store::Handle<nacre_topo::Vertex>; 3]| {
+        apply(
+            m,
+            &Operation::DatumPlane {
+                def: DatumDef::ThroughVertices(vs),
+            },
+        )
+        .unwrap_err()
+    };
+
+    assert_eq!(through(&mut m, [a, b, a]), OpError::DuplicateVertex);
+    assert_eq!(
+        m.live_solids, before,
+        "a refusal must leave the model alone"
+    );
+
+    // ★ A cylinder's seam vertex is the reachable `VertexNotThreePlane` case: its pair pins a
+    // curve, so no three planes name it and no exact coordinate follows from its definition. The
+    // box beside it supplies the other two — a cylinder alone has only the two seam vertices.
+    let mut cy = Model::new();
+    cy.add_cylinder(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        2.0,
+    );
+    cy.add_cuboid(
+        Point3::from_array([4.0, 0.0, 0.0]),
+        Point3::from_array([5.0, 1.0, 1.0]),
+    );
+    cy.rebuild_adjacency();
+    let seam = live_verts(&cy)
+        .into_iter()
+        .find(|v| matches!(cy.vertices.get(*v).def, nacre_topo::VertexDef::OnSeam(_)))
+        .expect("a cylinder has seam vertices");
+    let corners: Vec<_> = live_verts(&cy)
+        .into_iter()
+        .filter(|v| {
+            matches!(
+                cy.vertices.get(*v).def,
+                nacre_topo::VertexDef::ThreePlane(_)
+            )
+        })
+        .collect();
+    assert_eq!(
+        through(&mut cy, [seam, corners[0], corners[1]]),
+        OpError::VertexNotThreePlane
+    );
+
+    // ★★ Two boxes stacked share a vertical line, so three of their corners are collinear — the
+    // one shape in this vocabulary that puts three vertices on a line.
+    let mut st = Model::new();
+    st.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    st.add_cuboid(
+        Point3::from_array([0.0, 0.0, 1.0]),
+        Point3::from_array([1.0, 1.0, 2.0]),
+    );
+    st.rebuild_adjacency();
+    let on_axis: Vec<_> = live_verts(&st)
+        .into_iter()
+        .filter(|v| {
+            let c = st.vertex_point(*v).as_array();
+            c[0] == 0.0 && c[1] == 0.0
+        })
+        .collect();
+    assert!(on_axis.len() >= 3, "the stack must share a corner line");
+    assert_eq!(
+        through(&mut st, [on_axis[0], on_axis[1], on_axis[2]]),
+        OpError::CollinearVertices
+    );
+
+    // ★★★ **The cause the next stage owns.** Turn one box and leave the other: a vertex from each
+    // lives in a different frame, and no single frame holds a rational coordinate for both.
+    let mut mx = Model::new();
+    let fixed = mx.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let spun = mx.add_cuboid(
+        Point3::from_array([4.0, 0.0, 0.0]),
+        Point3::from_array([5.0, 1.0, 1.0]),
+    );
+    mx.rebuild_adjacency();
+    let OpOutput::Transform { solid: spun } = apply(
+        &mut mx,
+        &Operation::Transform {
+            solid: spun,
+            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                axis: Axis::Z,
+                point: [nacre_scalar::Rat::from_int(0); 3],
+                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn") else {
+        unreachable!()
+    };
+    mx.rebuild_adjacency();
+    let of = |m: &Model, s| {
+        let mut out = Vec::new();
+        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
+            for lp in std::iter::once(&m.faces.get(fh).outer).chain(m.faces.get(fh).inner.iter()) {
+                for &he in &lp.half_edges {
+                    out.push(m.he_start(he));
+                }
+            }
+        }
+        out
+    };
+    let (still, turned) = (of(&mx, fixed), of(&mx, spun));
+    assert_eq!(
+        through(&mut mx, [still[0], still[1], turned[0]]),
+        OpError::VerticesInMixedFrames,
+        "vertices from two frames have no shared rational coordinate"
+    );
+}
+
+/// ★★★★ **A solid built on a vertex-named datum moves exactly once.**
+///
+/// Two failures are possible and they point opposite ways, so both are measured:
+/// **zero** times, if the mover took the no-node path — the f64 cache would travel while the
+/// truth kept pointing at vertices that did not move, leaving the two describing different
+/// planes; and **twice**, if the definition were transported *and* a node recorded.
+///
+/// ★ The translation is far from the origin on purpose. Near zero, "twice as far" and "not at
+/// all" both look like zero, and the fixture would pass whatever the code did.
+#[test]
+fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let mut m = tilted_prism_with_pocket();
+    let vs = three_solvable(&m);
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("datum") else {
+        unreachable!()
+    };
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: Profile2d::polygon(vec![
+                p2(-0.2, -0.2),
+                p2(0.2, -0.2),
+                p2(0.2, 0.2),
+                p2(-0.2, 0.2),
+            ])
+            .unwrap(),
+            dist: 0.5,
+        },
+    )
+    .expect("a prism raised on the vertex-named datum") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+
+    let base_before = nacre_ops::face_plane(&m, base_cap(&m, solid, plane)).expect("planar");
+    let shift = [7.0, 11.0, 13.0]; // far from the origin, so 0× and 2× are distinguishable
+    let OpOutput::Transform { solid: moved } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid,
+            isometry: nacre_scalar::Isometry::translation(
+                shift.map(|x| nacre_scalar::Rat::from_decimal(x).unwrap()),
+            ),
+        },
+    )
+    .expect("moving a solid built on a vertex-named datum") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+
+    let cap = m
+        .shells
+        .get(m.solids.get(moved).outer)
+        .faces
+        .iter()
+        .copied()
+        .find(|&f| {
+            matches!(
+                m.surface_truth(m.faces.get(f).surface),
+                SurfaceTruth::Plane {
+                    points: PlanePoints::Through(_),
+                    ..
+                }
+            )
+        })
+        .expect("the moved base cap still points at vertices");
+    let after = nacre_ops::face_plane(&m, cap).expect("planar");
+
+    // The plane's own origin travelled once along the shift.
+    let d = after.origin() - base_before.origin();
+    let along = [d.as_array()[0], d.as_array()[1], d.as_array()[2]];
+    for (got, want) in along.iter().zip(shift) {
+        assert!(
+            (got - want).abs() < 1e-9,
+            "the base cap moved {along:?}, expected {shift:?} — 0× means the truth stayed \
+             behind, 2× means it was transported and re-moved"
+        );
+    }
+
+    // ★ And the truth still agrees with the cache: the definition names the *same* vertices plus
+    // a node, so the plane derived from the definition must contain the cache's own origin.
+    let SurfaceTruth::Plane {
+        points: PlanePoints::Through(named),
+        motion,
+    } = m.surface_truth(m.faces.get(cap).surface)
+    else {
+        unreachable!()
+    };
+    assert_eq!(*named, {
+        let mut s = vs;
+        s.sort_by_key(|v| v.index());
+        s
+    });
+    assert!(
+        motion.is_some(),
+        "a Through plane must take the recorded-node path, never the transporting one"
+    );
+}
+
+/// The prism's base cap — the face whose surface is the datum handle.
+fn base_cap(
+    m: &Model,
+    solid: nacre_store::Handle<nacre_topo::Solid>,
+    plane: nacre_store::Handle<Surface>,
+) -> nacre_store::Handle<nacre_topo::Face> {
+    m.shells
+        .get(m.solids.get(solid).outer)
+        .faces
+        .iter()
+        .copied()
+        .find(|&f| m.faces.get(f).surface == plane)
+        .expect("the base cap is the datum's own plane")
+}
+
+/// ★★ **`Copy` must not refuse it either.** `defs_are_remappable` asks whether every *vertex*
+/// definition names surfaces this walk will remap; a `Through` plane is the first reference
+/// pointing the other way, at vertices that need not belong to the solid at all. It is not
+/// remapped — the node carries the motion — but "not needed" is an argument, and this is the
+/// observation.
+#[test]
+fn a_solid_on_a_vertex_named_datum_can_be_copied() {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let mut m = tilted_prism_with_pocket();
+    let vs = three_solvable(&m);
+    let OpOutput::DatumPlane { frame, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("datum") else {
+        unreachable!()
+    };
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: Profile2d::polygon(vec![
+                p2(-0.2, -0.2),
+                p2(0.2, -0.2),
+                p2(0.2, 0.2),
+                p2(-0.2, 0.2),
+            ])
+            .unwrap(),
+            dist: 0.5,
+        },
+    )
+    .expect("prism") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let out = apply(&mut m, &Operation::Copy { solid });
+    assert!(
+        matches!(out, Ok(OpOutput::Copy { .. })),
+        "copy refused a solid whose base cap points at vertices: {out:?}"
+    );
+}
+
+/// ★★★★ **The invariant S2 established, still true.** Every plane in the arena has a name.
+///
+/// That is what keeps `frame_chain`'s nameless branch — a *silent* demotion to the f64 road, not
+/// a reject — unreachable. `Through` is the first thing since S2 that could store a nameless
+/// plane, so the assertion is not "the producer rejected" but "no such plane exists".
+#[test]
+fn every_plane_still_has_a_name() {
+    let mut m = tilted_prism_with_pocket();
+    let vs = three_solvable(&m);
+    apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("datum");
+    // ★ Walked through `surface_handle_at`, which is the only door out of S1's seal — the store
+    // itself is private, so this sweep sees exactly what a caller can.
+    let mut planes = 0;
+    let mut i = 0u32;
+    while let Some(h) = m.surface_handle_at(i) {
+        i += 1;
+        if matches!(m.surface_truth(h), SurfaceTruth::Plane { .. }) {
+            planes += 1;
+            assert!(
+                m.surface_name.contains_key(&h),
+                "a plane with no name — the nameless-plane population is back"
+            );
+        }
+    }
+    assert!(planes > 0, "the sweep found no planes to check");
+}

@@ -184,3 +184,94 @@ fn the_ops_dependency_stays_default_free_so_consumers_can_drop_rayon() {
          --no-default-features` still links rayon and a wasm consumer is stuck: {line}"
     );
 }
+
+/// ★★ **Can a caller outside the kernel actually name three vertices?**
+///
+/// The datum that closes the coordinate gap is only useful if the vertices can be pointed at from
+/// the facade, and today there is no query for that — the caller walks
+/// `solids → shells → faces → loops → half_edges` and calls `he_start`. Every step of that is
+/// public, so it *works*; this test is what says so, and it is also the evidence for whether a
+/// derived query is worth adding. Read it: if the walk below looks like something a script author
+/// should never write, that is the argument, made of code rather than of guesswork.
+#[test]
+fn a_caller_can_name_vertices_and_build_a_datum_through_them() {
+    use nacre::ops::{DatumDef, OpOutput, Operation, apply};
+    use nacre::prelude::*;
+
+    let mut m = nacre::topo::Model::new();
+    let a = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([4.0, 4.0, 4.0]),
+    );
+    let b = m.add_cuboid(
+        Point3::from_array([1.0, 1.0, 2.0]),
+        Point3::from_array([3.0, 3.0, 5.0]),
+    );
+    nacre::ops::boolean(&mut m, nacre::ops::BoolKind::Cut, a, b).expect("a pocketed box");
+    m.rebuild_adjacency();
+
+    // The walk. This is the whole vocabulary a caller has for "give me a corner".
+    let mut corners = Vec::new();
+    for &s in &m.live_solids {
+        let sol = m.solids.get(s);
+        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+            for &fh in &m.shells.get(sh).faces {
+                let f = m.faces.get(fh);
+                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for &he in &lp.half_edges {
+                        let v = m.he_start(he);
+                        if !corners.contains(&v) {
+                            corners.push(v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(corners.len() >= 3, "a cut box has corners to name");
+
+    // Pick a triple that names a plane, then build the datum and raise something on it.
+    let mut triple = None;
+    'search: for i in 0..corners.len() {
+        for j in (i + 1)..corners.len() {
+            for k in (j + 1)..corners.len() {
+                let t = [corners[i], corners[j], corners[k]];
+                let mut sorted = t;
+                sorted.sort_by_key(|v| v.index());
+                if m.plane_name_through(sorted).is_some() {
+                    triple = Some(t);
+                    break 'search;
+                }
+            }
+        }
+    }
+    let triple = triple.expect("some triple of a cut box's corners names a plane");
+
+    let OpOutput::DatumPlane { frame, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(triple),
+        },
+    )
+    .expect("a datum through named vertices, from the facade alone") else {
+        unreachable!()
+    };
+    let out = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: nacre::ops::Profile2d::polygon(vec![
+                Point2::from_array([-0.3, -0.3]),
+                Point2::from_array([0.3, -0.3]),
+                Point2::from_array([0.3, 0.3]),
+                Point2::from_array([-0.3, 0.3]),
+            ])
+            .unwrap(),
+            dist: 0.5,
+        },
+    );
+    assert!(
+        matches!(out, Ok(OpOutput::Extrude { .. })),
+        "the datum a caller named must be sketchable: {out:?}"
+    );
+}

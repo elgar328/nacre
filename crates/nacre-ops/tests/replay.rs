@@ -458,10 +458,29 @@ enum Step {
     Copy {
         solid: usize,
     },
+    /// ★★★★ **A datum that names vertices — the step this generator most needs.**
+    ///
+    /// Re-anchoring is a bounds check, and a bounds check cannot see an in-range index that names
+    /// the *wrong* cell. Every earlier handle-carrying step names a face, a solid or a surface —
+    /// few, and little disturbed by a reject. Vertices are neither: a late reject leaves 63–84
+    /// cells behind (measured, R), and most of them are vertices, so a log recorded across one
+    /// and replayed would re-anchor a datum onto three different corners with no error at all.
+    /// Only a generated session that actually places this step after a reject can say it does
+    /// not happen.
+    DatumThroughVertices {
+        solid: usize,
+        a: usize,
+        b: usize,
+        c: usize,
+    },
 }
 
 fn step_strategy() -> impl Strategy<Value = Step> {
     prop_oneof![
+        // ★ Weighted like the other handle-carrying steps, and deliberately *not* filtered to
+        // triples that succeed: its rejects are part of what the session must survive.
+        3 => (0usize..4, 0usize..12, 0usize..12, 0usize..12)
+            .prop_map(|(solid, a, b, c)| Step::DatumThroughVertices { solid, a, b, c }),
         4 => (-3i8..3, -3i8..3, 1u8..4, 1u8..4)
             .prop_map(|(x, y, w, dist)| Step::Extrude { x, y, w, dist }),
         3 => (0usize..4, 0usize..8, 0u8..3, 1u8..3)
@@ -500,6 +519,31 @@ fn concretize(m: &Model, step: &Step) -> Option<Operation> {
     let live: Vec<Handle<Solid>> = m.live_solids.to_vec();
     let pick = |i: usize| live.get(i % live.len().max(1)).copied();
     Some(match *step {
+        Step::DatumThroughVertices { solid, a, b, c } => {
+            let s = pick(solid)?;
+            let mut vs = Vec::new();
+            let sol = m.solids.get(s);
+            for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+                for &fh in &m.shells.get(sh).faces {
+                    let f = m.faces.get(fh);
+                    for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                        for &he in &lp.half_edges {
+                            let vh = m.he_start(he);
+                            if !vs.contains(&vh) {
+                                vs.push(vh);
+                            }
+                        }
+                    }
+                }
+            }
+            if vs.len() < 3 {
+                return None;
+            }
+            let g = |i: usize| vs[i % vs.len()];
+            Operation::DatumPlane {
+                def: nacre_ops::DatumDef::ThroughVertices([g(a), g(b), g(c)]),
+            }
+        }
         Step::Extrude { x, y, w, dist } => {
             let (x, y, w) = (f64::from(x), f64::from(y), f64::from(w));
             Operation::Extrude {
@@ -594,6 +638,10 @@ struct Stats {
     rejected: usize,
     unresolvable: usize,
     handle_carrying: usize,
+    /// ★ Vertex-naming datums accepted **after this session already rejected something** — the
+    /// only shape in which "in range but the wrong vertex" could show itself, since a reject is
+    /// what shifts the indices. Counted so the coverage cannot vanish silently.
+    datum_after_reject: usize,
 }
 
 /// Interpret a recipe into `(log, model)` — **the discipline, executed.**
@@ -626,6 +674,16 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
                 // one variant carrying nothing.
                 st.handle_carrying += 1;
                 st.accepted += 1;
+                if st.rejected > 0
+                    && matches!(
+                        op,
+                        Operation::DatumPlane {
+                            def: nacre_ops::DatumDef::ThroughVertices(_)
+                        }
+                    )
+                {
+                    st.datum_after_reject += 1;
+                }
                 log.push(op);
             }
             Err(_) => {
@@ -653,6 +711,7 @@ static CASES: AtomicUsize = AtomicUsize::new(0);
 static ATTEMPTED: AtomicUsize = AtomicUsize::new(0);
 static REJECTED: AtomicUsize = AtomicUsize::new(0);
 static HANDLED: AtomicUsize = AtomicUsize::new(0);
+static DATUM_AFTER_REJECT: AtomicUsize = AtomicUsize::new(0);
 const CASE_COUNT: u32 = 32;
 
 proptest! {
@@ -690,14 +749,20 @@ proptest! {
         ATTEMPTED.fetch_add(st.attempted, Ordering::Relaxed);
         REJECTED.fetch_add(st.rejected, Ordering::Relaxed);
         HANDLED.fetch_add(st.handle_carrying, Ordering::Relaxed);
+        DATUM_AFTER_REJECT.fetch_add(st.datum_after_reject, Ordering::Relaxed);
         if CASES.fetch_add(1, Ordering::Relaxed) + 1 == CASE_COUNT as usize {
             // A population that rejects everything measures nothing; print it, do not assume it.
             println!(
-                "stat generated_population cases={CASE_COUNT} attempted={} rejected={} handle_carrying={}",
+                "stat generated_population cases={CASE_COUNT} attempted={} rejected={} handle_carrying={} datum_after_reject={}",
                 ATTEMPTED.load(Ordering::Relaxed),
                 REJECTED.load(Ordering::Relaxed),
                 HANDLED.load(Ordering::Relaxed),
+                DATUM_AFTER_REJECT.load(Ordering::Relaxed),
             );
+            // ★ Reported, not asserted: a random generator cannot be *made* to produce a shape,
+            // and a suite that fails when it does not is flaky rather than strict. The shape this
+            // number watches for is guaranteed deterministically instead, by
+            // [`a_datum_naming_vertices_survives_a_session_that_rejected`].
         }
     }
 }
@@ -1254,4 +1319,81 @@ fn an_extrude_naming_a_surface_that_does_not_exist_is_rejected_by_name() {
     ];
     let replayed = replay(&full).expect("the whole log replays");
     assert_eq!(replayed.live_solids.len(), 1);
+}
+
+/// ★★★★★ **A vertex-naming datum, recorded after the session already rejected something.**
+///
+/// This is the one shape where re-anchoring could go wrong without any error: a late reject
+/// leaves cells in the arena (measured here, and 63–84 in R's census), so a replay that rebuilt
+/// from the log would find its vertices at *different indices* than the recording session did.
+/// A bounds check cannot see that — the wrong index is still in range — so the only witness is a
+/// session that contains both and an arena comparison afterwards.
+///
+/// The session follows the discipline (`docs/design.md`): after a reject it throws its model away
+/// and rebuilds from the log, which is what makes the indices agree. The point of the test is
+/// that a datum naming *vertices* is not an exception to it.
+#[test]
+fn a_datum_naming_vertices_survives_a_session_that_rejected() {
+    let mut m = Model::new();
+    let mut log: Vec<Operation> = Vec::new();
+
+    let seed = extrude_op(&m, 0.0, 2.0, 1.0);
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &seed).expect("seed") else {
+        unreachable!()
+    };
+    log.push(seed);
+
+    // A late reject — builds its tool prism, then declines. Its cells stay behind.
+    let before = arena_lengths(&m);
+    let err = apply(
+        &mut m,
+        &Operation::PadOnFace {
+            face: faces[1],
+            profile: rect(20.0, 20.0, 21.0, 21.0),
+            dist: 1.0,
+        },
+    )
+    .expect_err("this pad misses the face");
+    let residue: usize = arena_lengths(&m)
+        .iter()
+        .zip(&before)
+        .map(|(a, b)| a - b)
+        .sum();
+    assert!(
+        residue > 0,
+        "the premise of this test is residue; got none ({err:?})"
+    );
+
+    // The discipline: rebuild from the log, so the session's indices are the log's indices.
+    // ★ The rebuilt model is a *different* arena, so `solid` from before it must not be reused —
+    // the cross-store guard says so, loudly, and it is right to.
+    m = replay(&log).expect("the log so far replays");
+    let solid = m.live_solids[0];
+
+    // Now name three corners of the seed solid — the step whose handles are vertices.
+    let mut vs = Vec::new();
+    let sol = m.solids.get(solid);
+    for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+        for &fh in &m.shells.get(sh).faces {
+            let f = m.faces.get(fh);
+            for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                for &he in &lp.half_edges {
+                    let vh = m.he_start(he);
+                    if !vs.contains(&vh) {
+                        vs.push(vh);
+                    }
+                }
+            }
+        }
+    }
+    // Corners of one face are coplanar with it, so this datum interns onto a plane the box
+    // already holds — which is fine here: what is under test is the *handles*, not the variant.
+    let datum = Operation::DatumPlane {
+        def: nacre_ops::DatumDef::ThroughVertices([vs[0], vs[1], vs[2]]),
+    };
+    apply(&mut m, &datum).expect("three corners of a box name a plane");
+    log.push(datum);
+
+    let once = replay(&log).expect("the log replays");
+    assert_same_arena(&once, &m, "replay(log) vs the session that rejected");
 }

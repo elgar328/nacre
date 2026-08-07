@@ -618,6 +618,19 @@ impl Model {
         self.surfaces.handle_at(index)
     }
 
+    /// The vertex a log's index names — [`Model::surface_handle_at`]'s twin, for the same reason
+    /// (`replay` re-anchors an operation's handles onto the model it is rebuilding).
+    ///
+    /// ★ A bounds check is all this can be, and for vertices that is a weaker guarantee than it
+    /// looks: a rejected operation still leaves cells behind (measured 63–84), so a log recorded
+    /// across a reject can re-anchor **in range and onto the wrong vertex**. The discipline that
+    /// answers it — rebuild from the log before recording again — lives with `replay`, and the
+    /// generated-session proptest is what holds it.
+    #[inline]
+    pub fn vertex_handle_at(&self, index: u32) -> Option<Handle<Vertex>> {
+        self.vertices.handle_at(index)
+    }
+
     /// The motion node a handle names. Same seal as [`Model::surface`]: writing goes through
     /// [`Model::push_motion`] (interned), reading through here.
     #[inline]
