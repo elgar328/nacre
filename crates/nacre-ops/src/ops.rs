@@ -843,14 +843,24 @@ fn datum_plane(
             // the `PlaneDef`'s own rationals, and `SketchFrame::named`'s checks hold structurally:
             // `origin = points[0]` is on the plane, and `ref_dir = points[1] − points[0]` lies in
             // it and is nonzero because the triple is not collinear.
-            let frame = SketchFrame {
-                plane,
-                placement: nacre_topo::FramePlacement::Named {
-                    origin: d.origin(),
-                    ref_dir: d.ref_dir(),
-                },
-                flip: false,
+            let placement = nacre_topo::FramePlacement::Named {
+                origin: d.origin(),
+                ref_dir: d.ref_dir(),
             };
+            // ★★★ **`flip` is measured here, against the normal the caller stated** — and that is
+            // the only place the caller's *direction* can survive.
+            //
+            // A plane's canonical name has no direction, and planes intern: state `z = 0` facing
+            // `+ẑ` and state it facing `−ẑ`, and both come back as **one handle whose realized `ŵ`
+            // is `+ẑ`** (measured). So a frame built with `flip: false` would silently answer "up"
+            // to a caller who said "down". Measuring against `sp.normal()` — the direction their
+            // own point order fixes — makes the returned frame mean what they said, which is what
+            // lets an operation take a frame where it used to take a plane and sweep the same way.
+            //
+            // This is still S9's rule, not an exception to it: `flip` is *measured*, never stated,
+            // and `measured_frame` is the one place that measures.
+            let (frame, _) = measured_frame(model, plane, placement, sp.normal())
+                .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
         }
         DatumDef::Offset { frame, dist } => {
@@ -1477,6 +1487,46 @@ impl SketchFrame {
             plane,
             placement: nacre_topo::FramePlacement::Canonical,
             flip: false,
+        }
+    }
+
+    /// **One of the three world planes, framed the way the convention names them** — the frame
+    /// twin of [`SketchPlane::world_xy`] / [`world_yz`](SketchPlane::world_yz) /
+    /// [`world_zx`](SketchPlane::world_zx), and the door most sketches come through.
+    ///
+    /// ★★ **XY and YZ take `Canonical`; ZX must take `Named`.** The arbitrary-axis rule gives the
+    /// ZX plane `+u = −x̂`, while the convention — and `SketchPlane::world_zx` — says `+u = +ẑ`.
+    /// Derived and stated differ there and only there, so a caller who reached for
+    /// [`SketchFrame::canonical`] on the ZX seed would find their sketch a quarter turn from where
+    /// they asked. This function is where that one exception lives, spelled once.
+    ///
+    /// ★ **`flip` is `false` and that is a measurement, not a derivation**: each seed's canonical
+    /// `ŵ` realizes to `+axis` because of how `Model::new` writes the seeds' points and how the
+    /// canonical name normalizes — pinned by `a_world_frame_faces_its_axis`, and by S9's
+    /// `a_seeded_planes_canonical_frame_is_the_world_basis_exactly` underneath it. Re-seed the
+    /// world planes differently and this turns silently; the tests are what stop that.
+    ///
+    /// To sketch facing the *other* way, state a plane facing that way
+    /// ([`Operation::DatumPlane`] measures `flip` from the normal you state) — the same move as
+    /// writing `SketchPlane::from_origin_normal(o, -ẑ)` today.
+    pub fn world(model: &Model, axis: nacre_scalar::Axis) -> SketchFrame {
+        let plane = model.world_plane(axis);
+        match axis {
+            // The two whose derived frame already is the convention.
+            nacre_scalar::Axis::Z | nacre_scalar::Axis::X => SketchFrame::canonical(plane),
+            // ZX: `+u = +ẑ`, stated because it cannot be derived.
+            nacre_scalar::Axis::Y => SketchFrame {
+                plane,
+                placement: nacre_topo::FramePlacement::Named {
+                    origin: [nacre_scalar::Rat::from_int(0); 3],
+                    ref_dir: [
+                        nacre_scalar::Rat::from_int(0),
+                        nacre_scalar::Rat::from_int(0),
+                        nacre_scalar::Rat::from_int(1),
+                    ],
+                },
+                flip: false,
+            },
         }
     }
 

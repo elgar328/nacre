@@ -582,3 +582,225 @@ fn the_flip_fold_decides_which_side_and_it_bites() {
         z_of(b)
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Which way a frame faces — the half a plane handle cannot carry
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Realize a frame's world basis the way every consumer does, through a prism it builds.
+///
+/// `frame_world_basis` is crate-private, so this reads the direction back the way an operation
+/// would: extrude a unit square on the frame and look at which side the far cap landed on.
+fn frame_sweep_direction(m: &mut Model, frame: nacre_ops::SketchFrame) -> [f64; 3] {
+    let before = m.surface_count();
+    let OpOutput::DatumPlane { plane: up, .. } = apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Offset { frame, dist: 1.0 },
+        },
+    )
+    .expect("a unit offset names the side the frame faces") else {
+        unreachable!()
+    };
+    let _ = before;
+    let nacre_geom::Surface::Plane(base) = m.surface(frame.plane()) else {
+        unreachable!()
+    };
+    let nacre_geom::Surface::Plane(off) = m.surface(up) else {
+        unreachable!()
+    };
+    let (a, b) = (base.origin().as_array(), off.origin().as_array());
+    core::array::from_fn(|k| b[k] - a[k])
+}
+
+/// ★★★ **The measurement this whole stage rests on.**
+///
+/// A plane's canonical name has no direction and planes intern, so stating `z = 0` facing `+ẑ`
+/// and stating it facing `−ẑ` produce **one handle**. If the frame handed back carried
+/// `flip: false` in both cases, the second caller would be answered "up" when they said "down" —
+/// and an operation that took a frame where it used to take a plane would sweep the wrong way.
+///
+/// So `DatumPlane` measures `flip` against the normal the caller's own point order fixes. Same
+/// handle, opposite flips, and each frame faces the way its caller stated.
+#[test]
+fn two_statements_of_one_plane_share_a_handle_and_keep_their_directions() {
+    let mut m = Model::new();
+    let up = SketchPlane::through_points(
+        Point3::origin(),
+        Point3::from_array([1.0, 0.0, 0.0]),
+        Point3::from_array([0.0, 1.0, 0.0]),
+    )
+    .expect("z = 0 facing +z");
+    let down = SketchPlane::through_points(
+        Point3::origin(),
+        Point3::from_array([0.0, 1.0, 0.0]),
+        Point3::from_array([1.0, 0.0, 0.0]),
+    )
+    .expect("z = 0 facing −z");
+    assert!(
+        up.normal().as_array()[2] > 0.0 && down.normal().as_array()[2] < 0.0,
+        "the fixture is vacuous unless the two statements really oppose"
+    );
+
+    let state = |m: &mut Model, sp: SketchPlane| match apply(
+        m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(sp),
+        },
+    ) {
+        Ok(OpOutput::DatumPlane { plane, frame }) => (plane, frame),
+        other => panic!("datum failed: {other:?}"),
+    };
+    let (hu, fu) = state(&mut m, up);
+    let (hd, fd) = state(&mut m, down);
+
+    assert_eq!(
+        hu, hd,
+        "one geometric plane, one handle — interning answered"
+    );
+    assert_ne!(
+        fu.flip(),
+        fd.flip(),
+        "and the two frames must disagree about which way ŵ runs, or the direction was lost"
+    );
+
+    // Read the directions back through an operation, not through a private helper.
+    let (du, dd) = (
+        frame_sweep_direction(&mut m, fu),
+        frame_sweep_direction(&mut m, fd),
+    );
+    assert!(du[2] > 0.0, "the +z statement's frame faces up: {du:?}");
+    assert!(dd[2] < 0.0, "the −z statement's frame faces down: {dd:?}");
+}
+
+/// The seed sugar and a datum of the same world plane **mean** the same frame.
+///
+/// ★ They are not the same *value*, and that is worth knowing rather than asserting away: the
+/// sugar spells XY and YZ `Canonical` (derived) while a datum always spells `Named` (the caller's
+/// own `points[0]` and `points[1] − points[0]`). Two spellings of one frame — which is harmless
+/// here because a world plane's basis lifts exactly, so **neither road builds a motion node** and
+/// the arena cannot tell them apart. On a *tilted* plane the two spellings would be two nodes,
+/// which is correct: there they really are two different sketch coordinate systems.
+///
+/// What must agree is the meaning: same plane, same `flip`, same realized `ŵ`. The axes are
+/// pinned separately by [`the_zx_sugar_is_not_the_canonical_frame`].
+#[test]
+fn the_world_sugar_means_what_a_datum_of_the_same_plane_means() {
+    for (axis, stated) in [
+        (Axis::Z, SketchPlane::world_xy()),
+        (Axis::X, SketchPlane::world_yz()),
+        (Axis::Y, SketchPlane::world_zx()),
+    ] {
+        let mut m = Model::new();
+        let sugar = nacre_ops::SketchFrame::world(&m, axis);
+        assert_eq!(sugar.plane(), m.world_plane(axis));
+        assert!(!sugar.flip(), "{axis:?}: the sugar states no flip");
+
+        let OpOutput::DatumPlane { frame, .. } = apply(
+            &mut m,
+            &Operation::DatumPlane {
+                def: DatumDef::Stated(stated),
+            },
+        )
+        .expect("stating a world plane") else {
+            unreachable!()
+        };
+        assert_eq!(frame.plane(), sugar.plane(), "{axis:?}: same plane");
+        assert_eq!(frame.flip(), sugar.flip(), "{axis:?}: same sense");
+
+        let (a, b) = (
+            frame_sweep_direction(&mut m, sugar),
+            frame_sweep_direction(&mut m, frame),
+        );
+        for k in 0..3 {
+            assert!(
+                (a[k] - b[k]).abs() < 1e-12,
+                "{axis:?}: the two spellings must face the same way — {a:?} vs {b:?}"
+            );
+        }
+    }
+}
+
+/// ★★ **The ZX trap, pinned as a positive control.**
+///
+/// `SketchFrame::canonical` on the ZX seed gives `+u = −x̂` (the arbitrary-axis derivation) while
+/// the convention gives `+u = +ẑ`. They are *different frames on one plane*, and the sugar exists
+/// precisely because of that. Without this assertion nothing would record that the two differ,
+/// and a later simplification ("the sugar is just `canonical`") would pass every other test.
+#[test]
+fn the_zx_sugar_is_not_the_canonical_frame() {
+    let m = Model::new();
+    let zx = m.world_plane(Axis::Y);
+    let sugar = nacre_ops::SketchFrame::world(&m, Axis::Y);
+    let derived = nacre_ops::SketchFrame::canonical(zx);
+    assert_eq!(sugar.plane(), derived.plane(), "same plane");
+    assert_ne!(
+        sugar.placement(),
+        derived.placement(),
+        "ZX is the axis where the convention cannot be derived — if these ever agree, either the \
+         seeding or the arbitrary-axis rule moved, and every ZX sketch turned with it"
+    );
+
+    // XY and YZ are the other half of the claim: there, derived *is* the convention.
+    for axis in [Axis::Z, Axis::X] {
+        assert_eq!(
+            nacre_ops::SketchFrame::world(&m, axis),
+            nacre_ops::SketchFrame::canonical(m.world_plane(axis)),
+            "{axis:?}: derived and stated agree here, so the sugar must not invent a placement"
+        );
+    }
+}
+
+/// ★ The world frames face `+axis`, and that is a measurement.
+///
+/// Each seed's canonical `ŵ` realizes to `+axis` because of how `Model::new` writes the seeds'
+/// points and how the canonical name normalizes — not because anything derives it. Re-seed
+/// differently and `SketchFrame::world` turns silently; this is what stops that.
+#[test]
+fn a_world_frame_faces_its_axis() {
+    for (axis, expect) in [
+        (Axis::Z, [0.0, 0.0, 1.0]),
+        (Axis::X, [1.0, 0.0, 0.0]),
+        (Axis::Y, [0.0, 1.0, 0.0]),
+    ] {
+        let mut m = Model::new();
+        let f = nacre_ops::SketchFrame::world(&m, axis);
+        let d = frame_sweep_direction(&mut m, f);
+        for k in 0..3 {
+            assert!(
+                (d[k] - expect[k]).abs() < 1e-12,
+                "{axis:?}: a unit offset along the frame should land at {expect:?}, got {d:?}"
+            );
+        }
+    }
+}
+
+/// The flip a datum measures and the sign `Offset` folds must agree, or an offset from a
+/// "downward" plane would climb.
+#[test]
+fn the_datums_flip_and_the_offsets_fold_agree() {
+    let mut m = Model::new();
+    let down = SketchPlane::from_origin_normal(
+        Point3::from_array([0.0, 0.0, 2.0]),
+        Vector3::from_array([0.0, 0.0, -1.0]),
+    )
+    .expect("z = 2 facing down");
+    let OpOutput::DatumPlane { frame, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(down),
+        },
+    )
+    .expect("stated") else {
+        unreachable!()
+    };
+    assert!(
+        frame.flip(),
+        "the canonical ŵ of z = 2 is +ẑ, so a −ẑ statement flips"
+    );
+    let d = frame_sweep_direction(&mut m, frame);
+    assert!(
+        d[2] < 0.0,
+        "+dist from a downward-facing frame must go down: {d:?}"
+    );
+}
