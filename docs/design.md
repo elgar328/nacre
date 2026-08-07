@@ -425,12 +425,38 @@ pub enum Operation {
     // 프로파일에서 새 솔리드를 만들므로 앞선 op의 면을 참조할 필연이 없다 — op간 Handle 참조는
     // 기존 면 위에 작업하는 M4(PadOnFace/PocketOnFace)에서 비로소 필연적으로 도입된다.
     // M2는 매 Extrude 결과가 닫힌 솔리드라 validate가 빈틈없이 걸린다.
-    Extrude { plane: SketchPlane, profile: Profile2d, dist: f64 },
+    Extrude { frame: SketchFrame, profile: Profile2d, dist: f64 },   // ← 평면을 «이름 부른다»(S5(i)-b)
     Revolve { plane: SketchPlane, profile: Profile2d, axis: Axis, angle: f64 },
     PadOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 }, // M4: 기존 면 위 — Handle<Face> 참조
     Boolean { kind: BoolKind, a: Handle<Solid>, b: Handle<Solid> },
     // ...
 }
+
+**연산은 평면을 «이름 부른다» (S5(i)-b).** `Extrude` 가 `SketchFrame`(평면 핸들 + 배치 +
+측정된 `flip`)을 받으면서, 평면을 **값**으로 싣는 변종은 사라졌다. 그러면 원칙 2 가 연산 어휘
+전체에서 성립한다 — 평면은 아레나에 있고 연산은 그것을 가리킨다.
+
+| 무엇 | 어디서 |
+|---|---|
+| 세계 평면 위 스케치 | `SketchFrame::world(&m, Axis)` — 씨앗을 이름 부른다 |
+| 기존 면 위 스케치 | `face_sketch_frame(&m, face)` |
+| 그 밖의 평면 | `Operation::DatumPlane` 로 **먼저 진술**하고 돌려받은 프레임을 쓴다 |
+
+- **방향은 `flip` 이 들고, 프레임을 만든 쪽이 잰다.** 평면의 정준 이름에는 방향이 없고 평면은
+  interning 되므로(같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들**, 실측), 프레임이 방향을
+  담을 수 있는 자리는 `flip` 뿐이다. datum 은 **호출자가 진술한 법선**에 대해, 면은 **바깥
+  법선**에 대해 잰다. S9 의 «flip 은 진술이 아니라 측정» 규칙 그대로이고, 측정자가 늘었을 뿐이다.
+- ★ **`world_zx` 는 유도로 만들 수 없다**: arbitrary-axis 규약이 ZX 에 `+u = −x̂` 를 주는데
+  규약은 `+u = +ẑ` 다(`ŵ` 는 둘 다 `+ŷ`). `SketchFrame::world` 가 그 예외를 **한 곳에** 가둔다 —
+  `canonical(씨앗 ZX)` 로 바꾸면 그 스케치들이 90° 돈다(음성 대조로 잠금).
+- **`dist` 는 두께다**(`NonPositiveDistance` 유지). 방향은 프레임이 말한다 —
+  `DatumDef::Offset` 의 `dist` 가 **부호 있는 변위**인 것과 대비되며, 그쪽은 부호만이 «어느 쪽»
+  을 말하기 때문이다. 반대편을 향하는 스케치는 **그 방향으로 평면을 진술**한다.
+- **프레임의 기저는 유리수로 묻는다, 실현해서 되묻지 않는다.** `RatFrame::of_plane_frame` 이
+  `û = u_raw·inv_sqrt_exact(uu)` 로 답한다 — 실현한 축을 `Rat::from_decimal` 로 다시 들어올리면
+  정규화가 필요한 축(`(0.6,0.8,0)` → 원시 `(3,4,0)`, `uu=25`)이 `0.6000000000000001` 로 돌아와
+  직교정규가 깨지고, 그 평면이 **조용히 프레임-노드 도로로 옮겨간다**(실측). `plane_frame_named`
+  가 `v̂` 에 대해 이미 적어 둔 규칙과 같은 것이다.
 
 **datum 평면의 규칙 (S5(i)-a).** 평면을 만드는 연산은 `DatumPlane` **하나**이고, 불리언은
 여전히 평면을 만들지 않는다(C6 깊이 불변식 무손상, `a_boolean_mints_no_surface`).
@@ -466,7 +492,7 @@ pub struct TessConfig { pub default_tol: f64 /* , 면별 override 등 */ }
 // §2에서 tess/ops를 Model 필드에서 뺀 것과 같은 층 위반이 된다.
 ///
 /// 로그를 처음부터 재생. 보장: 동일 로그·동일 cfg → 동일 (모델, tess) (인덱스까지 재현).
-/// 핸들을 싣는 6변종에서도 성립한다 — replay 가 로그의 인덱스를 자기 아레나에 재고정하기
+/// **7변종 전부**에서 성립한다(S5(i)-b 이후 값-전용 변종은 없다) — replay 가 인덱스를 재고정하기
 /// 때문이며(§2 「인덱스 어휘」), 측정은 `tests/replay.rs`(생성 세션 + 6변종 전수)다.
 /// 로그 중간 파라미터를 수정한 재생은 v1에서 미지원 — Operation이 원시 Handle을
 /// 참조하므로 상류 수정이 하류 Handle 번호를 밀어낸다 (topological naming 문제).

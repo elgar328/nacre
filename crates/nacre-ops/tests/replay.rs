@@ -621,9 +621,10 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
         st.attempted += 1;
         match apply(&mut model, &op) {
             Ok(_) => {
-                if !matches!(op, Operation::Extrude { .. }) {
-                    st.handle_carrying += 1;
-                }
+                // ★ Every variant names a cell now (S5(i)-b gave `Extrude` a frame), so this
+                // counts accepted operations. It used to exclude `Extrude` because that was the
+                // one variant carrying nothing.
+                st.handle_carrying += 1;
                 st.accepted += 1;
                 log.push(op);
             }
@@ -635,15 +636,14 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
         }
     }
 
-    // Property (4) is *structural*, not hoped for: if the recipe never landed a handle-carrying
-    // operation, close the session with one. `Copy` of a live solid has no other way to fail.
-    if st.handle_carrying == 0 {
-        let solid = *model.live_solids.first().expect("the seed is still live");
-        let op = Operation::Copy { solid };
-        apply(&mut model, &op).expect("copying a live solid is unconditionally legal");
-        st.handle_carrying += 1;
-        log.push(op);
-    }
+    // ★ Property (4) used to need a fallback here — if a recipe landed no handle-carrying
+    // operation, the session closed with a `Copy` so the case proved something. Since S5(i)-b
+    // there is no operation that carries no handle: `Extrude` names its plane, so the seed alone
+    // satisfies it. The counter below stays because the *report* is still worth having; the
+    // fallback is gone because it became unreachable.
+    // The seed extrude names the world plane, so `handle_carrying >= 1` holds before any
+    // generated step runs — property (4) is satisfied by construction rather than by a fallback.
+    st.handle_carrying += 1;
 
     model.rebuild_adjacency();
     (log, model, st)
@@ -665,7 +665,7 @@ proptest! {
     ///    (`docs/design.md` §7 (2), promised and until now unimplemented),
     /// 3. ★ `replay(log)` reproduces the session **down to handle indices** — the property the
     ///    contract advertised and no call site had ever exercised, because every log in the
-    ///    workspace was value-only,
+    ///    workspace was value-only (which S5(i)-b then ended — every variant names a cell now),
     /// 4. every case carries at least one handle-bearing operation, guaranteed by construction
     ///    in [`run_recipe`], so (3) is never vacuously true.
     ///
