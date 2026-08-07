@@ -848,6 +848,28 @@ impl MeetPoint {
             MeetPoint::Wide(_) => None,
         }
     }
+
+    /// **The width `Rat` would have to hold** — the widest of the six magnitudes (numerator and
+    /// denominator of each coordinate) *after* the per-coordinate reduction. `≤ 127` is exactly
+    /// the `Narrow` condition, so this is the quantity, not a proxy for it.
+    ///
+    /// ★ Reduced, deliberately: the unreduced `detᵢ/det` Cramer produces is systematically wider
+    /// and would report how the answer was computed rather than how wide the answer is.
+    pub fn width_bits(&self) -> u64 {
+        match self {
+            MeetPoint::Narrow(p) => p
+                .iter()
+                .flat_map(|r| [r.numer(), r.denom()])
+                .map(|v| (128 - v.unsigned_abs().leading_zeros()) as u64)
+                .max()
+                .unwrap_or(0),
+            MeetPoint::Wide(p) => p
+                .iter()
+                .flat_map(|(n, d)| [n.bits(), d.bits()])
+                .max()
+                .unwrap_or(0),
+        }
+    }
 }
 
 /// **The same meeting point [`three_planes_rat`] computes, without the `i128` ceiling** — the
@@ -2779,6 +2801,33 @@ mod tests {
             MeetPoint::Narrow([Rat::from_int(1); 3]),
             "the point fits `Rat` — the invariant demands it come back Narrow"
         );
+        assert_eq!(found.width_bits(), 1, "1/1 is one bit wide");
+    }
+
+    /// ★★★★★ **The negative control for [`MeetPoint::width_bits`]** — without it, a corpus that
+    /// reports "nothing over 127 bits" is indistinguishable from a dead probe.
+    ///
+    /// A `Wide` carrier states a plane at `x = 2²⁰⁰`, which no `Rat` can hold; the meeting point
+    /// inherits that width and the fork has to take its other branch. So the instrument can say
+    /// the other thing, and `over127 = 0` in a measurement means the population, not the meter.
+    #[test]
+    fn the_width_meter_reports_a_point_no_rat_can_hold() {
+        use num_bigint::BigInt;
+        let far = BigInt::from(1) << 200;
+        let wide = PlaneName::Wide([BigInt::from(1), BigInt::from(0), BigInt::from(0), -&far]);
+        let r = |v: [i128; 4]| PlaneName::Narrow(v.map(Rat::from_int));
+        let (py, pz) = (r([0, 1, 0, 0]), r([0, 0, 1, 0]));
+        let found = three_planes_big([&wide, &py, &pz]).expect("three planes meet at (2²⁰⁰, 0, 0)");
+        assert!(
+            matches!(found, MeetPoint::Wide(_)),
+            "a 201-bit coordinate cannot be Narrow"
+        );
+        assert_eq!(
+            found.width_bits(),
+            201,
+            "the meter reads the coordinate's width"
+        );
+        assert_eq!(found.narrow(), None);
     }
 
     /// ★★★★★ **A canonical answer wider than `i128` is a name now, not a `None`** — and two
