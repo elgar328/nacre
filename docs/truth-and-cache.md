@@ -393,8 +393,12 @@ pub enum WorkingPlaneDef {
     /// 어림이었고, 실제로는 «어떤 식을 쓰는가» 가 정한다: 분모를 털고 아핀 외적을 하면 **15**,
     /// 동차점 셋의 **사영 join**(3×4 행렬의 네 3×3 소행렬식)이면 **9**. 후자를 쓴다 —
     /// `cramer_iv`(세 평면 → 점, meet)의 **정확한 쌍대**라 `det3_iv` 네 번이고 새 산술이 없다.
-    /// 기계는 `nacre-cip::kernel::frame3::{plane_iv_through, plane_hp_through}` 에 **서 있고
-    /// 아직 호출자가 없다**(생산자는 2b).
+    /// 기계는 `nacre-cip::kernel::frame3::{plane_iv_through, plane_hp_through}` 에 **서 있다**.
+    /// ★★★★★ **그리고 오늘 이 변종에는 생산자가 «없는» 게 아니라 «있을 수 없다»**(확인
+    /// 2026-08-08). 이런 평면은 이름이 없고 ⇒ `frame_chain` 이 사퇴하고 ⇒ `SketchFrame` 이
+    /// 없고 ⇒ base cap 이 못 되고 ⇒ **판정 표에 들어오지도 않는다.** 그러므로 저 두 함수의
+    /// 첫 소비자는 배열 엔진이 아니라 **프레임 실현**이고, 이 표는 **그 다음 벽**이다.
+    /// 순서와 남은 질문은 §열린 항목 16.
     Through([[usize; 3]; 3]),
 }
 
@@ -474,6 +478,9 @@ pub enum Decision {
     실을 곳 없는 값은 아무도 안 쓰는 값이다 — 함수가 스스로 정규화한다. 생성 200 중 **172**가
     음수 `D` 를 지나므로 그 이빨은 실제로 물렸고, 정규화를 지우면 대조 테스트가 깨진다(확인).
   - `D` 가 0 을 품으면 `None` → 상승 → 안 갈라지면 이름 붙은 거절. 조용한 폴백은 없다.
+  - ★★★★★ **그러나 이 갈래는 오늘 도달 불가능하다**(확인 2026-08-08). 그런 datum 은 이름이
+    없어 `SketchFrame` 을 못 얻고, 그래서 면이 못 되고, 그래서 이 표에 들어오지도 않는다.
+    위 기계의 첫 소비자는 **프레임 실현**이고 이 표는 그 다음 벽이다 — §열린 항목 16.
 
 ---
 
@@ -511,6 +518,7 @@ pub enum Decision {
 | *"코퍼스 최대값이 상한"* | ✗ 폭은 타입에서 유도하라(이름 ~2²²⁹¹) — 실측 최대는 표본이다 |
 | *"정준 원점이 넘치면 `points[0]` 으로 폴백"* | ✗ 스케치의 (0,0) 위치가 **오버플로 여부에 따라 달라진다** — 유도(`Canonical`)로 가면 실현이 임의정밀로 감당하고 규약이 유지된다 |
 | *"좁은 이름을 별도 곁표로"* | ✗ ~99% 가 중복 저장이다 — `PlaneName = Narrow \| Wide` 한 enum + `narrow()` 투영이면 저장은 하나다 |
+| *"S5(ii)-2 는 판정층 배선이다"* (2026-08-08 내가 이행표에 적음) | ✗ **벽은 프레임이었고 판정층은 애초에 막고 있지 않았다.** 이름 없는 평면은 `SketchFrame` 을 못 얻어 **판정 표에 도달조차 못 한다** — 그래서 `WorkingPlaneDef::Through` 는 생산자가 «없는» 게 아니라 «있을 수 없다». §열린 항목 16 이 두 벽을 순서대로 적는다. ★ 교훈: «다음 단계가 이 기계를 쓴다» 를 적기 전에 **그 단계가 도달 가능한지** 먼저 확인할 것 |
 
 ---
 
@@ -536,7 +544,18 @@ pub enum Decision {
 | S8 | **Edge 최종형** — `Edge{surfaces: [Handle<Surface>;2], vertices: [Handle<Vertex>;2]}`: 담체 두 면(오름차순 정렬 쌍) + 경계 두 점, `curve`·`bounds: Option`·`origin` 사망. `Store<Curve>` → `edge_cache: Vec<EdgeCache>`(인덱스-평행 캐시): 유일 입구 `push_edge`(eager 파생, 퇴화 검사는 **팔별** — rim `[v,v]` 는 합법) + `rebuild_edge_cache`(«버리고 재생» 잠금이 비트 동일 증명) + `edge_curve` 접근자·`derive_edge_curve`(직선 = 끝점 through_points, rim 원 = 담체에서 — 신설 geom `line_plane`, seam = 자기-인접 `[cyl,cyl]` 잠정 표기). transform pass 2(곡선 이동) 통째 소멸. validate: 신설 `EdgeCarrierMismatch`(담체 ≠ 인접 관측, `[plane,plane]` 자기쌍 검출) + `UnboundedEdgeInLoop`·`RefKind::EdgeCurve`·`StepError::UnboundedEdge` 순삭. ★ 구현 중 발견 2건: ① **담체는 wall 로 추측하면 틀린다** — 세 평면이 한 직선을 공유하는 인구(해결된 4-평면 동시성)에서 각 면의 arrangement 는 제3의 평면을 wall 로 (옳게) 지목 — 담체는 **전 링 선-주사한 인접성**에서 읽는다(실측: debug_assert 발화가 잡음). ② «전 생산 직선 비트 동일» 주장이 이동 경로에서 반박 — pass 2 는 방향을 직접 회전, 파생은 끝점 차 재정규화라 방향 ~1 ulp(실측 2.8e-16, 직선 83/84 비트 동일, 원 최대 2.2e-16 — 직선 기하는 비관측이라 무해). ③ VertexOffCurve 의 직선 갈래는 **타입상 항진**이 됐다(끝점이 자기 직선 위) — 검사는 원(rim)으로 이빨 유지, `.max(tol_of(edge.origin))` 은 상수 `EPS_CONSTRUCTED` 로 재철자(**무-행동이 아니었다** — `Discovered{tol:0}` 정점의 하한을 edge 항이 받치고 있었음, 실측). census 전 커밋 비트 동일 | ✔ 2026-08-06 |
 | S7 | **`Origin` 소멸 — 정점은 자기 정의를 들고, 좌표는 캐시가 된다** — `Vertex{def: VertexDef{ThreePlane([3]) \| OnSeam([2])}}`(Q3 수정: seam 정점이 단일형을 반박 — 반증표), `point`·`Origin`(3변종) 사망, `vertex_cache: Vec<PointCache{coord, tol: Option<f64>}>` 인덱스-평행 + 유일 입구 `push_vertex` + 접근자 `vertex_point`/`vertex_tol`. **`rebuild_vertex_cache` 는 없다**(3b ⏸ — 발견 좌표는 배열이 공들인 값 1992 중 238 이 순진 Cramer 와 다르고, seam 좌표는 load-bearing): S8 이 모서리에서 얻은 «버리고 재생» 보증은 정점엔 아직 없음을 정직 기록. 소멸한 기계: 스케치 프레임 base 정점(Q2 — 프레임 공유 세 평면의 유리수 Cramer + 사슬 재생이 저장 좌표를 **비트 동일**로 재현, 8/8 실측을 영구 잠금으로 승격)·`remap_origin`·`solid_motion`+정점용 `move_node`(면이 자기 leaf 를 든다 — 규칙 3)·한-홉 base 불변식(타입이 흡수: 중복 적용이 표현 불가)·`exact.rs::base_f64/top_f64`. reuse `solid_points` 는 def 경로로(구성=`Pt3::exact` 문자 동일, 발견=포기 문자 동일, 이동=세 이름의 checked-i128 Cramer→replay; **혼합 프레임은 정직한 decline** = 기록된 유일한 차이). 게이트 `origins_are_remappable`→`defs_are_remappable` 전 정점 확장(발화 0 + **양성 대조**), validate: `tol_of` 1식화·`VertexOffDefinition` **전 정점 확장**(+양성 대조)·신설 `VertexDefCarrierMismatch`(변종 ⇔ 담체 종류). 신설 `nacre_scalar::three_planes_rat`. census **전 커밋 비트 동일**(좌표 verbatim 이사 — 재기준 없음) | ✔ 2026-08-07 |
 
-### 남은 항목 — **순서는 다음 계획에서** (선행 관계만 적는다)
+### 남은 항목 — **비었다** (2026-08-08)
+
+★★★★★ **진실 타입이 전부 최종형에 도달했다.** `PlanePoints`·`VertexDef`·`SurfaceTruth`·
+`PlaneName`·`Profile2d`·`Edge`·`FramePlacement` — 그리고 `Motion::Frame { plane }` 은 **이름 없는
+평면에도 이미 정확한 정의**다. 남은 것은 타입이 아니라 **판정층의 실현**이고, 그래서 마지막 행이
+이행표를 떠나 열린 항목으로 갔다(아래 표의 S5(ii)-2b 줄).
+
+★ **«전부 ✔» 는 아니다**: 위 완료 표의 **`3b`(좌표 재생)는 여전히 ⏸** 이다 — 목적지와 `Pt3` 재생의
+무충돌만 확인해 둔 상태로, 재보고 보류다.
+
+| | 항목 | 선행 |
+|---|---|---|
 
 | | 항목 | 선행 |
 |---|---|---|
@@ -544,7 +563,7 @@ pub enum Decision {
 | S5(i)-b ✔ | **`Operation::Extrude` 의 평면 어휘 교체** — `plane: SketchPlane`(값) → `frame: SketchFrame`(핸들+배치+측정된 flip). 구현은 pad/pocket 도로 재사용(`realized_plane` → `swept_profile` → `build_prism(base_cap_surface = Some(프레임의 평면))`), `rebind` 의 `Extrude` 팔이 재고정으로(**7/7 변종이 핸들을 싣는다 — R 의 전제 소멸**), 신설 `SketchFrame::world(model, Axis)` 가 `world_zx` 예외를 한 곳에 가둔다. 호출부 112곳/4크레이트, 단일 커밋. ★ **방향은 `flip` 이 든다**: 같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들이고 두 프레임 모두 정준 `ŵ`** 를 보고하므로(실측), datum 이 «호출자가 진술한 법선» 에 대해 flip 을 재야 교체가 무행동이 된다. ★★ **C2 가 교체 전에 갈림을 잡았다**: 실현한 축을 다시 lift 하면 정규화가 필요한 축(`(0.6,0.8,0)`→원시`(3,4,0)`, `uu=25`)이 `0.6000000000000001` 로 돌아와 `exact()` 가 뒤집히고 평면이 **조용히 프레임-노드 도로로** 간다(ulp 가 아니라 다른 아레나). 수리 = `RatFrame::of_plane_frame`(유리수로 묻는다, `inv_sqrt_exact`). 내 가설 둘이 죽었다 — 원점 상쇄가 원인이 아니고(단위 축은 이동해도 살아남는다), «`|u_raw|²=1` 이니 정확» 은 **이미 단위인 축에만** 참이었다. C3 차등: 9 평면 가족 × 2 프로파일 = **18/18 아레나 동일 + 노드 수 일치**. census: `c ` 는 **기울어짐 9줄만 이동**(위상 이동 0, 최대 상대 편차 **4.4e-16** = ε 의 1/2000), `wide_planes` 불변, ★ **`seeded_hits` 는 455 불변 — 하락 예측이 틀렸다**(코퍼스에 세계 평면 extrude 가 **0개**이고 그 적중은 `add_cuboid` 의 면이었다; 카운터의 출처를 오독했다). ★ 훅이 못 본 19곳(oracle 은 전부 `#[ignore]`)을 손으로 돌려 **결함 하나를 잡았다** | ✔ 2026-08-07 |
 | S5(ii)-1 ✔ | **`PlanePoints::Through([Handle<Vertex>;3])` + 생산자 `DatumDef::ThroughVertices` + 유리수 닫힘 판정** (2026-08-08, 커밋 `ba52b8b`·`3c968f9`·`5c9b3ab`). 이름은 **push 시점에 한 번** 유도한다(`Model::through_points_rat` → `plane_name_exact`) — 그래서 `frame_chain`·far cap·`base_rat`·모든 술어가 **한 줄도 안 바뀐다**. 판정 표는 같은 유도로 증인 삼각형을 **그 자리에서** 만든다(연산 하나 동안 사는 거울이므로 규칙 1 위반이 아니다). ★ **정렬은 키에만, 방향은 호출자의 정점 순서** — `dist` 가 양수 전용이라 순서가 유일한 방향 선택이고, 뒤집으면 «같은 핸들 + 반대 프레임» 이다. ★★ **`transform` 은 핸들을 그대로 두고 노드를 기록한다**(정점은 복제되지 브릿지되지 않는다); 정점이 base 를 정하고 모션이 옮기며 **둘은 더해질 뿐 곱해지지 않는다**. 대가: 그런 datum 위의 솔리드는 정확한 강체 이동에도 **항상** 노드를 얻는다. ★★★★ **가장 조용히 틀릴 뻔한 자리는 컴파일러가 못 본 곳이었다** — 변종 추가가 낸 비망라 에러는 **2개**뿐이고, `transform::points_move` 의 `let`-`else`(원통용 폴백)는 거기 없었다. 원통은 진실이 기하를 **안 들어서** «나를 것 없음» 이 참이지만 `Through` 의 진실은 기하를 **참조로 든다** ⇒ 같은 답을 하면 노드 없는 경로로 가 **캐시만 움직이고 진실은 제자리**에 남는다. `false` 를 반환하게 고쳤다 | ✔ 2026-08-08 |
 | S5(ii)-2a ✔ | **증인 없는 평면의 구간·고정밀 계수** (2026-08-08, 커밋 `7acf5c5`). `plane_iv_through`·`plane_hp_through` — 동차점 셋의 **사영 join**. **차수 15 → 9**(분모 털고 아핀 외적이 아니라 3×4 의 네 소행렬식), `cramer_iv` 의 **쌍대**라 새 산술 0. ★★★★ **초안은 설계가 금지한 연산을 제안했다** — `Dvec/D` 로 나눠 아핀 좌표를 만들려 했고, 문서가 *"나누면 무리수가 되고 오차가 낀다"* 며 이미 금지한 것이었다. **타입이 이미 강제하고 있었다**: `Iv` 에는 나눗셈이 없고 `HpIv::div_exact` 는 반경 0 을 요구한다. ★★★ **배율의 부호는 값 안에서 없앤다**(실을 자리가 시그니처에 없다 — 실을 곳 없는 값은 아무도 안 쓴다). ★★ **실측이 단계를 갈랐다**: 깊이 1 은 필터가 살지만(미결 0/800, 최악 상대 반경 6.3e-10) **깊이 2 는 차수 81 이라 계수가 `f64` 밖 8/8** ⇒ 상승 전용. `NaN` 반경이 우연히 옳게 굴러가는 것에 기대지 않고 `None` 으로 명시한다. 생산자 없음(census 비트 동일), 잠금은 `three_planes_big` 과 같은 모양의 **차등 테스트** | ✔ 2026-08-08 |
-| S5(ii)-2b | **배선** — 위 기계에 생산자를 붙인다: 판정층 `WorkingPlaneDef::Through`, `Witness::tri_pt3` 의 전(total)성 제거(`plane_def` 를 지나는 **7개 술어 지점**). 오늘은 `VerticesInMixedFrames` 로 **이름 붙여 거절**한다. ★★ **선결 조건**: 이 단계가 «이름 없는 평면» 을 허용한다. ★ 내가 여기 적었던 «`frame_chain` 의 조용한 f64 강등을 먼저 없애라» 는 **틀렸다** — 그런 강등이 없다: `motion_chain` 의 `None` 소비자 넷이 전부 정직하다(`planes.rs` ×2 는 `FrameOutOfRange`, `exact.rs` 는 `PlaneWithoutExactForm`(S6b 가 f64 프리즘 폴백을 죽였다), `reuse.rs` 는 동등하게 옳은 배열 도로, `rotated_vertex.rs` 는 `Pt3Error::Downgrade`). 그 함수의 doc 주석이 낡았을 뿐이다. **진짜 선결 조건은 하나**: 이름이 없으면 **interning 도 없으므로**(§이름과 interning: *"`!=` 는 아무것도 증명하지 않는다"*) «한 평면에 한 핸들» 을 무엇이 대신 지킬지 그 단계가 답해야 한다. ★★★ **2a 가 남긴 네 질문**: ① **인덱스 공간** — `Through([[usize;3];3])` 이 가리키는 표가 무엇인가. 면 표는 **두 피연산자의 면**(`plane_index_setup` = `collect_planes(a)` ++ `collect_planes(b)`)이라 **제3 의 솔리드**에서 온 정점의 담체는 거기 없고, `WorkingPlane` 은 애초에 **클래스** 표(`dense_planes`)의 타입이다 ⇒ 표에 덧붙이거나(«synthetic faces appended later» 기계가 있다) 그 경우를 거절하거나 다른 인덱스 공간으로 적는다. ② `standard_for(&planes)` 가 표에서 정밀도 기준을 유도하므로 **표가 늘면 기준이 움직인다**. ③ 위 interning 질문. ④ `Witness::tri_pt3` 의 전성 제거 — 7개 술어 지점 + `FaceInfo`·`PlaneGeom` 두 구현체. ⑤ **깊이 제한** — 깊이 2 가 상승 전용이므로(2a 실측) `OnceCell` 메모가 «평면당 한 번» 을 실제로 보장하는지 확인하거나 제한을 둔다 | 2a ✔ — 남은 것은 배선 |
+| ~~S5(ii)-2b~~ | ★★★★★ **이행표를 떠났다 — 타입이 아니라 «능력» 이다**(2026-08-08). 여기 «배선» 이라 적혀 있던 것이 틀렸다: `WorkingPlaneDef::Through` 는 **생산자를 가질 수 없다**. 혼합 프레임 datum 은 이름이 없고 ⇒ `frame_chain` 이 사퇴하고 ⇒ `SketchFrame` 이 없고 ⇒ base cap 이 못 되고 ⇒ 판정 표에 **들어오지도 않는다**(`a_plane_with_no_name_cannot_host_a_sketch` 가 그 사슬을 실행한다). 여기 적혀 있던 다섯 질문(인덱스 공간·`standard_for`·interning·`tri_pt3` 전성·깊이 제한)은 전부 그 벽 뒤다. → **열린 항목 16 «이름 없는 평면의 프레임»** | — |
 
 ★★★ **S5(ii) 앞에서 «먼저 잰다» 를 했고, 그 실측이 단계를 잘랐다**(2026-08-07~08).
 
@@ -707,8 +726,52 @@ STEP 출력, undo/replay.
    평면은 정확 지름길을 전부 잃고 톨러런스+상승으로 간다. 실측 대가는 **상승 3.2배**(278→887,
    고갈 0). 고치는 방향은 `plane_name_big` 이 이미 보인 것과 같다 — 분모를 걷어낸 **정수**
    계수를 `Expansion` 에 넘기는 것이고, `PlaneName::Wide` 는 이미 그 정수를 들고 있다.
-   ★ 우선순위: 절벽이 아니므로 **S5(ii)-2 를 막지 않는다**. 다만 S5(ii)-2 가 wide 이름 인구를
+   ★ 우선순위: 절벽이 아니므로 **아무것도 막지 않는다**. 다만 아래 16 이 wide 이름 인구를
    키우면 이 배수가 곱해진다.
+
+16. ★★★★★ **이름 없는 평면에 프레임을 주는 일 — S5(ii)-2b 가 이행표를 떠나 온 자리**
+   (신설 2026-08-08). 혼합 프레임 datum 을 지원한다는 것은 **판정층 배선이 아니다.**
+
+   **벽은 둘이고 순서가 있다.**
+   1. **프레임.** `frame_chain` 의 첫 줄이 `surface_name.get(&plane)?` 이라 이름 없는 평면은
+      `SketchFrame` 을 못 얻고 ⇒ base cap 이 못 되고 ⇒ **판정 표에 들어오지도 않는다.**
+      `MoveNode::Frame`(`PlaneFrame`, 유리수)도 `FrameWide`(`WideFrame`, BigInt)도 **정확 계수를
+      요구**하는 것이 그 원인이다. 실행 증명: `a_plane_with_no_name_cannot_host_a_sketch`.
+      ★ **진실 쪽은 이미 열려 있다** — `Motion::Frame { plane: Handle<Surface> }` 는 이름 없는
+      평면에도 정확한 정의다. 깨지는 것은 **판정층으로 펼치는 단계 하나**뿐이다.
+   2. **판정 표.** 그 벽을 넘으면 `collect_planes` 의 `Through` 팔이 `through_points_rat` →
+      `None` 으로 다시 막는다. **여기가 `plane_iv_through`/`plane_hp_through` 가 마침내 호출자를
+      갖는 자리**이고, 그 뒤가 §판정에 적힌 다섯 질문(인덱스 공간·`standard_for`·interning·
+      `tri_pt3` 전성·깊이 제한)이다.
+
+   **크기(실측 2026-08-08, `tests/point_width.rs`)** — 삼중항 단위, 프레임 벽이 판정하는
+   삼중항 중 거절 비율: 회전 불리언 **95.1%**, 기울어진 프레임 위 feature **89.3%**, 두 번
+   쌓으면 **96.8%**. (모션이 없거나 전부 공유하는 두 음성 대조는 0%.) ★ 이것은 **상한**이다 —
+   막힌 삼중항은 공선인지 물어보기 전에 분류되므로 일부는 어차피 거절된다.
+   ★★★★ **혼합의 원인은 둘이고 둘 다 실재한다**(예측 반증): 담체가 갈라지는 것
+   (`carriers_straddle` — 회전-대-세계에서 전부) **과** 정점들이 서로 다른 프레임인 것
+   (`vertices_differ` — 프레임 위 feature 에서 160, 두 번 쌓으면 496; `pure_frames` 가 2·3 이다).
+   벽을 넘는 설계는 **둘 다** 답해야 한다.
+
+   **아래는 2b 조사가 낸 «후보» 이지 «확정» 이 아니다**(검증 안 됨 — 계획·조사는 참조이지
+   진실이 아니다):
+   - 해답 모양: `Pt3::frame_wide` 의 전파를 그대로 두고 계수만 `plane_hp_through` 가 정밀도별로
+     공급. 새 산술은 **구간 입력 `inv_sqrt`** 하나로 보인다(오늘 `inv_sqrt_bigint_bounded` 는
+     정확 BigInt 를 받는다).
+   - 판정 술어 쪽은 작아 보인다: `indirect_cmp_coord_judge`·`dir_sign_judge` 와
+     `orient3d_from_cramer` 의 **담체 세 평면**은 이미 4-벡터(`plane_iv`/`plane_hp`)만 먹는다.
+     새 형식이 필요해 보이는 곳은 **셋** — `orient3d` 의 질의 평면 j, `planes_coplanar`,
+     `boolean.rs` 의 법선 x-성분 — 이고 정확 지름길들은 사퇴하면 된다.
+   - 「인덱스 공간」 답 후보: 담체를 표에서 찾지 말고 **소유한다**(`Rc<WorkingPlane>`) — 그러면
+     인덱스 공간 질문과 `standard_for` 가 움직이는 질문이 **동시에 사라진다**.
+
+17. ★★ **`VertexPointTooWide` 는 혼합 프레임과 다른 population 이고 더 싸게 닫힌다**
+   (신설 2026-08-08). 담체가 프레임을 **공유하고** 만나는 점도 **정확한 유리수**인데 `Rat` 에만
+   안 들어가는 경우다 ⇒ 위 16 의 벽이 아니다: `plane_name_big` 의 «분모 털고 정수» 를
+   `MeetPoint::Wide` 에 적용하면 **`PlaneName::Wide` 이름이 나오고**, `WideFrame` 이 프레임까지
+   준다 ⇒ **판정층을 한 줄도 안 건드리고 닫힌다**(대신 열린 항목 15 의 3.2배를 문다).
+   이 코퍼스에선 **미발화**다(`wide_carrier = 0`, `too_wide = 0`) — 허구의 픽스처를 만들지 않고
+   미측정으로 기록한다.
 
 10. **감김(`oriented_ring`)은 아직 f64 다** — 배치된 3D 점의 면적벡터·법선 내적(ops).
    `check()` 가 단순성(≠0 면적)을 진실 위에서 보증하므로 지금은 건전하지만, f64 폴백 소멸

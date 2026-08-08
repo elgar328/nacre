@@ -875,7 +875,10 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 ★★★ **평면의 구간을 증인 없이 얻는 길 (S5(ii)-2a, 2026-08-08).** `frame3::{plane_iv_through,
 plane_hp_through}` — 동차점 `[Dvec : D]` 셋의 **사영 join**(3×4 의 네 3×3 소행렬식, 부호 교대).
 `cramer_iv`(세 평면 → 점, meet)의 **쌍대**라 `det3_iv`/`det3_big` 재사용뿐이고 새 산술이 없다.
-소비자는 무리수 모션이 낀 datum 평면(`PlanePoints::Through`)이고 **아직 배선 전**이다.
+소비자는 무리수 모션이 낀 datum 평면(`PlanePoints::Through`)인데, ★★★★★ **그 소비자는 배열
+엔진이 아니라 «프레임 실현» 이다**(정정 2026-08-08). 그런 평면은 이름이 없어 `SketchFrame` 을 못
+얻고 ⇒ base cap 이 못 되고 ⇒ **판정 표에 도달조차 못 한다**; 벽은 둘이고 프레임이 먼저다
+(`docs/truth-and-cache.md` 열린 항목 16, 실행 증명은 `a_plane_with_no_name_cannot_host_a_sketch`).
 - **나누지 않는다.** `Dvec/D` 로 아핀 좌표를 만드는 것은 무리수를 제조하는 일이고, `Iv` 에
   나눗셈이 없고 `HpIv::div_exact` 가 반경 0 을 요구하는 것이 그 규율의 집행이다.
 - **차수 9**(아핀 외적 경로는 15) — 구간 폭과 요구 정밀도가 그만큼 준다.
