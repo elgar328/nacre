@@ -188,7 +188,7 @@ pub(crate) fn frame_chain(
         }
         let pts = through_witness_points(model, *vs)?;
         let mut chain = vec![MoveNode::FrameThrough(Box::new(
-            nacre_cip::FrameThrough::of(pts, flip)?,
+            nacre_cip::FrameThrough::of(pts.map(nacre_cip::JudgedPoint::Pure), flip)?,
         ))];
         if let Some(m) = motion {
             chain.append(&mut motion_chain(model, *m)?);

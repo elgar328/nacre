@@ -319,9 +319,48 @@ fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigI
 /// a plane that can prove neither branch is refused by the producer, by name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FrameThrough {
-    pub points: [WitnessPoint; 3],
+    pub points: [JudgedPoint; 3],
     pub vertical: bool,
     pub flip: bool,
+}
+
+/// One defining point of a judged frame — **how the point is stated**, mirroring the two mixed
+/// causes (16-1 / 16-2).
+///
+/// Equality is definitional throughout ([`WitnessPoint`]'s own `PartialEq`), which is what the
+/// statement-level determinism tests and `shared_base`'s whole-node comparison consume.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JudgedPoint {
+    /// Exact in its own frame — a rational base carried by a chain. 16-1's whole population.
+    Pure(WitnessPoint),
+    /// ★ **The meet of its three carrier planes — a point with no coordinate anywhere** (16-2).
+    /// Each carrier is described by its own witness triangle; the point is realized as the
+    /// homogeneous `[Dvec : D]` of the carriers' Cramer system and never divided until a
+    /// realization explicitly asks for an affine value. Boxed: nine points dwarf one.
+    Meet(Box<[[WitnessPoint; 3]; 3]>),
+}
+
+/// A defining point as a **homogeneous** `(D, Dvec)` pair at `prec` bits — the uniform currency
+/// the projective join takes. A pure point is the special case `[p : 1]` (`D` exactly one); a
+/// meet realizes each carrier's interval coefficients ([`plane_hp`] — three points, chains free
+/// to differ) and runs Cramer ([`cramer_hp`]). No division anywhere.
+fn judged_homog(p: &JudgedPoint, prec: usize) -> (HpApprox, [HpApprox; 3]) {
+    match p {
+        JudgedPoint::Pure(wp) => (
+            HpApprox::exact(BigFloat::from_f64(1.0, prec)),
+            wp.hp_coord(prec),
+        ),
+        JudgedPoint::Meet(carriers) => {
+            let plane =
+                |t: &[WitnessPoint; 3]| -> [HpApprox; 4] { plane_hp(&t[0], &t[1], &t[2], prec) };
+            let planes = [
+                plane(&carriers[0]),
+                plane(&carriers[1]),
+                plane(&carriers[2]),
+            ];
+            cramer_hp(&planes, prec)
+        }
+    }
 }
 
 impl FrameThrough {
@@ -333,12 +372,13 @@ impl FrameThrough {
     ///
     /// `None` when no branch's in-plane axis can be bounded away from zero, or when the basis
     /// derivation fails there (a normal that may vanish — the points may be collinear — or an
-    /// origin denominator that may reach zero). ★ The caller must reject **by name and must not
-    /// claim degeneracy**: none of these are proofs that the plane is degenerate, only failures
-    /// to prove it healthy, and `CollinearVertices` would be a lie here.
-    pub fn of(points: [WitnessPoint; 3], flip: bool) -> Option<FrameThrough> {
+    /// origin denominator that may reach zero, or a meet whose `D` sign the rung cannot decide).
+    /// ★ The caller must reject **by name and must not claim degeneracy**: none of these are
+    /// proofs that the plane is degenerate, only failures to prove it healthy, and
+    /// `CollinearVertices` would be a lie here.
+    pub fn of(points: [JudgedPoint; 3], flip: bool) -> Option<FrameThrough> {
         let p = Self::RUNG;
-        let c = plane_hp(&points[0], &points[1], &points[2], p);
+        let c = judged_coeffs(&points, false, p)?;
         let sq_sum = |a: &HpApprox, b: &HpApprox| a.mul(a, p).add(&b.mul(b, p), p);
         // |ẑ×n|² = n₀²+n₁², |ŷ×n|² = n₂²+n₀². `flip` negates every coefficient, which no
         // squared length can see, so the decision is flip-invariant by construction.
@@ -360,6 +400,63 @@ impl FrameThrough {
         judged_basis(&f, p)?;
         Some(f)
     }
+
+    /// The rung realization of defining point 0, as the affine `[f64; 3]` a cache anchors at —
+    /// the definition's own replay (`exact.rs`' rule), never a second route through a vertex
+    /// cache. For a meet this is the one place the homogeneous point is divided, and the divisor
+    /// is safe by construction: [`FrameThrough::of`] proved the rung derivation, which includes
+    /// this point's `D` sign.
+    pub fn anchor_coord(&self) -> Option<[f64; 3]> {
+        match &self.points[0] {
+            JudgedPoint::Pure(wp) => Some(wp.coord),
+            JudgedPoint::Meet(_) => {
+                let p = Self::RUNG;
+                let (d, dvec) = judged_homog(&self.points[0], p);
+                let mut out = [0.0; 3];
+                for (o, num) in out.iter_mut().zip(&dvec) {
+                    (*o, _) = narrow_hp(&num.div(&d, p)?);
+                }
+                Some(out)
+            }
+        }
+    }
+}
+
+/// The judged plane's four coefficients at `prec`, `flip` applied — the front half of
+/// [`judged_basis`], split out because [`FrameThrough::of`] needs the coefficients *before* a
+/// branch exists to build the rest of the basis with.
+///
+/// All-pure triples keep 16-1's affine route ([`plane_hp`] — the road its two-road differential
+/// locks); any meet switches the whole triple to the **homogeneous route**: every point as
+/// `(D, Dvec)` ([`judged_homog`]) and the plane through them by the projective join
+/// ([`plane_hp_through`] — 2a's machine, called at last). `None` when any meet's `D` sign is
+/// undecided at this precision — the join's normalization has nothing to stand on then.
+fn judged_coeffs(points: &[JudgedPoint; 3], flip: bool, prec: usize) -> Option<[HpApprox; 4]> {
+    let mut c = if let [
+        JudgedPoint::Pure(p0),
+        JudgedPoint::Pure(p1),
+        JudgedPoint::Pure(p2),
+    ] = points
+    {
+        plane_hp(p0, p1, p2, prec)
+    } else {
+        let h = [
+            judged_homog(&points[0], prec),
+            judged_homog(&points[1], prec),
+            judged_homog(&points[2], prec),
+        ];
+        plane_hp_through(
+            [(&h[0].0, &h[0].1), (&h[1].0, &h[1].1), (&h[2].0, &h[2].1)],
+            prec,
+        )?
+    };
+    if flip {
+        let zero = HpApprox::exact(BigFloat::from_f64(0.0, prec));
+        for k in &mut c {
+            *k = zero.sub(k, prec);
+        }
+    }
+    Some(c)
 }
 
 /// The judged frame's basis at `prec` bits: `[origin, û, v̂, ŵ]`, every component carrying the
@@ -369,12 +466,7 @@ impl FrameThrough {
 fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpApprox; 3]; 4]> {
     let zero = || HpApprox::exact(BigFloat::from_f64(0.0, prec));
     let neg = |x: &HpApprox| zero().sub(x, prec);
-    let mut c = plane_hp(&f.points[0], &f.points[1], &f.points[2], prec);
-    if f.flip {
-        for k in &mut c {
-            *k = neg(k);
-        }
-    }
+    let c = judged_coeffs(&f.points, f.flip, prec)?;
     let [n0, n1, n2, d] = c;
     let u_raw = if f.vertical {
         [n2.clone(), zero(), neg(&n0)] // ŷ × n — the vertical-normal branch
@@ -1894,15 +1986,10 @@ fn plane_hp(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint, prec: usize
 /// Degree 9 in the nine original coefficients (`D`, `Dvec` are 3; the join is 3 in the points).
 #[allow(
     dead_code,
-    reason = "built and proved before it is wired. ★ Corrected 2026-08-08: the consumer is not \
-              the arrangement's plane table, as this used to say. Such a plane has no name, so it \
-              gets no `SketchFrame`, never becomes a base cap, and never reaches a plane table at \
-              all — the first consumer has to be a **frame realization** that takes a plane's \
-              coefficients as intervals at a precision (see `docs/truth-and-cache.md`, open item \
-              on framing a nameless plane); the plane table is the wall behind that one. The same \
-              shape `three_planes_big` was committed in (locked by a differential, wired a stage \
-              later); it escaped this lint only because it is `pub` in its crate, which is not a \
-              reason to widen this crate's surface."
+    reason = "the f64-filter half of the join. Its escalation twin (`plane_hp_through`) got its \
+              caller in 16-2 — the judged frame's homogeneous route; this one waits for 16-3, \
+              where the judging table's `WorkingPlaneDef::Through` filter finally consumes \
+              interval coefficients. Locked by the same differentials since 2a."
 )]
 pub(crate) fn plane_iv_through(pts: [(Approx, [Approx; 3]); 3]) -> Option<[Approx; 4]> {
     // Rows of the 3×4: each point as `[x, y, z, w]`, undivided.
@@ -1947,11 +2034,6 @@ pub(crate) fn plane_iv_through(pts: [(Approx, [Approx; 3]); 3]) -> Option<[Appro
 
 /// `true` when an odd number of the three scale factors is negative — the case where the join
 /// comes out pointing the other way. `sign()` reports `true` for positive.
-#[allow(
-    dead_code,
-    reason = "used by `plane_iv_through`/`plane_hp_through`, both awaiting a consumer — \
-              see the reason on `plane_iv_through` for which one"
-)]
 fn negatives_odd(signs: [bool; 3]) -> bool {
     signs.iter().filter(|positive| !**positive).count() % 2 == 1
 }
@@ -1965,11 +2047,6 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
 /// with the radius. `None` on an undecided `D` for the same reason as the interval form, though at
 /// this precision it is far less likely — and when the interval form already answered, its decided
 /// signs are correct, so the two agree by construction.
-#[allow(
-    dead_code,
-    reason = "the escalation half of `plane_iv_through` — the same wait, and the same \
-              correction about what it is waiting for"
-)]
 fn plane_hp_through(pts: [(&HpApprox, &[HpApprox; 3]); 3], prec: usize) -> Option<[HpApprox; 4]> {
     let zero = HpApprox::exact(BigFloat::from_f64(0.0, prec));
     let row = |i: usize| {
@@ -3136,7 +3213,8 @@ mod tests {
         let pf = nacre_scalar::plane_frame_named(c, origin, ref_dir).expect("narrow frame");
         let narrow = probe_named(pf);
 
-        let ft = FrameThrough::of(pts(), false).expect("a healthy plane frames");
+        let ft =
+            FrameThrough::of(pts().map(JudgedPoint::Pure), false).expect("a healthy plane frames");
         assert!(!ft.vertical, "n = (1,0,1) is nowhere near vertical");
         let judged = probe_through(&ft);
 
@@ -3153,7 +3231,9 @@ mod tests {
 
         // ★ The negative control: `flip` negates all four coefficients, which must flip ŵ and û
         // together and leave v̂ — `Frame`'s own documented semantics, reproduced by the judge.
-        let flipped = probe_through(&FrameThrough::of(pts(), true).expect("flip frames too"));
+        let flipped = probe_through(
+            &FrameThrough::of(pts().map(JudgedPoint::Pure), true).expect("flip frames too"),
+        );
         for k in 0..3 {
             assert!((flipped[1][k] + judged[1][k]).abs() < 1e-9, "û flips");
             assert!((flipped[2][k] - judged[2][k]).abs() < 1e-9, "v̂ stays");
@@ -3171,7 +3251,7 @@ mod tests {
             WitnessPoint::exact([1.0, 0.0, 5.0]).unwrap(),
             WitnessPoint::exact([0.0, 1.0, 5.0]).unwrap(),
         ];
-        let ft = FrameThrough::of(pts, false).expect("z = 5 frames");
+        let ft = FrameThrough::of(pts.map(JudgedPoint::Pure), false).expect("z = 5 frames");
         assert!(ft.vertical, "a horizontal plane must take ŷ×n");
         let judged = probe_through(&ft);
 
@@ -3191,6 +3271,150 @@ mod tests {
         }
     }
 
+    /// A carrier triple whose meet is the rational point `(a, b, c)` — the axis planes
+    /// `x = a`, `y = b`, `z = c`, each witnessed by three exact points, each optionally turned
+    /// by `spin` about Z. The cheapest constructible meet whose affine value is *also* statable
+    /// as a `Pure` point, which is what the two-road differential needs.
+    fn axis_carriers(a: f64, b: f64, c: f64, spin: Option<i128>) -> [[WitnessPoint; 3]; 3] {
+        let zero3 = [ri(0, 1), ri(0, 1), ri(0, 1)];
+        let turn = |w: WitnessPoint| match spin {
+            None => w,
+            Some(deg) => w.rotate_about(Axis::Z, Angle::from_deg(ri(deg, 1)).unwrap(), zero3),
+        };
+        let e = |x: f64, y: f64, z: f64| turn(WitnessPoint::exact([x, y, z]).unwrap());
+        [
+            [e(a, 0.0, 0.0), e(a, 1.0, 0.0), e(a, 0.0, 1.0)], // x = a
+            [e(0.0, b, 0.0), e(1.0, b, 0.0), e(0.0, b, 1.0)], // y = b
+            [e(0.0, 0.0, c), e(1.0, 0.0, c), e(0.0, 1.0, c)], // z = c
+        ]
+    }
+
+    /// ★★★★★ **The Pure-vs-Meet differential — the tooth of stage 16-2** (`three_planes_big`'s
+    /// pattern). A pure point can *also* be written as the meet of its three carriers, so the
+    /// same three vertices spelled `[Pure; 3]` and `[Meet; 3]` must derive one basis — that is
+    /// the only proof that the affine shortcut (16-1's locked road) and the homogeneous join
+    /// (2a's machine, wired here) describe the same plane. The rotated variant is the hard
+    /// half: the carriers turn as planes, the pure spelling turns as a point, and the two meet
+    /// only if the whole chain of machinery — carrier realization, Cramer, join, normalization —
+    /// is right.
+    #[test]
+    fn a_meet_spelling_derives_the_same_frame_as_the_pure_one() {
+        let zero3 = [ri(0, 1), ri(0, 1), ri(0, 1)];
+        for spin in [None, Some(37)] {
+            let pure_pt = |a: i128, b: i128, c: i128| {
+                let w = WitnessPoint::at([ri(a, 1), ri(b, 1), ri(c, 1)]);
+                JudgedPoint::Pure(match spin {
+                    None => w,
+                    Some(d) => w.rotate_about(Axis::Z, Angle::from_deg(ri(d, 1)).unwrap(), zero3),
+                })
+            };
+            let meet_pt = |a: i128, b: i128, c: i128| {
+                JudgedPoint::Meet(Box::new(axis_carriers(a as f64, b as f64, c as f64, spin)))
+            };
+            // Three non-collinear points, none axis-degenerate.
+            let coords = [(1, 2, 3), (4, 1, 2), (2, 5, 7)];
+            let pure = FrameThrough::of(coords.map(|(a, b, c)| pure_pt(a, b, c)), false)
+                .expect("the pure spelling frames");
+            let meet = FrameThrough::of(coords.map(|(a, b, c)| meet_pt(a, b, c)), false)
+                .expect("the meet spelling frames");
+            assert_eq!(pure.vertical, meet.vertical, "same branch (spin {spin:?})");
+            let (bp, bm) = (probe_through(&pure), probe_through(&meet));
+            for (row, (p, m)) in bp.iter().zip(&bm).enumerate() {
+                for k in 0..3 {
+                    assert!(
+                        (p[k] - m[k]).abs() < 1e-9,
+                        "spin {spin:?}, row {row}, component {k}: pure {} vs meet {}",
+                        p[k],
+                        m[k]
+                    );
+                }
+            }
+            // And the anchor — the one place a meet is divided — agrees with the pure cache.
+            let (ap, am) = (
+                pure.anchor_coord().expect("pure anchor"),
+                meet.anchor_coord().expect("meet anchor"),
+            );
+            for k in 0..3 {
+                assert!(
+                    (ap[k] - am[k]).abs() < 1e-9,
+                    "anchor component {k}: {} vs {}",
+                    ap[k],
+                    am[k]
+                );
+            }
+        }
+    }
+
+    /// A genuinely straddling definition — carriers that do **not** share a chain within one
+    /// meet — realizes, and its image under the frame carries honest positive tol that bounds
+    /// the high-precision realization. This is the population no coordinate can state.
+    #[test]
+    fn a_straddling_meet_realizes_within_its_stated_tol() {
+        const GT: usize = 384;
+        let zero3 = [ri(0, 1), ri(0, 1), ri(0, 1)];
+        let deg = |d: i128| Angle::from_deg(ri(d, 1)).unwrap();
+        // One carrier turned 37° about Z, the other two still: the meet straddles frames.
+        let e = |x: f64, y: f64, z: f64| WitnessPoint::exact([x, y, z]).unwrap();
+        let straddle = JudgedPoint::Meet(Box::new([
+            [
+                e(1.0, 0.0, 0.0).rotate_about(Axis::Z, deg(37), zero3),
+                e(1.0, 1.0, 0.0).rotate_about(Axis::Z, deg(37), zero3),
+                e(1.0, 0.0, 1.0).rotate_about(Axis::Z, deg(37), zero3),
+            ],
+            [e(0.0, 2.0, 0.0), e(1.0, 2.0, 0.0), e(0.0, 2.0, 1.0)], // y = 2, still
+            [e(0.0, 0.0, 3.0), e(1.0, 0.0, 3.0), e(0.0, 1.0, 3.0)], // z = 3, still
+        ]));
+        let pts = [
+            straddle,
+            JudgedPoint::Pure(e(5.0, 1.0, 0.0)),
+            JudgedPoint::Pure(e(0.0, 6.0, 1.0)),
+        ];
+        let ft = FrameThrough::of(pts.clone(), false).expect("a straddling meet frames");
+        let q = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
+            .frame_through(&ft)
+            .expect("realizes");
+        let hp = q.hp_coord(GT);
+        for (k, h) in hp.iter().enumerate() {
+            let err = abs_err(q.coord[k], h, GT);
+            assert!(
+                err <= q.tol[k].max(1e-300),
+                "axis {k}: cache off by {err:e}, stated tol {:e}",
+                q.tol[k]
+            );
+        }
+        // Determinism — same statement, same node, same realization (replay's requirement).
+        let ft2 = FrameThrough::of(pts, false).expect("again");
+        assert_eq!(ft, ft2);
+        let q2 = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
+            .frame_through(&ft2)
+            .expect("realizes");
+        assert_eq!(q.coord, q2.coord);
+        assert_eq!(q.tol, q2.tol);
+    }
+
+    /// A meet whose carriers all pass through one line has no unique point — `D` straddles zero
+    /// at every precision, the join has nothing to normalize against, and the constructor must
+    /// refuse (the producer then rejects by name, without claiming degeneracy).
+    #[test]
+    fn a_meet_whose_carriers_share_a_line_is_refused() {
+        let e = |x: f64, y: f64, z: f64| WitnessPoint::exact([x, y, z]).unwrap();
+        // Three planes through the z-axis: x = 0, y = 0, x = y — D exactly 0.
+        let sheaf = JudgedPoint::Meet(Box::new([
+            [e(0.0, 0.0, 0.0), e(0.0, 1.0, 0.0), e(0.0, 0.0, 1.0)],
+            [e(0.0, 0.0, 0.0), e(1.0, 0.0, 0.0), e(0.0, 0.0, 1.0)],
+            [e(0.0, 0.0, 0.0), e(1.0, 1.0, 0.0), e(0.0, 0.0, 1.0)],
+        ]));
+        let pts = [
+            sheaf,
+            JudgedPoint::Pure(e(5.0, 0.0, 0.0)),
+            JudgedPoint::Pure(e(0.0, 5.0, 0.0)),
+        ];
+        assert!(
+            FrameThrough::of(pts, false).is_none(),
+            "a meet with no unique point must not frame"
+        );
+    }
+
     /// A definition that cannot prove a basis is `None` from the constructor — collinear points
     /// have a normal that is exactly zero, so neither branch's squared length clears zero. The
     /// producer's duty (reject **by name**, and not as a proof of collinearity) is ops'; here
@@ -3203,7 +3427,7 @@ mod tests {
             WitnessPoint::exact([2.0, 2.0, 2.0]).unwrap(),
         ];
         assert!(
-            FrameThrough::of(pts, false).is_none(),
+            FrameThrough::of(pts.map(JudgedPoint::Pure), false).is_none(),
             "collinear points name no plane and must not frame"
         );
     }
@@ -3232,7 +3456,8 @@ mod tests {
                 ),
             ]
         };
-        let ft = FrameThrough::of(pts(), false).expect("a mixed-chain plane frames");
+        let ft = FrameThrough::of(pts().map(JudgedPoint::Pure), false)
+            .expect("a mixed-chain plane frames");
         let q = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
             .frame_through(&ft)
             .expect("realizes");
@@ -3252,7 +3477,7 @@ mod tests {
 
         // Determinism: the same statement builds the same node (definitional equality — the
         // `PartialEq` `shared_base` relies on) and realizes bit-identically.
-        let ft2 = FrameThrough::of(pts(), false).expect("again");
+        let ft2 = FrameThrough::of(pts().map(JudgedPoint::Pure), false).expect("again");
         assert_eq!(ft, ft2, "same statement, same node");
         let q2 = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
             .frame_through(&ft2)

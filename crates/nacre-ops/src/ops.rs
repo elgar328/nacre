@@ -1097,11 +1097,12 @@ fn datum_plane(
                 // validated is what gets framed.
                 let wpts = crate::rotated_vertex::through_witness_points(model, sorted)
                     .ok_or(OpError::PlaneWithoutExactForm)?; // unreachable: causes told apart above
-                let ft = nacre_cip::FrameThrough::of(wpts, false)
+                let ft = nacre_cip::FrameThrough::of(wpts.map(nacre_cip::JudgedPoint::Pure), false)
                     .ok_or(OpError::ThroughFrameUndecided)?;
                 // The cache anchors at the validated realization of the first stored vertex —
                 // the definition's own replay, same rule as the named road below.
-                let anchor = Point3::from_array(ft.points[0].coord);
+                let anchor =
+                    Point3::from_array(ft.anchor_coord().ok_or(OpError::ThroughFrameUndecided)?);
                 let cache =
                     Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
                 let (plane, _flipped) = model.push_plane_through(cache, sorted, None);
