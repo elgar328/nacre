@@ -894,8 +894,12 @@ plane_hp_through}` — 동차점 `[Dvec : D]` 셋의 **사영 join**(3×4 의 �
 (`plane_hp_through`)** 이 평면으로 잇는다(그 고아의 첫 호출자). 잠금은 Pure-대-Meet 차등(같은
 세 정점의 두 표기가 한 기저 — 정지·37° 회전). producer 는 straddle 을 `Nameless` 로 합류시키고
 (`VerticesInMixedFrames` 는 «담체가 이름 없는 datum» 만 남음), datum 어휘의 분류-수용률이 전
-population 100% 가 됐다. 불리언은 아직 — 걸친-datum 의 면은 `ImplicitPlaneUnsupported` 로
-정직 거절(판정 표의 자리 = 16-3, `plane_iv_through` 의 소비처).
+population 100% 가 됐다. ★★★★★ **16-3 (2026-08-09) — 열린 항목 16 완결.** 판정 표는 `WorkingPlaneDef::Through` 가
+필요 없었다: 표의 계약(«평면 위 세 정확한 점, n_out 감김»)을 판정 프레임의 probe
+`(0,0,0)·(1,0,0)·(0,1,0)` 이 정의상 만족한다 — `collect_planes` 가 그 삼각형을 지으면서
+걸친-datum 위의 **불리언이 열렸다**(Common 통과·부피 정확·434 climbs — Wide 와 같은 자릿수).
+클래스 병합은 probe 의 동일 사슬 → `shared_base` 증명된 0. 판정층 새 기계 0.
+`plane_iv_through` 는 소비자 없이 은퇴(잠금은 Pure-대-Meet 차등으로 이사).
 - **나누지 않는다.** `Dvec/D` 로 아핀 좌표를 만드는 것은 무리수를 제조하는 일이고, `Approx` 에
   나눗셈이 없고 `HpApprox::div_exact` 가 반경 0 을 요구하는 것이 그 규율의 집행이다.
 - **차수 9**(아핀 외적 경로는 15) — 구간 폭과 요구 정밀도가 그만큼 준다.
