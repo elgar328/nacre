@@ -673,13 +673,33 @@ impl Model {
         // for collinear points (which no production `PlaneDef` can supply); since S2 the vessel
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
         // ones included. [`WIDE_PLANES`] counts the names that took the wide vessel.
-        let name = {
-            let named = nacre_scalar::plane_name_exact(points[0], points[1], points[2]);
-            if named.as_ref().is_some_and(|n| n.narrow().is_none()) {
-                WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-            named
-        };
+        // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
+        // `plane_name_exact` computes the canonical form at unbounded precision — `None` only
+        // for collinear points (which no production `PlaneDef` can supply); since S2 the vessel
+        // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
+        // ones included.
+        let name = nacre_scalar::plane_name_exact(points[0], points[1], points[2]);
+        self.intern_plane(cache, name, PlanePoints::Known(points), motion)
+    }
+
+    /// **Interning, once — the half every plane producer shares.**
+    ///
+    /// A producer differs only in *how it derives the name* and *which `PlanePoints` it stores*.
+    /// Everything after that — the key, the already-issued reply and its `flipped`, the arena
+    /// push, the two side tables, the two counters — is the same, and was duplicated once, which
+    /// promptly cost both counters on the new road ([`WIDE_PLANES`] and [`SEEDED_HITS`] were
+    /// simply absent from it). Sharing the tail makes losing them structurally impossible rather
+    /// than a thing to remember.
+    fn intern_plane(
+        &mut self,
+        cache: nacre_geom::Plane,
+        name: Option<nacre_scalar::PlaneName>,
+        points: PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+    ) -> (Handle<Surface>, bool) {
+        if name.as_ref().is_some_and(|n| n.narrow().is_none()) {
+            WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         let key = name.map(|n| (n, motion));
         if let Some(k) = &key {
             if let Some(&h) = self.surface_ids.get(k) {
@@ -703,10 +723,7 @@ impl Model {
         }
         let h = self.push_raw(
             Surface::Plane(cache),
-            SurfaceTruth::Plane {
-                points: PlanePoints::Known(points),
-                motion,
-            },
+            SurfaceTruth::Plane { points, motion },
         );
         if let Some((n, _)) = &key {
             // One clone per push — the name is derived once here, never on a judging loop.
@@ -752,34 +769,7 @@ impl Model {
             "an unnameable Through plane must be rejected by cause before this door — \
              storing one would revive the nameless-plane population S2 drained"
         );
-        let key = name.clone().map(|n| (n, motion));
-        if let Some(k) = &key {
-            if let Some(&h) = self.surface_ids.get(k) {
-                let dir = |s: &Surface| match s {
-                    Surface::Plane(p) => Some(p.normal()),
-                    Surface::Cylinder(_) => None,
-                };
-                let flipped = match (dir(self.surfaces.get(h)), dir(&Surface::Plane(cache))) {
-                    (Some(a), Some(b)) => a.dot(b) < 0.0,
-                    _ => false,
-                };
-                return (h, flipped);
-            }
-        }
-        let h = self.push_raw(
-            Surface::Plane(cache),
-            SurfaceTruth::Plane {
-                points: PlanePoints::Through(vertices),
-                motion,
-            },
-        );
-        if let Some((n, _)) = &key {
-            self.surface_name.insert(h, n.clone());
-        }
-        if let Some(k) = key {
-            self.surface_ids.insert(k, h);
-        }
-        (h, false)
+        self.intern_plane(cache, name, PlanePoints::Through(vertices), motion)
     }
 
     /// **The name a `Through` statement derives**, and the one place that derivation lives — the
@@ -2392,5 +2382,132 @@ mod tests {
         want.sort_by_key(|v| v.index());
         let vs = [want[0], want[1], want[2]];
         (m, vs)
+    }
+    /// ★★★★ **Both counters see the second producer too.**
+    ///
+    /// `push_plane_through` began as a copy of `push_plane`'s tail and the copy silently dropped
+    /// [`WIDE_PLANES`] and [`SEEDED_HITS`] — the census bridges `stat wide_planes` and
+    /// `stat seeded_hits` went blind on the road the design predicts will *feed* them (open item
+    /// 2b: *"the first producer of a `Wide` name is the datum"*). Sharing one interning tail is
+    /// the fix; this is the observation that it worked, and it is two assertions because a
+    /// counter that cannot move is indistinguishable from a population that never arrives.
+    #[test]
+    fn a_through_plane_is_counted_by_both_bridges() {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        // ① A `Through` datum landing on a **seed** — three corners of a unit box on `z = 0`.
+        let (mut m, vs) = seed_plane_corners();
+        let cache = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+        )
+        .unwrap();
+        let seeded_before = SEEDED_HITS.load(Relaxed);
+        let (h, _) = m.push_plane_through(cache, vs, None);
+        assert!(
+            (h.index() as usize) < 3,
+            "three corners of the box's z = 0 face are the world XY seed"
+        );
+        assert!(
+            SEEDED_HITS.load(Relaxed) > seeded_before,
+            "a Through statement that interns onto a seed must be counted like any other"
+        );
+
+        // ② A `Through` datum whose name needs the wide vessel. The carriers are stated with
+        // coprime ~2^90 numerators, so the canonical coefficients leave `i128` with no content to
+        // divide out — the same construction `nacre-scalar` uses to reach that arm.
+        let wide_before = WIDE_PLANES.load(Relaxed);
+        let (mut m2, vs2) = wide_named_corner();
+        let cache2 = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([1.0, 1.0, 1.0]),
+        )
+        .unwrap();
+        let (h2, _) = m2.push_plane_through(cache2, vs2, None);
+        assert!(
+            m2.surface_name
+                .get(&h2)
+                .is_some_and(|n| n.narrow().is_none()),
+            "this fixture must actually produce a wide name, or ② measures nothing"
+        );
+        assert!(
+            WIDE_PLANES.load(Relaxed) > wide_before,
+            "a Through statement with a wide name must reach the wide-name bridge"
+        );
+    }
+
+    /// Three corners of the unit box that lie on `z = 0` — the world XY seed.
+    fn seed_plane_corners() -> (Model, [Handle<Vertex>; 3]) {
+        let mut m = Model::new();
+        m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([1.0, 1.0, 1.0]),
+        );
+        let mut want = Vec::new();
+        for i in 0..m.vertices.len() as u32 {
+            let vh = m.vertices.handle_at(i).unwrap();
+            if m.vertex_point(vh).as_array()[2] == 0.0 {
+                want.push(vh);
+            }
+        }
+        want.sort_by_key(|v| v.index());
+        let vs = [want[0], want[1], want[2]];
+        (m, vs)
+    }
+
+    /// A model whose three planes meet at a corner and whose *plane through* those corners needs
+    /// the wide vessel. Built through the test door so the fixture is exactly three planes.
+    fn wide_named_corner() -> (Model, [Handle<Vertex>; 3]) {
+        let r = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+        let (b1, b2) = ((1i128 << 90) + 1, (1i128 << 90) + 3);
+        let mut m = Model::new();
+        // Nine planes: three per vertex, each triple meeting at a point whose coordinates carry
+        // the coprime numerators, so the plane through the three points is wide.
+        let mut vs = Vec::new();
+        for (k, off) in [(0i128, 0i128), (1, 1), (2, 3)].iter().enumerate() {
+            let _ = k;
+            let (a, c) = (b1 + off.0, b2 + off.1);
+            let tri = [
+                axis_plane_at(&mut m, 0, r(1, a)),
+                axis_plane_at(&mut m, 1, r(1, c)),
+                axis_plane_at(&mut m, 2, r(off.0 + 1, b1)),
+            ];
+            let coord = Point3::from_array([
+                1.0 / a as f64,
+                1.0 / c as f64,
+                (off.0 + 1) as f64 / b1 as f64,
+            ]);
+            vs.push(m.push_vertex(VertexDef::ThreePlane(tri), coord, None));
+        }
+        vs.sort_by_key(|v| v.index());
+        let out = [vs[0], vs[1], vs[2]];
+        (m, out)
+    }
+
+    /// The plane `x_axis = value`, pushed with its exact triple.
+    fn axis_plane_at(m: &mut Model, axis: usize, value: nacre_scalar::Rat) -> Handle<Surface> {
+        let z = nacre_scalar::Rat::from_int(0);
+        let one = nacre_scalar::Rat::from_int(1);
+        let mut pts = [[z; 3]; 3];
+        let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+        for (i, p) in pts.iter_mut().enumerate() {
+            p[axis] = value;
+            if i == 1 {
+                p[u] = one;
+            }
+            if i == 2 {
+                p[v] = one;
+            }
+        }
+        let mut n = [0.0; 3];
+        n[axis] = 1.0;
+        let cache = nacre_geom::Plane::from_point_normal(
+            Point3::from_array(core::array::from_fn(|k| {
+                if k == axis { value.to_f64() } else { 0.0 }
+            })),
+            nacre_math::Vector3::from_array(n),
+        )
+        .unwrap();
+        m.push_plane(cache, pts, None).0
     }
 }
