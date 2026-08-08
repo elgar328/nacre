@@ -1387,6 +1387,103 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     );
 }
 
+/// ★★★★ **The second wall, heterogeneous half: the nameless plane's face sits in a judgment
+/// table and a boolean runs over it.**
+///
+/// The prism's base cap *is* the nameless datum surface, so `collect_planes` meets a `Through`
+/// truth with no rational solve and builds the witness triangle from the vertices' own chains —
+/// three exact points whose chains differ, which the judging layer never forbade. Every wall of
+/// the prism also realizes through the judged frame node (`Motion::Frame` → the nameless plane →
+/// `FrameThrough`), so this exercises the recursion end to end without a separate probe.
+///
+/// `Common` against a box that swallows the prism is the crisp oracle: the result is the prism
+/// itself, volume `1 × 1 × 0.5` **exactly as stated in the sketch frame** — a rigid frame does
+/// not change volume, whatever its coefficients are.
+#[test]
+fn a_prism_on_a_nameless_datum_survives_a_boolean() {
+    let mut m = Model::new();
+    let fixed = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let spun = m.add_cuboid(
+        Point3::from_array([4.0, 0.0, 0.0]),
+        Point3::from_array([5.0, 1.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+    let OpOutput::Transform { solid: spun } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid: spun,
+            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                axis: Axis::Z,
+                point: [nacre_scalar::Rat::from_int(0); 3],
+                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let corners = |m: &Model, s| {
+        let mut out = Vec::new();
+        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
+            for lp in std::iter::once(&m.faces.get(fh).outer).chain(m.faces.get(fh).inner.iter()) {
+                for &he in &lp.half_edges {
+                    out.push(m.he_start(he));
+                }
+            }
+        }
+        out
+    };
+    let (still, turned) = (corners(&m, fixed), corners(&m, spun));
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices([still[0], still[1], turned[0]]),
+        },
+    )
+    .expect("the pure-mixed datum") else {
+        unreachable!()
+    };
+    assert!(!m.surface_name.contains_key(&plane), "nameless, still");
+    let OpOutput::Extrude { solid: prism, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square(0.0, 1.0),
+            dist: 0.5,
+        },
+    )
+    .expect("prism on the judged frame") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+
+    // A box that swallows the prism wherever the judged frame put it.
+    let block = m.add_cuboid(
+        Point3::from_array([-12.0, -12.0, -12.0]),
+        Point3::from_array([12.0, 12.0, 12.0]),
+    );
+    m.rebuild_adjacency();
+    let out = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Common, block, prism)
+        .expect("the boolean over a nameless class must answer, not panic");
+    m.rebuild_adjacency();
+    assert_eq!(out.len(), 1, "block ∩ prism is the prism");
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "and it is a valid closed b-rep"
+    );
+    let vol = nacre_props::mass_props(&m, out[0])
+        .expect("measurable")
+        .volume;
+    assert!(
+        (vol - 0.5).abs() < 1e-9,
+        "1 × 1 × 0.5 wherever the frame sits — got {vol}"
+    );
+}
+
 /// ★★★ **The mixed-frame cause that is not the caller's doing — one solid, one vertex, carriers in
 /// two frames.**
 ///

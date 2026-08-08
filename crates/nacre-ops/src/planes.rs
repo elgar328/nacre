@@ -194,48 +194,64 @@ pub(crate) fn collect_planes(
                 // was derived once at push. That is not a rule-1 violation: this table lives for
                 // one operation and is a mirror, not truth.
                 //
-                // The rational-closure branch is the whole of stage 1: three vertices that solve
-                // to `Rat` give a triangle indistinguishable from a stated one, so every predicate
-                // below runs unchanged. The other branch — mixed frames, irrational motion — has
-                // no witness triangle at all; the producer refuses to build such a plane, so
-                // reaching here means the invariant broke rather than the user asked for something
-                // unsupported.
+                // The rational-closure branch is stage 1: three vertices that solve to `Rat`
+                // give a triangle indistinguishable from a stated one, so every predicate below
+                // runs unchanged.
                 //
-                // ★★★ **Corrected 2026-08-08: this is the *second* wall, not the first.** It used
-                // to say the homogeneous-lifting stage opens that branch. It does not on its own —
-                // such a plane has no name, so it never gets a `SketchFrame`, never becomes a base
-                // cap, and never reaches this table (`OpError::VerticesInMixedFrames` has the
-                // chain). The order is: give a nameless plane a frame, *then* this arm needs the
-                // homogeneous route, and that is where `nacre-cip`'s `plane_iv_through` finally
-                // has a caller.
+                // ★★★ **The nameless branch (open item 16, second wall — heterogeneous half).**
+                // A pure-mixed datum's vertices are each exact *in their own frame*, so its
+                // witness triangle exists — three `WitnessPoint`s whose chains simply differ.
+                // The judging layer never required them to agree: `plane_iv`/`plane_hp` realize
+                // each point independently, so the whole toleranced route (C4) runs unchanged,
+                // and `standard_for` sizes the operation from these very points. What such a
+                // plane has none of is exact f64 coefficients — so it is flagged `rotated`
+                // (the routing signal means "no exact description", not "carries a motion"),
+                // which makes every exact shortcut decline and `reconcile` carry nothing.
+                //
+                // A *straddling*-vertex datum still has no witness triangle at all — that is the
+                // implicit-point half of the second wall, where `plane_iv_through` finally gets
+                // its caller; until then `through_witness_points` answers `None` there and the
+                // reject stays honest.
                 nacre_topo::SurfaceTruth::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
                     motion,
                 } => {
                     let motion = *motion;
                     let _t = Watch::new();
-                    let base = model
-                        .through_points_rat(*vs)
-                        .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                    let w = match motion {
-                        None => base.map(WitnessPoint::at),
-                        Some(m) => {
-                            let chain = crate::rotated_vertex::motion_chain(model, m)
+                    let replay_all = |mut w: [WitnessPoint; 3],
+                                      m: Handle<nacre_topo::MotionNode>|
+                     -> Result<[WitnessPoint; 3], BoolError> {
+                        let chain = crate::rotated_vertex::motion_chain(model, m)
+                            .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                        for o in w.iter_mut() {
+                            *o = crate::rotated_vertex::replay(o.clone(), &chain)
                                 .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                            let mut out = [
-                                WitnessPoint::at(base[0]),
-                                WitnessPoint::at(base[1]),
-                                WitnessPoint::at(base[2]),
-                            ];
-                            for (o, b) in out.iter_mut().zip(base) {
-                                *o = crate::rotated_vertex::replay(WitnessPoint::at(b), &chain)
-                                    .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                            }
-                            out
+                        }
+                        Ok(w)
+                    };
+                    let (w, rotated) = match model.through_points_rat(*vs) {
+                        Some(base) => {
+                            let w = base.map(WitnessPoint::at);
+                            let w = match motion {
+                                None => w,
+                                Some(m) => replay_all(w, m)?,
+                            };
+                            (w, motion.is_some())
+                        }
+                        None => {
+                            let w = crate::rotated_vertex::through_witness_points(model, *vs)
+                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                            let w = match motion {
+                                // ★ The plane's own later motion appends to each point's own
+                                // chain — motions add, never multiply (S5(ii)-1's rule).
+                                None => w,
+                                Some(m) => replay_all(w, m)?,
+                            };
+                            (w, true)
                         }
                     };
                     _t.charge(Sub::TriPt3);
-                    (wind(w), motion.is_some(), motion)
+                    (wind(w), rotated, motion)
                 }
                 // The cache match above already rejected cylinders.
                 nacre_topo::SurfaceTruth::Cylinder { .. } => {

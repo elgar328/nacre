@@ -99,6 +99,24 @@
 //! triple is classified before anything can ask whether it is also collinear. The collinear rate on
 //! the accepted road (8 of 560 on the boxes, 0 on the tilted ones) is the only estimate of that
 //! contamination, which is why it is printed.
+//!
+//! # After 16-1 (2026-08-09) — the wall moved, and the meter moved with it
+//!
+//! Stage 16-1 accepts the pure-mixed statement (each vertex exact in its own frame), namelessly,
+//! so `vertices_differ` is re-labelled `accepted_nameless` — a classifier that kept calling an
+//! accepted population "blocked" would report yesterday's kernel. Measured after the change:
+//!
+//! | population | accepted (named) | **accepted nameless** | blocked (straddle) |
+//! |---|---|---|---|
+//! | `boolean_rotated`  | 4.9%  | **0%** | 95.1% — all straddle, stage 16-2's population |
+//! | `tilted_frame`     | 10.7% | **28.6%** | 60.7% |
+//! | `tilted_frame_x2`  | 3.2%  | **24.5%** | 72.3% |
+//!
+//! Reachable vocabulary moved 10.7% → 39.3% and 3.2% → 27.7% on the frame-on-frame family, and
+//! 0 on the rotation-against-world family — exactly the split the two mixed causes predicted.
+//! The judged class's judging cost, measured in `wide_datum_cost.rs`: **416 climbs** beside a
+//! wide name's 454 and a narrow name's 110, exhausted 0 — a cost of the same order as `Wide`,
+//! not a cliff.
 
 use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
@@ -349,7 +367,11 @@ struct Reach {
     triples: usize,
     accepted: usize,
     carriers_straddle: usize,
-    vertices_differ: usize,
+    /// ★ Re-labelled when 16-1 landed: pure vertices in differing frames used to be
+    /// `vertices_differ` (blocked); the judged frame accepts them now, namelessly. The op can
+    /// still refuse an individual one (`ThroughFrameUndecided`), so this is the *classifier's*
+    /// answer, same as `accepted`.
+    accepted_nameless: usize,
     too_wide: usize,
     undefined: usize,
     /// Only decidable on the accepted road: a triple that solved and named no plane.
@@ -359,8 +381,8 @@ struct Reach {
 impl Reach {
     fn report(&self, what: &str) {
         // The quantity: of the triples the *frame* is what blocks, how many would be freed.
-        let blocked = self.carriers_straddle + self.vertices_differ;
-        let denom = self.accepted + blocked;
+        let blocked = self.carriers_straddle;
+        let denom = self.accepted + self.accepted_nameless + blocked;
         let pct = |n: usize| {
             if denom == 0 {
                 0.0
@@ -373,14 +395,14 @@ impl Reach {
             self.vertices, self.pure, self.pure_frames, self.triples
         );
         println!(
-            "stat datum_reach {what:18} accepted={} ({:.1}%) blocked_by_frame={} ({:.1}%) \
-             [straddle={} differ={}]",
+            "stat datum_reach {what:18} accepted={} ({:.1}%) accepted_nameless={} ({:.1}%) \
+             blocked_by_frame={} ({:.1}%)",
             self.accepted,
             pct(self.accepted),
+            self.accepted_nameless,
+            pct(self.accepted_nameless),
             blocked,
             pct(blocked),
-            self.carriers_straddle,
-            self.vertices_differ
         );
         println!(
             "stat datum_reach {what:18} collinear={} too_wide={} undefined={}",
@@ -473,7 +495,7 @@ fn datum_reach(m: &Model) -> Reach {
                         })
                         .collect();
                     if f.clone().collect::<std::collections::HashSet<_>>().len() != 1 {
-                        t.vertices_differ += 1;
+                        t.accepted_nameless += 1;
                     } else if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
                         t.collinear += 1;
                     } else {
@@ -936,9 +958,9 @@ fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
         t.report(what);
         if matches!(what, "boolean_corner" | "turned_after_the_cut") {
             assert_eq!(
-                t.carriers_straddle + t.vertices_differ,
+                t.carriers_straddle + t.accepted_nameless,
                 0,
-                "{what}: every carrier shares one frame here, so nothing may be blocked by frames"
+                "{what}: every carrier shares one frame here, so nothing may be mixed at all"
             );
             assert!(t.accepted > 0, "{what}: the control accepted nothing");
         } else {

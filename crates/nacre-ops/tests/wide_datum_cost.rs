@@ -316,12 +316,17 @@ fn what_a_datum_bearing_boolean_costs() {
     // name fits `Rat` — which is exactly the fork that decides whether the exact shortcuts run.
     // "Datum vs no datum" was the first attempt and it measured nothing: the two arms reported
     // identical climb counts, because a datum nobody cuts with never reaches a plane table.
-    let run = |want_wide: bool| -> Option<(u64, u64, u64)> {
+    let run = |mode: &str| -> Option<(u64, u64, u64)> {
         let mut m = wf_family_with_pocket();
         let target = m.live_solids[0];
+        // ★ The named arms measure over **discovered** vertices (their original question was the
+        // width of discovered coordinates). The nameless arm lifts that filter: this family's
+        // differ-population lives on *constructed* corners (prism corners in one frame, pocket
+        // corners in another) — the discovered ones here all straddle, which stage 16-1 still
+        // refuses, and an arm that only ever hit the reject would be an UNBUILDABLE lie.
         let solvable: Vec<_> = live_verts(&m)
             .into_iter()
-            .filter(|v| m.vertex_tol(*v).is_some())
+            .filter(|v| mode == "nameless" || m.vertex_tol(*v).is_some())
             .collect();
 
         let mut tool = None;
@@ -330,8 +335,12 @@ fn what_a_datum_bearing_boolean_costs() {
                 for k in (j + 1)..solvable.len() {
                     let mut t = [solvable[i], solvable[j], solvable[k]];
                     t.sort_by_key(|v| v.index());
-                    match m.plane_name_through(t) {
-                        Some(n) if n.narrow().is_none() == want_wide => {}
+                    match (mode, m.plane_name_through(t)) {
+                        ("narrow_name", Some(n)) if n.narrow().is_some() => {}
+                        ("wide_name", Some(n)) if n.narrow().is_none() => {}
+                        // No name at all — the judged road; `apply` below still decides
+                        // acceptance (a straddling triple rejects and the loop moves on).
+                        ("nameless", None) => {}
                         _ => continue,
                     }
                     let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
@@ -378,8 +387,8 @@ fn what_a_datum_bearing_boolean_costs() {
     };
 
     let mut seen = 0;
-    for (label, wide) in [("narrow_name", false), ("wide_name", true)] {
-        match run(wide) {
+    for label in ["narrow_name", "wide_name", "nameless"] {
+        match run(label) {
             Some((climbs, bits, exhausted)) => {
                 seen += 1;
                 println!(
@@ -392,5 +401,5 @@ fn what_a_datum_bearing_boolean_costs() {
             None => println!("stat cost {label:12} UNBUILDABLE — no such datum carried a tool"),
         }
     }
-    assert!(seen > 0, "neither arm built — the measurement is empty");
+    assert!(seen > 0, "no arm built — the measurement is empty");
 }
