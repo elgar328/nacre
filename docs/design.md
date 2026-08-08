@@ -887,7 +887,15 @@ plane_hp_through}` — 동차점 `[Dvec : D]` 셋의 **사영 join**(3×4 의 �
 원래 세 점을 각자 실현하므로 판정층 새 기계 0). 끝-대-끝 실측: 이름 없는 datum 위 프리즘이
 불리언(Common)을 통과, 부피 = 스케치 진술 그대로, 비용 416 climbs(wide 454·narrow 110, 고갈 0).
 `WitnessPoint` 는 **정의 동등성**(base+chain)을 얻었다 — `shared_base` 의 전-노드 비교가 그
-소비자다. 남은 벽: 담체가 갈라진 정점(암시적 점 — 16-2/16-3, 회전 불리언의 95.1%).
+소비자다.
+
+★★★★ **16-2 (2026-08-09) — 걸친 정점의 datum.** `JudgedPoint { Pure, Meet }`: 정의점이 세 담체
+평면의 교점일 수 있다 — 담체들의 `cramer_hp` 가 낸 동차점 셋을 **2a 의 사영 join
+(`plane_hp_through`)** 이 평면으로 잇는다(그 고아의 첫 호출자). 잠금은 Pure-대-Meet 차등(같은
+세 정점의 두 표기가 한 기저 — 정지·37° 회전). producer 는 straddle 을 `Nameless` 로 합류시키고
+(`VerticesInMixedFrames` 는 «담체가 이름 없는 datum» 만 남음), datum 어휘의 분류-수용률이 전
+population 100% 가 됐다. 불리언은 아직 — 걸친-datum 의 면은 `ImplicitPlaneUnsupported` 로
+정직 거절(판정 표의 자리 = 16-3, `plane_iv_through` 의 소비처).
 - **나누지 않는다.** `Dvec/D` 로 아핀 좌표를 만드는 것은 무리수를 제조하는 일이고, `Approx` 에
   나눗셈이 없고 `HpApprox::div_exact` 가 반경 0 을 요구하는 것이 그 규율의 집행이다.
 - **차수 9**(아핀 외적 경로는 15) — 구간 폭과 요구 정밀도가 그만큼 준다.
