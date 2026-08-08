@@ -580,6 +580,16 @@ pub enum OpError {
     /// plane through such points is derivable at arbitrary precision, and the stage that stops
     /// requiring a name will stop requiring this.
     VertexPointTooWide,
+    /// A mixed-frame datum's **judged frame could not be decided** at the fixed rung: no
+    /// arbitrary-axis branch's squared length — or the normal's, or the origin's denominator —
+    /// could be bounded away from zero (`nacre_cip::FrameThrough::of`).
+    ///
+    /// ★ Deliberately **not** [`OpError::CollinearVertices`] and not
+    /// [`OpError::DegenerateGeometry`]: both claim the construction *is* degenerate, and an
+    /// interval that fails to clear zero proves nothing of the kind — the points may be exactly
+    /// collinear or merely too close to call. Failing to prove health is its own cause, so it
+    /// gets its own name (C7).
+    ThroughFrameUndecided,
     LogHandleOutOfRange {
         /// Which store the index was meant for.
         cell: LogCell,
@@ -957,50 +967,66 @@ fn datum_plane(
     /// rewritten for: the caller then chose a motion, chose `None`, and a plane stated in a frame
     /// was filed as a world plane. `DatumDef::Offset` has always returned `(points, motion)` from
     /// one decision for exactly this reason.
+    /// What the three vertices state, once the causes are told apart.
+    ///
+    /// (`Named` is 288 B beside a unit variant — the same shape and the same verdict as
+    /// `PlanePoints`: it lives for one call on one stack frame, and boxing would buy nothing.)
+    #[allow(clippy::large_enum_variant)]
+    enum ThroughStatement {
+        /// One shared frame — the named road (S5(ii)-1): points in that frame, and the frame.
+        Named(
+            [[nacre_scalar::Rat; 3]; 3],
+            Option<Handle<nacre_topo::MotionNode>>,
+        ),
+        /// ★ Every vertex pure, but the frames differ (open item 16, first wall): no frame
+        /// holds a rational triple, no name exists, and the plane takes the judged road.
+        Nameless,
+    }
+
     #[allow(clippy::type_complexity)]
     fn through_points_by_cause(
         model: &Model,
         vs: [Handle<Vertex>; 3],
-    ) -> Result<
-        (
-            [[nacre_scalar::Rat; 3]; 3],
-            Option<Handle<nacre_topo::MotionNode>>,
-        ),
-        OpError,
-    > {
+    ) -> Result<ThroughStatement, OpError> {
         let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
-        let mut frame = None;
+        let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
             let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(*vh).def else {
                 return Err(OpError::VertexNotThreePlane);
             };
             let mine = model.plane_motion(tri[0]);
             if tri.iter().any(|h| model.plane_motion(*h) != mine) {
+                // ★ The cause that remains refused: this **single vertex's own carriers**
+                // straddle frames, so it has no rational coordinate anywhere — the implicit-point
+                // stage (open item 16's second wall) is what will open it.
                 return Err(OpError::VerticesInMixedFrames);
             }
-            match frame {
-                None if i == 0 => frame = Some(mine),
-                f if f == Some(mine) => {}
-                _ => return Err(OpError::VerticesInMixedFrames),
-            }
+            frames[i] = Some(mine);
             let mut names = [None; 3];
             for (o, h) in names.iter_mut().zip(tri) {
                 *o = model.surface_name.get(&h);
             }
             let [Some(a), Some(b), Some(c)] = names else {
-                // Unreachable since S2 — every plane interns with a name. Named rather than
-                // asserted because the claim spans two crates.
-                return Err(OpError::PlaneWithoutExactForm);
+                // A carrier can lack a name now — it may itself be a nameless datum. Its
+                // vertices then have no rational solve in any frame either; same second wall.
+                return Err(OpError::VerticesInMixedFrames);
             };
             let meet = nacre_scalar::three_planes_big([a, b, c]).expect(
                 "a ThreePlane vertex's carriers meet — that is why the vertex exists (C2/S7)",
             );
             pts[i] = *meet.narrow().ok_or(OpError::VertexPointTooWide)?;
         }
+        // ★★ Vertices each pure, frames differing pairwise — the population S5(ii)-1 refused
+        // and the judged frame accepts. The collinearity question is *not* asked here: with no
+        // shared frame there is no exact solve to ask it in, and the judged constructor's
+        // failure is reported as undecided, never as proven collinear.
+        if !(frames[1] == frames[0] && frames[2] == frames[0]) {
+            return Ok(ThroughStatement::Nameless);
+        }
         if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
             return Err(OpError::CollinearVertices);
         }
-        Ok((pts, frame.flatten()))
+        Ok(ThroughStatement::Named(pts, frames[0].flatten()))
     }
 
     match def {
@@ -1044,7 +1070,7 @@ fn datum_plane(
             if sorted[0] == sorted[1] || sorted[1] == sorted[2] {
                 return Err(OpError::DuplicateVertex);
             }
-            let (pts, motion) = through_points_by_cause(model, sorted)?;
+            let statement = through_points_by_cause(model, sorted)?;
 
             // ★ **The caller's order is the stated normal**, by the right-hand rule — the one
             // place their choice of side can survive, since the stored triple is sorted and a
@@ -1059,6 +1085,31 @@ fn datum_plane(
                 .cross(world[2] - world[0])
                 .normalize()
                 .ok_or(OpError::CollinearVertices)?;
+
+            let ThroughStatement::Named(pts, motion) = statement else {
+                // ★★★ **The judged road** (open item 16, first wall): every vertex pure, frames
+                // differing — no name exists, and the frame is derived from the defining points
+                // as intervals. **Validation comes before the push**: the judged constructor can
+                // refuse (an undecidable basis), and rejecting after `push_plane_through` would
+                // leave a frameless nameless plane in the arena — the reject-after-commit shape
+                // this arm's own header forbids. The shared derivation
+                // (`through_witness_points`) is the one `frame_chain` will re-run, so what was
+                // validated is what gets framed.
+                let wpts = crate::rotated_vertex::through_witness_points(model, sorted)
+                    .ok_or(OpError::PlaneWithoutExactForm)?; // unreachable: causes told apart above
+                let ft = nacre_cip::FrameThrough::of(wpts, false)
+                    .ok_or(OpError::ThroughFrameUndecided)?;
+                // The cache anchors at the validated realization of the first stored vertex —
+                // the definition's own replay, same rule as the named road below.
+                let anchor = Point3::from_array(ft.points[0].coord);
+                let cache =
+                    Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
+                let (plane, _flipped) = model.push_plane_through(cache, sorted, None);
+                let (frame, _) =
+                    measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
+                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                return Ok((plane, frame));
+            };
 
             // ★★★ **The cache is a world description, and `pts` are not world coordinates unless
             // the carriers share no motion.** Realizing them means walking the very chain the

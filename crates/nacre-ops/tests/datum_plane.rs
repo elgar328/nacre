@@ -1208,8 +1208,22 @@ fn a_datum_through_vertices_refuses_by_cause() {
         OpError::CollinearVertices
     );
 
-    // ★★★ **The cause the next stage owns.** Turn one box and leave the other: a vertex from each
-    // lives in a different frame, and no single frame holds a rational coordinate for both.
+    // ★ The pure-vertices-in-different-frames shape is **no longer on this list** — open item
+    // 16's first wall opened it, and `a_nameless_datum_hosts_a_sketch_end_to_end` is where it
+    // now lives as an acceptance. What stays refused under `VerticesInMixedFrames` is a single
+    // vertex whose own carriers straddle (`a_datum_on_straddling_carriers_has_no_name`).
+}
+
+/// ★★★★★ **The first wall of open item 16, opened end to end**: a datum through three vertices
+/// that are each exact in their own frame — but not in each other's — gets a *judged* frame,
+/// hosts a sketch, and the whole thing replays.
+///
+/// The population S5(ii)-1 refused with `VerticesInMixedFrames` splits: this (the caller's
+/// vertices differ) is now accepted; a single straddling vertex still refuses. The plane has
+/// **no name** — its exact world coefficients are irrational — so it interns by statement, and
+/// the frame is derived from the defining points as intervals at a fixed rung.
+#[test]
+fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     let mut mx = Model::new();
     let fixed = mx.add_cuboid(
         Point3::from_array([0.0, 0.0, 0.0]),
@@ -1247,10 +1261,129 @@ fn a_datum_through_vertices_refuses_by_cause() {
         out
     };
     let (still, turned) = (of(&mx, fixed), of(&mx, spun));
+    let vs = [still[0], still[1], turned[0]];
+
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut mx,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("the pure-mixed datum is accepted now") else {
+        unreachable!()
+    };
+    assert!(
+        !mx.surface_name.contains_key(&plane),
+        "its exact world coefficients are irrational — a name here would be an invention"
+    );
+    assert!(
+        matches!(
+            mx.surface_truth(plane),
+            SurfaceTruth::Plane {
+                points: PlanePoints::Through(_),
+                motion: None,
+            }
+        ),
+        "the truth is the statement: handles, and no motion of its own"
+    );
+
+    // ★ Statement interning, end to end: the same three vertices again are the same handle.
+    let OpOutput::DatumPlane { plane: again, .. } = apply(
+        &mut mx,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("restating is fine") else {
+        unreachable!()
+    };
+    assert_eq!(plane, again, "one statement, one handle");
+
+    // The sketch: an extrude on the judged frame, validated.
+    let OpOutput::Extrude { .. } = apply(
+        &mut mx,
+        &Operation::Extrude {
+            frame,
+            profile: square(0.0, 1.0),
+            dist: 0.5,
+        },
+    )
+    .expect("a sketch on the judged frame") else {
+        unreachable!()
+    };
+    mx.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&mx).is_empty(),
+        "the prism on a nameless datum must be a valid closed b-rep"
+    );
+
+    // ★ And the same session rebuilt from scratch reaches the same arena — the judged road is
+    // deterministic. The scratch model mints its **own** handles (using `mx`'s here would trip
+    // the cross-store guard, and rightly — that is the guard working); determinism is asserted
+    // on the indices and the arena count.
+    let mut scratch = Model::new();
+    let f2 = scratch.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let s2 = scratch.add_cuboid(
+        Point3::from_array([4.0, 0.0, 0.0]),
+        Point3::from_array([5.0, 1.0, 1.0]),
+    );
+    scratch.rebuild_adjacency();
+    let OpOutput::Transform { solid: s2 } = apply(
+        &mut scratch,
+        &Operation::Transform {
+            solid: s2,
+            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                axis: Axis::Z,
+                point: [nacre_scalar::Rat::from_int(0); 3],
+                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn") else {
+        unreachable!()
+    };
+    scratch.rebuild_adjacency();
+    let (still2, turned2) = (of(&scratch, f2), of(&scratch, s2));
+    let vs2 = [still2[0], still2[1], turned2[0]];
     assert_eq!(
-        through(&mut mx, [still[0], still[1], turned[0]]),
-        OpError::VerticesInMixedFrames,
-        "vertices from two frames have no shared rational coordinate"
+        [vs2[0].index(), vs2[1].index(), vs2[2].index()],
+        [vs[0].index(), vs[1].index(), vs[2].index()],
+        "the scratch construction mints the same indices — the premise of comparing arenas"
+    );
+    let OpOutput::DatumPlane {
+        plane: plane2,
+        frame: frame2,
+    } = apply(
+        &mut scratch,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs2),
+        },
+    )
+    .expect("the same statement is accepted again")
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        plane2.index(),
+        plane.index(),
+        "same statement, same arena slot"
+    );
+    apply(
+        &mut scratch,
+        &Operation::Extrude {
+            frame: frame2,
+            profile: square(0.0, 1.0),
+            dist: 0.5,
+        },
+    )
+    .expect("the same sketch extrudes again");
+    assert_eq!(
+        scratch.surface_count(),
+        mx.surface_count(),
+        "same statements, same arena — minus nothing"
     );
 }
 

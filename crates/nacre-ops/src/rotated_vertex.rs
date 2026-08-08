@@ -62,6 +62,45 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
     })
 }
 
+/// The three defining vertices of a **nameless** `Through` plane as judgeable points — the
+/// judged road's twin of `Model::through_points_rat` (the named road's single solve). One
+/// spelling, shared by the datum producer's pre-push validation and [`frame_chain`]'s node
+/// assembly, so what was validated and what gets framed cannot drift.
+///
+/// Each vertex must be *pure* — its own three carriers share one motion — and solve to a `Rat`
+/// point in that frame; the chains may differ **between** vertices, which is exactly the
+/// population the named solve refuses (`docs/truth-and-cache.md` open item 16, first wall).
+/// `None` for a straddling vertex (the item's second stage), a seam vertex, an unnamed carrier,
+/// a too-wide solve, or a chain outside the decimal window. The producer tells those apart by
+/// cause before any plane is pushed; here one answer suffices, because reaching this through an
+/// *accepted* statement re-derives the same deterministic result.
+pub(crate) fn through_witness_points(
+    model: &Model,
+    vs: [Handle<nacre_topo::Vertex>; 3],
+) -> Option<[WitnessPoint; 3]> {
+    let mut out: [Option<WitnessPoint>; 3] = [None, None, None];
+    for (o, vh) in out.iter_mut().zip(vs) {
+        let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
+            return None; // OnSeam pins a curve, not a point
+        };
+        let mine = model.plane_motion(tri[0]);
+        if tri.iter().any(|h| model.plane_motion(*h) != mine) {
+            return None; // straddling carriers — open item 16's second stage
+        }
+        let names = tri.map(|h| model.surface_name.get(&h));
+        let [Some(a), Some(b), Some(c)] = names else {
+            return None;
+        };
+        let p = *nacre_scalar::three_planes_big([a, b, c])?.narrow()?;
+        let wp = WitnessPoint::at(p);
+        *o = Some(match mine {
+            None => wp,
+            Some(m) => replay(wp, &motion_chain(model, m)?)?,
+        });
+    }
+    Some([out[0].take()?, out[1].take()?, out[2].take()?])
+}
+
 /// The motion nodes from the root down to `leaf` (parent chain, reversed).
 ///
 /// ★★★ **A frame expands into more than one node, and that is the recursion.** `Motion::Frame`
@@ -128,7 +167,34 @@ pub(crate) fn frame_chain(
     flip: bool,
 ) -> Option<Vec<MoveNode>> {
     use nacre_topo::FramePlacement;
-    let name = model.surface_name.get(&plane)?;
+    let Some(name) = model.surface_name.get(&plane) else {
+        // ★★★ **The judged road** (open item 16, first wall): a plane with no name at all — a
+        // mixed-frame `Through` statement, whose exact world coefficients are irrational. Its
+        // frame is derived from the defining points as intervals ([`nacre_cip::FrameThrough`]),
+        // with the branch decided once at the fixed rung, so the same statement always frames
+        // the same way. `Named` placement is refused here defensively (`SketchFrame::named`
+        // already rejects it by name at construction — an on-plane claim needs a name to verify
+        // against), and the plane's own later motion is appended by the shared tail below,
+        // exactly as for the named roads.
+        let nacre_topo::SurfaceTruth::Plane {
+            points: nacre_topo::PlanePoints::Through(vs),
+            motion,
+        } = model.surface_truth(plane)
+        else {
+            return None;
+        };
+        if !matches!(placement, FramePlacement::Canonical) {
+            return None;
+        }
+        let pts = through_witness_points(model, *vs)?;
+        let mut chain = vec![MoveNode::FrameThrough(Box::new(
+            nacre_cip::FrameThrough::of(pts, flip)?,
+        ))];
+        if let Some(m) = motion {
+            chain.append(&mut motion_chain(model, *m)?);
+        }
+        return Some(chain);
+    };
 
     // ★★★★ **Canonical coefficients carry no direction, and a frame needs one.**
     // `canonical_plane_coeffs` forces the first nonzero component positive, because its question
