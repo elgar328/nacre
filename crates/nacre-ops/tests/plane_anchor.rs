@@ -177,7 +177,7 @@ fn an_axis_aligned_plane_is_anchor_blind() {
 
 /// **No — and not by luck: `reconcile`'s net is already fully engaged on this population.**
 ///
-/// `PlaneGeom::reconcile` carries a plane's f64 coefficients into the predicates only when
+/// `WorkingPlane::reconcile` carries a plane's f64 coefficients into the predicates only when
 /// [`Plane::spans_exactly`] says they describe the very plane the witness triangle spans, tested in
 /// exact expansion arithmetic. For a tilted decimal plane `d` is a rounded sum of products, so the
 /// test fails **for every anchor** — the coefficients are never carried, and swapping anchors

@@ -1243,7 +1243,7 @@ pub mod tests {
         let pr = table(&m, r2);
         assert_eq!(pu.len(), pr.len(), "rotation preserves the plane count");
         let n = pu.len();
-        let indep = |p: &[PlaneGeom], a: usize, b: usize, c: usize| {
+        let indep = |p: &[WorkingPlane], a: usize, b: usize, c: usize| {
             let nrm = |k: usize| p[k].plane.normal();
             nrm(a).dot(nrm(b).cross(nrm(c))).abs() > 0.3
         };
@@ -2060,7 +2060,7 @@ pub mod tests {
     }
 
     /// A ring's nodes as coordinates — each triple is three planes, so its point is their meet.
-    fn ring_points(planes: &[PlaneGeom], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
+    fn ring_points(planes: &[WorkingPlane], ring: &[[usize; 3]]) -> Vec<[f64; 3]> {
         ring.iter()
             .map(|t| {
                 three_planes(
@@ -2261,7 +2261,7 @@ pub mod tests {
     /// retired seam engine. The *properties* below are about `point_in_ring`/`every_ray`, which are
     /// live and load-bearing (`nest_cells` picks a hole's host with them, `unify_coplanar_faces`
     /// groups by them), so they had to be re-homed rather than deleted with their old fixture.
-    fn holed_face_rings(which: &str) -> (Vec<PlaneGeom>, usize, Ring, Ring) {
+    fn holed_face_rings(which: &str) -> (Vec<WorkingPlane>, usize, Ring, Ring) {
         let (mut m, l, stub) = if which == "dimple" {
             l_and_dimple()
         } else {
@@ -4634,7 +4634,7 @@ pub mod tests {
     /// right-hand normal is `n_out`. The merge reads more than `n_out` now — `loop_winding` and
     /// `point_in_ring` name their arguments by plane and evaluate exact predicates on `tri` — so a
     /// dummy triangle would make those answers meaningless.
-    fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> PlaneGeom {
+    fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingPlane {
         let mut n = [0.0; 3];
         n[axis] = if positive { 1.0 } else { -1.0 };
         let normal = Vector3::from_array(n);
@@ -4674,7 +4674,7 @@ pub mod tests {
         };
         let _ = face;
         let tri = [origin, step(i), step(j)];
-        PlaneGeom {
+        WorkingPlane {
             // A hand-built table has no recorded coefficients; the composed-rotation route
             // declines and the fixture takes the same escalating path it always did.
             base_rat: None,
@@ -4685,8 +4685,8 @@ pub mod tests {
             tri_pt3: tri.map(|p| nacre_cip::WitnessPoint::exact(p.as_array()).expect("exact")),
             rotated: false,
             frame_sign: 1, // `plane` is built from `normal`, so the two agree
-            exact_coeffs: PlaneGeom::reconcile(&plane, tri, false).0,
-            exact_normal: PlaneGeom::reconcile(&plane, tri, false).1,
+            exact_coeffs: WorkingPlane::reconcile(&plane, tri, false).0,
+            exact_normal: WorkingPlane::reconcile(&plane, tri, false).1,
         }
     }
 

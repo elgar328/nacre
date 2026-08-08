@@ -32,7 +32,7 @@ use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
 /// Shared, lazily-initialized cell for the memoized high-precision realization.
 ///
 /// Under `parallel` it is `Arc<OnceLock>` — `Send + Sync`. **What needs that is the shared
-/// borrow**: the boolean hands every worker the same `&[PlaneGeom]`, so `WitnessPoint` must be `Sync`
+/// borrow**: the boolean hands every worker the same `&[WorkingPlane]`, so `WitnessPoint` must be `Sync`
 /// or the plane table cannot cross the closure at all. The cache being shared rather than
 /// per-thread is the second benefit: a hot definition point is realized once for all workers.
 /// Two workers racing to fill one cell compute the same value and one wins, so the answer

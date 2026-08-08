@@ -19,14 +19,14 @@
 //! that read "different plane" for two faces of one plane and answered from rounding noise.
 //!
 //! That used to be held by a naming convention (`fp` / `fc`) and a debug-time net. It is now the
-//! type: the predicates here take [`crate::PlaneGeom`], which has no face geometry to offer, and
+//! type: the predicates here take [`crate::WorkingPlane`], which has no face geometry to offer, and
 //! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
 //!
 //! **Exception:** the code that *defines* the classes (`crate::fill_classes` →
 //! `crate::shares_or_coplanar` → `Judge::planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
-use crate::planes::{PlaneGeom, edge_incidence};
+use crate::planes::{WorkingPlane, edge_incidence};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, reject};
 use nacre_store::Handle;
@@ -68,7 +68,13 @@ pub(crate) fn edge_faces(
 /// The pair `(P, Q)` is a parameter, not the seam pair: sub-unit 3d orders two seam
 /// crossings along an *edge* of `f` by calling this with `(P, R)`, the edge's own
 /// two planes. No new predicate is needed for that.
-pub(crate) fn order_along(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, i: usize, j: usize) -> i8 {
+pub(crate) fn order_along(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    q: usize,
+    i: usize,
+    j: usize,
+) -> i8 {
     jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
@@ -135,7 +141,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 /// are several and any will do, so the smallest is taken and the answer stays replay-stable. This is
 /// the same rule `trace_transversal_face`'s `third_on_l` uses.
 pub(crate) fn ring_edges_with_walls(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     nodes: &[[usize; 3]],
     walls: &[usize],
@@ -170,7 +176,7 @@ pub(crate) fn ring_edges_with_walls(
 }
 
 /// `+1` when the ring's edge `i → i+1` runs along `d = n_P × n_Q`, `-1` against it.
-fn edge_sign(jd: &Judge<'_, PlaneGeom>, p: usize, e: &RingEdge) -> Result<i8, BoolError> {
+fn edge_sign(jd: &Judge<'_, WorkingPlane>, p: usize, e: &RingEdge) -> Result<i8, BoolError> {
     // `order_along` is `sign((V_i − V_j)·d)`, so `-1` — `V_i` precedes `V_j` — is the edge
     // running along `+d`. Recomputed rather than remembered from the assembly walk.
     match order_along(jd, p, e.wall, e.from_h, e.to_h) {
@@ -200,7 +206,7 @@ fn edge_sign(jd: &Judge<'_, PlaneGeom>, p: usize, e: &RingEdge) -> Result<i8, Bo
 // turn through `turn_between`, which lets the caller skip a straight stretch.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn turn_at(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     ring: &[RingEdge],
     i: usize,
@@ -212,7 +218,7 @@ pub(crate) fn turn_at(
 /// The turn from one edge to another, both on `P` — [`turn_at`] with the two edges named, so a
 /// caller that had to look past a straight stretch can say which pair it means.
 fn turn_between(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     arriving: &RingEdge,
     leaving: &RingEdge,
@@ -238,7 +244,7 @@ pub(crate) fn face_vertex_triples(
     f: Handle<Face>,
     p: usize,
     inc: &EdgeFaces,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
     loop_triples(&model.faces.get(f).outer, p, inc, jd, plane_ix)
@@ -287,7 +293,7 @@ pub(crate) fn trace_input(
     operands: [(Handle<Solid>, &EdgeFaces); 2],
     surf_ix: &HashMap<Handle<Face>, usize>,
     n_faces: usize,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[usize],
 ) -> TraceInput {
     let _ = n_faces;
@@ -320,7 +326,7 @@ pub(crate) fn hole_rings(
     f: Handle<Face>,
     p: usize,
     inc: &EdgeFaces,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[usize],
 ) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
     model
@@ -355,7 +361,7 @@ fn loop_triples(
     l: &Loop,
     p: usize,
     inc: &EdgeFaces,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[usize],
 ) -> Result<Vec<[usize; 3]>, BoolError> {
     let hes = &l.half_edges;
@@ -449,7 +455,7 @@ fn loop_triples(
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-pub(crate) fn side_of(jd: &Judge<'_, PlaneGeom>, t: [usize; 3], q: usize) -> i8 {
+pub(crate) fn side_of(jd: &Judge<'_, WorkingPlane>, t: [usize; 3], q: usize) -> i8 {
     jd.orient3d(t[0], t[1], t[2], q)
 }
 
@@ -475,7 +481,7 @@ pub(crate) fn side_of(jd: &Judge<'_, PlaneGeom>, t: [usize; 3], q: usize) -> i8 
 /// loop never touches `∂f` — and this is where it is finally checked: an intersection at
 /// `X == v` strictly inside an edge is the `POINT_ON_RING` reject.
 pub(crate) fn point_in_ring(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     v: [usize; 3],
     ring: &[RingEdge],
@@ -489,7 +495,7 @@ pub(crate) fn point_in_ring(
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
 /// says so, which is a second machine for free.
 pub(crate) fn every_ray(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     v: [usize; 3],
     ring: &[RingEdge],
@@ -559,7 +565,7 @@ pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<us
 /// Whether the point named by plane triple `v` lies on any edge of `ring` (a ring on plane `p`).
 /// Used by [`point_in_component`] to abandon a non-generic ray rather than guess on a boundary.
 fn point_on_ring(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     mut v: [usize; 3],
     ring: &[RingEdge],
@@ -602,7 +608,7 @@ fn point_on_ring(
 pub(crate) type ComponentFaces = Vec<(usize, Vec<Vec<RingEdge>>)>;
 
 pub(crate) fn point_in_component(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     query: [usize; 3],
     faces: &[(usize, Vec<Vec<RingEdge>>)],
 ) -> Result<bool, BoolError> {
@@ -700,7 +706,7 @@ pub(crate) fn point_in_component(
 /// other accepted.) Only a pinch *at* the extreme node itself leaves the turn ambiguous; that stays
 /// a `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than by a tolerance.
 pub(crate) fn loop_winding(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     p: usize,
     ring: &[RingEdge],
 ) -> Result<i8, BoolError> {
@@ -790,7 +796,7 @@ pub(crate) fn loop_winding(
 /// the predicate's convention is tied to `tri`'s RH normal by construction. Were the
 /// invariant to break, an `orient`-based order would reverse silently. Assert the
 /// agreement; do not depend on it.
-pub(crate) fn dir_sign(jd: &Judge<'_, PlaneGeom>, p: usize, q: usize, r: usize) -> i8 {
+pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usize) -> i8 {
     let planes = jd.planes;
     jd.plane_pair_dir_sign(p, q, r) * planes[r].frame_sign
 }

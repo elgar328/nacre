@@ -51,7 +51,7 @@ fn square(a: f64, b: f64) -> Profile2d {
 ///
 /// This is the lock on the cache-normal convention. `Model::new` seeds the world planes facing
 /// `−axis` (S9 measured that `+axis` flipped 781 stored cap normals for nothing), `extrude` pushes
-/// its base cap as `−plane.normal()`, and `PlaneGeom::frame_sign` reads a stored normal against a
+/// its base cap as `−plane.normal()`, and `WorkingPlane::frame_sign` reads a stored normal against a
 /// root face's outward — which for a base cap is `−N`. A datum that pushed `+normal` would still
 /// intern, but it would come back `flipped`, and every face built on it afterwards would have to
 /// be spelled the other way round to compensate. `flipped == false` here says the datum joined the

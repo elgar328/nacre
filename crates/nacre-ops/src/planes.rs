@@ -1,4 +1,4 @@
-//! The plane/face substrate: per-face (`FaceInfo`) and per-plane-class (`PlaneGeom`) tables and
+//! The plane/face substrate: per-face (`FaceInfo`) and per-plane-class (`WorkingPlane`) tables and
 //! their construction. Everything the boolean engine and its combinatorial queries build on.
 
 use crate::combinatorics;
@@ -44,7 +44,7 @@ pub(crate) struct FaceInfo {
     /// `+1` when this face's stored plane normal already points out of its solid, `-1` when the
     /// face is `Reversed` and the two oppose.
     ///
-    /// **This face's**, not its plane class's. The class-frame twin is [`PlaneGeom::frame_sign`],
+    /// **This face's**, not its plane class's. The class-frame twin is [`WorkingPlane::frame_sign`],
     /// and the two used to be one function called with either kind of index — the single place the
     /// face/plane convention could not be asserted, because both readings were legitimate
     /// (dev-log, normalization cell). Separate names, separate questions.
@@ -384,7 +384,7 @@ pub(crate) struct PlaneSetup {
     /// rebuild it.
     pub(crate) n_a: usize,
     /// The arrangement's planes, densely indexed — see [`dense_planes`].
-    pub(crate) geom: Vec<PlaneGeom>,
+    pub(crate) geom: Vec<WorkingPlane>,
     /// `plane_ix[face]` is that face's plane, as an index into `geom`.
     pub(crate) plane_ix: Vec<usize>,
     /// Whose faces each plane class carries — see [`class_owners`].
@@ -662,7 +662,7 @@ fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag
 /// The face table cannot answer "which plane" without a convention: a class holds faces from both
 /// operands, and two of them can face opposite ways, so there is no such thing as *the* plane's
 /// outward normal. What a plane has is a **frame** — the class root's stored normal — and the only
-/// direction fact anyone needs from it is [`PlaneGeom::frame_sign`]. Everything else here is a
+/// direction fact anyone needs from it is [`WorkingPlane::frame_sign`]. Everything else here is a
 /// witness: three points known to lie on this plane, used to reconstruct it exactly.
 /// The pre-rotation twin of a witness triangle: its `chain_id`, base points and base plane.
 ///
@@ -820,7 +820,7 @@ impl BaseFrame {
     }
 }
 
-pub(crate) struct PlaneGeom {
+pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,
     /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
     pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
@@ -866,7 +866,7 @@ pub(crate) struct PlaneGeom {
     pub(crate) exact_normal: Option<[f64; 3]>,
 }
 
-impl PlaneGeom {
+impl WorkingPlane {
     /// **Reconcile a plane's two exact descriptions, once, at construction.**
     ///
     /// Returns what may be carried: the coefficients when they describe the same plane the witness
@@ -907,7 +907,10 @@ impl PlaneGeom {
 /// depend on that (the two candidates — `loop_winding`'s lex-min node and `crossings`' pre-dedup
 /// sort — are by coordinate and by set, respectively), but the audit cannot be proved exhaustive
 /// over ~175 sites, so the numbering removes the question instead of answering it.
-pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGeom>, Vec<usize>) {
+pub(crate) fn dense_planes(
+    planes: &[FaceInfo],
+    canon: &[usize],
+) -> (Vec<WorkingPlane>, Vec<usize>) {
     let mut roots: Vec<usize> = canon.to_vec();
     roots.sort_unstable();
     roots.dedup();
@@ -927,8 +930,9 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
             // is simply not carried. A rotated plane has no exact `f64` coefficients at all, so
             // both are `None` there — which is also what makes the predicates stop asking
             // "is it rotated?" and ask "did I get coefficients?" instead.
-            let (exact_coeffs, exact_normal) = PlaneGeom::reconcile(&pi.plane, pi.tri, pi.rotated);
-            PlaneGeom {
+            let (exact_coeffs, exact_normal) =
+                WorkingPlane::reconcile(&pi.plane, pi.tri, pi.rotated);
+            WorkingPlane {
                 base_rat: pi.base_rat,
                 base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign, pi.base_rat),
                 plane: pi.plane,

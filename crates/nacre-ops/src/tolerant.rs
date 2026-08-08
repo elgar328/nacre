@@ -1,5 +1,5 @@
 //! The b-rep side of the toleranced predicates: `nacre-ops`'s arrangement tables
-//! ([`PlaneGeom`], [`FaceInfo`]) implement the [`Witness`]/[`PlaneWitness`] ports so the
+//! ([`WorkingPlane`], [`FaceInfo`]) implement the [`Witness`]/[`PlaneWitness`] ports so the
 //! rotation-general sign predicates in [`nacre_cip::predicate`] can run over them.
 //!
 //! The tables are **pure description** — geometry and provenance, nothing about how this
@@ -8,7 +8,7 @@
 //! are its methods. The predicate logic itself (exact-vs-kernel routing, the frame3 judges) lives
 //! in `nacre-cip`.
 
-use crate::planes::{FaceInfo, PlaneGeom};
+use crate::planes::{FaceInfo, WorkingPlane};
 use nacre_cip::WitnessPoint;
 use nacre_cip::predicate::{PlaneWitness, Witness};
 use nacre_math::Point3;
@@ -17,7 +17,7 @@ use nacre_math::Point3;
 // are methods on `Judge`, so there is nothing else to re-export.
 pub(crate) use nacre_cip::predicate::{ImplicitPoint, Judge, any_rotated, plane_def};
 
-impl Witness for PlaneGeom {
+impl Witness for WorkingPlane {
     fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
         self.base_rat
     }
@@ -61,7 +61,7 @@ impl Witness for FaceInfo {
     }
 }
 
-impl PlaneWitness for PlaneGeom {
+impl PlaneWitness for WorkingPlane {
     fn coeffs(&self) -> [f64; 4] {
         self.plane.coefficients()
     }
@@ -102,9 +102,9 @@ mod tests {
     use nacre_geom::intersect::{plane_pair_dir_sign, three_plane_cmp_coord, three_plane_orient3d};
 
     /// The plane table of one solid, built through the real path so these tests exercise the same
-    /// `PlaneGeom` the engine does. A single convex operand has no coplanar pair, so the numbering
+    /// `WorkingPlane` the engine does. A single convex operand has no coplanar pair, so the numbering
     /// is the identity — indices below name a face and its plane interchangeably.
-    fn plane_table(m: &Model, s: Handle<Solid>) -> Vec<PlaneGeom> {
+    fn plane_table(m: &Model, s: Handle<Solid>) -> Vec<WorkingPlane> {
         let faces = collect_planes(m, s).unwrap();
         let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
         crate::planes::dense_planes(&faces, &canon).0
@@ -147,7 +147,7 @@ mod tests {
 
     /// The signed volume of the normal triple `(n_p, n_q, n_r)` — nonzero iff the three
     /// planes meet in a single point (so `three_plane_orient3d` is well-defined).
-    fn normals_independent(planes: &[PlaneGeom], p: usize, q: usize, r: usize) -> bool {
+    fn normals_independent(planes: &[WorkingPlane], p: usize, q: usize, r: usize) -> bool {
         let n = |k: usize| planes[k].plane.normal();
         n(p).dot(n(q).cross(n(r))).abs() > 0.5
     }
@@ -198,7 +198,7 @@ mod tests {
     /// first-push coincidence, never the contract; on-plane is.
     #[test]
     fn plane_def_from_face() {
-        let on_plane = |pi: &crate::planes::PlaneGeom| {
+        let on_plane = |pi: &crate::planes::WorkingPlane| {
             for d in &pi.tri_pt3 {
                 let dist = pi.plane.distance(Point3::from_array(d.coord));
                 assert!(dist < 1e-9, "a witness point sits {dist:e} off its plane");
@@ -264,7 +264,7 @@ mod tests {
     }
 
     /// The independent-normal plane triples of a cuboid (each meets at one corner).
-    fn corner_triples(planes: &[PlaneGeom]) -> Vec<[usize; 3]> {
+    fn corner_triples(planes: &[WorkingPlane]) -> Vec<[usize; 3]> {
         let n = planes.len();
         let mut out = Vec::new();
         for p in 0..n {
@@ -288,8 +288,8 @@ mod tests {
         let (mut m, s) = cuboid();
         let pu = plane_table(&m, s);
         // (a) A hand-built degenerate pair: same-normal parallel planes, but `tri` is a point.
-        let degenerate: Vec<PlaneGeom> = (0..2)
-            .map(|k| PlaneGeom {
+        let degenerate: Vec<WorkingPlane> = (0..2)
+            .map(|k| WorkingPlane {
                 // A hand-built table has no recorded coefficients; the composed-rotation route
                 // declines and the fixture takes the same escalating path it always did.
                 base_rat: None,
@@ -304,13 +304,13 @@ mod tests {
                 frame_sign: pu[0].frame_sign,
                 // Derived by the same rule the arrangement uses -- a fixture that routed
                 // differently would be testing a different engine.
-                exact_coeffs: PlaneGeom::reconcile(
+                exact_coeffs: WorkingPlane::reconcile(
                     &pu[0].plane,
                     [Point3::from_array([k as f64, 0.0, 0.0]); 3],
                     false,
                 )
                 .0,
-                exact_normal: PlaneGeom::reconcile(
+                exact_normal: WorkingPlane::reconcile(
                     &pu[0].plane,
                     [Point3::from_array([k as f64, 0.0, 0.0]); 3],
                     false,
@@ -532,7 +532,7 @@ mod tests {
     /// canonicalisation is right: it puts the shortcut path and the no-shortcut path side by
     /// side on identical geometry, with no bypass switch in between. A sign that survives one
     /// too many or one too few reflections shows up here as a disagreement.
-    fn two_spellings() -> (Vec<PlaneGeom>, Vec<PlaneGeom>) {
+    fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
         use crate::planes::{FaceInfo, dense_planes, plane_classes};
         use nacre_topo::Motion;
 
@@ -556,7 +556,7 @@ mod tests {
             .map(|f| FaceInfo {
                 // A hand-built table has no surface to have recorded coefficients on, so the base
                 // frame derives as it always did. Filling this by hand is how a fixture and the
-                // engine come to route differently (see `PlaneGeom::reconcile`).
+                // engine come to route differently (see `WorkingPlane::reconcile`).
                 base_rat: None,
                 surf: f.surf,
                 face: f.face,
@@ -1199,7 +1199,7 @@ mod tests {
         // shortcut out of it, so what runs is the interval route the plan's stage C1 exercises.
         let mk = |d: [WitnessPoint; 3]| {
             let tri = d.clone().map(|p| Point3::from_array(p.coord));
-            PlaneGeom {
+            WorkingPlane {
                 base_rat: None,
                 base: crate::planes::BaseFrame::none(),
                 surf: faces[ia].surf,

@@ -685,7 +685,7 @@ pub fn coeff_normal_ok<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
             == 0
     };
     // ★ **Parallel is the whole condition — the direction is not part of it.** The stored normal
-    // is allowed to *oppose* the triangle's, and `PlaneGeom::frame_sign` exists to record exactly
+    // is allowed to *oppose* the triangle's, and `WorkingPlane::frame_sign` exists to record exactly
     // that; both branches of `plane_pair_dir_sign` already carry the convention (the exact one
     // takes the determinant of stored normals, the toleranced one multiplies the outward
     // determinant by the three `frame_sign`s). An earlier spelling here also demanded

@@ -17,7 +17,7 @@
 //! the same reason the kernel is allowed to have a fast path at all.
 
 use crate::boolean::{LocalFace, Node};
-use crate::planes::{FaceInfo, PlaneGeom, SolidSide};
+use crate::planes::{FaceInfo, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
 use nacre_cip::{WitnessPoint, orient3d_filter};
 use nacre_scalar::Orient;
@@ -124,7 +124,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
 /// **That argument needs every face to be planar.** It is: `collect_planes` rejects a non-planar
 /// face before any of this runs. A curved face would bulge outside its vertices' hull, so if
 /// curved surfaces ever arrive here this must test their bounds, not their corners.
-fn plane_misses(geom: &PlaneGeom, q: &[WitnessPoint]) -> bool {
+fn plane_misses(geom: &WorkingPlane, q: &[WitnessPoint]) -> bool {
     let t = &geom.tri_pt3;
     let mut side: Option<Orient> = None;
     for v in q {
@@ -161,7 +161,7 @@ pub(crate) fn class_plans(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    geom: &[PlaneGeom],
+    geom: &[WorkingPlane],
     class_owner: &[Option<SolidSide>],
 ) -> Vec<ClassPlan> {
     let mut plans = vec![ClassPlan::Arrange; geom.len()];
@@ -301,7 +301,7 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
 pub(crate) fn pass_through(
     model: &Model,
     wc: usize,
-    geom: &PlaneGeom,
+    geom: &WorkingPlane,
     faces: &[FaceInfo],
     plane_ix: &[usize],
     range: std::ops::Range<usize>,

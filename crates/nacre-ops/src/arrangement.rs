@@ -275,7 +275,7 @@ pub(crate) struct Aliases {
 
 impl Aliases {
     /// Record that every plane in `s` (sorted, deduped) passes through one point.
-    fn record(&mut self, jd: &Judge<'_, PlaneGeom>, s: &[usize]) {
+    fn record(&mut self, jd: &Judge<'_, WorkingPlane>, s: &[usize]) {
         if s.len() < 4 {
             return; // three planes meeting at a point is the ordinary case, and names nothing new
         }
@@ -422,7 +422,7 @@ fn trace_transversal_face(
     loops: &combinatorics::FaceLoops,
     which: SolidSide,
     wc: usize,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceInfo],
     plane_ix: &[usize],
     out: &mut Trace,
@@ -739,7 +739,7 @@ fn trace_transversal_face(
 /// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`FaceInfo::orient_sign`] and
 /// `trace_seated_face` already rely on. Everything else here is exact.
 fn run_body_above(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceInfo],
     wc: usize,
     fc: usize,
@@ -763,7 +763,7 @@ fn trace_one(
     faces_in: &[(usize, combinatorics::FaceLoops)],
     which: SolidSide,
     wc: usize,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceInfo],
     plane_ix: &[usize],
     out: &mut Trace,
@@ -855,7 +855,7 @@ fn trace_one(
 fn trace_on_class(
     input: &combinatorics::TraceInput,
     wc: usize,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceInfo],
     plane_ix: &[usize],
 ) -> Trace {
@@ -876,7 +876,7 @@ fn trace_on_class_of(
     a: Handle<Solid>,
     b: Handle<Solid>,
     wc: usize,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &combinatorics::EdgeFaces,
@@ -903,7 +903,7 @@ fn trace_one_of(
     solid: Handle<Solid>,
     which: SolidSide,
     wc: usize,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceInfo],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &combinatorics::EdgeFaces,
@@ -1023,7 +1023,7 @@ struct Wall {
 }
 
 fn split_at_crossings(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     segs: &[MergedSeg],
     aliases: &mut Aliases,
@@ -1053,7 +1053,7 @@ fn split_at_crossings(
     // segment on one wall, so the caller makes the handle once per **wall pair** and every segment
     // there shares its Cramer parts. Taking `r` instead would cap the sharing at one segment's two
     // endpoints, which is what a `_pair` predicate did.
-    let closed_contains = |si: usize, at: &ImplicitPoint<'_, PlaneGeom>, r: usize| -> bool {
+    let closed_contains = |si: usize, at: &ImplicitPoint<'_, WorkingPlane>, r: usize| -> bool {
         let s = &segs[si];
         let (r0, r1) = (s.end_h[0], s.end_h[1]);
         // ★ **Asked before the predicates, not after.** Integer identity is a *sufficient* condition
@@ -1264,7 +1264,7 @@ fn split_at_crossings(
 /// `union_wall` makes the four-plane concurrency model reject, which is what says the reliance is
 /// real and the check reaches it.
 fn angular_order(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     w: usize,
     edges: &[(usize, i8)],
 ) -> Result<Vec<usize>, BoolError> {
@@ -1386,7 +1386,7 @@ fn component_count(segs: &[MergedSeg]) -> usize {
 /// direction (predecessor vs successor) is `angular_order`'s handedness — unknown up front, so both
 /// are tried and the one giving exactly `component_count` faces of winding `-1` is kept.
 fn extract_cells(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     segs: &[MergedSeg],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
@@ -1535,7 +1535,7 @@ struct Nesting {
 /// the only impossibility (a closed figure always has an outside), and that is `HOLE_ROOTS`. A hole
 /// whose owner is not uniquely determined is `HOLE_DEPTH` (see [`innermost_host`]).
 fn nest_cells(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     cells: &[Cell],
     segs: &[MergedSeg],
@@ -1636,7 +1636,7 @@ fn nest_cells(
 /// [`combinatorics::point_in_ring`], and candidates sharing a node are adjacent rather than nested, so
 /// they cannot be ordered and the honest answer is to reject.
 fn innermost_host(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     rings: &[Vec<combinatorics::RingEdge>],
     hosts: &[usize],
@@ -1856,7 +1856,7 @@ fn emit_faces(
     labels: &[Label],
     cells: &[Cell],
     segs: &[MergedSeg],
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
 ) -> Vec<LocalFace> {
@@ -1946,7 +1946,7 @@ fn trace_result_faces(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceInfo],
     plane_ix: &[usize],
     n_a: usize,
@@ -2578,7 +2578,7 @@ mod tests {
     }
 
     /// Point of a canon triple, for asserting geometry by hand.
-    fn pt(t: [usize; 3], jd: &Judge<'_, PlaneGeom>) -> [f64; 3] {
+    fn pt(t: [usize; 3], jd: &Judge<'_, WorkingPlane>) -> [f64; 3] {
         let planes = jd.planes;
         three_planes(
             &planes[t[0]].plane,

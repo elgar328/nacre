@@ -204,7 +204,7 @@ impl Plane {
     /// caller that reads only the direction.
     ///
     /// ★ **Parallel, not co-directed.** A class's stored normal is allowed to *oppose* its witness
-    /// triangle's; `nacre_ops`' `PlaneGeom::frame_sign` records exactly that, and the predicates
+    /// triangle's; `nacre_ops`' `WorkingPlane::frame_sign` records exactly that, and the predicates
     /// that care carry the convention. Demanding agreement of direction here would refuse planes
     /// that agree perfectly about *where* they are.
     ///

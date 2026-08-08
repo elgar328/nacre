@@ -227,7 +227,7 @@ pub fn plane_spanned_by(c: [f64; 4], tri: [[f64; 3]; 3]) -> bool {
 /// only the direction.
 ///
 /// ★ **Parallel, not co-directed.** A stored normal is allowed to oppose its witness triangle's;
-/// that relation is recorded separately (`nacre_ops`' `PlaneGeom::frame_sign`) and the predicates
+/// that relation is recorded separately (`nacre_ops`' `WorkingPlane::frame_sign`) and the predicates
 /// that care carry the convention. Demanding agreement of *direction* here would refuse planes
 /// that agree perfectly about where they are.
 ///

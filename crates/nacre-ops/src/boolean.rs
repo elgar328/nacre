@@ -6,7 +6,7 @@
 //! [`unify_coplanar_faces`] to build and clean the shells (a legal module cycle).
 
 use crate::combinatorics;
-use crate::planes::{PlaneGeom, uf_find};
+use crate::planes::{WorkingPlane, uf_find};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
 use nacre_cip::predicate::{Evidence, Notes, Site};
@@ -358,7 +358,7 @@ pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 /// edge) — an honest reject, never a silent wrong label. Routed from `assemble_fuse_cut`'s
 /// per-component outward test by [`any_rotated`](crate::tolerant) (cell 3c-vi-b).
 fn component_is_outward_tol(
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     comp: &[&LocalFace],
 ) -> Result<bool, BoolError> {
     let planes = jd.planes;
@@ -545,7 +545,7 @@ impl Ring {
     /// This ring's edges, ready for the exact predicates.
     pub(crate) fn edges(
         &self,
-        jd: &Judge<'_, PlaneGeom>,
+        jd: &Judge<'_, WorkingPlane>,
         p: usize,
     ) -> Result<Vec<combinatorics::RingEdge>, BoolError> {
         combinatorics::ring_edges_with_walls(jd, p, &seam_ring(&self.nodes), &self.walls)
@@ -569,7 +569,7 @@ pub(crate) fn assemble_fuse_cut(
     model: &mut Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],
     faces: &[LocalFace],
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
@@ -942,7 +942,7 @@ fn norm_edge(a: Node, b: Node) -> (Node, Node) {
 /// unique).
 pub(crate) fn unify_coplanar_faces(
     faces: Vec<LocalFace>,
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
     // One plane class, one flip.
@@ -1041,7 +1041,7 @@ type RegionRings = (Ring, Vec<Ring>);
 /// the holes that belong to it.
 fn merge_component(
     group: &[&LocalFace],
-    jd: &Judge<'_, PlaneGeom>,
+    jd: &Judge<'_, WorkingPlane>,
 ) -> Result<Vec<RegionRings>, BoolError> {
     // 1. Collect directed edges **with their walls**. A repeat in the same direction means two
     //    faces claim the same side.

@@ -927,7 +927,7 @@ fn push_line_edge(
 /// ★★ **The cache faces `−normal`, and that is a convention with two independent reasons.**
 /// (i) It is the sense a base cap gets: `extrude` pushes `−plane.normal()` and `Model::new` seeds
 /// the world planes along `−axis`; S9 measured that seeding `+axis` instead flipped 781 stored
-/// cap normals for nothing. (ii) `PlaneGeom::frame_sign` records whether a plane's *stored* normal
+/// cap normals for nothing. (ii) `WorkingPlane::frame_sign` records whether a plane's *stored* normal
 /// agrees with its root face's outward normal, and a base cap's outward is `−N` — so `−normal`
 /// leaves that sign exactly where it is today. A datum that later becomes a base cap therefore
 /// interns with `flipped == false` and nothing downstream has to compensate.
