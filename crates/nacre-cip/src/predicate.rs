@@ -873,7 +873,8 @@ fn single_rotation(def: &[WitnessPoint; 3]) -> Option<OneRotation> {
             MoveNode::Translate { .. }
             | MoveNode::Mirror { .. }
             | MoveNode::Frame { .. }
-            | MoveNode::FrameWide(_) => {
+            | MoveNode::FrameWide(_)
+            | MoveNode::FrameThrough(_) => {
                 return None;
             }
         }
@@ -955,7 +956,9 @@ fn single_axis_motion(
             // A frame *is* a rotation, and it does act on a difference as its pure linear part —
             // but this shortcut's answer is "which coordinate axis is preserved", and a frame
             // (narrow or wide) preserves none. Escalating is the honest miss.
-            MoveNode::Frame { .. } | MoveNode::FrameWide(_) => return None,
+            MoveNode::Frame { .. } | MoveNode::FrameWide(_) | MoveNode::FrameThrough(_) => {
+                return None; // a judged frame is a rotation this shortcut cannot state, like Frame
+            }
         };
         if *axis.get_or_insert(*a) != *a {
             return None;

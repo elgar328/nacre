@@ -237,11 +237,6 @@ impl HpApprox {
     /// A positive lower bound on this interval's true magnitude, or `None` when it may reach
     /// zero — [`lb`]'s exponent floor on the computed value, minus the radius, in the
     /// rounded-toward-zero direction [`Mag::minus`] exists for.
-    #[allow(
-        dead_code,
-        reason = "the judged-frame realization (next commit of this stage) is the consumer; \
-                  locked here by the exact-route and corner differentials below"
-    )]
     fn mag_lo(&self) -> Option<Mag> {
         lb(&self.value)?.minus(self.error)
     }
@@ -259,11 +254,6 @@ impl HpApprox {
     /// `a/b − â/b̂ = (a−â)/b + (â/b̂)·(b̂−b)/b`, so the true-input error is at most
     /// `(r_a + |â/b̂|·r_b) / L`, and `|â/b̂| ≤ |q̂| + round_off`. `None` when the divisor's
     /// interval may reach zero — the caller climbs or rejects by name, never guesses.
-    #[allow(
-        dead_code,
-        reason = "the judged-frame realization (next commit of this stage) is the consumer; \
-                  locked here by the exact-route and corner differentials below"
-    )]
     pub fn div(&self, b: &HpApprox, prec: usize) -> Option<HpApprox> {
         let lo = b.mag_lo()?;
         let value = self.value.div(&b.value, prec, HP_RM);
@@ -285,11 +275,6 @@ impl HpApprox {
     ///
     /// `None` when `x` may reach zero or is not positive — a degenerate normal has no direction,
     /// and the caller says so by name.
-    #[allow(
-        dead_code,
-        reason = "the judged-frame realization (next commit of this stage) is the consumer; \
-                  locked here by the exact-route and corner differentials below"
-    )]
     pub fn inv_sqrt(&self, prec: usize) -> Option<HpApprox> {
         if !self.value.is_positive() {
             return None;

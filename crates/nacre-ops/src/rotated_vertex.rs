@@ -58,6 +58,7 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
         MoveNode::Mirror { axis, offset } => Some(q.mirror(*axis, *offset)),
         MoveNode::Frame { frame } => q.frame(*frame),
         MoveNode::FrameWide(f) => q.frame_wide(f),
+        MoveNode::FrameThrough(f) => q.frame_through(f),
     })
 }
 
@@ -444,7 +445,8 @@ mod tests {
                 MoveNode::Translate { .. }
                 | MoveNode::Mirror { .. }
                 | MoveNode::Frame { .. }
-                | MoveNode::FrameWide(_) => None,
+                | MoveNode::FrameWide(_)
+                | MoveNode::FrameThrough(_) => None,
             })
             .collect();
         assert_eq!(axes, vec![Axis::Z, Axis::X]);

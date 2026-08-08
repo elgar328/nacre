@@ -100,6 +100,17 @@ pub enum MoveNode {
     ///
     /// ★ **Proper** (`det = +1`), like [`MoveNode::Frame`].
     FrameWide(WideFrame),
+    /// [`MoveNode::Frame`] for a plane that has **no name at all** — a mixed-frame datum, whose
+    /// exact world coefficients are irrational so neither exact vessel can hold them. The node
+    /// carries the plane's three defining points instead (exact each in its own frame), and the
+    /// basis is *judged*: derived as intervals at whatever precision the realization runs at.
+    /// See [`FrameThrough`].
+    ///
+    /// ★ **Proper** (`det = +1`) — `v̂ = ŵ × û` by construction, like the other frame nodes, so
+    /// [`chain_parity`]'s mirrors-only count stays correct.
+    ///
+    /// Boxed: the three points dwarf every other variant.
+    FrameThrough(Box<FrameThrough>),
 }
 
 /// The exact data of a wide sketch frame — [`nacre_scalar::PlaneFrame`]'s arbitrary-precision
@@ -282,6 +293,124 @@ fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigI
     cs
 }
 
+/// The judged frame of a plane that has **no name** — the canonical placement derived from the
+/// plane through three exact points whose motion chains need not agree (truth-and-cache open
+/// item 16, wall 1).
+///
+/// [`MoveNode::Frame`] and [`MoveNode::FrameWide`] both demand exact coefficients (`Rat`,
+/// `BigInt`); a mixed-frame datum plane has neither, because its exact world coefficients are
+/// irrational. What it does have is three defining points that are each exact **in their own
+/// frame** — so the coefficients exist as *intervals* at any precision ([`plane_hp`] realizes
+/// each point independently and never required the chains to agree), and the canonical
+/// placement (foot of perpendicular + arbitrary axis — the frozen spec) is derived from those
+/// intervals with its error carried, never assumed away.
+///
+/// ★ `flip` is the same measured direction every frame node carries, spent the same way: the
+/// four coefficients are negated before the basis is derived. There is no canonical-sign field
+/// beside it — the canonical origin is sign-and-scale invariant (the doc's own words), the axes
+/// only read direction, so one global negation is the entire freedom and `flip` is its name.
+///
+/// ★★ `vertical` is the arbitrary-axis branch (`ŷ×n` instead of `ẑ×n`), **decided once at the
+/// fixed rung and stored**. Deciding per realization precision could change the basis between
+/// the f64 cache and an escalation, and a frame that changes basis with precision is not a
+/// frame; the fixed-rung realization is deterministic, so the same statement always decides the
+/// same way. For a *named* plane the branch reads `n₀ = n₁ = 0` exactly; here exact zero is not
+/// provable, so the branch is "provably usable" instead — `|ẑ×n|²` bounded away from zero — and
+/// a plane that can prove neither branch is refused by the producer, by name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrameThrough {
+    pub points: [WitnessPoint; 3],
+    pub vertical: bool,
+    pub flip: bool,
+}
+
+impl FrameThrough {
+    /// The fixed rung the branch decision and the f64 cache realize at — the ladder's first
+    /// rung, the same 128 bits [`WitnessPoint::frame_wide`] narrows from.
+    const RUNG: usize = 128;
+
+    /// Build the node: decide the branch, and prove the whole basis stands at the fixed rung.
+    ///
+    /// `None` when no branch's in-plane axis can be bounded away from zero, or when the basis
+    /// derivation fails there (a normal that may vanish — the points may be collinear — or an
+    /// origin denominator that may reach zero). ★ The caller must reject **by name and must not
+    /// claim degeneracy**: none of these are proofs that the plane is degenerate, only failures
+    /// to prove it healthy, and `CollinearVertices` would be a lie here.
+    pub fn of(points: [WitnessPoint; 3], flip: bool) -> Option<FrameThrough> {
+        let p = Self::RUNG;
+        let c = plane_hp(&points[0], &points[1], &points[2], p);
+        let sq_sum = |a: &HpApprox, b: &HpApprox| a.mul(a, p).add(&b.mul(b, p), p);
+        // |ẑ×n|² = n₀²+n₁², |ŷ×n|² = n₂²+n₀². `flip` negates every coefficient, which no
+        // squared length can see, so the decision is flip-invariant by construction.
+        let proven = |x: &HpApprox| x.sign() == Some(true);
+        let vertical = if proven(&sq_sum(&c[0], &c[1])) {
+            false
+        } else if proven(&sq_sum(&c[2], &c[0])) {
+            true
+        } else {
+            return None;
+        };
+        let f = FrameThrough {
+            points,
+            vertical,
+            flip,
+        };
+        // The whole basis must stand at the deciding rung — normal length and origin included —
+        // so that the realization methods' `None` arms are genuinely unreachable.
+        judged_basis(&f, p)?;
+        Some(f)
+    }
+}
+
+/// The judged frame's basis at `prec` bits: `[origin, û, v̂, ŵ]`, every component carrying the
+/// error its own derivation incurred. The one place the derivation is spelled, so the f64 cache
+/// ([`WitnessPoint::frame_through`]) and the escalation ([`WitnessPoint::hp_coord`]) cannot
+/// disagree about what the frame *is*.
+fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpApprox; 3]; 4]> {
+    let zero = || HpApprox::exact(BigFloat::from_f64(0.0, prec));
+    let neg = |x: &HpApprox| zero().sub(x, prec);
+    let mut c = plane_hp(&f.points[0], &f.points[1], &f.points[2], prec);
+    if f.flip {
+        for k in &mut c {
+            *k = neg(k);
+        }
+    }
+    let [n0, n1, n2, d] = c;
+    let u_raw = if f.vertical {
+        [n2.clone(), zero(), neg(&n0)] // ŷ × n — the vertical-normal branch
+    } else {
+        [neg(&n1), n0.clone(), zero()] // ẑ × n
+    };
+    let n = [n0, n1, n2];
+    let dot = |a: &[HpApprox; 3], b: &[HpApprox; 3]| {
+        a[0].mul(&b[0], prec)
+            .add(&a[1].mul(&b[1], prec), prec)
+            .add(&a[2].mul(&b[2], prec), prec)
+    };
+    let uu = dot(&u_raw, &u_raw);
+    let nn = dot(&n, &n);
+    let iu = uu.inv_sqrt(prec)?;
+    let iw = nn.inv_sqrt(prec)?;
+    let scale = |v: &[HpApprox; 3], s: &HpApprox| [0, 1, 2].map(|k| v[k].mul(s, prec));
+    let u = scale(&u_raw, &iu);
+    let w = scale(&n, &iw);
+    // v̂ = ŵ × û — right-handed by construction, so the node is proper (`det = +1`) and
+    // contributes nothing to a chain's mirror parity, like the other two frame nodes.
+    let v = [0, 1, 2].map(|k| {
+        let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+        w[i].mul(&u[j], prec).sub(&w[j].mul(&u[i], prec), prec)
+    });
+    // Foot of the perpendicular from the world origin, `(−d·n) / (n·n)` — the frozen canonical
+    // convention, through the interval division that exists for exactly this quotient.
+    let nd = neg(&d);
+    let origin = [
+        nd.mul(&n[0], prec).div(&nn, prec)?,
+        nd.mul(&n[1], prec).div(&nn, prec)?,
+        nd.mul(&n[2], prec).div(&nn, prec)?,
+    ];
+    Some([origin, u, v, w])
+}
+
 /// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
 /// history). `base` + `chain` are the exact **definition** (never lost); `coord` is
 /// the f64 realization (a cache), and `tol` bounds its error as a **direction-wise
@@ -292,6 +421,7 @@ fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigI
 pub struct WitnessPoint {
     pub base: [Rat; 3],
     pub chain: HpRc<[MoveNode]>,
+    // (equality is definitional — see the `PartialEq` impl below the struct)
     pub coord: [f64; 3],
     pub tol: [f64; 3],
     /// Memoized `hp_coord` at the boolean's chosen precision — the astro-float realization
@@ -304,6 +434,19 @@ pub struct WitnessPoint {
     /// `Arc<OnceLock>` (parallel) vs `Rc<OnceCell>` (serial) choice.
     hp: HpCell,
 }
+
+/// **Definitional equality — `base` and `chain`, nothing else.** `coord`/`tol`/`hp` are caches,
+/// and realization is a pure function of the definition (path independence is this file's root
+/// soundness argument), so two points with equal definitions cannot honestly disagree in their
+/// caches. The consumer this exists for is [`shared_base`]'s whole-node chain comparison — it
+/// declares two motions to be *one* motion, a question about definitions, never about caches —
+/// which [`FrameThrough`] joins by carrying points inside a node.
+impl PartialEq for WitnessPoint {
+    fn eq(&self, o: &Self) -> bool {
+        self.base == o.base && *self.chain == *o.chain
+    }
+}
+impl Eq for WitnessPoint {}
 
 /// **How far a rational's f64 image sits from the rational** — measured at high precision, `0`
 /// when the value is exactly representable.
@@ -720,6 +863,45 @@ impl WitnessPoint {
         Some(self)
     }
 
+    /// [`WitnessPoint::frame`] for a [`FrameThrough`] (open item 16) — the judged basis realized
+    /// at the fixed rung, narrowed to `(value, error)` pairs, then **the same propagation as
+    /// [`WitnessPoint::frame_wide`]**: the incoming tol is turned by the basis, the basis's own
+    /// realization error is scaled by the coordinates, and the combination charges its rounding.
+    ///
+    /// `None` is unreachable for a node built by [`FrameThrough::of`] — it proved this exact
+    /// derivation at this exact rung — and stays an `Option` so that "unreachable" is a fact
+    /// about the producer rather than an invariant this method asserts across a crate boundary.
+    ///
+    /// ★ Cost note: the node's points share their `hp` cells by `Rc`, so the cos/sin of their
+    /// chains realize once per node, not once per applied point — what recurs per point is
+    /// arithmetic, the same acceptance [`WitnessPoint::frame_wide`] records.
+    pub fn frame_through(mut self, f: &FrameThrough) -> Option<Self> {
+        let basis = judged_basis(f, FrameThrough::RUNG)?;
+        let [o, u, v, w] = basis.map(|row| row.map(|c| narrow_hp(&c)));
+        let p = self.coord;
+        let t = self.tol;
+        for k in 0..3 {
+            let (uh, eu) = u[k];
+            let (vh, ev) = v[k];
+            let (wh, ew) = w[k];
+            let (oh, eo) = o[k];
+            let terms = p[0] * uh + p[1] * vh + p[2] * wh;
+            let carried = uh.abs() * t[0] + vh.abs() * t[1] + wh.abs() * t[2];
+            let realized = p[0].abs() * eu + p[1].abs() * ev + p[2].abs() * ew;
+            let arith = eo
+                + 3.0
+                    * f64::EPSILON
+                    * (oh.abs() + (p[0] * uh).abs() + (p[1] * vh).abs() + (p[2] * wh).abs());
+            self.coord[k] = oh + terms;
+            self.tol[k] = carried + realized + arith;
+        }
+        let mut nodes = self.chain.to_vec();
+        nodes.push(MoveNode::FrameThrough(Box::new(f.clone())));
+        self.chain = HpRc::from(nodes);
+        self.hp = HpCell::default();
+        Some(self)
+    }
+
     /// The coordinate realized at `prec` bits from the **definition** (base rotated
     /// through the chain, each node about its pivot) — path-independent ground truth /
     /// escalation realization. The result is memoized in
@@ -846,6 +1028,26 @@ impl WitnessPoint {
                         o[k].add(&p[0].mul(&uh[k], prec), prec)
                             .add(&p[1].mul(&vh[k], prec), prec)
                             .add(&p[2].mul(&wh[k], prec), prec)
+                    });
+                }
+                // The judged frame — the same derivation the f64 rung took, at this precision.
+                MoveNode::FrameThrough(f) => {
+                    // Construction proved the derivation at the fixed rung, and every input
+                    // radius shrinks as `prec` grows (they are the points' own realization
+                    // errors), so the primary call is expected to succeed; the rung fallback
+                    // keeps the arm total without inventing a bound if that expectation is ever
+                    // wrong — a 128-bit basis is a *sound*, merely wider, interval for the same
+                    // true frame.
+                    let Some(basis) =
+                        judged_basis(f, prec).or_else(|| judged_basis(f, FrameThrough::RUNG))
+                    else {
+                        continue; // unreachable — `FrameThrough::of` proved the rung derivation
+                    };
+                    let [o, u, v, w] = basis;
+                    p = [0, 1, 2].map(|k| {
+                        o[k].add(&p[0].mul(&u[k], prec), prec)
+                            .add(&p[1].mul(&v[k], prec), prec)
+                            .add(&p[2].mul(&w[k], prec), prec)
                     });
                 }
             }
@@ -2873,6 +3075,190 @@ mod tests {
     /// `GT` is deep enough that it does not enter these comparisons.)
     fn abs_err(f: f64, truth: &HpApprox, gt: usize) -> f64 {
         bf_mag(&BigFloat::from_f64(f, gt).sub(&truth.value, gt, HP_RM).abs())
+    }
+
+    /// A frame's realized basis `[origin, û, v̂, ŵ]`, probed the way `frame_world_basis` probes —
+    /// apply to the world origin and the three unit points, subtract.
+    fn probe_through(f: &FrameThrough) -> [[f64; 3]; 4] {
+        let ap = |c: [f64; 3]| {
+            WitnessPoint::exact(c)
+                .expect("probe coords are f64")
+                .frame_through(f)
+                .expect("a constructed node realizes")
+                .coord
+        };
+        let o = ap([0.0, 0.0, 0.0]);
+        let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        [
+            o,
+            sub(ap([1.0, 0.0, 0.0]), o),
+            sub(ap([0.0, 1.0, 0.0]), o),
+            sub(ap([0.0, 0.0, 1.0]), o),
+        ]
+    }
+
+    fn probe_named(pf: nacre_scalar::PlaneFrame) -> [[f64; 3]; 4] {
+        let ap = |c: [f64; 3]| {
+            WitnessPoint::exact(c)
+                .expect("probe coords are f64")
+                .frame(pf)
+                .expect("a named frame realizes")
+                .coord
+        };
+        let o = ap([0.0, 0.0, 0.0]);
+        let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        [
+            o,
+            sub(ap([1.0, 0.0, 0.0]), o),
+            sub(ap([0.0, 1.0, 0.0]), o),
+            sub(ap([0.0, 0.0, 1.0]), o),
+        ]
+    }
+
+    /// ★ **The two-road differential that locks the judged frame** (`three_planes_big`'s
+    /// pattern): a plane both roads can describe — world-rational points, so the narrow road has
+    /// exact canonical coefficients — must get the same basis from `plane_frame_default` +
+    /// `plane_frame_named` (exact route) and from [`FrameThrough`] (judged route), within the
+    /// judged route's own stated error. The fixture's raw normal is canonical already (first
+    /// coefficient positive, content 1), so `flip: false` compares like for like.
+    #[test]
+    fn the_judged_frame_agrees_with_the_named_road() {
+        // (0,0,1), (1,0,0), (0,1,1): n = (1,0,1), d = −1 — canonical letter for letter.
+        let pts = || {
+            [
+                WitnessPoint::exact([0.0, 0.0, 1.0]).unwrap(),
+                WitnessPoint::exact([1.0, 0.0, 0.0]).unwrap(),
+                WitnessPoint::exact([0.0, 1.0, 1.0]).unwrap(),
+            ]
+        };
+        let c = [ri(1, 1), ri(0, 1), ri(1, 1), ri(-1, 1)];
+        let (origin, ref_dir) = nacre_scalar::plane_frame_default(c).expect("derivable");
+        let pf = nacre_scalar::plane_frame_named(c, origin, ref_dir).expect("narrow frame");
+        let narrow = probe_named(pf);
+
+        let ft = FrameThrough::of(pts(), false).expect("a healthy plane frames");
+        assert!(!ft.vertical, "n = (1,0,1) is nowhere near vertical");
+        let judged = probe_through(&ft);
+
+        for (row, (n, j)) in narrow.iter().zip(&judged).enumerate() {
+            for k in 0..3 {
+                assert!(
+                    (n[k] - j[k]).abs() < 1e-9,
+                    "row {row} component {k}: narrow {} vs judged {}",
+                    n[k],
+                    j[k]
+                );
+            }
+        }
+
+        // ★ The negative control: `flip` negates all four coefficients, which must flip ŵ and û
+        // together and leave v̂ — `Frame`'s own documented semantics, reproduced by the judge.
+        let flipped = probe_through(&FrameThrough::of(pts(), true).expect("flip frames too"));
+        for k in 0..3 {
+            assert!((flipped[1][k] + judged[1][k]).abs() < 1e-9, "û flips");
+            assert!((flipped[2][k] - judged[2][k]).abs() < 1e-9, "v̂ stays");
+            assert!((flipped[3][k] + judged[3][k]).abs() < 1e-9, "ŵ flips");
+        }
+    }
+
+    /// The vertical branch: `ẑ×n` vanishes **exactly** for a horizontal plane (exact inputs make
+    /// the interval a true zero), so the constructor must take `ŷ×n` — and agree with the narrow
+    /// road, whose branch condition is the exact `n₀ = n₁ = 0`.
+    #[test]
+    fn the_judged_frame_takes_the_vertical_branch_where_the_named_road_does() {
+        let pts = [
+            WitnessPoint::exact([0.0, 0.0, 5.0]).unwrap(),
+            WitnessPoint::exact([1.0, 0.0, 5.0]).unwrap(),
+            WitnessPoint::exact([0.0, 1.0, 5.0]).unwrap(),
+        ];
+        let ft = FrameThrough::of(pts, false).expect("z = 5 frames");
+        assert!(ft.vertical, "a horizontal plane must take ŷ×n");
+        let judged = probe_through(&ft);
+
+        let c = [ri(0, 1), ri(0, 1), ri(1, 1), ri(-5, 1)];
+        let (origin, ref_dir) = nacre_scalar::plane_frame_default(c).expect("derivable");
+        let pf = nacre_scalar::plane_frame_named(c, origin, ref_dir).expect("narrow frame");
+        let narrow = probe_named(pf);
+        for (row, (n, j)) in narrow.iter().zip(&judged).enumerate() {
+            for k in 0..3 {
+                assert!(
+                    (n[k] - j[k]).abs() < 1e-9,
+                    "row {row} component {k}: narrow {} vs judged {}",
+                    n[k],
+                    j[k]
+                );
+            }
+        }
+    }
+
+    /// A definition that cannot prove a basis is `None` from the constructor — collinear points
+    /// have a normal that is exactly zero, so neither branch's squared length clears zero. The
+    /// producer's duty (reject **by name**, and not as a proof of collinearity) is ops'; here
+    /// the contract is only that no frame comes back.
+    #[test]
+    fn a_definition_that_cannot_prove_a_basis_is_refused() {
+        let pts = [
+            WitnessPoint::exact([0.0, 0.0, 0.0]).unwrap(),
+            WitnessPoint::exact([1.0, 1.0, 1.0]).unwrap(),
+            WitnessPoint::exact([2.0, 2.0, 2.0]).unwrap(),
+        ];
+        assert!(
+            FrameThrough::of(pts, false).is_none(),
+            "collinear points name no plane and must not frame"
+        );
+    }
+
+    /// ★ The point of the whole node: three defining points with **different** chains — the
+    /// population no exact frame can serve. The f64 cache must sit within its own stated tol of
+    /// the high-precision realization, and construction must be deterministic (same statement,
+    /// same branch, bit-identical realization — replay's requirement).
+    #[test]
+    fn a_heterogeneous_definition_realizes_within_its_stated_tol() {
+        const GT: usize = 384;
+        let deg = |d: i128| Angle::from_deg(ri(d, 1)).unwrap();
+        let zero3 = [ri(0, 1), ri(0, 1), ri(0, 1)];
+        let pts = || {
+            [
+                WitnessPoint::at([ri(2, 1), ri(0, 1), ri(0, 1)]).rotate_about(
+                    Axis::Z,
+                    deg(37),
+                    zero3,
+                ),
+                WitnessPoint::exact([5.0, 1.0, 0.0]).unwrap(),
+                WitnessPoint::at([ri(0, 1), ri(3, 1), ri(1, 1)]).rotate_about(
+                    Axis::X,
+                    deg(22),
+                    zero3,
+                ),
+            ]
+        };
+        let ft = FrameThrough::of(pts(), false).expect("a mixed-chain plane frames");
+        let q = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
+            .frame_through(&ft)
+            .expect("realizes");
+        let hp = q.hp_coord(GT);
+        for (k, h) in hp.iter().enumerate() {
+            let err = abs_err(q.coord[k], h, GT);
+            assert!(
+                err <= q.tol[k].max(1e-300),
+                "axis {k}: cache off the realization by {err:e}, stated tol {:e}",
+                q.tol[k]
+            );
+            assert!(
+                q.tol[k] > 0.0,
+                "a judged frame's image carries honest positive tol"
+            );
+        }
+
+        // Determinism: the same statement builds the same node (definitional equality — the
+        // `PartialEq` `shared_base` relies on) and realizes bit-identically.
+        let ft2 = FrameThrough::of(pts(), false).expect("again");
+        assert_eq!(ft, ft2, "same statement, same node");
+        let q2 = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
+            .frame_through(&ft2)
+            .expect("realizes");
+        assert_eq!(q.coord, q2.coord, "same statement, same realization");
+        assert_eq!(q.tol, q2.tol, "and the same stated error");
     }
 
     /// **The shared-motion shortcut must answer the same question a reflection is in the chain.**
