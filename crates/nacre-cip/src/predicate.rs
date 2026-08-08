@@ -246,14 +246,14 @@ pub struct Judge<'a, W> {
     /// arrangement's crossing collector hands in the same three definitions hundreds of times.
     ///
     /// ★ **Why it is here and not on the witness, where [`Witness::tri_pt3`] says caches go.**
-    /// `Iv` is `pub(crate)`, and so is the module it lives in. A `PlaneWitness` method returning
-    /// `[Iv; 4]` would make the interval type — the precision kernel's working representation —
+    /// `Approx` is `pub(crate)`, and so is the module it lives in. A `PlaneWitness` method returning
+    /// `[Approx; 4]` would make the interval type — the precision kernel's working representation —
     /// part of this crate's public API, for every consumer, forever. `frame_sign` and `coeffs` are
     /// `i8` and `[f64; 4]`, so they *do* live on the witness; this one cannot follow them.
     ///
     /// Two workers racing to fill one cell compute the same value, so the answer does not depend on
     /// who won — the same argument `HpCell` rests on.
-    iv: Vec<IvCell>,
+    iv: Vec<ApproxCell>,
     /// ★★★ **Whether each plane's stored coefficients and its witness triangle describe the same
     /// plane** — the condition under which the exact route may be taken.
     ///
@@ -272,9 +272,9 @@ pub struct Judge<'a, W> {
 /// Lazily-filled cell for one plane's interval coefficients — `OnceLock` under `parallel` because
 /// the boolean hands every worker the same `&Judge`, `OnceCell` otherwise.
 #[cfg(feature = "parallel")]
-type IvCell = std::sync::OnceLock<[crate::kernel::interval::Iv; 4]>;
+type ApproxCell = std::sync::OnceLock<[crate::kernel::interval::Approx; 4]>;
 #[cfg(not(feature = "parallel"))]
-type IvCell = std::cell::OnceCell<[crate::kernel::interval::Iv; 4]>;
+type ApproxCell = std::cell::OnceCell<[crate::kernel::interval::Approx; 4]>;
 
 #[cfg(feature = "parallel")]
 type OkCell = std::sync::OnceLock<bool>;
@@ -287,7 +287,7 @@ impl<'a, W> Judge<'a, W> {
             planes,
             standard,
             notes,
-            iv: (0..planes.len()).map(|_| IvCell::new()).collect(),
+            iv: (0..planes.len()).map(|_| ApproxCell::new()).collect(),
             coeff_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
             normal_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
         }
@@ -316,10 +316,10 @@ impl<'a, W> Judge<'a, W> {
 impl<W: Witness> Judge<'_, W> {
     /// Plane `k`'s interval coefficients, built once and copied thereafter.
     ///
-    /// Returns a copy rather than a borrow because `[Iv; 4]` is four pairs of `f64` — cheaper to
+    /// Returns a copy rather than a borrow because `[Approx; 4]` is four pairs of `f64` — cheaper to
     /// move than to keep a reference alive across the judge call, and it keeps the cell's borrow
     /// from outliving the lookup.
-    fn plane_iv(&self, k: usize) -> [crate::kernel::interval::Iv; 4] {
+    fn plane_iv(&self, k: usize) -> [crate::kernel::interval::Approx; 4] {
         *self.iv[k].get_or_init(|| {
             let d = plane_def(self.planes, k);
             crate::kernel::frame3::plane_iv(&d[0], &d[1], &d[2])
@@ -574,11 +574,11 @@ pub struct ImplicitPoint<'a, W> {
     cramer: std::cell::OnceCell<CramerParts>,
 }
 
-/// `(D, Dvec)`. ★ Kept out of every public signature because [`crate::kernel::interval::Iv`] is
+/// `(D, Dvec)`. ★ Kept out of every public signature because [`crate::kernel::interval::Approx`] is
 /// `pub(crate)` and must stay so — see [`Judge`]'s `iv` field for why.
 type CramerParts = (
-    crate::kernel::interval::Iv,
-    [crate::kernel::interval::Iv; 3],
+    crate::kernel::interval::Approx,
+    [crate::kernel::interval::Approx; 3],
 );
 
 impl<W: PlaneWitness> ImplicitPoint<'_, W> {

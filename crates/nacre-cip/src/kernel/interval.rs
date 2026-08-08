@@ -1,7 +1,7 @@
 //! The two intervals the judgment ladder runs on — **one machine at two precisions**.
 //!
-//! [`Iv`] is the `f64` filter: a value with an error radius, propagated through every operation,
-//! whose sign is only reported when the interval clears zero. [`HpIv`] is the same thing in
+//! [`Approx`] is the `f64` filter: a value with an error radius, propagated through every operation,
+//! whose sign is only reported when the interval clears zero. [`HpApprox`] is the same thing in
 //! astro-float, differing in exactly one place — the per-operation rounding is `2⁻ᵖʳᵉᶜ` instead of
 //! `2·ε`.
 //!
@@ -48,17 +48,17 @@ pub(crate) fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
 /// The integers themselves are exact — [`rat_to_big`] feeds them in as `i128` — so the only
 /// error is the division, and even that vanishes when it terminates: a power-of-two denominator
 /// with a numerator inside `prec` bits is exact, and then the radius is genuinely zero.
-pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpIv {
-    let mid = rat_to_big(r, prec);
+pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpApprox {
+    let value = rat_to_big(r, prec);
     let (n, d) = (r.numer(), r.denom()); // `d > 0` after reduction
     let n_bits = (128 - n.unsigned_abs().leading_zeros()) as usize;
     if d & (d - 1) == 0 && n_bits <= prec {
-        return HpIv::exact(mid); // a terminating division: a power-of-two denominator
+        return HpApprox::exact(value); // a terminating division: a power-of-two denominator
     }
     // The integers enter exactly (see `rat_to_big`), so the only error left is the division's
     // own rounding.
-    let rad = ub(&mid).times(Mag::pow2(-(prec as i64)));
-    HpIv::new(mid, rad)
+    let error = ub(&value).times(Mag::pow2(-(prec as i64)));
+    HpApprox::new(value, error)
 }
 
 /// An arbitrary-precision integer as an **exact** interval — the wide-frame (S4) entry point.
@@ -66,8 +66,8 @@ pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpIv {
 /// [`nacre_scalar::bigint_to_bigfloat`] converts at the integer's own bit length, so the value
 /// enters whole and the radius is genuinely zero; downstream operations charge their own
 /// rounding, exactly as [`rat_to_hp`]'s exact branch does.
-pub(crate) fn bigint_to_hp(x: &num_bigint::BigInt, prec: usize) -> HpIv {
-    HpIv::exact(nacre_scalar::bigint_to_bigfloat(x, prec))
+pub(crate) fn bigint_to_hp(x: &num_bigint::BigInt, prec: usize) -> HpApprox {
+    HpApprox::exact(nacre_scalar::bigint_to_bigfloat(x, prec))
 }
 
 /// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero).
@@ -79,41 +79,47 @@ pub(crate) fn bf_mag(bf: &BigFloat) -> f64 {
     }
 }
 
-/// A value with a symmetric error radius (`mid ± rad`, `rad ≥ 0`). Arithmetic keeps
-/// `rad` a sound upper bound (worst case), plus a per-op f64-rounding inflation.
+/// A value with a symmetric error radius (`value ± error`, `error ≥ 0`). Arithmetic keeps
+/// `error` a sound upper bound (worst case), plus a per-op f64-rounding inflation.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Iv {
-    pub mid: f64,
-    pub rad: f64,
+pub(crate) struct Approx {
+    pub value: f64,
+    pub error: f64,
 }
 
-impl Iv {
-    pub fn new(mid: f64, rad: f64) -> Self {
-        Iv { mid, rad }
+impl Approx {
+    pub fn new(value: f64, error: f64) -> Self {
+        Approx { value, error }
     }
     /// `2·ε` per operation, four times the `ε/2` that round-to-nearest can cost — derived, not
     /// picked, and the same charge in `add` and `mul`.
-    pub fn sub(self, o: Iv) -> Iv {
-        let mid = self.mid - o.mid;
-        Iv::new(mid, self.rad + o.rad + 2.0 * f64::EPSILON * mid.abs())
+    pub fn sub(self, o: Approx) -> Approx {
+        let value = self.value - o.value;
+        Approx::new(
+            value,
+            self.error + o.error + 2.0 * f64::EPSILON * value.abs(),
+        )
     }
-    pub fn add(self, o: Iv) -> Iv {
-        let mid = self.mid + o.mid;
-        Iv::new(mid, self.rad + o.rad + 2.0 * f64::EPSILON * mid.abs())
+    pub fn add(self, o: Approx) -> Approx {
+        let value = self.value + o.value;
+        Approx::new(
+            value,
+            self.error + o.error + 2.0 * f64::EPSILON * value.abs(),
+        )
     }
-    pub fn mul(self, o: Iv) -> Iv {
-        let mid = self.mid * o.mid;
+    pub fn mul(self, o: Approx) -> Approx {
+        let value = self.value * o.value;
         // Worst-case product radius `|a|·rad_b + |b|·rad_a + rad_a·rad_b`, plus the
         // f64 rounding of the product itself.
-        let rad = self.mid.abs() * o.rad + o.mid.abs() * self.rad + self.rad * o.rad;
-        Iv::new(mid, rad + 2.0 * f64::EPSILON * mid.abs())
+        let error = self.value.abs() * o.error + o.value.abs() * self.error + self.error * o.error;
+        Approx::new(value, error + 2.0 * f64::EPSILON * value.abs())
     }
     /// `Some(true)` if definitely positive, `Some(false)` if definitely negative,
     /// `None` if the interval straddles 0 (escalate).
     pub fn sign(self) -> Option<bool> {
-        if self.mid > self.rad {
+        if self.value > self.error {
             Some(true)
-        } else if self.mid < -self.rad {
+        } else if self.value < -self.error {
             Some(false)
         } else {
             None
@@ -141,7 +147,7 @@ pub(crate) fn lb(x: &BigFloat) -> Option<Mag> {
     }
 }
 
-/// [`Iv`] in astro-float: a high-precision value with a **computed** error radius.
+/// [`Approx`] in astro-float: a high-precision value with a **computed** error radius.
 ///
 /// Every constructor must supply a radius that actually bounds its value's distance from the
 /// truth — for a coordinate that means the rotation chain's realization error
@@ -149,51 +155,51 @@ pub(crate) fn lb(x: &BigFloat) -> Option<Mag> {
 /// enough bits it means [`Mag::ZERO`]. A radius invented for convenience makes every sign above
 /// it unearned.
 #[derive(Clone, Debug)]
-pub(crate) struct HpIv {
-    pub mid: BigFloat,
-    pub rad: Mag,
+pub(crate) struct HpApprox {
+    pub value: BigFloat,
+    pub error: Mag,
 }
 
-impl HpIv {
-    pub fn new(mid: BigFloat, rad: Mag) -> Self {
-        HpIv { mid, rad }
+impl HpApprox {
+    pub fn new(value: BigFloat, error: Mag) -> Self {
+        HpApprox { value, error }
     }
 
     /// A value known exactly at this precision — a rational whose realization did not round.
-    pub fn exact(mid: BigFloat) -> Self {
-        HpIv {
-            mid,
-            rad: Mag::ZERO,
+    pub fn exact(value: BigFloat) -> Self {
+        HpApprox {
+            value,
+            error: Mag::ZERO,
         }
     }
 
     /// The rounding a `prec`-bit operation adds to its own result: at most a half-ulp,
     /// `|result| · 2⁻ᵖʳᵉᶜ`.
-    fn round_off(mid: &BigFloat, prec: usize) -> Mag {
-        ub(mid).times(Mag::pow2(-(prec as i64)))
+    fn round_off(value: &BigFloat, prec: usize) -> Mag {
+        ub(value).times(Mag::pow2(-(prec as i64)))
     }
 
-    pub fn sub(&self, o: &HpIv, prec: usize) -> HpIv {
-        let mid = self.mid.sub(&o.mid, prec, HP_RM);
-        let rad = self.rad.plus(o.rad).plus(Self::round_off(&mid, prec));
-        HpIv::new(mid, rad)
+    pub fn sub(&self, o: &HpApprox, prec: usize) -> HpApprox {
+        let value = self.value.sub(&o.value, prec, HP_RM);
+        let error = self.error.plus(o.error).plus(Self::round_off(&value, prec));
+        HpApprox::new(value, error)
     }
 
-    pub fn add(&self, o: &HpIv, prec: usize) -> HpIv {
-        let mid = self.mid.add(&o.mid, prec, HP_RM);
-        let rad = self.rad.plus(o.rad).plus(Self::round_off(&mid, prec));
-        HpIv::new(mid, rad)
+    pub fn add(&self, o: &HpApprox, prec: usize) -> HpApprox {
+        let value = self.value.add(&o.value, prec, HP_RM);
+        let error = self.error.plus(o.error).plus(Self::round_off(&value, prec));
+        HpApprox::new(value, error)
     }
 
-    pub fn mul(&self, o: &HpIv, prec: usize) -> HpIv {
-        let mid = self.mid.mul(&o.mid, prec, HP_RM);
+    pub fn mul(&self, o: &HpApprox, prec: usize) -> HpApprox {
+        let value = self.value.mul(&o.value, prec, HP_RM);
         // `|a|·rad_b + |b|·rad_a + rad_a·rad_b`, then the rounding of the product itself.
-        let rad = ub(&self.mid)
-            .times(o.rad)
-            .plus(ub(&o.mid).times(self.rad))
-            .plus(self.rad.times(o.rad))
-            .plus(Self::round_off(&mid, prec));
-        HpIv::new(mid, rad)
+        let error = ub(&self.value)
+            .times(o.error)
+            .plus(ub(&o.value).times(self.error))
+            .plus(self.error.times(o.error))
+            .plus(Self::round_off(&value, prec));
+        HpApprox::new(value, error)
     }
 
     /// Division by an **exact** nonzero divisor — what a wide frame's origin (`num / den`)
@@ -201,21 +207,21 @@ impl HpIv {
     /// `|b| ≥ 2^(e_b−1)`), and the division's own rounding is charged on top. The divisor
     /// being exact is a premise (its producer is [`bigint_to_hp`]), so it is asserted rather
     /// than handled.
-    pub fn div_exact(&self, b: &HpIv, prec: usize) -> Option<HpIv> {
+    pub fn div_exact(&self, b: &HpApprox, prec: usize) -> Option<HpApprox> {
         debug_assert!(
-            b.rad.exp2().is_none(),
+            b.error.exp2().is_none(),
             "div_exact's divisor must carry a zero radius"
         );
-        if b.mid.is_zero() {
+        if b.value.is_zero() {
             return None;
         }
-        let e = b.mid.exponent()? as i64;
-        let mid = self.mid.div(&b.mid, prec, HP_RM);
-        let rad = self
-            .rad
+        let e = b.value.exponent()? as i64;
+        let value = self.value.div(&b.value, prec, HP_RM);
+        let error = self
+            .error
             .times(Mag::pow2(1 - e))
-            .plus(Self::round_off(&mid, prec));
-        Some(HpIv::new(mid, rad))
+            .plus(Self::round_off(&value, prec));
+        Some(HpApprox::new(value, error))
     }
 
     /// `Some(true)` if definitely positive, `Some(false)` if definitely negative, `None` if the
@@ -224,8 +230,8 @@ impl HpIv {
     /// `None` is **"not decided at this precision"**, not "proved zero" — no finite precision
     /// proves a transcendental equality. The caller either climbs the ladder or says so.
     pub fn sign(&self) -> Option<bool> {
-        let low = lb(&self.mid)?;
-        self.rad.lt(low).then(|| self.mid.is_positive())
+        let low = lb(&self.value)?;
+        self.error.lt(low).then(|| self.value.is_positive())
     }
 }
 
@@ -335,10 +341,11 @@ mod tests {
                 exact_seen += 1;
             }
             let (hc, hs, rc, rs) = a.cos_sin_bounded(GT);
-            for (which, f, h, rad, reported) in [("cos", c, &hc, rc, dc), ("sin", s, &hs, rs, ds)] {
+            for (which, f, h, error, reported) in [("cos", c, &hc, rc, dc), ("sin", s, &hs, rs, ds)]
+            {
                 // |f64 − true| ≤ |f64 − deep midpoint| + that realization's own radius.
                 let truth = big(f, GT).sub(h, GT, HP_RM).abs().add(
-                    &big(rad.exp2().map_or(0.0, |e| 2f64.powi(e as i32)), GT),
+                    &big(error.exp2().map_or(0.0, |e| 2f64.powi(e as i32)), GT),
                     GT,
                     HP_RM,
                 );
@@ -372,19 +379,22 @@ mod tests {
     }
 
     /// The point of the type: a value that is only rounding residue must not report a sign, no
-    /// matter how confidently its `mid` is nonzero.
+    /// matter how confidently its `value` is nonzero.
     #[test]
     fn a_residue_left_by_cancellation_reports_no_sign() {
         let prec = 200;
         // Two large values differing by far less than the radius they carry. The separation has
         // to stay inside `prec` bits of the operands, or the subtraction is exactly zero and the
         // test proves nothing.
-        let rad = Mag::of(1.0e-10);
-        let a = HpIv::new(big(1.0e30, prec), rad);
-        let b = HpIv::new(big(1.0e30, prec).sub(&big(1.0e-20, prec), prec, HP_RM), rad);
+        let error = Mag::of(1.0e-10);
+        let a = HpApprox::new(big(1.0e30, prec), error);
+        let b = HpApprox::new(
+            big(1.0e30, prec).sub(&big(1.0e-20, prec), prec, HP_RM),
+            error,
+        );
         let d = a.sub(&b, prec);
         assert!(
-            !d.mid.is_zero(),
+            !d.value.is_zero(),
             "the midpoint is nonzero — that is the trap"
         );
         assert_eq!(
@@ -399,8 +409,8 @@ mod tests {
     #[test]
     fn a_value_clear_of_its_radius_still_decides() {
         let prec = 200;
-        let a = HpIv::new(big(3.0, prec), Mag::pow2(-100));
-        let b = HpIv::new(big(2.0, prec), Mag::pow2(-100));
+        let a = HpApprox::new(big(3.0, prec), Mag::pow2(-100));
+        let b = HpApprox::new(big(2.0, prec), Mag::pow2(-100));
         assert_eq!(a.sub(&b, prec).sign(), Some(true));
         assert_eq!(b.sub(&a, prec).sign(), Some(false));
         assert_eq!(a.mul(&b, prec).sign(), Some(true));
@@ -411,15 +421,15 @@ mod tests {
     #[test]
     fn a_deep_rung_does_not_lose_the_radius() {
         let prec = 2048;
-        let tiny = HpIv::new(big(1.0, prec), Mag::pow2(-(prec as i64)));
+        let tiny = HpApprox::new(big(1.0, prec), Mag::pow2(-(prec as i64)));
         let p = tiny.mul(&tiny, prec);
-        assert!(!p.rad.is_zero(), "the radius vanished at {prec} bits");
+        assert!(!p.error.is_zero(), "the radius vanished at {prec} bits");
         // A difference of exactly that size is therefore undecided, not positive.
-        let q = HpIv::new(
+        let q = HpApprox::new(
             big(1.0, prec).add(&BigFloat::from_f64(1.0, prec), prec, HP_RM),
             Mag::pow2(-(prec as i64) + 4),
         );
-        let r = HpIv::new(big(2.0, prec), Mag::pow2(-(prec as i64) + 4));
+        let r = HpApprox::new(big(2.0, prec), Mag::pow2(-(prec as i64) + 4));
         assert_eq!(q.sub(&r, prec).sign(), None);
     }
 
@@ -433,17 +443,17 @@ mod tests {
     #[test]
     fn exact_inputs_keep_a_radius_only_from_rounding() {
         let prec = 200;
-        let a = HpIv::exact(big(0.5, prec));
-        let b = HpIv::exact(big(0.25, prec));
+        let a = HpApprox::exact(big(0.5, prec));
+        let b = HpApprox::exact(big(0.25, prec));
         assert!(
-            a.rad.is_zero() && b.rad.is_zero(),
+            a.error.is_zero() && b.error.is_zero(),
             "an exact input carried a radius"
         );
         let d = a.sub(&b, prec);
         assert!(
-            d.rad.lt(Mag::pow2(-190)),
+            d.error.lt(Mag::pow2(-190)),
             "an exact subtraction picked up more than a half-ulp: 2^{:?}",
-            d.rad.exp2()
+            d.error.exp2()
         );
         assert_eq!(d.sign(), Some(true));
         // Exactly equal inputs are the case that cannot be settled here: the difference is zero
