@@ -1005,11 +1005,42 @@ fn denom_lo(v: &HpIv) -> Result<Bound, Gap> {
 /// One jump lands there, rounded up to a whole word because astro-float allocates whole words
 /// anyway. Doubling would either overshoot (paying for bits nobody asked for) or, on a model that
 /// starts deep, undershoot and realize everything twice for nothing.
+/// **How often a judgement had to climb, and how far.**
+///
+/// Every production escalation goes through [`escalate`], so one place here answers "what
+/// fraction of judgements the f64 filter could not settle" and "what they cost" without
+/// instrumentation scattered across the predicates.
+///
+/// ★ Unconditional, like `nacre-topo`'s `WIDE_PLANES` — and affordable for the same kind of
+/// reason: this path has already decided to realize in arbitrary precision, so a relaxed atomic
+/// add is noise beside the BigFloat work it is about to do. (`#[cfg(test)]` would not serve: the
+/// measurements that read these live in another crate.)
+pub mod climb_census {
+    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+
+    /// Judgements that reached [`super::escalate`] at all.
+    pub static CLIMBS: AtomicU64 = AtomicU64::new(0);
+    /// Sum of the precisions those judgements finished at — divide by `CLIMBS` for the mean.
+    pub static BITS: AtomicU64 = AtomicU64::new(0);
+    /// Judgements the budget could not settle.
+    pub static EXHAUSTED: AtomicU64 = AtomicU64::new(0);
+
+    /// `(climbs, bits, exhausted)` — read, and reset so the next window is its own.
+    pub fn take() -> (u64, u64, u64) {
+        (
+            CLIMBS.swap(0, Relaxed),
+            BITS.swap(0, Relaxed),
+            EXHAUSTED.swap(0, Relaxed),
+        )
+    }
+}
+
 fn escalate(
     j: Standard,
     limit: Bound,
     mut attempt: impl FnMut(usize) -> Result<Orient, Gap>,
 ) -> Decision {
+    climb_census::CLIMBS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // A zero precision means the context never got stamped: astro-float would be asked for a
     // realization with no bits, and every judgement would come back exhausted. That is a wiring
     // mistake, not a geometry one, so it fails loudly here rather than quietly answering `Zero`.
@@ -1017,10 +1048,17 @@ fn escalate(
         j.prec > 0,
         "escalate at zero precision — unstamped Standard"
     );
+    // ★ Charged on **every** way out, not just the resolved one: most climbs end in `Coincident`
+    // or a proved zero, and counting only the `Ok` path reported a mean of exactly 0 bits — a
+    // number that looked like "no cost" and was really "no instrument".
+    let done = |p: usize, d: Decision| -> Decision {
+        climb_census::BITS.fetch_add(p as u64, std::sync::atomic::Ordering::Relaxed);
+        d
+    };
     let mut prec = j.prec;
     loop {
         let gap = match attempt(prec) {
-            Ok(o) => return Decision::Sign(o),
+            Ok(o) => return done(prec, Decision::Sign(o)),
             Err(g) => g,
         };
         // How many bits short this judgement is, and the bound it managed — the second is what
@@ -1028,28 +1066,33 @@ fn escalate(
         // from an unresolved cofactor the cofactor itself named it, and there is no bound to
         // quote. Either way the number is *computed*, never guessed at by doubling.
         let (short, within) = match gap {
-            Gap::Vanished => return Decision::Degenerate,
+            Gap::Vanished => return done(prec, Decision::Degenerate),
             Gap::Unresolved { short } => (short, None),
             // **A zero gap is a proof, not a near miss.** The radius bounds how far the computed
             // value is from the true one, so a zero radius says the midpoint *is* the value — and
             // the sign came back undecided only because that midpoint is zero. Determinants reach
             // this honestly: a row that is exactly zero (a plane perpendicular to the rotation
             // axis keeps its coordinate exactly) multiplies every error term to nothing.
-            Gap::Of(g) if g.is_zero() => return Decision::Sign(Orient::Zero),
-            Gap::Of(g) if !limit.lt(g) => return Decision::Coincident { within: g },
+            Gap::Of(g) if g.is_zero() => return done(prec, Decision::Sign(Orient::Zero)),
+            Gap::Of(g) if !limit.lt(g) => return done(prec, Decision::Coincident { within: g }),
             Gap::Of(g) => match (g.exp2(), limit.exp2()) {
                 (Some(gx), Some(lx)) => ((gx - lx).max(1) as usize, Some(g)),
                 // A limit with no exponent (a zero bound) is a target no depth reaches.
                 _ => {
-                    return Decision::Exhausted {
-                        at: prec,
-                        within: Some(g),
-                    };
+                    climb_census::EXHAUSTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return done(
+                        prec,
+                        Decision::Exhausted {
+                            at: prec,
+                            within: Some(g),
+                        },
+                    );
                 }
             },
         };
         if prec >= j.cap {
-            return Decision::Exhausted { at: prec, within };
+            climb_census::EXHAUSTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return done(prec, Decision::Exhausted { at: prec, within });
         }
         // Up to a whole word, and never a standstill: a jump that rounded back to `prec` would
         // spin here forever.
