@@ -345,6 +345,7 @@ name = "nacre-scalar"
 version = "0.0.0"
 dependencies = [
  "astro-float",
+ "nacre-predicates",
  "num-bigint",
  "num-integer",
  "num-rational",

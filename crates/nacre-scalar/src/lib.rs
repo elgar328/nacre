@@ -504,6 +504,21 @@ impl PlaneName {
             PlaneName::Wide(_) => None,
         }
     }
+
+    /// The canonical coefficients as integers, **whichever width holds them** — the one vessel
+    /// the integer sign predicates ([`int_plane_side`], [`int_cmp_coord`], [`int_dir_sign`])
+    /// consume. A canonical narrow name is a primitive integer vector (the invariant
+    /// [`plane_name_exact`] normalizes to), so `numer()` is the value; a wide name already is
+    /// the integers.
+    pub fn coeff_ints(&self) -> [num_bigint::BigInt; 4] {
+        match self {
+            PlaneName::Narrow(c) => {
+                debug_assert!(c.iter().all(|r| r.denom() == 1));
+                core::array::from_fn(|k| num_bigint::BigInt::from(c[k].numer()))
+            }
+            PlaneName::Wide(c) => c.clone(),
+        }
+    }
 }
 
 /// **The plane three points name, computed so that the arithmetic on the way cannot lose it.**
@@ -720,6 +735,94 @@ fn residual_sign_big(ci: &[num_bigint::BigInt; 4], p: [Rat; 3]) -> i8 {
         Sign::NoSign => 0,
         Sign::Plus => 1,
     }
+}
+
+/// `-1 / 0 / +1` of a `BigInt`.
+fn big_sign(x: &num_bigint::BigInt) -> i8 {
+    use num_bigint::Sign;
+    match x.sign() {
+        Sign::Minus => -1,
+        Sign::NoSign => 0,
+        Sign::Plus => 1,
+    }
+}
+
+/// `det3` over borrowed `BigInt` entries — the same cofactor expansion
+/// `nacre_predicates::det3` evaluates through `Expansion`, exact by being integer arithmetic
+/// rather than by tracking roundoff.
+fn det3_big(m: [[&num_bigint::BigInt; 3]; 3]) -> num_bigint::BigInt {
+    let minor = |p: &num_bigint::BigInt,
+                 q: &num_bigint::BigInt,
+                 r: &num_bigint::BigInt,
+                 t: &num_bigint::BigInt| p * q - r * t;
+    m[0][0] * minor(m[1][1], m[2][2], m[1][2], m[2][1])
+        - m[0][1] * minor(m[1][0], m[2][2], m[1][2], m[2][0])
+        + m[0][2] * minor(m[1][0], m[2][1], m[1][1], m[2][0])
+}
+
+/// The implicit point `∩(p₀, p₁, p₂)` by Cramer, over integer plane coefficients: numerators
+/// `(Dx, Dy, Dz)` over the common denominator `D`. The integer twin of `nacre_predicates`'
+/// `cramer`, for coefficients too wide for any `f64`-chunk representation — an `Expansion`'s
+/// pieces are `f64`s, so its exponent range ends near `2¹⁰²³` while a wide canonical name is
+/// measured out to `~2²²⁹¹`.
+fn cramer_big(p: [&[num_bigint::BigInt; 4]; 3]) -> ([num_bigint::BigInt; 3], num_bigint::BigInt) {
+    let rhs = [-&p[0][3], -&p[1][3], -&p[2][3]];
+    let row = |r: usize, k: usize| {
+        let mut m = [&p[r][0], &p[r][1], &p[r][2]];
+        m[k] = &rhs[r];
+        m
+    };
+    let col_replaced = |k: usize| det3_big([row(0, k), row(1, k), row(2, k)]);
+    (
+        [col_replaced(0), col_replaced(1), col_replaced(2)],
+        det3_big(p.map(|r| [&r[0], &r[1], &r[2]])),
+    )
+}
+
+/// **Which side of the plane `j` the implicit point `∩(p₀, p₁, p₂)` lies on**, over integer
+/// coefficients — `sign(j·[Dvec : D]) · sign(D)`, the integer twin of
+/// `nacre_predicates::indirect_plane_side` (same convention: `+1` on the side `j`'s normal
+/// points to, and the sign is the plane's own, so a face whose stored normal opposes its
+/// outward direction applies that relation itself).
+///
+/// Row-linear in each input, so any per-row **positive** scale — clearing a denominator,
+/// un-reducing a canonical vector — cannot move the answer; negating a `p` row cannot either
+/// (it negates `D` and the dot together), while negating `j` negates the answer. `D = 0`
+/// (the three planes meet in no point) returns `0` with no branch, as in the twin.
+pub fn int_plane_side(p: [&[num_bigint::BigInt; 4]; 3], j: &[num_bigint::BigInt; 4]) -> i8 {
+    let (dvec, d) = cramer_big(p);
+    let side: num_bigint::BigInt =
+        (0..3).map(|i| &j[i] * &dvec[i]).sum::<num_bigint::BigInt>() + &j[3] * &d;
+    big_sign(&side) * big_sign(&d)
+}
+
+/// The exact sign of `a[axis] − b[axis]` for two implicit points over integer coefficients —
+/// `sign(Na·Db − Nb·Da) · sign(Da) · sign(Db)`, the integer twin of
+/// `nacre_predicates::indirect_cmp_coord`. Orientation-invariant: negating any row negates a
+/// numerator and its denominator together.
+///
+/// **Precondition:** both triples meet in a point (`Da, Db ≠ 0`), as in the twin.
+pub fn int_cmp_coord(
+    a: [&[num_bigint::BigInt; 4]; 3],
+    b: [&[num_bigint::BigInt; 4]; 3],
+    axis: usize,
+) -> i8 {
+    debug_assert!(axis < 3, "int_cmp_coord: axis must be 0, 1 or 2");
+    let (na, da) = cramer_big(a);
+    let (nb, db) = cramer_big(b);
+    debug_assert!(
+        big_sign(&da) != 0 && big_sign(&db) != 0,
+        "int_cmp_coord: degenerate three-plane input (D = 0)"
+    );
+    big_sign(&(&na[axis] * &db - &nb[axis] * &da)) * big_sign(&da) * big_sign(&db)
+}
+
+/// `sign(det[n₀; n₁; n₂])` over the three planes' integer normals — how the line `p ∩ a` runs
+/// relative to plane `b`, the integer twin of `nacre_predicates::det3_sign` on plane normals
+/// (`d` never enters). Direction-sensitive in every row: negating one normal negates the
+/// answer.
+pub fn int_dir_sign(n: [&[num_bigint::BigInt; 4]; 3]) -> i8 {
+    big_sign(&det3_big(n.map(|r| [&r[0], &r[1], &r[2]])))
 }
 
 /// **The world origin projected onto a rational plane** — `p = (−d / n·n) · n` for
@@ -2103,6 +2206,147 @@ mod tests {
 
     fn ints(v: [i128; 4]) -> [Rat; 4] {
         v.map(Rat::from_int)
+    }
+
+    /// The integer sign predicates, differentially locked.
+    ///
+    /// Three locks, matching the three ways they can be wrong:
+    /// - **against the f64 twins** on narrow input — same convention, two vessels;
+    /// - **scale-invariance into wide width** — the sign predicates are row-linear, so a row
+    ///   times a 200-bit positive integer is a genuine `> i128` input whose true answer the
+    ///   narrow twin still knows. This is the only exact ground truth for wide inputs that does
+    ///   not test `f(x)` against `f(x)`;
+    /// - **negation as the direction negative-control** — exactly the direction-sensitive
+    ///   slots flip (`plane_side`: `j` only; `cmp_coord`: none; `dir_sign`: every row), which
+    ///   is the per-slot σ analysis the judging layer's rescue relies on.
+    mod int_predicates {
+        use super::*;
+        use nacre_predicates::{ThreePlane, det3_sign, indirect_cmp_coord, indirect_plane_side};
+        use num_bigint::BigInt;
+        use proptest::prelude::*;
+
+        /// Small integer coefficients — exact in `f64`, so the twins speak the same input.
+        fn coeffs() -> impl Strategy<Value = [i32; 4]> {
+            proptest::array::uniform4(-9i32..=9)
+        }
+
+        fn big(c: [i32; 4]) -> [BigInt; 4] {
+            c.map(BigInt::from)
+        }
+        fn as_f64(c: [i32; 4]) -> [f64; 4] {
+            c.map(f64::from)
+        }
+        fn normals(p: [[i32; 4]; 3]) -> [[f64; 3]; 3] {
+            p.map(|c| [f64::from(c[0]), f64::from(c[1]), f64::from(c[2])])
+        }
+        fn rows(p: &[[BigInt; 4]; 3]) -> [&[BigInt; 4]; 3] {
+            [&p[0], &p[1], &p[2]]
+        }
+
+        proptest! {
+            #[test]
+            fn the_integer_predicates_agree_with_the_f64_twins(
+                p in proptest::array::uniform3(coeffs()),
+                j in coeffs(),
+            ) {
+                let bp = p.map(big);
+                prop_assert_eq!(
+                    int_plane_side(rows(&bp), &big(j)),
+                    indirect_plane_side(&ThreePlane(p.map(as_f64)), as_f64(j))
+                );
+                prop_assert_eq!(int_dir_sign(rows(&bp)), det3_sign(normals(p)));
+            }
+
+            #[test]
+            fn cmp_coord_agrees_with_the_f64_twin(
+                a in proptest::array::uniform3(coeffs()),
+                b in proptest::array::uniform3(coeffs()),
+                axis in 0usize..3,
+            ) {
+                let (ba, bb) = (a.map(big), b.map(big));
+                // Both twins' precondition: each triple meets in a point.
+                prop_assume!(int_dir_sign(rows(&ba)) != 0 && int_dir_sign(rows(&bb)) != 0);
+                prop_assert_eq!(
+                    int_cmp_coord(rows(&ba), rows(&bb), axis),
+                    indirect_cmp_coord(&ThreePlane(a.map(as_f64)), &ThreePlane(b.map(as_f64)), axis)
+                );
+            }
+
+            /// Rows scaled by ~200-bit positive integers — genuinely wider than `i128`, with
+            /// the unscaled f64 twin as exact ground truth.
+            #[test]
+            fn a_wide_positive_scale_cannot_move_any_answer(
+                p in proptest::array::uniform3(coeffs()),
+                j in coeffs(),
+                b in proptest::array::uniform3(coeffs()),
+                axis in 0usize..3,
+            ) {
+                // A distinct scale per row, so no cross-row cancellation can hide a bug.
+                let scale = |c: [i32; 4], k: u32| -> [BigInt; 4] {
+                    let s = (BigInt::from(1) << 199) + BigInt::from(12345 + k);
+                    c.map(|x| BigInt::from(x) * &s)
+                };
+                let sp: [[BigInt; 4]; 3] = core::array::from_fn(|k| scale(p[k], k as u32));
+                let sj = scale(j, 7);
+                prop_assert_eq!(
+                    int_plane_side(rows(&sp), &sj),
+                    indirect_plane_side(&ThreePlane(p.map(as_f64)), as_f64(j))
+                );
+                prop_assert_eq!(int_dir_sign(rows(&sp)), det3_sign(normals(p)));
+                let sb: [[BigInt; 4]; 3] = core::array::from_fn(|k| scale(b[k], 11 + k as u32));
+                if int_dir_sign(rows(&sp)) != 0 && int_dir_sign(rows(&sb)) != 0 {
+                    prop_assert_eq!(
+                        int_cmp_coord(rows(&sp), rows(&sb), axis),
+                        indirect_cmp_coord(
+                            &ThreePlane(p.map(as_f64)),
+                            &ThreePlane(b.map(as_f64)),
+                            axis
+                        )
+                    );
+                }
+            }
+
+            /// The direction negative-control: negating one row flips exactly the
+            /// direction-sensitive answers and nothing else.
+            #[test]
+            fn a_negated_row_flips_exactly_the_direction_sensitive_answers(
+                p in proptest::array::uniform3(coeffs()),
+                j in coeffs(),
+                k in 0usize..3,
+                axis in 0usize..3,
+            ) {
+                let bp = p.map(big);
+                let bj = big(j);
+                let neg = |c: &[BigInt; 4]| -> [BigInt; 4] { core::array::from_fn(|i| -&c[i]) };
+                let mut np = bp.clone();
+                np[k] = neg(&bp[k]);
+                let nj = neg(&bj);
+
+                // `plane_side`: a negated `p` row negates `D` and the dot together — invariant;
+                // a negated `j` negates the dot alone — flipped.
+                let side = int_plane_side(rows(&bp), &bj);
+                prop_assert_eq!(int_plane_side(rows(&np), &bj), side);
+                prop_assert_eq!(int_plane_side(rows(&bp), &nj), -side);
+
+                // `dir_sign`: one negated row negates the determinant.
+                prop_assert_eq!(int_dir_sign(rows(&np)), -int_dir_sign(rows(&bp)));
+
+                // `cmp_coord`: orientation-invariant in every row.
+                if int_dir_sign(rows(&bp)) != 0 && int_dir_sign(rows(&bj_triple(&bp, &bj))) != 0 {
+                    let other = bj_triple(&bp, &bj);
+                    prop_assert_eq!(
+                        int_cmp_coord(rows(&np), rows(&other), axis),
+                        int_cmp_coord(rows(&bp), rows(&other), axis)
+                    );
+                }
+            }
+        }
+
+        /// A second triple for `cmp_coord`, made from the first by swapping in `j` — cheap, and
+        /// dependent enough on the inputs to exercise real coordinates.
+        fn bj_triple(p: &[[BigInt; 4]; 3], j: &[BigInt; 4]) -> [[BigInt; 4]; 3] {
+            [p[1].clone(), p[2].clone(), j.clone()]
+        }
     }
 
     /// The projection lands **exactly on** the plane it came from, tilted ones included — checked

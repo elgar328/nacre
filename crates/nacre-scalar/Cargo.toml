@@ -19,5 +19,8 @@ astro-float = "0.9.5"
 
 [dev-dependencies]
 proptest.workspace = true
+# The f64 twins the integer sign predicates are differentially locked against (test-only; the
+# product-path direction stays predicates-free — nacre-predicates does not depend back).
+nacre-predicates = { path = "../nacre-predicates" }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

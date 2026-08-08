@@ -279,12 +279,7 @@ impl WideFrame {
 /// frame node carries is spent on the coefficients, exactly as the narrow route spends it
 /// before `plane_frame_named`.
 fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigInt; 4] {
-    use num_bigint::BigInt;
-    let mut cs: [BigInt; 4] = match name {
-        // A canonical narrow name is a primitive integer vector, so `numer()` is the value.
-        nacre_scalar::PlaneName::Narrow(c) => core::array::from_fn(|k| BigInt::from(c[k].numer())),
-        nacre_scalar::PlaneName::Wide(c) => c.clone(),
-    };
+    let mut cs = name.coeff_ints();
     if flip {
         for c in &mut cs {
             *c = -&*c;
