@@ -522,15 +522,6 @@ pub enum RejectReason {
     /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
     /// quadrics).
     CylinderFace,
-    /// An operand carries a face whose plane is defined **through implicit points** — a datum
-    /// through straddling vertices (16-2), whose witness triangle does not exist because the
-    /// points have no coordinates in any frame. The judging table cannot seat such a plane yet;
-    /// that is open item 16's last stage (16-3, `WorkingPlaneDef::Through`).
-    ///
-    /// ★ Deliberately not `FrameOutOfRange`: that umbrella says "a frame the rationals cannot
-    /// hold", and nothing here failed to hold anything — the definition is complete, the
-    /// consumer is unbuilt.
-    ImplicitPlaneUnsupported,
     /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
     DegenerateFace,
     /// An operand face's outer triangle has a zero-length normal, so it has no outward direction.
@@ -707,7 +698,6 @@ impl RejectReason {
             Self::DegenerateFace => "degenerate_face",
             Self::DegenerateNormal => "degenerate_normal",
             Self::FrameOutOfRange => "frame_out_of_range",
-            Self::ImplicitPlaneUnsupported => "implicit_plane_unsupported",
             Self::PrecisionBudget { .. } => "precision_budget",
             Self::JudgeExhausted => "judge_exhausted",
             Self::DegenerateWitness => "degenerate_witness",
@@ -739,8 +729,6 @@ impl RejectReason {
             | Self::ThreePlanes
             | Self::FourPlane
             | Self::CylinderFace
-            // A plane defined through implicit points: the judging table's seat for it is 16-3.
-            | Self::ImplicitPlaneUnsupported
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
             // Likewise a frame past `i128`: a wider rational would lift it.
@@ -4600,6 +4588,143 @@ pub mod tests {
         assert_eq!(distinct.len(), na + 1, "only b's far wall is a new class");
         // The class root is the smallest index in the class (deterministic canon).
         assert_eq!(canon[a_xp], a_xp.min(b_xm));
+    }
+
+    /// ★★★★ **Two faces of one judged surface are one class** (16-3). A nameless plane has no
+    /// name to intern classes by, so its class merging rests on the probes: both faces carry the
+    /// *same statement* → the same frame probes → identical chains → `shared_base` cancels the
+    /// motion and the exact predicate answers a **proved zero**. This is the argument turned into
+    /// a run: a straddle-datum prism is severed through its cap, leaving two faces on the one
+    /// judged surface, and `plane_classes` must fold them into one line.
+    #[test]
+    fn two_faces_of_one_judged_surface_are_one_class() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([3.3, 3.3, -1.0]),
+            Point3::from_array([7.7, 7.7, 11.0]),
+        );
+        m.rebuild_adjacency();
+        let OpOutput::Transform { solid: b } = crate::apply(
+            &mut m,
+            &Operation::Transform {
+                solid: b,
+                isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                    axis: nacre_scalar::Axis::Z,
+                    point: [nacre_scalar::Rat::from_int(0); 3],
+                    angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+                }),
+            },
+        )
+        .expect("turn") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let cut = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
+        m.rebuild_adjacency();
+
+        // A straddling vertex of the cut, plus two pure corners that share its plane sanely.
+        let mut straddle = None;
+        let mut pure = Vec::new();
+        for &s in &cut {
+            for &fh in &m.shells.get(m.solids.get(s).outer).faces {
+                for lp in
+                    std::iter::once(&m.faces.get(fh).outer).chain(m.faces.get(fh).inner.iter())
+                {
+                    for &he in &lp.half_edges {
+                        let vh = m.he_start(he);
+                        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                            continue;
+                        };
+                        let mine = m.plane_motion(tri[0]);
+                        if tri.iter().any(|h| m.plane_motion(*h) != mine) {
+                            straddle.get_or_insert(vh);
+                        } else if !pure.contains(&vh) {
+                            pure.push(vh);
+                        }
+                    }
+                }
+            }
+        }
+        let straddle = straddle.expect("the cut leaves straddling corners");
+        let vs = [straddle, pure[0], pure[1]];
+        let OpOutput::DatumPlane { plane, frame } = crate::apply(
+            &mut m,
+            &Operation::DatumPlane {
+                def: DatumDef::ThroughVertices(vs),
+            },
+        )
+        .expect("the straddle datum") else {
+            unreachable!()
+        };
+        assert!(!m.surface_name.contains_key(&plane), "nameless");
+        let square = Profile2d::polygon(vec![
+            Point2::from_array([0.0, 0.0]),
+            Point2::from_array([1.0, 0.0]),
+            Point2::from_array([1.0, 1.0]),
+            Point2::from_array([0.0, 1.0]),
+        ])
+        .unwrap();
+        let OpOutput::Extrude { solid: prism, .. } = crate::apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile: square,
+                dist: 0.5,
+            },
+        )
+        .expect("prism") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+
+        // Sever the prism through the middle with a thin box crossing the whole height: two
+        // pieces, each with a base-cap face on the SAME judged surface.
+        let (o, u, _v, w) = crate::rotated_vertex::frame_world_basis(
+            &m,
+            plane,
+            &nacre_topo::FramePlacement::Canonical,
+            frame.flip(),
+        )
+        .expect("the judged frame realizes");
+        // A knife centred over the prism: origin + 0.5·û ± thickness, spanning v and w amply.
+        let centre = Point3::from_array([
+            o[0] + 0.5 * u[0] + 0.5 * w[0] * 0.0,
+            o[1] + 0.5 * u[1],
+            o[2] + 0.5 * u[2],
+        ]);
+        let knife = m.add_cuboid(
+            centre + Vector3::from_array([-0.1, -5.0, -5.0]),
+            centre + Vector3::from_array([0.1, 5.0, 5.0]),
+        );
+        m.rebuild_adjacency();
+        let pieces = crate::boolean(&mut m, BoolKind::Cut, prism, knife).expect("sever");
+        m.rebuild_adjacency();
+        assert!(pieces.len() >= 2, "the knife must sever the prism");
+
+        // The judgment table over the two pieces: their base-cap faces share the judged surface
+        // and must fold into one class.
+        let planes_a = collect_planes(&m, pieces[0]).unwrap();
+        let na = planes_a.len();
+        let mut planes = planes_a;
+        planes.extend(collect_planes(&m, pieces[1]).unwrap());
+        let on_datum: Vec<usize> = (0..planes.len())
+            .filter(|&i| planes[i].surf == plane)
+            .collect();
+        assert!(
+            on_datum.len() >= 2
+                && on_datum.iter().any(|&i| i < na)
+                && on_datum.iter().any(|&i| i >= na),
+            "both pieces must carry a face on the judged surface"
+        );
+        let canon = plane_classes(&crate::planes::test_judge(&planes));
+        let first = canon[on_datum[0]];
+        for &i in &on_datum[1..] {
+            assert_eq!(
+                canon[i], first,
+                "two faces of one judged surface must be one class — same statement, same probes"
+            );
+        }
     }
 
     #[test]

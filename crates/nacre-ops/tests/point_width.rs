@@ -133,7 +133,7 @@
 //!
 //! ★ The datum-vocabulary wall is fully open at this level: every geometrically sound triple in
 //! every population classifies as acceptable. What is NOT open is the boolean over such a datum's
-//! own face — `ImplicitPlaneUnsupported`, the honest boundary until the judging table can seat an
+//! own face — at the time `ImplicitPlaneUnsupported`, a boundary 16-3 then removed by seating an
 //! implicit-point plane (open item 16-3).
 
 use nacre_geom::Surface;

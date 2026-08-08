@@ -1633,22 +1633,32 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         "the prism on a straddle datum must be a valid closed b-rep"
     );
 
-    // ★★★ **The honest boundary until 16-3**: this prism's base cap is a plane defined through
-    // an implicit point, which the judging table cannot seat yet — a boolean touching it must
-    // refuse **by its own name**, not by a name about rational width.
+    // ★★★★ **16-3: the boolean opens.** The base cap's plane is defined through an implicit
+    // point, and its witness in the judging table is the plane's **own frame's probes** — three
+    // exact on-plane definitions the escalation realizes at any precision. The refusal this
+    // block used to assert (`ImplicitPlaneUnsupported`) died with the wall; `Common` against a
+    // swallowing box is the same crisp oracle the pure-mixed e2e uses: the result is the prism,
+    // volume exactly as the sketch stated it.
     let block = m.add_cuboid(
         Point3::from_array([-30.0, -30.0, -30.0]),
         Point3::from_array([30.0, 30.0, 30.0]),
     );
     m.rebuild_adjacency();
-    let live_before = m.live_solids.clone();
-    match nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Common, block, prism) {
-        Err(nacre_ops::BoolError::Unsupported {
-            reason: nacre_ops::RejectReason::ImplicitPlaneUnsupported,
-        }) => {}
-        other => panic!("expected the implicit-plane refusal, got {other:?}"),
-    }
-    assert_eq!(m.live_solids, live_before, "a refusal leaves the live set");
+    let out = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Common, block, prism)
+        .expect("a boolean over the straddle-datum class must answer");
+    m.rebuild_adjacency();
+    assert_eq!(out.len(), 1, "block ∩ prism is the prism");
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "and it is a valid closed b-rep"
+    );
+    let vol = nacre_props::mass_props(&m, out[0])
+        .expect("measurable")
+        .volume;
+    assert!(
+        (vol - 0.5).abs() < 1e-9,
+        "1 × 1 × 0.5 wherever the judged frame sits — got {vol}"
+    );
 
     // Deterministic rebuild: the same construction accepts the same statements into the same
     // arena slots — the meet road is judged once at a fixed rung, so replay holds.

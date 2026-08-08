@@ -242,27 +242,59 @@ pub(crate) fn collect_planes(
                             let j = crate::rotated_vertex::through_judged_points(model, *vs)
                                 .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
                             // ★ All-pure unwraps to 16-1's heterogeneous triangle, letter for
-                            // letter. Any implicit point means this plane has **no witness
-                            // triangle at all** — the judging table's seat for that is 16-3
-                            // (`WorkingPlaneDef::Through`), so until then the boolean says so
-                            // by name instead of failing to build a triangle somewhere deeper.
-                            let mut w: [Option<WitnessPoint>; 3] = [None, None, None];
-                            for (o, jp) in w.iter_mut().zip(j) {
-                                match jp {
-                                    nacre_cip::JudgedPoint::Pure(wp) => *o = Some(wp),
-                                    nacre_cip::JudgedPoint::Meet(_) => {
-                                        return Err(reject(RejectReason::ImplicitPlaneUnsupported));
+                            // letter — that road is locked by its own tests and stays.
+                            //
+                            // ★★★★ **Any implicit point: the witness is the plane's own judged
+                            // frame** (16-3). The table's contract has been "three exact points
+                            // *on the plane*, wound to n_out" since S6b — never "the face's
+                            // corners" — and a judged plane has such points by definition: its
+                            // canonical frame's probes `(0,0,0)·(1,0,0)·(0,1,0)`, the same ones
+                            // `frame_world_basis` realizes. The origin is the foot of the
+                            // perpendicular (on the plane exactly), û and v̂ are in-plane by
+                            // construction, and `frame_chain` already appends the plane's own
+                            // later motion — so the probes are exact definitions the escalation
+                            // realizes at any precision. No `WorkingPlaneDef::Through` was ever
+                            // needed; this is where that assumption died.
+                            let all_pure = j
+                                .iter()
+                                .all(|p| matches!(p, nacre_cip::JudgedPoint::Pure(_)));
+                            if all_pure {
+                                let mut w: [Option<WitnessPoint>; 3] = [None, None, None];
+                                for (o, jp) in w.iter_mut().zip(j) {
+                                    if let nacre_cip::JudgedPoint::Pure(wp) = jp {
+                                        *o = Some(wp);
                                     }
                                 }
+                                let w = w.map(|o| o.expect("all pure"));
+                                let w = match motion {
+                                    // ★ The plane's own later motion appends to each point's
+                                    // own chain — motions add, never multiply (S5(ii)-1).
+                                    None => w,
+                                    Some(m) => replay_all(w, m)?,
+                                };
+                                (w, true)
+                            } else {
+                                let chain = crate::rotated_vertex::frame_chain(
+                                    model,
+                                    face.surface,
+                                    &nacre_topo::FramePlacement::Canonical,
+                                    false,
+                                )
+                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                                let r = nacre_scalar::Rat::from_int;
+                                let probe = |u: i128, v: i128| {
+                                    crate::rotated_vertex::replay(
+                                        WitnessPoint::at([r(u), r(v), r(0)]),
+                                        &chain,
+                                    )
+                                    .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
+                                };
+                                // `frame_chain` already carries the plane's own later motion in
+                                // its tail, so no `replay_all` here — appending it twice would
+                                // move the witness off the plane.
+                                let w = [probe(0, 0)?, probe(1, 0)?, probe(0, 1)?];
+                                (w, true)
                             }
-                            let w = w.map(|o| o.expect("filled above"));
-                            let w = match motion {
-                                // ★ The plane's own later motion appends to each point's own
-                                // chain — motions add, never multiply (S5(ii)-1's rule).
-                                None => w,
-                                Some(m) => replay_all(w, m)?,
-                            };
-                            (w, true)
                         }
                     };
                     _t.charge(Sub::TriPt3);
