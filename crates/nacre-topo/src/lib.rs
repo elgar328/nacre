@@ -139,6 +139,10 @@ pub struct MotionNode {
 /// speak about the world and `Moved` ones about the pre-motion frame.
 pub type SurfaceKey = (nacre_scalar::PlaneName, Option<Handle<MotionNode>>);
 
+/// The statement key for a plane the name key cannot hold (open item 16): the sorted defining
+/// triple and the motion it is stated under. See `Model::surface_through_ids`.
+type ThroughKey = ([Handle<Vertex>; 3], Option<Handle<MotionNode>>);
+
 /// How many planes were named **`Wide`** — the canonical answer exceeded `i128` and took the
 /// arbitrary-precision vessel (S2). Before S2 these were the *unnamed* planes; now they intern
 /// and carry identity like any other.
@@ -327,6 +331,17 @@ pub struct Model {
     /// whichever face first reached this surface" and winds it to *each* face's own outward
     /// normal — so it is not part of what makes two planes the same.
     surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
+    /// Interning for the planes the name key **cannot** hold: a `Through` statement whose exact
+    /// world coefficients are irrational (mixed-frame datum — open item 16) has no canonical
+    /// name, so it interns by the **statement itself**: the sorted vertex triple and the motion
+    /// it is stated under.
+    ///
+    /// ★ This is statement identity, not geometric identity. Two *different* triples on one
+    /// geometric plane get two handles here, and rule 6's qualification is exactly that:
+    /// a nameless plane's geometric identity is the predicates' to answer, per question.
+    /// What this table guarantees is the same thing construction-time sorting guarantees one
+    /// level down — **the same statement never becomes two handles.**
+    surface_through_ids: HashMap<ThroughKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,
     pub edges: Store<Edge>,
@@ -448,6 +463,7 @@ impl Model {
             motion_ids: HashMap::new(),
             surface_name: HashMap::new(),
             surface_ids: HashMap::new(),
+            surface_through_ids: HashMap::new(),
             vertices: Store::default(),
             edges: Store::default(),
             faces: Store::default(),
@@ -708,17 +724,8 @@ impl Model {
                 }
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
-                // outward the other way round. The f64 cache dot is exact here: two caches of one
-                // plane have parallel normals, so the sign cannot be lost to rounding.
-                let dir = |s: &Surface| match s {
-                    Surface::Plane(p) => Some(p.normal()),
-                    Surface::Cylinder(_) => None,
-                };
-                let flipped = match (dir(self.surfaces.get(h)), dir(&Surface::Plane(cache))) {
-                    (Some(a), Some(b)) => a.dot(b) < 0.0,
-                    _ => false,
-                };
-                return (h, flipped);
+                // outward the other way round.
+                return (h, self.flipped_against(h, &cache));
             }
         }
         let h = self.push_raw(
@@ -735,6 +742,17 @@ impl Model {
         (h, false)
     }
 
+    /// Whether the already-issued surface's cache normal points the other way from the one the
+    /// caller just built — the `flipped` report both interning roads share. The f64 cache dot is
+    /// exact here: two caches of one plane have parallel normals, so the sign cannot be lost to
+    /// rounding.
+    fn flipped_against(&self, h: Handle<Surface>, cache: &nacre_geom::Plane) -> bool {
+        match self.surfaces.get(h) {
+            Surface::Plane(p) => p.normal().dot(cache.normal()) < 0.0,
+            Surface::Cylinder(_) => false,
+        }
+    }
+
     /// **Push a plane stated as the three vertices it passes through** — [`push_plane`]'s twin
     /// for the datum vocabulary, with the same interning contract and the same `flipped` report.
     ///
@@ -748,9 +766,18 @@ impl Model {
     /// the same statement in any order). Direction is not lost: it lives in the frame's measured
     /// `flip`, exactly as it does for a stated plane.
     ///
-    /// `None` when the plane cannot be named — the caller has already rejected those populations
-    /// by cause and must not reach this door with one ([`Model::plane_name_through`] is the
-    /// shared derivation, so the check and the push cannot drift).
+    /// ★★ **A statement the name key cannot hold still interns — by the statement itself**
+    /// (open item 16). A mixed-frame datum's exact world coefficients are irrational, so
+    /// [`Model::plane_name_through`] answers `None`; such a plane takes the second key
+    /// (`surface_through_ids`) — the sorted triple and the motion. That is *statement*
+    /// identity: the same three vertices under the same motion are one handle, and geometric
+    /// identity across different statements is the predicates' to answer per question (rule 6's
+    /// own qualification — *"interning 없이 술어가 매번 답한다"*). This is **not** the
+    /// record-less population S2 drained: the truth (handles + motion) is complete; what does
+    /// not exist is a rational description of it.
+    ///
+    /// ★ The producer remains responsible for rejecting **before** pushing whatever it cannot
+    /// frame — this door stores; it does not validate framability.
     ///
     /// [`push_plane`]: Model::push_plane
     pub fn push_plane_through(
@@ -764,12 +791,21 @@ impl Model {
             "a Through statement must arrive sorted and duplicate-free"
         );
         let name = self.plane_name_through(vertices);
-        debug_assert!(
-            name.is_some(),
-            "an unnameable Through plane must be rejected by cause before this door — \
-             storing one would revive the nameless-plane population S2 drained"
+        if name.is_some() {
+            return self.intern_plane(cache, name, PlanePoints::Through(vertices), motion);
+        }
+        if let Some(&h) = self.surface_through_ids.get(&(vertices, motion)) {
+            return (h, self.flipped_against(h, &cache));
+        }
+        let h = self.push_raw(
+            Surface::Plane(cache),
+            SurfaceTruth::Plane {
+                points: PlanePoints::Through(vertices),
+                motion,
+            },
         );
-        self.intern_plane(cache, name, PlanePoints::Through(vertices), motion)
+        self.surface_through_ids.insert((vertices, motion), h);
+        (h, false)
     }
 
     /// **The name a `Through` statement derives**, and the one place that derivation lives — the
@@ -2087,6 +2123,91 @@ mod tests {
             first, permuted,
             "two spellings of one wide plane must intern"
         );
+    }
+
+    /// ★★ **A statement the name key cannot hold interns by the statement** (open item 16).
+    ///
+    /// The fixture reaches namelessness through `OnSeam` carriers — the cheapest population
+    /// `plane_name_through` declines inside this crate. Semantically an ops producer would
+    /// refuse this particular datum by cause; the door's contract is narrower ("store the
+    /// statement, once") and holds for every nameless reason identically, which is what is
+    /// pinned here. The real mixed-frame population is exercised end-to-end in `nacre-ops`.
+    #[test]
+    fn a_nameless_through_statement_interns_by_its_statement() {
+        let mut m = Model::new();
+        m.add_cylinder(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.0,
+            2.0,
+        );
+        m.add_cuboid(
+            Point3::from_array([4.0, 0.0, 0.0]),
+            Point3::from_array([5.0, 1.0, 1.0]),
+        );
+        let mut vs: Vec<Handle<Vertex>> = Vec::new();
+        let mut i = 0u32;
+        while let Some(h) = m.vertex_handle_at(i) {
+            i += 1;
+            if matches!(m.vertices.get(h).def, VertexDef::OnSeam(_)) && vs.len() < 2 {
+                vs.push(h);
+            } else if matches!(m.vertices.get(h).def, VertexDef::ThreePlane(_)) && vs.len() == 2 {
+                vs.push(h);
+                break;
+            }
+        }
+        let mut triple: [Handle<Vertex>; 3] = [vs[0], vs[1], vs[2]];
+        triple.sort_by_key(|v| v.index());
+        assert!(
+            m.plane_name_through(triple).is_none(),
+            "the fixture must be nameless, or this test measures the name road"
+        );
+
+        let cache = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 0.5]),
+            Vector3::from_array([0.0, 0.0, -1.0]),
+        )
+        .unwrap();
+        let before = m.surface_count();
+        let (h, flipped) = m.push_plane_through(cache, triple, None);
+        assert!(!flipped);
+        assert!(
+            !m.surface_name.contains_key(&h),
+            "a nameless statement must not invent a name"
+        );
+        assert_eq!(m.surface_count(), before + 1, "stored once");
+
+        // The same statement again — one handle; and a cache built facing the other way is the
+        // same plane with `flipped` reported, exactly as the name road reports it.
+        let (again, flipped_same) = m.push_plane_through(cache, triple, None);
+        assert_eq!(h, again, "one statement, one handle");
+        assert!(!flipped_same);
+        let reversed = nacre_geom::Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 0.5]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+        )
+        .unwrap();
+        let (still, flipped_now) = m.push_plane_through(reversed, triple, None);
+        assert_eq!(h, still, "direction is not part of the statement");
+        assert!(
+            flipped_now,
+            "but the survivor's other-way cache is reported"
+        );
+        assert_eq!(m.surface_count(), before + 1, "and nothing new was stored");
+
+        // A different motion is a different statement — the same rule the name key keeps.
+        let node = m.push_motion(
+            Motion::Translate {
+                offset: [
+                    nacre_scalar::Rat::from_int(1),
+                    nacre_scalar::Rat::from_int(0),
+                    nacre_scalar::Rat::from_int(0),
+                ],
+            },
+            None,
+        );
+        let (moved, _) = m.push_plane_through(cache, triple, Some(node));
+        assert_ne!(h, moved, "the motion belongs in the statement key");
     }
 
     /// ★★★ S9: **the three world planes are born with the model** — deterministic handles,

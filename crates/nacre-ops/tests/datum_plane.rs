@@ -1538,11 +1538,14 @@ fn a_solid_on_a_vertex_named_datum_can_be_copied() {
     );
 }
 
-/// ★★★★ **The invariant S2 established, still true.** Every plane in the arena has a name.
-///
-/// That is what keeps `frame_chain`'s nameless branch — a *silent* demotion to the f64 road, not
-/// a reject — unreachable. `Through` is the first thing since S2 that could store a nameless
-/// plane, so the assertion is not "the producer rejected" but "no such plane exists".
+/// ★★★★ **The invariant S2 established, re-scoped for open item 16.** What S2 drained was the
+/// *record-less* plane — no points, no truth to derive anything from. A nameless `Through`
+/// statement (mixed frames — its exact world coefficients are irrational) is not that: the truth
+/// is complete, only a rational description of it does not exist, and rule 6 wrote that
+/// population into the design from the start. So the invariant is now: **a plane without a name
+/// is exactly a `Through` statement, and everything else keeps its name.** This model holds no
+/// nameless planes at all (the datum here is rational-closure), so the sweep also proves the
+/// named road did not lose anyone.
 #[test]
 fn every_plane_still_has_a_name() {
     let mut m = tilted_prism_with_pocket();
@@ -1560,11 +1563,12 @@ fn every_plane_still_has_a_name() {
     let mut i = 0u32;
     while let Some(h) = m.surface_handle_at(i) {
         i += 1;
-        if matches!(m.surface_truth(h), SurfaceTruth::Plane { .. }) {
+        if let SurfaceTruth::Plane { points, .. } = m.surface_truth(h) {
             planes += 1;
             assert!(
-                m.surface_name.contains_key(&h),
-                "a plane with no name — the nameless-plane population is back"
+                m.surface_name.contains_key(&h) || matches!(points, PlanePoints::Through(_)),
+                "a plane with no name that is not a Through statement — \
+                 the record-less population S2 drained is back"
             );
         }
     }
