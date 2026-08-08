@@ -233,12 +233,183 @@ impl HpApprox {
         let low = lb(&self.value)?;
         self.error.lt(low).then(|| self.value.is_positive())
     }
+
+    /// A positive lower bound on this interval's true magnitude, or `None` when it may reach
+    /// zero — [`lb`]'s exponent floor on the computed value, minus the radius, in the
+    /// rounded-toward-zero direction [`Mag::minus`] exists for.
+    #[allow(
+        dead_code,
+        reason = "the judged-frame realization (next commit of this stage) is the consumer; \
+                  locked here by the exact-route and corner differentials below"
+    )]
+    fn mag_lo(&self) -> Option<Mag> {
+        lb(&self.value)?.minus(self.error)
+    }
+
+    /// Division by an **interval** divisor — what [`HpApprox::div_exact`] refuses, made sound by
+    /// bounding the divisor away from zero first.
+    ///
+    /// This is a *realization* operation (a frame's origin is the foot of a perpendicular,
+    /// `(−d·n)/(n·n)`, and for a judged plane `n·n` carries a radius); the kernel's no-division
+    /// discipline is about **sign questions**, where a quotient would manufacture an irrational
+    /// the predicate then has to trust. A realization hands back the radius it incurred, which is
+    /// exactly what this does.
+    ///
+    /// The bound: with `q̂` the computed quotient and `L ≤ |b|` (true divisor),
+    /// `a/b − â/b̂ = (a−â)/b + (â/b̂)·(b̂−b)/b`, so the true-input error is at most
+    /// `(r_a + |â/b̂|·r_b) / L`, and `|â/b̂| ≤ |q̂| + round_off`. `None` when the divisor's
+    /// interval may reach zero — the caller climbs or rejects by name, never guesses.
+    #[allow(
+        dead_code,
+        reason = "the judged-frame realization (next commit of this stage) is the consumer; \
+                  locked here by the exact-route and corner differentials below"
+    )]
+    pub fn div(&self, b: &HpApprox, prec: usize) -> Option<HpApprox> {
+        let lo = b.mag_lo()?;
+        let value = self.value.div(&b.value, prec, HP_RM);
+        let ro = Self::round_off(&value, prec);
+        let q = ub(&value).plus(ro);
+        let error = self.error.plus(q.times(b.error)).over(lo)?.plus(ro);
+        Some(HpApprox::new(value, error))
+    }
+
+    /// `1/√x` of an **interval** — the judged-frame twin of [`nacre_scalar::inv_sqrt_bounded`]
+    /// (exact `Rat` input) and [`nacre_scalar::inv_sqrt_bigint_bounded`] (exact `BigInt` input):
+    /// same shape, an input that carries a radius.
+    ///
+    /// The input error's amplification comes from the derivative: `|d(1/√x)| = ½·x^(−3/2)`,
+    /// largest at the interval's low end, so `error ≤ r / (2·L^(3/2))` with `L ≤ x` a positive
+    /// lower bound. `L ≥ 2^(e−1)` from its exponent, so `2·L^(3/2) ≥ 2^(1+(e−1)+⌊(e−1)/2⌋)` —
+    /// a pure power of two, which [`Mag::over`] divides by exactly. The two arithmetic roundings
+    /// (sqrt, then the reciprocal) are charged on top.
+    ///
+    /// `None` when `x` may reach zero or is not positive — a degenerate normal has no direction,
+    /// and the caller says so by name.
+    #[allow(
+        dead_code,
+        reason = "the judged-frame realization (next commit of this stage) is the consumer; \
+                  locked here by the exact-route and corner differentials below"
+    )]
+    pub fn inv_sqrt(&self, prec: usize) -> Option<HpApprox> {
+        if !self.value.is_positive() {
+            return None;
+        }
+        let lo = self.mag_lo()?;
+        let e = lo.exp2()?;
+        let s = self.value.sqrt(prec, HP_RM);
+        let one = BigFloat::from_f64(1.0, prec);
+        let value = one.div(&s, prec, HP_RM);
+        let denom = Mag::pow2(1 + (e - 1) + (e - 1).div_euclid(2));
+        let ro = Self::round_off(&value, prec);
+        let error = self.error.over(denom)?.plus(ro).plus(ro);
+        Some(HpApprox::new(value, error))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use nacre_scalar::{Angle, Mag};
+
+    /// An upper `f64` reading of a [`Mag`], for comparisons in tests only.
+    fn mag_f64(m: Mag) -> f64 {
+        m.exp2().map_or(0.0, |e| 2f64.powi(e as i32))
+    }
+
+    /// |x − y| at the two values' own precision, as f64 — a test-side residual reader.
+    fn resid(x: &BigFloat, y: &BigFloat, prec: usize) -> f64 {
+        let d = x.sub(y, prec, HP_RM).abs();
+        if d.is_zero() {
+            return 0.0;
+        }
+        d.exponent().map_or(f64::INFINITY, |e| 2f64.powi(e))
+    }
+
+    /// ★ The differential the two new interval operations are locked by: on **exact** inputs they
+    /// must agree with the exact routes that already exist, and on **interval** inputs the radius
+    /// must contain the truth — probed at the interval's endpoints, which is where a monotone
+    /// function's image is extreme (so the corners are the whole question, not a sample).
+    #[test]
+    fn the_interval_division_agrees_with_the_exact_route_and_contains_the_corners() {
+        let prec = 192;
+        let gt = 512;
+        for (a, ra, b, rb) in [
+            (3.75, 0.0, 1.5, 0.0),
+            (-7.0, 1e-20, 0.3, 1e-21),
+            (1e12, 1e-6, -2.5e-3, 1e-12),
+            (0.1, 1e-30, 12345.678, 1e-18),
+        ] {
+            let av = HpApprox::new(big(a, prec), Mag::of(ra));
+            let bv = HpApprox::new(big(b, prec), Mag::of(rb));
+            let q = av.div(&bv, prec).expect("divisor clears zero");
+            if ra == 0.0 && rb == 0.0 {
+                // The exact route answers the same value, bit for bit — same BigFloat division.
+                let qe = av.div_exact(&bv, prec).expect("exact divisor");
+                assert!(
+                    q.value.sub(&qe.value, prec, HP_RM).is_zero(),
+                    "interval and exact division disagree on exact inputs"
+                );
+            }
+            // Soundness at the corners: the true quotient for any (a', b') in the box lies
+            // within value ± error. A quotient is monotone in each argument on a sign-constant
+            // box, so the four corners bound the image.
+            for (da, db) in [(1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)] {
+                let at = big(a + da * ra, gt);
+                let bt = big(b + db * rb, gt);
+                let truth = at.div(&bt, gt, HP_RM);
+                let err = resid(&q.value, &truth, gt);
+                assert!(
+                    err <= mag_f64(q.error) || err == 0.0,
+                    "corner ({da},{db}) of {a}±{ra} / {b}±{rb}: off by {err:e}, radius {:e}",
+                    mag_f64(q.error)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_interval_inv_sqrt_agrees_with_the_exact_route_and_contains_the_endpoints() {
+        let prec = 192;
+        let gt = 512;
+        for (x, r) in [(2.0, 0.0), (0.09, 1e-22), (1e20, 1.0), (5.0e-7, 1e-27)] {
+            let xv = HpApprox::new(big(x, prec), Mag::of(r));
+            let s = xv.inv_sqrt(prec).expect("bounded away from zero");
+            if r == 0.0 {
+                // Against the exact-rational route on a value both can state.
+                let rat = nacre_scalar::Rat::from_decimal(x).expect("in the window");
+                let (m, br) = nacre_scalar::inv_sqrt_bounded(rat, prec).expect("positive");
+                let err = resid(&s.value, &m, prec);
+                assert!(
+                    err <= mag_f64(s.error) + mag_f64(br),
+                    "exact input {x}: the two routes disagree by {err:e}"
+                );
+            }
+            // 1/√x is monotone, so the endpoints are the extreme truths.
+            for d in [1.0, -1.0] {
+                let xt = big(x + d * r, gt);
+                let truth = big(1.0, gt).div(&xt.sqrt(gt, HP_RM), gt, HP_RM);
+                let err = resid(&s.value, &truth, gt);
+                assert!(
+                    err <= mag_f64(s.error) || err == 0.0,
+                    "endpoint {d} of {x}±{r}: off by {err:e}, radius {:e}",
+                    mag_f64(s.error)
+                );
+            }
+        }
+    }
+
+    /// The refusals: a divisor or radicand whose interval may reach zero is `None`, never a
+    /// guessed bound — and a negative radicand is refused outright.
+    #[test]
+    fn a_quantity_that_may_reach_zero_is_refused_not_bounded() {
+        let prec = 128;
+        let wide = HpApprox::new(big(1e-10, prec), Mag::of(1.0)); // straddles zero
+        let a = HpApprox::exact(big(1.0, prec));
+        assert!(a.div(&wide, prec).is_none(), "divisor may reach zero");
+        assert!(wide.inv_sqrt(prec).is_none(), "radicand may reach zero");
+        let neg = HpApprox::exact(big(-4.0, prec));
+        assert!(neg.inv_sqrt(prec).is_none(), "a negative has no real root");
+    }
 
     fn big(x: f64, prec: usize) -> BigFloat {
         BigFloat::from_f64(x, prec)
