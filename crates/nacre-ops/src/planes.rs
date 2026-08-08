@@ -208,10 +208,8 @@ pub(crate) fn collect_planes(
                 // (the routing signal means "no exact description", not "carries a motion"),
                 // which makes every exact shortcut decline and `reconcile` carry nothing.
                 //
-                // A *straddling*-vertex datum still has no witness triangle at all — that is the
-                // implicit-point half of the second wall, where `plane_iv_through` finally gets
-                // its caller; until then `through_witness_points` answers `None` there and the
-                // reject stays honest.
+                // A *straddling*-vertex datum has no witness triangle **from its vertices** —
+                // its witness is the judged frame's probes, built in the branch below (16-3).
                 nacre_topo::SurfaceTruth::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
                     motion,

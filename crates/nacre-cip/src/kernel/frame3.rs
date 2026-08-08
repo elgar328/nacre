@@ -1960,93 +1960,40 @@ fn plane_hp(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint, prec: usize
     [n0, n1, n2, d]
 }
 
-/// **The plane through three points that have no coordinates** — the dual of [`cramer_iv`].
-///
-/// `cramer_iv` meets three planes into a homogeneous point `[Dvec : D]`; this joins three such
-/// points back into a plane. Both are the same 3×3 determinant expansion read the other way round,
-/// which is why the whole thing is four `det3_iv` calls and no new arithmetic.
-///
-/// ★★★ **Nothing is divided, and that is the point.** A point named as an intersection has no
-/// rational coordinates to hand out — dividing `Dvec/D` would manufacture an irrational and bake
-/// its rounding into everything downstream, which is exactly what the homogeneous form exists to
-/// avoid (`Approx` has no division at all, and `HpApprox::div_exact` refuses an inexact divisor). So the
-/// plane is built in the same currency: multiplies and subtracts.
-///
-/// ★★★★ **The scale's sign is removed here, not handed to the caller.** The join of
-/// `P_i = D_i·[p_i : 1]` is multilinear in its rows, so the answer is `D0·D1·D2` times the plane
-/// through the affine points. A positive multiple is harmless — every question asked of a plane is
-/// a sign question — but a **negative** one silently reverses the plane's direction, and direction
-/// is what `frame_sign`, outward normals and the whole label frame are built on. There is nowhere
-/// in `Judge::plane_iv`'s signature to carry a correction, and a value with nowhere to go is a
-/// value nobody applies, so the function negates its own result instead. (The kernel's existing
-/// idiom: `canonical_plane_coeffs` also settles sign *inside* the value.)
-///
-/// `None` when any `D_i`'s sign is undecided — then it is not even known whether those three
-/// planes meet in a point, so there is nothing to normalize against and the caller must climb.
-/// Degree 9 in the nine original coefficients (`D`, `Dvec` are 3; the join is 3 in the points).
-#[allow(
-    dead_code,
-    reason = "the f64-filter half of the join. Its escalation twin (`plane_hp_through`) got its \
-              caller in 16-2 — the judged frame's homogeneous route; this one waits for 16-3, \
-              where the judging table's `WorkingPlaneDef::Through` filter finally consumes \
-              interval coefficients. Locked by the same differentials since 2a."
-)]
-pub(crate) fn plane_iv_through(pts: [(Approx, [Approx; 3]); 3]) -> Option<[Approx; 4]> {
-    // Rows of the 3×4: each point as `[x, y, z, w]`, undivided.
-    let row = |i: usize| {
-        let (d, v) = &pts[i];
-        [v[0], v[1], v[2], *d]
-    };
-    let (r0, r1, r2) = (row(0), row(1), row(2));
-    // The four 3×3 minors, alternating in sign — the cofactor expansion of
-    // `det[X; P0; P1; P2]` along its first row, which is `π·X`.
-    let minor = |a: usize, b: usize, c: usize| {
-        det3_iv([
-            [r0[a], r0[b], r0[c]],
-            [r1[a], r1[b], r1[c]],
-            [r2[a], r2[b], r2[c]],
-        ])
-    };
-    let zero = Approx::new(0.0, 0.0);
-    let mut pi = [
-        minor(1, 2, 3),
-        zero.sub(minor(0, 2, 3)),
-        minor(0, 1, 3),
-        zero.sub(minor(0, 1, 2)),
-    ];
-    if negatives_odd([pts[0].0.sign()?, pts[1].0.sign()?, pts[2].0.sign()?]) {
-        for c in &mut pi {
-            *c = zero.sub(*c);
-        }
-    }
-    // ★★★ **Degree nine leaves `f64` when the inputs are themselves joins.** Measured: one level
-    // of joining lands coefficients around `1e70` and the filter is comfortable there; a second
-    // level squares the degree to 81 and the coefficients pass `f64::MAX`, so a radius arrives as
-    // `inf` or `NaN`.
-    //
-    // A `NaN` radius happens to make `Approx::sign` answer `None`, which happens to escalate, which
-    // happens to be right — three accidents in a row is not a guarantee. Said instead: this route
-    // has no answer at that magnitude, and the caller climbs because it was told to.
-    pi.iter()
-        .all(|c| c.value.is_finite() && c.error.is_finite())
-        .then_some(pi)
-}
-
 /// `true` when an odd number of the three scale factors is negative — the case where the join
 /// comes out pointing the other way. `sign()` reports `true` for positive.
 fn negatives_odd(signs: [bool; 3]) -> bool {
     signs.iter().filter(|positive| !**positive).count() % 2 == 1
 }
 
-/// [`plane_iv_through`] at `prec` bits — the ground truth its radius is validated against, the
-/// same relationship [`plane_hp`] has to [`plane_iv`].
+/// **The plane through three points that have no coordinates** — the projective join, the dual
+/// of [`cramer_hp`]: that one meets three planes into a homogeneous point `[Dvec : D]`, this
+/// joins three such points back into a plane. Both are the same 3×3 determinant expansion read
+/// the other way round, which is why the whole thing is four [`det3_big`] calls and no new
+/// arithmetic. Consumed by [`judged_coeffs`]' homogeneous route (a judged frame whose defining
+/// point is a [`JudgedPoint::Meet`]).
 ///
-/// ★★ **It normalizes by the same rule, and it must.** The radius check compares this against the
-/// interval form coefficient by coefficient; if only one of the two settled its sign they would be
-/// describing opposite planes and every comparison would fail for a reason that has nothing to do
-/// with the radius. `None` on an undecided `D` for the same reason as the interval form, though at
-/// this precision it is far less likely — and when the interval form already answered, its decided
-/// signs are correct, so the two agree by construction.
+/// ★★★ **Nothing is divided, and that is the point.** A point named as an intersection has no
+/// rational coordinates to hand out — dividing `Dvec/D` would manufacture an irrational and bake
+/// its rounding into everything downstream, which is exactly what the homogeneous form exists to
+/// avoid. The plane is built in the same currency: multiplies and subtracts.
+///
+/// ★★★★ **The scale's sign is removed here, not handed to the caller.** The join of
+/// `P_i = D_i·[p_i : 1]` is multilinear in its rows, so the answer is `D0·D1·D2` times the plane
+/// through the affine points. A positive multiple is harmless — every question asked of a plane
+/// is a sign question — but a **negative** one silently reverses the plane's direction, and
+/// direction is what `frame_sign`, outward normals and the whole label frame are built on; the
+/// function negates its own result instead of reporting (the kernel's existing idiom:
+/// `canonical_plane_coeffs` also settles sign *inside* the value).
+///
+/// `None` when any `D_i`'s sign is undecided — then it is not even known whether those three
+/// planes meet in a point, so there is nothing to normalize against and the caller must climb.
+/// Degree 9 in the nine input coefficients.
+///
+/// (Its f64/`Approx` filter twin, `plane_iv_through`, retired unconsumed in 16-3 — the judging
+/// table turned out to need no interval-coefficient route at all. The dev-log records the
+/// restoration path; the lock lives in 16-2's Pure-vs-Meet differential, which pins this
+/// function's basis against the affine shortcut end to end.)
 fn plane_hp_through(pts: [(&HpApprox, &[HpApprox; 3]); 3], prec: usize) -> Option<[HpApprox; 4]> {
     let zero = HpApprox::exact(BigFloat::from_f64(0.0, prec));
     let row = |i: usize| {
@@ -4480,333 +4427,6 @@ mod tests {
         assert_eq!(Approx::new(1.0, 0.5).sign(), Some(true));
         assert_eq!(Approx::new(-1.0, 0.5).sign(), Some(false));
         assert_eq!(Approx::new(0.3, 0.5).sign(), None); // straddles 0 → escalate
-    }
-
-    /// ★★★★★ **The witness-free plane's radius must contain the truth — and this is the gate.**
-    ///
-    /// `plane_iv` is validated exactly this way (interval midpoint against `plane_hp` at 512 bits,
-    /// error must not exceed the radius). The join is the same check one level up, and it is not a
-    /// formality: `Approx::mul` charges `2ε` per operation, which has covered the rounding of its own
-    /// radius terms at the depths this kernel has used so far — and **the join is deeper than any
-    /// of them** (degree 9 in the nine input coefficients, against 6 for `plane_iv`+`cramer_iv`).
-    /// Whether the slack survives that depth is not something to assume.
-    #[test]
-    fn the_joined_plane_carries_its_own_error() {
-        const GT: usize = 512;
-        const N: usize = 200;
-        let mut st = 0x5eed_1357u64;
-        let mut ran = 0usize;
-        let mut negative_scale = 0usize;
-        // ★ Relative, not absolute: at degree 9 the coefficients themselves are enormous, so a
-        // radius of 1e70 says nothing on its own. What decides whether the f64 filter is usable at
-        // this depth is `error / |value|`.
-        let mut worst_rel = 0.0f64;
-        let mut undecided = 0usize;
-        for _ in 0..N {
-            // Nine planes → three implicit points. Each plane is a witness triangle, so both the
-            // interval and the high-precision route have the same inputs.
-            let tri = |st: &mut u64| (rand_point(st), rand_point(st), rand_point(st));
-            let ts: [(WitnessPoint, WitnessPoint, WitnessPoint); 9] =
-                core::array::from_fn(|_| tri(&mut st));
-            let ivs: Vec<[Approx; 4]> = ts.iter().map(|t| plane_iv(&t.0, &t.1, &t.2)).collect();
-            let hps: Vec<[HpApprox; 4]> =
-                ts.iter().map(|t| plane_hp(&t.0, &t.1, &t.2, GT)).collect();
-
-            let meet_iv: Vec<(Approx, [Approx; 3])> = (0..3)
-                .map(|k| cramer_iv([ivs[3 * k], ivs[3 * k + 1], ivs[3 * k + 2]]))
-                .collect();
-            let Some(joined) = plane_iv_through([meet_iv[0], meet_iv[1], meet_iv[2]]) else {
-                continue; // an undecided `D` — the caller climbs, there is nothing to check
-            };
-            let meet_hp: Vec<(HpApprox, [HpApprox; 3])> = (0..3)
-                .map(|k| {
-                    cramer_hp(
-                        &[
-                            hps[3 * k].clone(),
-                            hps[3 * k + 1].clone(),
-                            hps[3 * k + 2].clone(),
-                        ],
-                        GT,
-                    )
-                })
-                .collect();
-            let truth = plane_hp_through(
-                [
-                    (&meet_hp[0].0, &meet_hp[0].1),
-                    (&meet_hp[1].0, &meet_hp[1].1),
-                    (&meet_hp[2].0, &meet_hp[2].1),
-                ],
-                GT,
-            )
-            .expect("the interval form already decided every sign, so this one does too");
-
-            ran += 1;
-            if meet_iv.iter().any(|(d, _)| d.sign() == Some(false)) {
-                negative_scale += 1;
-            }
-            for k in 0..4 {
-                let err = abs_err(joined[k].value, &truth[k], GT);
-                assert!(
-                    err <= joined[k].error,
-                    "coefficient {k}: error {err} exceeds radius {} — the join's interval does \
-                     not contain the truth",
-                    joined[k].error
-                );
-                let rel = joined[k].error / joined[k].value.abs().max(f64::MIN_POSITIVE);
-                if rel > worst_rel {
-                    worst_rel = rel;
-                }
-                if joined[k].sign().is_none() {
-                    undecided += 1;
-                }
-            }
-        }
-        println!(
-            "stat join_soundness cases={N} decided={ran} with_negative_D={negative_scale} \
-             worst_relative_width={worst_rel:e} coefficients_undecided={undecided}/{}",
-            ran * 4
-        );
-        // ★ Both counts are asserted because either being zero would make the run vacuous: nothing
-        // decided means nothing was compared, and no negative `D` means the sign normalization —
-        // the one thing here that can silently reverse a plane — was never exercised.
-        assert!(
-            ran > 0,
-            "every case had an undecided D; nothing was compared"
-        );
-        assert!(
-            negative_scale > 0,
-            "no case had a negative scale factor, so the sign normalization went untested"
-        );
-    }
-
-    /// ★★★ **Depth two: a joined plane used as a carrier for another join.**
-    ///
-    /// A datum can be raised on a datum, so a `Through` plane's carriers can themselves be
-    /// `Through`. The degree multiplies rather than adds — 9 becomes 81 — and that is the number
-    /// that decides whether depth needs a limit. Shallow success says nothing about it, which is
-    /// why this is its own case rather than a wider generator.
-    #[test]
-    fn a_join_whose_carriers_are_joins_still_carries_its_error() {
-        const GT: usize = 512;
-        const N: usize = 8;
-        let mut st = 0xdeadb0d2u64;
-        let mut ran = 0usize;
-        let mut worst_rel = 0.0f64;
-        let mut undecided = 0usize;
-        let mut out_of_range = 0usize;
-
-        // One joined plane, from nine witness planes — returned in both currencies.
-        let joined_plane = |st: &mut u64| -> Option<([Approx; 4], [HpApprox; 4])> {
-            let ts: [(WitnessPoint, WitnessPoint, WitnessPoint); 9] =
-                core::array::from_fn(|_| (rand_point(st), rand_point(st), rand_point(st)));
-            let ivs: Vec<[Approx; 4]> = ts.iter().map(|t| plane_iv(&t.0, &t.1, &t.2)).collect();
-            let hps: Vec<[HpApprox; 4]> =
-                ts.iter().map(|t| plane_hp(&t.0, &t.1, &t.2, GT)).collect();
-            let m_iv: Vec<(Approx, [Approx; 3])> = (0..3)
-                .map(|k| cramer_iv([ivs[3 * k], ivs[3 * k + 1], ivs[3 * k + 2]]))
-                .collect();
-            let iv = plane_iv_through([m_iv[0], m_iv[1], m_iv[2]])?;
-            let m_hp: Vec<(HpApprox, [HpApprox; 3])> = (0..3)
-                .map(|k| {
-                    cramer_hp(
-                        &[
-                            hps[3 * k].clone(),
-                            hps[3 * k + 1].clone(),
-                            hps[3 * k + 2].clone(),
-                        ],
-                        GT,
-                    )
-                })
-                .collect();
-            let hp = plane_hp_through(
-                [
-                    (&m_hp[0].0, &m_hp[0].1),
-                    (&m_hp[1].0, &m_hp[1].1),
-                    (&m_hp[2].0, &m_hp[2].1),
-                ],
-                GT,
-            )?;
-            Some((iv, hp))
-        };
-
-        for _ in 0..N {
-            // Nine *joined* planes → three depth-two points → one depth-two plane.
-            let mut ivs = Vec::new();
-            let mut hps = Vec::new();
-            let mut ok = true;
-            for _ in 0..9 {
-                match joined_plane(&mut st) {
-                    Some((i, h)) => {
-                        ivs.push(i);
-                        hps.push(h);
-                    }
-                    None => ok = false,
-                }
-            }
-            if !ok {
-                continue;
-            }
-            let m_iv: Vec<(Approx, [Approx; 3])> = (0..3)
-                .map(|k| cramer_iv([ivs[3 * k], ivs[3 * k + 1], ivs[3 * k + 2]]))
-                .collect();
-            let filtered = plane_iv_through([m_iv[0], m_iv[1], m_iv[2]]);
-            if filtered.is_none() {
-                out_of_range += 1;
-            }
-            let m_hp: Vec<(HpApprox, [HpApprox; 3])> = (0..3)
-                .map(|k| {
-                    cramer_hp(
-                        &[
-                            hps[3 * k].clone(),
-                            hps[3 * k + 1].clone(),
-                            hps[3 * k + 2].clone(),
-                        ],
-                        GT,
-                    )
-                })
-                .collect();
-            let truth = plane_hp_through(
-                [
-                    (&m_hp[0].0, &m_hp[0].1),
-                    (&m_hp[1].0, &m_hp[1].1),
-                    (&m_hp[2].0, &m_hp[2].1),
-                ],
-                GT,
-            )
-            .expect("the interval form decided, so this one does too");
-
-            ran += 1;
-            // ★ The high-precision route is asked unconditionally: whatever the filter can or
-            // cannot represent, the escalation must still produce a plane, and that is what makes
-            // "climb instead" an answer rather than a shrug.
-            assert!(
-                truth.iter().all(|c| !c.value.is_nan() && !c.value.is_inf()),
-                "the high-precision route lost the plane too — then there is no answer at all"
-            );
-            if let Some(joined) = filtered {
-                for k in 0..4 {
-                    let err = abs_err(joined[k].value, &truth[k], GT);
-                    assert!(
-                        err <= joined[k].error,
-                        "depth-two coefficient {k}: error {err} exceeds radius {}",
-                        joined[k].error
-                    );
-                    let rel = joined[k].error / joined[k].value.abs().max(f64::MIN_POSITIVE);
-                    if rel > worst_rel {
-                        worst_rel = rel;
-                    }
-                    if joined[k].sign().is_none() {
-                        undecided += 1;
-                    }
-                }
-            }
-        }
-        println!(
-            "stat join_depth2 cases={N} reached={ran} filter_out_of_range={out_of_range} \
-             worst_relative_width={worst_rel:e} coefficients_undecided={undecided}"
-        );
-        assert!(ran > 0, "no depth-two case survived; nothing was compared");
-    }
-
-    /// ★★★★★ **The two descriptions of one plane must answer the same sign question.**
-    ///
-    /// Where three planes meet at a point whose coordinates *are* rational, that point can be
-    /// written both ways — as an intersection (no coordinates) and as a witness (coordinates from
-    /// `three_planes_big`). The plane through three such points therefore has two descriptions,
-    /// and they must agree.
-    ///
-    /// ★ The comparison is a **sign question**, not coefficient equality: the join returns a
-    /// positive multiple of the witnessed plane, not the same numbers. That is also what makes
-    /// this the test for the dangerous part — a multiple's *sign* is exactly what the
-    /// normalization inside `plane_iv_through` is responsible for.
-    #[test]
-    fn the_joined_plane_and_the_witnessed_one_agree_on_which_side() {
-        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
-        // Nine axis-ish planes with small integer coefficients, chosen so each triple meets at a
-        // rational point and `three_planes_big` answers `Narrow`.
-        let plane = |a: i128, b: i128, c: i128, d: i128| {
-            nacre_scalar::PlaneName::Narrow([r(a, 1), r(b, 1), r(c, 1), r(d, 1)])
-        };
-        // Three points: (1,2,3), (4,1,1), (2,5,2) — each as the meet of three planes, and each
-        // triple ordered so at least one determinant comes out negative.
-        let triples = [
-            // ★ The first two are swapped on purpose: exchanging two planes negates that
-            // triple's determinant, which is how the fixture reaches an *odd* number of negative
-            // scale factors — the only arrangement in which the normalization has to act.
-            [plane(0, 1, 0, -2), plane(1, 0, 0, -1), plane(0, 0, 1, -3)],
-            [plane(0, 0, 1, -1), plane(0, 1, 0, -1), plane(1, 0, 0, -4)],
-            [plane(0, 1, 0, -5), plane(1, 0, 0, -2), plane(0, 0, 1, -2)],
-        ];
-        let mut witnesses = Vec::new();
-        let mut meets = Vec::new();
-        let mut negative = 0usize;
-        for t in &triples {
-            let exact = nacre_scalar::three_planes_big([&t[0], &t[1], &t[2]])
-                .expect("these three planes meet")
-                .narrow()
-                .copied()
-                .expect("at these magnitudes the meet fits Rat");
-            witnesses.push(WitnessPoint::at(exact));
-            let ivs: Vec<[Approx; 4]> = t
-                .iter()
-                .map(|n| {
-                    let c = n.narrow().unwrap();
-                    [
-                        Approx::new(c[0].to_f64(), 0.0),
-                        Approx::new(c[1].to_f64(), 0.0),
-                        Approx::new(c[2].to_f64(), 0.0),
-                        Approx::new(c[3].to_f64(), 0.0),
-                    ]
-                })
-                .collect();
-            let m = cramer_iv([ivs[0], ivs[1], ivs[2]]);
-            if m.0.sign() == Some(false) {
-                negative += 1;
-            }
-            meets.push(m);
-        }
-        assert!(
-            negative % 2 == 1,
-            "this fixture must put an odd number of negative determinants in, or the sign \
-             normalization is never asked to do anything (got {negative})"
-        );
-
-        let joined = plane_iv_through([meets[0], meets[1], meets[2]])
-            .expect("every determinant here is definite");
-        let witnessed = plane_iv(&witnesses[0], &witnesses[1], &witnesses[2]);
-
-        // The same question of both: which side of the plane does each of several probes lie on?
-        let side = |pl: &[Approx; 4], p: [f64; 3]| {
-            pl[0]
-                .mul(Approx::new(p[0], 0.0))
-                .add(pl[1].mul(Approx::new(p[1], 0.0)))
-                .add(pl[2].mul(Approx::new(p[2], 0.0)))
-                .add(pl[3])
-                .sign()
-        };
-        let mut asked = 0usize;
-        for probe in [
-            [0.0, 0.0, 0.0],
-            [10.0, 0.0, 0.0],
-            [0.0, 10.0, 0.0],
-            [0.0, 0.0, 10.0],
-            [-7.0, 3.0, 5.0],
-            [3.0, -4.0, 8.0],
-        ] {
-            let (a, b) = (side(&joined, probe), side(&witnessed, probe));
-            if let (Some(a), Some(b)) = (a, b) {
-                asked += 1;
-                assert_eq!(
-                    a, b,
-                    "the joined plane and the witnessed one disagree about {probe:?} — the scale's \
-                     sign was not removed"
-                );
-            }
-        }
-        assert!(
-            asked >= 3,
-            "too few probes were decided to call this a comparison"
-        );
     }
 
     /// Sanity: three coordinate planes meet at the origin `V=(0,0,0)`; `orient3d(V,q,r,s)`

@@ -560,8 +560,8 @@ pub enum OpError {
     /// are in that state (`tests/point_width.rs`, `a_datum_on_straddling_carriers_has_no_name`).
     ///
     /// ★★★★ **Corrected 2026-08-08 — what opens this is not the judging layer.** This used to say
-    /// the next stage's homogeneous lift opened the population. It does not, and the machinery for
-    /// that lift now exists (`nacre-cip`'s `plane_iv_through`) with nothing able to reach it. Such
+    /// the next stage's homogeneous lift opened the population. It does not, and the lift's
+    /// machinery was built long before anything could reach it. Such
     /// a plane has **no exact name**, and from there:
     ///
     /// ```text
