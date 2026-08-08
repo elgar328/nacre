@@ -162,6 +162,84 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
     );
 }
 
+/// ★★★★★ **A plane the model cannot name cannot host a sketch — and that is the wall the last
+/// migration row actually stands behind.**
+///
+/// `docs/truth-and-cache.md` recorded S5(ii)-2 as judging-layer work. It is not. A datum through
+/// vertices in mixed frames has no exact name, and from there:
+///
+/// ```text
+/// no name → frame_chain declines → no SketchFrame → never a base cap → never in a plane table
+/// ```
+///
+/// so `WorkingPlaneDef::Through` has no producer and cannot have one until a nameless plane can be
+/// framed. That was read out of the code; this runs it.
+///
+/// ★ **Not a backstop for a future stage.** `Model::push_plane` is `pub` and leaves a nameless
+/// plane behind for a collinear triple (`intern_plane` builds no key), and `SketchFrame::canonical`
+/// is `pub` and checks nothing — so the pair is reachable from outside this crate today and had no
+/// test. Production is safe because every push passes a non-collinearity gate first (`PlaneDef`'s
+/// constructors call `plane_name_exact`; the prism's caps and walls gate on
+/// `Plane::from_point_normal`/`through_points` and `Profile2d::check`), which is what
+/// `every_plane_still_has_a_name` observes — but that is *we do not*, not *it cannot*.
+///
+/// ★★ **The control is half the test.** An unregistered plane's name is *derivable* and merely
+/// absent from the side table; a mixed-frame `Through` plane's name **does not exist**. Different
+/// facts — but indistinguishable *to a frame*, because `frame_chain`'s first line and
+/// `SketchFrame::named` both read that one table and there is no other route. Pushing the same
+/// points through `push_plane`, where the only thing that changes is that the name gets recorded,
+/// is what says so. A seed plane would not: it would answer "it extruded because it is world XY".
+#[test]
+fn a_plane_with_no_name_cannot_host_a_sketch() {
+    let r = nacre_scalar::Rat::from_int;
+    let pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
+    let origin = Point3::from_array([0.0, 0.0, 3.0]);
+    // `−normal`, the convention every datum and base cap keeps.
+    let cache = nacre_geom::Plane::from_point_normal(origin, Vector3::from_array([0.0, 0.0, -1.0]))
+        .expect("z = 3 is a plane");
+    let sketch = |frame| Operation::Extrude {
+        frame,
+        profile: square(0.0, 2.0),
+        dist: 1.0,
+    };
+
+    let mut m = Model::new();
+    let nameless = m.push_plane_unregistered(cache, pts);
+    assert!(
+        !m.surface_name.contains_key(&nameless),
+        "the instrument did not produce a nameless plane"
+    );
+
+    let before = m.live_solids.clone();
+    assert_eq!(
+        apply(&mut m, &sketch(SketchFrame::canonical(nameless))).unwrap_err(),
+        OpError::PlaneWithoutExactForm,
+        "a sketch on a plane with no name must be a named reject"
+    );
+    assert_eq!(
+        m.live_solids, before,
+        "a refusal must leave the model alone"
+    );
+
+    // ★ The other door onto the same plane answers the same way. One failure, one description —
+    // two descriptions of one thing is the shape this kernel has been bitten by repeatedly.
+    assert_eq!(
+        SketchFrame::named(&m, nameless, origin, Vector3::from_array([1.0, 0.0, 0.0])).unwrap_err(),
+        OpError::PlaneWithoutExactForm,
+        "the two doors onto a nameless plane describe the failure differently"
+    );
+
+    // ★★ The control: same cache, same points, and the name recorded.
+    let mut named = Model::new();
+    let (h, _) = named.push_plane(cache, pts, None);
+    assert!(
+        named.surface_name.contains_key(&h),
+        "push_plane derives the name from the points"
+    );
+    apply(&mut named, &sketch(SketchFrame::canonical(h)))
+        .expect("the same plane, named, hosts the same sketch");
+}
+
 /// ★★ **The seam this stage opened, now closed: an extrude's base cap *is* the frame's plane.**
 ///
 /// Before S5(i)-b this compared two roads — "state the plane first" against "let the extrude
@@ -1174,6 +1252,124 @@ fn a_datum_through_vertices_refuses_by_cause() {
         OpError::VerticesInMixedFrames,
         "vertices from two frames have no shared rational coordinate"
     );
+}
+
+/// ★★★ **The mixed-frame cause that is not the caller's doing — one solid, one vertex, carriers in
+/// two frames.**
+///
+/// `a_datum_through_vertices_refuses_by_cause` fires `VerticesInMixedFrames` by combining two
+/// *solids*, which a caller chooses to do. The population that actually dominates is the other
+/// one: a boolean between a turned operand and a still one hands back **one** solid whose corners
+/// are the meeting of an unmoved wall and two turned ones, so a single vertex straddles. Measured,
+/// **12 of that solid's 20 vertices** are in that state (`tests/point_width.rs`), and until this
+/// there was no fixture for it — the label was only ever fired by the caller-error shape.
+///
+/// ★ **The control is the minimal difference**: three vertices that solve, and the same triple with
+/// one of them swapped for a straddler. Nothing else about the model changes, so the swap is the
+/// whole of the cause.
+#[test]
+fn a_datum_on_straddling_carriers_has_no_name() {
+    use nacre_topo::VertexDef;
+
+    let mut m = Model::new();
+    let a = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 10.0]),
+    );
+    let b = m.add_cuboid(
+        Point3::from_array([3.3, 3.3, -1.0]),
+        Point3::from_array([7.7, 7.7, 11.0]),
+    );
+    let OpOutput::Transform { solid: b } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid: b,
+            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                axis: Axis::Z,
+                point: [nacre_scalar::Rat::from_int(0); 3],
+                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let cut = nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Cut, a, b).expect("cut");
+    m.rebuild_adjacency();
+    // ★ **The boolean's own result** — the whole point is that the straddling is something the
+    // *kernel* produced, not something a caller reached across two solids to make. (The untouched
+    // second cuboid is still live; walking every live solid would readmit exactly the caller-error
+    // shape this test is not about.) The cut severs a corner, so the result is more than one piece
+    // — that count is recorded rather than asserted, since nothing here depends on it.
+    let mine: std::collections::HashSet<_> = {
+        let mut out = std::collections::HashSet::new();
+        for &sh in cut
+            .iter()
+            .flat_map(|&sh| {
+                let s = m.solids.get(sh);
+                std::iter::once(s.outer).chain(s.cavities.iter().copied())
+            })
+            .collect::<Vec<_>>()
+            .iter()
+        {
+            for &fh in &m.shells.get(sh).faces {
+                let f = m.faces.get(fh);
+                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for &he in &lp.half_edges {
+                        out.insert(m.he_start(he));
+                    }
+                }
+            }
+        }
+        out
+    };
+
+    // Split them by whether their own three carriers share a motion.
+    let (mut pure, mut straddling) = (Vec::new(), Vec::new());
+    for vh in mine {
+        let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+            continue;
+        };
+        let mine = m.plane_motion(tri[0]);
+        if tri.iter().any(|h| m.plane_motion(*h) != mine) {
+            straddling.push(vh);
+        } else {
+            pure.push(vh);
+        }
+    }
+    assert!(
+        !straddling.is_empty(),
+        "a turned-against-still cut must leave carriers straddling — the fixture stopped measuring"
+    );
+    assert!(pure.len() >= 3, "and some corners must still be pure");
+
+    // A triple that does solve, so the swap below has something to be the difference from.
+    let solvable = (0..pure.len())
+        .flat_map(|i| ((i + 1)..pure.len()).map(move |j| (i, j)))
+        .flat_map(|(i, j)| ((j + 1)..pure.len()).map(move |k| [i, j, k]))
+        .map(|ix| ix.map(|i| pure[i]))
+        .find(|t| m.through_points_rat(*t).is_some())
+        .expect("three pure vertices that share one frame");
+
+    for &s in &straddling {
+        let swapped = [s, solvable[1], solvable[2]];
+        assert!(
+            m.through_points_rat(swapped).is_none(),
+            "a straddling vertex has no rational coordinate in any single frame"
+        );
+        assert_eq!(
+            apply(
+                &mut m,
+                &Operation::DatumPlane {
+                    def: DatumDef::ThroughVertices(swapped),
+                },
+            )
+            .unwrap_err(),
+            OpError::VerticesInMixedFrames,
+            "and the datum must say so by name"
+        );
+    }
 }
 
 /// ★★★★ **A solid built on a vertex-named datum moves exactly once.**

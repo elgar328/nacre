@@ -554,9 +554,27 @@ pub enum OpError {
     /// rational coordinate for them: reaching the world means realizing a rotation, and cos/sin
     /// are irrational.
     ///
-    /// ★ This is not a caller mistake — it is the population the *next* stage opens (the judging
-    /// layer's homogeneous lift, `docs/truth-and-cache.md` open item 1). It is named separately
-    /// so that "how much does this cost us today" stays countable.
+    /// ★ This is not a caller mistake. The dominant shape is not two solids combined by hand but a
+    /// **single boolean result**: a cut between a turned operand and a still one leaves corners
+    /// where an unmoved wall meets two turned ones, and measured, 12 of that solid's 20 vertices
+    /// are in that state (`tests/point_width.rs`, `a_datum_on_straddling_carriers_has_no_name`).
+    ///
+    /// ★★★★ **Corrected 2026-08-08 — what opens this is not the judging layer.** This used to say
+    /// the next stage's homogeneous lift opened the population. It does not, and the machinery for
+    /// that lift now exists (`nacre-cip`'s `plane_iv_through`) with nothing able to reach it. Such
+    /// a plane has **no exact name**, and from there:
+    ///
+    /// ```text
+    /// no name → frame_chain declines → no SketchFrame → never a base cap → never in a plane table
+    /// ```
+    ///
+    /// so it never gets as far as being judged. What would open it is a **frame for a nameless
+    /// plane** — a realization that takes the plane's coefficients as intervals at a precision
+    /// rather than as exact rationals or `BigInt`s, which is what `MoveNode::Frame` and
+    /// `FrameWide` both require today. `docs/truth-and-cache.md`'s open item says so, and
+    /// `a_plane_with_no_name_cannot_host_a_sketch` runs the chain.
+    ///
+    /// It is named separately so that "how much does this cost us today" stays countable.
     VerticesInMixedFrames,
     /// A named vertex solves exactly, but its coordinate does not fit `Rat`. Stage-one only: the
     /// plane through such points is derivable at arbitrary precision, and the stage that stops
@@ -607,8 +625,10 @@ pub enum DatumDef {
     /// way a caller can choose a side (`dist` is positive-only).
     ///
     /// Rejects by cause rather than by one blanket failure, because the causes have different
-    /// futures: [`OpError::VerticesInMixedFrames`] is what the next stage opens,
-    /// [`OpError::VertexPointTooWide`] is a limit of this one, and the rest are the caller's.
+    /// futures: [`OpError::VerticesInMixedFrames`] waits on a frame for a nameless plane (see
+    /// there — this used to say "what the next stage opens", and that stage turned out not to be
+    /// the one that opens it), [`OpError::VertexPointTooWide`] is a limit of this one, and the
+    /// rest are the caller's.
     ThroughVertices([Handle<Vertex>; 3]),
     /// **`dist` away from a plane the model already holds**, stated inside that plane's own frame
     /// as the rational triple `(0,0,d), (1,0,d), (0,1,d)`.
@@ -1734,9 +1754,15 @@ impl SketchFrame {
     /// * [`OpError::FrameOutsideDecimalWindow`] — a coordinate of `origin`/`ref_dir` has no
     ///   decimal truth (`Rat::from_decimal` — `~1e38` above, `~1e-22` below for a full-width
     ///   value); the claim cannot even be stated exactly.
-    /// * [`OpError::PlaneWithoutExactForm`] — the plane carries no name (a test-only
-    ///   unregistered surface): the same proposition as everywhere this error fires, "there is
-    ///   no exact statement to check against".
+    /// * [`OpError::PlaneWithoutExactForm`] — the plane carries no name: the same proposition as
+    ///   everywhere this error fires, "there is no exact statement to check against". ★ Not a
+    ///   test-only population, as this used to say — [`Model::push_plane`] is public and leaves a
+    ///   nameless plane behind for a collinear triple, so a caller outside this crate can reach
+    ///   it. Every production push passes a non-collinearity gate first, which is why
+    ///   `every_plane_still_has_a_name` holds; that is *we do not*, not *it cannot*.
+    ///   [`SketchFrame::canonical`] makes no claim and so cannot answer here — the same plane
+    ///   reaches this error one step later, inside the operation, and
+    ///   `a_plane_with_no_name_cannot_host_a_sketch` pins that the two doors agree.
     /// * [`OpError::OriginNotOnPlane`] — the stated origin's residual against the plane's name
     ///   is nonzero. Exact, total ([`nacre_scalar::plane_residual_sign`]): a `Wide` name checks
     ///   through arbitrary precision, never a shrug.

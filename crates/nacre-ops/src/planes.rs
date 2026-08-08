@@ -194,9 +194,17 @@ pub(crate) fn collect_planes(
                 // The rational-closure branch is the whole of stage 1: three vertices that solve
                 // to `Rat` give a triangle indistinguishable from a stated one, so every predicate
                 // below runs unchanged. The other branch — mixed frames, irrational motion — has
-                // no witness triangle at all and is what the homogeneous-lifting stage opens; the
-                // producer refuses to build such a plane, so reaching here means the invariant
-                // broke rather than the user asked for something unsupported.
+                // no witness triangle at all; the producer refuses to build such a plane, so
+                // reaching here means the invariant broke rather than the user asked for something
+                // unsupported.
+                //
+                // ★★★ **Corrected 2026-08-08: this is the *second* wall, not the first.** It used
+                // to say the homogeneous-lifting stage opens that branch. It does not on its own —
+                // such a plane has no name, so it never gets a `SketchFrame`, never becomes a base
+                // cap, and never reaches this table (`OpError::VerticesInMixedFrames` has the
+                // chain). The order is: give a nameless plane a frame, *then* this arm needs the
+                // homogeneous route, and that is where `nacre-cip`'s `plane_iv_through` finally
+                // has a caller.
                 nacre_topo::SurfaceTruth::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
                     motion,

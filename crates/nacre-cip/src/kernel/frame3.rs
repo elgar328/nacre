@@ -1656,10 +1656,15 @@ fn plane_hp(p0: &Pt3, p1: &Pt3, p2: &Pt3, prec: usize) -> [HpIv; 4] {
 /// Degree 9 in the nine original coefficients (`D`, `Dvec` are 3; the join is 3 in the points).
 #[allow(
     dead_code,
-    reason = "built and proved before it is wired — S5(ii)-2b is the consumer. The same shape \
-              `three_planes_big` was committed in (locked by a differential, wired a stage later); \
-              it escaped this lint only because it is `pub` in its crate, which is not a reason to \
-              widen this crate's surface."
+    reason = "built and proved before it is wired. ★ Corrected 2026-08-08: the consumer is not \
+              the arrangement's plane table, as this used to say. Such a plane has no name, so it \
+              gets no `SketchFrame`, never becomes a base cap, and never reaches a plane table at \
+              all — the first consumer has to be a **frame realization** that takes a plane's \
+              coefficients as intervals at a precision (see `docs/truth-and-cache.md`, open item \
+              on framing a nameless plane); the plane table is the wall behind that one. The same \
+              shape `three_planes_big` was committed in (locked by a differential, wired a stage \
+              later); it escaped this lint only because it is `pub` in its crate, which is not a \
+              reason to widen this crate's surface."
 )]
 pub(crate) fn plane_iv_through(pts: [(Iv, [Iv; 3]); 3]) -> Option<[Iv; 4]> {
     // Rows of the 3×4: each point as `[x, y, z, w]`, undivided.
@@ -1706,7 +1711,8 @@ pub(crate) fn plane_iv_through(pts: [(Iv, [Iv; 3]); 3]) -> Option<[Iv; 4]> {
 /// comes out pointing the other way. `sign()` reports `true` for positive.
 #[allow(
     dead_code,
-    reason = "used by `plane_iv_through`/`plane_hp_through`, both awaiting S5(ii)-2b"
+    reason = "used by `plane_iv_through`/`plane_hp_through`, both awaiting a consumer — \
+              see the reason on `plane_iv_through` for which one"
 )]
 fn negatives_odd(signs: [bool; 3]) -> bool {
     signs.iter().filter(|positive| !**positive).count() % 2 == 1
@@ -1723,7 +1729,8 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
 /// signs are correct, so the two agree by construction.
 #[allow(
     dead_code,
-    reason = "the escalation half of `plane_iv_through` — same wait"
+    reason = "the escalation half of `plane_iv_through` — the same wait, and the same \
+              correction about what it is waiting for"
 )]
 fn plane_hp_through(pts: [(&HpIv, &[HpIv; 3]); 3], prec: usize) -> Option<[HpIv; 4]> {
     let zero = HpIv::exact(BigFloat::from_f64(0.0, prec));
