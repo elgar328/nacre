@@ -117,6 +117,24 @@
 //! The judged class's judging cost, measured in `wide_datum_cost.rs`: **416 climbs** beside a
 //! wide name's 454 and a narrow name's 110, exhausted 0 — a cost of the same order as `Wide`,
 //! not a cliff.
+//!
+//! # After 16-2 (2026-08-09) — the straddle bucket opens too
+//!
+//! Stage 16-2 accepts the straddling vertex as the **meet of its carriers** (an implicit point),
+//! so `carriers_straddle` re-labels `accepted_straddle` — again an upper bound (the op can refuse
+//! an individual statement as `ThroughFrameUndecided`). Measured after the change, of the triples
+//! the frame question decides:
+//!
+//! | population | named | nameless (pure-mixed) | **nameless (straddle)** | blocked |
+//! |---|---|---|---|---|
+//! | `boolean_rotated`  | 4.9%  | 0%    | **95.1%** | **0** |
+//! | `tilted_frame`     | 10.7% | 28.6% | **60.7%** | **0** |
+//! | `tilted_frame_x2`  | 3.2%  | 24.5% | **72.3%** | **0** |
+//!
+//! ★ The datum-vocabulary wall is fully open at this level: every geometrically sound triple in
+//! every population classifies as acceptable. What is NOT open is the boolean over such a datum's
+//! own face — `ImplicitPlaneUnsupported`, the honest boundary until the judging table can seat an
+//! implicit-point plane (open item 16-3).
 
 use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
@@ -366,7 +384,11 @@ struct Reach {
     pure_frames: usize,
     triples: usize,
     accepted: usize,
-    carriers_straddle: usize,
+    /// ★ Re-labelled when 16-2 landed: a straddling vertex used to block its triple; the meet
+    /// road accepts it now (the op can still refuse an individual statement with
+    /// `ThroughFrameUndecided`, so like the other buckets this is the classifier's answer — an
+    /// upper bound on op-level acceptance).
+    accepted_straddle: usize,
     /// ★ Re-labelled when 16-1 landed: pure vertices in differing frames used to be
     /// `vertices_differ` (blocked); the judged frame accepts them now, namelessly. The op can
     /// still refuse an individual one (`ThroughFrameUndecided`), so this is the *classifier's*
@@ -381,8 +403,8 @@ struct Reach {
 impl Reach {
     fn report(&self, what: &str) {
         // The quantity: of the triples the *frame* is what blocks, how many would be freed.
-        let blocked = self.carriers_straddle;
-        let denom = self.accepted + self.accepted_nameless + blocked;
+        let blocked = 0usize;
+        let denom = self.accepted + self.accepted_nameless + self.accepted_straddle;
         let pct = |n: usize| {
             if denom == 0 {
                 0.0
@@ -394,15 +416,16 @@ impl Reach {
             "stat datum_reach {what:18} vertices={} pure={} pure_frames={} triples={}",
             self.vertices, self.pure, self.pure_frames, self.triples
         );
+        let _ = blocked;
         println!(
             "stat datum_reach {what:18} accepted={} ({:.1}%) accepted_nameless={} ({:.1}%) \
-             blocked_by_frame={} ({:.1}%)",
+             accepted_straddle={} ({:.1}%)",
             self.accepted,
             pct(self.accepted),
             self.accepted_nameless,
             pct(self.accepted_nameless),
-            blocked,
-            pct(blocked),
+            self.accepted_straddle,
+            pct(self.accepted_straddle),
         );
         println!(
             "stat datum_reach {what:18} collinear={} too_wide={} undefined={}",
@@ -475,7 +498,7 @@ fn datum_reach(m: &Model) -> Reach {
                 if three.iter().any(|r| matches!(r, VertexReach::Undefined)) {
                     t.undefined += 1;
                 } else if three.iter().any(|r| matches!(r, VertexReach::Straddle)) {
-                    t.carriers_straddle += 1;
+                    t.accepted_straddle += 1;
                 } else if three.iter().any(|r| matches!(r, VertexReach::TooWide)) {
                     // ★ Ranked above "frames differ" only because a too-wide vertex has no point
                     // to compare frames with. The producer's per-vertex loop can reach the frame
@@ -958,18 +981,18 @@ fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
         t.report(what);
         if matches!(what, "boolean_corner" | "turned_after_the_cut") {
             assert_eq!(
-                t.carriers_straddle + t.accepted_nameless,
+                t.accepted_straddle + t.accepted_nameless,
                 0,
                 "{what}: every carrier shares one frame here, so nothing may be mixed at all"
             );
             assert!(t.accepted > 0, "{what}: the control accepted nothing");
         } else {
-            blocked_somewhere = true;
+            blocked_somewhere |= t.accepted_nameless + t.accepted_straddle > 0;
         }
     }
     assert!(
         blocked_somewhere,
-        "no population reached the wall — the fixtures stopped measuring it"
+        "no population exercised the judged roads — the fixtures stopped measuring them"
     );
 }
 
