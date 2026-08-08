@@ -70,6 +70,35 @@
 //! **different name** on tilted geometry — a different handle, and exact identity answers "no".
 //! That is the capability gap a vertex-naming datum closes, and it is a fact about the population
 //! (the control shows the two roads agreeing wherever the cache is exact), not about the probe.
+//!
+//! # And how much of that vocabulary is unreachable today (2026-08-08)
+//!
+//! A datum needs **three** vertices, so the vertex-level column above cannot answer it. Of the
+//! triples the frame wall decides (`accepted + blocked`; collinear and undefined ones are refused
+//! whatever happens to frames):
+//!
+//! | population | vertices | pure | **pure frames** | accepted | blocked | straddle / differ |
+//! |---|---|---|---|---|---|---|
+//! | `boolean_corner`       | 16 | 16 | 1 | **100%** | 0 | 0 / 0 — no motion, cannot fail |
+//! | `turned_after_the_cut` | 16 | 16 | 1 | **100%** | 0 | 0 / 0 — **motion, all shared** |
+//! | `boolean_rotated`      | 20 |  8 | 1 | **4.9%** | 95.1% | 1084 / **0** |
+//! | `tilted_frame`         | 16 | 12 | **2** | **10.7%** | 89.3% | 340 / **160** |
+//! | `tilted_frame_x2`      | 24 | 16 | **3** | **3.2%** | 96.8% | 1464 / **496** |
+//!
+//! ★ The prediction written first was 4.9% for `boolean_rotated` — `C(8,3)/C(20,3)`, on the guess
+//! that the 8 pure vertices are the still operand's own corners and so share one frame. They are,
+//! `pure_frames = 1`, and the bound is met exactly.
+//!
+//! ★★★★ **What was not predicted: `vertices_differ` is real.** The guess was that it would be ~0
+//! because everything is measured inside one solid. It is 0 for rotation-against-world — but a
+//! prism on a tilted frame with a feature on a *wall* spans **two** frames of pure vertices, and
+//! two passes span three. So the two mixed causes are not one cause wearing two names: the second
+//! has its own population, and anything that lifts the wall has to answer both.
+//!
+//! ★★ The blocked column is an **upper bound** on what lifting the wall would free — a blocked
+//! triple is classified before anything can ask whether it is also collinear. The collinear rate on
+//! the accepted road (8 of 560 on the boxes, 0 on the tilted ones) is the only estimate of that
+//! contamination, which is why it is printed.
 
 use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
@@ -285,6 +314,179 @@ fn measure(m: &Model) -> Tally {
 }
 
 // ---------------------------------------------------------------------------------------------
+// how much of the datum vocabulary the frame wall costs — measured where the caller picks
+// ---------------------------------------------------------------------------------------------
+
+/// What `DatumDef::ThroughVertices` would find when it looks at **one** vertex — solved once and
+/// reused across every triple it appears in.
+///
+/// ★ Solving per triple would be the same `three_planes_big` call `n²` times over; solving per
+/// vertex makes the triple pass plain combination arithmetic, so the whole `C(n,3)` sweep runs
+/// with no cap and nothing silently dropped.
+enum VertexReach {
+    /// Carriers share one motion and the point fits `Rat` — the frame it is written in, and it.
+    Pure(Option<Handle<nacre_topo::MotionNode>>, [Rat; 3]),
+    /// This vertex's own three carriers are in different frames. **The kernel makes these**, not
+    /// the caller: a cut between a turned operand and a still one leaves corners where an unmoved
+    /// wall meets two turned ones.
+    Straddle,
+    /// Carriers agree, the point is exact, and it does not fit `Rat`.
+    TooWide,
+    /// `OnSeam`, or a carrier with no name.
+    Undefined,
+}
+
+/// Triple-level tallies — the unit a caller actually picks in.
+#[derive(Default, Debug)]
+struct Reach {
+    vertices: usize,
+    pure: usize,
+    /// ★ How many **distinct frames** the pure vertices span. This is what decides whether the
+    /// all-pure combination count is achieved: `through_points_rat`'s two conditions differ in
+    /// kind — carriers sharing a motion is *per vertex*, three vertices sharing a frame is
+    /// *pairwise* — so a triple of pure vertices in two frames is still refused.
+    pure_frames: usize,
+    triples: usize,
+    accepted: usize,
+    carriers_straddle: usize,
+    vertices_differ: usize,
+    too_wide: usize,
+    undefined: usize,
+    /// Only decidable on the accepted road: a triple that solved and named no plane.
+    collinear: usize,
+}
+
+impl Reach {
+    fn report(&self, what: &str) {
+        // The quantity: of the triples the *frame* is what blocks, how many would be freed.
+        let blocked = self.carriers_straddle + self.vertices_differ;
+        let denom = self.accepted + blocked;
+        let pct = |n: usize| {
+            if denom == 0 {
+                0.0
+            } else {
+                100.0 * n as f64 / denom as f64
+            }
+        };
+        println!(
+            "stat datum_reach {what:18} vertices={} pure={} pure_frames={} triples={}",
+            self.vertices, self.pure, self.pure_frames, self.triples
+        );
+        println!(
+            "stat datum_reach {what:18} accepted={} ({:.1}%) blocked_by_frame={} ({:.1}%) \
+             [straddle={} differ={}]",
+            self.accepted,
+            pct(self.accepted),
+            blocked,
+            pct(blocked),
+            self.carriers_straddle,
+            self.vertices_differ
+        );
+        println!(
+            "stat datum_reach {what:18} collinear={} too_wide={} undefined={}",
+            self.collinear, self.too_wide, self.undefined
+        );
+    }
+}
+
+/// Walk every live vertex once, then every distinct triple, and classify each triple by **what
+/// the datum operation would answer**.
+///
+/// ★★★ **The denominator is stated, not assumed.** `collinear` and `undefined` are refused
+/// whatever happens to frames, so they are outside the question; the reported percentage is over
+/// `accepted + blocked_by_frame` — *"of the triples the frame wall decides, how many does it
+/// refuse"*. ★ It is an **upper bound** on what solving the wall would free: a blocked triple is
+/// classified before anything can ask whether it is also collinear, so the blocked bucket holds an
+/// unknown number that would fail anyway. `collinear`'s rate on the accepted road is the only
+/// estimate of that contamination, and it is printed for exactly that reason.
+///
+/// ★ Causes are assigned by **priority**, not by which would fire first in the producer's
+/// per-vertex loop — a triple can carry more than one, and a per-triple bucket has to pick. The
+/// order is the producer's own: undefined, straddle, differing frames, width, collinear.
+fn datum_reach(m: &Model) -> Reach {
+    let mut t = Reach::default();
+    let verts = live_vertices(m);
+    let reach: Vec<VertexReach> = verts
+        .iter()
+        .map(|&vh| {
+            let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                return VertexReach::Undefined;
+            };
+            let (a, b, c) = (
+                motion_of(m, tri[0]),
+                motion_of(m, tri[1]),
+                motion_of(m, tri[2]),
+            );
+            if !(a == b && b == c) {
+                return VertexReach::Straddle;
+            }
+            let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
+            if names.len() != 3 {
+                return VertexReach::Undefined;
+            }
+            match nacre_scalar::three_planes_big([names[0], names[1], names[2]])
+                .as_ref()
+                .and_then(MeetPoint::narrow)
+            {
+                Some(p) => VertexReach::Pure(a, *p),
+                None => VertexReach::TooWide,
+            }
+        })
+        .collect();
+
+    t.vertices = verts.len();
+    let mut frames = std::collections::HashSet::new();
+    for r in &reach {
+        if let VertexReach::Pure(f, _) = r {
+            t.pure += 1;
+            frames.insert(*f);
+        }
+    }
+    t.pure_frames = frames.len();
+
+    let n = verts.len();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            for k in (j + 1)..n {
+                t.triples += 1;
+                let three = [&reach[i], &reach[j], &reach[k]];
+                if three.iter().any(|r| matches!(r, VertexReach::Undefined)) {
+                    t.undefined += 1;
+                } else if three.iter().any(|r| matches!(r, VertexReach::Straddle)) {
+                    t.carriers_straddle += 1;
+                } else if three.iter().any(|r| matches!(r, VertexReach::TooWide)) {
+                    // ★ Ranked above "frames differ" only because a too-wide vertex has no point
+                    // to compare frames with. The producer's per-vertex loop can reach the frame
+                    // check first on an earlier vertex, so the two orders can disagree — moot
+                    // while this stays 0, and recorded rather than glossed.
+                    t.too_wide += 1;
+                } else {
+                    let f = three.iter().map(|r| match r {
+                        VertexReach::Pure(f, _) => *f,
+                        _ => unreachable!("the other kinds were taken above"),
+                    });
+                    let pts: Vec<[Rat; 3]> = three
+                        .iter()
+                        .map(|r| match r {
+                            VertexReach::Pure(_, p) => *p,
+                            _ => unreachable!("the other kinds were taken above"),
+                        })
+                        .collect();
+                    if f.clone().collect::<std::collections::HashSet<_>>().len() != 1 {
+                        t.vertices_differ += 1;
+                    } else if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
+                        t.collinear += 1;
+                    } else {
+                        t.accepted += 1;
+                    }
+                }
+            }
+        }
+    }
+    t
+}
+
+// ---------------------------------------------------------------------------------------------
 // populations
 // ---------------------------------------------------------------------------------------------
 
@@ -294,6 +496,41 @@ fn boolean_corner() -> Model {
     let a = cuboid(&mut m, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
     let b = cuboid(&mut m, [3.3, 3.3, -1.0], [7.7, 7.7, 11.0]);
     boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
+    m.rebuild_adjacency();
+    m
+}
+
+/// ★★★★ **The negative control with teeth: motion everywhere, and all of it shared.**
+///
+/// `boolean_corner` reports zero mixed vertices, but it *cannot* report anything else — it has no
+/// motion at all, so the instrument is not being asked. Turning the finished solid gives every
+/// surface a motion (`transform_solid` memoizes one new node per distinct parent leaf, and every
+/// parent here is `None`, so they all land on one) while leaving the geometry alone. A nonzero
+/// mixed count here would mean either the measurement is reading something other than "do the
+/// frames agree", or those motions did not intern to one node — and either is a finding.
+///
+/// ★ The source stays live after a `Transform` (it is not consumed the way a boolean's operands
+/// are), and a sweep over *both* would readmit the caller-error shape — two solids in two frames —
+/// which is precisely the variable this control is holding still. So the live set is narrowed to
+/// the image.
+fn turned_after_the_cut() -> Model {
+    let mut m = boolean_corner();
+    let src = m.live_solids[0];
+    let OpOutput::Transform { solid } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid: src,
+            isometry: Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn") else {
+        unreachable!()
+    };
+    m.live_solids = vec![solid];
     m.rebuild_adjacency();
     m
 }
@@ -670,6 +907,48 @@ fn how_wide_a_discovered_coordinate_is() {
         "no discovered vertex in any population — the fixtures never reached the target"
     );
     assert!(solved > 0, "nothing solved — the instrument is dead");
+}
+
+/// ★★★★★ **How much of the datum vocabulary the frame wall costs — in the unit a caller picks.**
+///
+/// The vertex-level number (12 of 20 mixed on `boolean_rotated`) cannot answer this: a datum needs
+/// **three** vertices and `through_points_rat`'s two conditions differ in kind — carriers sharing
+/// one motion is *per vertex*, the three vertices sharing one frame is *pairwise*. So the
+/// all-pure combination count is only an upper bound, and `pure_frames` is what says whether it is
+/// reached.
+///
+/// ★★ **Two negative controls, because one of them cannot fail.** `boolean_corner` has no motion,
+/// so "zero mixed" there is true by construction and measures nothing.
+/// [`turned_after_the_cut`] has motion on every surface and all of it shared — that is the arm
+/// where a zero is evidence.
+#[test]
+#[ignore = "measurement — run explicitly, prints the table"]
+fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
+    let mut blocked_somewhere = false;
+    for (what, m) in [
+        ("boolean_corner", boolean_corner()),
+        ("turned_after_the_cut", turned_after_the_cut()),
+        ("boolean_rotated", boolean_rotated()),
+        ("tilted_frame", tilted_frame(1)),
+        ("tilted_frame_x2", tilted_frame(2)),
+    ] {
+        let t = datum_reach(&m);
+        t.report(what);
+        if matches!(what, "boolean_corner" | "turned_after_the_cut") {
+            assert_eq!(
+                t.carriers_straddle + t.vertices_differ,
+                0,
+                "{what}: every carrier shares one frame here, so nothing may be blocked by frames"
+            );
+            assert!(t.accepted > 0, "{what}: the control accepted nothing");
+        } else {
+            blocked_somewhere = true;
+        }
+    }
+    assert!(
+        blocked_somewhere,
+        "no population reached the wall — the fixtures stopped measuring it"
+    );
 }
 
 /// ★★★★ **The invariant, cheap enough for every run**: wherever `three_planes_rat` answers, the
