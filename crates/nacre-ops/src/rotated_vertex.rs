@@ -71,11 +71,17 @@ pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
 /// carries the result out of its frame and into the next one down. The walk terminates at a plane
 /// with no frame, which is the world.
 ///
-/// `None` when a frame cannot be built exactly — no name recorded at all, or a degenerate
-/// plane. That is a decline, not a reject: the caller falls
-/// back to the f64 path it was on before frames existed. ★ Width is **not** on that list since
-/// S4: a `Wide` name or overflowing squared lengths take the arbitrary-precision road
-/// (`MoveNode::FrameWide`) instead of declining.
+/// `None` when a frame cannot be built exactly — no name recorded at all, or a degenerate plane.
+/// ★ Width is **not** on that list since S4: a `Wide` name or overflowing squared lengths take the
+/// arbitrary-precision road (`MoveNode::FrameWide`) instead of declining.
+///
+/// ★★ **This used to say the caller "falls back to the f64 path it was on before frames existed".
+/// That is stale, and it misled a later plan into inventing a precondition.** No such fallback
+/// remains: `planes.rs` turns this `None` into `RejectReason::FrameOutOfRange`, `exact.rs` into
+/// `OpError::PlaneWithoutExactForm` (S6b deleted the f64 prism road), `reuse.rs` declines to the
+/// arrangement — an equally correct road, not a degraded one — and `replay_chain_coord` names
+/// `Pt3Error::Downgrade`. Every consumer is honest; and since S2 the branch is unreachable anyway,
+/// because every plane has a name.
 pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Vec<MoveNode>> {
     let mut chain = Vec::new();
     let mut cur = Some(leaf);
