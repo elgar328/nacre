@@ -1374,3 +1374,168 @@ fn every_plane_still_has_a_name() {
     }
     assert!(planes > 0, "the sweep found no planes to check");
 }
+
+/// ★★★★★ **A datum through vertices must not collide with a plane it is not.**
+///
+/// A prism raised on a tilted frame states its far cap **inside that frame**, where it is
+/// `w = dist` — canonical name `[0,0,1,−dist]`, which is *letter for letter* the name of the world
+/// plane `z = dist`. What keeps those apart is the motion in the interning key
+/// (`SurfaceKey = (name, motion)`): the far cap is filed under `(that name, Some(node))`.
+///
+/// A datum through the far cap's corners solves them **in the same frame**, so it derives the same
+/// name — and if it files that under `None`, it is claiming to be a world plane. The model here
+/// holds `z = dist` as a box top, so the claim is resolved by interning handing back **the box's
+/// face**: a plane somewhere else entirely, which the caller then sketches on.
+///
+/// The assertion is the harm, not the mechanism: *this datum is not the box top*. That stays true
+/// however the cause is later described.
+#[test]
+fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let mut m = Model::new();
+
+    // A plane whose normal has `n·n = 3` — not a perfect square, so `exact_frame` declines and the
+    // prism is written against a recorded frame node (scalar: "it is `3` for `[1,1,1]`").
+    let tilted = SketchPlane::from_origin_normal(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([1.0, 1.0, 1.0]),
+    )
+    .expect("a tilted plane");
+    let frame = datum_frame(&mut m, tilted);
+    let dist = 2.0;
+    let OpOutput::Extrude { solid, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: Profile2d::polygon(vec![
+                p2(0.0, 0.0),
+                p2(1.0, 0.0),
+                p2(1.0, 1.0),
+                p2(0.0, 1.0),
+            ])
+            .unwrap(),
+            dist,
+        },
+    )
+    .expect("a prism on the tilted frame") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+
+    // The world plane `z = dist`, as an ordinary box's top face.
+    let boxy = m.add_cuboid(
+        Point3::from_array([10.0, 10.0, 0.0]),
+        Point3::from_array([11.0, 11.0, dist]),
+    );
+    m.rebuild_adjacency();
+    let box_top = m
+        .shells
+        .get(m.solids.get(boxy).outer)
+        .faces
+        .iter()
+        .map(|&f| m.faces.get(f).surface)
+        .find(|s| {
+            m.surface_name
+                .get(s)
+                .and_then(|n| n.narrow())
+                .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -dist])
+        })
+        .expect("the box top names z = dist");
+
+    // The far cap's corners: every one of their carriers is written in the prism's frame, so the
+    // three share a motion and the datum is buildable. (Base-cap corners would not: the base cap
+    // is the stated plane with no motion, so those triples are mixed-frame and rejected.)
+    let far_cap = m
+        .shells
+        .get(m.solids.get(solid).outer)
+        .faces
+        .iter()
+        .map(|&f| m.faces.get(f).surface)
+        .find(|s| {
+            matches!(
+                m.surface_truth(*s),
+                SurfaceTruth::Plane {
+                    motion: Some(_),
+                    ..
+                }
+            ) && m
+                .surface_name
+                .get(s)
+                .and_then(|n| n.narrow())
+                .is_some_and(|c| c.map(|r| r.to_f64()) == [0.0, 0.0, 1.0, -dist])
+        })
+        .expect("the far cap is `w = dist` in the frame — the premise of this test");
+    assert_ne!(
+        far_cap, box_top,
+        "the far cap and the box top share a name and are kept apart by the motion — \
+         if they were already one handle this test would be vacuous"
+    );
+
+    let corners: Vec<_> = live_verts(&m)
+        .into_iter()
+        .filter(|v| match m.vertices.get(*v).def {
+            nacre_topo::VertexDef::ThreePlane(tri) => tri.contains(&far_cap),
+            _ => false,
+        })
+        .collect();
+    assert!(corners.len() >= 3, "the far cap has corners to name");
+
+    let OpOutput::DatumPlane { plane, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices([corners[0], corners[1], corners[2]]),
+        },
+    )
+    .expect("three far-cap corners share one frame, so this datum is buildable") else {
+        unreachable!()
+    };
+
+    // ★ The harm, stated as the harm.
+    assert_ne!(
+        plane, box_top,
+        "the datum through the prism's far-cap corners came back as the box's top face — \
+         a plane in a different place, which the caller would now sketch on"
+    );
+    // ★ And it *is* that far cap: the same three points, so the same plane.
+    assert_eq!(
+        plane, far_cap,
+        "a datum through three corners of the far cap is the far cap"
+    );
+
+    // ★★ The truth says which frame its points are written in — the disambiguator that keeps the
+    // two same-named planes apart.
+    let SurfaceTruth::Plane { motion, .. } = m.surface_truth(plane) else {
+        unreachable!()
+    };
+    assert!(
+        motion.is_some(),
+        "a datum whose vertices live in a frame must record that frame"
+    );
+
+    // ★★★ And the f64 cache is a *world* description of that same plane: put the cache's own
+    // anchor back through the definition and the residual must vanish. A cache built from frame
+    // coordinates would land far off, which is the other half of the defect.
+    let sp = nacre_ops::face_plane(&m, {
+        *m.shells
+            .get(m.solids.get(solid).outer)
+            .faces
+            .iter()
+            .find(|&&f| m.faces.get(f).surface == plane)
+            .expect("the far cap is a face of this prism")
+    })
+    .expect("planar");
+    // ★ The statement is **"the named vertices lie on the cached plane"**, not "the cache's
+    // origin is one of them" — `face_plane`'s origin is the canonical foot of perpendicular, so
+    // comparing positions would pass or fail for reasons that have nothing to do with the defect.
+    let n = sp.normal().as_array();
+    let o = sp.origin().as_array();
+    for (i, v) in corners.iter().take(3).enumerate() {
+        let p = m.vertex_point(*v).as_array();
+        let d = (0..3).map(|k| n[k] * (p[k] - o[k])).sum::<f64>().abs();
+        assert!(
+            d < 1e-9,
+            "named vertex {i} sits {d} off the plane's own f64 cache — \
+             a frame coordinate was used as a world point"
+        );
+    }
+}

@@ -931,10 +931,23 @@ fn datum_plane(
     /// ★★ A carrier triple that does not meet is **not** on the list: those three planes met, or
     /// the vertex would not exist. That is asserted, not rejected, so a broken invariant cannot
     /// arrive disguised as a user error.
+    ///
+    /// ★★★★★ **The motion comes back with the points, because it *is* which frame they are
+    /// written in.** Returning the points alone is what produced the defect this function was
+    /// rewritten for: the caller then chose a motion, chose `None`, and a plane stated in a frame
+    /// was filed as a world plane. `DatumDef::Offset` has always returned `(points, motion)` from
+    /// one decision for exactly this reason.
+    #[allow(clippy::type_complexity)]
     fn through_points_by_cause(
         model: &Model,
         vs: [Handle<Vertex>; 3],
-    ) -> Result<[[nacre_scalar::Rat; 3]; 3], OpError> {
+    ) -> Result<
+        (
+            [[nacre_scalar::Rat; 3]; 3],
+            Option<Handle<nacre_topo::MotionNode>>,
+        ),
+        OpError,
+    > {
         let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
         let mut frame = None;
         for (i, vh) in vs.iter().enumerate() {
@@ -967,7 +980,7 @@ fn datum_plane(
         if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
             return Err(OpError::CollinearVertices);
         }
-        Ok(pts)
+        Ok((pts, frame.flatten()))
     }
 
     match def {
@@ -1011,26 +1024,41 @@ fn datum_plane(
             if sorted[0] == sorted[1] || sorted[1] == sorted[2] {
                 return Err(OpError::DuplicateVertex);
             }
-            let pts = through_points_by_cause(model, sorted)?;
+            let (pts, motion) = through_points_by_cause(model, sorted)?;
 
             // ★ **The caller's order is the stated normal**, by the right-hand rule — the one
             // place their choice of side can survive, since the stored triple is sorted and a
             // canonical name carries no direction. `measured_frame` then measures `flip` against
             // it, exactly as the `Stated` arm does against `sp.normal()`.
+            //
+            // The vertices' world caches are the right input here even though they are rounded:
+            // this asks only for a *direction*, and `measured_frame` compares it against the
+            // plane's own world realization.
             let world = vs.map(|v| model.vertex_point(v));
             let stated = (world[1] - world[0])
                 .cross(world[2] - world[0])
                 .normalize()
                 .ok_or(OpError::CollinearVertices)?;
 
-            // ★★ **The cache comes from the solved points, not from the vertices' caches.** Those
-            // caches are the rounded coordinates this whole variant exists to avoid — on tilted
-            // geometry not one of them equals its exact value. The exact solve is already in hand
-            // for the name, so rounding *it* once is strictly closer than rounding three times.
-            let f = |p: [nacre_scalar::Rat; 3]| Point3::from_array(p.map(|r| r.to_f64()));
+            // ★★★ **The cache is a world description, and `pts` are not world coordinates unless
+            // the carriers share no motion.** Realizing them means walking the very chain the
+            // definition names — `exact.rs` states the rule ("the realization must be the
+            // definition's own replay, not a second route to the same real number"), and taking
+            // any other road here is how a plane's cache and its truth end up describing
+            // different planes.
+            let anchor = match motion {
+                None => Point3::from_array(pts[0].map(|r| r.to_f64())),
+                Some(leaf) => {
+                    let chain = crate::rotated_vertex::motion_chain(model, leaf)
+                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                    let p = crate::rotated_vertex::replay(nacre_cip::Pt3::at(pts[0]), &chain)
+                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                    Point3::from_array(p.coord)
+                }
+            };
             let cache =
-                Plane::from_point_normal(f(pts[0]), -stated).ok_or(OpError::DegenerateGeometry)?;
-            let (plane, _flipped) = model.push_plane_through(cache, sorted, None);
+                Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
+            let (plane, _flipped) = model.push_plane_through(cache, sorted, motion);
             let (frame, _) =
                 measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
                     .ok_or(OpError::PlaneWithoutExactForm)?;
