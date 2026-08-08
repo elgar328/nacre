@@ -4578,7 +4578,7 @@ mod tests {
     /// this size can hide**, so the invariant is asserted rather than inspected.
     ///
     /// Separate from the timing spike on purpose: this asks the predicate about every pair, which
-    /// fills `Pt3`'s realization cells and would make the phase timers read the collector 1.76x
+    /// fills `WitnessPoint`'s realization cells and would make the phase timers read the collector 1.76x
     /// cheaper than it is.
     #[test]
     #[ignore = "slow: every wall pair of every class, two folds"]

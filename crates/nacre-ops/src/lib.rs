@@ -834,7 +834,7 @@ pub mod tests {
     use crate::tolerant::Judge;
     use crate::transform::transform;
     use crate::{boolean::*, ops::*, planes::*};
-    use nacre_cip::Pt3;
+    use nacre_cip::WitnessPoint;
     use nacre_geom::intersect::{planes_coplanar, three_planes};
     use nacre_geom::{Plane, Surface};
     use nacre_scalar::Axis;
@@ -1067,13 +1067,11 @@ pub mod tests {
         use nacre_scalar::{Angle, Axis, Rat};
         let ang = Angle::from_deg(Rat::from_int(37)).unwrap();
         let piv = [Rat::from_int(2), Rat::from_int(-1), Rat::from_int(0)];
-        let rp = |x: i128, y: i128, z: i128| {
-            Pt3::at([Rat::from_int(x), Rat::from_int(y), Rat::from_int(z)]).rotate_about(
-                Axis::Z,
-                ang,
-                piv,
-            )
-        };
+        let rp =
+            |x: i128, y: i128, z: i128| {
+                WitnessPoint::at([Rat::from_int(x), Rat::from_int(y), Rat::from_int(z)])
+                    .rotate_about(Axis::Z, ang, piv)
+            };
         // (0,0,0), (2,4,6), (1,2,3): all on the line t·(1,2,3) → collinear.
         assert!(pt3_base_collinear(&rp(0, 0, 0), &rp(2, 4, 6), &rp(1, 2, 3)));
         // (1,2,4) is off that line (z), a real nonzero-area triangle → not collinear.
@@ -2941,7 +2939,7 @@ pub mod tests {
             n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
-            tri_pt3: tri.map(|p| nacre_cip::Pt3::exact(p.as_array()).expect("exact")),
+            tri_pt3: tri.map(|p| nacre_cip::WitnessPoint::exact(p.as_array()).expect("exact")),
             rotated: false,
         };
         let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
@@ -3589,7 +3587,7 @@ pub mod tests {
     ///
     /// A definition and its cached coordinate must agree **exactly**, and they do only because the
     /// replay performs the very same float operations the producer did. A reflection is the step
-    /// where that is easiest to lose — `Pt3::mirror` must walk the same `2c − x` that
+    /// where that is easiest to lose — `WitnessPoint::mirror` must walk the same `2c − x` that
     /// `AxisMirror::point` just walked — and a chain that ends in one is what this checks.
     #[test]
     fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
@@ -3974,7 +3972,7 @@ pub mod tests {
     /// A rotated solid's face coordinates are rounded, so its planes are truthful only through an
     /// exact *definition* (`FaceInfo::tri_pt3` built from a rotation history). A boolean's *result*
     /// is just as rotated as its operands — but the result carries no rotation provenance, so
-    /// `collect_planes` describes every one of its faces by `Pt3::exact` of the rounded triangle
+    /// `collect_planes` describes every one of its faces by `WitnessPoint::exact` of the rounded triangle
     /// and the kernel starts treating a rounded copy as the truth. That is what makes one wall
     /// become two plane classes on the next operation.
     ///
@@ -4684,7 +4682,7 @@ pub mod tests {
             surf,
             plane,
             tri,
-            tri_pt3: tri.map(|p| nacre_cip::Pt3::exact(p.as_array()).expect("exact")),
+            tri_pt3: tri.map(|p| nacre_cip::WitnessPoint::exact(p.as_array()).expect("exact")),
             rotated: false,
             frame_sign: 1, // `plane` is built from `normal`, so the two agree
             exact_coeffs: PlaneGeom::reconcile(&plane, tri, false).0,

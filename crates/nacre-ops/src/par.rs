@@ -13,7 +13,7 @@
 //! reassociated. A caller reads the same code in both builds and cannot reintroduce the
 //! hazard by accident, because there is no call site where the ordering decision is made.
 //!
-//! The `parallel` feature (default on) is also the switch for `Pt3`'s high-precision cache
+//! The `parallel` feature (default on) is also the switch for `WitnessPoint`'s high-precision cache
 //! (`Arc<OnceLock>` vs `Rc<OnceCell>`) — which is why the two bodies below need different
 //! bounds, and why **both feature combinations have to be built**. `cargo` will not check
 //! the one you are not using.

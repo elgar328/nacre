@@ -9,7 +9,7 @@
 //! in `nacre-cip`.
 
 use crate::planes::{FaceInfo, PlaneGeom};
-use nacre_cip::Pt3;
+use nacre_cip::WitnessPoint;
 use nacre_cip::predicate::{PlaneWitness, Witness};
 use nacre_math::Point3;
 
@@ -30,7 +30,7 @@ impl Witness for PlaneGeom {
     fn base_tri(&self) -> Option<[Point3; 3]> {
         self.base.tri
     }
-    fn tri_pt3(&self) -> &[Pt3; 3] {
+    fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.tri_pt3
     }
     fn is_rotated(&self) -> bool {
@@ -53,7 +53,7 @@ impl Witness for FaceInfo {
     fn base_tri(&self) -> Option<[Point3; 3]> {
         None
     }
-    fn tri_pt3(&self) -> &[Pt3; 3] {
+    fn tri_pt3(&self) -> &[WitnessPoint; 3] {
         &self.tri_pt3
     }
     fn is_rotated(&self) -> bool {
@@ -153,7 +153,7 @@ mod tests {
     }
 
     /// Core: `orient3d` is rigid-rotation invariant, so the frame3 path over a rotated
-    /// cuboid's exact `Pt3` definitions must agree, on every definite config, with the
+    /// cuboid's exact `WitnessPoint` definitions must agree, on every definite config, with the
     /// geom path over the same cuboid unrotated. Validates the ops-side assembly + routing
     /// (predicate soundness itself is `frame3`'s H-c).
     #[test]
@@ -189,7 +189,7 @@ mod tests {
         assert!(checked > 0, "no definite config in the corpus");
     }
 
-    /// `collect_planes` on a rotated solid fills each plane's exact `Pt3` triple, whose
+    /// `collect_planes` on a rotated solid fills each plane's exact `WitnessPoint` triple, whose
     /// coordinates **span the face's own plane** and whose definition is rotated (tol > 0).
     ///
     /// ★ The witness is the surface's recorded triple, which is the *first pusher's* — since S9
@@ -297,7 +297,9 @@ mod tests {
                 surf: pu[0].surf,
                 plane: pu[0].plane,
                 tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
-                tri_pt3: std::array::from_fn(|_| Pt3::exact([k as f64, 0.0, 0.0]).expect("exact")),
+                tri_pt3: std::array::from_fn(|_| {
+                    WitnessPoint::exact([k as f64, 0.0, 0.0]).expect("exact")
+                }),
                 rotated: false,
                 frame_sign: pu[0].frame_sign,
                 // Derived by the same rule the arrangement uses -- a fixture that routed
@@ -565,7 +567,8 @@ mod tests {
                 tri_pt3: std::array::from_fn(|i| {
                     let c = f.tri_pt3[i].coord;
                     let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
-                    Pt3::at([r(2.0 - c[0]), r(c[1]), r(c[2])]).mirror(Axis::X, Rat::from_int(1))
+                    WitnessPoint::at([r(2.0 - c[0]), r(c[1]), r(c[2])])
+                        .mirror(Axis::X, Rat::from_int(1))
                 }),
                 motion: Some(leaf),
                 rotated: true,
@@ -1137,7 +1140,7 @@ mod tests {
     #[test]
     fn two_caps_described_exactly_are_one_plane() {
         use nacre_cip::predicate::{Judge, Notes};
-        use nacre_cip::{Pt3, Standard};
+        use nacre_cip::{Standard, WitnessPoint};
         use nacre_scalar::Mag;
 
         let (m, s, _) = two_caps_on_a_tilted_face(Recipe::Split);
@@ -1146,7 +1149,7 @@ mod tests {
 
         // The exact definition each cap already carries: frame coefficients + the motion.
         // `nudge` offsets the cap's height inside its own frame — the negative control.
-        let define = |i: usize, nudge: Option<Rat>| -> [Pt3; 3] {
+        let define = |i: usize, nudge: Option<Rat>| -> [WitnessPoint; 3] {
             let surf = faces[i].surf;
             let c = *m
                 .surface_name
@@ -1186,14 +1189,15 @@ mod tests {
             let zero = Rat::from_int(0);
             let one = Rat::from_int(1);
             let chain = crate::rotated_vertex::motion_chain(&m, motion).expect("chain");
-            [[zero, zero, z], [one, zero, z], [zero, one, z]]
-                .map(|b| crate::rotated_vertex::replay(Pt3::at(b), &chain).expect("replay"))
+            [[zero, zero, z], [one, zero, z], [zero, one, z]].map(|b| {
+                crate::rotated_vertex::replay(WitnessPoint::at(b), &chain).expect("replay")
+            })
         };
         let (da, db) = (define(ia, None), define(ib, None));
 
         // A two-plane table over those definitions. `base_rat: None` keeps the composed-rotation
         // shortcut out of it, so what runs is the interval route the plan's stage C1 exercises.
-        let mk = |d: [Pt3; 3]| {
+        let mk = |d: [WitnessPoint; 3]| {
             let tri = d.clone().map(|p| Point3::from_array(p.coord));
             PlaneGeom {
                 base_rat: None,

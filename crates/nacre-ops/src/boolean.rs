@@ -336,7 +336,7 @@ pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
 
 /// Rotation-sound twin of [`is_shell_outward`]: whether a result component's shell is
 /// **outward** (material, an outer shell) versus **inward** (a void/cavity shell), decided on
-/// the faces' exact `Pt3` definitions through `frame3`, so it is sound when the coordinates
+/// the faces' exact `WitnessPoint` definitions through `frame3`, so it is sound when the coordinates
 /// are rounded irrationals (rotation). Same algorithm as the f64 [`is_shell_outward`] — the
 /// lexicographically-minimal vertex `v*` is a convex extreme corner and the shell is outward
 /// iff some face there has an outward normal with `n_x < 0` — but both numeric steps become
@@ -770,7 +770,7 @@ pub(crate) fn assemble_fuse_cut(
         by_comp[labels[i]].push(fh);
     }
     // Outward/void label per component, routed by rotation (overhaul 3c-vi): a component with
-    // any rotated plane is decided on exact `Pt3` definitions (`component_is_outward_tol` over
+    // any rotated plane is decided on exact `WitnessPoint` definitions (`component_is_outward_tol` over
     // its pre-assembly `LocalFace`s), else the axis-aligned f64 `is_shell_outward` — unchanged,
     // so an unrotated result is bit-identical. `positives` stays in ascending `c` order.
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];

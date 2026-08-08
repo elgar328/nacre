@@ -163,9 +163,9 @@ type TrigAt = (BigFloat, BigFloat, Mag, Mag);
 /// is the nearest `f64` to the exact one.
 ///
 /// ★★ **Not for the coordinates the kernel works with.** Rounding `px + u·c − v·s` as a whole
-/// would make every `Pt3::coord` literally `round(compute_hp)` and take `tol` to a half-ulp, and it
+/// would make every `WitnessPoint::coord` literally `round(compute_hp)` and take `tol` to a half-ulp, and it
 /// was **declined**: that is arbitrary precision *per vertex*, where [`Angle::cos_sin_f64`]'s is
-/// per *angle* and memoised, so it would pay at construction for a precision that `Pt3`'s lazy
+/// per *angle* and memoised, so it would pay at construction for a precision that `WitnessPoint`'s lazy
 /// `compute_hp` already buys **only where a judgement actually needs it**. (`nacre-cip` depends on
 /// this crate, so that type cannot be named here as a link.) Cheaper ways to shrink that
 /// arithmetic (an FMA, a compensated
@@ -1786,11 +1786,11 @@ impl Angle {
     /// against an arbitrary-precision realization, not assumed from a constant.
     ///
     /// `|f64 − true| ≤ |f64 − hp midpoint| + hp's own radius`, which is the ruler this kernel
-    /// already uses for a rational's realization in `Pt3`'s `translate`, `mirror` and pivot terms.
+    /// already uses for a rational's realization in `WitnessPoint`'s `translate`, `mirror` and pivot terms.
     /// Memoized in [`F64_ERR`], keyed by the angle *and the pair* — see there for why the pair.
     ///
     /// ★★★ **The caller passes the values in rather than letting this re-realize them**, and that
-    /// is the whole soundness argument. The consumer is `Pt3::rotate_about`, whose `tol` must bound
+    /// is the whole soundness argument. The consumer is `WitnessPoint::rotate_about`, whose `tol` must bound
     /// the error in the `coord` it just wrote from *its* `cos_sin_f64()` result. An error measured
     /// against a second, independent realization would bound a number nobody stored — and those two
     /// realizations are measured to differ (see [`F64_ERR`]). Taking `c` and `s` as arguments makes
@@ -1810,7 +1810,7 @@ impl Angle {
     ///
     /// ★ **An `f64`, not a [`Mag`].** `Mag` exists because a deep ladder's `2⁻ᵖʳᵉᶜ` underflows
     /// `f64` to zero and a zero radius claims exactness; this quantity is always ε-scale, so that
-    /// hazard is absent — and the consumer is `Pt3::tol`, which is `f64`.
+    /// hazard is absent — and the consumer is `WitnessPoint::tol`, which is `f64`.
     ///
     /// The reading is at octave granularity (`bf_mag` is `2^exponent`), so it can sit up to 2×
     /// above the true error. Conservative in the sound direction, and still a measurement.
@@ -3222,7 +3222,7 @@ mod tests {
 
     /// **The 90°-family realizes with no error at all, and that zero is load-bearing.**
     ///
-    /// `Pt3::rotate_about` reads [`Angle::realization_error_of`] to decide whether a rotation
+    /// `WitnessPoint::rotate_about` reads [`Angle::realization_error_of`] to decide whether a rotation
     /// contributes any tolerance. For `cos`/`sin` in `{0, ±1}` the f64 values *are* the true ones,
     /// and every product and difference downstream is exact too — which is why a quadrantal origin
     /// rotation stays at tol 0 and an axis-aligned model never leaves the exact predicate path.

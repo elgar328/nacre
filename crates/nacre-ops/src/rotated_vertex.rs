@@ -12,14 +12,14 @@
 //! (`crate::planes`) and
 //! the hunt is gone.
 
-use nacre_cip::{MoveNode, Pt3};
+use nacre_cip::{MoveNode, WitnessPoint};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
 use nacre_topo::{Model, Motion, MotionNode};
 
 /// Why a coordinate could not be lifted to an exact rational.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Pt3Error {
+pub(crate) enum WitnessPointError {
     /// An f64 coordinate did not fit an exact i128 rational (downgrade).
     Downgrade,
 }
@@ -38,10 +38,10 @@ pub(crate) fn replay_chain_coord(
     model: &Model,
     base_point: [f64; 3],
     leaf: Handle<MotionNode>,
-) -> Result<[f64; 3], Pt3Error> {
-    let chain = motion_chain(model, leaf).ok_or(Pt3Error::Downgrade)?;
-    Ok(replay(Pt3::at(coord_rat(base_point)?), &chain)
-        .ok_or(Pt3Error::Downgrade)?
+) -> Result<[f64; 3], WitnessPointError> {
+    let chain = motion_chain(model, leaf).ok_or(WitnessPointError::Downgrade)?;
+    Ok(replay(WitnessPoint::at(coord_rat(base_point)?), &chain)
+        .ok_or(WitnessPointError::Downgrade)?
         .coord)
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn replay_chain_coord(
 /// `None` only for a [`MoveNode::Frame`] whose squared lengths do not fit `i128`, which
 /// [`motion_chain`] already refuses to emit — so in practice this is infallible, and the `Option`
 /// is here so that "in practice" does not have to be an invariant spanning two crates.
-pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
+pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint> {
     chain.iter().try_fold(p, |q, n| match n {
         MoveNode::Rotate { axis, angle, point } => Some(q.rotate_about(*axis, *angle, *point)),
         MoveNode::Translate { offset } => Some(q.translate(*offset)),
@@ -80,7 +80,7 @@ pub(crate) fn replay(p: Pt3, chain: &[MoveNode]) -> Option<Pt3> {
 /// remains: `planes.rs` turns this `None` into `RejectReason::FrameOutOfRange`, `exact.rs` into
 /// `OpError::PlaneWithoutExactForm` (S6b deleted the f64 prism road), `reuse.rs` declines to the
 /// arrangement — an equally correct road, not a degraded one — and `replay_chain_coord` names
-/// `Pt3Error::Downgrade`. Every consumer is honest; and since S2 the branch is unreachable anyway,
+/// `WitnessPointError::Downgrade`. Every consumer is honest; and since S2 the branch is unreachable anyway,
 /// because every plane has a name.
 pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Vec<MoveNode>> {
     let mut chain = Vec::new();
@@ -209,7 +209,7 @@ pub(crate) fn frame_world_basis(
 ) -> Option<WorldBasis> {
     let chain = frame_chain(model, plane, placement, flip)?;
     let at = |p: [i128; 3]| -> Option<[f64; 3]> {
-        Some(replay(Pt3::at(p.map(Rat::from_int)), &chain)?.coord)
+        Some(replay(WitnessPoint::at(p.map(Rat::from_int)), &chain)?.coord)
     };
     let o = at([0, 0, 0])?;
     let axis = |p: [i128; 3]| -> Option<[f64; 3]> {
@@ -219,11 +219,11 @@ pub(crate) fn frame_world_basis(
     Some((o, axis([1, 0, 0])?, axis([0, 1, 0])?, axis([0, 0, 1])?))
 }
 
-pub(crate) fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], Pt3Error> {
+pub(crate) fn coord_rat(c: [f64; 3]) -> Result<[Rat; 3], WitnessPointError> {
     Ok([
-        Rat::try_from_f64(c[0]).ok_or(Pt3Error::Downgrade)?,
-        Rat::try_from_f64(c[1]).ok_or(Pt3Error::Downgrade)?,
-        Rat::try_from_f64(c[2]).ok_or(Pt3Error::Downgrade)?,
+        Rat::try_from_f64(c[0]).ok_or(WitnessPointError::Downgrade)?,
+        Rat::try_from_f64(c[1]).ok_or(WitnessPointError::Downgrade)?,
+        Rat::try_from_f64(c[2]).ok_or(WitnessPointError::Downgrade)?,
     ])
 }
 
@@ -304,7 +304,7 @@ mod tests {
     /// This is the contract that lets a consumer check a coordinate against its definition by
     /// equality rather than by tolerance: the replay must perform the *same* float operations, in
     /// the same order, that the producer did. Every motion node owes this, and `Mirror` is where
-    /// it is easiest to lose — `Pt3::mirror` walks the same `2c − x` that `AxisMirror::point` did,
+    /// it is easiest to lose — `WitnessPoint::mirror` walks the same `2c − x` that `AxisMirror::point` did,
     /// rather than an algebraically equal rearrangement.
     ///
     /// ★★★ **It is also what stands between this kernel and a realization that is not a function

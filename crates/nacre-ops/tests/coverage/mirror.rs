@@ -391,7 +391,7 @@ fn a_mirrored_rotated_solid_lands_where_reflection_says() {
 }
 
 /// A mirrored *rotated* solid is still a boolean operand. Moved operands are judged on their
-/// exact `Pt3` definitions, and this one's chain has **odd parity** — so a handedness correction
+/// exact `WitnessPoint` definitions, and this one's chain has **odd parity** — so a handedness correction
 /// that is wrong (or missing) shows up as a wrong or refused decision here, where the coordinates
 /// alone would look perfectly fine.
 #[test]

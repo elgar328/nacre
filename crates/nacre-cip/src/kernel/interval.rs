@@ -246,7 +246,7 @@ mod tests {
 
     /// **Does the error `Angle::realization_error_of` reports actually bound the real one?**
     ///
-    /// `Pt3::rotate_about` charges that number for the one input here without a rounding contract:
+    /// `WitnessPoint::rotate_about` charges that number for the one input here without a rounding contract:
     /// neither Rust nor any libm promises an accuracy for `f64::cos`. It used to charge a constant
     /// measured once and written into a doc — sound only on machines like the one it was taken on,
     /// which a kernel that ships to browsers cannot assume. Now it measures, so **a worse platform

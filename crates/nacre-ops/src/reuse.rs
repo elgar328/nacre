@@ -19,7 +19,7 @@
 use crate::boolean::{LocalFace, Node};
 use crate::planes::{FaceInfo, PlaneGeom, SolidSide};
 use crate::{BoolKind, he_start};
-use nacre_cip::{Pt3, orient3d_filter};
+use nacre_cip::{WitnessPoint, orient3d_filter};
 use nacre_scalar::Orient;
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid, Vertex};
@@ -48,14 +48,14 @@ pub(crate) enum ClassPlan {
     Empty,
 }
 
-/// Every vertex of a solid as an exact [`Pt3`], from its **definition** — or `None` when one
+/// Every vertex of a solid as an exact [`WitnessPoint`], from its **definition** — or `None` when one
 /// declines, and the class falls back to [`ClassPlan::Arrange`] (slower, never wrong).
 ///
 /// Three branches (measured against the pre-S7 `Origin` road, bit-identical where both
 /// answered — the C2 differential):
 /// * measured vertex (`vertex_tol` Some) — decline, an implicit point has no rational base;
 /// * all three defining surfaces world-stated (`motion: None`) — the coordinate is the
-///   statement, `Pt3::exact`, letter-identical to the old `Constructed` arm;
+///   statement, `WitnessPoint::exact`, letter-identical to the old `Constructed` arm;
 /// * all three sharing one motion — solve the triple's **narrow names in their shared
 ///   pre-motion frame** ([`nacre_scalar::three_planes_rat`]) and replay the chain: the very
 ///   computation measured bit-identical to the stored base-and-replay road (8/8).
@@ -65,7 +65,7 @@ pub(crate) enum ClassPlan {
 /// (the frame realization is irrational). The old road answered these through the base
 /// vertex S7 dissolves; the decline is honest (Arrange — slower, never wrong) and C2's
 /// differential counts the population.
-fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
+fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
     use nacre_topo::{SurfaceTruth, VertexDef};
 
     let sol = model.solids.get(s);
@@ -92,7 +92,9 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
                     };
                     out.push(
                         match (motion_of(tri[0]), motion_of(tri[1]), motion_of(tri[2])) {
-                            (None, None, None) => Pt3::exact(model.vertex_point(vh).as_array())?,
+                            (None, None, None) => {
+                                WitnessPoint::exact(model.vertex_point(vh).as_array())?
+                            }
                             (Some(a), Some(b), Some(c)) if a == b && b == c => {
                                 let mut coeffs = [[nacre_scalar::Rat::from_int(0); 4]; 3];
                                 for (o, h) in coeffs.iter_mut().zip(tri) {
@@ -100,7 +102,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
                                 }
                                 let base = nacre_scalar::three_planes_rat(coeffs)?;
                                 let chain = crate::rotated_vertex::motion_chain(model, a)?;
-                                crate::rotated_vertex::replay(Pt3::at(base), &chain)?
+                                crate::rotated_vertex::replay(WitnessPoint::at(base), &chain)?
                             }
                             _ => return None, // mixed frames — see the doc
                         },
@@ -122,7 +124,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<Pt3>> {
 /// **That argument needs every face to be planar.** It is: `collect_planes` rejects a non-planar
 /// face before any of this runs. A curved face would bulge outside its vertices' hull, so if
 /// curved surfaces ever arrive here this must test their bounds, not their corners.
-fn plane_misses(geom: &PlaneGeom, q: &[Pt3]) -> bool {
+fn plane_misses(geom: &PlaneGeom, q: &[WitnessPoint]) -> bool {
     let t = &geom.tri_pt3;
     let mut side: Option<Orient> = None;
     for v in q {
@@ -168,7 +170,7 @@ pub(crate) fn class_plans(
     }
     // Built lazily and once: the query set is the *other* operand's, so each is needed only if
     // some class belongs to the one it is not.
-    let mut q: [Option<Option<Vec<Pt3>>>; 2] = [None, None];
+    let mut q: [Option<Option<Vec<WitnessPoint>>>; 2] = [None, None];
     for (wc, plan) in plans.iter_mut().enumerate() {
         let Some(side) = class_owner[wc] else {
             continue;

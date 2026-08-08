@@ -4,14 +4,14 @@
 //! A rotated face's plane coefficients and `tri` coordinates are rounded irrationals, so the
 //! exact predicates (`nacre-predicates`) over them are exact only w.r.t. the *rounded*
 //! geometry. When a predicate's planes are rotated, these wrappers rebuild each plane from the
-//! three exact [`Pt3`] its face carries ([`Witness::tri_pt3`], or — for the axis-aligned
+//! three exact [`WitnessPoint`] its face carries ([`Witness::tri_pt3`], or — for the axis-aligned
 //! operand of a *mixed*-rotation boolean, whose `tri_pt3` is `None` — exactly from its `tri`
 //! coordinates, see [`plane_def`]) and decide the sign with the [`crate::kernel`] judges
 //! instead.
 //!
 //! **Routing is per-predicate, derived — no `rotated` flag is threaded.** Each wrapper asks
 //! [`any_rotated`] of just the planes it touches: all-axis-aligned → the exact hot path (never
-//! builds a `Pt3`); any rotated → the kernel judge. So a mixed-rotation boolean keeps the
+//! builds a `WitnessPoint`); any rotated → the kernel judge. So a mixed-rotation boolean keeps the
 //! axis-aligned operand's own predicates on the fast path, finer than a per-boolean flag.
 //!
 //! The caller (`nacre-ops`) provides the witnesses by implementing [`Witness`] (a face) and
@@ -21,8 +21,8 @@
 //! be proved, and the table itself. The predicates are its methods.
 
 use crate::kernel::frame3::{
-    Decision, MoveNode, Pt3, Standard, cramer_iv, dir_sign_judge, indirect_cmp_coord_judge,
-    orient3d_from_cramer, orient3d_judge,
+    Decision, MoveNode, Standard, WitnessPoint, cramer_iv, dir_sign_judge,
+    indirect_cmp_coord_judge, orient3d_from_cramer, orient3d_judge,
 };
 use nacre_math::Point3;
 use nacre_predicates::{
@@ -114,7 +114,7 @@ impl Notes {
 }
 
 /// A plane witnessed by three points known to lie on it, and — when the solid was rotated —
-/// their exact [`Pt3`] definitions.
+/// their exact [`WitnessPoint`] definitions.
 ///
 /// The rotation-general predicates need only this, which is why one implementation can serve
 /// both index spaces (a plane class and a single face) without confusing them. Only
@@ -122,13 +122,13 @@ impl Notes {
 /// so it necessarily runs before a plane table exists.
 pub trait Witness {
     fn tri(&self) -> [Point3; 3];
-    /// The three `tri` points as exact [`Pt3`] definitions, **always present**.
+    /// The three `tri` points as exact [`WitnessPoint`] definitions, **always present**.
     ///
     /// This is a *cache*: the definition is built once, where the witness is, and every predicate
     /// borrows it. It used to be an `Option` whose emptiness *also* meant "not rotated" — one
     /// field answering two questions, which is why it could not be filled in advance without
     /// changing which predicate path runs. [`Witness::is_rotated`] is now that second question.
-    fn tri_pt3(&self) -> &[Pt3; 3];
+    fn tri_pt3(&self) -> &[WitnessPoint; 3];
     /// Whether this plane came from a rotated solid — the predicate-routing signal, and a
     /// **different fact** from "does the definition carry a rotation chain". Neither
     /// `chain.is_empty()` nor `tol == 0` is equivalent to it (a rotated solid's face may witness
@@ -310,7 +310,7 @@ impl<'a, W> Judge<'a, W> {
 
 /// The plane-class predicates — the questions the arrangement asks of a plane table.
 ///
-/// Each routes itself: all-axis-aligned planes take the exact path and never build a `Pt3`;
+/// Each routes itself: all-axis-aligned planes take the exact path and never build a `WitnessPoint`;
 /// any rotated plane goes to the kernel judges, under this operation's [`Standard`], with what
 /// it could not prove recorded in [`Judge::notes`].
 impl<W: Witness> Judge<'_, W> {
@@ -334,7 +334,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// - `!rotated`: the exact path — the implicit-point `orient3d` (Attene) on the stored plane
     ///   coefficients and `tri` coordinates.
     /// - `rotated`: each of `p, q, r` and the explicit triangle `j` is taken as its three exact
-    ///   [`Pt3`] ([`plane_def`]), and [`indirect_orient3d_judge`] decides the sign from the
+    ///   [`WitnessPoint`] ([`plane_def`]), and [`indirect_orient3d_judge`] decides the sign from the
     ///   definitions — never materializing `V` or reading the rounded `tri`.
     ///
     /// Winding-invariant. A query plane `j` equal to one of `p, q, r` means the point lies on `j`,
@@ -485,7 +485,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// The sign of `a[axis] − b[axis]` between the two implicit points `a = ∩(planes a…)` and
     /// `b = ∩(planes b…)` (`+1` = `a[axis] > b[axis]`). `!rotated` → the exact implicit
     /// `cmp_coord` on the stored coefficients; `rotated` → each triple's three planes as exact
-    /// `Pt3` → [`indirect_cmp_coord_judge`].
+    /// `WitnessPoint` → [`indirect_cmp_coord_judge`].
     pub fn cmp_coord(&self, a: [usize; 3], b: [usize; 3], axis: usize) -> i8 {
         let planes = self.planes;
         let tp = |t: [usize; 3]| {
@@ -559,7 +559,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
 /// certified route and reused by every later one.
 ///
 /// ★ **`OnceCell`, not `Cell<Option<_>>`**: "filled once, never changes" is said by the type, the way
-/// [`Witness::tri_pt3`] and `Pt3`'s realization cell already say it. And a **cell rather than a
+/// [`Witness::tri_pt3`] and `WitnessPoint`'s realization cell already say it. And a **cell rather than a
 /// lock** because the handle is a local value that never crosses a thread — the shared thing is the
 /// `Judge` behind it, borrowed immutably. (On the `Judge` this cache would need a lock, and a lock
 /// here would serialize the parallel arrangement.)
@@ -606,7 +606,7 @@ impl<W: Witness> Judge<'_, W> {
     /// coordinates instead of on their derived coefficients (three non-collinear points on a plane
     /// determine it, so "every point of `tri_j` lies on `tri_i`'s plane" is conclusive — but only
     /// under non-collinearity, so a degenerate `tri` answers `false`). `!rotated` → the exact
-    /// `orient3d` on `tri`; any rotated → the exact `Pt3` definitions and [`orient3d_judge`].
+    /// `orient3d` on `tri`; any rotated → the exact `WitnessPoint` definitions and [`orient3d_judge`].
     pub fn planes_coplanar(&self, i: usize, j: usize) -> bool {
         let planes = self.planes;
         if tri_collinear(planes[i].tri()) || tri_collinear(planes[j].tri()) {
@@ -716,7 +716,7 @@ pub fn any_rotated<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     idx.iter().any(|&k| planes[k].is_rotated())
 }
 
-/// The three exact [`Pt3`] defining plane `k` — **borrowed**, never rebuilt.
+/// The three exact [`WitnessPoint`] defining plane `k` — **borrowed**, never rebuilt.
 ///
 /// This used to construct them per call: cloning a rotated witness (a heap allocation each time)
 /// or rebuilding an axis-aligned one from its `tri`. A boolean over 25 rotated fins called it a
@@ -736,7 +736,7 @@ fn shared_motion<W: Witness>(planes: &[W], idx: &[usize]) -> bool {
     id != 0 && idx.iter().all(|&k| planes[k].chain_id() == id)
 }
 
-pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[Pt3; 3] {
+pub fn plane_def<W: Witness>(planes: &[W], k: usize) -> &[WitnessPoint; 3] {
     planes[k].tri_pt3()
 }
 
@@ -748,13 +748,13 @@ fn to_i8(o: Orient) -> i8 {
     }
 }
 
-/// Borrow an owned plane def as the `&Pt3` tuple the judges take.
-fn borrow3(d: &[Pt3; 3]) -> (&Pt3, &Pt3, &Pt3) {
+/// Borrow an owned plane def as the `&WitnessPoint` tuple the judges take.
+fn borrow3(d: &[WitnessPoint; 3]) -> (&WitnessPoint, &WitnessPoint, &WitnessPoint) {
     (&d[0], &d[1], &d[2])
 }
 
 /// Borrow three plane defs as the tuples `indirect_cmp_coord_judge` takes.
-fn borrow_triple(d: [&[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
+fn borrow_triple(d: [&[WitnessPoint; 3]; 3]) -> [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3] {
     [borrow3(d[0]), borrow3(d[1]), borrow3(d[2])]
 }
 
@@ -846,7 +846,7 @@ type OneRotation = (
     Option<[Rat; 3]>,
 );
 
-fn single_rotation(def: &[Pt3; 3]) -> Option<OneRotation> {
+fn single_rotation(def: &[WitnessPoint; 3]) -> Option<OneRotation> {
     let mut axis: Option<nacre_scalar::Axis> = None;
     let mut pivot: Option<[Rat; 3]> = None;
     let mut total = nacre_scalar::Angle::from_deg(Rat::from_int(0))?;
@@ -938,7 +938,9 @@ fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -
 /// rescue it either: their product is a half-turn, not a turn by the angles read here. So the
 /// declaration is that this shortcut is defined for **axis-preserving** motions, and anything
 /// else escalates. A conservative miss, never a wrong sign.
-fn single_axis_motion(def: &[Pt3; 3]) -> Option<(nacre_scalar::Axis, nacre_scalar::Angle)> {
+fn single_axis_motion(
+    def: &[WitnessPoint; 3],
+) -> Option<(nacre_scalar::Axis, nacre_scalar::Angle)> {
     let chain = &def[0].chain;
     let mut axis: Option<nacre_scalar::Axis> = None;
     let mut total = nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(0))?;
@@ -1031,13 +1033,16 @@ mod tests {
     /// answering anyway.
     #[test]
     fn a_chain_holding_a_frame_never_reaches_the_coefficient_transport() {
-        use super::{Pt3, single_rotation};
+        use super::{WitnessPoint, single_rotation};
         use nacre_scalar::{Angle, Axis, Rat};
         let ri = |n: i128, d: i128| Rat::new(n, d).unwrap();
         // A tilted plane's frame: 2x - 3y + 7z + 11 = 0.
         let fr = nacre_scalar::plane_frame([2, -3, 7, 11].map(Rat::from_int)).unwrap();
-        let framed =
-            |u: i128, v: i128, w: i128| Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)]).frame(fr).unwrap();
+        let framed = |u: i128, v: i128, w: i128| {
+            WitnessPoint::at([ri(u, 1), ri(v, 1), ri(w, 1)])
+                .frame(fr)
+                .unwrap()
+        };
         let def = [framed(0, 0, 0), framed(1, 0, 0), framed(0, 1, 0)];
         assert!(
             single_rotation(&def).is_none(),
@@ -1047,9 +1052,9 @@ mod tests {
         // The same points with an ordinary rotation *are* accepted, so the decline above is the
         // frame's doing and not a shortcut that never fires.
         let turned = [
-            Pt3::at([ri(0, 1), ri(0, 1), ri(0, 1)]),
-            Pt3::at([ri(1, 1), ri(0, 1), ri(0, 1)]),
-            Pt3::at([ri(0, 1), ri(1, 1), ri(0, 1)]),
+            WitnessPoint::at([ri(0, 1), ri(0, 1), ri(0, 1)]),
+            WitnessPoint::at([ri(1, 1), ri(0, 1), ri(0, 1)]),
+            WitnessPoint::at([ri(0, 1), ri(1, 1), ri(0, 1)]),
         ]
         .map(|p| {
             p.rotate_about(
@@ -1076,17 +1081,17 @@ mod tests {
     }
 
     /// A synthetic axis-aligned plane witness: three points on the plane, its exact
-    /// coefficients, and the exact `Pt3` definition of those points. `is_rotated` is `false`,
+    /// coefficients, and the exact `WitnessPoint` definition of those points. `is_rotated` is `false`,
     /// so predicates take the exact path — the definition is there but unused, which is
     /// precisely the arrangement the production tables now have.
     struct W {
         tri: [Point3; 3],
         coeffs: [f64; 4],
-        def: [Pt3; 3],
+        def: [WitnessPoint; 3],
     }
     impl W {
         fn new(tri: [Point3; 3], coeffs: [f64; 4]) -> W {
-            let def = tri.map(|p| Pt3::exact(p.as_array()).expect("test coordinate"));
+            let def = tri.map(|p| WitnessPoint::exact(p.as_array()).expect("test coordinate"));
             W { tri, coeffs, def }
         }
     }
@@ -1094,7 +1099,7 @@ mod tests {
         fn tri(&self) -> [Point3; 3] {
             self.tri
         }
-        fn tri_pt3(&self) -> &[Pt3; 3] {
+        fn tri_pt3(&self) -> &[WitnessPoint; 3] {
             &self.def
         }
         fn is_rotated(&self) -> bool {
@@ -1168,7 +1173,7 @@ mod tests {
     struct RW {
         tri: [Point3; 3],
         coeffs: [f64; 4],
-        def: [Pt3; 3],
+        def: [WitnessPoint; 3],
         base: [Point3; 3],
         base_coeffs: [f64; 4],
     }
@@ -1200,8 +1205,8 @@ mod tests {
         /// The same, through a chain of turns — one node per `(axis, deg)`.
         fn turned(pts: [[i128; 3]; 3], nodes: &[(Axis, i128)]) -> RW {
             let pivot = [ri(1, 3), ri(1, 7), ri(0, 1)];
-            let def: [Pt3; 3] = pts.map(|q| {
-                let mut p = Pt3::at([ri(q[0], 1), ri(q[1], 1), ri(q[2], 1)]);
+            let def: [WitnessPoint; 3] = pts.map(|q| {
+                let mut p = WitnessPoint::at([ri(q[0], 1), ri(q[1], 1), ri(q[2], 1)]);
                 for &(axis, deg) in nodes {
                     p = p.rotate_about(axis, Angle::from_deg(ri(deg, 1)).unwrap(), pivot);
                 }
@@ -1222,7 +1227,7 @@ mod tests {
         fn tri(&self) -> [Point3; 3] {
             self.tri
         }
-        fn tri_pt3(&self) -> &[Pt3; 3] {
+        fn tri_pt3(&self) -> &[WitnessPoint; 3] {
             &self.def
         }
         fn is_rotated(&self) -> bool {

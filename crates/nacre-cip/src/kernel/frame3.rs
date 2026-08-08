@@ -32,14 +32,14 @@ use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
 /// Shared, lazily-initialized cell for the memoized high-precision realization.
 ///
 /// Under `parallel` it is `Arc<OnceLock>` — `Send + Sync`. **What needs that is the shared
-/// borrow**: the boolean hands every worker the same `&[PlaneGeom]`, so `Pt3` must be `Sync`
+/// borrow**: the boolean hands every worker the same `&[PlaneGeom]`, so `WitnessPoint` must be `Sync`
 /// or the plane table cannot cross the closure at all. The cache being shared rather than
 /// per-thread is the second benefit: a hot definition point is realized once for all workers.
 /// Two workers racing to fill one cell compute the same value and one wins, so the answer
 /// does not depend on who did.
 ///
 /// Otherwise it is `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has
-/// the identical signature on both, so the consumer ([`Pt3::hp_coord`]) is unchanged.
+/// the identical signature on both, so the consumer ([`WitnessPoint::hp_coord`]) is unchanged.
 type HpCell = HpRc<HpOnce<(usize, [HpApprox; 3])>>;
 
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
@@ -58,7 +58,7 @@ pub enum MoveNode {
         angle: Angle,
         point: [Rat; 3],
     },
-    /// An exact rational translation. Realized by adding the offset — see [`Pt3::compute_hp`].
+    /// An exact rational translation. Realized by adding the offset — see [`WitnessPoint::compute_hp`].
     Translate { offset: [Rat; 3] },
     /// An exact reflection in `axis = offset` (`x ↦ 2·offset − x` on that axis).
     ///
@@ -289,7 +289,7 @@ fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigI
 /// arbitrary precision from the definition, so two points with the same definition
 /// realize identically (path-independent — the soundness argument's root).
 #[derive(Clone, Debug)]
-pub struct Pt3 {
+pub struct WitnessPoint {
     pub base: [Rat; 3],
     pub chain: HpRc<[MoveNode]>,
     pub coord: [f64; 3],
@@ -308,8 +308,8 @@ pub struct Pt3 {
 /// **How far a rational's f64 image sits from the rational** — measured at high precision, `0`
 /// when the value is exactly representable.
 ///
-/// One spelling, because three call sites want the identical quantity ([`Pt3::at`]'s seed,
-/// [`Pt3::translate`]'s offset, [`Pt3::frame`]'s inputs) and "how a rational's rounding is
+/// One spelling, because three call sites want the identical quantity ([`WitnessPoint::at`]'s seed,
+/// [`WitnessPoint::translate`]'s offset, [`WitnessPoint::frame`]'s inputs) and "how a rational's rounding is
 /// charged" is exactly the kind of thing that drifts when it is written out twice. `bf_mag` reads
 /// at octave granularity, so the `2×` keeps the result above the truth.
 fn rat_round_tol(r: Rat, f: f64) -> f64 {
@@ -317,7 +317,7 @@ fn rat_round_tol(r: Rat, f: f64) -> f64 {
     2.0 * bf_mag(&e.abs())
 }
 
-impl Pt3 {
+impl WitnessPoint {
     /// A point at `base`, tol seeded with the base→f64 rounding (a division; exactly
     /// 0 for an f64-representable base, positive otherwise). An axis a later chain
     /// never rotates keeps exactly this, which a per-axis tol check needs.
@@ -355,7 +355,7 @@ impl Pt3 {
     /// (`|R|·old`). [`at`](Self::at) is the Constructed case (initial tol = base
     /// rounding).
     pub fn at_with_tol(base: [Rat; 3], tol: [f64; 3]) -> Self {
-        Pt3 {
+        WitnessPoint {
             coord: [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
             base,
             chain: HpRc::from([] as [MoveNode; 0]),
@@ -664,7 +664,7 @@ impl Pt3 {
         Some(self)
     }
 
-    /// [`Pt3::frame`] for a [`WideFrame`] (S4) — the same propagation, with the axis and origin
+    /// [`WitnessPoint::frame`] for a [`WideFrame`] (S4) — the same propagation, with the axis and origin
     /// `(value, error)` pairs taken from a fixed-precision arbitrary-precision realization
     /// instead of `inv_sqrt_f64`/`axis_comp`. No new f64 error derivation exists here: every
     /// rounding on the way is inside an `HpApprox`, and the final narrowing to f64 charges itself.
@@ -673,7 +673,7 @@ impl Pt3 {
     /// of pushes, so that cost is accepted rather than memoized — a measure-later item.
     ///
     /// ★ No exact-permutation shortcut: a wide frame is never an axis permutation (its squared
-    /// lengths exceed `i128`), so the tol-0 branch `Pt3::frame` has cannot apply.
+    /// lengths exceed `i128`), so the tol-0 branch `WitnessPoint::frame` has cannot apply.
     pub fn frame_wide(mut self, f: &WideFrame) -> Option<Self> {
         // The fixed rung for the f64 cache of a wide frame — the ladder's first rung, the same
         // one `inv_sqrt_f64` starts at. The judgment path re-realizes at its own precision.
@@ -695,7 +695,7 @@ impl Pt3 {
             (wh[k], ew[k]) = comp(&f.n[k], &iw);
             (oh[k], eo[k]) = narrow_hp(&bigint_to_hp(&f.origin_num[k], P).div_exact(&od, P)?);
         }
-        // The same propagation as `Pt3::frame`, with the realized origin's own error in place
+        // The same propagation as `WitnessPoint::frame`, with the realized origin's own error in place
         // of `rat_round_tol`.
         let p = self.coord;
         let t = self.tol;
@@ -723,7 +723,7 @@ impl Pt3 {
     /// The coordinate realized at `prec` bits from the **definition** (base rotated
     /// through the chain, each node about its pivot) — path-independent ground truth /
     /// escalation realization. The result is memoized in
-    /// [`Pt3::hp`] and shared across clones of the same definition, so a definition-point pays
+    /// [`WitnessPoint::hp`] and shared across clones of the same definition, so a definition-point pays
     /// the astro-float cos/sin once per boolean rather than once per predicate.
     pub(crate) fn hp_coord(&self, prec: usize) -> [HpApprox; 3] {
         // **Keyed by precision, and that key is load-bearing.** The precision is chosen per
@@ -779,12 +779,12 @@ impl Pt3 {
                     let c = rat_to_hp(*offset, prec);
                     p[k] = c.add(&c, prec).sub(&p[k], prec);
                 }
-                // The same derivation as [`Pt3::frame`], in the domain that carries its own
+                // The same derivation as [`WitnessPoint::frame`], in the domain that carries its own
                 // error: two `1/√` intervals, two scaled basis vectors, their cross product, and
                 // the combination. Nothing is charged by hand — every rounding is inside an
                 // `HpApprox`, which is the point of realizing here rather than trusting the f64 tol.
                 //
-                // A degenerate frame cannot arise here: `Pt3::frame` is the only producer of this
+                // A degenerate frame cannot arise here: `WitnessPoint::frame` is the only producer of this
                 // node and it refuses a non-positive squared length, so the chain never holds one.
                 MoveNode::Frame { frame } => {
                     let inv = |v: Rat| {
@@ -797,7 +797,7 @@ impl Pt3 {
                         [0, 1, 2].map(|k| rat_to_hp(v[k], prec).mul(s, prec))
                     };
                     let (uh, wh) = (scaled(frame.u_raw, &iu), scaled(frame.n, &iw));
-                    // The same two routes `Pt3::frame` takes, in the domain that carries its own
+                    // The same two routes `WitnessPoint::frame` takes, in the domain that carries its own
                     // error interval.
                     let vh = match frame.v.and_then(|(v_raw, vv)| Some((v_raw, inv(vv)?))) {
                         Some((v_raw, iv)) => scaled(v_raw, &iv),
@@ -894,7 +894,7 @@ fn rad_f64(r: Mag) -> f64 {
 #[derive(Clone, Copy, Debug)]
 pub struct Standard {
     /// The precision the escalation realizes definitions at — chosen for this model, uniform
-    /// across the operation so [`Pt3`]'s realization cache stays warm.
+    /// across the operation so [`WitnessPoint`]'s realization cache stays warm.
     pub prec: usize,
     /// Two things **proved** to lie within this distance of each other are one thing.
     pub coincidence: Mag,
@@ -1114,7 +1114,7 @@ const TRIAL_PREC: usize = 128;
 /// ★ **And deep enough that an exactly-representable point reads exactly zero.**
 ///
 /// A second requirement, once a caller is allowed to *skip* [`trial_bound`] for a definition it
-/// knows is exact. `Pt3::exact`'s base is `Rat::try_from_f64` = `mantissa · 2^exp`, so the
+/// knows is exact. `WitnessPoint::exact`'s base is `Rat::try_from_f64` = `mantissa · 2^exp`, so the
 /// denominator is a power of two and the numerator is at most `Rat`'s own 127 bits — and
 /// `rat_to_hp` returns an exact interval exactly when both hold *at this precision*. Below 127 a
 /// large exact coordinate would start carrying a bound again, and a caller that skipped the call on
@@ -1147,7 +1147,7 @@ const WORD: usize = 64;
 /// This is an *estimate*, and correctness does not rest on it: every judgement checks its own
 /// interval, so an under-estimate costs a re-run and never an answer. It is deliberately
 /// generous by one word to cover the determinant arithmetic stacked on top of the coordinates.
-pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Mag) -> usize {
+pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, limit: Mag) -> usize {
     let mut worst = Mag::ZERO;
     for p in pts {
         let b = trial_bound(p);
@@ -1165,7 +1165,7 @@ pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Mag) -
 /// associative and exact, so no order of combination — and no schedule — can change the
 /// answer. That is what makes this safe to hand out, where exposing a partial *sum* would not
 /// be: a reassociated floating-point sum is a different number.
-pub fn trial_bound(p: &Pt3) -> Mag {
+pub fn trial_bound(p: &WitnessPoint) -> Mag {
     let mut worst = Mag::ZERO;
     // **Uncached on purpose.** `hp_coord` fills a point's realization cell with whatever
     // precision asks first, and this measurement runs before the real precision is known —
@@ -1327,7 +1327,13 @@ fn det3_big_rows(r: &[[HpApprox; 3]; 3], prec: usize) -> HpApprox {
 
 /// `orient3d` determinant realized at `prec` bits (astro-float) from the point
 /// definitions — path-independent ground truth / escalation realization.
-fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> HpApprox {
+fn det3_hp(
+    pa: &WitnessPoint,
+    pb: &WitnessPoint,
+    pc: &WitnessPoint,
+    pd: &WitnessPoint,
+    prec: usize,
+) -> HpApprox {
     let (a, b, c, d) = (
         pa.hp_coord(prec),
         pb.hp_coord(prec),
@@ -1361,7 +1367,7 @@ fn det3_hp(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> HpApprox {
 /// moved frame's handedness and every determinant question transfers unchanged.
 ///
 /// The canonical reflection is a sign flip on x, which is exact for every finite `f64`.
-fn shared_base<const N: usize>(pts: &[&Pt3; N]) -> Option<[[f64; 3]; N]> {
+fn shared_base<const N: usize>(pts: &[&WitnessPoint; N]) -> Option<[[f64; 3]; N]> {
     let first = pts[0];
     if first.chain.is_empty() {
         return None; // nothing to cancel; the caller's own fast path already handled this
@@ -1419,7 +1425,12 @@ pub fn chain_parity(chain: &[MoveNode]) -> i8 {
 /// filter would be two error budgets to keep in step, and this kernel has already been bitten
 /// twice by a question with two answering sites. The judge calls this, so they cannot drift, and
 /// soundness here is not a property to test but a consequence of being the same code.
-pub fn orient3d_filter(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Option<Orient> {
+pub fn orient3d_filter(
+    pa: &WitnessPoint,
+    pb: &WitnessPoint,
+    pc: &WitnessPoint,
+    pd: &WitnessPoint,
+) -> Option<Orient> {
     let (a, b, c, d) = (pa.coord, pb.coord, pc.coord, pd.coord);
     let det = det3_f64(a, b, c, d);
     let bound = det3_bound([a, b, c, d], [pa.tol, pb.tol, pc.tol, pd.tol]);
@@ -1447,7 +1458,13 @@ pub fn orient3d_filter(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3) -> Option<Orient>
 /// turned into a distance and answered by [`escalate`]. Path-independent (a
 /// function of the four point definitions). This is the *tol > 0* path — a tol-0
 /// config is exact/faster via `nacre-predicates` (Shewchuk), routed above this crate.
-pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, j: Standard) -> Decision {
+pub fn orient3d_judge(
+    pa: &WitnessPoint,
+    pb: &WitnessPoint,
+    pc: &WitnessPoint,
+    pd: &WitnessPoint,
+    j: Standard,
+) -> Decision {
     if let Some(o) = orient3d_filter(pa, pb, pc, pd) {
         return Decision::Sign(o);
     }
@@ -1464,7 +1481,7 @@ pub fn orient3d_judge(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, j: Standard) -> De
 
 /// `(b−d) × (c−d)` at `prec` bits — the area term that turns [`orient3d_judge`]'s determinant
 /// into a height above the plane through `b, c, d`.
-fn cross_of(pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> [HpApprox; 3] {
+fn cross_of(pb: &WitnessPoint, pc: &WitnessPoint, pd: &WitnessPoint, prec: usize) -> [HpApprox; 3] {
     let (b, c, d) = (pb.hp_coord(prec), pc.hp_coord(prec), pd.hp_coord(prec));
     let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
     let (u, v) = (
@@ -1484,7 +1501,13 @@ fn cross_of(pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> [HpApprox; 3] {
 /// the judge cannot decide a sign, this is the honest statement of what it *did* establish: not
 /// "these are the same", but "`pa` is within **this much** of that plane". `None` when the three
 /// plane points are too near collinear for a distance to mean anything.
-pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Option<Mag> {
+pub fn orient3d_distance(
+    pa: &WitnessPoint,
+    pb: &WitnessPoint,
+    pc: &WitnessPoint,
+    pd: &WitnessPoint,
+    prec: usize,
+) -> Option<Mag> {
     let det = det3_hp(pa, pb, pc, pd, prec);
     // The *value* the judge could not separate from zero is somewhere in `±error`, so the distance
     // it bounds is `error / |cross|`.
@@ -1498,7 +1521,7 @@ pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) ->
 /// orientation of the ray direction `d` against the edge fan `(base→x, base→y)`. The
 /// **direction analogue** of [`orient3d_judge`]: `point_in_solid`'s ray-triangle test asks
 /// `orient3d(p, p+d, ·, ·)`, but `p+d` (a rotated point plus a rational offset) has no exact
-/// `base+chain` `Pt3` (`R⁻¹d` is irrational). Every such determinant reduces to this form,
+/// `base+chain` `WitnessPoint` (`R⁻¹d` is irrational). Every such determinant reduces to this form,
 /// where `d` enters as one **exact** (error-0) column and only `x, y, base` carry rotation tol.
 /// Interval filter → astro-float escalation, exactly like the indirect judges; a below-floor
 /// determinant that stays undecided is [`Orient::Zero`], absorbed by the caller's ray retry.
@@ -1507,10 +1530,16 @@ pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) ->
 /// need one: a zero here means the ray runs along the face's plane, and `boolean` answers that by
 /// casting a different ray rather than by asking how close it came.
 ///
-/// `d` is realized through an unrotated [`Pt3`] purely to reuse `pt_iv`/`hp_coord` for its
+/// `d` is realized through an unrotated [`WitnessPoint`] purely to reuse `pt_iv`/`hp_coord` for its
 /// coord/tol/hp — the row is `d` itself, never `d − base`.
-pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Orient {
-    let dp = Pt3::at(d);
+pub fn dir_orient3d_judge(
+    d: [Rat; 3],
+    base: &WitnessPoint,
+    x: &WitnessPoint,
+    y: &WitnessPoint,
+    prec: usize,
+) -> Orient {
+    let dp = WitnessPoint::at(d);
     let (bi, xi, yi, di) = (pt_iv(base), pt_iv(x), pt_iv(y), pt_iv(&dp));
     let sub_iv = |u: [Approx; 3], v: [Approx; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
     if let Some(pos) = det3_iv([di, sub_iv(xi, bi), sub_iv(yi, bi)]).sign() {
@@ -1551,7 +1580,13 @@ pub fn dir_orient3d_judge(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize
 /// The determinant `det[base−y, (base+dir)−y, x−y]` column-reduces (`R1−R0 = dir`) and, after
 /// the two swaps that move `dir` to the front, is `dir·((x−y)×(base−y))` — i.e. a plain
 /// [`dir_orient3d_judge`] with the points permuted, no sign fix needed.
-pub fn orient3d_ray(base: &Pt3, dir: [Rat; 3], x: &Pt3, y: &Pt3, prec: usize) -> Orient {
+pub fn orient3d_ray(
+    base: &WitnessPoint,
+    dir: [Rat; 3],
+    x: &WitnessPoint,
+    y: &WitnessPoint,
+    prec: usize,
+) -> Orient {
     dir_orient3d_judge(dir, y, x, base, prec)
 }
 
@@ -1566,7 +1601,7 @@ pub fn orient3d_ray(base: &Pt3, dir: [Rat; 3], x: &Pt3, y: &Pt3, prec: usize) ->
 // arithmetic is a sound worst-case bound by construction, so no per-predicate bound
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
 // point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path, the
-// judgment **layer only** ("층만") — the boolean wiring (seam → plane `Pt3`s) is
+// judgment **layer only** ("층만") — the boolean wiring (seam → plane `WitnessPoint`s) is
 // stage 3. Validated before the port by the isolated 3D experiment (H-b coefficient
 // tol, H-c indirect soundness); the constant `mag`-floor policy is indirect-only (distinct from the
 // explicit `16·scale³` floor of [`orient3d_judge`]).
@@ -1580,8 +1615,8 @@ fn det3_iv(r: [[Approx; 3]; 3]) -> Approx {
 }
 
 /// A point's coord+tol as an interval per component (the pivot is already folded into
-/// `coord`/`tol` by [`Pt3::rotate_about`]).
-fn pt_iv(p: &Pt3) -> [Approx; 3] {
+/// `coord`/`tol` by [`WitnessPoint::rotate_about`]).
+fn pt_iv(p: &WitnessPoint) -> [Approx; 3] {
     [
         Approx::new(p.coord[0], p.tol[0]),
         Approx::new(p.coord[1], p.tol[1]),
@@ -1593,7 +1628,7 @@ fn pt_iv(p: &Pt3) -> [Approx; 3] {
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
 /// (§CIP ②, design.md §539). Validated H-b.
-pub(crate) fn plane_iv(p0: &Pt3, p1: &Pt3, p2: &Pt3) -> [Approx; 4] {
+pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Approx; 4] {
     let (a, b, c) = (pt_iv(p0), pt_iv(p1), pt_iv(p2));
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];
     let e2 = [c[0].sub(a[0]), c[1].sub(a[1]), c[2].sub(a[2])];
@@ -1612,7 +1647,7 @@ pub(crate) fn plane_iv(p0: &Pt3, p1: &Pt3, p2: &Pt3) -> [Approx; 4] {
 /// The plane's four coefficients realized at `prec` bits from the definitions
 /// (ground truth for the coefficient tol; no trig of its own — consumes point
 /// `hp_coord`).
-fn plane_hp(p0: &Pt3, p1: &Pt3, p2: &Pt3, prec: usize) -> [HpApprox; 4] {
+fn plane_hp(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint, prec: usize) -> [HpApprox; 4] {
     let (a, b, c) = (p0.hp_coord(prec), p1.hp_coord(prec), p2.hp_coord(prec));
     let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
     let mul = |x: &HpApprox, y: &HpApprox| x.mul(y, prec);
@@ -2008,12 +2043,12 @@ fn plane_gap(m: &HpApprox, d: &HpApprox, cross: &[HpApprox; 3], prec: usize) -> 
 /// [`orient3d_judge`]; boolean wiring is stage 3.
 #[allow(clippy::too_many_arguments)]
 pub fn indirect_orient3d_judge(
-    plane_a: (&Pt3, &Pt3, &Pt3),
-    plane_b: (&Pt3, &Pt3, &Pt3),
-    plane_c: (&Pt3, &Pt3, &Pt3),
-    q: &Pt3,
-    r: &Pt3,
-    s: &Pt3,
+    plane_a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    plane_b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    plane_c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    q: &WitnessPoint,
+    r: &WitnessPoint,
+    s: &WitnessPoint,
     j: Standard,
 ) -> Decision {
     let iv = [
@@ -2028,18 +2063,18 @@ pub fn indirect_orient3d_judge(
 /// body of the certified `orient3d`, reached by both [`crate::predicate::Judge::orient3d`] and
 /// [`crate::predicate::ImplicitPoint::orient3d`].
 ///
-/// The `Pt3` definitions stay in the signature because the escalation still needs them: `plane_hp`
+/// The `WitnessPoint` definitions stay in the signature because the escalation still needs them: `plane_hp`
 /// realizes the coefficients afresh at each precision, and an interval cannot be sharpened after
 /// the fact.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn orient3d_from_cramer(
     cr: (Approx, [Approx; 3]),
-    plane_a: (&Pt3, &Pt3, &Pt3),
-    plane_b: (&Pt3, &Pt3, &Pt3),
-    plane_c: (&Pt3, &Pt3, &Pt3),
-    q: &Pt3,
-    r: &Pt3,
-    s: &Pt3,
+    plane_a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    plane_b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    plane_c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    q: &WitnessPoint,
+    r: &WitnessPoint,
+    s: &WitnessPoint,
     j: Standard,
 ) -> Decision {
     if let Some(o) = filter_from_cramer(cr, pt_iv(q), pt_iv(r), pt_iv(s)) {
@@ -2049,7 +2084,7 @@ pub(crate) fn orient3d_from_cramer(
     // along its own computation. A determinant whose interval straddles zero is undecided,
     // and what it *did* establish is how far the implicit point may be from the triangle's plane.
     escalate(j, j.coincidence, |prec| {
-        let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+        let ph = |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| plane_hp(t.0, t.1, t.2, prec);
         let (d, m, cross) = indirect_hp(
             [ph(plane_a), ph(plane_b), ph(plane_c)],
             q.hp_coord(prec),
@@ -2152,12 +2187,12 @@ fn coord_gap(m: &HpApprox, da: &HpApprox, db: &HpApprox) -> Gap {
 /// exactly equal — see [`Decision`] for which of the two this was). The
 /// two-implicit companion of [`indirect_orient3d_judge`]; boolean wiring is stage 3.
 pub fn indirect_cmp_coord_judge(
-    a: [(&Pt3, &Pt3, &Pt3); 3],
-    b: [(&Pt3, &Pt3, &Pt3); 3],
+    a: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
+    b: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
     axis: usize,
     j: Standard,
 ) -> Decision {
-    let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+    let iv = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
         [
             plane_iv(t[0].0, t[0].1, t[0].2),
             plane_iv(t[1].0, t[1].1, t[1].2),
@@ -2168,7 +2203,7 @@ pub fn indirect_cmp_coord_judge(
         return Decision::Sign(o);
     }
     escalate(j, j.coincidence, |prec| {
-        let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+        let hp = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
             [
                 plane_hp(t[0].0, t[0].1, t[0].2, prec),
                 plane_hp(t[1].0, t[1].1, t[1].2, prec),
@@ -2200,9 +2235,9 @@ fn orient_of(pos: bool) -> Orient {
 /// result follows each triple's point order. The caller must pass the three points in a
 /// consistent order (the ops wrapper passes each face's outward-oriented `tri`).
 pub fn dir_sign_judge(
-    a: (&Pt3, &Pt3, &Pt3),
-    b: (&Pt3, &Pt3, &Pt3),
-    c: (&Pt3, &Pt3, &Pt3),
+    a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+    c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     j: Standard,
 ) -> Decision {
     // ★ **Not fed from `Judge`'s interval-plane cache, and that is measured.** Wiring it here
@@ -2233,7 +2268,7 @@ pub fn dir_sign_judge(
         return Decision::Degenerate;
     };
     escalate(j, limit, |prec| {
-        let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+        let ph = |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| plane_hp(t.0, t.1, t.2, prec);
         let planes = [ph(a), ph(b), ph(c)];
         let dh = normals_det_hp(&planes, prec);
         match dh.sign() {
@@ -2457,7 +2492,11 @@ mod tests {
     fn a_structural_zero_comes_back_proved_not_assumed() {
         // The plane `z = x` through four points, one of them irrational, all turned together.
         let pt = |x: Rat, y: Rat| {
-            Pt3::at([x, y, x]).rotate_about(Axis::Z, deg(30, 1), [ri(1, 3), ri(1, 7), ri(0, 1)])
+            WitnessPoint::at([x, y, x]).rotate_about(
+                Axis::Z,
+                deg(30, 1),
+                [ri(1, 3), ri(1, 7), ri(0, 1)],
+            )
         };
         let (a, b, c, d) = (
             pt(ri(1, 3), ri(1, 1)),
@@ -2512,7 +2551,7 @@ mod tests {
         // A rotation with an irrational cos/sin, about a non-origin pivot, so the radius has
         // every term in it: the trig bound, the pivot arithmetic, and the per-operation rounding.
         let pt = |x: i128, y: i128, z: i128| {
-            Pt3::at([ri(x, 10), ri(y, 10), ri(z, 10)]).rotate_about(
+            WitnessPoint::at([ri(x, 10), ri(y, 10), ri(z, 10)]).rotate_about(
                 Axis::Z,
                 deg(37, 1),
                 [ri(1, 3), ri(1, 7), ri(0, 1)],
@@ -2573,7 +2612,7 @@ mod tests {
             for (hn, hd) in [(1i128, 1i128), (1, 1_000), (1, 1_000_000_000_000)] {
                 for tri_span in [1i128, 1_000] {
                     let p = |x: i128, y: i128, z: (i128, i128)| {
-                        Pt3::at([ri(x * scale, 1), ri(y * scale, 1), ri(z.0, z.1)])
+                        WitnessPoint::at([ri(x * scale, 1), ri(y * scale, 1), ri(z.0, z.1)])
                     };
                     // Plane z = 0 through three points, and the query a height h above it.
                     let (b, c, d) = (
@@ -2862,7 +2901,7 @@ mod tests {
                 std::array::from_fn(|_| ri(rng(st, -100_000, 100_000), 1 << rng(st, 0, 6)))
             };
             let bases: [[Rat; 3]; 4] = std::array::from_fn(|_| dyadic(&mut st));
-            let mut pts: Vec<Pt3> = bases.iter().map(|&b| Pt3::at(b)).collect();
+            let mut pts: Vec<WitnessPoint> = bases.iter().map(|&b| WitnessPoint::at(b)).collect();
             for _ in 0..rng(&mut st, 1, 4) {
                 match rng(&mut st, 0, 2) {
                     0 => {
@@ -2960,7 +2999,7 @@ mod tests {
             ("has a translate       ", 0.0, 0, String::new()),
             // ★ **Pivot rotations and nothing else.** Added to isolate the `piv` term, and it
             // showed something else instead: this row sits at **exactly 0.5000** and does not
-            // move when `piv` changes, because what dominates there is the *base seed* — `Pt3::at`
+            // move when `piv` changes, because what dominates there is the *base seed* — `WitnessPoint::at`
             // measures the base's own rounding and charges twice it, so a chain that only rotates
             // reports half its bound and nothing else can shift that. **A row that cannot move is
             // reporting a different term than the one it was built for.**
@@ -2971,9 +3010,9 @@ mod tests {
         let mut worst_desc = String::new();
         for _ in 0..2000 {
             let base = rand_base(&mut st);
-            let seed_free = Pt3::at(base).tol == [0.0; 3];
+            let seed_free = WitnessPoint::at(base).tol == [0.0; 3];
             let mut shape = Shape::default();
-            let mut p = Pt3::at(base);
+            let mut p = WitnessPoint::at(base);
             // **From one node, not two.** A single origin rotation of an exact base is the case
             // the deleted 2D frame validated on its own; sampling it here is what makes this test
             // strictly cover that one, rather than merely resemble it.
@@ -3156,7 +3195,7 @@ mod tests {
             ] {
                 let base = [ri(bxn, bxd), ri(byn, byd), ri(0, 1)];
                 let angle = deg(an, ad);
-                let p = Pt3::at(base).rotate(Axis::Z, angle);
+                let p = WitnessPoint::at(base).rotate(Axis::Z, angle);
                 let hp = p.compute_hp(GT);
                 // The realization error this angle actually has — the same quantity `rotate_about`
                 // charges. Using it makes the refutation stronger than a constant would: even the
@@ -3218,7 +3257,7 @@ mod tests {
             let fr = frame_of(c);
             for (u, v) in [(0, 0), (1, 0), (0, 1), (3, -7), (-2, 5)] {
                 let base = [ri(u, 1), ri(v, 1), Rat::from_int(0)];
-                let p = Pt3::at(base)
+                let p = WitnessPoint::at(base)
                     .frame(fr)
                     .expect("a frame with positive lengths");
                 let hp = p.hp_coord(GT);
@@ -3268,10 +3307,12 @@ mod tests {
 
         // The named frame is still a frame: `+u` realizes to `ẑ`, and a point at `w = 0` is on
         // the plane `y = 0`.
-        let p = Pt3::at([ri(3, 1), ri(-7, 1), Rat::from_int(0)])
+        let p = WitnessPoint::at([ri(3, 1), ri(-7, 1), Rat::from_int(0)])
             .frame(named)
             .unwrap();
-        let q = Pt3::at([Rat::from_int(0); 3]).frame(named).unwrap();
+        let q = WitnessPoint::at([Rat::from_int(0); 3])
+            .frame(named)
+            .unwrap();
         let u = [0, 1, 2].map(|k| p.coord[k] - q.coord[k]);
         assert!(p.coord[1].abs() < 1e-15, "on the plane y = 0");
         assert!((u[2] - 3.0).abs() < 1e-15, "+u ran along ẑ, got {u:?}");
@@ -3310,7 +3351,7 @@ mod tests {
                 "plane {c:?} was expected to decline the exact v̂"
             );
             for (u, v) in [(0, 0), (1, 0), (0, 1), (3, -7)] {
-                let p = Pt3::at([ri(u, 1), ri(v, 1), Rat::from_int(0)])
+                let p = WitnessPoint::at([ri(u, 1), ri(v, 1), Rat::from_int(0)])
                     .frame(fr)
                     .expect("a frame with positive lengths");
                 let hp = p.hp_coord(GT);
@@ -3350,7 +3391,7 @@ mod tests {
             let fr = frame_of(c);
             for (u, v, w) in [(0, 0, 0), (1, 0, 0), (3, -7, 2), (-2, 5, -1), (11, 13, 17)] {
                 let base = [ri(u, 1), ri(v, 1), ri(w, 1)];
-                let p = Pt3::at(base).frame(fr).unwrap();
+                let p = WitnessPoint::at(base).frame(fr).unwrap();
                 let hp = p.hp_coord(GT);
                 for (k, h) in hp.iter().enumerate() {
                     let err = abs_err(p.coord[k], h, GT);
@@ -3405,7 +3446,7 @@ mod tests {
         let (c, fr) = wide_fixture();
         for (u, v) in [(0, 0), (1, 0), (0, 1), (3, -7), (-2, 5)] {
             let base = [ri(u, 1), ri(v, 1), Rat::from_int(0)];
-            let p = Pt3::at(base)
+            let p = WitnessPoint::at(base)
                 .frame_wide(&fr)
                 .expect("a wide frame has positive lengths");
             let hp = p.hp_coord(GT);
@@ -3433,7 +3474,7 @@ mod tests {
         let (mut worst, mut worst_at) = (0.0f64, String::new());
         for (u, v, w) in [(0, 0, 0), (1, 0, 0), (3, -7, 2), (-2, 5, -1), (11, 13, 17)] {
             let base = [ri(u, 1), ri(v, 1), ri(w, 1)];
-            let p = Pt3::at(base).frame_wide(&fr).unwrap();
+            let p = WitnessPoint::at(base).frame_wide(&fr).unwrap();
             let hp = p.hp_coord(GT);
             for (k, h) in hp.iter().enumerate() {
                 let err = abs_err(p.coord[k], h, GT);
@@ -3458,19 +3499,23 @@ mod tests {
     /// ★★★ **A frame on an axis-aligned plane through the origin costs nothing at all** — the
     /// basis is a signed permutation, so every product and every sum is exact and `tol` stays a
     /// literal zero. That is what keeps such a sketch on the exact predicate path, and it is the
-    /// case the `perm` gate in [`Pt3::frame`] exists for.
+    /// case the `perm` gate in [`WitnessPoint::frame`] exists for.
     #[test]
     fn an_axis_aligned_frame_through_the_origin_is_tol_zero() {
         for c in [[0i128, 0, 1, 0], [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 2, 0]] {
             let fr = frame_of(c);
             for (u, v, w) in [(0, 0, 0), (3, -7, 2), (11, 13, 17)] {
-                let p = Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)]).frame(fr).unwrap();
+                let p = WitnessPoint::at([ri(u, 1), ri(v, 1), ri(w, 1)])
+                    .frame(fr)
+                    .unwrap();
                 assert_eq!(p.tol, [0.0; 3], "plane {c:?} at ({u},{v},{w})");
             }
         }
         // …and the world XY frame is the identity, which is what makes a frame on it harmless.
         let fr = frame_of([0, 0, 1, 0]);
-        let p = Pt3::at([ri(3, 1), ri(-7, 1), ri(2, 1)]).frame(fr).unwrap();
+        let p = WitnessPoint::at([ri(3, 1), ri(-7, 1), ri(2, 1)])
+            .frame(fr)
+            .unwrap();
         assert_eq!(p.coord, [3.0, -7.0, 2.0]);
     }
 
@@ -3491,8 +3536,11 @@ mod tests {
     #[test]
     fn four_points_sharing_one_frame_are_judged_exactly() {
         let fr = frame_of([2, -3, 7, 11]);
-        let at =
-            |u: i128, v: i128, w: i128| Pt3::at([ri(u, 1), ri(v, 1), ri(w, 1)]).frame(fr).unwrap();
+        let at = |u: i128, v: i128, w: i128| {
+            WitnessPoint::at([ri(u, 1), ri(v, 1), ri(w, 1)])
+                .frame(fr)
+                .unwrap()
+        };
         // Four points on the sketch plane itself (`w = 0`) — exactly coplanar, by construction.
         let (a, b, c, d) = (at(0, 0, 0), at(1, 0, 0), at(0, 1, 0), at(2, 3, 0));
         assert_eq!(
@@ -3517,7 +3565,9 @@ mod tests {
     #[test]
     fn a_frame_does_not_flip_the_chain_parity() {
         let fr = frame_of([3, 4, 0, -10]);
-        let framed = Pt3::at([ri(1, 1), ri(2, 1), ri(3, 1)]).frame(fr).unwrap();
+        let framed = WitnessPoint::at([ri(1, 1), ri(2, 1), ri(3, 1)])
+            .frame(fr)
+            .unwrap();
         assert_eq!(chain_parity(&framed.chain), 1);
         let mirrored = framed.clone().mirror(Axis::X, Rat::from_int(0));
         assert_eq!(
@@ -3536,7 +3586,7 @@ mod tests {
 
     #[test]
     fn quadrantal_origin_chain_is_tol_zero() {
-        let p = Pt3::at([ri(3, 1), ri(5, 1), ri(7, 1)])
+        let p = WitnessPoint::at([ri(3, 1), ri(5, 1), ri(7, 1)])
             .rotate(Axis::Z, deg(90, 1))
             .rotate(Axis::X, deg(180, 1))
             .rotate(Axis::Y, deg(270, 1));
@@ -3545,7 +3595,7 @@ mod tests {
         assert_eq!(p.coord, [7.0, -3.0, -5.0]);
     }
 
-    /// **`Pt3::exact` states the tol that `Pt3::at` would measure — the same value.**
+    /// **`WitnessPoint::exact` states the tol that `WitnessPoint::at` would measure — the same value.**
     ///
     /// This equivalence is what licenses the substitution on the boolean's hot path, where `at`
     /// spent nine 120-bit BigFloat operations per call to arrive at zero. It rests on three
@@ -3563,8 +3613,9 @@ mod tests {
             [1e18, -4e17, 3.5e19],    // large, still inside Rat's exponent range
             [1e-20, -2.5e-21, 5e-18], // small, still inside it (the floor is 2^-74 ≈ 5.3e-23)
         ] {
-            let fast = Pt3::exact(c).expect("representable");
-            let measured = Pt3::at(c.map(|x| Rat::try_from_f64(x).expect("representable")));
+            let fast = WitnessPoint::exact(c).expect("representable");
+            let measured =
+                WitnessPoint::at(c.map(|x| Rat::try_from_f64(x).expect("representable")));
             assert_eq!(fast.coord, c, "the coordinates round-trip: {c:?}");
             assert_eq!(fast.coord, measured.coord, "same coord for {c:?}");
             assert_eq!(
@@ -3582,7 +3633,7 @@ mod tests {
     /// with no rotation history asks for nothing, and a caller that already knows a point is
     /// `Constructed` can skip [`trial_bound`] rather than spend a realization computing a zero.
     ///
-    /// Not an accident of small numbers. `Pt3::exact` builds its base with `Rat::try_from_f64` =
+    /// Not an accident of small numbers. `WitnessPoint::exact` builds its base with `Rat::try_from_f64` =
     /// `mantissa · 2^exp`, so the **denominator is a power of two** and the **numerator fits
     /// `i128`** — and `rat_to_hp` returns an exact interval exactly when those two hold at `prec`.
     /// The corpus therefore reaches **both ends of `Rat`'s range**: where the numerator is widest
@@ -3601,7 +3652,7 @@ mod tests {
             [1e-20, -2.5e-21, 5e-18], // small
             [1e-22, -2e-22, 1.0],     // ★ near Rat's floor (2^-74): the deepest denominator
         ] {
-            let p = Pt3::exact(c).expect("representable");
+            let p = WitnessPoint::exact(c).expect("representable");
             assert!(
                 trial_bound(&p).is_zero(),
                 "an exact point must realize exactly: {c:?} gave {:?}",
@@ -3620,25 +3671,34 @@ mod tests {
     /// A CAD model at either extreme is not real; the limit is.
     #[test]
     fn exact_declines_a_coordinate_it_cannot_represent() {
-        assert!(Pt3::exact([1e300, 0.0, 0.0]).is_none(), "too large");
         assert!(
-            Pt3::exact([1e-30, 0.0, 0.0]).is_none(),
+            WitnessPoint::exact([1e300, 0.0, 0.0]).is_none(),
+            "too large"
+        );
+        assert!(
+            WitnessPoint::exact([1e-30, 0.0, 0.0]).is_none(),
             "below the 2^-74 floor"
         );
         assert!(
-            Pt3::exact([f64::MIN_POSITIVE, 0.0, 0.0]).is_none(),
+            WitnessPoint::exact([f64::MIN_POSITIVE, 0.0, 0.0]).is_none(),
             "subnormal"
         );
         // Zero is not a boundary case — it is special-cased and exact.
-        assert_eq!(Pt3::exact([0.0; 3]).expect("zero is exact").tol, [0.0; 3]);
+        assert_eq!(
+            WitnessPoint::exact([0.0; 3]).expect("zero is exact").tol,
+            [0.0; 3]
+        );
     }
 
     /// `at` seeds the base→f64 rounding: 0 for an integer base, positive for a base
     /// that is not f64-representable (e.g. 1/3).
     #[test]
     fn at_seeds_base_rounding_tol() {
-        assert_eq!(Pt3::at([ri(2, 1), ri(3, 1), ri(4, 1)]).tol, [0.0; 3]);
-        let third = Pt3::at([ri(1, 3), ri(0, 1), ri(0, 1)]);
+        assert_eq!(
+            WitnessPoint::at([ri(2, 1), ri(3, 1), ri(4, 1)]).tol,
+            [0.0; 3]
+        );
+        let third = WitnessPoint::at([ri(1, 3), ri(0, 1), ri(0, 1)]);
         assert!(third.tol[0] > 0.0 && third.tol[1] == 0.0);
     }
 
@@ -3646,7 +3706,7 @@ mod tests {
     /// transports it (`|R|·old`): a 90° rotation about Z swaps the x/y tol components.
     #[test]
     fn seeded_tol_transports_through_rotation() {
-        let p = Pt3::at_with_tol([ri(1, 1), ri(0, 1), ri(0, 1)], [1e-9, 2e-9, 3e-9])
+        let p = WitnessPoint::at_with_tol([ri(1, 1), ri(0, 1), ri(0, 1)], [1e-9, 2e-9, 3e-9])
             .rotate(Axis::Z, deg(90, 1));
         // 90° about Z: |R| swaps x,y → tol[0]=old tol[1], tol[1]=old tol[0]; z unchanged.
         assert_eq!(p.tol, [2e-9, 1e-9, 3e-9]);
@@ -3658,12 +3718,12 @@ mod tests {
     fn bundling_is_tighter_than_incremental() {
         let base = [ri(11, 1), ri(-7, 1), ri(4, 1)];
         let (k, theta) = (30i128, ri(1, 7));
-        let mut incr = Pt3::at(base);
+        let mut incr = WitnessPoint::at(base);
         for _ in 0..k {
             incr = incr.rotate(Axis::Z, Angle::from_deg(theta).unwrap());
         }
         let k_theta = theta.checked_mul(Rat::from_int(k)).unwrap();
-        let bundled = Pt3::at(base).rotate(Axis::Z, Angle::from_deg(k_theta).unwrap());
+        let bundled = WitnessPoint::at(base).rotate(Axis::Z, Angle::from_deg(k_theta).unwrap());
         assert!(
             bundled.tol[0] < incr.tol[0] && bundled.tol[1] < incr.tol[1],
             "bundled {:?} must be tighter than incremental {:?}",
@@ -3678,7 +3738,7 @@ mod tests {
     /// rational angle — generic non-degenerate, heterogeneous provenance (each point its
     /// own rotation), the H-a corpus shape. Inexact angles only (an exact/near-coplanar
     /// mix would expose the tol-0 GT noise floor — that is the declare-0 test's job).
-    fn rand_point(st: &mut u64) -> Pt3 {
+    fn rand_point(st: &mut u64) -> WitnessPoint {
         let base = rand_base(st);
         let axis = axis_of(rng(st, 0, 2));
         let ang = deg(rng(st, 0, 360_000), rng(st, 1, 9973)); // inexact
@@ -3687,7 +3747,7 @@ mod tests {
         } else {
             rand_base(st) // non-origin pivot: exercises the pivot tol → det3_bound path
         };
-        Pt3::at(base).rotate_about(axis, ang, pivot)
+        WitnessPoint::at(base).rotate_about(axis, ang, pivot)
     }
 
     /// H-a — `det3_bound` soundness: over many random heterogeneous-rotation 4-point
@@ -3757,7 +3817,7 @@ mod tests {
     /// orientation). Exact (tol 0) points take the filter's fast path.
     #[test]
     fn orient3d_sanity_and_rotation_invariance() {
-        let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
+        let pt = |x, y, z| WitnessPoint::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
         // d at origin; a,b,c along +x,+y,+z → right-handed → Positive.
         let (a, b, c, d) = (pt(1, 0, 0), pt(0, 1, 0), pt(0, 0, 1), pt(0, 0, 0));
         assert_eq!(
@@ -3771,7 +3831,7 @@ mod tests {
         );
 
         // Shared rotation of all four (37° about Z through a rational pivot) keeps the sign.
-        let rot = |p: &Pt3| {
+        let rot = |p: &WitnessPoint| {
             p.clone()
                 .rotate_about(Axis::Z, deg(37, 1), [ri(2, 1), ri(-3, 1), ri(0, 1)])
         };
@@ -3786,7 +3846,7 @@ mod tests {
     /// exactly 0 → `Orient::Zero` (the ask-the-user case).
     #[test]
     fn orient3d_coplanar_is_zero() {
-        let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
+        let pt = |x, y, z| WitnessPoint::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
         // all four in the plane z = 0.
         let (a, b, c, d) = (pt(0, 0, 0), pt(3, 0, 0), pt(0, 5, 0), pt(2, 7, 0));
         assert_eq!(
@@ -3835,7 +3895,8 @@ mod tests {
             // Nine planes → three implicit points. Each plane is a witness triangle, so both the
             // interval and the high-precision route have the same inputs.
             let tri = |st: &mut u64| (rand_point(st), rand_point(st), rand_point(st));
-            let ts: [(Pt3, Pt3, Pt3); 9] = core::array::from_fn(|_| tri(&mut st));
+            let ts: [(WitnessPoint, WitnessPoint, WitnessPoint); 9] =
+                core::array::from_fn(|_| tri(&mut st));
             let ivs: Vec<[Approx; 4]> = ts.iter().map(|t| plane_iv(&t.0, &t.1, &t.2)).collect();
             let hps: Vec<[HpApprox; 4]> =
                 ts.iter().map(|t| plane_hp(&t.0, &t.1, &t.2, GT)).collect();
@@ -3925,7 +3986,7 @@ mod tests {
 
         // One joined plane, from nine witness planes — returned in both currencies.
         let joined_plane = |st: &mut u64| -> Option<([Approx; 4], [HpApprox; 4])> {
-            let ts: [(Pt3, Pt3, Pt3); 9] =
+            let ts: [(WitnessPoint, WitnessPoint, WitnessPoint); 9] =
                 core::array::from_fn(|_| (rand_point(st), rand_point(st), rand_point(st)));
             let ivs: Vec<[Approx; 4]> = ts.iter().map(|t| plane_iv(&t.0, &t.1, &t.2)).collect();
             let hps: Vec<[HpApprox; 4]> =
@@ -4074,7 +4135,7 @@ mod tests {
                 .narrow()
                 .copied()
                 .expect("at these magnitudes the meet fits Rat");
-            witnesses.push(Pt3::at(exact));
+            witnesses.push(WitnessPoint::at(exact));
             let ivs: Vec<[Approx; 4]> = t
                 .iter()
                 .map(|n| {
@@ -4142,10 +4203,12 @@ mod tests {
     /// `V,q,r`, and is invariant under a shared rotation (rotations preserve orientation).
     #[test]
     fn indirect_sanity_and_rotation_invariance() {
-        fn tri(t: &(Pt3, Pt3, Pt3)) -> (&Pt3, &Pt3, &Pt3) {
+        fn tri(
+            t: &(WitnessPoint, WitnessPoint, WitnessPoint),
+        ) -> (&WitnessPoint, &WitnessPoint, &WitnessPoint) {
             (&t.0, &t.1, &t.2)
         }
-        let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
+        let pt = |x, y, z| WitnessPoint::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
         let pa = (pt(0, 0, 0), pt(1, 0, 0), pt(0, 1, 0)); // z = 0
         let pb = (pt(0, 0, 0), pt(1, 0, 0), pt(0, 0, 1)); // y = 0
         let pc = (pt(0, 0, 0), pt(0, 1, 0), pt(0, 0, 1)); // x = 0  → V = (0,0,0)
@@ -4166,11 +4229,11 @@ mod tests {
             Orient::Zero
         );
         // Shared rotation of all twelve points keeps the definite sign.
-        let rot = |p: &Pt3| {
+        let rot = |p: &WitnessPoint| {
             p.clone()
                 .rotate_about(Axis::Z, deg(37, 1), [ri(2, 1), ri(-1, 1), ri(0, 1)])
         };
-        let rp = |t: (&Pt3, &Pt3, &Pt3)| (rot(t.0), rot(t.1), rot(t.2));
+        let rp = |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| (rot(t.0), rot(t.1), rot(t.2));
         let (ra, rb, rc) = (rp(tri(&pa)), rp(tri(&pb)), rp(tri(&pc)));
         let (rq, rr, rs) = (rot(&q), rot(&r), rot(&s));
         assert_eq!(
@@ -4193,16 +4256,17 @@ mod tests {
     /// instead: a sign is trusted only when `prec` and `2·prec` produce the same nonzero sign, and
     /// anything else is `None` (not asserted against). That borrows no formula from the judge.
     fn indirect_truth(
-        pa: (&Pt3, &Pt3, &Pt3),
-        pb: (&Pt3, &Pt3, &Pt3),
-        pc: (&Pt3, &Pt3, &Pt3),
-        q: &Pt3,
-        r: &Pt3,
-        s: &Pt3,
+        pa: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+        pb: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+        pc: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+        q: &WitnessPoint,
+        r: &WitnessPoint,
+        s: &WitnessPoint,
         prec: usize,
     ) -> Option<Orient> {
         let at = |prec: usize| -> Orient {
-            let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+            let ph =
+                |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| plane_hp(t.0, t.1, t.2, prec);
             let (d, m, _gap) = indirect_hp(
                 [ph(pa), ph(pb), ph(pc)],
                 q.hp_coord(prec),
@@ -4281,10 +4345,10 @@ mod tests {
             let pivot = rand_base(&mut st);
             let turn = |b: [Rat; 3], st: &mut u64| {
                 let _ = st;
-                Pt3::at(b).rotate_about(axis, ang, pivot)
+                WitnessPoint::at(b).rotate_about(axis, ang, pivot)
             };
             let p = turn(rand_base(&mut st), &mut st);
-            let spans: Vec<[Pt3; 2]> = (0..4)
+            let spans: Vec<[WitnessPoint; 2]> = (0..4)
                 .map(|_| {
                     [
                         turn(rand_base(&mut st), &mut st),
@@ -4351,12 +4415,12 @@ mod tests {
         const GT: usize = 512;
         let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
             (0usize, 0, 0, 0, 0, 0);
-        let mut check = |a: (&Pt3, &Pt3, &Pt3),
-                         b: (&Pt3, &Pt3, &Pt3),
-                         c: (&Pt3, &Pt3, &Pt3),
-                         q: &Pt3,
-                         r: &Pt3,
-                         s: &Pt3| {
+        let mut check = |a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+                         b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+                         c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+                         q: &WitnessPoint,
+                         r: &WitnessPoint,
+                         s: &WitnessPoint| {
             let judged = indirect_orient3d_judge(a, b, c, q, r, s, fixture()).orient();
             let planes = [
                 plane_iv(a.0, a.1, a.2),
@@ -4385,7 +4449,7 @@ mod tests {
         // rotation, origin or arbitrary pivot). Generic → mostly filter-resolved.
         let mut st = 0xC0C0_9999_ABAB_CDCDu64;
         for _ in 0..2000 {
-            let p: Vec<Pt3> = (0..12).map(|_| rand_point(&mut st)).collect();
+            let p: Vec<WitnessPoint> = (0..12).map(|_| rand_point(&mut st)).collect();
             check(
                 (&p[0], &p[1], &p[2]),
                 (&p[3], &p[4], &p[5]),
@@ -4462,7 +4526,7 @@ mod tests {
             let axis = axis_of(rng(&mut st, 0, 2));
             let ang = deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 9973));
             let piv = rand_base(&mut st);
-            let rp = |p: [Rat; 3]| Pt3::at(p).rotate_about(axis, ang, piv);
+            let rp = |p: [Rat; 3]| WitnessPoint::at(p).rotate_about(axis, ang, piv);
             let (a0, a1, a2) = (rp(a[0]), rp(a[1]), rp(a[2]));
             let (b0, b1, b2) = (rp(b[0]), rp(b[1]), rp(b[2]));
             let (c0, c1, c2) = (rp(c[0]), rp(c[1]), rp(c[2]));
@@ -4487,9 +4551,9 @@ mod tests {
             let axis = axis_of(rng(&mut st, 0, 2));
             let ang = deg(rng(&mut st, 1, 359_000), rng(&mut st, 1, 997)); // inexact
             let pivot = rand_base(&mut st);
-            let turn = |b: [Rat; 3]| Pt3::at(b).rotate_about(axis, ang, pivot);
+            let turn = |b: [Rat; 3]| WitnessPoint::at(b).rotate_about(axis, ang, pivot);
             let p = turn(rand_base(&mut st));
-            let sp: Vec<[Pt3; 2]> = (0..4)
+            let sp: Vec<[WitnessPoint; 2]> = (0..4)
                 .map(|_| [turn(rand_base(&mut st)), turn(rand_base(&mut st))])
                 .collect();
             for qi in 0..4 {
@@ -4527,7 +4591,7 @@ mod tests {
         const GT: usize = 384;
         let mut st = 0x1DEA_2C11_9F00_5A5Au64;
         for _ in 0..16 {
-            let p: Vec<Pt3> = (0..12).map(|_| rand_point(&mut st)).collect();
+            let p: Vec<WitnessPoint> = (0..12).map(|_| rand_point(&mut st)).collect();
             let a = (&p[0], &p[1], &p[2]);
             let b = (&p[3], &p[4], &p[5]);
             let c = (&p[6], &p[7], &p[8]);
@@ -4552,8 +4616,8 @@ mod tests {
         ]
     }
 
-    /// Borrow an owned plane-triple as the `&Pt3` tuples the judge takes.
-    fn tr(t: &[[Pt3; 3]; 3]) -> [(&Pt3, &Pt3, &Pt3); 3] {
+    /// Borrow an owned plane-triple as the `&WitnessPoint` tuples the judge takes.
+    fn tr(t: &[[WitnessPoint; 3]; 3]) -> [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3] {
         [
             (&t[0][0], &t[0][1], &t[0][2]),
             (&t[1][0], &t[1][1], &t[1][2]),
@@ -4563,7 +4627,13 @@ mod tests {
 
     /// Three planes meeting at `v` (each through `v` + two small offsets), all rotated by
     /// `(ax, ang, piv)` — an implicit point at `rotate(v)` with heterogeneous provenance.
-    fn triple_pts(v: [Rat; 3], st: &mut u64, ax: Axis, ang: Angle, piv: [Rat; 3]) -> [[Pt3; 3]; 3] {
+    fn triple_pts(
+        v: [Rat; 3],
+        st: &mut u64,
+        ax: Axis,
+        ang: Angle,
+        piv: [Rat; 3],
+    ) -> [[WitnessPoint; 3]; 3] {
         let plane = |st: &mut u64| {
             let off = |st: &mut u64| {
                 [
@@ -4574,9 +4644,9 @@ mod tests {
             };
             let (o1, o2) = (off(st), off(st));
             [
-                Pt3::at(v).rotate_about(ax, ang, piv),
-                Pt3::at(add3(v, o1)).rotate_about(ax, ang, piv),
-                Pt3::at(add3(v, o2)).rotate_about(ax, ang, piv),
+                WitnessPoint::at(v).rotate_about(ax, ang, piv),
+                WitnessPoint::at(add3(v, o1)).rotate_about(ax, ang, piv),
+                WitnessPoint::at(add3(v, o2)).rotate_about(ax, ang, piv),
             ]
         };
         [plane(st), plane(st), plane(st)]
@@ -4585,7 +4655,7 @@ mod tests {
     /// A random rotated three-plane triple (own random center, axis, inexact angle,
     /// pivot) — heterogeneous provenance. Sequences the RNG draws so each `&mut st`
     /// borrow ends before the next.
-    fn rand_triple(st: &mut u64) -> [[Pt3; 3]; 3] {
+    fn rand_triple(st: &mut u64) -> [[WitnessPoint; 3]; 3] {
         let v = rand_base(st);
         let ax = axis_of(rng(st, 0, 2));
         let angle = deg(rng(st, 0, 360_000), rng(st, 1, 9973));
@@ -4595,8 +4665,8 @@ mod tests {
 
     /// The three axis-perpendicular planes through integer point `p` (meet exactly at `p`,
     /// tol 0) — an exact axis-aligned implicit point for the sanity oracle.
-    fn axis_planes(p: [i128; 3]) -> [[Pt3; 3]; 3] {
-        let pt = |x, y, z| Pt3::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
+    fn axis_planes(p: [i128; 3]) -> [[WitnessPoint; 3]; 3] {
+        let pt = |x, y, z| WitnessPoint::at([ri(x, 1), ri(y, 1), ri(z, 1)]);
         let [x, y, z] = p;
         [
             [pt(x, y, z), pt(x, y + 1, z), pt(x, y, z + 1)], // ⊥ x
@@ -4608,12 +4678,12 @@ mod tests {
     /// The high-precision cmp truth (`None` when the coordinates are equal or below the
     /// GT floor — a genuine tie).
     fn cmp_truth(
-        a: [(&Pt3, &Pt3, &Pt3); 3],
-        b: [(&Pt3, &Pt3, &Pt3); 3],
+        a: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
+        b: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
         axis: usize,
         prec: usize,
     ) -> Option<Orient> {
-        let hp = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+        let hp = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
             [
                 plane_hp(t[0].0, t[0].1, t[0].2, prec),
                 plane_hp(t[1].0, t[1].1, t[1].2, prec),
@@ -4697,10 +4767,10 @@ mod tests {
         const GT: usize = 512;
         let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
             (0usize, 0, 0, 0, 0, 0);
-        let mut check = |a: &[[Pt3; 3]; 3], b: &[[Pt3; 3]; 3], axis: usize| {
+        let mut check = |a: &[[WitnessPoint; 3]; 3], b: &[[WitnessPoint; 3]; 3], axis: usize| {
             let (ta, tb) = (tr(a), tr(b));
             let judged = indirect_cmp_coord_judge(ta, tb, axis, fixture()).orient();
-            let iv = |t: [(&Pt3, &Pt3, &Pt3); 3]| {
+            let iv = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
                 [
                     plane_iv(t[0].0, t[0].1, t[0].2),
                     plane_iv(t[1].0, t[1].1, t[1].2),
@@ -4801,18 +4871,18 @@ mod tests {
         [p0, add3(p0, rat_cross(n, e1)), add3(p0, rat_cross(n, e2))]
     }
 
-    fn rot_plane(b: [[Rat; 3]; 3], ax: Axis, ang: Angle, piv: [Rat; 3]) -> [Pt3; 3] {
-        b.map(|p| Pt3::at(p).rotate_about(ax, ang, piv))
+    fn rot_plane(b: [[Rat; 3]; 3], ax: Axis, ang: Angle, piv: [Rat; 3]) -> [WitnessPoint; 3] {
+        b.map(|p| WitnessPoint::at(p).rotate_about(ax, ang, piv))
     }
 
-    fn t3(p: &[Pt3; 3]) -> (&Pt3, &Pt3, &Pt3) {
+    fn t3(p: &[WitnessPoint; 3]) -> (&WitnessPoint, &WitnessPoint, &WitnessPoint) {
         (&p[0], &p[1], &p[2])
     }
 
     /// The three points are far from collinear (`sin²` of the corner angle above a
     /// threshold) — a well-formed plane. A degenerate plane (tiny normal) is not the
     /// near-coplanar-*normals* regime under test, so the corpus skips it.
-    fn well_conditioned(p: &[Pt3; 3]) -> bool {
+    fn well_conditioned(p: &[WitnessPoint; 3]) -> bool {
         let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
         let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
         let (e1, e2) = (sub(p[1].coord, p[0].coord), sub(p[2].coord, p[0].coord));
@@ -4826,12 +4896,12 @@ mod tests {
 
     /// The **raw** sign of `D` (det of the three normals) at `prec` bits — no radius, no limit.
     fn dir_d_sign_at(
-        a: (&Pt3, &Pt3, &Pt3),
-        b: (&Pt3, &Pt3, &Pt3),
-        c: (&Pt3, &Pt3, &Pt3),
+        a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+        b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+        c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
         prec: usize,
     ) -> Option<bool> {
-        let ph = |t: (&Pt3, &Pt3, &Pt3)| plane_hp(t.0, t.1, t.2, prec);
+        let ph = |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| plane_hp(t.0, t.1, t.2, prec);
         // The **raw** sign, with no radius and no floor — see `dir_orient_at` for why the oracle
         // must not borrow the judge's bound. `dir_sign_truth` gets its confidence from two
         // precisions agreeing instead.
@@ -4844,9 +4914,9 @@ mod tests {
     /// truth itself resolves, so it is `None` (skip), not a spurious "wrong". (Mirrors
     /// exact3d's `indirect_truth` stability check.)
     fn dir_sign_truth(
-        a: (&Pt3, &Pt3, &Pt3),
-        b: (&Pt3, &Pt3, &Pt3),
-        c: (&Pt3, &Pt3, &Pt3),
+        a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+        b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
+        c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
         prec: usize,
     ) -> Option<Orient> {
         match (
@@ -4875,7 +4945,7 @@ mod tests {
         );
         // Three normals in the plane z = 0 → coplanar → D = 0 → Zero.
         let mk = |n: [i128; 3]| {
-            plane_norm([ri(n[0], 1), ri(n[1], 1), ri(n[2], 1)], [ri(0, 1); 3]).map(Pt3::at)
+            plane_norm([ri(n[0], 1), ri(n[1], 1), ri(n[2], 1)], [ri(0, 1); 3]).map(WitnessPoint::at)
         };
         let (a, b, c) = (mk([1, 0, 0]), mk([0, 1, 0]), mk([1, 1, 0]));
         assert_eq!(
@@ -4893,7 +4963,7 @@ mod tests {
         for _ in 0..40 {
             let mk = |st: &mut u64| plane_norm(rand_base(st), rand_base(st));
             let (ba, bb, bc) = (mk(&mut st), mk(&mut st), mk(&mut st));
-            let un = |b: [[Rat; 3]; 3]| b.map(Pt3::at);
+            let un = |b: [[Rat; 3]; 3]| b.map(WitnessPoint::at);
             let (ua, ub, uc) = (un(ba), un(bb), un(bc));
             let s = dir_sign_judge(t3(&ua), t3(&ub), t3(&uc), fixture()).orient();
             if s == Orient::Zero {
@@ -4994,8 +5064,14 @@ mod tests {
 
     /// The `dir_orient3d` determinant `det[d, x−base, y−base]` at `prec` bits — the GT /
     /// escalation realization (mirrors the judge's hp path).
-    fn dir_orient_at(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Option<bool> {
-        let dp = Pt3::at(d);
+    fn dir_orient_at(
+        d: [Rat; 3],
+        base: &WitnessPoint,
+        x: &WitnessPoint,
+        y: &WitnessPoint,
+        prec: usize,
+    ) -> Option<bool> {
+        let dp = WitnessPoint::at(d);
         let sub = |u: &HpApprox, v: &HpApprox| u.sub(v, prec);
         let (bh, xh, yh, dh) = (
             base.hp_coord(prec),
@@ -5025,7 +5101,13 @@ mod tests {
 
     /// GT-stable truth: `Some` only when `prec` and `prec + 128` agree (else too degenerate
     /// for the ground truth itself — skip, not a spurious "wrong"). Mirrors `dir_sign_truth`.
-    fn dir_orient_truth(d: [Rat; 3], base: &Pt3, x: &Pt3, y: &Pt3, prec: usize) -> Option<Orient> {
+    fn dir_orient_truth(
+        d: [Rat; 3],
+        base: &WitnessPoint,
+        x: &WitnessPoint,
+        y: &WitnessPoint,
+        prec: usize,
+    ) -> Option<Orient> {
         match (
             dir_orient_at(d, base, x, y, prec),
             dir_orient_at(d, base, x, y, prec + 128),
@@ -5040,9 +5122,9 @@ mod tests {
     /// `Zero`; swapping the edge pair flips the sign.
     #[test]
     fn dir_orient3d_judge_sanity() {
-        let o = Pt3::at([ri(0, 1); 3]);
-        let x = Pt3::at([ri(1, 1), ri(0, 1), ri(0, 1)]);
-        let y = Pt3::at([ri(0, 1), ri(1, 1), ri(0, 1)]);
+        let o = WitnessPoint::at([ri(0, 1); 3]);
+        let x = WitnessPoint::at([ri(1, 1), ri(0, 1), ri(0, 1)]);
+        let y = WitnessPoint::at([ri(0, 1), ri(1, 1), ri(0, 1)]);
         let e = |a: i128, b: i128, c: i128| [ri(a, 1), ri(b, 1), ri(c, 1)];
         assert_eq!(
             dir_orient3d_judge(e(0, 0, 1), &o, &x, &y, FIXTURE_PREC),
@@ -5065,13 +5147,13 @@ mod tests {
     }
 
     /// `orient3d_ray(base, dir, x, y)` is exactly `orient3d(base, base+dir, x, y)`: on
-    /// unrotated points (where `base+dir` *is* an exact `Pt3`) it must equal `orient3d_judge`
+    /// unrotated points (where `base+dir` *is* an exact `WitnessPoint`) it must equal `orient3d_judge`
     /// with the ideal point materialized — the argument-for-argument reduction the ops
     /// ray-triangle caller relies on.
     #[test]
     fn orient3d_ray_matches_materialized() {
         let mut st = 0x0D1B_7A44_0F0F_9001u64;
-        let at = |b: [Rat; 3]| Pt3::at(b);
+        let at = |b: [Rat; 3]| WitnessPoint::at(b);
         for _ in 0..200 {
             let (bb, xb, yb) = (rand_base(&mut st), rand_base(&mut st), rand_base(&mut st));
             let dir = [
@@ -5111,7 +5193,7 @@ mod tests {
             let ax = axis_of(rng(&mut st, 0, 2));
             let ang = deg(rng(&mut st, 0, 360_000), rng(&mut st, 1, 9973));
             let piv = rand_base(&mut st);
-            let rp = |b: [Rat; 3]| Pt3::at(b).rotate_about(ax, ang, piv);
+            let rp = |b: [Rat; 3]| WitnessPoint::at(b).rotate_about(ax, ang, piv);
             let (base, x, y) = (rp(bb), rp(xb), rp(yb));
             let tri = [base.clone(), x.clone(), y.clone()];
             if !well_conditioned(&tri) {
@@ -5135,7 +5217,7 @@ mod tests {
             };
             let judged = dir_orient3d_judge(d, &base, &x, &y, FIXTURE_PREC);
             // Recompute the Approx filter to tally which path resolved (mirrors the judge).
-            let dp = Pt3::at(d);
+            let dp = WitnessPoint::at(d);
             let (bi, xi, yi, di) = (pt_iv(&base), pt_iv(&x), pt_iv(&y), pt_iv(&dp));
             let subi =
                 |u: [Approx; 3], v: [Approx; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];

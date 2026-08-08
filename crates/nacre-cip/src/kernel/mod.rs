@@ -1,4 +1,4 @@
-//! The toleranced-sign kernel — certified indirect predicates over [`frame3::Pt3`] (design.md
+//! The toleranced-sign kernel — certified indirect predicates over [`frame3::WitnessPoint`] (design.md
 //! §9 CIP). A rotated point carries a sound directional tol, and the sign of an orientation
 //! determinant is decided from it: an f64 filter
 //! with a sound error bound handles the easy cases, the ambiguous ones escalate to

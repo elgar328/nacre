@@ -360,7 +360,7 @@ pub(crate) fn prism_rings_in(
                     // computed from the decimal rationals above, so `7.7` and `1.1 + 6.6` name
                     // one plane however their vertices round.
                     let b = crate::rotated_vertex::coord_rat(f.as_array()).ok()?;
-                    let q = crate::rotated_vertex::replay(nacre_cip::Pt3::at(b), c)?;
+                    let q = crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(b), c)?;
                     Some(Point3::from_array(q.coord))
                 })
                 .collect(),

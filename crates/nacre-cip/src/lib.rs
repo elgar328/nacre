@@ -1,7 +1,7 @@
 //! Certified indirect predicates (§CIP) — the toleranced sign layer for the nacre kernel.
 //!
 //! Two parts, both pure numeric (neither touches `nacre-topo`):
-//! - [`kernel`] — the toleranced-sign kernel: a rotated point ([`Pt3`]) carries a sound
+//! - [`kernel`] — the toleranced-sign kernel: a rotated point ([`WitnessPoint`]) carries a sound
 //!   directional tol, and an orientation determinant is decided by an f64 filter → astro-float
 //!   escalation → a proved coincidence or an honest "undecided" ([`Decision`]). The
 //!   certified-toleranced twin of `nacre-predicates` (exact f64).
@@ -13,10 +13,10 @@
 pub mod kernel;
 pub mod predicate;
 
-// The toleranced-sign kernel symbols consumers use directly (`nacre-ops`: `Pt3`/`MoveNode` for
+// The toleranced-sign kernel symbols consumers use directly (`nacre-ops`: `WitnessPoint`/`MoveNode` for
 // vertex assembly, `dir_orient3d_judge` for a per-face normal sign).
 pub use kernel::frame3::{
-    Decision, MoveNode, Pt3, Standard, WideFrame, chain_parity, dir_orient3d_judge, dir_sign_judge,
-    indirect_cmp_coord_judge, indirect_orient3d_judge, judge_precision, orient3d_filter,
-    orient3d_judge, precision_for, trial_bound,
+    Decision, MoveNode, Standard, WideFrame, WitnessPoint, chain_parity, dir_orient3d_judge,
+    dir_sign_judge, indirect_cmp_coord_judge, indirect_orient3d_judge, judge_precision,
+    orient3d_filter, orient3d_judge, precision_for, trial_bound,
 };

@@ -1071,8 +1071,9 @@ fn datum_plane(
                 Some(leaf) => {
                     let chain = crate::rotated_vertex::motion_chain(model, leaf)
                         .ok_or(OpError::PlaneWithoutExactForm)?;
-                    let p = crate::rotated_vertex::replay(nacre_cip::Pt3::at(pts[0]), &chain)
-                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                    let p =
+                        crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(pts[0]), &chain)
+                            .ok_or(OpError::PlaneWithoutExactForm)?;
                     Point3::from_array(p.coord)
                 }
             };

@@ -4,7 +4,7 @@
 use crate::combinatorics;
 use crate::{BoolError, RejectReason, he_start, reject};
 use nacre_cip::predicate::{Judge, Notes};
-use nacre_cip::{Pt3, Standard};
+use nacre_cip::{Standard, WitnessPoint};
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
@@ -49,10 +49,10 @@ pub(crate) struct FaceInfo {
     /// face/plane convention could not be asserted, because both readings were legitimate
     /// (dev-log, normalization cell). Separate names, separate questions.
     pub(crate) orient_sign: i8,
-    /// The three `tri` points as **exact `Pt3` definitions**, in the same order as `tri`.
+    /// The three `tri` points as **exact `WitnessPoint` definitions**, in the same order as `tri`.
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
     /// per judgment, which dominated the boolean's runtime.
-    pub(crate) tri_pt3: [Pt3; 3],
+    pub(crate) tri_pt3: [WitnessPoint; 3],
     /// The motion-history leaf this face's plane was moved by, or `None` for a constructed one.
     /// **The canonical identity of "which motion"** — see [`BaseFrame`].
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
@@ -95,7 +95,7 @@ pub(crate) fn collect_planes(
             //
             // Both used to be decided per *solid* ("is this solid rotated?"), which a boolean's
             // result cannot answer — it carries no rotation provenance, so every result face was
-            // described by `Pt3::exact` of its rounded triangle and one wall became two plane
+            // described by `WitnessPoint::exact` of its rounded triangle and one wall became two plane
             // classes on the next operation. The surface knows (its truth — points + motion,
             // S6b), and a result face reuses its operand's surface handle, so the answer
             // survives a chain of booleans.
@@ -104,7 +104,7 @@ pub(crate) fn collect_planes(
             // *plane* — two faces sharing it can face opposite ways, and the implicit-point
             // `orient3d` reads the side `tri_pt3` spans. So both arms wind it to agree with
             // *this* face's `n_out`.
-            let wind = |mut w: [Pt3; 3]| -> [Pt3; 3] {
+            let wind = |mut w: [WitnessPoint; 3]| -> [WitnessPoint; 3] {
                 let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
                 let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
                 if e1.cross(e2).dot(n_out) < 0.0 {
@@ -117,13 +117,13 @@ pub(crate) fn collect_planes(
                 //
                 // The face's triangle is where this used to read from, and after a chain of
                 // booleans those corners are `Discovered`: seam points the kernel itself annotated
-                // with a tol, handed to `Pt3::exact`, which states `tol = 0` **by construction**.
+                // with a tol, handed to `WitnessPoint::exact`, which states `tol = 0` **by construction**.
                 // Measured, 1,938 of 68,350 triangles carried one, in 162 plane tables, 77 of
                 // which also held a rotated plane — where the claim is actually consulted. The
                 // plane's recorded points are construction points, so no such claim is made.
                 //
-                // ★ `Pt3::exact` is kept for a point that **is** an f64: it states the same thing
-                // and skips the nine BigFloat operations `Pt3::at` spends measuring a zero. The
+                // ★ `WitnessPoint::exact` is kept for a point that **is** an f64: it states the same thing
+                // and skips the nine BigFloat operations `WitnessPoint::at` spends measuring a zero. The
                 // round-trip test is the one `BaseFrame` already uses.
                 nacre_topo::SurfaceTruth::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
@@ -131,13 +131,13 @@ pub(crate) fn collect_planes(
                 } => {
                     let w = pts.map(|b| {
                         let f = b.map(|r| r.to_f64());
-                        match Pt3::exact(f).filter(|_| {
+                        match WitnessPoint::exact(f).filter(|_| {
                             b.iter()
                                 .zip(f)
                                 .all(|(&r, x)| nacre_scalar::Rat::try_from_f64(x) == Some(r))
                         }) {
                             Some(p) => p,
-                            // ★★★ **The bound is free; measuring it is not.** `Pt3::at` reads
+                            // ★★★ **The bound is free; measuring it is not.** `WitnessPoint::at` reads
                             // the rounding at 120 bits — nine BigFloat operations per point,
                             // and 38.3% of these points are not f64, so the suite paid 6% for
                             // it. `Rat::to_f64` is documented as *"the **nearest** f64 … ties
@@ -152,7 +152,10 @@ pub(crate) fn collect_planes(
                                 let bound = |x: f64| {
                                     (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
                                 };
-                                Pt3::at_with_tol(b, [bound(f[0]), bound(f[1]), bound(f[2])])
+                                WitnessPoint::at_with_tol(
+                                    b,
+                                    [bound(f[0]), bound(f[1]), bound(f[2])],
+                                )
                             }
                         }
                     });
@@ -165,11 +168,11 @@ pub(crate) fn collect_planes(
                     let motion = *motion;
                     let _t = Watch::new(); // charged at the arm's end
                     // The pre-motion description, carried through the recorded chain — the same
-                    // computation, in the same order, that a moved vertex's `Pt3` performs.
+                    // computation, in the same order, that a moved vertex's `WitnessPoint` performs.
                     let chain = crate::rotated_vertex::motion_chain(model, motion)
                         .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                    let turn = |base: [nacre_scalar::Rat; 3]| -> Result<Pt3, BoolError> {
-                        crate::rotated_vertex::replay(Pt3::at(base), &chain)
+                    let turn = |base: [nacre_scalar::Rat; 3]| -> Result<WitnessPoint, BoolError> {
+                        crate::rotated_vertex::replay(WitnessPoint::at(base), &chain)
                             .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
                     };
                     // ★★★★★ **The exact points the plane was built from — the only description.**
@@ -215,13 +218,17 @@ pub(crate) fn collect_planes(
                         .through_points_rat(*vs)
                         .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
                     let w = match motion {
-                        None => base.map(Pt3::at),
+                        None => base.map(WitnessPoint::at),
                         Some(m) => {
                             let chain = crate::rotated_vertex::motion_chain(model, m)
                                 .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                            let mut out = [Pt3::at(base[0]), Pt3::at(base[1]), Pt3::at(base[2])];
+                            let mut out = [
+                                WitnessPoint::at(base[0]),
+                                WitnessPoint::at(base[1]),
+                                WitnessPoint::at(base[2]),
+                            ];
                             for (o, b) in out.iter_mut().zip(base) {
-                                *o = crate::rotated_vertex::replay(Pt3::at(b), &chain)
+                                *o = crate::rotated_vertex::replay(WitnessPoint::at(b), &chain)
                                     .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
                             }
                             out
@@ -280,7 +287,7 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
 
 /// Three non-collinear points of a face's outer loop — with the **vertex handle** each
 /// point came from — ordered so their right-hand normal points **out** of the solid.
-/// The handles let the toleranced predicates rebuild each point as a `Pt3` (overhaul
+/// The handles let the toleranced predicates rebuild each point as a `WitnessPoint` (overhaul
 /// stage 3); the coordinates alone drive the axis-aligned path.
 pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Handle<Vertex>; 3])> {
     let verts: Vec<Handle<Vertex>> = face
@@ -517,7 +524,7 @@ pub(crate) fn plane_index_setup(
 fn standard_for(planes: &[FaceInfo]) -> Standard {
     // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
     //
-    // Its `tri_pt3` are `Pt3::exact` of the face's own f64 triangle: base = `mantissa · 2^exp`, so
+    // Its `tri_pt3` are `WitnessPoint::exact` of the face's own f64 triangle: base = `mantissa · 2^exp`, so
     // the denominator is a power of two and the numerator fits `Rat`'s 127 bits, and the chain is
     // empty — which is precisely when `rat_to_hp` returns an *exact* interval. The realization has
     // no error to report (`an_exact_point_demands_no_precision` in `nacre-cip`, and the const
@@ -525,8 +532,8 @@ fn standard_for(planes: &[FaceInfo]) -> Standard {
     //
     // So the loop below used to spend a full high-precision replay per point to compute a zero —
     // measured, an axis-aligned 60-fin fold did that 24,120 times for 15.7ms and a `worst` of
-    // exactly `Mag::ZERO`. The same shape was removed one level down when `Pt3::exact` replaced
-    // `Pt3::at` for these points ("nine BigFloat operations to compute a zero").
+    // exactly `Mag::ZERO`. The same shape was removed one level down when `WitnessPoint::exact` replaced
+    // `WitnessPoint::at` for these points ("nine BigFloat operations to compute a zero").
     //
     // `max` over the empty set is `Mag::ZERO`, which is the right answer for a model with no
     // rotation history — `precision_for` reads that as "nothing to size" and returns `TRIAL_PREC`.
@@ -600,7 +607,9 @@ pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
 /// "what precision does *this* point demand" wants exactly the two halves in order, and spelling
 /// them out at every call site says less than the name does.
 #[cfg(test)]
-pub(crate) fn standard_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + Clone) -> Standard {
+pub(crate) fn standard_for_points<'a>(
+    pts: impl IntoIterator<Item = &'a WitnessPoint> + Clone,
+) -> Standard {
     standard_from(pts.clone(), worst_trial(pts))
 }
 
@@ -616,8 +625,8 @@ pub(crate) fn standard_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + C
 /// critical path). Each point's trial realization is independent and they combine by **maximum**,
 /// which is associative and exact — so evaluating them across cores cannot move the answer the way
 /// a reassociated sum would.
-fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a Pt3>) -> Mag {
-    let pts: Vec<&Pt3> = pts.into_iter().collect();
+fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>) -> Mag {
+    let pts: Vec<&WitnessPoint> = pts.into_iter().collect();
     let bounds = crate::par::map_range(pts.len(), |i| nacre_cip::trial_bound(pts[i]));
     bounds
         .into_iter()
@@ -626,7 +635,7 @@ fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a Pt3>) -> Mag {
 
 /// The standard for points whose worst trial bound is already known: `scale` off the f64
 /// coordinates, the coincidence limit derived from it, and the precision that reaches it.
-fn standard_from<'a>(pts: impl IntoIterator<Item = &'a Pt3>, worst: Mag) -> Standard {
+fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag) -> Standard {
     let mut scale = 1.0f64;
     for p in pts {
         for c in p.coord {
@@ -683,7 +692,7 @@ impl BaseFrame {
     }
 
     fn of(
-        tri_pt3: &[Pt3; 3],
+        tri_pt3: &[WitnessPoint; 3],
         motion: Option<Handle<nacre_topo::MotionNode>>,
         frame_sign: i8,
         base_rat: Option<[nacre_scalar::Rat; 4]>,
@@ -714,7 +723,7 @@ impl BaseFrame {
                 coeffs: None,
             };
         }
-        let pt = |p: &Pt3| {
+        let pt = |p: &WitnessPoint| {
             Point3::from_array([p.base[0].to_f64(), p.base[1].to_f64(), p.base[2].to_f64()])
         };
         let tri = [pt(&tri_pt3[0]), pt(&tri_pt3[1]), pt(&tri_pt3[2])];
@@ -820,8 +829,8 @@ pub(crate) struct PlaneGeom {
     pub(crate) surf: Handle<Surface>,
     /// Witness points on this plane (the root face's `tri`), outward-ordered for that face.
     pub(crate) tri: [Point3; 3],
-    /// The witness as exact `Pt3` definitions (the root face's), borrowed by every predicate.
-    pub(crate) tri_pt3: [Pt3; 3],
+    /// The witness as exact `WitnessPoint` definitions (the root face's), borrowed by every predicate.
+    pub(crate) tri_pt3: [WitnessPoint; 3],
     /// Whether the root face's solid is rotated — copied from it together with `tri_pt3` so the
     /// pair cannot disagree. See [`FaceInfo::rotated`].
     pub(crate) rotated: bool,
@@ -936,7 +945,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
     (geom, plane_ix)
 }
 
-/// Whether three `Pt3` are **exactly collinear** (zero-area triangle), decided on their
+/// Whether three `WitnessPoint` are **exactly collinear** (zero-area triangle), decided on their
 /// pre-rotation rational `base` coordinates. A rigid rotation preserves collinearity, and three
 /// vertices of one solid share a rotation chain, so their bases are comparable; all three
 /// coordinate-plane projections of `(b−a)×(c−a)` must vanish (exact `Rat`, no tolerance). An
@@ -945,7 +954,7 @@ pub(crate) fn dense_planes(planes: &[FaceInfo], canon: &[usize]) -> (Vec<PlaneGe
 /// real crossing — silent-wrong). Unrotated vertices carry `base == coord`, so this is the exact
 /// zero-area (collinear) test on the vertices' rotation definitions.
 #[cfg(test)]
-pub(crate) fn pt3_base_collinear(a: &Pt3, b: &Pt3, c: &Pt3) -> bool {
+pub(crate) fn pt3_base_collinear(a: &WitnessPoint, b: &WitnessPoint, c: &WitnessPoint) -> bool {
     use nacre_scalar::Rat;
     let (a, b, c) = (&a.base, &b.base, &c.base);
     let proj_zero = |i: usize, j: usize| -> Option<bool> {
@@ -1136,7 +1145,7 @@ mod tests {
     #[test]
     fn the_climbing_headroom_survives_a_deep_model() {
         let deg = Angle::from_deg(Rat::from_int(37)).expect("angle");
-        let mut p = Pt3::at([Rat::from_int(1), Rat::from_int(2), Rat::from_int(3)]);
+        let mut p = WitnessPoint::at([Rat::from_int(1), Rat::from_int(2), Rat::from_int(3)]);
         let mut seen = Vec::new();
         for turn in 0..=200 {
             if turn == 0 || turn == 20 || turn == 200 {

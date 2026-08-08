@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Rotated-vertex Pt3 assembly (§CIP) over the nacre b-rep Model — assembles a vertex's exact definition + directional tol from the rotation forest for the boolean's sign judges"
+description = "Rotated-vertex WitnessPoint assembly (§CIP) over the nacre b-rep Model — assembles a vertex's exact definition + directional tol from the rotation forest for the boolean's sign judges"
 
 [dependencies]
 nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
@@ -18,7 +18,7 @@ num-bigint = "0.4"
 num-integer = "0.1"
 
 [features]
-# When on, the memoized high-precision cell in the kernel's `Pt3` is `Arc<OnceLock>`
+# When on, the memoized high-precision cell in the kernel's `WitnessPoint` is `Arc<OnceLock>`
 # (Send + Sync) instead of `Rc<OnceCell>`. That is what makes the plane table `Sync`, so the
 # parallel boolean's workers can *share* it -- the load is on the shared borrow, not on
 # anything a worker returns. Off by default; nacre-ops turns it on via its own `parallel`.
