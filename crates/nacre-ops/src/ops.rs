@@ -988,7 +988,10 @@ fn datum_plane(
         model: &Model,
         vs: [Handle<Vertex>; 3],
     ) -> Result<ThroughStatement, OpError> {
-        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+        // Pass one: what kind of statement is this? Frames only — no solve happens until the
+        // road is known, because a solve's failure means different things on different roads
+        // (a too-wide coordinate kills the named road but a meet never asks it to fit).
+        let mut mixed = false;
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
             let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(*vh).def else {
@@ -996,32 +999,42 @@ fn datum_plane(
             };
             let mine = model.plane_motion(tri[0]);
             if tri.iter().any(|h| model.plane_motion(*h) != mine) {
-                // ★ The cause that remains refused: this **single vertex's own carriers**
-                // straddle frames, so it has no rational coordinate anywhere — the implicit-point
-                // stage (open item 16's second wall) is what will open it.
+                // ★ A straddling vertex — no rational coordinate anywhere, but a complete
+                // definition (the meet of its carriers). The judged road takes it (16-2), as
+                // long as every carrier can hand out a witness triangle of its own.
+                mixed = true;
+            }
+            if tri.iter().any(|h| !model.surface_name.contains_key(h)) {
+                // ★★ The one population still refused here: a carrier that is itself a nameless
+                // datum (a datum on a nameless datum — depth). Its triangle needs the judged
+                // machinery recursively, which is open item 16-3's depth question. This is now
+                // the **only** thing `VerticesInMixedFrames` names; measure before splitting
+                // the label further.
                 return Err(OpError::VerticesInMixedFrames);
             }
             frames[i] = Some(mine);
-            let mut names = [None; 3];
-            for (o, h) in names.iter_mut().zip(tri) {
-                *o = model.surface_name.get(&h);
-            }
+        }
+        // ★★ Any straddle, or pure vertices in differing frames — the judged road. The
+        // collinearity question is *not* asked here: with no shared frame there is no exact
+        // solve to ask it in, and the judged constructor's failure is reported as undecided,
+        // never as proven collinear.
+        if mixed || !(frames[1] == frames[0] && frames[2] == frames[0]) {
+            return Ok(ThroughStatement::Nameless);
+        }
+        // Pass two, named road only: solve in the one shared frame.
+        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+        for (p, vh) in pts.iter_mut().zip(vs) {
+            let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
+                unreachable!("pass one verified the definitions");
+            };
+            let names = tri.map(|h| model.surface_name.get(&h));
             let [Some(a), Some(b), Some(c)] = names else {
-                // A carrier can lack a name now — it may itself be a nameless datum. Its
-                // vertices then have no rational solve in any frame either; same second wall.
-                return Err(OpError::VerticesInMixedFrames);
+                unreachable!("pass one verified the names");
             };
             let meet = nacre_scalar::three_planes_big([a, b, c]).expect(
                 "a ThreePlane vertex's carriers meet — that is why the vertex exists (C2/S7)",
             );
-            pts[i] = *meet.narrow().ok_or(OpError::VertexPointTooWide)?;
-        }
-        // ★★ Vertices each pure, frames differing pairwise — the population S5(ii)-1 refused
-        // and the judged frame accepts. The collinearity question is *not* asked here: with no
-        // shared frame there is no exact solve to ask it in, and the judged constructor's
-        // failure is reported as undecided, never as proven collinear.
-        if !(frames[1] == frames[0] && frames[2] == frames[0]) {
-            return Ok(ThroughStatement::Nameless);
+            *p = *meet.narrow().ok_or(OpError::VertexPointTooWide)?;
         }
         if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
             return Err(OpError::CollinearVertices);
@@ -1093,11 +1106,11 @@ fn datum_plane(
                 // refuse (an undecidable basis), and rejecting after `push_plane_through` would
                 // leave a frameless nameless plane in the arena — the reject-after-commit shape
                 // this arm's own header forbids. The shared derivation
-                // (`through_witness_points`) is the one `frame_chain` will re-run, so what was
+                // (`through_judged_points`) is the one `frame_chain` will re-run, so what was
                 // validated is what gets framed.
-                let wpts = crate::rotated_vertex::through_witness_points(model, sorted)
+                let jpts = crate::rotated_vertex::through_judged_points(model, sorted)
                     .ok_or(OpError::PlaneWithoutExactForm)?; // unreachable: causes told apart above
-                let ft = nacre_cip::FrameThrough::of(wpts.map(nacre_cip::JudgedPoint::Pure), false)
+                let ft = nacre_cip::FrameThrough::of(jpts, false)
                     .ok_or(OpError::ThroughFrameUndecided)?;
                 // The cache anchors at the validated realization of the first stored vertex —
                 // the definition's own replay, same rule as the named road below.

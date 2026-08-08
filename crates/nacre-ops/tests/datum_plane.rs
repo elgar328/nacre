@@ -1582,24 +1582,121 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         .find(|t| m.through_points_rat(*t).is_some())
         .expect("three pure vertices that share one frame");
 
-    for &s in &straddling {
-        let swapped = [s, solvable[1], solvable[2]];
-        assert!(
-            m.through_points_rat(swapped).is_none(),
-            "a straddling vertex has no rational coordinate in any single frame"
-        );
-        assert_eq!(
-            apply(
-                &mut m,
-                &Operation::DatumPlane {
-                    def: DatumDef::ThroughVertices(swapped),
-                },
-            )
-            .unwrap_err(),
-            OpError::VerticesInMixedFrames,
-            "and the datum must say so by name"
-        );
+    // ★★★★★ **16-2: the straddling vertex is accepted** — its definition (the meet of its three
+    // carriers) is complete even though its coordinate exists in no frame at all. This block used
+    // to assert `VerticesInMixedFrames`; the acceptance below is the same fixture with the wall
+    // moved, end to end: datum → sketch → extrude → validate → deterministic rebuild.
+    let swapped = [straddling[0], solvable[1], solvable[2]];
+    assert!(
+        m.through_points_rat(swapped).is_none(),
+        "a straddling vertex has no rational coordinate in any single frame"
+    );
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(swapped),
+        },
+    )
+    .expect("a straddling-vertex datum is accepted now (16-2)") else {
+        unreachable!()
+    };
+    assert!(
+        !m.surface_name.contains_key(&plane),
+        "its exact world coefficients are irrational — nameless, by statement"
+    );
+    // Restating is the same handle — statement interning holds for meets too.
+    let OpOutput::DatumPlane { plane: again, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(swapped),
+        },
+    )
+    .expect("restating") else {
+        unreachable!()
+    };
+    assert_eq!(plane, again, "one statement, one handle");
+
+    let OpOutput::Extrude { solid: prism, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square(0.0, 1.0),
+            dist: 0.5,
+        },
+    )
+    .expect("a sketch on the meet-judged frame") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "the prism on a straddle datum must be a valid closed b-rep"
+    );
+
+    // ★★★ **The honest boundary until 16-3**: this prism's base cap is a plane defined through
+    // an implicit point, which the judging table cannot seat yet — a boolean touching it must
+    // refuse **by its own name**, not by a name about rational width.
+    let block = m.add_cuboid(
+        Point3::from_array([-30.0, -30.0, -30.0]),
+        Point3::from_array([30.0, 30.0, 30.0]),
+    );
+    m.rebuild_adjacency();
+    let live_before = m.live_solids.clone();
+    match nacre_ops::boolean(&mut m, nacre_ops::BoolKind::Common, block, prism) {
+        Err(nacre_ops::BoolError::Unsupported {
+            reason: nacre_ops::RejectReason::ImplicitPlaneUnsupported,
+        }) => {}
+        other => panic!("expected the implicit-plane refusal, got {other:?}"),
     }
+    assert_eq!(m.live_solids, live_before, "a refusal leaves the live set");
+
+    // Deterministic rebuild: the same construction accepts the same statements into the same
+    // arena slots — the meet road is judged once at a fixed rung, so replay holds.
+    let mut scratch = Model::new();
+    let a2 = scratch.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 10.0]),
+    );
+    let b2 = scratch.add_cuboid(
+        Point3::from_array([3.3, 3.3, -1.0]),
+        Point3::from_array([7.7, 7.7, 11.0]),
+    );
+    let OpOutput::Transform { solid: b2 } = apply(
+        &mut scratch,
+        &Operation::Transform {
+            solid: b2,
+            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                axis: Axis::Z,
+                point: [nacre_scalar::Rat::from_int(0); 3],
+                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+            }),
+        },
+    )
+    .expect("turn") else {
+        unreachable!()
+    };
+    scratch.rebuild_adjacency();
+    nacre_ops::boolean(&mut scratch, nacre_ops::BoolKind::Cut, a2, b2).expect("cut");
+    scratch.rebuild_adjacency();
+    let swapped2 = swapped.map(|v| {
+        scratch
+            .vertex_handle_at(v.index())
+            .expect("same construction, same indices")
+    });
+    let OpOutput::DatumPlane { plane: plane2, .. } = apply(
+        &mut scratch,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(swapped2),
+        },
+    )
+    .expect("the same statement is accepted again") else {
+        unreachable!()
+    };
+    assert_eq!(
+        plane2.index(),
+        plane.index(),
+        "same statement, same arena slot"
+    );
 }
 
 /// ★★★★ **A solid built on a vertex-named datum moves exactly once.**

@@ -522,6 +522,15 @@ pub enum RejectReason {
     /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
     /// quadrics).
     CylinderFace,
+    /// An operand carries a face whose plane is defined **through implicit points** — a datum
+    /// through straddling vertices (16-2), whose witness triangle does not exist because the
+    /// points have no coordinates in any frame. The judging table cannot seat such a plane yet;
+    /// that is open item 16's last stage (16-3, `WorkingPlaneDef::Through`).
+    ///
+    /// ★ Deliberately not `FrameOutOfRange`: that umbrella says "a frame the rationals cannot
+    /// hold", and nothing here failed to hold anything — the definition is complete, the
+    /// consumer is unbuilt.
+    ImplicitPlaneUnsupported,
     /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
     DegenerateFace,
     /// An operand face's outer triangle has a zero-length normal, so it has no outward direction.
@@ -698,6 +707,7 @@ impl RejectReason {
             Self::DegenerateFace => "degenerate_face",
             Self::DegenerateNormal => "degenerate_normal",
             Self::FrameOutOfRange => "frame_out_of_range",
+            Self::ImplicitPlaneUnsupported => "implicit_plane_unsupported",
             Self::PrecisionBudget { .. } => "precision_budget",
             Self::JudgeExhausted => "judge_exhausted",
             Self::DegenerateWitness => "degenerate_witness",
@@ -729,6 +739,8 @@ impl RejectReason {
             | Self::ThreePlanes
             | Self::FourPlane
             | Self::CylinderFace
+            // A plane defined through implicit points: the judging table's seat for it is 16-3.
+            | Self::ImplicitPlaneUnsupported
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
             // Likewise a frame past `i128`: a wider rational would lift it.

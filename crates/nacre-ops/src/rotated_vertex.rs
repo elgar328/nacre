@@ -62,40 +62,90 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
     })
 }
 
-/// The three defining vertices of a **nameless** `Through` plane as judgeable points — the
-/// judged road's twin of `Model::through_points_rat` (the named road's single solve). One
-/// spelling, shared by the datum producer's pre-push validation and [`frame_chain`]'s node
-/// assembly, so what was validated and what gets framed cannot drift.
+/// **A surface's plane as its exact witness triangle** — the per-carrier building block of an
+/// implicit point (16-2). The same computation `collect_planes`' arms perform per face, spelled
+/// once for the per-carrier consumer: `Known` points replay through the surface's own motion; a
+/// **named** `Through` plane (rational closure) solves through `through_points_rat` and replays
+/// the same way. `None` for a nameless `Through` carrier (a datum on a nameless datum — depth,
+/// open item 16-3's question) and for a cylinder.
+pub(crate) fn surface_witness_triangle(
+    model: &Model,
+    h: Handle<nacre_geom::Surface>,
+) -> Option<[WitnessPoint; 3]> {
+    let (base, motion) = match model.surface_truth(h) {
+        nacre_topo::SurfaceTruth::Plane {
+            points: nacre_topo::PlanePoints::Known(pts),
+            motion,
+        } => (*pts, *motion),
+        nacre_topo::SurfaceTruth::Plane {
+            points: nacre_topo::PlanePoints::Through(vs),
+            motion,
+        } => (model.through_points_rat(*vs)?, *motion),
+        nacre_topo::SurfaceTruth::Cylinder { .. } => return None,
+    };
+    let w = base.map(WitnessPoint::at);
+    match motion {
+        None => Some(w),
+        Some(m) => {
+            let chain = motion_chain(model, m)?;
+            let mut out = w;
+            for o in out.iter_mut() {
+                *o = replay(o.clone(), &chain)?;
+            }
+            Some(out)
+        }
+    }
+}
+
+/// The three defining vertices of a **nameless** `Through` plane as judged points — the judged
+/// road's twin of `Model::through_points_rat` (the named road's single solve). One spelling,
+/// shared by the datum producer's pre-push validation and [`frame_chain`]'s node assembly, so
+/// what was validated and what gets framed cannot drift.
 ///
-/// Each vertex must be *pure* — its own three carriers share one motion — and solve to a `Rat`
-/// point in that frame; the chains may differ **between** vertices, which is exactly the
-/// population the named solve refuses (`docs/truth-and-cache.md` open item 16, first wall).
-/// `None` for a straddling vertex (the item's second stage), a seam vertex, an unnamed carrier,
-/// a too-wide solve, or a chain outside the decimal window. The producer tells those apart by
-/// cause before any plane is pushed; here one answer suffices, because reaching this through an
-/// *accepted* statement re-derives the same deterministic result.
-pub(crate) fn through_witness_points(
+/// Per vertex: **pure** (its three carriers share one motion, and the solve fits `Rat`) becomes
+/// [`JudgedPoint::Pure`] — 16-1's whole population; anything else that is still a well-defined
+/// three-plane meet becomes [`JudgedPoint::Meet`] of its carriers' witness triangles — the
+/// straddling population (16-2), **and** the pure-but-too-wide one, which a meet represents
+/// without ever asking the coordinate to fit anything.
+///
+/// `None` for a seam vertex, or a carrier that has no witness triangle of its own (a nameless
+/// `Through` carrier — depth — or a chain outside the decimal window). The producer tells those
+/// apart by cause before any plane is pushed; here one answer suffices, because reaching this
+/// through an *accepted* statement re-derives the same deterministic result.
+pub(crate) fn through_judged_points(
     model: &Model,
     vs: [Handle<nacre_topo::Vertex>; 3],
-) -> Option<[WitnessPoint; 3]> {
-    let mut out: [Option<WitnessPoint>; 3] = [None, None, None];
+) -> Option<[nacre_cip::JudgedPoint; 3]> {
+    use nacre_cip::JudgedPoint;
+    let mut out: [Option<JudgedPoint>; 3] = [None, None, None];
     for (o, vh) in out.iter_mut().zip(vs) {
         let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
             return None; // OnSeam pins a curve, not a point
         };
         let mine = model.plane_motion(tri[0]);
-        if tri.iter().any(|h| model.plane_motion(*h) != mine) {
-            return None; // straddling carriers — open item 16's second stage
-        }
-        let names = tri.map(|h| model.surface_name.get(&h));
-        let [Some(a), Some(b), Some(c)] = names else {
-            return None;
+        let pure = if tri.iter().all(|h| model.plane_motion(*h) == mine) {
+            let names = tri.map(|h| model.surface_name.get(&h));
+            if let [Some(a), Some(b), Some(c)] = names {
+                nacre_scalar::three_planes_big([a, b, c])?
+                    .narrow()
+                    .map(|p| WitnessPoint::at(*p))
+                    .and_then(|wp| match mine {
+                        None => Some(wp),
+                        Some(m) => replay(wp, &motion_chain(model, m)?),
+                    })
+            } else {
+                None
+            }
+        } else {
+            None
         };
-        let p = *nacre_scalar::three_planes_big([a, b, c])?.narrow()?;
-        let wp = WitnessPoint::at(p);
-        *o = Some(match mine {
-            None => wp,
-            Some(m) => replay(wp, &motion_chain(model, m)?)?,
+        *o = Some(match pure {
+            Some(wp) => JudgedPoint::Pure(wp),
+            None => JudgedPoint::Meet(Box::new([
+                surface_witness_triangle(model, tri[0])?,
+                surface_witness_triangle(model, tri[1])?,
+                surface_witness_triangle(model, tri[2])?,
+            ])),
         });
     }
     Some([out[0].take()?, out[1].take()?, out[2].take()?])
@@ -186,9 +236,9 @@ pub(crate) fn frame_chain(
         if !matches!(placement, FramePlacement::Canonical) {
             return None;
         }
-        let pts = through_witness_points(model, *vs)?;
+        let pts = through_judged_points(model, *vs)?;
         let mut chain = vec![MoveNode::FrameThrough(Box::new(
-            nacre_cip::FrameThrough::of(pts.map(nacre_cip::JudgedPoint::Pure), flip)?,
+            nacre_cip::FrameThrough::of(pts, flip)?,
         ))];
         if let Some(m) = motion {
             chain.append(&mut motion_chain(model, *m)?);

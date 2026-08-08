@@ -239,8 +239,23 @@ pub(crate) fn collect_planes(
                             (w, motion.is_some())
                         }
                         None => {
-                            let w = crate::rotated_vertex::through_witness_points(model, *vs)
+                            let j = crate::rotated_vertex::through_judged_points(model, *vs)
                                 .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                            // ★ All-pure unwraps to 16-1's heterogeneous triangle, letter for
+                            // letter. Any implicit point means this plane has **no witness
+                            // triangle at all** — the judging table's seat for that is 16-3
+                            // (`WorkingPlaneDef::Through`), so until then the boolean says so
+                            // by name instead of failing to build a triangle somewhere deeper.
+                            let mut w: [Option<WitnessPoint>; 3] = [None, None, None];
+                            for (o, jp) in w.iter_mut().zip(j) {
+                                match jp {
+                                    nacre_cip::JudgedPoint::Pure(wp) => *o = Some(wp),
+                                    nacre_cip::JudgedPoint::Meet(_) => {
+                                        return Err(reject(RejectReason::ImplicitPlaneUnsupported));
+                                    }
+                                }
+                            }
+                            let w = w.map(|o| o.expect("filled above"));
                             let w = match motion {
                                 // ★ The plane's own later motion appends to each point's own
                                 // chain — motions add, never multiply (S5(ii)-1's rule).
