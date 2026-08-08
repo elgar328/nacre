@@ -7642,3 +7642,35 @@ tilted_frame_x2       24    16     3       3.2%     96.8%    1464 / 496
 남은 것은 타입이 아니라 **판정층의 실현**이고 §열린 항목 16 이 벽 둘을 순서대로, 후보 설계를
 «확정 아님» 으로 라벨링해 적는다. `VertexPointTooWide` 는 **다른 인구**이고 판정층을 안 건드리고
 닫힌다(열린 항목 17).
+
+---
+
+## 판정층 개명 — 코드가 문서의 최종 이름을 입는다 (2026-08-08, 열린 항목 8 전반부)
+
+이행표가 비어 «각 타입을 처음 만지는 단계에 얹는다» 는 조건이 실효됐으므로 자기 단계로 집행했다.
+지금이 싼 이유: 열린 항목 16 이 만들 새 코드(`WorkingPlaneDef::Through` 생산자·`WorkingVertex`)가
+정확히 이 이름들 위에 태어난다. 4커밋, 각각 훅 전량 + **census 비트 동일**.
+
+| 옛 | 새 | 규모 |
+|---|---|---|
+| `Bound` (+모듈 `bound.rs`) | `Mag` (+`mag.rs`) | 168곳 |
+| `Iv` / `HpIv` (+`IvCell`) | `Approx` / `HpApprox` (+`ApproxCell`) | 219곳 |
+| 필드 `mid`/`rad` | `value`/`error` | (같은 커밋) |
+| `Pt3` (+`Pt3Error`) | `WitnessPoint` (+`WitnessPointError`) | 401곳/19파일 |
+| `PlaneGeom` | `WorkingPlane` | 84곳/14파일 |
+
+**일부러 안 바꾼 것** (근거는 truth-and-cache §판정 이름 규칙의 대응 목록):
+- ★★★ `FaceInfo` — 대응표는 «`PlaneGeom`/`FaceInfo` 둘 다 `WorkingPlane`» 이라 적었지만
+  **정정했다**: 면/평면 분리는 `orient_sign` vs `frame_sign` 이 한 함수로 불리던 시절의 결함을
+  가른 수선이라, 지금 한 이름으로 부르면 고친 결함의 이름이 되살아난다. 합치기는 설계 작업.
+- `tri_pt3`→`def` 는 타입 변경(16의 몫), `WorkingPoint`→`WorkingVertex` 는 대상이 아직 없음,
+  `Standard`→`ProofStandard` 는 모양이 달라(재구성) 유예 — **기준: 대응 목록에 명시된 것만
+  기계적 개명이다.** 함수 이름(`plane_iv`·`cramer_iv` 등)은 대응표가 타입만 정했으므로 유지.
+
+★ 작업상 함정 둘, 다음 사람을 위해: (1) BSD sed 는 `\b` 가 없다 — perl 로. (2) **zsh 는 따옴표
+없는 변수를 단어 분리하지 않는다** — `for f in $FILES` 가 목록 전체를 파일명 하나로 넘겨 조용히
+실패했다(치환 0건). `| xargs` 로 우회했고, 치환 후 잔여 grep-0 을 관문으로 세워 둔 것이 이것을
+잡았다 — 치환 스크립트는 반드시 «옛 이름 0» 검증과 짝지어야 한다.
+
+산문 오폭 0(단어경계·대소문자 — 소문자 "bound"·"radius" 무접촉, `tri_pt3`·`plane_iv`
+소문자 가족 생존). design.md 는 토큰만 갱신, 이 로그의 과거 셀들은 그대로 둔다(이력).

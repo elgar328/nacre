@@ -18,7 +18,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 ├── nacre-math       # 자체 선형대수: Point<D>·Vector<D>·변환
 ├── nacre-scalar     # exact 유리수 값 엔진: Rat·Angle·Axis/Rotation/Isometry·Orient
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone
-├── nacre-cip        # toleranced 부호 술어(회전): kernel(Pt3 판정) + predicate(평면 배열 술어). predicates의 쌍둥이
+├── nacre-cip        # toleranced 부호 술어(회전): kernel(WitnessPoint 판정) + predicate(평면 배열 술어). predicates의 쌍둥이
 ├── nacre-geom       # f64 기하 캐시(Surface·Curve)·교차(intersect 격리; scalar 의존 — Rat 링 술어 쌍둥이). 평면의 진실은 topo 의 SurfaceTruth(S6b)
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model
 ├── nacre-tess       # tessellation: 출처 태그·증분 갱신
@@ -490,7 +490,7 @@ pub enum Operation {
   없는 경로로 가 **캐시만 움직이고 진실은 제자리**에 남았을 것이다.
 
 - **캐시 법선은 `−(진술된 법선)`** — 씨앗이 `−축`, extrude 밑캡이 `−plane.normal()` 인 그 규약.
-  근거 둘: S9 가 `+축` 씨앗으로 **781 캡의 저장 법선이 뒤집힘**을 실측했고, `PlaneGeom::
+  근거 둘: S9 가 `+축` 씨앗으로 **781 캡의 저장 법선이 뒤집힘**을 실측했고, `WorkingPlane::
   frame_sign` 이 «저장 법선 vs 루트 면의 바깥 법선» 인데 밑캡의 바깥이 `−N` 이다.
 - **연산은 호출자의 프레임을 함께 돌려준다**(`OpOutput::DatumPlane{plane, frame}`) — 편의가
   아니라 **정확성**이다. 호출자가 `SketchFrame::named` 로 다시 말하면 f64 를 거쳐
@@ -864,11 +864,11 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 2. **~~입력 tol → 행렬식 오차 한계 공식~~ → orient3d는 확정·이식(단계 2a-ii): `frame3::det3_bound`**(6개 signed triple-product 구간 반경 `prod_err` + `16ε·mag` f64 반올림; `orient3d_judge`가 필터→astro-float 상승→정규화된 간격 판정으로 소비). exact3d H-a 검증(위반0·tightness 0.12; 프로덕션 재현 0.065·피벗 포함). `plane_side`=explicit orient3d 쌍둥이(같은 공식). **간접 orient3d**(3평면 implicit point·평면 계수)도 확정·이식(단계 2c-i `indirect_orient3d_judge`; exact3d H-b/H-c 검증·프로덕션 재현 위반0). ①이 확정돼 **입력이 명확**하다 — 점 tol = xyz 방향별 벡터. "방향별 점 tol이 행렬식에서 각자 자기 계수로 증폭돼 오차 한계를 이루는"(항목 5) 공식을 술어별로 유도(현행 정적 상수는 tol = 0 가정). **H4-soundness 진행 상황**: **(a) 새-오차·(b) 전파 항 모두 실측 검증 완료.** (a) 접선형 반증→좌표혼합(10000 랜덤 0회 붕괴). (b) `|R|·기존 tol`: 증분 회전 체인 5000회 0회 붕괴(sound·~3× 타이트); 전파의 **필요성은 비대칭 tol**에서 발현(x-tol을 90° 회전 → 오차가 y로 이동, 전파 없으면 tol_y=0으로 과소예측 — 대수적 확인; 비대칭 tol은 v1-후 √거리·구속 솔버에서). 아래 ③(평면 계수 tol 전파)도 같은 유도의 일부. **남은 H4**: consistency(경로-독립 결정성)·amplification(증폭 경계)·속도.
 3. **~~평면 계수의 tol 구조~~ → sqrt 섭동은 (5d)-1이 해결, 나머지는 ②로 흡수.** `Plane::through_points`의 정규화(sqrt) 섭동은 미확정이 아니다 — (5d)-1이 Plane에 비정규화 `raw`를 함께 저장해 판정이 쓰는 `coefficients()`가 exact(정의 정점이 정확히 0)이고 `normal()`(sqrt)은 크기 소비자에게만 간다 → **판정 경로에 sqrt 섭동 없음**. 남은 **"회전된 평면의 계수 tol"**은 별개 미확정이 아니라 **①의 따름정리**다: 평면은 세 점으로 정의되고, 회전되면 그 점들이 ①의 방향별 tol을 가지며, 계수는 그 점들의 뺄셈·외적이라 **점 tol이 계수 tol로 전파**된다. ②의 오차 한계 유도의 일부로 함께 다룬다.
 4. **~~3D에서 "거리"의 정확한 정의~~ → ①에서 확정.** 새-오차 (a)는 **좌표 크기 `|x|+|y|`**로 실측 확정(H4). 각도-불확실성 (c)의 접선 크기 = `da_각도 × 회전축까지 수직거리(모멘트 암)`(v1엔 0).
-5. **~~방향별 tol의 자료구조~~ → 확정: `[f64;3]` xyz 벡터**(단계 2a). `nacre-cip::kernel::frame3::Pt3 { base:[Rat;3], chain: HpRc<[RotNode]>, coord:[f64;3], tol:[f64;3], hp }`. (검증 도구였던 2D `Pt2` 프레임은 소비자가 없어 2026-07-28에 삭제 — 불변식은 frame3의 랜덤 체인 tol 테스트와 접선형 반증 테스트가 이어받았다.) **생성자가 세 경우를 이름으로 구분한다**(2026-07-27): `exact`(좌표가 f64로 정확 → tol이 **구조상 0**) · `at`(유리수 base의 반올림을 **측정**) · `at_with_tol`(Discovered seam의 seed). `at`을 exact 경우에 쓰면 답이 0인 것을 120비트로 계산하게 되고, 그게 회전 부울 시간의 절반이었다. `chain`이 `HpRc`인 이유는 clone을 refcount 증가로 만들면서 `parallel` 빌드의 `Send`를 지키는 것(`Rc`는 `Send`가 아니다). (**회전 시 tol 변환**은 ①의 `|R|·기존 tol`로 흡수.) 임의 유리수 피벗까지 exact3d H-f로 검증(피벗 산술 tol 항 추가).
+5. **~~방향별 tol의 자료구조~~ → 확정: `[f64;3]` xyz 벡터**(단계 2a). `nacre-cip::kernel::frame3::WitnessPoint { base:[Rat;3], chain: HpRc<[RotNode]>, coord:[f64;3], tol:[f64;3], hp }`. (검증 도구였던 2D `Pt2` 프레임은 소비자가 없어 2026-07-28에 삭제 — 불변식은 frame3의 랜덤 체인 tol 테스트와 접선형 반증 테스트가 이어받았다.) **생성자가 세 경우를 이름으로 구분한다**(2026-07-27): `exact`(좌표가 f64로 정확 → tol이 **구조상 0**) · `at`(유리수 base의 반올림을 **측정**) · `at_with_tol`(Discovered seam의 seed). `at`을 exact 경우에 쓰면 답이 0인 것을 120비트로 계산하게 되고, 그게 회전 부울 시간의 절반이었다. `chain`이 `HpRc`인 이유는 clone을 refcount 증가로 만들면서 `parallel` 빌드의 `Send`를 지키는 것(`Rc`는 `Send`가 아니다). (**회전 시 tol 변환**은 ①의 `|R|·기존 tol`로 흡수.) 임의 유리수 피벗까지 exact3d H-f로 검증(피벗 산술 tol 항 추가).
 6. **~~고정밀 층의 선택~~ → 확정: `astro-float`(순수 Rust 임의정밀). twofloat(double-double)는 H1.5에서 탈락.** H1.5 실측: twofloat의 π 상수는 정확하나 삼각함수가 "preliminary"라 **영점 근처 cos 오차 ~1.8e-16(f64 수준)**으로 정확도 게이트(~1e-30) 실패 — 부호 판정이 일어나는 near-degenerate가 곧 영점 근처라 치명적. `astro-float`로 교체(160비트에서 cos/sin 오차 **~1e-58**로 통과). **정밀도가 dial 가능**이라 double-double의 ~1e-32 천장이 사라진다(H4-amplification이 tol을 키워도 정밀도를 올리면 됨 → "quad-double 상승 or 정직 거절" 딜레마가 "정밀도 dial"로 단순화). 대가는 속도 **~120µs/call**(상승 경로라 드물고, 각도당 실현을 캐시해 상각; 정밀도를 낮추면 빨라짐) — H4가 속도·상승빈도 실측. **★ 그리고 이 층은 이제 상승 경로 전용이 아니다**: `Angle::cos_sin_f64`가 libm을 부르지 않고 128비트 실현을 f64로 **정확 반올림**해 돌려주므로(`round_to_f64`), 모델을 **구성할 때부터** 임의정밀이 관여한다. 그 대신 f64 캐시가 진실의 반올림 사본이 되고, 실현이 플랫폼·빌드·호출부에 무관해진다 — 실측: `128`비트 실현 1회 ≈ 32µs(libm은 22ns)이지만 각도당 한 번이고 `trial_bound`와 **같은 `TRIG` 항목**을 쓰므로 판정까지 가는 모델은 오히려 일이 준다(회전 fold 80: 731ms → 715ms). **★ 이하 이 문서의 "double-double"·"f128"·"고정밀 상승"은 이 상승 층을 가리키는 일반명이며, 실제 구현은 astro-float다.**
-6.5. **평면 witness는 정의를 소유하고, "회전됨"은 별개 필드다** (2026-07-27). `Witness::tri_pt3() -> &[Pt3;3]`(캐시, 항상 존재) + `is_rotated() -> bool`(경로 선택). 전에는 `tri_pt3: Option`의 **존재가 두 질문에 동시에 답**해서 정의를 미리 저장할 수 없었다(저장하면 모든 평면이 회전으로 오인). 그래서 `plane_def`가 판정마다 정의를 재구성했고 — 핀 25개 부울에서 **108만 회** — 그것이 시간의 77%였다. 지금은 순수 접근자다. **플래그는 유도하지 않는다**: `chain.is_empty()`도 `tol == 0`도 `solid_is_rotated`와 등가가 아니며(각각 chain 없는 증언 / 90°계열 회전에서 깨진다) 서로 다른 케이스에서 틀린다. 두 필드는 `collect_planes` 한 자리에서만 함께 설정한다.
+6.5. **평면 witness는 정의를 소유하고, "회전됨"은 별개 필드다** (2026-07-27). `Witness::tri_pt3() -> &[WitnessPoint;3]`(캐시, 항상 존재) + `is_rotated() -> bool`(경로 선택). 전에는 `tri_pt3: Option`의 **존재가 두 질문에 동시에 답**해서 정의를 미리 저장할 수 없었다(저장하면 모든 평면이 회전으로 오인). 그래서 `plane_def`가 판정마다 정의를 재구성했고 — 핀 25개 부울에서 **108만 회** — 그것이 시간의 77%였다. 지금은 순수 접근자다. **플래그는 유도하지 않는다**: `chain.is_empty()`도 `tol == 0`도 `solid_is_rotated`와 등가가 아니며(각각 chain 없는 증언 / 90°계열 회전에서 깨진다) 서로 다른 케이스에서 틀린다. 두 필드는 `collect_planes` 한 자리에서만 함께 설정한다.
 
-7. **회전 이력 트리 → 확정(단계 1c): `Model.rotations: Store<Rotation>` + `parent` 링크 forest.** 남은 **캐시 정책**(hp 실현값 수명·축출)은 단계 2a에서 미실행(Pt3 매번 fresh 계산) → **단계 2b 이후로 defer**(성능 최적화, soundness 무관).
+7. **회전 이력 트리 → 확정(단계 1c): `Model.rotations: Store<Rotation>` + `parent` 링크 forest.** 남은 **캐시 정책**(hp 실현값 수명·축출)은 단계 2a에서 미실행(WitnessPoint 매번 fresh 계산) → **단계 2b 이후로 defer**(성능 최적화, soundness 무관).
 
 **★ 정리 — ②(오차 한계)가 완전 소진됐다: orient3d/plane_side 직접(2a-ii `det3_bound`)·간접(2c-i `indirect_orient3d_judge`)·cmp_coord(cmp-i `indirect_cmp_coord_judge`) 모두 확정·이식(프로덕션 `nacre-cip::kernel::frame3`).** 남은 §CIP는 ⑦-캐시(성능·defer)뿐. ①·④·⑤·⑥ 확정, ⑦-트리는 1c 완료, ③은 sqrt 부분 (5d)-1이 해결·나머지 ②로 흡수. §CIP의 마지막 수학 ②는 실험 H-a(직접 orient3d)/H-b(평면 계수)/H-c(간접 orient3d)가 검증했고, cmp_coord는 exact3d에 없던 새 수학이라 frame3에서 직접 **H-g**(두 코퍼스·wrong-sign 0)로 검증했다(Cramer 기계는 2c-i 이식분 재사용·최종 부호 결합만 신규). 세 술어 모두 프로덕션에 들어왔다 — **판정층 완성**.
 
@@ -879,8 +879,8 @@ plane_hp_through}` — 동차점 `[Dvec : D]` 셋의 **사영 join**(3×4 의 �
 엔진이 아니라 «프레임 실현» 이다**(정정 2026-08-08). 그런 평면은 이름이 없어 `SketchFrame` 을 못
 얻고 ⇒ base cap 이 못 되고 ⇒ **판정 표에 도달조차 못 한다**; 벽은 둘이고 프레임이 먼저다
 (`docs/truth-and-cache.md` 열린 항목 16, 실행 증명은 `a_plane_with_no_name_cannot_host_a_sketch`).
-- **나누지 않는다.** `Dvec/D` 로 아핀 좌표를 만드는 것은 무리수를 제조하는 일이고, `Iv` 에
-  나눗셈이 없고 `HpIv::div_exact` 가 반경 0 을 요구하는 것이 그 규율의 집행이다.
+- **나누지 않는다.** `Dvec/D` 로 아핀 좌표를 만드는 것은 무리수를 제조하는 일이고, `Approx` 에
+  나눗셈이 없고 `HpApprox::div_exact` 가 반경 0 을 요구하는 것이 그 규율의 집행이다.
 - **차수 9**(아핀 외적 경로는 15) — 구간 폭과 요구 정밀도가 그만큼 준다.
 - **배율 부호는 값 안에서 없앤다** — 결과가 참 평면의 `D0·D1·D2` 배라 음수면 방향이 뒤집히고,
   `Judge::plane_iv` 시그니처에 부호를 실을 자리가 없다.

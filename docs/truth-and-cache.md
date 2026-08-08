@@ -357,9 +357,22 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 살며 수명을 상속하므로 접두사를 반복하지 않고, 이름은 역할을 말한다(캐시 타입은 모델 쪽과
 일부러 공유된다 — 반올림 사본임이 타입에 보이도록). ② **거울의 변종 이름은 진실과 같다**
 (`Known`/`Through`). ③ 평면 정의를 이루는 유리수 점은 **증인 점 `WitnessPoint`** 다.
-오늘 코드와의 대응(이행 중 개명): `Pt3` → `WitnessPoint`, `WorkingPoint` → `WorkingVertex`,
-`PlaneGeom`/`FaceInfo` → `WorkingPlane`, `tri_pt3` → `def`, `HpIv` → `HpApprox`
-(스칼라 구간 — 점 실현 묶음은 `HpPointCache`).
+오늘 코드와의 대응 — **판정층 개명 집행 완료(2026-08-08)**, 항목별 처분:
+- ✔ `Pt3` → `WitnessPoint` (+위성 `Pt3Error` → `WitnessPointError`)
+- ✔ `HpIv` → `HpApprox`, 그리고 짝이 강제한 ✔ `Iv` → `Approx`(수치층 규칙 — 같은 것의 다른
+  정밀도는 `Hp` 접두사 하나로만 다르다) + 필드 `mid`/`rad` → `value`/`error`, ✔ `Bound` → `Mag`
+  (캐시 절의 철자 그대로 — `HpApprox { value: BigFloat, error: Mag }`)
+- ✔ `PlaneGeom` → `WorkingPlane`(모양은 오늘 것 그대로 — 최종 모양은 열린 항목 16이 만든다)
+- ★★★ **`FaceInfo` 는 따라가지 않았다 — 여기 적혀 있던 «둘 다 `WorkingPlane`» 은 정정한다.**
+  면/평면 분리가 오늘 하중을 진다: `orient_sign`(이 면의) vs `frame_sign`(그 클래스의)은
+  한 함수가 두 종류 인덱스로 불리던 시절 — *규약을 단언할 수 없던 유일한 자리* — 를 가른
+  수선이었고, 한 이름으로 합치면 고친 결함의 이름이 되살아난다. 합치기는 개명이 아니라 설계
+  작업이며 16 이후 재검토.
+- `WorkingPoint` → `WorkingVertex`: 코드에 아직 없음 — 16이 만들 타입이 이 이름으로 태어난다.
+- `tri_pt3` → `def`: 개명이 아니라 **타입 변경**(`[WitnessPoint;3]` → `WorkingPlaneDef`) — 16의 몫.
+- `Standard` → `ProofStandard`: 같은 계열(모양이 다르다 — `same_within` 유도로의 재구성) — 대응
+  명시가 없어 유예. **기준: 이 목록에 명시된 것만 기계적 개명이다.**
+(점 실현 묶음 `HpPointCache` 는 아직 타입으로 없음 — 오늘은 `(usize, [HpApprox; 3])` 튜플.)
 
 ```rust
 /// 판정용 평면 — `Surface::Plane` 의 쌍둥이. 정의를 펼쳐 들고 두 실현을 메모한다.
@@ -552,7 +565,7 @@ pub enum Decision {
 평면에도 이미 정확한 정의**다. 남은 것은 타입이 아니라 **판정층의 실현**이고, 그래서 마지막 행이
 이행표를 떠나 열린 항목으로 갔다(아래 표의 S5(ii)-2b 줄).
 
-★ **«전부 ✔» 는 아니다**: 위 완료 표의 **`3b`(좌표 재생)는 여전히 ⏸** 이다 — 목적지와 `Pt3` 재생의
+★ **«전부 ✔» 는 아니다**: 위 완료 표의 **`3b`(좌표 재생)는 여전히 ⏸** 이다 — 목적지와 `WitnessPoint` 재생의
 무충돌만 확인해 둔 상태로, 재보고 보류다.
 
 | | 항목 | 선행 |
@@ -587,9 +600,9 @@ datum 은 새 복사본을 추적하지 않는다. 실제 규약은 **핸들을 
 그래도 성립하지만 그 근거는 «정점을 따라감» 이 아니라 **interning**(같은 셋 → 같은 이름 →
 같은 핸들)이다.
 
-★ 판정층 개명(`Pt3`→`WitnessPoint`·`WorkingPoint`→`WorkingVertex`·`PlaneGeom`→`WorkingPlane`,
-§판정 이름 규칙)은 별도 단계가 아니라 **각 타입을 처음 만지는 단계에 얹는다** — 기계적 개명이라
-관문은 컴파일이다.
+★ 판정층 개명은 «각 타입을 처음 만지는 단계에 얹는다» 로 적어 뒀으나 이행표가 비어 얹을 단계가
+없어졌고, **자기 단계로 집행됐다**(2026-08-08, 4커밋 + census 비트 동일 ×4). 결과와 항목별
+처분은 §판정 이름 규칙의 대응 목록에 있다.
 
 ### 관문 규칙
 
@@ -691,11 +704,14 @@ STEP 출력, undo/replay.
    손 스케치(수십 점)는 ms 미만이라 수용, 수천 점 생성기가 실재해지면 그때의 수: (a) Rat
    비교 기반 정확 bbox 선별(교차쌍 대부분 기각), (b) 실현 f64 + 건전 오차 한계 필터 → Rat
    상승(CIP 필터 철학의 2D 판). **둘 다 그 인구가 생기기 전엔 짓지 않는다.**
-8. **최종 개명은 유예됐다(S6b)** — 진실 enum 은 `SurfaceTruth`(문서의 `Surface` 이름은 아직
-   geom 의 f64 캐시가 쥠), 캐시는 `Store<geom::Surface>` 그대로. `Handle<T>` 의 타입
-   매개변수가 아레나 반전을 강제하고(공유 인덱스라 의미 무손실), `SurfaceCache{coeffs,tol,
-   inv_norm}` 실형이 판정 통합에서 생길 때 개명·반전을 한 번에 기계적으로 한다. 판정층
-   개명(`PlaneGeom`→`WorkingPlane` 등)도 같은 자리(또는 S7)로 유예.
+8. **최종 개명 — 판정층 절반은 집행됐고(2026-08-08), 아레나 반전 절반만 남았다.**
+   ✔ 집행: `Mag`·`Approx`/`HpApprox`(+필드 `value`/`error`)·`WitnessPoint`·`WorkingPlane` —
+   4커밋, census 비트 동일 ×4, 항목별 처분은 §판정 이름 규칙의 대응 목록.
+   ⏳ 잔여: 진실 enum 은 `SurfaceTruth`(문서의 `Surface` 이름은 아직 geom 의 f64 캐시가 쥠),
+   캐시는 `Store<geom::Surface>` 그대로. `Handle<T>` 의 타입 매개변수가 아레나 반전을 강제하고
+   (공유 인덱스라 의미 무손실), `SurfaceCache{coeffs,tol,inv_norm}` **실형이 판정 통합에서 생길
+   때** 개명·반전을 한 번에 기계적으로 한다 — 조건은 원래 그대로, 오늘은 그 실형을 만들 수 없다
+   (`tol`·`inv_norm` 이 존재하지 않는다).
 9. **`Inexact` 소멸의 두 반증은 지반이 제거됐다(S6a)** — #28(축만 든 호출자)은 `from_axes`
    리프트가 닫았고(십진 진실 def + S2 이름 + S4 wide 프레임), "정확한 형태가 없는 평면
    0.07%/모델 25.8%" 실측은 **S2 이전 수치**(원인이 이름의 i128 넘침이었고 그 원인이
@@ -757,7 +773,7 @@ STEP 출력, undo/replay.
 
    **아래는 2b 조사가 낸 «후보» 이지 «확정» 이 아니다**(검증 안 됨 — 계획·조사는 참조이지
    진실이 아니다):
-   - 해답 모양: `Pt3::frame_wide` 의 전파를 그대로 두고 계수만 `plane_hp_through` 가 정밀도별로
+   - 해답 모양: `WitnessPoint::frame_wide` 의 전파를 그대로 두고 계수만 `plane_hp_through` 가 정밀도별로
      공급. 새 산술은 **구간 입력 `inv_sqrt`** 하나로 보인다(오늘 `inv_sqrt_bigint_bounded` 는
      정확 BigInt 를 받는다).
    - 판정 술어 쪽은 작아 보인다: `indirect_cmp_coord_judge`·`dir_sign_judge` 와
