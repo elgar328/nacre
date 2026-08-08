@@ -12,12 +12,12 @@
 //! rounding residue was reported as a confident sign. Side by side, an operation that propagates
 //! its radius in one and not the other is visible.
 //!
-//! **The radius is a [`Bound`], not an `f64`.** At a deep rung `2⁻ᵖʳᵉᶜ` underflows an `f64` to
+//! **The radius is a [`Mag`], not an `f64`.** At a deep rung `2⁻ᵖʳᵉᶜ` underflows an `f64` to
 //! zero, and a zero radius claims exactness — the same failure in new clothes. See
 //! [`nacre_scalar::bound`].
 
 use astro_float::BigFloat;
-use nacre_scalar::{Bound, Rat};
+use nacre_scalar::{Mag, Rat};
 
 use super::HP_RM;
 
@@ -57,7 +57,7 @@ pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpIv {
     }
     // The integers enter exactly (see `rat_to_big`), so the only error left is the division's
     // own rounding.
-    let rad = ub(&mid).times(Bound::pow2(-(prec as i64)));
+    let rad = ub(&mid).times(Mag::pow2(-(prec as i64)));
     HpIv::new(mid, rad)
 }
 
@@ -122,10 +122,10 @@ impl Iv {
 }
 
 /// An upper bound on `|x|`, from its exponent (`|x| < 2^exponent`).
-pub(crate) fn ub(x: &BigFloat) -> Bound {
+pub(crate) fn ub(x: &BigFloat) -> Mag {
     match x.exponent() {
-        Some(e) if !x.is_zero() => Bound::pow2(e as i64),
-        _ => Bound::ZERO,
+        Some(e) if !x.is_zero() => Mag::pow2(e as i64),
+        _ => Mag::ZERO,
     }
 }
 
@@ -134,9 +134,9 @@ pub(crate) fn ub(x: &BigFloat) -> Bound {
 /// Reading the mantissa would tighten this by up to one bit. It is left at the exponent because
 /// the error is in the safe direction — a judgement declines slightly sooner than it must, and
 /// the ladder is what recovers those, not a tighter comparison here.
-pub(crate) fn lb(x: &BigFloat) -> Option<Bound> {
+pub(crate) fn lb(x: &BigFloat) -> Option<Mag> {
     match x.exponent() {
-        Some(e) if !x.is_zero() => Some(Bound::pow2(e as i64 - 1)),
+        Some(e) if !x.is_zero() => Some(Mag::pow2(e as i64 - 1)),
         _ => None,
     }
 }
@@ -146,16 +146,16 @@ pub(crate) fn lb(x: &BigFloat) -> Option<Bound> {
 /// Every constructor must supply a radius that actually bounds its value's distance from the
 /// truth — for a coordinate that means the rotation chain's realization error
 /// ([`nacre_scalar::Angle::cos_sin_bounded`] is where it starts), and for a rational read at
-/// enough bits it means [`Bound::ZERO`]. A radius invented for convenience makes every sign above
+/// enough bits it means [`Mag::ZERO`]. A radius invented for convenience makes every sign above
 /// it unearned.
 #[derive(Clone, Debug)]
 pub(crate) struct HpIv {
     pub mid: BigFloat,
-    pub rad: Bound,
+    pub rad: Mag,
 }
 
 impl HpIv {
-    pub fn new(mid: BigFloat, rad: Bound) -> Self {
+    pub fn new(mid: BigFloat, rad: Mag) -> Self {
         HpIv { mid, rad }
     }
 
@@ -163,14 +163,14 @@ impl HpIv {
     pub fn exact(mid: BigFloat) -> Self {
         HpIv {
             mid,
-            rad: Bound::ZERO,
+            rad: Mag::ZERO,
         }
     }
 
     /// The rounding a `prec`-bit operation adds to its own result: at most a half-ulp,
     /// `|result| · 2⁻ᵖʳᵉᶜ`.
-    fn round_off(mid: &BigFloat, prec: usize) -> Bound {
-        ub(mid).times(Bound::pow2(-(prec as i64)))
+    fn round_off(mid: &BigFloat, prec: usize) -> Mag {
+        ub(mid).times(Mag::pow2(-(prec as i64)))
     }
 
     pub fn sub(&self, o: &HpIv, prec: usize) -> HpIv {
@@ -213,7 +213,7 @@ impl HpIv {
         let mid = self.mid.div(&b.mid, prec, HP_RM);
         let rad = self
             .rad
-            .times(Bound::pow2(1 - e))
+            .times(Mag::pow2(1 - e))
             .plus(Self::round_off(&mid, prec));
         Some(HpIv::new(mid, rad))
     }
@@ -232,7 +232,7 @@ impl HpIv {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nacre_scalar::{Angle, Bound};
+    use nacre_scalar::{Angle, Mag};
 
     fn big(x: f64, prec: usize) -> BigFloat {
         BigFloat::from_f64(x, prec)
@@ -379,7 +379,7 @@ mod tests {
         // Two large values differing by far less than the radius they carry. The separation has
         // to stay inside `prec` bits of the operands, or the subtraction is exactly zero and the
         // test proves nothing.
-        let rad = Bound::of(1.0e-10);
+        let rad = Mag::of(1.0e-10);
         let a = HpIv::new(big(1.0e30, prec), rad);
         let b = HpIv::new(big(1.0e30, prec).sub(&big(1.0e-20, prec), prec, HP_RM), rad);
         let d = a.sub(&b, prec);
@@ -399,27 +399,27 @@ mod tests {
     #[test]
     fn a_value_clear_of_its_radius_still_decides() {
         let prec = 200;
-        let a = HpIv::new(big(3.0, prec), Bound::pow2(-100));
-        let b = HpIv::new(big(2.0, prec), Bound::pow2(-100));
+        let a = HpIv::new(big(3.0, prec), Mag::pow2(-100));
+        let b = HpIv::new(big(2.0, prec), Mag::pow2(-100));
         assert_eq!(a.sub(&b, prec).sign(), Some(true));
         assert_eq!(b.sub(&a, prec).sign(), Some(false));
         assert_eq!(a.mul(&b, prec).sign(), Some(true));
     }
 
     /// The radius survives a rung deep enough to flush an `f64` radius to zero — the reason
-    /// [`Bound`] exists. With an `f64` radius this product would report a confident sign.
+    /// [`Mag`] exists. With an `f64` radius this product would report a confident sign.
     #[test]
     fn a_deep_rung_does_not_lose_the_radius() {
         let prec = 2048;
-        let tiny = HpIv::new(big(1.0, prec), Bound::pow2(-(prec as i64)));
+        let tiny = HpIv::new(big(1.0, prec), Mag::pow2(-(prec as i64)));
         let p = tiny.mul(&tiny, prec);
         assert!(!p.rad.is_zero(), "the radius vanished at {prec} bits");
         // A difference of exactly that size is therefore undecided, not positive.
         let q = HpIv::new(
             big(1.0, prec).add(&BigFloat::from_f64(1.0, prec), prec, HP_RM),
-            Bound::pow2(-(prec as i64) + 4),
+            Mag::pow2(-(prec as i64) + 4),
         );
-        let r = HpIv::new(big(2.0, prec), Bound::pow2(-(prec as i64) + 4));
+        let r = HpIv::new(big(2.0, prec), Mag::pow2(-(prec as i64) + 4));
         assert_eq!(q.sub(&r, prec).sign(), None);
     }
 
@@ -441,7 +441,7 @@ mod tests {
         );
         let d = a.sub(&b, prec);
         assert!(
-            d.rad.lt(Bound::pow2(-190)),
+            d.rad.lt(Mag::pow2(-190)),
             "an exact subtraction picked up more than a half-ulp: 2^{:?}",
             d.rad.exp2()
         );

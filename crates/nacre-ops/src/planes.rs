@@ -8,7 +8,7 @@ use nacre_cip::{Pt3, Standard};
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::Bound;
+use nacre_scalar::Mag;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Shell, Solid, Vertex};
 use std::collections::HashMap;
@@ -525,10 +525,10 @@ fn standard_for(planes: &[FaceInfo]) -> Standard {
     //
     // So the loop below used to spend a full high-precision replay per point to compute a zero —
     // measured, an axis-aligned 60-fin fold did that 24,120 times for 15.7ms and a `worst` of
-    // exactly `Bound::ZERO`. The same shape was removed one level down when `Pt3::exact` replaced
+    // exactly `Mag::ZERO`. The same shape was removed one level down when `Pt3::exact` replaced
     // `Pt3::at` for these points ("nine BigFloat operations to compute a zero").
     //
-    // `max` over the empty set is `Bound::ZERO`, which is the right answer for a model with no
+    // `max` over the empty set is `Mag::ZERO`, which is the right answer for a model with no
     // rotation history — `precision_for` reads that as "nothing to size" and returns `TRIAL_PREC`.
     let worst = worst_trial(
         planes
@@ -585,8 +585,8 @@ pub(crate) fn test_judge<W>(planes: &[W]) -> Judge<'_, W> {
         planes,
         Standard {
             prec: 256,
-            coincidence: Bound::pow2(-180),
-            scale: Bound::of(1.0),
+            coincidence: Mag::pow2(-180),
+            scale: Mag::of(1.0),
             cap: 256 + CLIMB_HEADROOM,
         },
         notes,
@@ -616,26 +616,26 @@ pub(crate) fn standard_for_points<'a>(pts: impl IntoIterator<Item = &'a Pt3> + C
 /// critical path). Each point's trial realization is independent and they combine by **maximum**,
 /// which is associative and exact — so evaluating them across cores cannot move the answer the way
 /// a reassociated sum would.
-fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a Pt3>) -> Bound {
+fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a Pt3>) -> Mag {
     let pts: Vec<&Pt3> = pts.into_iter().collect();
     let bounds = crate::par::map_range(pts.len(), |i| nacre_cip::trial_bound(pts[i]));
     bounds
         .into_iter()
-        .fold(Bound::ZERO, |w, b| if w.lt(b) { b } else { w })
+        .fold(Mag::ZERO, |w, b| if w.lt(b) { b } else { w })
 }
 
 /// The standard for points whose worst trial bound is already known: `scale` off the f64
 /// coordinates, the coincidence limit derived from it, and the precision that reaches it.
-fn standard_from<'a>(pts: impl IntoIterator<Item = &'a Pt3>, worst: Bound) -> Standard {
+fn standard_from<'a>(pts: impl IntoIterator<Item = &'a Pt3>, worst: Mag) -> Standard {
     let mut scale = 1.0f64;
     for p in pts {
         for c in p.coord {
             scale = scale.max(c.abs());
         }
     }
-    let scale = Bound::of(scale);
-    let output_precision = scale.times(Bound::pow2(-52));
-    let coincidence = output_precision.times(Bound::pow2(-128));
+    let scale = Mag::of(scale);
+    let output_precision = scale.times(Mag::pow2(-52));
+    let coincidence = output_precision.times(Mag::pow2(-128));
     let prec = nacre_cip::precision_for(worst, coincidence);
     Standard {
         prec,

@@ -23,7 +23,7 @@ use super::HP_RM;
 use super::interval::{HpIv, Iv};
 use super::interval::{bf_mag, bigint_to_hp, rat_to_big, rat_to_hp};
 use astro_float::BigFloat;
-use nacre_scalar::{Angle, Axis, Bound, Orient, Rat};
+use nacre_scalar::{Angle, Axis, Mag, Orient, Rat};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]
@@ -865,10 +865,10 @@ fn narrow_hp(x: &HpIv) -> (f64, f64) {
     }
 }
 
-/// An upper `f64` for a [`Bound`] radius: `2^e` from the exponent. Below f64's floor it lands on
+/// An upper `f64` for a [`Mag`] radius: `2^e` from the exponent. Below f64's floor it lands on
 /// the smallest positive value rather than a zero that would claim exactness; above the range it
 /// is honestly infinite (an infinite tol declines, never lies).
-fn rad_f64(r: Bound) -> f64 {
+fn rad_f64(r: Mag) -> f64 {
     match r.exp2() {
         None => 0.0, // a genuinely zero radius
         Some(e) if e < -1074 => f64::MIN_POSITIVE,
@@ -896,10 +896,10 @@ pub struct Standard {
     /// across the operation so [`Pt3`]'s realization cache stays warm.
     pub prec: usize,
     /// Two things **proved** to lie within this distance of each other are one thing.
-    pub coincidence: Bound,
+    pub coincidence: Mag,
     /// The model's size — what turns the length limit into an angle for the one judgement whose
     /// question is about directions ([`dir_sign_judge`]).
-    pub scale: Bound,
+    pub scale: Mag,
     /// The most bits an escalation may ask for. Past it the judgement is [`Decision::Exhausted`]:
     /// answerable in principle, too expensive in practice, and said out loud rather than guessed.
     pub cap: usize,
@@ -917,7 +917,7 @@ pub enum Decision {
     Sign(Orient),
     /// The two things were shown to lie within `within` of each other, and that is at or below
     /// the coincidence limit. They are treated as one, and `within` is the evidence for it.
-    Coincident { within: Bound },
+    Coincident { within: Mag },
     /// Still straddling zero at `at` bits, the cap — and the separation it might stand for is
     /// *larger* than the coincidence limit, so calling it a coincidence would be a guess. More
     /// precision would decide it; this judgement has outgrown the budget.
@@ -928,7 +928,7 @@ pub enum Decision {
     /// same news — the first is far below anything the `f64` output can carry, the second is a
     /// gap somebody would see. `None` when even that bound could not be formed: the cofactor was
     /// still unresolved at the cap, so there is no distance to quote at all.
-    Exhausted { at: usize, within: Option<Bound> },
+    Exhausted { at: usize, within: Option<Mag> },
     /// The quantity that turns this determinant into a distance cannot be bounded away from zero
     /// — a degenerate witness triangle, or three planes with no well-defined meeting point. **A
     /// different cause from [`Self::Exhausted`], and the distinction matters**: more precision
@@ -958,7 +958,7 @@ impl Decision {
 #[derive(Clone, Copy, Debug)]
 enum Gap {
     /// An upper bound on the separation, in the unit the judgement's limit is in.
-    Of(Bound),
+    Of(Mag),
     /// A cofactor is nonzero but has not been separated from its own error radius yet. `short`
     /// bits more would separate it — **so this climbs**, exactly like a gap that is merely too
     /// wide. Collapsing it into the case below is what would make the kernel quietly merge two
@@ -975,7 +975,7 @@ enum Gap {
 ///
 /// The mantissa is deliberately not read: `lb` is an exponent bound, so `short` is generous by up
 /// to a bit — in the direction that costs a word, not correctness.
-fn denom_lo(v: &HpIv) -> Result<Bound, Gap> {
+fn denom_lo(v: &HpIv) -> Result<Mag, Gap> {
     let Some(lo) = super::interval::lb(&v.mid) else {
         return Err(Gap::Vanished); // the midpoint is exactly zero
     };
@@ -1037,7 +1037,7 @@ pub mod climb_census {
 
 fn escalate(
     j: Standard,
-    limit: Bound,
+    limit: Mag,
     mut attempt: impl FnMut(usize) -> Result<Orient, Gap>,
 ) -> Decision {
     climb_census::CLIMBS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1146,8 +1146,8 @@ const WORD: usize = 64;
 /// This is an *estimate*, and correctness does not rest on it: every judgement checks its own
 /// interval, so an under-estimate costs a re-run and never an answer. It is deliberately
 /// generous by one word to cover the determinant arithmetic stacked on top of the coordinates.
-pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Bound) -> usize {
-    let mut worst = Bound::ZERO;
+pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Mag) -> usize {
+    let mut worst = Mag::ZERO;
     for p in pts {
         let b = trial_bound(p);
         if worst.lt(b) {
@@ -1164,8 +1164,8 @@ pub fn judge_precision<'a>(pts: impl IntoIterator<Item = &'a Pt3>, limit: Bound)
 /// associative and exact, so no order of combination — and no schedule — can change the
 /// answer. That is what makes this safe to hand out, where exposing a partial *sum* would not
 /// be: a reassociated floating-point sum is a different number.
-pub fn trial_bound(p: &Pt3) -> Bound {
-    let mut worst = Bound::ZERO;
+pub fn trial_bound(p: &Pt3) -> Mag {
+    let mut worst = Mag::ZERO;
     // **Uncached on purpose.** `hp_coord` fills a point's realization cell with whatever
     // precision asks first, and this measurement runs before the real precision is known —
     // so going through it would fill every cell at `TRIAL_PREC` and make every later
@@ -1180,7 +1180,7 @@ pub fn trial_bound(p: &Pt3) -> Bound {
 
 /// The working precision that brings a model whose worst trial-precision error is `worst`
 /// within `limit` — the arithmetic half of [`judge_precision`], once the maximum is known.
-pub fn precision_for(worst: Bound, limit: Bound) -> usize {
+pub fn precision_for(worst: Mag, limit: Mag) -> usize {
     // `worst = C · 2⁻ᵗʳⁱᵃˡ`, so `C = worst · 2ᵗʳⁱᵃˡ` and `need = log₂C − log₂limit`.
     let (Some(w), Some(l)) = (worst.exp2(), limit.exp2()) else {
         return TRIAL_PREC; // an exact model, or no limit to reach — nothing to size
@@ -1204,7 +1204,7 @@ pub fn precision_for(worst: Bound, limit: Bound) -> usize {
 /// uncertain, so its **lower** bound is what divides. When the area term cannot be bounded away
 /// from zero the answer is the [`Gap`] saying which failure it is: a triangle that has collapsed
 /// has no plane to be a distance from, while one that is merely unresolved is a matter of depth.
-fn distance_bound(det_rad: Bound, cross: &[HpIv; 3], prec: usize) -> Gap {
+fn distance_bound(det_rad: Mag, cross: &[HpIv; 3], prec: usize) -> Gap {
     // `|cross|² = Σ cross[k]²`, and a lower bound on the norm needs a lower bound on the sum.
     let mut lo = HpIv::exact(BigFloat::from_f64(0.0, prec));
     for c in cross {
@@ -1227,7 +1227,7 @@ fn distance_bound(det_rad: Bound, cross: &[HpIv; 3], prec: usize) -> Gap {
         return Gap::Vanished;
     };
     // `√(m · 2^e) ≥ 2^(⌊e/2⌋ − 1)` for `m ∈ [0.5, 1)`, which is the bound we need below.
-    let norm_lo = Bound::pow2(e.div_euclid(2) - 1);
+    let norm_lo = Mag::pow2(e.div_euclid(2) - 1);
     match det_rad.over(norm_lo) {
         Some(b) => Gap::Of(b),
         None => Gap::Vanished,
@@ -1483,7 +1483,7 @@ fn cross_of(pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> [HpIv; 3] {
 /// the judge cannot decide a sign, this is the honest statement of what it *did* establish: not
 /// "these are the same", but "`pa` is within **this much** of that plane". `None` when the three
 /// plane points are too near collinear for a distance to mean anything.
-pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Option<Bound> {
+pub fn orient3d_distance(pa: &Pt3, pb: &Pt3, pc: &Pt3, pd: &Pt3, prec: usize) -> Option<Mag> {
     let det = det3_hp(pa, pb, pc, pd, prec);
     // The *value* the judge could not separate from zero is somewhere in `±rad`, so the distance
     // it bounds is `rad / |cross|`.
@@ -2250,12 +2250,12 @@ pub fn dir_sign_judge(
 /// coincidence limit subtends across the model. `None` when a normal cannot be bounded away from
 /// zero — a degenerate plane has no direction to be off by.
 fn dir_gap(d: &HpIv, planes: &[[HpIv; 4]; 3], prec: usize) -> Gap {
-    let mut denom = Bound::of(1.0);
+    let mut denom = Mag::of(1.0);
     for p in planes {
         // `|n| ≥ max|n_k|`, which is enough and needs no square root. One component clearing zero
         // is all a normal needs, so a shortfall only counts when **every** component fell short —
         // and then the smallest of them is the cheapest way out.
-        let mut lo = Bound::ZERO;
+        let mut lo = Mag::ZERO;
         let mut short: Option<usize> = None;
         let mut vanished = 0;
         for c in p.iter().take(3) {
@@ -2301,8 +2301,8 @@ mod tests {
     fn fixture() -> Standard {
         Standard {
             prec: FIXTURE_PREC,
-            coincidence: Bound::pow2(-180),
-            scale: Bound::of(1.0),
+            coincidence: Mag::pow2(-180),
+            scale: Mag::of(1.0),
             cap: 4096,
         }
     }
@@ -2328,18 +2328,18 @@ mod tests {
         let mut asked = Vec::new();
         let j = Standard {
             prec: 256,
-            coincidence: Bound::pow2(-300),
-            scale: Bound::of(1.0),
+            coincidence: Mag::pow2(-300),
+            scale: Mag::of(1.0),
             cap: 4096,
         };
         let out = escalate(j, j.coincidence, |prec| {
             asked.push(prec);
             // `C = 2⁵⁶`: at 256 bits the gap is `2⁻²⁰⁰`, a hundred bits above the limit.
-            Err(Gap::Of(Bound::pow2(56 - prec as i64)))
+            Err(Gap::Of(Mag::pow2(56 - prec as i64)))
         });
         assert_eq!(asked, vec![256, 384], "the climb overshot or crept");
         assert!(
-            matches!(out, Decision::Coincident { within } if within.lt(Bound::pow2(-299))),
+            matches!(out, Decision::Coincident { within } if within.lt(Mag::pow2(-299))),
             "{out:?} — the second attempt was inside the limit and had to be reported as proof"
         );
     }
@@ -2354,8 +2354,8 @@ mod tests {
     fn a_gap_that_never_reaches_the_limit_is_exhausted_not_coincident() {
         let j = Standard {
             prec: 256,
-            coincidence: Bound::pow2(-300),
-            scale: Bound::of(1.0),
+            coincidence: Mag::pow2(-300),
+            scale: Mag::of(1.0),
             cap: 512,
         };
         let mut rounds = 0;
@@ -2363,7 +2363,7 @@ mod tests {
         // radius shrinks. No depth settles it, which is what the cap is for.
         let out = escalate(j, j.coincidence, |_| {
             rounds += 1;
-            Err(Gap::Of(Bound::pow2(-10)))
+            Err(Gap::Of(Mag::pow2(-10)))
         });
         // **The bound it did establish rides out with it.** Without it the caller cannot tell a
         // judgement that stopped `2⁻¹⁰` short from one that stopped `2⁻³⁰⁰` short, and those are
@@ -2372,7 +2372,7 @@ mod tests {
             out,
             Decision::Exhausted {
                 at: 512,
-                within: Some(Bound::pow2(-10)),
+                within: Some(Mag::pow2(-10)),
             }
         );
         assert_eq!(out.orient(), Orient::Zero, "the geometry still gets a sign");
@@ -2401,8 +2401,8 @@ mod tests {
     fn a_degenerate_witness_is_told_apart_from_an_exhausted_one() {
         let j = Standard {
             prec: 256,
-            coincidence: Bound::pow2(-300),
-            scale: Bound::of(1.0),
+            coincidence: Mag::pow2(-300),
+            scale: Mag::of(1.0),
             cap: 4096,
         };
         let mut rounds = 0;
@@ -2475,7 +2475,7 @@ mod tests {
         // …and the limit is genuinely consulted: ask for a coincidence a thousand bits finer than
         // the model can carry and the same judgement must refuse to call it one.
         let strict = Standard {
-            coincidence: Bound::pow2(-2000),
+            coincidence: Mag::pow2(-2000),
             cap: 512,
             ..j
         };
@@ -2644,7 +2644,7 @@ mod tests {
                                 prec,
                                 HP_RM,
                             ),
-                            Bound::ZERO,
+                            Mag::ZERO,
                         ),
                     ]
                 };
@@ -2699,7 +2699,7 @@ mod tests {
                                     prec,
                                     HP_RM,
                                 ),
-                                Bound::ZERO,
+                                Mag::ZERO,
                             ),
                         ]
                     };
@@ -2749,7 +2749,7 @@ mod tests {
                         prec,
                         HP_RM,
                     ),
-                    Bound::ZERO,
+                    Mag::ZERO,
                 );
                 let planes = [
                     [big(1), big(0), big(0), big(0)],
@@ -3214,7 +3214,7 @@ mod tests {
                     .expect("a frame with positive lengths");
                 let hp = p.hp_coord(GT);
                 // a·x + b·y + c·z + d, realized — its interval must contain zero.
-                let mut e = HpIv::new(BigFloat::from_i128(c[3], GT), Bound::ZERO);
+                let mut e = HpIv::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
                 for k in 0..3 {
                     e = e.add(&hp[k].mul(&rat_to_hp(Rat::from_int(c[k]), GT), GT), GT);
                 }
@@ -3305,7 +3305,7 @@ mod tests {
                     .frame(fr)
                     .expect("a frame with positive lengths");
                 let hp = p.hp_coord(GT);
-                let mut e = HpIv::new(BigFloat::from_i128(c[3], GT), Bound::ZERO);
+                let mut e = HpIv::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
                 for k in 0..3 {
                     e = e.add(&hp[k].mul(&rat_to_hp(Rat::from_int(c[k]), GT), GT), GT);
                 }

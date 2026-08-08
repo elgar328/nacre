@@ -1062,15 +1062,15 @@ mod tests {
     }
 
     use super::*;
-    use nacre_scalar::Bound;
+    use nacre_scalar::Mag;
 
     /// How these fixtures judge; production chooses both per model. The coincidence limit is the
     /// derived default for a unit-scale model — output resolution (`2⁻⁵²`) two words further down.
     fn fixture() -> Standard {
         Standard {
             prec: 256,
-            coincidence: Bound::pow2(-180),
-            scale: Bound::of(1.0),
+            coincidence: Mag::pow2(-180),
+            scale: Mag::of(1.0),
             cap: 4096,
         }
     }

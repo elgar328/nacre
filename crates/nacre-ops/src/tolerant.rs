@@ -1138,7 +1138,7 @@ mod tests {
     fn two_caps_described_exactly_are_one_plane() {
         use nacre_cip::predicate::{Judge, Notes};
         use nacre_cip::{Pt3, Standard};
-        use nacre_scalar::Bound;
+        use nacre_scalar::Mag;
 
         let (m, s, _) = two_caps_on_a_tilted_face(Recipe::Split);
         let faces = collect_planes(&m, s).unwrap();
@@ -1218,8 +1218,8 @@ mod tests {
             // to report the bound it actually achieved.
             let standard = Standard {
                 prec,
-                coincidence: Bound::pow2(-4000),
-                scale: Bound::of(16.0),
+                coincidence: Mag::pow2(-4000),
+                scale: Mag::of(16.0),
                 cap: prec,
             };
             let same = Judge::new(&planes, standard, &notes).planes_coplanar(0, 1);
@@ -1230,7 +1230,7 @@ mod tests {
                 _ => None,
             });
             assert!(same, "prec={prec}: no definite separation may be found");
-            // `Bound` is `m · 2^e`; the exponent is the reading that matters — a true zero makes it
+            // `Mag` is `m · 2^e`; the exponent is the reading that matters — a true zero makes it
             // fall one per bit of precision, a real separation makes it flatten.
             let w = within
                 .and_then(|b| b.exp2())
@@ -1260,8 +1260,8 @@ mod tests {
             let notes = Notes::new();
             let standard = Standard {
                 prec,
-                coincidence: Bound::pow2(-4000),
-                scale: Bound::of(16.0),
+                coincidence: Mag::pow2(-4000),
+                scale: Mag::of(16.0),
                 cap: prec,
             };
             let same = Judge::new(&planes, standard, &notes).planes_coplanar(0, 1);

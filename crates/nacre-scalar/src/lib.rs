@@ -32,8 +32,8 @@
 //! coincidence carrying its evidence, or as a reject named for its cause (`nacre-cip`).
 //! Ported from an isolated 2D experiment that verified it first.
 
-pub mod bound;
-pub use bound::Bound;
+pub mod mag;
+pub use mag::Mag;
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
@@ -117,7 +117,7 @@ thread_local! {
     /// result is a pure function of the key, so the memo cannot move an answer; and `prec` is in
     /// the key, so a model judged more deeply lands on a different entry rather than reading one
     /// realized too shallowly.
-    static INV_SQRT: RefCell<HashMap<(Rat, usize), (BigFloat, Bound)>> =
+    static INV_SQRT: RefCell<HashMap<(Rat, usize), (BigFloat, Mag)>> =
         RefCell::new(HashMap::new());
 
     /// **The f64 realization of `1/√v`, keyed by the rational alone** — see [`inv_sqrt_f64`].
@@ -133,7 +133,7 @@ thread_local! {
 }
 
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
-type TrigAt = (BigFloat, BigFloat, Bound, Bound);
+type TrigAt = (BigFloat, BigFloat, Mag, Mag);
 
 /// **The `f64` nearest the true value that `mid ± rad` encloses — or `None` when `mid ± rad` is
 /// not narrow enough to say.**
@@ -171,7 +171,7 @@ type TrigAt = (BigFloat, BigFloat, Bound, Bound);
 /// arithmetic (an FMA, a compensated
 /// evaluation) stay in `f64` and keep the laziness, so they are the candidates if the term ever
 /// needs to move.
-pub fn round_to_f64(mid: &BigFloat, rad: Bound, prec: usize) -> Option<f64> {
+pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
     if mid.is_nan() || mid.is_inf() {
         return None;
     }
@@ -184,14 +184,14 @@ pub fn round_to_f64(mid: &BigFloat, rad: Bound, prec: usize) -> Option<f64> {
 
 /// `2^exp2()` as a `BigFloat` — an **upper bound** on the radius, exactly representable.
 ///
-/// [`Bound`] is `m · 2^e` with `m ∈ [0.5, 1)`, so `2^e` is above it; the mantissa is left out
+/// [`Mag`] is `m · 2^e` with `m ∈ [0.5, 1)`, so `2^e` is above it; the mantissa is left out
 /// because widening the interval can only cost an escalation, never buy a wrong acceptance, and
-/// `Bound` does not expose its mantissa. A power of two is exact in `BigFloat` at any precision.
+/// `Mag` does not expose its mantissa. A power of two is exact in `BigFloat` at any precision.
 ///
 /// `None` when `2^e` is outside `f64`'s range. That cannot happen for the radii this crate
 /// produces (`prec ≤ 256` against magnitudes above `2⁻¹³³`), and returning `None` rather than
 /// silently flushing to zero is what keeps a broken premise from reading as a *tighter* interval.
-fn rad_upper_big(rad: Bound, p: usize) -> Option<BigFloat> {
+fn rad_upper_big(rad: Mag, p: usize) -> Option<BigFloat> {
     let Some(e) = rad.exp2() else {
         return Some(BigFloat::from_f64(0.0, p)); // an exact realization: a zero radius is honest
     };
@@ -1202,7 +1202,7 @@ pub fn inv_sqrt_exact(v: Rat) -> Option<Rat> {
 ///
 /// `None` when `v ≤ 0` — there is no frame normal with a non-positive squared length, so that is a
 /// broken premise rather than an unusual input.
-pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<(BigFloat, Bound)> {
+pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<(BigFloat, Mag)> {
     if v <= Rat::from_int(0) {
         return None;
     }
@@ -1248,7 +1248,7 @@ pub fn bigint_to_bigfloat(x: &num_bigint::BigInt, prec_floor: usize) -> BigFloat
 ///
 /// **Uncached** — the wide population is a fraction of a percent of pushes and the memo key
 /// would be a `BigInt`; measured before optimizing, per the cache philosophy.
-pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<(BigFloat, Bound)> {
+pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<(BigFloat, Mag)> {
     if v.sign() != num_bigint::Sign::Plus {
         return None;
     }
@@ -1256,18 +1256,18 @@ pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<(B
     let x = bigint_to_bigfloat(v, ip);
     let one = BigFloat::from_i128(1, ip);
     let z = one.div(&x.sqrt(prec, HP_RM), prec, HP_RM);
-    let u = Bound::pow2(-(prec as i64));
-    let rel = u.times(Bound::of(4.0));
+    let u = Mag::pow2(-(prec as i64));
+    let rel = u.times(Mag::of(4.0));
     let mag = match z.exponent() {
-        Some(e) if !z.is_zero() => Bound::pow2(e as i64),
-        _ => Bound::ZERO,
+        Some(e) if !z.is_zero() => Mag::pow2(e as i64),
+        _ => Mag::ZERO,
     };
     Some((z, mag.times(rel)))
 }
 
 /// [`inv_sqrt_bounded`] without the memo — the evaluation itself, kept separate so no `INV_SQRT`
 /// borrow is held across the arbitrary-precision work.
-fn realize_inv_sqrt(v: Rat, prec: usize) -> (BigFloat, Bound) {
+fn realize_inv_sqrt(v: Rat, prec: usize) -> (BigFloat, Mag) {
     // As `i128`, not through `f64`: the loss would happen before astro-float saw the value.
     let ip = prec.max(128);
     let n = BigFloat::from_i128(*v.0.numer(), ip);
@@ -1275,12 +1275,12 @@ fn realize_inv_sqrt(v: Rat, prec: usize) -> (BigFloat, Bound) {
     let one = BigFloat::from_i128(1, ip);
     let x = n.div(&d, prec, HP_RM);
     let z = one.div(&x.sqrt(prec, HP_RM), prec, HP_RM);
-    let u = Bound::pow2(-(prec as i64));
+    let u = Mag::pow2(-(prec as i64));
     // `½ + 1 + 1 = 2.5`, rounded up. Relative, so it is scaled by the result's magnitude below.
-    let rel = u.times(Bound::of(4.0));
+    let rel = u.times(Mag::of(4.0));
     let mag = match z.exponent() {
-        Some(e) if !z.is_zero() => Bound::pow2(e as i64), // `|x| < 2^exponent`
-        _ => Bound::ZERO,
+        Some(e) if !z.is_zero() => Mag::pow2(e as i64), // `|x| < 2^exponent`
+        _ => Mag::ZERO,
     };
     (z, mag.times(rel))
 }
@@ -1339,7 +1339,7 @@ fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
 }
 
 /// [`inv_sqrt_bounded`] for a `v` already known positive.
-fn realize_inv_sqrt_memoized(v: Rat, prec: usize) -> (BigFloat, Bound) {
+fn realize_inv_sqrt_memoized(v: Rat, prec: usize) -> (BigFloat, Mag) {
     inv_sqrt_bounded(v, prec).expect("v > 0 checked by the caller")
 }
 
@@ -1621,7 +1621,7 @@ impl Angle {
     /// why a process-wide memo is sound here and a handle-keyed one would not be.
     ///
     /// Returns `(cos, sin, |Δcos|, |Δsin|)`.
-    pub fn cos_sin_bounded(self, prec: usize) -> (BigFloat, BigFloat, Bound, Bound) {
+    pub fn cos_sin_bounded(self, prec: usize) -> (BigFloat, BigFloat, Mag, Mag) {
         if let Some(hit) = TRIG.with_borrow(|t| t.get(&(self, prec)).cloned()) {
             return hit;
         }
@@ -1635,7 +1635,7 @@ impl Angle {
     /// **Separate so no `TRIG` borrow is held across it.** `HP_CONSTS` is borrowed for the whole
     /// realization and the trig calls are the slow part; nesting the memo's borrow around that is
     /// how a re-entrant call would panic rather than merely be slow.
-    fn realize_cos_sin(self, prec: usize) -> (BigFloat, BigFloat, Bound, Bound) {
+    fn realize_cos_sin(self, prec: usize) -> (BigFloat, BigFloat, Mag, Mag) {
         HP_CONSTS.with_borrow_mut(|cc| {
             let pi = cc.pi(prec, HP_RM);
             let d180 = BigFloat::from_f64(180.0, prec);
@@ -1649,24 +1649,24 @@ impl Angle {
                 .div(&d, prec, HP_RM)
                 .mul(&pi, prec, HP_RM)
                 .div(&d180, prec, HP_RM);
-            let u = Bound::pow2(-(prec as i64));
+            let u = Mag::pow2(-(prec as i64));
             // Relative error of the argument: the two `i128 → f64` conversions, then four
             // rounded high-precision operations (the division, the product, the division, and π).
             // Four rounded operations build the argument (the division, the product, the
             // division, and π itself). The integers contribute nothing — they go in exactly.
-            let rel = u.times(Bound::of(4.0));
+            let rel = u.times(Mag::of(4.0));
             // `|θ|` in radians, over-estimated from its exponent (`|x| < 2^exponent`).
             let theta = match rad.exponent() {
-                Some(e) if !rad.is_zero() => Bound::pow2(e as i64),
-                _ => Bound::ZERO,
+                Some(e) if !rad.is_zero() => Mag::pow2(e as i64),
+                _ => Mag::ZERO,
             };
             let d_theta = theta.times(rel);
             let (c, s) = (rad.cos(prec, HP_RM, cc), rad.sin(prec, HP_RM, cc));
             // `|x| < 2^exponent` — the slope of the *other* function, and the scale of the
             // half-ulp of this one.
             let ub = |x: &BigFloat| match x.exponent() {
-                Some(e) if !x.is_zero() => Bound::pow2(e as i64),
-                _ => Bound::ZERO,
+                Some(e) if !x.is_zero() => Mag::pow2(e as i64),
+                _ => Mag::ZERO,
             };
             let (uc, us) = (ub(&c), ub(&s));
             let err_cos = us.times(d_theta).plus(uc.times(u));
@@ -1808,7 +1808,7 @@ impl Angle {
     /// no error also performs no rounding downstream (`u·(±1)` and `u·0` are exact), which is what
     /// keeps a quadrantal origin rotation at tol 0.
     ///
-    /// ★ **An `f64`, not a [`Bound`].** `Bound` exists because a deep ladder's `2⁻ᵖʳᵉᶜ` underflows
+    /// ★ **An `f64`, not a [`Mag`].** `Mag` exists because a deep ladder's `2⁻ᵖʳᵉᶜ` underflows
     /// `f64` to zero and a zero radius claims exactness; this quantity is always ε-scale, so that
     /// hazard is absent — and the consumer is `Pt3::tol`, which is `f64`.
     ///
@@ -1839,7 +1839,7 @@ impl Angle {
             return (0.0, 0.0);
         }
         let (hc, hs, rc, rs) = self.cos_sin_bounded(P);
-        let gap = |f: f64, h: &BigFloat, rad: Bound| {
+        let gap = |f: f64, h: &BigFloat, rad: Mag| {
             let diff = BigFloat::from_f64(f, P).sub(h, P, HP_RM);
             let mag = if diff.is_zero() {
                 0.0
@@ -3315,7 +3315,7 @@ mod tests {
             "a 2^-128 radius is decidable"
         );
         // An ulp-wide radius cannot be: it reaches both neighbours.
-        assert!(round_to_f64(&c, Bound::pow2(-52), 128).is_none());
+        assert!(round_to_f64(&c, Mag::pow2(-52), 128).is_none());
         // And zero is the case no precision resolves — cos 90 is exactly 0, so its interval
         // straddles zero forever. This is why `cos_sin_f64` resolves the family first.
         let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
@@ -3617,7 +3617,7 @@ mod tests {
                         continue; // exactly equal — nothing to bound
                     };
                     // `|diff| < 2^de`; the bound must be at least that.
-                    let observed = Bound::pow2(de as i64);
+                    let observed = Mag::pow2(de as i64);
                     assert!(
                         !bound.lt(observed),
                         "{what} {num}/{den}° at {prec} bits: error 2^{de} exceeds its bound 2^{:?}",
@@ -3707,7 +3707,7 @@ mod tests {
                 };
                 // `|diff| < 2^de`; the bound must be at least that.
                 assert!(
-                    !bound.lt(Bound::pow2(de as i64)),
+                    !bound.lt(Mag::pow2(de as i64)),
                     "1/sqrt({num}/{den}) at {prec} bits: error 2^{de} exceeds its bound 2^{:?}",
                     bound.exp2()
                 );
