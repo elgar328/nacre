@@ -419,6 +419,98 @@ mod tests {
         }
     }
 
+    /// ★★★ **Open item 0's lock on the population that reaches this module.** A decimal-framed
+    /// prism's constructed corners solve from their carriers' in-frame names, whose rational
+    /// Cramer overflowed on every one (measured 8/8 — while all eight points fit `Rat`), and
+    /// [`solid_points`] gives the whole solid up on the first failure — so a framed operand
+    /// used to cost a boolean its entire class reuse. The investigation probe, promoted.
+    #[test]
+    fn a_framed_prisms_corners_solve_for_reuse() {
+        let mut m = Model::new();
+        let plane = crate::SketchPlane::from_axes(
+            Point3::from_array([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
+            Vector3::from_array([0.6, 0.8, 0.0]),
+            Vector3::from_array([-0.48, 0.36, 0.8]),
+        );
+        let frame = datum_frame(&mut m, plane);
+        let OpOutput::Extrude { solid: prism, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile: crate::Profile2d::polygon(vec![
+                    Point2::from_array([0.1111111111111111, 0.1234567890123456]),
+                    Point2::from_array([4.123456789012345, 0.2345678901234567]),
+                    Point2::from_array([3.9876543210987654, 3.1234567890123459]),
+                    Point2::from_array([0.2222222222222222, 2.765432109876543]),
+                ])
+                .unwrap(),
+                dist: 2.5,
+            },
+        )
+        .expect("the framed prism") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+
+        // ① The solve: all eight corners — the narrow Cramer alone answered none of them.
+        let pts = solid_points(&m, prism).expect("a framed prism's corners solve");
+        assert_eq!(pts.len(), 8, "eight corners, none given up");
+
+        // ② One point, one realization road: every replayed coordinate IS a stored vertex
+        // coordinate, bit for bit. A ulp here would mean construction and replay realize one
+        // rational through two roads — a finding, not a tolerance.
+        let mut stored: std::collections::HashSet<[u64; 3]> = std::collections::HashSet::new();
+        let sol = m.solids.get(prism);
+        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+            for &fh in &m.shells.get(sh).faces {
+                for &he in &m.faces.get(fh).outer.half_edges {
+                    stored.insert(
+                        m.vertex_point(he_start(&m, he))
+                            .as_array()
+                            .map(f64::to_bits),
+                    );
+                }
+            }
+        }
+        assert_eq!(stored.len(), 8, "a prism has eight distinct corners");
+        for p in &pts {
+            assert!(
+                stored.contains(&p.coord.map(f64::to_bits)),
+                "a replayed corner {:?} is not any stored coordinate",
+                p.coord
+            );
+        }
+
+        // ③ The gate bites, in the consultation direction the ceiling used to close: a class
+        // owned by the world cuboid asks for the *prism's* points, so it can now leave
+        // `Arrange`. (The other direction — prism-owned classes consulting the cuboid — was
+        // always open, so it proves nothing here.)
+        let cub = m.add_cuboid(
+            Point3::from_array([-2.0, -2.0, -2.0]),
+            Point3::from_array([10.0, 10.0, 10.0]),
+        );
+        m.rebuild_adjacency();
+        let setup = crate::planes::plane_index_setup(&m, prism, cub).expect("plane setup");
+        let plans = class_plans(
+            &m,
+            ClassReuse::Proved,
+            BoolKind::Fuse,
+            prism,
+            cub,
+            &setup.geom,
+            &setup.class_owner,
+        );
+        let opened = plans
+            .iter()
+            .zip(&setup.class_owner)
+            .filter(|(p, o)| **o == Some(SolidSide::B) && **p != ClassPlan::Arrange)
+            .count();
+        assert!(
+            opened > 0,
+            "no cuboid-owned class left Arrange — the reopened road was not exercised"
+        );
+    }
+
     /// ★★ S7: **which populations the def road answers for**, pinned per producer. Measured
     /// against the pre-S7 `Origin` road while both existed (C2): constructed and moved agree
     /// **bit for bit**; discovered declines on both. The one recorded difference is the
