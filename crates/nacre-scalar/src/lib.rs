@@ -999,7 +999,6 @@ impl MeetPoint {
 pub fn three_planes_big(p: [&PlaneName; 3]) -> Option<MeetPoint> {
     use num_bigint::BigInt;
     use num_integer::Integer;
-    use num_traits::{Signed, ToPrimitive, Zero};
 
     let row = |name: &PlaneName| -> [BigInt; 4] {
         match name {
@@ -1011,7 +1010,18 @@ pub fn three_planes_big(p: [&PlaneName; 3]) -> Option<MeetPoint> {
             }
         }
     };
-    let m = [row(p[0]), row(p[1]), row(p[2])];
+    three_planes_int([row(p[0]), row(p[1]), row(p[2])])
+}
+
+/// [`three_planes_big`]'s integer core — Cramer over integer plane rows, one reduction per
+/// coordinate, the [`MeetPoint`] fork at the end. Separate so [`three_planes_rat`]'s fallback
+/// can reach it with rows that are *not* canonical names (wrapping those in
+/// [`PlaneName::Narrow`] would make the type say something false — that variant means "a
+/// canonical name", and [`PlaneName::coeff_ints`] asserts its denominators are 1).
+fn three_planes_int(m: [[num_bigint::BigInt; 4]; 3]) -> Option<MeetPoint> {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    use num_traits::{Signed, ToPrimitive, Zero};
 
     let det3 = |a: &[[BigInt; 3]; 3]| -> BigInt {
         let minor = |r0: usize, r1: usize, c0: usize, c1: usize| -> BigInt {
