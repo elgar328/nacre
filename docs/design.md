@@ -475,9 +475,10 @@ pub enum Operation {
   가리키던 datum 은 새 복사본을 안 따라간다; 정점이 base 를 정하고 모션이 옮기며 **더해질 뿐
   곱해지지 않는다**. 대가로 그런 datum 위의 솔리드는 **정확한 강체 이동에도 노드를 얻는다**.
 - **거절은 원인별**(`VerticesInMixedFrames`·`CollinearVertices`·`DuplicateVertex`·
-  `VertexNotThreePlane`·`VertexPointTooWide`)이고, «담체 셋이 안 만난다» 는 거절이 아니라
+  `VertexNotThreePlane`)이고, «담체 셋이 안 만난다» 는 거절이 아니라
   **단언**이다 — 그 정점이 존재한다는 것이 곧 만났다는 뜻이므로 불변식 위반이지 사용자 오류가
-  아니다.
+  아니다. (`VertexPointTooWide` 는 열린 항목 17 로 은퇴 — 폭 무관 이름 유도
+  `plane_name_from_meets` 가 그 인구를 named 도로에 태운다; 2026-08-09.)
 - ★★★★★ **정정(2026-08-08)**: 출하 직후 검토가 결함 하나를 찾았다 — 이 팔이 세 정점이
   공유하는 **프레임을 계산해 놓고 버리고** 모션을 `None` 으로 저장했다. 기울어진 프레임 위
   프리즘의 먼캡은 그 프레임에서 `w = dist`, 즉 정준 이름이 **세계 평면 `z = dist` 와 같다** —

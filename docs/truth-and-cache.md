@@ -845,14 +845,32 @@ STEP 출력, undo/replay.
    **유일한 잔여 — 깊이**: 담체가 이름 없는 datum 인 정점(datum 위 datum 의 정점)은 producer
    가 `VerticesInMixedFrames` 로 거절한다. 인구 0; 인구가 생기면 재개하고 라벨 분리를 잰다.
 
-17. ★★ **`VertexPointTooWide` 는 혼합 프레임과 다른 population 이고 더 싸게 닫힌다**
-   (신설 2026-08-08). 담체가 프레임을 **공유하고** 만나는 점도 **정확한 유리수**인데 `Rat` 에만
-   안 들어가는 경우다 ⇒ 위 16 의 벽이 아니다: `plane_name_big` 의 «분모 털고 정수» 를
-   `MeetPoint::Wide` 에 적용하면 **`PlaneName::Wide` 이름이 나오고**, `WideFrame` 이 프레임까지
-   준다 ⇒ **판정층을 한 줄도 안 건드리고 닫힌다**(판정 비용은 항목 15 닫힘 이후 게이트가
-   여는 표에서는 공짜, 혼합 표에서는 상승).
-   이 코퍼스에선 **미발화**다(`wide_carrier = 0`, `too_wide = 0`) — 허구의 픽스처를 만들지 않고
-   미측정으로 기록한다.
+17. ✔ **닫힘 (2026-08-09, `42ce674`·`c2ceb7f`·docs) — 폭은 진술의 문제였던 적이 없다.**
+   원문: 담체가 프레임을 공유하고 만나는 점도 정확한 유리수인데 `Rat` 에만 안 들어가면
+   producer 가 `VertexPointTooWide` 로 거절했다. 문서 처방대로 닫혔다:
+   - **scalar**: `plane_name_from_meets([&MeetPoint;3])` — `plane_name_big` 의 lift-이후 몸통을
+     분리(`plane_name_from_lifted`)해 폭 무관 점에서 같은 join·정준화. 잠금은 양쪽 다
+     손-oracle: wide 만남 셋이 놓인 **T: 7x+11y−13z+1=0**(narrow 이름) 과 **T_w: 2⁷⁰x +
+     y/5³⁰ − z + 1 = 0**(정준 정수 ~2¹⁴⁰ — wide 이름) — 유도가 자기 자신과 비교되지 않는다.
+   - **topo/ops**: `through_meets`(폭 필터 없는 solve) 위에 `plane_name_through` 를 다시
+     세우고(`through_points_rat` 는 전-narrow **투영**으로 유지 — 증인 base 가 `[Rat;3]` 인
+     타입 사실), producer 의 거절 줄과 **`OpError::VertexPointTooWide` 변종을 삭제**
+     (`ImplicitPlaneUnsupported` 선례 — 도달 불가 변종은 지운다). Wide 만남의 캐시 앵커는
+     **첫 저장 정점의 세계 캐시**(정의의 자기 재생 — 8/8 잠금이 근거; wide 점의 f64 는 5⁻⁴⁰
+     처럼 정확 lift 가 `i128` 을 떠나므로 재생-재현이 불가능하고, 그럴 필요도 없었다).
+   - **구현이 잡은 둘째 벽(계획 1회차가 예견한 자리)**: «named ⇔ narrow 풀이» 불변식을 이
+     항목이 깨므로 ① `surface_witness_triangle` 에 probe 폴백(named 인데 풀이-불가 →
+     자기 프레임의 정준 probe 셋 — collect_planes 의 probe 가지와 같은 논증), ② 항목 15 의
+     σ-접기(`name_stored_ints`)는 증인 base 가 이름 평면 위가 아니면 — probe 증인은
+     프레임-국소 좌표라 **이름과 다른 프레임을 말한다** — debug_assert 가 아니라 **decline**
+     이 옳다(`name_ints` None → 그 평면은 톨러런스 길 유지: 느리고, 틀리지 않는다).
+   - **e2e 실행 증명**: wide-만남 datum 이 이름·interning(재진술 = 같은 핸들; 공유-담체
+     삼중 = 놓인 평면의 기존 핸들로 intern)·프레임·스케치·**불리언**까지 통과 — named 평면의
+     probe-증인 인구의 첫 실행. moved 팔(37° 공유 사슬) 포함. 판정층·collect_planes·
+     frame_chain 은 예고대로 **0 변경**.
+   - 코퍼스 인구는 여전히 0(census 비트 동일 ×3) — 능력이 열렸고, 픽스처는 합법적 수제
+     모델(`push_plane`+`push_vertex`)로 상시 잠금이 됐다. `MeetPoint::coord_f64` 는 구현 중
+     소비자가 죽어 **커밋 사이에 태어나고 은퇴했다**(미소비 기계는 남기지 않는다).
 
 10. **감김(`oriented_ring`)은 아직 f64 다** — 배치된 3D 점의 면적벡터·법선 내적(ops).
    `check()` 가 단순성(≠0 면적)을 진실 위에서 보증하므로 지금은 건전하지만, f64 폴백 소멸

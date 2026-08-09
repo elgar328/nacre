@@ -7925,3 +7925,45 @@ x-미러 — 큰 슬래브로 잘라 `FrameWide` 벽이 결과에 안 들어오�
 벽-프레임 도구(pocket 도구 모양) **자신**은 여전히 decline — 꼭짓점 담체가 혼합 프레임
 (밑캡 = 벽의 프레임, 자기 벽 = 자기 스케치 프레임). 항목 13/14 의 인구이고, 이 항목의 천장과
 다른 벽임을 probe 가 갈랐다(`target_solves=Some(8) tool_solves=None`).
+
+## ★★★ 열린 항목 17 — 넓은 만남점의 datum 이 이름을 지킨다 (2026-08-09)
+
+커밋 `42ce674`(scalar) · `c2ceb7f`(topo/ops) · docs. census 비트 동일 ×3 (코퍼스 인구 여전히 0 —
+능력 개방 + 수제 합법 픽스처 상시 잠금).
+
+### 지은 것
+
+- **scalar**: `plane_name_from_lifted`(lift-이후 몸통 분리, blame-격리 리팩토링) +
+  `plane_name_from_meets([&MeetPoint;3])`. 잠금은 **양쪽 출력 폭 모두 손-oracle**:
+  wide 만남 셋이 구성상 놓인 T(7x+11y−13z+1=0 — narrow 이름 문자 그대로)와
+  T_w(2⁷⁰x+y/5³⁰−z+1=0 — 정준 정수 ~2¹⁴⁰, 손으로 계산한 BigInt 벡터). 전-Narrow proptest 는
+  `plane_name_exact` 와 일치.
+- **topo**: `through_meets`(폭 필터 없는 solve — 기존 solve 는 이미 BigInt 였고 마지막
+  `narrow()?` 만 천장이었다) → `plane_name_through` 재배선, `through_points_rat` 는 전-narrow
+  **투영**으로 유지(증인 base 는 `[Rat;3]` 라는 타입 사실).
+- **ops**: producer pass 2 가 meets 로(거절 줄 삭제, collinear 는 `plane_name_from_meets` 의
+  None), `OpError::VertexPointTooWide` **변종 삭제**, `surface_witness_triangle` 에 named-인데-
+  풀이불가 → 자기 프레임 probe 폴백, point_width 분류기 `TooWide` 변종 소멸(`Pure(frame,
+  MeetPoint)` 로 통일 — producer 를 그대로 비춘다, `accepted_wide` 카운터 신설).
+
+### 구현 중 잡힌 것 — 예측 대 결과
+
+| 예측(계획) | 결과 |
+|---|---|
+| 판정층·collect_planes·frame_chain 0 변경 | ✓ 실행 증명(e2e 불리언 — named 평면의 probe-증인 인구 첫 실행) |
+| 앵커: Wide 는 `coord_f64`+`replay_chain_coord` | **반증 2회**: ① `replay_chain_coord` 는 `#[cfg(test)]` — 계획이 프로덕션 가용성을 확인 안 함. ② f64 실현의 정확 lift 재생도 불가 — 5⁻⁴⁰ 의 f64 는 분모 ~2¹⁴⁶ 인 이진 유리수라 `Rat` lift 가 죽는다. 옳은 앵커는 **첫 저장 정점의 세계 캐시**(정의의 자기 재생 — 8/8 잠금이 근거)였고, 그 결과 `MeetPoint::coord_f64` 는 **커밋 사이에 태어나 은퇴**(미소비 기계는 안 남긴다 — plane_iv_through 선례) |
+| σ-접기(항목 15)와의 충돌은 안 예견 | **잡힘**: probe-증인 평면은 named 인데 증인 base 가 프레임-국소 좌표라 σ 의 전제(«증인과 이름이 같은 프레임을 말한다»)가 깨진다 — 항목 15 의 debug_assert 가 발화해 가르쳐줬고, decline 분기로 전환(name_ints None → 톨러런스 길: 느리고 안 틀림). 그 assert 는 결함 검출기가 아니라 **프레임 판별기**였다 |
+| 예상 파손 = point_width 1곳 | ✓ (분류기 재구성 — 단언 무접촉, `too_wide` 버킷은 원래 «특이 담체»까지 뭉치고 있었음을 재구성이 드러냄) |
+| 픽스처 셈(z 분모 ~13·2⁸⁰·5⁴⁰) | ✓ wide 확정 — 단 세계 캐시 z 를 `Rat` 로 계산하려던 첫 시도가 정확히 그 넘침으로 죽었다(이 항목의 요점을 픽스처가 자기 몸으로 시연) |
+
+### 잠금
+
+벽-넘기 단언(`through_points_rat` None ∧ `plane_name_through` Some — 정확히 이 항목이 연 문),
+이름 = 손-oracle, 재진술 = 같은 핸들, 공유-담체 = 놓인 평면 핸들로 intern, moved 팔(37° 사슬),
+e2e cut + validate.
+
+### 남은 것
+
+`VerticesInMixedFrames` 의 유일 인구는 여전히 깊이(이름 없는 datum 담체). probe-증인 named
+평면의 판정은 톨러런스 길(σ decline — 정확 rescue 없음): 인구가 생기고 비용이 아프면 «프레임
+좌표로 말하는 name_ints» 가 후속감이다.
