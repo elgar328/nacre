@@ -359,15 +359,17 @@ fn measure(m: &Model) -> Tally {
 /// ★ Solving per triple would be the same `three_planes_big` call `n²` times over; solving per
 /// vertex makes the triple pass plain combination arithmetic, so the whole `C(n,3)` sweep runs
 /// with no cap and nothing silently dropped.
+#[allow(clippy::large_enum_variant)] // a per-vertex scratch value in a measurement walk
 enum VertexReach {
-    /// Carriers share one motion and the point fits `Rat` — the frame it is written in, and it.
-    Pure(Option<Handle<nacre_topo::MotionNode>>, [Rat; 3]),
+    /// Carriers share one motion — the frame it is written in, and the meet **at whatever width
+    /// it needs** (★ re-unified when open item 17 landed: a meet wider than `Rat` used to be its
+    /// own `TooWide` kind and block its triple; the named road accepts it now, so width stopped
+    /// being a reach distinction — exactly mirroring the producer).
+    Pure(Option<Handle<nacre_topo::MotionNode>>, MeetPoint),
     /// This vertex's own three carriers are in different frames. **The kernel makes these**, not
     /// the caller: a cut between a turned operand and a still one leaves corners where an unmoved
     /// wall meets two turned ones.
     Straddle,
-    /// Carriers agree, the point is exact, and it does not fit `Rat`.
-    TooWide,
     /// `OnSeam`, or a carrier with no name.
     Undefined,
 }
@@ -394,7 +396,10 @@ struct Reach {
     /// still refuse an individual one (`ThroughFrameUndecided`), so this is the *classifier's*
     /// answer, same as `accepted`.
     accepted_nameless: usize,
-    too_wide: usize,
+    /// Accepted triples in which at least one meet needed the wide vessel — visibility for the
+    /// population `VertexPointTooWide` used to refuse (open item 17), kept as a count so
+    /// "still 0 in this corpus" stays a statement the table makes rather than an assumption.
+    accepted_wide: usize,
     undefined: usize,
     /// Only decidable on the accepted road: a triple that solved and named no plane.
     collinear: usize,
@@ -428,8 +433,8 @@ impl Reach {
             pct(self.accepted_straddle),
         );
         println!(
-            "stat datum_reach {what:18} collinear={} too_wide={} undefined={}",
-            self.collinear, self.too_wide, self.undefined
+            "stat datum_reach {what:18} collinear={} accepted_wide={} undefined={}",
+            self.collinear, self.accepted_wide, self.undefined
         );
     }
 }
@@ -469,12 +474,9 @@ fn datum_reach(m: &Model) -> Reach {
             if names.len() != 3 {
                 return VertexReach::Undefined;
             }
-            match nacre_scalar::three_planes_big([names[0], names[1], names[2]])
-                .as_ref()
-                .and_then(MeetPoint::narrow)
-            {
-                Some(p) => VertexReach::Pure(a, *p),
-                None => VertexReach::TooWide,
+            match nacre_scalar::three_planes_big([names[0], names[1], names[2]]) {
+                Some(p) => VertexReach::Pure(a, p),
+                None => VertexReach::Undefined, // carriers share a line — no unique point
             }
         })
         .collect();
@@ -499,30 +501,28 @@ fn datum_reach(m: &Model) -> Reach {
                     t.undefined += 1;
                 } else if three.iter().any(|r| matches!(r, VertexReach::Straddle)) {
                     t.accepted_straddle += 1;
-                } else if three.iter().any(|r| matches!(r, VertexReach::TooWide)) {
-                    // ★ Ranked above "frames differ" only because a too-wide vertex has no point
-                    // to compare frames with. The producer's per-vertex loop can reach the frame
-                    // check first on an earlier vertex, so the two orders can disagree — moot
-                    // while this stays 0, and recorded rather than glossed.
-                    t.too_wide += 1;
                 } else {
                     let f = three.iter().map(|r| match r {
                         VertexReach::Pure(f, _) => *f,
                         _ => unreachable!("the other kinds were taken above"),
                     });
-                    let pts: Vec<[Rat; 3]> = three
+                    let pts: Vec<&MeetPoint> = three
                         .iter()
                         .map(|r| match r {
-                            VertexReach::Pure(_, p) => *p,
+                            VertexReach::Pure(_, p) => p,
                             _ => unreachable!("the other kinds were taken above"),
                         })
                         .collect();
                     if f.clone().collect::<std::collections::HashSet<_>>().len() != 1 {
                         t.accepted_nameless += 1;
-                    } else if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
+                    } else if nacre_scalar::plane_name_from_meets([pts[0], pts[1], pts[2]])
+                        .is_none()
+                    {
                         t.collinear += 1;
                     } else {
                         t.accepted += 1;
+                        t.accepted_wide +=
+                            usize::from(pts.iter().any(|p| matches!(p, MeetPoint::Wide(_))));
                     }
                 }
             }

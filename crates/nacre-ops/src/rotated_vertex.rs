@@ -66,8 +66,11 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
 /// implicit point (16-2). The same computation `collect_planes`' arms perform per face, spelled
 /// once for the per-carrier consumer: `Known` points replay through the surface's own motion; a
 /// **named** `Through` plane (rational closure) solves through `through_points_rat` and replays
-/// the same way. `None` for a nameless `Through` carrier (a datum on a nameless datum — depth,
-/// open item 16-3's question) and for a cylinder.
+/// the same way. ★ A named `Through` plane whose meets are wider than any witness base (open
+/// item 17) gets its **own frame's canonical probes** instead — on-plane exact definitions, the
+/// same witness `collect_planes`' probe branch builds; `frame_chain` already carries the
+/// plane's later motion, so those return directly. `None` for a nameless `Through` carrier
+/// (a datum on a nameless datum — depth, open item 16-3's question) and for a cylinder.
 pub(crate) fn surface_witness_triangle(
     model: &Model,
     h: Handle<nacre_geom::Surface>,
@@ -80,7 +83,16 @@ pub(crate) fn surface_witness_triangle(
         nacre_topo::SurfaceTruth::Plane {
             points: nacre_topo::PlanePoints::Through(vs),
             motion,
-        } => (model.through_points_rat(*vs)?, *motion),
+        } => match model.through_points_rat(*vs) {
+            Some(base) => (base, *motion),
+            None if model.surface_name.contains_key(&h) => {
+                let chain = frame_chain(model, h, &nacre_topo::FramePlacement::Canonical, false)?;
+                let r = nacre_scalar::Rat::from_int;
+                let probe = |u: i128, v: i128| replay(WitnessPoint::at([r(u), r(v), r(0)]), &chain);
+                return Some([probe(0, 0)?, probe(1, 0)?, probe(0, 1)?]);
+            }
+            None => return None, // nameless Through — depth
+        },
         nacre_topo::SurfaceTruth::Cylinder { .. } => return None,
     };
     let w = base.map(WitnessPoint::at);

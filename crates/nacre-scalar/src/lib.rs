@@ -1020,23 +1020,6 @@ impl MeetPoint {
         }
     }
 
-    /// **The point as an f64 coordinate triple — a cache realization, rounded.** The `Narrow`
-    /// arm is exactly [`Rat::to_f64`] per coordinate (bit-preserving for every caller that read
-    /// the point that way before this existed); the `Wide` arm divides through
-    /// `Ratio<BigInt>`'s exponent-aware conversion, so a 200-bit numerator over a 200-bit
-    /// denominator comes back finite instead of `inf/inf`.
-    pub fn coord_f64(&self) -> [f64; 3] {
-        match self {
-            MeetPoint::Narrow(p) => p.map(|r| r.to_f64()),
-            MeetPoint::Wide(p) => core::array::from_fn(|i| {
-                use num_traits::ToPrimitive;
-                num_rational::Ratio::new_raw(p[i].0.clone(), p[i].1.clone())
-                    .to_f64()
-                    .unwrap_or(f64::NAN)
-            }),
-        }
-    }
-
     /// **The width `Rat` would have to hold** — the widest of the six magnitudes (numerator and
     /// denominator of each coordinate) *after* the per-coordinate reduction. `≤ 127` is exactly
     /// the `Narrow` condition, so this is the quantity, not a proxy for it.
@@ -2392,21 +2375,6 @@ mod tests {
             let p = |x: i128| MeetPoint::Narrow([r(x, 1), r(x, 1), r(0, 1)]);
             let (a, b, c) = (p(0), p(1), p(2));
             assert_eq!(plane_name_from_meets([&a, &b, &c]), None);
-        }
-
-        /// The `Wide` arm of [`MeetPoint::coord_f64`] stays finite where naive division
-        /// (`num.to_f64() / den.to_f64()`) would be `inf/inf`.
-        #[test]
-        fn a_wide_coordinate_realizes_finite() {
-            let big: BigInt = BigInt::from(1) << 200u32;
-            let m = MeetPoint::Wide([
-                ((&big * BigInt::from(3) + BigInt::from(1)), big.clone()),
-                (BigInt::from(1), &big * BigInt::from(2)),
-                (-&big, &big + BigInt::from(1)),
-            ]);
-            let c = m.coord_f64();
-            assert!(c.iter().all(|x| x.is_finite()), "every coordinate finite");
-            assert!((c[0] - 3.0).abs() < 1e-9 && c[1].abs() < 1e-9 && (c[2] + 1.0).abs() < 1e-9);
         }
 
         proptest! {

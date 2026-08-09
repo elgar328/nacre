@@ -1125,10 +1125,10 @@ fn reversing_the_vertex_order_keeps_the_handle_and_flips_the_frame() {
 /// no fixture is a cause that was never measured — and `VerticesInMixedFrames` in particular is
 /// how the next stage will count what it is opening.
 ///
-/// ★ `VertexPointTooWide` is deliberately absent: reaching it needs a vertex whose carriers are
-/// all named yet whose meeting point leaves `Rat`, and this kernel's corpus produces no wide
-/// carrier at all (measured `wide_carrier = 0`). Recorded as unfired rather than faked — the
-/// stage that removes the requirement removes the variant with it.
+/// ★ `VertexPointTooWide` no longer exists to list: open item 17 removed the requirement and
+/// the variant with it, exactly as this note used to predict ("the stage that removes the
+/// requirement removes the variant") — a meet wider than `Rat` now names its plane through
+/// `plane_name_from_meets`, locked by `a_datum_through_wide_meets_keeps_its_name` below.
 #[test]
 fn a_datum_through_vertices_refuses_by_cause() {
     let mut m = tilted_prism_with_pocket();
@@ -2075,4 +2075,282 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
              a frame coordinate was used as a world point"
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// open item 17 — a datum through meets wider than `Rat` keeps its name
+// ---------------------------------------------------------------------------------------------
+
+/// One vertex whose three narrow-named carriers meet at a point **wider than `Rat`**, lying on
+/// the integer plane `base` by construction: the carriers are `x = m·2⁻⁸⁰`, `y = w·5⁻⁴⁰`, and
+/// `base + λ·(x − m·2⁻⁸⁰)` — the third crosses the first two exactly where `base` does, so the
+/// meet is on `base` while no carrier *is* `base` (unless `third` overrides it). The meet's
+/// z-denominator is `~13·2⁸⁰·5⁴⁰` (~177 bits), which no `Rat` can hold.
+///
+/// `place` positions the world cache coordinate (identity, or the fixture's motion in f64).
+#[allow(clippy::too_many_arguments)]
+fn wide_meet_vertex(
+    m: &mut Model,
+    base: [i128; 4],
+    mnum: i128,
+    w: i128,
+    lambda: i128,
+    motion: Option<nacre_store::Handle<nacre_topo::MotionNode>>,
+    third: Option<nacre_store::Handle<Surface>>,
+    place: impl Fn([f64; 3]) -> [f64; 3],
+) -> nacre_store::Handle<nacre_topo::Vertex> {
+    use nacre_scalar::Rat;
+    let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let u = r(mnum, 1 << 80);
+    let v = r(w, 5i128.pow(40));
+    let push = |m: &mut Model, pts: [[Rat; 3]; 3]| -> nacre_store::Handle<Surface> {
+        let f = |q: [Rat; 3]| Point3::from_array([q[0].to_f64(), q[1].to_f64(), q[2].to_f64()]);
+        let cache = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
+            .expect("a fixture plane spans");
+        m.push_plane(cache, pts, motion).0
+    };
+    let a = push(
+        m,
+        [
+            [u, r(0, 1), r(0, 1)],
+            [u, r(1, 1), r(0, 1)],
+            [u, r(0, 1), r(1, 1)],
+        ],
+    );
+    let b = push(
+        m,
+        [
+            [r(0, 1), v, r(0, 1)],
+            [r(1, 1), v, r(0, 1)],
+            [r(0, 1), v, r(1, 1)],
+        ],
+    );
+    // z on a plane `[c0, c1, c2, c3]` at (x, y): `z = (c0·x + c1·y + c3) · (−1/c2)`.
+    let z_on = |c0: Rat, c1: Rat, c2: i128, c3: Rat, x: Rat, y: Rat| -> Rat {
+        c0.checked_mul(x)
+            .unwrap()
+            .checked_add(c1.checked_mul(y).unwrap())
+            .unwrap()
+            .checked_add(c3)
+            .unwrap()
+            .checked_mul(r(-1, c2))
+            .unwrap()
+    };
+    let c = third.unwrap_or_else(|| {
+        let c0 = r(base[0] + lambda, 1);
+        let c1 = r(base[1], 1);
+        let c3 = r(base[3], 1)
+            .checked_sub(r(lambda, 1).checked_mul(u).unwrap())
+            .unwrap();
+        let zc = |x: Rat, y: Rat| z_on(c0, c1, base[2], c3, x, y);
+        push(
+            m,
+            [
+                [r(0, 1), r(0, 1), zc(r(0, 1), r(0, 1))],
+                [r(1, 1), r(0, 1), zc(r(1, 1), r(0, 1))],
+                [r(0, 1), r(1, 1), zc(r(0, 1), r(1, 1))],
+            ],
+        )
+    });
+    // The world cache: the meet realized in f64, placed by the fixture's own motion. ★ f64 on
+    // purpose — the exact z is the very value no `Rat` holds (denominator ~13·2⁸⁰·5⁴⁰), which
+    // is what this fixture exists to state; a cache is a rounding by definition.
+    let zw = -(base[0] as f64 * u.to_f64() + base[1] as f64 * v.to_f64() + base[3] as f64)
+        / base[2] as f64;
+    let coord = place([u.to_f64(), v.to_f64(), zw]);
+    m.push_vertex(
+        nacre_topo::VertexDef::ThreePlane([a, b, c]),
+        Point3::from_array(coord),
+        None,
+    )
+}
+
+/// The three fixture vertices on `base`, world-framed by default.
+fn wide_meet_triple(
+    m: &mut Model,
+    base: [i128; 4],
+    motion: Option<nacre_store::Handle<nacre_topo::MotionNode>>,
+    third: Option<nacre_store::Handle<Surface>>,
+    place: &impl Fn([f64; 3]) -> [f64; 3],
+) -> [nacre_store::Handle<nacre_topo::Vertex>; 3] {
+    [
+        wide_meet_vertex(m, base, 1, 1, 1, motion, third, place),
+        wide_meet_vertex(m, base, 3, 1, 2, motion, third, place),
+        wide_meet_vertex(m, base, 1, 7, 3, motion, third, place),
+    ]
+}
+
+/// ★★★ **Open item 17's lock**: the wall the producer used to reject (`VertexPointTooWide`)
+/// is crossed — `through_points_rat` still says the meets fit no witness (`None`), and the
+/// name is derived anyway, equal to the hand-known plane `T: 7x + 11y − 13z + 1 = 0` the
+/// meets were constructed to lie on. Then the plane lives a full life: interned by name on
+/// re-statement, framed, extruded on, and cut against a world solid — the probe-witness road
+/// for a named plane whose meets no witness base can hold, run end to end.
+#[test]
+fn a_datum_through_wide_meets_keeps_its_name() {
+    use nacre_scalar::{MeetPoint, PlaneName, Rat};
+    let t = [7i128, 11, -13, 1];
+    let mut m = Model::new();
+    let vs = wide_meet_triple(&mut m, t, None, None, &|c| c);
+    let mut sorted = vs;
+    sorted.sort_by_key(|v| v.index());
+
+    // The wall, crossed exactly: no witness triple exists, the name does.
+    let meets = m.through_meets(sorted).expect("one shared frame");
+    assert!(
+        meets.iter().any(|p| matches!(p, MeetPoint::Wide(_))),
+        "fixture validity: a meet must be wide, or this test measures nothing"
+    );
+    assert!(
+        m.through_points_rat(sorted).is_none(),
+        "no [Rat; 3] witness exists for a wide meet — the fork, not a refusal"
+    );
+    let expected = PlaneName::Narrow([
+        Rat::from_int(7),
+        Rat::from_int(11),
+        Rat::from_int(-13),
+        Rat::from_int(1),
+    ]);
+    assert_eq!(
+        m.plane_name_through(sorted).as_ref(),
+        Some(&expected),
+        "the plane the meets lie on, by hand"
+    );
+
+    // The statement is accepted, named, and interns to one handle on re-statement.
+    let Ok(OpOutput::DatumPlane { plane, frame }) = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    ) else {
+        panic!("a datum through wide meets is accepted");
+    };
+    assert_eq!(m.surface_name.get(&plane), Some(&expected));
+    let Ok(OpOutput::DatumPlane { plane: again, .. }) = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    ) else {
+        panic!("re-stating the same datum is accepted");
+    };
+    assert_eq!(plane, again, "one plane, one handle — interned by name");
+
+    // End to end: a tool on the datum's frame cuts a world cuboid. The tool's base cap is the
+    // wide-meet plane, whose judging witness is its own frame's probes.
+    let OpOutput::Extrude { solid: tool, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: square(-0.5, 0.5),
+            dist: 1.0,
+        },
+    )
+    .expect("the wide-meet datum hosts a sketch") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    let cub = m.add_cuboid(
+        Point3::from_array([-2.0, -2.0, -2.0]),
+        Point3::from_array([2.0, 2.0, 2.0]),
+    );
+    m.rebuild_adjacency();
+    let OpOutput::Boolean { solids } = apply(
+        &mut m,
+        &Operation::Boolean {
+            kind: nacre_ops::BoolKind::Cut,
+            a: cub,
+            b: tool,
+        },
+    )
+    .expect("the boolean over the wide-meet plane opens") else {
+        unreachable!()
+    };
+    assert!(!solids.is_empty(), "the cut leaves material");
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+}
+
+/// The interning arm: when the meets' own plane is one the model already holds (here, the
+/// shared third carrier `T` itself), the datum comes back as **that handle** — coplanar
+/// statements collapse by name, wide meets or not.
+#[test]
+fn a_wide_meet_datum_interns_onto_the_plane_it_lies_on() {
+    use nacre_scalar::Rat;
+    let t = [7i128, 11, -13, 1];
+    let mut m = Model::new();
+    let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+    let zc = |x: Rat, y: Rat| -> Rat {
+        r(7, 1)
+            .checked_mul(x)
+            .unwrap()
+            .checked_add(r(11, 1).checked_mul(y).unwrap())
+            .unwrap()
+            .checked_add(r(1, 1))
+            .unwrap()
+            .checked_mul(r(-1, -13))
+            .unwrap()
+    };
+    let f = |q: [Rat; 3]| Point3::from_array([q[0].to_f64(), q[1].to_f64(), q[2].to_f64()]);
+    let t_pts = [
+        [r(0, 1), r(0, 1), zc(r(0, 1), r(0, 1))],
+        [r(1, 1), r(0, 1), zc(r(1, 1), r(0, 1))],
+        [r(0, 1), r(1, 1), zc(r(0, 1), r(1, 1))],
+    ];
+    let cache = nacre_geom::Plane::through_points(f(t_pts[0]), f(t_pts[1]), f(t_pts[2])).unwrap();
+    let t_handle = m.push_plane(cache, t_pts, None).0;
+
+    let vs = wide_meet_triple(&mut m, t, None, Some(t_handle), &|c| c);
+    let Ok(OpOutput::DatumPlane { plane, .. }) = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    ) else {
+        panic!("accepted");
+    };
+    assert_eq!(plane, t_handle, "the datum is the plane it lies on");
+}
+
+/// The moved arm: the nine carriers share one recorded motion, so the meets speak in the
+/// pre-motion frame and the cache anchors through the chain — the `Wide` anchor's own road.
+#[test]
+fn a_moved_wide_meet_datum_frames_and_replays() {
+    use nacre_scalar::{Angle, Rat, Rotation};
+    let t = [7i128, 11, -13, 1];
+    let mut m = Model::new();
+    let leaf = m.push_motion(
+        nacre_topo::Motion::Rotate {
+            axis: Axis::Z,
+            point: [Rat::from_int(0); 3],
+            angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+        },
+        None,
+    );
+    let (s, c) = (37f64.to_radians().sin(), 37f64.to_radians().cos());
+    let place = move |p: [f64; 3]| [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]];
+    let vs = wide_meet_triple(&mut m, t, Some(leaf), None, &place);
+    let out = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    );
+    let Ok(OpOutput::DatumPlane { plane, frame: _ }) = out else {
+        panic!("a moved wide-meet datum is accepted — got {out:?}");
+    };
+    // The name speaks the pre-motion frame, exactly as an unmoved one's speaks the world.
+    let expected = nacre_scalar::PlaneName::Narrow([
+        Rat::from_int(7),
+        Rat::from_int(11),
+        Rat::from_int(-13),
+        Rat::from_int(1),
+    ]);
+    assert_eq!(m.surface_name.get(&plane), Some(&expected));
+    let _ = Rotation {
+        axis: Axis::Z,
+        point: [Rat::from_int(0); 3],
+        angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+    };
 }

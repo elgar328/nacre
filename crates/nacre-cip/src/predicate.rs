@@ -291,15 +291,19 @@ pub fn name_stored_ints(
         &u[0] * &v[1] - &u[1] * &v[0],
     ];
     let mut ints = name.coeff_ints();
-    // The σ below is exact only because the witness lies exactly on the named plane — the
-    // table contract this fold rests on, asserted while it is cheap to say where it broke.
-    debug_assert!(
-        [&p0, &p1, &p2].iter().all(|p| {
-            let r: BigInt = (0..3).map(|i| &ints[i] * &p[i]).sum::<BigInt>() + &ints[3] * &lcm;
-            r.sign() == num_bigint::Sign::NoSign
-        }),
-        "name_stored_ints: a witness base off its own named plane — the table contract is broken"
-    );
+    // The σ below is exact only when the witness bases lie exactly on the named plane — i.e.
+    // when witness and name **speak the same frame**. A nonzero residual here is not a broken
+    // table: a named plane whose meets are wider than any witness base (open item 17) is
+    // witnessed by its own frame's probes, whose bases are frame-local coordinates — a
+    // different frame from the name's. The fold then declines, `name_ints` stays `None`, and
+    // the plane keeps the toleranced routes: slower, never wrong.
+    let on_plane = [&p0, &p1, &p2].iter().all(|p| {
+        let r: BigInt = (0..3).map(|i| &ints[i] * &p[i]).sum::<BigInt>() + &ints[3] * &lcm;
+        r.sign() == num_bigint::Sign::NoSign
+    });
+    if !on_plane {
+        return None;
+    }
     let dot: BigInt = (0..3).map(|i| &ints[i] * &cross[i]).sum();
     let sigma = match dot.sign() {
         num_bigint::Sign::Plus => frame_sign,

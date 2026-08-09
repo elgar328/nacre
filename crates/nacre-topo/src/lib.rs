@@ -813,31 +813,33 @@ impl Model {
     /// what we could not name" is structural rather than two functions agreeing by habit.
     ///
     /// `None` when any vertex is not a three-plane point, when the carriers do not share one
-    /// motion (no frame holds a rational coordinate then), when a solved point does not fit
-    /// `Rat`, or when the three points are collinear. The caller tells those apart by cause; this
-    /// answers only "is there a name".
+    /// motion (no frame holds a rational coordinate then), or when the three points are
+    /// collinear. ★ A meet too wide for `Rat` is **not** on the list since open item 17: the
+    /// name is derived from the meets at whatever width they need
+    /// ([`nacre_scalar::plane_name_from_meets`]) — width was the arithmetic's problem, never
+    /// the statement's.
     pub fn plane_name_through(
         &self,
         vertices: [Handle<Vertex>; 3],
     ) -> Option<nacre_scalar::PlaneName> {
-        let p = self.through_points_rat(vertices)?;
-        nacre_scalar::plane_name_exact(p[0], p[1], p[2])
+        let m = self.through_meets(vertices)?;
+        nacre_scalar::plane_name_from_meets([&m[0], &m[1], &m[2]])
     }
 
-    /// **The three vertices' exact coordinates, in the one frame they share** — the single solve
-    /// behind both [`Model::plane_name_through`] (at push) and the judging table's witness
-    /// triangle (per operation). One spelling, so the name a plane interns under and the points a
-    /// predicate reasons about cannot describe different planes.
+    /// **The three vertices' exact meeting points, in the one frame they share** — the single
+    /// solve behind [`Model::plane_name_through`] (at push, width-free) and, through the
+    /// all-narrow projection [`Model::through_points_rat`], the judging table's witness
+    /// triangle. One spelling, so the name a plane interns under and the points a predicate
+    /// reasons about cannot describe different planes.
     ///
-    /// `None` on any of: a vertex that is not a three-plane point, carriers that do not share one
-    /// motion (then no frame holds a rational coordinate at all), a carrier with no recorded name,
-    /// or a solved point too wide for `Rat`. The producer tells these apart by cause before a
-    /// plane is ever built; here they are one answer because the caller only needs "is there one".
-    pub fn through_points_rat(
+    /// `None` on any of: a vertex that is not a three-plane point, carriers that do not share
+    /// one motion (then no frame holds a rational coordinate at all), or a carrier with no
+    /// recorded name.
+    pub fn through_meets(
         &self,
         vertices: [Handle<Vertex>; 3],
-    ) -> Option<[[nacre_scalar::Rat; 3]; 3]> {
-        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+    ) -> Option<[nacre_scalar::MeetPoint; 3]> {
+        let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
         let mut frame = None;
         for (i, vh) in vertices.iter().enumerate() {
             let VertexDef::ThreePlane(tri) = self.vertices.get(*vh).def else {
@@ -856,7 +858,23 @@ impl Model {
             let [Some(a), Some(b), Some(c)] = names else {
                 return None;
             };
-            pts[i] = *nacre_scalar::three_planes_big([a, b, c])?.narrow()?;
+            pts[i] = Some(nacre_scalar::three_planes_big([a, b, c])?);
+        }
+        Some([pts[0].take()?, pts[1].take()?, pts[2].take()?])
+    }
+
+    /// [`Model::through_meets`]' all-narrow projection — the form a **witness triangle** takes,
+    /// since a witness base is a `[Rat; 3]` by type. `None` additionally when any meet is
+    /// [`nacre_scalar::MeetPoint::Wide`]; the judging table then builds its witness another way
+    /// (the plane's own frame probes), so this is a road fork, not a refusal.
+    pub fn through_points_rat(
+        &self,
+        vertices: [Handle<Vertex>; 3],
+    ) -> Option<[[nacre_scalar::Rat; 3]; 3]> {
+        let meets = self.through_meets(vertices)?;
+        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+        for (o, m) in pts.iter_mut().zip(&meets) {
+            *o = *m.narrow()?;
         }
         Some(pts)
     }

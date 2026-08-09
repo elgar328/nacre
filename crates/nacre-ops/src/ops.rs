@@ -576,10 +576,6 @@ pub enum OpError {
     ///
     /// It is named separately so that "how much does this cost us today" stays countable.
     VerticesInMixedFrames,
-    /// A named vertex solves exactly, but its coordinate does not fit `Rat`. Stage-one only: the
-    /// plane through such points is derivable at arbitrary precision, and the stage that stops
-    /// requiring a name will stop requiring this.
-    VertexPointTooWide,
     /// A mixed-frame datum's **judged frame could not be decided** at the fixed rung: no
     /// arbitrary-axis branch's squared length — or the normal's, or the origin's denominator —
     /// could be bounded away from zero (`nacre_cip::FrameThrough::of`).
@@ -637,8 +633,9 @@ pub enum DatumDef {
     /// Rejects by cause rather than by one blanket failure, because the causes have different
     /// futures: [`OpError::VerticesInMixedFrames`] waits on a frame for a nameless plane (see
     /// there — this used to say "what the next stage opens", and that stage turned out not to be
-    /// the one that opens it), [`OpError::VertexPointTooWide`] is a limit of this one, and the
-    /// rest are the caller's.
+    /// the one that opens it), and the rest are the caller's. (`VertexPointTooWide` retired with
+    /// open item 17: a meet wider than `Rat` names its plane through `plane_name_from_meets`,
+    /// so width stopped being a cause.)
     ThroughVertices([Handle<Vertex>; 3]),
     /// **`dist` away from a plane the model already holds**, stated inside that plane's own frame
     /// as the rational triple `(0,0,d), (1,0,d), (0,1,d)`.
@@ -973,9 +970,11 @@ fn datum_plane(
     /// `PlanePoints`: it lives for one call on one stack frame, and boxing would buy nothing.)
     #[allow(clippy::large_enum_variant)]
     enum ThroughStatement {
-        /// One shared frame — the named road (S5(ii)-1): points in that frame, and the frame.
+        /// One shared frame — the named road (S5(ii)-1): the vertices' meets in that frame
+        /// (**any width** since open item 17 — a meet wider than `Rat` still names its plane
+        /// through `plane_name_from_meets`), and the frame.
         Named(
-            [[nacre_scalar::Rat; 3]; 3],
+            [nacre_scalar::MeetPoint; 3],
             Option<Handle<nacre_topo::MotionNode>>,
         ),
         /// ★ Every vertex pure, but the frames differ (open item 16, first wall): no frame
@@ -1021,8 +1020,10 @@ fn datum_plane(
         if mixed || !(frames[1] == frames[0] && frames[2] == frames[0]) {
             return Ok(ThroughStatement::Nameless);
         }
-        // Pass two, named road only: solve in the one shared frame.
-        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+        // Pass two, named road only: solve in the one shared frame. ★ The meets are kept at
+        // whatever width they need (open item 17) — the name is a function of the *plane*, and
+        // `plane_name_from_meets` derives it without ever asking a coordinate to fit `Rat`.
+        let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
         for (p, vh) in pts.iter_mut().zip(vs) {
             let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
                 unreachable!("pass one verified the definitions");
@@ -1031,15 +1032,15 @@ fn datum_plane(
             let [Some(a), Some(b), Some(c)] = names else {
                 unreachable!("pass one verified the names");
             };
-            let meet = nacre_scalar::three_planes_big([a, b, c]).expect(
+            *p = Some(nacre_scalar::three_planes_big([a, b, c]).expect(
                 "a ThreePlane vertex's carriers meet — that is why the vertex exists (C2/S7)",
-            );
-            *p = *meet.narrow().ok_or(OpError::VertexPointTooWide)?;
+            ));
         }
-        if nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).is_none() {
+        let meets = pts.map(|p| p.expect("filled above"));
+        if nacre_scalar::plane_name_from_meets([&meets[0], &meets[1], &meets[2]]).is_none() {
             return Err(OpError::CollinearVertices);
         }
-        Ok(ThroughStatement::Named(pts, frames[0].flatten()))
+        Ok(ThroughStatement::Named(meets, frames[0].flatten()))
     }
 
     match def {
@@ -1099,7 +1100,7 @@ fn datum_plane(
                 .normalize()
                 .ok_or(OpError::CollinearVertices)?;
 
-            let ThroughStatement::Named(pts, motion) = statement else {
+            let ThroughStatement::Named(meets, motion) = statement else {
                 // ★★★ **The judged road** (open item 16, first wall): every vertex pure, frames
                 // differing — no name exists, and the frame is derived from the defining points
                 // as intervals. **Validation comes before the push**: the judged constructor can
@@ -1125,22 +1126,34 @@ fn datum_plane(
                 return Ok((plane, frame));
             };
 
-            // ★★★ **The cache is a world description, and `pts` are not world coordinates unless
-            // the carriers share no motion.** Realizing them means walking the very chain the
-            // definition names — `exact.rs` states the rule ("the realization must be the
+            // ★★★ **The cache is a world description, and the meets are not world coordinates
+            // unless the carriers share no motion.** Realizing them means walking the very chain
+            // the definition names — `exact.rs` states the rule ("the realization must be the
             // definition's own replay, not a second route to the same real number"), and taking
             // any other road here is how a plane's cache and its truth end up describing
             // different planes.
-            let anchor = match motion {
-                None => Point3::from_array(pts[0].map(|r| r.to_f64())),
-                Some(leaf) => {
+            //
+            // ★ **Split by width so the narrow bits stay put**: a `Narrow` meet takes the road
+            // this arm always took, letter for letter. A `Wide` meet (open item 17) has no
+            // `Rat` triple to replay — and no f64 realization of it survives an exact lift
+            // either (a value like 5⁻⁴⁰ rounds to a dyadic whose denominator leaves `i128`) —
+            // so its cache anchors at the **first stored vertex's own world cache**: the
+            // definition's replay already performed by whoever made the vertex (the 8/8 lock is
+            // what says re-solving and replaying lands on it), and a rounded cache like every
+            // anchor (`plane_anchor.rs` measured what anchor wobble costs — nothing the judging
+            // reads).
+            let anchor = match (&meets[0], motion) {
+                (nacre_scalar::MeetPoint::Narrow(p), None) => {
+                    Point3::from_array(p.map(|r| r.to_f64()))
+                }
+                (nacre_scalar::MeetPoint::Narrow(p), Some(leaf)) => {
                     let chain = crate::rotated_vertex::motion_chain(model, leaf)
                         .ok_or(OpError::PlaneWithoutExactForm)?;
-                    let p =
-                        crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(pts[0]), &chain)
-                            .ok_or(OpError::PlaneWithoutExactForm)?;
-                    Point3::from_array(p.coord)
+                    let w = crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(*p), &chain)
+                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                    Point3::from_array(w.coord)
                 }
+                (nacre_scalar::MeetPoint::Wide(_), _) => model.vertex_point(sorted[0]),
             };
             let cache =
                 Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
