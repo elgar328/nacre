@@ -403,3 +403,118 @@ fn what_a_datum_bearing_boolean_costs() {
     }
     assert!(seen > 0, "no arm built — the measurement is empty");
 }
+
+/// ★★★ **What the name-integer rescue actually buys, measured where its gates open.**
+///
+/// The first datum-bearing boolean (the table above) is a **mixed-frame** table: the wide name
+/// speaks for the world (its carriers are discovered vertices — no chain), the target's walls
+/// carry the wf frame, and the tool's walls carry the datum-derived `FrameWide` — no question
+/// pairing them lives in one frame, so the integer gates stay shut there *by design* (and the
+/// `FrameWide` walls' frame is irrational, so no integer description of those questions
+/// exists to be found). The populations the rescue serves are the **second generation**:
+///
+/// - a solid whose faces are all world-named with the wide slice among them, cut again by a
+///   world tool — the world gate;
+/// - the same solid moved whole (rotate/mirror), cut by a tool moved with it — out of this
+///   measurement's scope (the unit differential covers its correctness).
+///
+/// Two arms, one shape: the cuboid sliced by a **wide**-named datum plane vs a **narrow**-named
+/// one, each then cut by the same world column. Before the rescue the wide arm had no exact
+/// route at all; after it, the wide arm's cap-vs-column questions answer from the name's
+/// integers. (The narrow arm's cap has a name too, but its *witness* is deep-rational, so its
+/// f64 shortcuts may decline on rounding — the coefficient-mismatch population the plan lists
+/// as its own follow-up. The gate deliberately requires a wide participant, so the narrow arm
+/// measures the status quo.)
+#[test]
+#[ignore = "measurement — run explicitly, prints the table"]
+fn what_a_second_generation_boolean_costs() {
+    use nacre_cip::kernel::frame3::climb_census;
+
+    let run = |want_wide: bool| -> Option<(u64, u64, u64)> {
+        let mut m = wf_family_with_pocket();
+        // A datum through the first triple of the wanted width, carrying a slab tool so large
+        // that only the datum plane itself reaches the cuboid below.
+        let solvable: Vec<_> = live_verts(&m)
+            .into_iter()
+            .filter(|v| m.vertex_tol(*v).is_some())
+            .collect();
+        let mut slab = None;
+        'pick: for i in 0..solvable.len() {
+            for j in (i + 1)..solvable.len() {
+                for k in (j + 1)..solvable.len() {
+                    let mut t = [solvable[i], solvable[j], solvable[k]];
+                    t.sort_by_key(|v| v.index());
+                    match m.plane_name_through(t) {
+                        Some(n) if n.narrow().is_none() == want_wide => {}
+                        _ => continue,
+                    }
+                    let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
+                        &mut m,
+                        &Operation::DatumPlane {
+                            def: DatumDef::ThroughVertices([solvable[i], solvable[j], solvable[k]]),
+                        },
+                    ) else {
+                        continue;
+                    };
+                    if let Ok(OpOutput::Extrude { solid, .. }) = apply(
+                        &mut m,
+                        &Operation::Extrude {
+                            frame,
+                            profile: Profile2d::polygon(vec![
+                                p2(-50.0, -50.0),
+                                p2(50.0, -50.0),
+                                p2(50.0, 50.0),
+                                p2(-50.0, 50.0),
+                            ])
+                            .unwrap(),
+                            dist: 50.0,
+                        },
+                    ) {
+                        m.rebuild_adjacency();
+                        slab = Some(solid);
+                        break 'pick;
+                    }
+                }
+            }
+        }
+        let slab = slab?;
+        let cub = m.add_cuboid(
+            Point3::from_array([-1.0, -1.0, -1.0]),
+            Point3::from_array([5.0, 5.0, 4.0]),
+        );
+        let sliced = *nacre_ops::boolean(&mut m, BoolKind::Cut, cub, slab)
+            .ok()?
+            .first()?;
+        m.rebuild_adjacency();
+        // The second generation: every face of `sliced` is world-named, one of them by the
+        // datum's name. Only this boolean is measured.
+        let column = m.add_cuboid(
+            Point3::from_array([0.5, 0.5, -2.0]),
+            Point3::from_array([2.5, 2.5, 5.0]),
+        );
+        let _ = climb_census::take();
+        let out = nacre_ops::boolean(&mut m, BoolKind::Cut, sliced, column);
+        let (c, b, e) = climb_census::take();
+        println!(
+            "     (second cut {} — {:?})",
+            if out.is_ok() { "ok" } else { "declined" },
+            out.err()
+        );
+        Some((c, b, e))
+    };
+
+    let mut seen = 0;
+    for (want_wide, label) in [(false, "narrow_slice"), (true, "wide_slice")] {
+        match run(want_wide) {
+            Some((climbs, bits, exhausted)) => {
+                seen += 1;
+                println!(
+                    "stat cost2 {label:12} climbs={climbs} mean_bits={} exhausted={exhausted}",
+                    bits.checked_div(climbs).unwrap_or(0)
+                );
+            }
+            None => println!("stat cost2 {label:12} UNBUILDABLE — no such slice was cut"),
+        }
+    }
+    assert!(seen > 0, "no arm built — the measurement is empty");
+}
