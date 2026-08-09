@@ -868,18 +868,43 @@ pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
     Some(out)
 }
 
-/// **The point where three rational planes meet**, exactly — Cramer over `Rat` with checked
-/// arithmetic (S7). Input rows are `[a, b, c, d]` for `a·x + b·y + c·z + d = 0`.
+/// **The point where three rational planes meet**, exactly — the `Rat` Cramer route first, and
+/// where an intermediate overflows `i128`, the same answer through [`three_planes_big`]'s
+/// integer core, denominators cleared once per row (a plane row is scale-free, and scaling a
+/// row of a linear system leaves its solution). Input rows are `[a, b, c, d]` for
+/// `a·x + b·y + c·z + d = 0`.
 ///
-/// `None` when the determinant is zero (no unique point — parallel or line-sharing planes) or
-/// when any intermediate overflows `i128` — the kernel's ordinary demotion signal: the caller
-/// keeps the road it was on (for `reuse`, the arrangement fallback — slower, never wrong).
-/// Division at the end is `Ratio`'s checked division, the [`plane_origin_projection`] precedent.
+/// `None` means exactly two things, **neither of them the arithmetic**: the determinant is zero
+/// (no unique point — parallel or line-sharing planes), or the point itself does not fit `Rat`
+/// ([`MeetPoint::Wide`]). It used to also mean "an intermediate overflowed" — the rational
+/// cofactor expansion builds `a.num·b.den ± b.num·a.den` before it can reduce — and that
+/// conflation silently cost a decimal-framed tool its whole class reuse: its constructed
+/// corners solve to points that fit `Rat` (measured 8/8), but the road there overflowed
+/// (truth-and-cache open item 0). The fallback runs only on the decline path, so the narrow
+/// route's cost and answers are untouched.
 ///
 /// This is what replaces a dissolved sketch-frame base vertex: the frame-shared triple of a
 /// prism corner, solved in the frame the planes are stated in, is the corner's exact base —
 /// measured bit-identical to the stored base-and-replay road (8/8, `docs/dev-log.md`).
 pub fn three_planes_rat(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
+    three_planes_rat_narrow(p).or_else(|| {
+        use num_bigint::BigInt;
+        use num_integer::Integer;
+        let lift = |row: &[Rat; 4]| -> [BigInt; 4] {
+            let den: [BigInt; 4] = core::array::from_fn(|i| BigInt::from(row[i].denom()));
+            let l = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+            core::array::from_fn(|i| BigInt::from(row[i].numer()) * (&l / &den[i]))
+        };
+        three_planes_int([lift(&p[0]), lift(&p[1]), lift(&p[2])])?
+            .narrow()
+            .copied()
+    })
+}
+
+/// [`three_planes_rat`]'s narrow route — Cramer over `Rat` with checked arithmetic (S7), whose
+/// `None` still conflates "no unique point" with "an intermediate overflowed". That is fine
+/// *here*: the caller above resolves the conflation by asking the integer core.
+fn three_planes_rat_narrow(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
     let zero = Rat::from_int(0);
     // 3×3 determinant by cofactor expansion, all checked.
     let det3 = |m: [[Rat; 3]; 3]| -> Option<Rat> {
@@ -3018,19 +3043,21 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **`three_planes_rat`'s `None` means two different things** — the point-side twin of
-    /// `a_plane_the_narrow_route_gives_up_on_is_still_named`.
+    /// ★★★★★ **An overflowing intermediate no longer costs the answer** — the repair of open
+    /// item 0, locked on the fixture that used to document the defect.
     ///
     /// These three planes meet at `(1, 1, 1)`, which fits `Rat` with room to spare. But their
     /// coefficients carry coprime denominators — a power of two and a power of five, what decimal
     /// arithmetic produces once it reduces — and the determinant is their product: `2⁹³·5³⁴`, a
-    /// ~172-bit denominator. `three_planes_rat` multiplies before it can reduce, so it declines.
+    /// ~172-bit denominator. The narrow Cramer multiplies before it can reduce, so it overflows;
+    /// this fixture used to assert the resulting decline, and now asserts the fallback answers
+    /// through the integer core instead — the hand-known point, so this is an independent oracle
+    /// and not the two routes agreeing with each other.
     ///
-    /// ★ So a decline is **not** evidence that a coordinate is too wide to store. It can equally
-    /// be the arithmetic's ceiling on a value that fits. Nothing in the narrow route can tell the
-    /// two apart, which is what this twin exists to fix.
+    /// ★ The private narrow route still declines here (asserted), so the fixture keeps proving
+    /// the fallback is *reached*, not merely present.
     #[test]
-    fn a_point_the_narrow_solve_gives_up_on_is_still_found() {
+    fn an_overflowing_intermediate_no_longer_costs_the_answer() {
         let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
         let rows = [
             [r(1, 1 << 53), r(0, 1), r(0, 1), r(-1, 1 << 53)],
@@ -3043,9 +3070,15 @@ mod tests {
             ],
         ];
         assert_eq!(
-            three_planes_rat(rows),
+            three_planes_rat_narrow(rows),
             None,
-            "the narrow solve was expected to overflow on coprime denominators"
+            "the narrow route was expected to overflow on coprime denominators — \
+             without that this fixture no longer exercises the fallback"
+        );
+        assert_eq!(
+            three_planes_rat(rows),
+            Some([Rat::from_int(1); 3]),
+            "the point fits `Rat`, and the solve now says so"
         );
         let names = rows.map(PlaneName::Narrow);
         let found = three_planes_big([&names[0], &names[1], &names[2]])
@@ -3056,6 +3089,69 @@ mod tests {
             "the point fits `Rat` — the invariant demands it come back Narrow"
         );
         assert_eq!(found.width_bits(), 1, "1/1 is one bit wide");
+    }
+
+    /// The two remaining meanings of [`three_planes_rat`]'s `None`, each still honest:
+    /// no unique point (parallel planes), and a point that truly does not fit `Rat` — which
+    /// [`three_planes_big`] tells apart by answering `Wide`.
+    #[test]
+    fn the_solve_still_declines_what_it_should() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        // Parallel pair: x = 0 and x = 1 — no unique point, both routes say so.
+        let parallel = [
+            [r(1, 1), r(0, 1), r(0, 1), r(0, 1)],
+            [r(1, 1), r(0, 1), r(0, 1), r(-1, 1)],
+            [r(0, 1), r(0, 1), r(1, 1), r(0, 1)],
+        ];
+        assert_eq!(
+            three_planes_rat(parallel),
+            None,
+            "parallel planes meet nowhere"
+        );
+        // Narrow rows whose meeting point is wider than `Rat`: x + y = 2⁻¹⁰⁰, x − y = 5⁻⁵⁰
+        // put a denominator of 2¹⁰¹·5⁵⁰ (~217 bits) on x. `three_planes_rat` declines;
+        // the wide twin answers, and answers `Wide` — the causes stay told apart.
+        let wide_point = [
+            [r(1, 1), r(1, 1), r(0, 1), r(-1, 1 << 100)],
+            [r(1, 1), r(-1, 1), r(0, 1), r(-1, 5i128.pow(50))],
+            [r(0, 1), r(0, 1), r(1, 1), r(0, 1)],
+        ];
+        assert_eq!(
+            three_planes_rat(wide_point),
+            None,
+            "a point no `Rat` can hold is a decline, not an answer"
+        );
+        let names = wide_point.map(PlaneName::Narrow);
+        assert!(
+            matches!(
+                three_planes_big([&names[0], &names[1], &names[2]]),
+                Some(MeetPoint::Wide(_))
+            ),
+            "the twin names the cause: the point exists and is wide"
+        );
+    }
+
+    proptest! {
+        /// Totality: wherever the integer core answers `Narrow`, [`three_planes_rat`] answers
+        /// the same. ★ A **wiring** lock, stated as such: after the refactor both routes
+        /// converge on `three_planes_int`, so this pins the `.or_else` plumbing (lift,
+        /// `narrow()` return) rather than serving as an independent oracle — that role belongs
+        /// to `an_overflowing_intermediate_no_longer_costs_the_answer`'s hand-known point and
+        /// to the agreement direction the ops-side `point_width` invariant keeps.
+        #[test]
+        fn the_solve_answers_wherever_the_answer_is_narrow(
+            rows in proptest::array::uniform3(proptest::array::uniform4((-9i128..=9, 1u32..=60))),
+        ) {
+            let rat_rows: [[Rat; 4]; 3] =
+                rows.map(|row| row.map(|(n, e)| Rat::new(n, 1i128 << e).unwrap()));
+            let names = rat_rows.map(PlaneName::Narrow);
+            let big = three_planes_big([&names[0], &names[1], &names[2]]);
+            let expect = match &big {
+                Some(MeetPoint::Narrow(p)) => Some(*p),
+                _ => None, // no unique point, or truly wide — the honest declines
+            };
+            prop_assert_eq!(three_planes_rat(rat_rows), expect);
+        }
     }
 
     /// ★★★★★ **The negative control for [`MeetPoint::width_bits`]** — without it, a corpus that
@@ -3262,16 +3358,22 @@ mod tests {
             ]),
             None
         );
-        // Overflow declines honestly: coefficients near the i128 edge.
+        // Coefficients near the i128 edge overflow the narrow Cramer — and the answer still
+        // fits `Rat` (denominator 2¹²⁶ + 1), so since open item 0 the fallback answers it.
+        // This clause used to assert the decline; the decline was the defect.
         let big = Rat::from_int(1 << 126);
+        let edge = [
+            [big, r(1), r(0), r(-1)],
+            [r(1), big, r(0), r(-1)],
+            [r(0), r(0), big, big],
+        ];
         assert_eq!(
-            three_planes_rat([
-                [big, r(1), r(0), r(-1)],
-                [r(1), big, r(0), r(-1)],
-                [r(0), r(0), big, big],
-            ]),
-            None
+            three_planes_rat_narrow(edge),
+            None,
+            "the narrow route overflows here"
         );
+        let inv = Rat::new(1, (1 << 126) + 1).unwrap();
+        assert_eq!(three_planes_rat(edge), Some([inv, inv, r(-1)]));
     }
 
     /// The core rational-representation property in miniature: exact rational accumulation does not
