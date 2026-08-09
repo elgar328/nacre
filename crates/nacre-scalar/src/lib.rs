@@ -562,7 +562,6 @@ pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneNa
 pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
     use num_bigint::BigInt;
     use num_integer::Integer;
-    use num_traits::{ToPrimitive, Zero};
 
     // ★★★★ **Integers, not rationals.** The obvious spelling is `Ratio<BigInt>`, mirroring
     // `plane_through_points` term for term — and that is how this started. But `Ratio` reduces by a
@@ -580,7 +579,20 @@ pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<Pl
         let num = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&d / &den[i]));
         (num, d)
     };
-    let ((pa, da), (pb, db), (pc, dc)) = (lift(a), lift(b), lift(c));
+    plane_name_from_lifted([lift(a), lift(b), lift(c)])
+}
+
+/// [`plane_name_big`]'s body after the lift — three points as `(integer coordinates, positive
+/// denominator scale)` pairs. Separate so [`plane_name_from_meets`] can reach it with points
+/// that never were `Rat` triples ([`MeetPoint::Wide`]).
+fn plane_name_from_lifted(
+    pts: [([num_bigint::BigInt; 3], num_bigint::BigInt); 3],
+) -> Option<PlaneName> {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    use num_traits::{ToPrimitive, Zero};
+
+    let [(pa, da), (pb, db), (pc, dc)] = pts;
     let edge = |q: &[BigInt; 3], dq: &BigInt| -> [BigInt; 3] {
         core::array::from_fn(|i| &q[i] * &da - &pa[i] * dq)
     };
@@ -623,6 +635,37 @@ pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<Pl
         }
     }
     Some(PlaneName::Narrow(out))
+}
+
+/// **The canonical name of the plane through three meeting points, at whatever width the points
+/// needed** — what lets a datum through [`MeetPoint::Wide`] vertices keep a name (truth-and-cache
+/// open item 17). The same lift-and-join [`plane_name_big`] performs, with each point's
+/// denominators cleared from whichever vessel holds them; a plane is scale-free per point, so the
+/// per-point scale cannot move the canonical answer.
+///
+/// `None` means the points are collinear and name no plane — width is never a cause here, on
+/// either side: wide points are lifted the same way, and a canonical answer too wide for `Rat`
+/// comes back [`PlaneName::Wide`].
+pub fn plane_name_from_meets(points: [&MeetPoint; 3]) -> Option<PlaneName> {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+
+    let lift = |p: &MeetPoint| -> ([BigInt; 3], BigInt) {
+        match p {
+            MeetPoint::Narrow(p) => {
+                let den = p.map(|r| BigInt::from(r.denom()));
+                let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+                let num = core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&d / &den[i]));
+                (num, d)
+            }
+            MeetPoint::Wide(p) => {
+                let d = p.iter().fold(BigInt::from(1), |l, (_, den)| l.lcm(den));
+                let num = core::array::from_fn(|i| &p[i].0 * (&d / &p[i].1));
+                (num, d)
+            }
+        }
+    };
+    plane_name_from_lifted([lift(points[0]), lift(points[1]), lift(points[2])])
 }
 
 /// The sign of the 2-D orientation determinant `(b − a) × (c − a)` — positive when `abc` turns
@@ -974,6 +1017,23 @@ impl MeetPoint {
         match self {
             MeetPoint::Narrow(p) => Some(p),
             MeetPoint::Wide(_) => None,
+        }
+    }
+
+    /// **The point as an f64 coordinate triple — a cache realization, rounded.** The `Narrow`
+    /// arm is exactly [`Rat::to_f64`] per coordinate (bit-preserving for every caller that read
+    /// the point that way before this existed); the `Wide` arm divides through
+    /// `Ratio<BigInt>`'s exponent-aware conversion, so a 200-bit numerator over a 200-bit
+    /// denominator comes back finite instead of `inf/inf`.
+    pub fn coord_f64(&self) -> [f64; 3] {
+        match self {
+            MeetPoint::Narrow(p) => p.map(|r| r.to_f64()),
+            MeetPoint::Wide(p) => core::array::from_fn(|i| {
+                use num_traits::ToPrimitive;
+                num_rational::Ratio::new_raw(p[i].0.clone(), p[i].1.clone())
+                    .to_f64()
+                    .unwrap_or(f64::NAN)
+            }),
         }
     }
 
@@ -2241,6 +2301,129 @@ mod tests {
 
     fn ints(v: [i128; 4]) -> [Rat; 4] {
         v.map(Rat::from_int)
+    }
+
+    /// [`plane_name_from_meets`] — the name of a plane through meets of any width (open
+    /// item 17), locked on both output widths with hand-known planes so the derivation is
+    /// never its own oracle.
+    mod name_from_meets {
+        use super::*;
+        use num_bigint::BigInt;
+        use proptest::prelude::*;
+
+        fn r(n: i128, d: i128) -> Rat {
+            Rat::new(n, d).unwrap()
+        }
+
+        /// The carriers of one fixture vertex: `x = m·2⁻⁸⁰`, `y = w·5⁻⁴⁰`, and a third plane
+        /// `base + λ·(x − m·2⁻⁸⁰)` — which meets the first two exactly where `base` does, so
+        /// the meet lies on `base` by construction while no carrier *is* `base`.
+        fn meet_on(base: [Rat; 4], m: i128, w: i128, lambda: i128) -> MeetPoint {
+            let a = PlaneName::Narrow([r(1 << 80, 1), r(0, 1), r(0, 1), r(-m, 1)]);
+            let b = PlaneName::Narrow([r(0, 1), r(5i128.pow(40), 1), r(0, 1), r(-w, 1)]);
+            let u = r(m, 1 << 80);
+            let c = PlaneName::Narrow([
+                base[0].checked_add(r(lambda, 1)).unwrap(),
+                base[1],
+                base[2],
+                base[3]
+                    .checked_sub(r(lambda, 1).checked_mul(u).unwrap())
+                    .unwrap(),
+            ]);
+            three_planes_big([&a, &b, &c]).expect("the fixture carriers meet")
+        }
+
+        /// ★ Narrow-name output: three **wide** meets on the hand-known plane
+        /// `T: 7x + 11y − 13z + 1 = 0` (already canonical — gcd 1, first coefficient
+        /// positive) name exactly `T`.
+        #[test]
+        fn wide_meets_on_a_narrow_plane_name_it() {
+            let t = [r(7, 1), r(11, 1), r(-13, 1), r(1, 1)];
+            let meets = [
+                meet_on(t, 1, 1, 1),
+                meet_on(t, 3, 1, 2),
+                meet_on(t, 1, 7, 3),
+            ];
+            for m in &meets {
+                assert!(
+                    matches!(m, MeetPoint::Wide(_)),
+                    "fixture validity: every meet must be wide, or this test measures nothing"
+                );
+            }
+            assert_eq!(
+                plane_name_from_meets([&meets[0], &meets[1], &meets[2]]),
+                Some(PlaneName::Narrow([r(7, 1), r(11, 1), r(-13, 1), r(1, 1)])),
+                "the plane the meets lie on, by hand"
+            );
+        }
+
+        /// ★ Wide-name output — the other side of the derivation's fork. `T_w: 2⁷⁰·x + y/5³⁰
+        /// − z + 1 = 0` has all-`Rat` coefficients but its canonical integers are `×5³⁰`:
+        /// `(2⁷⁰·5³⁰, 1, −5³⁰, 5³⁰)`, whose largest is ~2¹⁴⁰ — a `Wide` name, still known by
+        /// hand.
+        #[test]
+        fn wide_meets_on_a_wide_plane_name_it() {
+            let tw = [r(1 << 70, 1), r(1, 5i128.pow(30)), r(-1, 1), r(1, 1)];
+            let meets = [
+                meet_on(tw, 1, 1, 1),
+                meet_on(tw, 3, 1, 2),
+                meet_on(tw, 1, 7, 3),
+            ];
+            for m in &meets {
+                assert!(matches!(m, MeetPoint::Wide(_)), "fixture validity");
+            }
+            let five30 = BigInt::from(5i128.pow(30));
+            let expected = [
+                BigInt::from(1i128 << 70) * &five30,
+                BigInt::from(1),
+                -&five30,
+                five30.clone(),
+            ];
+            assert_eq!(
+                plane_name_from_meets([&meets[0], &meets[1], &meets[2]]),
+                Some(PlaneName::Wide(expected)),
+                "the canonical integers of T_w, by hand"
+            );
+        }
+
+        /// Collinear meets name nothing — width is never the cause of a `None` here.
+        #[test]
+        fn collinear_meets_name_no_plane() {
+            let p = |x: i128| MeetPoint::Narrow([r(x, 1), r(x, 1), r(0, 1)]);
+            let (a, b, c) = (p(0), p(1), p(2));
+            assert_eq!(plane_name_from_meets([&a, &b, &c]), None);
+        }
+
+        /// The `Wide` arm of [`MeetPoint::coord_f64`] stays finite where naive division
+        /// (`num.to_f64() / den.to_f64()`) would be `inf/inf`.
+        #[test]
+        fn a_wide_coordinate_realizes_finite() {
+            let big: BigInt = BigInt::from(1) << 200u32;
+            let m = MeetPoint::Wide([
+                ((&big * BigInt::from(3) + BigInt::from(1)), big.clone()),
+                (BigInt::from(1), &big * BigInt::from(2)),
+                (-&big, &big + BigInt::from(1)),
+            ]);
+            let c = m.coord_f64();
+            assert!(c.iter().all(|x| x.is_finite()), "every coordinate finite");
+            assert!((c[0] - 3.0).abs() < 1e-9 && c[1].abs() < 1e-9 && (c[2] + 1.0).abs() < 1e-9);
+        }
+
+        proptest! {
+            /// All-narrow meets: the new derivation answers exactly what [`plane_name_exact`]
+            /// answers — the independent oracle for the lift being a pure generalization.
+            #[test]
+            fn narrow_meets_agree_with_the_point_derivation(
+                pts in proptest::array::uniform3(proptest::array::uniform3((-40i128..=40, 1u32..=40))),
+            ) {
+                let p: [[Rat; 3]; 3] = pts.map(|q| q.map(|(n, e)| r(n, 1i128 << e)));
+                let meets = p.map(MeetPoint::Narrow);
+                prop_assert_eq!(
+                    plane_name_from_meets([&meets[0], &meets[1], &meets[2]]),
+                    plane_name_exact(p[0], p[1], p[2])
+                );
+            }
+        }
     }
 
     /// The integer sign predicates, differentially locked.
