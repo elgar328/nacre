@@ -21,7 +21,7 @@
 //! be proved, and the table itself. The predicates are its methods.
 
 use crate::kernel::frame3::{
-    Decision, MoveNode, Standard, WitnessPoint, cramer_iv, dir_sign_judge,
+    Decision, MoveNode, Standard, WitnessPoint, chain_parity, cramer_iv, dir_sign_judge,
     indirect_cmp_coord_judge, orient3d_from_cramer, orient3d_judge,
 };
 use nacre_math::Point3;
@@ -30,6 +30,7 @@ use nacre_predicates::{
     orient3d,
 };
 use nacre_scalar::{Orient, Rat};
+use num_bigint::BigInt;
 
 /// **What a judgement was asked about**, in the only vocabulary this crate has: plane-table
 /// indices.
@@ -218,6 +219,102 @@ pub trait PlaneWitness: Witness {
     /// The plane's coefficients in the pre-motion frame — **derived from the canonicalised
     /// `base_tri`**, with all the handedness caveats there.
     fn base_coeffs(&self) -> Option<[f64; 4]>;
+
+    /// The plane's **name integers, folded to the stored orientation** — built once by
+    /// [`name_stored_ints`] where the witness is constructed, `None` when the plane has no name
+    /// (or the fold declined). This is what gives a *wide* name its exact shortcuts back
+    /// (truth-and-cache open item 15): [`Witness::base_coeffs_rat`] and
+    /// [`Self::base_coeffs`]/[`Self::exact_coeffs`] all read `PlaneName::narrow()` or `f64`, so
+    /// a wide name answers `None` to every one of them and the judgement climbs — measured at
+    /// **3.2×** the escalations.
+    fn name_ints(&self) -> Option<&NameInts> {
+        None
+    }
+}
+
+/// A plane's canonical name integers, **oriented as the stored coefficients are** — the exact
+/// integer stand-in for [`PlaneWitness::coeffs`], any width.
+///
+/// The canonical name deliberately carries no direction (first nonzero coefficient positive),
+/// and the stored plane may hold it either way round — measured, 1,916 interned statements in
+/// the suite arrive `flipped`. So the raw name cannot be handed to a direction-sensitive
+/// predicate; the σ that relates the two is folded in **here, once, at construction**
+/// ([`name_stored_ints`]), so every consumer inherits the stored convention and the existing
+/// `frame_sign` bridges apply verbatim.
+#[derive(Clone, Debug)]
+pub struct NameInts {
+    /// The integer coefficients, in the frame the name speaks (the world when unmoved, the
+    /// pre-motion frame when moved), sign-folded to the stored orientation.
+    pub ints: [BigInt; 4],
+    /// Whether the canonical name needed the wide vessel — the rescue gate reads this: a
+    /// question whose planes are all narrow keeps its existing routes (behavior-identical),
+    /// so the corpus (`wide_planes` 0) is untouched.
+    pub wide: bool,
+}
+
+/// Fold a plane's canonical name to the **stored orientation** — the one-time σ computation
+/// [`PlaneWitness::name_ints`] carries.
+///
+/// The witness triangle's `base` points lie exactly on the named plane (the table contract:
+/// three exact points on the plane, wound to the face's outward normal), so the name's normal
+/// and the triangle's cross product are exactly parallel and their dot's sign is σ against the
+/// *triangle's* orientation — computed in integers after clearing all nine coordinate
+/// denominators by one common positive factor (a global scale moves neither the cross's
+/// direction nor the dot's sign; per-point scales would). `frame_sign` (stored vs. triangle)
+/// then carries it the rest of the way: `σ = sign(name·cross) · frame_sign`.
+///
+/// `None` when the plane has no name, or the dot is zero (a degenerate witness — collinear
+/// `base` points span no direction to compare against), in which case the rescue simply
+/// declines and the judgement keeps its toleranced route: slower, never wrong.
+pub fn name_stored_ints(
+    name: Option<&nacre_scalar::PlaneName>,
+    tri_pt3: &[WitnessPoint; 3],
+    frame_sign: i8,
+) -> Option<NameInts> {
+    use num_integer::Integer;
+    let name = name?;
+    let bases: [&[Rat; 3]; 3] = [&tri_pt3[0].base, &tri_pt3[1].base, &tri_pt3[2].base];
+    // One common positive scale for all nine coordinates.
+    let lcm = bases
+        .iter()
+        .flat_map(|p| p.iter())
+        .fold(BigInt::from(1), |l, r| l.lcm(&BigInt::from(r.denom())));
+    let lift = |p: &[Rat; 3]| -> [BigInt; 3] {
+        core::array::from_fn(|i| BigInt::from(p[i].numer()) * (&lcm / BigInt::from(p[i].denom())))
+    };
+    let (p0, p1, p2) = (lift(bases[0]), lift(bases[1]), lift(bases[2]));
+    let edge = |q: &[BigInt; 3]| -> [BigInt; 3] { core::array::from_fn(|i| &q[i] - &p0[i]) };
+    let (u, v) = (edge(&p1), edge(&p2));
+    let cross = [
+        &u[1] * &v[2] - &u[2] * &v[1],
+        &u[2] * &v[0] - &u[0] * &v[2],
+        &u[0] * &v[1] - &u[1] * &v[0],
+    ];
+    let mut ints = name.coeff_ints();
+    // The σ below is exact only because the witness lies exactly on the named plane — the
+    // table contract this fold rests on, asserted while it is cheap to say where it broke.
+    debug_assert!(
+        [&p0, &p1, &p2].iter().all(|p| {
+            let r: BigInt = (0..3).map(|i| &ints[i] * &p[i]).sum::<BigInt>() + &ints[3] * &lcm;
+            r.sign() == num_bigint::Sign::NoSign
+        }),
+        "name_stored_ints: a witness base off its own named plane — the table contract is broken"
+    );
+    let dot: BigInt = (0..3).map(|i| &ints[i] * &cross[i]).sum();
+    let sigma = match dot.sign() {
+        num_bigint::Sign::Plus => frame_sign,
+        num_bigint::Sign::Minus => -frame_sign,
+        num_bigint::Sign::NoSign => return None,
+    };
+    if sigma < 0 {
+        for c in &mut ints {
+            *c = -&*c;
+        }
+    }
+    Some(NameInts {
+        ints,
+        wide: name.narrow().is_none(),
+    })
 }
 
 /// **One operation's judging**: the witnesses it reasons over, the standard it holds them to, and
@@ -424,6 +521,56 @@ impl<W: PlaneWitness> Judge<'_, W> {
                 return Some(indirect_plane_side(&tp, cj) * self.planes[j].frame_sign());
             }
         }
+        // A wide name reaches here (no f64 spelling exists for it), and its integers are still
+        // an exact description — the same question the arm above asks, in the integer twin,
+        // with the same `frame_sign` bridge on `j` (the one direction-sensitive slot: a negated
+        // `p`/`q`/`r` row negates `D` and the dot together, so only `j`'s orientation matters).
+        if let Some([bp, bq, br, bj]) = self.name_rescue([p, q, r, j], true) {
+            return Some(
+                nacre_scalar::int_plane_side([&bp, &bq, &br], &bj) * self.planes[j].frame_sign(),
+            );
+        }
+        None
+    }
+
+    /// **The name-integer rescue gate**: the rows for a question every one of whose planes is
+    /// named, **at least one wide**, and whose frames the name can speak for — either no plane
+    /// is moved (the names are world descriptions) or all carry one motion (the names are one
+    /// shared pre-motion description, parity-corrected below). `None` keeps every existing
+    /// route exactly as it was — in particular, an all-narrow question never takes this gate,
+    /// so a corpus with no wide plane is untouched to the bit.
+    ///
+    /// ★ **The parity correction is on the coefficients, and it is not "negate x".** The
+    /// canonicalised base frame reflects the *points* in `x` (see [`Witness::base_tri`]), and a
+    /// plane derived from reflected points is `det(C)·(C·n, d)` — the cross product is a
+    /// pseudovector, so the reflection `C` (negate the x *coefficient*) arrives with one more
+    /// global sign `det(C) = −1`. The two together negate `y`, `z` and `d` and keep `x`:
+    /// exactly what makes these rows a positive multiple of what `base_coeffs` would hold if
+    /// the base were `f64`-representable, so the arms above transplant verbatim.
+    fn name_rescue<const N: usize>(
+        &self,
+        idx: [usize; N],
+        allow_shared: bool,
+    ) -> Option<[[BigInt; 4]; N]> {
+        let planes = self.planes;
+        let rows = idx.map(|k| planes[k].name_ints());
+        if rows.iter().any(|r| r.is_none()) || !rows.iter().flatten().any(|n| n.wide) {
+            return None;
+        }
+        if !any_rotated(planes, &idx) {
+            return Some(rows.map(|r| r.expect("checked above").ints.clone()));
+        }
+        if allow_shared && shared_motion(planes, &idx) {
+            let odd = chain_parity(&plane_def(planes, idx[0])[0].chain) < 0;
+            return Some(rows.map(|r| {
+                let v = &r.expect("checked above").ints;
+                if odd {
+                    [v[0].clone(), -&v[1], -&v[2], -&v[3]]
+                } else {
+                    v.clone()
+                }
+            }));
+        }
         None
     }
 
@@ -501,6 +648,14 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if let Some(s) = cancel_cmp_coord(planes, a, b, axis) {
             return s;
         }
+        // The world-gate only (`allow_shared: false`): a coordinate comparison is not
+        // motion-invariant, and the rotation-axis reasoning that makes some moved cases exact
+        // is `cancel_cmp_coord`'s above. Orientation-invariant, so the σ fold is harmless here.
+        if let Some([a0, a1, a2, b0, b1, b2]) =
+            self.name_rescue([a[0], a[1], a[2], b[0], b[1], b[2]], false)
+        {
+            return nacre_scalar::int_cmp_coord([&a0, &a1, &a2], [&b0, &b1, &b2], axis);
+        }
         let da = a.map(|k| plane_def(planes, k));
         let db = b.map(|k| plane_def(planes, k));
         self.record(
@@ -537,6 +692,13 @@ impl<W: PlaneWitness> Judge<'_, W> {
             if let (Some(rp), Some(ra), Some(rb)) = (row(p), row(a), row(b)) {
                 return det3_sign([rp, ra, rb]);
             }
+        }
+        // The integer twin of both arms above, for a wide name: the rows carry the stored
+        // orientation already (the σ fold), so no `frame_sign` bridge appears — exactly as in
+        // the `det3_sign` arms, and unlike the toleranced route below, which reads the outward
+        // triangles and bridges back.
+        if let Some([bp, ba, bb]) = self.name_rescue([p, a, b], true) {
+            return nacre_scalar::int_dir_sign([&bp, &ba, &bb]);
         }
         let (dp, da, db) = (
             plane_def(planes, p),

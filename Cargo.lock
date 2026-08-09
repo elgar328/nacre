@@ -302,6 +302,7 @@ dependencies = [
  "nacre-tess",
  "nacre-topo",
  "nacre-validate",
+ "num-bigint",
  "proptest",
  "rayon",
 ]

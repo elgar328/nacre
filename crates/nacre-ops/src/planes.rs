@@ -61,6 +61,11 @@ pub(crate) struct FaceInfo {
     /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
     /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
     pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
+    /// The surface's full canonical name (`Model::surface_name`), **any width** — what
+    /// [`WorkingPlane::name_ints`] is folded from. `base_rat` above is its narrow projection,
+    /// kept beside it because the narrow consumers (`BaseFrame`, the composed-rotation route)
+    /// read `[Rat; 4]` directly.
+    pub(crate) name: Option<nacre_scalar::PlaneName>,
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
     /// the surface's own truth (`Model::surface_truth`).
     ///
@@ -315,12 +320,10 @@ pub(crate) fn collect_planes(
                 face.orientation == Orientation::Forward,
                 "n_out's sign against the surface normal is the face's orientation"
             );
+            let name = model.surface_name.get(&face.surface).cloned();
             out.push(FaceInfo {
-                base_rat: model
-                    .surface_name
-                    .get(&face.surface)
-                    .and_then(|n| n.narrow())
-                    .copied(),
+                base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
+                name,
                 surf: face.surface,
                 face: Some(fh),
                 plane,
@@ -881,6 +884,7 @@ impl BaseFrame {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,
     /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
@@ -925,6 +929,11 @@ pub(crate) struct WorkingPlane {
     /// demanding the full agreement for those cost 4.7x on the axis-aligned fold and bought
     /// nothing.
     pub(crate) exact_normal: Option<[f64; 3]>,
+    /// The class root's name integers, folded to the stored orientation
+    /// ([`nacre_cip::predicate::name_stored_ints`]) — what gives a **wide** name its exact
+    /// judging shortcuts back (truth-and-cache open item 15). `None` when the root's surface
+    /// has no name.
+    pub(crate) name_ints: Option<nacre_cip::predicate::NameInts>,
 }
 
 impl WorkingPlane {
@@ -996,6 +1005,11 @@ pub(crate) fn dense_planes(
             WorkingPlane {
                 base_rat: pi.base_rat,
                 base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign, pi.base_rat),
+                name_ints: nacre_cip::predicate::name_stored_ints(
+                    pi.name.as_ref(),
+                    &pi.tri_pt3,
+                    pi.orient_sign,
+                ),
                 plane: pi.plane,
                 surf: pi.surf,
                 tri: pi.tri,

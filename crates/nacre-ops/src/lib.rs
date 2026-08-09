@@ -2931,6 +2931,7 @@ pub mod tests {
         let mk = |plane, tri: [Point3; 3]| FaceInfo {
             // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
             base_rat: None,
+            name: None,
             motion: None,
             surf: shared,
             face: Some(fh),
@@ -4815,6 +4816,7 @@ pub mod tests {
             // A hand-built table has no recorded coefficients; the composed-rotation route
             // declines and the fixture takes the same escalating path it always did.
             base_rat: None,
+            name_ints: None,
             base: crate::planes::BaseFrame::none(),
             surf,
             plane,

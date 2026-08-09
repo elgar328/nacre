@@ -77,6 +77,9 @@ impl PlaneWitness for WorkingPlane {
     fn base_coeffs(&self) -> Option<[f64; 4]> {
         self.base.coeffs
     }
+    fn name_ints(&self) -> Option<&nacre_cip::predicate::NameInts> {
+        self.name_ints.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -293,6 +296,7 @@ mod tests {
                 // A hand-built table has no recorded coefficients; the composed-rotation route
                 // declines and the fixture takes the same escalating path it always did.
                 base_rat: None,
+                name_ints: None,
                 base: crate::planes::BaseFrame::none(),
                 surf: pu[0].surf,
                 plane: pu[0].plane,
@@ -558,6 +562,7 @@ mod tests {
                 // frame derives as it always did. Filling this by hand is how a fixture and the
                 // engine come to route differently (see `WorkingPlane::reconcile`).
                 base_rat: None,
+                name: None,
                 surf: f.surf,
                 face: f.face,
                 plane: f.plane,
@@ -1201,6 +1206,7 @@ mod tests {
             let tri = d.clone().map(|p| Point3::from_array(p.coord));
             WorkingPlane {
                 base_rat: None,
+                name_ints: None,
                 base: crate::planes::BaseFrame::none(),
                 surf: faces[ia].surf,
                 plane: nacre_geom::Plane::through_points(tri[0], tri[1], tri[2])
@@ -1629,5 +1635,528 @@ mod tests {
              ({total} faces, {} distinct surfaces)",
             surfaces.len()
         );
+    }
+
+    /// ★★ Open item 15 — a **wide** name's integer rescue, locked two ways: against the climb
+    /// on the real population (shared-motion gate, mirrored included), and by a starved judge
+    /// that can answer *only* through the name (world gate, path proved from both sides).
+    mod wide_name_rescue {
+        use super::*;
+        use crate::planes::WorkingPlane;
+        use crate::{DatumDef, OpOutput, Profile2d};
+        use nacre_cip::Standard;
+        use nacre_cip::predicate::{Judge, Notes, name_stored_ints};
+        use nacre_math::Point2;
+        use nacre_scalar::{Mag, PlaneName};
+        use num_bigint::BigInt;
+
+        fn p2(x: f64, y: f64) -> Point2 {
+            Point2::from_array([x, y])
+        }
+
+        /// The census `wf` family with a pocket — the kernel's one natural producer of a wide
+        /// canonical name (three of its discovered vertices name a plane past `i128`;
+        /// `tests/wide_datum_cost.rs` measured it, and is duplicated here because an
+        /// integration test cannot be imported). A prism on a tilted decimal orthonormal
+        /// frame, with a pocket on the frame-general wall.
+        fn wf_pocket_model() -> Model {
+            let mut m = Model::new();
+            let plane = crate::SketchPlane::from_axes(
+                Point3::from_array([0.1234567890123456, 0.2345678901234567, 0.3456789012345678]),
+                nacre_math::Vector3::from_array([0.6, 0.8, 0.0]),
+                nacre_math::Vector3::from_array([-0.48, 0.36, 0.8]),
+            );
+            let frame = datum_frame(&mut m, plane);
+            let OpOutput::Extrude { solid, .. } = apply(
+                &mut m,
+                &Operation::Extrude {
+                    frame,
+                    profile: Profile2d::polygon(vec![
+                        p2(0.1111111111111111, 0.1234567890123456),
+                        p2(4.123456789012345, 0.2345678901234567),
+                        p2(3.9876543210987654, 3.1234567890123459),
+                        p2(0.2222222222222222, 2.765432109876543),
+                    ])
+                    .unwrap(),
+                    dist: 2.5,
+                },
+            )
+            .expect("the wf base prism") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            let wall = *m
+                .shells
+                .get(m.solids.get(solid).outer)
+                .faces
+                .iter()
+                .find(|&&f| {
+                    let s = m.faces.get(f).surface;
+                    m.surface_name
+                        .get(&s)
+                        .and_then(|n| n.narrow())
+                        .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                })
+                .expect("the wf population");
+            let sp = crate::face_plane(&m, wall).expect("planar");
+            // An interior point of the convex wall: its outer-loop vertex average (the
+            // integration test uses the area centroid; any interior point serves).
+            let pts: Vec<Point3> = m
+                .faces
+                .get(wall)
+                .outer
+                .half_edges
+                .iter()
+                .map(|&he| m.vertex_point(m.he_start(he)))
+                .collect();
+            let n = pts.len() as f64;
+            let c = Point3::from_array(std::array::from_fn(|k| {
+                pts.iter().map(|p| p.as_array()[k]).sum::<f64>() / n
+            }));
+            let d = c - sp.origin();
+            let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
+            apply(
+                &mut m,
+                &Operation::PocketOnFace {
+                    face: wall,
+                    profile: Profile2d::polygon(vec![
+                        p2(cu - 0.3, cv - 0.3),
+                        p2(cu + 0.3, cv - 0.3),
+                        p2(cu + 0.3, cv + 0.3),
+                        p2(cu - 0.3, cv + 0.3),
+                    ])
+                    .unwrap(),
+                    dist: 0.4,
+                },
+            )
+            .expect("the wf pocket");
+            m.rebuild_adjacency();
+            m
+        }
+
+        /// Every live vertex, deduplicated in first-seen order.
+        fn live_verts(m: &Model) -> Vec<nacre_store::Handle<nacre_topo::Vertex>> {
+            let mut seen = std::collections::HashSet::new();
+            let mut out = Vec::new();
+            for &s in &m.live_solids {
+                let sol = m.solids.get(s);
+                for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+                    for &fh in &m.shells.get(sh).faces {
+                        let f = m.faces.get(fh);
+                        for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                            for &he in &lp.half_edges {
+                                let vh = m.he_start(he);
+                                if seen.insert(vh) {
+                                    out.push(vh);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            out
+        }
+
+        /// A tool raised on a **wide** vertex-named datum of `m` — the first triple whose
+        /// canonical name needs the wide vessel and whose datum carries an extrude
+        /// (`half`-sized square profile, `dist` deep). The carriers are the pocket's
+        /// *discovered* vertices, which carry no motion chain, so the datum names the
+        /// **world** — the probe below (`the wide plane names the world`) is what taught this
+        /// module that fact, and it is why the populations under test are the world gate and a
+        /// later whole-solid motion, not the boolean that first makes the wide plane.
+        fn wide_datum_tool(m: &mut Model, half: f64, dist: f64) -> Option<Handle<Solid>> {
+            let verts = live_verts(m);
+            for i in 0..verts.len() {
+                for j in (i + 1)..verts.len() {
+                    for k in (j + 1)..verts.len() {
+                        let mut t = [verts[i], verts[j], verts[k]];
+                        t.sort_by_key(|v| v.index());
+                        match m.plane_name_through(t) {
+                            Some(n) if n.narrow().is_none() => {}
+                            _ => continue,
+                        }
+                        let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
+                            m,
+                            &Operation::DatumPlane {
+                                def: DatumDef::ThroughVertices([verts[i], verts[j], verts[k]]),
+                            },
+                        ) else {
+                            continue;
+                        };
+                        if let Ok(OpOutput::Extrude { solid, .. }) = apply(
+                            m,
+                            &Operation::Extrude {
+                                frame,
+                                profile: Profile2d::polygon(vec![
+                                    p2(-half, -half),
+                                    p2(half, -half),
+                                    p2(half, half),
+                                    p2(-half, half),
+                                ])
+                                .unwrap(),
+                                dist,
+                            },
+                        ) {
+                            m.rebuild_adjacency();
+                            return Some(solid);
+                        }
+                    }
+                }
+            }
+            None
+        }
+
+        /// A solid whose faces are **all world-named, one of them wide**: a cuboid sliced by
+        /// the wide plane alone — the tool is made so large that its walls and far cap miss
+        /// the cuboid entirely, so the result's faces are the trimmed cuboid's (integer world
+        /// names) plus the wide cap (the discovered-vertex world name).
+        fn cuboid_sliced_by_the_wide_plane(m: &mut Model) -> Handle<Solid> {
+            let tool =
+                wide_datum_tool(m, 50.0, 50.0).expect("a wide-named datum carries a slab tool");
+            let cub = m.add_cuboid(
+                Point3::from_array([-1.0, -1.0, -1.0]),
+                Point3::from_array([5.0, 5.0, 4.0]),
+            );
+            let out = crate::boolean(m, crate::BoolKind::Cut, cub, tool)
+                .expect("the wide slab slices the cuboid");
+            m.rebuild_adjacency();
+            *out.first().expect("the slice leaves material")
+        }
+
+        /// Whether the name-integer gate opens for these planes — the fixture-validity probe
+        /// (mirrors `Judge::name_rescue`'s condition; a fixture where no question passes it
+        /// would run the differential against nothing).
+        fn gate_opens(t: &[WorkingPlane], idx: &[usize]) -> bool {
+            idx.iter().all(|&k| t[k].name_ints.is_some())
+                && idx
+                    .iter()
+                    .any(|&k| t[k].name_ints.as_ref().is_some_and(|n| n.wide))
+                && (!idx.iter().any(|&k| t[k].rotated)
+                    || (t[idx[0]].base.chain_id != 0
+                        && idx
+                            .iter()
+                            .all(|&k| t[k].base.chain_id == t[idx[0]].base.chain_id)))
+        }
+
+        /// ★★★ **The probe that corrected the plan's population claim.** The wide datum's
+        /// carriers are the pocket's *discovered* vertices — solved world rationals with no
+        /// motion chain — so the wide name is a **world** description (`chain = []`,
+        /// `rotated = false`), not a moved one. The boolean that first makes the wide plane
+        /// therefore asks mixed-frame questions (world-wide cap × frame-moved prism walls ×
+        /// `FrameWide`-raised tool walls) that *neither* gate can speak to; the name's real
+        /// populations are the world gate and a later solid moved **whole**. Kept as its own
+        /// test because the wrong claim survived investigation and review twice.
+        #[test]
+        fn the_wide_plane_names_the_world() {
+            let mut m = wf_pocket_model();
+            let tool = wide_datum_tool(&mut m, 0.4, 1.2).expect("a wide datum carries a tool");
+            let table = plane_table(&m, tool);
+            let wide = table
+                .iter()
+                .find(|p| p.name_ints.as_ref().is_some_and(|n| n.wide))
+                .expect("the tool's base cap carries the wide name");
+            assert!(
+                wide.tri_pt3[0].chain.is_empty() && !wide.rotated,
+                "the wide name speaks for the world, not for a frame"
+            );
+            // And its table-mates are moved (the tool's walls live on the derived frame), so
+            // no question pairing them with the wide cap passes either gate — the fact that
+            // sends the first boolean's judgements to the climb, by design.
+            assert!(
+                table.iter().any(|p| p.rotated),
+                "the first boolean's table is mixed-frame"
+            );
+        }
+
+        /// The rescue against the climb, over the populations the gates cover:
+        ///
+        /// - **world** — the wide cap beside an unmoved cuboid, one combined table (the shape
+        ///   a boolean of the two would judge): every cap-and-cuboid question is all-world,
+        ///   all-named, one wide.
+        /// - **rotated** — a solid whose faces are all world-named with the wide slice among
+        ///   them, then turned 30° as one: every question shares one chain (even parity).
+        /// - **mirrored** — the same through a reflection: odd parity, where the pseudovector
+        ///   correction (negate `y`, `z`, `d` — keep `x`) is the part a sign slip would hide
+        ///   in.
+        ///
+        /// Both routes are exact, so any disagreement is a bug in one of them. That the gate
+        /// opens at all is asserted per arm (`gate_opens` — a differential over a gate that
+        /// never fires would measure nothing), and that only the name route can answer is
+        /// proved by `a_starved_judge_answers_only_through_the_name`.
+        #[test]
+        fn a_wide_name_judges_the_same_signs_the_climb_does() {
+            for arm in ["world", "rotated", "mirrored"] {
+                let mut m = wf_pocket_model();
+                let named: Vec<WorkingPlane> = if arm == "world" {
+                    let tool =
+                        wide_datum_tool(&mut m, 0.4, 1.2).expect("a wide datum carries a tool");
+                    let cub = m.add_cuboid(
+                        Point3::from_array([-1.0, -1.0, -1.0]),
+                        Point3::from_array([5.0, 5.0, 4.0]),
+                    );
+                    let faces: Vec<crate::planes::FaceInfo> = collect_planes(&m, cub)
+                        .unwrap()
+                        .into_iter()
+                        .chain(collect_planes(&m, tool).unwrap())
+                        .collect();
+                    let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
+                    crate::planes::dense_planes(&faces, &canon).0
+                } else {
+                    let sliced = cuboid_sliced_by_the_wide_plane(&mut m);
+                    let moved = if arm == "rotated" {
+                        rotated(&mut m, sliced)
+                    } else {
+                        let Ok(OpOutput::Mirror { solid }) = apply(
+                            &mut m,
+                            &Operation::Mirror {
+                                solid: sliced,
+                                axis: Axis::X,
+                                offset: Rat::from_int(0),
+                            },
+                        ) else {
+                            panic!("mirror applies");
+                        };
+                        m.rebuild_adjacency();
+                        solid
+                    };
+                    plane_table(&m, moved)
+                };
+                let n = named.len();
+                let mut stripped = named.clone();
+                for p in &mut stripped {
+                    p.name_ints = None;
+                }
+                let jn = crate::planes::test_judge(&named);
+                let js = crate::planes::test_judge(&stripped);
+                let (mut open3, mut open4) = (0usize, 0usize);
+                let mut diffs: Vec<String> = Vec::new();
+                for p in 0..n {
+                    for q in (p + 1)..n {
+                        for r in (q + 1)..n {
+                            // The predicates' precondition: the triple meets in a point.
+                            if !normals_independent(&named, p, q, r) {
+                                continue;
+                            }
+                            for j in 0..n {
+                                if j == p || j == q || j == r {
+                                    continue;
+                                }
+                                open4 += usize::from(gate_opens(&named, &[p, q, r, j]));
+                                let (a, b) = (jn.orient3d(p, q, r, j), js.orient3d(p, q, r, j));
+                                if a != b {
+                                    diffs.push(format!("orient3d({p},{q},{r};{j}): {a} vs {b}"));
+                                }
+                            }
+                        }
+                    }
+                }
+                for p in 0..n {
+                    for a in (p + 1)..n {
+                        for b in (a + 1)..n {
+                            open3 += usize::from(gate_opens(&named, &[p, a, b]));
+                            let (x, y) = (
+                                jn.plane_pair_dir_sign(p, a, b),
+                                js.plane_pair_dir_sign(p, a, b),
+                            );
+                            if x != y {
+                                diffs.push(format!("dir_sign({p},{a},{b}): {x} vs {y}"));
+                            }
+                        }
+                    }
+                }
+                assert!(
+                    open3 > 0 && open4 > 0,
+                    "{arm}: the gate never opened — the differential measured nothing"
+                );
+                if arm == "mirrored" {
+                    let wide = named
+                        .iter()
+                        .find(|p| p.name_ints.as_ref().is_some_and(|w| w.wide))
+                        .expect("a wide plane");
+                    assert!(
+                        nacre_cip::chain_parity(&wide.tri_pt3[0].chain) < 0,
+                        "the mirrored arm must carry an odd chain"
+                    );
+                }
+                assert!(
+                    diffs.is_empty(),
+                    "{arm}: name route vs climb disagree: {diffs:?}"
+                );
+            }
+        }
+
+        /// ★★★ **The rescue path itself, proved from both sides** — over questions separated
+        /// by `2⁻¹⁰⁰`, which the f64 filter cannot see and an 8-bit-capped climb cannot reach:
+        /// a starved judge with names answers the hand-derived signs (nothing but the
+        /// name-integer route can), and the same starved judge without names answers `0` for
+        /// every nonzero question (without the name, this judge *cannot* know). The full-budget
+        /// climb on the stripped table is the independent oracle, and the expected signs are
+        /// stated by hand, so no route is compared only to itself.
+        ///
+        /// Also under test: the world gate (`!any_rotated`), the σ fold (plane 3's canonical
+        /// name opposes its stored orientation, `frame_sign = −1`), and σ's negative control —
+        /// negating every name (and then only some) changes no answer.
+        #[test]
+        fn a_starved_judge_answers_only_through_the_name() {
+            let (m, s) = cuboid();
+            let donor = plane_table(&m, s)[0].surf;
+            let e_den: i128 = 1 << 100;
+            let one_plus = Rat::new(e_den + 1, e_den).unwrap(); // 1 + 2⁻¹⁰⁰
+            let one_minus = Rat::new(e_den - 1, e_den).unwrap();
+            let r = Rat::from_int;
+
+            // Integer spellings of the five planes' canonical names, scaled by a ~201-bit odd
+            // factor so every name is genuinely wide (the predicates are row-linear, so the
+            // scale is invisible to every answer — C1's lock).
+            let s_factor: BigInt = (BigInt::from(1) << 201) + 3;
+            let wide_name = |c: [i128; 4]| -> PlaneName {
+                PlaneName::Wide(c.map(|x| BigInt::from(x) * &s_factor))
+            };
+
+            // (witness triangle wound to the tri normal; stored normal; frame_sign; name)
+            type Fixture = ([[Rat; 3]; 3], [f64; 3], i8, PlaneName);
+            let fixtures: [Fixture; 5] = [
+                // 0: x = 1
+                (
+                    [[r(1), r(0), r(0)], [r(1), r(1), r(0)], [r(1), r(0), r(1)]],
+                    [1.0, 0.0, 0.0],
+                    1,
+                    wide_name([1, 0, 0, -1]),
+                ),
+                // 1: x = 1 + 2⁻¹⁰⁰
+                (
+                    [
+                        [one_plus, r(0), r(0)],
+                        [one_plus, r(1), r(0)],
+                        [one_plus, r(0), r(1)],
+                    ],
+                    [1.0, 0.0, 0.0],
+                    1,
+                    wide_name([e_den, 0, 0, -(e_den + 1)]),
+                ),
+                // 2: y = 1
+                (
+                    [[r(0), r(1), r(0)], [r(0), r(1), r(1)], [r(1), r(1), r(0)]],
+                    [0.0, 1.0, 0.0],
+                    1,
+                    wide_name([0, 1, 0, -1]),
+                ),
+                // 3: z = 1, stored the other way round — the σ fold and the frame_sign bridge.
+                (
+                    [[r(0), r(0), r(1)], [r(1), r(0), r(1)], [r(0), r(1), r(1)]],
+                    [0.0, 0.0, -1.0],
+                    -1,
+                    wide_name([0, 0, 1, -1]),
+                ),
+                // 4: x + 2⁻¹⁰⁰·y = 1 — nearly parallel to plane 0.
+                (
+                    [
+                        [r(1), r(0), r(0)],
+                        [one_minus, r(1), r(0)],
+                        [r(1), r(0), r(1)],
+                    ],
+                    [1.0, 0.0, 0.0],
+                    1,
+                    wide_name([e_den, 1, 0, -e_den]),
+                ),
+            ];
+
+            let build = |names_sign: [i8; 5], keep_names: bool| -> Vec<WorkingPlane> {
+                fixtures
+                    .iter()
+                    .zip(names_sign)
+                    .map(|((bases, n_stored, fs, name), flip)| {
+                        let name = if flip < 0 {
+                            let PlaneName::Wide(c) = name else {
+                                unreachable!()
+                            };
+                            PlaneName::Wide(core::array::from_fn(|i| -&c[i]))
+                        } else {
+                            name.clone()
+                        };
+                        let tri_pt3: [WitnessPoint; 3] = bases.map(WitnessPoint::at);
+                        let tri = std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord));
+                        WorkingPlane {
+                            base_rat: None,
+                            // ★ Deliberately not `reconcile`: a deep-rational witness's f64
+                            // `tri` is a rounded cache, and reconciling against it would label
+                            // the *rounded* plane exact — the two-descriptions trap. `None` is
+                            // what forces every question here onto the name or the climb.
+                            exact_coeffs: None,
+                            exact_normal: None,
+                            name_ints: keep_names
+                                .then(|| name_stored_ints(Some(&name), &tri_pt3, *fs))
+                                .flatten(),
+                            base: crate::planes::BaseFrame::none(),
+                            surf: donor,
+                            plane: nacre_geom::Plane::from_point_normal(
+                                tri[0],
+                                nacre_math::Vector3::from_array(*n_stored),
+                            )
+                            .unwrap(),
+                            tri,
+                            tri_pt3,
+                            rotated: false,
+                            frame_sign: *fs,
+                        }
+                    })
+                    .collect()
+            };
+            let named = build([1; 5], true);
+            assert!(
+                named
+                    .iter()
+                    .all(|p| p.name_ints.as_ref().is_some_and(|n| n.wide)),
+                "every fixture name folds and is wide"
+            );
+            let stripped = build([1; 5], false);
+            let negated = build([-1; 5], true);
+            let mixed = build([1, -1, 1, 1, -1], true);
+
+            let starved = Standard {
+                prec: 8,
+                coincidence: Mag::pow2(-4000),
+                scale: Mag::of(16.0),
+                cap: 8,
+            };
+            let notes = Notes::new();
+            let oracle = crate::planes::test_judge(&stripped);
+
+            // (question, expected) — hand-derived, so no route is its own oracle.
+            // q1: ∩(1,2,3) = (1+2⁻¹⁰⁰, 1, 1) vs ∩(0,2,3) = (1, 1, 1) on axis 0 → +1.
+            // q2: (1,1,1) against plane 1 (outward +x, a hair above) → −1.
+            // q3: (1+2⁻¹⁰⁰,1,1) against plane 0 → +1.
+            // q4: det of stored normals [(1,0,0), (1,2⁻¹⁰⁰,0), (0,0,−1)] = −2⁻¹⁰⁰ → −1.
+            // q5: det of stored normals [(1,0,0), (1,2⁻¹⁰⁰,0), (0,1,0)] = 0 — the exact-zero
+            //     case, where every route must say 0.
+            type Q = (
+                &'static str,
+                Box<dyn Fn(&Judge<'_, WorkingPlane>) -> i8>,
+                i8,
+            );
+            let questions: Vec<Q> = vec![
+                ("cmp", Box::new(|j| j.cmp_coord([1, 2, 3], [0, 2, 3], 0)), 1),
+                ("orient a", Box::new(|j| j.orient3d(0, 2, 3, 1)), -1),
+                ("orient b", Box::new(|j| j.orient3d(1, 2, 3, 0)), 1),
+                ("dir a", Box::new(|j| j.plane_pair_dir_sign(0, 4, 3)), -1),
+                ("dir zero", Box::new(|j| j.plane_pair_dir_sign(0, 4, 2)), 0),
+            ];
+            for (label, ask, expected) in &questions {
+                // The name route, too starved to climb: only the integers can answer.
+                for (t, arm) in [(&named, "named"), (&negated, "negated"), (&mixed, "mixed")] {
+                    let jd = Judge::new(t, starved, &notes);
+                    assert_eq!(ask(&jd), *expected, "{label}: starved {arm} table");
+                }
+                // The independent oracle: the full-budget climb, no names anywhere.
+                assert_eq!(ask(&oracle), *expected, "{label}: full climb oracle");
+                // The other side of the proof: starved and nameless, the judge cannot know.
+                let js = Judge::new(&stripped, starved, &notes);
+                assert_eq!(
+                    ask(&js),
+                    0,
+                    "{label}: a starved judge without names must come back empty-handed"
+                );
+            }
+        }
     }
 }

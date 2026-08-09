@@ -49,5 +49,8 @@ nacre-step = { path = "../nacre-step", version = "0.0.0" }
 nacre-tess = { path = "../nacre-tess", version = "0.0.0" }
 # Boolean tests diff result volumes against the analytic mass properties.
 nacre-props = { path = "../nacre-props", version = "0.0.0" }
+# The wide-name rescue tests hand-build synthetic `PlaneName::Wide` fixtures (production code
+# reaches BigInt only through nacre-cip's types).
+num-bigint = "0.4"
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.
