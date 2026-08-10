@@ -2032,6 +2032,32 @@ pub fn face_plane(model: &Model, face: Handle<Face>) -> Result<SketchPlane, OpEr
     Ok(realized_plane(f.origin, f.x, f.y))
 }
 
+/// **Where a frame is, in space** — its origin and its two axes, realized as f64.
+///
+/// [`face_plane`] answers this for a face; this answers it for any frame a caller holds, which
+/// is what a viewer needs to draw a sketch where it was drawn: the sketch's coordinates are
+/// `(u, v)` in this frame, and `origin + u·x + v·y` is the point.
+///
+/// ★ It is a **report**, not a truth. The frame's statement is the truth — this is that
+/// statement realized, with all the rounding a realization carries, and nothing exact should be
+/// decided from it.
+///
+/// `None` when the frame's chain cannot be realized at all (a plane with no name). A caller
+/// that cannot place a thing should decline to draw it rather than draw it somewhere wrong.
+pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
+    let basis = crate::rotated_vertex::frame_world_basis(
+        model,
+        frame.plane(),
+        frame.placement(),
+        frame.flip(),
+    )?;
+    Some(realized_plane(
+        Point3::from_array(basis.0),
+        Vector3::from_array(basis.1),
+        Vector3::from_array(basis.2),
+    ))
+}
+
 /// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and
 /// measured flip that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in. Where
 /// [`face_plane`] projects that frame to realized f64 axes for a caller to *look at*, this is

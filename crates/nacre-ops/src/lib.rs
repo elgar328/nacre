@@ -32,7 +32,7 @@ pub use nacre_cip::Decision;
 pub use nacre_cip::predicate::{Evidence, Site};
 pub use ops::{
     BoolKind, DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing,
-    Ring2d, SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, replay,
+    Ring2d, SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
 };
 pub use sketch::{Curve2d, Edge2d, SketchError, from_edges, from_rings};
 

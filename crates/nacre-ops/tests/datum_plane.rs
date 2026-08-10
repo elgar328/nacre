@@ -2354,3 +2354,62 @@ fn a_moved_wide_meet_datum_frames_and_replays() {
         angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
     };
 }
+
+/// **Where a frame is** — `frame_plane` realizes any frame's origin and axes, which is what a
+/// viewer needs to draw a sketch on the plane it was stated on.
+///
+/// The proposition is not "these are the numbers I expected": for a plane through three named
+/// vertices nobody outside the kernel can predict the axes, and guessing them from the vertex
+/// coordinates is exactly the mistake `ThroughVertices` exists to prevent. What can be measured
+/// is that the frame's own coordinates land on the frame's own plane — so a point stated as
+/// `origin + u·x + v·y` is tested against the plane the frame names.
+#[test]
+fn a_frame_says_where_it_is() {
+    let mut m = Model::new();
+
+    // A tilted plane, stated by three written points, and a plane through three vertices of a
+    // box — the two roads a sketch can arrive on.
+    let tilted = SketchPlane::through_points(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([1.0, 0.0, 1.0]),
+        Point3::from_array([0.0, 1.0, 0.0]),
+    )
+    .expect("three points, one plane");
+    let OpOutput::DatumPlane { plane, frame } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::Stated(tilted),
+        },
+    )
+    .expect("datum") else {
+        panic!("datum answered something else")
+    };
+
+    let sp = nacre_ops::frame_plane(&m, &frame).expect("a stated plane realizes");
+    // Every point of the frame lies on the plane the frame names.
+    let normal = match m.surface(plane) {
+        Surface::Plane(p) => p.normal(),
+        Surface::Cylinder(_) => panic!("a datum is planar"),
+    };
+    let anchor = sp.origin();
+    for (u, v) in [(0.0, 0.0), (3.0, 0.0), (0.0, -2.5), (7.25, 4.5)] {
+        let p = anchor + sp.x_axis() * u + sp.y_axis() * v;
+        assert!(
+            (p - anchor).dot(normal).abs() < 1e-9,
+            "({u}, {v}) in the frame is off its own plane"
+        );
+    }
+    // The axes are a frame: unit length and perpendicular.
+    assert!((sp.x_axis().norm() - 1.0).abs() < 1e-9);
+    assert!((sp.y_axis().norm() - 1.0).abs() < 1e-9);
+    assert!(sp.x_axis().dot(sp.y_axis()).abs() < 1e-9);
+
+    // ★ Deliberately **not** compared against `face_plane`: a face's frame winds its axes to
+    // the face's own outward normal, so a reversed face names the same plane on a different
+    // basis. Both are frames of that plane and neither is wrong — the comparison would be
+    // measuring the wrong proposition. What matters for a sketch is that this realization is
+    // the one `Operation::Extrude` places a profile with, which it is (both read the frame's
+    // placement through `frame_world_basis`/`exact_frame`), and that the drawn lines land where
+    // the extruded solid does — measured end to end where the two can be seen together, in
+    // nacre-kit's `sketch_lines` tests.
+}
