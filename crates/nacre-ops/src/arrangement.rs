@@ -1728,14 +1728,25 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
                 // whether the solid straddles here, and nothing says which to believe.
                 return Err(reject(RejectReason::EdgeOccupancyConflict));
             }
-            // ★ Grazes fill arcs, so take their **union** rather than requiring them to agree.
-            // Two faces of one solid meeting *at* this edge each fill one side, and together they
-            // fill both — which is the same occupancy the diagram above calls `[T,T]`, and the same
-            // thing a lone transversal means. Requiring agreement read that as a contradiction and
-            // rejected it; it is the ordinary picture wherever a solid's edge lies in `W`, which is
-            // exactly what a four-plane concurrency is made of.
-            for &above in &grazes {
-                mask[base + usize::from(!above)] = true;
+            // A valid solid brings exactly two faces to an edge, so more than two grazes on one
+            // merged edge is degenerate input, not a case to arbitrate.
+            if grazes.len() > 2 {
+                return Err(reject(RejectReason::EdgeOccupancyConflict));
+            }
+            // ★ Grazes combine by **parity per side**, not by union. One graze is a step (the
+            // face fills that arc — flip it). An opposite pair is a solid whose edge lies in `W`
+            // with material above on one in-plane side and below on the other — both flip, the
+            // `[T,T]` of the diagram, which is what a four-plane concurrency is made of. And a
+            // **same-side pair flips nothing**: whether it is a knife edge (the wedge between the
+            // two faces is the material, which pinches to measure zero at `W`) or its reflex
+            // complement (the wedge is the void), what is immediately above `W` is the same on
+            // both sides of this line. The union rule read that pair as one fill and flipped a
+            // bit that changes nothing — a mask the propagation check then caught two layers
+            // later as LabelConflict.
+            for side in [true, false] {
+                if grazes.iter().filter(|&&a| a == side).count() % 2 == 1 {
+                    mask[base + usize::from(!side)] = true;
+                }
             }
         } else if !seated.is_empty() {
             if seated.iter().any(|&b| b != seated[0]) {
@@ -2565,6 +2576,36 @@ mod tests {
     use super::*;
     use crate::SketchFrame;
     use nacre_scalar::Axis;
+
+    /// The graze rows of `edge_mask`'s algebra, one by one. The missing row was the
+    /// same-side pair: a knife edge's two faces both leave `W` upward, the material
+    /// between them pinches to measure zero at the plane, and flipping anything there
+    /// hands the label propagation a contradiction it reports two layers later.
+    #[test]
+    fn edge_mask_graze_algebra() {
+        let g = |above: bool| (SolidSide::A, SegKind::Graze { body_above: above });
+        let flips = |m: &[(SolidSide, SegKind)]| edge_mask(m).unwrap();
+
+        // One graze: a step — the face fills that arc, its bit flips.
+        assert_eq!(flips(&[g(true)]), [true, false, false, false]);
+        assert_eq!(flips(&[g(false)]), [false, true, false, false]);
+        // An opposite pair: the solid's edge lies in W with material above on one
+        // in-plane side and below on the other — both flip (the [T,T] picture).
+        assert_eq!(flips(&[g(true), g(false)]), [true, true, false, false]);
+        // ★ A same-side pair: knife edge (or its reflex complement) — nothing flips,
+        // whichever side the pair is on.
+        assert_eq!(flips(&[g(true), g(true)]), [false; 4]);
+        assert_eq!(flips(&[g(false), g(false)]), [false; 4]);
+        // The two solids are independent lanes.
+        let gb = (SolidSide::B, SegKind::Graze { body_above: true });
+        assert_eq!(flips(&[g(true), g(true), gb]), [false, false, true, false]);
+
+        // More than two grazes from one solid is degenerate input, not a case.
+        assert!(edge_mask(&[g(true), g(true), g(true)]).is_err());
+        // Unchanged refusals: a graze coincident with a same-solid true crossing.
+        let t = (SolidSide::A, SegKind::Transversal { mat: 1 });
+        assert!(edge_mask(&[g(true), t]).is_err());
+    }
 
     /// The engine entry with the evidence dropped — these tests assert geometry, and the report
     /// has its own tests. Shadows [`super::boolean`] so the call sites read as they always did.
