@@ -1339,6 +1339,42 @@ fn angular_order(
     Ok(out)
 }
 
+/// Keep only the edges that carry news: an edge whose [`edge_mask`] is all-false changes no
+/// label when crossed, so the cells on its two sides are the same region — of the arrangement
+/// *and* of the result, since equal labels mean an equal keep decision. Left in the skeleton it
+/// only damages structure: a knife-edge tangency far from everything else is a dangling edge the
+/// face walk cannot close (a two-half-edge orbit), which surfaced as `RingOrientation` two layers
+/// from its cause.
+///
+/// This is the 1D twin of `touches`: a single-point tangency is recorded as a vertex but never
+/// becomes a segment, and a tangency along a line is now an edge that never enters the DCEL.
+/// Where a knife edge coincides with the *other* solid's real boundary, that solid's
+/// contributions make the mask non-false and the edge stays — a true boundary cannot be dropped
+/// by this filter.
+///
+/// Mask evaluation moves ahead of the walk here, so a conflict (`EdgeOccupancyConflict`) that
+/// used to hide behind a walk-stage reject can now surface first — nearer its cause.
+fn drop_newsless(segs: Vec<MergedSeg>) -> Result<Vec<MergedSeg>, BoolError> {
+    let mut kept = Vec::with_capacity(segs.len());
+    for s in segs {
+        if edge_mask(&s.merged)? != [false; 4] {
+            kept.push(s);
+            continue;
+        }
+        // The only way to all-false is an even count of same-side grazes per solid (seated flips
+        // one bit, a transversal flips two, and an edge has at least one contribution) — anything
+        // else dropped here would be a hole in that argument, so it is checked, not assumed.
+        debug_assert!(
+            s.merged
+                .iter()
+                .all(|(_, k)| matches!(k, SegKind::Graze { .. })),
+            "a newsless edge that is not a graze pair: {:?}",
+            s.merged
+        );
+    }
+    Ok(kept)
+}
+
 /// One face of the arrangement: the cyclic list of half-edges bounding it, and its winding
 /// (`+1` a bounded island, `-1` the unbounded outer contour).
 #[derive(Clone, Debug)]
@@ -2035,6 +2071,7 @@ fn trace_result_faces(
             }
             let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
+            let split = drop_newsless(split)?;
             Ok((split, local))
         })?;
         splits.clear();
@@ -2308,6 +2345,25 @@ pub(crate) fn frame_audit(
         &jd,
         &plane_ix,
     );
+    // The alias fixpoint, exactly as the boolean runs it (sequentially): classes discover names
+    // for one another's features, so auditing each class against an empty table is auditing a
+    // *different* pipeline — it diverged from the boolean's answer the day the rounds arrived,
+    // and the divergence surfaced when this file's test moved to a fixture that needs them.
+    let mut aliases = Aliases::default();
+    loop {
+        let before = aliases.len();
+        for wc in 0..geom.len() {
+            let mut tr = trace_on_class(&trace_in, wc, &jd, &faces_tab, &plane_ix);
+            aliases.absorb(&std::mem::take(&mut tr.aliases));
+            if tr.declined.is_empty() {
+                let merged = merge_coincident(&tr.segs, wc, &aliases);
+                let _ = split_at_crossings(&jd, wc, &merged, &mut aliases);
+            }
+        }
+        if aliases.len() == before {
+            break;
+        }
+    }
     let mut out = Vec::new();
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
@@ -2341,8 +2397,12 @@ pub(crate) fn frame_audit(
             Some(decline_to_reject(kind, faces_tab[fp].face))
         } else {
             let run = || -> Result<(), BoolError> {
-                let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-                let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default())?;
+                // A copy, so one class's split discoveries cannot leak into the next class's
+                // audit — the fixpoint above already holds everything the boolean would know.
+                let mut local = aliases.clone();
+                let merged = merge_coincident(&tr.segs, wc, &local);
+                let split = split_at_crossings(&jd, wc, &merged, &mut local)?;
+                let split = drop_newsless(split)?;
                 let (cells, face_of) = extract_cells(&jd, wc, &split)?;
                 let nesting = nest_cells(&jd, wc, &cells, &split)?;
                 let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4])?;
@@ -4194,49 +4254,56 @@ mod tests {
     /// at `120°` is one; if a later capability makes it build, the fix is to re-run that sweep and
     /// take whatever still declines — not to weaken the assertion.
     #[test]
-    fn the_audit_reports_the_same_reject_as_the_boolean() {
+    fn the_audit_does_not_invent_failures() {
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+        // The audit's scope is the per-class pipeline, and its duty is to run **the pipeline the
+        // boolean runs** — with the alias fixpoint. Audited against an empty alias table it
+        // reported `UnorderedEdges` for three classes of this input (names two classes discover
+        // for each other were missing), failures the boolean never had: an instrument that
+        // invents readings. The boolean's own reject here (`DegenerateWitness`) comes from the
+        // routing judgements before any class pipeline runs, which is outside the audit's scope
+        // — so the audit's honest answer for this input is "no class failed".
+        //
+        // (This test once asserted the audit reports the boolean's *class-level* reject, on a
+        // fixture chosen as "some input that rejects" — a bar rotated through an L-shaped
+        // target. The knife-edge fix turned that family, and every class-level-rejecting valid
+        // input we could construct, into answers; the shared mapping the old test guarded,
+        // `decline_to_reject`, is one function called by both consumers, so it cannot drift.)
         let build = || -> (Model, Handle<Solid>, Handle<Solid>) {
             let mut m = Model::new();
-            let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-            let block = m.add_cuboid(
-                Point3::from_array([0.5, 0.0, 1.0]),
-                Point3::from_array([1.0, 1.0, 2.0]),
-            );
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+            let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
             m.rebuild_adjacency();
-            let target = boolean(&mut m, BoolKind::Fuse, cube, block).expect("block fuses on")[0];
-            m.rebuild_adjacency();
-            let bar = m.add_cuboid(
-                Point3::from_array([0.3, -0.5, 0.5]),
-                Point3::from_array([0.7, 1.5, 1.5]),
-            );
-            m.rebuild_adjacency();
-            let bar = transform(
+            let a = transform(
                 &mut m,
-                bar,
+                a,
                 &Isometry::rotation(Rotation {
-                    axis: Axis::Y,
-                    point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
-                    angle: Angle::from_deg(Rat::from_int(120)).unwrap(),
+                    axis: Axis::Z,
+                    point: [Rat::from_int(0); 3],
+                    angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
                 }),
             )
             .unwrap();
             m.rebuild_adjacency();
-            (m, target, bar)
+            (m, a, b)
         };
-
-        let (mut m, target, bar) = build();
-        let err = boolean(&mut m, BoolKind::Cut, target, bar).unwrap_err();
-        let BoolError::Unsupported { reason } = err else {
-            panic!("expected an Unsupported rejection, got {err:?}");
-        };
-
-        let (m, target, bar) = build();
-        let audits = frame_audit(&m, BoolKind::Cut, target, bar).unwrap();
-        let failed: Vec<RejectReason> = audits.iter().filter_map(|a| a.failed_at).collect();
-        assert!(
-            failed.contains(&reason),
-            "the audit must report the boolean's reject ({reason:?}), got {failed:?}"
+        let (mut m, a, b) = build();
+        let err = boolean(&mut m, BoolKind::Cut, a, b).unwrap_err();
+        assert_eq!(
+            err,
+            BoolError::Unsupported {
+                reason: RejectReason::DegenerateWitness
+            },
+            "the fixture's premise: a pre-class reject"
+        );
+        let (m, a, b) = build();
+        let audits = frame_audit(&m, BoolKind::Cut, a, b).unwrap();
+        let failed: Vec<RejectReason> = audits.iter().filter_map(|x| x.failed_at).collect();
+        assert_eq!(
+            failed,
+            vec![],
+            "every class runs clean under the boolean's own alias table — a failure invented \
+             here is an artifact of running a different pipeline than the boolean runs"
         );
     }
 
