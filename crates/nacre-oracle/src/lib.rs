@@ -4166,4 +4166,113 @@ centroid 1 1.5 2
             }
         }
     }
+
+    /// **The rotation sweep, scored fuse by fuse.**
+    ///
+    /// The 30° step is where `sin 30° = ½` puts a rotated copy's corner exactly on one of the
+    /// original's face planes, and the union's vertex there is named by four concurrent planes. That
+    /// fuse *always* built — what it could not do was describe itself in its own surfaces, so the
+    /// next rotation refused it. Nothing ever checked whether the shape it built was **right**: the
+    /// defect was in the naming, the labelling sat one step away, and a wrong answer here would have
+    /// looked exactly like the correct one to every test that existed.
+    ///
+    /// So OCCT scores every step of the sweep from the same operands, before nacre consumes them.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn the_thirty_degree_sweep_matches_occt() {
+        use nacre_math::Point2;
+        use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchFrame, apply, boolean};
+        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+
+        let prism = |m: &mut Model, pts: &[[f64; 2]], axis: Axis, dist: f64| {
+            let profile =
+                Profile2d::polygon(pts.iter().map(|&p| Point2::from_array(p)).collect()).unwrap();
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("extrude") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            solid
+        };
+        let mut m = Model::new();
+        let plate = prism(
+            &mut m,
+            &[
+                [0.0, 0.0],
+                [50.0, 0.0],
+                [50.0, 25.0],
+                [38.0, 25.0],
+                [38.0, 50.0],
+                [50.0, 50.0],
+                [50.0, 75.0],
+                [0.0, 75.0],
+            ],
+            Axis::Z,
+            12.0,
+        );
+        let bar = prism(
+            &mut m,
+            &[[20.0, 12.0], [75.0, 12.0], [75.0, 37.0], [55.0, 37.0]],
+            Axis::X,
+            25.0,
+        );
+        let unit = boolean(&mut m, BoolKind::Fuse, plate, bar).expect("the part fuses")[0];
+        m.rebuild_adjacency();
+
+        // The template must stay live to be copied again, so the accumulator starts as a copy.
+        let copy = |m: &mut Model, s| {
+            let OpOutput::Copy { solid } = apply(m, &Operation::Copy { solid: s }).expect("copy")
+            else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            solid
+        };
+        let mut part = copy(&mut m, unit);
+        for deg in (30..360).step_by(30) {
+            let c = copy(&mut m, unit);
+            let OpOutput::Transform { solid: c } = apply(
+                &mut m,
+                &Operation::Transform {
+                    solid: c,
+                    isometry: Isometry::rotation(Rotation {
+                        axis: Axis::Z,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(deg as i128)).unwrap(),
+                    }),
+                },
+            )
+            .expect("rotate a copy") else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            let occt = occt_boolean_of(&m, OcctBool::Fuse, part, c).expect("occt fuse");
+            part = boolean(&mut m, BoolKind::Fuse, part, c).expect("the copy fuses on")[0];
+            m.rebuild_adjacency();
+            let ours = nacre_props::mass_props(&m, part).expect("props");
+            assert!(
+                approx(ours.volume, occt.volume),
+                "{deg}°: volume nacre {} vs occt {}",
+                ours.volume,
+                occt.volume
+            );
+            let c = nacre_props::centroid(&m, part).expect("centroid");
+            for i in 0..3 {
+                assert!(
+                    approx(c[i], occt.centroid[i]),
+                    "{deg}°: centroid axis {i}: nacre {} vs occt {}",
+                    c[i],
+                    occt.centroid[i]
+                );
+            }
+        }
+    }
 }

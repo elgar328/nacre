@@ -583,6 +583,74 @@ pub(crate) fn assemble_fuse_cut(
         model.live_solids.retain(|&s| s != a && s != b);
         return Ok(Vec::new());
     }
+    // ★★ **A result vertex is named by the faces that meet it.**
+    //
+    // The arrangement names a point by a canonical plane triple — lexicographically first among
+    // the planes through it — and where four planes concur that choice can land on a plane the
+    // result keeps **no face on**: a rotated copy's wall, say, buried inside the union it was
+    // fused into. The definition *is* the vertex's identity, so such a result cannot describe
+    // itself, and `transform`'s remap (which walks this solid's own face surfaces) refuses it two
+    // operations later — a reject whose cause is here.
+    //
+    // So the triple is derived the way this function already derives an edge's carriers
+    // (`pair_surfs` below: "read off the whole result, not guessed from one side") and the way
+    // `component_is_outward_tol` derives a corner's: **one incident face, plus the far planes of
+    // its two edges at that corner.** Those three are result faces by construction, so
+    // `defs_are_remappable` holds by construction — and their meet is exactly this vertex, since
+    // the two edge lines through it are distinct.
+    let mut edge_faces: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
+    for lf in faces {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            let k = ring.len();
+            for t in 0..k {
+                edge_faces
+                    .entry(norm_edge(ring[t], ring[(t + 1) % k]))
+                    .or_default()
+                    .push(lf.plane_idx);
+            }
+        }
+    }
+    // The plane on the other side of an edge. `None` rather than an error: a corner this cannot
+    // resolve is one to skip, and the edge-use guard further down is what judges the face set.
+    let far_plane = |a: Node, b: Node, own: usize| -> Option<usize> {
+        let mut others = edge_faces
+            .get(&norm_edge(a, b))?
+            .iter()
+            .copied()
+            .filter(|&x| x != own);
+        let o = others.next()?;
+        others.all(|x| x == o).then_some(o)
+    };
+    let mut def_triple: HashMap<Node, [usize; 3]> = HashMap::new();
+    for lf in faces {
+        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+            let k = ring.len();
+            for t in 0..k {
+                let node = ring[t];
+                if def_triple.contains_key(&node) {
+                    continue;
+                }
+                let (Some(prev), Some(next)) = (
+                    far_plane(ring[(t + k - 1) % k], node, lf.plane_idx),
+                    far_plane(node, ring[(t + 1) % k], lf.plane_idx),
+                ) else {
+                    continue;
+                };
+                // ★ A straight corner is **skipped, not refused**. At a four-plane vertex a face's
+                // ring can run straight through the point — both its edges on one line — and then
+                // this face has no triple to give, while another face meeting the same vertex
+                // does. (`component_is_outward_tol` rejects here instead, and is right to: it
+                // asks about one lex-minimal corner, not about every vertex.)
+                if prev == next {
+                    continue;
+                }
+                let mut tri = [lf.plane_idx, prev, next];
+                tri.sort_unstable();
+                def_triple.insert(node, tri);
+            }
+        }
+    }
+
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
     let mut node_handle = |model: &mut Model, node: Node| -> Result<Handle<Vertex>, BoolError> {
@@ -598,13 +666,22 @@ pub(crate) fn assemble_fuse_cut(
                     .iter()
                     .find(|s| s.triple == triple)
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                // A vertex that is a corner of no face at all has no name in the result's own
+                // planes — a degeneracy, and the honest answer is the one this reason already
+                // carries ("a corner with no turn").
+                let tri = def_triple
+                    .get(&node)
+                    .copied()
+                    .ok_or_else(|| reject(RejectReason::StraightAngle))?;
                 let def = VertexDef::ThreePlane([
-                    planes[triple[0]].surf,
-                    planes[triple[1]].surf,
-                    planes[triple[2]].surf,
+                    planes[tri[0]].surf,
+                    planes[tri[1]].surf,
+                    planes[tri[2]].surf,
                 ]);
                 // The coordinate and its measured tolerance travel together into the cache
-                // (the arrangement made them as a pair — `three_planes` + `vertex_tol`).
+                // (the arrangement made them as a pair — `three_planes` + `vertex_tol`). Every
+                // plane through the point contains it exactly, so re-naming leaves the point
+                // itself untouched: the same vertex, said in surfaces this solid has.
                 model.push_vertex(def, sv.point, Some(sv.tol))
             }
         };
@@ -797,7 +874,11 @@ pub(crate) fn assemble_fuse_cut(
             })
         })
         .collect();
-    match positives.len() {
+    // ★ The invariant this function is responsible for, checked where it is established: every
+    // vertex of every result names surfaces this solid has faces on. A violation builds a solid
+    // that cannot be moved, and used to surface as a rejection two operations downstream — so the
+    // whole test suite is the corpus for it now, not the one caller that happens to transform.
+    let out = match positives.len() {
         0 => Err(reject(RejectReason::NoOutwardShell)),
         1 => {
             let outer_c = positives[0];
@@ -907,7 +988,15 @@ pub(crate) fn assemble_fuse_cut(
             model.live_solids.retain(|&s| s != a && s != b);
             Ok(solids)
         }
-    }
+    };
+    debug_assert!(
+        out.as_ref().is_ok_and(|solids| solids
+            .iter()
+            .all(|&s| crate::transform::defs_are_remappable(model, s)))
+            || out.is_err(),
+        "a result vertex names a surface this solid has no face on — see the def derivation above"
+    );
+    out
 }
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.

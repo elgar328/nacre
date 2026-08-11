@@ -80,7 +80,15 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
 /// 100%), and the suite staying green is that evidence: a firing here is a new rejection, which
 /// is a failing test. The positive control (`a_foreign_definition_is_rejected`) shows the gate
 /// actually bites.
-fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
+///
+/// ★★ **That expectation was once false, and is now enforced where it is made.** A boolean's
+/// assembly used to name a four-plane vertex by the arrangement's canonical triple, which could
+/// include a plane the result kept no face on; the solid built fine and refused to move, here,
+/// two operations after the mistake. `assemble_fuse_cut` now derives the name from the faces that
+/// meet the vertex *and* asserts this predicate on what it returns (debug builds), so the whole
+/// suite is the corpus for "every producer writes definitions from its own face surfaces" rather
+/// than this gate being the first to find out.
+pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
     let src = model.solids.get(solid);
     let shells: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
