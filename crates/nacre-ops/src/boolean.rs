@@ -597,7 +597,7 @@ pub(crate) fn assemble_fuse_cut(
     // `component_is_outward_tol` derives a corner's: **one incident face, plus the far planes of
     // its two edges at that corner.** Those three are result faces by construction, so
     // `defs_are_remappable` holds by construction — and their meet is exactly this vertex, since
-    // the two edge lines through it are distinct.
+    // the two edge lines through it are distinct (checked, not assumed — see the corner guards).
     let mut edge_faces: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
     for lf in faces {
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
@@ -642,6 +642,16 @@ pub(crate) fn assemble_fuse_cut(
                 // does. (`component_is_outward_tol` rejects here instead, and is right to: it
                 // asks about one lex-minimal corner, not about every vertex.)
                 if prev == next {
+                    continue;
+                }
+                // ★ …and neither is a corner whose two edges ride **different planes that carry
+                // one line**. `prev != next` does not rule that out, and three planes through a
+                // line name no point — the def would then be a triple that defines nothing. The
+                // same determinant the arrangement uses to spot it (`Aliases::record`: "shares a
+                // line: names no point") answers here. Measured: it fires nowhere in the suite,
+                // which is why the check is here rather than trusted — the argument above claims
+                // the meet *is* this vertex, and this is what makes that true by construction.
+                if jd.plane_pair_dir_sign(lf.plane_idx, prev, next) == 0 {
                     continue;
                 }
                 let mut tri = [lf.plane_idx, prev, next];
