@@ -618,10 +618,22 @@ pub(crate) fn every_ray(
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
+    let nodes: Vec<[usize; 3]> = ring.iter().map(|e| e.node).collect();
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
+        // Where the ring meets the line — the walk `trace_transversal_face` reads too.
+        //
+        // ★ **A `Crossing` is exactly what this loop used to derive per edge.** It said "is
+        // `X = {P, Q_a, R}` strictly inside the edge" with two `order_along`s: `a` is the sign of
+        // `X − From` along `P ∩ R` and `b` that of `X − To`, both normalized to the same direction
+        // on the same line, so `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a` — which
+        // is what the walk already knows from their sides. The parallel guard goes with it: an edge
+        // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
+        let Some(features) = ring_against_plane(jd, &nodes, qa) else {
+            continue; // the whole ring lies on `Q_a`
+        };
         // Clear iff no ring node sits on `Q_a`, hence none on the line `P ∩ Q_a`.
-        if ring.iter().any(|e| side_of(jd, e.node, qa) == 0) {
+        if features.iter().any(|f| matches!(f, Feature::Run { .. })) {
             continue;
         }
         let qb = *v
@@ -630,19 +642,12 @@ pub(crate) fn every_ray(
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
         for dir in [1i8, -1] {
             let mut crossings = 0usize;
-            for e in ring {
-                let (r, si, sj) = (e.wall, e.from_h, e.to_h);
-                // Parallel: distinct lines, because no ring node lies on `P ∩ Q_a`.
-                if jd.plane_pair_dir_sign(p, qa, r) == 0 {
-                    continue;
-                }
-                // `X = {P, Q_a, R}` strictly inside the edge?
-                let (a, b) = (order_along(jd, p, r, qa, si), order_along(jd, p, r, qa, sj));
-                if a * b >= 0 {
-                    continue; // outside the edge, or on an endpoint (excluded above)
-                }
+            for f in &features {
+                let Feature::Crossing { edge } = *f else {
+                    unreachable!("runs sent us to the next candidate")
+                };
                 // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
-                match order_along(jd, p, qa, r, qb) {
+                match order_along(jd, p, qa, ring[edge].wall, qb) {
                     0 => return Err(reject(RejectReason::PointOnRing)), // `X == v`, inside an edge
                     o if o == dir => crossings += 1,
                     _ => {}

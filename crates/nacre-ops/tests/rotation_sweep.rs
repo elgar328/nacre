@@ -307,3 +307,44 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
         "call `ring_in_ring` instead — the retry lives there"
     );
 }
+
+/// ★ …and so does the walk underneath it.
+///
+/// "Where does this ring meet that line, and does it cross or only touch" was answered in two
+/// places — the tracer had the flank rule, the ray caster threw such a candidate away — which is
+/// the same shape the retry above was in. It is `ring_against_plane` now. Reading `side_of` over a
+/// **ring** anywhere else is a second walk being born, so the source says so.
+#[test]
+fn no_production_code_walks_a_ring_past_the_shared_walk() {
+    let src = [
+        "src/combinatorics.rs",
+        "src/arrangement.rs",
+        "src/boolean.rs",
+    ];
+    let mut offenders = Vec::new();
+    for file in src {
+        let text = std::fs::read_to_string(file).expect("source file");
+        for (n, line) in text.lines().enumerate() {
+            let calls = line.contains("side_of(");
+            let is_definition = line.contains("fn side_of");
+            let is_prose =
+                line.trim_start().starts_with("//") || line.trim_start().starts_with("///");
+            if calls && !is_definition && !is_prose {
+                offenders.push(format!("{file}:{}: {}", n + 1, line.trim()));
+            }
+        }
+    }
+    // The walk itself, plus the two places that ask about a **single point** rather than a ring:
+    // `point_on_ring` ("is `v` on this edge's line") and the alias seed ("does this vertex lie on
+    // that class"). Neither reads a sign sequence, so neither is a walk.
+    offenders.retain(|o| {
+        !o.contains("side_of(jd, nodes[i], q)")
+            && !o.contains("side_of(jd, v, r)")
+            && !o.contains("side_of(&jd, sorted3(t), wc)")
+    });
+    assert_eq!(
+        offenders,
+        Vec::<String>::new(),
+        "call `ring_against_plane` instead — the flank rule lives there"
+    );
+}
