@@ -4177,9 +4177,20 @@ centroid 1 1.5 2
     /// looked exactly like the correct one to every test that existed.
     ///
     /// So OCCT scores every step of the sweep from the same operands, before nacre consumes them.
+    ///
+    /// ★ 38°, 40° and 44° are here for the same reason at one remove: those are the sweeps that
+    /// only run at all because a ray is now allowed to graze a ring corner, and the containment
+    /// answers that ray gives are checked by **nothing else**. A hole hung on the wrong face is a
+    /// topology error, and volume and centroid see it.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
-    fn the_thirty_degree_sweep_matches_occt() {
+    fn the_rotation_sweeps_match_occt() {
+        for step in [30usize, 38, 40, 44] {
+            sweep_matches_occt(step);
+        }
+    }
+
+    fn sweep_matches_occt(step: usize) {
         use nacre_math::Point2;
         use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchFrame, apply, boolean};
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
@@ -4237,7 +4248,7 @@ centroid 1 1.5 2
             solid
         };
         let mut part = copy(&mut m, unit);
-        for deg in (30..360).step_by(30) {
+        for deg in (step..360).step_by(step) {
             let c = copy(&mut m, unit);
             let OpOutput::Transform { solid: c } = apply(
                 &mut m,
@@ -4260,7 +4271,7 @@ centroid 1 1.5 2
             let ours = nacre_props::mass_props(&m, part).expect("props");
             assert!(
                 approx(ours.volume, occt.volume),
-                "{deg}°: volume nacre {} vs occt {}",
+                "{step}°/{deg}°: volume nacre {} vs occt {}",
                 ours.volume,
                 occt.volume
             );
@@ -4268,7 +4279,7 @@ centroid 1 1.5 2
             for i in 0..3 {
                 assert!(
                     approx(c[i], occt.centroid[i]),
-                    "{deg}°: centroid axis {i}: nacre {} vs occt {}",
+                    "{step}°/{deg}°: centroid axis {i}: nacre {} vs occt {}",
                     c[i],
                     occt.centroid[i]
                 );

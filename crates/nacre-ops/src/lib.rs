@@ -2262,11 +2262,26 @@ pub mod tests {
     /// live and load-bearing (`nest_cells` picks a hole's host with them, `unify_coplanar_faces`
     /// groups by them), so they had to be re-homed rather than deleted with their old fixture.
     fn holed_face_rings(which: &str) -> (Vec<WorkingPlane>, usize, Ring, Ring) {
-        let (mut m, l, stub) = if which == "dimple" {
+        let (m, l, stub) = if which == "dimple" {
             l_and_dimple()
         } else {
             l_and_ell_stub()
         };
+        let (planes, p, outer, hole) = holed_face_rings_of(m, l, stub);
+        assert_eq!(outer.len(), 6, "{which}: the L's cap is a reflex hexagon");
+        (planes, p, outer, hole)
+    }
+
+    /// Cut `stub` out of `l` and hand back the first holed face's two rings, with the plane table
+    /// they are named in. The ring-length assertion belongs to the caller: a fixture built to put
+    /// a specific corner on a specific line **must** say how many corners it expects, because
+    /// `Profile2d` dissolves a vertex that sits mid-run on a straight edge and a silently
+    /// dissolved corner is a fixture that measures nothing.
+    fn holed_face_rings_of(
+        mut m: Model,
+        l: Handle<Solid>,
+        stub: Handle<Solid>,
+    ) -> (Vec<WorkingPlane>, usize, Ring, Ring) {
         let r = boolean_one(&mut m, BoolKind::Cut, l, stub).expect("the cut");
         m.rebuild_adjacency();
         let faces_tab = collect_planes(&m, r).unwrap();
@@ -2298,11 +2313,10 @@ pub mod tests {
                     &plane_ix,
                 )
                 .unwrap();
-                assert_eq!(outer.len(), 6, "{which}: the L's cap is a reflex hexagon");
                 return (planes, plane_ix[fp], outer, hole);
             }
         }
-        panic!("{which}: no holed face");
+        panic!("no holed face");
     }
 
     #[test]
@@ -2447,6 +2461,133 @@ pub mod tests {
             )
             .unwrap()
         );
+    }
+
+    /// A 40×40 plate with the given outline and a through pocket at `[20,30]×[10,20]`, as the
+    /// holed cap's two rings. The pocket's four wall **planes** are what the fixtures below aim
+    /// rays along; the outline decides which of them a ring node sits on.
+    fn grazed_plate(outline: &[[f64; 2]]) -> (Vec<WorkingPlane>, usize, Ring, Ring) {
+        let profile =
+            Profile2d::polygon(outline.iter().map(|&p| p2(p[0], p[1])).collect()).unwrap();
+        let mut m = replay(&[extrude_log_op(profile, 12.0)]).unwrap();
+        let plate = m.live_solids[0];
+        // Through, so the cap really is holed rather than dimpled.
+        let pocket = m.add_cuboid(
+            Point3::from_array([20.0, 10.0, -1.0]),
+            Point3::from_array([30.0, 20.0, 13.0]),
+        );
+        holed_face_rings_of(m, plate, pocket)
+    }
+
+    /// The ring node whose point is `(x, y)` — fixtures are written in coordinates and the engine
+    /// answers in plane triples, so this is where the two meet.
+    fn node_at(planes: &[WorkingPlane], ring: &Ring, x: f64, y: f64) -> [usize; 3] {
+        let pts = ring_points(planes, ring);
+        let i = pts
+            .iter()
+            .position(|p| (p[0] - x).abs() < 1e-9 && (p[1] - y).abs() < 1e-9)
+            .unwrap_or_else(|| panic!("no node at ({x}, {y}) among {pts:?}"));
+        ring[i]
+    }
+
+    /// ★ **A ray that grazes a corner is still a ray** — the four ways a ring can meet the ray's
+    /// line, each with an answer known by hand.
+    ///
+    /// A ring node *on* the line used to make the parity ambiguous, so the candidate was thrown
+    /// away; with both of a vertex's candidates thrown away the whole question came back
+    /// `NO_CLEAR_RAY`, and a band of rotation angles died of it. The rule that resolves it is the
+    /// one `trace_transversal_face` has always used: look at the node's two off-line neighbours —
+    /// **opposite sides is a crossing, equal sides a touch**.
+    ///
+    /// So both fixtures block **both** candidates. That matters: with one candidate left clear the
+    /// answer comes out anyway and the test would be green before the fix as well as after,
+    /// measuring nothing. Here `point_in_ring` is `NO_CLEAR_RAY` before and the truth after.
+    ///
+    /// The outer outlines are chosen so that no vertex sits mid-run on a straight edge —
+    /// `Profile2d` dissolves those at construction — and the ring lengths are asserted so that a
+    /// dissolve fails loudly instead of quietly weakening the fixture.
+    #[test]
+    fn a_ray_that_grazes_a_corner_still_answers() {
+        // The pocket's own corner `(20,10)`: its two candidate lines are `y=10` and `x=20`.
+        //
+        // `y=10` carries the run — the outline's `(5,10)→(0,10)` edge lies *on* it — and the run's
+        // flanks `(5,20)` and `(0,0)` are on opposite sides, so the boundary crosses there.
+        // `x=20` is grazed by the single corner `(20,30)`, whose flanks `(40,40)` and `(0,40)` are
+        // also opposite. One crossing each way: the pocket corner is inside the plate.
+        let a = [
+            [0.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 40.0],
+            [20.0, 30.0],
+            [0.0, 40.0],
+            [0.0, 20.0],
+            [5.0, 20.0],
+            [5.0, 10.0],
+            [0.0, 10.0],
+        ];
+        let (planes, p, outer, hole) = grazed_plate(&a);
+        assert_eq!(outer.len(), 9, "every corner of the outline survived");
+        let jd = crate::planes::test_judge(&planes);
+        let outer_edges = combinatorics::ring_from_names(p, &outer).unwrap();
+        let hole_edges = combinatorics::ring_from_names(p, &hole).unwrap();
+
+        // Run-crossing and isolated-crossing, both saying "inside".
+        let v = node_at(&planes, &hole, 20.0, 10.0);
+        assert!(
+            combinatorics::point_in_ring(&jd, p, v, &outer_edges).unwrap(),
+            "the pocket's corner is inside the plate"
+        );
+        let rays = combinatorics::every_ray(&jd, p, v, &outer_edges).unwrap();
+        assert_eq!(rays.len(), 4, "both candidates are usable: {rays:?}");
+        assert!(rays.iter().all(|&x| x), "and unanimous — {rays:?}");
+
+        // ★ Negative control, and the touch rule's own lock: from the outline's `(0,10)` the
+        // `y=10` line grazes the pocket's `(20,10)→(30,10)` edge, whose flanks `(30,20)` and
+        // `(20,20)` are on the *same* side. Nothing crossed, so `(0,10)` is outside the pocket —
+        // and counting that touch as a crossing would make this ray disagree with the `x=0` one.
+        let w = node_at(&planes, &outer, 0.0, 10.0);
+        assert!(
+            !combinatorics::point_in_ring(&jd, p, w, &hole_edges).unwrap(),
+            "a plate corner is not inside the pocket"
+        );
+        let rays = combinatorics::every_ray(&jd, p, w, &hole_edges).unwrap();
+        assert_eq!(rays.len(), 4, "both candidates are usable: {rays:?}");
+        assert!(!rays.iter().any(|&x| x), "and unanimous — {rays:?}");
+    }
+
+    /// The isolated **touch** — the branch fixture A never reaches.
+    ///
+    /// The outline's bottom notch rises to `(12,10)` and turns straight back down, so both its
+    /// neighbours `(8,0)` and `(16,0)` are below `y=10`: the ring touched the ray's line without
+    /// crossing it. Counting it as a crossing flips the parity of the `−x` ray alone, and the two
+    /// directions of one candidate would then contradict each other.
+    #[test]
+    fn a_ring_that_touches_the_ray_and_turns_back_crossed_nothing() {
+        let b = [
+            [0.0, 0.0],
+            [8.0, 0.0],
+            [12.0, 10.0], // touches y=10 and turns back — the branch under test
+            [16.0, 0.0],
+            [40.0, 0.0],
+            [40.0, 40.0],
+            [20.0, 30.0], // blocks the x=20 candidate, so neither is clear
+            [0.0, 40.0],
+            [0.0, 20.0],
+            [5.0, 10.0], // crosses y=10
+            [0.0, 5.0],
+        ];
+        let (planes, p, outer, hole) = grazed_plate(&b);
+        assert_eq!(outer.len(), 11, "every corner of the outline survived");
+        let jd = crate::planes::test_judge(&planes);
+        let outer_edges = combinatorics::ring_from_names(p, &outer).unwrap();
+        let v = node_at(&planes, &hole, 20.0, 10.0);
+        assert!(
+            combinatorics::point_in_ring(&jd, p, v, &outer_edges).unwrap(),
+            "the pocket's corner is inside the plate"
+        );
+        let rays = combinatorics::every_ray(&jd, p, v, &outer_edges).unwrap();
+        assert_eq!(rays.len(), 4, "both candidates are usable: {rays:?}");
+        assert!(rays.iter().all(|&x| x), "and unanimous — {rays:?}");
     }
 
     /// The L with a stub rising out of its top face, footprint strictly inside that

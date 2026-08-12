@@ -546,15 +546,23 @@ pub(crate) fn ring_against_plane(
 /// and "is `X` ahead of `v`" are both [`order_along`], the comparator cell 3d already built
 /// for two three-plane points on one line. **No coordinate is read and no point is built.**
 ///
-/// **Choosing the ray first deletes the special cases.** A ring node on the ray's *line*
-/// would make the parity ambiguous; `side_of` decides that exactly. Once no node lies on the
-/// line, an edge's line cannot *be* the ray's line (its endpoints would be on it), so a zero
-/// determinant always means "parallel and distinct" — no crossing, no collinearity to handle
-/// — and every crossing is transversal, so parity is containment.
+/// **The flanks delete the special case, not the choice of ray.** A ring node *on* the ray's line
+/// leaves no room for "is `X` inside the edge" to decide anything, and this used to abandon the
+/// candidate; with both of `v`'s candidates abandoned the question came back `no_clear_ray`, and a
+/// band of rotation angles died of it. But the node is not ambiguous at all — its two off-line
+/// **neighbours** settle it: opposite sides and the boundary crossed here, equal sides and it
+/// touched and turned back. That is the rule `trace_transversal_face` has always read a ring with,
+/// and [`ring_against_plane`] is now where both get it.
+///
+/// So a `Feature::Run` — one node, or a whole edge of the ring lying on the line — contributes one
+/// crossing iff its flanks differ, and a `Feature::Crossing` contributes one where it always did.
+/// Nothing is counted twice: a crossing's endpoints are both off the line by construction.
 ///
 /// Candidates are each node's two non-`P` planes, in ring order, `+d` before `-d`; the first
-/// clear one wins, which keeps the answer deterministic. `no_clear_ray` if none is clear.
-/// The answer must not depend on which was chosen, and a golden says so.
+/// usable one wins, which keeps the answer deterministic. `no_clear_ray` survives for the two
+/// cases nothing can name: a ring lying wholly on `Q_a` (no flanks), and an on-line node whose own
+/// two walls are both parallel to the line (nothing pins it there). The answer must not depend on
+/// which candidate was chosen, and a golden says so.
 ///
 /// `v` must not lie *on* `ring` — a hole ring never touches the outer ring it sits in, and a seam
 /// loop never touches `∂f` — and this is where it is finally checked: an intersection at
@@ -632,19 +640,56 @@ pub(crate) fn every_ray(
         let Some(features) = ring_against_plane(jd, &nodes, qa) else {
             continue; // the whole ring lies on `Q_a`
         };
-        // Clear iff no ring node sits on `Q_a`, hence none on the line `P ∩ Q_a`.
-        if features.iter().any(|f| matches!(f, Feature::Run { .. })) {
-            continue;
-        }
         let qb = *v
             .iter()
             .find(|&&x| x != p && x != qa)
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
+        // A node on the line is a crossing point in its own right, so it must be nameable as one:
+        // some plane of its own, off the line, pins it there. (`third_on_l` picks a handle the
+        // same way, and for the same reason — one parallel to the line names no point on it.)
+        let namer = |i: usize| {
+            nodes[i]
+                .iter()
+                .copied()
+                .find(|&x| x != p && x != qa && jd.plane_pair_dir_sign(p, qa, x) != 0)
+        };
+        // Which side of `v` each run sits on, and whether the ring crossed the line there at all.
+        // A run is one interval of the line and the ring is simple, so it cannot double back
+        // inside itself: its two ends bracket it, and ends that disagree mean `v` is *between*
+        // them — on the ring.
+        let mut run_hits: Vec<i8> = Vec::new();
+        let mut unnameable = false;
+        for f in &features {
+            let Feature::Run {
+                first,
+                len,
+                flanks_differ,
+            } = *f
+            else {
+                continue;
+            };
+            let ends = [first, (first + len - 1) % nodes.len()];
+            let (Some(lo), Some(hi)) = (namer(ends[0]), namer(ends[1])) else {
+                unnameable = true;
+                break;
+            };
+            let o = [
+                order_along(jd, p, qa, lo, qb),
+                order_along(jd, p, qa, hi, qb),
+            ];
+            if o[0] != o[1] || o[0] == 0 {
+                return Err(reject(RejectReason::PointOnRing)); // `v` inside the run, or one of it
+            }
+            run_hits.push(if flanks_differ { o[0] } else { 0 });
+        }
+        if unnameable {
+            continue;
+        }
         for dir in [1i8, -1] {
-            let mut crossings = 0usize;
+            let mut crossings = run_hits.iter().filter(|&&o| o == dir).count();
             for f in &features {
                 let Feature::Crossing { edge } = *f else {
-                    unreachable!("runs sent us to the next candidate")
+                    continue; // runs are counted above
                 };
                 // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
                 match order_along(jd, p, qa, ring[edge].wall, qb) {

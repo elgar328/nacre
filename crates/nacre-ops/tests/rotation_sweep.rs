@@ -190,18 +190,33 @@ fn the_band_of_angles_a_single_probe_used_to_cost() {
     }
 }
 
-/// The band, plus the boundaries that never failed and must not start (37°, 46°) and the long
-/// 20° sweep — seventeen chained fuses, each on the result of the last. (38–40° are not here
-/// yet: one probe vertex was only half the story, and they still reject on the other half.)
+/// ★ The angles the retry alone could not save — where **every** candidate ray was blocked.
 ///
-/// `#[ignore]`: about sixty booleans on a solid that grows with every one, minutes in a debug
-/// build. The population is what the fix was judged by, so it is written down; the default suite
-/// carries one angle from it.
+/// A ring node sitting on the ray's line used to be abandoned rather than judged, and at 38–40°
+/// the arrangement puts one on every line a probe can cast along: five isolated corners and one
+/// whole edge, measured. The node's two off-line neighbours settle it — opposite sides is a
+/// crossing, equal sides a touch — which is the rule the tracer had all along.
+///
+/// This carries the *second* fix the way the test above carries the first; they lock different
+/// things, so both stay in the default suite.
+#[test]
+fn the_angles_where_no_ray_was_left_unblocked() {
+    if let Err((deg, e)) = sweep(38) {
+        panic!("the 38° sweep died at the {deg}° copy: {e:?}");
+    }
+}
+
+/// The whole band, plus the boundaries that never failed and must not start (37°, 46°) and the
+/// long 20° sweep — seventeen chained fuses, each on the result of the last.
+///
+/// `#[ignore]`: about eighty booleans on a solid that grows with every one, minutes in a debug
+/// build. The population is what the two fixes were judged by, so it is written down; the default
+/// suite carries one angle from each.
 #[test]
 #[ignore = "slow angle sweep (run with --ignored)"]
 fn the_whole_band_of_angles() {
     let mut died = Vec::new();
-    for step in [20, 37, 41, 42, 43, 44, 46] {
+    for step in [20, 37, 38, 39, 40, 41, 42, 43, 44, 46] {
         if let Err((deg, e)) = sweep(step) {
             died.push(format!("{step}° at the {deg}° copy: {e:?}"));
         }
@@ -238,9 +253,7 @@ fn the_thirty_degree_sweep_runs_to_completion() {
 /// If one of these moves, the fix reached further than its argument says it does.
 #[test]
 fn the_other_rejections_are_untouched() {
-    let cases: [(usize, RejectReason); 3] = [
-        // Every candidate ray for a containment test has a ring node on it.
-        (40, RejectReason::NoClearRay),
+    let cases: [(usize, RejectReason); 2] = [
         (45, RejectReason::CoplanarMerge),
         // Two bodies meeting along one line — no 2-manifold contains it.
         (120, RejectReason::NonManifoldResultEdge),
