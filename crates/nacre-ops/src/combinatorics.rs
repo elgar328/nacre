@@ -459,6 +459,85 @@ pub(crate) fn side_of(jd: &Judge<'_, WorkingPlane>, t: [usize; 3], q: usize) -> 
     jd.orient3d(t[0], t[1], t[2], q)
 }
 
+/// Where a ring meets the line that `q` cuts its plane along — see [`ring_against_plane`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Feature {
+    /// Edge `edge` (node `edge` → node `edge + 1`) crosses the line strictly inside: both its
+    /// endpoints are off `q` and on opposite sides of it.
+    Crossing { edge: usize },
+    /// `len` consecutive nodes from `first` lie *on* `q`. `len >= 2` means the edges between them
+    /// lie on the line too — an on-line interval rather than a point.
+    ///
+    /// `flanks_differ` is the whole decision: the two off-line neighbours bracketing the run sit on
+    /// **opposite** sides, so the ring genuinely crosses the line here; equal sides mean it touched
+    /// and turned back, and nothing crossed.
+    Run {
+        first: usize,
+        len: usize,
+        flanks_differ: bool,
+    },
+}
+
+/// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
+///
+/// ★ **One walk, two consumers.** [`trace_transversal_face`] clips a face's ring against a cut
+/// plane and [`every_ray`] casts a parity ray along `P ∩ Q_a`; both must answer the same question
+/// first — *does the boundary cross this line here?* — and a node sitting **on** the line is the
+/// only hard part of it. The tracer had the rule (look at the node's two off-line neighbours:
+/// opposite sides is a crossing, equal sides a touch) inlined in its scan, entangled with naming,
+/// alias recording and decline kinds; the ray caster had no rule at all and threw such a candidate
+/// away. Resilience that lives in one consumer is resilience the other does not have — the same
+/// shape [`ring_in_ring`]'s retry was in.
+///
+/// What each consumer does *with* a feature stays its own: the tracer turns it into a **named
+/// point** (four-plane aliases, `DeclineKind`, occupancy), the ray caster into one bit ("ahead of
+/// `v`?"). That is where the sharing stops.
+///
+/// `None` when every node lies on `q` — a ring in the plane has no flanks to be decided by.
+///
+/// **Features come out in ring order from the first off-`q` node.** That is the order the tracer's
+/// scan produced them in, and its naming step records aliases into a union-find as it goes, so the
+/// order is contract, not incident.
+pub(crate) fn ring_against_plane(
+    jd: &Judge<'_, WorkingPlane>,
+    nodes: &[[usize; 3]],
+    q: usize,
+) -> Option<Vec<Feature>> {
+    let n = nodes.len();
+    let side: Vec<i8> = (0..n).map(|i| side_of(jd, nodes[i], q)).collect();
+    let start = side.iter().position(|&s| s != 0)?;
+    let mut out = Vec::new();
+    let mut j = 0;
+    while j < n {
+        let i = (start + j) % n;
+        if side[i] != 0 {
+            let ni = (i + 1) % n;
+            if side[ni] != 0 && side[ni] != side[i] {
+                out.push(Feature::Crossing { edge: i });
+            }
+            j += 1;
+        } else {
+            // A maximal run of on-line vertices. Two is the common case, but a vertex whose name
+            // had to be taken from its touching planes (`loop_triples`) stays in the ring even
+            // when the loop runs straight through it, so a run can be longer.
+            let first = i;
+            let mut len = 0;
+            while j < n && side[(start + j) % n] == 0 {
+                len += 1;
+                j += 1;
+            }
+            let before = side[(first + n - 1) % n];
+            let after = side[(start + j) % n];
+            out.push(Feature::Run {
+                first,
+                len,
+                flanks_differ: before != after,
+            });
+        }
+    }
+    Some(out)
+}
+
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
 ///
 /// **A ray, cast along a line we already have.** Every ring edge lies on `P ∩ R`, and `v`

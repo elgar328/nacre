@@ -524,22 +524,19 @@ fn trace_transversal_face(
     let mut declined: Option<DeclineKind> = None;
     'rings: for ring in std::iter::once(&outer).chain(holes.iter()) {
         let n = ring.len();
-        let side: Vec<i8> = (0..n)
-            .map(|i| combinatorics::side_of(jd, ring[i], wc))
-            .collect();
-        let Some(start) = side.iter().position(|&s| s != 0) else {
+        // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
+        // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
+        // function's own business: naming it, recording a four-plane alias, deciding occupancy.
+        let Some(features) = combinatorics::ring_against_plane(jd, ring, wc) else {
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
             declined = Some(DeclineKind::AllOnPlane);
             break;
         };
-        let mut j = 0;
-        while j < n {
-            let i = (start + j) % n;
-            if side[i] != 0 {
-                let ni = (i + 1) % n;
-                if side[ni] != 0 && side[ni] != side[i] {
-                    // Strict crossing on edge i; its wall is the plane the edge rides besides fp.
-                    match combinatorics::ring_from_names(fc, ring).map(|es| es[i].wall) {
+        for feature in features {
+            match feature {
+                combinatorics::Feature::Crossing { edge } => {
+                    // Its wall is the plane the edge rides besides fp.
+                    match combinatorics::ring_from_names(fc, ring).map(|es| es[edge].wall) {
                         Ok(wall) => nodes.push(Node {
                             r: wall,
                             flip: true,
@@ -551,64 +548,56 @@ fn trace_transversal_face(
                         Err(_) => declined = Some(DeclineKind::CrossingName),
                     }
                 }
-                j += 1;
-            } else {
-                // A maximal run of side==0 vertices. Two is the common case, but a vertex whose
-                // name had to be taken from its touching planes (`loop_triples`) stays in the ring
-                // even when the loop runs straight through it, so a run can be longer: an on-line
-                // *interval* with any number of named points inside it.
-                let run_start = i;
-                let mut m = 0;
-                while j < n && side[(start + j) % n] == 0 {
-                    m += 1;
-                    j += 1;
-                }
-                let before = side[(run_start + n - 1) % n];
-                let after = side[(start + j) % n];
-                let flanks_differ = before != after;
-                let name = |k: usize, out: &mut Trace| third_on_l(ring[(run_start + k) % n], out);
-                if m == 1 {
-                    match name(0, out) {
-                        Ok(r) => nodes.push(Node {
-                            r,
-                            flip: flanks_differ,
-                            run: None,
-                            flanks_differ,
-                            single_touch: !flanks_differ,
-                            // A single-vertex tangential touch is a point (`touches`), never a graze
-                            // segment; a flank-differing single vertex is a strict crossing.
-                            graze_above: None,
-                        }),
-                        Err(kind) => declined = Some(kind),
-                    }
-                } else {
-                    // m >= 2: one on-line interval. Only its two ends and the flanks decide
-                    // anything; the interior points are names the arrangement may split at.
-                    let id = run_counter;
-                    run_counter += 1;
-                    let names: Result<Vec<usize>, DeclineKind> =
-                        (0..m).map(|k| name(k, out)).collect();
-                    match names {
-                        Ok(rs) => {
-                            // Every run is one-sided: it is an *edge* of `f` lying on `L`, so `f`
-                            // is on one side of it whatever the ring does afterwards.
-                            // `flanks_differ` says only whether the sweep's parity toggles here
-                            // (Phase B gives it to `flip`) — it is not an occupancy fact, and
-                            // gating the side on it left a crossing run classified as a
-                            // straddling transversal.
-                            let graze_above = Some(run_body_above(jd, faces, wc, fc, fp, &rs));
-                            for r in rs {
-                                nodes.push(Node {
-                                    r,
-                                    flip: false,
-                                    run: Some(id),
-                                    flanks_differ,
-                                    single_touch: false,
-                                    graze_above,
-                                });
-                            }
+                combinatorics::Feature::Run {
+                    first,
+                    len: m,
+                    flanks_differ,
+                } => {
+                    let name = |k: usize, out: &mut Trace| third_on_l(ring[(first + k) % n], out);
+                    if m == 1 {
+                        match name(0, out) {
+                            Ok(r) => nodes.push(Node {
+                                r,
+                                flip: flanks_differ,
+                                run: None,
+                                flanks_differ,
+                                single_touch: !flanks_differ,
+                                // A single-vertex tangential touch is a point (`touches`), never a
+                                // graze segment; a flank-differing single vertex is a strict
+                                // crossing.
+                                graze_above: None,
+                            }),
+                            Err(kind) => declined = Some(kind),
                         }
-                        Err(kind) => declined = Some(kind),
+                    } else {
+                        // m >= 2: one on-line interval. Only its two ends and the flanks decide
+                        // anything; the interior points are names the arrangement may split at.
+                        let id = run_counter;
+                        run_counter += 1;
+                        let names: Result<Vec<usize>, DeclineKind> =
+                            (0..m).map(|k| name(k, out)).collect();
+                        match names {
+                            Ok(rs) => {
+                                // Every run is one-sided: it is an *edge* of `f` lying on `L`, so
+                                // `f` is on one side of it whatever the ring does afterwards.
+                                // `flanks_differ` says only whether the sweep's parity toggles here
+                                // (Phase B gives it to `flip`) — it is not an occupancy fact, and
+                                // gating the side on it left a crossing run classified as a
+                                // straddling transversal.
+                                let graze_above = Some(run_body_above(jd, faces, wc, fc, fp, &rs));
+                                for r in rs {
+                                    nodes.push(Node {
+                                        r,
+                                        flip: false,
+                                        run: Some(id),
+                                        flanks_differ,
+                                        single_touch: false,
+                                        graze_above,
+                                    });
+                                }
+                            }
+                            Err(kind) => declined = Some(kind),
+                        }
                     }
                 }
             }
