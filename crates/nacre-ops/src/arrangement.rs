@@ -1615,19 +1615,11 @@ fn nest_cells(
             {
                 continue;
             }
-            // Vertex-disjoint: one clear ray settles it. Retry past a spoiled (ring-node) ray;
-            // all of `c`'s vertices spoiled against `r` is a genuine degeneracy → honest reject.
-            let mut inside = None;
-            for v in rings[c].iter().map(|e| e.node) {
-                if let Ok(hit) = combinatorics::point_in_ring(jd, wc, v, &rings[r]) {
-                    inside = Some(hit);
-                    break;
-                }
-            }
-            match inside {
-                Some(true) => hosts.push(r),
-                Some(false) => {}
-                None => return Err(reject(RejectReason::NoClearRay)),
+            // Vertex-disjoint: `ring_in_ring` casts from each of `c`'s nodes until one gives a
+            // clear ray, and an exhausted ring is the genuine degeneracy it rejects for.
+            let probes: Vec<[usize; 3]> = rings[c].iter().map(|e| e.node).collect();
+            if combinatorics::ring_in_ring(jd, wc, &probes, &rings[r])? {
+                hosts.push(r);
             }
         }
         if hosts.is_empty() {
@@ -1677,20 +1669,30 @@ fn innermost_host(
     rings: &[Vec<combinatorics::RingEdge>],
     hosts: &[usize],
 ) -> Result<usize, BoolError> {
-    let inside = |a: usize, b: usize| -> Option<bool> {
+    // ★ Two answers that used to be one. `None` meant *either* "adjacent, so not comparable" or
+    // "every ray was spoiled", and both left as `HoleDepth` — whose own doc reads "if this fires,
+    // rings are crossing and the fault is upstream", a diagnosis that is simply wrong for a
+    // spoiled ray. Adjacency stays `None` here; an exhausted ring is now `NoClearRay`, its cause.
+    let inside = |a: usize, b: usize| -> Result<Option<bool>, BoolError> {
         if rings[a]
             .iter()
             .any(|e| rings[b].iter().any(|f| f.node == e.node))
         {
-            return None; // adjacent, not nested — not comparable
+            return Ok(None); // adjacent, not nested — not comparable
         }
-        rings[a]
-            .iter()
-            .find_map(|e| combinatorics::point_in_ring(jd, wc, e.node, &rings[b]).ok())
+        let probes: Vec<[usize; 3]> = rings[a].iter().map(|e| e.node).collect();
+        combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
     };
     let mut found = None;
     for &h in hosts {
-        if hosts.iter().all(|&o| o == h || inside(h, o) == Some(true)) {
+        let mut wraps_all = true;
+        for &o in hosts {
+            if o != h && inside(h, o)? != Some(true) {
+                wraps_all = false;
+                break;
+            }
+        }
+        if wraps_all {
             if found.is_some() {
                 return Err(reject(RejectReason::HoleDepth)); // two minima: not a chain
             }

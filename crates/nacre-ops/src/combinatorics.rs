@@ -492,6 +492,37 @@ pub(crate) fn point_in_ring(
         .ok_or_else(|| reject(RejectReason::NoClearRay))
 }
 
+/// Is the ring whose nodes are `probes` inside `outer` — **asked of the ring, not of one point**.
+///
+/// [`point_in_ring`] answers for a single vertex and can honestly fail there: every ray it can
+/// cast from that vertex may have a ring node on its line. That is a fact about the *probe*, not
+/// about the two rings, so the question is retried from the next node and only an exhausted ring
+/// is a real degeneracy.
+///
+/// ★ **The retry belongs here, not in the callers.** It used to live in two of them, spelled two
+/// different ways, and the third — the coplanar-merge cleaning pass — never got it: it probed
+/// `nodes[0]` alone and rejected the whole boolean when that one vertex happened to be spoiled.
+/// Measured, that lost a *band* of rotation angles at a stroke, because a small change of angle
+/// leaves the topology (and therefore the unlucky first node) exactly where it was. Resilience
+/// that lives in a caller is resilience the next caller does not have.
+///
+/// The probes are tried in order, so the answer is deterministic. Callers decide what *adjacency*
+/// means for them (see [`arrangement::nest_cells`] and `innermost_host`, which disagree) and ask
+/// this only about rings they have already established are disjoint.
+pub(crate) fn ring_in_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    probes: &[[usize; 3]],
+    outer: &[RingEdge],
+) -> Result<bool, BoolError> {
+    for &v in probes {
+        if let Ok(hit) = point_in_ring(jd, p, v, outer) {
+            return Ok(hit);
+        }
+    }
+    Err(reject(RejectReason::NoClearRay))
+}
+
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
 /// says so, which is a second machine for free.
 pub(crate) fn every_ray(

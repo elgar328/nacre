@@ -152,6 +152,63 @@ fn a_fused_result_names_itself_in_its_own_surfaces() {
     rot_z(&mut m, fused, 30).expect("the result can be moved");
 }
 
+/// Fuse `unit` with a copy of itself every `step` degrees, all the way round, and say where it
+/// stopped. The template stays live: a boolean supersedes its operands, so `u` itself must never
+/// be one of them or the next copy has nothing to copy.
+fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
+    let mut m = Model::new();
+    let u = unit(&mut m);
+    let mut part = copy_of(&mut m, u);
+    for deg in (step..360).step_by(step) {
+        let c = copy_of(&mut m, u);
+        let c = rot_z(&mut m, c, deg as i128).expect("rotating a copy");
+        match boolean(&mut m, BoolKind::Fuse, part, c) {
+            Ok(out) => {
+                part = out[0];
+                m.rebuild_adjacency();
+            }
+            Err(e) => return Err((deg, e)),
+        }
+    }
+    Ok(())
+}
+
+/// ★ The band that one arbitrary probe vertex used to cost us.
+///
+/// "Is this hole inside that ring" is answered by casting a ray from a vertex, and a ring node on
+/// the ray's line makes the parity ambiguous, so that candidate is dropped. The cleaning pass
+/// probed the hole's *first* node and gave up if it was spoiled — while the arrangement, asking
+/// the same question, tried every node. A small change of angle leaves the topology alone, so the
+/// same unlucky first node persisted across a whole band of angles and took all of them down.
+///
+/// 41° is the cheapest angle that used to fail, so it is the one the default suite runs; the
+/// rest of the band lives in the sweep below, which is slow enough to be opt-in.
+#[test]
+fn the_band_of_angles_a_single_probe_used_to_cost() {
+    if let Err((deg, e)) = sweep(41) {
+        panic!("the 41° sweep died at the {deg}° copy: {e:?}");
+    }
+}
+
+/// The band, plus the boundaries that never failed and must not start (37°, 46°) and the long
+/// 20° sweep — seventeen chained fuses, each on the result of the last. (38–40° are not here
+/// yet: one probe vertex was only half the story, and they still reject on the other half.)
+///
+/// `#[ignore]`: about sixty booleans on a solid that grows with every one, minutes in a debug
+/// build. The population is what the fix was judged by, so it is written down; the default suite
+/// carries one angle from it.
+#[test]
+#[ignore = "slow angle sweep (run with --ignored)"]
+fn the_whole_band_of_angles() {
+    let mut died = Vec::new();
+    for step in [20, 37, 41, 42, 43, 44, 46] {
+        if let Err((deg, e)) = sweep(step) {
+            died.push(format!("{step}° at the {deg}° copy: {e:?}"));
+        }
+    }
+    assert!(died.is_empty(), "the failing population changed: {died:?}");
+}
+
 /// ② The whole 30° sweep — eleven chained fuses, each on the result of the last.
 #[test]
 fn the_thirty_degree_sweep_runs_to_completion() {
@@ -215,4 +272,38 @@ fn the_other_rejections_are_untouched() {
             "the {step}° sweep's rejection changed"
         );
     }
+}
+
+/// ★ One implementation, and it stays one.
+///
+/// The retry that answers "is this ring inside that one" used to live in the callers — spelled
+/// two ways in the arrangement, missing entirely in the cleaning pass. It lives in
+/// `ring_in_ring` now, and a caller that goes around it is a caller that will quietly lack the
+/// retry again, so the source says so.
+#[test]
+fn no_production_caller_reaches_past_the_shared_predicate() {
+    let src = [
+        "src/combinatorics.rs",
+        "src/arrangement.rs",
+        "src/boolean.rs",
+    ];
+    let mut offenders = Vec::new();
+    for file in src {
+        let text = std::fs::read_to_string(file).expect("source file");
+        for (n, line) in text.lines().enumerate() {
+            let calls = line.contains("point_in_ring(");
+            let is_definition = line.contains("fn point_in_ring");
+            let is_prose = line.trim_start().starts_with("//");
+            if calls && !is_definition && !is_prose {
+                offenders.push(format!("{file}:{}: {}", n + 1, line.trim()));
+            }
+        }
+    }
+    // `ring_in_ring` is the one caller, and `point_in_component` casts its own rays in 3D.
+    offenders.retain(|o| !o.contains("point_in_ring(jd, p, v, outer)"));
+    assert_eq!(
+        offenders,
+        Vec::<String>::new(),
+        "call `ring_in_ring` instead — the retry lives there"
+    );
 }

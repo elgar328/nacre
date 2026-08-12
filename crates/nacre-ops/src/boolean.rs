@@ -1230,11 +1230,15 @@ fn merge_component(
     //    of the arrangement's cells, answered by the same predicate.
     let mut faces: Vec<RegionRings> = outers.into_iter().map(|o| (o, Vec::new())).collect();
     for hole in holes {
-        let Node::Seam(probe) = hole.nodes[0];
+        // Every node is a probe, not just the first: which vertex can cast a clear ray is a fact
+        // about that vertex, and settling for `nodes[0]` is what lost whole bands of rotation
+        // angles here. `ring_in_ring` holds that retry now, for this caller and the two in the
+        // arrangement alike.
+        let probes: Vec<[usize; 3]> = hole.nodes.iter().map(|Node::Seam(t)| *t).collect();
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             let ring = outer.edges(jd, wc)?;
-            if combinatorics::point_in_ring(jd, wc, probe, &ring)? {
+            if combinatorics::ring_in_ring(jd, wc, &probes, &ring)? {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
                 }
