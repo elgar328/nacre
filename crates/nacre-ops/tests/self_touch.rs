@@ -6,10 +6,10 @@
 //! so the kernel refuses it by name instead of handing it back.
 //!
 //! The everyday way in is a dimension that makes two surfaces meet exactly: a pocket whose wedge
-//! tip lands on the far wall. Parasolid fails the same bodies (`PK_FACE_state_bad_face_face_c`,
-//! "split the body … to make the body valid"); OCCT accepts them, and this kernel follows
-//! Parasolid. The cost is that a plain modelling move now needs a nudge — which is the same fix
-//! other kernels ask for when they say "zero thickness geometry is not allowed".
+//! tip lands on the far wall. Parasolid fails the same bodies (`PK_FACE_state_bad_face_face_c`);
+//! OCCT accepts them, and this kernel follows Parasolid. The cost is that a plain modelling move
+//! is now refused — and the reject says only *what* is wrong, since which coincidence was
+//! unintended is design intent the kernel cannot see.
 //!
 //! ★ The propositions here are paired: every fixture that must reject sits next to one that must
 //! build, because a check that rejects the wedge by rejecting *everything* would pass half of them.
@@ -120,12 +120,13 @@ fn the_same_contact_is_found_after_a_rotation() {
     expect_self_touch(&mut m, a, b, "a rotated self-touch is still a self-touch");
 }
 
-/// The negative control the fix is paired with: nudge the tip off the wall and the same cut is an
-/// ordinary pocket. This is the fix a user is told to make, so it has to actually work.
+/// The neighbouring case: take the tip off the wall and the same cut is an ordinary pocket. It is
+/// here so the reject above is known to be about the coincidence and not about wedge-shaped cuts.
 #[test]
 fn a_wedge_that_stops_short_of_the_wall_builds() {
     let (mut m, a, b) = cube_and_wedge(0.999);
-    let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the nudged cut builds");
+    let got =
+        boolean(&mut m, BoolKind::Cut, a, b).expect("the cut with the tip off the wall builds");
     m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
     assert_eq!(m.solids.get(got[0]).cavities.len(), 1, "an enclosed cavity");

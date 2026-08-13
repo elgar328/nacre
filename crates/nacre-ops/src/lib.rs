@@ -386,10 +386,17 @@ pub enum RejectReason {
     /// that one names an output *shape* the kernel may one day allow (several solids), while this
     /// one is about a single solid's validity, which no change of output shape rescues.
     ///
-    /// The everyday cause is a dimension that makes two surfaces meet exactly: a pocket whose
-    /// wedge tip lands on the far wall, a boss flush with a neighbouring face. Parasolid refuses
-    /// the same bodies (`PK_FACE_state_bad_face_face_c`), and other kernels surface it as "zero
-    /// thickness geometry". Moving the dimension off the coincidence — `1.0` to `0.999` — builds.
+    /// What produces it is two surfaces of the model meeting exactly, leaving the material between
+    /// them no thickness at all: a pocket whose wedge tip lands on the far wall, a boss flush with
+    /// a neighbouring face. Parasolid refuses the same bodies
+    /// (`PK_FACE_state_bad_face_face_c`); other kernels name the condition "zero thickness
+    /// geometry".
+    ///
+    /// ★ **This says what is wrong, not what to do about it.** Which coincidence was unintended —
+    /// and whether the answer is a different dimension, a different operation, or two bodies
+    /// instead of one — is the author's design intent, which the kernel cannot see. Suggesting a
+    /// nudge would be guessing at it, and [`crate::BoolReport`] already writes the rule this
+    /// follows: *a diagnosis, not a prompt*.
     SelfTouchingResult,
     /// The assembled boundary leaves an edge used **once** — a dangling edge, so the face set is
     /// not closed. Unlike [`Self::NonManifoldResultEdge`] this says nothing bad about the input:

@@ -113,9 +113,9 @@ fn an_axis_aligned_void_is_unchanged() {
 ///
 /// ★ The tip was at `1.0`, *on* the wall, until the kernel learned to refuse a solid whose surface
 /// touches itself: that version is now `SelfTouchingResult`, and it lives in `self_touch.rs` as the
-/// case that reject is for. Nudging the tip to `0.999` is the same fix a user is told to make, and
-/// it leaves this file asking what it was always asking — that a cut wholly inside a body comes
-/// back as one body with a cavity, whatever the sketch's angles.
+/// case that reject is for. Moving it to `0.999` keeps this file asking what it was always asking —
+/// that a cut wholly inside a body comes back as one body with a cavity, whatever the sketch's
+/// angles — without also asserting the self-contact rule, which belongs next door.
 #[test]
 fn a_wedge_whose_tip_nearly_reaches_the_wall_is_still_one_body() {
     let mut m = Model::new();
