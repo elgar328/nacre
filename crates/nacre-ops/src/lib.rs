@@ -507,7 +507,13 @@ pub enum RejectReason {
     /// defect upstream, never a property of the input. Raised where the seam table is built, while
     /// both triples are still in hand; without it the disagreement surfaces much later as a
     /// zero-length edge. The known cause is a **split plane table** (one geometric plane carried by
-    /// two classes); a genuine 4-plane concurrency would do the same.
+    /// two classes).
+    ///
+    /// ★ A genuine 4-plane concurrency used to reach here too, and that was **this reject naming
+    /// the wrong thing** — a property of the input reported at the class that says "report a bug".
+    /// The arrangement folds those names now, including the branch that was missing: a plane which
+    /// *carries* an arrangement line rather than crossing it (`Aliases::wall_family`, and
+    /// `tests/concurrent_line.rs` for the shape). What remains here is meant to be a real defect.
     SeamAlias,
     /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
     /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is the

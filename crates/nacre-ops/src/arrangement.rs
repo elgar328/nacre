@@ -361,6 +361,29 @@ impl Aliases {
         self.find_wall(class, w)
     }
 
+    /// The walls that carry **one line** with `w` on `class` — `w` alone when none does.
+    ///
+    /// The wall fold says two classes name one line; this reads that back out, because a point on
+    /// that line lies on **every** plane in the family, and the point fold needs to hear about it
+    /// (see the report in [`split_at_crossings`]).
+    fn wall_family(&self, class: usize, w: usize) -> Vec<usize> {
+        if self.wall.is_empty() {
+            return vec![w];
+        }
+        let rep = self.find_wall(class, w);
+        let mut fam: Vec<usize> = self
+            .wall
+            .keys()
+            .filter(|(c, _)| *c == class)
+            .map(|&(_, x)| x)
+            .filter(|&x| self.find_wall(class, x) == rep)
+            .collect();
+        fam.push(w);
+        fam.sort_unstable();
+        fam.dedup();
+        fam
+    }
+
     fn absorb(&mut self, other: &Aliases) {
         for (&k, &v) in &other.point {
             self.union_point(k, v);
@@ -1184,6 +1207,35 @@ fn split_at_crossings(
             flush(&mut group, &mut reps, aliases);
             reps
         };
+        // ★★ **The fourth plane that *carries* this line, rather than crossing it.**
+        //
+        // The report above sees a concurrency when two classes **cross** `W`'s line at one point:
+        // they order equal, so one point wears two handles. A plane that *contains* the line cannot
+        // be seen that way — it is in `W`'s own direction family, which the collector skips
+        // (`other.dir == wall.dir`), so it never becomes a handle and never orders against anything.
+        //
+        // But `Aliases::wall` already knows it: folding two walls onto one line is exactly the
+        // statement that a second plane carries it. Every split point on this line therefore lies on
+        // every plane of the family, and that is a four-plane concurrency the point fold must hear
+        // about — otherwise one class names the point with the canonical wall and another names it
+        // with a plane that cuts the line, and the two names reach the seam table unlinked
+        // (`SeamAlias`, measured: `[3,11,12]` vs `[3,6,11]` at one point).
+        //
+        // ★ The report happens on the class whose wall was **folded**, and the class that produces
+        // the other name reads the alias afterwards — the fixpoint loop above runs another round
+        // whenever this grows the table, which is what carries it across.
+        {
+            let family = aliases.wall_family(wc, w);
+            if family.len() > 1 {
+                for &r in &pts {
+                    let mut set: Vec<usize> = vec![wc, r];
+                    set.extend(family.iter().copied());
+                    set.sort_unstable();
+                    set.dedup();
+                    aliases.record(jd, &set);
+                }
+            }
+        }
         // A split point is named `{wc, w, third}` — then folded, because this rebuilds the name
         // from a handle and so would otherwise re-introduce the very alias `merge_coincident` just
         // removed. Canonicalizing here and in the merge means every name **downstream** is already
