@@ -704,6 +704,121 @@ pub(crate) fn every_ray(
     Ok(out)
 }
 
+/// **Does the open segment between two named points on one line meet this face's material?**
+///
+/// [`every_ray`]'s sibling, and not its copy. That one asks about a **point** and may bail with
+/// `PointOnRing` when the point lands on the boundary — here the two endpoints are *expected* to,
+/// because the defect this answers is an edge whose ends sit on a face's ring while its middle
+/// crosses the interior. An interval query has no candidate to fall back to, so every case that one
+/// declines has to become a value.
+///
+/// ★ **One algorithm, no special cases.** The rings meet the line `P ∩ w` at a set of places; the
+/// two unbounded ends of the line are outside the face and each genuine crossing flips that, so the
+/// line reads **outside / inside / outside / …**. The answer is whether any *inside* stretch
+/// overlaps the open `(u, v)`. Written as branches — "is there a crossing between them", "is it in a
+/// hole" — it was twice wrong, because each branch re-derived a piece of that structure and lost
+/// another. Read as one alternation it also subsumes the endpoint test: an endpoint strictly inside
+/// puts `u` in an inside stretch.
+///
+/// **Holes come along for free.** All rings go into one bag: the rings of a face are disjoint, so
+/// even-odd over the union *is* the material region (a point inside a hole has crossed twice) — the
+/// rule `design.md` states one dimension down for 2D sketches.
+///
+/// ★★ **A `Run` is a stretch, not a place.** `Run { len >= 2 }` means the boundary *lies along* the
+/// line, so it occupies an interval where the segment would be **on** the face rather than inside
+/// it — two faces sharing an edge, which is ordinary adjacency. Those stretches are boundary and
+/// are not counted as inside; `flanks_differ` still says whether crossing the run flips the side,
+/// which is the rule the tracer and the ray caster already read a ring with.
+pub(crate) fn segment_meets_face(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    w: usize,
+    u: [usize; 3],
+    v: [usize; 3],
+    rings: &[Vec<RingEdge>],
+) -> Result<bool, BoolError> {
+    // A point on `P ∩ w` is named there by a third plane of its own that **cuts** the line; one
+    // parallel to it names nothing (the same duty `every_ray`'s `namer` states).
+    let handle = |t: [usize; 3]| -> Option<usize> {
+        t.iter()
+            .copied()
+            .find(|&x| x != p && x != w && jd.plane_pair_dir_sign(p, w, x) != 0)
+    };
+    let (Some(hu), Some(hv)) = (handle(u), handle(v)) else {
+        eprintln!("SEGFAIL endpoints p={p} w={w} u={u:?} v={v:?}");
+        return Err(reject(RejectReason::RingNaming));
+    };
+    // Every place a ring meets the line: `[lo, hi]` handles (equal for a crossing at a point) and
+    // whether passing it flips inside/outside.
+    let mut events: Vec<([usize; 2], bool)> = Vec::new();
+    for ring in rings {
+        let nodes: Vec<[usize; 3]> = ring.iter().map(|e| e.node).collect();
+        let Some(features) = ring_against_plane(jd, &nodes, w) else {
+            // The whole ring lies on `w`: this face's boundary is the line itself, and the
+            // alternation has no crossings to read. Refusing to guess.
+            return Err(reject(RejectReason::PointOnRing));
+        };
+        for f in &features {
+            match *f {
+                Feature::Crossing { edge } => {
+                    let h = ring[edge].wall;
+                    events.push(([h, h], true));
+                }
+                Feature::Run {
+                    first,
+                    len,
+                    flanks_differ,
+                } => {
+                    let ends = [first, (first + len - 1) % nodes.len()];
+                    let (Some(a), Some(b)) = (handle(nodes[ends[0]]), handle(nodes[ends[1]]))
+                    else {
+                        eprintln!(
+                            "SEGFAIL run p={p} w={w} ends={:?} {:?}",
+                            nodes[ends[0]], nodes[ends[1]]
+                        );
+                        return Err(reject(RejectReason::RingNaming));
+                    };
+                    let lo_first = order_along(jd, p, w, a, b) <= 0;
+                    events.push((if lo_first { [a, b] } else { [b, a] }, flanks_differ));
+                }
+            }
+        }
+    }
+    events.sort_by(|x, y| match order_along(jd, p, w, x.0[0], y.0[0]) {
+        -1 => std::cmp::Ordering::Less,
+        1 => std::cmp::Ordering::Greater,
+        _ => std::cmp::Ordering::Equal,
+    });
+    // Walk the line: outside before the first event, flipping as each genuine crossing is passed.
+    // The stretch between two events is a cell; an inside cell that overlaps the open `(u, v)` is
+    // the surface meeting itself.
+    let (lo, hi) = if order_along(jd, p, w, hu, hv) <= 0 {
+        (hu, hv)
+    } else {
+        (hv, hu)
+    };
+    let mut inside = false;
+    for i in 0..events.len() {
+        if events[i].1 {
+            inside = !inside;
+        }
+        if !inside {
+            continue;
+        }
+        // The cell runs from this event's far end to the next event's near end.
+        let cell_start = events[i].0[1];
+        let Some(next) = events.get(i + 1) else {
+            continue; // the unbounded tail is outside for a closed ring; nothing to test
+        };
+        let cell_end = next.0[0];
+        // Overlap with the **open** interval: strictly, so touching at `u` or `v` is not inside.
+        if order_along(jd, p, w, cell_start, hi) < 0 && order_along(jd, p, w, cell_end, lo) > 0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Every **face** incident to `vh`, as `planes`-table slots. (Was `vertex_plane_indices`; it
 /// returns `inc`'s pairs verbatim, and those are faces. Its one caller maps them through
 /// `plane_ix`.)

@@ -413,7 +413,17 @@ pub(crate) fn assemble_fuse_cut(
 ///    lookup above is not the end of it. A box per face rejects 99.99% of what survives step 1
 ///    (measured: 2,538,703 candidate pairs down to 203), and on the booleans that cost the most it
 ///    rejects all of them.
-/// 3. The exact ring test, on what is left.
+/// 3. The exact test, on what is left: [`combinatorics::segment_meets_face`] — **the open segment**,
+///    not its endpoints. The endpoints alone miss the shape that motivated this: a cut taken all the
+///    way *through* leaves a contact line whose ends sit on the face's ring while its middle crosses
+///    the interior, and a point test reads both ends as "on the boundary, not inside" and passes a
+///    body that cannot exist (measured: `Ok(n=1)`, volume exact, `validate` silent).
+///
+/// ★ **One judge, not two.** The endpoint test was here first and is *subsumed* — an endpoint
+/// strictly inside puts that end in an inside stretch of the line, so the segment test answers it
+/// too. Measured across the corpus: 1,696 candidate pairs, the two verdicts agreed on every one,
+/// and no pair was undecidable. Keeping both would have left the same question answered in two
+/// places.
 ///
 /// ★ **The boxes are inflated by the vertices' own tolerance and so can only over-keep.** They are
 /// built from realized `f64` coordinates, which are rounded; a box used to *reject* a candidate
@@ -490,50 +500,24 @@ fn self_touch_reject(
                                 .collect::<Result<_, BoolError>>()?,
                         );
                     }
-                    for t in [u, v] {
-                        if inside_trimmed_face(jd, q, t, &rings_of_face[&j])? {
-                            return Err(reject(RejectReason::SelfTouchingResult));
-                        }
+                    // ★ The line is `q ∩ w`, and `w` comes from **the edge's own two faces**, not
+                    // from the endpoint names and not from the ring's recorded wall. Both of those
+                    // fail, measured: an edge can lie on a pencil of three planes and the ring is
+                    // free to call it by any of them — including `q` itself — and where four planes
+                    // concur the endpoints' canonical triples need not share a second plane at all
+                    // (31 pairs in the rotation sweep). An edge's two faces always give one, because
+                    // that is what the edge *is*.
+                    let Some(w2) = own.iter().map(|&o| faces[o].plane_idx).find(|&x| x != q) else {
+                        continue; // an edge whose faces are both on `q` is not an edge
+                    };
+                    if combinatorics::segment_meets_face(jd, q, w2, u, v, &rings_of_face[&j])? {
+                        return Err(reject(RejectReason::SelfTouchingResult));
                     }
                 }
             }
         }
     }
     Ok(())
-}
-
-/// Is `t` in the **material** part of the face on plane `q` — inside its outer ring and outside
-/// every hole?
-///
-/// ★ A point **on** a ring is not inside it. That is the everyday case, not the exception: the
-/// query points are the solid's own vertices, and a face sharing one meets it on its boundary. What
-/// is *not* swallowed is any other undecided answer — reading "could not tell" as "not touching"
-/// would be a silent pass, and across the suite (5,099 booleans) no such answer occurs.
-fn inside_trimmed_face(
-    jd: &Judge<'_, WorkingPlane>,
-    q: usize,
-    t: [usize; 3],
-    rings: &[Vec<combinatorics::RingEdge>],
-) -> Result<bool, BoolError> {
-    let on_ring = BoolError::Unsupported {
-        reason: RejectReason::PointOnRing,
-    };
-    match combinatorics::point_in_ring(jd, q, t, &rings[0]) {
-        Ok(false) => Ok(false),
-        Err(e) if e == on_ring => Ok(false),
-        Err(e) => Err(e),
-        Ok(true) => {
-            for hole in &rings[1..] {
-                match combinatorics::point_in_ring(jd, q, t, hole) {
-                    Ok(true) => return Ok(false), // in a hole: the face is not there
-                    Ok(false) => {}
-                    Err(e) if e == on_ring => return Ok(false),
-                    Err(e) => return Err(e),
-                }
-            }
-            Ok(true)
-        }
-    }
 }
 
 /// A face's rings, outer first.

@@ -102,6 +102,61 @@ fn a_wedge_whose_tip_reaches_the_wall_is_not_a_solid() {
     expect_self_touch(&mut m, a, b, "the wedge tip on the wall self-touches");
 }
 
+/// ★★ **The same contact, taken all the way through — and the endpoints stop being the story.**
+///
+/// Extrude the same wedge through the whole cube instead of stopping inside it. The contact line
+/// now spans the wall's full height, so **both of its ends land on the wall's ring** rather than
+/// inside it, and a test that asks about endpoints reads "on the boundary, not inside" twice and
+/// lets the body through. It did: `Ok(n=1)`, volume `0.64` exactly, `validate` silent — the wall is
+/// not split at the line, so every edge is still used twice and no count sees anything.
+///
+/// The wall's ring is a hexagon visiting both contact points **non-adjacently**; the contact line is
+/// its **chord**. Nothing about that is exotic — a through slot is a more ordinary modelling move
+/// than a blind pocket, which is why the blind spot was worth closing rather than documenting.
+#[test]
+fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
+    let mut m = Model::new();
+    let a = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+    // Not lifted, and as tall as the cube: the cut goes clean through.
+    let b = prism(&mut m, &[[1.0, 0.5], [0.1, 0.1], [0.1, 0.9]], 1.0);
+    let live = m.live_solids.clone();
+    assert_eq!(
+        boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
+        BoolError::Unsupported {
+            reason: RejectReason::SelfTouchingResult
+        },
+        "the through cut leaves the wall touching the pocket along a chord"
+    );
+    assert_eq!(*m.live_solids, live, "a reject retired the operands");
+}
+
+/// The same through cut with the tip off the wall: an ordinary through slot, and it must build.
+/// Paired with the test above so the reject is known to be about the coincidence rather than about
+/// cutting all the way through.
+#[test]
+fn a_through_cut_that_stops_short_of_the_wall_builds() {
+    let mut m = Model::new();
+    let a = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    m.rebuild_adjacency();
+    let b = prism(&mut m, &[[0.999, 0.5], [0.1, 0.1], [0.1, 0.9]], 1.0);
+    let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the nudged through cut builds");
+    m.rebuild_adjacency();
+    assert_eq!(got.len(), 1);
+    assert_eq!(
+        m.solids.get(got[0]).cavities.len(),
+        0,
+        "a through slot opens both caps, so there is no enclosed cavity"
+    );
+    assert!(nacre_validate::validate(&m).is_empty());
+}
+
 /// ★ **The same body, turned.** If the check leant on axis-aligned coordinates it would pass here
 /// and quietly stop working for every real model; the judgement is on plane triples, so it does
 /// not. The rotation is one this kernel's sweep already exercises.
