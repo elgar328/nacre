@@ -375,7 +375,13 @@ pub(crate) struct LocalFace {
     pub(crate) flip: bool,
 }
 
-/// Push the reconstructed result and supersede the inputs (mirrors `assemble`).
+/// Push the reconstructed result and supersede the inputs.
+///
+/// ★ **The operands retire in exactly one place, and it is after the result is accepted.** The
+/// retire used to be copied into each arm that produced solids, which meant every future reject had
+/// to know whether it stood before or after its arm's copy. Hoisting it here makes "a reject leaves
+/// the model alone" true of the *shape* of this function rather than of a fact about where the
+/// rejects happen to sit today. [`reconstruct`] does the work and never touches the live set.
 pub(crate) fn assemble_fuse_cut(
     model: &mut Model,
     a: Handle<Solid>,
@@ -384,14 +390,25 @@ pub(crate) fn assemble_fuse_cut(
     seam: &[SeamVertex],
     faces: &[LocalFace],
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let out = reconstruct(model, jd, seam, faces)?;
+    model.live_solids.retain(|&s| s != a && s != b);
+    Ok(out)
+}
+
+/// Rebuild the result solids from the arrangement's faces. Pushes into the arena; it does not take
+/// the operands at all, which is the point — the live set is its caller's to move.
+fn reconstruct(
+    model: &mut Model,
+    jd: &Judge<'_, WorkingPlane>,
+    seam: &[SeamVertex],
+    faces: &[LocalFace],
+) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes = jd.planes;
     // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
     // is wholly inside what cuts it. That is an answer, not a failure: a solid is bounded by faces,
     // so a non-empty result cannot have none. The inputs are still consumed, exactly as they are on
-    // any other successful boolean — the retire below sits inside the `positives` match, which this
-    // early return skips, so it has to happen here too or the operands stay live.
+    // any other successful boolean — this returns `Ok`, so the caller's retire runs.
     if faces.is_empty() {
-        model.live_solids.retain(|&s| s != a && s != b);
         return Ok(Vec::new());
     }
     // ★★ **A result vertex is named by the faces that meet it.**
@@ -772,7 +789,6 @@ pub(crate) fn assemble_fuse_cut(
                 outer: shells[outer_c],
                 cavities,
             });
-            model.live_solids.retain(|&s| s != a && s != b);
             Ok(vec![solid])
         }
         _ => {
@@ -843,7 +859,6 @@ pub(crate) fn assemble_fuse_cut(
                     })
                 })
                 .collect();
-            model.live_solids.retain(|&s| s != a && s != b);
             Ok(solids)
         }
     };
