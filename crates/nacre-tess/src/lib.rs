@@ -8,6 +8,7 @@
 //!   samples edges into shared polylines and triangulates faces (planar fans +
 //!   ruled cylinder bands) crack-free, tagging every vertex with its origin.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod polygon;
 
 use nacre_geom::{Curve, Cylinder, Surface};

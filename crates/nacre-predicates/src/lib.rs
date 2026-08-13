@@ -18,6 +18,7 @@
 //! (the goal of being Rust's first open-source indirect-predicates crate, §1).
 //! Callers (`nacre-geom`) convert their types to arrays at the boundary.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 /// The exact sign of `orient3d` — the signed volume of the tetrahedron
 /// `(a, b, c, d)`, computed as `det[a − d, b − d, c − d]`. Positive means `d`
 /// lies on the negative side of the plane through `a, b, c` (i.e. `a, b, c` wind

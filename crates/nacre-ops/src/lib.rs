@@ -7,6 +7,7 @@
 //! applied by [`apply`] and folded by [`replay`]; every result is a **closed** solid, so
 //! `nacre-validate` applies fully.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
@@ -447,6 +448,15 @@ pub enum RejectReason {
     /// No assignment of the class's rings to cells leaves exactly one outer boundary per
     /// component — the planar subdivision does not close into faces the way a subdivision must.
     RingOrientation,
+    /// **A closed ring met a line an odd number of times.** Crossings of a closed curve with a
+    /// line come in pairs, so the alternation `segment_meets_face` reads along that line —
+    /// outside, inside, outside — has no consistent end.
+    ///
+    /// Raised rather than assumed away: the leftover would otherwise be read as "outside", and
+    /// this judge's whole job is to notice a contact, so a wrong "outside" is a body whose
+    /// surface meets itself shipped in silence. A `SuspectedDefect` because the rings it walks
+    /// are the arrangement's own output — nothing a user writes can make a closed ring odd.
+    RingParity,
     /// **A cell the inside/outside labels never reached.** Labels spread across shared edges, and
     /// a component sharing none is bridged by its nesting host instead — so this says the host
     /// was not found, and the cell has no side.
@@ -721,6 +731,7 @@ impl RejectReason {
             Self::UnpairedSeamEdge => "unpaired_seam_edge",
             Self::EdgeOccupancyConflict => "edge_occupancy_conflict",
             Self::RingOrientation => "ring_orientation",
+            Self::RingParity => "ring_parity",
             Self::UnreachedCell => "unreached_cell",
             Self::LabelConflict => "label_conflict",
             Self::TraceDeclined { .. } => "trace_declined",
@@ -805,6 +816,7 @@ impl RejectReason {
             | Self::DegenerateRing
             | Self::UnpairedSeamEdge
             | Self::RingOrientation
+            | Self::RingParity
             | Self::UnreachedCell
             | Self::LabelConflict
             | Self::HoleRoots

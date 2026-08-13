@@ -16,6 +16,7 @@
 //! system: `Point − Point → Vector`, `Point + Vector → Point`, and
 //! `Point + Point` does not compile.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod point;
 mod vector;
 

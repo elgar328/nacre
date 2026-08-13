@@ -9,6 +9,7 @@
 //! needs `Handle` (its `Curve::Intersection` holds `Handle<Surface>`), so placing
 //! them in `nacre-topo` would create a geom→topo→geom cycle.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};

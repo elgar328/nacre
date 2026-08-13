@@ -10,6 +10,7 @@
 //! model is the replay result"; putting them here would make topo depend on
 //! tess/ops and break the truth/cache split).
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod adjacency;
 mod topology;
 

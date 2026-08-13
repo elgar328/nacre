@@ -10,6 +10,7 @@
 //!   its planes are rotated. The b-rep supplies witnesses through the
 //!   [`Witness`](predicate::Witness) / [`PlaneWitness`](predicate::PlaneWitness) ports.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 pub mod kernel;
 pub mod predicate;
 

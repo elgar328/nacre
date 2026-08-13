@@ -7,6 +7,7 @@
 //! tessellation checks (§5, §7 — provenance coherence, crack-free) arrive in M3
 //! when a `Tessellation` exists.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_geom::Surface;
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};

@@ -285,3 +285,49 @@ fn an_ordinary_fuse_is_untouched() {
     assert!((v - (8.0 + 8.0 - 1.0)).abs() < 1e-9, "volume {v}");
     assert!(nacre_validate::validate(&m).is_empty());
 }
+
+/// ★ **A face with a hole, so the even-odd rule is exercised and not merely present.**
+///
+/// The judge folds *every* ring of a face into one bag and reads even-odd, because a point inside a
+/// hole has crossed the boundary twice. Writing it as "inside the outer ring **and** outside each
+/// hole" was one of the two shapes that got the earlier drafts wrong, so the rule needs a fixture
+/// rather than a corpus that happens to cover it: 52 of the corpus's candidate faces are holed
+/// (measured), but nothing there would fail if the hole handling broke.
+///
+/// A plate with a square hole, and a wedge cut whose tip lands exactly on the hole's wall: the
+/// contact line lies on a plane the plate carries, and the point is on the **hole's** ring, not the
+/// outer one.
+#[test]
+fn a_contact_on_a_holes_wall_is_seen() {
+    let mut m = Model::new();
+    // Plate 3×3×1 with a 1×1 hole in the middle.
+    let pts =
+        |v: &[[f64; 2]]| -> Vec<Point2> { v.iter().map(|&p| Point2::from_array(p)).collect() };
+    let profile = Profile2d::with_holes(
+        pts(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0]]),
+        vec![pts(&[[1.0, 1.0], [1.0, 2.0], [2.0, 2.0], [2.0, 1.0]])],
+    )
+    .expect("a plate with a square hole");
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let nacre_ops::OpOutput::Extrude { solid: a, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 1.0,
+        },
+    )
+    .expect("extrude") else {
+        panic!()
+    };
+    m.rebuild_adjacency();
+    // A wedge in the plate's material whose tip lands on the hole's wall x = 1.
+    let b = prism(&mut m, &[[1.0, 1.5], [0.2, 1.1], [0.2, 1.9]], 1.0);
+    assert_eq!(
+        boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
+        BoolError::Unsupported {
+            reason: RejectReason::SelfTouchingResult
+        },
+        "the cut's tip touches the hole's wall"
+    );
+}

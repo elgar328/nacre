@@ -745,7 +745,6 @@ pub(crate) fn segment_meets_face(
             .find(|&x| x != p && x != w && jd.plane_pair_dir_sign(p, w, x) != 0)
     };
     let (Some(hu), Some(hv)) = (handle(u), handle(v)) else {
-        eprintln!("SEGFAIL endpoints p={p} w={w} u={u:?} v={v:?}");
         return Err(reject(RejectReason::RingNaming));
     };
     // Every place a ring meets the line: `[lo, hi]` handles (equal for a crossing at a point) and
@@ -772,10 +771,6 @@ pub(crate) fn segment_meets_face(
                     let ends = [first, (first + len - 1) % nodes.len()];
                     let (Some(a), Some(b)) = (handle(nodes[ends[0]]), handle(nodes[ends[1]]))
                     else {
-                        eprintln!(
-                            "SEGFAIL run p={p} w={w} ends={:?} {:?}",
-                            nodes[ends[0]], nodes[ends[1]]
-                        );
                         return Err(reject(RejectReason::RingNaming));
                     };
                     let lo_first = order_along(jd, p, w, a, b) <= 0;
@@ -808,7 +803,11 @@ pub(crate) fn segment_meets_face(
         // The cell runs from this event's far end to the next event's near end.
         let cell_start = events[i].0[1];
         let Some(next) = events.get(i + 1) else {
-            continue; // the unbounded tail is outside for a closed ring; nothing to test
+            // ★ Reaching the unbounded tail while *inside* means the rings crossed the line an odd
+            // number of times, which a closed curve cannot do. Reading it as "outside" would let a
+            // real contact past in silence, so it is named instead — the same rule the rest of this
+            // engine follows for an invariant it cannot verify.
+            return Err(reject(RejectReason::RingParity));
         };
         let cell_end = next.0[0];
         // Overlap with the **open** interval: strictly, so touching at `u` or `v` is not inside.

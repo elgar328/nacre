@@ -17,6 +17,7 @@
 //! producers emit and `validate` accepts). Coordinates are the cache side of the
 //! truth/cache split (design.md §0), so f64 arithmetic here is appropriate.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_geom::{Curve, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;

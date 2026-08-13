@@ -32,6 +32,7 @@
 //! coincidence carrying its evidence, or as a reject named for its cause (`nacre-cip`).
 //! Ported from an isolated 2D experiment that verified it first.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 pub mod mag;
 pub use mag::Mag;
 

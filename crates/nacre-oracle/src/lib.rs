@@ -15,6 +15,7 @@
 //! nacre-side volume/area (`nacre-props`) is now diffed directly against OCCT
 //! here (M4); the boolean `fuse|cut|common` oracle arrives with M5.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 use std::path::PathBuf;

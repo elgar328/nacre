@@ -11,6 +11,7 @@
 //! surface/curve `match`es stay exhaustive, so future variants (sphere, NURBS)
 //! force a compile error here. AP242 Ed2 is stamped by the backend.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_geom::{Curve, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;

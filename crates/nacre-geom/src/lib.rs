@@ -15,6 +15,7 @@
 //! will later depend on `nacre-store`; today it uses no `Handle` and has no store
 //! dependency.
 
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod circle;
 mod cylinder;
 mod line;

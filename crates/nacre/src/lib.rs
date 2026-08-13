@@ -78,6 +78,7 @@
 //! returns a reason (`ops::RejectReason`, classified by `ops::RejectClass`) rather than
 //! a plausible-looking wrong answer.
 #![doc(html_root_url = "https://docs.rs/nacre")]
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 pub use nacre_geom as geom;
 pub use nacre_math as math;
