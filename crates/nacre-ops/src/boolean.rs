@@ -55,13 +55,23 @@ pub fn boolean_with_report(
     // The arrangement engine (`arrangement.rs`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
+    // ★ **A rejected boolean leaves the live set as it found it** — every reject, not just the
+    // topology one below. The engine retires the operands once the result is accepted, so a reject
+    // raised after that point would otherwise hand back a model whose inputs had vanished. Restoring
+    // here makes the rule hold no matter where inside the engine a reject is raised or added later.
+    // (Orphaned result cells stay in the append-only arena, unreachable, as any superseded solid's
+    // do — the arena is not restored and is not meant to be.)
     let snapshot = model.live_solids.clone();
-    let (result, notes, _class_of) = crate::arrangement::boolean(model, kind, a, b)?;
+    let (result, notes, _class_of) = match crate::arrangement::boolean(model, kind, a, b) {
+        Ok(v) => v,
+        Err(e) => {
+            model.live_solids = snapshot;
+            return Err(e);
+        }
+    };
     // Topological self-check on the assembled result (DNA: never return a malformed solid). Reject
-    // rather than return, restoring the pre-op live set so the reject leaves the *live* model
-    // untouched (orphaned result cells stay in the append-only arena, unreachable, as any superseded
-    // solid's do). Valid results always pass, so this never false-rejects; the traversal reads the
-    // topology stores directly (no adjacency rebuild, no coordinates).
+    // rather than return. Valid results always pass, so this never false-rejects; the traversal
+    // reads the topology stores directly (no adjacency rebuild, no coordinates).
     if let Some(t) = check_result_topology(model, &result) {
         model.live_solids = snapshot;
         return Err(reject(t));
@@ -86,8 +96,16 @@ pub(crate) fn boolean_with_classes(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<(Vec<Handle<Solid>>, crate::arrangement::ClassOf), BoolError> {
+    // The live-set restore is [`boolean`]'s rule, held here too: a reject leaves the live model
+    // alone whichever entry point raised it.
     let snapshot = model.live_solids.clone();
-    let (result, notes, class_of) = crate::arrangement::boolean(model, kind, a, b)?;
+    let (result, notes, class_of) = match crate::arrangement::boolean(model, kind, a, b) {
+        Ok(v) => v,
+        Err(e) => {
+            model.live_solids = snapshot;
+            return Err(e);
+        }
+    };
     if let Some(t) = check_result_topology(model, &result) {
         model.live_solids = snapshot;
         return Err(reject(t));

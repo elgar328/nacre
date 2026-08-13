@@ -141,3 +141,44 @@ fn the_cause_is_named_instead_of_its_downstream_symptom() {
         boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?} of the same pair: {e:?}"));
     }
 }
+
+/// **A rejected boolean leaves the live model exactly as it found it.**
+///
+/// The operands are retired when the result is accepted, and a reject can be raised on either side
+/// of that — `check_result_topology` runs after the whole engine has. So "reject" has to mean the
+/// caller still holds the two solids it passed in, whichever step said no; otherwise a refused
+/// operation silently costs the user their model. The kernel already restored the live set for the
+/// topology reject and for nothing else, and nothing asserted the rule at all.
+///
+/// Only the *live set* is restored. Result cells the refused attempt appended to the arena stay
+/// there, unreachable — the arena is append-only by design and superseded solids leave the same
+/// residue.
+///
+/// ★ **What this cannot show today, stated rather than implied.** Every reject the kernel currently
+/// raises happens *before* the retire, so the restore this locks is not what keeps these particular
+/// cases whole — they were never at risk. The assertion is here because the property is the
+/// contract, and because the next reject to be added is the first one that sits after the retire.
+/// The `!= 0` count below is what stops the loop from passing on an empty set of rejects.
+#[test]
+fn a_rejected_boolean_leaves_the_operands_live() {
+    let mut rejected = 0;
+    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+        let (mut m, a, b) = two_boxes();
+        // The rotation the arrangement refuses at 60° for `Fuse`; `Cut`/`Common` of the same pair
+        // build, so one fixture covers a reject and a success against the same assertion.
+        let a = xf(&mut m, a, rot_iso(Axis::Z, 60));
+        let before = m.live_solids.clone();
+        match boolean(&mut m, kind, a, b) {
+            Err(e) => {
+                rejected += 1;
+                assert_eq!(
+                    m.live_solids, before,
+                    "{kind:?} rejected with {e:?} and changed the live set"
+                );
+            }
+            // A success *must* move the live set on: the operands are consumed.
+            Ok(_) => assert_ne!(m.live_solids, before, "{kind:?} succeeded without retiring"),
+        }
+    }
+    assert_ne!(rejected, 0, "no kind rejected — the assertion never ran");
+}
