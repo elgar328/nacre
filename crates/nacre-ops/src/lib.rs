@@ -375,6 +375,22 @@ pub enum RejectReason {
     /// whenever two sampled boxes share exactly an edge, e.g. `[2,4]×[2,4]×[1,4]` fused with
     /// `[2,4]×[4,8]×[4,6]`, which touch only along the line `y = 4, z = 4`.
     NonManifoldResultEdge,
+    /// **The result's own surface touches itself**: an edge of the assembled solid lies in the
+    /// *interior* of one of that same solid's faces. An embedded boundary cannot do that — two
+    /// pieces of it would occupy the same points — so what came back is not a solid, however
+    /// plausible its volume.
+    ///
+    /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than
+    /// twice") is **false** here: the face is not split at the contact, so every edge is still used
+    /// exactly twice and the topology count sees nothing. `Impossible` for the stronger reason —
+    /// that one names an output *shape* the kernel may one day allow (several solids), while this
+    /// one is about a single solid's validity, which no change of output shape rescues.
+    ///
+    /// The everyday cause is a dimension that makes two surfaces meet exactly: a pocket whose
+    /// wedge tip lands on the far wall, a boss flush with a neighbouring face. Parasolid refuses
+    /// the same bodies (`PK_FACE_state_bad_face_face_c`), and other kernels surface it as "zero
+    /// thickness geometry". Moving the dimension off the coincidence — `1.0` to `0.999` — builds.
+    SelfTouchingResult,
     /// The assembled boundary leaves an edge used **once** — a dangling edge, so the face set is
     /// not closed. Unlike [`Self::NonManifoldResultEdge`] this says nothing bad about the input:
     /// the assembly dropped a face, which is ours to fix. Unfired in the suite (2026-07-26).
@@ -681,6 +697,7 @@ impl RejectReason {
         match self {
             Self::NonManifoldEdge => "non_manifold_edge",
             Self::NonManifoldResultEdge => "non_manifold_result_edge",
+            Self::SelfTouchingResult => "self_touching_result",
             Self::OpenResultShell => "open_result_shell",
             Self::CoincidentNodes => "coincident_nodes",
             Self::RingNaming => "ring_naming",
@@ -730,6 +747,7 @@ impl RejectReason {
             Self::NonManifoldEdge
             | Self::NonManifoldVertex
             | Self::NonManifoldResultEdge
+            | Self::SelfTouchingResult
             | Self::DegenerateFace
             | Self::DegenerateNormal => RejectClass::Impossible,
             // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate

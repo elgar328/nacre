@@ -136,7 +136,12 @@ live 여부·합법성은 여전히 op 자신의 `SolidNotLive`/`FaceNotInLiveSo
   `PadMissesFace` +84 셀(v24/e36/f18/sh3/so3), `PocketNotBlind` +80(v24/e36/f16/sh2/so2),
   `Boolean(NonManifoldVertex)` +63(v19/e30/f12/sh1/so1).
 
-live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋 후 거절은 없다. 그러나 아레나 길이는
+live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋 후 거절은 없다. ★ 부울에서는 이것이
+2026-08-13 부터 **우연이 아니라 구조**다: 조립의 피연산자 은퇴가 세 분기에 복사돼 있던 것을
+「결과가 받아들여진 뒤 한 자리」로 모았고(`assemble_fuse_cut` → `reconstruct`), 그와 별도로
+`boolean`/`boolean_with_classes` 가 엔진의 **모든** `Err` 에 live set 스냅샷을 복원한다. 전에는
+「조립의 모든 거절이 마침 은퇴 앞에 있다」는 사실에 기대고 있었고, 그걸 단언하는 테스트는 없었다
+(지금은 `coverage/rejects.rs` 와 `self_touch.rs` 가 단언한다). 그러나 아레나 길이는
 되돌지 않으므로, **거절 뒤에도 기록을 이어가려면 모델을 로그로 다시 지어야 한다**(`model =
 replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 인덱스를 적게 되고, 결과는
 **이름 붙은 거절이거나 발산**이며 — 패닉은 아니다(측정: `LogHandleOutOfRange{Solid, 4}`).
@@ -611,6 +616,22 @@ OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 �
 > **★ 방향 전환(2026-07-20, 사용자 결정 — 이 절은 이행기 서술).** 아래 "공면 접촉 유무로 배타 라우팅"(detector + 공면 생존표)은 케이스가 늘수록 **경우의 수가 폭발**한다(same_ground·single-shared·containment로 실증). 그래서 design.md가 **M7**(하이브리드, §426 exact ray casting)에 두던 **arrangement/winding 통합 분류 방식을 M5 평면으로 앞당긴다** — 평면은 메시·SSI 불요라 M7 분류법을 exact plane-triple에 그대로 적용. **M5의 목표 = winding 기반 단일 arrangement 엔진**(면당 세분 → sub-face를 in/out/on 분류 → op별 Requicha keep 균일 적용; 글로벌 detector·이중 경로 소거, Requicha 규칙은 유지). 이 방식은 커토버로 프로덕션 엔진(`nacre-ops::arrangement`)이 됐다 — 면당 평면 cell-복합체(트레이스→분할→셀→중첩→라벨→방출→조립). **잔여 커버리지 갭:** containment(seam 없는 포함)·cavity 접촉(현재 outer shell 순회). ~~회전 접촉~~ — 실체는 회전이 아니라 **칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남)이었고 2026-08-11 에 닫혔다: `edge_mask` 의 스침 결합이 합집합→**홀짝**(같은 쪽 쌍 = 꼬집힘/노치 = 무소식), all-false 모서리는 골격에서 제외(`drop_newsless` — 점 접촉 `touches` 의 1D 판). 모서리-만 접촉 fuse 는 기존 `NonManifoldVertex` 검출이 정직 거절(잠금: `tests/knife_edge.rs`).
 >
 > **★★ 갱신(F2 — detector 붕괴 완료).** 위 "경우의 수 폭발"의 실체가 **라우팅뿐**이었음이 실증됐다: 케이스별 detector 7종이 **전부 같은 `coplanar_result_unified`를 호출** — 결과 생성기는 이미 통합돼 있었다. 그래서 dispatch를 **하나의 exact 질문**(`coplanar_contact_count >= 1`, "진짜 공면 접촉인가")으로 붕괴시키고 detector 12종·지원 타입 ~775줄을 삭제했다. 부수적으로 그 좁은 게이트들이 막던 케이스가 열렸고(비볼록 오버행 footprint, 관통 slot/corner cut), 라우팅이 넓어지며 드러난 "성공하되 열린 셸" 한 건은 **`assemble_fuse_cut`의 닫힘 가드**(모든 모서리 정확히 2회 사용, 위반 시 `NON_MANIFOLD_EDGE` 정직 거절)로 차단했다. ∴ **아래 배타-라우팅 서술은 여전히 유효하되 "detector 다발"이 아니라 "질문 하나"이며**, 두 메커니즘(seam / coplanar)의 공존은 폐기 대상이 아니라 **구조적 필연**이다 — (단계4 SoS Cell 4) 실측이 "seam 하나로 통일"을 반증했다(공면 접촉 모서리는 공유 평면에 통째로 누워 transversal seam 자체가 부재 = 구조적 공면성, 섭동으로 해소 불가). 남은 winding 작업은 엔진 대체가 아니라 **커버리지 확장**(공면 arm의 회전·cavity·containment)이다.
+
+**★ 결과 계약(2026-08-13): 표면이 자기와 닿는 솔리드는 만들지 않는다.** 조립이 내놓은 결과
+솔리드(바깥 껍질 + 공동)에 대해 *"이 솔리드의 모서리가 같은 솔리드의 어떤 면의 «내부»에 있는가"*
+를 묻고, 참이면 `SelfTouchingResult`(`Impossible`)로 거절한다. 이런 몸체는 연결돼 있고 부피가
+맞고 **모든 위상 계수를 통과한다** — 접촉선에서 면이 쪼개지지 않아 모든 모서리가 여전히 두 번씩
+쓰이므로 `check_result_topology` 도 `validate` 도 보지 못한다. 방향은 Parasolid 기준(사용자 결정,
+2026-08-12): OCCT 는 이런 몸체를 받지만 따르지 않는다. **대가**는 자연스러운 모델링 동작 하나가
+막히는 것이고(쐐기 포켓의 끝이 마침 반대 벽에 닿는 경우), 처방은 다른 커널의 *"zero thickness
+geometry"* 안내와 같다 — 치수를 조금 옮긴다. 커널은 사유 이름과 클래스만 내놓고 **사람이 읽을
+문장은 앱의 몫**이다(`RejectClass` 로 분기, 변주 이름으로 분기하지 않는다).
+
+판정은 체 셋을 싼 것부터 통과시킨다 — ① 후보 평면 = 두 끝점 이름 삼중의 교집합(정확, 좌표 없음)
+② 그 평면 위 면들 사이에서 정점 `tol` 로 **부풀린** 경계상자 선별(한 평면이 면 80개를 일 수 있다;
+실측 후보 2,538,703 → 203) ③ 남은 것만 `point_in_ring`. 상자를 부풀리는 것은 선택이 아니다:
+상자는 반올림된 실현 좌표에서 나오고 정확 판정 **앞에서 후보를 버리는** 데 쓰이므로, 보수적이지
+않으면 진짜 접촉이 조용히 사라진다. 관문·실측은 `docs/dev-log.md` 의 같은 날 항목.
 
 M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접촉 유무"로 배타 라우팅**한다(한 부울에 하나만 돈다).
 

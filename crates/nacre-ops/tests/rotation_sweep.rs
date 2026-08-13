@@ -293,6 +293,12 @@ fn the_other_rejections_are_untouched() {
 /// two ways in the arrangement, missing entirely in the cleaning pass. It lives in
 /// `ring_in_ring` now, and a caller that goes around it is a caller that will quietly lack the
 /// retry again, so the source says so.
+///
+/// ★ **The exceptions are listed, not implied.** `ring_in_ring`'s value is picking *another node*
+/// when one grazes, so the rule binds anything asking "is this ring inside that one". A caller
+/// asking about **one named vertex** has no other node to offer, and the retry would have nothing
+/// to retry with — `inside_trimmed_face` (the self-touch check) is that, and it is spelled out
+/// below rather than left to a loose pattern.
 #[test]
 fn no_production_caller_reaches_past_the_shared_predicate() {
     let src = [
@@ -312,8 +318,11 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
             }
         }
     }
-    // `ring_in_ring` is the one caller, and `point_in_component` casts its own rays in 3D.
-    offenders.retain(|o| !o.contains("point_in_ring(jd, p, v, outer)"));
+    // `ring_in_ring` is the one ring-vs-ring caller, and `point_in_component` casts its own rays
+    // in 3D. `inside_trimmed_face` asks about a single vertex — see this test's note.
+    offenders.retain(|o| {
+        !o.contains("point_in_ring(jd, p, v, outer)") && !o.contains("point_in_ring(jd, q, t, ")
+    });
     assert_eq!(
         offenders,
         Vec::<String>::new(),

@@ -395,6 +395,152 @@ pub(crate) fn assemble_fuse_cut(
     Ok(out)
 }
 
+/// **A solid whose surface touches itself is not a solid.**
+///
+/// The proposition: *an edge of this solid lies in the interior of one of this same solid's faces.*
+/// An embedded boundary cannot do that — the surface would occupy the same points twice — so a
+/// result that does is refused rather than returned. The unit is the **result solid**, outer shell
+/// and cavities together: a wedge cut whose tip lands on the far wall touches its own cavity, and
+/// asking the question per component would miss exactly that.
+///
+/// **Three sieves, cheapest first**, because the exact question is the expensive one:
+///
+/// 1. ★ **Which planes** — both endpoints must lie on the face's plane, and a vertex's plane triple
+///    *is* the set of planes it lies on, so the candidates for an edge are `triple(u) ∩ triple(v)`,
+///    usually two. Exact, no coordinates, a hash lookup per edge. Scanning every face for every
+///    edge instead costs ~40% on the 80-fold star (measured).
+/// 2. ★ **Which faces on that plane** — one plane can carry *eighty* faces in a folded star, so the
+///    lookup above is not the end of it. A box per face rejects 99.99% of what survives step 1
+///    (measured: 2,538,703 candidate pairs down to 203), and on the booleans that cost the most it
+///    rejects all of them.
+/// 3. The exact ring test, on what is left.
+///
+/// ★ **The boxes are inflated by the vertices' own tolerance and so can only over-keep.** They are
+/// built from realized `f64` coordinates, which are rounded; a box used to *reject* a candidate
+/// before an exact test must therefore be conservative, or a real self-contact is dropped in
+/// silence. `SeamVertex::tol` is the measured bound on that vertex's realization — both the box and
+/// the query point are widened by it. The case this protects is not hypothetical: the wedge that
+/// motivated this check touches at exactly `x = 1`, which is a face of its own box.
+///
+/// The rings a face is trimmed by are built **lazily and once per face**: `Ring::edges` spends an
+/// exact predicate per node, and building them for every result face is the same unconditional cost
+/// that put 12x on the star when the void label did it.
+fn self_touch_reject(
+    jd: &Judge<'_, WorkingPlane>,
+    seam: &[SeamVertex],
+    groups: &[Vec<usize>],
+    by_comp_lf: &[Vec<&LocalFace>],
+) -> Result<(), BoolError> {
+    let pt: HashMap<[usize; 3], (Point3, f64)> = seam
+        .iter()
+        .map(|sv| (sv.triple, (sv.point, sv.tol)))
+        .collect();
+    for g in groups {
+        let faces: Vec<&LocalFace> = g
+            .iter()
+            .flat_map(|&c| by_comp_lf[c].iter().copied())
+            .collect();
+        // One pass: which faces sit on each plane, which two faces own each edge, and a box per
+        // face already widened by its own vertices' tolerances.
+        let mut by_plane: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut owners: HashMap<[[usize; 3]; 2], Vec<usize>> = HashMap::new();
+        let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::with_capacity(faces.len());
+        for (j, lf) in faces.iter().enumerate() {
+            by_plane.entry(lf.plane_idx).or_default().push(j);
+            let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            for r in rings_of(lf) {
+                let k = r.nodes.len();
+                for i in 0..k {
+                    let (Node::Seam(u), Node::Seam(v)) = (r.nodes[i], r.nodes[(i + 1) % k]);
+                    owners
+                        .entry(if u < v { [u, v] } else { [v, u] })
+                        .or_default()
+                        .push(j);
+                    if let Some(&(p, tol)) = pt.get(&u) {
+                        let a = p.as_array();
+                        for k in 0..3 {
+                            lo[k] = lo[k].min(a[k] - tol);
+                            hi[k] = hi[k].max(a[k] + tol);
+                        }
+                    }
+                }
+            }
+            boxes.push((lo, hi));
+        }
+        let mut rings_of_face: HashMap<usize, Vec<Vec<combinatorics::RingEdge>>> = HashMap::new();
+        for (&[u, v], own) in &owners {
+            for q in u.iter().copied().filter(|x| v.contains(x)) {
+                let Some(js) = by_plane.get(&q) else { continue };
+                for &j in js.iter().filter(|j| !own.contains(j)) {
+                    let (lo, hi) = boxes[j];
+                    let in_box = [u, v].iter().all(|t| {
+                        pt.get(t).is_some_and(|&(p, tol)| {
+                            let a = p.as_array();
+                            (0..3).all(|k| a[k] >= lo[k] - tol && a[k] <= hi[k] + tol)
+                        })
+                    });
+                    if !in_box {
+                        continue;
+                    }
+                    if let std::collections::hash_map::Entry::Vacant(slot) = rings_of_face.entry(j)
+                    {
+                        slot.insert(
+                            rings_of(faces[j])
+                                .map(|r| r.edges(jd, q))
+                                .collect::<Result<_, BoolError>>()?,
+                        );
+                    }
+                    for t in [u, v] {
+                        if inside_trimmed_face(jd, q, t, &rings_of_face[&j])? {
+                            return Err(reject(RejectReason::SelfTouchingResult));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Is `t` in the **material** part of the face on plane `q` — inside its outer ring and outside
+/// every hole?
+///
+/// ★ A point **on** a ring is not inside it. That is the everyday case, not the exception: the
+/// query points are the solid's own vertices, and a face sharing one meets it on its boundary. What
+/// is *not* swallowed is any other undecided answer — reading "could not tell" as "not touching"
+/// would be a silent pass, and across the suite (5,099 booleans) no such answer occurs.
+fn inside_trimmed_face(
+    jd: &Judge<'_, WorkingPlane>,
+    q: usize,
+    t: [usize; 3],
+    rings: &[Vec<combinatorics::RingEdge>],
+) -> Result<bool, BoolError> {
+    let on_ring = BoolError::Unsupported {
+        reason: RejectReason::PointOnRing,
+    };
+    match combinatorics::point_in_ring(jd, q, t, &rings[0]) {
+        Ok(false) => Ok(false),
+        Err(e) if e == on_ring => Ok(false),
+        Err(e) => Err(e),
+        Ok(true) => {
+            for hole in &rings[1..] {
+                match combinatorics::point_in_ring(jd, q, t, hole) {
+                    Ok(true) => return Ok(false), // in a hole: the face is not there
+                    Ok(false) => {}
+                    Err(e) if e == on_ring => return Ok(false),
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(true)
+        }
+    }
+}
+
+/// A face's rings, outer first.
+fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
+    std::iter::once(&lf.loop_nodes).chain(lf.inner.iter())
+}
+
 /// Rebuild the result solids from the arrangement's faces. Pushes into the arena; it does not take
 /// the operands at all, which is the point — the live set is its caller's to move.
 fn reconstruct(
@@ -775,9 +921,11 @@ fn reconstruct(
     // vertex of every result names surfaces this solid has faces on. A violation builds a solid
     // that cannot be moved, and used to surface as a rejection two operations downstream — so the
     // whole test suite is the corpus for it now, not the one caller that happens to transform.
+    let mut groups: Vec<Vec<usize>> = Vec::new();
     let out = match positives.len() {
         0 => Err(reject(RejectReason::NoOutwardShell)),
         1 => {
+            groups.push((0..n).collect());
             let outer_c = positives[0];
             // A cavity shell's faces already point into the void (the material is outside it, so
             // the material-on-correct-side reconstruction winds them inward) — measured, no flip.
@@ -800,6 +948,11 @@ fn reconstruct(
             // `comp_faces`/`nodes_of` are the same pair the material/void label above uses.
             let mut cavities_of: std::collections::HashMap<usize, Vec<Handle<Shell>>> =
                 positives.iter().map(|&m| (m, Vec::new())).collect();
+            // The same assignment in component numbers: a result solid is a material component and
+            // the cavity components it owns, and that grouping — not the component — is the unit a
+            // self-contact question is asked about.
+            let mut comps_of: std::collections::HashMap<usize, Vec<usize>> =
+                positives.iter().map(|&m| (m, vec![m])).collect();
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
@@ -836,6 +989,7 @@ fn reconstruct(
                         .ok_or_else(|| reject(RejectReason::CavityNoOwner))?,
                 };
                 cavities_of.get_mut(&owner).unwrap().push(shells[d]);
+                comps_of.get_mut(&owner).unwrap().push(d);
             }
             // Emit each material solid (with its cavities) in a canonical, replay-stable order
             // keyed on geometry, so a downstream op can index the returned Vec deterministically.
@@ -853,6 +1007,7 @@ fn reconstruct(
                 .into_iter()
                 .map(|oi| {
                     let c = positives[oi];
+                    groups.push(comps_of.remove(&c).unwrap());
                     model.push_solid(Solid {
                         outer: shells[c],
                         cavities: cavities_of.remove(&c).unwrap(),
@@ -862,6 +1017,10 @@ fn reconstruct(
             Ok(solids)
         }
     };
+    let out = out.and_then(|solids| {
+        self_touch_reject(jd, seam, &groups, &by_comp_lf)?;
+        Ok(solids)
+    });
     debug_assert!(
         out.as_ref().is_ok_and(|solids| solids
             .iter()

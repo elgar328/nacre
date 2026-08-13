@@ -108,19 +108,25 @@ fn an_axis_aligned_void_is_unchanged() {
     one_solid_with_a_cavity(&mut m, got, 1.0 - 0.6 * 0.6 * 0.6);
 }
 
-/// The wedge whose sharp tip lands **exactly on the cube's wall** — a plain modelling move, and
-/// the one that showed the defect first. The tip touching the wall is a separate question (the
-/// result's surface meets itself along that line); what this locks is that the cut is a cut.
+/// The wedge whose sharp tip stops just **short** of the cube's wall — a plain modelling move, and
+/// the shape that showed the defect first.
+///
+/// ★ The tip was at `1.0`, *on* the wall, until the kernel learned to refuse a solid whose surface
+/// touches itself: that version is now `SelfTouchingResult`, and it lives in `self_touch.rs` as the
+/// case that reject is for. Nudging the tip to `0.999` is the same fix a user is told to make, and
+/// it leaves this file asking what it was always asking — that a cut wholly inside a body comes
+/// back as one body with a cavity, whatever the sketch's angles.
 #[test]
-fn a_wedge_whose_tip_reaches_the_wall_is_still_one_body() {
+fn a_wedge_whose_tip_nearly_reaches_the_wall_is_still_one_body() {
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
     m.rebuild_adjacency();
-    let b = prism(&mut m, &[[1.0, 0.5], [0.1, 0.1], [0.1, 0.9]], 0.6);
+    let b = prism(&mut m, &[[0.999, 0.5], [0.1, 0.1], [0.1, 0.9]], 0.6);
     let b = lift(&mut m, b, 2, 10);
     let got = boolean(&mut m, BoolKind::Cut, a, b).expect("the cut builds");
-    one_solid_with_a_cavity(&mut m, got, 1.0 - 0.36 * 0.6);
+    // Area of the triangle (0.999,0.5), (0.1,0.1), (0.1,0.9): base 0.8 on x = 0.1, height 0.899.
+    one_solid_with_a_cavity(&mut m, got, 1.0 - 0.5 * 0.8 * 0.899 * 0.6);
 }
