@@ -9,8 +9,8 @@ use crate::combinatorics;
 use crate::planes::{WorkingPlane, uf_find};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
+use nacre_cip::Decision;
 use nacre_cip::predicate::{Evidence, Notes, Site};
-use nacre_cip::{Decision, dir_orient3d_judge};
 use nacre_geom::Surface;
 use nacre_math::Point3;
 use nacre_store::Handle;
@@ -268,213 +268,6 @@ fn comp_key(model: &Model, faces: &[Handle<Face>]) -> Vec<[f64; 3]> {
         .collect();
     pts.sort_by(|a, b| a.partial_cmp(b).expect("finite vertex coordinates"));
     pts
-}
-
-/// Whether a closed component shell (a set of oriented faces) is **outward**
-/// (material-enclosing, positive signed volume — an outer shell) versus
-/// **inward** (a void/cavity shell). The `assemble_fuse_cut` cavity-vs-outer
-/// label ((5d)#5 retired the f64 signed-volume flux this replaces), reading no
-/// coordinate arithmetic: only a lexicographic vertex ordering and one
-/// axis-aligned plane-coefficient sign.
-///
-/// At the component's lexicographically-minimal vertex `v*` (min x, then y, then
-/// z) the shell is a convex corner, and the material lies toward increasing
-/// coordinates. So an outward shell has a `−x`-facing boundary face at `v*` (its
-/// materialized outward normal `n_x < 0`), while a void's three walls all face
-/// into the void (`n_x ≥ 0` at its own `v*`). Hence: **outward iff some face
-/// incident to `v*` has materialized outward normal with `n_x < 0`**. Two
-/// antiparallel `x`-perpendicular faces cannot share a vertex, so this `∃`-test
-/// is equivalent to (and simpler than) picking the max-`|n_x|` face.
-///
-/// Exact for the axis-aligned M5 corpus: face normals are exactly `±eₓ/±e_y/±e_z`
-/// so `sign(n_x)` is the exact sign of the plane's `x`-coefficient (times the
-/// face orientation), and the `v*` search is exact coordinate ordering — both
-/// hold even for non-representable coordinates (e.g. a `0.3`-offset void face).
-/// Rotated shells break the "axis-aligned normal / unique x-perpendicular face"
-/// premises and are CIP's job (design §9 (5d)#5, honest scope).
-pub(crate) fn is_shell_outward(model: &Model, faces: &[Handle<Face>]) -> bool {
-    // Lexicographically-minimal vertex over the component's outer loops.
-    let mut vstar: Option<Handle<Vertex>> = None;
-    let mut pstar = [f64::INFINITY; 3];
-    for &fh in faces {
-        for &he in &model.faces.get(fh).outer.half_edges {
-            let vh = he_start(model, he);
-            let p = model.vertex_point(vh).as_array();
-            if p < pstar {
-                pstar = p;
-                vstar = Some(vh);
-            }
-        }
-    }
-    let Some(vstar) = vstar else { return false };
-    // Outward iff some face at v* faces −x (materialized outward normal n_x < 0).
-    // n_x's sign is the plane x-coefficient's sign times the orientation sign
-    // (no normalization — exact for axis-aligned faces).
-    for &fh in faces {
-        let face = model.faces.get(fh);
-        if !face
-            .outer
-            .half_edges
-            .iter()
-            .any(|&he| he_start(model, he) == vstar)
-        {
-            continue;
-        }
-        let Surface::Plane(plane) = model.surface(face.surface) else {
-            continue;
-        };
-        let sign = match face.orientation {
-            Orientation::Forward => 1.0,
-            Orientation::Reversed => -1.0,
-        };
-        if plane.coefficients()[0] * sign < 0.0 {
-            return true;
-        }
-    }
-    false
-}
-
-/// Rotation-sound twin of [`is_shell_outward`]: whether a result component's shell is
-/// **outward** (material, an outer shell) versus **inward** (a void/cavity shell), decided on
-/// the faces' exact `WitnessPoint` definitions through `frame3`, so it is sound when the coordinates
-/// are rounded irrationals (rotation). Same algorithm as the f64 [`is_shell_outward`] — the
-/// lexicographically-minimal vertex `v*` is a convex extreme corner and the shell is outward
-/// iff some face there has an outward normal with `n_x < 0` — but both numeric steps become
-/// exact CIP predicates:
-///
-/// - **`v*`** by [`Judge::cmp_coord`](crate::tolerant) over each node's three-plane triple, the same
-///   lex-min scan as [`loop_winding`](crate::combinatorics::loop_winding). A node's triple is its
-///   own face plane plus the neighbour planes of its two loop edges (the
-///   [`loop_triples`](crate::combinatorics) construction), whose meet *is* that vertex — so an
-///   original corner is as implicit a point as a seam node, no mixed compare needed.
-/// - **`sign(n_x)`** by [`dir_orient3d_judge`]`([1,0,0], tri…)` on the face's exact plane
-///   definition ([`plane_def`](crate::tolerant), mixed-rotation safe): the x-component of the
-///   RH normal, flipped by `lf.flip` to the result face's materialized outward normal.
-///
-/// Operates on the **pre-assembly** `LocalFace`s (not the result faces), so it never reads a
-/// result vertex whose exact rotation provenance `assemble_fuse_cut` drops — every exact
-/// definition it needs lives in `planes` and in the loop adjacency. Reads no `Model`. `Err`
-/// on a non-simple/degenerate component (coincident nodes, a straight angle, or a non-manifold
-/// edge) — an honest reject, never a silent wrong label. Routed from `assemble_fuse_cut`'s
-/// per-component outward test by [`any_rotated`](crate::tolerant) (cell 3c-vi-b).
-fn component_is_outward_tol(
-    jd: &Judge<'_, WorkingPlane>,
-    comp: &[&LocalFace],
-) -> Result<bool, BoolError> {
-    let planes = jd.planes;
-    use nacre_scalar::{Orient, Rat};
-
-    // The unordered edge key: `Node` is `Ord`, so order the pair canonically.
-    let ekey = |a: Node, b: Node| if a <= b { (a, b) } else { (b, a) };
-
-    // Edge -> the planes carrying it, over every loop (outer + inner): a hole-rim edge is the
-    // outer edge of its wall and an inner edge of the holed face, so building over both loops
-    // gives it both planes. A manifold edge yields exactly two.
-    type EKey = (Node, Node);
-    let mut edge_faces: HashMap<EKey, Vec<usize>> = HashMap::new();
-    for lf in comp {
-        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
-            let k = ring.len();
-            for t in 0..k {
-                edge_faces
-                    .entry(ekey(ring[t], ring[(t + 1) % k]))
-                    .or_default()
-                    .push(lf.plane_idx);
-            }
-        }
-    }
-    let other_plane = |a: Node, b: Node, own: usize| -> Result<usize, BoolError> {
-        let ps = edge_faces
-            .get(&ekey(a, b))
-            .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-        let mut others = ps.iter().copied().filter(|&x| x != own);
-        let o = others
-            .next()
-            .ok_or_else(|| reject(RejectReason::UnpairedSeamEdge))?;
-        if others.any(|x| x != o) {
-            return Err(reject(RejectReason::NonManifoldEdge)); // edge shared by >2 distinct planes
-        }
-        Ok(o)
-    };
-
-    // Each unique outer node -> its three-plane triple (meet = that vertex). Any incident face
-    // yields a valid triple (all its planes pass through the vertex); first occurrence wins.
-    let mut triple_of: HashMap<Node, [usize; 3]> = HashMap::new();
-    for lf in comp {
-        let ring = &lf.loop_nodes;
-        let k = ring.len();
-        for t in 0..k {
-            let node = ring[t];
-            if triple_of.contains_key(&node) {
-                continue;
-            }
-            let prev = other_plane(ring[(t + k - 1) % k], node, lf.plane_idx)?;
-            let next = other_plane(node, ring[(t + 1) % k], lf.plane_idx)?;
-            if prev == next {
-                return Err(reject(RejectReason::StraightAngle)); // a straight angle
-            }
-            let mut tri = [lf.plane_idx, prev, next];
-            tri.sort_unstable();
-            triple_of.insert(node, tri);
-        }
-    }
-
-    // Lexicographically-minimal vertex over the unique outer nodes (`loop_winding`'s scan;
-    // `Judge::cmp_coord` is exact for the rotated triples). Sort candidates for replay determinism.
-    let mut nodes: Vec<Node> = triple_of.keys().copied().collect();
-    nodes.sort_unstable();
-    let Some((&first, rest)) = nodes.split_first() else {
-        return Ok(false); // empty component
-    };
-    let mut lo = first;
-    for &node in rest {
-        let ord = (0..3)
-            .map(|axis| jd.cmp_coord(triple_of[&node], triple_of[&lo], axis))
-            .find(|&c| c != 0);
-        match ord {
-            Some(c) if c < 0 => lo = node,
-            Some(_) => {}
-            None => return Err(reject(RejectReason::CoincidentNodes)), // two distinct nodes coincide
-        }
-    }
-    // ★★ **Same postcondition as `loop_winding`'s scan, and here the stake is higher**: `v*`
-    // decides whether this shell is the outside or the inside, so a node that is not extreme
-    // turns the solid inside out. The forward scan finds a minimum only if the lexicographic
-    // relation is an order, which is a property of the predicates rather than of this loop.
-    debug_assert!(
-        !nodes.iter().any(|n| {
-            *n != lo
-                && (0..3)
-                    .map(|axis| jd.cmp_coord(triple_of[n], triple_of[&lo], axis))
-                    .find(|&c| c != 0)
-                    == Some(-1)
-        }),
-        "the lexicographic scan did not find a minimum — the comparison is not an order here"
-    );
-
-    // Outward iff some outer face at v* has a result outward normal with n_x < 0. n_x's sign is
-    // the RH-normal x-component (`dir_orient3d_judge` on the exact plane def), flipped by `flip`.
-    for lf in comp {
-        if !lf.loop_nodes.contains(&lo) {
-            continue;
-        }
-        let tri = crate::tolerant::plane_def(planes, lf.plane_idx);
-        let ex = [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)];
-        let nx = dir_orient3d_judge(ex, &tri[0], &tri[1], &tri[2], jd.standard.prec);
-        let nx = if lf.flip {
-            match nx {
-                Orient::Positive => Orient::Negative,
-                Orient::Negative => Orient::Positive,
-                Orient::Zero => Orient::Zero,
-            }
-        } else {
-            nx
-        };
-        if nx == Orient::Negative {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 /// A seam vertex — a three-plane point on both `∂A` and `∂B` (2 A-planes + 1
@@ -856,23 +649,82 @@ pub(crate) fn assemble_fuse_cut(
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
     }
-    // Outward/void label per component, routed by rotation (overhaul 3c-vi): a component with
-    // any rotated plane is decided on exact `WitnessPoint` definitions (`component_is_outward_tol` over
-    // its pre-assembly `LocalFace`s), else the axis-aligned f64 `is_shell_outward` — unchanged,
-    // so an unrotated result is bit-identical. `positives` stays in ascending `c` order.
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
     for (i, lf) in faces.iter().enumerate() {
         by_comp_lf[labels[i]].push(lf);
     }
+    // A component as `(plane, rings)` per face, and its nodes — what the containment predicate
+    // takes. Both the material/void label below and the cavity-owner search further down ask the
+    // same question of them.
+    // ★ **Only when there is something to compare.** One component is the whole result — depth 0,
+    // material, nothing to ask — and that is nearly every boolean. Building these rings costs an
+    // exact predicate per node, so doing it unconditionally put **12x** on the 80-fold star
+    // (measured). Built once per component rather than once per query for the same reason: the
+    // label below retries with another node when one grazes.
+    let comp_faces: Vec<combinatorics::ComponentFaces> = (0..if n > 1 { n } else { 0 })
+        .map(|c| {
+            by_comp_lf[c]
+                .iter()
+                .map(|lf| {
+                    let mut rings = vec![lf.loop_nodes.edges(jd, lf.plane_idx)?];
+                    for h in &lf.inner {
+                        rings.push(h.edges(jd, lf.plane_idx)?);
+                    }
+                    Ok((lf.plane_idx, rings))
+                })
+                .collect::<Result<_, BoolError>>()
+        })
+        .collect::<Result<_, BoolError>>()?;
+    let nodes_of = |c: usize| -> Vec<[usize; 3]> {
+        by_comp_lf[c]
+            .iter()
+            .flat_map(|lf| lf.loop_nodes.iter().map(|Node::Seam(t)| *t))
+            .collect()
+    };
+    // ★★ **Material or void is a question about nesting, not about normals.**
+    //
+    // It used to be answered at the component's lexicographically-minimal vertex `v*`: outward iff
+    // *some* face there has an outward normal with `n_x < 0`. That existential is a shortcut for
+    // "the face with the largest `|n_x|` faces −x", and the shortcut is only equivalent while the
+    // normals are **axis-aligned** — the old `is_shell_outward`'s own doc said so. A slanted sketch
+    // breaks it with no rotation in sight: a wedge void cut inside a box came back as its own
+    // *material* solid of **negative volume**, with the box unchanged beside it. A wrong model,
+    // and `validate` had nothing to say about it (measured, `docs/dev-log.md`).
+    //
+    // So ask the question the kernel already answers one dimension down. `sketch::from_rings`
+    // decides a ring by **containment depth — even is material, odd is a hole** (design.md: "채우기
+    // 규칙 파라미터는 두지 않는다 — 짝수-홀수가 유일한 규칙이다"), and the cavity-owner search
+    // below already picks the *innermost* container, the other half of that same rule. This is the
+    // 3D reading of it, with `point_in_component` where the 2D one uses `point_in_ring`.
+    //
+    // Nothing here reads an orientation, so a shell that winds either way is labelled the same —
+    // which is the point: the winding is what the old test was trying, and failing, to recover.
+    // `positives` stays in ascending `c` order (a downstream contract).
     let mut positives: Vec<usize> = Vec::new();
     for c in 0..n {
-        let idxs: Vec<usize> = by_comp_lf[c].iter().map(|lf| lf.plane_idx).collect();
-        let outward = if crate::tolerant::any_rotated(planes, &idxs) {
-            component_is_outward_tol(jd, &by_comp_lf[c])?
-        } else {
-            is_shell_outward(model, &by_comp[c])
-        };
-        if outward {
+        if n == 1 {
+            positives.push(0); // the whole result: depth 0, and no other component to be inside
+            break;
+        }
+        // One origin for the whole row: a node of `c` that classifies against *every* other
+        // component. Trying them in turn is what the cavity search does, and for the same reason —
+        // a node that grazes one component's boundary is a fact about that node, not about the
+        // components.
+        let depth = nodes_of(c)
+            .iter()
+            .find_map(|&x| {
+                let mut d = 0usize;
+                for other in (0..n).filter(|&o| o != c) {
+                    match combinatorics::point_in_component(jd, x, &comp_faces[other]) {
+                        Ok(true) => d += 1,
+                        Ok(false) => {}
+                        Err(_) => return None, // grazed — try the next node
+                    }
+                }
+                Some(d)
+            })
+            .ok_or_else(|| reject(RejectReason::NoClearRay))?;
+        if depth % 2 == 0 {
             positives.push(c);
         }
     }
@@ -910,25 +762,8 @@ pub(crate) fn assemble_fuse_cut(
             // material whose outer shell nests it — the innermost, if materials themselves nest —
             // by the exact point-in-solid `point_in_component`. With no cavity this loop is empty
             // and every material emits cavity-free (the plain sever, unchanged).
-            // ★ The rings hand over their walls; nothing here derives one from a name.
-            let comp_faces = |c: usize| -> Result<combinatorics::ComponentFaces, BoolError> {
-                by_comp_lf[c]
-                    .iter()
-                    .map(|lf| {
-                        let mut rings = vec![lf.loop_nodes.edges(jd, lf.plane_idx)?];
-                        for h in &lf.inner {
-                            rings.push(h.edges(jd, lf.plane_idx)?);
-                        }
-                        Ok((lf.plane_idx, rings))
-                    })
-                    .collect()
-            };
-            let nodes_of = |c: usize| -> Vec<[usize; 3]> {
-                by_comp_lf[c]
-                    .iter()
-                    .flat_map(|lf| lf.loop_nodes.iter().map(|Node::Seam(t)| *t))
-                    .collect()
-            };
+            // ★ The rings hand over their walls; nothing here derives one from a name —
+            // `comp_faces`/`nodes_of` are the same pair the material/void label above uses.
             let mut cavities_of: std::collections::HashMap<usize, Vec<Handle<Shell>>> =
                 positives.iter().map(|&m| (m, Vec::new())).collect();
             for d in (0..n).filter(|c| !positives.contains(c)) {
@@ -937,9 +772,7 @@ pub(crate) fn assemble_fuse_cut(
                 let containers = nodes_of(d).iter().find_map(|&x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match comp_faces(m)
-                            .and_then(|f| combinatorics::point_in_component(jd, x, &f))
-                        {
+                        match combinatorics::point_in_component(jd, x, &comp_faces[m]) {
                             Ok(true) => cs.push(m),
                             Ok(false) => {}
                             Err(_) => return None, // grazed against a material — try next node
@@ -960,10 +793,7 @@ pub(crate) fn assemble_fuse_cut(
                                     || nodes_of(c)
                                         .iter()
                                         .find_map(|&x| {
-                                            comp_faces(o)
-                                                .and_then(|f| {
-                                                    combinatorics::point_in_component(jd, x, &f)
-                                                })
+                                            combinatorics::point_in_component(jd, x, &comp_faces[o])
                                                 .ok()
                                         })
                                         .unwrap_or(false)

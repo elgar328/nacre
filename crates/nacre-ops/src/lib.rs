@@ -564,6 +564,15 @@ pub enum RejectReason {
     /// it**: no amount of precision creates a distance that is not there (measured — the
     /// determinant was still bit-exactly zero 8192 bits deeper). The arrangement asked for a
     /// point that does not exist.
+    ///
+    /// ★ **Unfired across the suite since the outwardness label became nesting parity.** The one
+    /// judgement the corpus ever came back degenerate on was the component material/void test,
+    /// which asked for the sign of a rotated plane's normal; the parity label asks containment
+    /// instead, which the substrate always answers. A sweep over three rotation axes, ten angles,
+    /// two operand shapes, four overlaps and all three kinds (720 booleans) found none, and none
+    /// of `JudgeExhausted` either. `undecided_reject` is still wired and still the right shape —
+    /// an undecided judgement must never reach the geometry as a zero — it simply has no fixture,
+    /// which is recorded rather than taken as licence to delete the guard.
     DegenerateWitness,
     /// Every candidate ray from a loop's nodes has a ring node on its line.
     ///
@@ -1958,25 +1967,6 @@ pub mod tests {
             assert_eq!(m.solids.get(r).cavities.len(), 1, "Fuse swap={swap}");
             assert_eq!(m.reachable().shells.len(), 2, "Fuse swap={swap}");
         }
-    }
-
-    /// `is_shell_outward` — the exact sign `assemble_fuse_cut` labels components by
-    /// ((5d)#5, replacing the f64 signed-volume flux) — is true for an outward,
-    /// material-enclosing shell and false for an inward void shell. `reversed_shell`
-    /// flips one into the other, so the same faces read opposite orientations.
-    #[test]
-    fn is_shell_outward_true_for_outer_false_for_void() {
-        let mut m = Model::new();
-        let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-        let outer = m.solids.get(cube).outer;
-        let out_faces = m.shells.get(outer).faces.clone();
-        assert!(is_shell_outward(&m, &out_faces), "outer shell is outward");
-        let void = m.reversed_shell(outer);
-        let void_faces = m.shells.get(void).faces.clone();
-        assert!(
-            !is_shell_outward(&m, &void_faces),
-            "reversed shell is a void"
-        );
     }
 
     /// The L with a box biting its reflex corner and poking out the top. The box top

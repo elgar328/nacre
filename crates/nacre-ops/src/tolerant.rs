@@ -15,7 +15,9 @@ use nacre_math::Point3;
 
 // The judging context and the helpers the engine reaches for by name. The predicates themselves
 // are methods on `Judge`, so there is nothing else to re-export.
-pub(crate) use nacre_cip::predicate::{ImplicitPoint, Judge, any_rotated, plane_def};
+#[cfg(test)]
+use nacre_cip::predicate::plane_def;
+pub(crate) use nacre_cip::predicate::{ImplicitPoint, Judge};
 
 impl Witness for WorkingPlane {
     fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {

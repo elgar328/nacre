@@ -103,32 +103,41 @@ fn a_stale_operand_is_not_a_reject_reason() {
     );
 }
 
-/// **A judgement that could not be made is named as the cause, not as whatever broke downstream.**
+/// **The cause is named, not whatever broke downstream.**
 ///
-/// Rotating one operand of a face-touching pair leaves triples of planes that never meet in a
-/// point — the Cramer determinant is exactly zero, measured, and still bit-exactly zero 8192 bits
-/// deeper — so there is no distance to measure and no precision that would create one. Before the
-/// evidence had a channel out, `Decision::orient` collapsed that to `Zero`, the arrangement read
-/// it as "the same point", and the boolean failed several steps later as `LoopOrientMismatch`: a
-/// symptom of the guess, reported as if it were the problem.
+/// The original subject was `DegenerateWitness`: rotating one operand of a face-touching pair
+/// left a judgement with no distance to measure and no precision that would create one, and
+/// before the evidence had a channel out the arrangement read that as "the same point" and failed
+/// several steps later as `LoopOrientMismatch` — a symptom of the guess, reported as the problem.
 ///
-/// The `Common` of the same pair still builds, which is what makes this a statement about the
-/// judgement rather than about the geometry as a whole.
+/// ★ **That subject went unfired**, and the reason is worth keeping: the only judgement in the
+/// corpus that came back degenerate was the component **outwardness** test, and the nesting-parity
+/// label replaced it (it asks containment, which the substrate answers, instead of the sign of a
+/// rotated plane's normal, which it sometimes cannot). A sweep over three rotation axes, ten
+/// angles, two operand shapes, four overlaps and all three kinds — 720 booleans — found no
+/// `DegenerateWitness` and no `JudgeExhausted` left. `undecided_reject` is still wired; it has no
+/// fixture. See `RejectReason::DegenerateWitness`.
+///
+/// So the proposition is locked on what the same family still produces. At 60° the pair's `Fuse`
+/// stops in the assembly's vertex naming: a corner with no turn, named `StraightAngle` — the
+/// cause — rather than the ring that will not close afterwards. `Cut` and `Common` of the same
+/// pair still build, which is what makes this a statement about the *judgement* rather than about
+/// the geometry as a whole.
 #[test]
-fn a_degenerate_judgement_is_named_instead_of_its_downstream_symptom() {
-    for kind in [BoolKind::Fuse, BoolKind::Cut] {
-        let (mut m, a, b) = two_boxes();
-        let a = xf(&mut m, a, rot_iso(Axis::Z, 30));
-        let err = boolean(&mut m, kind, a, b).unwrap_err();
-        assert_eq!(
-            err,
-            BoolError::Unsupported {
-                reason: RejectReason::DegenerateWitness
-            },
-            "{kind:?} named a symptom instead of the judgement that caused it"
-        );
-    }
+fn the_cause_is_named_instead_of_its_downstream_symptom() {
     let (mut m, a, b) = two_boxes();
-    let a = xf(&mut m, a, rot_iso(Axis::Z, 30));
-    boolean(&mut m, BoolKind::Common, a, b).expect("the same pair still meets");
+    let a = xf(&mut m, a, rot_iso(Axis::Z, 60));
+    let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
+    assert_eq!(
+        err,
+        BoolError::Unsupported {
+            reason: RejectReason::StraightAngle
+        },
+        "named a symptom instead of the cause"
+    );
+    for kind in [BoolKind::Cut, BoolKind::Common] {
+        let (mut m, a, b) = two_boxes();
+        let a = xf(&mut m, a, rot_iso(Axis::Z, 60));
+        boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?} of the same pair: {e:?}"));
+    }
 }

@@ -4251,9 +4251,16 @@ mod tests {
         // boolean runs** — with the alias fixpoint. Audited against an empty alias table it
         // reported `UnorderedEdges` for three classes of this input (names two classes discover
         // for each other were missing), failures the boolean never had: an instrument that
-        // invents readings. The boolean's own reject here (`DegenerateWitness`) comes from the
-        // routing judgements before any class pipeline runs, which is outside the audit's scope
-        // — so the audit's honest answer for this input is "no class failed".
+        // invents readings. The boolean's own reject here (`StraightAngle`) comes from the
+        // assembly's vertex naming, after every class pipeline has run and outside the audit's
+        // scope — so the audit's honest answer for this input is "no class failed".
+        //
+        // ★ **The fixture moved once, exactly as the note above prescribes.** It used to be the
+        // same pair at 30° with `Cut`, rejecting `DegenerateWitness` — and that reject came from
+        // the component outwardness test, which the nesting-parity label replaced. The sweep was
+        // re-run over rotations about all three axes, four overlaps, both operand shapes and all
+        // three kinds (720 booleans): the only pre-class rejects left are `StraightAngle` and
+        // `NonManifoldVertex`, and this is the cheapest of them.
         //
         // (This test once asserted the audit reports the boolean's *class-level* reject, on a
         // fixture chosen as "some input that rejects" — a bar rotated through an L-shaped
@@ -4271,7 +4278,7 @@ mod tests {
                 &Isometry::rotation(Rotation {
                     axis: Axis::Z,
                     point: [Rat::from_int(0); 3],
-                    angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+                    angle: Angle::from_deg(Rat::from_int(60)).unwrap(),
                 }),
             )
             .unwrap();
@@ -4279,16 +4286,16 @@ mod tests {
             (m, a, b)
         };
         let (mut m, a, b) = build();
-        let err = boolean(&mut m, BoolKind::Cut, a, b).unwrap_err();
+        let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
         assert_eq!(
             err,
             BoolError::Unsupported {
-                reason: RejectReason::DegenerateWitness
+                reason: RejectReason::StraightAngle
             },
-            "the fixture's premise: a pre-class reject"
+            "the fixture's premise: a reject from outside the class pipeline"
         );
         let (m, a, b) = build();
-        let audits = frame_audit(&m, BoolKind::Cut, a, b).unwrap();
+        let audits = frame_audit(&m, BoolKind::Fuse, a, b).unwrap();
         let failed: Vec<RejectReason> = audits.iter().filter_map(|x| x.failed_at).collect();
         assert_eq!(
             failed,
