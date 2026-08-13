@@ -73,21 +73,13 @@ fn stair_and_prism(step: f64, apex: f64, dist: f64) -> (Model, Handle<Solid>, Ha
     (m, a, b)
 }
 
+/// ★ Every case in this file validates. It did not always: at `apex = 0.7` a vertex used to land
+/// `5.55e-17` off one of its defining planes with a recorded tolerance of `0`, so this helper had a
+/// second copy that skipped `validate`. That was a **separate** defect — the tolerance measured the
+/// triple the arrangement computed the point with, while the definition named the triple the result
+/// re-derived — and it is fixed, so the exception is gone with it. Leaving it would have made this
+/// file quiet the next time the same thing broke.
 fn fused_volume(step: f64, apex: f64, dist: f64) -> f64 {
-    let (mut m, a, b) = stair_and_prism(step, apex, dist);
-    let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");
-    m.rebuild_adjacency();
-    assert_eq!(got.len(), 1, "one body");
-    nacre_props::mass_props(&m, got[0]).expect("props").volume
-}
-
-/// The same, and the model validates. Split out because **one shape in this family does not**, for
-/// a reason that has nothing to do with the concurrency: at `apex = 0.7` a vertex lands
-/// `5.55e-17` off one of its defining planes with a recorded tolerance of `0`
-/// (`VertexOffDefinition`). Measured on the commit *before* this fix too, so it is a separate
-/// defect and gets its own entry in `docs/dev-log.md` rather than a silent `assert` here that
-/// would make this file look like it covers it.
-fn fused_volume_validating(step: f64, apex: f64, dist: f64) -> f64 {
     let (mut m, a, b) = stair_and_prism(step, apex, dist);
     let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");
     m.rebuild_adjacency();
@@ -106,7 +98,7 @@ fn fused_volume_validating(step: f64, apex: f64, dist: f64) -> f64 {
 /// shares a plane with is at `y ∈ [1,2]`, so they never meet.
 #[test]
 fn a_prism_coplanar_with_a_far_away_wall_still_builds() {
-    let v = fused_volume_validating(1.0, 1.0, 0.9);
+    let v = fused_volume(1.0, 1.0, 0.9);
     // The staircase is 1×(2·1 + 0.5·1 + 0.5·1) = 1.75 by area × height 1; the prism adds the part
     // of its triangle that is outside the staircase. Locked as a number so a silent change speaks.
     assert!(v > 1.75, "the fuse must add material: volume {v}");
@@ -120,7 +112,7 @@ fn a_prism_coplanar_with_a_far_away_wall_still_builds() {
 /// concurrent. It built before and must keep building.
 #[test]
 fn a_step_off_the_apex_plane_is_unchanged() {
-    let v = fused_volume_validating(1.05, 1.0, 0.9);
+    let v = fused_volume(1.05, 1.0, 0.9);
     assert!(v > 1.75, "volume {v}");
 }
 
@@ -128,7 +120,7 @@ fn a_step_off_the_apex_plane_is_unchanged() {
 /// is no arrangement vertex on the shared line and nothing to name twice. Built before, builds now.
 #[test]
 fn a_prism_that_stops_short_of_the_crossing_is_unchanged() {
-    let v = fused_volume_validating(1.0, 1.0, 0.4);
+    let v = fused_volume(1.0, 1.0, 0.4);
     assert!(v > 1.75, "volume {v}");
 }
 
@@ -149,8 +141,7 @@ fn a_genuine_self_touch_on_a_shared_line_is_still_refused() {
 }
 
 /// And an apex on no plane of the staircase at all — the ordinary case, which must be untouched by
-/// any of this. ★ Volume only: this shape carries the unrelated `VertexOffDefinition` noted above,
-/// so asserting `validate` here would be asserting someone else's bug.
+/// any of this.
 #[test]
 fn an_apex_on_no_shared_plane_is_unchanged() {
     let v = fused_volume(1.0, 0.7, 0.9);

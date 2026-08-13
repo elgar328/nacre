@@ -646,11 +646,30 @@ fn reconstruct(
                     planes[tri[1]].surf,
                     planes[tri[2]].surf,
                 ]);
-                // The coordinate and its measured tolerance travel together into the cache
-                // (the arrangement made them as a pair — `three_planes` + `vertex_tol`). Every
-                // plane through the point contains it exactly, so re-naming leaves the point
-                // itself untouched: the same vertex, said in surfaces this solid has.
-                model.push_vertex(def, sv.point, Some(sv.tol))
+                // ★★ **The tolerance measures the planes the vertex is *defined* by.**
+                //
+                // The arrangement made the coordinate and `sv.tol` as a pair — `three_planes` on
+                // one triple, `vertex_tol` on the same one. The lines above then **re-name** the
+                // vertex in the result's own surfaces, which is a *different* triple wherever four
+                // planes concur (that is why the derivation exists). The old code carried the
+                // tolerance through that swap on the grounds that "every plane through the point
+                // contains it exactly" — **true only while nothing is rotated**. A rotated plane
+                // passes a realized point within an ulp or two, not through it, so the carried
+                // tolerance bounded a distance nobody was going to measure while `validate`
+                // measured a different one (found by `replay`'s proptest; 454 of 91,394 result
+                // vertices in the corpus were short, by at most 2.1e-14 — rounding, as it should
+                // be, but rounding the record has to admit to).
+                //
+                // ★ Measured on `model.surface(..)`, the very object `validate` reads — not on the
+                // class's own `plane` copy, or this would compare two descriptions of one plane
+                // again. And `max`ed with `sv.tol` rather than replacing it: the arrangement's
+                // figure also covers the pairwise meet lines, which is a real part of what this
+                // number means.
+                let tol = [tri[0], tri[1], tri[2]]
+                    .iter()
+                    .map(|&i| model.surface(planes[i].surf).distance(sv.point))
+                    .fold(sv.tol, f64::max);
+                model.push_vertex(def, sv.point, Some(tol))
             }
         };
         vh.insert(node, handle);
