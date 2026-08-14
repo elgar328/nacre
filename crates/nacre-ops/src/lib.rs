@@ -634,12 +634,21 @@ pub enum RejectReason {
     /// an undecided judgement must never reach the geometry as a zero — it simply has no fixture,
     /// which is recorded rather than taken as licence to delete the guard.
     DegenerateWitness,
-    /// Every candidate ray from a loop's nodes has a ring node on its line.
+    /// Every candidate ray from a loop's nodes has a ring node on its line — or, in 3D, every node
+    /// of a component grazes the boundary it is being classified against.
     ///
     /// `point_in_ring` casts along `P ∩ Q_a` for a node's own plane `Q_a`; a ring node on
     /// that line makes the crossing parity ambiguous. Candidates are `2 · |loop|` lines and
     /// two directions, and half of them can be spoiled at once — `l_and_staple`'s loop and
-    /// arc share both `y` planes, so only the `x` lines are clear there. Unfired today.
+    /// arc share both `y` planes, so only the `x` lines are clear there.
+    ///
+    /// ★ **Fired since 2026-08-14, by a population that could not reach it before.** A component's
+    /// nesting depth is decided by `point_in_component` from one of that component's own nodes, and
+    /// until contacts separated, a touching void and its host were one component and the question
+    /// was never asked. Now they are two, and a void whose *every* corner sits on a wall — a
+    /// diamond inscribed in a square block — leaves no candidate that does not graze. The retry
+    /// over the other nodes is what keeps ordinary contacts (a cube corner: one node of eight)
+    /// clear. Locked in `tests/contact_separates.rs`.
     NoClearRay,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
