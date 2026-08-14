@@ -5,11 +5,10 @@
 //! will take — and it exists to keep the error surface usable from outside the crate, which
 //! is the only place that can prove it.
 
-use crate::common::{rot_iso, two_boxes, xf};
 use nacre_math::Point3;
 use nacre_ops::{BoolError, BoolKind, RejectClass, RejectReason, boolean};
-use nacre_scalar::Axis;
-use nacre_topo::Model;
+use nacre_store::Handle;
+use nacre_topo::{Model, Solid};
 
 /// The message an application would show.
 ///
@@ -30,17 +29,32 @@ fn user_message(err: BoolError) -> String {
     }
 }
 
-/// Two cubes meeting at exactly one point: the fuse would pinch two solids at a single vertex,
-/// which no valid 2-manifold can be. The caller learns that much — the reason, its class, and a
-/// message — from the returned error alone.
+/// A fuse that would pinch one solid at a single vertex: A and B meet only at `(2,2,1)` while two
+/// bridges run around the contact and join them elsewhere, so the material loops and there is no
+/// pair of solids to hand back. The caller learns that much — the reason, its class, and a message
+/// — from the returned error alone.
+///
+/// ★ The fixture used to be two cubes touching at a corner. Those separate now (they are two
+/// bodies and nothing joins them); what this test is about is the error *surface*, so it moved to
+/// a shape that still cannot part rather than losing the assertions.
 #[test]
-fn a_corner_touching_fuse_tells_the_caller_why() {
+fn a_pinched_fuse_tells_the_caller_why() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+    let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
+        let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        m.rebuild_adjacency();
+        s
+    };
+    let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let g1 = cub(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
+    let g2 = cub(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
+    let b = cub(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
+    let t1 = boolean(&mut m, BoolKind::Fuse, a, g1).expect("a and g1 overlap");
+    m.rebuild_adjacency();
+    let t2 = boolean(&mut m, BoolKind::Fuse, t1[0], g2).expect("g1 and g2 overlap");
     m.rebuild_adjacency();
 
-    let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
+    let err = boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap_err();
 
     let BoolError::Unsupported { reason } = err else {
         panic!("expected an Unsupported rejection, got {err:?}");
@@ -56,20 +70,28 @@ fn a_corner_touching_fuse_tells_the_caller_why() {
     );
 }
 
-/// Two cubes meeting along one whole edge — the edge twin of the corner touch above, and the
-/// reject the grid proptest lands on most often. Four faces would meet along that edge, which no
-/// 2-manifold boundary allows, so it is `Impossible` rather than a coverage limit.
+/// The edge twin of the pinch above: A and B meet only along the line `x = 2, y = 2`, and a bridge
+/// overlapping both takes the material around the contact. Four faces use that segment and the body
+/// cannot be parted there, which no 2-manifold boundary allows — `Impossible`, not a coverage limit.
+///
+/// ★ The fixture used to be two cubes sharing one whole edge, which was "the reject the grid
+/// proptest lands on most often". Those are two bodies now, and the proptest scores them instead of
+/// skipping them.
 #[test]
-fn an_edge_touching_fuse_is_impossible_not_unsupported() {
+fn a_pinched_fuse_is_impossible_not_unsupported() {
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-    let b = m.add_cuboid(
-        Point3::from_array([1.0, 1.0, 0.0]),
-        Point3::from_array([2.0, 2.0, 1.0]),
-    );
+    let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
+        let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        m.rebuild_adjacency();
+        s
+    };
+    let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+    let bridge = cub(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+    let b = cub(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+    let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
     m.rebuild_adjacency();
 
-    let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
+    let err = boolean(&mut m, BoolKind::Fuse, ab[0], b).unwrap_err();
 
     assert_eq!(
         err,
@@ -103,44 +125,19 @@ fn a_stale_operand_is_not_a_reject_reason() {
     );
 }
 
-/// **The cause is named, not whatever broke downstream.**
-///
-/// The original subject was `DegenerateWitness`: rotating one operand of a face-touching pair
-/// left a judgement with no distance to measure and no precision that would create one, and
-/// before the evidence had a channel out the arrangement read that as "the same point" and failed
-/// several steps later as `LoopOrientMismatch` — a symptom of the guess, reported as the problem.
-///
-/// ★ **That subject went unfired**, and the reason is worth keeping: the only judgement in the
-/// corpus that came back degenerate was the component **outwardness** test, and the nesting-parity
-/// label replaced it (it asks containment, which the substrate answers, instead of the sign of a
-/// rotated plane's normal, which it sometimes cannot). A sweep over three rotation axes, ten
-/// angles, two operand shapes, four overlaps and all three kinds — 720 booleans — found no
-/// `DegenerateWitness` and no `JudgeExhausted` left. `undecided_reject` is still wired; it has no
-/// fixture. See `RejectReason::DegenerateWitness`.
-///
-/// So the proposition is locked on what the same family still produces. At 60° the pair's `Fuse`
-/// stops in the assembly's vertex naming: a corner with no turn, named `StraightAngle` — the
-/// cause — rather than the ring that will not close afterwards. `Cut` and `Common` of the same
-/// pair still build, which is what makes this a statement about the *judgement* rather than about
-/// the geometry as a whole.
-#[test]
-fn the_cause_is_named_instead_of_its_downstream_symptom() {
-    let (mut m, a, b) = two_boxes();
-    let a = xf(&mut m, a, rot_iso(Axis::Z, 60));
-    let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
-    assert_eq!(
-        err,
-        BoolError::Unsupported {
-            reason: RejectReason::StraightAngle
-        },
-        "named a symptom instead of the cause"
-    );
-    for kind in [BoolKind::Cut, BoolKind::Common] {
-        let (mut m, a, b) = two_boxes();
-        let a = xf(&mut m, a, rot_iso(Axis::Z, 60));
-        boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?} of the same pair: {e:?}"));
-    }
-}
+// ★ **Retired: `the_cause_is_named_instead_of_its_downstream_symptom`.**
+//
+// It locked "a reject names the cause, not the downstream symptom" on the one input of its family
+// that still declined — two overlapping unit boxes with one turned 60° about Z, which stopped in
+// the assembly's vertex naming as `StraightAngle`. Contacts separating answered that input: at 60°
+// the two boxes only *touch* (measured: `Common` empty, fused volume 2.0, `validate` clean), so
+// they come back as the two bodies they are.
+//
+// The sweep its note prescribed was re-run over the same family — three rotation axes, seventeen
+// angles, four overlaps, all three kinds, **612 booleans, and none declines**. Its first subject
+// (`DegenerateWitness`) had already gone the same way. A test with no input left measures nothing,
+// so it is gone rather than weakened, and what it was protecting is written where the next person
+// will look: `RejectReason::StraightAngle`'s own doc.
 
 /// **A rejected boolean leaves the live model exactly as it found it.**
 ///
@@ -161,12 +158,26 @@ fn the_cause_is_named_instead_of_its_downstream_symptom() {
 /// The `!= 0` count below is what stops the loop from passing on an empty set of rejects.
 #[test]
 fn a_rejected_boolean_leaves_the_operands_live() {
+    // A pinched pair: A and B meet only along `x = 2, y = 2`, and a bridge overlapping both runs
+    // the material around the contact. `Fuse` refuses it; `Cut` and `Common` of the same pair
+    // build, so one fixture covers a reject and a success against the same assertion.
+    let pinched = || -> (Model, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
+            let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            m.rebuild_adjacency();
+            s
+        };
+        let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+        let bridge = cub(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+        let b = cub(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+        let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
+        m.rebuild_adjacency();
+        (m, ab[0], b)
+    };
     let mut rejected = 0;
     for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-        let (mut m, a, b) = two_boxes();
-        // The rotation the arrangement refuses at 60° for `Fuse`; `Cut`/`Common` of the same pair
-        // build, so one fixture covers a reject and a success against the same assertion.
-        let a = xf(&mut m, a, rot_iso(Axis::Z, 60));
+        let (mut m, a, b) = pinched();
         let before = m.live_solids.clone();
         match boolean(&mut m, kind, a, b) {
             Err(e) => {

@@ -164,6 +164,9 @@ fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
         let c = rot_z(&mut m, c, deg as i128).expect("rotating a copy");
         match boolean(&mut m, BoolKind::Fuse, part, c) {
             Ok(out) => {
+                // ★ Taking `out[0]` without asking how many there are would let a fold that starts
+                // severing carry on against a *fragment* — green, and measuring something else.
+                assert_eq!(out.len(), 1, "the {step}° fold split at the {deg}° copy");
                 part = out[0];
                 m.rebuild_adjacency();
             }
@@ -248,16 +251,16 @@ fn the_thirty_degree_sweep_runs_to_completion() {
     }
 }
 
-/// ③ ★ The negative control, and the baseline for the work that comes after this fix. Three other
-/// step angles reject for three *other* reasons; renaming vertices must not touch any of them.
-/// If one of these moves, the fix reached further than its argument says it does.
+/// ③ ★ The negative control: a step angle that rejects for an *other* reason, which renaming
+/// vertices must not touch. If it moves, the fix reached further than its argument says it does.
+///
+/// ★★ It used to carry `120°` as well, on the reading "two bodies meeting along one line — no
+/// 2-manifold contains it". Two bodies meeting along one line are two bodies now, and that fold
+/// runs to completion (`the_hundred_and_twenty_degree_sweep_runs_to_completion`). The reading was
+/// right about the *single* body the reconstruction used to weld and wrong about the answer.
 #[test]
 fn the_other_rejections_are_untouched() {
-    let cases: [(usize, RejectReason); 2] = [
-        (45, RejectReason::CoplanarMerge),
-        // Two bodies meeting along one line — no 2-manifold contains it.
-        (120, RejectReason::NonManifoldResultEdge),
-    ];
+    let cases: [(usize, RejectReason); 1] = [(45, RejectReason::CoplanarMerge)];
     for (step, expected) in cases {
         let mut m = Model::new();
         let u = unit(&mut m);
@@ -284,6 +287,38 @@ fn the_other_rejections_are_untouched() {
             Some(BoolError::Unsupported { reason: expected }),
             "the {step}° sweep's rejection changed"
         );
+    }
+}
+
+/// ④ ★ **The 120° copy, which used to be a reject.** It meets the part along one line and nowhere
+/// else, so the fuse is the two bodies it was handed — on a real part, not a pair of cubes.
+///
+/// ★★ Written as its own statement rather than through `sweep`, because `sweep` is a *fold* and
+/// asserts its result stays one solid. That assertion is what caught the first draft of this test,
+/// which claimed the fold ran to completion: it does not, and the first step is why.
+#[test]
+fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
+    let mut m = Model::new();
+    let u = unit(&mut m);
+    let one = nacre_props::mass_props(&m, u).expect("props").volume;
+    let part = copy_of(&mut m, u);
+    let c = copy_of(&mut m, u);
+    let c = rot_z(&mut m, c, 120).expect("rotating a copy");
+    let out = boolean(&mut m, BoolKind::Fuse, part, c).expect("a line contact separates");
+    m.rebuild_adjacency();
+    assert_eq!(out.len(), 2, "the part and its 120° copy only touch");
+    let total: f64 = out
+        .iter()
+        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+        .sum();
+    assert!(
+        (total - 2.0 * one).abs() < 1e-9,
+        "nothing was removed: {total} against {}",
+        2.0 * one
+    );
+    assert!(nacre_validate::validate(&m).is_empty());
+    for &s in &out {
+        assert_eq!(foreign_definitions(&m, s), Vec::<String>::new());
     }
 }
 

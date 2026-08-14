@@ -367,14 +367,20 @@ pub enum RejectReason {
     /// neighbours); the *result*-side closure check is [`Self::OpenResultShell`], which is a
     /// different situation and used to share this name. Unfired across the suite (2026-07-26).
     NonManifoldEdge,
-    /// The assembled boundary uses an edge **more than twice**: the two bodies meet exactly along
-    /// that edge, so the result would pinch there and no 2-manifold solid contains it. The edge
-    /// twin of [`Self::NonManifoldVertex`], and `Impossible` for the same reason — a design that
-    /// leans on an exact edge-to-edge touch has no valid answer at any milestone.
+    /// One result solid uses an edge **more than twice**: its own surface meets itself along that
+    /// line, so it would pinch there and no 2-manifold solid contains it. The edge twin of
+    /// [`Self::NonManifoldVertex`].
     ///
-    /// **The most common reject in the suite** (2026-07-26 census): the grid proptest lands on it
-    /// whenever two sampled boxes share exactly an edge, e.g. `[2,4]×[2,4]×[1,4]` fused with
-    /// `[2,4]×[4,8]×[4,6]`, which touch only along the line `y = 4, z = 4`.
+    /// ★★ **It is about one solid, not two.** Two bodies that meet along a line are two bodies and
+    /// come back as such — handles are minted per output solid, so their contact is two edges of two
+    /// uses each and there is nothing here to count. What is left is the case where the material
+    /// **runs around** the contact: cut the pinch and one piece remains, so no pair of solids
+    /// exists to hand back and the reject is `Impossible` at any milestone. A square block with two
+    /// square voids meeting along a line is the smallest example (`tests/contact_separates.rs`).
+    ///
+    /// This used to be **the most common reject in the suite** (2026-07-26 census) — the grid
+    /// proptest landed on it whenever two sampled boxes shared exactly an edge. Those are answers
+    /// now, and the proptest scores them against inclusion-exclusion instead of skipping them.
     NonManifoldResultEdge,
     /// **The result's own surface touches itself**: an edge of the assembled solid lies in the
     /// *interior* of one of that same solid's faces. An embedded boundary cannot do that — two
@@ -384,8 +390,10 @@ pub enum RejectReason {
     /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than
     /// twice") is **false** here: the face is not split at the contact, so every edge is still used
     /// exactly twice and the topology count sees nothing. `Impossible` for the stronger reason —
-    /// that one names an output *shape* the kernel may one day allow (several solids), while this
-    /// one is about a single solid's validity, which no change of output shape rescues.
+    /// that one is now about a single solid pinching *itself* along an edge — the day it named an
+    /// output shape the kernel might allow arrived, and several solids is what two touching bodies
+    /// get. Both survive because each states a different proposition about one solid's surface: an
+    /// edge inside a face here, an edge four faces share there.
     ///
     /// What produces it is two surfaces of the model meeting exactly, leaving the material between
     /// them no thickness at all: a pocket whose wedge tip lands on the far wall, a boss flush with
@@ -425,6 +433,15 @@ pub enum RejectReason {
     /// **A corner with no turn**: the two edges meeting at a ring node run along one line
     /// (their wall planes' determinant vanishes, or both edges name the same wall), so the loop
     /// has no left or right there.
+    ///
+    /// ★ **No fixture in the suite, and the reason is worth keeping.** Its one subject was a pair of
+    /// overlapping unit boxes with one turned 60° about Z, whose `Fuse` stopped in the assembly's
+    /// vertex naming — a node that is a corner of one body and a straight run of the other, named
+    /// by borrowing the other body's plane. Scoping the naming per solid removed the borrowing, and
+    /// the pair (which only *touches* at 60°) now comes back as two bodies. The sweep was re-run
+    /// over that family — three axes, seventeen angles, four overlaps, all three kinds, **612
+    /// booleans, none declining**. Like [`Self::DegenerateWitness`] the check stays wired: it is the
+    /// honest answer if a ring ever does run straight through a node, and a corpus is not a proof.
     StraightAngle,
     /// Two ring edges meet at more than one vertex, or at none, so which vertex the corner *is*
     /// cannot be decided (a two-gon, or a self-bounded rim).
@@ -497,12 +514,16 @@ pub enum RejectReason {
     /// `NonManifoldVertex`); e.g. a dropped face. Rotation-independent. Checked post-assembly in
     /// `boolean`, per solid.
     EulerParity,
-    /// The assembled result has a **non-manifold vertex** — a "pinch" where two or more face-fans
-    /// meet at one point (a cutter's convex corner exactly on the target's concave corner; two
-    /// solids touching only at a corner), even though every edge is manifold. No valid 2-manifold
-    /// solid has one, so the boolean rejects with this clear reason rather than the incidental
-    /// `EulerParity` (which also misses an *even* number of pinches). Rotation-independent; checked
-    /// per solid post-assembly via `nacre_topo::nonmanifold_vertices`.
+    /// One result solid has a **non-manifold vertex** — a "pinch" where two or more of its face-fans
+    /// meet at one point (a cutter's convex corner exactly on the target's concave corner), even
+    /// though every edge of it is manifold. No valid 2-manifold solid has one, so the boolean
+    /// rejects with this clear reason rather than the incidental `EulerParity` (which also misses an
+    /// *even* number of pinches). Rotation-independent; checked per solid post-assembly via
+    /// `nacre_topo::nonmanifold_vertices`.
+    ///
+    /// ★ **Two solids touching only at a corner are not this.** They are two solids, and each gets
+    /// its own copy of the point; what remains is a body whose material runs around the contact, so
+    /// there is no pair to part into.
     NonManifoldVertex,
     /// The assembled result has an even Euler characteristic but a **negative genus** (`S − χ/2 < 0`)
     /// — more handles than a solid can have, so it is not a valid closed 2-manifold. A count-based
@@ -1230,33 +1251,49 @@ pub mod tests {
         run(true); // rotated
     }
 
-    /// Two cubes touching only at the corner (1,1,1): their Fuse pinches two solids at a single
-    /// vertex (non-manifold), so it is rejected with the clear `NON_MANIFOLD_VERTEX` — the direct,
-    /// minimal pinch (every edge is manifold; only the vertex is the defect).
+    /// Two cubes touching only at the corner (1,1,1): nothing is joined, so the Fuse comes back as
+    /// the two bodies it was handed. ★ This used to be `NON_MANIFOLD_VERTEX` — true of the single
+    /// welded body the reconstruction built then, and beside the point once the pieces are minted
+    /// per solid. The pinch reject is still there for a body that touches *itself*
+    /// (`tests/contact_separates.rs`).
     #[test]
-    fn two_cubes_touching_at_a_corner_fuse_is_non_manifold() {
+    fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
         m.rebuild_adjacency();
-        let live = m.live_solids.clone();
-        assert_rejects(
-            || boolean(&mut m, BoolKind::Fuse, a, b),
-            RejectReason::NonManifoldVertex,
-        );
-        assert_eq!(m.live_solids, live, "reject must not mutate the live set");
+        let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("a point contact separates");
+        assert_eq!(out.len(), 2);
+        m.rebuild_adjacency();
+        assert_eq!(nacre_validate::validate(&m), Vec::new());
     }
 
-    /// The kernel's validator now catches the pinch too (it previously only exposed it indirectly as
-    /// `EulerParity`). Bypass `boolean`'s reject via `arrangement::boolean` to obtain the malformed
-    /// corner-touch Fuse solid, then confirm `validate` reports a `NonManifoldVertex`.
+    /// The kernel's validator catches the pinch too (it previously only exposed it indirectly as
+    /// `EulerParity`). Bypass `boolean`'s reject via `arrangement::boolean` to obtain a malformed
+    /// solid, then confirm `validate` reports a `NonManifoldVertex`.
+    ///
+    /// ★ The shape has to be one that **cannot** part: two bodies touching at a corner now come
+    /// back as two bodies and there is no malformed solid to obtain from them. So A and B meet only
+    /// at `(2,2,1)` while two bridges run around the contact and join them elsewhere — the material
+    /// loops, the pinch is real, and the vertex check (which lives in `boolean`, not in the
+    /// arrangement) is the one this bypasses.
     #[test]
     fn validate_reports_the_non_manifold_pinch() {
         let mut m = Model::new();
-        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
+            let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            m.rebuild_adjacency();
+            s
+        };
+        let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+        let g1 = cub(&mut m, [1.0, 0.3, 0.2], [4.5, 1.3, 0.8]);
+        let g2 = cub(&mut m, [3.5, 0.3, 0.2], [4.5, 3.8, 1.6]);
+        let b = cub(&mut m, [2.0, 2.0, 1.0], [4.0, 4.0, 2.0]);
+        let t1 = boolean(&mut m, BoolKind::Fuse, a, g1).expect("a and g1 overlap");
         m.rebuild_adjacency();
-        crate::arrangement::boolean(&mut m, BoolKind::Fuse, a, b).unwrap();
+        let t2 = boolean(&mut m, BoolKind::Fuse, t1[0], g2).expect("g1 and g2 overlap");
+        m.rebuild_adjacency();
+        crate::arrangement::boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap();
 
         m.rebuild_adjacency();
         let issues = nacre_validate::validate(&m);

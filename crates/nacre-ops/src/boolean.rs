@@ -229,10 +229,22 @@ fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<Reje
     None
 }
 
-/// Connected components of the reconstructed faces by shared `Node` — the same identity
-/// `assemble_fuse_cut` welds result vertices by. Returns a component label per face (dense
-/// `0..n` in order of first appearance, for replay determinism) and the component count. An
-/// enclosed void is its own component: its boundary shares no vertex with the outer.
+/// Connected components of the reconstructed faces, joined **only across a manifold contact** — a
+/// ring edge that exactly two of them use. Returns a component label per face (dense `0..n` in
+/// order of first appearance, for replay determinism) and the component count.
+///
+/// ★★ **Touching is not joining.** Two bodies that meet along a line share that line's nodes, and
+/// used to come back as one component and so one pinched pseudo-solid, which the edge-use guard
+/// then had to reject. They share no *manifold* edge — four faces use the contact line, not two —
+/// so they land in two components and come back as the two bodies they are. Where a body touches
+/// **itself** the material still runs around the contact, every edge of that path is used twice,
+/// and the component stays one: the guard fires exactly where no pair of solids exists.
+///
+/// This is the 3D reading of a rule this file already applies one dimension down:
+/// [`unify_coplanar_faces`] splits a coplanar group "into **edge-connected components**, because
+/// faces that merely lie on the same plane without touching must each survive on their own".
+///
+/// An enclosed void is its own component, as before — its boundary shares no edge with the outer.
 fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     fn find(p: &mut [usize], mut x: usize) -> usize {
         while p[x] != x {
@@ -242,22 +254,24 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
         x
     }
     let mut parent: Vec<usize> = (0..faces.len()).collect();
-    let mut owner: HashMap<Node, usize> = HashMap::new();
+    // Which faces use each ring edge. A count other than two is not a contact between neighbours:
+    // one is a dangling edge and more is a pinch, and both are the edge-use guard's to name.
+    let mut users: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
     for (i, lf) in faces.iter().enumerate() {
-        for &nd in lf
-            .loop_nodes
-            .iter()
-            .chain(lf.inner.iter().flat_map(|r| r.iter()))
-        {
-            match owner.entry(nd) {
-                std::collections::hash_map::Entry::Occupied(e) => {
-                    let (ra, rb) = (find(&mut parent, *e.get()), find(&mut parent, i));
-                    parent[ra] = rb;
-                }
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    e.insert(i);
-                }
+        for ring in rings_of(lf) {
+            let k = ring.len();
+            for t in 0..k {
+                users
+                    .entry(norm_edge(ring[t], ring[(t + 1) % k]))
+                    .or_default()
+                    .push(i);
             }
+        }
+    }
+    for us in users.values() {
+        if let [a, b] = us[..] {
+            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+            parent[ra] = rb;
         }
     }
     let mut label: HashMap<usize, usize> = HashMap::new();
@@ -743,6 +757,27 @@ fn reconstruct(
         Ok(g) => g.group_of.clone(),
         Err(_) => vec![0; faces.len()],
     };
+    // ★★ **A straight angle is a per-solid question, and only a result in several pieces can make
+    // the two answers differ.** The cleaning pass runs `dissolve_straight_angles` over the whole
+    // result, so it keeps a node that is a real corner *somewhere* — right while the result is one
+    // body. The moment it is two, the tip of one body's knife edge can land in the middle of
+    // another body's wall: a corner of the first, a straight run of the second. Left in the
+    // second's ring it is a vertex with no name there — only two of the three planes through it
+    // bound that solid — and the whole-result derivation used to fill the gap by borrowing the
+    // *other* body's plane, which is exactly the defect scoping the derivation closes. So each
+    // solid now drops the nodes that are straight runs **for it**.
+    let per_solid: Option<Vec<LocalFace>> = match &grouping {
+        Ok(g) if g.n > 1 => {
+            let mut v = faces.to_vec();
+            for gi in 0..g.positives.len() {
+                let which: Vec<usize> = (0..v.len()).filter(|&i| group_of[i] == gi).collect();
+                dissolve_straight_angles(&mut v, &which);
+            }
+            Some(v)
+        }
+        _ => None,
+    };
+    let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
     // ★★ **A result vertex is named by the faces that meet it.**
     //
     // The arrangement names a point by a canonical plane triple — lexicographically first among
@@ -1215,7 +1250,8 @@ pub(crate) fn unify_coplanar_faces(
     }
     let mut out: Vec<LocalFace> = kept.into_iter().flatten().collect();
     out.extend(merged);
-    dissolve_straight_angles(&mut out);
+    let all: Vec<usize> = (0..out.len()).collect();
+    dissolve_straight_angles(&mut out, &all);
     Ok(out)
 }
 
@@ -1369,7 +1405,7 @@ fn merge_component(
 ///
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
-fn dissolve_straight_angles(out: &mut [LocalFace]) {
+fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
     // that edge always sees two walls overall and would never dissolve. On each face separately it
@@ -1380,7 +1416,8 @@ fn dissolve_straight_angles(out: &mut [LocalFace]) {
     let mut nbrs: HashMap<Node, HashSet<Node>> = HashMap::new();
     let mut first_wall: HashMap<(Node, usize), usize> = HashMap::new();
     let mut bent: HashSet<Node> = HashSet::new();
-    for lf in out.iter() {
+    for &fi in which {
+        let lf = &out[fi];
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
             let k = ring.len();
             for i in 0..k {
@@ -1412,7 +1449,8 @@ fn dissolve_straight_angles(out: &mut [LocalFace]) {
     if drop.is_empty() {
         return;
     }
-    for lf in out.iter_mut() {
+    for &fi in which {
+        let lf = &mut out[fi];
         for ring in std::iter::once(&mut lf.loop_nodes).chain(lf.inner.iter_mut()) {
             if !ring.nodes.iter().any(|nd| drop.contains(nd)) {
                 continue; // untouched rings keep their allocation

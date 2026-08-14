@@ -4293,12 +4293,11 @@ mod tests {
     ///
     /// The model is **chosen by measurement, not by taste**: a sweep over the fixture corpus found
     /// no boolean that declines inside the arrangement at all (every fixture builds), so the
-    /// agreement had to be pinned on a four-plane variant that still stops there. `half_z = 0.5`
-    /// at `120°` is one; if a later capability makes it build, the fix is to re-run that sweep and
-    /// take whatever still declines — not to weaken the assertion.
+    /// agreement had to be pinned on an input that still stops after the classes have run. If a
+    /// later capability makes it build, the fix is to take whatever still declines — not to weaken
+    /// the assertion.
     #[test]
     fn the_audit_does_not_invent_failures() {
-        use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
         // The audit's scope is the per-class pipeline, and its duty is to run **the pipeline the
         // boolean runs** — with the alias fixpoint. Audited against an empty alias table it
         // reported `UnorderedEdges` for three classes of this input (names two classes discover
@@ -4307,12 +4306,17 @@ mod tests {
         // assembly's vertex naming, after every class pipeline has run and outside the audit's
         // scope — so the audit's honest answer for this input is "no class failed".
         //
-        // ★ **The fixture moved once, exactly as the note above prescribes.** It used to be the
-        // same pair at 30° with `Cut`, rejecting `DegenerateWitness` — and that reject came from
-        // the component outwardness test, which the nesting-parity label replaced. The sweep was
-        // re-run over rotations about all three axes, four overlaps, both operand shapes and all
-        // three kinds (720 booleans): the only pre-class rejects left are `StraightAngle` and
-        // `NonManifoldVertex`, and this is the cheapest of them.
+        // ★ **The fixture has moved twice, exactly as the note above prescribes**, and each move
+        // is a capability the kernel gained. First it was the same pair at 30° with `Cut`,
+        // rejecting `DegenerateWitness` — a reject from the component outwardness test, which the
+        // nesting-parity label replaced. Then it was that pair at 60°, rejecting `StraightAngle`:
+        // two unit cubes that only *touch*, which now come back as the two bodies they are
+        // (measured: `Common` empty, fused volume 2.0, `validate` clean).
+        //
+        // So the fixture is now a pinch that **cannot** part: A and B meet only along the line
+        // `x = 2, y = 2`, and a bridge overlapping both runs the material around the contact, so
+        // cutting there leaves one piece. The closed-shell guard in `boolean::reconstruct` rejects
+        // it — after every class pipeline has run, which is the property this test needs.
         //
         // (This test once asserted the audit reports the boolean's *class-level* reject, on a
         // fixture chosen as "some input that rejects" — a bar rotated through an L-shaped
@@ -4321,28 +4325,24 @@ mod tests {
         // `decline_to_reject`, is one function called by both consumers, so it cannot drift.)
         let build = || -> (Model, Handle<Solid>, Handle<Solid>) {
             let mut m = Model::new();
-            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-            let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
+            let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {
+                let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+                m.rebuild_adjacency();
+                s
+            };
+            let a = cub(&mut m, [0.0, 0.0, 0.0], [2.0, 2.0, 1.0]);
+            let bridge = cub(&mut m, [1.0, 0.3, 0.2], [3.0, 3.0, 0.8]);
+            let b = cub(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
+            let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
             m.rebuild_adjacency();
-            let a = transform(
-                &mut m,
-                a,
-                &Isometry::rotation(Rotation {
-                    axis: Axis::Z,
-                    point: [Rat::from_int(0); 3],
-                    angle: Angle::from_deg(Rat::from_int(60)).unwrap(),
-                }),
-            )
-            .unwrap();
-            m.rebuild_adjacency();
-            (m, a, b)
+            (m, ab[0], b)
         };
         let (mut m, a, b) = build();
         let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
         assert_eq!(
             err,
             BoolError::Unsupported {
-                reason: RejectReason::StraightAngle
+                reason: RejectReason::NonManifoldResultEdge
             },
             "the fixture's premise: a reject from outside the class pipeline"
         );

@@ -153,13 +153,16 @@ fn axis_aligned_knife_edge_fuses_to_two_bodies() {
 }
 
 /// ④ The knife edge ON the face itself: the prism touches the box along that line and nowhere
-/// else, and the material sectors on the two sides of the plane are not adjacent — the union is
-/// genuinely non-manifold along the line. ★ The answer is already in the kernel: the
-/// non-manifold-vertex detection sees the edge's endpoints and rejects by name. This is the
-/// vertex-touch precedent (corner-coincidence) extended to a line for free — locked here so a
-/// future change cannot silently start emitting the non-manifold result.
+/// else. Not a shared ring edge — the prism's sharp edge lies in the *interior* of the box's wall
+/// face — so it is a different shape of contact from two cubes sharing a corner edge, and it is
+/// checked the way the criterion has to be checked: **by volume**. 4000 + 500 with nothing
+/// removed means the interiors are disjoint, which is what "two bodies" claims.
+///
+/// ★ This used to be a `NonManifoldVertex` reject, on the reading that "the material sectors on
+/// the two sides of the plane are not adjacent — the union is genuinely non-manifold along the
+/// line". That reading was about a *single* union body; two bodies is the answer it was missing.
 #[test]
-fn edge_only_contact_is_a_named_reject() {
+fn edge_only_contact_separates_into_two_bodies() {
     let mut m = Model::new();
     let b = m.add_cuboid(
         Point3::from_array([-30.0, -20.0, 0.0]),
@@ -167,10 +170,21 @@ fn edge_only_contact_is_a_named_reject() {
     );
     m.rebuild_adjacency();
     let w = prism(&mut m, -20.0, 0.0); // the sharp edge lies inside the wall's face
-    let err = boolean(&mut m, BoolKind::Fuse, w, b).expect_err("a non-manifold union");
+    let out = boolean(&mut m, BoolKind::Fuse, w, b).expect("a line contact separates");
+    m.rebuild_adjacency();
+    assert_eq!(out.len(), 2, "a contact along a line is two bodies");
+    let total: f64 = out
+        .iter()
+        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+        .sum();
     assert!(
-        format!("{err:?}").contains("NonManifoldVertex"),
-        "named, not silent: {err:?}"
+        (total - 4500.0).abs() < 1e-9,
+        "box 4000 + prism 500, nothing removed — got {total}"
+    );
+    assert_eq!(
+        nacre_validate::validate(&m),
+        Vec::new(),
+        "each body is a solid on its own"
     );
 }
 

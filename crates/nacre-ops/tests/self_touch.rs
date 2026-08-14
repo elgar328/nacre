@@ -189,13 +189,14 @@ fn a_wedge_that_stops_short_of_the_wall_builds() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// ★ **Two bodies touching *each other* keep their own name.** The proposition here is about one
-/// solid's surface meeting itself; two boxes sharing exactly an edge is the other situation, and
-/// it already has a reject that states its own truth — the edge really is used more than twice.
+/// ★ **Two bodies touching *each other* are not a self-touch.** The proposition here is about one
+/// solid's surface meeting itself; two boxes sharing exactly an edge is the other situation
+/// entirely — nothing is joined, so the answer is the two bodies that went in.
 ///
-/// Locked as an equality rather than "not a self-touch", because the failure worth catching is the
-/// two rejects **collapsing into one**: a check that fired on this pair would be answering "is
-/// there a contact" when the question is "whose surface is it".
+/// The failure worth catching is the two questions **collapsing into one**: a self-touch check that
+/// fired on this pair would be answering "is there a contact" when the question is "whose surface
+/// is it". That failure now shows as an error where there should be none, which is a stronger
+/// statement than the reject-name equality this used to make.
 #[test]
 fn a_contact_between_two_bodies_keeps_its_own_name() {
     let mut m = Model::new();
@@ -208,13 +209,11 @@ fn a_contact_between_two_bodies_keeps_its_own_name() {
         Point3::from_array([2.0, 2.0, 1.0]),
     );
     m.rebuild_adjacency();
-    assert_eq!(
-        boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err(),
-        BoolError::Unsupported {
-            reason: RejectReason::NonManifoldResultEdge
-        },
-        "two bodies meeting each other were renamed"
-    );
+    let out = boolean(&mut m, BoolKind::Fuse, a, b)
+        .expect("two bodies meeting each other are not one surface touching itself");
+    m.rebuild_adjacency();
+    assert_eq!(out.len(), 2);
+    assert!(nacre_validate::validate(&m).is_empty());
 }
 
 /// ★ **An *area* contact opens the wall instead of leaving a zero-thickness one.**
