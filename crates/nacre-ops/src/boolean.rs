@@ -273,6 +273,194 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     (labels, n)
 }
 
+/// **Which faces make one output solid — decided before any topology exists.**
+///
+/// A result solid is a *material* component plus the cavity components nested in it, and that
+/// grouping is the unit [`reconstruct`] mints vertex and edge handles per: two faces in one group
+/// may share a handle, two faces in different groups never do. Every question asked here is asked
+/// of `LocalFace`/`Node`/`jd` alone — none of it reads the arena — which is what lets it run first.
+///
+/// ★★ **The group, not the component, is the right unit.** A cavity that touches its host's outer
+/// shell is one solid with a pinch, and a pinch is counted on *handles* ([`check_result_topology`],
+/// `validate`): split the handles there and the defect stops being visible while the model keeps
+/// its zero-thickness material. Grouping keeps a cavity with its host, so that case still reaches
+/// the reject it deserves.
+struct Grouping {
+    /// Connected-component label per face, dense `0..n`.
+    labels: Vec<usize>,
+    /// Component count.
+    n: usize,
+    /// The material components (even nesting depth), ascending.
+    positives: Vec<usize>,
+    /// Per material component, the components its solid is made of: itself first, then its
+    /// cavities in ascending order.
+    comps_of: HashMap<usize, Vec<usize>>,
+    /// Group index per face — the unit handles are minted per. Numbered by position in
+    /// `positives`; the canonical *output* order is decided later, from geometry (`comp_key`).
+    group_of: Vec<usize>,
+}
+
+/// Partition the faces into connected components, then into output solids. One component is the
+/// whole result; several mean either an enclosed void (a cavity — an inward-oriented shell) or a
+/// severed operand (two or more material-enclosing shells).
+///
+/// ★ **Deciding early is not the same as *rejecting* early.** [`reconstruct`] holds this `Result`
+/// and raises it exactly where the old code did, so a boolean that declines here leaves the arena
+/// it left before — the quantity `replay::a_late_reject_is_not_index_neutral` measures.
+fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grouping, BoolError> {
+    let (labels, n) = face_components(faces);
+    let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
+    for (i, lf) in faces.iter().enumerate() {
+        by_comp_lf[labels[i]].push(lf);
+    }
+    // A component as `(plane, rings)` per face, and its nodes — what the containment predicate
+    // takes. Both the material/void label below and the cavity-owner search further down ask the
+    // same question of them.
+    // ★ **Only when there is something to compare.** One component is the whole result — depth 0,
+    // material, nothing to ask — and that is nearly every boolean. Building these rings costs an
+    // exact predicate per node, so doing it unconditionally put **12x** on the 80-fold star
+    // (measured). Built once per component rather than once per query for the same reason: the
+    // label below retries with another node when one grazes.
+    let comp_faces: Vec<combinatorics::ComponentFaces> = (0..if n > 1 { n } else { 0 })
+        .map(|c| {
+            by_comp_lf[c]
+                .iter()
+                .map(|lf| {
+                    let mut rings = vec![lf.loop_nodes.edges(jd, lf.plane_idx)?];
+                    for h in &lf.inner {
+                        rings.push(h.edges(jd, lf.plane_idx)?);
+                    }
+                    Ok((lf.plane_idx, rings))
+                })
+                .collect::<Result<_, BoolError>>()
+        })
+        .collect::<Result<_, BoolError>>()?;
+    let nodes_of = |c: usize| -> Vec<[usize; 3]> {
+        by_comp_lf[c]
+            .iter()
+            .flat_map(|lf| lf.loop_nodes.iter().map(|Node::Seam(t)| *t))
+            .collect()
+    };
+    // ★★ **Material or void is a question about nesting, not about normals.**
+    //
+    // It used to be answered at the component's lexicographically-minimal vertex `v*`: outward iff
+    // *some* face there has an outward normal with `n_x < 0`. That existential is a shortcut for
+    // "the face with the largest `|n_x|` faces −x", and the shortcut is only equivalent while the
+    // normals are **axis-aligned** — the old `is_shell_outward`'s own doc said so. A slanted sketch
+    // breaks it with no rotation in sight: a wedge void cut inside a box came back as its own
+    // *material* solid of **negative volume**, with the box unchanged beside it. A wrong model,
+    // and `validate` had nothing to say about it (measured, `docs/dev-log.md`).
+    //
+    // So ask the question the kernel already answers one dimension down. `sketch::from_rings`
+    // decides a ring by **containment depth — even is material, odd is a hole** (design.md: "채우기
+    // 규칙 파라미터는 두지 않는다 — 짝수-홀수가 유일한 규칙이다"), and the cavity-owner search
+    // below already picks the *innermost* container, the other half of that same rule. This is the
+    // 3D reading of it, with `point_in_component` where the 2D one uses `point_in_ring`.
+    //
+    // Nothing here reads an orientation, so a shell that winds either way is labelled the same —
+    // which is the point: the winding is what the old test was trying, and failing, to recover.
+    // `positives` stays in ascending `c` order (a downstream contract).
+    let mut positives: Vec<usize> = Vec::new();
+    for c in 0..n {
+        if n == 1 {
+            positives.push(0); // the whole result: depth 0, and no other component to be inside
+            break;
+        }
+        // One origin for the whole row: a node of `c` that classifies against *every* other
+        // component. Trying them in turn is what the cavity search does, and for the same reason —
+        // a node that grazes one component's boundary is a fact about that node, not about the
+        // components.
+        let depth = nodes_of(c)
+            .iter()
+            .find_map(|&x| {
+                let mut d = 0usize;
+                for other in (0..n).filter(|&o| o != c) {
+                    match combinatorics::point_in_component(jd, x, &comp_faces[other]) {
+                        Ok(true) => d += 1,
+                        Ok(false) => {}
+                        Err(_) => return None, // grazed — try the next node
+                    }
+                }
+                Some(d)
+            })
+            .ok_or_else(|| reject(RejectReason::NoClearRay))?;
+        if depth % 2 == 0 {
+            positives.push(c);
+        }
+    }
+    // A result solid is a material component and the cavity components it owns, and that grouping —
+    // not the component — is the unit a self-contact question is asked about, and the unit handles
+    // are minted per.
+    let mut comps_of: HashMap<usize, Vec<usize>> =
+        positives.iter().map(|&m| (m, vec![m])).collect();
+    match positives.len() {
+        0 => return Err(reject(RejectReason::NoOutwardShell)),
+        // One material: every other component is a cavity of it, and no search is needed to say so.
+        1 => {
+            comps_of.insert(positives[0], (0..n).collect());
+        }
+        _ => {
+            // Several material solids. Assign each surviving cavity (an inward component) to the
+            // material whose outer shell nests it — the innermost, if materials themselves nest —
+            // by the exact point-in-solid `point_in_component`. With no cavity this loop is empty
+            // and every material emits cavity-free (the plain sever, unchanged).
+            // ★ The rings hand over their walls; nothing here derives one from a name —
+            // `comp_faces`/`nodes_of` are the same pair the material/void label above uses.
+            for d in (0..n).filter(|c| !positives.contains(c)) {
+                // A cavity node that classifies cleanly against *every* material (one shared origin
+                // keeps the nesting consistent); its `true` materials nest, so take the innermost.
+                let containers = nodes_of(d).iter().find_map(|&x| {
+                    let mut cs = Vec::new();
+                    for &m in &positives {
+                        match combinatorics::point_in_component(jd, x, &comp_faces[m]) {
+                            Ok(true) => cs.push(m),
+                            Ok(false) => {}
+                            Err(_) => return None, // grazed against a material — try next node
+                        }
+                    }
+                    Some(cs)
+                });
+                let containers = containers.ok_or_else(|| reject(RejectReason::NoClearRay))?;
+                let owner = match containers.as_slice() {
+                    [] => return Err(reject(RejectReason::CavityNoOwner)),
+                    [only] => *only,
+                    _ => *containers
+                        .iter()
+                        .find(|&&c| {
+                            // Innermost: inside every other container.
+                            containers.iter().all(|&o| {
+                                o == c
+                                    || nodes_of(c)
+                                        .iter()
+                                        .find_map(|&x| {
+                                            combinatorics::point_in_component(jd, x, &comp_faces[o])
+                                                .ok()
+                                        })
+                                        .unwrap_or(false)
+                            })
+                        })
+                        .ok_or_else(|| reject(RejectReason::CavityNoOwner))?,
+                };
+                comps_of.get_mut(&owner).unwrap().push(d);
+            }
+        }
+    }
+    let mut comp_group = vec![0usize; n];
+    for (gi, m) in positives.iter().enumerate() {
+        for &c in &comps_of[m] {
+            comp_group[c] = gi;
+        }
+    }
+    let group_of = labels.iter().map(|&l| comp_group[l]).collect();
+    Ok(Grouping {
+        labels,
+        n,
+        positives,
+        comps_of,
+        group_of,
+    })
+}
+
 /// A canonical, replay-stable sort key for a severed component: its outer-loop vertex
 /// coordinates, sorted lexicographically. Total order for disjoint components — distinct pieces
 /// occupy different space, so their coordinate multisets differ, and the lex-min vertex alone can
@@ -541,6 +729,20 @@ fn reconstruct(
     if faces.is_empty() {
         return Ok(Vec::new());
     }
+    // ★ **Which faces make one solid, decided before a single handle exists** — see [`Grouping`].
+    // Everything derived below (an edge's far plane, a vertex's defining triple, the handles
+    // themselves) is scoped to one group, so no result solid can be named by — or share a handle
+    // with — a solid it merely touches.
+    //
+    // ★★ **Held, not raised.** A failed grouping is reported further down, where the old code
+    // reported it, and until then every face is one group — which is exactly the keying this
+    // function used before groups existed. So a boolean that declines pushes the arena cells it
+    // always did (`replay::a_late_reject_is_not_index_neutral` measures that).
+    let grouping = group_faces(jd, faces);
+    let group_of: Vec<usize> = match &grouping {
+        Ok(g) => g.group_of.clone(),
+        Err(_) => vec![0; faces.len()],
+    };
     // ★★ **A result vertex is named by the faces that meet it.**
     //
     // The arrangement names a point by a canonical plane triple — lexicographically first among
@@ -556,41 +758,43 @@ fn reconstruct(
     // its two edges at that corner.** Those three are result faces by construction, so
     // `defs_are_remappable` holds by construction — and their meet is exactly this vertex, since
     // the two edge lines through it are distinct (checked, not assumed — see the corner guards).
-    let mut edge_faces: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
-    for lf in faces {
+    let mut edge_faces: HashMap<(usize, (Node, Node)), Vec<usize>> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
             let k = ring.len();
             for t in 0..k {
                 edge_faces
-                    .entry(norm_edge(ring[t], ring[(t + 1) % k]))
+                    .entry((group_of[fi], norm_edge(ring[t], ring[(t + 1) % k])))
                     .or_default()
                     .push(lf.plane_idx);
             }
         }
     }
-    // The plane on the other side of an edge. `None` rather than an error: a corner this cannot
+    // The plane on the other side of an edge, **within this solid**. `None` rather than an error:
+    // a corner this cannot
     // resolve is one to skip, and the edge-use guard further down is what judges the face set.
-    let far_plane = |a: Node, b: Node, own: usize| -> Option<usize> {
+    let far_plane = |g: usize, a: Node, b: Node, own: usize| -> Option<usize> {
         let mut others = edge_faces
-            .get(&norm_edge(a, b))?
+            .get(&(g, norm_edge(a, b)))?
             .iter()
             .copied()
             .filter(|&x| x != own);
         let o = others.next()?;
         others.all(|x| x == o).then_some(o)
     };
-    let mut def_triple: HashMap<Node, [usize; 3]> = HashMap::new();
-    for lf in faces {
+    let mut def_triple: HashMap<(usize, Node), [usize; 3]> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
+        let g = group_of[fi];
         for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
             let k = ring.len();
             for t in 0..k {
                 let node = ring[t];
-                if def_triple.contains_key(&node) {
+                if def_triple.contains_key(&(g, node)) {
                     continue;
                 }
                 let (Some(prev), Some(next)) = (
-                    far_plane(ring[(t + k - 1) % k], node, lf.plane_idx),
-                    far_plane(node, ring[(t + 1) % k], lf.plane_idx),
+                    far_plane(g, ring[(t + k - 1) % k], node, lf.plane_idx),
+                    far_plane(g, node, ring[(t + 1) % k], lf.plane_idx),
                 ) else {
                     continue;
                 };
@@ -614,76 +818,77 @@ fn reconstruct(
                 }
                 let mut tri = [lf.plane_idx, prev, next];
                 tri.sort_unstable();
-                def_triple.insert(node, tri);
+                def_triple.insert((g, node), tri);
             }
         }
     }
 
     // Vertices (deterministic: first appearance across faces in order).
-    let mut vh: HashMap<Node, Handle<Vertex>> = HashMap::new();
-    let mut node_handle = |model: &mut Model, node: Node| -> Result<Handle<Vertex>, BoolError> {
-        if let Some(&h) = vh.get(&node) {
-            return Ok(h);
-        }
-        let handle = match node {
-            Node::Seam(triple) => {
-                // A face references a seam node whose triple was not welded into `seam` — a
-                // reconstruction dropped a crossing. Reject (never panic): an unmodeled flush
-                // topology must decline honestly, not abort the kernel (DNA).
-                let sv = seam
-                    .iter()
-                    .find(|s| s.triple == triple)
-                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                // A vertex that is a corner of no face at all has no name in the result's own
-                // planes — a degeneracy, and the honest answer is the one this reason already
-                // carries ("a corner with no turn").
-                let tri = def_triple
-                    .get(&node)
-                    .copied()
-                    .ok_or_else(|| reject(RejectReason::StraightAngle))?;
-                let def = VertexDef::ThreePlane([
-                    planes[tri[0]].surf,
-                    planes[tri[1]].surf,
-                    planes[tri[2]].surf,
-                ]);
-                // ★★ **The tolerance measures the planes the vertex is *defined* by.**
-                //
-                // The arrangement made the coordinate and `sv.tol` as a pair — `three_planes` on
-                // one triple, `vertex_tol` on the same one. The lines above then **re-name** the
-                // vertex in the result's own surfaces, which is a *different* triple wherever four
-                // planes concur (that is why the derivation exists). The old code carried the
-                // tolerance through that swap on the grounds that "every plane through the point
-                // contains it exactly" — **true only while nothing is rotated**. A rotated plane
-                // passes a realized point within an ulp or two, not through it, so the carried
-                // tolerance bounded a distance nobody was going to measure while `validate`
-                // measured a different one (found by `replay`'s proptest; 454 of 91,394 result
-                // vertices in the corpus were short, by at most 2.1e-14 — rounding, as it should
-                // be, but rounding the record has to admit to).
-                //
-                // ★ Measured on `model.surface(..)`, the very object `validate` reads — not on the
-                // class's own `plane` copy, or this would compare two descriptions of one plane
-                // again. And `max`ed with `sv.tol` rather than replacing it: the arrangement's
-                // figure also covers the pairwise meet lines, which is a real part of what this
-                // number means.
-                let tol = [tri[0], tri[1], tri[2]]
-                    .iter()
-                    .map(|&i| model.surface(planes[i].surf).distance(sv.point))
-                    .fold(sv.tol, f64::max);
-                model.push_vertex(def, sv.point, Some(tol))
+    let mut vh: HashMap<(usize, Node), Handle<Vertex>> = HashMap::new();
+    let mut node_handle =
+        |model: &mut Model, g: usize, node: Node| -> Result<Handle<Vertex>, BoolError> {
+            if let Some(&h) = vh.get(&(g, node)) {
+                return Ok(h);
             }
+            let handle = match node {
+                Node::Seam(triple) => {
+                    // A face references a seam node whose triple was not welded into `seam` — a
+                    // reconstruction dropped a crossing. Reject (never panic): an unmodeled flush
+                    // topology must decline honestly, not abort the kernel (DNA).
+                    let sv = seam
+                        .iter()
+                        .find(|s| s.triple == triple)
+                        .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                    // A vertex that is a corner of no face at all has no name in the result's own
+                    // planes — a degeneracy, and the honest answer is the one this reason already
+                    // carries ("a corner with no turn").
+                    let tri = def_triple
+                        .get(&(g, node))
+                        .copied()
+                        .ok_or_else(|| reject(RejectReason::StraightAngle))?;
+                    let def = VertexDef::ThreePlane([
+                        planes[tri[0]].surf,
+                        planes[tri[1]].surf,
+                        planes[tri[2]].surf,
+                    ]);
+                    // ★★ **The tolerance measures the planes the vertex is *defined* by.**
+                    //
+                    // The arrangement made the coordinate and `sv.tol` as a pair — `three_planes` on
+                    // one triple, `vertex_tol` on the same one. The lines above then **re-name** the
+                    // vertex in the result's own surfaces, which is a *different* triple wherever four
+                    // planes concur (that is why the derivation exists). The old code carried the
+                    // tolerance through that swap on the grounds that "every plane through the point
+                    // contains it exactly" — **true only while nothing is rotated**. A rotated plane
+                    // passes a realized point within an ulp or two, not through it, so the carried
+                    // tolerance bounded a distance nobody was going to measure while `validate`
+                    // measured a different one (found by `replay`'s proptest; 454 of 91,394 result
+                    // vertices in the corpus were short, by at most 2.1e-14 — rounding, as it should
+                    // be, but rounding the record has to admit to).
+                    //
+                    // ★ Measured on `model.surface(..)`, the very object `validate` reads — not on the
+                    // class's own `plane` copy, or this would compare two descriptions of one plane
+                    // again. And `max`ed with `sv.tol` rather than replacing it: the arrangement's
+                    // figure also covers the pairwise meet lines, which is a real part of what this
+                    // number means.
+                    let tol = [tri[0], tri[1], tri[2]]
+                        .iter()
+                        .map(|&i| model.surface(planes[i].surf).distance(sv.point))
+                        .fold(sv.tol, f64::max);
+                    model.push_vertex(def, sv.point, Some(tol))
+                }
+            };
+            vh.insert((g, node), handle);
+            Ok(handle)
         };
-        vh.insert(node, handle);
-        Ok(handle)
-    };
     // Materialize all vertex handles first. Outer then inner, rings in order: `vh`'s
     // first-appearance order fixes the vertex handles, and replay depends on it.
-    for lf in faces {
+    for (fi, lf) in faces.iter().enumerate() {
         for &node in lf
             .loop_nodes
             .iter()
             .chain(lf.inner.iter().flat_map(|r| r.iter()))
         {
-            node_handle(model, node)?;
+            node_handle(model, group_of[fi], node)?;
         }
     }
 
@@ -695,12 +900,13 @@ fn reconstruct(
     // sharing such an edge named two different walls. The faces themselves are the ground
     // truth, and every ring is already in hand, so one pre-scan reads it.
     let mut pair_surfs: HashMap<(usize, usize), Vec<Handle<Surface>>> = HashMap::new();
-    for lf in faces {
+    for (fi, lf) in faces.iter().enumerate() {
+        let g = group_of[fi];
         let fsurf = planes[lf.plane_idx].surf;
         for r in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
             let k = r.nodes.len();
             for t in 0..k {
-                let (va, vb) = (vh[&r.nodes[t]], vh[&r.nodes[(t + 1) % k]]);
+                let (va, vb) = (vh[&(g, r.nodes[t])], vh[&(g, r.nodes[(t + 1) % k])]);
                 pair_surfs
                     .entry(unordered(va.index() as usize, vb.index() as usize))
                     .or_default()
@@ -741,10 +947,11 @@ fn reconstruct(
     };
 
     let mut face_handles = Vec::new();
-    for lf in faces {
+    for (fi, lf) in faces.iter().enumerate() {
+        let g = group_of[fi];
         let face_surf = planes[lf.plane_idx].surf;
         let mut ring = |model: &mut Model, r: &Ring| -> Result<Loop, BoolError> {
-            let handles: Vec<Handle<Vertex>> = r.nodes.iter().map(|nd| vh[nd]).collect();
+            let handles: Vec<Handle<Vertex>> = r.nodes.iter().map(|nd| vh[&(g, *nd)]).collect();
             let k = handles.len();
             let mut half_edges: Vec<HalfEdge> = (0..k)
                 .map(|t| {
@@ -821,14 +1028,19 @@ fn reconstruct(
             return Err(reject(RejectReason::OpenResultShell));
         }
     }
-    // Partition the faces into connected components (by shared node). One component is the
-    // whole result; several mean either an enclosed void (a cavity — an inward-oriented shell)
-    // or a severed operand (two or more outward, material-enclosing shells). `is_shell_outward`
-    // (exact extreme-vertex sign) tells them apart. One outward component ⇒ outer shell + the
-    // rest as its cavities. Several outward components ⇒ the result severed into that many
-    // solids (cell 0.4); a cavity that also survives is assigned to the piece whose outer shell
-    // nests it (`combinatorics::point_in_component`). No outward component is impossible.
-    let (labels, n) = face_components(faces);
+    // ★ **The grouping decided at the top of this function, raised here** — where the old code
+    // decided it, so a boolean that declines leaves the arena cells it always left. What it says:
+    // one component is the whole result; several mean either an enclosed void (a cavity, an
+    // inward-oriented shell) or a severed operand (two or more material-enclosing shells), and a
+    // surviving cavity belongs to the piece whose outer shell nests it. See [`group_faces`] — and
+    // for why the *group*, not the component, is the unit the handles above were minted per.
+    let Grouping {
+        labels,
+        n,
+        positives,
+        mut comps_of,
+        ..
+    } = grouping?;
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
@@ -836,81 +1048,6 @@ fn reconstruct(
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
     for (i, lf) in faces.iter().enumerate() {
         by_comp_lf[labels[i]].push(lf);
-    }
-    // A component as `(plane, rings)` per face, and its nodes — what the containment predicate
-    // takes. Both the material/void label below and the cavity-owner search further down ask the
-    // same question of them.
-    // ★ **Only when there is something to compare.** One component is the whole result — depth 0,
-    // material, nothing to ask — and that is nearly every boolean. Building these rings costs an
-    // exact predicate per node, so doing it unconditionally put **12x** on the 80-fold star
-    // (measured). Built once per component rather than once per query for the same reason: the
-    // label below retries with another node when one grazes.
-    let comp_faces: Vec<combinatorics::ComponentFaces> = (0..if n > 1 { n } else { 0 })
-        .map(|c| {
-            by_comp_lf[c]
-                .iter()
-                .map(|lf| {
-                    let mut rings = vec![lf.loop_nodes.edges(jd, lf.plane_idx)?];
-                    for h in &lf.inner {
-                        rings.push(h.edges(jd, lf.plane_idx)?);
-                    }
-                    Ok((lf.plane_idx, rings))
-                })
-                .collect::<Result<_, BoolError>>()
-        })
-        .collect::<Result<_, BoolError>>()?;
-    let nodes_of = |c: usize| -> Vec<[usize; 3]> {
-        by_comp_lf[c]
-            .iter()
-            .flat_map(|lf| lf.loop_nodes.iter().map(|Node::Seam(t)| *t))
-            .collect()
-    };
-    // ★★ **Material or void is a question about nesting, not about normals.**
-    //
-    // It used to be answered at the component's lexicographically-minimal vertex `v*`: outward iff
-    // *some* face there has an outward normal with `n_x < 0`. That existential is a shortcut for
-    // "the face with the largest `|n_x|` faces −x", and the shortcut is only equivalent while the
-    // normals are **axis-aligned** — the old `is_shell_outward`'s own doc said so. A slanted sketch
-    // breaks it with no rotation in sight: a wedge void cut inside a box came back as its own
-    // *material* solid of **negative volume**, with the box unchanged beside it. A wrong model,
-    // and `validate` had nothing to say about it (measured, `docs/dev-log.md`).
-    //
-    // So ask the question the kernel already answers one dimension down. `sketch::from_rings`
-    // decides a ring by **containment depth — even is material, odd is a hole** (design.md: "채우기
-    // 규칙 파라미터는 두지 않는다 — 짝수-홀수가 유일한 규칙이다"), and the cavity-owner search
-    // below already picks the *innermost* container, the other half of that same rule. This is the
-    // 3D reading of it, with `point_in_component` where the 2D one uses `point_in_ring`.
-    //
-    // Nothing here reads an orientation, so a shell that winds either way is labelled the same —
-    // which is the point: the winding is what the old test was trying, and failing, to recover.
-    // `positives` stays in ascending `c` order (a downstream contract).
-    let mut positives: Vec<usize> = Vec::new();
-    for c in 0..n {
-        if n == 1 {
-            positives.push(0); // the whole result: depth 0, and no other component to be inside
-            break;
-        }
-        // One origin for the whole row: a node of `c` that classifies against *every* other
-        // component. Trying them in turn is what the cavity search does, and for the same reason —
-        // a node that grazes one component's boundary is a fact about that node, not about the
-        // components.
-        let depth = nodes_of(c)
-            .iter()
-            .find_map(|&x| {
-                let mut d = 0usize;
-                for other in (0..n).filter(|&o| o != c) {
-                    match combinatorics::point_in_component(jd, x, &comp_faces[other]) {
-                        Ok(true) => d += 1,
-                        Ok(false) => {}
-                        Err(_) => return None, // grazed — try the next node
-                    }
-                }
-                Some(d)
-            })
-            .ok_or_else(|| reject(RejectReason::NoClearRay))?;
-        if depth % 2 == 0 {
-            positives.push(c);
-        }
     }
     let shells: Vec<Handle<Shell>> = by_comp
         .iter()
@@ -925,101 +1062,46 @@ fn reconstruct(
     // that cannot be moved, and used to surface as a rejection two operations downstream — so the
     // whole test suite is the corpus for it now, not the one caller that happens to transform.
     let mut groups: Vec<Vec<usize>> = Vec::new();
-    let out = match positives.len() {
-        0 => Err(reject(RejectReason::NoOutwardShell)),
-        1 => {
-            groups.push((0..n).collect());
-            let outer_c = positives[0];
+    // Emit each material solid (with its cavities) in a canonical, replay-stable order keyed on
+    // geometry, so a downstream op can index the returned Vec deterministically. ★ One material
+    // needs no key and must not pay for one — `comp_key` walks every face of the piece.
+    let order: Vec<usize> = if positives.len() == 1 {
+        vec![0]
+    } else {
+        let keys: Vec<Vec<[f64; 3]>> = positives
+            .iter()
+            .map(|&c| comp_key(model, &by_comp[c]))
+            .collect();
+        let mut order: Vec<usize> = (0..positives.len()).collect();
+        order.sort_by(|&x, &y| {
+            keys[x]
+                .partial_cmp(&keys[y])
+                .expect("finite vertex coordinates")
+        });
+        order
+    };
+    let out: Result<Vec<Handle<Solid>>, BoolError> = Ok(order
+        .into_iter()
+        .map(|oi| {
+            let c = positives[oi];
+            let comps = comps_of
+                .remove(&c)
+                .expect("every material component owns a component list");
             // A cavity shell's faces already point into the void (the material is outside it, so
             // the material-on-correct-side reconstruction winds them inward) — measured, no flip.
-            let cavities = (0..n)
-                .filter(|&c| c != outer_c)
-                .map(|c| shells[c])
-                .collect();
-            let solid = model.push_solid(Solid {
-                outer: shells[outer_c],
-                cavities,
-            });
-            Ok(vec![solid])
-        }
-        _ => {
-            // Several material solids. Assign each surviving cavity (an inward component) to the
-            // material whose outer shell nests it — the innermost, if materials themselves nest —
-            // by the exact point-in-solid `point_in_component`. With no cavity this loop is empty
-            // and every material emits cavity-free (the plain sever, unchanged).
-            // ★ The rings hand over their walls; nothing here derives one from a name —
-            // `comp_faces`/`nodes_of` are the same pair the material/void label above uses.
-            let mut cavities_of: std::collections::HashMap<usize, Vec<Handle<Shell>>> =
-                positives.iter().map(|&m| (m, Vec::new())).collect();
-            // The same assignment in component numbers: a result solid is a material component and
-            // the cavity components it owns, and that grouping — not the component — is the unit a
-            // self-contact question is asked about.
-            let mut comps_of: std::collections::HashMap<usize, Vec<usize>> =
-                positives.iter().map(|&m| (m, vec![m])).collect();
-            for d in (0..n).filter(|c| !positives.contains(c)) {
-                // A cavity node that classifies cleanly against *every* material (one shared origin
-                // keeps the nesting consistent); its `true` materials nest, so take the innermost.
-                let containers = nodes_of(d).iter().find_map(|&x| {
-                    let mut cs = Vec::new();
-                    for &m in &positives {
-                        match combinatorics::point_in_component(jd, x, &comp_faces[m]) {
-                            Ok(true) => cs.push(m),
-                            Ok(false) => {}
-                            Err(_) => return None, // grazed against a material — try next node
-                        }
-                    }
-                    Some(cs)
-                });
-                let containers = containers.ok_or_else(|| reject(RejectReason::NoClearRay))?;
-                let owner = match containers.as_slice() {
-                    [] => return Err(reject(RejectReason::CavityNoOwner)),
-                    [only] => *only,
-                    _ => *containers
-                        .iter()
-                        .find(|&&c| {
-                            // Innermost: inside every other container.
-                            containers.iter().all(|&o| {
-                                o == c
-                                    || nodes_of(c)
-                                        .iter()
-                                        .find_map(|&x| {
-                                            combinatorics::point_in_component(jd, x, &comp_faces[o])
-                                                .ok()
-                                        })
-                                        .unwrap_or(false)
-                            })
-                        })
-                        .ok_or_else(|| reject(RejectReason::CavityNoOwner))?,
-                };
-                cavities_of.get_mut(&owner).unwrap().push(shells[d]);
-                comps_of.get_mut(&owner).unwrap().push(d);
-            }
-            // Emit each material solid (with its cavities) in a canonical, replay-stable order
-            // keyed on geometry, so a downstream op can index the returned Vec deterministically.
-            let keys: Vec<Vec<[f64; 3]>> = positives
+            let cavities = comps
                 .iter()
-                .map(|&c| comp_key(model, &by_comp[c]))
+                .copied()
+                .filter(|&x| x != c)
+                .map(|x| shells[x])
                 .collect();
-            let mut order: Vec<usize> = (0..positives.len()).collect();
-            order.sort_by(|&x, &y| {
-                keys[x]
-                    .partial_cmp(&keys[y])
-                    .expect("finite vertex coordinates")
-            });
-            let solids: Vec<Handle<Solid>> = order
-                .into_iter()
-                .map(|oi| {
-                    let c = positives[oi];
-                    groups.push(comps_of.remove(&c).unwrap());
-                    model.push_solid(Solid {
-                        outer: shells[c],
-                        cavities: cavities_of.remove(&c).unwrap(),
-                    })
-                })
-                .collect();
-            Ok(solids)
-        }
-    };
+            groups.push(comps);
+            model.push_solid(Solid {
+                outer: shells[c],
+                cavities,
+            })
+        })
+        .collect());
     let out = out.and_then(|solids| {
         self_touch_reject(jd, seam, &groups, &by_comp_lf)?;
         Ok(solids)

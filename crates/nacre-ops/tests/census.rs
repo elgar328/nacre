@@ -552,6 +552,62 @@ fn dump() {
         }
     }
 
+    // ── **Contact — two bodies that meet along a line or at a point, and one pair that cannot part.**
+    //
+    // ★ The population this file was blind to. Before the contact work every one of these was a
+    // reject, and census carried **no reject line at all** (measured: 152 lines, 7 `EMPTY`, zero
+    // `ERR`), so the whole family was invisible to the gate that reads every commit. It records
+    // *both* halves on purpose: the separable contacts coming back as the bodies they are, and the
+    // pinch that stays a reject because the material loops around it.
+    for (kn, k) in KINDS {
+        // Two cubes sharing exactly the vertical line x=1, y=1.
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let inputs = operands(&m, a, b);
+        let out = boolean(&mut m, k, a, b);
+        m.rebuild_adjacency();
+        record(&format!("ct edge {kn}"), &m, &inputs, &out);
+
+        // Two cubes sharing exactly the point (1,1,1).
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
+        m.rebuild_adjacency();
+        let inputs = operands(&m, a, b);
+        let out = boolean(&mut m, k, a, b);
+        m.rebuild_adjacency();
+        record(&format!("ct corner {kn}"), &m, &inputs, &out);
+    }
+    // ★★ **The pinch that must stay a reject.** A and B meet only along the line x=2, y=2, but a
+    // bridge overlaps both, so the material loops around the contact: cut it there and one piece
+    // remains, not two. A line that ever stops saying `ERR` here is the separation going too far.
+    {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 2.0, 1.0]),
+        );
+        let bridge = m.add_cuboid(
+            Point3::from_array([1.0, 0.3, 0.2]),
+            Point3::from_array([3.0, 3.0, 0.8]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([2.0, 2.0, 0.0]),
+            Point3::from_array([4.0, 4.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
+        m.rebuild_adjacency();
+        let inputs = operands(&m, ab[0], b);
+        let out = boolean(&mut m, BoolKind::Fuse, ab[0], b);
+        m.rebuild_adjacency();
+        record("ct ring-pinch fuse", &m, &inputs, &out);
+    }
     // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** Since S2
     // every plane with points is named (wide ones in the arbitrary-precision vessel), so a
     // coordinate can move only when wide planes *merge* — a `c ` line that moves must come with
