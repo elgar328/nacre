@@ -9008,3 +9008,74 @@ surface=11  평면 법선 (-0.866, -0.5, 0)   외곽 루프 6점, 전부 평면 
 **「면의 orientation 이 루프 감김과 맞는가」를 `validate` 로 올린다.** 지금 그 불변식은 불리언
 한복판의 `debug_assert` 두 줄에만 있다. 그게 끝나면 「`n_out` 을 저장된 orientation 에서 읽기」를
 **그물을 잃지 않고** 할 수 있다. 순서가 반대면 안 된다.
+
+---
+
+## `face_plane` 이 pad 와 다른 프레임을 보고했다 — flip 반턴의 축이 두 자리에서 달랐다 (2026-08-16)
+
+`outer_tri` 스윕을 짓다 나온 별건(앞 셀): 면의 **자기 중심**에 놓은 pad 가 30° 회전 상자의 6면 중
+2면에서 `PadMissesFace`. 0°에서는 6/6 성공. 조사 결과는 계약 위반이었다 — `face_plane` 의 doc 이
+*"이 동등성은 계약이지 우연이 아니다"* 라고 스스로 못박아 둔 그 계약.
+
+### 원인
+
+스케치 프레임의 `flip`(법선을 뒤집는 반턴)을 두 코드가 **서로 다른 축으로** 적었다:
+
+- `ops.rs::face_frame`(→`face_plane` 보고): unflipped 기저에 **손으로** `x = −u, y = v` —
+  v̂ 축 기준 반턴. 옆 주석이 그렇게 주장했다(*"negates ŵ and û … a half-turn about v"*).
+- `rotated_vertex.rs::frame_chain`(실현): 계수 반전 → `x = u, y = −v` — **û 축 기준** 반턴
+  (`ref_dir` 이 unflipped 계수에서 유도된 채 살아남으므로).
+
+법선은 같고 면내 축은 **점대칭**. `face_plane` 좌표로 면 중심에 놓은 발자국이 실현에서는 반대편
+(면 밖)에 지어져 프리즘이 면과 안 닿는다.
+
+### 증거 사슬
+
+1. 세 축 모두 **pad 가 빗나간 면 = flip=true 이고 두 API 가 점대칭(x·x=y·y=−1)인 면** — 완전
+   일치(X: 0·2, Y: 0·5, Z: 2·5). origin 은 전부 일치(d=0.000).
+2. 같은 면에 **B(`frame_plane(face_sketch_frame)`) 좌표로** 놓으면 4/4 성공. 더 강하게:
+   `frame_plane` 과 `prism_rings` 는 **같은 `frame_chain`** 을 실현한다 — 겹침 우연이 아니라
+   코드 경로 동일(`prism_rings` 는 frame 노드가 있으면 `RatFrame::identity()` — `face_frame` 이
+   보고한 축은 실현에서 아예 읽히지 않는다).
+3. 왜 2/6면: 회전 후 flip=true 3면 중 회전축에 수직인 평면(회전 불변) 1면은 세계축 분기로 무사.
+
+### 왜 기존 테스트가 못 잡았나
+
+계약을 고정하는 테스트가 **실존했다** —
+`features.rs::face_plane_is_the_frame_pad_places_profiles_in`, off-centre 프로파일까지 제대로.
+픽스처가 `cube_with_top()` = **축정렬** 하나였을 뿐이다. 축정렬은 flip/스케치 분기를 아예 안 타는
+인구다. 게이트는 자기가 묻는 것에만 초록이다.
+
+### 고침 — 미러를 고치지 않고 지웠다
+
+sgn 을 u→v 로 옮기는 첫 안은 검토에서 기각 — **잘못된 미러를 «올바른 미러»로 바꿔 유지**하는
+것이라서. 결함의 모양 자체가 「실현 규칙의 수동 복제」였으므로 복제를 없앴다:
+
+- `measured_frame` 은 **`SketchFrame` 만** 돌려준다. unflipped 기저의 ride-along 반환(*"cost one
+  realization, not two"* 최적화)을 삭제 — 그 유일한 소비자(`face_frame`)의 소비 방식(기저에
+  flip 을 손으로 조합)이 바로 이 결함이었다. **unflipped 기저가 어떤 시그니처로도 새지 않으므로
+  같은 실수가 타입 수준에서 표현 불가능**해졌다. (호출자 5곳 중 4곳은 원래 기저를 버렸다.)
+- `face_frame` 은 측정된 flip 채로 `frame_world_basis` 를 **한 번 더** 부른다 — 보고와 실현이
+  같은 함수의 같은 인자. flip 의 기하는 이제 `frame_chain` 한 곳에만 적혀 있다. 비용: 4점 f64
+  chain replay 1회/연산, 그 절약이 미러를 만든 원인이었다.
+- origin 이 재실현에서도 비트 동일한 구조적 이유: `Canonical` 의 placement 쌍은 **unflipped**
+  계수에서 유도되고 부호는 그 뒤에 적용된다(`frame_chain` 의 명시 규칙) → 두 chain 의 origin
+  rational 동일. 실측 d=0.000 과 일치.
+
+### 잠금과 실측
+
+- **pinning 회전 테스트**(`features.rs`): 3축 × 30° × **6면 전부**, off-centre, boss cap 중심 =
+  `face_plane` 예측. 자물쇠 확인: 고침 없이 **flip=true 점대칭 6셀에서만** 빨갛고 나머지 12셀은
+  초록(err ~1e-16) — 음성 대조까지 실측과 정확히 일치.
+- **`collinear_loop_points.rs` 스윕**: X/Y 의 `PadMissesFace` 72셀이 **전부 지어지기 시작** →
+  108/108, 성공-셀 단언(면-법선·부피 경계·validate) 전부 통과. `built == 108` 로 갱신.
+- **bit census 비트 동일** — 파급 격리의 구조적 예측(sgn 이 적용되는 경우 = 그 plane 이 실현에서
+  무시되는 경우가 완벽히 겹친다)이 측정으로 확인됨.
+
+### 부수 발견 — 기록만, 범위 밖
+
+motion 이 달린 **세계축-평행 평면**(회전축에 수직이라 회전해도 평면 불변)에서 `face_sketch_frame`
+이 pad 의 실제 프레임(세계축, 노드 생략)과 **30° 어긋난** canonical+motion 프레임을 돌려준다 —
+그 API doc 의 node-omission normalization 전제(*"canonical frame … realizes to those same world
+axes"*)가 이 인구에서 깨진다(실측: 30° 회전 상자에서 x·x=±0.866 인 면들). pad 는 노드를
+생략하므로 실해는 없지만 API 계약 위반이다. 이번 고침은 이 인구를 건드리지 않는다.
