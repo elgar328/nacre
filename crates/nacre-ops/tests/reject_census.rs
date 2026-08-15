@@ -22,7 +22,7 @@
 //! directly, never through `boolean()`).
 
 use nacre_math::{Point2, Point3, Vector3};
-use nacre_ops::reject_census::{self, Census};
+use nacre_ops::reject_census::{self, Census, ReasonId};
 use nacre_ops::{
     BoolError, BoolKind, DatumDef, OpOutput, Operation, Profile2d, RejectReason, SketchFrame,
     SketchPlane, apply, boolean,
@@ -30,6 +30,7 @@ use nacre_ops::{
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
+use std::collections::BTreeSet;
 
 // ── shape helpers, copied from the tests each fixture came from ───────────────────────────────
 
@@ -120,12 +121,23 @@ fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Handle<Solid> {
 
 // ── the corpus ────────────────────────────────────────────────────────────────────────────────
 
-/// A shape, what it must reject with, and why it is in the corpus.
+/// A shape, what it must reject with, and the census it must produce.
 struct Fixture {
     name: &'static str,
     /// `None` = it must succeed (the control).
     expect: Option<RejectReason>,
     run: fn(&mut Model) -> Result<Vec<Handle<Solid>>, BoolError>,
+    /// **The pinned raise shape**: `(reason, detail, file)`. Read off a measurement, not predicted
+    /// — and measured identical in all four of debug/release x parallel/serial, which is why it is
+    /// asserted unconditionally.
+    ///
+    /// No line numbers: a gate keyed on them goes red on every unrelated edit above a guard, which
+    /// is how a lock stops being read. Lines are printed instead.
+    raised: &'static [(&'static str, Option<&'static str>, &'static str)],
+    /// **The pinned surfaced shape** — the strong half. `par::try_map_range` returns the
+    /// lowest-index error by construction, so which reason comes back does not depend on the
+    /// schedule or the build.
+    surfaced: &'static [(&'static str, Option<&'static str>)],
 }
 
 /// ① A fuse that pinches one solid at a single vertex — two bridges run around the contact, so the
@@ -244,41 +256,67 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Fuse, a, b)
 }
 
+const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
+
 const CORPUS: [Fixture; 7] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
         run: pinched_vertex,
+        raised: &[("non_manifold_vertex", None, BOOLEAN)],
+        surfaced: &[("non_manifold_vertex", None)],
     },
     Fixture {
         name: "pinched-edge",
         expect: Some(RejectReason::NonManifoldResultEdge),
         run: pinched_edge,
+        raised: &[("non_manifold_result_edge", None, BOOLEAN)],
+        surfaced: &[("non_manifold_result_edge", None)],
     },
     Fixture {
         name: "wedge-tip-on-wall",
         expect: Some(RejectReason::SelfTouchingResult),
         run: wedge_tip_on_wall,
+        raised: &[("self_touching_result", None, BOOLEAN)],
+        surfaced: &[("self_touching_result", None)],
     },
     Fixture {
         name: "diamond-void",
         expect: Some(RejectReason::NoClearRay),
         run: diamond_void,
+        // ★ Two sites for one reason, and only one of them is anything a caller is told about: the
+        // `combinatorics.rs` guard is the per-node probe the retry swallows.
+        raised: &[
+            ("no_clear_ray", None, BOOLEAN),
+            (
+                "no_clear_ray",
+                None,
+                "crates/nacre-ops/src/combinatorics.rs",
+            ),
+        ],
+        surfaced: &[("no_clear_ray", None)],
     },
     Fixture {
         name: "cylinder-operand",
         expect: Some(RejectReason::CylinderFace),
         run: cylinder_operand,
+        // The only corpus reject raised while reading the operands rather than in the assembly.
+        raised: &[("cylinder_face", None, "crates/nacre-ops/src/planes.rs")],
+        surfaced: &[("cylinder_face", None)],
     },
     Fixture {
         name: "fold-45",
         expect: Some(RejectReason::CoplanarMerge),
         run: fold_45,
+        raised: &[("coplanar_merge", None, BOOLEAN)],
+        surfaced: &[("coplanar_merge", None)],
     },
     Fixture {
         name: "plain-fuse",
         expect: None,
         run: plain_fuse,
+        raised: &[],
+        surfaced: &[],
     },
 ];
 
@@ -313,6 +351,37 @@ fn the_reject_census() {
                 f.name
             ),
         }
+
+        // ★ Assertion 3: which reason is raised in which file. This is what nothing else in the
+        // suite pins — every reject test asserts the *reason*, none of them where it lives.
+        let want: BTreeSet<(ReasonId, &str)> = f
+            .raised
+            .iter()
+            .map(|&(reason, detail, file)| (ReasonId { reason, detail }, file))
+            .collect();
+        assert_eq!(
+            census.raised_shape(),
+            want,
+            "{}: the guards that rang changed.\n{}\
+             If that is intended, update this fixture's `raised`; if not, ask why a guard moved.",
+            f.name,
+            census.report()
+        );
+
+        // ★ Assertion 2: what the caller was told. The strong half — identical in every build.
+        let want: BTreeSet<ReasonId> = f
+            .surfaced
+            .iter()
+            .map(|&(reason, detail)| ReasonId { reason, detail })
+            .collect();
+        assert_eq!(
+            census.surfaced_shape(),
+            want,
+            "{}: the reasons leaving the kernel changed.\n{}",
+            f.name,
+            census.report()
+        );
+
         table.push((f.name, census));
     }
 
@@ -330,6 +399,29 @@ fn the_reject_census() {
             .expect("fixture present")
             .1
     };
+
+    // ★★ Assertion 4: **`CoplanarMerge` has ten raise sites and only one of them ever rings.**
+    // That is the fact the next step stands on — the guard that speaks says "the pieces meet at a
+    // point", a self-touch seen one dimension down, while the name it reports says "not supported
+    // yet". Distinct *sites*, not raise counts: counts move with the build (`debug` re-runs every
+    // traced boolean, `parallel` evaluates the classes a failing input would have skipped), and
+    // the claim is about how many guards speak, not how often.
+    assert_eq!(
+        by("fold-45").distinct_sites("coplanar_merge"),
+        1,
+        "a second `coplanar_merge` guard started ringing — the split this measurement licenses is \
+         no longer about one site.\n{}",
+        by("fold-45").report()
+    );
+    // ★ The positive control for that counter. `== 1` above proves nothing unless the count can
+    // come back something else, and the diamond void is the shape where it does.
+    assert_eq!(
+        by("diamond-void").distinct_sites("no_clear_ray"),
+        2,
+        "the two-site shape collapsed — `distinct_sites` can no longer answer anything but 1, \
+         which makes the assertion above vacuous.\n{}",
+        by("diamond-void").report()
+    );
 
     // ★ Assertion 5: the two columns measure something. If every raise surfaced, recording them
     // apart would be ceremony — the diamond void is the shape that proves they differ.
