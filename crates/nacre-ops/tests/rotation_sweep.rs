@@ -255,9 +255,10 @@ fn the_thirty_degree_sweep_runs_to_completion() {
 /// vertices must not touch. If it moves, the fix reached further than its argument says it does.
 ///
 /// ★★ It used to carry `120°` as well, on the reading "two bodies meeting along one line — no
-/// 2-manifold contains it". Two bodies meeting along one line are two bodies now, and that fold
-/// runs to completion (`the_hundred_and_twenty_degree_sweep_runs_to_completion`). The reading was
-/// right about the *single* body the reconstruction used to weld and wrong about the answer.
+/// 2-manifold contains it". Two bodies meeting along one line are two bodies now, and that first
+/// copy comes back as two of them (`the_hundred_and_twenty_degree_copy_is_two_bodies`). The
+/// reading was right about the *single* body the reconstruction used to weld, and wrong about the
+/// answer.
 #[test]
 fn the_other_rejections_are_untouched() {
     let cases: [(usize, RejectReason); 1] = [(45, RejectReason::CoplanarMerge)];
