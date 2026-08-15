@@ -349,10 +349,14 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
         .collect()
 }
 
-/// Three non-collinear points of a face's outer loop — with the **vertex handle** each
+/// Three **well-spread** points of a face's outer loop — with the **vertex handle** each
 /// point came from — ordered so their right-hand normal points **out** of the solid.
 /// The handles let the toleranced predicates rebuild each point as a `WitnessPoint` (overhaul
 /// stage 3); the coordinates alone drive the axis-aligned path.
+///
+/// "Well spread" rather than "non-collinear" is the whole contract: the triangle is what states
+/// this face's outward direction *and* what `WorkingPlane::tri` carries into the predicates, so a
+/// nearly-flat one is not a lesser answer but a wrong one. See the corner choice below.
 pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Handle<Vertex>; 3])> {
     let verts: Vec<Handle<Vertex>> = face
         .outer
@@ -369,10 +373,29 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     let newell = (0..n).fold(Vector3::zero(), |acc, i| {
         acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
     });
-    let i = (0..n).find(|&i| {
+    // ★★★ **The widest corner, not the first non-flat one.** A loop carries vertices that do not
+    // turn: two faces sharing an edge must list the same vertices along it, so a pad that splits a
+    // neighbour's face leaves this loop with points strung along one straight line. Three of those
+    // span **exactly** zero area — but only in exact arithmetic. On rotated coordinates the f64
+    // cancellation leaves ~2⁻⁵³ instead, which passes a `> 0.0` gate and `normalize`, and the
+    // direction that comes back is the rounding, not the plane: measured 90° off its own surface.
+    //
+    // **`0.0` is not a threshold in floating point** — "not zero" is not "well conditioned". The
+    // sibling that answers this same question already says so: `exact::cap_points` takes "the
+    // widest turn ... so a nearly-collinear pair is not chosen when a better one exists", and
+    // records there why the f64 realization is the right instrument for a *selection* (the points
+    // kept are exact; only "which three are spread out" is being asked, and answering it in
+    // rationals would risk an `i128` overflow for nothing).
+    //
+    // `None` when every corner is degenerate, exactly as before — that is `DegenerateFace`.
+    let (i, best) = (0..n).fold((0usize, 0.0f64), |acc, i| {
         let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
-        (b - a).cross(c - a).norm() > 0.0
-    })?;
+        let spread = (b - a).cross(c - a).norm();
+        if spread > acc.1 { (i, spread) } else { acc }
+    });
+    if best <= 0.0 {
+        return None;
+    }
     let (i0, i1, i2) = (i, (i + 1) % n, (i + 2) % n);
     let (a, b, c) = (pts[i0], pts[i1], pts[i2]);
     // Same b/c swap for coords and handles, so `tri[k]` and `tri_verts[k]` stay aligned.
@@ -1212,6 +1235,110 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
 mod tests {
     use super::*;
     use nacre_scalar::{Angle, Axis, Rat};
+
+    /// **A loop with points that do not turn still states its own outward direction.**
+    ///
+    /// Two faces sharing an edge list the same vertices along it, so a pad that covers part of a
+    /// face leaves the neighbouring walls with points strung along one line. Those points cannot
+    /// be removed — that would leave a T-vertex — so the population is every partially-covering
+    /// pad, and `outer_tri` has to survive it.
+    ///
+    /// ★ **Turned coordinates are the whole difficulty.** Axis-aligned collinear points cancel to
+    /// exactly `0.0`, which the old "first corner that is not flat" rule skipped correctly. Turned,
+    /// the cancellation leaves ~2⁻⁵³ — not zero, so it was taken, and the direction that came back
+    /// was rounding: measured 90° off its own plane, which is `orient_sign`, the winding of the
+    /// witness triangle every predicate borrows, and which side of the plane holds material.
+    ///
+    /// Asserted on `collect_planes`' own output rather than through `debug_assert`, so it is a
+    /// measurement in release too. `tests/collinear_loop_points.rs` sweeps the same proposition
+    /// from outside the crate over a band of angles.
+    #[test]
+    fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
+        use crate::{OpOutput, Operation, Profile2d, SketchFrame, apply};
+        use nacre_math::Point2;
+        use nacre_scalar::{Isometry, Rotation};
+
+        let rect = |a: f64, b: f64, c: f64, d: f64| {
+            Profile2d::polygon(vec![
+                Point2::from_array([a, b]),
+                Point2::from_array([c, b]),
+                Point2::from_array([c, d]),
+                Point2::from_array([a, d]),
+            ])
+            .expect("a rectangle is a fair profile")
+        };
+
+        let mut m = Model::new();
+        let world = SketchFrame::world(&m, Axis::Z);
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame: world,
+                profile: rect(0.0, 0.0, 2.0, 2.0),
+                dist: 1.0,
+            },
+        )
+        .expect("the block") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        let OpOutput::Transform { solid } = apply(
+            &mut m,
+            &Operation::Transform {
+                solid,
+                isometry: Isometry::rotation(Rotation {
+                    axis: Axis::Z,
+                    point: [Rat::from_int(0); 3],
+                    angle: Angle::from_deg(Rat::from_int(30)).expect("angle"),
+                }),
+            },
+        )
+        .expect("the turn") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+        // A pad covering part of the face: the walls around it inherit the split edge.
+        let face = m.shells.get(m.solids.get(solid).outer).faces[0];
+        let OpOutput::PadOnFace { solid, .. } = apply(
+            &mut m,
+            &Operation::PadOnFace {
+                face,
+                profile: rect(0.25, 0.25, 1.25, 1.25),
+                dist: 1.0,
+            },
+        )
+        .expect("the pad") else {
+            unreachable!()
+        };
+        m.rebuild_adjacency();
+
+        let faces = collect_planes(&m, solid).expect("the planes of a padded block");
+        // The population has to be present, or this asserts over nothing.
+        let straight = faces
+            .iter()
+            .filter(|f| {
+                let n = m
+                    .faces
+                    .get(f.face.expect("a model face"))
+                    .outer
+                    .half_edges
+                    .len();
+                n > 4
+            })
+            .count();
+        assert!(
+            straight > 0,
+            "no face carries a split edge — the fixture stopped reaching the population"
+        );
+        for f in &faces {
+            let cos = f.plane.normal().dot(f.n_out).abs();
+            assert!(
+                cos > 0.5,
+                "a face's stored plane is {cos:.3} of the way to perpendicular against its own \
+                 outward normal"
+            );
+        }
+    }
 
     /// **A judgement's headroom is relative to its model, not carved out of a shared ceiling.**
     ///
