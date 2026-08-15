@@ -8875,3 +8875,23 @@ A가 먼저인 이유: C가 census baseline을 고치며 들어오므로 **C의 
 (`CoplanarMerge` doc은 `Whole`-생존 접촉면 겹침을 말하고 사이트 10곳은 링 재봉합이다) census는 사이트를
 **보이게** 할 뿐 doc과 묶어 주지 않는다. 장치를 지금 발명하지 않는다 — 인구가 하나다. 미해결로 이름만
 붙여 둔다.
+
+---
+
+## proptest 가 새 결함을 찾았다 — 기록만 하고 고치지 않았다 (2026-08-15)
+
+census 작업 중 `replay.rs::a_generated_session_replays_to_itself` 가 새 케이스를 찾아 시드를
+regressions 파일에 적었고, 그때부터 매번 결정적으로 실패한다(5/5).
+
+```
+cc 1c41997e49c4d19003e15c0034cbb87f5d543c5b8a0328f1d507b3e17bef730f # shrinks to steps = [Rotate { solid: 0, axis: 2, deg: 2 }, Pad { solid: 0, face: 0, inset: 1, dist: 1 }, Pad { solid: 0, face: 0, inset: 0, dist: 1 }]
+```
+
+- **터지는 자리**: `planes.rs` 의 `debug_assert!(dot.abs() > 0.5, "a plane's normal must be
+  parallel to n_out")` — 면의 평면 법선과 그 면의 바깥 법선이 나란하지 않다.
+- **축소된 케이스**: `Rotate{axis:Z, deg:2}` → 같은 면에 `Pad` 두 번(inset 1, 그다음 0).
+- **census 작업과 무관하다** — 수정한 소스 셋을 stash 하고 돌려도 그대로 터진다(확인함).
+- **`debug_assert` 라 release 에서는 안 터진다.** 그래서 이 세션의 release 측정들이 전부 못 봤고,
+  스위트가 debug 로 도는 훅에서만 드러났다. 「불변식이 틀렸나, 입력이 어기나」는 아직 안 봤다.
+- ★ **시드를 일부러 치워 뒀다**(regressions 파일을 HEAD 로 되돌렸다). census 셋은 초록이고 이 결함과
+  아무 관계가 없어 먼저 넣었다. 위 한 줄을 그 파일에 붙이면 즉시 되살아난다.
