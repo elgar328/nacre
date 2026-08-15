@@ -724,6 +724,84 @@ fn face_plane_is_the_frame_pad_places_profiles_in() {
     );
 }
 
+/// **The same contract, on a turned solid — the population the test above cannot reach.**
+///
+/// An axis-aligned face never goes near the flip/sketch-frame branch, so the pin above was green
+/// while `face_plane` on a turned face reported a frame the pad did not use: the report applied
+/// `flip` as a half-turn about `v̂` while the realization (`frame_chain`) half-turns about `û`,
+/// leaving the two point-symmetric in the plane. A footprint centred on the face through
+/// `face_plane`'s own coordinates was then built on the opposite side — outside the face —
+/// and a legal pad came back `PadMissesFace` (measured: 2 of 6 faces of a 30°-turned block,
+/// every axis).
+///
+/// All six faces, deliberately: the two flip=true walls are the defect, the two flip=false walls
+/// are the contrast, and the two rotation-invariant planes take the world-axis branch — three
+/// populations under one assertion, so none can drift out of the contract unnoticed.
+#[test]
+fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
+    use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        for fi in 0..6 {
+            let mut m = Model::new();
+            let __op = extrude_op(&m, square(), 1.0);
+            let OpOutput::Extrude { solid, .. } = apply(&mut m, &__op).unwrap() else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            let OpOutput::Transform { solid } = apply(
+                &mut m,
+                &Operation::Transform {
+                    solid,
+                    isometry: Isometry::rotation(Rotation {
+                        axis,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+                    }),
+                },
+            )
+            .unwrap() else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+            let face = m.shells.get(m.solids.get(solid).outer).faces[fi];
+
+            // Off-centre about the face's own centroid (the frame origin is a property of the
+            // plane, not of the face, so absolute sketch coordinates can lie off the face
+            // entirely on a turned solid). Asymmetric in both axes, as in the pin above.
+            let plane = nacre_ops::face_plane(&m, face).unwrap();
+            let d = nacre_props::face_props(&m, face).unwrap().centroid - plane.origin();
+            let (cu, cv) = (d.dot(plane.x_axis()), d.dot(plane.y_axis()));
+            let profile = Profile2d::polygon(vec![
+                p2(cu + 0.05, cv - 0.15),
+                p2(cu + 0.25, cv - 0.15),
+                p2(cu + 0.25, cv + 0.05),
+                p2(cu + 0.05, cv + 0.05),
+            ])
+            .unwrap();
+            let dist = 0.5;
+            let OpOutput::PadOnFace { top_face, .. } = apply(&mut m, &pad_op(face, profile, dist))
+                .unwrap_or_else(|e| {
+                    panic!("{axis:?} face[{fi}]: the pad missed the frame it was promised: {e:?}")
+                })
+            else {
+                unreachable!()
+            };
+            m.rebuild_adjacency();
+
+            let n = plane.x_axis().cross(plane.y_axis());
+            let want = plane.origin()
+                + plane.x_axis() * (cu + 0.15)
+                + plane.y_axis() * (cv - 0.05)
+                + n * dist;
+            let got = nacre_props::face_props(&m, top_face).unwrap().centroid;
+            assert!(
+                (got - want).norm() < 1e-9,
+                "{axis:?} face[{fi}]: pad placed the boss at {got:?}, face_plane predicted {want:?}"
+            );
+        }
+    }
+}
+
 /// A rotated face's sketch frame is deterministic and right-handed about its own
 /// outward normal — pinned so a change to `any_perpendicular` cannot quietly
 /// rotate every sketch on such a face.

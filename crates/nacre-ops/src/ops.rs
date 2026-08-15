@@ -1071,7 +1071,7 @@ fn datum_plane(
             //
             // This is still S9's rule, not an exception to it: `flip` is *measured*, never stated,
             // and `measured_frame` is the one place that measures.
-            let (frame, _) = measured_frame(model, plane, placement, sp.normal())
+            let frame = measured_frame(model, plane, placement, sp.normal())
                 .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
         }
@@ -1120,7 +1120,7 @@ fn datum_plane(
                 let cache =
                     Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
                 let (plane, _flipped) = model.push_plane_through(cache, sorted, None);
-                let (frame, _) =
+                let frame =
                     measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
                         .ok_or(OpError::PlaneWithoutExactForm)?;
                 return Ok((plane, frame));
@@ -1158,9 +1158,8 @@ fn datum_plane(
             let cache =
                 Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
             let (plane, _flipped) = model.push_plane_through(cache, sorted, motion);
-            let (frame, _) =
-                measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
-                    .ok_or(OpError::PlaneWithoutExactForm)?;
+            let frame = measured_frame(model, plane, nacre_topo::FramePlacement::Canonical, stated)
+                .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
         }
         DatumDef::Offset { frame, dist } => {
@@ -1913,27 +1912,34 @@ impl SketchFrame {
 
 /// A [`SketchFrame`] with its `flip` measured — the placement's realized `ŵ` dotted against the
 /// direction the sketch must face (a sweep's sense, a face's outward normal). This is the one
-/// place `flip` is decided (S9): every road calls it, so no two can measure differently. The
-/// realized basis rides along for the caller who also needs the axes (`face_frame`), so deciding
-/// and looking cost one realization, not two. `None` when the chain cannot realize a basis (a
-/// plane with no name).
+/// place `flip` is decided (S9): every road calls it, so no two can measure differently. `None`
+/// when the chain cannot realize a basis (a plane with no name).
+///
+/// ★★★ **Only the frame comes back — deliberately.** The basis realized here to measure `flip`
+/// is the *unflipped* one, and it used to ride along "so deciding and looking cost one
+/// realization, not two". That saving is what broke `face_plane`'s contract: the one caller who
+/// wanted the axes combined the measured `flip` with the unflipped basis **by hand**, as a
+/// half-turn about `v̂` — while the realization (`frame_chain`) half-turns about `û` — and every
+/// flip=true face was reported a frame point-symmetric to the one the pad actually built in
+/// (measured: a footprint centred on the face through `face_plane`'s own coordinates landed
+/// outside it, `PadMissesFace` on 2 of 6 faces of a turned block). A caller that needs the axes
+/// asks [`crate::rotated_vertex::frame_world_basis`] *with the measured flip*, so the geometry of
+/// `flip` is written in exactly one place; the second 4-point replay is one plain f64 chain per
+/// user operation, which is what the hand-combination was saving.
 fn measured_frame(
     model: &Model,
     plane: Handle<Surface>,
     placement: nacre_topo::FramePlacement,
     toward: Vector3,
-) -> Option<(SketchFrame, crate::rotated_vertex::WorldBasis)> {
+) -> Option<SketchFrame> {
     let basis = crate::rotated_vertex::frame_world_basis(model, plane, &placement, false)?;
     let n = toward.as_array();
     let flip = (0..3).map(|k| basis.3[k] * n[k]).sum::<f64>() < 0.0;
-    Some((
-        SketchFrame {
-            plane,
-            placement,
-            flip,
-        },
-        basis,
-    ))
+    Some(SketchFrame {
+        plane,
+        placement,
+        flip,
+    })
 }
 
 /// Name a [`SketchFrame`] as the [`nacre_topo::Motion::Frame`] node the sweep writes coordinates
@@ -2085,7 +2091,6 @@ pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFram
         nacre_topo::FramePlacement::Canonical,
         f.n,
     )
-    .map(|(sf, _)| sf)
     .ok_or(OpError::PlaneWithoutExactForm)
 }
 
@@ -2159,8 +2164,14 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // not the same intent: take the frame only when the world axes do not lift to exact
     // orthonormal rationals. Axis-aligned faces therefore never go near it and are untouched.
     //
-    // ★ **`flip` is measured, not derived** — by `measured_frame`, the one measuring place (S9);
-    // the realized basis rides along so the axes below cost no second realization.
+    // ★ **`flip` is measured, not derived** — by `measured_frame`, the one measuring place (S9).
+    // ★★★ **The axes are then realized *with* that flip, by the same function the operation's
+    // prism replays through.** They used to be read off the unflipped basis with the sign applied
+    // by hand here, as a half-turn about `v̂` — but the realization (`frame_chain`) half-turns
+    // about `û` (its `ref_dir` is derived from the unflipped coefficients and survives the sign),
+    // so every flip=true face was reported a frame point-symmetric to the one the pad built in.
+    // Asking `frame_world_basis` with the measured flip leaves the geometry of `flip` written in
+    // exactly one place; for flip=false the call is bit-identical to the measuring one.
     // ★★ A face has no caller to name a frame, so its placement is `Canonical` (S4) — derived
     // when the chain is flattened, stored nowhere. That is also what opens this branch for a
     // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`
@@ -2169,20 +2180,23 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let sketch = (world.exact().is_none())
         .then(|| measured_frame(model, surface_h, nacre_topo::FramePlacement::Canonical, n))
         .flatten()
-        .map(|(sf, (o, u, v, _))| {
-            // ★ `flip = true` negates `ŵ` and `û` together and leaves `v̂` — a half-turn about
-            // `v` — so the second reading is a sign change rather than a second realization.
-            let sgn = if sf.flip { -1.0 } else { 1.0 };
-            (
+        .and_then(|sf| {
+            let (o, u, v, _) = crate::rotated_vertex::frame_world_basis(
+                model,
+                surface_h,
+                &nacre_topo::FramePlacement::Canonical,
+                sf.flip,
+            )?;
+            Some((
                 sf,
                 Point3::from_array(o),
-                Vector3::from_array(u.map(|c| c * sgn)),
+                Vector3::from_array(u),
                 // ★★ **`v̂` as realized, not as `ŵ × û` recomputed here.** It has its own exact
                 // rational form (`plane_frame`), so realizing it costs one rounding where a cross
                 // product costs two that do not cancel — measured, a wall whose `v` is exactly
                 // `ẑ` came back three ulps short of `1.0` through the cross product.
                 Vector3::from_array(v),
-            )
+            ))
         });
     let (x, y, origin, sketch_frame) = match sketch {
         Some((sf, o, u, v)) => (u, v, o, Some(sf)),

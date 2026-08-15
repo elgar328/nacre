@@ -207,32 +207,21 @@ fn a_loop_with_points_that_do_not_turn_still_states_its_own_outward_direction() 
         }
     }
 
-    // ★ The population must not empty out: a sweep where nothing builds proves nothing. 36 is what
-    // this recipe reaches today (every Z cell); the floor is the measurement, not a wish.
+    // ★★ Measured with the `outer_tri` fix removed: 32 cells built and **14 of them came back
+    // with a volume a pad cannot produce** — `Z/5deg/inset0.5` went 5.0 → 3.21, a boss that ate
+    // 1.79 of material, with `validate` clean. That is what this file is for, and it is why the
+    // volume bound above is not decoration: the face-normal check cannot see it (its own normal
+    // is the Newell sum, which was never the broken part), so the bound is the instrument that
+    // moved.
     //
-    // ★★ Measured with the fix removed: 32 cells built and **14 of them came back with a volume a
-    // pad cannot produce** — `Z/5deg/inset0.5` went 5.0 → 3.21, a boss that ate 1.79 of material,
-    // with `validate` clean. That is what this file is for, and it is why the volume bound below
-    // is not decoration: the face-normal check above cannot see it (its own normal is the Newell
-    // sum, which was never the broken part), so the bound is the instrument that moved.
-    assert!(
-        built >= 36,
-        "only {built} cells built — the sweep stopped measuring. Declines: {declined:?}"
-    );
-
-    // ★★ **The declines are pinned by *reason*, not by count.** Every one of them today is
-    // `PadMissesFace` on an X- or Y-turned block, and that is **a separate defect, not this
-    // fixture being sloppy**: the footprint is centred on the face's own centroid through the
-    // repo's own placement idiom (`face_plane` + centroid, as `tests/census.rs`'s `wf` family
-    // uses), so it cannot miss geometrically — measured, a pad on 2 of 6 faces of a 30°-turned
-    // block misses while all 6 succeed at 0°. Recorded in `docs/dev-log.md`; a *new* kind of
-    // decline appearing here is news and fails.
-    let kinds: std::collections::BTreeSet<String> =
-        declined.iter().map(|(_, e)| format!("{e:?}")).collect();
-    let expected: std::collections::BTreeSet<String> =
-        ["PadMissesFace".to_string()].into_iter().collect();
+    // ★ **All 108 cells build.** They did not always: the X- and Y-turned cells (72 of them) used
+    // to decline `PadMissesFace`, because `face_plane` reported a frame point-symmetric to the
+    // one the pad realized in — the flip half-turn was written about `v̂` in the report and about
+    // `û` in the realization — so a footprint centred on the face through `face_plane`'s own
+    // coordinates was built on the opposite side, outside the face. The report reads the
+    // realization itself now, and a decline reappearing here is news, not noise.
     assert_eq!(
-        kinds, expected,
-        "a new decline kind appeared in this sweep: {declined:?}"
+        built, 108,
+        "cells stopped building — a decline reappeared in this sweep: {declined:?}"
     );
 }
