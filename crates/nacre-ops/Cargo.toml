@@ -34,6 +34,13 @@ rayon = { workspace = true, optional = true }
 # on through nacre-oracle's and nacre-props's dev-dependencies).
 default = ["parallel"]
 parallel = ["dep:rayon", "nacre-cip/parallel"]
+# Print every reject as it is raised and as it surfaces (`src/reject_census.rs`). Off by default,
+# so a product build compiles no printing at all — this is the one exception to the crate's
+# `deny(clippy::print_stderr)`. It exists because the in-memory census dies with its process and
+# the population worth sweeping is spread over ~30 test binaries:
+#   cargo test --workspace --features nacre-ops/reject-trace -- --nocapture 2>&1 | grep '^RAISE '
+# The census itself is unconditional; only the printing is behind this.
+reject-trace = []
 
 [dev-dependencies]
 # Enables the topo test-only primitive `Model::add_cuboid` for building test solids

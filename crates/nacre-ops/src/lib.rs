@@ -20,6 +20,8 @@ mod exact;
 mod ops;
 mod par;
 mod planes;
+/// Public because the measurements that read it live in other crates — see the module doc.
+pub mod reject_census;
 mod reuse;
 mod rotated_vertex;
 mod sketch;
@@ -869,8 +871,13 @@ impl std::fmt::Display for RejectReason {
 /// Every `Unsupported` in this crate is built here. The reason rides in the returned value, so
 /// a guard that is raised and then swallowed by an alternative path (several sites try another
 /// route on `Err`) can never be mistaken for the one that actually surfaced.
+///
+/// Being the single funnel is also what makes [`reject_census`] possible: `#[track_caller]` here
+/// records *which* guard rang, at its own line, for all 88 call sites at once.
 #[inline]
+#[track_caller]
 pub(crate) fn reject(reason: RejectReason) -> BoolError {
+    reject_census::raised(reason, std::panic::Location::caller());
     BoolError::Unsupported { reason }
 }
 
