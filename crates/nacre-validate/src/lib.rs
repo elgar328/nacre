@@ -2,8 +2,9 @@
 //!
 //! [`validate`] runs every M1 check over a [`Model`] and returns all
 //! [`Violation`]s it finds (an empty `Vec` means the model is valid). Checks:
-//! reference integrity, loop closure, half-edge manifold pairing, geometric
-//! incidence (vertices on their curves/surfaces), and Euler-Poincaré. The
+//! reference integrity, loop closure, half-edge manifold pairing, face
+//! orientation against loop winding, geometric incidence (vertices on their
+//! curves/surfaces), and Euler-Poincaré. The
 //! tessellation checks (§5, §7 — provenance coherence, crack-free) arrive in M3
 //! when a `Tessellation` exists.
 
@@ -173,6 +174,20 @@ pub enum Violation {
         cavity: Handle<Shell>,
         signed_volume: f64,
     },
+
+    /// A planar face's outer-loop winding disagrees with its stated orientation:
+    /// the loop's Newell area vector and the outward normal the face states
+    /// (`plane.normal()` × `orientation`, the same normal [`shell_signed_volume`]
+    /// integrates) are not aligned. `cos` is their unit dot — a healthy face has
+    /// `cos ≈ +1`; `≈ −1` is a flipped orientation flag, `≈ 0` a loop that does
+    /// not span its own plane. Both are one defect ("the face lies about which
+    /// way it faces"), so one variant carries the measurement.
+    ///
+    /// This is the release-side net for the invariant `collect_planes` guards
+    /// with `debug_assert`s at every boolean: a wrong flag or winding survives
+    /// every other check here (edge opposition and Euler are blind to it) and
+    /// walks straight into "which side is material".
+    FaceMisoriented { face: Handle<Face>, cos: f64 },
 }
 
 /// Check every M1 invariant of `model`, returning all violations (empty = valid).
@@ -200,6 +215,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     check_loop_closure(model, &reach, &mut out);
     check_manifold(model, &adj, &reach, &mut out);
     check_cavity_orientation(model, &mut out);
+    check_face_orientation(model, &reach, &mut out);
     check_geometric_incidence(model, &reach, &mut out);
     check_euler_poincare(model, &reach, &mut out);
     out
@@ -516,6 +532,56 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     Some(flux / 3.0)
 }
 
+/// Each live planar face's outer-loop winding must agree with the outward
+/// normal the face states. The loop is the one independent witness of "which
+/// way is out" (b-rep loops wind CCW about the outward normal), so its Newell
+/// sum — which no single collinear corner can fool — is compared against
+/// `plane.normal()` × `orientation`. Skipped where there is no polygon to wind:
+/// non-planar faces, loops of fewer than three points (a cylinder cap's rim
+/// loop is one closed edge), and a Newell sum of exactly zero.
+fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
+    for (fh, face) in m.faces.iter() {
+        if !reach.faces.contains(&fh) {
+            continue;
+        }
+        let Surface::Plane(plane) = m.surface(face.surface) else {
+            continue;
+        };
+        let pts = loop_points(m, &face.outer);
+        let n = pts.len();
+        if n < 3 {
+            continue;
+        }
+        // An unclosed loop has no winding to speak of — `OpenLoop` already names
+        // that face's defect, and a measurement of the broken chain would only
+        // add noise beside it (the more-specific-defect-first rule).
+        let ends = |he: &nacre_topo::HalfEdge| {
+            let [a, b] = m.edges.get(he.edge).vertices;
+            if he.forward { (a, b) } else { (b, a) }
+        };
+        let hes = &face.outer.half_edges;
+        if (0..n).any(|i| ends(&hes[i]).1 != ends(&hes[(i + 1) % n]).0) {
+            continue;
+        }
+        let newell = (0..n).fold(Vector3::zero(), |acc, i| {
+            acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
+        });
+        let Some(dir) = newell.normalize() else {
+            continue;
+        };
+        let sign = match face.orientation {
+            Orientation::Forward => 1.0,
+            Orientation::Reversed => -1.0,
+        };
+        let cos = dir.dot(plane.normal() * sign);
+        // Two aligned unit vectors sit at ±1; 0.5 is the same "a full unit from
+        // the sign boundary" margin the boolean's own asserts use.
+        if cos <= 0.5 {
+            out.push(Violation::FaceMisoriented { face: fh, cos });
+        }
+    }
+}
+
 /// The start vertex of a loop's first half-edge (`None` for an empty loop).
 fn loop_start(m: &Model, lp: &Loop) -> Option<Handle<Vertex>> {
     let he = lp.half_edges.first()?;
@@ -523,18 +589,22 @@ fn loop_start(m: &Model, lp: &Loop) -> Option<Handle<Vertex>> {
     Some(if he.forward { a } else { b })
 }
 
-/// `(unsigned area, area-weighted centroid)` of a planar polygon loop, via a
-/// signed triangle fan from the first vertex (exact for concave loops). `None`
-/// if the loop has an unbounded edge or fewer than three vertices.
-fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
-    let pts: Vec<Point3> = lp
-        .half_edges
+/// A loop's traversal-order start points, one per half-edge.
+fn loop_points(m: &Model, lp: &Loop) -> Vec<Point3> {
+    lp.half_edges
         .iter()
         .map(|he| {
             let [a, b] = m.edges.get(he.edge).vertices;
             m.vertex_point(if he.forward { a } else { b })
         })
-        .collect();
+        .collect()
+}
+
+/// `(unsigned area, area-weighted centroid)` of a planar polygon loop, via a
+/// signed triangle fan from the first vertex (exact for concave loops). `None`
+/// if the loop has an unbounded edge or fewer than three vertices.
+fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
+    let pts = loop_points(m, lp);
     if pts.len() < 3 {
         return None;
     }
@@ -1220,6 +1290,45 @@ mod tests {
                 "a contradictory def must be flagged: {vs:?}"
             );
         }
+    }
+
+    /// ★ The positive control for `FaceMisoriented`. The stores are sealed against
+    /// mutation, so the defect is *built*: a twin of one cuboid wall pushed with its
+    /// orientation flag flipped, seated in a hand-made shell that supersedes the
+    /// original solid. Every other cell is shared and the twin traverses the same
+    /// half-edges, so edge opposition, Euler and incidence all still hold — this
+    /// check is the only one that can see the lie.
+    #[test]
+    fn a_flipped_orientation_flag_is_caught() {
+        let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let solid = m.live_solids[0];
+        let shell = m.solids.get(solid).outer;
+        let faces = m.shells.get(shell).faces.clone();
+        let victim = faces[0];
+        let twin = {
+            let f = m.faces.get(victim).clone();
+            m.faces.push(Face {
+                orientation: f.orientation.flipped(),
+                ..f
+            })
+        };
+        let sh = m.shells.push(Shell {
+            faces: faces
+                .iter()
+                .map(|&h| if h == victim { twin } else { h })
+                .collect(),
+        });
+        let replaced = m.push_solid(Solid {
+            outer: sh,
+            cavities: vec![],
+        });
+        m.live_solids.retain(|&s| s == replaced);
+        let vs = validate(&m);
+        assert_eq!(vs.len(), 1, "only the flag lie should fire: {vs:?}");
+        assert!(
+            matches!(vs[0], Violation::FaceMisoriented { face, cos } if face == twin && cos < -0.5),
+            "{vs:?}"
+        );
     }
 
     /// ★ S8: the check `VertexOffCurve` still has teeth where the curve does NOT derive from
