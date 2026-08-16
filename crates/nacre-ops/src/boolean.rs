@@ -86,7 +86,7 @@ pub fn boolean_with_report(
 /// what comes back here is something a caller ever sees. `InputNotLive` is not a
 /// [`RejectReason`] — it is a caller mistake, not a guard — so it stays out of the census.
 fn surfacing(e: BoolError) -> BoolError {
-    if let BoolError::Unsupported { reason } = e {
+    if let BoolError::Rejected { reason } = e {
         crate::reject_census::surfaced(reason);
     }
     e

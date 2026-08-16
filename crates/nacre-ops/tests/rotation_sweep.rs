@@ -285,7 +285,7 @@ fn the_other_rejections_are_untouched() {
         }
         assert_eq!(
             got,
-            Some(BoolError::Unsupported { reason: expected }),
+            Some(BoolError::Rejected { reason: expected }),
             "the {step}° sweep's rejection changed"
         );
     }

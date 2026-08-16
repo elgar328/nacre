@@ -820,7 +820,7 @@ mod tests {
     /// ★ **A shape-matched control is not available.** Raising *both* columns as `1.1 + 6.6` would
     /// hold the shape fixed and change only the coincidence question, but it cannot be built: the
     /// two columns' shoulders are then one plane and the second column's upper pad is refused with
-    /// `Unsupported { SeamAlias }` — the same family of defect, one level down. `Single` differs by
+    /// `Rejected { SeamAlias }` — the same family of defect, one level down. `Single` differs by
     /// one shoulder at height `3.1`, which is nowhere near the caps at `9.7`, so the third control
     /// (the plate over one cap only) carries the isolation instead.
     #[derive(Clone, Copy, Debug, PartialEq)]

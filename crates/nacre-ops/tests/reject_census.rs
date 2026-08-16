@@ -341,7 +341,7 @@ fn the_reject_census() {
         match f.expect {
             Some(reason) => assert_eq!(
                 got.err(),
-                Some(BoolError::Unsupported { reason }),
+                Some(BoolError::Rejected { reason }),
                 "{}: the fixture stopped producing the reject it exists for",
                 f.name
             ),

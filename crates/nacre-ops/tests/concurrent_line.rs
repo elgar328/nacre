@@ -133,7 +133,7 @@ fn a_genuine_self_touch_on_a_shared_line_is_still_refused() {
     let (mut m, a, b) = stair_and_prism(1.0, 0.5, 0.9);
     assert_eq!(
         boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err(),
-        nacre_ops::BoolError::Unsupported {
+        nacre_ops::BoolError::Rejected {
             reason: RejectReason::SelfTouchingResult
         },
         "the surface meets itself along the apex line"

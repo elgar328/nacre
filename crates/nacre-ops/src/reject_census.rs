@@ -1,6 +1,6 @@
 //! **Which guard rang, where — and which of those the caller actually saw.**
 //!
-//! Every [`crate::BoolError::Unsupported`] in this crate is built by [`crate::reject`], so one
+//! Every [`crate::BoolError::Rejected`] in this crate is built by [`crate::reject`], so one
 //! `#[track_caller]` there records the whole population: the reason, the source line of the guard
 //! that raised it, and separately the reasons that actually left a public entry point.
 //!

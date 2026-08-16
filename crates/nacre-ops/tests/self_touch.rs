@@ -75,7 +75,7 @@ fn expect_self_touch(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>, what: &s
     let err = boolean(m, BoolKind::Cut, a, b).expect_err(what);
     assert_eq!(
         err,
-        BoolError::Unsupported {
+        BoolError::Rejected {
             reason: RejectReason::SelfTouchingResult
         },
         "{what}"
@@ -126,7 +126,7 @@ fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
     let live = m.live_solids.clone();
     assert_eq!(
         boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
-        BoolError::Unsupported {
+        BoolError::Rejected {
             reason: RejectReason::SelfTouchingResult
         },
         "the through cut leaves the wall touching the pocket along a chord"
@@ -324,7 +324,7 @@ fn a_contact_on_a_holes_wall_is_seen() {
     let b = prism(&mut m, &[[1.0, 1.5], [0.2, 1.1], [0.2, 1.9]], 1.0);
     assert_eq!(
         boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
-        BoolError::Unsupported {
+        BoolError::Rejected {
             reason: RejectReason::SelfTouchingResult
         },
         "the cut's tip touches the hole's wall"

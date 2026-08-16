@@ -2453,7 +2453,7 @@ pub(crate) fn frame_audit(
                 Ok(())
             };
             run().err().and_then(|e| match e {
-                BoolError::Unsupported { reason } => Some(reason),
+                BoolError::Rejected { reason } => Some(reason),
                 // No live-set check runs inside the pipeline, so this arm is unreachable.
                 BoolError::InputNotLive => None,
             })
@@ -4341,7 +4341,7 @@ mod tests {
         let err = boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err();
         assert_eq!(
             err,
-            BoolError::Unsupported {
+            BoolError::Rejected {
                 reason: RejectReason::NonManifoldResultEdge
             },
             "the fixture's premise: a reject from outside the class pipeline"

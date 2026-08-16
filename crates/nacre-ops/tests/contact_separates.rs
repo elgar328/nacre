@@ -138,7 +138,7 @@ fn a_body_pinched_along_a_line_is_still_a_reject() {
     m.rebuild_adjacency();
     assert_eq!(
         boolean(&mut m, BoolKind::Fuse, ab[0], b),
-        Err(BoolError::Unsupported {
+        Err(BoolError::Rejected {
             reason: RejectReason::NonManifoldResultEdge
         })
     );
@@ -159,7 +159,7 @@ fn a_body_pinched_at_a_point_is_still_a_reject() {
     m.rebuild_adjacency();
     assert_eq!(
         boolean(&mut m, BoolKind::Fuse, t2[0], b),
-        Err(BoolError::Unsupported {
+        Err(BoolError::Rejected {
             reason: RejectReason::NonManifoldVertex
         })
     );
@@ -235,7 +235,7 @@ fn two_cavities_meeting_along_a_line_are_still_a_reject() {
     );
     assert_eq!(
         boolean(&mut m, BoolKind::Cut, hollow[0], v2),
-        Err(BoolError::Unsupported {
+        Err(BoolError::Rejected {
             reason: RejectReason::NonManifoldResultEdge
         }),
         "two voids pinching the material between them is not a solid"
@@ -253,7 +253,7 @@ fn a_cavity_touching_its_host_s_wall_is_still_a_reject() {
     let void = prism(&mut m, &[[0.0, 2.0], [2.0, 1.0], [2.0, 3.0]], 1.0, 1.0);
     assert_eq!(
         boolean(&mut m, BoolKind::Cut, b, void),
-        Err(BoolError::Unsupported {
+        Err(BoolError::Rejected {
             reason: RejectReason::SelfTouchingResult
         })
     );
@@ -278,7 +278,7 @@ fn a_void_whose_every_corner_grazes_declines_by_name() {
     );
     assert_eq!(
         boolean(&mut m, BoolKind::Cut, b, diamond),
-        Err(BoolError::Unsupported {
+        Err(BoolError::Rejected {
             reason: RejectReason::NoClearRay
         })
     );

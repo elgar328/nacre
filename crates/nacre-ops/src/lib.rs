@@ -323,7 +323,13 @@ pub enum BoolError {
     /// The reason travels in the value so a consumer can say why, and so the site that
     /// returned is the site that is reported (guards that are raised and then swallowed
     /// by an alternative path cannot be mistaken for the surfaced one).
-    Unsupported { reason: RejectReason },
+    ///
+    /// ★ Renamed from `Unsupported` (2026-08-16): that name asserted every reject is a
+    /// coverage limit, which is false for two of the three [`RejectClass`]es —
+    /// `Impossible` (no milestone will build this input) and `SuspectedDefect` (ours, not
+    /// the caller's). The variant states what happened; *what kind* of answer it is stays
+    /// where it always was, in [`RejectReason::class`].
+    Rejected { reason: RejectReason },
     /// An input solid handle is not in `model.live_solids`.
     InputNotLive,
 }
@@ -354,7 +360,7 @@ pub enum RejectClass {
     SuspectedDefect,
 }
 
-/// Which guard raised an [`BoolError::Unsupported`].
+/// Which guard raised an [`BoolError::Rejected`].
 ///
 /// Named so a guard and the test that asserts it share one identifier — a renamed reason then
 /// cannot silently drift out of a test's expectation. `#[non_exhaustive]`: reasons are added
@@ -866,9 +872,9 @@ impl std::fmt::Display for RejectReason {
     }
 }
 
-/// Build an `Unsupported` carrying *which* guard raised it.
+/// Build an `Rejected` carrying *which* guard raised it.
 ///
-/// Every `Unsupported` in this crate is built here. The reason rides in the returned value, so
+/// Every `Rejected` in this crate is built here. The reason rides in the returned value, so
 /// a guard that is raised and then swallowed by an alternative path (several sites try another
 /// route on `Err`) can never be mistaken for the one that actually surfaced.
 ///
@@ -878,7 +884,7 @@ impl std::fmt::Display for RejectReason {
 #[track_caller]
 pub(crate) fn reject(reason: RejectReason) -> BoolError {
     reject_census::raised(reason, std::panic::Location::caller());
-    BoolError::Unsupported { reason }
+    BoolError::Rejected { reason }
 }
 
 /// Assert that `f` rejects *through the intended guard* — a reject test whose fixture drifts
@@ -888,7 +894,7 @@ fn assert_rejects<T: std::fmt::Debug + PartialEq>(
     f: impl FnOnce() -> Result<T, BoolError>,
     expect: RejectReason,
 ) {
-    assert_eq!(f(), Err(BoolError::Unsupported { reason: expect }));
+    assert_eq!(f(), Err(BoolError::Rejected { reason: expect }));
 }
 
 /// The start vertex of a half-edge (`vertices[0]` if forward, else `vertices[1]`).

@@ -98,7 +98,7 @@ fn theta_sweep_census() {
         let th = t as f64;
         if let Err(e) = fuse_fins(&[th, th + 180.0, th + 198.0]) {
             let name = match e {
-                BoolError::Unsupported { reason } => reason.as_str().to_string(),
+                BoolError::Rejected { reason } => reason.as_str().to_string(),
                 other => format!("{other:?}"),
             };
             census.entry(name).or_default().push(t);

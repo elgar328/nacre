@@ -355,7 +355,7 @@ fn a_rotation_history_past_the_budget_is_rejected_by_name() {
         a = xf(&mut m, a, rot_iso(Axis::Z, 37));
     }
     match boolean(&mut m, BoolKind::Cut, a, b) {
-        Err(BoolError::Unsupported {
+        Err(BoolError::Rejected {
             reason: nacre_ops::RejectReason::PrecisionBudget { needed, cap },
         }) => {
             assert!(needed > cap, "needed {needed} bits, cap {cap}");

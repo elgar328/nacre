@@ -574,7 +574,7 @@ pub trait BooleanEngine {
 }
 
 pub struct PolyhedralBoolean; // M5: 평면 솔리드 전용 — exact 술어로 진짜 강건.
-                              //   커버리지 밖 입력은 BoolError::Unsupported로 정직하게 거절
+                              //   커버리지 밖 입력은 BoolError::Rejected로 정직하게 거절
 pub struct QuadricBoolean;    // M6: 평면+이차곡면 (닫힌 형식 교차)
 pub struct HybridBoolean;     // M7: 일반 곡면 — 출처태그 메시 → 조합 결정 → 스냅백.
                               //   주의: 조합 결정이 메시 해상도에 의존할 수 있으므로,
@@ -584,12 +584,12 @@ pub struct HybridBoolean;     // M7: 일반 곡면 — 출처태그 메시 → �
 
 OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 채점자(§7)뿐이다. 사다리의 각 단은 자기 커버리지 안에서 완전해야 하며, 밖은 조용히 틀리는 대신 에러로 거절한다.
 
-**거절의 *이유*는 값에 실려 나간다 (2026-07-26 구현).** `BoolError::Unsupported { reason: RejectReason }` — 이름 붙인 거절이 크레이트 밖에서 하나의 불투명한 에러로 붕괴하던 것을 값으로 옮겼다(그전엔 태그가 `#[cfg(test)]` thread-local에만 기록됐고, 여러 지점이 거절을 울린 뒤 삼키므로 애초에 건전하지도 않았다). **소비자는 `RejectReason::class()`로 분기한다** — `NotSupportedYet`(다음 마일스톤이면 됨) / `Impossible`(어떤 마일스톤에서도 유효 솔리드가 없음) / `SuspectedDefect`(엔진 불변식이 깨짐, 리포트 대상). 변형 이름은 엔진 어휘라 로그·리포트용 안정 식별자로만 쓴다. 사람이 읽는 문장·현지화는 앱 몫이다.
+**거절의 *이유*는 값에 실려 나간다 (2026-07-26 구현; 변종명 `Unsupported`→`Rejected` 개명 2026-08-16 — 세 등급 중 `Impossible`·`SuspectedDefect` 둘에 대해 «미지원»이라는 이름이 거짓이었다).** `BoolError::Rejected { reason: RejectReason }` — 이름 붙인 거절이 크레이트 밖에서 하나의 불투명한 에러로 붕괴하던 것을 값으로 옮겼다(그전엔 태그가 `#[cfg(test)]` thread-local에만 기록됐고, 여러 지점이 거절을 울린 뒤 삼키므로 애초에 건전하지도 않았다). **소비자는 `RejectReason::class()`로 분기한다** — `NotSupportedYet`(다음 마일스톤이면 됨) / `Impossible`(어떤 마일스톤에서도 유효 솔리드가 없음) / `SuspectedDefect`(엔진 불변식이 깨짐, 리포트 대상). 변형 이름은 엔진 어휘라 로그·리포트용 안정 식별자로만 쓴다. 사람이 읽는 문장·현지화는 앱 몫이다.
 
 성장은 `RejectReason`에서만 일어나므로 그것만 `#[non_exhaustive]`이고 `BoolError`·`RejectClass`는 exhaustive다(소비자가 완전히 처리할 수 있게). 트레이스가 불완전한 경우는 `TraceDeclined { kind, face }`가 **무엇을 못 했는지와 어느 피연산자 면에서인지**를 함께 싣는다 — 예전엔 서로 다른 10가지 사유가 전부 `COPLANAR_PAIR` 하나로 나가 커널이 틀린 말을 했다.
 
 **어떤 사유가 실제로 발화하는지는 상설 census가 답한다 — `nacre-ops::reject_census` (2026-08-15).**
-`reject()`가 크레이트의 모든 `Unsupported`를 짓는 유일한 자리라, 거기 `#[track_caller]` 하나가 88개
+`reject()`가 크레이트의 모든 `Rejected`를 짓는 유일한 자리라, 거기 `#[track_caller]` 하나가 88개
 호출 지점을 한꺼번에 계측한다. 무조건부(선례: `nacre-topo::WIDE_PLANES`, `nacre-cip::climb_census`
 — `#[cfg(test)]`는 통합 테스트가 비-test 빌드를 링크해서 못 쓴다), 비용은 raise 1회당 **~11ns**(실측).
 
@@ -808,7 +808,7 @@ STEP 라운드트립(자기 출력 되읽기): nacre가 쓴 STEP을 step-io **�
 
 **indirect predicates 자체 구현(clean-room).** `nacre-predicates`(§1)에 implicit point 표현과 indirect 술어를 자체 구현하되, 확장 산술 바닥은 `geometry-predicates`(MIT/Apache) 재사용. **라이선스 엄수** — Attene 참조 구현(LGPL)은 "돌려서 답 비교는 자유, 열어서 코드 보는 건 MIT/Apache 소스만": (a) **작성 중 소스 열람 금지**(LGPL C++를 열어 함수 대응·로직 흐름을 따라가면 2차적 저작물), 참고처는 논문(Attene 2020, arXiv 2105.09772; Cherchi 2020 mesh arrangements·2022 interactive booleans; Lévy 2024; Shewchuk 1997)과 `geometry-predicates` 소스로 한정. (b) **완성 후 실행 대조는 허용·권장**(dev-only, `tools/` 격리, 우리 크레이트에 링크 금지 — OCCT 오라클과 동일 논리). indirect predicate는 틀려도 대부분 입력에선 맞는 답이 나와 버그가 숨기 쉬우므로 저자 구현을 정답지로 쓰는 게 강력한 검증(§7).
 
-**exact-arithmetic 바닥 확정(M5-prep, 코드로 실증).** `geometry-predicates`(elrnv, 0.3, MIT/Apache)가 finished `orient3d`뿐 아니라 **Shewchuk expansion primitive**(`two_product`·`two_sum`·`expansion_sum`·`scale_expansion_zeroelim` 등, `predicates` 모듈에 공개)를 노출함을 `nacre-predicates` 뼈대가 실제 호출로 확인 → 그 위에 indirect 술어를 쌓을 수 있고 expansion 산술 자체 구현이 불필요. (primitive는 `[lo, hi]` 순서. orient3d 부호 규약 = `det[a−d, b−d, c−d]`, 뼈대 golden으로 고정.) **M5 서브유닛 사다리:** ① `nacre-predicates`(뼈대→implicit point[3-plane]+indirect orient3d, direct 대조 property test) → ② `nacre-geom::intersect`(평면∩평면=닫힌형식 직선, 3-평면 꼭짓점) → ③ `PolyhedralBoolean`(fuse/cut/common, 세 엣지가 한 Vertex Handle 공유로 봉합 우회, `Origin::Discovered.definition` 필드 도입, 커버리지 밖 `Unsupported` 거절) + 오라클 부피·불리언대수 proptest.
+**exact-arithmetic 바닥 확정(M5-prep, 코드로 실증).** `geometry-predicates`(elrnv, 0.3, MIT/Apache)가 finished `orient3d`뿐 아니라 **Shewchuk expansion primitive**(`two_product`·`two_sum`·`expansion_sum`·`scale_expansion_zeroelim` 등, `predicates` 모듈에 공개)를 노출함을 `nacre-predicates` 뼈대가 실제 호출로 확인 → 그 위에 indirect 술어를 쌓을 수 있고 expansion 산술 자체 구현이 불필요. (primitive는 `[lo, hi]` 순서. orient3d 부호 규약 = `det[a−d, b−d, c−d]`, 뼈대 golden으로 고정.) **M5 서브유닛 사다리:** ① `nacre-predicates`(뼈대→implicit point[3-plane]+indirect orient3d, direct 대조 property test) → ② `nacre-geom::intersect`(평면∩평면=닫힌형식 직선, 3-평면 꼭짓점) → ③ `PolyhedralBoolean`(fuse/cut/common, 세 엣지가 한 Vertex Handle 공유로 봉합 우회, `Origin::Discovered.definition` 필드 도입, 커버리지 밖 `Rejected` 거절) + 오라클 부피·불리언대수 proptest.
 
 알고리즘 참고: Manifold(Apache-2.0 — 차용·번역 가능), Hoffmann 등 문헌. 커버리지 밖 곡면 불리언은 명시적 미지원 에러로 정직하게 거절. `Discovered` 경로·국소 tolerance·relaxation 실전 투입. 이 시점에 "OCCT 없이 직동하는, 실용적 기계 부품(평면 위주)을 STEP으로 내보내는" 진짜 커널이 된다. 참고: Truck 대비 벤치마크·정밀도 비교(전역 1e-6 폴리라인 vs 정점별 실측 tol + 닫힌 형식)는 수치로 보여줄 수 있는 차별점 — 공개 지표 후보.
 
@@ -822,7 +822,7 @@ STEP 라운드트립(자기 출력 되읽기): nacre가 쓴 STEP을 step-io **�
 
 **오해 방지 셋.** (1) **Truck 방식이 아니다** — 표면적으로 메시를 쓰나 정반대다: Truck은 교차를 폴리라인 근사로 표현해 그 근사가 **최종 결과**(전역 1e-6), 우리는 메시를 **분류용 임시 도구로만** 쓰고 exact 술어로 분류 후 **정확 곡면으로 스냅백**. 차이는 "메시를 쓰느냐"가 아니라 "메시가 최종이냐(Truck) vs 임시냐(우리)". (2) **indirect predicates의 대체·확장이 아니다** — indirect predicates=M5 **점** 부호 판정(평면·국소·교차 계산 중), exact ray casting=M7 **patch** 내/외 분류(전역·분류 단계). 대상(점 vs 덩어리)도 마일스톤(M5 vs M7)도 다른 별개 부품. (3) **"어려운 케이스에만 켜는 정밀 모드"가 아니다** — relaxation 사다리·적응 술어는 케이스 단위로 "어려우면 더 정밀하게", ray casting은 M7에서 **상시 도는 분류 단계**. "선택적"의 단위는 케이스가 아니라 **마일스톤**(M5·M6엔 닫힌 형식이라 불필요, M7에서 켜짐).
 
-**한계 — ray casting은 분류를 풀지 SSI를 풀지 않는다.** M7 "내/외 분류" 절반을 검증된 방법으로 채워도, 진짜 도박인 **SSI(곡면 교차 곡선 계산)**는 미해결로 남는다. ray casting은 "조각을 어떻게 분류하나"만 정확히 할 뿐 "곡면 교차 곡선을 어떻게 정확히 뽑나"를 풀지 않는다. M7이 도박·연구 구간인 것은 그대로고, ray casting은 그 도박의 한 부품(분류)만 안정화한다. **덧붙임 — "스냅백"과 "SSI"는 다른 일이다.** SSI(교차 곡선을 처음부터 **찾는** 것)가 도박인 미해결 문제이고, 스냅백(이미 찾은 교차 근처에서 정확 곡면으로 **되당기는** 것)은 그다음의 별개 작업이다. 즉 M7의 위험은 "스냅백"이 아니라 "SSI로 교차를 정확히 찾을 수 있는가"에 있다. 스냅백은 SSI가 성공한 뒤라야 의미가 있으므로, SSI가 실패하면 스냅백까지 갈 것도 없이 그 연산은 `Unsupported`로 거절된다.
+**한계 — ray casting은 분류를 풀지 SSI를 풀지 않는다.** M7 "내/외 분류" 절반을 검증된 방법으로 채워도, 진짜 도박인 **SSI(곡면 교차 곡선 계산)**는 미해결로 남는다. ray casting은 "조각을 어떻게 분류하나"만 정확히 할 뿐 "곡면 교차 곡선을 어떻게 정확히 뽑나"를 풀지 않는다. M7이 도박·연구 구간인 것은 그대로고, ray casting은 그 도박의 한 부품(분류)만 안정화한다. **덧붙임 — "스냅백"과 "SSI"는 다른 일이다.** SSI(교차 곡선을 처음부터 **찾는** 것)가 도박인 미해결 문제이고, 스냅백(이미 찾은 교차 근처에서 정확 곡면으로 **되당기는** 것)은 그다음의 별개 작업이다. 즉 M7의 위험은 "스냅백"이 아니라 "SSI로 교차를 정확히 찾을 수 있는가"에 있다. 스냅백은 SSI가 성공한 뒤라야 의미가 있으므로, SSI가 실패하면 스냅백까지 갈 것도 없이 그 연산은 `Rejected`로 거절된다.
 
 **SSI는 검증된 해법이 없는 60년 미해결 문제.** 일반 곡면 교차는 1960년대부터 연구됐으나 CAD가 받아들일 만큼 강건·신뢰할 해가 여전히 없다 — **Parasolid·SISL·IRIT 등 최고 커널조차 특정 위상 케이스(작은 loop, 접선, cusp, 미세 자기교차)에서 실패**하고, 2025년 논문들도 watertightness 보장이 "여전히 challenging"이라 적는다. M7 "도박" 표기는 과장이 아니라 정확한 현실 인식이다. 아래는 **"채택할 검증된 기법"이 아니라 "M7 진입 시 읽을 프론티어 후보"**로만 걸어둔다(저자 벤치마크 주장일 뿐 독립 검증·프로덕션 채택 전 — 지금 상세 검토는 "정보 없이 미리 설계" 함정이라 M7 진입 시로 미룸): winding number + subdivision 시작점 검출(작은 loop·접선 branch 놓침 완화, 2026), Dixon matrix tracing(branch jumping/missing을 root-solving으로, Chen 2025), interval algebraic topology analysis(SSI 위상을 4D 대수계로 분류, Cheng 2023), lower-dimensional formulation gap control(Wang 2025).
 
@@ -850,7 +850,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 - **★ 게이트(순서 강제).** (a) 불리언 공면 처리를 하나로 흡수·완성(지금 셀 사다리 — Cut 3갈래 통합, Common이 Cut의 detect 재사용) → (b) Handle-공유 O(1) fast path 추가 → (c) 그제서야 pad/pocket을 extrude+불리언 wrapper로 바꾸고 M4 직접 경로 제거. **역순 금지**: 불리언 공면이 robust해지기 전에 M4를 걷어내면 지금 되던 포켓/보스가 커버리지 구멍에 빠진다(M4 직접 경로는 그때까지 신뢰 가능한 fallback).
   - **(c-1) pocket 완료 (실행됨).** `PocketOnFace`는 `build_prism`(inward, top-flush) + `boolean(Cut)`으로 재구현됐다 — contained-coplanar Cut 경로가 빈 seam을 내므로 결과는 전부 Constructed(tolerance 0), 옛 직접 `raise_region`과 등가. 선결로 `detect_pocket_contact`의 볼록성 게이트를 제거(비볼록 kept `a`·비볼록 프로파일 `b` 둘 다 열림, OCCT로 교차검증)했다. `raise_region`은 `pad`용으로 잔존. through-pocket(`dist ≥ 두께`)은 이제 정직히 거절(M4는 미검사 UB였음 — 개선). **게이트 (b) Handle-공유 fast path는 불필요로 폐기**: contained 경로가 이미 빈 seam·전부 Constructed라 참조-fast-path가 더할 exactness가 없다. 다음: pad(=extrude+Fuse), 그다음 M4 직접 경로 완전 제거.
   - **(c-2) pad 완료 (실행됨).** `PadOnFace`도 `build_prism`(outward, top-flush) + `boolean(Fuse)`로 재구현 — pocket과 대칭. 선결로 `detect_contained_contact`의 볼록성 게이트를 제거(비볼록 kept base·비볼록 프로파일 boss 둘 다 열림, OCCT 2종 교차검증). pad·pocket은 이제 부호(±dist)·`BoolKind`·복원-면-부재 에러만 다른 **공통 헬퍼 `extrude_and_boolean` 위의 얇은 wrapper**로 통일됐다("feature = tool body + boolean"의 코드화). `raise_region`은 유일 사용자였던 pad가 떠나며 **삭제**(그 죽은 `Split` 필드도 함께 정리). 남은 M4 직접 기계는 imprint(`imprint`/`prepare_face_split`)뿐 — 완전 제거는 imprint 정리 후 별도 스텝.
-  - **(c-3) 오버행 pad/pocket 획득 (실행됨 — 로드맵 payoff).** `placed_profile`을 `placed_profile_unchecked`(CCW+배치)와 strict-containment wrapper로 쪼개고, `extrude_and_boolean`이 unchecked를 쓰게 했다. 이로써 **면 경계를 넘는 프로파일이 기존 오버행 불리언 사이드카로 자동 라우팅**(Fuse: 단일 엣지·코너·spanning slab; Cut: N-wall blind)된다 — "프로파일이 면 안에 있어야 한다"는 제약이 사라졌다. contained 경로는 완전 불변(같은 base_pts). 커버리지 밖(비볼록 오버행·through·far·비축정렬)은 **정직 거절**(`Boolean(Unsupported)`) — silent-wrong 아님. 오버행은 contained(빈 seam)와 달리 footprint crossing에서 **Discovered seam 정점**을 만든다(기존 오버행 셀의 성질, 새 tolerance 아님). imprint는 containment **유지**(유효 inner-loop 필요). **알려진 비대칭**: contained pad/pocket은 비볼록을 받으나 오버행은 볼록 게이트로 볼록만 — 비볼록 오버행(오버행 detect 볼록 게이트 제거)이 다음 후보.
+  - **(c-3) 오버행 pad/pocket 획득 (실행됨 — 로드맵 payoff).** `placed_profile`을 `placed_profile_unchecked`(CCW+배치)와 strict-containment wrapper로 쪼개고, `extrude_and_boolean`이 unchecked를 쓰게 했다. 이로써 **면 경계를 넘는 프로파일이 기존 오버행 불리언 사이드카로 자동 라우팅**(Fuse: 단일 엣지·코너·spanning slab; Cut: N-wall blind)된다 — "프로파일이 면 안에 있어야 한다"는 제약이 사라졌다. contained 경로는 완전 불변(같은 base_pts). 커버리지 밖(비볼록 오버행·through·far·비축정렬)은 **정직 거절**(`Boolean(Rejected)`) — silent-wrong 아님. 오버행은 contained(빈 seam)와 달리 footprint crossing에서 **Discovered seam 정점**을 만든다(기존 오버행 셀의 성질, 새 tolerance 아님). imprint는 containment **유지**(유효 inner-loop 필요). **알려진 비대칭**: contained pad/pocket은 비볼록을 받으나 오버행은 볼록 게이트로 볼록만 — 비볼록 오버행(오버행 detect 볼록 게이트 제거)이 다음 후보.
   - **(c-4) 오버행 boss가 비볼록 솔리드 수용 (실행됨 — c-3 비대칭 절반 해소).** `detect_overhang_contact`(Fuse)의 whole-solid `is_convex` 게이트를 **접촉면 footprint 게이트**(두 접촉면 outer loop 볼록 + 홀 없음)로 교체. 근거: Fuse 재구성은 **로컬** — arc-split은 (볼록) 접촉면만, `resplit_overhang`은 wall을 edge-local(볼록 무관)로, 나머지 면은 verbatim 재방출. 그래서 **비볼록 솔리드(포켓 파인 부품·부울 결과)에 접촉면만 볼록이면 boss 캔틸레버**가 붙는다. n0로 OCCT-정확 확인(포켓 큐브 옆면 오버행 = 1.17). silent-wrong 원천인 비볼록 **접촉 footprint**(arc 오분류)는 게이트가 거절. **Cut/Common은 whole-solid 게이트 유지** — 그 `clip_bwall_inside_a`가 breached 반평면 SH 클립이라 볼록 kept에서만 "inside a"와 일치(비볼록은 `OVERHANG_ARCS` 정직 거절, n0 실증). 신규 `loop_is_convex_2d`·`face_outer_is_convex`. **후속**: ② 비볼록 footprint 오버행(multi-piece 재구성), 비볼록 솔리드 오버행 Cut(clip_bwall_inside_a 일반화).
 - **보존 불변식 — 의도는 유효, 메커니즘 서술은 arrangement가 대체함(커토버에서 갱신).** 원문은 *"(b)의 참조-fast-path가 순수성을 유지해야 한다 — 공유 면 seam은 Discovered로 승격하지 않고 Constructed로 남긴다"* 였으나, **(b)는 이미 폐기됐고**(위 (c-1)), 커토버 뒤의 arrangement는 결과 정점을 **평면 삼중항으로 다시 이름 붙이므로 회전 없는 부울 출력이 전부 `Discovered{ThreePlane}`** 다(`Node::Orig`는 생성되지 않음; 잠금 = `an_unrotated_boolean_names_every_vertex_by_its_plane_triple`). ⇒ **불변식의 의도(*"통합이 exactness를 후퇴시키면 안 된다"*)는 지켜진다** — 측정한 축정렬 사례에서 그 정점들의 `tol = 0`으로 `EPS_CONSTRUCTED`(1e-9)보다 오히려 엄격하고, 상자 모서리는 실제로 세 평면의 교점이라 정의도 참이다. **바뀐 것은 exactness가 아니라 표식이다:** `Origin`은 더 이상 *"어느 정점이 컷에서 왔나"* 를 구별해 주지 않으므로 **provenance로 면·정점을 고르는 코드는 성립하지 않는다**(이 사실을 모른 픽스처가 조용히 엉뚱한 면을 골랐다 — dev-log 참조).
 - **업계 정합.** 피처 레이어는 pad=tool body+boolean으로 통합돼 있고(SolidWorks/NX/Creo/Fusion), 커널 레이어는 그래도 coincidence 전담 로직을 보유한다 — 상용은 그것을 imprint+tolerance로 두지만, nacre는 **커널 불리언 안**에 두었다(surface Handle 공유 + exact 술어). nacre는 tolerance 대신 exact 술어로 그 자리를 채우는 소수파.
@@ -881,13 +881,13 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 
 **진행:** #1·#2·#3·#4·#5·#6 **전부 완료 → (5d) exactness sweep 종료.** n0 완결성 감사(nacre-ops 프로덕션 grep)가 clean: **tolerance 리터럴이 하나도 남지 않았고**(`vertex_tol`만, 그건 존재론적 제외 행), 나머지 f64 부호 비교는 전부 exact 술어 부호(`orient3d`/`plane_side`/`planes_coplanar`)·축정렬 구성-방향·축정렬 법선 dot 부호뿐 — tol/누적 기반 위상 판정 0. dev-log.md (5b-0)/(5c) 기록의 "전수조사 표" 참조는 모두 이 표를 가리킨다.
 
-**M6 부호 판정·내외 분류 방식 — 세 마일스톤 중 유일한 미정 (M6 직전 확정).** M5는 방법 확정(indirect predicates), M7은 방법 미정이어도 무방(SSI 실패 시 `Unsupported`로 정직하게 거절하는 게 설계에 내장). 반면 **M6만 "확실히 되는 실용 영역"이라 문서가 약속했는데 정작 어떤 방법으로 판정할지가 비어 있다** — M5의 indirect predicates는 선·평면(다항식)에 특화라 이차곡면에 그대로 안 맞고, M7의 exact ray casting은 메시 경유 하이브리드용이라 M6엔 과하다.
+**M6 부호 판정·내외 분류 방식 — 세 마일스톤 중 유일한 미정 (M6 직전 확정).** M5는 방법 확정(indirect predicates), M7은 방법 미정이어도 무방(SSI 실패 시 `Rejected`로 정직하게 거절하는 게 설계에 내장). 반면 **M6만 "확실히 되는 실용 영역"이라 문서가 약속했는데 정작 어떤 방법으로 판정할지가 비어 있다** — M5의 indirect predicates는 선·평면(다항식)에 특화라 이차곡면에 그대로 안 맞고, M7의 exact ray casting은 메시 경유 하이브리드용이라 M6엔 과하다.
 
 미정인 근본 이유: 이차곡면 교차는 난이도가 갈린다. **평면∩이차곡면**(평면∩실린더=타원, 평면∩구=원, 평면∩원뿔=원뿔곡선)은 **닫힌 형식**이라 쉬운 쪽이고, **이차곡면∩이차곡면**(실린더∩실린더 등, 일반적으로 4차 공간곡선)은 특수 케이스(직교 등)만 닫힌 형식이고 일반은 이미 SSI에 가깝다. 따라서 M6는 "하나의 알고리즘"이 아니라 **"어느 곡면쌍까지를 M6로 긋고, 그 판정을 무엇으로 할지"라는 범위+방법이 얽힌 선긋기**다.
 
 **현재 유력 방향 (확정은 M6 직전 재조사):**
 - **평면∩이차곡면 교차점 판정** → indirect predicates를 **부분 확장**하는 것이 유력. 교차 곡선이 닫힌 형식이고 이차곡면도 2차 다항식이라, implicit point를 "이 평면과 이 이차곡면의 교차"로 정의하면 indirect 술어의 다항식이 복잡해질 뿐 **여전히 다항식**이라 M5 indirect가 여기까지 늘어날 여지가 있다.
-- **일반 이차곡면쌍** → indirect가 버거워지는 지점. exact ray casting(M7 도구)을 앞당겨 쓰거나, 커버리지 밖으로 두고 `Unsupported`로 거절. 즉 어려운 이차곡면쌍은 사실상 M7 쪽으로 미룬다.
+- **일반 이차곡면쌍** → indirect가 버거워지는 지점. exact ray casting(M7 도구)을 앞당겨 쓰거나, 커버리지 밖으로 두고 `Rejected`로 거절. 즉 어려운 이차곡면쌍은 사실상 M7 쪽으로 미룬다.
 
 **M6 이차곡면 교차 — 참고 논문 + 라이선스 규율 (M6 직전 사용, 지금 구현 아님).** 이차곡면 교차 위상의 exact 분류 참고처를 미리 걸어둔다(위 두 불릿의 판정 근거).
 
@@ -902,7 +902,7 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 
 **지금 할 것: 없음**(M6 직전까지 인지만). M6 진입 시 이 논문들을 읽고 라이선스 오염 없이 clean-room으로 구현한다. 아래 "M6 직전 재조사" 시점에 이 메모를 꺼낸다.
 
-**위험도:** 미정이지만 위험하지 않다. M6도 M7과 같은 안전장치(`Unsupported` 거절)가 있어, "정한 방법으로 되는 데까지만 하고 나머지는 정직하게 거절"이 가능하다. 차이는 M7은 "도박이라 열어둠", M6는 "방향은 있고 확정만 M6 직전으로 미룸".
+**위험도:** 미정이지만 위험하지 않다. M6도 M7과 같은 안전장치(`Rejected` 거절)가 있어, "정한 방법으로 되는 데까지만 하고 나머지는 정직하게 거절"이 가능하다. 차이는 M7은 "도박이라 열어둠", M6는 "방향은 있고 확정만 M6 직전으로 미룸".
 
 **지금 정하지 않는 이유:** M5에서 indirect predicates를 실제 구현해보면 "이것이 이차곡면으로 얼마나 확장되는지"에 대한 감이 생기고, 그 감이 M6 방법 선택을 정확하게 만든다. 지금 확정하면 "M5 구현 경험 없이 미리 상세 설계"라는 함정. M1~M5 진행 중에는 인지만 해두고, M6 직전에 재조사해 확정한다.
 
@@ -1036,11 +1036,11 @@ narrow 대조군보다 싸다). 상세·잔여는 truth-and-cache.md 항목 15.
 2. 거리 **국소 최소**(줄었다 늚) 영역 = 교차 후보로 표적화. "나란히 가까이 붙은 넓은 영역"(거리 작지만 최소 아님)은 제외해 세분 폭발 방지. ← 단순 "간격<최대변" heuristic의 약점 보완.
 3. 후보 영역만 적응 세분, 재귀(간격 ≥ 새 최대 변까지). 세분 리미트 설정.
 4. 리미트 도달 → 뉴턴법으로 넘김: 해 수렴=교차 존재, 발산=미교차. 뉴턴 스냅백 점은 tol 있는 점이므로 **CIP에 통합**(수렴 잔차=tol, 애매하면 정밀도를 올려 재수렴).
-5. 리미트에서도 확신 불가(작은 loop는 "다 찾았다"의 수학적 보장이 근본적으로 불가) → **`Unsupported` 정직 거부.** 조용히 틀리기보다 거부(§8·M7 철학).
+5. 리미트에서도 확신 불가(작은 loop는 "다 찾았다"의 수학적 보장이 근본적으로 불가) → **`Rejected` 정직 거부.** 조용히 틀리기보다 거부(§8·M7 철학).
 
 **출발점 — M7 진입 시 이것부터 읽는다:** Li·Yang·Jia, "Advances and challenges in surface–surface intersection computation — An overview", Computer-Aided Design 193:104039, 2026. SSI 분야 전체 최신 개관이라 개별 논문 여러 개보다 이 리뷰가 최적 출발점. 그 시점의 최신을 반영해 위 세 계보(거리/법선/winding number)를 재비교 후 채택. (관련: Li·Jia·Chen, "Fast Determination and Computation of Self-intersections for NURBS Surfaces", ACM TOG 44(2), 2025 — ④ 자기교차 판정·거부용.)
 
-**CIP와의 관계 정리 (혼동 방지).** CIP(Certified Indirect Predicates)는 "다항식 판정 + 회전 tol 필터"라 **부호 판정** 층이다. M7에서 CIP가 닿는 곳은 (a) 메시 조합 판정(내/외 분류)의 필터, (b) 뉴턴 스냅백 점의 tol 추적·정밀도 상승 — 둘 다 **정밀화·판정**이다. M7의 도박인 **SSI(교차를 찾는 것)** 자체는 tol 문제가 아니라 위상 존재 문제이므로 CIP 밖이다. "찾은 것을 정밀하게"(CIP·스냅백)와 "못 찾은 것을 찾기"(SSI)는 다른 일. SSI 성공 후라야 스냅백·판정이 의미 있고, SSI 실패 시 `Unsupported`.
+**CIP와의 관계 정리 (혼동 방지).** CIP(Certified Indirect Predicates)는 "다항식 판정 + 회전 tol 필터"라 **부호 판정** 층이다. M7에서 CIP가 닿는 곳은 (a) 메시 조합 판정(내/외 분류)의 필터, (b) 뉴턴 스냅백 점의 tol 추적·정밀도 상승 — 둘 다 **정밀화·판정**이다. M7의 도박인 **SSI(교차를 찾는 것)** 자체는 tol 문제가 아니라 위상 존재 문제이므로 CIP 밖이다. "찾은 것을 정밀하게"(CIP·스냅백)와 "못 찾은 것을 찾기"(SSI)는 다른 일. SSI 성공 후라야 스냅백·판정이 의미 있고, SSI 실패 시 `Rejected`.
 
 **STEP 백엔드 교체 (비크리티컬).** 개발 중 백엔드인 step-io를 경량 AP242 출력 전용 크레이트로 교체 — 시점은 M4 이후 임의이며 크리티컬 패스가 아니다. 커널의 STEP 출력은 좁은 슬라이스(AP242, 커널 형상 엔티티만)라 최종적으로 경량 라이터가 이상적이지만, 그걸 처음부터 만드는 건 난이도가 높아 크리티컬 패스에 두지 않는다("동작 먼저 → 최적화 나중", OCCT·불리언과 같은 전략). step-io의 AP242 Ed2 스키마 지식·코드젠 타입 정의는 재활용하되 리더 로직은 배제. 교체 검증은 step-io 리더를 오라클로: "step-io 출력 vs 경량 출력"을 되읽어 비교.
 

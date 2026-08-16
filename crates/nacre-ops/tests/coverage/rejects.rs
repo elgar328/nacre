@@ -18,7 +18,7 @@ use nacre_topo::{Model, Solid};
 fn user_message(err: BoolError) -> String {
     match err {
         BoolError::InputNotLive => "an operand is no longer part of the model".to_string(),
-        BoolError::Unsupported { reason } => {
+        BoolError::Rejected { reason } => {
             let what = match reason.class() {
                 RejectClass::NotSupportedYet => "not supported yet",
                 RejectClass::Impossible => "cannot produce a valid solid",
@@ -56,8 +56,8 @@ fn a_pinched_fuse_tells_the_caller_why() {
 
     let err = boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap_err();
 
-    let BoolError::Unsupported { reason } = err else {
-        panic!("expected an Unsupported rejection, got {err:?}");
+    let BoolError::Rejected { reason } = err else {
+        panic!("expected a named rejection, got {err:?}");
     };
     assert_eq!(reason, RejectReason::NonManifoldVertex);
     // Not a coverage limit and not a defect: no milestone will make this input buildable.
@@ -95,7 +95,7 @@ fn a_pinched_fuse_is_impossible_not_unsupported() {
 
     assert_eq!(
         err,
-        BoolError::Unsupported {
+        BoolError::Rejected {
             reason: RejectReason::NonManifoldResultEdge
         }
     );

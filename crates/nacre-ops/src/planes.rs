@@ -76,7 +76,7 @@ pub(crate) struct FaceInfo {
     pub(crate) rotated: bool,
 }
 
-/// The supporting planes of a solid's outer shell. `Unsupported` if any face is
+/// The supporting planes of a solid's outer shell. `Rejected` if any face is
 /// non-planar or lacks three non-collinear loop points.
 pub(crate) fn collect_planes(
     model: &Model,
