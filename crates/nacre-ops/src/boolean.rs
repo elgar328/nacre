@@ -72,9 +72,12 @@ pub fn boolean_with_report(
     // Topological self-check on the assembled result (DNA: never return a malformed solid). Reject
     // rather than return. Valid results always pass, so this never false-rejects; the traversal
     // reads the topology stores directly (no adjacency rebuild, no coordinates).
-    if let Some(t) = check_result_topology(model, &result) {
+    if let Some((t, at)) = check_result_topology(model, &result) {
         model.live_solids = snapshot;
-        return Err(surfacing(reject(t)));
+        return Err(surfacing(match at {
+            Some(w) => crate::reject_at(t, w),
+            None => reject(t),
+        }));
     }
     Ok((result, BoolReport::of(&notes)))
 }
@@ -86,7 +89,7 @@ pub fn boolean_with_report(
 /// what comes back here is something a caller ever sees. `InputNotLive` is not a
 /// [`RejectReason`] — it is a caller mistake, not a guard — so it stays out of the census.
 fn surfacing(e: BoolError) -> BoolError {
-    if let BoolError::Rejected { reason } = e {
+    if let BoolError::Rejected { reason, .. } = e {
         crate::reject_census::surfaced(reason);
     }
     e
@@ -119,9 +122,12 @@ pub(crate) fn boolean_with_classes(
             return Err(surfacing(e));
         }
     };
-    if let Some(t) = check_result_topology(model, &result) {
+    if let Some((t, at)) = check_result_topology(model, &result) {
         model.live_solids = snapshot;
-        return Err(surfacing(reject(t)));
+        return Err(surfacing(match at {
+            Some(w) => crate::reject_at(t, w),
+            None => reject(t),
+        }));
     }
     let _ = notes;
     Ok((result, class_of))
@@ -192,7 +198,10 @@ impl BoolReport {
 ///
 /// A boolean output is freshly built, so its cells never alias another live solid's — the scoped
 /// maps are exact.
-fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<RejectReason> {
+fn check_result_topology(
+    model: &Model,
+    solids: &[Handle<Solid>],
+) -> Option<(RejectReason, Option<crate::RejectWhere>)> {
     for &sh in solids {
         let solid = model.solids.get(sh);
         let mut shells: HashSet<Handle<Shell>> = HashSet::new();
@@ -223,8 +232,13 @@ fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<Reje
                 }
             }
         }
-        if !nacre_topo::nonmanifold_vertices(&vertex_edges, &edge_uses).is_empty() {
-            return Some(RejectReason::NonManifoldVertex);
+        // The returned list is sorted by handle index, so the first entry is a deterministic
+        // witness (one of possibly several pinch vertices).
+        if let Some(&vh) = nacre_topo::nonmanifold_vertices(&vertex_edges, &edge_uses).first() {
+            return Some((
+                RejectReason::NonManifoldVertex,
+                Some(crate::RejectWhere::Point(model.vertex_point(vh))),
+            ));
         }
         let (v, e, f) = (
             vertex_edges.len() as i64,
@@ -233,10 +247,10 @@ fn check_result_topology(model: &Model, solids: &[Handle<Solid>]) -> Option<Reje
         );
         let chi = v - e + f - inner_loops;
         if chi % 2 != 0 {
-            return Some(RejectReason::EulerParity);
+            return Some((RejectReason::EulerParity, None));
         }
         if shells.len() as i64 - chi / 2 < 0 {
-            return Some(RejectReason::NegativeGenus);
+            return Some((RejectReason::NegativeGenus, None));
         }
     }
     None
@@ -752,7 +766,12 @@ fn self_touch_reject(
                         continue; // an edge whose faces are both on `q` is not an edge
                     };
                     if combinatorics::segment_meets_face(jd, q, w2, u, v, &rings_of_face[&j])? {
-                        return Err(reject(RejectReason::SelfTouchingResult));
+                        // The offending edge itself, as the witness: both endpoints are in `pt`
+                        // (the `in_box` guard above already looked them up).
+                        return Err(crate::reject_at(
+                            RejectReason::SelfTouchingResult,
+                            crate::RejectWhere::Segment([pt[&u].0, pt[&v].0]),
+                        ));
                     }
                 }
             }
@@ -1095,8 +1114,19 @@ fn reconstruct(
         // A use count above two is a *pinch*: the two bodies meet exactly along that edge, and no
         // 2-manifold solid contains it (the edge twin of `NonManifoldVertex`). A count of one is a
         // *dangling* edge — the assembly dropped a face, which is ours to fix, not the input's.
-        if uses.values().any(|&n| n > 2) {
-            return Err(reject(RejectReason::NonManifoldResultEdge));
+        // The witness is the minimum offending edge handle, not the map's first hit: `HashMap`
+        // iteration order would make the reported location differ between runs.
+        if let Some(eh) = uses
+            .iter()
+            .filter(|&(_, &n)| n > 2)
+            .map(|(&e, _)| e)
+            .min_by_key(|e| e.index())
+        {
+            let [va, vb] = model.edges.get(eh).vertices;
+            return Err(crate::reject_at(
+                RejectReason::NonManifoldResultEdge,
+                crate::RejectWhere::Segment([model.vertex_point(va), model.vertex_point(vb)]),
+            ));
         }
         if uses.values().any(|&n| n != 2) {
             return Err(reject(RejectReason::OpenResultShell));
@@ -1360,13 +1390,31 @@ fn merge_component(
     // than one layer deep and unwinding it is not this guard's job. The honest statement from
     // *here* is the capability limit itself.
     let mut next: HashMap<Node, Node> = HashMap::new();
+    // The witness is the *minimum* pinch node, not the first collision: `dirs` is a `HashMap`,
+    // and "which node collided first" would vary run to run. A node collides iff it has two or
+    // more outgoing survivors, which is a fact about the contour, not the iteration.
+    let mut pinch: Option<Node> = None;
     for &(a, b) in dirs.keys() {
         if dirs.contains_key(&(b, a)) {
             continue; // interior
         }
         if next.insert(a, b).is_some() {
-            return Err(reject(RejectReason::CoplanarPinch));
+            pinch = Some(pinch.map_or(a, |p| p.min(a)));
         }
+    }
+    if let Some(Node::Seam(t)) = pinch {
+        // Realized from the node's own three planes — the seam table does not exist yet at this
+        // stage. `None` (a near-degenerate meet) simply drops the location, never the reject.
+        let at = nacre_geom::intersect::three_planes(
+            &jd.planes[t[0]].plane,
+            &jd.planes[t[1]].plane,
+            &jd.planes[t[2]].plane,
+        )
+        .map(crate::RejectWhere::Point);
+        return Err(match at {
+            Some(w) => crate::reject_at(RejectReason::CoplanarPinch, w),
+            None => reject(RejectReason::CoplanarPinch),
+        });
     }
     let mut starts: Vec<Node> = next.keys().copied().collect();
     starts.sort_unstable();

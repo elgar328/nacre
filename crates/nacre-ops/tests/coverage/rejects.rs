@@ -18,7 +18,7 @@ use nacre_topo::{Model, Solid};
 fn user_message(err: BoolError) -> String {
     match err {
         BoolError::InputNotLive => "an operand is no longer part of the model".to_string(),
-        BoolError::Rejected { reason } => {
+        BoolError::Rejected { reason, .. } => {
             // Facts only, never advice or prediction — the standing wording rule (a
             // diagnosis, not a prompt; no smuggled tense). These mirror what the kit ships.
             let what = match reason.class() {
@@ -58,7 +58,7 @@ fn a_pinched_fuse_tells_the_caller_why() {
 
     let err = boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap_err();
 
-    let BoolError::Rejected { reason } = err else {
+    let BoolError::Rejected { reason, .. } = err else {
         panic!("expected a named rejection, got {err:?}");
     };
     assert_eq!(reason, RejectReason::NonManifoldVertex);
@@ -95,11 +95,15 @@ fn a_pinched_fuse_is_impossible_not_unsupported() {
 
     let err = boolean(&mut m, BoolKind::Fuse, ab[0], b).unwrap_err();
 
-    assert_eq!(
-        err,
-        BoolError::Rejected {
-            reason: RejectReason::NonManifoldResultEdge
-        }
+    assert!(
+        matches!(
+            err,
+            BoolError::Rejected {
+                reason: RejectReason::NonManifoldResultEdge,
+                ..
+            }
+        ),
+        "got {err:?}"
     );
     assert_eq!(
         RejectReason::NonManifoldResultEdge.class(),

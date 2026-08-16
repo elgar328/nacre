@@ -283,10 +283,23 @@ fn the_other_rejections_are_untouched() {
                 }
             }
         }
-        assert_eq!(
-            got,
-            Some(BoolError::Rejected { reason: expected }),
-            "the {step}° sweep's rejection changed"
+        let got = got.map(|e| match e {
+            BoolError::Rejected { reason, at } => (reason, at),
+            other => panic!("expected a named rejection, got {other:?}"),
+        });
+        let (reason, at) = got.expect("the sweep was expected to reject");
+        assert_eq!(reason, expected, "the {step}° sweep's rejection changed");
+        // The pinch witness must lie on the merge group's own plane. Every fuse here rotates
+        // about Z, so coplanar groups live on the horizontal faces — the prism's z = 0 or
+        // z = 12 (the fixture's own height) — and a wrongly-realized point would land on
+        // neither. (Which of x/y it lands at would re-derive the fold; the plane is the part
+        // the algebra pins.)
+        let Some(nacre_ops::RejectWhere::Point(p)) = at else {
+            panic!("the {step}° pinch carries no witness point: {at:?}");
+        };
+        assert!(
+            p[2].abs() < 1e-9 || (p[2] - 12.0).abs() < 1e-9,
+            "the {step}° pinch witness is off both horizontal planes: {p:?}"
         );
     }
 }

@@ -73,12 +73,15 @@ fn cube_and_wedge(tip_x: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 fn expect_self_touch(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>, what: &str) {
     let live = m.live_solids.clone();
     let err = boolean(m, BoolKind::Cut, a, b).expect_err(what);
-    assert_eq!(
-        err,
-        BoolError::Rejected {
-            reason: RejectReason::SelfTouchingResult
-        },
-        "{what}"
+    assert!(
+        matches!(
+            err,
+            BoolError::Rejected {
+                reason: RejectReason::SelfTouchingResult,
+                ..
+            }
+        ),
+        "{what}: got {err:?}"
     );
     assert_eq!(
         RejectReason::SelfTouchingResult.class(),
@@ -124,11 +127,14 @@ fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
     // Not lifted, and as tall as the cube: the cut goes clean through.
     let b = prism(&mut m, &[[1.0, 0.5], [0.1, 0.1], [0.1, 0.9]], 1.0);
     let live = m.live_solids.clone();
-    assert_eq!(
-        boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
-        BoolError::Rejected {
-            reason: RejectReason::SelfTouchingResult
-        },
+    assert!(
+        matches!(
+            boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
+            BoolError::Rejected {
+                reason: RejectReason::SelfTouchingResult,
+                ..
+            }
+        ),
         "the through cut leaves the wall touching the pocket along a chord"
     );
     assert_eq!(*m.live_solids, live, "a reject retired the operands");
@@ -322,11 +328,14 @@ fn a_contact_on_a_holes_wall_is_seen() {
     m.rebuild_adjacency();
     // A wedge in the plate's material whose tip lands on the hole's wall x = 1.
     let b = prism(&mut m, &[[1.0, 1.5], [0.2, 1.1], [0.2, 1.9]], 1.0);
-    assert_eq!(
-        boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
-        BoolError::Rejected {
-            reason: RejectReason::SelfTouchingResult
-        },
+    assert!(
+        matches!(
+            boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
+            BoolError::Rejected {
+                reason: RejectReason::SelfTouchingResult,
+                ..
+            }
+        ),
         "the cut's tip touches the hole's wall"
     );
 }

@@ -338,8 +338,11 @@ fn the_reject_census() {
         // rather than quietly re-baselining the table below.
         match f.expect {
             Some(reason) => assert_eq!(
-                got.err(),
-                Some(BoolError::Rejected { reason }),
+                got.err().map(|e| match e {
+                    BoolError::Rejected { reason, .. } => reason,
+                    other => panic!("{}: expected a named rejection, got {other:?}", f.name),
+                }),
+                Some(reason),
                 "{}: the fixture stopped producing the reject it exists for",
                 f.name
             ),

@@ -13,8 +13,8 @@
 
 use nacre_math::{Point2, Point3};
 use nacre_ops::{
-    BoolError, BoolKind, DatumDef, OpOutput, Operation, Profile2d, RejectReason, SketchPlane,
-    apply, boolean,
+    BoolError, BoolKind, DatumDef, OpOutput, Operation, Profile2d, RejectReason, RejectWhere,
+    SketchPlane, apply, boolean,
 };
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid, VertexDef};
@@ -136,12 +136,27 @@ fn a_body_pinched_along_a_line_is_still_a_reject() {
     let b = cube(&mut m, [2.0, 2.0, 0.0], [4.0, 4.0, 1.0]);
     let ab = boolean(&mut m, BoolKind::Fuse, a, bridge).expect("a and its bridge overlap");
     m.rebuild_adjacency();
-    assert_eq!(
-        boolean(&mut m, BoolKind::Fuse, ab[0], b),
-        Err(BoolError::Rejected {
-            reason: RejectReason::NonManifoldResultEdge
-        })
-    );
+    let err = boolean(&mut m, BoolKind::Fuse, ab[0], b).unwrap_err();
+    let BoolError::Rejected {
+        reason: RejectReason::NonManifoldResultEdge,
+        at,
+    } = err
+    else {
+        panic!("expected the edge pinch, got {err:?}");
+    };
+    // The witness is (a sub-segment of) the contact line `x = 2, y = 2` the fixture pinches
+    // along — derived from the cubes' own corners, not from the engine.
+    let Some(RejectWhere::Segment(seg)) = at else {
+        panic!("the edge pinch carries no witness segment: {at:?}");
+    };
+    for p in seg {
+        assert!(
+            (p[0] - 2.0).abs() < 1e-9
+                && (p[1] - 2.0).abs() < 1e-9
+                && (-1e-9..=1.0 + 1e-9).contains(&p[2]),
+            "witness endpoint off the contact line: {p:?}"
+        );
+    }
 }
 
 /// ④ ★★ **The negative control, at a point.** The same loop, closed through two bridge pieces that
@@ -157,11 +172,22 @@ fn a_body_pinched_at_a_point_is_still_a_reject() {
     m.rebuild_adjacency();
     let t2 = boolean(&mut m, BoolKind::Fuse, t1[0], g2).expect("g1 and g2 overlap");
     m.rebuild_adjacency();
-    assert_eq!(
-        boolean(&mut m, BoolKind::Fuse, t2[0], b),
-        Err(BoolError::Rejected {
-            reason: RejectReason::NonManifoldVertex
-        })
+    let err = boolean(&mut m, BoolKind::Fuse, t2[0], b).unwrap_err();
+    let BoolError::Rejected {
+        reason: RejectReason::NonManifoldVertex,
+        at,
+    } = err
+    else {
+        panic!("expected the vertex pinch, got {err:?}");
+    };
+    // The witness is the pinch point itself, `(2, 2, 1)` — the corner the fixture is built
+    // around (its own doc comment names it).
+    let Some(RejectWhere::Point(p)) = at else {
+        panic!("the vertex pinch carries no witness point: {at:?}");
+    };
+    assert!(
+        p.distance(Point3::from_array([2.0, 2.0, 1.0])) < 1e-9,
+        "witness off the pinch corner: {p:?}"
     );
 }
 
@@ -233,11 +259,14 @@ fn two_cavities_meeting_along_a_line_are_still_a_reject() {
         1.0,
         1.0,
     );
-    assert_eq!(
-        boolean(&mut m, BoolKind::Cut, hollow[0], v2),
-        Err(BoolError::Rejected {
-            reason: RejectReason::NonManifoldResultEdge
-        }),
+    assert!(
+        matches!(
+            boolean(&mut m, BoolKind::Cut, hollow[0], v2),
+            Err(BoolError::Rejected {
+                reason: RejectReason::NonManifoldResultEdge,
+                ..
+            })
+        ),
         "two voids pinching the material between them is not a solid"
     );
 }
@@ -251,12 +280,26 @@ fn a_cavity_touching_its_host_s_wall_is_still_a_reject() {
     let mut m = Model::new();
     let b = block(&mut m);
     let void = prism(&mut m, &[[0.0, 2.0], [2.0, 1.0], [2.0, 3.0]], 1.0, 1.0);
-    assert_eq!(
-        boolean(&mut m, BoolKind::Cut, b, void),
-        Err(BoolError::Rejected {
-            reason: RejectReason::SelfTouchingResult
-        })
+    let err = boolean(&mut m, BoolKind::Cut, b, void).unwrap_err();
+    let BoolError::Rejected {
+        reason: RejectReason::SelfTouchingResult,
+        at,
+    } = err
+    else {
+        panic!("expected the self-touch, got {err:?}");
+    };
+    // The witness is the void's vertical corner edge `(0,2,1)–(0,2,2)`, the line its corner
+    // rides down the wall `x = 0` — read off the fixture's own polygon and z-range.
+    let Some(RejectWhere::Segment(seg)) = at else {
+        panic!("the self-touch carries no witness segment: {at:?}");
+    };
+    let (a, b) = (
+        Point3::from_array([0.0, 2.0, 1.0]),
+        Point3::from_array([0.0, 2.0, 2.0]),
     );
+    let hit = (seg[0].distance(a) < 1e-9 && seg[1].distance(b) < 1e-9)
+        || (seg[0].distance(b) < 1e-9 && seg[1].distance(a) < 1e-9);
+    assert!(hit, "witness off the corner edge: {seg:?}");
 }
 
 /// ⑤c ★ **Every candidate node grazes.** A diamond void whose four corners sit on the four walls:
@@ -276,12 +319,13 @@ fn a_void_whose_every_corner_grazes_declines_by_name() {
         1.0,
         1.0,
     );
-    assert_eq!(
+    assert!(matches!(
         boolean(&mut m, BoolKind::Cut, b, diamond),
         Err(BoolError::Rejected {
-            reason: RejectReason::NoClearRay
+            reason: RejectReason::NoClearRay,
+            ..
         })
-    );
+    ));
 }
 
 /// ⑥ ★ Each body names itself by **its own** planes. The definition triple is derived per solid, so

@@ -317,21 +317,52 @@ impl SketchPlane {
 /// 불리언 전략).
 /// Exhaustive on purpose: new failure modes become [`RejectReason`] variants, not new variants
 /// here, so a consumer can handle this enum completely and still not be broken by growth.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// `Eq` is deliberately absent: [`RejectWhere`] carries `f64` coordinates, whose equality is
+/// not an equivalence ([`Point3`]'s own rule). Compare rejects by projecting `reason` out —
+/// never by comparing whole errors.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BoolError {
     /// The engine declined to answer, and [`RejectReason`] names *which* guard spoke.
     /// The reason travels in the value so a consumer can say why, and so the site that
     /// returned is the site that is reported (guards that are raised and then swallowed
     /// by an alternative path cannot be mistaken for the surfaced one).
     ///
+    /// `at` is where the guard was looking when it spoke — a witness for diagnostics
+    /// ([`RejectWhere`]), `None` when the reason has no meaningful single location.
+    ///
     /// ★ Renamed from `Unsupported` (2026-08-16): that name asserted every reject is a
     /// coverage limit, which is false for two of the three [`RejectClass`]es —
     /// `Impossible` (no milestone will build this input) and `SuspectedDefect` (ours, not
     /// the caller's). The variant states what happened; *what kind* of answer it is stays
     /// where it always was, in [`RejectReason::class`].
-    Rejected { reason: RejectReason },
+    Rejected {
+        reason: RejectReason,
+        at: Option<RejectWhere>,
+    },
     /// An input solid handle is not in `model.live_solids`.
     InputNotLive,
+}
+
+/// Where a reject was looking — the location payload that rides **beside** the reason in
+/// [`BoolError::Rejected`], for a consumer that wants to point at the failure (a viewer
+/// drawing a marker), never inside [`RejectReason`] itself: the reason is categorical
+/// vocabulary (the census key, the thing tests name), and a coordinate is a measurement.
+///
+/// Two rules about what these values are:
+/// - **A witness, not a census.** A reject with several offending entities carries one,
+///   chosen deterministically (the minimum by the entity's own order), so identical inputs
+///   yield identical errors in every build.
+/// - **A diagnostic realization, cache-grade.** The coordinates are rounded `f64` world
+///   positions realized at the raise site. Draw with them, report them — never judge with
+///   them, and never compare them with `==` (use a distance against a tolerance; this type
+///   has no `Eq` for the same reason [`Point3`] has none).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RejectWhere {
+    /// A single point — e.g. the pinch vertex of a non-manifold result.
+    Point(Point3),
+    /// A segment between two points — e.g. the edge along which a result touches itself.
+    Segment([Point3; 2]),
 }
 
 /// What kind of answer a rejection is — **the API a consumer should branch on**.
@@ -917,27 +948,46 @@ impl std::fmt::Display for RejectReason {
 
 /// Build an `Rejected` carrying *which* guard raised it.
 ///
-/// Every `Rejected` in this crate is built here. The reason rides in the returned value, so
-/// a guard that is raised and then swallowed by an alternative path (several sites try another
-/// route on `Err`) can never be mistaken for the one that actually surfaced.
+/// Every `Rejected` in this crate is built here or in [`reject_at`] (this, with a location).
+/// The reason rides in the returned value, so a guard that is raised and then swallowed by an
+/// alternative path (several sites try another route on `Err`) can never be mistaken for the
+/// one that actually surfaced.
 ///
-/// Being the single funnel is also what makes [`reject_census`] possible: `#[track_caller]` here
-/// records *which* guard rang, at its own line, for all 88 call sites at once.
+/// The pair being the only funnel is also what makes [`reject_census`] possible:
+/// `#[track_caller]` here records *which* guard rang, at its own line, for every call site
+/// at once.
 #[inline]
 #[track_caller]
 pub(crate) fn reject(reason: RejectReason) -> BoolError {
     reject_census::raised(reason, std::panic::Location::caller());
-    BoolError::Rejected { reason }
+    BoolError::Rejected { reason, at: None }
+}
+
+/// [`reject`], carrying where the guard was looking — same census instrumentation
+/// (`#[track_caller]` sees through to the raise site).
+#[inline]
+#[track_caller]
+pub(crate) fn reject_at(reason: RejectReason, at: RejectWhere) -> BoolError {
+    reject_census::raised(reason, std::panic::Location::caller());
+    BoolError::Rejected {
+        reason,
+        at: Some(at),
+    }
 }
 
 /// Assert that `f` rejects *through the intended guard* — a reject test whose fixture drifts
-/// onto a different guard then fails instead of silently passing.
+/// onto a different guard then fails instead of silently passing. Compares the projected
+/// reason only: the location payload is a measurement, asserted (approximately) by the
+/// per-reason payload tests, not here.
 #[cfg(test)]
 fn assert_rejects<T: std::fmt::Debug + PartialEq>(
     f: impl FnOnce() -> Result<T, BoolError>,
     expect: RejectReason,
 ) {
-    assert_eq!(f(), Err(BoolError::Rejected { reason: expect }));
+    match f() {
+        Err(BoolError::Rejected { reason, .. }) => assert_eq!(reason, expect),
+        other => panic!("expected a reject with {expect:?}, got {other:?}"),
+    }
 }
 
 /// The start vertex of a half-edge (`vertices[0]` if forward, else `vertices[1]`).

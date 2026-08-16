@@ -131,11 +131,14 @@ fn a_prism_that_stops_short_of_the_crossing_is_unchanged() {
 #[test]
 fn a_genuine_self_touch_on_a_shared_line_is_still_refused() {
     let (mut m, a, b) = stair_and_prism(1.0, 0.5, 0.9);
-    assert_eq!(
-        boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err(),
-        nacre_ops::BoolError::Rejected {
-            reason: RejectReason::SelfTouchingResult
-        },
+    assert!(
+        matches!(
+            boolean(&mut m, BoolKind::Fuse, a, b).unwrap_err(),
+            nacre_ops::BoolError::Rejected {
+                reason: RejectReason::SelfTouchingResult,
+                ..
+            }
+        ),
         "the surface meets itself along the apex line"
     );
 }
