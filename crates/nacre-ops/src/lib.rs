@@ -634,9 +634,10 @@ pub enum RejectReason {
     /// quadrics).
     CylinderFace,
     /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
+    /// (Its sibling `DegenerateNormal` — a zero-length triangle normal — died when `n_out`
+    /// moved to the stored orientation: no triangle cross is taken, so there is nothing
+    /// left to degenerate.)
     DegenerateFace,
-    /// An operand face's outer triangle has a zero-length normal, so it has no outward direction.
-    DegenerateNormal,
     /// A plane's own frame cannot be stated exactly, so a sketch built in it has no exact
     /// definition to judge from. Either the plane recorded no rational coefficients, or the
     /// squared lengths the frame's realization divides by do not fit `i128`.
@@ -856,7 +857,6 @@ impl RejectReason {
             Self::FourPlane => "fourplane",
             Self::CylinderFace => "cylinder_face",
             Self::DegenerateFace => "degenerate_face",
-            Self::DegenerateNormal => "degenerate_normal",
             Self::FrameOutOfRange => "frame_out_of_range",
             Self::PrecisionBudget { .. } => "precision_budget",
             Self::JudgeExhausted => "judge_exhausted",
@@ -883,8 +883,7 @@ impl RejectReason {
             | Self::NonManifoldVertex
             | Self::NonManifoldResultEdge
             | Self::SelfTouchingResult
-            | Self::DegenerateFace
-            | Self::DegenerateNormal => RejectClass::Impossible,
+            | Self::DegenerateFace => RejectClass::Impossible,
             // Built later: quadrics, deeper nesting, rotated-chain witnesses, degenerate
             // arrangements the substrate cannot name yet.
             Self::TraceDeclined { .. }
@@ -1214,18 +1213,14 @@ pub mod tests {
     /// outward normal, and the b-rep's own `Surface` plus `Orientation`. They must agree
     /// on every face of every solid.
     ///
-    /// `outer_tri` used to read the turn at the first non-collinear corner, which is the
-    /// ring's winding **only when that corner is convex**. Nothing enforced that. The
-    /// four fixtures below were safe by accident — none starts its cap loop one vertex
-    /// before a reflex corner. `rotated_l_prism` does, and it is the same solid.
+    /// `n_out` reads the second source now (the stored orientation), so what this
+    /// pins is the first: the witness triangle `outer_tri` picks must span the ring's
+    /// winding. `outer_tri` used to read the turn at the first non-collinear corner,
+    /// which is the winding **only when that corner is convex**. The four fixtures
+    /// below were safe by accident — none starts its cap loop one vertex before a
+    /// reflex corner. `rotated_l_prism` does, and it is the same solid.
     #[test]
     fn outward_normals_agree_with_their_orientation() {
-        // `collect_planes` debug_asserts, per face, that `sign(normal·n_out)` equals the topo
-        // `face.orientation` — the invariant this test used to check by reading a `.orient` field
-        // it kept alongside. That field is gone (its production role is `orient_sign`), so the
-        // check lives at construction now; running collect_planes on shapes with reversed faces
-        // (the L/U notch, a rotated solid) exercises it. Here we add the parallel invariant, which
-        // is not debug_asserted the same way.
         let mut cube = Model::new();
         let c = cube.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
         let (ml, sl) = l_prism();
@@ -1238,10 +1233,14 @@ pub mod tests {
             ("rotated_l_prism", &mr, sr),
         ] {
             for pi in &collect_planes(m, s).unwrap() {
-                let dot = pi.plane.normal().dot(pi.n_out);
+                let cos = (pi.tri[1] - pi.tri[0])
+                    .cross(pi.tri[2] - pi.tri[0])
+                    .normalize()
+                    .expect("a widest corner spans area")
+                    .dot(pi.n_out);
                 assert!(
-                    dot.abs() > 0.5,
-                    "{name}: n_out is not parallel to its plane"
+                    cos > 0.5,
+                    "{name}: the witness triangle does not span its face's stated outward"
                 );
             }
         }

@@ -17,10 +17,11 @@ use std::collections::HashMap;
 ///
 /// `three_plane_orient3d(.., tri[0], tri[1], tri[2])` returns `+1` when the
 /// implicit point lies on **`tri`'s right-hand-normal side** — the convention is
-/// tied to the triangle, never to `plane`. `n_out` happens to equal that RH normal
-/// only because `tri` is taken outer-CCW; `plane.normal()` is the *surface's*
-/// normal and may point inward on a `Reversed` face. Every sign test here reads
-/// `n_out` (or `tri`), and none reads `plane.normal()`.
+/// tied to the triangle, never to `plane`. `n_out` is the face's *stated*
+/// outward — `plane.normal()` × `orientation`, the reading props and STEP trust
+/// — and the loop's winding is held to it by a `debug_assert` at construction
+/// and by `validate`'s `FaceMisoriented` at every op. Every sign test here reads
+/// `n_out` (or `tri`), and the two agree by that enforcement.
 #[derive(Clone)]
 pub(crate) struct FaceInfo {
     pub(crate) surf: Handle<Surface>,
@@ -38,11 +39,13 @@ pub(crate) struct FaceInfo {
     /// Three non-collinear outer-loop points, **ordered so their RH normal is outward**.
     /// The order need not follow the loop: at a reflex corner it is reversed.
     pub(crate) tri: [Point3; 3],
-    /// Outward normal, `(tri[1]−tri[0])×(tri[2]−tri[0])` normalized — the single
-    /// source of "outward" for both the in/out sign test and face ordering.
+    /// Outward normal — `plane.normal()` × the face's stated `orientation`; the single
+    /// source of "outward" for both the in/out sign test and face ordering. Read off
+    /// the b-rep's statement, never re-derived from loop geometry (the re-derivation's
+    /// conditioning was the pad-eats-material defect).
     pub(crate) n_out: Vector3,
     /// `+1` when this face's stored plane normal already points out of its solid, `-1` when the
-    /// face is `Reversed` and the two oppose.
+    /// face is `Reversed` and the two oppose — the `Orientation` flag as a sign.
     ///
     /// **This face's**, not its plane class's. The class-frame twin is [`WorkingPlane::frame_sign`],
     /// and the two used to be one function called with either kind of index — the single place the
@@ -92,10 +95,18 @@ pub(crate) fn collect_planes(
             };
             let (tri, _) =
                 outer_tri(model, face).ok_or_else(|| reject(RejectReason::DegenerateFace))?;
-            let n_out = (tri[1] - tri[0])
-                .cross(tri[2] - tri[0])
-                .normalize()
-                .ok_or_else(|| reject(RejectReason::DegenerateNormal))?;
+            // **Outward is read off the face's statement, not re-derived from its loop.**
+            // `orientation` relates the stored surface normal to "out of the solid" — the
+            // same reading props and STEP already trust — so `n_out` is that product,
+            // exact in direction by construction. The triangle's cross used to be the
+            // source, and its conditioning was the pad-eats-material defect: on rotated
+            // near-collinear corners the direction that came back was the rounding. The
+            // winding is still consulted — as the cross-check below, not as the answer.
+            let orient_sign: i8 = match face.orientation {
+                Orientation::Forward => 1,
+                Orientation::Reversed => -1,
+            };
+            let n_out = plane.normal() * f64::from(orient_sign);
             // **The plane's exact definition comes from the surface, not from the vertices.**
             //
             // Both used to be decided per *solid* ("is this solid rotated?"), which a boolean's
@@ -308,17 +319,17 @@ pub(crate) fn collect_planes(
                     return Err(reject(RejectReason::CylinderFace));
                 }
             };
-            // `orient_sign`, precomputed: the two invariants it used to re-check on every call
-            // are properties of this face, so they are decided once, here.
-            let dot = plane.normal().dot(n_out);
+            // The loop's winding, cross-checked against the flag it stated. `validate`
+            // pins this same invariant as `FaceMisoriented`; here it runs at every
+            // boolean in debug. A failure is a producer bug — a lying flag or a
+            // mis-wound loop — never a conditioning artifact (`outer_tri` picks the
+            // widest corner).
             debug_assert!(
-                dot.abs() > 0.5,
-                "a plane's normal must be parallel to n_out"
-            );
-            debug_assert_eq!(
-                dot > 0.0,
-                face.orientation == Orientation::Forward,
-                "n_out's sign against the surface normal is the face's orientation"
+                (tri[1] - tri[0])
+                    .cross(tri[2] - tri[0])
+                    .normalize()
+                    .is_some_and(|w| w.dot(n_out) > 0.5),
+                "a face's outer winding must agree with its stated orientation"
             );
             let name = model.surface_name.get(&face.surface).cloned();
             out.push(FaceInfo {
@@ -329,7 +340,7 @@ pub(crate) fn collect_planes(
                 plane,
                 tri,
                 n_out,
-                orient_sign: if dot > 0.0 { 1 } else { -1 },
+                orient_sign,
                 tri_pt3,
                 rotated,
                 motion,
@@ -1330,12 +1341,21 @@ mod tests {
             straight > 0,
             "no face carries a split edge — the fixture stopped reaching the population"
         );
+        // The lock is on the *winding* side now: `n_out` is read off the stored
+        // orientation, so `plane.normal()·n_out` is ±1 by construction and asserts
+        // nothing. What the widest-corner rule still owns is the triangle — revert
+        // `outer_tri` to "first non-flat corner" and the cross below is rounding
+        // noise again, failing this in release.
         for f in &faces {
-            let cos = f.plane.normal().dot(f.n_out).abs();
+            let cos = (f.tri[1] - f.tri[0])
+                .cross(f.tri[2] - f.tri[0])
+                .normalize()
+                .expect("a widest corner spans area")
+                .dot(f.n_out);
             assert!(
                 cos > 0.5,
-                "a face's stored plane is {cos:.3} of the way to perpendicular against its own \
-                 outward normal"
+                "a face's outer triangle is {cos:.3} of the way to perpendicular against its \
+                 stated outward"
             );
         }
     }

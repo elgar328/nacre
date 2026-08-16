@@ -191,8 +191,9 @@ impl Tessellation {
 /// **Specialized, not general**: planar faces are fan-triangulated (convex
 /// only), cylindrical faces are sampled as a ruled band between their two
 /// circular rims. Edge polylines are sampled once and shared, so adjacent faces
-/// meet watertight (design §5). Assumes `Orientation::Forward` faces (every
-/// current producer) — the loop winding already points outward.
+/// meet watertight (design §5). Reads the loop winding, not the `Orientation`
+/// flag — every producer winds loops outward, `Reversed` faces included
+/// (booleans emit both), and `validate` holds the two in agreement.
 ///
 /// Only cells **reachable from `live_solids`** are meshed. `Store` is append-only
 /// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the

@@ -1075,11 +1075,12 @@ pub(crate) fn loop_winding(
 /// correct with their dot — two parallel unit vectors, `|·| ≈ 1`, nowhere near the
 /// sign boundary.
 ///
-/// It is tempting to read the correction off the face's `orient` instead. Don't:
-/// "`Reversed` ⇔ `n_out = −plane.normal()`" is an invariant nothing enforces, while
-/// the predicate's convention is tied to `tri`'s RH normal by construction. Were the
-/// invariant to break, an `orient`-based order would reverse silently. Assert the
-/// agreement; do not depend on it.
+/// The correction *is* the face's stated flag — since the stored-orientation
+/// cutover, `frame_sign` is `Forward`/`Reversed` as a sign, and
+/// "`Reversed` ⇔ `n_out = −plane.normal()`" holds by construction rather than by
+/// hope. What keeps it honest is the winding: `collect_planes` debug_asserts the
+/// witness triangle against `n_out`, and `validate` pins the loop itself as
+/// `FaceMisoriented`.
 pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usize) -> i8 {
     let planes = jd.planes;
     jd.plane_pair_dir_sign(p, q, r) * planes[r].frame_sign

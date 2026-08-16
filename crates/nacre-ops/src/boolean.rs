@@ -1071,10 +1071,10 @@ fn reconstruct(
             .iter()
             .map(|h| ring(model, h))
             .collect::<Result<Vec<_>, BoolError>>()?;
-        // The plane's frame *is* the root face's orientation: `frame_sign` is
-        // `sign(stored normal · that face's n_out)`, and `collect_planes` asserts that sign equals
-        // `Forward`/`Reversed`. Reading it here is what used to be `planes[plane_idx].orient` — a
-        // face field indexed by a plane, the shape of every bug this split exists to prevent.
+        // The plane's frame *is* the root face's orientation: `frame_sign` carries that face's
+        // `Forward`/`Reversed` as a sign (read off the stored flag since the cutover). Reading it
+        // here is what used to be `planes[plane_idx].orient` — a face field indexed by a plane,
+        // the shape of every bug this split exists to prevent.
         let framed = if planes[lf.plane_idx].frame_sign > 0 {
             Orientation::Forward
         } else {

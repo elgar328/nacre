@@ -9359,3 +9359,48 @@ bit census 비트 동일, clippy 무경고 — 전부 실측.
 design.md 두 곳 갱신: §7 검사 목록, §Mirror 의 "못 잡는다" 를 절반 정정(면 단위는 이제 잡는다;
 플래그와 감김이 **함께** 뒤집힌 전-셸 반전은 면 단위 검사가 원리적으로 못 보므로 그쪽 그물은
 여전히 부호 부피·불리언·오라클).
+
+---
+
+## `n_out` 이 저장된 orientation 을 읽는다 — 방향 오계산이라는 오류 부류의 소멸 (2026-08-17)
+
+「남은 별건」 2단계(1단계 = 앞 셀의 `FaceMisoriented`). `collect_planes` 는 면의 바깥 방향을
+외곽 삼각형의 외적으로 매번 재계산했고, 그 컨디셔닝이 pad-eats-material 결함의 뿌리였다.
+widest-corner 는 계산을 잘하게 만든 것이고, 이 셀은 **계산 자체를 없앤다**: `orient_sign` 은
+`Orientation` 플래그 그대로(Forward→+1), `n_out = plane.normal() × orient_sign`. 방향이
+반올림에서 나올 경로가 타입에서 사라졌다.
+
+### 신뢰의 이동 — 정직하게 적는다
+
+지금까지 `orient_sign` 은 기하(dot)에서 유도돼, 생산자가 플래그를 잘못 써도 불리언 안에서는
+조용히 *교정*됐다(props/step 만 틀리게). 이제 불리언은 **플래그를 신뢰**한다 — 잘못된 플래그는
+release 에서 n_out 자체를 뒤집는다. 이것이 의도한 방향인 이유: `Orientation` 은 b-rep 이
+**진술한** 재료 방향(sweep 방향·`frame_sign`+`flip` 같은 구성 지식으로 생산자가 쓴 정의)이고,
+삼각형 외적은 그 파생 캐시였다 — [derive-from-the-definition-not-the-record] 의 definition 이
+플래그 쪽이다. 그리고 이것은 정합화다: props(:124,:243)와 STEP(`same_sense`)은 이미 플래그를
+신뢰하고, tess 는 감김을 신뢰한다 — **좌표에서 방향을 재유도하던 소비자는 불리언 엔진뿐**이었다.
+release 그물은 앞 셀이 세운 validate 검사(매 연산 뒤 도는 호출자들) 몫이고, debug 에서는
+`collect_planes` 의 단언 하나(외곽 삼각형 외적 · n_out > 0.5 — 옛 두 줄의 후신)가 매 불리언마다
+같은 명제를 묻는다. 이제 그 단언의 실패는 컨디셔닝이 아니라 **생산자 결함**(거짓 플래그 또는
+잘못 감긴 루프)만을 뜻한다.
+
+### 죽은 것들
+
+- `RejectReason::DegenerateNormal` **변종 삭제** — planes.rs 의 raise 가 유일한 생산자였고
+  (워크스페이스 grep), 외적을 안 하니 퇴화할 것이 없다. 단언하는 테스트 0·kit 이름별 소비자 0,
+  reject census baseline **불변**(발화 인구가 없던 사유). `ImplicitPlaneUnsupported`·
+  `VertexPointTooWide` 선례. `DegenerateFace` 는 생산자(`outer_tri` None)가 살아 유지.
+- 자명해진 잠금 둘을 **재조준**: `outward_normals_agree_with_their_orientation`(lib.rs)과
+  padded-block in-file 테스트(planes.rs) — `plane.normal()·n_out` 이 구성상 ±1 이 돼 아무것도
+  안 재므로, 둘 다 **삼각형 외적 vs n_out**(widest-corner 가 실제로 지는 하중)으로. `outer_tri`
+  를 first-non-flat 으로 되돌리면 다시 빨개진다.
+- `dir_sign`(combinatorics) doc 의 *"아무것도 강제하지 않는 불변식이니 읽지 말 것"* — 이제
+  강제되므로 문장을 갱신(로직 무변경). tess 의 낡은 *"모든 생산자가 Forward"* 괄호도 정정.
+
+### 예측과 실측
+
+n_out 의 비트는 바뀐다(단위화된 외적 → ±plane.normal()). 소비처 전수는 평행/횡단 량에 대한
+부호 읽기뿐(사전 검토에서 값-의존 0 확인) ⇒ 예측 = 행동 무변화. 실측: **bit census 비트 동일**
+(census 테스트 green = 체크인된 baseline 과 일치), reject census baseline 불변, collinear sweep
+green(뉴웰 독립 계기), proptest 시드(`cc 1c41997e…`) green, 워크스페이스 전체 0 실패,
+clippy 무경고.
