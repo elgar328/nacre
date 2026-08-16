@@ -9156,3 +9156,51 @@ motion 면은 Named 로도 여전히 +0.866 — **현 어휘로 표현 불가 �
 불변 평면 재진술(법선 ∥ 회전축 평면은 motion 기록 대신 세계-서술 재진술 — 정확-모션 재진술
 규칙의 per-plane 일반화)은 별도 단위: `docs/truth-and-cache.md` 필독(CLAUDE.md), 술어 경로가
 toleranced→exact 로 바뀌며 결과 비트가 움직일 수 있어 ε-동등 게이트를 정의한 측정된 컷오버.
+
+---
+
+## C — 45° 폴드의 거절 이름: 라우팅 가설이 실측으로 반박되고, 자리의 사실이 이름이 됐다 (2026-08-16)
+
+오류 메시지 사다리의 C. 45° 폴드는 자기접촉(존재 불가)인데 `CoplanarMerge`(`NotSupportedYet`)로
+거절됐다 — census 가 그 라벨의 10개 사이트 중 **발화하는 곳이 `merge_component` 의 점-접촉 가드
+하나뿐**임을 전수로 밝혀 둔 상태였다.
+
+### 계획의 1안(라우팅)이 측정으로 기각됐다
+
+구조 조사: 옳은 이름을 아는 검사(`self_touch_reject`, `check_result_topology`)는 전부 병합
+**다음** 단계다 — 지역 가드의 조기 `Err` 가 그들을 선점한다. 그래서 1안은 «병합을 포기하고
+계속 가서 전역 검사가 말하게 하기»였다(병합은 정리 단계지 정확성 단계가 아니고, 미병합 방출
+경로가 이미 있다). 갈림길 판정 기준을 계획에 박아 뒀다: 하류 거절이 **`Impossible` 등급이고
+명제가 이 기하에 참일 때만** 채택.
+
+실측: 병합 포기 라우팅 후 45° 폴드는 **`StraightAngle`** 로 죽는다 — `NotSupportedYet` 의 또
+다른 증상 이름(그 변종 doc 은 "픽스처 없음"을 자랑하던 중이었다). ⇒ **지역-한계 사슬이 한 겹이
+아니다**(병합 → 직선각 처리 → 자기접촉 검사). "아직 못 함(A)"을 "아직 못 함(B)"으로 바꾸는
+것은 개선이 아니므로 기각, 라우팅 원복.
+
+### 채택 — (a) 자리의 사실을 이름으로: `CoplanarPinch`
+
+- `merge_component` 의 점-접촉 사이트만 새 변종: **"한 병합 그룹의 공면 조각들이 한 점에서
+  만난다 — figure-8 재봉합은 못 짠다"**. 나머지 9개 사이트는 `CoplanarMerge` 유지(발화 인구 0,
+  그 doc 에 «unfired» 명시).
+- ★ **등급은 `NotSupportedYet` 유지가 정직하다.** 스위트의 유일 입력(45° 폴드)은 분명 자기접촉
+  (`Impossible`)이지만, **이 가드의 명제**는 능력 한계다 — figure-8 윤곽은 그 자체로 불가능이
+  아니고(design.md: `loop_winding` 은 비단순 윤곽을 정당하게 읽는다), 불가능 판정은 이 사이트가
+  볼 수 없는 전체-결과 사실이다. 한 입력의 성질을 가드의 등급으로 승격하는 것은
+  [sample-max-is-not-a-bound] 의 그 실수. 폴드가 진실을 받는 길 = **figure-8 병합 능력**(후속)
+  — 그때 이 거절의 인구가 전체-결과 검사로 넘어가 옳은 등급을 «그들에게서» 받는다.
+- 사용자 지시 반영(2026-08-16): 거절 문서는 **사실만, 행동 지시 금지** — 커널의 기존
+  «diagnosis, not a prompt» 원칙의 재확인. 유일한 위반이던 `RejectClass::Impossible` doc 의
+  *"The design has to change"* 를 사실 진술로 교체.
+
+### A-before-C 가 회수됐다
+
+이름을 바꾸자 **census 게이트가 의도대로 빨개졌다**(`fold-45` baseline: `coplanar_merge` →
+`coplanar_pinch`) — 어휘 변경이 계획서가 아니라 diff 에 스스로 드러나는, census 를 C 보다 먼저
+넣은 이유 그 자체. baseline 실측 갱신, distinct-site 단언은 `coplanar_pinch == 1` 로 이동.
+
+### 검증
+
+`rotation_sweep`(45° 기대 사유 갱신)·`reject_census`·`self_touch` 초록. bit census 는 diff 가
+**정확히 한 줄** — B 의 `Unsupported`→`Rejected` 가 ERR 줄 표기에 반영된 것(의도된 변화)이고,
+좌표·거절 인구는 전부 불변(C 의 영향 0 — `fold-45` 는 census 인구 밖).

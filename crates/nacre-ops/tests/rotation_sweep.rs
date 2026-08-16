@@ -261,7 +261,7 @@ fn the_thirty_degree_sweep_runs_to_completion() {
 /// answer.
 #[test]
 fn the_other_rejections_are_untouched() {
-    let cases: [(usize, RejectReason); 1] = [(45, RejectReason::CoplanarMerge)];
+    let cases: [(usize, RejectReason); 1] = [(45, RejectReason::CoplanarPinch)];
     for (step, expected) in cases {
         let mut m = Model::new();
         let u = unit(&mut m);

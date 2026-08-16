@@ -1322,15 +1322,24 @@ fn merge_component(
     if undirected.values().any(|&c| c > 2) {
         return Err(reject(RejectReason::CoplanarMerge));
     }
-    // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a point
-    //    and the cycles are not determined.
+    // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a
+    //    point and the cycles are not determined — the merged contour would be a figure-8.
+    //
+    // ★★ **Its own name, because this is the one merge guard that fires** (census: the other
+    // nine sites of the old shared `CoplanarMerge` label have never fired in the suite), and
+    // what it sees is a specific thing: coplanar pieces of one edge-connected group pinching at
+    // a point. ★ **Declining to merge instead was tried and measured (2026-08-16)**: leaving the
+    // group unmerged sends the 45° fold one check further, where it dies as `StraightAngle` —
+    // another `NotSupportedYet` symptom name, not the truth — so the local-limit chain is more
+    // than one layer deep and unwinding it is not this guard's job. The honest statement from
+    // *here* is the capability limit itself.
     let mut next: HashMap<Node, Node> = HashMap::new();
     for &(a, b) in dirs.keys() {
         if dirs.contains_key(&(b, a)) {
             continue; // interior
         }
         if next.insert(a, b).is_some() {
-            return Err(reject(RejectReason::CoplanarMerge));
+            return Err(reject(RejectReason::CoplanarPinch));
         }
     }
     let mut starts: Vec<Node> = next.keys().copied().collect();

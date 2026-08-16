@@ -349,7 +349,10 @@ pub enum RejectClass {
     /// at a later milestone. "Not supported yet."
     NotSupportedYet,
     /// No valid solid exists for this input, at any milestone: the operands are not valid
-    /// 2-manifolds, or the requested combination pinches. The design has to change.
+    /// 2-manifolds, or the requested combination pinches. A statement of fact, not advice —
+    /// which coincidence was unintended, and what the author does about it, is theirs
+    /// (the same rule [`RejectReason::SelfTouchingResult`]'s doc states: a diagnosis, not a
+    /// prompt).
     Impossible,
     /// An engine invariant broke: the arrangement built something malformed, or a backstop
     /// that should be unreachable spoke. Reported rather than returned (DNA: never silently
@@ -682,7 +685,27 @@ pub enum RejectReason {
     /// contact plane separates the two solids (nothing to remove). What is left is a `Cut` whose tool
     /// reaches back across that plane — a pin below its own contact face — where the cut owes a notch
     /// this path cannot yet cut. Honest reject rather than a whole cap that ignores the pin.
+    ///
+    /// ★ **Unfired across the suite (census, 2026-08-16).** Ten sites used to share this label;
+    /// the only one that ever fired — coplanar pieces meeting at a point during the merge — is
+    /// [`Self::CoplanarPinch`] now, so what remains under this name are the nine defensive guards
+    /// of the coplanar merge, none with a known input.
     CoplanarMerge,
+    /// **Coplanar faces of one merged group meet at a single point.** The group is edge-connected
+    /// — its pieces share edges elsewhere — and re-threading its boundary runs twice through one
+    /// node, so the merged contour would be a figure-8, which this merge cannot spell yet.
+    ///
+    /// ★ `NotSupportedYet`, deliberately, although the one input in the suite that reaches this
+    /// (a part fused with its own 45°-turned copies, an arm landing coplanar on its own body) is
+    /// a self-touch no milestone will build: a figure-8 contour is not itself impossible —
+    /// `loop_winding` reads non-simple contours the arrangement produces as legitimate — so the
+    /// *proposition of this guard* is a capability limit, and claiming `Impossible` here would
+    /// borrow a conclusion this site cannot see (the whole-result checks that could are further
+    /// down, and the measured attempt to let them speak — declining to merge and continuing —
+    /// died one check later as `StraightAngle`, another symptom name; the local-limit chain is
+    /// more than one layer deep). The day the merge can spell a figure-8, this reject's
+    /// population moves to the whole-result checks and gets its true class from them.
+    CoplanarPinch,
 }
 
 /// What a face's trace on one plane class could not do — the detail behind
@@ -795,6 +818,7 @@ impl RejectReason {
             Self::HoleRoots => "hole_roots",
             Self::MissingSeam => "missing_seam",
             Self::CoplanarMerge => "coplanar_merge",
+            Self::CoplanarPinch => "coplanar_pinch",
         }
     }
 
@@ -840,7 +864,8 @@ impl RejectReason {
             | Self::NoClearRay
             | Self::PointOnRing
             | Self::HoleDepth
-            | Self::CoplanarMerge => RejectClass::NotSupportedYet,
+            | Self::CoplanarMerge
+            | Self::CoplanarPinch => RejectClass::NotSupportedYet,
             // An invariant broke: malformed assembly, or a backstop that should be unreachable.
             Self::OpenResultShell
             | Self::EulerParity

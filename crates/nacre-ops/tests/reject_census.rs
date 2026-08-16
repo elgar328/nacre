@@ -213,9 +213,11 @@ fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 }
 
 /// ⑥ ★ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
-/// another, giving a solid of zero thickness. The truth is a self-touch (`Impossible`); what comes
-/// back today is `CoplanarMerge` (`NotSupportedYet`), because a local guard inside the coplanar
-/// merge ends the operation before the whole-result check can speak (`rotation_sweep.rs`).
+/// another, giving a solid of zero thickness. What comes back is `CoplanarPinch` — the merge
+/// guard's own capability limit, under its own name since 2026-08-16 (this census measured that
+/// it was the only firing site of the old shared `CoplanarMerge` label). The deeper truth (a
+/// self-touch, `Impossible`) still needs the figure-8 merge: the measured detour of skipping the
+/// merge died one check later as `StraightAngle` (`rotation_sweep.rs`, dev-log).
 fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let plate = [
         [0.0, 0.0],
@@ -306,10 +308,10 @@ const CORPUS: [Fixture; 7] = [
     },
     Fixture {
         name: "fold-45",
-        expect: Some(RejectReason::CoplanarMerge),
+        expect: Some(RejectReason::CoplanarPinch),
         run: fold_45,
-        raised: &[("coplanar_merge", None, BOOLEAN)],
-        surfaced: &[("coplanar_merge", None)],
+        raised: &[("coplanar_pinch", None, BOOLEAN)],
+        surfaced: &[("coplanar_pinch", None)],
     },
     Fixture {
         name: "plain-fuse",
@@ -400,17 +402,17 @@ fn the_reject_census() {
             .1
     };
 
-    // ★★ Assertion 4: **`CoplanarMerge` has ten raise sites and only one of them ever rings.**
-    // That is the fact the next step stands on — the guard that speaks says "the pieces meet at a
-    // point", a self-touch seen one dimension down, while the name it reports says "not supported
-    // yet". Distinct *sites*, not raise counts: counts move with the build (`debug` re-runs every
-    // traced boolean, `parallel` evaluates the classes a failing input would have skipped), and
-    // the claim is about how many guards speak, not how often.
+    // ★★ Assertion 4: **the point-contact merge guard is one site, under its own name.** It was
+    // one of `CoplanarMerge`'s ten sites — the only one that ever fired — and this census is what
+    // measured that and licensed giving it its own name (`CoplanarPinch`, 2026-08-16). The
+    // baseline going red on that change was the census working as designed: the vocabulary change
+    // showed up in the diff. Distinct *sites*, not raise counts: counts move with the build
+    // (`debug` re-runs every traced boolean, `parallel` evaluates the classes a failing input
+    // would have skipped), and the claim is about how many guards speak, not how often.
     assert_eq!(
-        by("fold-45").distinct_sites("coplanar_merge"),
+        by("fold-45").distinct_sites("coplanar_pinch"),
         1,
-        "a second `coplanar_merge` guard started ringing — the split this measurement licenses is \
-         no longer about one site.\n{}",
+        "a second `coplanar_pinch` guard started ringing.\n{}",
         by("fold-45").report()
     );
     // ★ The positive control for that counter. `== 1` above proves nothing unless the count can
