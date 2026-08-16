@@ -877,7 +877,14 @@ fn point_on_ring(
 /// reads `true` iff that material's outer shell nests the void.
 ///
 /// A ray grazing a face boundary, or an undecidable in-face containment, is abandoned for the
-/// query's next plane pair; if every pair is blocked the answer is honestly `NO_CLEAR_RAY`.
+/// query's next plane pair. **`Ok(None)` means every pair of this query's planes was blocked** —
+/// this *node* cannot decide the question, which is a fact about the node, not an error: the
+/// callers hold other nodes to try, and "every node abstained" is *their* proposition to reject
+/// (`NoClearRay`, raised where the retries actually run out). `Err` is reserved for the
+/// judgement itself failing (`JudgeExhausted`, a ring that cannot be named, …) — those must
+/// propagate, never be traded for the next node: an abstention has other nodes as its remedy,
+/// a failed judgement does not, and retrying it would let a real cause masquerade as
+/// "no clear ray" once every node hit it.
 /// A component as `(plane, rings)` per face, each ring already carrying its edges' walls.
 pub(crate) type ComponentFaces = Vec<(usize, Vec<Vec<RingEdge>>)>;
 
@@ -885,7 +892,7 @@ pub(crate) fn point_in_component(
     jd: &Judge<'_, WorkingPlane>,
     query: [usize; 3],
     faces: &[(usize, Vec<Vec<RingEdge>>)],
-) -> Result<bool, BoolError> {
+) -> Result<Option<bool>, BoolError> {
     let mut vplanes = query.to_vec();
     vplanes.sort_unstable();
     vplanes.dedup();
@@ -951,11 +958,14 @@ pub(crate) fn point_in_component(
                 continue;
             };
             if let Some(inside) = attempt(a, b, c)? {
-                return Ok(inside);
+                return Ok(Some(inside));
             }
         }
     }
-    Err(reject(RejectReason::NoClearRay))
+    // Every plane pair of this query was blocked: the node abstains. The inner `attempt`
+    // already speaks this language per pair (`Ok(None)`); the boundary now keeps it instead of
+    // dressing the abstention up as an error for the caller to catch and swallow.
+    Ok(None)
 }
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.

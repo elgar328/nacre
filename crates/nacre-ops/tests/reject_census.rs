@@ -286,16 +286,12 @@ const CORPUS: [Fixture; 7] = [
         name: "diamond-void",
         expect: Some(RejectReason::NoClearRay),
         run: diamond_void,
-        // ★ Two sites for one reason, and only one of them is anything a caller is told about: the
-        // `combinatorics.rs` guard is the per-node probe the retry swallows.
-        raised: &[
-            ("no_clear_ray", None, BOOLEAN),
-            (
-                "no_clear_ray",
-                None,
-                "crates/nacre-ops/src/combinatorics.rs",
-            ),
-        ],
+        // ★ One site now, and it is the one the caller is told about. This fixture used to be
+        // the census's carrier of swallowed raises — its per-node probe rang `no_clear_ray` from
+        // `combinatorics.rs` 24 times per boolean and surfaced once — until E (2026-08-17) made
+        // the probe's "this node cannot decide" an abstention in its type (`Ok(None)`) instead
+        // of an error for the retry to catch. What rings now is what surfaces.
+        raised: &[("no_clear_ray", None, BOOLEAN)],
         surfaced: &[("no_clear_ray", None)],
     },
     Fixture {
@@ -415,26 +411,24 @@ fn the_reject_census() {
         "a second `coplanar_pinch` guard started ringing.\n{}",
         by("fold-45").report()
     );
-    // ★ The positive control for that counter. `== 1` above proves nothing unless the count can
-    // come back something else, and the diamond void is the shape where it does.
+    // ★ The positive control for that counter: it can answer something other than 1. The
+    // two-site carrier this used to ride (diamond-void's swallowed probe raises) was removed by
+    // E on purpose, so the control is the other direction now — a fixture where the reason
+    // never rings at all.
     assert_eq!(
-        by("diamond-void").distinct_sites("no_clear_ray"),
-        2,
-        "the two-site shape collapsed — `distinct_sites` can no longer answer anything but 1, \
-         which makes the assertion above vacuous.\n{}",
-        by("diamond-void").report()
+        by("plain-fuse").distinct_sites("coplanar_pinch"),
+        0,
+        "a successful boolean rang the pinch guard.\n{}",
+        by("plain-fuse").report()
     );
 
-    // ★ Assertion 5: the two columns measure something. If every raise surfaced, recording them
-    // apart would be ceremony — the diamond void is the shape that proves they differ.
-    let dv = by("diamond-void");
-    let raised: u64 = dv.raised.iter().map(|(_, n)| n).sum();
-    let surfaced: u64 = dv.surfaced.iter().map(|(_, n)| n).sum();
-    assert!(
-        raised > surfaced,
-        "the corpus no longer contains a swallowed raise — the raised/surfaced split measures \
-         nothing (diamond-void: raised {raised}, surfaced {surfaced})"
-    );
+    // ★ What used to be Assertion 5 — "at least one reason is raised more often than it
+    // surfaces" — is gone **because the population it rode on was deliberately removed**: E
+    // (2026-08-17) turned the swallowed-raise champion (`point_in_component`'s per-node probe,
+    // 122 of the suite's 151 raises) into a typed abstention. The two columns still measure
+    // something, but the reading inverted: their gap is now the count of *remaining* swallowed
+    // raises, and near-zero is the goal state — a gap reopening here is news of a new
+    // swallow, visible in the whole-suite sweep (`--features reject-trace`).
 
     // ★ Assertion 6: a successful boolean rings no guard at all.
     assert!(

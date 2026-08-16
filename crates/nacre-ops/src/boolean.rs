@@ -368,6 +368,24 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
             .flat_map(|lf| lf.loop_nodes.iter().map(|Node::Seam(t)| *t))
             .collect()
     };
+    // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
+    // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
+    // (`Err`) propagates immediately. The last part is the point of the shape: an abstention has
+    // other nodes as its remedy, a failed judgement does not — the old `Err(_) => try the next
+    // node` arms retried both, so a real cause could masquerade as `NoClearRay` once every node
+    // hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
+    // proposition to raise.
+    fn first_deciding<T>(
+        nodes: &[[usize; 3]],
+        mut f: impl FnMut([usize; 3]) -> Result<Option<T>, BoolError>,
+    ) -> Result<Option<T>, BoolError> {
+        for &x in nodes {
+            if let Some(v) = f(x)? {
+                return Ok(Some(v));
+            }
+        }
+        Ok(None)
+    }
     // ★★ **Material or void is a question about nesting, not about normals.**
     //
     // It used to be answered at the component's lexicographically-minimal vertex `v*`: outward iff
@@ -397,20 +415,18 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
         // component. Trying them in turn is what the cavity search does, and for the same reason —
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
-        let depth = nodes_of(c)
-            .iter()
-            .find_map(|&x| {
-                let mut d = 0usize;
-                for other in (0..n).filter(|&o| o != c) {
-                    match combinatorics::point_in_component(jd, x, &comp_faces[other]) {
-                        Ok(true) => d += 1,
-                        Ok(false) => {}
-                        Err(_) => return None, // grazed — try the next node
-                    }
+        let depth = first_deciding(&nodes_of(c), |x| {
+            let mut d = 0usize;
+            for other in (0..n).filter(|&o| o != c) {
+                match combinatorics::point_in_component(jd, x, &comp_faces[other])? {
+                    Some(true) => d += 1,
+                    Some(false) => {}
+                    None => return Ok(None), // grazed — this node abstains
                 }
-                Some(d)
-            })
-            .ok_or_else(|| reject(RejectReason::NoClearRay))?;
+            }
+            Ok(Some(d))
+        })?
+        .ok_or_else(|| reject(RejectReason::NoClearRay))?;
         if depth % 2 == 0 {
             positives.push(c);
         }
@@ -436,37 +452,47 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
-                let containers = nodes_of(d).iter().find_map(|&x| {
+                let containers = first_deciding(&nodes_of(d), |x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match combinatorics::point_in_component(jd, x, &comp_faces[m]) {
-                            Ok(true) => cs.push(m),
-                            Ok(false) => {}
-                            Err(_) => return None, // grazed against a material — try next node
+                        match combinatorics::point_in_component(jd, x, &comp_faces[m])? {
+                            Some(true) => cs.push(m),
+                            Some(false) => {}
+                            None => return Ok(None), // grazed against a material — abstain
                         }
                     }
-                    Some(cs)
-                });
-                let containers = containers.ok_or_else(|| reject(RejectReason::NoClearRay))?;
+                    Ok(Some(cs))
+                })?
+                .ok_or_else(|| reject(RejectReason::NoClearRay))?;
                 let owner = match containers.as_slice() {
                     [] => return Err(reject(RejectReason::CavityNoOwner)),
                     [only] => *only,
-                    _ => *containers
-                        .iter()
-                        .find(|&&c| {
-                            // Innermost: inside every other container.
-                            containers.iter().all(|&o| {
-                                o == c
-                                    || nodes_of(c)
-                                        .iter()
-                                        .find_map(|&x| {
-                                            combinatorics::point_in_component(jd, x, &comp_faces[o])
-                                                .ok()
-                                        })
-                                        .unwrap_or(false)
-                            })
-                        })
-                        .ok_or_else(|| reject(RejectReason::CavityNoOwner))?,
+                    _ => {
+                        // Innermost: inside every other container. The pairwise facts are
+                        // decided **before** the search, because the search closures speak
+                        // bool and a failed judgement must propagate, not vanish into "not
+                        // inside". A pair where every node abstains stays `false` — no
+                        // evidence places `c` inside `o`, the same answer the old `.ok()`
+                        // retry produced. (Nested containers are a rare population; deciding
+                        // the few pairs up front costs nothing measurable.)
+                        let mut inside = HashMap::new();
+                        for &c in &containers {
+                            for &o in &containers {
+                                if o == c {
+                                    continue;
+                                }
+                                let v = first_deciding(&nodes_of(c), |x| {
+                                    combinatorics::point_in_component(jd, x, &comp_faces[o])
+                                })?
+                                .unwrap_or(false);
+                                inside.insert((c, o), v);
+                            }
+                        }
+                        *containers
+                            .iter()
+                            .find(|&&c| containers.iter().all(|&o| o == c || inside[&(c, o)]))
+                            .ok_or_else(|| reject(RejectReason::CavityNoOwner))?
+                    }
                 };
                 comps_of.get_mut(&owner).unwrap().push(d);
             }

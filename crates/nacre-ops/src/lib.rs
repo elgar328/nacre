@@ -669,6 +669,15 @@ pub enum RejectReason {
     /// diamond inscribed in a square block — leaves no candidate that does not graze. The retry
     /// over the other nodes is what keeps ordinary contacts (a cube corner: one node of eight)
     /// clear. Locked in `tests/contact_separates.rs`.
+    ///
+    /// ★★ **Raised only where the retries actually run out (E, 2026-08-17).** A single node
+    /// failing to decide is an *abstention*, not an error — `point_in_component` says so in its
+    /// type now (`Ok(None)`), and the census had measured the cost of saying it with this reason
+    /// instead: 122 of the whole suite's 151 raises were that guard being caught and swallowed by
+    /// its own retry loop. What raises this reason today is the caller whose node supply is
+    /// exhausted (the 3D depth/cavity classification in `boolean.rs`) — and, same shape one
+    /// dimension down with no firing population, `point_in_ring`'s rayless case and
+    /// `ring_in_ring`'s probe exhaustion.
     NoClearRay,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
