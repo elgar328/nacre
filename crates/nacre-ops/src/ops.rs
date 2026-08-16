@@ -2455,13 +2455,16 @@ pub(crate) fn pocket(
 ///    `reference`'s tri plane (`plane_side`, an exact `orient3d` on the points the user gave).
 ///    Needed because `plane_idx` names a *class representative*: if the cap plane merged with a
 ///    coplanar face of the other operand, the survivor can carry that operand's surface instead.
-///    A `None` from `outer_tri` (no non-collinear triple) means no evidence — that face is skipped,
-///    and a degenerate `reference` leaves only branch 1.
+///    A `None` from `outer_tri` (no non-collinear triple) means no evidence *for this branch* —
+///    such a candidate can still match by handle, and a degenerate `reference` leaves only
+///    branch 1.
 ///
 /// The direction filter reads the **candidate's** outward normal against `want`, never
 /// `reference`'s: a pocket's tool cap faces along the sweep (`−n`) while the floor it becomes faces
-/// back into the void (`+n`). Coplanarity is settled by then, so the two are parallel and the dot
-/// is a full magnitude away from zero — an f64 read whose sign cannot round the wrong way.
+/// back into the void (`+n`). Outward is the face's *stated* one — `plane.normal()` ×
+/// `orientation`, the same cutover `collect_planes` made — not a re-derivation from its loop.
+/// Coplanarity is settled by then, so the two are parallel and the dot is a full magnitude away
+/// from zero — an f64 read whose sign cannot round the wrong way.
 ///
 /// If the cap survives as several faces they all satisfy this, and the first is returned; the
 /// coefficient test had the same ambiguity.
@@ -2480,12 +2483,20 @@ pub(crate) fn find_face_coplanar_with(
     let ref_tri = outer_tri(model, model.faces.get(reference)).map(|(tri, _)| tri);
     let shell = model.solids.get(solid).outer;
     model.shells.get(shell).faces.iter().copied().find(|&fh| {
-        let Some((tri, _)) = outer_tri(model, model.faces.get(fh)) else {
+        let face = model.faces.get(fh);
+        let Surface::Plane(pl) = model.surface(face.surface) else {
             return false;
         };
-        let coplanar = model.faces.get(fh).surface == ref_surf
-            || ref_tri.is_some_and(|r| tri.iter().all(|&q| plane_side(r, q) == 0));
-        coplanar && (tri[1] - tri[0]).cross(tri[2] - tri[0]).dot(want) > 0.0
+        let coplanar = face.surface == ref_surf
+            || ref_tri.is_some_and(|r| {
+                outer_tri(model, face)
+                    .is_some_and(|(tri, _)| tri.iter().all(|&q| plane_side(r, q) == 0))
+            });
+        let sign = match face.orientation {
+            Orientation::Forward => 1.0,
+            Orientation::Reversed => -1.0,
+        };
+        coplanar && pl.normal().dot(want) * sign > 0.0
     })
 }
 

@@ -9404,3 +9404,16 @@ n_out 의 비트는 바뀐다(단위화된 외적 → ±plane.normal()). 소비�
 (census 테스트 green = 체크인된 baseline 과 일치), reject census baseline 불변, collinear sweep
 green(뉴웰 독립 계기), proptest 시드(`cc 1c41997e…`) green, 워크스페이스 전체 0 실패,
 clippy 무경고.
+
+---
+
+## 같은 규칙의 옆집 — `find_face_coplanar_with` 도 진술된 방향을 읽는다 (2026-08-17)
+
+pad/pocket 이 결과에서 제 캡(보스 윗면·포켓 바닥)을 찾을 때의 방향 필터가 후보 면의 외곽
+삼각형 외적을 읽고 있었다 — `collect_planes` 가 방금 떠난 그 자리의 축약판. 남겨 두면
+[rule-lives-inline-next-door] 의 모양(올바른 규칙이 한 곳에, 축약판이 옆집에)이 재생되므로
+같은 커트오버를 적용: 방향은 `plane.normal() × orientation`, 공면 판정(핸들 branch 1 /
+exact `plane_side` branch 2)은 무변경. 삼각형은 이제 branch 2 의 증거로만 쓰이므로, 삼각형
+없는 후보가 핸들로 일치하는 구석의 의미가 「방향을 못 정해 skip」에서 「플래그가 방향을
+말한다」로 바뀐다 — 그 인구는 오늘 0 이다(불리언 결과 면은 emit 이 ≥3 노드를 보장). 실측:
+nacre-ops 전 스위트 green(census 포함), clippy 무경고.
