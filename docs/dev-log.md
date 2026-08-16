@@ -9204,3 +9204,30 @@ toleranced→exact 로 바뀌며 결과 비트가 움직일 수 있어 ε-동등
 `rotation_sweep`(45° 기대 사유 갱신)·`reject_census`·`self_touch` 초록. bit census 는 diff 가
 **정확히 한 줄** — B 의 `Unsupported`→`Rejected` 가 ERR 줄 표기에 반영된 것(의도된 변화)이고,
 좌표·거절 인구는 전부 불변(C 의 영향 0 — `fold-45` 는 census 인구 밖).
+
+---
+
+## 등급 이름의 «Yet» 도 예측이었다 — `NotSupportedYet` → `NotSupported` (2026-08-17)
+
+kit 의 등급 문장에서 "yet" 을 지우기로 하자(사용자 지적: "곧 될 것"이라는 예측이 의도적 거절을
+미완성처럼 들리게 한다), 같은 결함이 **등급 이름 자체**에 있다는 후속 지적이 나왔다. 이 등급의
+실제 명제는 «커널의 현재 커버리지가 여기서 끝난다»는 인식의 사실인데, 이름의 "Yet" 은 «지원이
+올 것»이라는 존재 예측으로 읽힌다 — B(`Unsupported`→`Rejected`)와 같은 계열: 이름이 값이 갖지
+않은 주장을 한다.
+
+- 새 이름 `NotSupported` 는 우산 검사를 통과한다: B 때의 `Unsupported` 는 세 등급 전체의
+  우산이라 거짓이었지만(`Impossible` 까지 «미지원»으로 덮음), 이 한 등급의 이름으로는 정확히
+  참이다.
+- 변종 doc 을 명제 순서로 재작성: 커버리지의 현재 경계(사실) 먼저, "나중에 될 수도"는 인식적
+  가능성으로만 — 그리고 일부 구성원은 능력이 와도 더 정확한 거절을 받을 뿐임을 45° 폴드
+  예시로 명시.
+- 소비자-본보기(`rejects.rs::user_message`)의 세 문구도 kit 이 싣는 문장과 정렬: "the kernel
+  does not build this" / "no valid solid exists for this input" / "an engine invariant broke"
+  — "(please report)" 는 행동 지시라 제거(문구 원칙: 진단만).
+- rename 실측: 커널+문서 14곳 → 라이브 잔존 0(dev-log 역사 제외), kit 3곳은 컴파일 에러로
+  강제 전이(다음 커밋), `RejectClass` 에 문자열 직렬화가 없어 조용한 표류 경로 자체가 없음.
+
+★ **규율 추가**: 커널에서 거절 사유의 이름이 바뀌면 census 게이트가 빨개진다(실증: C 의
+`coplanar_pinch`). 그 baseline 을 갱신하는 커밋은 **kit 의 사유→문장 표**(`nacre-kit`
+`src/error.rs`)도 함께 확인한다 — kit 의 발화-테스트가 없는 사유는 표가 낡아도 폴백으로 조용히
+후퇴하므로(틀린 문장은 아니지만 감지도 없다), 이 체크가 크로스-리포 표류의 방어선이다.

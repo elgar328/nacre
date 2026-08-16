@@ -345,9 +345,18 @@ pub enum BoolError {
 /// class, and the taxonomy is meant to stay this small (the reasons grow, not the classes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RejectClass {
-    /// Inside the kernel's remit but outside what is built yet — the same input may succeed
-    /// at a later milestone. "Not supported yet."
-    NotSupportedYet,
+    /// **The kernel's current coverage ends here** — a fact about the kernel, and nothing is
+    /// judged about the input itself. Epistemically the same input *may* succeed at a later
+    /// milestone (the kernel cannot rule it out from where this class is assigned), but that is
+    /// a possibility, not a promise: some members will only ever earn a more precise rejection
+    /// (the 45° fold reaches `CoplanarPinch` here today and would reach an `Impossible` check
+    /// if the figure-8 merge existed).
+    ///
+    /// ★ Renamed from `NotSupportedYet` (2026-08-17): the "Yet" read as a prediction that
+    /// support is coming — the same smuggled tense the user-facing sentence had — and a
+    /// deliberate refusal (the DNA: reject honestly rather than guess) is not an unfinished
+    /// feature. The name states the present fact.
+    NotSupported,
     /// No valid solid exists for this input, at any milestone: the operands are not valid
     /// 2-manifolds, or the requested combination pinches. A statement of fact, not advice —
     /// which coincidence was unintended, and what the author does about it, is theirs
@@ -695,7 +704,7 @@ pub enum RejectReason {
     /// — its pieces share edges elsewhere — and re-threading its boundary runs twice through one
     /// node, so the merged contour would be a figure-8, which this merge cannot spell yet.
     ///
-    /// ★ `NotSupportedYet`, deliberately, although the one input in the suite that reaches this
+    /// ★ `NotSupported`, deliberately, although the one input in the suite that reaches this
     /// (a part fused with its own 45°-turned copies, an arm landing coplanar on its own body) is
     /// a self-touch no milestone will build: a figure-8 contour is not itself impossible —
     /// `loop_winding` reads non-simple contours the arrangement produces as legitimate — so the
@@ -825,7 +834,7 @@ impl RejectReason {
     /// What kind of answer this is — see [`RejectClass`]. **Branch on this, not on the variant.**
     ///
     /// The split follows what each guard's own documentation says it detects: invalid operands
-    /// (no valid solid exists) are `Impossible`, coverage limits are `NotSupportedYet`, and
+    /// (no valid solid exists) are `Impossible`, coverage limits are `NotSupported`, and
     /// "the arrangement built something malformed" backstops are `SuspectedDefect`.
     pub fn class(self) -> RejectClass {
         match self {
@@ -865,7 +874,7 @@ impl RejectReason {
             | Self::PointOnRing
             | Self::HoleDepth
             | Self::CoplanarMerge
-            | Self::CoplanarPinch => RejectClass::NotSupportedYet,
+            | Self::CoplanarPinch => RejectClass::NotSupported,
             // An invariant broke: malformed assembly, or a backstop that should be unreachable.
             Self::OpenResultShell
             | Self::EulerParity

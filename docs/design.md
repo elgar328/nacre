@@ -584,7 +584,7 @@ pub struct HybridBoolean;     // M7: 일반 곡면 — 출처태그 메시 → �
 
 OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 채점자(§7)뿐이다. 사다리의 각 단은 자기 커버리지 안에서 완전해야 하며, 밖은 조용히 틀리는 대신 에러로 거절한다.
 
-**거절의 *이유*는 값에 실려 나간다 (2026-07-26 구현; 변종명 `Unsupported`→`Rejected` 개명 2026-08-16 — 세 등급 중 `Impossible`·`SuspectedDefect` 둘에 대해 «미지원»이라는 이름이 거짓이었다).** `BoolError::Rejected { reason: RejectReason }` — 이름 붙인 거절이 크레이트 밖에서 하나의 불투명한 에러로 붕괴하던 것을 값으로 옮겼다(그전엔 태그가 `#[cfg(test)]` thread-local에만 기록됐고, 여러 지점이 거절을 울린 뒤 삼키므로 애초에 건전하지도 않았다). **소비자는 `RejectReason::class()`로 분기한다** — `NotSupportedYet`(다음 마일스톤이면 됨) / `Impossible`(어떤 마일스톤에서도 유효 솔리드가 없음) / `SuspectedDefect`(엔진 불변식이 깨짐, 리포트 대상). 변형 이름은 엔진 어휘라 로그·리포트용 안정 식별자로만 쓴다. 사람이 읽는 문장·현지화는 앱 몫이다.
+**거절의 *이유*는 값에 실려 나간다 (2026-07-26 구현; 변종명 `Unsupported`→`Rejected` 개명 2026-08-16 — 세 등급 중 `Impossible`·`SuspectedDefect` 둘에 대해 «미지원»이라는 이름이 거짓이었다).** `BoolError::Rejected { reason: RejectReason }` — 이름 붙인 거절이 크레이트 밖에서 하나의 불투명한 에러로 붕괴하던 것을 값으로 옮겼다(그전엔 태그가 `#[cfg(test)]` thread-local에만 기록됐고, 여러 지점이 거절을 울린 뒤 삼키므로 애초에 건전하지도 않았다). **소비자는 `RejectReason::class()`로 분기한다** — `NotSupported`(커널의 현재 커버리지 밖 — 입력 자체는 판정 안 됨; 변종명 `NotSupportedYet`→`NotSupported` 개명 2026-08-17, 이름의 «Yet»이 지원 예정이라는 예측으로 읽혀서) / `Impossible`(어떤 마일스톤에서도 유효 솔리드가 없음) / `SuspectedDefect`(엔진 불변식이 깨짐). 변형 이름은 엔진 어휘라 로그·리포트용 안정 식별자로만 쓴다. 사람이 읽는 문장·현지화는 앱 몫이다.
 
 성장은 `RejectReason`에서만 일어나므로 그것만 `#[non_exhaustive]`이고 `BoolError`·`RejectClass`는 exhaustive다(소비자가 완전히 처리할 수 있게). 트레이스가 불완전한 경우는 `TraceDeclined { kind, face }`가 **무엇을 못 했는지와 어느 피연산자 면에서인지**를 함께 싣는다 — 예전엔 서로 다른 10가지 사유가 전부 `COPLANAR_PAIR` 하나로 나가 커널이 틀린 말을 했다.
 
@@ -649,7 +649,7 @@ census 키가 `detail`을 드는 이유: `TraceDeclined`의 11개 kind가 전부
 **이름 정리 이행(2026-08-16)**: 그 거절은 이제 `CoplanarPinch` — 병합 그룹의 공면 조각들이 한
 점에서 만나 figure-8 재봉합이 필요하다는, 그 자리가 실제로 보는 사실의 이름이다(census 실측:
 옛 `CoplanarMerge` 라벨의 10개 사이트 중 발화하는 곳은 이 하나뿐이었다). ★ 등급은 여전히
-`NotSupportedYet` 이 정직하다: figure-8 윤곽 자체는 불가능이 아니고(`loop_winding` 은 비단순
+`NotSupported` 이 정직하다: figure-8 윤곽 자체는 불가능이 아니고(`loop_winding` 은 비단순
 윤곽을 정당하게 읽는다) 이 자리는 능력 한계를 말할 뿐이다. «병합을 건너뛰고 전역 자기접촉
 검사가 말하게 하기»는 실측으로 반박됐다 — 한 검사 뒤의 `StraightAngle`(또 다른 증상 이름)로
 죽는다: 지역-한계 사슬이 한 겹이 아니다. 폴드가 진실(`Impossible` 계열)을 받으려면 figure-8

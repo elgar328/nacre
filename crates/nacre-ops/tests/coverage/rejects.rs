@@ -19,10 +19,12 @@ fn user_message(err: BoolError) -> String {
     match err {
         BoolError::InputNotLive => "an operand is no longer part of the model".to_string(),
         BoolError::Rejected { reason } => {
+            // Facts only, never advice or prediction — the standing wording rule (a
+            // diagnosis, not a prompt; no smuggled tense). These mirror what the kit ships.
             let what = match reason.class() {
-                RejectClass::NotSupportedYet => "not supported yet",
-                RejectClass::Impossible => "cannot produce a valid solid",
-                RejectClass::SuspectedDefect => "could not produce a valid result (please report)",
+                RejectClass::NotSupported => "the kernel does not build this",
+                RejectClass::Impossible => "no valid solid exists for this input",
+                RejectClass::SuspectedDefect => "an engine invariant broke",
             };
             format!("{what} [{reason}]")
         }
@@ -66,7 +68,7 @@ fn a_pinched_fuse_tells_the_caller_why() {
     assert_eq!(reason.as_str(), "non_manifold_vertex");
     assert_eq!(
         user_message(err),
-        "cannot produce a valid solid [non_manifold_vertex]"
+        "no valid solid exists for this input [non_manifold_vertex]"
     );
 }
 

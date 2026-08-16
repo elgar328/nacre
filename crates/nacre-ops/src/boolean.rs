@@ -1330,7 +1330,7 @@ fn merge_component(
     // what it sees is a specific thing: coplanar pieces of one edge-connected group pinching at
     // a point. ★ **Declining to merge instead was tried and measured (2026-08-16)**: leaving the
     // group unmerged sends the 45° fold one check further, where it dies as `StraightAngle` —
-    // another `NotSupportedYet` symptom name, not the truth — so the local-limit chain is more
+    // another `NotSupported` symptom name, not the truth — so the local-limit chain is more
     // than one layer deep and unwinding it is not this guard's job. The honest statement from
     // *here* is the capability limit itself.
     let mut next: HashMap<Node, Node> = HashMap::new();
