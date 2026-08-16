@@ -588,9 +588,20 @@ OCCT는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle의 �
 
 성장은 `RejectReason`에서만 일어나므로 그것만 `#[non_exhaustive]`이고 `BoolError`·`RejectClass`는 exhaustive다(소비자가 완전히 처리할 수 있게). 트레이스가 불완전한 경우는 `TraceDeclined { kind, face }`가 **무엇을 못 했는지와 어느 피연산자 면에서인지**를 함께 싣는다 — 예전엔 서로 다른 10가지 사유가 전부 `COPLANAR_PAIR` 하나로 나가 커널이 틀린 말을 했다.
 
+**«어디»는 사유 옆에 실려 나간다 (F, 2026-08-17).** `BoolError::Rejected { reason, at }` — `at:
+Option<RejectWhere>`(`Point` | `Segment`, 월드 f64)는 가드가 발화한 순간 보고 있던 **증인**이다
+(여럿이면 엔티티 자체 순서의 최솟값 — HashMap 순회로 뽑으면 실행마다 다른 좌표가 나온다). 위치를
+`RejectReason` 변종 안에 넣지 않는 이유: 사유는 범주 어휘(census 키·테스트가 이름 대는 것, `Copy+Eq`
+·const-구성)이고 좌표는 측정값이다 — census 의 "측정값은 키 밖" 규칙의 오류-값 판. 좌표는 진단용
+실현(캐시급)이라 `RejectWhere` 는 `Eq` 가 없고, 비교는 근사로만 한다. 표면화 사유 중
+`self_touching_result`(위반 모서리)·`non_manifold_result_edge`(위반 모서리)·`non_manifold_vertex`
+(핀치 정점)·`coplanar_pinch`(핀치 노드, 퇴화 시 None)가 싣고, `no_clear_ray`(분산적)·
+`precision_budget`(전-모델)·`cylinder_face`(발화 인구 0 — 필요해지면 `RejectWhere::Face` 변종으로
+연다)는 싣지 않는다.
+
 **어떤 사유가 실제로 발화하는지는 상설 census가 답한다 — `nacre-ops::reject_census` (2026-08-15).**
-`reject()`가 크레이트의 모든 `Rejected`를 짓는 유일한 자리라, 거기 `#[track_caller]` 하나가 88개
-호출 지점을 한꺼번에 계측한다. 무조건부(선례: `nacre-topo::WIDE_PLANES`, `nacre-cip::climb_census`
+`reject()`/`reject_at()` 쌍이 크레이트의 모든 `Rejected`를 짓는 유일한 깔때기라, 거기
+`#[track_caller]` 하나씩이 모든 호출 지점을 한꺼번에 계측한다. 무조건부(선례: `nacre-topo::WIDE_PLANES`, `nacre-cip::climb_census`
 — `#[cfg(test)]`는 통합 테스트가 비-test 빌드를 링크해서 못 쓴다), 비용은 raise 1회당 **~11ns**(실측).
 
 ★ **두 열은 서로 다른 인구다.** 「울린 것」과 「밖으로 나간 것」을 따로 적는다: E 이전(2026-08-15)

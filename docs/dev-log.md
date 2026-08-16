@@ -9277,3 +9277,45 @@ census 실측(A)의 갭 — 벨 151회 / 도달 26회 — 중 **122회가 한 �
 초록, bit census 비트 동일, 전 워크스페이스 + clippy + no-default 초록. 의도된 유일한 의미
 변화 — 판정 오류가 재시도에 삼켜지지 않고 전파 — 는 현 스위트 인구 0(예측대로 초록 무변동);
 미래에 그 경로로 거절이 새로 생기면 그것이 이 고침의 목적(위장 대신 이름)이다.
+
+---
+
+## F(커널 절반) — 거절이 «어디»를 싣는다: `RejectWhere`, 사유 옆의 증인 (2026-08-17)
+
+목표: 플레이그라운드가 거절 시 피연산자 전체를 빨갛게 칠하는 대신 **실패 지점에 마커**를 그리게
+한다. 이 셀은 커널 쪽 절반 — kit·wasm·앱 파이프는 다음 커밋들.
+
+### 설계 — 위치는 변종 안이 아니라 옆에
+
+`BoolError::Rejected { reason, at: Option<RejectWhere> }`, `RejectWhere = Point | Segment`
+(월드 f64), `reject_at()` = `reject()` 의 위치-실린 형제(같은 census 계측). 변종 필드안
+(`TraceDeclined{face}` 선례의 확장)을 Plan 리뷰가 반박했다: 기대를 `RejectReason` **값으로 적는**
+테스트 기구 3종(`assert_rejects`·census 코퍼스 표·rotation_sweep 표)이 전부 재설계되고 ~22
+사이트가 이행 대상이 된다. 사이드카는 사유를 순수 어휘(`Copy+Eq`·const-구성)로 남겨 그 기구들이
+타입 그대로 살아남고, census 의 "측정값은 키 밖" 규칙과 정합이다. `BoolError` 는 `Eq` 를 잃었다
+(f64 payload; 소비처 전수 grep 0) — 거절 비교는 reason 투영으로.
+
+### 증인 4곳 — 발화 지점에서 버려지던 것들
+
+- `self_touching_result`: 위반 모서리 양 끝 — `pt` 맵에 **이미 실현돼 있었다**(존재는 상류
+  `in_box` 가드가 보장).
+- `non_manifold_result_edge`: 위반 모서리가 `uses` 맵 키로 손에 있다가 `.any()` 에 버려지고
+  있었다 → **min 핸들 인덱스**로 증인 고정(HashMap 순회는 실행마다 다른 좌표를 내놓는다 —
+  debug==release 규율).
+- `non_manifold_vertex`: `nonmanifold_vertices` 가 위반 정점 목록을 반환하는데 `.is_empty()` 로
+  버려지고 있었다 → 정렬된 첫 증인. raise 가 함수 밖(호출자)이라 `check_result_topology` 의
+  반환이 `Option<(RejectReason, Option<RejectWhere>)>` 로 넓어졌다(2차 리뷰가 찾은 파급).
+- `coplanar_pinch`: 핀치 노드들 중 **min Node** → `three_planes` 실현(seam 테이블 이전 단계라
+  직접 실현; 퇴화면 위치만 떨어지고 거절은 유지).
+
+싣지 않는 것: `no_clear_ray`(위치가 분산적 — blame 색칠이 이미 답), `precision_budget`(전-모델
+명제), `cylinder_face`(**앱에서 발화 인구 0** — 앱이 실린더 입력을 못 만든다; 필요해지면
+`RejectWhere::Face(Handle<Face>)` 변종으로 연다).
+
+### 잠금 — 픽스처가 스스로 아는 좌표로, 근사로만
+
+`==` 는 `Point` 의 절대 규칙이 금지(45° 폴드는 회전 평면이라 실현 자체가 근사): 점-핀치 픽스처의
+`(2,2,1)`(자기 doc 이 이름 대는 모서리), 선-핀치의 접촉선 `x=2,y=2`, 셀프터치 보이드의 수직
+모서리 `(0,2,1)–(0,2,2)`, 45° 폴드는 **공유 평면 명제**(Z 회전만 있으니 핀치는 z=0 또는 z=12 —
+x/y 까지 대면 폴드를 재구현하는 셈이라 대수가 박는 부분만). census baseline 불변(키는 as_str),
+bit census 비트 동일, clippy 무경고 — 전부 실측.
