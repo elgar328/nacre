@@ -476,6 +476,20 @@ pub enum OpError {
     /// points, could not survive a motion, and is the population `Inexact` grew from — a named
     /// reject is the honest answer (S6b).
     PlaneWithoutExactForm,
+    /// The face's sketch frame **exists** — [`face_plane`] reports it and the pad sketches in
+    /// it — but no [`SketchFrame`] realizes to it, so [`face_sketch_frame`] has nothing true
+    /// to return. Not [`Self::PlaneWithoutExactForm`]: that says the exact form is missing,
+    /// and here it is present — what is missing is a *spelling*.
+    ///
+    /// The population today: world-branch faces whose surface carries a motion (a plane the
+    /// rotation maps onto itself, or an exact move recorded over a history). The pad elides the
+    /// frame node and sketches in world axes there, and every `SketchFrame` on that surface
+    /// means "the pre-motion frame, then the motion" — stating the world axes in it would need
+    /// the motion's inverse image, which is irrational. Defined by **verification failure**
+    /// (no candidate's realization matches), not by that condition: the day invariant planes
+    /// are restated world-side instead of carrying their motion, these faces start verifying
+    /// and this reject disappears without a code change.
+    FrameNotRepresentable,
     /// A [`SketchFrame::named`] coordinate (origin or `ref_dir`) outside the decimal window
     /// (`Rat::from_decimal`), so the frame claim has no exact statement to check. The frame
     /// sibling of [`OpError::ProfileOutsideDecimalWindow`] and [`OpError::DistOutsideDecimalWindow`].
@@ -2070,28 +2084,63 @@ pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
 /// the exact vocabulary itself (S9): the same value `face_frame` builds internally, no longer
 /// thrown away at the boundary.
 ///
-/// A face has no caller to name a placement, so it is always `Canonical`. For a face whose world
-/// axes lift exactly (axis-aligned), the operation *elides* the frame node — the canonical frame
-/// of the plane realizes to those same world axes, so the frame returned here is the same frame
-/// by the node-omission normalization, not a second opinion.
+/// ★★★ **What comes back is verified against the pad's frame, by realization, to the bit.** On a
+/// world-branch face (axes lifting exactly) the operation elides the frame node and sketches in
+/// `face_frame`'s world axes — so this transcribes *those* axes into the vocabulary and returns a
+/// candidate only if realizing it lands bit-identically on them. The old fallback assumed the
+/// canonical frame realizes to the same axes ("the node-omission normalization"); that holds only
+/// for flip=false faces of motion-free planes, and everywhere else the returned frame put a
+/// sketch somewhere the pad does not (measured: point-symmetric on every flip=true axis-aligned
+/// face). Verification is the contract now — no candidate can be returned wrong, whatever
+/// population shows up next.
+///
+/// A face has no caller to name a placement, so the canonical frame is tried first (the stronger
+/// normal form); where it realizes elsewhere, the pad's axes are transcribed as a `Named`
+/// placement (origin + `ref_dir`, S9's vocabulary) with `flip` measured as everywhere else.
 ///
 /// Errors as [`face_plane`]: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when
-/// the plane carries no name to derive a frame from (a test-only unregistered surface).
+/// the plane carries no name to derive a frame from (a test-only unregistered surface); and
+/// [`OpError::FrameNotRepresentable`] when the frame exists but no spelling realizes to it —
+/// today, world-branch faces whose surface carries a motion (see the variant's doc).
 pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFrame, OpError> {
     let f = face_frame(model, face)?;
     if let Some(sf) = f.sketch_frame {
         return Ok(sf);
     }
-    // The world-liftable population: `face_frame` skipped the derivation because the operation
-    // will not build a node. The frame is still well-defined — measure `flip` the same way the
-    // tilted branch does, against the face's outward normal.
-    measured_frame(
-        model,
-        f.surface_h,
-        nacre_topo::FramePlacement::Canonical,
-        f.n,
-    )
-    .ok_or(OpError::PlaneWithoutExactForm)
+    // The world-branch population: the operation will build no node and sketch in `f`'s axes.
+    // Every candidate below must prove itself by realizing to exactly those axes — bits, not a
+    // tolerance: both sides come from exact roads ({0,±1} axes, rational projections), so
+    // agreement is exact when it holds and a threshold would only paper over a third derivation.
+    let pad_frame =
+        [f.origin.as_array(), f.x.as_array(), f.y.as_array()].map(|c| c.map(f64::to_bits));
+    let verified = |sf: SketchFrame| -> Option<SketchFrame> {
+        let (o, u, v, _) =
+            crate::rotated_vertex::frame_world_basis(model, f.surface_h, sf.placement(), sf.flip)?;
+        ([o, u, v].map(|c| c.map(f64::to_bits)) == pad_frame).then_some(sf)
+    };
+    let canonical = || {
+        measured_frame(
+            model,
+            f.surface_h,
+            nacre_topo::FramePlacement::Canonical,
+            f.n,
+        )
+    };
+    // The transcription: the pad's own origin and +u, said as a `Named` placement. `named`'s
+    // exact checks (on-plane origin, non-degenerate ref_dir) ride along; any failure just drops
+    // the candidate — the refusal below is the answer, never a silent wrong frame.
+    let transcribed = || {
+        let sf = SketchFrame::named(model, f.surface_h, f.origin, f.x).ok()?;
+        measured_frame(model, f.surface_h, sf.placement, f.n)
+    };
+    if !model.surface_name.contains_key(&f.surface_h) {
+        // No name at all: nothing can realize. The distinct, older proposition.
+        return Err(OpError::PlaneWithoutExactForm);
+    }
+    canonical()
+        .and_then(&verified)
+        .or_else(|| transcribed().and_then(&verified))
+        .ok_or(OpError::FrameNotRepresentable)
 }
 
 /// Locate `face`'s live solid and build its planar frame. `NonPlanarFace` for a curved surface,

@@ -190,8 +190,28 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
     let bottom = face_with_surface(&m, m.world_plane(Axis::Z));
     let fb = nacre_ops::face_sketch_frame(&m, bottom).expect("the seeded bottom");
     assert_eq!(fb.plane(), m.world_plane(Axis::Z));
-    assert_eq!(*fb.placement(), FramePlacement::Canonical);
     assert!(fb.flip(), "outward −ẑ against canonical ŵ = +ẑ");
+    // ★ Not `placement == Canonical` any more — that was an implementation detail standing in
+    // for the actual contract, and it was false in substance: the canonical frame *flipped*
+    // realizes point-symmetric to the axes the pad sketches this face in (the node is elided on
+    // an axis-aligned face, and the pad uses the world axes derived from the outward normal).
+    // The contract is the realization: the frame this returns must land, bit for bit, on the
+    // plane `face_plane` reports — which is what the pad reads. `tests/sketch_frame_contract.rs`
+    // sweeps this same proposition over four placements × six faces.
+    let realized = nacre_ops::frame_plane(&m, &fb).expect("the returned frame realizes");
+    let reported = nacre_ops::face_plane(&m, bottom).expect("planar");
+    let bits = |p: &nacre_ops::SketchPlane| {
+        [
+            p.origin().as_array().map(f64::to_bits),
+            p.x_axis().as_array().map(f64::to_bits),
+            p.y_axis().as_array().map(f64::to_bits),
+        ]
+    };
+    assert_eq!(
+        bits(&realized),
+        bits(&reported),
+        "the returned frame realizes somewhere the pad does not sketch"
+    );
 
     // A tilted face: turn the box, pad on its (rotated) top, then compare the reported frame
     // with the node the pad actually sketched in.
