@@ -9605,3 +9605,29 @@ tracer의 crossed-edge wall(arrangement의 Crossing 팔) 하나였다.
 - 실측: 착수 전 `reject-trace` 전수에서 CrossingName 발화 **0**(baseline — 삭제 면허),
   **bit census 비트 동일**(3-평면 정점에서 carried == derived의 증명대로), reject census
   baseline 불변, rotation_sweep 45° + 전체 밴드 초록, 전 스위트 0 실패.
+
+---
+
+## M6-사전 위생 일괄 — 작은 거짓말들, 눈먼 폴백, 옆집 사본, 테스트 이사 (2026-08-17)
+
+전수 스윕(54회 조회)이 특정한 빚의 나머지(wall-carried 건은 자기 셀). 전부 행동-무변화 실측:
+
+- **거짓말 정리**: `transform`의 `axis_index` 사본 삭제(`Axis::index` 존재), `Axis::index`에
+  잘못 앉아 있던 doc(`plane()`의 것) 제자리, `plane_classes`의 «later cell 배선 예정» 거짓
+  주석+낡은 dead_code 허용 제거(프로덕션이 이미 호출), `MergedSeg::end`의 무의미 허용 제거,
+  fin_array의 현재형 `SurfaceDef` doc 정정.
+- **눈먼 폴백 → 망라 match** (`motion_is_exact`): `points_move`의 let-else(코드 자신이 ★5개로
+  경고하던 자리)와 origin 프로브의 if-let — M6가 `SurfaceTruth`/`Surface`에 변종을 추가하는
+  순간 조용한 흡수 대신 **컴파일 에러**가 재검토를 강제한다. Cylinder 팔들은 면허를 주석으로
+  진다(전제 만료 시점 명시).
+- **`Orientation::sign()`**: "저장 법선 × 부호 = 진술된 바깥"의 ±1 사상이 3개 크레이트 7곳
+  (프로덕션 5 + props 2 — 스윕이 놓친 props 2곳은 구현 중 발견)+테스트 3곳에 인라인으로 흩어져
+  있던 것을 한 철자로. `motion_of` 클로저 사본 2곳도 기존 `Model::plane_motion`으로.
+- **테스트 이사**: ops/lib.rs의 6,520줄 인라인 `pub mod tests` → `src/tests.rs`(선언만 남김,
+  경로 불변), tolerant.rs의 2,081줄 → `src/tolerant_tests.rs`(`#[path]`) — lib.rs 프로덕션
+  991줄, tolerant.rs 89줄(=M6가 이차곡면 증인으로 확장할 `Witness` 포트)이 드러났다.
+
+실측: bit census 비트 동일(커밋 3·4·5 각각 — 이사 후에도 논증 아닌 실측), reject census
+불변, 워크스페이스 0 실패, clippy 0, no-default 클린. M6 인계 목록은 메모리에: points_move
+Cylinder 팔 재검토가 컴파일러로 강제됨 · canonical frame 5번째 tier 금지 · 무발화 backstop들의
+첫 발화 기대 · `FaceInfo::face` Option 결정 · 뉴웰 공유 거처.
