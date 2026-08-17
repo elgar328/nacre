@@ -2138,6 +2138,35 @@ impl Isometry {
         }
     }
 
+    /// Whether this isometry maps the plane `a·x + b·y + c·z + d = 0` onto itself
+    /// **as a set** — exactly, on the rational definition.
+    ///
+    /// A rotation about an axis parallel to the plane's normal permutes the plane
+    /// within itself whatever the pivot (the normal coordinate is untouched), and a
+    /// translation moves the plane iff its component along the normal is nonzero.
+    /// So the condition is: the rotation, if any, has its axis parallel to
+    /// `(a, b, c)`, and `(a, b, c) · translate == 0`. `d` plays no part — every
+    /// plane sharing the normal answers alike. Checked arithmetic; an overflow
+    /// answers `false`, a conservative miss (the plane is then carried on the
+    /// recorded path, slower but never wrong).
+    ///
+    /// A reflection is not an `Isometry`; the mirror motion answers for itself.
+    pub fn fixes_plane(&self, coeffs: &[Rat; 4]) -> bool {
+        let n = [coeffs[0], coeffs[1], coeffs[2]];
+        let zero = Rat::from_int(0);
+        if let Some(r) = self.rotate {
+            let i = r.axis.index();
+            if n[i] == zero || (0..3).any(|k| k != i && n[k] != zero) {
+                return false;
+            }
+        }
+        let dot = n
+            .iter()
+            .zip(self.translate)
+            .try_fold(zero, |acc, (&a, t)| a.checked_mul(t)?.checked_add(acc));
+        dot == Some(zero)
+    }
+
     /// Apply the full isometry (rotate about the axis point, then translate) to a
     /// point realized in f64.
     pub fn apply_point(&self, p: [f64; 3]) -> [f64; 3] {
@@ -2285,6 +2314,72 @@ mod tests {
 
     fn ints(v: [i128; 4]) -> [Rat; 4] {
         v.map(Rat::from_int)
+    }
+
+    /// [`Isometry::fixes_plane`] — the set-invariance predicate the invariant-plane
+    /// restatement gates on. Hand-known planes and motions; the overflow case locks the
+    /// conservative direction (a miss records a node — slower, never wrong).
+    mod fixes_plane {
+        use super::*;
+
+        fn rot(axis: Axis, deg: i128, point: [i128; 3]) -> Isometry {
+            Isometry::rotation(Rotation {
+                axis,
+                point: point.map(Rat::from_int),
+                angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
+            })
+        }
+
+        #[test]
+        fn an_axis_parallel_normal_rides_any_pivot() {
+            let z_plane = ints([0, 0, 1, -3]);
+            assert!(rot(Axis::Z, 30, [0, 0, 0]).fixes_plane(&z_plane));
+            assert!(rot(Axis::Z, 30, [7, -2, 5]).fixes_plane(&z_plane));
+            let x_wall = ints([1, 0, 0, -2]);
+            assert!(!rot(Axis::Z, 30, [0, 0, 0]).fixes_plane(&x_wall));
+            assert!(rot(Axis::X, 30, [1, 1, 1]).fixes_plane(&x_wall));
+            assert!(!rot(Axis::X, 30, [1, 1, 1]).fixes_plane(&z_plane));
+        }
+
+        #[test]
+        fn a_translation_moves_the_plane_iff_it_leaves_it() {
+            let z_plane = ints([0, 0, 1, -3]);
+            let mut in_plane = rot(Axis::Z, 30, [0, 0, 0]);
+            in_plane.translate = [Rat::from_int(1), Rat::from_int(2), Rat::from_int(0)];
+            assert!(in_plane.fixes_plane(&z_plane));
+            let mut off_plane = rot(Axis::Z, 30, [0, 0, 0]);
+            off_plane.translate = [Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)];
+            assert!(!off_plane.fixes_plane(&z_plane));
+        }
+
+        #[test]
+        fn a_pure_translation_needs_no_rotation_clause() {
+            // The population the whole-solid probe loses to magnitude rounding: a huge
+            // in-plane offset still fixes every plane it slides along.
+            let big = Rat::from_int(1i128 << 100);
+            let iso = Isometry::translation([big, big, Rat::from_int(0)]);
+            assert!(iso.fixes_plane(&ints([0, 0, 1, -3])));
+            assert!(!iso.fixes_plane(&ints([1, 0, 0, -2])));
+        }
+
+        #[test]
+        fn an_overflowing_dot_is_a_conservative_miss() {
+            // a·tx and −b·ty would cancel to a true zero, but each product overflows
+            // i128 — the checked arithmetic answers false rather than guessing.
+            let wide = 1i128 << 100;
+            let plane = [
+                Rat::from_int(wide),
+                Rat::from_int(wide),
+                Rat::from_int(0),
+                Rat::from_int(-1),
+            ];
+            let iso = Isometry::translation([
+                Rat::from_int(wide),
+                Rat::from_int(-wide),
+                Rat::from_int(0),
+            ]);
+            assert!(!iso.fixes_plane(&plane));
+        }
     }
 
     /// [`plane_name_from_meets`] — the name of a plane through meets of any width (open
