@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc ddda0a21b0a598a94abeefd83a016678809c645dad736fd1568dd2e0ad86fd23 # shrinks to base = [0.0, 0.0, 0.0], axis = [0.0, 0.0, 0.11629631038855466], r = 0.5, h = 0.1
+cc 2cf2c562812d1702d1de6218c807e4d6743d20bd38f3a9c002bc165d4ba3bbf1 # shrinks to base = [0.0, 0.0, 0.0], axis = [0.1181674690543037, -0.11258144547841069, -0.033712610662548576], r = 0.5, h = 0.1

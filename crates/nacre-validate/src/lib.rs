@@ -186,7 +186,34 @@ pub enum Violation {
     /// every other check here (edge opposition and Euler are blind to it) and
     /// walks straight into "which side is material".
     FaceMisoriented { face: Handle<Face>, cos: f64 },
+
+    /// A cylinder's exact truth (`CylinderDef`) and its f64 cache describe **different
+    /// cylinders** — the two-descriptions net (M6-0): coefficients-beside-witness taught that
+    /// two exact-looking descriptions of one surface can drift apart, and the cure is a
+    /// consumer-side postcondition, not trust in the producer. `field` names the disagreeing
+    /// quantity (`"radius"`, `"origin"`, `"dir"`, `"ref_dir"`), the two values are the def's
+    /// realization and the cache's, one component at a time.
+    ///
+    /// The failure modes this exists to net are enormous, not subtle — a wrong seam tie-break
+    /// turns `ref_dir` ~90° (a component moves by ~1), a raw-vs-unit mix-up scales `dir` by
+    /// its length — while every healthy realization path sits within a few machine epsilons;
+    /// the threshold sits between at [`CYL_TRUTH_EPS`].
+    CylinderTruthCacheMismatch {
+        surface_index: u32,
+        field: &'static str,
+        def_value: f64,
+        cache_value: f64,
+    },
 }
+
+/// How far a cylinder def's realization may sit from the cache, per component, before
+/// [`Violation::CylinderTruthCacheMismatch`] fires — `|def − cache| ≤ CYL_TRUTH_EPS ·
+/// max(1, |def|, |cache|)`, a mixed absolute/relative bound. Not an ulp count: the cache's
+/// Gram–Schmidt legitimately smears ~1e−17 into a slot the def's shuffle keeps at exactly
+/// `0.0` (measured on a full-width random axis), and ulps are meaningless across zero.
+/// Healthy paths measure ≤1e−17 absolute (`nacre-topo/tests/cylinder_truth.rs` sees 0–1 ulp
+/// on the nonzero components); the defects the net exists for move a component by ~10¹⁵·ε.
+pub const CYL_TRUTH_EPS: f64 = 8.0 * f64::EPSILON;
 
 /// Check every M1 invariant of `model`, returning all violations (empty = valid).
 ///
@@ -214,6 +241,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     check_manifold(model, &adj, &reach, &mut out);
     check_cavity_orientation(model, &mut out);
     check_face_orientation(model, &reach, &mut out);
+    check_cylinder_truth(model, &reach, &mut out);
     check_geometric_incidence(model, &reach, &mut out);
     check_euler_poincare(model, &reach, &mut out);
     out
@@ -615,6 +643,64 @@ fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
         weight += signed;
     }
     Some((0.5 * area_vec.norm(), base + weighted * (1.0 / weight)))
+}
+
+/// **The def and the cache must describe one cylinder** (M6-0) — see
+/// [`Violation::CylinderTruthCacheMismatch`]. The radius is compared on every cylinder (it is
+/// invariant under every rigid motion, and a mirrored cylinder cannot exist); the frame —
+/// origin, axis direction, seam direction — only where the statement is world-spoken
+/// (`motion: None`): a recorded chain states the def *before* the motion, and realizing a
+/// statement through its chain is machinery M6-0 deliberately does not build (3b's sibling).
+fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
+    let mut seen: std::collections::HashSet<Handle<Surface>> = std::collections::HashSet::new();
+    for (fh, face) in m.faces.iter() {
+        if !reach.faces.contains(&fh) || !seen.insert(face.surface) {
+            continue;
+        }
+        let Surface::Cylinder(cy) = m.surface(face.surface) else {
+            continue;
+        };
+        // The stores are index-parallel with one entry door, so a kind mismatch cannot arise;
+        // it is transform's `unreachable!`, not this check's proposition.
+        let nacre_topo::SurfaceTruth::Cylinder { def, motion } = m.surface_truth(face.surface)
+        else {
+            continue;
+        };
+        let surface_index = face.surface.index();
+        let mut flag = |field: &'static str, dv: f64, cv: f64| {
+            let scale = 1f64.max(dv.abs()).max(cv.abs());
+            if (dv - cv).abs() > CYL_TRUTH_EPS * scale {
+                out.push(Violation::CylinderTruthCacheMismatch {
+                    surface_index,
+                    field,
+                    def_value: dv,
+                    cache_value: cv,
+                });
+            }
+        };
+        flag("radius", def.radius().to_f64(), cy.radius());
+        if motion.is_some() {
+            continue;
+        }
+        let co = cy.axis().origin().as_array();
+        for (k, o) in def.origin().iter().enumerate() {
+            flag("origin", o.to_f64(), co[k]);
+        }
+        // The raw exact directions are positively parallel to the cache's unit ones, so their
+        // own realizations, normalized, must land beside them. (No `Rat` in a signature here —
+        // scalar types flow through topo's API, and this crate deliberately never names them.)
+        for (raw, cache_v, name) in [
+            (def.dir(), cy.axis().direction(), "dir"),
+            (def.ref_dir(), cy.ref_dir(), "ref_dir"),
+        ] {
+            let realized = Vector3::from_array([raw[0].to_f64(), raw[1].to_f64(), raw[2].to_f64()]);
+            if let Some(u) = realized.normalize() {
+                for k in 0..3 {
+                    flag(name, u[k], cache_v[k]);
+                }
+            }
+        }
+    }
 }
 
 fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
@@ -1321,6 +1407,82 @@ mod tests {
             matches!(vs[0], Violation::FaceMisoriented { face, cos } if face == twin && cos < -0.5),
             "{vs:?}"
         );
+    }
+
+    /// ★ M6-0 positive control: the def–cache net (`CylinderTruthCacheMismatch`) actually
+    /// bites. The stores are sealed, so the defect is *built* the `FaceMisoriented` way: a twin
+    /// of the lateral face whose surface is the same cache pushed under a **lying def** (radius
+    /// 2 where the cache says 1). Every geometric check still passes — the loop's vertices sit
+    /// on the same cache — so a def that lies about the radius is visible to this net alone.
+    /// (The twin's edges still name the original lateral as carrier, so `EdgeCarrierMismatch`
+    /// fires too; the assertion is that the truth net is among the findings, per-field.)
+    #[test]
+    fn a_lying_cylinder_def_is_caught() {
+        let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
+        let solid = m.live_solids[0];
+        let shell = m.solids.get(solid).outer;
+        let faces = m.shells.get(shell).faces.clone();
+        let victim = *faces
+            .iter()
+            .find(|&&fh| matches!(m.surface(m.faces.get(fh).surface), Surface::Cylinder(_)))
+            .expect("the lateral face");
+        let cache = match m.surface(m.faces.get(victim).surface) {
+            Surface::Cylinder(c) => *c,
+            _ => unreachable!(),
+        };
+        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).expect("decimal");
+        let lying = nacre_topo::CylinderDef::new(
+            [r(0.0), r(0.0), r(0.0)],
+            [r(0.0), r(0.0), r(1.0)],
+            [r(0.0), r(-1.0), r(0.0)],
+            r(2.0), // the lie — the cache's radius is 1
+        )
+        .expect("well-formed statement");
+        let liar = m.push_cylinder(cache, lying, None);
+        let twin = {
+            let f = m.faces.get(victim).clone();
+            m.faces.push(Face { surface: liar, ..f })
+        };
+        let sh = m.shells.push(Shell {
+            faces: faces
+                .iter()
+                .map(|&h| if h == victim { twin } else { h })
+                .collect(),
+        });
+        let replaced = m.push_solid(Solid {
+            outer: sh,
+            cavities: vec![],
+        });
+        m.live_solids.retain(|&s| s == replaced);
+        let vs = validate(&m);
+        assert!(
+            vs.iter().any(|v| matches!(
+                v,
+                Violation::CylinderTruthCacheMismatch { field: "radius", def_value, cache_value, .. }
+                    if *def_value == 2.0 && *cache_value == 1.0
+            )),
+            "the lying radius must be caught: {vs:?}"
+        );
+    }
+
+    /// ★ M6-0: the population that refuted the net's first (ulp-based) metric, pinned. A
+    /// full-width random axis makes the cache's Gram–Schmidt smear ~1e−17 into the component
+    /// the def's shuffle keeps at exactly `0.0` — ulps are meaningless across zero, so the
+    /// bound is mixed absolute/relative ([`CYL_TRUTH_EPS`]). This exact axis is the proptest's
+    /// minimal failing input from that refutation; it must stay clean.
+    #[test]
+    fn a_full_width_axis_survives_the_truth_net() {
+        let m = cylinder(
+            [0.0, 0.0, 0.0],
+            [
+                0.1181674690543037,
+                -0.11258144547841069,
+                -0.033712610662548576,
+            ],
+            0.5,
+            0.1,
+        );
+        assert_eq!(validate(&m), vec![]);
     }
 
     /// ★ S8: the check `VertexOffCurve` still has teeth where the curve does NOT derive from

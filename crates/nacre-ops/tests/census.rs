@@ -608,6 +608,68 @@ fn dump() {
         m.rebuild_adjacency();
         record("ct ring-pinch fuse", &m, &inputs, &out);
     }
+    // ── Cylinders (M6-0): the truth rides beside the cache. Solo and moved bodies are digest
+    // lines (a boolean never runs); the boolean rows record the honest refusal — that reject
+    // string is part of the corpus, so the day M6-2 admits cylinders, these lines change from
+    // ERR to results *in the diff*, not silently.
+    {
+        use nacre_math::Vector3;
+        let solo = |m: &Model, s: Handle<Solid>| {
+            let (vn, vh) = coord_digest(m, s);
+            let (pn, ph) = plane_digest(m, s);
+            format!("v{vn}h{vh:016x}p{pn}h{ph:016x}")
+        };
+        let mut m = Model::new();
+        let c = m.add_cylinder(
+            Point3::from_array([0.5, -1.25, 2.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.5,
+            2.5,
+        );
+        m.rebuild_adjacency();
+        println!("c cyl solo {}", solo(&m, c));
+        // An exact 90° turn (truth transported, nothing recorded) and an inexact 31° turn
+        // (node recorded, def carried verbatim) — both roads in the corpus.
+        let turned = xf(
+            &mut m,
+            c,
+            Isometry::rotation(Rotation {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(90)).expect("angle"),
+            }),
+        );
+        println!("c cyl turn90 {}", solo(&m, turned));
+        let leaned = xf(
+            &mut m,
+            turned,
+            Isometry::rotation(Rotation {
+                axis: Axis::X,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(31)).expect("angle"),
+            }),
+        );
+        println!("c cyl turn31 {}", solo(&m, leaned));
+
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([2.0, 2.0, 2.0]),
+            );
+            let b = m.add_cylinder(
+                Point3::from_array([1.0, 1.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                4.0,
+            );
+            m.rebuild_adjacency();
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("cyl {kn}"), &m, &inputs, &out);
+        }
+    }
     // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** Since S2
     // every plane with points is named (wide ones in the arbitrary-precision vessel), so a
     // coordinate can move only when wide planes *merge* — a `c ` line that moves must come with

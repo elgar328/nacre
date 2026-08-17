@@ -9687,3 +9687,24 @@ M6 진입 재조사(원통-우선 M6a, `sign(a+b√c)` 원시, 유리수 반각 
   회전상과 일치), 31°는 노드 + def verbatim — 둘 다 새 테스트. bit census 159줄 **HEAD
   worktree 대조 비트 동일**, reject census 단정 green, 전 스위트 0 실패, clippy 0, no-default
   클린, kit 3게이트 클린.
+
+---
+
+## M6-0 커밋 3 — 관문·픽스처: 그물의 첫 계량이 반증당하고 고쳐졌다 (2026-08-17)
+
+- **census 원통 가족 6줄**: solo·turn90(정확 수송)·turn31(노드 기록) digest + 불리언 3종의
+  `CylinderFace` 정직 거절 줄 — M6-2가 원통을 불리언에 들이는 날 이 줄들이 diff에서 ERR→결과로
+  바뀐다(조용한 전환 불가). 기존 157줄 비트 동일, seeded_hits 530→539(신규 픽스처 캡 interning
+  — 의도된 증가). 보너스 증거: turn90의 평면 digest가 solo와 동일 — 축 둘레 90° 회전에서 캡이
+  불변-평면 재진술로 원 핸들에 되꽂힘.
+- **validate `CylinderTruthCacheMismatch`**: def 실현 ↔ 캐시 정합의 소비자측 그물
+  ([two-exact-descriptions] 선례). radius는 전 원통(강체 불변), 프레임(origin·dir·ref_dir)은
+  world-진술(motion None)만 — 기록 사슬 실현은 3b 짝으로 유예. ★ **첫 계량(ulp)이 proptest에
+  반증당했다**: 전폭 무작위 축에서 캐시 Gram–Schmidt가 def 셔플의 구조적 0.0 자리에 ~1e-17을
+  묻힌다 — 0을 가로지르는 ulp는 무의미(비트거리 ~10¹⁸). 계량을 혼합 절대/상대
+  (`CYL_TRUTH_EPS = 8ε · max(1,|값|)`)로 교체; 반증 입력을 고정 회귀로 박제
+  (`a_full_width_axis_survives_the_truth_net`). 양성 대조: 같은 캐시에 radius 거짓말 def를
+  얹은 쌍둥이 면 — 기하 검사 전부 통과, 이 그물만 잡는다(`a_lying_cylinder_def_is_caught`).
+- **STEP 왕복**: dump_cylinder_step → step-io 독립 판독 — 73 엔티티 전량 검증, drop 0,
+  faces = Cylindrical 1 + Plane 2, 경고 0. tess OBJ 2종(coarse/fine) 육안용 산출.
+- 전 스위트 0 실패, clippy 0, 훅 게이트 통과.
