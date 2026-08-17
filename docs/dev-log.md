@@ -9631,3 +9631,28 @@ tracer의 crossed-edge wall(arrangement의 Crossing 팔) 하나였다.
 불변, 워크스페이스 0 실패, clippy 0, no-default 클린. M6 인계 목록은 메모리에: points_move
 Cylinder 팔 재검토가 컴파일러로 강제됨 · canonical frame 5번째 tier 금지 · 무발화 backstop들의
 첫 발화 기대 · `FaceInfo::face` Option 결정 · 뉴웰 공유 거처.
+
+---
+
+## M6-0 커밋 1 — 원통의 진실: 규약을 문서에 먼저 박다 (2026-08-17)
+
+M6 진입 재조사(원통-우선 M6a, `sign(a+b√c)` 원시, 유리수 반각 차트)의 확정 사항을 코드보다
+먼저 문서에 기록 — 커밋 2(topo/scalar 확장)·3(관문)이 이 규약을 구현한다.
+
+- **seam 근거의 정정**: design.md §9의 *"OCCT·Parasolid·ACIS가 전부 내부적으로 seam을
+  넣는다"* 는 과장이었다 — 실측: **OCCT만 필수**, ACIS는 `periodic_no_seam` 옵션, Parasolid는
+  winding loop로 seamless가 네이티브. 업계 관행 근거를 지우고 자기 제약 4가지로 자립시켰고,
+  재조사가 찾은 **근거 5**를 추가: 유리수 반각 차트의 배제점(t=∞) = seam — seam이 인공물이
+  아니라 유리수 차트의 자연 경계다.
+- **M6-0 규약 6개 기록** (design.md §9 + truth-and-cache 이행표 ⏳ 행): ① `CylinderDef`
+  성분형·비정규화 원시(ref_dir은 `any_perpendicular` 자신의 규칙을 유리수로 — 최소-|성분| 축,
+  동률 X→Y→Z, 십진 순서 ≡ f64 순서라 축 선택 항상 일치) ② seam은 모델 기하라 M6-0이 영구
+  고정, M6-1 차트가 seam에 적응(역방향 금지) ③ 보수 interning(`cylinder_ids` 별도 맵, def
+  문자 동일 — 다른 ref_dir 병합은 seam을 가른다) ④ OnSeam = "rim ∩ +ref_dir ray" 정의 완성
+  ⑤ `[s,s]` 자기-인접 확정(잠정 딱지 제거) ⑥ 평면∩평면∩원통 ≤2점은 `VertexDef` 새 변종
+  방향만 기록(구현 M6-1).
+- **§8 M6 절 갱신**: "지금 할 것: 없음" → 재조사 완료(2026-08-17), M6-0→M6-3 사다리 확정,
+  QI 논문은 M6a에 불필요(평면∩원통은 `sign(a+b√c)`로 닫힌다 — 라이선스 규율 불변).
+- 착수 전 프로브(사전-측정 리터럴): 오늘 코드의 seam 정점·캐시 비트패턴 4픽스처 40줄 채집
+  완료(스크래치 보관) — 커밋 2의 기대 리터럴로 쓴다. 발견: near-tie 픽스처는 오늘도 캐시
+  ref_dir과 정점-u가 1ulp 다르다(두 정규화 경로) — 커밋 2의 ≤ulp 관문이 이를 존중해야 한다.
