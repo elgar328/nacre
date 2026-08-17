@@ -34,7 +34,9 @@
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 pub mod mag;
+pub mod quad;
 pub use mag::Mag;
+pub use quad::{QuadVal, biquad_sign};
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};

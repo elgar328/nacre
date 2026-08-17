@@ -9732,3 +9732,26 @@ M6 진입 재조사(원통-우선 M6a, `sign(a+b√c)` 원시, 유리수 반각 
 - 나머지 스윕은 클린: `from_decimal(-0.0)` = Rat 0(패닉 없음), 무행동 모션의
   `new_motion == src_m(Some)` 경로는 항등 수송이라 건전(chain_motion 확인), 회전 이동은
   radius 를 verbatim 전달, kit 게이트 무영향.
+
+---
+
+## M6-1 커밋 1 — sign 탑: QuadVal(a+b√c)과 ℚ(√u,√v)의 부호 (2026-08-18)
+
+- **`nacre-scalar/src/quad.rs` 신설**: `QuadVal { a, b, c }`(불변식 c≥0, b=0⇔c=0 정규화;
+  `PartialEq` 비파생 — √8=2√2 같은 두 철자를 정준화하려면 소인수분해라 값 동등은 sign 탑 몫),
+  같은-라디칼 add/sub/neg/mul(+Rat 스칼라 곱, checked — 라디칼 불일치는 debug_assert+None),
+  `to_f64`(캐시 전용), `sign()`. 나눗셈은 소비자가 없어 안 지음(YAGNI — t 실현이 필요한 날).
+- **sign 탑은 BigInt 코어로 total**: 분모 클리어(√(p/q)=√(pq)/q 접기 포함) 후 정수 재귀.
+  sign1: c=0 최우선 → b=0/a=0 → 동부호 → 상반은 `sign(a)·sign(a²−b²c)` 곱.
+  `biquad_sign`(A+B√u+C√v+D√uv): P+√v·Q 분해 → 상반이면 `sign(P)·sign1(P²−vQ²)`.
+  음수 라디칸드는 정의역 답 `None`(존재하지 않는 값 — QuadVal::new 계약과 동일, 버그 아님).
+- **관문**: 케이스 전수(16 — 플랜 리뷰가 문면에서 두 번 고친 c=0 함정·곱 결합 포함), 두-철자
+  상쇄(1+√4−3, √8−2√2 — 후자는 sign2의 P²−vQ²=0 팔 행사), biquad 손 케이스 5 + 퇴화 라디칼,
+  **Pell 수렴자 사다리**(p²−2q²=±1이라 기대 부호가 자기-검증 — 매직 리터럴 0개, i128 끝까지
+  90+단, 최심 분리 ~1e-73), 512-bit astro-float 차등 오라클(proptest 2종 포함) + 오라클
+  분해능 음성 대조. debug 14/release 13 green.
+- ★ **함정 재확인**: astro-float의 `from_f64(0.0)` 영과의 `cmp`가 크레이트 환경에서 0.414를
+  "<0"이라 답했다(알려진 업스트림 이슈 — 이 프로젝트에서 과거에도 발견). 오라클은 0-비교를
+  버리고 `sign()`+비영-eps 비교로. 
+- design.md 정정: "sign(a+b√c) **하나로** 닫힌다" → sign1/sign2 역할 분리 + 차트 t는 실현
+  전용·원형 순서는 두-술어(반평면·외적) + seam 모선 위 점은 `SeamIncident`로 이름 답.
