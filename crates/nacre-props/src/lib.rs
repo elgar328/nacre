@@ -21,7 +21,7 @@
 use nacre_geom::{Curve, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{Face, Loop, Model, Orientation, Solid};
+use nacre_topo::{Face, Loop, Model, Solid};
 
 use std::f64::consts::PI;
 
@@ -121,10 +121,7 @@ pub struct FaceProps {
 /// [`FaceProps`] of one face.
 pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsError> {
     let face = model.faces.get(face);
-    let sign = match face.orientation {
-        Orientation::Forward => 1.0,
-        Orientation::Reversed => -1.0,
-    };
+    let sign = f64::from(face.orientation.sign());
     match model.surface(face.surface) {
         Surface::Plane(plane) => {
             let (area, centroid) = planar_region(model, face)?;
@@ -240,10 +237,7 @@ fn face_contribution(
     face: &Face,
     reference: Point3,
 ) -> Result<(f64, f64), PropsError> {
-    let sign = match face.orientation {
-        Orientation::Forward => 1.0,
-        Orientation::Reversed => -1.0,
-    };
+    let sign = f64::from(face.orientation.sign());
     match model.surface(face.surface) {
         Surface::Plane(plane) => {
             // Outer boundary, minus each inner loop (a hole): area and first

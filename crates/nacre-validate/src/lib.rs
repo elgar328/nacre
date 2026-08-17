@@ -12,9 +12,7 @@
 use nacre_geom::Surface;
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
-use nacre_topo::{
-    Adjacency, Edge, Face, Loop, Model, Orientation, Reachable, Shell, Solid, Vertex, VertexDef,
-};
+use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Vertex, VertexDef};
 
 /// Residual bound for a vertex with **no measured tolerance** lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — such a coordinate is the
@@ -517,10 +515,7 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
         let Surface::Plane(plane) = m.surface(face.surface) else {
             return None;
         };
-        let sign = match face.orientation {
-            Orientation::Forward => 1.0,
-            Orientation::Reversed => -1.0,
-        };
+        let sign = f64::from(face.orientation.sign());
         let normal = plane.normal() * sign;
         let (area, centroid) = loop_area_centroid(m, &face.outer)?;
         flux += normal.dot(centroid - reference) * area;
@@ -569,10 +564,7 @@ fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>
         let Some(dir) = newell.normalize() else {
             continue;
         };
-        let sign = match face.orientation {
-            Orientation::Forward => 1.0,
-            Orientation::Reversed => -1.0,
-        };
+        let sign = f64::from(face.orientation.sign());
         let cos = dir.dot(plane.normal() * sign);
         // Two aligned unit vectors sit at ±1; 0.5 is the same "a full unit from
         // the sign boundary" margin the boolean's own asserts use.

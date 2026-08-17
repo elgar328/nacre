@@ -72,7 +72,7 @@ pub(crate) enum ClassPlan {
 /// irrational — still has no rational pullback and declines honestly (Arrange — slower,
 /// never wrong); C2's differential counts that population (open item 14).
 fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
-    use nacre_topo::{SurfaceTruth, VertexDef};
+    use nacre_topo::VertexDef;
 
     let sol = model.solids.get(s);
     let mut seen: std::collections::HashSet<Handle<Vertex>> = std::collections::HashSet::new();
@@ -92,11 +92,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     let VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
                         return None; // OnSeam: a cylinder never reaches a boolean anyway
                     };
-                    let motion_of = |h| match model.surface_truth(h) {
-                        SurfaceTruth::Plane { motion, .. } => *motion,
-                        SurfaceTruth::Cylinder { motion } => *motion,
-                    };
-                    let motions = tri.map(motion_of);
+                    let motions = tri.map(|h| model.plane_motion(h));
                     out.push(if motions.iter().all(Option::is_none) {
                         WitnessPoint::exact(model.vertex_point(vh).as_array())?
                     } else {

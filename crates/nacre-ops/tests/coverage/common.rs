@@ -18,7 +18,7 @@ use nacre_ops::{
 };
 use nacre_scalar::{Axis, Isometry};
 use nacre_store::Handle;
-use nacre_topo::{Face, Model, Orientation, Solid};
+use nacre_topo::{Face, Model, Solid};
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).
@@ -111,10 +111,7 @@ pub fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3
         let Surface::Plane(plane) = m.surface(f.surface) else {
             return false;
         };
-        let sign = match f.orientation {
-            Orientation::Forward => 1.0,
-            Orientation::Reversed => -1.0,
-        };
+        let sign = f64::from(f.orientation.sign());
         planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n) > 0.0
     })
 }

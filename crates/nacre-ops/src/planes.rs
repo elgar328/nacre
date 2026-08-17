@@ -10,7 +10,7 @@ use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::Mag;
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, HalfEdge, Model, Orientation, Shell, Solid, Vertex};
+use nacre_topo::{Edge, Face, HalfEdge, Model, Shell, Solid, Vertex};
 use std::collections::HashMap;
 
 /// A face's supporting plane plus the exact in/out data the seam path needs.
@@ -102,10 +102,7 @@ pub(crate) fn collect_planes(
             // source, and its conditioning was the pad-eats-material defect: on rotated
             // near-collinear corners the direction that came back was the rounding. The
             // winding is still consulted — as the cross-check below, not as the answer.
-            let orient_sign: i8 = match face.orientation {
-                Orientation::Forward => 1,
-                Orientation::Reversed => -1,
-            };
+            let orient_sign = face.orientation.sign();
             let n_out = plane.normal() * f64::from(orient_sign);
             // **The plane's exact definition comes from the surface, not from the vertices.**
             //

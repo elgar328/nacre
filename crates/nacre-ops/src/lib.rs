@@ -1052,10 +1052,7 @@ pub mod tests {
             let Surface::Plane(plane) = m.surface(f.surface) else {
                 return false;
             };
-            let sign = match f.orientation {
-                Orientation::Forward => 1.0,
-                Orientation::Reversed => -1.0,
-            };
+            let sign = f64::from(f.orientation.sign());
             planes_coplanar(plane, &target) && (plane.normal() * sign).dot(n) > 0.0
         })
     }
@@ -3124,10 +3121,7 @@ pub mod tests {
         let Surface::Plane(p) = m.surface(cap.surface) else {
             unreachable!()
         };
-        let sign = match cap.orientation {
-            Orientation::Forward => 1.0,
-            Orientation::Reversed => -1.0,
-        };
+        let sign = f64::from(cap.orientation.sign());
         let materialized = p.normal() * sign;
         assert!(
             (materialized - Vector3::from_array([0.0, 0.0, -1.0])).norm() < 1e-12,

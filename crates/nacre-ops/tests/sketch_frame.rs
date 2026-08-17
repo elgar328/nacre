@@ -246,10 +246,7 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
                     nacre_geom::Surface::Plane(p) => *p,
                     _ => unreachable!(),
                 };
-                let sgn = match f.orientation {
-                    nacre_topo::Orientation::Forward => 1.0,
-                    nacre_topo::Orientation::Reversed => -1.0,
-                };
+                let sgn = f64::from(f.orientation.sign());
                 p.normal().as_array()[2] * sgn
             };
             z(a).partial_cmp(&z(b)).unwrap()

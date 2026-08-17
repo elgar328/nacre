@@ -182,6 +182,18 @@ impl Orientation {
             Orientation::Reversed => Orientation::Forward,
         }
     }
+
+    /// The flag as a sign: stored surface normal × `sign()` = the face's **stated outward**
+    /// — the one reading props, STEP (`same_sense`) and the boolean engine all share. One
+    /// spelling, because the ±1 map used to live inline at six production sites and a copy
+    /// drifting is exactly how a face comes to lie about which way it faces.
+    #[inline]
+    pub fn sign(self) -> i8 {
+        match self {
+            Orientation::Forward => 1,
+            Orientation::Reversed => -1,
+        }
+    }
 }
 
 /// **A surface's exact truth** — what the surface *is*, as opposed to the f64

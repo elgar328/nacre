@@ -2164,10 +2164,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
         Surface::Plane(p) => *p,
         Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
     };
-    let sign = match orientation {
-        Orientation::Forward => 1.0,
-        Orientation::Reversed => -1.0,
-    };
+    let sign = f64::from(orientation.sign());
     let n = plane.normal() * sign;
     let (x, y) = frame_axes(n).ok_or(OpError::DegenerateGeometry)?;
     // ★ The origin is the **world origin projected onto the face's plane** — a property of the
@@ -2495,10 +2492,7 @@ pub(crate) fn find_face_coplanar_with(
                 outer_tri(model, face)
                     .is_some_and(|(tri, _)| tri.iter().all(|&q| plane_side(r, q) == 0))
             });
-        let sign = match face.orientation {
-            Orientation::Forward => 1.0,
-            Orientation::Reversed => -1.0,
-        };
+        let sign = f64::from(face.orientation.sign());
         coplanar && pl.normal().dot(want) * sign > 0.0
     })
 }
