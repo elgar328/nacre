@@ -6525,3 +6525,168 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The rational road (M6-2a C4a): `combinatorics::point_in_faces_rat`.
+//
+// Its production consumer is the cylinder band (C4b), but the road answers a question about
+// **planar** solids, so it is locked here against one — a non-convex L-prism, where a convex
+// test would be wrong and the notch is the counterexample the plan's uniform-slab theorem was
+// rewritten around.
+// ---------------------------------------------------------------------------
+
+/// A solid's faces as the rational road takes them: `(plane class, rings of node triples)`.
+fn component_triples(
+    m: &Model,
+    s: Handle<Solid>,
+    setup: &PlaneSetup,
+    jd: &Judge<'_, WorkingPlane>,
+) -> combinatorics::ComponentTriples {
+    let mut out = combinatorics::ComponentTriples::new();
+    for sh in solid_shell_handles(m, s) {
+        for &fh in &m.shells.get(sh).faces {
+            let fp = setup.surf_ix[&fh];
+            let cls = setup.plane_ix[fp].plane();
+            let outer =
+                combinatorics::face_vertex_triples(m, fh, fp, &setup.inc_a, jd, &setup.plane_ix)
+                    .expect("a planar operand names its outer loop");
+            let mut rings = vec![outer.poly().expect("a poly outer").triples.clone()];
+            for h in combinatorics::hole_rings(m, fh, fp, &setup.inc_a, jd, &setup.plane_ix)
+                .expect("a planar operand names its holes")
+            {
+                rings.push(h.poly().expect("a poly hole").triples.clone());
+            }
+            out.push((cls, rings));
+        }
+    }
+    out
+}
+
+/// The L-prism's own profile as the differential's **oracle**: a 2D crossing parity on the ring
+/// the fixture was written from, plus the extrusion's z range. It reads the test's inputs, never
+/// the model the road reads — the two must not share a derivation.
+fn l_prism_oracle(p: [f64; 3]) -> bool {
+    let ring = [
+        p2(0.0, 0.0),
+        p2(2.0, 0.0),
+        p2(2.0, 1.0),
+        p2(1.0, 1.0),
+        p2(1.0, 2.0),
+        p2(0.0, 2.0),
+    ];
+    let inside_2d = matches!(
+        nacre_geom::intersect::point_in_ring_2d(p2(p[0], p[1]), &ring),
+        nacre_geom::intersect::RingSide::Inside
+    );
+    inside_2d && p[2] > 0.0 && p[2] < 1.0
+}
+
+fn rat3(p: [f64; 3]) -> [Rat; 3] {
+    p.map(|x| Rat::from_decimal(x).expect("a fixture coordinate is a decimal"))
+}
+
+/// A grid of witnesses over the L-prism and its notch, road against oracle — **and both ray
+/// directions agree**, which is the road's own claim: parity does not depend on where you look
+/// from. The notch is why: it is outside the material and inside the bounding box, so a convex
+/// or "z-range" answer would be wrong on a quarter of the grid.
+#[test]
+fn the_rational_road_agrees_with_the_profile_over_the_l_notch() {
+    let (m, s) = l_prism();
+    let setup = plane_index_setup(&m, s, s).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let faces = component_triples(&m, s, &setup, &jd);
+
+    let coords = [0.25, 0.75, 1.25, 1.75, 2.25];
+    let mut inside = 0;
+    let mut checked = 0;
+    for x in coords {
+        for y in coords {
+            let p = [x, y, 0.5];
+            let want = l_prism_oracle(p);
+            for dir in [[0, 0, 1], [1, 0, 0], [0, 1, 0], [1, 1, 1]] {
+                let d = dir.map(Rat::from_int);
+                let got = combinatorics::point_in_faces_rat(&jd, &rat3(p), &d, &faces)
+                    .unwrap_or_else(|e| panic!("{p:?} along {dir:?}: {e:?}"));
+                let Some(got) = got else {
+                    // An abstention is allowed (a grazing ray), but it must not be the only
+                    // answer this point ever gets — the loop's other directions cover it.
+                    continue;
+                };
+                assert_eq!(got, want, "point {p:?} along {dir:?}");
+                checked += 1;
+            }
+            inside += usize::from(want);
+        }
+    }
+    // The instrument moved: the grid is not all-outside or all-inside, and the notch column is
+    // genuinely void while the bar beside it is material.
+    assert_eq!(inside, 12, "12 of 25 grid points are material");
+    assert!(
+        checked >= 25,
+        "every grid point answered along some direction: {checked}"
+    );
+}
+
+/// The three non-generic rays, each abstaining rather than guessing: a ray that **starts on** the
+/// solid's surface, a ray that **runs inside** a face's plane, and a ray that **grazes an edge**.
+/// Abstention is a fact about the ray — the same point answers along another direction, which the
+/// test shows in the same breath.
+#[test]
+fn a_non_generic_ray_abstains_and_another_direction_answers() {
+    let (m, s) = l_prism();
+    let setup = plane_index_setup(&m, s, s).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    let faces = component_triples(&m, s, &setup, &jd);
+    let ask = |p: [f64; 3], dir: [i128; 3]| {
+        combinatorics::point_in_faces_rat(&jd, &rat3(p), &dir.map(Rat::from_int), &faces).unwrap()
+    };
+
+    // ① The origin is on the bottom cap, inside its material: "inside" has no answer there.
+    assert_eq!(ask([0.5, 0.5, 0.0], [0, 0, 1]), None);
+    // ② The same origin, a direction lying in that cap's plane: no crossing parity at all.
+    assert_eq!(ask([0.5, 0.5, 0.0], [1, 0, 0]), None);
+    // ③ A grazing ray: from (0.5,0.5,0.5) toward (2,1,0.5), the convex corner where the x=2 and
+    //    y=1 walls meet — the hit lands on both faces' boundary.
+    assert_eq!(ask([0.5, 0.5, 0.5], [3, 1, 0]), None);
+    // …and the same point, off the corner, answers.
+    assert_eq!(ask([0.5, 0.5, 0.5], [1, 0, 0]), Some(true));
+}
+
+/// A class with no exact description is **not** an abstention: no direction repairs it, so the
+/// road raises `WitnessNotRational` rather than letting a substrate limit wear "no clear ray"'s
+/// clothes. Measured on a rotated L-prism, whose classes carry realized coefficients only.
+#[test]
+fn a_rotated_class_refuses_the_rational_road_by_name() {
+    use nacre_scalar::{Angle, Isometry, Rotation};
+    let (mut m, s) = l_prism();
+    let iso = Isometry::rotation(Rotation {
+        axis: Axis::Z,
+        point: [Rat::from_int(0); 3],
+        angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
+    });
+    let t = transform(&mut m, s, &iso).unwrap();
+    let setup = plane_index_setup(&m, t, t).unwrap();
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    assert!(
+        setup.geom.iter().any(|p| p.rotated),
+        "the fixture must actually be rotated"
+    );
+    let faces = component_triples(&m, t, &setup, &jd);
+    let err = combinatorics::point_in_faces_rat(
+        &jd,
+        &rat3([0.5, 0.5, 0.5]),
+        &[0, 0, 1].map(Rat::from_int),
+        &faces,
+    )
+    .expect_err("a rotated class has no exact description to divide by");
+    assert!(
+        matches!(
+            err,
+            BoolError::Rejected {
+                reason: RejectReason::WitnessNotRational,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+}

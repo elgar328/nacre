@@ -1939,15 +1939,6 @@ fn nest_cells(
     })
 }
 
-/// A ring node's exact coordinates: the rational meet of its three classes' descriptions.
-/// `None` when any class lacks a narrow rational description — the caller declines rather
-/// than guessing (in the circle population every class passed the gate, which required those
-/// descriptions, so a `None` here is the miss the gate already named).
-fn node_coords_rat(jd: &Judge<'_, WorkingPlane>, t: [usize; 3]) -> Option<[nacre_scalar::Rat; 3]> {
-    let c = |i: usize| jd.planes[i].base_rat.filter(|_| !jd.planes[i].rotated);
-    nacre_scalar::three_planes_rat([c(t[0])?, c(t[1])?, c(t[2])?])
-}
-
 /// Whether a circle's **center** lies inside a polygon ring of the class — the containment
 /// witness `nest_cells` uses for a circle contour (the loops are disjoint by the gate's
 /// clearance proof, so one point decides). Exact: the center is `axis ∩ W` (rational), the
@@ -1962,8 +1953,7 @@ fn circle_center_in_ring(
     use nacre_scalar::Rat;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
     let zero = Rat::from_int(0);
-    let wp = &jd.planes[wc];
-    let coeffs = wp.base_rat.filter(|_| !wp.rotated).ok_or_else(undecided)?;
+    let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let (o, m) = (circle.def.origin(), circle.def.dir());
     let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
@@ -1984,35 +1974,12 @@ fn circle_center_in_ring(
         Some(p)
     })()
     .ok_or_else(undecided)?;
-    // A rational 2D basis of W: e₁ = ê_k × n (first k with a nonzero cross), e₂ = n × e₁.
-    // Parity is affine-invariant, so the basis need not be orthonormal.
-    let cross = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<[Rat; 3]> {
-        Some([
-            x[1].checked_mul(y[2])?
-                .checked_sub(x[2].checked_mul(y[1])?)?,
-            x[2].checked_mul(y[0])?
-                .checked_sub(x[0].checked_mul(y[2])?)?,
-            x[0].checked_mul(y[1])?
-                .checked_sub(x[1].checked_mul(y[0])?)?,
-        ])
-    };
-    let basis = |k: usize| -> [Rat; 3] {
-        let mut e = [zero; 3];
-        e[k] = Rat::from_int(1);
-        e
-    };
-    let e1 = (0..3)
-        .filter_map(|k| cross(&basis(k), &n))
-        .find(|e| e.iter().any(|c| *c != zero))
-        .ok_or_else(undecided)?;
-    let e2 = cross(&n, &e1).ok_or_else(undecided)?;
-    let project = |p: &[Rat; 3]| -> Option<[Rat; 2]> { Some([dot3(p, &e1)?, dot3(p, &e2)?]) };
-    let p2 = project(&center).ok_or_else(undecided)?;
-    let mut ring2 = Vec::with_capacity(ring.len());
-    for e in ring {
-        let p = node_coords_rat(jd, e.node).ok_or_else(undecided)?;
-        ring2.push(project(&p).ok_or_else(undecided)?);
-    }
+    // The class's rational chart — the one copy of that rule ([`combinatorics::Chart2dRat`]);
+    // parity is affine-invariant, so the basis need not be orthonormal.
+    let chart = combinatorics::Chart2dRat::of_normal(&n).ok_or_else(undecided)?;
+    let p2 = chart.project(&center).ok_or_else(undecided)?;
+    let nodes: Vec<[usize; 3]> = ring.iter().map(|e| e.node).collect();
+    let ring2 = chart.ring(jd, &nodes).ok_or_else(undecided)?;
     match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
         nacre_geom::intersect::RingSide::Inside => Ok(true),
         nacre_geom::intersect::RingSide::Outside => Ok(false),
@@ -2031,7 +1998,7 @@ fn node_in_circle(
 ) -> Result<bool, BoolError> {
     let undecided = || reject(RejectReason::CylinderGateUndecided);
     let node = ring.first().ok_or_else(undecided)?.node;
-    let p = node_coords_rat(jd, node).ok_or_else(undecided)?;
+    let p = combinatorics::node_coords_rat(jd, node).ok_or_else(undecided)?;
     match nacre_scalar::cylinder_radial_side(
         &p,
         &circle.def.origin(),

@@ -1148,3 +1148,214 @@ pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usiz
     let planes = jd.planes;
     jd.plane_pair_dir_sign(p, q, r) * planes[r].frame_sign
 }
+
+// ---------------------------------------------------------------------------
+// The **rational road** (M6-2a C4a): the same containment questions as above, asked about a
+// point that has coordinates instead of a name.
+//
+// Everything else in this module names a point by three planes, which is what makes it exact.
+// A cylinder's band has no such name to offer — its witness is a rational point on the axis —
+// so the uniform-slab theorem needs a road that starts from coordinates and stays exact anyway.
+// It does: a rational point, a rational direction, plane classes with narrow rational
+// descriptions, and `point_in_ring_2d_rat` for the in-face parity. No `f64` decides anything
+// here either.
+// ---------------------------------------------------------------------------
+
+/// A plane class's exact description, or `None` where it has none to give (a rotated class'
+/// realized coefficients are not its truth, so they are refused rather than read).
+pub(crate) fn class_coeffs_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+) -> Option<[nacre_scalar::Rat; 4]> {
+    jd.planes[c].base_rat.filter(|_| !jd.planes[c].rotated)
+}
+
+/// A node's exact coordinates: the rational meet of its three classes' descriptions. `None` when
+/// any class lacks a narrow rational description — the caller declines rather than guessing.
+pub(crate) fn node_coords_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    t: [usize; 3],
+) -> Option<[nacre_scalar::Rat; 3]> {
+    nacre_scalar::three_planes_rat([
+        class_coeffs_rat(jd, t[0])?,
+        class_coeffs_rat(jd, t[1])?,
+        class_coeffs_rat(jd, t[2])?,
+    ])
+}
+
+fn dot3_rat(x: &[nacre_scalar::Rat; 3], y: &[nacre_scalar::Rat; 3]) -> Option<nacre_scalar::Rat> {
+    x[0].checked_mul(y[0])?
+        .checked_add(x[1].checked_mul(y[1])?)?
+        .checked_add(x[2].checked_mul(y[2])?)
+}
+
+fn cross3_rat(
+    x: &[nacre_scalar::Rat; 3],
+    y: &[nacre_scalar::Rat; 3],
+) -> Option<[nacre_scalar::Rat; 3]> {
+    Some([
+        x[1].checked_mul(y[2])?
+            .checked_sub(x[2].checked_mul(y[1])?)?,
+        x[2].checked_mul(y[0])?
+            .checked_sub(x[0].checked_mul(y[2])?)?,
+        x[0].checked_mul(y[1])?
+            .checked_sub(x[1].checked_mul(y[0])?)?,
+    ])
+}
+
+/// **A rational 2D chart of a plane**, for running a parity test in it.
+///
+/// `e₁ = ê_k × n` for the first basis axis giving a nonzero cross, `e₂ = n × e₁`. The chart is
+/// deliberately **not** orthonormal: crossing parity is invariant under any affine isomorphism of
+/// the plane, and demanding unit vectors would need square roots that leave the rationals. One
+/// copy of this rule, because a second spelling of it is how two consumers start disagreeing
+/// about which side of a ring a point is on.
+pub(crate) struct Chart2dRat {
+    e1: [nacre_scalar::Rat; 3],
+    e2: [nacre_scalar::Rat; 3],
+}
+
+impl Chart2dRat {
+    /// The chart of the plane with normal `n`. `None` on a zero normal or on checked-`Rat`
+    /// overflow.
+    pub(crate) fn of_normal(n: &[nacre_scalar::Rat; 3]) -> Option<Self> {
+        let zero = nacre_scalar::Rat::from_int(0);
+        let basis = |k: usize| -> [nacre_scalar::Rat; 3] {
+            let mut e = [zero; 3];
+            e[k] = nacre_scalar::Rat::from_int(1);
+            e
+        };
+        let e1 = (0..3)
+            .filter_map(|k| cross3_rat(&basis(k), n))
+            .find(|e| e.iter().any(|c| *c != zero))?;
+        let e2 = cross3_rat(n, &e1)?;
+        Some(Chart2dRat { e1, e2 })
+    }
+
+    /// A point's chart coordinates.
+    pub(crate) fn project(&self, p: &[nacre_scalar::Rat; 3]) -> Option<[nacre_scalar::Rat; 2]> {
+        Some([dot3_rat(p, &self.e1)?, dot3_rat(p, &self.e2)?])
+    }
+
+    /// A ring of node triples in chart coordinates.
+    pub(crate) fn ring(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+        ring: &[[usize; 3]],
+    ) -> Option<Vec<[nacre_scalar::Rat; 2]>> {
+        ring.iter()
+            .map(|&t| self.project(&node_coords_rat(jd, t)?))
+            .collect()
+    }
+}
+
+/// A component's faces for the rational road: `(plane class, rings)`, `rings[0]` the outer loop
+/// and the rest holes, each ring a list of node triples. The triples are what
+/// [`face_vertex_triples`] and [`hole_rings`] already produce.
+#[cfg_attr(not(test), allow(dead_code))] // the production consumer is C4b's band membership
+pub(crate) type ComponentTriples = Vec<(usize, Vec<Vec<[usize; 3]>>)>;
+
+/// **Whether a rational point lies inside a component** — the coordinate-bearing twin of
+/// [`point_in_component`], and the road the cylinder band's uniform-slab witness travels.
+///
+/// A ray `p + t·dir`, `t > 0`, crossing-parity over the component's faces: each face's plane
+/// gives one `t` exactly (rational), and the hit point's membership in that face's material is a
+/// parity test in the plane's rational chart — inside the outer ring, outside every hole. Odd
+/// count ⇒ inside.
+///
+/// **`Ok(None)` is abstention, and it is a fact about this ray, not about the point**: the ray
+/// grazed a face boundary, ran inside a face's plane, or started on a face. The caller's remedy
+/// is another direction (the band has a whole open interval of witnesses), which is exactly the
+/// protocol [`point_in_component`] uses for its plane pairs. `Err` is reserved for a question no
+/// direction can answer — a class in the way with no exact description, or checked-`Rat`
+/// overflow — because trading that for an abstention would let a real cause masquerade as "no
+/// clear ray" once every direction hit it.
+#[cfg_attr(not(test), allow(dead_code))] // the production consumer is C4b's band membership
+pub(crate) fn point_in_faces_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    p: &[nacre_scalar::Rat; 3],
+    dir: &[nacre_scalar::Rat; 3],
+    faces: &ComponentTriples,
+) -> Result<Option<bool>, BoolError> {
+    use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
+    use nacre_scalar::Rat;
+    let not_rational = || reject(RejectReason::WitnessNotRational);
+    let zero = Rat::from_int(0);
+    if dir.iter().all(|c| *c == zero) {
+        return Err(reject(RejectReason::DegenerateWitness));
+    }
+    let mut count = 0usize;
+    for (q, rings) in faces {
+        let coeffs = class_coeffs_rat(jd, *q).ok_or_else(not_rational)?;
+        let n = [coeffs[0], coeffs[1], coeffs[2]];
+        let nd = dot3_rat(&n, dir).ok_or_else(not_rational)?;
+        let residual = dot3_rat(&n, p)
+            .and_then(|v| v.checked_add(coeffs[3]))
+            .ok_or_else(not_rational)?;
+        if nd == zero {
+            // The ray is parallel to this plane: it misses the face outright, unless it runs
+            // *inside* the plane — where "how many times does it cross this face" has no
+            // crossing-parity answer at all, and another direction is the remedy.
+            if residual == zero {
+                return Ok(None);
+            }
+            continue;
+        }
+        let t = (|| -> Option<Rat> {
+            zero.checked_sub(residual)?
+                .checked_mul(Rat::new(nd.denom(), nd.numer())?)
+        })()
+        .ok_or_else(not_rational)?;
+        if t < zero {
+            continue; // behind the origin
+        }
+        // The hit point, and whether it is in this face's material.
+        let x = (|| -> Option<[Rat; 3]> {
+            let mut x = *p;
+            for k in 0..3 {
+                x[k] = x[k].checked_add(t.checked_mul(dir[k])?)?;
+            }
+            Some(x)
+        })()
+        .ok_or_else(not_rational)?;
+        let chart = Chart2dRat::of_normal(&n).ok_or_else(not_rational)?;
+        let x2 = chart.project(&x).ok_or_else(not_rational)?;
+        let side = |ring: &[[usize; 3]]| -> Result<RingSide, BoolError> {
+            let ring2 = chart.ring(jd, ring).ok_or_else(not_rational)?;
+            Ok(point_in_ring_2d_rat(x2, &ring2))
+        };
+        let Some(outer) = rings.first() else {
+            return Err(reject(RejectReason::DegenerateRing));
+        };
+        let mut material = match side(outer)? {
+            RingSide::Inside => true,
+            RingSide::Outside => false,
+            RingSide::OnBoundary => return Ok(None), // grazed an edge — not a generic ray
+        };
+        if material {
+            for hole in &rings[1..] {
+                match side(hole)? {
+                    RingSide::Inside => {
+                        material = false;
+                        break;
+                    }
+                    RingSide::Outside => {}
+                    RingSide::OnBoundary => return Ok(None),
+                }
+            }
+        }
+        if t == zero {
+            // The crossing is the ray's own origin. On the face's material the query sits on
+            // the boundary of the solid, where "inside" has no answer; off it, the plane is
+            // simply touched at a point outside the face and counts for nothing.
+            if material {
+                return Ok(None);
+            }
+            continue;
+        }
+        if material {
+            count += 1;
+        }
+    }
+    Ok(Some(count % 2 == 1))
+}

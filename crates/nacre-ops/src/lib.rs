@@ -733,6 +733,17 @@ pub enum RejectReason {
     /// dimension down with no firing population, `point_in_ring`'s rayless case and
     /// `ring_in_ring`'s probe exhaustion.
     NoClearRay,
+    /// **A containment question about a rational point met a class that cannot state itself
+    /// exactly.** The coordinate-bearing road (`combinatorics::point_in_faces_rat`, the cylinder
+    /// band's uniform-slab witness) needs every face plane it crosses as narrow rational
+    /// coefficients; a rotated class, a class with no narrow name, or checked-`Rat` overflow
+    /// leaves it with nothing exact to divide by.
+    ///
+    /// **Not an abstention.** Choosing another ray direction is the remedy for a grazed boundary,
+    /// and this is not that: no direction avoids a face that has no description. Sharing
+    /// [`Self::NoClearRay`] would hide a substrate limit inside a geometry accident — the same
+    /// mistake `FourPlane` was split out of.
+    WitnessNotRational,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
@@ -881,6 +892,7 @@ impl RejectReason {
             Self::JudgeExhausted => "judge_exhausted",
             Self::DegenerateWitness => "degenerate_witness",
             Self::NoClearRay => "no_clear_ray",
+            Self::WitnessNotRational => "witness_not_rational",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
             Self::HoleRoots => "hole_roots",
@@ -933,6 +945,7 @@ impl RejectReason {
             | Self::UnorderedEdges
             | Self::EdgeOccupancyConflict
             | Self::NoClearRay
+            | Self::WitnessNotRational
             | Self::PointOnRing
             | Self::HoleDepth
             | Self::CoplanarMerge => RejectClass::NotSupported,
