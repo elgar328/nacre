@@ -115,19 +115,13 @@ impl QuadVal {
         QuadVal::new(self.a.checked_sub(rhs.a)?, self.b.checked_sub(rhs.b)?, c)
     }
 
-    /// Exact negation (cannot overflow: `Rat` keeps the sign in an `i128` numerator whose
-    /// negation only fails at `i128::MIN`, which a reduced `Ratio` never holds).
-    pub fn neg(&self) -> QuadVal {
+    /// Exact negation; `None` on overflow. ★ Checked, not infallible — the first spelling
+    /// claimed "a reduced `Ratio` never holds `i128::MIN`", and that is false (measured:
+    /// `Rat::from_int(i128::MIN)` is a legal reduced value whose negation overflows). The
+    /// claim was a panic path dressed as a proof; the checked contract is the honest one.
+    pub fn checked_neg(&self) -> Option<QuadVal> {
         let zero = Rat::from_int(0);
-        QuadVal {
-            a: zero
-                .checked_sub(self.a)
-                .expect("negating a reduced rational"),
-            b: zero
-                .checked_sub(self.b)
-                .expect("negating a reduced rational"),
-            c: self.c,
-        }
+        QuadVal::new(zero.checked_sub(self.a)?, zero.checked_sub(self.b)?, self.c)
     }
 
     /// Exact multiplication within one radical:
@@ -335,9 +329,14 @@ fn is_zero3(x: &V3) -> bool {
     x.iter().all(|c| *c == zero)
 }
 
-/// Exact rational division; `None` for a zero divisor or overflow.
+/// Exact rational division by a **positive** divisor; `None` for a zero divisor or overflow.
+///
+/// ★ The positivity is load-bearing, not cosmetic: `Rat::new(denom, numer)` with a negative
+/// `numer` normalizes the sign by negating both parts *inside* `Ratio`, which is unchecked —
+/// at `numer = i128::MIN` that negation panics. Every call site divides by `|ℓ|²` or `2A`
+/// (both positive), and the assert keeps the next caller honest.
 fn rat_div(x: Rat, y: Rat) -> Option<Rat> {
-    // 1/y spelled through the public constructor, which normalizes the sign.
+    debug_assert!(y > Rat::from_int(0), "rat_div is for positive divisors");
     x.checked_mul(Rat::new(y.denom(), y.numer())?)
 }
 
@@ -563,6 +562,13 @@ pub fn circular_order_about_seam(
         *out = mm
             .checked_mul(ref_dir[k])?
             .checked_sub(rm.checked_mul(m[k])?)?;
+    }
+    // `ref_dir ∥ axis` pins no seam — `CylinderDef::new` forbids it, but this pure-numeric
+    // door sits outside that guard, and without the check it would fall through to the
+    // off-surface assert with the wrong diagnosis.
+    if is_zero3(&e1) {
+        debug_assert!(false, "ref_dir parallel to the axis pins no seam");
+        return None;
     }
     let e2 = cross3(m, &e1)?;
 

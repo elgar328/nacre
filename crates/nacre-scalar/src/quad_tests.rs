@@ -25,13 +25,16 @@ fn qv(a: Rat, b: Rat, c: Rat) -> QuadVal {
 /// zero. Our fixtures either separate far above that or are constructed to be exactly zero —
 /// `the_oracle_actually_resolves_the_adversarial_gap` proves the instrument moves at the
 /// smallest separation this file uses.
-fn oracle_sign(a: Rat, b: Rat, c: Rat) -> Orient {
+fn oracle_val(a: Rat, b: Rat, c: Rat) -> BigFloat {
     const P: usize = 512;
     let bf = |x: Rat| {
         BigFloat::from_i128(x.numer(), P).div(&BigFloat::from_i128(x.denom(), P), P, HP_RM)
     };
-    let val = bf(a).add(&bf(b).mul(&bf(c).sqrt(P, HP_RM), P, HP_RM), P, HP_RM);
-    bigfloat_sign(&val)
+    bf(a).add(&bf(b).mul(&bf(c).sqrt(P, HP_RM), P, HP_RM), P, HP_RM)
+}
+
+fn oracle_sign(a: Rat, b: Rat, c: Rat) -> Orient {
+    bigfloat_sign(&oracle_val(a, b, c))
 }
 
 fn oracle_biquad(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Orient {
@@ -207,17 +210,33 @@ fn the_oracle_actually_resolves_the_adversarial_gap() {
 
 #[test]
 fn arithmetic_agrees_with_the_oracle() {
-    // (a₁+b₁√c)(a₂+b₂√c) and sums, spot-checked against the oracle over a small grid.
+    // ★ The differential runs against the **inputs' realizations** — the first spelling fed
+    // the result's own coefficients back to the oracle, which verifies `sign()` but lets a
+    // wrong `checked_mul` coefficient pass unseen (the shared-derivation trap): the oracle
+    // must derive the product from x and y, never from the thing under test.
+    const P: usize = 512;
     for a1 in -2..=2i128 {
         for b1 in -2..=2i128 {
             for a2 in -2..=2i128 {
                 for b2 in -2..=2i128 {
                     let (x, y) = (qv(ri(a1), ri(b1), ri(3)), qv(ri(a2), ri(b2), ri(3)));
+                    let (xv, yv) = (
+                        oracle_val(ri(a1), ri(b1), ri(3)),
+                        oracle_val(ri(a2), ri(b2), ri(3)),
+                    );
                     let prod = x.checked_mul(&y).expect("small values");
-                    let want = oracle_sign(prod.a(), prod.b(), prod.c());
-                    assert_eq!(prod.sign(), want, "({a1}+{b1}√3)({a2}+{b2}√3)");
+                    assert_eq!(
+                        prod.sign(),
+                        bigfloat_sign(&xv.mul(&yv, P, HP_RM)),
+                        "({a1}+{b1}√3)({a2}+{b2}√3)"
+                    );
                     let sum = x.checked_add(&y).expect("small values");
-                    assert_eq!(sum.sign(), oracle_sign(sum.a(), sum.b(), sum.c()));
+                    assert_eq!(sum.sign(), bigfloat_sign(&xv.add(&yv, P, HP_RM)));
+                    let negated = x.checked_neg().expect("small values");
+                    assert_eq!(
+                        negated.sign(),
+                        bigfloat_sign(&xv.mul(&BigFloat::from_i128(-1, P), P, HP_RM))
+                    );
                 }
             }
         }

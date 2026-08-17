@@ -9802,3 +9802,25 @@ M6 진입 재조사(원통-우선 M6a, `sign(a+b√c)` 원시, 유리수 반각 
   잡음(평면 잔차 0인 채 — 변종이 더한 담체가 무는 증거) + carrier 모순 2종 flagged.
 - **관문**: census 165줄 비트 동일(생산자 없음 — 예측 적중), reject census 불변, 전 스위트
   0 실패, clippy 0, kit 게이트 0/0.
+
+---
+
+## M6-1 사후 검토 — 오라클이 시험 대상에게 답을 물었었다 (2026-08-18)
+
+출하 직후 적대 재검토. 수학 핵심(정수화·biquad 재귀·Cramer 부호·외적 전개·같은-라디칼 쌍의
+biquad 처리)은 재검산 통과. 실질 결함 3건 수리:
+
+- **★ 차등 테스트의 공유-유도 함정**([two-tests-sharing-one-derivation] 재발):
+  `arithmetic_agrees_with_the_oracle`이 곱의 **결과 계수**를 오라클에 넣어 부호만 비교 —
+  `checked_mul`이 계수를 틀리게 조립해도 오라클이 그 틀린 값을 성실히 실현해서 합의한다.
+  **입력 실현들의 곱**과 비교하도록 교체하고, b항 부호를 틀어 red 실측(옛 테스트는 이 교란에
+  green이었을 것) 후 원복. checked_neg 팔도 추가.
+- **`neg()`의 거짓 주장 + panic 경로**: "기약 Ratio는 i128::MIN을 못 든다"는 반증됨(실측:
+  `Rat::from_int(i128::MIN)` 합법, 0−MIN = None) → `checked_neg() -> Option`으로 교체(호출자
+  0이라 파급 없음).
+- **`rat_div` 음수 나눗수의 잠재 panic**: `Ratio::new` 부호 정규화가 MIN 분자에서 내부
+  넘침 — 전 호출처가 양수(|ℓ|², 2A)임을 doc + debug_assert로 계약화.
+- 부수: `circular_order`에 ref_dir ∥ 축 조기 검출(순수-수치 문이 CylinderDef 가드 밖 —
+  기존엔 "점이 면 밖" 오진 메시지로 떨어졌다).
+
+전 스위트·kit 0 실패.
