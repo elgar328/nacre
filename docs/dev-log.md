@@ -9755,3 +9755,25 @@ M6 진입 재조사(원통-우선 M6a, `sign(a+b√c)` 원시, 유리수 반각 
   버리고 `sign()`+비영-eps 비교로. 
 - design.md 정정: "sign(a+b√c) **하나로** 닫힌다" → sign1/sign2 역할 분리 + 차트 t는 실현
   전용·원형 순서는 두-술어(반평면·외적) + seam 모선 위 점은 `SeamIncident`로 이름 답.
+
+---
+
+## M6-1 커밋 2 — meet·평면-쪽·원형 순서: 점은 교선+매개변수로 산다 (2026-08-18)
+
+- **`plane_plane_cylinder`**(scalar, 순수 수치 — 핸들 무지): 퇴화 사다리 전 변종이 자기 이름 —
+  CoincidentPlanes(비례 4-벡터 — 이름 없는/Through 인구에서 도달 가능) / ParallelPlanes /
+  OnRuling(축-평행 & C=0 — 교차가 점이 아니라 모선 전체) / AxisParallelMiss / Miss(disc<0) /
+  Tangent(유리 중근) / Pair(s 오름차순 — A>0는 Cauchy–Schwarz, debug_assert로 A=0⇒B=0 구조
+  확인). 반환 None = checked 넘침(정직 decline).
+- **점 = `MeetLine { base, dir } + s: QuadVal`**: 기점은 ℓ·x=0 보조평면 Cramer(결정적 — 원점
+  수선의 발), 세 좌표의 같은-라디칼 공유가 구조적. `plane_side` = (n·base+d) + s·(n·ℓ) —
+  QuadVal 곱셈 1회+덧셈 1회 → sign 탑.
+- **`circular_order_about_seam`**: 네 계급(Seam/Upper/π/Lower — w·e₂, 경계에서 w·e₁; e₁ =
+  (m·m)ref − (ref·m)m 스케일형이라 나눗셈 0회) → SeamIncident는 순위가 아니라 이름으로 표면화,
+  같은 열린 반평면은 (w₁×w₂)·m — s₁s₂ 전개가 ℚ(√c₁,√c₂) 4항이 되어 biquad_sign이 닫는다.
+  API 모양은 후보(M6-2 스윕이 확정) — 수학·부호 규약만 고정.
+- **관문**: 퇴화 사다리 7변종 픽스처(접점·모선 좌표 실현 단언 포함), 기울어진 축 Pair의 담체
+  잔차(평면 정확 0 — plane_side 자기-담체 Zero가 무리점 영점 교차검증; 원통 ≤1e-9 f64) ·
+  x=c 5절단 10점의 exact 정렬 ≡ atan2 정렬 · seam 지름 픽스처(θ=0은 SeamIncident, θ=π는
+  보통 계급) · **1e-18 분리 양성 대조**(두 절단의 위쪽 근이 f64로 비트 동일 각인데 exact가
+  strict 순서 — 이 탑의 존재 이유). 16 테스트 green.
