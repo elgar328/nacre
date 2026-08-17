@@ -17,7 +17,7 @@
 //! the same reason the kernel is allowed to have a fast path at all.
 
 use crate::boolean::{LocalFace, Node};
-use crate::planes::{FaceInfo, SolidSide, WorkingPlane};
+use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
 use nacre_cip::{WitnessPoint, orient3d_filter};
 use nacre_scalar::Orient;
@@ -234,17 +234,17 @@ impl VertexClasses {
     /// Over the faces of one operand — `faces[range]` — collect each vertex's plane classes.
     pub(crate) fn of(
         model: &Model,
-        faces: &[FaceInfo],
-        plane_ix: &[usize],
+        faces: &[FaceRow],
+        plane_ix: &[ClassIx],
         range: std::ops::Range<usize>,
     ) -> VertexClasses {
         let mut vertices: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
         let mut edges: HashMap<Handle<nacre_topo::Edge>, Vec<usize>> = HashMap::new();
         for fi in range {
-            let wc = plane_ix[fi];
+            let wc = plane_ix[fi].plane();
             let f = model
                 .faces
-                .get(faces[fi].face.expect("reuse only sees real faces"));
+                .get(faces[fi].plane().face.expect("reuse only sees real faces"));
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for &he in &lp.half_edges {
                     let e = vertices.entry(he_start(model, he)).or_default();
@@ -325,15 +325,15 @@ pub(crate) fn pass_through(
     model: &Model,
     wc: usize,
     geom: &WorkingPlane,
-    faces: &[FaceInfo],
-    plane_ix: &[usize],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     range: std::ops::Range<usize>,
     vc: &VertexClasses,
     canon: impl Fn([usize; 3]) -> [usize; 3],
 ) -> Option<Vec<LocalFace>> {
     let mut out = Vec::new();
     for fi in range {
-        if plane_ix[fi] != wc {
+        if plane_ix[fi].plane() != wc {
             continue;
         }
         let fa = &faces[fi];
@@ -342,7 +342,7 @@ pub(crate) fn pass_through(
         // ±1 and no rounding can move its sign. Anything near zero would mean the class itself is
         // wrong, so it is refused rather than rounded.
         let n = geom.tri_n_out();
-        let d = fa.n_out.dot(n);
+        let d = fa.plane().n_out.dot(n);
         // `n_out` is a unit vector but the class's is a raw cross product, so the test has to be
         // on the **cosine**, not on the dot. Comparing the dot to a constant instead reads a small
         // witness triangle as a near-perpendicular one — which rejected 94% of the classes this
@@ -378,7 +378,7 @@ pub(crate) fn pass_through(
         };
         let f = model
             .faces
-            .get(fa.face.expect("reuse only sees real faces"));
+            .get(fa.face().expect("reuse only sees real faces"));
         out.push(LocalFace {
             plane_idx: wc,
             loop_nodes: ring(&f.outer)?,

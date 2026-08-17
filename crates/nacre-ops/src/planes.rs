@@ -22,6 +22,77 @@ use std::collections::HashMap;
 /// — and the loop's winding is held to it by a `debug_assert` at construction
 /// and by `validate`'s `FaceMisoriented` at every op. Every sign test here reads
 /// `n_out` (or `tri`), and the two agree by that enforcement.
+/// One row of the boolean's face table — the face vocabulary the engine reads (M6-2a).
+///
+/// The table used to be `Vec<FaceInfo>` with a hard `CylinderFace` reject at the door; the row
+/// is now an enum so a cylinder face can *sit in the table* (keeping the face-index space that
+/// `surf_ix`/`EdgeFaces`/`plane_ix` share) while the plane data keeps its own struct — plane
+/// consumers read through [`FaceRow::plane`], and the population gate decides what flows.
+/// ★ The size gap is the `SurfaceTruth` trade taken again: planes dominate every table (a
+/// prism is all planes; a cylinder contributes one lateral row), so boxing the plane data
+/// would put an allocation and a pointer chase on the common row to shrink the rare one.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
+pub(crate) enum FaceRow {
+    Plane(FaceInfo),
+    Cylinder(CylFaceInfo),
+}
+
+impl FaceRow {
+    /// The plane data of this row. **Panics on a cylinder row** — every caller sits behind the
+    /// population gate or a kind filter (`loop_triples`/`trace_one` skip cylinder rows), so a
+    /// cylinder here is an upstream filter bug, and a loud panic beats a silently wrong plane.
+    #[inline]
+    #[track_caller]
+    pub(crate) fn plane(&self) -> &FaceInfo {
+        match self {
+            FaceRow::Plane(p) => p,
+            FaceRow::Cylinder(c) => panic!(
+                "a plane-only path reached a cylinder row (face {:?}) — upstream filter bug",
+                c.face
+            ),
+        }
+    }
+
+    /// The row's surface, whichever kind it is.
+    // Test consumers today; the first production consumer is C2's population gate.
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn surf(&self) -> Handle<Surface> {
+        match self {
+            FaceRow::Plane(p) => p.surf,
+            FaceRow::Cylinder(c) => c.surf,
+        }
+    }
+
+    /// The row's model face, whichever kind it is.
+    #[inline]
+    pub(crate) fn face(&self) -> Option<Handle<nacre_topo::Face>> {
+        match self {
+            FaceRow::Plane(p) => p.face,
+            FaceRow::Cylinder(c) => c.face,
+        }
+    }
+}
+
+/// A cylinder face's table row (M6-2a): what `collect_planes` can state about a lateral face
+/// without pretending it has a plane's four-piece description (`plane`/`tri`/`n_out`/`tri_pt3`
+/// are constant-normal vocabulary — a dummy would be the type lying). The class index and the
+/// exact def arrive with the cylinder class table (C2).
+#[derive(Clone, Debug)]
+pub(crate) struct CylFaceInfo {
+    pub(crate) surf: Handle<Surface>,
+    /// See [`FaceInfo::face`].
+    pub(crate) face: Option<Handle<nacre_topo::Face>>,
+    /// The `Orientation` flag as a sign — same reading as [`FaceInfo::orient_sign`]: `+1` when
+    /// the stored surface normal (radially outward) is this face's outward.
+    // Read from C4b's band orientation on — recorded now because the row is built now.
+    #[allow(dead_code)]
+    pub(crate) orient_sign: i8,
+    /// The motion-history leaf of the cylinder's truth, `None` for a constructed one.
+    pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
+}
+
 #[derive(Clone)]
 pub(crate) struct FaceInfo {
     pub(crate) surf: Handle<Surface>,
@@ -84,14 +155,46 @@ pub(crate) struct FaceInfo {
 pub(crate) fn collect_planes(
     model: &Model,
     solid: Handle<Solid>,
-) -> Result<Vec<FaceInfo>, BoolError> {
+) -> Result<Vec<FaceRow>, BoolError> {
+    // ★ The cylinder door, C1 form: the row vocabulary below exists, but no cylinder-bearing
+    // solid flows yet — and the gate must fire **before** the per-face loop, because a
+    // cylinder's cap is a disk whose outer loop has one vertex, which `outer_tri` would
+    // (mis)report as `DegenerateFace` first. C2 replaces this pre-scan with the population
+    // gate, and C3 teaches the cap row its circle vocabulary.
+    for sh in solid_shell_handles(model, solid) {
+        for &fh in &model.shells.get(sh).faces {
+            if matches!(
+                model.surface(model.faces.get(fh).surface),
+                Surface::Cylinder(_)
+            ) {
+                return Err(reject(RejectReason::CylinderFace));
+            }
+        }
+    }
     let mut out = Vec::new();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
             let plane = match model.surface(face.surface) {
                 Surface::Plane(p) => *p,
-                Surface::Cylinder(_) => return Err(reject(RejectReason::CylinderFace)),
+                // A cylinder face sits in the table (M6-2a) — its row keeps the shared facts
+                // (surface, face, stated outward sign, motion leaf) and none of the plane
+                // vocabulary. Whether it may *flow* is the population gate's question, asked
+                // in `plane_index_setup`, not a door slam here.
+                Surface::Cylinder(_) => {
+                    let nacre_topo::SurfaceTruth::Cylinder { motion, .. } =
+                        model.surface_truth(face.surface)
+                    else {
+                        unreachable!("a cylinder cache carries a cylinder truth")
+                    };
+                    out.push(FaceRow::Cylinder(CylFaceInfo {
+                        surf: face.surface,
+                        face: Some(fh),
+                        orient_sign: face.orientation.sign(),
+                        motion: *motion,
+                    }));
+                    continue;
+                }
             };
             let (tri, _) =
                 outer_tri(model, face).ok_or_else(|| reject(RejectReason::DegenerateFace))?;
@@ -329,7 +432,7 @@ pub(crate) fn collect_planes(
                 "a face's outer winding must agree with its stated orientation"
             );
             let name = model.surface_name.get(&face.surface).cloned();
-            out.push(FaceInfo {
+            out.push(FaceRow::Plane(FaceInfo {
                 base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
                 name,
                 surf: face.surface,
@@ -341,7 +444,7 @@ pub(crate) fn collect_planes(
                 tri_pt3,
                 rotated,
                 motion,
-            });
+            }));
         }
     }
     // ★★★ **The mirror takes the strongest description — a restated plane rejoins its
@@ -360,14 +463,22 @@ pub(crate) fn collect_planes(
     // The chain is chosen deterministically (lowest node index that qualifies) so replay
     // reproduces the table; a plane no chain fixes keeps its world description.
     let leaves = {
-        let mut v: Vec<Handle<nacre_topo::MotionNode>> =
-            out.iter().filter_map(|f| f.motion).collect();
+        let mut v: Vec<Handle<nacre_topo::MotionNode>> = out
+            .iter()
+            .filter_map(|r| match r {
+                FaceRow::Plane(f) => f.motion,
+                FaceRow::Cylinder(c) => c.motion,
+            })
+            .collect();
         v.sort_unstable_by_key(|h| h.index());
         v.dedup();
         v
     };
     if !leaves.is_empty() {
-        for f in out.iter_mut() {
+        for row in out.iter_mut() {
+            // The restatement mirror is a plane story — a motion-fixed *cylinder*'s
+            // restatement is separately deferred (M6-0's handover list).
+            let FaceRow::Plane(f) = row else { continue };
             if f.motion.is_some() {
                 continue;
             }
@@ -503,10 +614,12 @@ pub(crate) enum SolidSide {
 ///
 /// **A `None` class is a coplanar contact** — the two solids meet on that plane — so nothing may
 /// treat it as belonging to one side.
-fn class_owners(plane_ix: &[usize], n_a: usize, n_class: usize) -> Vec<Option<SolidSide>> {
+fn class_owners(plane_ix: &[ClassIx], n_a: usize, n_class: usize) -> Vec<Option<SolidSide>> {
     let mut out: Vec<Option<SolidSide>> = vec![None; n_class];
     let mut seen = vec![false; n_class];
-    for (fi, &c) in plane_ix.iter().enumerate() {
+    for (fi, &ci) in plane_ix.iter().enumerate() {
+        // Cylinder classes get their own owner table with the cylinder class table (C2).
+        let ClassIx::Plane(c) = ci else { continue };
         let side = if fi < n_a { SolidSide::A } else { SolidSide::B };
         if !seen[c] {
             seen[c] = true;
@@ -516,6 +629,32 @@ fn class_owners(plane_ix: &[usize], n_a: usize, n_class: usize) -> Vec<Option<So
         }
     }
     out
+}
+
+/// A face's class in the arrangement — **which index space the face's surface lives in** (M6-2a).
+/// The old `plane_ix: Vec<usize>` presumed every class is a plane; the enum makes a cylinder
+/// class unrepresentable as a plane index instead of smuggling it through a sentinel.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) enum ClassIx {
+    /// An index into the dense plane-class table (`PlaneSetup::geom`).
+    Plane(usize),
+    /// An index into the cylinder-class table (arrives with C2; the index space exists first so
+    /// the type is total).
+    Cyl(usize),
+}
+
+impl ClassIx {
+    /// The plane-class index. **Panics on a cylinder class** — same contract as
+    /// [`FaceRow::plane`]: plane-only paths sit behind kind filters, and a cylinder here is an
+    /// upstream filter bug.
+    #[inline]
+    #[track_caller]
+    pub(crate) fn plane(self) -> usize {
+        match self {
+            ClassIx::Plane(i) => i,
+            ClassIx::Cyl(k) => panic!("a plane-only path got cylinder class {k}"),
+        }
+    }
 }
 
 /// The minimal per-op plane table two solids share: the
@@ -530,7 +669,7 @@ fn class_owners(plane_ix: &[usize], n_a: usize, n_class: usize) -> Vec<Option<So
 /// dense `plane_ix` is the only face→plane map anything downstream needs, so the sparse union-find
 /// output does not escape.
 pub(crate) struct PlaneSetup {
-    pub(crate) planes: Vec<FaceInfo>,
+    pub(crate) planes: Vec<FaceRow>,
     pub(crate) surf_ix: HashMap<Handle<Face>, usize>,
     pub(crate) inc_a: combinatorics::EdgeFaces,
     pub(crate) inc_b: combinatorics::EdgeFaces,
@@ -540,8 +679,9 @@ pub(crate) struct PlaneSetup {
     pub(crate) n_a: usize,
     /// The arrangement's planes, densely indexed — see [`dense_planes`].
     pub(crate) geom: Vec<WorkingPlane>,
-    /// `plane_ix[face]` is that face's plane, as an index into `geom`.
-    pub(crate) plane_ix: Vec<usize>,
+    /// `plane_ix[face]` is that face's class — a plane index into `geom`, or a cylinder class
+    /// ([`ClassIx`]).
+    pub(crate) plane_ix: Vec<ClassIx>,
     /// Whose faces each plane class carries — see [`class_owners`].
     pub(crate) class_owner: Vec<Option<SolidSide>>,
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
@@ -616,7 +756,7 @@ pub(crate) fn plane_index_setup(
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in planes.iter().enumerate() {
         // Synthetic faces are appended later, after this table is built; every entry here is real.
-        surf_ix.insert(pi.face.expect("collect_planes yields real faces"), i);
+        surf_ix.insert(pi.face().expect("collect_planes yields real faces"), i);
     }
     let t = Watch::new();
     let inc_a = combinatorics::edge_faces(model, a, &surf_ix)?;
@@ -676,7 +816,20 @@ pub(crate) fn plane_index_setup(
 /// precision, the cap, the headroom — is derived from it and from the model, because a bit count
 /// means a different physical thing in every model ("256 bits" is `1e-76` for a solid turned once
 /// and `1e+15` for one turned three hundred times).
-fn standard_for(planes: &[FaceInfo]) -> Standard {
+/// The plane data of a row, `None` for a cylinder — the kind filter the plane-only sweeps
+/// share.
+#[inline]
+pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
+    match r {
+        FaceRow::Plane(p) => Some(p),
+        FaceRow::Cylinder(_) => None,
+    }
+}
+
+// A cylinder row contributes no witness points to the standard — structurally right, not an
+// omission: an axis-aligned-grade rational cylinder is the `rotated == false` case (its exact
+// def needs no high-precision realization); the rotated-cylinder story is M6-3's (CIP).
+fn standard_for(rows: &[FaceRow]) -> Standard {
     // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
     //
     // Its `tri_pt3` are `WitnessPoint::exact` of the face's own f64 triangle: base = `mantissa · 2^exp`, so
@@ -693,14 +846,19 @@ fn standard_for(planes: &[FaceInfo]) -> Standard {
     // `max` over the empty set is `Mag::ZERO`, which is the right answer for a model with no
     // rotation history — `precision_for` reads that as "nothing to size" and returns `TRIAL_PREC`.
     let worst = worst_trial(
-        planes
-            .iter()
+        rows.iter()
+            .filter_map(plane_of)
             .filter(|p| p.rotated)
             .flat_map(|p| p.tri_pt3.iter()),
     );
     // `scale`, by contrast, is every point's business: it is the model's size, and an unmoved face
     // is as far from the origin as any other.
-    standard_from(planes.iter().flat_map(|p| p.tri_pt3.iter()), worst)
+    standard_from(
+        rows.iter()
+            .filter_map(plane_of)
+            .flat_map(|p| p.tri_pt3.iter()),
+        worst,
+    )
 }
 
 /// **How deep a model may be before the operation is rejected instead.**
@@ -1069,24 +1227,40 @@ impl WorkingPlane {
 /// sort — are by coordinate and by set, respectively), but the audit cannot be proved exhaustive
 /// over ~175 sites, so the numbering removes the question instead of answering it.
 pub(crate) fn dense_planes(
-    planes: &[FaceInfo],
+    planes: &[FaceRow],
     canon: &[usize],
-) -> (Vec<WorkingPlane>, Vec<usize>) {
-    let mut roots: Vec<usize> = canon.to_vec();
+) -> (Vec<WorkingPlane>, Vec<ClassIx>) {
+    // Plane classes densify from the union-find roots; cylinder rows never entered the
+    // union-find (their identity question is the cylinder class table's, C2), so here they
+    // number by first-seen surface — the index space exists before the table does.
+    let mut roots: Vec<usize> = canon
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| matches!(planes[i], FaceRow::Plane(_)))
+        .map(|(_, &c)| c)
+        .collect();
     roots.sort_unstable();
     roots.dedup();
+    let mut cyl_ix: HashMap<Handle<Surface>, usize> = HashMap::new();
     let plane_ix = canon
         .iter()
-        .map(|c| {
-            roots
-                .binary_search(c)
-                .expect("a class root is in the root set")
+        .enumerate()
+        .map(|(i, c)| match &planes[i] {
+            FaceRow::Plane(_) => ClassIx::Plane(
+                roots
+                    .binary_search(c)
+                    .expect("a class root is in the root set"),
+            ),
+            FaceRow::Cylinder(cf) => {
+                let n = cyl_ix.len();
+                ClassIx::Cyl(*cyl_ix.entry(cf.surf).or_insert(n))
+            }
         })
         .collect();
     let geom = roots
         .iter()
         .map(|&r| {
-            let pi = &planes[r];
+            let pi = planes[r].plane();
             // ★ The two descriptions are reconciled **here**, once, and a description that loses
             // is simply not carried. A rotated plane has no exact `f64` coefficients at all, so
             // both are `None` there — which is also what makes the predicates stop asking
@@ -1206,8 +1380,8 @@ pub(crate) fn face_half_edges(face: &Face) -> impl Iterator<Item = &HalfEdge> {
 /// fallback is what keeps independently-built coplanar contacts working; the handle
 /// path's real payoff is rotated frames, where the geometric test would need the
 /// rotation-exact judgment.
-pub(crate) fn shares_or_coplanar(jd: &Judge<'_, FaceInfo>, i: usize, j: usize) -> bool {
-    let (pa, pb) = (&jd.planes[i], &jd.planes[j]);
+pub(crate) fn shares_or_coplanar(jd: &Judge<'_, FaceRow>, i: usize, j: usize) -> bool {
+    let (pa, pb) = (jd.planes[i].plane(), jd.planes[j].plane());
     // Three independent witnesses, OR-ed, so this can only ever merge *more* than before:
     //  1. the same `Surface` handle — coplanar by reference (what an ops-built tool's base cap and
     //     its target face share, and what a chained operand's split coplanar faces share);
@@ -1243,10 +1417,12 @@ pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
 /// canonicalizing turns that self-comparison into a real order. Returns `canon` where `canon[i]`
 /// is the class root (the smallest index in the class). Every decision is exact
 /// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
-pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
+pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
     let planes = jd.planes;
     let n = planes.len();
     let mut parent: Vec<usize> = (0..n).collect();
+    // Cylinder rows stay self-rooted: their identity question belongs to the cylinder class
+    // table (C2), not the coplanarity union-find — they simply never enter `reps` below.
 
     // **Merge by `Surface` handle first, then compare only one face per distinct surface.**
     //
@@ -1267,7 +1443,8 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
     // removed operations overstates the saving whenever the removed ones are the cheap ones.
     let mut rep: HashMap<Handle<Surface>, usize> = HashMap::new();
     let mut reps: Vec<usize> = Vec::new();
-    for (i, p) in planes.iter().enumerate() {
+    for (i, row) in planes.iter().enumerate() {
+        let FaceRow::Plane(p) = row else { continue };
         match rep.get(&p.surf) {
             Some(&r) => {
                 let (ri, rj) = (uf_find(&mut parent, r), uf_find(&mut parent, i));
@@ -1385,7 +1562,7 @@ mod tests {
             .filter(|f| {
                 let n = m
                     .faces
-                    .get(f.face.expect("a model face"))
+                    .get(f.face().expect("a model face"))
                     .outer
                     .half_edges
                     .len();
@@ -1401,7 +1578,8 @@ mod tests {
         // nothing. What the widest-corner rule still owns is the triangle — revert
         // `outer_tri` to "first non-flat corner" and the cross below is rounding
         // noise again, failing this in release.
-        for f in &faces {
+        for row in &faces {
+            let f = row.plane();
             let cos = (f.tri[1] - f.tri[0])
                 .cross(f.tri[2] - f.tri[0])
                 .normalize()

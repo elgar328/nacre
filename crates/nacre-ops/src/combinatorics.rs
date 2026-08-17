@@ -26,7 +26,7 @@
 //! `crate::shares_or_coplanar` → `Judge::planes_coplanar`) necessarily runs before a
 //! plane table exists, so it takes face indices — hence that predicate's generic `Witness` bound.
 
-use crate::planes::{WorkingPlane, edge_incidence};
+use crate::planes::{ClassIx, WorkingPlane, edge_incidence};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, reject};
 use nacre_store::Handle;
@@ -249,7 +249,7 @@ pub(crate) fn face_vertex_triples(
     p: usize,
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
-    plane_ix: &[usize],
+    plane_ix: &[ClassIx],
 ) -> Result<NamedRing, BoolError> {
     loop_triples(&model.faces.get(f).outer, p, inc, jd, plane_ix)
 }
@@ -310,7 +310,7 @@ pub(crate) fn trace_input(
     surf_ix: &HashMap<Handle<Face>, usize>,
     n_faces: usize,
     jd: &Judge<'_, WorkingPlane>,
-    plane_ix: &[usize],
+    plane_ix: &[ClassIx],
 ) -> TraceInput {
     let _ = n_faces;
     let mut faces = [Vec::new(), Vec::new()];
@@ -343,7 +343,7 @@ pub(crate) fn hole_rings(
     p: usize,
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
-    plane_ix: &[usize],
+    plane_ix: &[ClassIx],
 ) -> Result<Vec<NamedRing>, BoolError> {
     model
         .faces
@@ -378,7 +378,7 @@ fn loop_triples(
     p: usize,
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
-    plane_ix: &[usize],
+    plane_ix: &[ClassIx],
 ) -> Result<NamedRing, BoolError> {
     let hes = &l.half_edges;
     let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
@@ -397,10 +397,14 @@ fn loop_triples(
         let (a, b) = (other(in_pair), other(out_pair));
         // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
         // vertex *names* below have to fall back or decline (see [`NamedRing`]).
-        walls.push(plane_ix[b]);
+        walls.push(plane_ix[b].plane());
         // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
         // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
-        let mut t = [plane_ix[p], plane_ix[a], plane_ix[b]];
+        let mut t = [
+            plane_ix[p].plane(),
+            plane_ix[a].plane(),
+            plane_ix[b].plane(),
+        ];
         t.sort_unstable();
         if t[0] != t[1] && t[1] != t[2] {
             out.push(t);
@@ -418,7 +422,7 @@ fn loop_triples(
         };
         let mut classes: Vec<usize> = vertex_face_indices(vh, inc)
             .into_iter()
-            .map(|k| plane_ix[k])
+            .map(|k| plane_ix[k].plane())
             .collect();
         classes.sort_unstable();
         classes.dedup();
@@ -441,14 +445,14 @@ fn loop_triples(
                 RejectReason::RingNaming
             }));
         }
-        // `plane_ix[p]`, not `p`. An earlier revision kept `p` raw because consumers still matched the
+        // `plane_ix[p].plane()`, not `p`. An earlier revision kept `p` raw because consumers still matched the
         // face's own plane by raw index; they now compare classes (2026-07-22), and a triple that
         // mixed one face index with two class indices was exactly the ambiguity this brick exists
         // to remove.
-        let mut t = [plane_ix[p], 0, 0];
+        let mut t = [plane_ix[p].plane(), 0, 0];
         let mut k = 1;
         for &c in &classes {
-            if c != plane_ix[p] {
+            if c != plane_ix[p].plane() {
                 t[k] = c;
                 k += 1;
             }

@@ -446,14 +446,14 @@ fn trace_transversal_face(
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
-    faces: &[FaceInfo],
-    plane_ix: &[usize],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     out: &mut Trace,
 ) {
     // `fp` names a *face* (`n_out`, `orient`, the declined log); `fc` names the *plane class* it
     // lies on (triples, comparisons, predicate arguments). Every ring below is in class form, so
     // the two must not be confused — see `canon_ring`.
-    let fc = plane_ix[fp];
+    let fc = plane_ix[fp].plane();
     // Each ring pairs its class-form triples with the **carried walls** the producer read off
     // the model's edges (`NamedRing`) — the Crossing arm below names an edge's wall from the
     // ride, never from the two endpoint names.
@@ -674,14 +674,14 @@ fn trace_transversal_face(
     let mut seg_start: Option<(usize, Option<bool>)> = None;
     let emit = |a: usize, b: usize, graze: Option<bool>, out: &mut Trace| {
         out.segs.push(Seg {
-            wall: plane_ix[fp],
+            wall: plane_ix[fp].plane(),
             end: [sorted3([wc, fc, a]), sorted3([wc, fc, b])],
             end_h: [a, b],
             solid: which,
             kind: match graze {
                 Some(body_above) => SegKind::Graze { body_above },
                 None => SegKind::Transversal {
-                    mat: faces[fp].orient_sign,
+                    mat: faces[fp].plane().orient_sign,
                 },
             },
         });
@@ -755,7 +755,7 @@ fn trace_transversal_face(
 /// `trace_seated_face` already rely on. Everything else here is exact.
 fn run_body_above(
     jd: &Judge<'_, WorkingPlane>,
-    faces: &[FaceInfo],
+    faces: &[FaceRow],
     wc: usize,
     fc: usize,
     fp: usize,
@@ -763,7 +763,7 @@ fn run_body_above(
 ) -> bool {
     let planes = jd.planes;
     let t = combinatorics::order_along(jd, wc, fc, rs[0], rs[rs.len() - 1]);
-    let sigma = faces[fp].n_out.dot(planes[fc].plane.normal());
+    let sigma = faces[fp].plane().n_out.dot(planes[fc].plane.normal());
     (t < 0) == (sigma > 0.0)
 }
 
@@ -779,15 +779,15 @@ fn trace_one(
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
-    faces: &[FaceInfo],
-    plane_ix: &[usize],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     out: &mut Trace,
 ) {
     let planes = jd.planes;
     let w_normal = planes[wc].plane.normal();
     for (fp, fl) in faces_in {
         let fp = *fp;
-        if plane_ix[fp] != wc {
+        if plane_ix[fp].plane() != wc {
             trace_transversal_face(fp, fl, which, wc, jd, faces, plane_ix, out);
             continue;
         }
@@ -796,7 +796,7 @@ fn trace_one(
         // `n_out · n_W < 0`. The f64 sign is robust even rotated: seated means `canon[fp]==wc`,
         // so `n_out ∥ n_W` (both unit) and the dot is ≈ ±1, a full unit from the sign boundary
         // (the rotated-tunnel tests exercise this seated path through the cube's own caps).
-        let body_above = faces[fp].n_out.dot(w_normal) < 0.0;
+        let body_above = faces[fp].plane().n_out.dot(w_normal) < 0.0;
         let kind = SegKind::Seated { body_above };
         // Collect every ring in class form first: a collapsed name declines the whole face, and
         // deciding that before the emitting closure exists keeps the two borrows apart.
@@ -821,7 +821,7 @@ fn trace_one(
             out.declined.push((fp, DeclineKind::CollapsedTriple));
             continue;
         }
-        let fc = plane_ix[fp];
+        let fc = plane_ix[fp].plane();
         let mut emit_ring = |tris: &[[usize; 3]]| {
             let n = tris.len();
             for i in 0..n {
@@ -871,8 +871,8 @@ fn trace_on_class(
     input: &combinatorics::TraceInput,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
-    faces: &[FaceInfo],
-    plane_ix: &[usize],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
 ) -> Trace {
     let mut out = Trace::default();
     for (side, which) in [SolidSide::A, SolidSide::B].into_iter().enumerate() {
@@ -892,11 +892,11 @@ fn trace_on_class_of(
     b: Handle<Solid>,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
-    faces: &[FaceInfo],
+    faces: &[FaceRow],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &combinatorics::EdgeFaces,
     inc_b: &combinatorics::EdgeFaces,
-    plane_ix: &[usize],
+    plane_ix: &[ClassIx],
 ) -> Trace {
     let input = combinatorics::trace_input(
         model,
@@ -919,10 +919,10 @@ fn trace_one_of(
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
-    faces: &[FaceInfo],
+    faces: &[FaceRow],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &combinatorics::EdgeFaces,
-    plane_ix: &[usize],
+    plane_ix: &[ClassIx],
     out: &mut Trace,
 ) {
     let input = combinatorics::trace_input(
@@ -2039,8 +2039,8 @@ fn trace_result_faces(
     a: Handle<Solid>,
     b: Handle<Solid>,
     jd: &Judge<'_, WorkingPlane>,
-    faces: &[FaceInfo],
-    plane_ix: &[usize],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
@@ -2071,7 +2071,7 @@ fn trace_result_faces(
             .faces
             .iter()
             .flatten()
-            .map(|(fp, _)| plane_ix[*fp])
+            .map(|(fp, _)| plane_ix[*fp].plane())
             .collect();
         c.sort_unstable();
         c.dedup();
@@ -2112,7 +2112,7 @@ fn trace_result_faces(
             // reported, and `try_map_range` picks the lowest-numbered class, which is the one
             // the sequential loop returned at.
             if let Some(&(fp, kind)) = tr.declined.first() {
-                return Err(reject(decline_to_reject(kind, faces[fp].face)));
+                return Err(reject(decline_to_reject(kind, faces[fp].plane().face)));
             }
             let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
@@ -2440,7 +2440,7 @@ pub(crate) fn frame_audit(
         };
         // Run the rest of the per-class pipeline, recording where it stops.
         audit.failed_at = if let Some(&(fp, kind)) = audit.declined.first() {
-            Some(decline_to_reject(kind, faces_tab[fp].face))
+            Some(decline_to_reject(kind, faces_tab[fp].face()))
         } else {
             let run = || -> Result<(), BoolError> {
                 // A copy, so one class's split discoveries cannot leak into the next class's
@@ -2515,7 +2515,7 @@ pub(crate) fn boolean(
     // engine already settled with evidence (see `ops::find_face_coplanar_with`).
     let class_of: ClassOf = surf_ix
         .iter()
-        .map(|(&f, &i)| (f, geom[plane_ix[i]].surf))
+        .map(|(&f, &i)| (f, geom[plane_ix[i].plane()].surf))
         .collect();
     // ★ **A closure so a `?` inside cannot skip the evidence check below.** Everything from here on
     // may reject, and every one of those rejects has to pass through `undecided_reject` first —
@@ -2772,7 +2772,8 @@ mod tests {
                 let seats = |s: Handle<Solid>| {
                     solid_shell_handles(&m, s).into_iter().any(|sh| {
                         m.shells.get(sh).faces.iter().any(|fh| {
-                            plane_ix[surf_ix[fh]] == c && face_on_z1(*fh, &surf_ix, &faces_tab)
+                            plane_ix[surf_ix[fh]].plane() == c
+                                && face_on_z1(*fh, &surf_ix, &faces_tab)
                         })
                     })
                 };
@@ -3655,7 +3656,7 @@ mod tests {
             .find(|&c| {
                 solid_shell_handles(&m, b).into_iter().any(|sh| {
                     m.shells.get(sh).faces.iter().any(|fh| {
-                        plane_ix[surf_ix[fh]] == c && face_on_z1(*fh, &surf_ix, &faces_tab)
+                        plane_ix[surf_ix[fh]].plane() == c && face_on_z1(*fh, &surf_ix, &faces_tab)
                     })
                 })
             })
@@ -4600,20 +4601,23 @@ mod tests {
         a: Handle<Solid>,
         b: Handle<Solid>,
         surf_ix: &HashMap<Handle<Face>, usize>,
-        faces: &[FaceInfo],
-        plane_ix: &[usize],
+        faces: &[FaceRow],
+        plane_ix: &[ClassIx],
     ) -> usize {
-        let n_planes = plane_ix.iter().copied().max().map_or(0, |m| m + 1);
+        let n_planes = plane_ix
+            .iter()
+            .map(|c| c.plane())
+            .max()
+            .map_or(0, |m| m + 1);
         (0..n_planes)
             .find(|&c| {
-                let seats =
-                    |s: Handle<Solid>| {
-                        solid_shell_handles(m, s).into_iter().any(|sh| {
-                            m.shells.get(sh).faces.iter().any(|fh| {
-                                plane_ix[surf_ix[fh]] == c && face_on_z1(*fh, surf_ix, faces)
-                            })
+                let seats = |s: Handle<Solid>| {
+                    solid_shell_handles(m, s).into_iter().any(|sh| {
+                        m.shells.get(sh).faces.iter().any(|fh| {
+                            plane_ix[surf_ix[fh]].plane() == c && face_on_z1(*fh, surf_ix, faces)
                         })
-                    };
+                    })
+                };
                 seats(a) && seats(b)
             })
             .expect("a shared z=1 cap class")
@@ -4671,11 +4675,14 @@ mod tests {
     fn face_on_z1(
         fh: Handle<Face>,
         surf_ix: &HashMap<Handle<Face>, usize>,
-        faces: &[FaceInfo],
+        faces: &[FaceRow],
     ) -> bool {
         let p = &faces[surf_ix[&fh]];
         // A cap in the z=1 plane: all three defining points at z=1.
-        p.tri.iter().all(|q| (q.as_array()[2] - 1.0).abs() < 1e-12)
+        p.plane()
+            .tri
+            .iter()
+            .all(|q| (q.as_array()[2] - 1.0).abs() < 1e-12)
     }
 
     /// Axis-aligned cubes never decline: every face is seated, a clean transversal chord, or a
@@ -5155,7 +5162,7 @@ mod tests {
         );
         let boxes: Vec<[[f64; 2]; 3]> = faces_tab
             .iter()
-            .map(|f| face_box(m, f.face.expect("real")))
+            .map(|f| face_box(m, f.face().expect("real")))
             .collect();
         let overlap = |x: &[[f64; 2]; 3], y: &[[f64; 2]; 3]| {
             (0..3).all(|k| x[k][0] <= y[k][1] && y[k][0] <= x[k][1])
@@ -5167,7 +5174,7 @@ mod tests {
             }
             c.arranged += 1;
             let seated: Vec<usize> = (0..faces_tab.len())
-                .filter(|&f| plane_ix[f] == wc)
+                .filter(|&f| plane_ix[f].plane() == wc)
                 .collect();
             if seated.is_empty() {
                 continue;
@@ -5208,7 +5215,7 @@ mod tests {
                 if pieces == 1 {
                     c.pairs_1p += 1;
                 }
-                if plane_ix[f] == wc {
+                if plane_ix[f].plane() == wc {
                     continue; // seated: never culled
                 }
                 if !overlap(&boxes[f], &foot) {

@@ -225,6 +225,7 @@ fn outward_normals_agree_with_their_orientation() {
         ("rotated_l_prism", &mr, sr),
     ] {
         for pi in &collect_planes(m, s).unwrap() {
+            let pi = pi.plane();
             let cos = (pi.tri[1] - pi.tri[0])
                 .cross(pi.tri[2] - pi.tri[0])
                 .normalize()
@@ -1464,7 +1465,7 @@ fn holed_face_rings_of(
     let faces_tab = collect_planes(&m, r).unwrap();
     let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
     for (i, pi) in faces_tab.iter().enumerate() {
-        surf_ix.insert(pi.face.expect("a real face table"), i);
+        surf_ix.insert(pi.face().expect("a real face table"), i);
     }
     let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
     let (planes, plane_ix) = dense_planes(&faces_tab, &canon);
@@ -1490,7 +1491,7 @@ fn holed_face_rings_of(
                 &plane_ix,
             )
             .unwrap();
-            return (planes, plane_ix[fp], outer.triples, hole.triples);
+            return (planes, plane_ix[fp].plane(), outer.triples, hole.triples);
         }
     }
     panic!("no holed face");
@@ -2238,20 +2239,22 @@ fn shares_or_coplanar_uses_the_handle_branch() {
     // Each `tri` is three NON-collinear points of its own plane. A degenerate `tri` (three
     // equal points) would make every `orient3d` vanish, so the coordinate branch would report
     // coplanar and this test would pass without the handle branch ever mattering.
-    let mk = |plane, tri: [Point3; 3]| FaceInfo {
-        // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
-        base_rat: None,
-        name: None,
-        motion: None,
-        surf: shared,
-        face: Some(fh),
-        plane,
-        tri,
-        n_out: Vector3::from_array([0.0; 3]),
-        // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on `tri`.
-        orient_sign: 1,
-        tri_pt3: tri.map(|p| nacre_cip::WitnessPoint::exact(p.as_array()).expect("exact")),
-        rotated: false,
+    let mk = |plane, tri: [Point3; 3]| {
+        crate::planes::FaceRow::Plane(FaceInfo {
+            // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
+            base_rat: None,
+            name: None,
+            motion: None,
+            surf: shared,
+            face: Some(fh),
+            plane,
+            tri,
+            n_out: Vector3::from_array([0.0; 3]),
+            // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on `tri`.
+            orient_sign: 1,
+            tri_pt3: tri.map(|p| nacre_cip::WitnessPoint::exact(p.as_array()).expect("exact")),
+            rotated: false,
+        })
     };
     let p = |x: f64, y: f64, z: f64| Point3::from_array([x, y, z]);
     let planes = vec![
@@ -2260,7 +2263,10 @@ fn shares_or_coplanar_uses_the_handle_branch() {
     ];
     // Neither fallback fires: the coefficients are not proportional, and the coordinates say
     // these really are two different planes.
-    assert!(!planes_coplanar(&planes[0].plane, &planes[1].plane));
+    assert!(!planes_coplanar(
+        &planes[0].plane().plane,
+        &planes[1].plane().plane
+    ));
     assert!(!crate::planes::test_judge(&planes).planes_coplanar(0, 1));
     // The shared handle alone makes them coplanar-by-reference.
     assert!(shares_or_coplanar(
@@ -3349,14 +3355,14 @@ fn a_chained_boolean_keeps_its_faces_exact() {
     for (name, s) in [("operand a", a), ("operand b", b)] {
         let planes = crate::planes::collect_planes(&m, s).expect("planes");
         assert!(
-            planes.iter().all(|f| f.rotated),
+            planes.iter().all(|f| f.plane().rotated),
             "{name}: a rotated operand's faces must be described by their rotation"
         );
     }
     let r = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse")[0];
     m.rebuild_adjacency();
     let planes = crate::planes::collect_planes(&m, r).expect("planes");
-    let described = planes.iter().filter(|f| f.rotated).count();
+    let described = planes.iter().filter(|f| f.plane().rotated).count();
     assert_eq!(
         described,
         planes.len(),
@@ -3933,8 +3939,8 @@ fn plane_classes_merge_a_shared_wall() {
     let find = |rng: std::ops::Range<usize>, nx: f64, x: f64| -> usize {
         rng.clone()
             .find(|&i| {
-                let n = planes[i].n_out.as_array();
-                n[0] * nx > 0.5 && (planes[i].tri[0].as_array()[0] - x).abs() < 1e-9
+                let n = planes[i].plane().n_out.as_array();
+                n[0] * nx > 0.5 && (planes[i].plane().tri[0].as_array()[0] - x).abs() < 1e-9
             })
             .expect("plane")
     };
@@ -4070,7 +4076,7 @@ fn two_faces_of_one_judged_surface_are_one_class() {
     let mut planes = planes_a;
     planes.extend(collect_planes(&m, pieces[1]).unwrap());
     let on_datum: Vec<usize> = (0..planes.len())
-        .filter(|&i| planes[i].surf == plane)
+        .filter(|&i| planes[i].surf() == plane)
         .collect();
     assert!(
         on_datum.len() >= 2
@@ -4492,14 +4498,15 @@ fn one_plane_is_one_class_whatever_the_face_size() {
     // which is the property under test.
     let x_walls: Vec<usize> = (0..faces_tab.len())
         .filter(|&i| {
-            faces_tab[i].n_out.as_array() == [1.0, 0.0, 0.0]
-                && (faces_tab[i].tri[0].as_array()[0] - dx).abs() < 1e-12
+            faces_tab[i].plane().n_out.as_array() == [1.0, 0.0, 0.0]
+                && (faces_tab[i].plane().tri[0].as_array()[0] - dx).abs() < 1e-12
         })
         .collect();
     assert_eq!(x_walls.len(), 2, "one wall from each box: {x_walls:?}");
     let (i, j) = (x_walls[0], x_walls[1]);
     assert_eq!(
-        faces_tab[i].surf, faces_tab[j].surf,
+        faces_tab[i].surf(),
+        faces_tab[j].surf(),
         "two faces, one surface — interning collapsed them at construction"
     );
     assert!(
@@ -4954,12 +4961,12 @@ fn dense_plane_ids_are_monotone_in_canon() {
         for j in 0..canon.len() {
             assert_eq!(
                 canon[i].cmp(&canon[j]),
-                plane_ix[i].cmp(&plane_ix[j]),
+                plane_ix[i].plane().cmp(&plane_ix[j].plane()),
                 "faces {i}/{j}: canon {}/{} vs dense {}/{}",
                 canon[i],
                 canon[j],
-                plane_ix[i],
-                plane_ix[j]
+                plane_ix[i].plane(),
+                plane_ix[j].plane()
             );
         }
     }

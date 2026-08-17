@@ -8,7 +8,7 @@
 //! are its methods. The predicate logic itself (exact-vs-kernel routing, the frame3 judges) lives
 //! in `nacre-cip`.
 
-use crate::planes::{FaceInfo, WorkingPlane};
+use crate::planes::{FaceRow, WorkingPlane};
 use nacre_cip::WitnessPoint;
 use nacre_cip::predicate::{PlaneWitness, Witness};
 use nacre_math::Point3;
@@ -40,12 +40,17 @@ impl Witness for WorkingPlane {
     }
 }
 
-impl Witness for FaceInfo {
+impl Witness for FaceRow {
+    // ★ Every arm reads through [`FaceRow::plane`], which **panics on a cylinder row**: the
+    // only predicate that runs on the face table is `Judge::planes_coplanar` during class
+    // discovery, and that sweep filters to plane rows before asking (a cylinder's identity is
+    // the cylinder class table's question, C2). A panic here is an upstream filter bug made
+    // loud, never a silently wrong plane answer.
     fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
-        self.base_rat
+        self.plane().base_rat
     }
     fn tri(&self) -> [Point3; 3] {
-        self.tri
+        self.plane().tri
     }
     // A face table exists before plane classes do, and the only predicate that runs on it is
     // `Judge::planes_coplanar` during class discovery. Opting out here keeps that path unchanged.
@@ -56,10 +61,10 @@ impl Witness for FaceInfo {
         None
     }
     fn tri_pt3(&self) -> &[WitnessPoint; 3] {
-        &self.tri_pt3
+        &self.plane().tri_pt3
     }
     fn is_rotated(&self) -> bool {
-        self.rotated
+        self.plane().rotated
     }
 }
 

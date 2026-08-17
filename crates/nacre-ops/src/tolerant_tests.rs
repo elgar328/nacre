@@ -475,31 +475,35 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
     let plain = collect_planes(&m, s).unwrap();
     // The same faces, described as the image of their own reflection: base = `−coord`, one
     // `Mirror` node, and the realized coordinate lands back on `coord`.
-    let mirrored: Vec<FaceInfo> = plain
+    let mirrored: Vec<crate::planes::FaceRow> = plain
         .iter()
-        .map(|f| FaceInfo {
-            // A hand-built table has no surface to have recorded coefficients on, so the base
-            // frame derives as it always did. Filling this by hand is how a fixture and the
-            // engine come to route differently (see `WorkingPlane::reconcile`).
-            base_rat: None,
-            name: None,
-            surf: f.surf,
-            face: f.face,
-            plane: f.plane,
-            tri: f.tri,
-            n_out: f.n_out,
-            orient_sign: f.orient_sign,
-            tri_pt3: std::array::from_fn(|i| {
-                let c = f.tri_pt3[i].coord;
-                let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
-                WitnessPoint::at([r(2.0 - c[0]), r(c[1]), r(c[2])])
-                    .mirror(Axis::X, Rat::from_int(1))
-            }),
-            motion: Some(leaf),
-            rotated: true,
+        .map(|row| {
+            let f = row.plane();
+            crate::planes::FaceRow::Plane(FaceInfo {
+                // A hand-built table has no surface to have recorded coefficients on, so the base
+                // frame derives as it always did. Filling this by hand is how a fixture and the
+                // engine come to route differently (see `WorkingPlane::reconcile`).
+                base_rat: None,
+                name: None,
+                surf: f.surf,
+                face: f.face,
+                plane: f.plane,
+                tri: f.tri,
+                n_out: f.n_out,
+                orient_sign: f.orient_sign,
+                tri_pt3: std::array::from_fn(|i| {
+                    let c = f.tri_pt3[i].coord;
+                    let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
+                    WitnessPoint::at([r(2.0 - c[0]), r(c[1]), r(c[2])])
+                        .mirror(Axis::X, Rat::from_int(1))
+                }),
+                motion: Some(leaf),
+                rotated: true,
+            })
         })
         .collect();
     for (a, b) in plain.iter().zip(&mirrored) {
+        let (a, b) = (a.plane(), b.plane());
         for i in 0..3 {
             assert_eq!(a.tri_pt3[i].coord, b.tri_pt3[i].coord, "same coordinates");
             // The *operation* is exact on these integers, but `tol` is an a-priori bound
@@ -870,13 +874,13 @@ fn tilt_up() -> nacre_math::Vector3 {
 }
 
 /// The two highest faces along the tilt — the caps — as indices into `faces`.
-fn cap_pair(m: &Model, faces: &[FaceInfo]) -> (usize, usize) {
+fn cap_pair(m: &Model, faces: &[crate::planes::FaceRow]) -> (usize, usize) {
     let up = tilt_up();
     let mut along: Vec<(usize, f64)> = faces
         .iter()
         .enumerate()
         .filter_map(|(i, fi)| {
-            let p = nacre_props::face_props(m, fi.face.expect("a face")).ok()?;
+            let p = nacre_props::face_props(m, fi.face().expect("a face")).ok()?;
             (p.normal?.dot(up) > 0.99).then(|| (i, (p.centroid - Point3::origin()).dot(up)))
         })
         .collect();
@@ -905,10 +909,10 @@ fn two_caps_reached_by_different_arithmetic_are_one_plane() {
         let faces = collect_planes(&m, s).unwrap();
         let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
         let (ia, ib) = cap_pair(&m, &faces);
-        let ha = nacre_props::face_props(&m, faces[ia].face.unwrap())
+        let ha = nacre_props::face_props(&m, faces[ia].face().unwrap())
             .unwrap()
             .centroid;
-        let hb = nacre_props::face_props(&m, faces[ib].face.unwrap())
+        let hb = nacre_props::face_props(&m, faces[ib].face().unwrap())
             .unwrap()
             .centroid;
         let (ha, hb) = (
@@ -1073,7 +1077,7 @@ fn two_caps_described_exactly_are_one_plane() {
     // The exact definition each cap already carries: frame coefficients + the motion.
     // `nudge` offsets the cap's height inside its own frame — the negative control.
     let define = |i: usize, nudge: Option<Rat>| -> [WitnessPoint; 3] {
-        let surf = faces[i].surf;
+        let surf = faces[i].surf();
         let c = *m
             .surface_name
             .get(&surf)
@@ -1125,7 +1129,7 @@ fn two_caps_described_exactly_are_one_plane() {
             base_rat: None,
             name_ints: None,
             base: crate::planes::BaseFrame::none(),
-            surf: faces[ia].surf,
+            surf: faces[ia].surf(),
             plane: nacre_geom::Plane::through_points(tri[0], tri[1], tri[2])
                 .expect("non-collinear"),
             tri,
@@ -1236,7 +1240,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
             let nacre_topo::SurfaceTruth::Plane {
                 points: nacre_topo::PlanePoints::Known(pts),
                 ..
-            } = m.surface_truth(fi.surf)
+            } = m.surface_truth(fi.surf())
             else {
                 without += 1;
                 continue;
@@ -1245,7 +1249,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
             // ★ The points must satisfy the coefficients they are filed beside — both are
             // stated in the same frame, so this is an exact rational identity with no
             // tolerance anywhere.
-            if let Some(c) = m.surface_name.get(&fi.surf).and_then(|n| n.narrow()) {
+            if let Some(c) = m.surface_name.get(&fi.surf()).and_then(|n| n.narrow()) {
                 for p in pts {
                     let mut acc = c[3];
                     for k in 0..3 {
@@ -1257,7 +1261,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
                         acc,
                         Rat::from_int(0),
                         "{name}: a recorded point is not on its own plane {:?}",
-                        fi.surf
+                        fi.surf()
                     );
                 }
             }
@@ -1463,7 +1467,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
             // which the type now guarantees. The sweep stays as the retrospective record
             // of what this lock used to have to check.
             let ok = matches!(
-                m.surface_truth(fi.surf),
+                m.surface_truth(fi.surf()),
                 nacre_topo::SurfaceTruth::Plane { .. }
             );
             if ok {
@@ -1472,9 +1476,9 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
                 f64_only += 1;
                 println!(
                     "  {name}: {:?} named={} truth={:?}",
-                    fi.surf,
-                    m.surface_name.contains_key(&fi.surf),
-                    m.surface_truth(fi.surf)
+                    fi.surf(),
+                    m.surface_name.contains_key(&fi.surf()),
+                    m.surface_truth(fi.surf())
                 );
             }
         }
@@ -1809,7 +1813,7 @@ mod wide_name_rescue {
                     Point3::from_array([-1.0, -1.0, -1.0]),
                     Point3::from_array([5.0, 5.0, 4.0]),
                 );
-                let faces: Vec<crate::planes::FaceInfo> = collect_planes(&m, cub)
+                let faces: Vec<crate::planes::FaceRow> = collect_planes(&m, cub)
                     .unwrap()
                     .into_iter()
                     .chain(collect_planes(&m, tool).unwrap())

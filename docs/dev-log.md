@@ -9824,3 +9824,22 @@ biquad 처리)은 재검산 통과. 실질 결함 3건 수리:
   기존엔 "점이 면 밖" 오진 메시지로 떨어졌다).
 
 전 스위트·kit 0 실패.
+
+---
+
+## M6-2a C1 — 입구 어휘: 원통 면이 테이블에 앉는다 (행동 무변화) (2026-08-18)
+
+- **`FaceRow { Plane(FaceInfo) | Cylinder(CylFaceInfo) }`**: 면 테이블의 행이 enum이 되고
+  FaceInfo(평면 4중주)는 무변경 — 평면 소비처는 `row.plane()`(원통이면 명시 panic — 상류
+  필터 버그를 조용한 오답 대신 소리로) 또는 `plane_of` 필터로 읽는다. `Witness` impl은
+  FaceInfo→FaceRow 위임으로 이사(class 발견의 짝 스윕이 평면 행만 순회).
+- **`ClassIx { Plane(usize) | Cyl(usize) }`**: `plane_ix`가 타입화 — 센티널 금지. cylinder
+  행은 union-find 밖(자기-루트)이고 dense화에서 surf별 첫-등장 순 Cyl 번호(테이블은 C2).
+  `class_owners`는 Cyl 건너뜀.
+- **게이트 위치**: `CylinderFace` 거절이 face-루프 앞 사전 스캔으로 — ★ 재검토가 잡은 함정:
+  루프 뒤에 두면 원통 **캡**(정점 1개 디스크)이 `outer_tri`에서 `DegenerateFace`를 먼저 내
+  거절 이름이 바뀐다(전 스위트가 실제로 잡음). C2가 이 스캔을 인구 게이트로 교체, C3가 캡의
+  원 어휘를 가르친다. 같은 파일이라 reject census 키 불변.
+- **파급**: planes/arrangement/combinatorics/reuse/tolerant + 테스트 — 컴파일러 열거로
+  ~60 사이트, 전부 `.plane()`/`.plane()` 투영(perl 벌크 + 수동 잔여).
+- **관문**: census 165줄 비트 동일, reject census 불변, 전 스위트 0 실패, clippy 0.
