@@ -307,9 +307,16 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
     let mut out: Vec<_> = faces
         .iter()
         .map(|f| {
-            let mut inner: Vec<Vec<[usize; 3]>> = f.inner.iter().map(|r| ring(r)).collect();
+            // Circle bounds canonicalize as empty node lists beside the polygons — the
+            // differential's job is "same faces either route", and neither route emits
+            // circles until C4b.
+            let ring_b = |b: &crate::boolean::Bound| match b {
+                crate::boolean::Bound::Ring(r) => ring(r),
+                crate::boolean::Bound::Circle { .. } => Vec::new(),
+            };
+            let mut inner: Vec<Vec<[usize; 3]>> = f.inner.iter().map(ring_b).collect();
             inner.sort();
-            (f.plane_idx, f.flip, ring(&f.loop_nodes), inner)
+            (f.plane_idx, f.flip, ring_b(&f.outer), inner)
         })
         .collect();
     out.sort();
@@ -381,8 +388,12 @@ pub(crate) fn pass_through(
             .get(fa.face().expect("reuse only sees real faces"));
         out.push(LocalFace {
             plane_idx: wc,
-            loop_nodes: ring(&f.outer)?,
-            inner: f.inner.iter().map(ring).collect::<Option<_>>()?,
+            outer: crate::boolean::Bound::Ring(ring(&f.outer)?),
+            inner: f
+                .inner
+                .iter()
+                .map(|l| Some(crate::boolean::Bound::Ring(ring(l)?)))
+                .collect::<Option<_>>()?,
             flip: !same,
         });
     }

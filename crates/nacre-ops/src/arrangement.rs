@@ -201,11 +201,70 @@ pub(crate) struct Seg {
     pub kind: SegKind,
 }
 
+/// A **full circle** of a solid's trace on a plane class (M6-2a): a cylinder's mark, closed —
+/// no endpoints, no wall, no place in the segment machinery. Seated circles come from disk
+/// faces and circular holes lying in the class; transversal circles from a lateral surface
+/// crossing it. The population gate proves a circle meets no segment (every wall is clear of
+/// the lateral by more than r), so circles join the arrangement only at the cell stage.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CircleTrace {
+    /// The cylinder class ([`ClassIx::Cyl`] payload) whose circle this is.
+    pub cyl: usize,
+    pub solid: SolidSide,
+    pub kind: SegKind,
+}
+
+/// One circle of the class's arrangement after merging: both operands' contributions on one
+/// cylinder class, plus the cylinder's exact statement (the containment predicates read it).
+/// The circle twin of [`MergedSeg`].
+#[derive(Clone, Debug)]
+pub(crate) struct MergedCircle {
+    pub cyl: usize,
+    pub def: nacre_topo::CylinderDef,
+    pub merged: Vec<(SolidSide, SegKind)>,
+}
+
+/// Group a class's circle traces by cylinder class, in ascending class order (deterministic —
+/// replay mints handles from this order). The def is read off any cylinder row of that class.
+fn merge_circles(
+    circles: &[CircleTrace],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+) -> Result<Vec<MergedCircle>, BoolError> {
+    let mut out: Vec<MergedCircle> = Vec::new();
+    let mut sorted: Vec<&CircleTrace> = circles.iter().collect();
+    sorted.sort_by_key(|c| c.cyl);
+    for c in sorted {
+        if let Some(last) = out.last_mut() {
+            if last.cyl == c.cyl {
+                last.merged.push((c.solid, c.kind));
+                continue;
+            }
+        }
+        let def = faces
+            .iter()
+            .enumerate()
+            .find_map(|(i, row)| match (plane_ix[i], row) {
+                (ClassIx::Cyl(k), FaceRow::Cylinder(cf)) if k == c.cyl => Some(cf.def.clone()),
+                _ => None,
+            })
+            .expect("a circle's cylinder class has a lateral row");
+        out.push(MergedCircle {
+            cyl: c.cyl,
+            def,
+            merged: vec![(c.solid, c.kind)],
+        });
+    }
+    Ok(out)
+}
+
 /// A solid's trace on one plane class. `declined` non-empty ⇒ incomplete: a consumer must not
 /// read "no segments" as "the plane misses the solid".
 #[derive(Default, Debug)]
 pub(crate) struct Trace {
     pub segs: Vec<Seg>,
+    /// The closed circle elements beside the segments (M6-2a) — see [`CircleTrace`].
+    pub circles: Vec<CircleTrace>,
     /// Names this trace found to denote one feature — see [`Aliases`].
     pub aliases: Aliases,
     /// Single-point tangential contacts — real arrangement vertices, but not segments (a
@@ -457,7 +516,7 @@ fn trace_transversal_face(
     // Each ring pairs its class-form triples with the **carried walls** the producer read off
     // the model's edges (`NamedRing`) — the Crossing arm below names an edge's wall from the
     // ride, never from the two endpoint names.
-    let outer = match &loops.outer {
+    let outer = match loops.outer.as_ref().and_then(|r| r.poly()) {
         Some(nr) => match plane_ring(&nr.triples) {
             Some(ts) => (ts, nr.walls.as_slice()),
             None => {
@@ -465,6 +524,18 @@ fn trace_transversal_face(
                 return;
             }
         },
+        // ★ A **circular outer is a disk face, and it misses this class by proof** — the same
+        // clearance the circular-hole arm below rests on. Two classes can carry `W`: another ⊥
+        // class, which is parallel to the disk's own and meets it nowhere; or a ∥-axis wall,
+        // which the population gate proved farther from the axis than r, so the disk (radius r
+        // about that axis) does not reach the line `W ∩ fc`. Either way the face contributes no
+        // chord — a miss, like a parallel plane, not a decline.
+        //
+        // `None` is also how an *unnamed* ring arrives, but not for a face the tracer reaches:
+        // the only loops `loop_triples` leaves unnamed are the ones it rejects for, and those
+        // are `Err` at the source. A circle is the one `None` that means "named, and not a
+        // polygon".
+        None if matches!(loops.outer, Some(combinatorics::LoopRing::Circle { .. })) => return,
         None => {
             out.declined.push((fp, DeclineKind::OuterRing));
             return;
@@ -478,12 +549,19 @@ fn trace_transversal_face(
         return;
     };
     for r in raw_holes {
-        match plane_ring(&r.triples) {
-            Some(ts) => holes.push((ts, r.walls.as_slice())),
-            None => {
-                out.declined.push((fp, DeclineKind::CollapsedTriple));
-                return;
-            }
+        match r {
+            // ★ A **circular hole is skipped, by proof, not by hope**: the population gate
+            // established every ∥-axis wall clear of the circle's cylinder by more than r, and
+            // this trace's line `L = W ∩ fc` lies in such a wall — so the circle cannot meet
+            // `L`, and a disjoint hole contributes no crossings to the 3-valued scan.
+            combinatorics::LoopRing::Circle { .. } => continue,
+            combinatorics::LoopRing::Poly(r) => match plane_ring(&r.triples) {
+                Some(ts) => holes.push((ts, r.walls.as_slice())),
+                None => {
+                    out.declined.push((fp, DeclineKind::CollapsedTriple));
+                    return;
+                }
+            },
         }
     }
 
@@ -787,6 +865,29 @@ fn trace_one(
     let w_normal = planes[wc].plane.normal();
     for (fp, fl) in faces_in {
         let fp = *fp;
+        // A **lateral face** (a cylinder row): its trace on a ⊥ class is a transversal circle
+        // when the class's axis parameter lies strictly inside the face's rim span — outside
+        // it (or at a rim, which coplanarity would have folded into a seated class) the
+        // lateral does not reach this plane. Non-⊥ classes cannot carry a circle, and the
+        // population gate has already named every such interaction.
+        if let ClassIx::Cyl(k) = plane_ix[fp] {
+            let cf = match &faces[fp] {
+                FaceRow::Cylinder(cf) => cf,
+                FaceRow::Plane(_) => unreachable!("ClassIx::Cyl marks a cylinder row"),
+            };
+            match transversal_circle(cf, &planes[wc]) {
+                Ok(Some(())) => out.circles.push(CircleTrace {
+                    cyl: k,
+                    solid: which,
+                    kind: SegKind::Transversal {
+                        mat: cf.orient_sign,
+                    },
+                }),
+                Ok(None) => {}
+                Err(kind) => out.declined.push((fp, kind)),
+            }
+            continue;
+        }
         if plane_ix[fp].plane() != wc {
             trace_transversal_face(fp, fl, which, wc, jd, faces, plane_ix, out);
             continue;
@@ -800,11 +901,29 @@ fn trace_one(
         let kind = SegKind::Seated { body_above };
         // Collect every ring in class form first: a collapsed name declines the whole face, and
         // deciding that before the emitting closure exists keeps the two borrows apart.
-        let Some(outer) = fl.outer.as_ref().and_then(|nr| plane_ring(&nr.triples)) else {
-            out.declined.push((fp, DeclineKind::OuterRing));
-            continue;
-        };
-        let mut rings = vec![outer];
+        // A **circular** boundary — a disk face's outer, or a circular drill hole — is a
+        // closed trace element ([`CircleTrace`]) rather than a segment ring.
+        let mut rings = Vec::new();
+        match &fl.outer {
+            Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(&nr.triples) {
+                Some(ts) => rings.push(ts),
+                None => {
+                    out.declined.push((fp, DeclineKind::OuterRing));
+                    continue;
+                }
+            },
+            Some(combinatorics::LoopRing::Circle { cyl }) => {
+                out.circles.push(CircleTrace {
+                    cyl: *cyl,
+                    solid: which,
+                    kind,
+                });
+            }
+            None => {
+                out.declined.push((fp, DeclineKind::OuterRing));
+                continue;
+            }
+        }
         let mut collapsed = false;
         // As above: an unnameable hole is a reject, not "no hole".
         let Some(raw) = &fl.holes else {
@@ -812,9 +931,16 @@ fn trace_one(
             continue;
         };
         for r in raw {
-            match plane_ring(&r.triples) {
-                Some(r) => rings.push(r),
-                None => collapsed = true,
+            match r {
+                combinatorics::LoopRing::Circle { cyl } => out.circles.push(CircleTrace {
+                    cyl: *cyl,
+                    solid: which,
+                    kind,
+                }),
+                combinatorics::LoopRing::Poly(nr) => match plane_ring(&nr.triples) {
+                    Some(r) => rings.push(r),
+                    None => collapsed = true,
+                },
             }
         }
         if collapsed {
@@ -862,6 +988,65 @@ fn trace_one(
         for ring in &rings {
             emit_ring(ring);
         }
+    }
+}
+
+/// Whether a lateral face crosses the plane class `wp` in a full circle (M6-2a).
+///
+/// `Ok(Some(()))` — the class is ⊥ this cylinder's axis and its axis parameter lies strictly
+/// inside the face's rim span. `Ok(None)` — no circle (a non-⊥ class carries none, and a ⊥
+/// class outside the span never meets this face; a rim-coincident plane would have been one
+/// class with the rim's cap and traced seated). `Err` — the face cannot answer (no rim span,
+/// or the class has no exact description the gate would already have refused); declining
+/// beats a silently missing circle, which would corrupt every label on the class.
+fn transversal_circle(
+    cf: &crate::planes::CylFaceInfo,
+    wp: &WorkingPlane,
+) -> Result<Option<()>, DeclineKind> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let Some(coeffs) = wp.base_rat else {
+        return Err(DeclineKind::CylSpan);
+    };
+    if wp.rotated {
+        return Err(DeclineKind::CylSpan);
+    }
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let m = cf.def.dir();
+    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    let cross_zero = (|| -> Option<bool> {
+        let c0 = n[1]
+            .checked_mul(m[2])?
+            .checked_sub(n[2].checked_mul(m[1])?)?;
+        let c1 = n[2]
+            .checked_mul(m[0])?
+            .checked_sub(n[0].checked_mul(m[2])?)?;
+        let c2 = n[0]
+            .checked_mul(m[1])?
+            .checked_sub(n[1].checked_mul(m[0])?)?;
+        Some(c0 == zero && c1 == zero && c2 == zero)
+    })();
+    match cross_zero {
+        None => return Err(DeclineKind::CylSpan),
+        Some(false) => return Ok(None),
+        Some(true) => {}
+    }
+    let Some(span) = cf.span else {
+        return Err(DeclineKind::CylSpan);
+    };
+    let t = (|| -> Option<Rat> {
+        let nm = dot3(&n, &m)?;
+        let no_d = dot3(&n, &cf.def.origin())?.checked_add(coeffs[3])?;
+        zero.checked_sub(no_d)?
+            .checked_mul(Rat::new(nm.denom(), nm.numer())?)
+    })();
+    match t {
+        None => Err(DeclineKind::CylSpan),
+        Some(t) => Ok((span[0] < t && t < span[1]).then_some(())),
     }
 }
 
@@ -1468,6 +1653,7 @@ fn extract_cells(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     segs: &[MergedSeg],
+    circles: &[MergedCircle],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
     let n = segs.len();
     let he_count = 2 * n;
@@ -1570,6 +1756,25 @@ fn extract_cells(
             });
         }
         if ok && cells.iter().filter(|c| c.winding == -1).count() == components {
+            // ★ **Circle cells, appended after the segment orbits** (M6-2a). Each circle is a
+            // 1-edge component the DCEL walk cannot express (orbits need ≥3): a `+1` disk cell
+            // and a `−1` contour, with pseudo-half-edges numbered past the segment range —
+            // `2n + 2i` (disk side) and its `^1` twin (outside), so the label propagation's
+            // twin arithmetic works unmodified (`2n` is even). The gate proves a circle meets
+            // no segment, so no crossing machinery is owed.
+            for (i, _) in circles.iter().enumerate() {
+                let he_in = 2 * n + 2 * i;
+                face_of.insert(he_in, cells.len());
+                cells.push(Cell {
+                    half_edges: vec![he_in],
+                    winding: 1,
+                });
+                face_of.insert(he_in + 1, cells.len());
+                cells.push(Cell {
+                    half_edges: vec![he_in + 1],
+                    winding: -1,
+                });
+            }
             return Ok((cells, face_of));
         }
     }
@@ -1618,11 +1823,21 @@ fn nest_cells(
     wc: usize,
     cells: &[Cell],
     segs: &[MergedSeg],
+    circles: &[MergedCircle],
 ) -> Result<Nesting, BoolError> {
     let n = cells.len();
+    // Which circle a cell is (by pseudo-half-edge range), `None` for a segment cell.
+    let circle_of = |c: &Cell| -> Option<usize> {
+        let he = *c.half_edges.first()?;
+        (he >= 2 * segs.len()).then(|| (he - 2 * segs.len()) / 2)
+    };
     // As in `extract_cells`: the walk knows each edge's wall and handles, so the ring carries them
-    // instead of leaving them to be re-derived from the endpoint names.
+    // instead of leaving them to be re-derived from the endpoint names. A circle cell has no
+    // ring — its containment questions run on the cylinder's exact statement instead.
     let ring_of = |c: &Cell| -> Vec<combinatorics::RingEdge> {
+        if circle_of(c).is_some() {
+            return Vec::new();
+        }
         c.half_edges
             .iter()
             .map(|&he| combinatorics::RingEdge {
@@ -1651,23 +1866,59 @@ fn nest_cells(
     for c in (0..n).filter(|&i| cells[i].winding == -1) {
         let mut hosts: Vec<usize> = Vec::new();
         for &r in &pos {
-            // Shares a node ⇒ adjacent (or `c`'s own partner) ⇒ not a hole of `r`.
-            if rings[c]
-                .iter()
-                .any(|e| rings[r].iter().any(|f| f.node == e.node))
-            {
-                continue;
-            }
-            // Vertex-disjoint: `ring_in_ring` casts from each of `c`'s nodes until one gives a
-            // clear ray, and an exhausted ring is the genuine degeneracy it rejects for.
-            let probes: Vec<[usize; 3]> = rings[c].iter().map(|e| e.node).collect();
-            if combinatorics::ring_in_ring(jd, wc, &probes, &rings[r])? {
-                hosts.push(r);
+            match (circle_of(&cells[c]), circle_of(&cells[r])) {
+                // Two circles never nest in this population: the same circle's disk is `c`'s
+                // partner (adjacent, not nested), and distinct cylinders are pairwise clear by
+                // the gate (`dist > r₁+r₂` forbids containment).
+                (Some(_), Some(_)) => continue,
+                // A circle contour inside a polygon cell: one witness point decides (the loops
+                // are disjoint — the gate keeps every wall line clear of the circle), and the
+                // witness is the circle's **center** (= axis ∩ wc, rational).
+                (Some(ci), None) => {
+                    if circle_center_in_ring(jd, wc, &circles[ci], &rings[r])? {
+                        hosts.push(r);
+                    }
+                }
+                // A polygon contour inside a disk is population-impossible (its edges ride
+                // wall planes, all farther from the axis than r) — computed anyway, honestly,
+                // from one node's radial side.
+                (None, Some(ri)) => {
+                    if node_in_circle(jd, &rings[c], &circles[ri])? {
+                        hosts.push(r);
+                    }
+                }
+                (None, None) => {
+                    // Shares a node ⇒ adjacent (or `c`'s own partner) ⇒ not a hole of `r`.
+                    if rings[c]
+                        .iter()
+                        .any(|e| rings[r].iter().any(|f| f.node == e.node))
+                    {
+                        continue;
+                    }
+                    // Vertex-disjoint: `ring_in_ring` casts from each of `c`'s nodes until one
+                    // gives a clear ray; an exhausted ring is the genuine degeneracy it
+                    // rejects for.
+                    let probes: Vec<[usize; 3]> = rings[c].iter().map(|e| e.node).collect();
+                    if combinatorics::ring_in_ring(jd, wc, &probes, &rings[r])? {
+                        hosts.push(r);
+                    }
+                }
             }
         }
         if hosts.is_empty() {
             roots.push(c);
         } else {
+            // The population proof above says a disk hosts nothing; keep the invariant loud
+            // and the ordering machinery polygon-only.
+            debug_assert!(
+                hosts.iter().all(|&r| circle_of(&cells[r]).is_none()),
+                "a disk cell hosted a contour — the gate's clearance proof is broken"
+            );
+            hosts.retain(|&r| circle_of(&cells[r]).is_none());
+            if hosts.is_empty() {
+                roots.push(c);
+                continue;
+            }
             let host = innermost_host(jd, wc, &rings, &hosts)?;
             let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
             parent[rc] = rr;
@@ -1686,6 +1937,112 @@ fn nest_cells(
         root_groups,
         holes,
     })
+}
+
+/// A ring node's exact coordinates: the rational meet of its three classes' descriptions.
+/// `None` when any class lacks a narrow rational description — the caller declines rather
+/// than guessing (in the circle population every class passed the gate, which required those
+/// descriptions, so a `None` here is the miss the gate already named).
+fn node_coords_rat(jd: &Judge<'_, WorkingPlane>, t: [usize; 3]) -> Option<[nacre_scalar::Rat; 3]> {
+    let c = |i: usize| jd.planes[i].base_rat.filter(|_| !jd.planes[i].rotated);
+    nacre_scalar::three_planes_rat([c(t[0])?, c(t[1])?, c(t[2])?])
+}
+
+/// Whether a circle's **center** lies inside a polygon ring of the class — the containment
+/// witness `nest_cells` uses for a circle contour (the loops are disjoint by the gate's
+/// clearance proof, so one point decides). Exact: the center is `axis ∩ W` (rational), the
+/// ring corners are rational meets, and the parity runs in a rational 2D basis of `W`
+/// (`point_in_ring_2d_rat` — parity is invariant under the affine projection).
+fn circle_center_in_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    circle: &MergedCircle,
+    ring: &[combinatorics::RingEdge],
+) -> Result<bool, BoolError> {
+    use nacre_scalar::Rat;
+    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    let zero = Rat::from_int(0);
+    let wp = &jd.planes[wc];
+    let coeffs = wp.base_rat.filter(|_| !wp.rotated).ok_or_else(undecided)?;
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let (o, m) = (circle.def.origin(), circle.def.dir());
+    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    let center = (|| -> Option<[Rat; 3]> {
+        let nm = dot3(&n, &m)?;
+        let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
+        let t = zero
+            .checked_sub(no_d)?
+            .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
+        let mut p = o;
+        for k in 0..3 {
+            p[k] = p[k].checked_add(t.checked_mul(m[k])?)?;
+        }
+        Some(p)
+    })()
+    .ok_or_else(undecided)?;
+    // A rational 2D basis of W: e₁ = ê_k × n (first k with a nonzero cross), e₂ = n × e₁.
+    // Parity is affine-invariant, so the basis need not be orthonormal.
+    let cross = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            x[1].checked_mul(y[2])?
+                .checked_sub(x[2].checked_mul(y[1])?)?,
+            x[2].checked_mul(y[0])?
+                .checked_sub(x[0].checked_mul(y[2])?)?,
+            x[0].checked_mul(y[1])?
+                .checked_sub(x[1].checked_mul(y[0])?)?,
+        ])
+    };
+    let basis = |k: usize| -> [Rat; 3] {
+        let mut e = [zero; 3];
+        e[k] = Rat::from_int(1);
+        e
+    };
+    let e1 = (0..3)
+        .filter_map(|k| cross(&basis(k), &n))
+        .find(|e| e.iter().any(|c| *c != zero))
+        .ok_or_else(undecided)?;
+    let e2 = cross(&n, &e1).ok_or_else(undecided)?;
+    let project = |p: &[Rat; 3]| -> Option<[Rat; 2]> { Some([dot3(p, &e1)?, dot3(p, &e2)?]) };
+    let p2 = project(&center).ok_or_else(undecided)?;
+    let mut ring2 = Vec::with_capacity(ring.len());
+    for e in ring {
+        let p = node_coords_rat(jd, e.node).ok_or_else(undecided)?;
+        ring2.push(project(&p).ok_or_else(undecided)?);
+    }
+    match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
+        nacre_geom::intersect::RingSide::Inside => Ok(true),
+        nacre_geom::intersect::RingSide::Outside => Ok(false),
+        // On the boundary is the gate-impossible contact; refusing is the honest answer.
+        nacre_geom::intersect::RingSide::OnBoundary => Err(undecided()),
+    }
+}
+
+/// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
+/// planes, all clear of the axis by more than r), but computed honestly from one node's
+/// radial side rather than assumed.
+fn node_in_circle(
+    jd: &Judge<'_, WorkingPlane>,
+    ring: &[combinatorics::RingEdge],
+    circle: &MergedCircle,
+) -> Result<bool, BoolError> {
+    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    let node = ring.first().ok_or_else(undecided)?.node;
+    let p = node_coords_rat(jd, node).ok_or_else(undecided)?;
+    match nacre_scalar::cylinder_radial_side(
+        &p,
+        &circle.def.origin(),
+        &circle.def.dir(),
+        circle.def.radius(),
+    ) {
+        Some(nacre_scalar::Orient::Negative) => Ok(true),
+        Some(nacre_scalar::Orient::Positive) => Ok(false),
+        // On the surface, or overflow: the gate-impossible contact — refuse honestly.
+        _ => Err(undecided()),
+    }
 }
 
 /// Which of `hosts` owns the hole: the **innermost** one — the candidate contained in all the
@@ -1865,9 +2222,19 @@ fn label_cells(
     cells: &[Cell],
     face_of: &HashMap<usize, usize>,
     segs: &[MergedSeg],
+    circles: &[MergedCircle],
     nesting: &Nesting,
     seed: Label,
 ) -> Result<Vec<Label>, BoolError> {
+    // Crossing a circle flips like crossing any edge — its occupancy list is the mask's input;
+    // the pseudo-half-edge numbering (`≥ 2·segs.len()`) picks the table.
+    let mask_of = |he: usize| -> Result<Label, BoolError> {
+        if he / 2 < segs.len() {
+            edge_mask(&segs[he / 2].merged)
+        } else {
+            edge_mask(&circles[he / 2 - segs.len()].merged)
+        }
+    };
     // A face-with-holes is one region: label its group as a unit. Group representative → members.
     let mut members: HashMap<usize, Vec<usize>> = HashMap::new();
     for (i, &g) in nesting.group_of.iter().enumerate() {
@@ -1889,7 +2256,7 @@ fn label_cells(
         for &he in &cells[c].half_edges {
             let nb = face_of[&(he ^ 1)];
             if label[nb].is_none() {
-                let mask = edge_mask(&segs[he / 2].merged)?;
+                let mask = mask_of(he)?;
                 let lab: Label = std::array::from_fn(|i| lc[i] ^ mask[i]);
                 // A hole and its host bound the same region: label the whole group at once and
                 // enqueue every member, so the hole cell's edges bridge to the cell inside it —
@@ -1910,7 +2277,7 @@ fn label_cells(
     // Verify every edge (tree and non-tree): the flip relation must hold everywhere.
     for (he, &c) in face_of {
         let nb = face_of[&(he ^ 1)];
-        let mask = edge_mask(&segs[he / 2].merged)?;
+        let mask = mask_of(*he)?;
         if std::array::from_fn::<bool, 4, _>(|i| out[c][i] ^ mask[i]) != out[nb] {
             return Err(reject(RejectReason::LabelConflict)); // inconsistent propagation
         }
@@ -1943,11 +2310,13 @@ fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
 /// with an original A/B vertex (a cap corner); the weld table canonicalizes such a W-triple onto
 /// the same result vertex, or `assemble_fuse_cut`'s manifold guard rejects. This brick emits
 /// all-`Seam`; the reconciliation and assembly are later.
+#[allow(clippy::too_many_arguments)]
 fn emit_faces(
     kind: BoolKind,
     labels: &[Label],
     cells: &[Cell],
     segs: &[MergedSeg],
+    circles: &[MergedCircle],
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
@@ -1956,9 +2325,18 @@ fn emit_faces(
     // `crate::boolean::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
     // three-valued-scan struct) shadows it here.
     // ★ The wall travels with the ring. A half-edge was *told* which plane its edge rides, and
-    // that is the one fact a name cannot always give back (see `boolean::Ring`).
-    let ring_of = |cell: &Cell| -> crate::boolean::Ring {
-        crate::boolean::Ring::new(
+    // that is the one fact a name cannot always give back (see `boolean::Ring`). A circle cell
+    // (pseudo-half-edge past the segment range) has no nodes — its boundary is the cylinder
+    // class itself.
+    let bound_of = |cell: &Cell| -> crate::boolean::Bound {
+        if let Some(&he) = cell.half_edges.first() {
+            if he >= 2 * segs.len() {
+                return crate::boolean::Bound::Circle {
+                    cyl: circles[(he - 2 * segs.len()) / 2].cyl,
+                };
+            }
+        }
+        crate::boolean::Bound::Ring(crate::boolean::Ring::new(
             cell.half_edges
                 .iter()
                 .map(|&he| crate::boolean::Node::Seam(segs[he / 2].end[he % 2]))
@@ -1967,7 +2345,7 @@ fn emit_faces(
                 .iter()
                 .map(|&he| segs[he / 2].wall)
                 .collect(),
-        )
+        ))
     };
     let mut out = Vec::new();
     for (c, cell) in cells.iter().enumerate() {
@@ -1981,13 +2359,13 @@ fn emit_faces(
             continue; // material the same on both sides ⇒ not a result face here
         }
         let flip = keep_above == (planes[wc].frame_sign > 0);
-        let inner: Vec<crate::boolean::Ring> = holes
+        let inner: Vec<crate::boolean::Bound> = holes
             .get(&c)
-            .map(|hs| hs.iter().map(|&h| ring_of(&cells[h])).collect())
+            .map(|hs| hs.iter().map(|&h| bound_of(&cells[h])).collect())
             .unwrap_or_default();
         out.push(LocalFace {
             plane_idx: wc,
-            loop_nodes: ring_of(cell),
+            outer: bound_of(cell),
             inner,
             flip,
         });
@@ -2078,7 +2456,7 @@ fn trace_result_faces(
         c
     };
     let mut aliases = Aliases::default();
-    let mut splits: Vec<Vec<MergedSeg>> = Vec::new();
+    let mut splits: Vec<(Vec<MergedSeg>, Vec<MergedCircle>)> = Vec::new();
     loop {
         let before = aliases.len();
         // **Every class in the round sees the table as it stood when the round began**, and
@@ -2117,7 +2495,8 @@ fn trace_result_faces(
             let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
             let split = drop_newsless(split)?;
-            Ok((split, local))
+            let circles = merge_circles(&tr.circles, faces, plane_ix)?;
+            Ok(((split, circles), local))
         })?;
         splits.clear();
         for (split, local) in round {
@@ -2146,11 +2525,11 @@ fn trace_result_faces(
 
     let per_class = crate::par::try_map_range(splits.len(), |k| {
         let wc = work[k];
-        let split = &splits[k];
+        let (split, circles) = &splits[k];
         let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
             watch!(CELLS);
-            let (cells, face_of) = timed!(C_EXTRACT, extract_cells(jd, wc, split))?;
-            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, split))?;
+            let (cells, face_of) = timed!(C_EXTRACT, extract_cells(jd, wc, split, circles))?;
+            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, split, circles))?;
             // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
             // arrangement covers all of space, so its unbounded cells reach infinity, where neither
             // solid is. That is a fact about arranging the *whole* model — restrict the input to a
@@ -2158,11 +2537,20 @@ fn trace_result_faces(
             // is what the parameter records.
             let labels = timed!(
                 C_LABEL,
-                label_cells(&cells, &face_of, split, &nesting, [false; 4])
+                label_cells(&cells, &face_of, split, circles, &nesting, [false; 4])
             )?;
             Ok(timed!(
                 C_EMIT,
-                emit_faces(kind, &labels, &cells, split, jd, wc, &nesting.holes,)
+                emit_faces(
+                    kind,
+                    &labels,
+                    &cells,
+                    split,
+                    circles,
+                    jd,
+                    wc,
+                    &nesting.holes,
+                )
             ))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
@@ -2284,13 +2672,14 @@ pub(crate) fn concurrency_audit(
                 };
                 let mut rings =
                     combinatorics::face_vertex_triples(model, fh, fp, inc, &jd, &plane_ix)
-                        .map(|nr| nr.triples)
+                        .map(|lr| lr.poly().map(|nr| nr.triples.clone()).unwrap_or_default())
                         .unwrap_or_default();
                 rings.extend(
                     combinatorics::hole_rings(model, fh, fp, inc, &jd, &plane_ix)
                         .unwrap_or_default()
                         .into_iter()
-                        .flat_map(|nr| nr.triples),
+                        .filter_map(|lr| lr.poly().map(|nr| nr.triples.clone()))
+                        .flatten(),
                 );
                 // Only vertices the class would actually name: those lying on it (`side == 0`),
                 // which is exactly the run condition the trace's rule fires under.
@@ -2449,10 +2838,20 @@ pub(crate) fn frame_audit(
                 let merged = merge_coincident(&tr.segs, wc, &local);
                 let split = split_at_crossings(&jd, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
-                let (cells, face_of) = extract_cells(&jd, wc, &split)?;
-                let nesting = nest_cells(&jd, wc, &cells, &split)?;
-                let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4])?;
-                let _ = emit_faces(kind, &labels, &cells, &split, &jd, wc, &nesting.holes);
+                let circles = merge_circles(&tr.circles, &faces_tab, &plane_ix)?;
+                let (cells, face_of) = extract_cells(&jd, wc, &split, &circles)?;
+                let nesting = nest_cells(&jd, wc, &cells, &split, &circles)?;
+                let labels = label_cells(&cells, &face_of, &split, &circles, &nesting, [false; 4])?;
+                let _ = emit_faces(
+                    kind,
+                    &labels,
+                    &cells,
+                    &split,
+                    &circles,
+                    &jd,
+                    wc,
+                    &nesting.holes,
+                );
                 Ok(())
             };
             run().err().and_then(|e| match e {
@@ -2605,7 +3004,7 @@ pub(crate) fn boolean(
             let mut seam: Vec<SeamVertex> = Vec::new();
             let mut seen: HashMap<[usize; 3], ()> = HashMap::new();
             for f in &faces {
-                for loop_ in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+                for loop_ in f.poly_rings() {
                     for node in loop_.iter() {
                         let crate::boolean::Node::Seam(t) = node;
                         if seen.insert(*t, ()).is_some() {
@@ -3464,7 +3863,7 @@ mod tests {
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
 
-        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
 
         // ★★★ **An independent reading of every winding: the shoelace sign.**
         //
@@ -3592,9 +3991,9 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4]).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &split, &[]).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &[], &nesting, [false; 4]).unwrap();
 
         for (i, c) in cells.iter().enumerate() {
             if c.winding == -1 {
@@ -3666,9 +4065,9 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4]).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &split, &[]).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &[], &nesting, [false; 4]).unwrap();
 
         assert_eq!(cells.len(), 2, "one square: inner + unbounded");
         let inner = cells.iter().position(|c| c.winding == 1).unwrap();
@@ -3719,14 +4118,15 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&jd, wc, &split).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &split).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &nesting, [false; 4]).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &split, &[]).unwrap();
+        let labels = label_cells(&cells, &face_of, &split, &[], &nesting, [false; 4]).unwrap();
 
         // Centroid of a face's ring (convex cells here).
         let centroid = |f: &LocalFace| -> [f64; 2] {
             let ps: Vec<[f64; 3]> = f
-                .loop_nodes
+                .outer
+                .expect_ring()
                 .iter()
                 .map(|n| match n {
                     crate::boolean::Node::Seam(t) => pt(*t, &jd),
@@ -3745,6 +4145,7 @@ mod tests {
             &labels,
             &cells,
             &split,
+            &[],
             &jd,
             wc,
             &nesting.holes,
@@ -3756,6 +4157,7 @@ mod tests {
             &labels,
             &cells,
             &split,
+            &[],
             &jd,
             wc,
             &nesting.holes,
@@ -3772,6 +4174,7 @@ mod tests {
             &labels,
             &cells,
             &split,
+            &[],
             &jd,
             wc,
             &nesting.holes,
@@ -3782,7 +4185,8 @@ mod tests {
         // Each emitted loop winds +1 (CCW about n_out(wc)) and has ≥3 distinct nodes.
         for f in fuse.iter().chain(&cut).chain(&common) {
             let ring: Vec<[usize; 3]> = f
-                .loop_nodes
+                .outer
+                .expect_ring()
                 .iter()
                 .map(|crate::boolean::Node::Seam(t)| *t)
                 .collect();
@@ -3820,7 +4224,8 @@ mod tests {
         let mut edges: HashMap<([usize; 3], [usize; 3]), (i32, i32)> = HashMap::new();
         for f in &fuse {
             let ns: Vec<[usize; 3]> = f
-                .loop_nodes
+                .outer
+                .expect_ring()
                 .iter()
                 .map(|crate::boolean::Node::Seam(t)| *t)
                 .collect();
@@ -3912,7 +4317,8 @@ mod tests {
         let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
         for f in &faces {
             let ns: Vec<[usize; 3]> = f
-                .loop_nodes
+                .outer
+                .expect_ring()
                 .iter()
                 .map(|n| match n {
                     crate::boolean::Node::Seam(t) => *t,
@@ -4135,7 +4541,7 @@ mod tests {
         };
         let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
         for f in &faces {
-            for ring in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+            for ring in f.poly_rings() {
                 let ns = triples(ring);
                 for w in ns
                     .windows(2)
@@ -4240,7 +4646,7 @@ mod tests {
         };
         let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
         for f in &faces {
-            for ring in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+            for ring in f.poly_rings() {
                 let ns = triples(ring);
                 for w in ns
                     .windows(2)
@@ -4519,7 +4925,7 @@ mod tests {
         };
         let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
         for f in &faces {
-            for ring in std::iter::once(&f.loop_nodes).chain(f.inner.iter()) {
+            for ring in f.poly_rings() {
                 let ns = triples(ring);
                 for w in ns
                     .windows(2)
@@ -4621,6 +5027,393 @@ mod tests {
                 seats(a) && seats(b)
             })
             .expect("a shared z=1 cap class")
+    }
+
+    /// The gated drill population's fixture: a `[0,2]³` box and an axis-aligned cylinder at
+    /// `(1,1)`, r=0.5 — every wall is a full unit from the axis, so the population gate passes
+    /// and [`plane_index_setup_past_stopper`] hands the arrangement bricks a cylinder-bearing
+    /// table (production stays behind `CylinderBooleanNotYet` until C4b).
+    fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b = m.add_cylinder(
+            Point3::from_array([1.0, 1.0, z0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            h,
+        );
+        m.rebuild_adjacency();
+        (a, b)
+    }
+
+    /// The plane class whose defining triangle lies wholly at `z` — a z-cap.
+    fn class_at_z(planes: &[WorkingPlane], z: f64) -> usize {
+        planes
+            .iter()
+            .position(|p| p.tri.iter().all(|q| (q.as_array()[2] - z).abs() < 1e-12))
+            .expect("a z-cap class")
+    }
+
+    /// A cylinder cap alone on its class: the disk's circular outer traces as a **seated
+    /// circle**, and the cell bricks turn it into a disk `+1` / contour `−1` pair whose labels
+    /// say "body on the cap's inside" — with no segments anywhere. The emitted face's outer is
+    /// the circle itself ([`crate::boolean::Bound::Circle`]), the vocabulary C4b's assembly
+    /// will consume.
+    #[test]
+    fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
+        let mut m = Model::new();
+        let (a, b) = drilled(&mut m, -1.0, 4.0); // caps at z=-1 and z=3, clear of the box
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        let wc = class_at_z(&planes, 3.0);
+
+        let mut tr = Trace::default();
+        trace_one_of(
+            &m,
+            b,
+            SolidSide::B,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_b,
+            &plane_ix,
+            &mut tr,
+        );
+        assert!(
+            tr.segs.is_empty(),
+            "a circle owes the segment machinery nothing"
+        );
+        assert!(tr.declined.is_empty(), "{:?}", tr.declined);
+        // The class's normal is the cap's own outward +z (the cap is its only member), so the
+        // body — below z=3 — is `body_above: false`.
+        assert!(planes[wc].plane.normal().as_array()[2] > 0.0);
+        assert!(
+            matches!(
+                tr.circles[..],
+                [CircleTrace {
+                    cyl: 0,
+                    solid: SolidSide::B,
+                    kind: SegKind::Seated { body_above: false },
+                }]
+            ),
+            "{:?}",
+            tr.circles
+        );
+
+        let circles = merge_circles(&tr.circles, &faces_tab, &plane_ix).unwrap();
+        let (cells, face_of) = extract_cells(&jd, wc, &[], &circles).unwrap();
+        // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
+        assert_eq!(cells.len(), 2, "{cells:?}");
+        assert_eq!(
+            (cells[0].half_edges.as_slice(), cells[0].winding),
+            (&[0][..], 1)
+        );
+        assert_eq!(
+            (cells[1].half_edges.as_slice(), cells[1].winding),
+            (&[1][..], -1)
+        );
+        let nesting = nest_cells(&jd, wc, &cells, &[], &circles).unwrap();
+        assert_eq!(
+            nesting.root_groups,
+            vec![1],
+            "the contour bounds the unbounded region"
+        );
+        assert!(nesting.holes.is_empty());
+        let labels = label_cells(&cells, &face_of, &[], &circles, &nesting, [false; 4]).unwrap();
+        assert_eq!(labels[1], [false; 4]);
+        assert_eq!(
+            labels[0],
+            [false, false, false, true],
+            "inside the circle, B below the plane only"
+        );
+        // Fuse keeps below and not above across the disk → the disk is a result face, and its
+        // outer boundary is the circle — no ring, no nodes.
+        let out = emit_faces(
+            BoolKind::Fuse,
+            &labels,
+            &cells,
+            &[],
+            &circles,
+            &jd,
+            wc,
+            &nesting.holes,
+        );
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(matches!(
+            out[0].outer,
+            crate::boolean::Bound::Circle { cyl: 0 }
+        ));
+        assert!(out[0].inner.is_empty());
+    }
+
+    /// The through-drill's cap arrangement, brick by brick: the box cap is a seated 4-ring, the
+    /// lateral crosses the cap plane in a **transversal circle**, and the bricks nest the circle
+    /// as the cap cell's hole, label the disk with the cylinder straddling `W`, and emit — for
+    /// `Cut` — exactly one face: the cap with a circular hole. The per-kind `edge_mask`
+    /// difference is what the two labels measure (seated flips one side, transversal flips
+    /// both).
+    #[test]
+    fn a_drill_circle_is_a_hole_of_the_cap_ring() {
+        let mut m = Model::new();
+        let (a, b) = drilled(&mut m, -1.0, 4.0); // z∈[-1,3]: through both caps of the box
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        let wc = class_at_z(&planes, 0.0);
+
+        let tr = trace_on_class_of(
+            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+        );
+        assert!(tr.declined.is_empty(), "{:?}", tr.declined);
+        assert!(
+            matches!(
+                tr.circles[..],
+                [CircleTrace {
+                    cyl: 0,
+                    solid: SolidSide::B,
+                    kind: SegKind::Transversal { .. },
+                }]
+            ),
+            "{:?}",
+            tr.circles
+        );
+
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let circles = merge_circles(&tr.circles, &faces_tab, &plane_ix).unwrap();
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        assert_eq!(
+            split.len(),
+            4,
+            "the cap ring alone — the circle owes the splitter nothing"
+        );
+
+        let (cells, face_of) = extract_cells(&jd, wc, &split, &circles).unwrap();
+        assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
+        let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();
+        let (disk, contour) = (at(2 * split.len()), at(2 * split.len() + 1));
+        let cap = cells
+            .iter()
+            .position(|c| c.winding == 1 && c.half_edges.len() == 4)
+            .unwrap();
+
+        let nesting = nest_cells(&jd, wc, &cells, &split, &circles).unwrap();
+        assert_eq!(
+            nesting.holes.get(&cap).map(Vec::as_slice),
+            Some(&[contour][..]),
+            "the circle contour is the cap cell's hole"
+        );
+
+        let labels = label_cells(&cells, &face_of, &split, &circles, &nesting, [false; 4]).unwrap();
+        // The class is the box's **bottom** cap, so which of `W`'s two sides carries the box is
+        // read off the class normal rather than assumed: the box occupies z>0.
+        let up = planes[wc].plane.normal().as_array()[2] > 0.0;
+        let box_side = usize::from(!up); // 0 = above `n_W`, 1 = below
+        let mut cap_label = [false; 4];
+        cap_label[box_side] = true;
+        assert_eq!(
+            labels[cap], cap_label,
+            "outside the circle: box material on the z>0 side only"
+        );
+        assert_eq!(
+            labels[contour], labels[cap],
+            "a hole bounds its host's region"
+        );
+        let mut disk_label = cap_label;
+        disk_label[2] = true;
+        disk_label[3] = true;
+        assert_eq!(
+            labels[disk], disk_label,
+            "inside the circle the cylinder straddles W, the box side is unchanged"
+        );
+
+        let out = emit_faces(
+            BoolKind::Cut,
+            &labels,
+            &cells,
+            &split,
+            &circles,
+            &jd,
+            wc,
+            &nesting.holes,
+        );
+        assert_eq!(out.len(), 1, "one face: the drilled cap — {out:?}");
+        assert_eq!(out[0].outer.expect_ring().len(), 4);
+        assert!(
+            matches!(out[0].inner[..], [crate::boolean::Bound::Circle { cyl: 0 }]),
+            "{:?}",
+            out[0].inner
+        );
+    }
+
+    /// The hole arm of the seated tracer: a face whose inner loop is a circle (a two-hole
+    /// plate's input shape — no producer builds one until C4b/C5, so the loops are doctored by
+    /// hand) emits its polygon segments **and** a seated circle that inherits the face's own
+    /// body side.
+    #[test]
+    fn a_circular_hole_ring_traces_as_a_seated_circle() {
+        let mut m = Model::new();
+        let (a, b) = drilled(&mut m, -1.0, 4.0);
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        let wc = class_at_z(&planes, 0.0);
+
+        let input = combinatorics::trace_input(
+            &m,
+            [(a, &inc_a), (b, &inc_b)],
+            &surf_ix,
+            faces_tab.len(),
+            &jd,
+            &plane_ix,
+        );
+        let (fp, fl) = input.faces[0]
+            .iter()
+            .find(|(fp, _)| matches!(plane_ix[*fp], ClassIx::Plane(c) if c == wc))
+            .expect("the box's bottom cap sits on wc");
+        let doctored = combinatorics::FaceLoops {
+            outer: fl.outer.clone(),
+            holes: Some(vec![combinatorics::LoopRing::Circle { cyl: 0 }]),
+        };
+        let mut tr = Trace::default();
+        trace_one(
+            &[(*fp, doctored)],
+            SolidSide::A,
+            wc,
+            &jd,
+            &faces_tab,
+            &plane_ix,
+            &mut tr,
+        );
+        assert!(tr.declined.is_empty(), "{:?}", tr.declined);
+        assert_eq!(tr.segs.len(), 4, "the polygon outer still emits its edges");
+        let SegKind::Seated { body_above } = tr.segs[0].kind else {
+            panic!("a face on wc traces seated: {:?}", tr.segs[0]);
+        };
+        assert!(
+            matches!(
+                tr.circles[..],
+                [CircleTrace { cyl: 0, solid: SolidSide::A, kind: SegKind::Seated { body_above: ba } }]
+                if ba == body_above
+            ),
+            "the hole circle inherits the face's body side: {:?}",
+            tr.circles
+        );
+    }
+
+    /// The existence condition, negatively: a cap plane **outside** the lateral's rim span gets
+    /// no circle (and no decline — a miss, like a parallel plane), while the rim-interior cap
+    /// still does, and a rim-**coincident** plane carries the cap's seated circle rather than a
+    /// transversal one. A ghost circle here would corrupt every label on the class.
+    #[test]
+    fn no_ghost_circle_outside_the_rim_span() {
+        let mut m = Model::new();
+        // z∈[-1,1.5]: through the box's bottom cap, short of its top cap at z=2.
+        let (a, b) = drilled(&mut m, -1.0, 2.5);
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+
+        // The box's top cap at z=2 is past the rim span [−1, 1.5]: no circle, no decline.
+        let top = trace_on_class_of(
+            &m,
+            a,
+            b,
+            class_at_z(&planes, 2.0),
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+        );
+        assert!(top.circles.is_empty(), "{:?}", top.circles);
+        assert!(top.declined.is_empty(), "{:?}", top.declined);
+
+        // The bottom cap at z=0 is strictly inside the span: the transversal circle is there.
+        let bottom = trace_on_class_of(
+            &m,
+            a,
+            b,
+            class_at_z(&planes, 0.0),
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+        );
+        assert_eq!(
+            bottom
+                .circles
+                .iter()
+                .filter(|c| matches!(c.kind, SegKind::Transversal { .. }))
+                .count(),
+            1,
+            "{:?}",
+            bottom.circles
+        );
+
+        // The cylinder's own top cap at z=1.5 (inside the box): the rim-coincident plane traces
+        // the cap's **seated** circle, and the lateral adds no transversal twin (t = span end,
+        // not strictly inside).
+        let cap = trace_on_class_of(
+            &m,
+            a,
+            b,
+            class_at_z(&planes, 1.5),
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+        );
+        assert!(cap.declined.is_empty(), "{:?}", cap.declined);
+        assert_eq!(
+            cap.circles
+                .iter()
+                .map(|c| matches!(c.kind, SegKind::Seated { .. }))
+                .collect::<Vec<_>>(),
+            vec![true],
+            "one circle, seated: {:?}",
+            cap.circles
+        );
     }
 
     /// Partial overlap (E5) is NOT merged — different endpoints mean different edges. a and b share

@@ -805,6 +805,9 @@ pub enum DeclineKind {
     OddParity,
     /// A seated (on-plane) edge has no unique wall plane, so its segment cannot be named.
     SeatedEdgeNaming,
+    /// A cylinder face could not answer a circle question exactly — its rim span is
+    /// underivable or a plane class lacks the exact description a circle test needs (M6-2a).
+    CylSpan,
 }
 
 impl DeclineKind {
@@ -821,6 +824,7 @@ impl DeclineKind {
             Self::RunSplit => "run-split",
             Self::OddParity => "odd-parity",
             Self::SeatedEdgeNaming => "seated-edge-naming",
+            Self::CylSpan => "cyl-span",
         }
     }
 }

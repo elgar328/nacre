@@ -1491,7 +1491,12 @@ fn holed_face_rings_of(
                 &plane_ix,
             )
             .unwrap();
-            return (planes, plane_ix[fp].plane(), outer.triples, hole.triples);
+            return (
+                planes,
+                plane_ix[fp].plane(),
+                outer.poly().expect("a poly outer").triples.clone(),
+                hole.poly().expect("a poly hole").triples.clone(),
+            );
         }
     }
     panic!("no holed face");
@@ -4199,10 +4204,14 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
 fn face(plane_idx: usize, nodes: Vec<Node>, inner: Vec<Vec<Node>>) -> LocalFace {
     LocalFace {
         plane_idx,
-        loop_nodes: crate::boolean::Ring::from_clean_names(plane_idx, nodes),
+        outer: crate::boolean::Bound::Ring(crate::boolean::Ring::from_clean_names(
+            plane_idx, nodes,
+        )),
         inner: inner
             .into_iter()
-            .map(|r| crate::boolean::Ring::from_clean_names(plane_idx, r))
+            .map(|r| {
+                crate::boolean::Bound::Ring(crate::boolean::Ring::from_clean_names(plane_idx, r))
+            })
             .collect(),
         flip: false,
     }
@@ -4238,7 +4247,7 @@ fn unify_merges_a_coplanar_chain() {
     ];
     let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
     assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
-    let l = &out[0].loop_nodes;
+    let l = &out[0].outer.expect_ring();
     assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
     for c in [c00, c30, c31, c01] {
         assert!(l.contains(&c), "corner kept");
@@ -4326,9 +4335,9 @@ fn a_hole_filled_by_two_faces_still_merges() {
     let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
     assert_eq!(out.len(), 1, "the hole is filled, so one face remains");
     assert!(out[0].inner.is_empty(), "and it has no hole left");
-    assert_eq!(out[0].loop_nodes.len(), 4, "just the outer square");
+    assert_eq!(out[0].outer.expect_ring().len(), 4, "just the outer square");
     for c in [o00, o30, o33, o03] {
-        assert!(out[0].loop_nodes.contains(&c), "outer corner kept");
+        assert!(out[0].outer.expect_ring().contains(&c), "outer corner kept");
     }
 }
 
@@ -4369,11 +4378,11 @@ fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
     assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
     let merged = out.iter().find(|lf| lf.plane_idx == 0).unwrap();
     assert!(
-        merged.loop_nodes.contains(&v100),
+        merged.outer.expect_ring().contains(&v100),
         "corner-elsewhere vertex kept (no T-junction)"
     );
     assert!(
-        !merged.loop_nodes.contains(&v110),
+        !merged.outer.expect_ring().contains(&v110),
         "pure straight-angle vertex dropped"
     );
 }
@@ -4893,7 +4902,10 @@ fn a_vertex_is_named_by_the_planes_that_touch_it() {
             let p = surf_ix[&fh];
             let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
                 .unwrap()
-                .triples;
+                .poly()
+                .expect("a poly outer")
+                .triples
+                .clone();
             for t in &tris {
                 // The triple is already dense plane ids: distinct means three real planes.
                 assert!(
@@ -5022,13 +5034,16 @@ fn plane_triples_are_always_canon() {
             let mut rings = vec![
                 combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
                     .unwrap()
-                    .triples,
+                    .poly()
+                    .expect("a poly outer")
+                    .triples
+                    .clone(),
             ];
             rings.extend(
                 combinatorics::hole_rings(&m, fh, p, &inc_a, &jd, &plane_ix)
                     .unwrap()
                     .into_iter()
-                    .map(|nr| nr.triples),
+                    .filter_map(|lr| lr.poly().map(|nr| nr.triples.clone())),
             );
             for t in rings.iter().flatten() {
                 for &k in t {
@@ -5091,7 +5106,10 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
             let p = surf_ix[&fh];
             let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
                 .unwrap()
-                .triples;
+                .poly()
+                .expect("a poly outer")
+                .triples
+                .clone();
             for t in &tris {
                 // The vertex lies on exactly its three defining planes; each must read 0.
                 for &q in t {

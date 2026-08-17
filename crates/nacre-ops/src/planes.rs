@@ -86,11 +86,17 @@ pub(crate) struct CylFaceInfo {
     pub(crate) face: Option<Handle<nacre_topo::Face>>,
     /// The `Orientation` flag as a sign — same reading as [`FaceInfo::orient_sign`]: `+1` when
     /// the stored surface normal (radially outward) is this face's outward.
-    // Read from C4b's band orientation on — recorded now because the row is built now.
-    #[allow(dead_code)]
     pub(crate) orient_sign: i8,
     /// The motion-history leaf of the cylinder's truth, `None` for a constructed one.
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
+    /// The cylinder's exact statement — cloned here so the tracer (which works off the face
+    /// table, never the `Model`) can ask ⊥-ness and axis parameters.
+    pub(crate) def: nacre_topo::CylinderDef,
+    /// This lateral **face**'s span in the axis parameter `t` (of the raw `def.dir()`), read
+    /// off its two rim carrier planes: `t = −(n·o + d)/(n·m)` per rim plane, ordered. `None`
+    /// when a rim carrier has no narrow rational name — the transversal-circle producer then
+    /// declines the face rather than guessing.
+    pub(crate) span: Option<[nacre_scalar::Rat; 2]>,
 }
 
 #[derive(Clone)]
@@ -167,7 +173,7 @@ pub(crate) fn collect_planes(
                 // vocabulary. Whether it may *flow* is the population gate's question, asked
                 // in `plane_index_setup`, not a door slam here.
                 Surface::Cylinder(_) => {
-                    let nacre_topo::SurfaceTruth::Cylinder { motion, .. } =
+                    let nacre_topo::SurfaceTruth::Cylinder { def, motion } =
                         model.surface_truth(face.surface)
                     else {
                         unreachable!("a cylinder cache carries a cylinder truth")
@@ -177,6 +183,8 @@ pub(crate) fn collect_planes(
                         face: Some(fh),
                         orient_sign: face.orientation.sign(),
                         motion: *motion,
+                        span: lateral_axis_span(model, face, def),
+                        def: def.clone(),
                     }));
                     continue;
                 }
@@ -526,6 +534,51 @@ pub(crate) fn collect_planes(
         }
     }
     Ok(out)
+}
+
+/// A lateral face's axis-parameter span, read off its rim carrier planes (M6-2a).
+///
+/// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
+/// `o + t·m` at `t = −(n·o + d)/(n·m)` — rational whenever the plane has a narrow name (its
+/// ⊥-ness guarantees `n·m ≠ 0`). Two distinct rim planes give the span; anything else (a
+/// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
+/// and the consumer declines the face.
+fn lateral_axis_span(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_scalar::Rat; 2]> {
+    use nacre_scalar::Rat;
+    let (o, m) = (def.origin(), def.dir());
+    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    let mut ts: Vec<Rat> = Vec::new();
+    for he in &face.outer.half_edges {
+        let e = model.edges.get(he.edge);
+        let [a, b] = e.surfaces;
+        let cap = if a == face.surface { b } else { a };
+        if cap == face.surface {
+            continue; // the seam edge is self-adjacent — not a rim
+        }
+        let coeffs = *model.surface_name.get(&cap)?.narrow()?;
+        let n = [coeffs[0], coeffs[1], coeffs[2]];
+        let nm = dot3(&n, &m)?;
+        if nm == Rat::from_int(0) {
+            return None; // a rim carrier not ⊥ the axis — outside this vocabulary
+        }
+        let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
+        let t = Rat::from_int(0)
+            .checked_sub(no_d)?
+            .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
+        if !ts.contains(&t) {
+            ts.push(t);
+        }
+    }
+    let [a, b] = ts[..] else { return None };
+    Some(if a < b { [a, b] } else { [b, a] })
 }
 
 /// All shells of a solid — outer first, then cavities. The boolean seam
@@ -906,6 +959,40 @@ pub(crate) fn plane_index_setup(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<PlaneSetup, BoolError> {
+    let (setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
+    // ★ The cylinder door, C2 form: the population gate decides **by name** what stands in the
+    // way (an oblique cut, a wall touching the lateral surface, a seated cap, an undecidable
+    // pair) — and the population that passes still waits behind its own stopper until the
+    // cylinder arrangement lands (C4b removes `CylinderBooleanNotYet`).
+    if !cyl_surfs.is_empty() {
+        let _cyls = cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner)?;
+        return Err(reject(RejectReason::CylinderBooleanNotYet));
+    }
+    Ok(setup)
+}
+
+/// The same setup and the same population gate, minus the final `CylinderBooleanNotYet`
+/// stopper — the test door through which the arrangement bricks are exercised on the gated
+/// cylinder population before C4b opens the production path. Gate-refused inputs still
+/// reject here, so a test cannot wander outside the population by mistake.
+#[cfg(test)]
+pub(crate) fn plane_index_setup_past_stopper(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<PlaneSetup, BoolError> {
+    let (setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
+    if !cyl_surfs.is_empty() {
+        cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner)?;
+    }
+    Ok(setup)
+}
+
+fn plane_index_setup_inner(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<(PlaneSetup, Vec<Handle<Surface>>), BoolError> {
     let t = Watch::new();
     let mut planes = collect_planes(model, a)?;
     let n_a = planes.len();
@@ -940,26 +1027,21 @@ pub(crate) fn plane_index_setup(
     let (geom, plane_ix, cyl_surfs) = dense_planes(&planes, &canon);
     let class_owner = class_owners(&plane_ix, n_a, geom.len());
     t.charge(Sub::Dense);
-    // ★ The cylinder door, C2 form: the population gate decides **by name** what stands in the
-    // way (an oblique cut, a wall touching the lateral surface, a seated cap, an undecidable
-    // pair) — and the population that passes still waits behind its own stopper until the
-    // cylinder arrangement lands (C4b removes `CylinderBooleanNotYet`).
-    if !cyl_surfs.is_empty() {
-        let _cyls = cylinder_gate(model, &cyl_surfs, &geom, &class_owner)?;
-        return Err(reject(RejectReason::CylinderBooleanNotYet));
-    }
-    Ok(PlaneSetup {
-        planes,
-        surf_ix,
-        inc_a,
-        inc_b,
-        n_a,
-        geom,
-        plane_ix,
-        class_owner,
-        standard,
-        notes,
-    })
+    Ok((
+        PlaneSetup {
+            planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            n_a,
+            geom,
+            plane_ix,
+            class_owner,
+            standard,
+            notes,
+        },
+        cyl_surfs,
+    ))
 }
 
 /// **How precisely this operation's rotated definitions must be realized.**

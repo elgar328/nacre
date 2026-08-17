@@ -9867,3 +9867,36 @@ biquad 처리)은 재검산 통과. 실질 결함 3건 수리:
   (평면 코퍼스 비트 동일).
 - **kit**: cylinder_face 문장 행 → 6개 새 원인 문장(전부 NotSupported), reject_class 3행 갱신.
 - 전 스위트·clippy·kit 게이트 0 실패.
+
+---
+
+## M6-2a C3 — 평면 배열의 원 요소: 원은 세그먼트가 아니라 닫힌 셀이다 (2026-08-18)
+
+- **어휘 먼저**(combinatorics): `LoopRing { Poly(NamedRing) | Circle { cyl } }` — 루프 1개짜리
+  rim 엣지의 상대 face가 원통 class면 원. **구조로 탐지**(`[v,v]` rim은 생산자가 만드는 유일한
+  단일-엣지 루프)라 곡선을 읽지 않는다. `trace_input`은 **측면 face의 루프를 아예 명명하지
+  않는다**(rim은 어떤 3중도 기술 못 함 — 트레이서는 원통 행을 읽는다).
+- **트레이스 요소 2종**(arrangement): `CircleTrace { cyl, solid, kind }` —
+  ① **transversal**(측면이 ⊥ class를 가로지름; 존재 조건 = 축 매개변수가 rim span의 **열린
+  내부**, 유리수 비교), ② **seated**(디스크 외곽·원형 구멍이 class 위에 앉음; face의 body
+  side를 그대로 물려받음). `MergedCircle`은 cyl 오름차순 그룹(재생 결정성).
+- **셀은 유사 half-edge로**: `he = 2n+2i`(원판, winding +1)와 `^1` 쌍둥이(윤곽, −1) —
+  DCEL orbit≥3 제약을 우회하되 base가 짝수라 라벨 XOR 전파는 **무수정**. nest는
+  (원,원)=건너뜀 / (원,다각형)=중심의 유리 점-대-링 패리티 / (다각형,원)=노드의 반경 부호,
+  emit은 `Bound::Circle { cyl }`.
+- **원은 세그먼트를 만나지 않는다(게이트의 증명)**: ∥벽 거리 > r이므로 원형 구멍은 3값 스캔에
+  교차를 주지 않고(건너뜀), **디스크 face는 다른 class를 놓친다**(⊥끼리는 평행, ∥벽은 무접촉)
+  — 오늘 이 팔이 `OuterRing` **거절**로 잘못 적혀 있던 것을 실측으로 발견해 miss로 정정.
+- **잠금 = 손제작 트레이스의 셀·라벨 단위 차등**(생산 소비자는 C4b에 열림; S5(ii)-2a 선례).
+  4개 전부 red 실측: span 조건 제거 → 유령 원 2건 red / 구멍-원 팔 제거 → 1건 / 원 nest 팔이
+  "밖"만 답함 → 1건 / transversal을 seated로 위장(종별 마스크 붕괴) → 2건.
+  라벨 기대치는 class 법선에서 **유도**(z=0 바닥 캡의 법선은 −z — 상수로 적었다면 방향을
+  가정한 셈).
+- **테스트 문**: `plane_index_setup_past_stopper` — 게이트는 그대로 통과시키되
+  `CylinderBooleanNotYet` 마개만 없는 `#[cfg(test)]` 입구(게이트 밖 인구로 새는 테스트 불가).
+- **관문**: census 165줄 비트 동일, reject census 불변, 워크스페이스 982 통과, clippy 0.
+- ★ **사고와 복구**: red 프로브를 되돌리며 `git checkout -- arrangement.rs`를 써서 같은 파일의
+  **미커밋 C3 작업 전체**(원 요소 코어 ~600줄)를 함께 지웠다([probe-revert-ate-real-work]가
+  기록한 그 실수의 재발). 세션 트랜스크립트(jsonl)의 편집 이력을 HEAD 위에 순서대로 재생해
+  전량 복구 — 이후 프로브는 파일 백업→복원으로만 돌렸다. 규율: **프로브의 줄을 되돌리되,
+  경로를 되돌리지 않는다.**

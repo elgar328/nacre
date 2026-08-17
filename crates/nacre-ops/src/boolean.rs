@@ -367,10 +367,12 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
             by_comp_lf[c]
                 .iter()
                 .map(|lf| {
-                    let mut rings = vec![lf.loop_nodes.edges(jd, lf.plane_idx)?];
-                    for h in &lf.inner {
-                        rings.push(h.edges(jd, lf.plane_idx)?);
-                    }
+                    // Circle bounds carry no ring edges — their component adjacency is the
+                    // rim rule's (C4b); a node-level containment probe reads polygons only.
+                    let rings = lf
+                        .poly_rings()
+                        .map(|r| r.edges(jd, lf.plane_idx))
+                        .collect::<Result<Vec<_>, BoolError>>()?;
                     Ok((lf.plane_idx, rings))
                 })
                 .collect::<Result<_, BoolError>>()
@@ -379,7 +381,10 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
     let nodes_of = |c: usize| -> Vec<[usize; 3]> {
         by_comp_lf[c]
             .iter()
-            .flat_map(|lf| lf.loop_nodes.iter().map(|Node::Seam(t)| *t))
+            .flat_map(|lf| {
+                lf.poly_rings()
+                    .flat_map(|r| r.iter().map(|Node::Seam(t)| *t))
+            })
             .collect()
     };
     // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
@@ -618,16 +623,79 @@ impl Ring {
     }
 }
 
-/// A reconstructed result face: which combined plane it is on, its loop as
-/// nodes, and whether to flip it (cut's inside-A B-pieces).
-#[derive(Clone)]
+/// One boundary of a result face (M6-2a): a polygon of seam nodes, or a **full circle** of a
+/// cylinder class. A circle has no nodes and no walls; it is assembled through the rim
+/// machinery (`push_edge([lateral, plane], [v, v])` + an `OnSeam` vertex), never through the
+/// seam-vertex table.
+#[derive(Clone, Debug)]
+pub(crate) enum Bound {
+    Ring(Ring),
+    Circle { cyl: usize },
+}
+
+impl Bound {
+    /// The polygon ring, `None` for a circle — the node-walking consumers' filter.
+    pub(crate) fn ring(&self) -> Option<&Ring> {
+        match self {
+            Bound::Ring(r) => Some(r),
+            Bound::Circle { .. } => None,
+        }
+    }
+
+    pub(crate) fn ring_mut(&mut self) -> Option<&mut Ring> {
+        match self {
+            Bound::Ring(r) => Some(r),
+            Bound::Circle { .. } => None,
+        }
+    }
+
+    /// The polygon ring, asserted — for consumers whose population cannot carry circles (and
+    /// tests). Panics on a circle with the caller's location.
+    #[cfg_attr(not(test), allow(dead_code))]
+    #[track_caller]
+    pub(crate) fn expect_ring(&self) -> &Ring {
+        match self {
+            Bound::Ring(r) => r,
+            Bound::Circle { cyl } => panic!("a polygon-only path got a circle bound (cyl {cyl})"),
+        }
+    }
+}
+
+/// A reconstructed result face: which combined plane it is on, its boundaries, and whether to
+/// flip it (cut's inside-A B-pieces).
+#[derive(Clone, Debug)]
 pub(crate) struct LocalFace {
     pub(crate) plane_idx: usize,
-    pub(crate) loop_nodes: Ring,
-    /// Hole rings, each already wound so the kept material stays on its left
-    /// about the face's outward normal. Only the non-convex path ever fills this.
-    pub(crate) inner: Vec<Ring>,
+    pub(crate) outer: Bound,
+    /// Hole boundaries, each already wound so the kept material stays on its left
+    /// about the face's outward normal.
+    pub(crate) inner: Vec<Bound>,
     pub(crate) flip: bool,
+}
+
+impl LocalFace {
+    /// Every **polygon** ring of the face, outer first. Circle bounds carry no nodes and are
+    /// deliberately absent — node-level consumers (the seam table, edge scans, self-touch)
+    /// have nothing to read off them.
+    pub(crate) fn poly_rings(&self) -> impl Iterator<Item = &Ring> {
+        std::iter::once(&self.outer)
+            .chain(self.inner.iter())
+            .filter_map(Bound::ring)
+    }
+
+    pub(crate) fn poly_rings_mut(&mut self) -> impl Iterator<Item = &mut Ring> {
+        std::iter::once(&mut self.outer)
+            .chain(self.inner.iter_mut())
+            .filter_map(Bound::ring_mut)
+    }
+
+    /// Whether any boundary is a circle — the unify partition reads this (circle-bounded
+    /// faces are never merge candidates).
+    pub(crate) fn has_circle(&self) -> bool {
+        std::iter::once(&self.outer)
+            .chain(self.inner.iter())
+            .any(|b| matches!(b, Bound::Circle { .. }))
+    }
 }
 
 /// Push the reconstructed result and supersede the inputs.
@@ -782,7 +850,7 @@ fn self_touch_reject(
 
 /// A face's rings, outer first.
 fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
-    std::iter::once(&lf.loop_nodes).chain(lf.inner.iter())
+    lf.poly_rings()
 }
 
 /// Rebuild the result solids from the arrangement's faces. Pushes into the arena; it does not take
@@ -871,7 +939,7 @@ fn reconstruct(
     // the two edge lines through it are distinct (checked, not assumed — see the corner guards).
     let mut edge_faces: HashMap<(usize, (Node, Node)), Vec<usize>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
-        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+        for ring in lf.poly_rings() {
             let k = ring.len();
             for t in 0..k {
                 edge_faces
@@ -896,7 +964,7 @@ fn reconstruct(
     let mut def_triple: HashMap<(usize, Node), [usize; 3]> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+        for ring in lf.poly_rings() {
             let k = ring.len();
             for t in 0..k {
                 let node = ring[t];
@@ -994,11 +1062,7 @@ fn reconstruct(
     // Materialize all vertex handles first. Outer then inner, rings in order: `vh`'s
     // first-appearance order fixes the vertex handles, and replay depends on it.
     for (fi, lf) in faces.iter().enumerate() {
-        for &node in lf
-            .loop_nodes
-            .iter()
-            .chain(lf.inner.iter().flat_map(|r| r.iter()))
-        {
+        for &node in lf.poly_rings().flat_map(|r| r.iter()) {
             node_handle(model, group_of[fi], node)?;
         }
     }
@@ -1014,7 +1078,7 @@ fn reconstruct(
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         let fsurf = planes[lf.plane_idx].surf;
-        for r in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+        for r in lf.poly_rings() {
             let k = r.nodes.len();
             for t in 0..k {
                 let (va, vb) = (vh[&(g, r.nodes[t])], vh[&(g, r.nodes[(t + 1) % k])]);
@@ -1083,11 +1147,24 @@ fn reconstruct(
             }
             Ok(Loop { half_edges })
         };
-        let outer = ring(model, &lf.loop_nodes)?;
+        // ★ Circle bounds do not assemble through the seam table — their loops are the rim
+        // machinery's (`push_edge([lateral, plane], [v, v])` + `OnSeam`), which lands with the
+        // cylinder arrangement (C4b). Until that commit no production path emits one (the C2
+        // population stopper holds), so reaching here with a circle is a wiring bug, not an
+        // input.
+        let mut ring_of = |b: &Bound| -> Result<Loop, BoolError> {
+            match b {
+                Bound::Ring(r) => ring(model, r),
+                Bound::Circle { cyl } => {
+                    unreachable!("circle bound (cyl {cyl}) reached assembly before C4b")
+                }
+            }
+        };
+        let outer = ring_of(&lf.outer)?;
         let inner: Vec<Loop> = lf
             .inner
             .iter()
-            .map(|h| ring(model, h))
+            .map(ring_of)
             .collect::<Result<Vec<_>, BoolError>>()?;
         // The plane's frame *is* the root face's orientation: `frame_sign` carries that face's
         // `Forward`/`Reversed` as a sign (read off the stored flag since the cutover). Reading it
@@ -1275,7 +1352,7 @@ pub(crate) fn unify_coplanar_faces(
         // Holes count here too: a tool cap sitting flush inside another face touches it only
         // along that hole, so leaving `inner` out would put the two in different components and
         // nothing would merge at all.
-        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+        for ring in lf.poly_rings() {
             for (a, b) in ring_edges(ring) {
                 carriers.entry(norm_edge(a, b)).or_default().push(fi);
             }
@@ -1305,6 +1382,17 @@ pub(crate) fn unify_coplanar_faces(
         if mem.len() < 2 {
             continue; // nothing to merge; the face (if any) is emitted as-is below
         }
+        // ★ A circle-bounded face never merges (M6-2a): `merge_component` rebuilds a
+        // component's boundary from node rings alone, so a member's circle hole would
+        // silently vanish from the rebuilt face — the exact "quiet pass-through" the
+        // integration survey flagged. Skipping keeps a drilled cap's coplanar neighbours as
+        // separate faces: a tidiness loss, never a correctness one (this pass's own charter).
+        if mem
+            .iter()
+            .any(|&fi| kept[fi].as_ref().is_some_and(LocalFace::has_circle))
+        {
+            continue;
+        }
         let group: Vec<&LocalFace> = mem
             .iter()
             .map(|&fi| kept[fi].as_ref().expect("member present"))
@@ -1318,8 +1406,8 @@ pub(crate) fn unify_coplanar_faces(
         let (plane_idx, flip) = (group[0].plane_idx, group[0].flip);
         merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
             plane_idx,
-            loop_nodes: outer,
-            inner,
+            outer: Bound::Ring(outer),
+            inner: inner.into_iter().map(Bound::Ring).collect(),
             flip,
         }));
         for &fi in mem {
@@ -1375,7 +1463,7 @@ fn merge_component(
     // One map, `(count, wall)` — the wall rides along rather than in a second table.
     let mut dirs: HashMap<(Node, Node), (usize, usize)> = HashMap::new();
     for lf in group {
-        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+        for ring in lf.poly_rings() {
             for (e, wall) in ring_edges_walled(ring) {
                 let slot = dirs.entry(e).or_insert((0, wall));
                 slot.0 += 1;
@@ -1505,7 +1593,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     let mut bent: HashSet<Node> = HashSet::new();
     for &fi in which {
         let lf = &out[fi];
-        for ring in std::iter::once(&lf.loop_nodes).chain(lf.inner.iter()) {
+        for ring in lf.poly_rings() {
             let k = ring.len();
             for i in 0..k {
                 let (a, b) = (ring.nodes[i], ring.nodes[(i + 1) % k]);
@@ -1538,7 +1626,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     }
     for &fi in which {
         let lf = &mut out[fi];
-        for ring in std::iter::once(&mut lf.loop_nodes).chain(lf.inner.iter_mut()) {
+        for ring in lf.poly_rings_mut() {
             if !ring.nodes.iter().any(|nd| drop.contains(nd)) {
                 continue; // untouched rings keep their allocation
             }

@@ -250,7 +250,7 @@ pub(crate) fn face_vertex_triples(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
-) -> Result<NamedRing, BoolError> {
+) -> Result<LoopRing, BoolError> {
     loop_triples(&model.faces.get(f).outer, p, inc, jd, plane_ix)
 }
 
@@ -266,6 +266,26 @@ pub(crate) struct NamedRing {
     pub walls: Vec<usize>,
 }
 
+/// One loop of a face, in the vocabulary the tracer speaks (M6-2a): a polygon of three-plane
+/// triples, or a **full circle** — one rim edge whose far face is a cylinder, named by that
+/// cylinder's class. A circle has no triples, no walls and no endpoints; forcing it through
+/// `NamedRing` was `RingNaming`'s job before the vocabulary existed.
+#[derive(Clone, Debug)]
+pub(crate) enum LoopRing {
+    Poly(NamedRing),
+    Circle { cyl: usize },
+}
+
+impl LoopRing {
+    /// The polygon ring, `None` for a circle — the poly-only consumers' filter.
+    pub(crate) fn poly(&self) -> Option<&NamedRing> {
+        match self {
+            LoopRing::Poly(nr) => Some(nr),
+            LoopRing::Circle { .. } => None,
+        }
+    }
+}
+
 /// Every loop of one face in class form — **the only thing the tracer needs from `Model`**.
 ///
 /// A loop that could not be named is `None` rather than an error, because the two failures have
@@ -274,10 +294,10 @@ pub(crate) struct NamedRing {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FaceLoops {
     /// The outer loop, or `None` if [`face_vertex_triples`] declined.
-    pub outer: Option<NamedRing>,
+    pub outer: Option<LoopRing>,
     /// One entry per hole ring, or `None` if [`hole_rings`] declined for **any** of them — a hole
     /// that cannot be named is not "no hole".
-    pub holes: Option<Vec<NamedRing>>,
+    pub holes: Option<Vec<LoopRing>>,
 }
 
 /// What one boolean's tracer reads instead of the `Model`: every face's loops, plus which slots
@@ -318,13 +338,20 @@ pub(crate) fn trace_input(
         for sh in crate::planes::solid_shell_handles(model, solid) {
             for &fh in &model.shells.get(sh).faces {
                 let fp = surf_ix[&fh];
-                faces[side].push((
-                    fp,
+                // ★ A **lateral face** is not named here (M6-2a): its loops are the two rims,
+                // which no triple describes, and the tracer reads the face's cylinder row
+                // rather than its loops. The empty `FaceLoops` is never looked at — the
+                // tracer's cylinder arm returns before touching it — so this is a skip, not a
+                // decline.
+                let loops = if matches!(plane_ix[fp], ClassIx::Cyl(_)) {
+                    FaceLoops::default()
+                } else {
                     FaceLoops {
                         outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix).ok(),
                         holes: hole_rings(model, fh, fp, inc, jd, plane_ix).ok(),
-                    },
-                ));
+                    }
+                };
+                faces[side].push((fp, loops));
             }
         }
     }
@@ -344,7 +371,7 @@ pub(crate) fn hole_rings(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
-) -> Result<Vec<NamedRing>, BoolError> {
+) -> Result<Vec<LoopRing>, BoolError> {
     model
         .faces
         .get(f)
@@ -379,7 +406,7 @@ fn loop_triples(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
-) -> Result<NamedRing, BoolError> {
+) -> Result<LoopRing, BoolError> {
     let hes = &l.half_edges;
     let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
         inc.get(&he.edge)
@@ -388,6 +415,15 @@ fn loop_triples(
     };
     let other = |pair: [usize; 2]| if pair[0] == p { pair[1] } else { pair[0] };
     let n = hes.len();
+    // A **full-circle loop** (M6-2a): one rim edge whose far face is a cylinder — no triples,
+    // no walls, no endpoints; it is named by the cylinder's class. Detected structurally
+    // (`[v, v]` rims are the only single-edge loops a producer makes), so no curve is read.
+    if n == 1 {
+        let (_, pair) = edge(&hes[0])?;
+        if let ClassIx::Cyl(k) = plane_ix[other(pair)] {
+            return Ok(LoopRing::Circle { cyl: k });
+        }
+    }
     let mut out = Vec::with_capacity(n);
     let mut walls = Vec::with_capacity(n);
     for i in 0..n {
@@ -463,10 +499,10 @@ fn loop_triples(
         t.sort_unstable();
         out.push(t);
     }
-    Ok(NamedRing {
+    Ok(LoopRing::Poly(NamedRing {
         triples: out,
         walls,
-    })
+    }))
 }
 
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
