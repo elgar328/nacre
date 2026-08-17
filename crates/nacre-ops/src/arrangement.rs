@@ -947,7 +947,6 @@ pub(crate) struct MergedSeg {
     pub wall: usize,
     /// Read by the next brick (crossings + split); kept here so the merged edge carries its
     /// geometry, not just its contributions.
-    #[cfg_attr(test, allow(dead_code))]
     pub end: [[usize; 3]; 2],
     /// The endpoints as handles on this edge's line — see [`Seg::end_h`].
     pub end_h: [usize; 2],

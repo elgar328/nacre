@@ -1246,8 +1246,6 @@ pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
 /// canonicalizing turns that self-comparison into a real order. Returns `canon` where `canon[i]`
 /// is the class root (the smallest index in the class). Every decision is exact
 /// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.
-// Wired into the unified coplanar handler's dispatch in a later cell; used by tests now.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn plane_classes(jd: &Judge<'_, FaceInfo>) -> Vec<usize> {
     let planes = jd.planes;
     let n = planes.len();

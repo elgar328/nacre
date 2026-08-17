@@ -2050,8 +2050,6 @@ pub enum Axis {
 }
 
 impl Axis {
-    /// The two in-plane coordinate indices (the third is the fixed rotation axis).
-    /// The order gives a right-handed (CCW-about-the-axis) rotation.
     /// The coordinate index this axis names (`X → 0`, `Y → 1`, `Z → 2`) — the one a reflection in
     /// a plane perpendicular to it negates.
     pub fn index(self) -> usize {
@@ -2062,6 +2060,8 @@ impl Axis {
         }
     }
 
+    /// The two in-plane coordinate indices (the third is the fixed rotation axis).
+    /// The order gives a right-handed (CCW-about-the-axis) rotation.
     pub fn plane(self) -> (usize, usize) {
         match self {
             Axis::X => (1, 2), // rotate y,z

@@ -261,7 +261,7 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
             .iter()
             .zip(iso.translate)
             .all(|(&x, t)| translated(x, t)),
-        Xform::Mirror { axis, offset, .. } => reflected(p.as_array()[axis_index(*axis)], *offset),
+        Xform::Mirror { axis, offset, .. } => reflected(p.as_array()[axis.index()], *offset),
     };
     let src = model.solids.get(solid);
     // ★ S6a: the surfaces' exact points must survive the no-node path too. An exact motion
@@ -392,14 +392,6 @@ fn moved_surface_motion(
     leaf.or(parent)
 }
 
-fn axis_index(axis: Axis) -> usize {
-    match axis {
-        Axis::X => 0,
-        Axis::Y => 1,
-        Axis::Z => 2,
-    }
-}
-
 /// How [`transform_solid`] maps a solid's cells. One walker serves both kinds so the seven
 /// passes are not duplicated; the kinds differ in exactly three places — how a point/direction
 /// maps, whether a curved surface can be carried at all, and whether loops must be rewound.
@@ -425,7 +417,7 @@ impl Xform<'_> {
     /// rather than handed in beside it.
     fn mirror(axis: Axis, offset: Rat) -> Xform<'static> {
         Xform::Mirror {
-            m: AxisMirror::new(axis_index(axis), offset.to_f64()).expect("axis index is 0..3"),
+            m: AxisMirror::new(axis.index(), offset.to_f64()).expect("axis index is 0..3"),
             axis,
             offset,
         }
