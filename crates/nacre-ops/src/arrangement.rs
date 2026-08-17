@@ -3098,7 +3098,7 @@ mod tests {
         // One prism: no two faces are coplanar, so `plane_ix` is the identity and a face index and
         // its plane id coincide. Built through the real path anyway, so the test cannot drift.
         let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces_tab));
-        let (planes, _plane_ix) = crate::planes::dense_planes(&faces_tab, &canon);
+        let (planes, _plane_ix, _cyls) = crate::planes::dense_planes(&faces_tab, &canon);
         assert_eq!(planes.len(), faces_tab.len(), "no coplanar pair in a prism");
 
         // Find a face by its outward normal direction (z cap, y-wall, x-wall, diagonal wall).

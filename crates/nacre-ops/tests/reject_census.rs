@@ -212,6 +212,62 @@ fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Common, a, cyl)
 }
 
+fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let cyl = m.add_cylinder(
+        Point3::from_array([1.0, 1.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        4.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Cut, a, cyl)
+}
+
+fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let cyl = m.add_cylinder(
+        Point3::from_array([0.3, 1.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        4.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Cut, a, cyl)
+}
+
+fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    // A tilted rational axis against an axis-aligned box: the box's planes are neither ⊥ nor
+    // ∥ to (0,1,1), and — unlike rotating the box — every description stays world-rational,
+    // so the gate reaches the *oblique* verdict rather than declining as undecidable.
+    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let cyl = m.add_cylinder(
+        Point3::from_array([1.0, 1.0, -2.0]),
+        Vector3::from_array([0.0, 1.0, 1.0]),
+        0.5,
+        6.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Cut, a, cyl)
+}
+
+fn cylinder_pair(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let a = m.add_cylinder(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        2.0,
+    );
+    let b = m.add_cylinder(
+        Point3::from_array([0.6, 0.0, 0.5]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        3.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Fuse, a, b)
+}
+
 /// ⑥ ★ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
 /// another, giving a solid of zero thickness — a self-touch. What comes back is its truth,
 /// `SelfTouchingResult` (`Impossible`, the touching edge as the witness), since 2026-08-17: the
@@ -261,7 +317,7 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
 
-const CORPUS: [Fixture; 7] = [
+const CORPUS: [Fixture; 11] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
@@ -295,13 +351,66 @@ const CORPUS: [Fixture; 7] = [
         raised: &[("no_clear_ray", None, BOOLEAN)],
         surfaced: &[("no_clear_ray", None)],
     },
+    // ── The M6-2a population gate names its refusals (C2) — one fixture per cause. All are
+    // raised while reading the operands (`plane_index_setup`), before any arrangement work.
     Fixture {
         name: "cylinder-operand",
-        expect: Some(RejectReason::CylinderFace),
+        // Flush caps: the cylinder's z ∈ [0,2] caps intern onto the box's own cap planes, so
+        // the shared ⊥ classes are a coplanar seating.
+        expect: Some(RejectReason::SeatedCylinderCap),
         run: cylinder_operand,
-        // The only corpus reject raised while reading the operands rather than in the assembly.
-        raised: &[("cylinder_face", None, "crates/nacre-ops/src/planes.rs")],
-        surfaced: &[("cylinder_face", None)],
+        raised: &[(
+            "seated_cylinder_cap",
+            None,
+            "crates/nacre-ops/src/planes.rs",
+        )],
+        surfaced: &[("seated_cylinder_cap", None)],
+    },
+    Fixture {
+        name: "cylinder-notyet",
+        // The drill-population pass: walls clear (distance 1 > r = 0.5), caps unshared —
+        // held only by the C4b stopper, and this row is the diff that shows it opening.
+        expect: Some(RejectReason::CylinderBooleanNotYet),
+        run: cylinder_notyet,
+        raised: &[(
+            "cylinder_boolean_not_yet",
+            None,
+            "crates/nacre-ops/src/planes.rs",
+        )],
+        surfaced: &[("cylinder_boolean_not_yet", None)],
+    },
+    Fixture {
+        name: "cylinder-wall-contact",
+        // The axis sits 0.3 from the x = 0 wall with r = 0.5 — the wall pierces the lateral
+        // surface (M6-2b's rulings).
+        expect: Some(RejectReason::WallMeetsLateral),
+        run: cylinder_wall_contact,
+        raised: &[("wall_meets_lateral", None, "crates/nacre-ops/src/planes.rs")],
+        surfaced: &[("wall_meets_lateral", None)],
+    },
+    Fixture {
+        name: "cylinder-oblique",
+        // A 30°-turned box: its planes are neither ⊥ nor ∥ to the axis — ellipses (M6-3).
+        expect: Some(RejectReason::ObliqueCylinderCut),
+        run: cylinder_oblique,
+        raised: &[(
+            "oblique_cylinder_cut",
+            None,
+            "crates/nacre-ops/src/planes.rs",
+        )],
+        surfaced: &[("oblique_cylinder_cut", None)],
+    },
+    Fixture {
+        name: "cylinder-pair",
+        // Two overlapping parallel cylinders: axis distance 0.6 < r₁+r₂ = 1 (M6b).
+        expect: Some(RejectReason::CylinderPairContact),
+        run: cylinder_pair,
+        raised: &[(
+            "cylinder_pair_contact",
+            None,
+            "crates/nacre-ops/src/planes.rs",
+        )],
+        surfaced: &[("cylinder_pair_contact", None)],
     },
     Fixture {
         name: "fold-45",
@@ -462,7 +571,7 @@ fn instrument_answers_for_itself() {
     let site = c
         .raised
         .iter()
-        .find(|(s, _)| s.id.reason == "cylinder_face")
+        .find(|(s, _)| s.id.reason == "seated_cylinder_cap")
         .map(|(s, _)| *s)
         .expect("the cylinder guard rang");
     assert!(

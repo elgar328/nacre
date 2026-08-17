@@ -631,9 +631,30 @@ pub enum RejectReason {
     /// concurrency — this was never an artefact of `f64` construction, which is why exact
     /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
-    /// An operand carries a cylindrical face. The planar engine covers planes only (M6 adds
-    /// quadrics).
-    CylinderFace,
+    /// A wall plane parallel to a cylinder's axis touches or pierces its lateral surface —
+    /// the crossing makes Branch vertices and angular-partial faces, which is M6-2b's
+    /// machinery (rulings, arcs, the chart arrangement). The M6-2a population gate holds it
+    /// by name until then.
+    WallMeetsLateral,
+    /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
+    /// intersection is an ellipse (M6-3's vocabulary).
+    ObliqueCylinderCut,
+    /// Two distinct cylinder classes are not provably clear of each other (parallel axes
+    /// further apart than the radius sum is the only pair the gate can pass) —
+    /// cylinder∩cylinder is M6b's.
+    CylinderPairContact,
+    /// A perpendicular plane class carries faces of **both** operands beside a cylinder — a
+    /// coplanar seating (a boss on a face, flush caps). The seated-coplanar merge with circle
+    /// boundaries is its own deferred population.
+    SeatedCylinderCap,
+    /// The population gate could not decide a (plane, cylinder) pair **exactly** — a plane
+    /// with no narrow rational description, a rotated class, a moved cylinder (its def is
+    /// pre-motion), or checked-`Rat` overflow. Conservative honest refusal, never a guess.
+    CylinderGateUndecided,
+    /// The operands passed the M6-2a population gate (⊥ cuts and clear walls only), and the
+    /// cylinder arrangement that serves them is still being built — the temporary stopper
+    /// C4b removes. Its own name so the census diff shows the population the moment it opens.
+    CylinderBooleanNotYet,
     /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
     /// (Its sibling `DegenerateNormal` — a zero-length triangle normal — died when `n_out`
     /// moved to the stored orientation: no triangle cross is taken, so there is nothing
@@ -844,7 +865,12 @@ impl RejectReason {
             Self::SeamAlias => "seam_alias",
             Self::ZeroLengthEdge => "zero_length_edge",
             Self::FourPlane => "fourplane",
-            Self::CylinderFace => "cylinder_face",
+            Self::WallMeetsLateral => "wall_meets_lateral",
+            Self::ObliqueCylinderCut => "oblique_cylinder_cut",
+            Self::CylinderPairContact => "cylinder_pair_contact",
+            Self::SeatedCylinderCap => "seated_cylinder_cap",
+            Self::CylinderGateUndecided => "cylinder_gate_undecided",
+            Self::CylinderBooleanNotYet => "cylinder_boolean_not_yet",
             Self::DegenerateFace => "degenerate_face",
             Self::FrameOutOfRange => "frame_out_of_range",
             Self::PrecisionBudget { .. } => "precision_budget",
@@ -877,7 +903,12 @@ impl RejectReason {
             Self::TraceDeclined { .. }
             | Self::ThreePlanes
             | Self::FourPlane
-            | Self::CylinderFace
+            | Self::WallMeetsLateral
+            | Self::ObliqueCylinderCut
+            | Self::CylinderPairContact
+            | Self::SeatedCylinderCap
+            | Self::CylinderGateUndecided
+            | Self::CylinderBooleanNotYet
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
             // Likewise a frame past `i128`: a wider rational would lift it.

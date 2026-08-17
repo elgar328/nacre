@@ -524,3 +524,50 @@ fn the_exact_order_outresolves_f64() {
         circular_order_about_seam(&o, &m, &ref_dir, (&l1, &s1), (&l2, &s2)).expect("no overflow");
     assert_eq!(got, SeamOrder::Ordered(std::cmp::Ordering::Greater));
 }
+
+/// The radial-side sign agrees with the f64 distance oracle across the surface — including the
+/// exact-zero shell, which only rational points on radius-r circles can witness.
+#[test]
+fn the_radial_side_knows_its_shell() {
+    let (o, m, radius) = zcyl();
+    // (3,4)/5-scaled points: exactly on the unit circle, inside, outside — rational witnesses.
+    let cases: [([Rat; 3], Orient); 5] = [
+        ([r(3, 5), r(4, 5), ri(7)], Orient::Zero),
+        ([r(3, 5), r(4, 5), ri(-2)], Orient::Zero), // z is radially irrelevant
+        ([r(1, 2), ri(0), ri(0)], Orient::Negative),
+        ([ri(2), ri(0), ri(3)], Orient::Positive),
+        ([ri(0), ri(0), ri(5)], Orient::Negative), // the axis itself
+    ];
+    for (p, want) in cases {
+        assert_eq!(
+            cylinder_radial_side(&p, &o, &m, radius),
+            Some(want),
+            "point {p:?}"
+        );
+    }
+    // A tilted rational axis: cross-check against the f64 realization.
+    let o2 = [ri(1), r(-1, 2), ri(2)];
+    let m2 = [ri(1), ri(2), ri(2)];
+    let r2 = r(3, 2);
+    for p in [
+        [ri(1), ri(1), ri(1)],
+        [ri(3), ri(3), ri(3)],
+        [ri(1), r(-1, 2), ri(2)],
+        [r(5, 2), r(5, 2), ri(5)],
+    ] {
+        let got = cylinder_radial_side(&p, &o2, &m2, r2).expect("fits");
+        let pf: Vec<f64> = p.iter().map(|x| x.to_f64()).collect();
+        let w = [pf[0] - 1.0, pf[1] + 0.5, pf[2] - 2.0];
+        let mf = [1.0, 2.0, 2.0];
+        let dot = |x: &[f64; 3], y: &[f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+        let val = dot(&w, &w) * dot(&mf, &mf) - dot(&w, &mf).powi(2) - 2.25 * dot(&mf, &mf);
+        let want = if val.abs() < 1e-9 {
+            Orient::Zero
+        } else if val < 0.0 {
+            Orient::Negative
+        } else {
+            Orient::Positive
+        };
+        assert_eq!(got, want, "point {pf:?}");
+    }
+}

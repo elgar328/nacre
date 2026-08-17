@@ -156,21 +156,6 @@ pub(crate) fn collect_planes(
     model: &Model,
     solid: Handle<Solid>,
 ) -> Result<Vec<FaceRow>, BoolError> {
-    // ★ The cylinder door, C1 form: the row vocabulary below exists, but no cylinder-bearing
-    // solid flows yet — and the gate must fire **before** the per-face loop, because a
-    // cylinder's cap is a disk whose outer loop has one vertex, which `outer_tri` would
-    // (mis)report as `DegenerateFace` first. C2 replaces this pre-scan with the population
-    // gate, and C3 teaches the cap row its circle vocabulary.
-    for sh in solid_shell_handles(model, solid) {
-        for &fh in &model.shells.get(sh).faces {
-            if matches!(
-                model.surface(model.faces.get(fh).surface),
-                Surface::Cylinder(_)
-            ) {
-                return Err(reject(RejectReason::CylinderFace));
-            }
-        }
-    }
     let mut out = Vec::new();
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
@@ -196,8 +181,6 @@ pub(crate) fn collect_planes(
                     continue;
                 }
             };
-            let (tri, _) =
-                outer_tri(model, face).ok_or_else(|| reject(RejectReason::DegenerateFace))?;
             // **Outward is read off the face's statement, not re-derived from its loop.**
             // `orientation` relates the stored surface normal to "out of the solid" — the
             // same reading props and STEP already trust — so `n_out` is that product,
@@ -207,6 +190,34 @@ pub(crate) fn collect_planes(
             // winding is still consulted — as the cross-check below, not as the answer.
             let orient_sign = face.orientation.sign();
             let n_out = plane.normal() * f64::from(orient_sign);
+            let tri = match outer_tri(model, face) {
+                Some((tri, _)) => tri,
+                // A **disk** face (a cylinder cap): its outer loop is one circle edge with a
+                // single seam vertex, so no three loop points exist — the plane's own truth
+                // points state the triangle instead (the cap's construction points,
+                // realized), wound to this face's outward like every other `tri`.
+                None if face.outer.half_edges.len() == 1
+                    && matches!(
+                        model.edge_curve(face.outer.half_edges[0].edge),
+                        nacre_geom::Curve::Circle(_)
+                    ) =>
+                {
+                    let nacre_topo::SurfaceTruth::Plane {
+                        points: nacre_topo::PlanePoints::Known(pts),
+                        ..
+                    } = model.surface_truth(face.surface)
+                    else {
+                        return Err(reject(RejectReason::DegenerateFace));
+                    };
+                    let mut tri = pts.map(|p| Point3::from_array(p.map(|x| x.to_f64())));
+                    let wound = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
+                    if wound.dot(n_out) < 0.0 {
+                        tri.swap(1, 2);
+                    }
+                    tri
+                }
+                None => return Err(reject(RejectReason::DegenerateFace)),
+            };
             // **The plane's exact definition comes from the surface, not from the vertices.**
             //
             // Both used to be decided per *solid* ("is this solid rotated?"), which a boolean's
@@ -414,9 +425,8 @@ pub(crate) fn collect_planes(
                     _t.charge(Sub::TriPt3);
                     (wind(w), rotated, motion)
                 }
-                // The cache match above already rejected cylinders.
                 nacre_topo::SurfaceTruth::Cylinder { .. } => {
-                    return Err(reject(RejectReason::CylinderFace));
+                    unreachable!("a plane cache cannot carry a cylinder truth")
                 }
             };
             // The loop's winding, cross-checked against the flag it stated. `validate`
@@ -657,6 +667,164 @@ impl ClassIx {
     }
 }
 
+/// A cylinder class of one boolean (M6-2a): the exact statement the population gate reasons
+/// about, beside its f64 cache. One entry per distinct lateral surface, in [`ClassIx::Cyl`]
+/// numbering order.
+pub(crate) struct WorkingCyl {
+    #[allow(dead_code)] // the arrangement's circle elements read these from C3 on
+    pub(crate) surf: Handle<Surface>,
+    pub(crate) def: nacre_topo::CylinderDef,
+    #[allow(dead_code)]
+    pub(crate) cache: nacre_geom::Cylinder,
+}
+
+/// **The M6-2a population gate** — decides, exactly, whether this operand pair stays inside
+/// the axis-perpendicular population the cylinder arrangement serves, and names the refusal
+/// otherwise. All arithmetic is checked `Rat` on world-stated descriptions; anything the gate
+/// cannot decide exactly is [`RejectReason::CylinderGateUndecided`] — a conservative honest
+/// refusal, never a guess.
+///
+/// Per (plane class, cylinder) pair, with `n` the class's rational normal and `m`/`o`/`r` the
+/// cylinder's raw axis/origin/radius:
+/// - `n × m = 0` — a perpendicular cut. Passes, unless the class carries faces of **both**
+///   operands (a coplanar seating → [`RejectReason::SeatedCylinderCap`]).
+/// - `n · m = 0` — a wall parallel to the axis. Passes iff it provably misses the lateral
+///   surface: `(n·o + d)² > r²·|n|²`; touching or piercing is
+///   [`RejectReason::WallMeetsLateral`] (M6-2b's rulings and arcs).
+/// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
+///
+/// Per cylinder pair: parallel axes clear of each other (`dist > r₁+r₂`, same quadratic form)
+/// pass; every other pair is [`RejectReason::CylinderPairContact`] (M6b).
+pub(crate) fn cylinder_gate(
+    model: &Model,
+    cyl_surfs: &[Handle<Surface>],
+    geom: &[WorkingPlane],
+    class_owner: &[Option<SolidSide>],
+) -> Result<Vec<WorkingCyl>, BoolError> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    let cross_is_zero = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<bool> {
+        let c0 = x[1]
+            .checked_mul(y[2])?
+            .checked_sub(x[2].checked_mul(y[1])?)?;
+        let c1 = x[2]
+            .checked_mul(y[0])?
+            .checked_sub(x[0].checked_mul(y[2])?)?;
+        let c2 = x[0]
+            .checked_mul(y[1])?
+            .checked_sub(x[1].checked_mul(y[0])?)?;
+        Some(c0 == zero && c1 == zero && c2 == zero)
+    };
+    let undecided = || reject(RejectReason::CylinderGateUndecided);
+
+    let mut cyls = Vec::with_capacity(cyl_surfs.len());
+    for &surf in cyl_surfs {
+        let nacre_topo::SurfaceTruth::Cylinder { def, motion } = model.surface_truth(surf) else {
+            unreachable!("a cylinder row carries a cylinder truth")
+        };
+        // A moved cylinder's def is stated before its motion; the gate compares world
+        // geometry, and realizing a def through its chain is machinery this population
+        // does not have yet.
+        if motion.is_some() {
+            return Err(undecided());
+        }
+        let Surface::Cylinder(cache) = model.surface(surf) else {
+            unreachable!("a cylinder truth carries a cylinder cache")
+        };
+        cyls.push(WorkingCyl {
+            surf,
+            def: def.clone(),
+            cache: *cache,
+        });
+    }
+
+    for cyl in &cyls {
+        let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
+        for (c, wp) in geom.iter().enumerate() {
+            if wp.rotated {
+                return Err(undecided());
+            }
+            let Some(coeffs) = wp.base_rat else {
+                return Err(undecided());
+            };
+            let n = [coeffs[0], coeffs[1], coeffs[2]];
+            match cross_is_zero(&n, &m) {
+                None => return Err(undecided()),
+                Some(true) => {
+                    // Perpendicular cut — the circle population, unless coplanar-seated.
+                    if class_owner[c].is_none() {
+                        return Err(reject(RejectReason::SeatedCylinderCap));
+                    }
+                }
+                Some(false) => {
+                    let nm = dot3(&n, &m).ok_or_else(undecided)?;
+                    if nm != zero {
+                        return Err(reject(RejectReason::ObliqueCylinderCut));
+                    }
+                    // A parallel wall: it must provably miss the lateral surface.
+                    let no_d = dot3(&n, &o)
+                        .and_then(|x| x.checked_add(coeffs[3]))
+                        .ok_or_else(undecided)?;
+                    let lhs = no_d.checked_mul(no_d).ok_or_else(undecided)?;
+                    let rhs = r
+                        .checked_mul(r)
+                        .and_then(|rr| rr.checked_mul(dot3(&n, &n)?))
+                        .ok_or_else(undecided)?;
+                    if lhs <= rhs {
+                        return Err(reject(RejectReason::WallMeetsLateral));
+                    }
+                }
+            }
+        }
+    }
+
+    for (i, a) in cyls.iter().enumerate() {
+        for b in &cyls[i + 1..] {
+            let (m1, m2) = (a.def.dir(), b.def.dir());
+            match cross_is_zero(&m1, &m2) {
+                None => return Err(undecided()),
+                Some(false) => return Err(reject(RejectReason::CylinderPairContact)),
+                Some(true) => {
+                    // Parallel axes: clear iff axis distance exceeds the radius sum —
+                    // dist²·|m₁|² = |w|²|m₁|² − (w·m₁)² with w the origin difference.
+                    let w: [Rat; 3] = {
+                        let (oa, ob) = (a.def.origin(), b.def.origin());
+                        let mut w = [zero; 3];
+                        for k in 0..3 {
+                            w[k] = ob[k].checked_sub(oa[k]).ok_or_else(undecided)?;
+                        }
+                        w
+                    };
+                    let mm = dot3(&m1, &m1).ok_or_else(undecided)?;
+                    let wm = dot3(&w, &m1).ok_or_else(undecided)?;
+                    let lhs = dot3(&w, &w)
+                        .and_then(|ww| ww.checked_mul(mm))
+                        .and_then(|x| x.checked_sub(wm.checked_mul(wm)?))
+                        .ok_or_else(undecided)?;
+                    let rsum = a
+                        .def
+                        .radius()
+                        .checked_add(b.def.radius())
+                        .ok_or_else(undecided)?;
+                    let rhs = rsum
+                        .checked_mul(rsum)
+                        .and_then(|x| x.checked_mul(mm))
+                        .ok_or_else(undecided)?;
+                    if lhs <= rhs {
+                        return Err(reject(RejectReason::CylinderPairContact));
+                    }
+                }
+            }
+        }
+    }
+    Ok(cyls)
+}
+
 /// The minimal per-op plane table two solids share: the
 /// concatenated plane list (`a`'s then `b`'s), the face→index map, and each solid's
 /// [`combinatorics::EdgeFaces`]. Built once and shared: indices into the returned `planes`/`surf_ix`
@@ -769,9 +937,17 @@ pub(crate) fn plane_index_setup(
     let canon = plane_classes(&Judge::new(&planes, standard, &notes));
     t.charge(Sub::Classes);
     let t = Watch::new();
-    let (geom, plane_ix) = dense_planes(&planes, &canon);
+    let (geom, plane_ix, cyl_surfs) = dense_planes(&planes, &canon);
     let class_owner = class_owners(&plane_ix, n_a, geom.len());
     t.charge(Sub::Dense);
+    // ★ The cylinder door, C2 form: the population gate decides **by name** what stands in the
+    // way (an oblique cut, a wall touching the lateral surface, a seated cap, an undecidable
+    // pair) — and the population that passes still waits behind its own stopper until the
+    // cylinder arrangement lands (C4b removes `CylinderBooleanNotYet`).
+    if !cyl_surfs.is_empty() {
+        let _cyls = cylinder_gate(model, &cyl_surfs, &geom, &class_owner)?;
+        return Err(reject(RejectReason::CylinderBooleanNotYet));
+    }
     Ok(PlaneSetup {
         planes,
         surf_ix,
@@ -1229,7 +1405,7 @@ impl WorkingPlane {
 pub(crate) fn dense_planes(
     planes: &[FaceRow],
     canon: &[usize],
-) -> (Vec<WorkingPlane>, Vec<ClassIx>) {
+) -> (Vec<WorkingPlane>, Vec<ClassIx>, Vec<Handle<Surface>>) {
     // Plane classes densify from the union-find roots; cylinder rows never entered the
     // union-find (their identity question is the cylinder class table's, C2), so here they
     // number by first-seen surface — the index space exists before the table does.
@@ -1286,7 +1462,11 @@ pub(crate) fn dense_planes(
             }
         })
         .collect();
-    (geom, plane_ix)
+    // The cylinder surfaces in `ClassIx::Cyl` numbering order (first seen) — rebuilt from the
+    // same map so the two cannot drift.
+    let mut cyls: Vec<(usize, Handle<Surface>)> = cyl_ix.into_iter().map(|(s, k)| (k, s)).collect();
+    cyls.sort_unstable_by_key(|&(k, _)| k);
+    (geom, plane_ix, cyls.into_iter().map(|(_, s)| s).collect())
 }
 
 /// Whether three `WitnessPoint` are **exactly collinear** (zero-area triangle), decided on their

@@ -9843,3 +9843,27 @@ biquad 처리)은 재검산 통과. 실질 결함 3건 수리:
 - **파급**: planes/arrangement/combinatorics/reuse/tolerant + 테스트 — 컴파일러 열거로
   ~60 사이트, 전부 `.plane()`/`.plane()` 투영(perl 벌크 + 수동 잔여).
 - **관문**: census 165줄 비트 동일, reject census 불변, 전 스위트 0 실패, clippy 0.
+
+---
+
+## M6-2a C2 — 인구 게이트: 거절이 원인의 이름을 얻는다 (2026-08-18)
+
+- **`cylinder_gate`**(planes.rs): (평면 class, 원통) 쌍마다 checked Rat 정확 판정 —
+  n×축=0(⊥)은 통과(공면-좌석 class는 `SeatedCylinderCap`), n·축=0(∥ 벽)은
+  `(n·o+d)² > r²·|n|²`일 때만 통과(아니면 `WallMeetsLateral`), 그 외는
+  `ObliqueCylinderCut`; 원통쌍은 평행+무접촉만 통과(`CylinderPairContact`); 회전 class·
+  narrow 이름 부재·이동 원통·넘침은 `CylinderGateUndecided`(보수 정직). 통과 인구는
+  `CylinderBooleanNotYet` 마개(C4b가 제거 — census diff가 열리는 순간을 보여줄 자기 이름).
+  `CylinderFace`는 발화지 0이 되어 **삭제**(고아 이름 정리 규율).
+- **`WorkingCyl`**: surf+def+cache — `ClassIx::Cyl` 번호 순서(dense의 같은 맵에서 재구성이라
+  드리프트 불가). 캡 **디스크 face**가 `outer_tri` 대신 평면 진실 점으로 tri를 얻는 팔 신설
+  (루프가 원 엣지 1개일 때 — C1의 사전 스캔이 가리던 자리).
+- **scalar**: `cylinder_radial_side` pub 노출(축거리² vs r² — meet 이차식의 상수항 재사용) +
+  껍질/내부/외부/축 유리 픽스처 + 기울어진 축 f64 대조.
+- **픽스처가 곧 게이트 테스트**: reject census 7→11 (seated: 캡 공면 붙은 원래 픽스처 /
+  notyet: 관통 인구 / wall-contact: 축이 벽에서 0.3 < r=0.5 / oblique: **기울어진 유리 축**
+  — 상자를 돌리면 rotated class라 Undecided가 선행하므로 원통을 기울이는 게 정직한 oblique /
+  pair: 평행축 0.6 < r₁+r₂). census: 원통 불리언 3줄 CylinderFace→CylinderBooleanNotYet
+  (평면 코퍼스 비트 동일).
+- **kit**: cylinder_face 문장 행 → 6개 새 원인 문장(전부 NotSupported), reject_class 3행 갱신.
+- 전 스위트·clippy·kit 게이트 0 실패.

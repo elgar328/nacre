@@ -493,6 +493,36 @@ pub fn plane_plane_cylinder(
     Some(CylinderMeet::Pair { line, s: [lo, hi] })
 }
 
+/// The **radial side** of a cylinder's lateral surface a rational point lies on — negative
+/// inside, zero on the surface, positive outside. Exact:
+/// `sign(|w|²|m|² − (w·m)² − r²|m|²)` with `w = p − origin` — the same constant term the meet
+/// quadratic carries, scaled by the positive `|m|²` so no normalization is needed. `None` on
+/// checked-`Rat` overflow (honest decline). Preconditions `dir ≠ 0`, `radius > 0` as in
+/// [`plane_plane_cylinder`].
+///
+/// This is the "axis distance² vs r²" question the M6-2a population gate and the circle
+/// containment tests ask; the axial (z-range) half of point-vs-cylinder-solid is
+/// [`plane_side`]-against-the-caps, deliberately separate.
+pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, radius: Rat) -> Option<Orient> {
+    debug_assert!(!is_zero3(dir), "cylinder axis must be nonzero");
+    debug_assert!(
+        radius > Rat::from_int(0),
+        "cylinder radius must be positive"
+    );
+    let w = sub3(p, origin)?;
+    let mm = dot3(dir, dir)?;
+    let wm = dot3(&w, dir)?;
+    let val = dot3(&w, &w)?
+        .checked_mul(mm)?
+        .checked_sub(wm.checked_mul(wm)?)?
+        .checked_sub(radius.checked_mul(radius)?.checked_mul(mm)?)?;
+    Some(match val.cmp(&Rat::from_int(0)) {
+        core::cmp::Ordering::Less => Orient::Negative,
+        core::cmp::Ordering::Equal => Orient::Zero,
+        core::cmp::Ordering::Greater => Orient::Positive,
+    })
+}
+
 /// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, one
 /// `QuadVal` multiply-add, then the sign tower. `None` on overflow.
 pub fn plane_side(plane: &[Rat; 4], line: &MeetLine, s: &QuadVal) -> Option<Orient> {

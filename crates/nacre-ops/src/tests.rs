@@ -1468,7 +1468,7 @@ fn holed_face_rings_of(
         surf_ix.insert(pi.face().expect("a real face table"), i);
     }
     let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
-    let (planes, plane_ix) = dense_planes(&faces_tab, &canon);
+    let (planes, plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
     let inc = combinatorics::edge_faces(&m, r, &surf_ix).unwrap();
     for &fh in &m.shells.get(m.solids.get(r).outer).faces {
         let fp = surf_ix[&fh];
@@ -4948,7 +4948,7 @@ fn dense_plane_ids_are_monotone_in_canon() {
     let mut faces = collect_planes(&m, chained).unwrap();
     faces.extend(collect_planes(&m, probe).unwrap());
     let canon = plane_classes(&crate::planes::test_judge(&faces));
-    let (geom, plane_ix) = dense_planes(&faces, &canon);
+    let (geom, plane_ix, _cyls) = dense_planes(&faces, &canon);
     assert!(
         canon.iter().enumerate().any(|(i, &c)| c != i),
         "fixture has no split plane — the invariant would be vacuous"
@@ -5122,7 +5122,7 @@ fn common_rejects_non_planar_input() {
     );
     assert_rejects(
         || boolean_one(&mut m, BoolKind::Common, a, cyl),
-        RejectReason::CylinderFace,
+        RejectReason::SeatedCylinderCap,
     );
 }
 

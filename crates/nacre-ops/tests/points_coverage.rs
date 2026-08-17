@@ -8,7 +8,7 @@
 //! battery stays as the producer-path smoke test and the cache/truth agreement sweep.
 //!
 //! Cylinder *lateral* surfaces are the deliberate exception: a curved surface's truth arrives
-//! with M6, and booleans already reject it honestly (`CylinderFace`).
+//! with M6, and booleans still hold it behind the M6-2a population gate.
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::DatumDef;
