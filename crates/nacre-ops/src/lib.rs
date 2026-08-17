@@ -765,9 +765,11 @@ pub enum DeclineKind {
     HoleRing,
     /// Every vertex of a ring lies on the class plane — a ring lying in the cut plane.
     AllOnPlane,
-    /// A strictly crossing ring edge has no nameable wall plane beside the face's own.
-    CrossingName,
     /// An on-plane run's bounding node has no nameable wall plane.
+    ///
+    /// (Its sibling `CrossingName` — a crossing edge's wall unreadable from the endpoint
+    /// names — died 2026-08-17 when the tracer started reading the wall the producer carries
+    /// (`NamedRing`): there is no name derivation left to fail.)
     RunName,
     /// An on-plane run's node lies on the cut plane yet is not named by it — four planes meet
     /// there. Raised as [`RejectReason::FourPlane`] rather than as a `TraceDeclined`, since the
@@ -792,7 +794,6 @@ impl DeclineKind {
             Self::OuterRing => "outer-ring",
             Self::HoleRing => "hole-ring",
             Self::AllOnPlane => "all-on-plane",
-            Self::CrossingName => "crossing-name",
             Self::RunName => "run-name",
             Self::FourPlane => "four-plane",
             Self::CoincidentFeatures => "coincident-features",
@@ -2480,7 +2481,7 @@ pub mod tests {
                     &plane_ix,
                 )
                 .unwrap();
-                return (planes, plane_ix[fp], outer, hole);
+                return (planes, plane_ix[fp], outer.triples, hole.triples);
             }
         }
         panic!("no holed face");
@@ -5880,8 +5881,9 @@ pub mod tests {
         for sh in solid_shell_handles(&m, overhung) {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
-                let tris =
-                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap();
+                let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
+                    .unwrap()
+                    .triples;
                 for t in &tris {
                     // The triple is already dense plane ids: distinct means three real planes.
                     assert!(
@@ -6008,9 +6010,16 @@ pub mod tests {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
                 let mut rings = vec![
-                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap(),
+                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
+                        .unwrap()
+                        .triples,
                 ];
-                rings.extend(combinatorics::hole_rings(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap());
+                rings.extend(
+                    combinatorics::hole_rings(&m, fh, p, &inc_a, &jd, &plane_ix)
+                        .unwrap()
+                        .into_iter()
+                        .map(|nr| nr.triples),
+                );
                 for t in rings.iter().flatten() {
                     for &k in t {
                         assert!(
@@ -6070,8 +6079,9 @@ pub mod tests {
         for sh in solid_shell_handles(&m, chained) {
             for &fh in &m.shells.get(sh).faces {
                 let p = surf_ix[&fh];
-                let tris =
-                    combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix).unwrap();
+                let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
+                    .unwrap()
+                    .triples;
                 for t in &tris {
                     // The vertex lies on exactly its three defining planes; each must read 0.
                     for &q in t {

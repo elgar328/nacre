@@ -9585,3 +9585,23 @@ baseline, reject census. ★ M6 전제도 함께 정리: 점-접촉 핀치는 �
 `NonManifoldVertex`가 받는다(조용히 틀리는 길은 없음). 그날이 오면 점-접촉 확장이 그 인구의
 소비자다. figure-8 «재봉합» 기능은 소비자가 없다: 전역 검사 둘을 다 통과하는 핀치 인구가
 나타나는 날이 그 기능이 필요해지는 첫 날이다(플랜의 유예 경계 그대로).
+
+---
+
+## wall은 생산자가 싣는다 — `ring_from_names`의 마지막 프로덕션 소비자 은퇴 (2026-08-17)
+
+M6-사전 위생의 본편. 이름-유도("두 끝점 이름이 공유하는 평면")는 모든 정점이 정확히 3평면일
+때만 건전하고, 4평면 공점에서 **엣지가 타지 않는 평면을 조용히 wall로 내놓는** 실측된 모양이다
+— M6의 이차곡면 공점은 그 위험을 코퍼스의 우연에서 일상으로 바꾼다. 마지막 프로덕션 소비자는
+tracer의 crossed-edge wall(arrangement의 Crossing 팔) 하나였다.
+
+- **`NamedRing { triples, walls }`**: `loop_triples`가 삼중항을 만들 때 이미 손에 든
+  `inc`(모서리의 face쌍)에서 `walls[i] = plane_ix[반대편]`을 **함께 싣는다** — 병합의
+  `Ring{nodes,walls}`와 같은 신뢰 모델. 이름이 폴백/거절되는 정점에서도 wall은 total(carried
+  값은 이름 퇴화와 무관) — 옛 유도가 실패하던 인구가 정확히 여기서 개선된다.
+- Crossing 팔은 `walls[edge]`를 읽고, `ring_from_names`는 `#[cfg(test)]`로 격하(손으로 지은
+  깨끗한 3-평면 링 전용), **`DeclineKind::CrossingName`은 유일 생산자를 잃어 삭제**(유도가
+  없으니 유도-실패도 없다 — RunName doc에 사망 기록).
+- 실측: 착수 전 `reject-trace` 전수에서 CrossingName 발화 **0**(baseline — 삭제 면허),
+  **bit census 비트 동일**(3-평면 정점에서 carried == derived의 증명대로), reject census
+  baseline 불변, rotation_sweep 45° + 전체 밴드 초록, 전 스위트 0 실패.

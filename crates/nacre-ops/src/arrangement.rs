@@ -454,9 +454,12 @@ fn trace_transversal_face(
     // lies on (triples, comparisons, predicate arguments). Every ring below is in class form, so
     // the two must not be confused — see `canon_ring`.
     let fc = plane_ix[fp];
+    // Each ring pairs its class-form triples with the **carried walls** the producer read off
+    // the model's edges (`NamedRing`) — the Crossing arm below names an edge's wall from the
+    // ride, never from the two endpoint names.
     let outer = match &loops.outer {
-        Some(r) => match plane_ring(r) {
-            Some(r) => r,
+        Some(nr) => match plane_ring(&nr.triples) {
+            Some(ts) => (ts, nr.walls.as_slice()),
             None => {
                 out.declined.push((fp, DeclineKind::CollapsedTriple));
                 return;
@@ -467,7 +470,7 @@ fn trace_transversal_face(
             return;
         }
     };
-    let mut holes: Vec<Vec<[usize; 3]>> = Vec::new();
+    let mut holes: Vec<(Vec<[usize; 3]>, &[usize])> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Some(raw_holes) = &loops.holes else {
@@ -475,8 +478,8 @@ fn trace_transversal_face(
         return;
     };
     for r in raw_holes {
-        match plane_ring(r) {
-            Some(r) => holes.push(r),
+        match plane_ring(&r.triples) {
+            Some(ts) => holes.push((ts, r.walls.as_slice())),
             None => {
                 out.declined.push((fp, DeclineKind::CollapsedTriple));
                 return;
@@ -545,7 +548,7 @@ fn trace_transversal_face(
     let mut nodes: Vec<Node> = Vec::new();
     let mut run_counter = 0usize;
     let mut declined: Option<DeclineKind> = None;
-    'rings: for ring in std::iter::once(&outer).chain(holes.iter()) {
+    'rings: for (ring, walls) in std::iter::once(&outer).chain(holes.iter()) {
         let n = ring.len();
         // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
         // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
@@ -558,18 +561,18 @@ fn trace_transversal_face(
         for feature in features {
             match feature {
                 combinatorics::Feature::Crossing { edge } => {
-                    // Its wall is the plane the edge rides besides fp.
-                    match combinatorics::ring_from_names(fc, ring).map(|es| es[edge].wall) {
-                        Ok(wall) => nodes.push(Node {
-                            r: wall,
-                            flip: true,
-                            run: None,
-                            flanks_differ: false,
-                            single_touch: false,
-                            graze_above: None,
-                        }),
-                        Err(_) => declined = Some(DeclineKind::CrossingName),
-                    }
+                    // The crossed edge's wall, **carried** from the producer — it used to be
+                    // re-derived from the two endpoint names (`ring_from_names`), which is
+                    // sound only while every vertex lies on exactly three planes and could
+                    // hand back a plane the edge does not ride at a concurrency.
+                    nodes.push(Node {
+                        r: walls[edge],
+                        flip: true,
+                        run: None,
+                        flanks_differ: false,
+                        single_touch: false,
+                        graze_above: None,
+                    });
                 }
                 combinatorics::Feature::Run {
                     first,
@@ -797,7 +800,7 @@ fn trace_one(
         let kind = SegKind::Seated { body_above };
         // Collect every ring in class form first: a collapsed name declines the whole face, and
         // deciding that before the emitting closure exists keeps the two borrows apart.
-        let Some(outer) = fl.outer.as_deref().and_then(plane_ring) else {
+        let Some(outer) = fl.outer.as_ref().and_then(|nr| plane_ring(&nr.triples)) else {
             out.declined.push((fp, DeclineKind::OuterRing));
             continue;
         };
@@ -809,7 +812,7 @@ fn trace_one(
             continue;
         };
         for r in raw {
-            match plane_ring(r) {
+            match plane_ring(&r.triples) {
                 Some(r) => rings.push(r),
                 None => collapsed = true,
             }
@@ -2281,12 +2284,13 @@ pub(crate) fn concurrency_audit(
                 };
                 let mut rings =
                     combinatorics::face_vertex_triples(model, fh, fp, inc, &jd, &plane_ix)
+                        .map(|nr| nr.triples)
                         .unwrap_or_default();
                 rings.extend(
                     combinatorics::hole_rings(model, fh, fp, inc, &jd, &plane_ix)
                         .unwrap_or_default()
                         .into_iter()
-                        .flatten(),
+                        .flat_map(|nr| nr.triples),
                 );
                 // Only vertices the class would actually name: those lying on it (`side == 0`),
                 // which is exactly the run condition the trace's rule fires under.

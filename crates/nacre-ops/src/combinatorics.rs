@@ -103,7 +103,11 @@ pub(crate) struct RingEdge {
 /// Recover a ring's edges from its vertex names — the classic derivation, now in **one** place.
 ///
 /// Sound exactly while each name lists all three of its planes and no more (see [`RingEdge`]).
-/// A producer that can hand over the real geometry should do that instead.
+/// ★ **Test-only since 2026-08-17**: the last production consumer (the tracer's crossed-edge
+/// wall) reads the wall the producer carries (`NamedRing`) instead, so no production path
+/// derives ring geometry from names any more. Kept for hand-built test rings, whose vertices
+/// are clean three-plane points by construction.
+#[cfg(test)]
 pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingEdge>, BoolError> {
     (0..ring.len())
         .map(|i| {
@@ -246,8 +250,20 @@ pub(crate) fn face_vertex_triples(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[usize],
-) -> Result<Vec<[usize; 3]>, BoolError> {
+) -> Result<NamedRing, BoolError> {
     loop_triples(&model.faces.get(f).outer, p, inc, jd, plane_ix)
+}
+
+/// One loop in class form with each edge's **carried wall** beside it: `walls[i]` is the plane
+/// class the edge `triples[i] → triples[i+1]` rides — the far face's class, read off `inc` where
+/// the triples are produced ([`loop_triples`]), never re-derived from the endpoint names. The
+/// same trust model as the merge's `Ring { nodes, walls }`: deriving a wall from two names is
+/// sound only while every vertex lies on exactly three planes, and the carried value is total
+/// even where the *names* degenerate (the fallback-named vertices still know their edges).
+#[derive(Clone, Debug)]
+pub(crate) struct NamedRing {
+    pub triples: Vec<[usize; 3]>,
+    pub walls: Vec<usize>,
 }
 
 /// Every loop of one face in class form — **the only thing the tracer needs from `Model`**.
@@ -257,11 +273,11 @@ pub(crate) fn face_vertex_triples(
 /// tracer's to say, not this table's.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FaceLoops {
-    /// The outer loop's vertices, or `None` if [`face_vertex_triples`] declined.
-    pub outer: Option<Vec<[usize; 3]>>,
+    /// The outer loop, or `None` if [`face_vertex_triples`] declined.
+    pub outer: Option<NamedRing>,
     /// One entry per hole ring, or `None` if [`hole_rings`] declined for **any** of them — a hole
     /// that cannot be named is not "no hole".
-    pub holes: Option<Vec<Vec<[usize; 3]>>>,
+    pub holes: Option<Vec<NamedRing>>,
 }
 
 /// What one boolean's tracer reads instead of the `Model`: every face's loops, plus which slots
@@ -328,7 +344,7 @@ pub(crate) fn hole_rings(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[usize],
-) -> Result<Vec<Vec<[usize; 3]>>, BoolError> {
+) -> Result<Vec<NamedRing>, BoolError> {
     model
         .faces
         .get(f)
@@ -363,7 +379,7 @@ fn loop_triples(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[usize],
-) -> Result<Vec<[usize; 3]>, BoolError> {
+) -> Result<NamedRing, BoolError> {
     let hes = &l.half_edges;
     let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
         inc.get(&he.edge)
@@ -373,11 +389,15 @@ fn loop_triples(
     let other = |pair: [usize; 2]| if pair[0] == p { pair[1] } else { pair[0] };
     let n = hes.len();
     let mut out = Vec::with_capacity(n);
+    let mut walls = Vec::with_capacity(n);
     for i in 0..n {
         // Vertex `i` starts edge `i` and ends edge `i - 1`.
         let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
         let (out_bounds, out_pair) = edge(&hes[i])?;
         let (a, b) = (other(in_pair), other(out_pair));
+        // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
+        // vertex *names* below have to fall back or decline (see [`NamedRing`]).
+        walls.push(plane_ix[b]);
         // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
         // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
         let mut t = [plane_ix[p], plane_ix[a], plane_ix[b]];
@@ -439,7 +459,10 @@ fn loop_triples(
         t.sort_unstable();
         out.push(t);
     }
-    Ok(out)
+    Ok(NamedRing {
+        triples: out,
+        walls,
+    })
 }
 
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
