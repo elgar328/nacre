@@ -481,14 +481,15 @@ pub enum OpError {
     /// to return. Not [`Self::PlaneWithoutExactForm`]: that says the exact form is missing,
     /// and here it is present — what is missing is a *spelling*.
     ///
-    /// The population today: world-branch faces whose surface carries a motion (a plane the
-    /// rotation maps onto itself, or an exact move recorded over a history). The pad elides the
+    /// The population: world-branch faces whose surface carries a motion. The pad elides the
     /// frame node and sketches in world axes there, and every `SketchFrame` on that surface
     /// means "the pre-motion frame, then the motion" — stating the world axes in it would need
     /// the motion's inverse image, which is irrational. Defined by **verification failure**
-    /// (no candidate's realization matches), not by that condition: the day invariant planes
-    /// are restated world-side instead of carrying their motion, these faces start verifying
-    /// and this reject disappears without a code change.
+    /// (no candidate's realization matches), not by that condition — which is how the
+    /// invariant-plane restatement (2026-08-17) shrank it without a code change here: a plane
+    /// its motion *fixes* keeps the world statement and verifies. What remains recorded, and
+    /// so still lands here: exactly-statable-but-shifted images (a normal-wise translation
+    /// after a turn), mirror chains, and moved sources re-moved (stage-1 boundaries).
     FrameNotRepresentable,
     /// A [`SketchFrame::named`] coordinate (origin or `ref_dir`) outside the decimal window
     /// (`Rat::from_decimal`), so the frame claim has no exact statement to check. The frame
@@ -2101,7 +2102,9 @@ pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
 /// Errors as [`face_plane`]: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when
 /// the plane carries no name to derive a frame from (a test-only unregistered surface); and
 /// [`OpError::FrameNotRepresentable`] when the frame exists but no spelling realizes to it —
-/// today, world-branch faces whose surface carries a motion (see the variant's doc).
+/// world-branch faces whose surface carries a motion; since the invariant-plane restatement
+/// a plane its motion fixes carries none, so the residual population is the recorded one
+/// (see the variant's doc).
 pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFrame, OpError> {
     let f = face_frame(model, face)?;
     if let Some(sf) = f.sketch_frame {

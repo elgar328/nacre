@@ -2071,6 +2071,49 @@ impl Axis {
     }
 }
 
+/// Whether **any** rotation about an axis-parallel line fixes the plane
+/// `a·x + b·y + c·z + d = 0` as a set: the normal rides the axis (its other two
+/// components exactly zero), so the normal coordinate of every point is untouched
+/// whatever the pivot or angle. One of the three set-invariance atoms — the others
+/// are [`translation_fixes_plane`] and [`mirror_fixes_plane`]; `Isometry::fixes_plane`
+/// composes the first two, and a recorded motion chain is checked node by node.
+pub fn axis_rotation_fixes_plane(axis: Axis, coeffs: &[Rat; 4]) -> bool {
+    let i = axis.index();
+    let zero = Rat::from_int(0);
+    coeffs[i] != zero && (0..3).all(|k| k == i || coeffs[k] == zero)
+}
+
+/// Whether the translation `offset` fixes the plane as a set: its component along the
+/// normal is exactly zero (`n · offset == 0`, checked — an overflow answers `false`,
+/// a conservative miss).
+pub fn translation_fixes_plane(offset: &[Rat; 3], coeffs: &[Rat; 4]) -> bool {
+    let zero = Rat::from_int(0);
+    let dot = coeffs[..3]
+        .iter()
+        .zip(offset)
+        .try_fold(zero, |acc, (&a, &t)| a.checked_mul(t)?.checked_add(acc));
+    dot == Some(zero)
+}
+
+/// Whether the reflection in the coordinate plane `axis = offset` fixes the plane as a
+/// set: either the normal is perpendicular to the mirror axis (the plane contains the
+/// mirrored direction, so the set maps to itself), or the plane **is** the mirror plane
+/// (`n ∥ axis` and `n_axis · offset + d == 0`, checked — overflow answers `false`).
+/// Set-fixed only: the second case flips the normal's sense, which a canonical name
+/// does not carry.
+pub fn mirror_fixes_plane(axis: Axis, offset: Rat, coeffs: &[Rat; 4]) -> bool {
+    let i = axis.index();
+    let zero = Rat::from_int(0);
+    if coeffs[i] == zero {
+        return true;
+    }
+    (0..3).all(|k| k == i || coeffs[k] == zero)
+        && coeffs[i]
+            .checked_mul(offset)
+            .and_then(|p| p.checked_add(coeffs[3]))
+            == Some(zero)
+}
+
 /// An axis-aligned rigid rotation: turn about `axis` (the line through the rational
 /// `point`) by the rational `angle`. Exact for the 90°-family (`try_exact_cos_sin`);
 /// otherwise the realized coordinate is irrational (cos/sin) and carries tol.
@@ -2150,21 +2193,12 @@ impl Isometry {
     /// answers `false`, a conservative miss (the plane is then carried on the
     /// recorded path, slower but never wrong).
     ///
-    /// A reflection is not an `Isometry`; the mirror motion answers for itself.
+    /// A reflection is not an `Isometry`; [`mirror_fixes_plane`] answers for the mirror
+    /// motion, and a recorded chain is checked node by node with the same three atoms.
     pub fn fixes_plane(&self, coeffs: &[Rat; 4]) -> bool {
-        let n = [coeffs[0], coeffs[1], coeffs[2]];
-        let zero = Rat::from_int(0);
-        if let Some(r) = self.rotate {
-            let i = r.axis.index();
-            if n[i] == zero || (0..3).any(|k| k != i && n[k] != zero) {
-                return false;
-            }
-        }
-        let dot = n
-            .iter()
-            .zip(self.translate)
-            .try_fold(zero, |acc, (&a, t)| a.checked_mul(t)?.checked_add(acc));
-        dot == Some(zero)
+        self.rotate
+            .is_none_or(|r| axis_rotation_fixes_plane(r.axis, coeffs))
+            && translation_fixes_plane(&self.translate, coeffs)
     }
 
     /// Apply the full isometry (rotate about the axis point, then translate) to a

@@ -343,7 +343,10 @@ fn a_rotated_solid_mirrors() {
             let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
                 return false;
             };
-            tri.iter().all(|&h| {
+            // ★ `any`, not `all`: the Z-fixed caps are world-stated since the invariant-plane
+            // restatement (and stay so through this mirror — normal ⊥ X), so the moved
+            // provenance lives on the walls each corner also names.
+            tri.iter().any(|&h| {
                 !matches!(
                     m.surface_truth(h),
                     nacre_topo::SurfaceTruth::Plane { motion: None, .. }

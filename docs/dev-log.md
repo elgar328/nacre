@@ -9444,3 +9444,61 @@ nacre-ops 전 스위트 green(census 포함), clippy 무경고.
 캡 재진술 후 그 솔리드의 `solid_points` 는 혼합-담체 decline 이 된다(정확성 무손상, Arrange
 폴백). 이는 항목 0 이 연 이득의 그 인구 되돌림이고, 완화 레버는 이미 항목 13(ImplicitPoint)에
 이름이 있다. 이 비용은 커토버 때 ε-관문과 함께 잰다 — 지금 잴 계기가 공개 표면에 없다.
+
+---
+
+## invariant-plane 재진술 — 모션이 고정하는 평면은 노드 대신 세계 진술을 유지한다 (2026-08-17)
+
+스파이크(앞 셀)가 확정한 1단계 범위 그대로: 소스가 `Plane{Known, motion: None}`·narrow 이름·
+`Xform::Rigid`·`Isometry::fixes_plane`(회전축 ∥ 법선 AND `n·translate == 0`, checked)이면
+transform pass 1 이 노드를 만들지 않고 **같은 진술을 다시 push** — interning 키가 (이름, 모션)
+이라 **소스 핸들로 intern-back** 된다(Copy 가 항등 모션에서 이미 밟던 길의 일반화). 술어는
+scalar 원자 셋(`axis_rotation_fixes_plane`·`translation_fixes_plane`·`mirror_fixes_plane`)으로
+분해해 생산자·소비자가 한 규칙을 나눠 쓴다. 예고된 함정 그대로 `carried` 조건문은 불변 플래그가
+먼저 갈랐다(`transport_points` 의 expect 는 이 경로에서 돈 적 없는 프로브를 이름 댄다 — 2차
+리뷰가 구현 전에 잡은 패닉). 종단 잠금 `tests/invariant_planes.rs`: 돌린 블록의 밑캡 == 세계
+씨앗 핸들, 30°×2 에서도 캡 무이력, `face_sketch_frame` 이 캡에서 Ok. 계약 스윕 핀 rot30·
+rot30+t **2→0**(먼저 의도된 빨강을 보고 측정으로 갱신 — 스윕 메시지가 예고한 그 절차).
+
+### 구현이 가른 것 둘 — 계획의 「측정 후 결정」 분기가 즉시 발화했다
+
+**① reuse 의 잠긴 능력이 통째로 회귀할 뻔했다.** 캡이 무이력이 되자 회전 솔리드의 모든 코너가
+혼합 담체가 되어 `solid_points` 가 전부 decline — 인구 ② 핀("회전 큐보이드는 풀린다")이 빨갛게.
+핀을 뒤집는 대신 **같은 술어의 소비자측 적용**으로 지켰다: `chain_fixes_plane`(사슬의 노드마다
+scalar 원자) — 고정 평면의 세계 방정식은 사슬의 pre-motion 프레임에서도 같은 방정식이므로,
+「움직인 담체들이 한 leaf 공유 + 무이력 담체는 그 사슬이 고정을 증명」이면 풀고 재생한다.
+이 검사가 없으면 ④ 인구(frame datum 의 캡 — 사슬이 고정하지 **않는** 세계 평면)가 잘못 풀리게
+되므로, 검사는 완화가 아니라 **정확성 요건**이다. ④ 핀은 그대로 decline(초록).
+
+**② 판정 품질 핀이 진짜 회귀를 잡았다 — 답은 「거울은 가장 강한 서술을 취한다」.**
+`a_shared_rotation_still_assumes_nothing` 이 빨갛게: 캡이 사슬을 잃자 캡×벽×벽 질문이
+shared-motion 정확 게이트를 잃고 toleranced 로 떨어져, 공유-회전 fuse 가 **가정된 일치**를
+만들기 시작했다(2차 리뷰가 «부호 미정» 이라 적은 비용 스왑의 품질 면). 수리는 판정층이 아니라
+**표의 경계**: `collect_planes` 후처리가, 솔리드의 사슬이 **행-보존으로 고정**하는
+(`chain_preserves_plane_row` — mirror 자기-평면의 행 부호 반전은 Cramer 비율엔 무해하지만
+행렬식 부호 읽기엔 치명이라 엄격판이 따로 있다) 무이력 평면에 그 사슬 서술을 되입힌다 —
+base 점은 세계 점 그대로, 사슬 재생 증인은 재진술 전 moved twin 이 들던 것과 **비트 동일**
+(그 twin 의 pre-motion 점이 곧 이 세계 점이었으므로). 표는 연산 하나 동안 사는 거울이라 규칙 1
+위반이 아니다(Through 풀이 선례). 결과: 판정 행동이 **구조적으로 보존** — coincidence 0 복원,
+비용 스왑 소멸, 그리고 **bit census 가 비트 동일**(ε-재기준 예측보다 강한 결과; census 의 rot
+가족 포함 전 코퍼스). 진실 쪽 이득(핸들 치유·무노드·face_sketch_frame)은 그대로다.
+
+### 핀 감사 — 16 + 3
+
+깨진 19개 테스트 전수 판정: 진실-수준 프로브(faces[0]=캡을 읽던 `forest_probe` → 최장 사슬로,
+카운트 «전부 이동» → «이동 담체 포함», 담체 부분집합 검사 신설)와 표-수준 기대(재사슬화로
+원 기대 복원 — tolerant 둘·chained-boolean 은 **원래 단언으로 되돌아감**), 픽스처 하나는
+전제 보수(`an_overflowing_exact_move…` 의 이동에 z 성분 — 순수-x 이동이 그 z-평면을 고정해
+버려 오버플로 경로를 잰다는 전제가 죽었었다). `replay_reproduces` 는 혼합-축 사슬의
+짧은-사슬 캡(캡 [X] vs 벽 [Z,X] — leaf 상이)이 **정직 decline 인구**로 남음을 세고(같은 축
+깊이-2 픽스처를 추가해 licence 의 깊이-2 를 잠금), 그 잔여는 열린 항목 13/14 가족으로 기록.
+★ 교훈: 3차 리뷰의 "고정 카운트 핀 없음" 은 **통합 테스트만 훑은 반쪽 grep** 이었다 — in-crate
+단위 테스트 16개가 그 핀이었다. [adjacent-proposition-failure] 의 리뷰판.
+
+### 실측 요약
+
+scalar 4 + ops 전 스위트(lib 206, 통합 23 바이너리) + 워크스페이스 전체 + clippy + no-default
+전부 초록, **bit census 비트 동일**(명시 `--ignored` 실행 — 훅은 이 테스트를 안 돈다), reject
+census baseline 불변, `seeded_hits` 불변(455 잠금 초록 — intern-back 은 그 카운터의 인구가
+아니었다), 계약 스윕 0+0. 판정 비용 측정(climb 스왑)은 **구조 보존으로 무의미해져 생략** —
+표가 재진술 전과 같은 서술로 판정하므로 잴 차이가 없다.

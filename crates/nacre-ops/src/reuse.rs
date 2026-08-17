@@ -56,15 +56,21 @@ pub(crate) enum ClassPlan {
 /// * measured vertex (`vertex_tol` Some) — decline, an implicit point has no rational base;
 /// * all three defining surfaces world-stated (`motion: None`) — the coordinate is the
 ///   statement, `WitnessPoint::exact`, letter-identical to the old `Constructed` arm;
-/// * all three sharing one motion — solve the triple's **narrow names in their shared
-///   pre-motion frame** ([`nacre_scalar::three_planes_rat`]) and replay the chain: the very
-///   computation measured bit-identical to the stored base-and-replay road (8/8).
+/// * the moved carriers sharing one motion, any world-stated carrier **fixed by that
+///   chain** — solve the triple's **narrow names in the shared pre-motion frame**
+///   ([`nacre_scalar::three_planes_rat`]) and replay the chain: the very computation
+///   measured bit-identical to the stored base-and-replay road (8/8). (A fixed plane's
+///   world equation *is* its pre-motion equation, which is what admits a restated cap.)
 ///
-/// ★ **Mixed frames decline** — a prism's base-ring corner under a caller-stated world plane
-/// has two frame-stated walls and one world-stated cap, and no rational pullback exists
-/// (the frame realization is irrational). The old road answered these through the base
-/// vertex S7 dissolves; the decline is honest (Arrange — slower, never wrong) and C2's
-/// differential counts the population.
+/// ★ **Mixed frames decline — unless the odd carrier is provably fixed.** Since the
+/// invariant-plane restatement, a turned block's corner is a restated world cap × two
+/// chained walls; the cap's world equation is *also* its equation in the walls' pre-motion
+/// frame precisely when the chain fixes the plane ([`crate::rotated_vertex::chain_fixes_plane`]
+/// — the consumer-side twin of the producer's own gate), so the triple solves in that
+/// frame and the chain replays as before. A mixed corner the chain does **not** fix — a
+/// prism's base ring under a caller-stated world plane, the frame realization being
+/// irrational — still has no rational pullback and declines honestly (Arrange — slower,
+/// never wrong); C2's differential counts that population (open item 14).
 fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
     use nacre_topo::{SurfaceTruth, VertexDef};
 
@@ -90,23 +96,38 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                         SurfaceTruth::Plane { motion, .. } => *motion,
                         SurfaceTruth::Cylinder { motion } => *motion,
                     };
-                    out.push(
-                        match (motion_of(tri[0]), motion_of(tri[1]), motion_of(tri[2])) {
-                            (None, None, None) => {
-                                WitnessPoint::exact(model.vertex_point(vh).as_array())?
+                    let motions = tri.map(motion_of);
+                    out.push(if motions.iter().all(Option::is_none) {
+                        WitnessPoint::exact(model.vertex_point(vh).as_array())?
+                    } else {
+                        // One shared leaf among the moved carriers, or a decline.
+                        let mut leaf = None;
+                        for m in motions.iter().flatten() {
+                            match leaf {
+                                None => leaf = Some(*m),
+                                Some(l) if l == *m => {}
+                                Some(_) => return None, // two histories — no shared frame
                             }
-                            (Some(a), Some(b), Some(c)) if a == b && b == c => {
-                                let mut coeffs = [[nacre_scalar::Rat::from_int(0); 4]; 3];
-                                for (o, h) in coeffs.iter_mut().zip(tri) {
-                                    *o = *model.surface_name.get(&h)?.narrow()?;
-                                }
-                                let base = nacre_scalar::three_planes_rat(coeffs)?;
-                                let chain = crate::rotated_vertex::motion_chain(model, a)?;
-                                crate::rotated_vertex::replay(WitnessPoint::at(base), &chain)?
+                        }
+                        let leaf = leaf.expect("not the all-world arm");
+                        let mut coeffs = [[nacre_scalar::Rat::from_int(0); 4]; 3];
+                        for (o, h) in coeffs.iter_mut().zip(tri) {
+                            *o = *model.surface_name.get(&h)?.narrow()?;
+                        }
+                        // A world-stated carrier among chained ones is admissible iff the
+                        // chain fixes it — then its equation holds in the pre-motion frame
+                        // too. Otherwise: mixed frames, decline (see the doc).
+                        for (c, m) in coeffs.iter().zip(&motions) {
+                            if m.is_none()
+                                && !crate::rotated_vertex::chain_fixes_plane(model, leaf, c)
+                            {
+                                return None;
                             }
-                            _ => return None, // mixed frames — see the doc
-                        },
-                    );
+                        }
+                        let base = nacre_scalar::three_planes_rat(coeffs)?;
+                        let chain = crate::rotated_vertex::motion_chain(model, leaf)?;
+                        crate::rotated_vertex::replay(WitnessPoint::at(base), &chain)?
+                    });
                 }
             }
         }

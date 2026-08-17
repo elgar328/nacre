@@ -3945,10 +3945,17 @@ pub mod tests {
                         nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
                         nacre_topo::SurfaceTruth::Cylinder { motion } => *motion,
                     };
-                    let rotation = motion_of(tri[0]).expect("a mirrored image records its motion");
+                    // The caps were fixed by the Z turn and by the X mirror (normal ⊥ both),
+                    // so they are world-stated; the moved carriers share the one leaf whose
+                    // chain the fixed caps provably survive — the reconstruction below runs
+                    // through the walls' recorded [rotate, mirror] history unchanged.
+                    let leaves: Vec<_> = tri.iter().filter_map(|&h| motion_of(h)).collect();
+                    let rotation = *leaves
+                        .first()
+                        .expect("a mirrored image's corner names a moved carrier");
                     assert!(
-                        tri.iter().all(|&h| motion_of(h) == Some(rotation)),
-                        "the corner's planes share one motion leaf"
+                        leaves.iter().all(|&l| l == rotation),
+                        "the corner's moved planes share one motion leaf"
                     );
                     let mut coeffs = [[Rat::from_int(0); 4]; 3];
                     for (o, h) in coeffs.iter_mut().zip(tri) {
@@ -4157,28 +4164,44 @@ pub mod tests {
         // the moved ones (S7: the vertex follows its faces' motion — there is no base vertex
         // left to chase).
         let sh = m.solids.get(r2).outer;
-        let mut found_disc_base = false;
+        let own_surfaces: std::collections::HashSet<_> = m
+            .shells
+            .get(sh)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .collect();
+        let mut found_moved_carrier = false;
         for &fh in &m.shells.get(sh).faces {
             for he in &m.faces.get(fh).outer.half_edges {
                 for vh in m.edges.get(he.edge).vertices {
                     let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
                         continue;
                     };
-                    let moved = tri.iter().all(|&h| {
+                    // The carriers are the result's own planes — never a superseded
+                    // pre-move twin. (A restated cap's handle *equals* its pre-move
+                    // handle by intern-back, which is why this is a subset check on the
+                    // live faces' surfaces rather than "all carriers moved".)
+                    for h in tri {
+                        assert!(
+                            own_surfaces.contains(&h),
+                            "a vertex carrier is not one of the solid's own planes"
+                        );
+                    }
+                    if tri.iter().any(|&h| {
                         !matches!(
                             m.surface_truth(h),
                             nacre_topo::SurfaceTruth::Plane { motion: None, .. }
                         )
-                    });
-                    if moved {
-                        found_disc_base = true;
+                    }) {
+                        found_moved_carrier = true;
                     }
                 }
             }
         }
         assert!(
-            found_disc_base,
-            "a Rotated vertex's base is its Discovered seam vertex"
+            found_moved_carrier,
+            "a moved result's vertices name its moved planes"
         );
     }
 
@@ -4263,7 +4286,11 @@ pub mod tests {
         })
     }
 
-    /// Chain: `(node_count, axes-root-to-leaf)` for `s`'s first face's motion.
+    /// Chain: `(node_count, axes-root-to-leaf)` of the **fullest** face history of `s` — the
+    /// walls', which go through every motion. It used to read `faces[0]`, but that is a cap,
+    /// and a cap a rotation fixes is restated world-side now (no motion, or a shorter chain
+    /// begun by a later non-fixing motion) — the forest's story lives on the faces that
+    /// genuinely moved. `None` when no face carries a rotation.
     ///
     /// ★ S7 dropped a third field, `base_is_rotated` — "does this vertex's base vertex itself
     /// carry a motion?", the one-hop invariant that kept a replay from applying the same motion
@@ -4272,25 +4299,30 @@ pub mod tests {
     /// absorbed the invariant, and a probe field that could only ever read `false` would be
     /// theatre.
     fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar::Axis>)> {
-        let fh = m.shells.get(m.solids.get(s).outer).faces[0];
-        let &nacre_topo::SurfaceTruth::Plane {
-            motion: Some(rotation),
-            ..
-        } = m.surface_truth(m.faces.get(fh).surface)
-        else {
-            return None;
-        };
-        let mut axes = Vec::new();
-        let mut cur = Some(rotation);
-        while let Some(h) = cur {
-            let n = m.motion(h);
-            if let nacre_topo::Motion::Rotate { axis, .. } = n.motion {
-                axes.push(axis);
+        let mut best: Option<Vec<nacre_scalar::Axis>> = None;
+        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
+            let &nacre_topo::SurfaceTruth::Plane {
+                motion: Some(rotation),
+                ..
+            } = m.surface_truth(m.faces.get(fh).surface)
+            else {
+                continue;
+            };
+            let mut axes = Vec::new();
+            let mut cur = Some(rotation);
+            while let Some(h) = cur {
+                let n = m.motion(h);
+                if let nacre_topo::Motion::Rotate { axis, .. } = n.motion {
+                    axes.push(axis);
+                }
+                cur = n.parent;
             }
-            cur = n.parent;
+            axes.reverse();
+            if best.as_ref().is_none_or(|b| axes.len() > b.len()) {
+                best = Some(axes);
+            }
         }
-        axes.reverse();
-        Some((axes.len(), axes))
+        best.map(|axes| (axes.len(), axes))
     }
 
     /// **A chained boolean must not lose exactness.**
@@ -4321,7 +4353,11 @@ pub mod tests {
         m.rebuild_adjacency();
         let b = transform(&mut m, b, &rot_iso(Axis::Z, 30)).unwrap();
         m.rebuild_adjacency();
-        // The operands hold up: a rotated solid's faces do carry definitions.
+        // The operands hold up: a rotated solid's faces do carry definitions. The caps'
+        // *truth* is world-stated since the invariant-plane restatement, but the judging
+        // table re-chains a chain-fixed plane (the mirror takes the strongest description),
+        // so the whole table reads rotated — exactly as it did when the twin carried the
+        // motion itself.
         for (name, s) in [("operand a", a), ("operand b", b)] {
             let planes = crate::planes::collect_planes(&m, s).expect("planes");
             assert!(
@@ -4424,26 +4460,40 @@ pub mod tests {
         m.rebuild_adjacency();
 
         let mut leaves = std::collections::HashSet::new();
+        let mut caps = 0usize;
         let sh = m.solids.get(r).outer;
         for &fh in &m.shells.get(sh).faces {
             let s = m.faces.get(fh).surface;
-            let &nacre_topo::SurfaceTruth::Plane {
-                motion: Some(rotation),
-                ..
-            } = m.surface_truth(s)
-            else {
-                panic!("a rotated result's walls must carry a rotation");
-            };
-            assert_eq!(
-                crate::rotated_vertex::motion_chain(&m, rotation)
-                    .expect("an axis-aligned history holds no frame")
-                    .len(),
-                2,
-                "both rotations, once each"
-            );
-            leaves.insert(rotation);
+            match m.surface_truth(s) {
+                &nacre_topo::SurfaceTruth::Plane {
+                    motion: Some(rotation),
+                    ..
+                } => {
+                    assert_eq!(
+                        crate::rotated_vertex::motion_chain(&m, rotation)
+                            .expect("an axis-aligned history holds no frame")
+                            .len(),
+                        2,
+                        "both rotations, once each"
+                    );
+                    leaves.insert(rotation);
+                }
+                // Every rotation in this chain is about Z, so the z-caps are fixed by all
+                // of them and stay restated — the only faces allowed to carry nothing.
+                nacre_topo::SurfaceTruth::Plane { motion: None, .. } => {
+                    let n = m.surface_name.get(&s).unwrap().narrow().unwrap();
+                    assert!(
+                        n[0] == nacre_scalar::Rat::from_int(0)
+                            && n[1] == nacre_scalar::Rat::from_int(0),
+                        "only a Z-fixed cap may go without a history here"
+                    );
+                    caps += 1;
+                }
+                other => panic!("unexpected truth {other:?}"),
+            }
         }
         assert_eq!(leaves.len(), 2, "the two operands' histories stay apart");
+        assert!(caps > 0, "the restated caps are present in the result");
     }
 
     /// **A copy of a rotated solid is still exactly defined.**

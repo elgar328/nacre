@@ -170,7 +170,10 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
                 let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
                     return false;
                 };
-                tri.iter().all(|&h| {
+                // ★ `any`, not `all`: since the invariant-plane restatement the caps a
+                // rotation fixes are world-stated, so every corner names two moved walls
+                // and one restated cap — the moved provenance lives on the walls.
+                tri.iter().any(|&h| {
                     !matches!(
                         m.surface_truth(h),
                         nacre_topo::SurfaceTruth::Plane { motion: None, .. }

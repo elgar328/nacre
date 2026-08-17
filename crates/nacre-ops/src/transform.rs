@@ -233,6 +233,11 @@ fn chain_motion(
 /// vertex and every face's plane origin — the two things a judgment reads — and one rounding
 /// anywhere puts the whole solid on the recorded path.
 ///
+/// (The per-plane **surface-statement** exemption — pass 1's `invariant` flag, a plane the
+/// motion fixes as a set — is a different question and does not touch this one: the vertices
+/// of such a plane still move and still share the solid's node story; only the plane's own
+/// statement needed no new spelling.)
+///
 /// This answers for the **translation/reflection** part only; `chain_motion` reads
 /// `Isometry::is_exact` for the turn itself, and a rotation that is not exact makes the whole
 /// chain recorded anyway (the exception lapses the moment a history exists).
@@ -344,6 +349,12 @@ fn transport_points(motion: &Xform<'_>, p: [[Rat; 3]; 3]) -> Option<[[Rat; 3]; 3
 /// |---|---|---|
 /// | `None` (world) | `Some(leaf)` — the points stay pre-motion | `None` (points transported exactly) |
 /// | `Some(m)` | `Some(leaf)`, hanging off `m` — replaying from the root applies every motion once | unreachable (the exceptions lapse once a history exists) |
+///
+/// The `None (world)` row has a third outcome decided **before** this function is asked: a
+/// rigid motion that *fixes the plane* (`Isometry::fixes_plane` — pass 1's `invariant` flag)
+/// records nothing and carries the points **verbatim**, so the image interns back onto the
+/// source handle. Per plane, not per solid — the caps of a turned block take it while the
+/// walls land in this table.
 ///
 /// **One table for all three motions.** A reflection used to have its own column here, carrying a
 /// moved surface by conjugating its chain over a mirrored witness; it now appends a node like
@@ -570,7 +581,39 @@ fn transform_solid(
             .surface(model.surface(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
         let src_truth = model.surface_truth(s).clone();
-        let new_motion = moved_surface_motion(model, s, motion, exact, &mut surf_rot);
+        // ★ **A motion that fixes this plane restates nothing — the source statement already
+        // states the image.** The per-plane sibling of `motion_is_exact`'s whole-solid
+        // exemption: a rigid motion mapping this plane onto itself *as a set* (axis ∥
+        // normal, in-plane translation — `Isometry::fixes_plane`, exact) leaves the same
+        // points and no node to record, and re-pushing that statement interns back onto
+        // the **source handle** — the road `Copy` already takes for the identity. The caps
+        // of a solid turned about their own normal are the population; their frames stay
+        // world-spoken (`face_sketch_frame` verifies instead of declining) and their
+        // predicates keep the exact roads.
+        //
+        // `Known` + narrow name only: a `Through` plane's truth is vertex handles in a
+        // separate intern table, and a source that already carries a motion keeps today's
+        // recorded path (stage 1 — under it a fixed plane never gains a history, so a
+        // second turn about the same normal restates again). A mirror never restates here:
+        // an improper motion's parity interactions deserve their own measured stage.
+        let invariant = matches!(
+            &src_truth,
+            nacre_topo::SurfaceTruth::Plane {
+                points: nacre_topo::PlanePoints::Known(_),
+                motion: None,
+            }
+        ) && motion.rigid().is_some_and(|iso| {
+            model
+                .surface_name
+                .get(&s)
+                .and_then(|n| n.narrow())
+                .is_some_and(|c| iso.fixes_plane(c))
+        });
+        let new_motion = if invariant {
+            None
+        } else {
+            moved_surface_motion(model, s, motion, exact, &mut surf_rot)
+        };
         // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
         // `Model::push_surface_with_points`, so there is no second description to keep in step —
         // the agreement between points and coefficients was checked across the suite before the
@@ -595,7 +638,11 @@ fn transform_solid(
                     motion: src_m,
                 },
             ) => {
-                let carried = if new_motion != *src_m {
+                // ★ `invariant` must gate first: there `new_motion == *src_m == None`, and
+                // the else arm's expect names a probe (`motion_is_exact`) that never ran on
+                // this road — an irrational turn would panic in `transport_points`. The
+                // statement is the image's verbatim, so there is nothing to transport.
+                let carried = if invariant || new_motion != *src_m {
                     *p
                 } else {
                     transport_points(motion, *p).expect("probed by motion_is_exact")
@@ -841,7 +888,11 @@ mod tests {
         );
         assert!(deep.checked_add(t).is_none(), "the transport must overflow");
 
-        let iso = Isometry::translation([t, Rat::from_int(0), Rat::from_int(0)]);
+        // The z component keeps the doctored z-plane off the invariant branch (a purely-x
+        // translation *fixes* it, and a fixed plane is restated with no transport at all —
+        // this test is about the transport overflowing). `0 + 1` and `1 + 1` are exact, so
+        // the f64-side qualification above still holds for every corner.
+        let iso = Isometry::translation([t, Rat::from_int(0), Rat::from_int(1)]);
         let moved = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
         m.rebuild_adjacency();
         let moved_surf = m

@@ -17,10 +17,10 @@
 //! agreement is exact when it holds and a threshold would only paper over a third derivation.
 //!
 //! ★★ The refusal population is pinned per flavour below. It is defined by *verification
-//! failure*, not by a condition list — when the invariant-plane restatement lands (a plane a
-//! rotation maps onto itself gets restated world-side instead of carrying the motion), those
-//! cells start verifying and the pinned counts go red as intended news, the same dynamic the
-//! reject census uses.
+//! failure*, not by a condition list — and the invariant-plane restatement (2026-08-17)
+//! delivered the intended news exactly as this header once predicted: a plane the rotation
+//! maps onto itself keeps its world statement instead of carrying the motion, those cells
+//! now verify bit-for-bit, and the rotated pins measured 2 → 0.
 
 use nacre_math::Point2;
 use nacre_ops::{
@@ -83,12 +83,14 @@ fn rot(axis: Axis, deg: i128) -> Isometry {
 
 /// The four flavours: how the block is placed, and how many faces must decline.
 ///
-/// The declining faces are the world-branch faces whose surface carries a motion — planes the
-/// rotation maps onto themselves (and, in the translated flavour, then shifts): the pad sketches
-/// them in world axes with the frame node elided, and stating those axes in the plane's
-/// motion-carrying vocabulary would need the motion's inverse image, which is irrational.
-/// Everything else must agree to the bit — including the flip=true axis-aligned faces the old
-/// fallback reported point-symmetric.
+/// Since the invariant-plane restatement, a plane the motion fixes (the z-caps here — the
+/// rotation is about their own normal, the translation slides within them) keeps its world
+/// statement and no motion node, so its canonical frame verifies and **nothing declines** in
+/// any flavour. The declining population that remains for `FrameNotRepresentable` is the one
+/// stage 1 leaves recorded: exactly-statable-but-shifted images (a z-translation after the
+/// turn), mirror chains, and second-generation moved sources — none of which these flavours
+/// build. Everything must agree to the bit — including the flip=true axis-aligned faces the
+/// old fallback reported point-symmetric.
 fn flavours() -> Vec<(&'static str, Model, Handle<Solid>, usize)> {
     let mut out = Vec::new();
 
@@ -102,14 +104,16 @@ fn flavours() -> Vec<(&'static str, Model, Handle<Solid>, usize)> {
     let s = xf(&mut m, s, rot(Axis::Z, 90));
     out.push(("rot90", m, s, 0));
 
-    // 30°: the two rotation-invariant planes (z = 0, z = 1) carry the motion.
+    // 30°: the two rotation-invariant planes (z = 0, z = 1) are restated — no motion, no
+    // decline; the four walls carry the chain and transcribe.
     let mut m = Model::new();
     let s = block(&mut m);
     let s = xf(&mut m, s, rot(Axis::Z, 30));
-    out.push(("rot30", m, s, 2));
+    out.push(("rot30", m, s, 0));
 
-    // 30° then an exact translation — recorded because a history exists, so the same two planes
-    // decline; before the fix their returned frame was also 1.0 off in origin.
+    // 30° then an exact in-plane translation — the walls' history records it, while the caps
+    // are fixed by both motions and stay restated. (Before the restatement the caps declined
+    // here, and before the transcription fix their returned frame was 1.0 off in origin.)
     let mut m = Model::new();
     let s = block(&mut m);
     let s = xf(&mut m, s, rot(Axis::Z, 30));
@@ -118,7 +122,7 @@ fn flavours() -> Vec<(&'static str, Model, Handle<Solid>, usize)> {
         s,
         Isometry::translation([Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)]),
     );
-    out.push(("rot30+t", m, s, 2));
+    out.push(("rot30+t", m, s, 0));
 
     out
 }

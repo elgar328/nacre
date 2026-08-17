@@ -212,6 +212,75 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
     Some(chain)
 }
 
+/// Whether every node of `leaf`'s recorded chain fixes the plane `coeffs` **as a set** —
+/// the consumer-side twin of the producer's `Isometry::fixes_plane`, on the same scalar
+/// atoms (one rule per motion kind, two thin composers).
+///
+/// What it licenses: a world-stated plane among motion-carrying carriers is usable in
+/// the carriers' *pre-motion* frame **iff** the chain fixes it — then its world equation
+/// is the same equation there, and the corner solves as if all three shared the chain.
+/// The invariant-plane restatement mints exactly this shape (a turned block's corner =
+/// restated cap × two chained walls), and this check is what keeps the licence honest:
+/// a frame-hosted datum's cap (open item 14's population) hits the `Frame` arm and the
+/// caller stays declined.
+///
+/// Conservative by construction — `Frame` nodes are never fixed (their basis is
+/// irrational), and the scalar atoms answer `false` on overflow.
+pub(crate) fn chain_fixes_plane(
+    model: &Model,
+    leaf: Handle<MotionNode>,
+    coeffs: &[nacre_scalar::Rat; 4],
+) -> bool {
+    chain_fixes(model, leaf, coeffs, false)
+}
+
+/// The strict twin: every node carries the plane's **coefficient row verbatim**, not merely
+/// the set. The one place they part is a mirror whose plane is the carrier itself (`n ∥ axis`,
+/// on-plane): the set maps to itself but the row comes back negated — harmless to a Cramer
+/// solve (both determinants negate, the ratio stands), fatal to a determinant *sign* read.
+/// So [`chain_fixes_plane`] licenses solving, and this licenses judging-table descriptions
+/// ([`crate::planes::collect_planes`]'s mirror re-chaining).
+pub(crate) fn chain_preserves_plane_row(
+    model: &Model,
+    leaf: Handle<MotionNode>,
+    coeffs: &[nacre_scalar::Rat; 4],
+) -> bool {
+    chain_fixes(model, leaf, coeffs, true)
+}
+
+fn chain_fixes(
+    model: &Model,
+    leaf: Handle<MotionNode>,
+    coeffs: &[nacre_scalar::Rat; 4],
+    rows_verbatim: bool,
+) -> bool {
+    let mut cur = Some(leaf);
+    while let Some(h) = cur {
+        let n: &MotionNode = model.motion(h);
+        let fixed = match &n.motion {
+            Motion::Rotate { axis, .. } => nacre_scalar::axis_rotation_fixes_plane(*axis, coeffs),
+            Motion::Translate { offset } => nacre_scalar::translation_fixes_plane(offset, coeffs),
+            Motion::Mirror { axis, offset } => {
+                if rows_verbatim {
+                    coeffs[match axis {
+                        nacre_scalar::Axis::X => 0,
+                        nacre_scalar::Axis::Y => 1,
+                        nacre_scalar::Axis::Z => 2,
+                    }] == nacre_scalar::Rat::from_int(0)
+                } else {
+                    nacre_scalar::mirror_fixes_plane(*axis, *offset, coeffs)
+                }
+            }
+            Motion::Frame { .. } => false,
+        };
+        if !fixed {
+            return false;
+        }
+        cur = n.parent;
+    }
+    true
+}
+
 /// **One plane's frame, as the motion nodes that carry it out to the world** — in reading order,
 /// root first.
 ///
@@ -458,7 +527,7 @@ mod tests {
         // realization is nowhere near a quadrantal one, then a translate and a reflection. A single
         // Z-turn about a rational pivot exercises one node and one of the two rotate axes.
         let mv = |iso| Step::Move(Box::new(iso));
-        let chains: [Vec<Step>; 3] = [
+        let chains: [Vec<Step>; 4] = [
             vec![mv(rot30z())],
             vec![
                 mv(turn(Axis::Z, [1, 1, 0], (2749, 71))),
@@ -476,8 +545,14 @@ mod tests {
                 Step::Flip(Axis::X, R::new(1, 2).unwrap()),
                 mv(turn(Axis::Z, [0, 0, 0], (271, 4))),
             ],
+            // ★ A same-axis depth-2 chain: the caps are fixed by *both* turns (restated
+            // twice, still world-stated), so their corners exercise the fixed-carrier
+            // licence at depth 2 — walls [Z, Z], caps None, `chain_fixes_plane` proving
+            // the caps ride the whole chain.
+            vec![mv(rot30z()), mv(turn(Axis::Z, [2, -1, 3], (2749, 71)))],
         ];
         let mut checked = 0;
+        let mut declined = 0;
         for chain in &chains {
             let mut m = Model::new();
             let s = m.add_cuboid(
@@ -509,21 +584,36 @@ mod tests {
                             nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
                             nacre_topo::SurfaceTruth::Cylinder { motion } => *motion,
                         };
-                        let leaf = motion_of(tri[0]);
-                        assert!(
-                            leaf.is_some() && tri.iter().all(|&h| motion_of(h) == leaf),
-                            "a moved solid's faces share one motion leaf"
-                        );
+                        // The solvable population mirrors `solid_points`' own criterion: the
+                        // moved carriers share one leaf, and a world-stated carrier among
+                        // them is provably fixed by that chain (the restatement licence).
+                        // A corner whose carriers hold *different* leaves — a mixed-axis
+                        // chain leaves a partially-fixed cap with a shorter history — is
+                        // production's honest decline (Arrange), counted, not asserted.
+                        let leaves: Vec<_> = tri.iter().filter_map(|&h| motion_of(h)).collect();
+                        let leaf = *leaves.first().expect("a moved solid moves some carrier");
+                        if !leaves.iter().all(|&l| l == leaf) {
+                            declined += 1;
+                            continue;
+                        }
                         let mut coeffs = [[R::from_int(0); 4]; 3];
                         for (o, h) in coeffs.iter_mut().zip(tri) {
                             *o = *m.surface_name.get(&h).unwrap().narrow().unwrap();
+                        }
+                        for (c, h) in coeffs.iter().zip(tri) {
+                            if motion_of(h).is_none() {
+                                assert!(
+                                    chain_fixes_plane(&m, leaf, c),
+                                    "a world-stated carrier must be provably fixed by the chain"
+                                );
+                            }
                         }
                         let base = nacre_scalar::three_planes_rat(coeffs)
                             .expect("three distinct planes of a cuboid corner meet");
                         let replayed = replay_chain_coord(
                             &m,
                             [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
-                            leaf.unwrap(),
+                            leaf,
                         )
                         .unwrap();
                         assert_eq!(replayed, m.vertex_point(vh).as_array());
@@ -532,7 +622,14 @@ mod tests {
                 }
             }
         }
-        assert!(checked > 100, "walked only {checked} vertices");
+        // Both populations must be real, or half the lock is vacuous: the single-turn and
+        // same-axis chains solve (fixed caps riding the licence), the mixed-axis chains
+        // decline at their partially-fixed corners.
+        assert!(checked > 80, "solved only {checked} vertices");
+        assert!(
+            declined > 0,
+            "no mixed-leaf corner declined — the residual vanished?"
+        );
     }
 
     /// A chain is read root-to-leaf, so replaying it applies the rotations in the order they
@@ -555,29 +652,42 @@ mod tests {
                 angle: Angle::from_deg(R::from_int(45)).unwrap(),
             }),
         );
-        let sh = m.solids.get(r).outer;
-        let fh = m.shells.get(sh).faces[0];
         // The motion is the *face's* (S7: surfaces record it; vertices follow their planes).
-        let &nacre_topo::SurfaceTruth::Plane {
-            motion: Some(rotation),
-            ..
-        } = m.surface_truth(m.faces.get(fh).surface)
-        else {
-            panic!("a rotated face records its motion");
-        };
-        let axes: Vec<Axis> = motion_chain(&m, rotation)
-            .expect("an axis-aligned history holds no frame")
-            .iter()
-            .filter_map(|n| match n {
-                MoveNode::Rotate { axis, .. } => Some(*axis),
-                MoveNode::Translate { .. }
-                | MoveNode::Mirror { .. }
-                | MoveNode::Frame { .. }
-                | MoveNode::FrameWide(_)
-                | MoveNode::FrameThrough(_) => None,
-            })
-            .collect();
-        assert_eq!(axes, vec![Axis::Z, Axis::X]);
+        // Faces carry different depths since the restatement — the caps were fixed by the
+        // Z turn (restated) and only joined at the X turn — so the order lock reads every
+        // face: the walls' `[Z, X]` (never `[X, Z]` — the reversal this test exists to
+        // forbid) and the caps' `[X]`.
+        let sh = m.solids.get(r).outer;
+        let mut counts: std::collections::HashMap<Vec<Axis>, usize> = Default::default();
+        for &fh in &m.shells.get(sh).faces {
+            let &nacre_topo::SurfaceTruth::Plane {
+                motion: Some(rotation),
+                ..
+            } = m.surface_truth(m.faces.get(fh).surface)
+            else {
+                panic!("every face of this solid records a motion");
+            };
+            let axes: Vec<Axis> = motion_chain(&m, rotation)
+                .expect("an axis-aligned history holds no frame")
+                .iter()
+                .filter_map(|n| match n {
+                    MoveNode::Rotate { axis, .. } => Some(*axis),
+                    MoveNode::Translate { .. }
+                    | MoveNode::Mirror { .. }
+                    | MoveNode::Frame { .. }
+                    | MoveNode::FrameWide(_)
+                    | MoveNode::FrameThrough(_) => None,
+                })
+                .collect();
+            *counts.entry(axes).or_insert(0) += 1;
+        }
+        assert_eq!(
+            counts,
+            [(vec![Axis::Z, Axis::X], 4), (vec![Axis::X], 2)]
+                .into_iter()
+                .collect(),
+            "walls read root-to-leaf [Z, X]; the Z-fixed caps joined at X"
+        );
     }
 
     /// Push a plane whose exact triple is `pts`, with an f64 `Plane` **consistent with it**

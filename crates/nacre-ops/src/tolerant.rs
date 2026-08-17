@@ -213,6 +213,9 @@ mod tests {
         let r = rotated(&mut m, s);
         let planes = plane_table(&m, r);
         for pi in &planes {
+            // The caps' *truth* is world-stated since the invariant-plane restatement, but
+            // the table re-chains a chain-fixed plane (the mirror takes the strongest
+            // description), so every plane of a uniformly-turned solid reads rotated here.
             assert!(pi.rotated, "a rotated solid's planes are flagged rotated");
             on_plane(pi);
             assert!(
@@ -442,7 +445,10 @@ mod tests {
         let mut planes = plane_table(&m, a);
         let na = planes.len();
         let pb = plane_table(&m, b);
-        assert!(planes.iter().all(|p| p.rotated), "rotated operand flagged");
+        assert!(
+            planes.iter().all(|p| p.rotated),
+            "rotated operand flagged (the table re-chains its chain-fixed caps)"
+        );
         assert!(
             pb.iter().all(|p| !p.rotated),
             "axis-aligned operand not flagged"

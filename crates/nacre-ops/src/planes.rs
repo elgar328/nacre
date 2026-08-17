@@ -347,6 +347,66 @@ pub(crate) fn collect_planes(
             });
         }
     }
+    // ★★★ **The mirror takes the strongest description — a restated plane rejoins its
+    // solid's chain here.** The truth keeps a motion-fixed plane world-stated (the
+    // invariant-plane restatement: one plane, one handle, no node), but this table is a
+    // per-operation mirror, and a chain-borne description is strictly stronger when the
+    // rest of the solid carries one: with every plane on one chain the shared-motion
+    // roads answer exactly — a shared rotation must not turn exact questions into
+    // assumed ones (`a_shared_rotation_still_assumes_nothing`). A fixed plane admits it
+    // verbatim: its world points replayed through the chain still lie on the plane (the
+    // chain maps the plane onto itself), and its world coefficients ARE its pre-motion
+    // coefficients — bit-identical to the description the moved twin carried before the
+    // restatement. Row-verbatim fixedness (`chain_preserves_plane_row`), not mere
+    // set-fixedness: a sign-flipped row would poison determinant reads.
+    //
+    // The chain is chosen deterministically (lowest node index that qualifies) so replay
+    // reproduces the table; a plane no chain fixes keeps its world description.
+    let leaves = {
+        let mut v: Vec<Handle<nacre_topo::MotionNode>> =
+            out.iter().filter_map(|f| f.motion).collect();
+        v.sort_unstable_by_key(|h| h.index());
+        v.dedup();
+        v
+    };
+    if !leaves.is_empty() {
+        for f in out.iter_mut() {
+            if f.motion.is_some() {
+                continue;
+            }
+            let Some(name) = f.base_rat else { continue };
+            let nacre_topo::SurfaceTruth::Plane {
+                points: nacre_topo::PlanePoints::Known(pts),
+                motion: None,
+            } = model.surface_truth(f.surf)
+            else {
+                continue;
+            };
+            let Some(&c) = leaves
+                .iter()
+                .find(|&&c| crate::rotated_vertex::chain_preserves_plane_row(model, c, &name))
+            else {
+                continue;
+            };
+            let Some(chain) = crate::rotated_vertex::motion_chain(model, c) else {
+                continue;
+            };
+            let turned: Option<Vec<WitnessPoint>> = pts
+                .iter()
+                .map(|&b| crate::rotated_vertex::replay(WitnessPoint::at(b), &chain))
+                .collect();
+            let Some(w) = turned else { continue }; // conservative: keep the world description
+            let mut w: [WitnessPoint; 3] = [w[0].clone(), w[1].clone(), w[2].clone()];
+            let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
+            let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
+            if e1.cross(e2).dot(f.n_out) < 0.0 {
+                w.swap(1, 2);
+            }
+            f.tri_pt3 = w;
+            f.rotated = true;
+            f.motion = Some(c);
+        }
+    }
     Ok(out)
 }
 
