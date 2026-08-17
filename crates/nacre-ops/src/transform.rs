@@ -272,44 +272,50 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
     // triple as the pre-motion truth. The probe is per solid like everything here, so one
     // overflowing surface puts the whole solid on the recorded path rather than splitting it.
     let points_move = |s: Handle<Surface>| -> bool {
-        // ★★★★★ **The `else` here is the most dangerous line in this file, and the compiler
-        // cannot see it.** A `let`-`else` is not a match: adding `PlanePoints::Through` produced
-        // exactly two non-exhaustive-match errors and **not** one here — this arm would have
-        // swallowed the new variant silently.
-        //
-        // A cylinder answering `true` is right because its truth carries *no geometry* (until M6
-        // it is `Cylinder { motion }`), so there is nothing a motion could fail to transport. A
-        // `Through` plane's truth **does** carry geometry — by reference — and the no-node path
-        // would transport nothing while the f64 cache moved, leaving truth and cache describing
-        // different planes. So it must refuse that path, which is what `false` says.
-        let truth = model.surface_truth(s);
-        if matches!(
-            truth,
+        // ★★★★★ **An exhaustive `match`, deliberately — this used to be the most dangerous
+        // `let`-`else` in the file, and the compiler could not see it.** Adding
+        // `PlanePoints::Through` produced exactly two non-exhaustive-match errors and **not**
+        // one here — the fallback arm would have swallowed the new variant silently, answering
+        // for geometry it had never seen. Spelled as a match, the next variant (M6's) is a
+        // compile error at exactly this decision.
+        match model.surface_truth(s) {
+            // The very function pass 1 will transport with — sharing it is what makes the
+            // probe's promise ("this will not overflow") structural rather than a parallel
+            // re-derivation.
+            nacre_topo::SurfaceTruth::Plane {
+                points: nacre_topo::PlanePoints::Known(p),
+                ..
+            } => transport_points(motion, *p).is_some(),
+            // A `Through` plane's truth carries geometry **by reference** — the no-node path
+            // would transport nothing while the f64 cache moved, leaving truth and cache
+            // describing different planes. So it refuses that path.
             nacre_topo::SurfaceTruth::Plane {
                 points: nacre_topo::PlanePoints::Through(_),
                 ..
-            }
-        ) {
-            return false;
+            } => false,
+            // `true` is right **while** a cylinder's truth carries no geometry (`Cylinder
+            // { motion }` until M6): there is nothing a motion could fail to transport. The
+            // day M6 gives this variant geometry, that premise expires — and this arm, not a
+            // fallback, is where the compiler will demand the answer.
+            nacre_topo::SurfaceTruth::Cylinder { .. } => true,
         }
-        let nacre_topo::SurfaceTruth::Plane {
-            points: nacre_topo::PlanePoints::Known(p),
-            ..
-        } = truth
-        else {
-            return true; // a cylinder carries no points
-        };
-        // The very function pass 1 will transport with — sharing it is what makes the probe's
-        // promise ("this will not overflow") structural rather than a parallel re-derivation.
-        transport_points(motion, *p).is_some()
     };
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
-            if let Surface::Plane(pl) = model.surface(face.surface) {
-                if !all(pl.origin()) {
-                    return false;
+            // Exhaustive for the same reason as `points_move` above: a new `Surface` variant
+            // (M6's sphere/cone) must be a compile error here, not a silently skipped probe.
+            match model.surface(face.surface) {
+                Surface::Plane(pl) => {
+                    if !all(pl.origin()) {
+                        return false;
+                    }
                 }
+                // Licensed by this function's own charter: it probes "the two things a
+                // judgment reads" — vertex coordinates and *plane* origins — and no M5
+                // judgment reads a cylinder's origin (cylinders never reach a boolean).
+                // When M6 admits cylinders to judgments, this arm owes an origin/axis probe.
+                Surface::Cylinder(_) => {}
             }
             if !points_move(face.surface) {
                 return false;
