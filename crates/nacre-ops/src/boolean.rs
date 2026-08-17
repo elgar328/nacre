@@ -836,6 +836,24 @@ fn reconstruct(
         _ => None,
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
+    // ★ **The whole-result judgement runs before a single cell is minted.** Everything
+    // `self_touch_reject` reads — the seam table, the per-body component lists, the faces'
+    // rings — exists right here, and an impossible result must be named by its truth, not by
+    // whichever local derivation happens to fail first on its unnameable corners: a
+    // self-touching body's pinch line cannot be honestly named by any face-local rule (its
+    // in-plane edges are lobe-to-lobe, its touch edge carries four faces — measured, the
+    // Stage-A probe, dev-log 2026-08-17). A held grouping error stays held (raised further
+    // down, where the old code raised it); the self-touch question is only askable of a
+    // grouping that answered.
+    if let Ok(g) = &grouping {
+        let body_comps: Vec<Vec<usize>> =
+            g.positives.iter().map(|m| g.comps_of[m].clone()).collect();
+        let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); g.n];
+        for (i, lf) in faces.iter().enumerate() {
+            by_comp_lf[g.labels[i]].push(lf);
+        }
+        self_touch_reject(jd, seam, &body_comps, &by_comp_lf)?;
+    }
     // ★★ **A result vertex is named by the faces that meet it.**
     //
     // The arrangement names a point by a canonical plane triple — lexicographically first among
@@ -1149,10 +1167,6 @@ fn reconstruct(
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
     }
-    let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
-    for (i, lf) in faces.iter().enumerate() {
-        by_comp_lf[labels[i]].push(lf);
-    }
     let shells: Vec<Handle<Shell>> = by_comp
         .iter()
         .map(|faces| {
@@ -1161,11 +1175,6 @@ fn reconstruct(
             })
         })
         .collect();
-    // ★ The invariant this function is responsible for, checked where it is established: every
-    // vertex of every result names surfaces this solid has faces on. A violation builds a solid
-    // that cannot be moved, and used to surface as a rejection two operations downstream — so the
-    // whole test suite is the corpus for it now, not the one caller that happens to transform.
-    let mut groups: Vec<Vec<usize>> = Vec::new();
     // Emit each material solid (with its cavities) in a canonical, replay-stable order keyed on
     // geometry, so a downstream op can index the returned Vec deterministically. ★ One material
     // needs no key and must not pay for one — `comp_key` walks every face of the piece.
@@ -1199,17 +1208,12 @@ fn reconstruct(
                 .filter(|&x| x != c)
                 .map(|x| shells[x])
                 .collect();
-            groups.push(comps);
             model.push_solid(Solid {
                 outer: shells[c],
                 cavities,
             })
         })
         .collect());
-    let out = out.and_then(|solids| {
-        self_touch_reject(jd, seam, &groups, &by_comp_lf)?;
-        Ok(solids)
-    });
     debug_assert!(
         out.as_ref().is_ok_and(|solids| solids
             .iter()
@@ -1305,7 +1309,12 @@ pub(crate) fn unify_coplanar_faces(
             .iter()
             .map(|&fi| kept[fi].as_ref().expect("member present"))
             .collect();
-        let rings = merge_component(&group, jd)?;
+        // Abstention: the group pinches at a point, so its faces are emitted as-is — the
+        // whole-result judgement (`self_touch_reject`, run before any cell is minted) owns
+        // what this shape is about to be named for.
+        let Some(rings) = merge_component(&group, jd)? else {
+            continue;
+        };
         let (plane_idx, flip) = (group[0].plane_idx, group[0].flip);
         merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
             plane_idx,
@@ -1349,11 +1358,18 @@ fn seam_ring(ring: &[Node]) -> Vec<[usize; 3]> {
 type RegionRings = (Ring, Vec<Ring>);
 
 /// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
-/// the holes that belong to it.
+/// the holes that belong to it. `Ok(None)` is **abstention**: the group's pieces meet at a point,
+/// the merged contour would be a figure-8, and there is no cycle set to re-thread — the caller
+/// emits the group as-is. Merging is a tidiness pass, not a correctness one, so a merge that
+/// cannot merge passes through; the whole-result judgement such a shape is headed for
+/// ([`self_touch_reject`], which runs before any cell is minted) is not this function's to
+/// pre-empt. (It used to reject `CoplanarPinch` here — a capability-limit name for what is, on
+/// every input that reaches it, a self-touching result; the detour of naming it from here was
+/// measured and declined twice before the abstention landed, dev-log 2026-08-16/17.)
 fn merge_component(
     group: &[&LocalFace],
     jd: &Judge<'_, WorkingPlane>,
-) -> Result<Vec<RegionRings>, BoolError> {
+) -> Result<Option<Vec<RegionRings>>, BoolError> {
     // 1. Collect directed edges **with their walls**. A repeat in the same direction means two
     //    faces claim the same side.
     // One map, `(count, wall)` — the wall rides along rather than in a second table.
@@ -1379,42 +1395,17 @@ fn merge_component(
         return Err(reject(RejectReason::CoplanarMerge));
     }
     // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a
-    //    point and the cycles are not determined — the merged contour would be a figure-8.
-    //
-    // ★★ **Its own name, because this is the one merge guard that fires** (census: the other
-    // nine sites of the old shared `CoplanarMerge` label have never fired in the suite), and
-    // what it sees is a specific thing: coplanar pieces of one edge-connected group pinching at
-    // a point. ★ **Declining to merge instead was tried and measured (2026-08-16)**: leaving the
-    // group unmerged sends the 45° fold one check further, where it dies as `StraightAngle` —
-    // another `NotSupported` symptom name, not the truth — so the local-limit chain is more
-    // than one layer deep and unwinding it is not this guard's job. The honest statement from
-    // *here* is the capability limit itself.
+    //    point and the cycles are not determined — the merged contour would be a figure-8:
+    //    nothing to re-thread, so the merge abstains (see the function doc). Which node
+    //    collided is irrelevant to the outcome, so the first collision answers.
     let mut next: HashMap<Node, Node> = HashMap::new();
-    // The witness is the *minimum* pinch node, not the first collision: `dirs` is a `HashMap`,
-    // and "which node collided first" would vary run to run. A node collides iff it has two or
-    // more outgoing survivors, which is a fact about the contour, not the iteration.
-    let mut pinch: Option<Node> = None;
     for &(a, b) in dirs.keys() {
         if dirs.contains_key(&(b, a)) {
             continue; // interior
         }
         if next.insert(a, b).is_some() {
-            pinch = Some(pinch.map_or(a, |p| p.min(a)));
+            return Ok(None);
         }
-    }
-    if let Some(Node::Seam(t)) = pinch {
-        // Realized from the node's own three planes — the seam table does not exist yet at this
-        // stage. `None` (a near-degenerate meet) simply drops the location, never the reject.
-        let at = nacre_geom::intersect::three_planes(
-            &jd.planes[t[0]].plane,
-            &jd.planes[t[1]].plane,
-            &jd.planes[t[2]].plane,
-        )
-        .map(crate::RejectWhere::Point);
-        return Err(match at {
-            Some(w) => crate::reject_at(RejectReason::CoplanarPinch, w),
-            None => reject(RejectReason::CoplanarPinch),
-        });
     }
     let mut starts: Vec<Node> = next.keys().copied().collect();
     starts.sort_unstable();
@@ -1488,7 +1479,7 @@ fn merge_component(
             .1
             .push(hole);
     }
-    Ok(faces)
+    Ok(Some(faces))
 }
 
 /// Drop straight-angle vertices: a node whose only two neighbours across **all** rings continue

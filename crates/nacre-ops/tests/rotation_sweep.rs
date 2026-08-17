@@ -259,9 +259,15 @@ fn the_thirty_degree_sweep_runs_to_completion() {
 /// copy comes back as two of them (`the_hundred_and_twenty_degree_copy_is_two_bodies`). The
 /// reading was right about the *single* body the reconstruction used to weld, and wrong about the
 /// answer.
+///
+/// ★★★ **45° says its truth now** (2026-08-17): the arm landing coplanar on its own body is a
+/// self-touch, and since the merge abstains on a pinching group (nothing to re-thread) and the
+/// whole-result judgement runs before minting, the reject is `SelfTouchingResult` — `Impossible`,
+/// with the touching edge itself as the witness — where for two days it was `CoplanarPinch`
+/// (`NotSupported`, a capability-limit name raised by a site that could not see the whole result).
 #[test]
 fn the_other_rejections_are_untouched() {
-    let cases: [(usize, RejectReason); 1] = [(45, RejectReason::CoplanarPinch)];
+    let cases: [(usize, RejectReason); 1] = [(45, RejectReason::SelfTouchingResult)];
     for (step, expected) in cases {
         let mut m = Model::new();
         let u = unit(&mut m);
@@ -289,17 +295,25 @@ fn the_other_rejections_are_untouched() {
         });
         let (reason, at) = got.expect("the sweep was expected to reject");
         assert_eq!(reason, expected, "the {step}° sweep's rejection changed");
-        // The pinch witness must lie on the merge group's own plane. Every fuse here rotates
-        // about Z, so coplanar groups live on the horizontal faces — the prism's z = 0 or
-        // z = 12 (the fixture's own height) — and a wrongly-realized point would land on
-        // neither. (Which of x/y it lands at would re-derive the fold; the plane is the part
-        // the algebra pins.)
-        let Some(nacre_ops::RejectWhere::Point(p)) = at else {
-            panic!("the {step}° pinch carries no witness point: {at:?}");
+        // The witness is the touching edge itself. Every fuse here rotates about Z, so the
+        // self-touch is the vertical line the coplanar pinch extrudes along: its endpoints sit
+        // on the two horizontal caps (z = 0 and z = 12, the fixture's own height) and share
+        // their x/y — a wrongly-realized segment would break one of those. (Pinning the exact
+        // x/y would re-derive the fold; the algebra pins the vertical-line shape only.)
+        let Some(nacre_ops::RejectWhere::Segment([a, b])) = at else {
+            panic!("the {step}° self-touch carries no witness segment: {at:?}");
         };
+        let (mut lo, mut hi) = (a[2], b[2]);
+        if lo > hi {
+            std::mem::swap(&mut lo, &mut hi);
+        }
         assert!(
-            p[2].abs() < 1e-9 || (p[2] - 12.0).abs() < 1e-9,
-            "the {step}° pinch witness is off both horizontal planes: {p:?}"
+            lo.abs() < 1e-9 && (hi - 12.0).abs() < 1e-9,
+            "the {step}° touch segment does not span the caps: {a:?} {b:?}"
+        );
+        assert!(
+            (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9,
+            "the {step}° touch segment is not vertical: {a:?} {b:?}"
         );
     }
 }

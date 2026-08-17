@@ -213,11 +213,12 @@ fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 }
 
 /// ⑥ ★ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
-/// another, giving a solid of zero thickness. What comes back is `CoplanarPinch` — the merge
-/// guard's own capability limit, under its own name since 2026-08-16 (this census measured that
-/// it was the only firing site of the old shared `CoplanarMerge` label). The deeper truth (a
-/// self-touch, `Impossible`) still needs the figure-8 merge: the measured detour of skipping the
-/// merge died one check later as `StraightAngle` (`rotation_sweep.rs`, dev-log).
+/// another, giving a solid of zero thickness — a self-touch. What comes back is its truth,
+/// `SelfTouchingResult` (`Impossible`, the touching edge as the witness), since 2026-08-17: the
+/// merge abstains on a pinching group and the whole-result judgement runs before minting. (The
+/// two-day intermediate was `CoplanarPinch` — the merge guard's capability limit under its own
+/// name, which this census measured as the only firing site of the old shared `CoplanarMerge`
+/// label; both the name and its raise site are gone.)
 fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let plate = [
         [0.0, 0.0],
@@ -304,10 +305,10 @@ const CORPUS: [Fixture; 7] = [
     },
     Fixture {
         name: "fold-45",
-        expect: Some(RejectReason::CoplanarPinch),
+        expect: Some(RejectReason::SelfTouchingResult),
         run: fold_45,
-        raised: &[("coplanar_pinch", None, BOOLEAN)],
-        surfaced: &[("coplanar_pinch", None)],
+        raised: &[("self_touching_result", None, BOOLEAN)],
+        surfaced: &[("self_touching_result", None)],
     },
     Fixture {
         name: "plain-fuse",
@@ -401,17 +402,18 @@ fn the_reject_census() {
             .1
     };
 
-    // ★★ Assertion 4: **the point-contact merge guard is one site, under its own name.** It was
-    // one of `CoplanarMerge`'s ten sites — the only one that ever fired — and this census is what
-    // measured that and licensed giving it its own name (`CoplanarPinch`, 2026-08-16). The
-    // baseline going red on that change was the census working as designed: the vocabulary change
-    // showed up in the diff. Distinct *sites*, not raise counts: counts move with the build
-    // (`debug` re-runs every traced boolean, `parallel` evaluates the classes a failing input
-    // would have skipped), and the claim is about how many guards speak, not how often.
+    // ★★ Assertion 4: **the fold's truth is one site, the whole-result judgement.** The
+    // point-contact merge guard it used to hit (`CoplanarPinch`, 2026-08-16, this census's own
+    // measurement) abstains since 2026-08-17 — the merge emits a pinching group unmerged and
+    // `self_touch_reject`, hoisted before minting, names the shape. Both baseline reds were the
+    // census working as designed: the vocabulary changes showed up in the diff. Distinct
+    // *sites*, not raise counts: counts move with the build (`debug` re-runs every traced
+    // boolean, `parallel` evaluates the classes a failing input would have skipped), and the
+    // claim is about how many guards speak, not how often.
     assert_eq!(
-        by("fold-45").distinct_sites("coplanar_pinch"),
+        by("fold-45").distinct_sites("self_touching_result"),
         1,
-        "a second `coplanar_pinch` guard started ringing.\n{}",
+        "a second `self_touching_result` guard started ringing.\n{}",
         by("fold-45").report()
     );
     // ★ The positive control for that counter: it can answer something other than 1. The
@@ -419,9 +421,9 @@ fn the_reject_census() {
     // E on purpose, so the control is the other direction now — a fixture where the reason
     // never rings at all.
     assert_eq!(
-        by("plain-fuse").distinct_sites("coplanar_pinch"),
+        by("plain-fuse").distinct_sites("self_touching_result"),
         0,
-        "a successful boolean rang the pinch guard.\n{}",
+        "a successful boolean rang the self-touch guard.\n{}",
         by("plain-fuse").report()
     );
 

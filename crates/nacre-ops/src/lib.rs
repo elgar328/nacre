@@ -379,9 +379,10 @@ pub enum RejectClass {
     /// **The kernel's current coverage ends here** — a fact about the kernel, and nothing is
     /// judged about the input itself. Epistemically the same input *may* succeed at a later
     /// milestone (the kernel cannot rule it out from where this class is assigned), but that is
-    /// a possibility, not a promise: some members will only ever earn a more precise rejection
-    /// (the 45° fold reaches `CoplanarPinch` here today and would reach an `Impossible` check
-    /// if the figure-8 merge existed).
+    /// a possibility, not a promise: some members will only ever earn a more precise rejection.
+    /// (The 45° fold was this class's example for two days — `CoplanarPinch` — until the merge
+    /// learned to abstain and the fold started reaching its `Impossible` truth,
+    /// `SelfTouchingResult`.)
     ///
     /// ★ Renamed from `NotSupportedYet` (2026-08-17): the "Yet" read as a prediction that
     /// support is coming — the same smuggled tense the user-facing sentence had — and a
@@ -737,25 +738,12 @@ pub enum RejectReason {
     /// this path cannot yet cut. Honest reject rather than a whole cap that ignores the pin.
     ///
     /// ★ **Unfired across the suite (census, 2026-08-16).** Ten sites used to share this label;
-    /// the only one that ever fired — coplanar pieces meeting at a point during the merge — is
-    /// [`Self::CoplanarPinch`] now, so what remains under this name are the nine defensive guards
-    /// of the coplanar merge, none with a known input.
+    /// the only one that ever fired — coplanar pieces meeting at a point during the merge — was
+    /// `CoplanarPinch` for two days and is an **abstention** now (the merge emits a pinching
+    /// group unmerged and the whole-result judgement, hoisted before minting, names the shape —
+    /// `SelfTouchingResult` on every input that reaches it). What remains under this name are
+    /// the nine defensive guards of the coplanar merge, none with a known input.
     CoplanarMerge,
-    /// **Coplanar faces of one merged group meet at a single point.** The group is edge-connected
-    /// — its pieces share edges elsewhere — and re-threading its boundary runs twice through one
-    /// node, so the merged contour would be a figure-8, which this merge cannot spell yet.
-    ///
-    /// ★ `NotSupported`, deliberately, although the one input in the suite that reaches this
-    /// (a part fused with its own 45°-turned copies, an arm landing coplanar on its own body) is
-    /// a self-touch no milestone will build: a figure-8 contour is not itself impossible —
-    /// `loop_winding` reads non-simple contours the arrangement produces as legitimate — so the
-    /// *proposition of this guard* is a capability limit, and claiming `Impossible` here would
-    /// borrow a conclusion this site cannot see (the whole-result checks that could are further
-    /// down, and the measured attempt to let them speak — declining to merge and continuing —
-    /// died one check later as `StraightAngle`, another symptom name; the local-limit chain is
-    /// more than one layer deep). The day the merge can spell a figure-8, this reject's
-    /// population moves to the whole-result checks and gets its true class from them.
-    CoplanarPinch,
 }
 
 /// What a face's trace on one plane class could not do — the detail behind
@@ -867,7 +855,6 @@ impl RejectReason {
             Self::HoleRoots => "hole_roots",
             Self::MissingSeam => "missing_seam",
             Self::CoplanarMerge => "coplanar_merge",
-            Self::CoplanarPinch => "coplanar_pinch",
         }
     }
 
@@ -912,8 +899,7 @@ impl RejectReason {
             | Self::NoClearRay
             | Self::PointOnRing
             | Self::HoleDepth
-            | Self::CoplanarMerge
-            | Self::CoplanarPinch => RejectClass::NotSupported,
+            | Self::CoplanarMerge => RejectClass::NotSupported,
             // An invariant broke: malformed assembly, or a backstop that should be unreachable.
             Self::OpenResultShell
             | Self::EulerParity
