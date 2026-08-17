@@ -253,6 +253,34 @@ fn a_near_tie_axis_takes_the_same_tie_break_as_the_cache() {
 }
 
 #[test]
+fn a_tie_born_of_rounding_picks_the_caches_basis() {
+    // ★ The axis that refuted the first spelling's order argument ("one positive scale
+    // preserves |·| order" — a real-number claim). Raw components: |x| > |y| strictly, so a
+    // raw-reading rule picks basis Y; but f64 normalization rounds both to the SAME value, and
+    // `any_perpendicular` (reading the normalized axis) tie-breaks to X. The rule must read
+    // `d`'s components — the cache's actual inputs — or the seam lands ~90° from the cache's
+    // and the validate net fires on a healthy model (measured, 2026-08-17).
+    let (_, _, cache, def) = build(
+        pt(0.0, 0.0, 0.0),
+        vec(0.34, 0.33999999999999997, 1.0),
+        0.5,
+        1.0,
+    );
+    // X basis: x̂ × dir = (0, −dir_z, dir_y) — the zero slot names the chosen basis.
+    assert_eq!(
+        def.ref_dir(),
+        [rat(0.0), rat(-1.0), rat(0.33999999999999997)],
+        "the basis choice must be the cache's (X), not the raw order's (Y)"
+    );
+    let r = realized_ref_dir(&def);
+    let c = cache.ref_dir();
+    for k in 0..3 {
+        assert!(ulp_apart(r[k], c[k]) <= 1, "component {k} beyond 1 ulp");
+    }
+    assert!(r.dot(c) > 0.0, "the seam direction must be preserved");
+}
+
+#[test]
 fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
     let mut m = Model::new();
     let cache = nacre_geom::Cylinder::from_axis(

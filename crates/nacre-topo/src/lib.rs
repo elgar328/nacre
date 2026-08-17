@@ -1467,10 +1467,18 @@ impl Model {
         // The exact truth (M6-0): a direct lift of the caller's statement — origin and the raw,
         // unnormalized axis (normalizing would destroy the exact form; the `normal_def`
         // precedent). `ref_dir` replicates `any_perpendicular`'s own rule in rationals: cross
-        // the axis with the basis axis of its smallest |component| (ties X→Y→Z). The choice
-        // reads the same f64s that rule reads — normalization scales all components by one
-        // positive factor, so the |·| order is the cache's — and the raw cross is positively
-        // parallel to the realized `u`: the seam direction is exact, not approximately close.
+        // the axis with the basis axis of its smallest |component| (ties X→Y→Z).
+        //
+        // ★ **The basis choice reads `d` — the very components `any_perpendicular` reads — so
+        // agreement is structural, not order-theoretic.** The first spelling compared the *raw*
+        // components and argued "one positive scale preserves |·| order"; that is a real-number
+        // argument, and f64 division rounds: a strict `|x| > |y|` can collapse to equality in
+        // `d`, flipping which side of the `<=` tie-break each rule lands on (measured — axis
+        // `[0.34, 0.33999999999999997, 1.0]`: raw picks Y, `d` picks X, seam ~90° apart, the
+        // validate net fires on a healthy model; pinned in `tests/cylinder_truth.rs`).
+        //
+        // The *cross* still uses the raw exact components — `ê_k × raw` is positively parallel
+        // to `ê_k × d` whichever values chose `k` — so the seam direction stays exact.
         // A statement outside the decimal window is a caller bug → panic (the radius/height
         // precedent above).
         let lift = |x: f64| -> nacre_scalar::Rat {
@@ -1485,8 +1493,9 @@ impl Model {
                     .expect("negating a lifted decimal cannot overflow")
             };
             let a = axis.as_array();
-            let ax = a.map(f64::abs);
-            // ê_k × axis, k = the smallest-|component| basis axis — `any_perpendicular`'s rule.
+            let ax = d.as_array().map(f64::abs);
+            // ê_k × axis, k = the smallest-|component| basis axis of `d` — the identical
+            // comparison chain `any_perpendicular` runs on the identical inputs.
             let ref_dir = if ax[0] <= ax[1] && ax[0] <= ax[2] {
                 [zero, neg(a[2]), lift(a[1])]
             } else if ax[1] <= ax[2] {
