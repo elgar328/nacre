@@ -293,11 +293,14 @@ fn motion_is_exact(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> b
                 points: nacre_topo::PlanePoints::Through(_),
                 ..
             } => false,
-            // `true` is right **while** a cylinder's truth carries no geometry (`Cylinder
-            // { motion }` until M6): there is nothing a motion could fail to transport. The
-            // day M6 gives this variant geometry, that premise expires — and this arm, not a
-            // fallback, is where the compiler will demand the answer.
-            nacre_topo::SurfaceTruth::Cylinder { .. } => true,
+            // A cylinder's truth carries geometry since M6-0, so the probe asks the same
+            // question it asks a plane: can the very function pass 1 will transport with
+            // carry this statement? (`transport_cylinder` — shared, like `transport_points`
+            // above.) A mirror answers `false` here and is then rejected by pass 1's
+            // `MirrorNotPlanar` before any transport runs.
+            nacre_topo::SurfaceTruth::Cylinder { def, .. } => {
+                transport_cylinder(motion, def).is_some()
+            }
         }
     };
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
@@ -346,6 +349,33 @@ fn transport_points(motion: &Xform<'_>, p: [[Rat; 3]; 3]) -> Option<[[Rat; 3]; 3
         }
     };
     Some([each(p[0])?, each(p[1])?, each(p[2])?])
+}
+
+/// The cylinder twin of [`transport_points`] — pass 1 transports with the very function the
+/// probe checked, so "this will not overflow" is structural, not a parallel re-derivation.
+///
+/// Rigid: the origin rides `point_rat`; the two directions ride the rotation alone
+/// (`dir_rat` — a direction is a difference of points, so pivot and translation cancel); the
+/// radius is invariant under a rigid motion. The image is rebuilt through the checked
+/// constructor, which a rigid motion cannot fail except on overflow — then `None`, the
+/// conservative answer the probe turns into "take the recorded path".
+///
+/// Mirror: `None`, deliberately — pass 1's `MirrorNotPlanar` rejection preempts (a mirrored
+/// cylinder has no cache image, `Xform::surface`), so this arm only ever steers the probe and
+/// must refuse quietly rather than panic.
+fn transport_cylinder(
+    motion: &Xform<'_>,
+    def: &nacre_topo::CylinderDef,
+) -> Option<nacre_topo::CylinderDef> {
+    match motion {
+        Xform::Rigid(iso) => nacre_topo::CylinderDef::new(
+            iso.point_rat(def.origin())?,
+            iso.dir_rat(def.dir())?,
+            iso.dir_rat(def.ref_dir())?,
+            def.radius(),
+        ),
+        Xform::Mirror { .. } => None,
+    }
 }
 
 /// The motion history a moved surface's image carries — the surface twin of the vertex
@@ -530,7 +560,7 @@ fn transform_solid(
                 !matches!(
                     model.surface_truth(model.faces.get(fh).surface),
                     nacre_topo::SurfaceTruth::Plane { motion: None, .. }
-                        | nacre_topo::SurfaceTruth::Cylinder { motion: None }
+                        | nacre_topo::SurfaceTruth::Cylinder { motion: None, .. }
                 )
             })
     };
@@ -665,9 +695,23 @@ fn transform_solid(
                 );
                 out
             }
-            (Surface::Cylinder(cy), _) => (model.push_cylinder(cy, new_motion), false),
-            (Surface::Plane(_), nacre_topo::SurfaceTruth::Cylinder { .. }) => {
-                unreachable!("a plane's cache cannot carry a cylinder's truth")
+            (Surface::Cylinder(cy), nacre_topo::SurfaceTruth::Cylinder { def, motion: src_m }) => {
+                // The same fork as the `Known` plane above, minus the invariant road (an
+                // invariant-cylinder restatement — a turn about its own axis — is deliberately
+                // deferred; the condition is narrower than a plane's because `ref_dir` turns).
+                // A recorded node states the def **before** the motion → carried verbatim;
+                // nothing recorded means the motion kept everything exact → the def rides the
+                // very transport the probe checked.
+                let carried = if new_motion != *src_m {
+                    def.clone()
+                } else {
+                    transport_cylinder(motion, def).expect("probed by motion_is_exact")
+                };
+                (model.push_cylinder(cy, carried, new_motion), false)
+            }
+            (Surface::Plane(_), nacre_topo::SurfaceTruth::Cylinder { .. })
+            | (Surface::Cylinder(_), nacre_topo::SurfaceTruth::Plane { .. }) => {
+                unreachable!("a surface's cache and truth cannot disagree about its kind")
             }
         };
         surf_map.insert(s, new_s);
@@ -1049,12 +1093,62 @@ mod tests {
             .map(|&f| m.faces.get(f).surface)
             .find(|&su| matches!(m.surface(su), Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
-        assert!(
-            matches!(
-                m.surface_truth(lateral),
-                nacre_topo::SurfaceTruth::Cylinder { motion: Some(_) }
-            ),
-            "a moved cylinder's truth must carry the motion, not degrade"
+        // An inexact turn records a node, and the def is carried **verbatim** — the recorded
+        // node states its cylinder before the motion (the plane rule, unchanged by M6-0).
+        match m.surface_truth(lateral) {
+            nacre_topo::SurfaceTruth::Cylinder {
+                def,
+                motion: Some(_),
+            } => {
+                let z = Rat::from_int(0);
+                assert_eq!(def.origin(), [z; 3], "pre-motion statement, verbatim");
+                assert_eq!(def.dir(), [z, z, Rat::from_int(1)]);
+            }
+            other => panic!("a moved cylinder's truth must carry the motion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_exact_turn_transports_a_cylinders_truth_instead_of_recording() {
+        let mut m = Model::new();
+        let s = m.add_cylinder(
+            Point3::from_array([0.5, -1.25, 2.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.5,
+            2.5,
         );
+        m.rebuild_adjacency();
+        let iso = Isometry::rotation(nacre_scalar::Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(0); 3],
+            angle: nacre_scalar::Angle::from_deg(Rat::from_int(90)).expect("angle"),
+        });
+        let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
+        m.rebuild_adjacency();
+        let lateral = m
+            .shells
+            .get(m.solids.get(turned).outer)
+            .faces
+            .iter()
+            .map(|&f| m.faces.get(f).surface)
+            .find(|&su| matches!(m.surface(su), Surface::Cylinder(_)))
+            .expect("a cylinder keeps its lateral face");
+        // A 90°-family turn is exact: nothing is recorded, and the def rides the very
+        // transport the probe checked — origin through `point_rat`, directions through
+        // `dir_rat` (the pivot cancels), radius invariant. (x, y) ↦ (−y, x).
+        let d = |x: f64| Rat::from_decimal(x).expect("decimal");
+        match m.surface_truth(lateral) {
+            nacre_topo::SurfaceTruth::Cylinder { def, motion: None } => {
+                assert_eq!(def.origin(), [d(1.25), d(0.5), d(2.0)]);
+                assert_eq!(def.dir(), [d(0.0), d(0.0), d(1.0)]);
+                assert_eq!(
+                    def.ref_dir(),
+                    [d(1.0), d(0.0), d(0.0)],
+                    "seam turned with it"
+                );
+                assert_eq!(def.radius(), d(1.5), "radius is rigid-invariant");
+            }
+            other => panic!("an exact turn must transport, not record — got {other:?}"),
+        }
     }
 }

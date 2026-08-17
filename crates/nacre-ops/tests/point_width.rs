@@ -247,7 +247,7 @@ impl Tally {
 fn motion_of(m: &Model, h: Handle<Surface>) -> Option<Handle<nacre_topo::MotionNode>> {
     match m.surface_truth(h) {
         SurfaceTruth::Plane { motion, .. } => *motion,
-        SurfaceTruth::Cylinder { motion } => *motion,
+        SurfaceTruth::Cylinder { motion, .. } => *motion,
     }
 }
 

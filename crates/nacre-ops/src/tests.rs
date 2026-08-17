@@ -2928,7 +2928,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
                 };
                 let motion_of = |h| match m.surface_truth(h) {
                     nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
-                    nacre_topo::SurfaceTruth::Cylinder { motion } => *motion,
+                    nacre_topo::SurfaceTruth::Cylinder { motion, .. } => *motion,
                 };
                 // The caps were fixed by the Z turn and by the X mirror (normal ⊥ both),
                 // so they are world-stated; the moved carriers share the one leaf whose
@@ -3257,7 +3257,10 @@ fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
             nacre_topo::SurfaceTruth::Plane {
                 motion: Some(_),
                 ..
-            } | nacre_topo::SurfaceTruth::Cylinder { motion: Some(_) }
+            } | nacre_topo::SurfaceTruth::Cylinder {
+                motion: Some(_),
+                ..
+            }
         )
     })
 }

@@ -2308,6 +2308,25 @@ impl Isometry {
             turned[2].checked_add(self.translate[2])?,
         ])
     }
+
+    /// **This isometry's rotation applied to a rational direction**, exactly — the rational twin
+    /// of [`apply_dir`](Isometry::apply_dir). A direction is a difference of points, so the pivot
+    /// and the translation cancel and only the turn remains. `None` under the same conditions as
+    /// [`point_rat`](Isometry::point_rat) — a rotation the rationals cannot state, or `i128`
+    /// overflow.
+    pub fn dir_rat(&self, d: [Rat; 3]) -> Option<[Rat; 3]> {
+        match self.rotate {
+            None => Some(d),
+            Some(r) => {
+                let (cos, sin) = r.angle.try_exact_cos_sin()?;
+                let (i, j) = r.axis.plane();
+                let mut m = d;
+                m[i] = d[i].checked_mul(cos)?.checked_sub(d[j].checked_mul(sin)?)?;
+                m[j] = d[i].checked_mul(sin)?.checked_add(d[j].checked_mul(cos)?)?;
+                Some(m)
+            }
+        }
+    }
 }
 
 /// **A reflection in `axis = offset` applied to a rational point**, exactly — `x_a ↦ 2·offset − x_a`.

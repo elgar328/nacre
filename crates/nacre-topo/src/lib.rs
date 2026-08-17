@@ -39,10 +39,11 @@ pub enum VertexDef {
     /// A point on the intersection **curve** of two surfaces — the M3 cylinder seam vertex:
     /// the rim circle (lateral cylinder ∩ cap plane) at parameter `θ = 0` (S7).
     ///
-    /// ★ The pair pins a curve, not a point. The datum that picks the point — the cylinder's
-    /// `ref_dir` — is not part of the cylinder's *truth* until M6; until then the vertex's
-    /// coordinate cache is load-bearing for this population (the one place a coordinate still
-    /// carries information the definition cannot reproduce — recorded honestly, not hidden).
+    /// ★ The pair pins a curve; what picks the point on it is the cylinder's `ref_dir`, which
+    /// sits in the cylinder's truth since M6-0 ([`CylinderDef`]): `OnSeam([cylinder, cap])`
+    /// **is** "the rim ∩ the `+ref_dir` ray" — a unique point, exactly designated. The
+    /// definition is complete; what remains deferred (with 3b, recorded honestly) is the
+    /// machinery that *regenerates* the cached coordinate from it.
     /// M6 grows the vocabulary by variants (`Branch { surfaces, branch }`, an apex, …), each
     /// stating its own truth — the invariants are per-variant (Q5's doctrine).
     OnSeam([Handle<Surface>; 2]),
@@ -144,6 +145,15 @@ pub type SurfaceKey = (nacre_scalar::PlaneName, Option<Handle<MotionNode>>);
 /// triple and the motion it is stated under. See `Model::surface_through_ids`.
 type ThroughKey = ([Handle<Vertex>; 3], Option<Handle<MotionNode>>);
 
+/// The interning key for a cylinder — **deliberately conservative** (M6-0): the whole exact
+/// statement, `ref_dir` included, plus the motion it is stated under. Two statements of one
+/// geometric cylinder with different `ref_dir`s stay two handles, because merging them would
+/// split the seam (seam vertices and the seam edge cite the surface as their carrier). A key
+/// this literal cannot merge wrongly; geometric identity across different statements is the
+/// predicates' to answer per question (rule 6), starting M6-1. No `flipped` report either — a
+/// literal-identical statement realizes to a literal-identical cache.
+type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
+
 /// How many planes were named **`Wide`** — the canonical answer exceeded `i128` and took the
 /// arbitrary-precision vessel (S2). Before S2 these were the *unnamed* planes; now they intern
 /// and carry identity like any other.
@@ -219,11 +229,12 @@ pub enum SurfaceTruth {
         /// The motion history carrying the points out to the world; `None` = the world itself.
         motion: Option<Handle<MotionNode>>,
     },
-    /// A cylinder's exact truth arrives with the curved-geometry milestone (M6); until then the
-    /// variant holds only the motion slot, symmetrically — so a *moved* cylinder records its
-    /// history instead of silently degrading (the old side-table path demoted it to
-    /// `Inexact`).
+    /// A cylinder's exact truth (M6-0): the rational statement of its lateral surface, beside
+    /// the same motion slot a plane carries — a *moved* cylinder records its history instead of
+    /// silently degrading (the old side-table path demoted it to `Inexact`).
     Cylinder {
+        /// The exact statement, in the frame `motion` names (the world when `None`).
+        def: CylinderDef,
         /// See [`SurfaceTruth::Plane::motion`].
         motion: Option<Handle<MotionNode>>,
     },
@@ -259,6 +270,79 @@ pub enum PlanePoints {
     /// would move the plane twice, and doing neither would leave the truth behind while the cache
     /// moved.
     Through([nacre_store::Handle<Vertex>; 3]),
+}
+
+/// **A cylinder's exact truth** (M6-0): the lateral surface as its producer stated it — origin,
+/// axis direction, seam reference direction and radius, all rational, in the pre-motion frame.
+///
+/// ★ `dir` and `ref_dir` are **raw, unnormalized** — the `normal_def` precedent: normalizing
+/// divides by an irrational length and would destroy the exact form. The f64 cache
+/// ([`nacre_geom::Cylinder`]) holds the realized unit frame; this holds what the cylinder *is*.
+/// The component form is the cylinder's analogue of a plane's *points* — a direct lift of the
+/// caller's vocabulary plus component shuffles, never a derived product (the shape the
+/// falsification table forbids for coefficients).
+///
+/// ★★ **`ref_dir` is model geometry, not a chart choice.** It fixes the seam permanently
+/// (`θ = 0` on the `+ref_dir` side of the axis); the rational half-angle chart (M6-1) places its
+/// own excluded point *on* this seam — the chart adapts to the seam, never the reverse.
+///
+/// Construction is checked ([`CylinderDef::new`]); fields are private so a literal cannot bypass
+/// the check (the `SketchFrame` precedent).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CylinderDef {
+    origin: [Rat; 3],
+    dir: [Rat; 3],
+    ref_dir: [Rat; 3],
+    radius: Rat,
+}
+
+impl CylinderDef {
+    /// The checked constructor — `None` when the statement means no cylinder: a zero `dir`, a
+    /// non-positive `radius`, or a `ref_dir` with no component perpendicular to the axis
+    /// (`ref_dir × dir = 0`, exact). The cross runs in checked `Rat`, so an overflow also
+    /// answers `None` — a conservative refusal, never a wrong acceptance.
+    pub fn new(origin: [Rat; 3], dir: [Rat; 3], ref_dir: [Rat; 3], radius: Rat) -> Option<Self> {
+        let zero = Rat::from_int(0);
+        if dir.iter().all(|c| *c == zero) || radius <= zero {
+            return None;
+        }
+        let cross = |a: Rat, b: Rat, c: Rat, d: Rat| -> Option<Rat> {
+            a.checked_mul(b)?.checked_sub(c.checked_mul(d)?)
+        };
+        let cx = cross(ref_dir[1], dir[2], ref_dir[2], dir[1])?;
+        let cy = cross(ref_dir[2], dir[0], ref_dir[0], dir[2])?;
+        let cz = cross(ref_dir[0], dir[1], ref_dir[1], dir[0])?;
+        if cx == zero && cy == zero && cz == zero {
+            return None;
+        }
+        Some(CylinderDef {
+            origin,
+            dir,
+            ref_dir,
+            radius,
+        })
+    }
+
+    /// A point on the axis, exact.
+    pub fn origin(&self) -> [Rat; 3] {
+        self.origin
+    }
+
+    /// The axis direction, raw (unnormalized), exact. Nonzero by construction.
+    pub fn dir(&self) -> [Rat; 3] {
+        self.dir
+    }
+
+    /// The seam reference direction, raw, exact — not parallel to `dir` by construction. The
+    /// seam is the lateral line on the `+ref_dir` side of the axis.
+    pub fn ref_dir(&self) -> [Rat; 3] {
+        self.ref_dir
+    }
+
+    /// The radius, exact. Positive by construction.
+    pub fn radius(&self) -> Rat {
+        self.radius
+    }
 }
 
 /// The truth-only aggregate: exact geometry + topology stores + the derived
@@ -355,6 +439,9 @@ pub struct Model {
     /// What this table guarantees is the same thing construction-time sorting guarantees one
     /// level down — **the same statement never becomes two handles.**
     surface_through_ids: HashMap<ThroughKey, Handle<Surface>>,
+    /// Interning for cylinders (M6-0) — by the whole exact statement plus motion; see
+    /// [`CylinderKey`] for why the key is deliberately this literal.
+    cylinder_ids: HashMap<CylinderKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
     pub vertices: Store<Vertex>,
     pub edges: Store<Edge>,
@@ -477,6 +564,7 @@ impl Model {
             surface_name: HashMap::new(),
             surface_ids: HashMap::new(),
             surface_through_ids: HashMap::new(),
+            cylinder_ids: HashMap::new(),
             vertices: Store::default(),
             edges: Store::default(),
             faces: Store::default(),
@@ -896,19 +984,31 @@ impl Model {
     #[inline]
     pub fn plane_motion(&self, h: Handle<Surface>) -> Option<Handle<MotionNode>> {
         match self.surface_truth(h) {
-            SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion } => *motion,
+            SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion, .. } => *motion,
         }
     }
 
-    /// Push a **cylinder** — the lateral surface, whose exact truth arrives with M6. Until
-    /// then the truth records only the motion slot (`None` at construction; a move records its
-    /// node there instead of degrading, as the old side-table path did).
+    /// Push a **cylinder** — the lateral surface, stating its exact truth (M6-0), with
+    /// interning by the whole statement (see [`CylinderKey`] for why the key is deliberately
+    /// that literal: merging two `ref_dir`s would split the seam). No `flipped` report — a
+    /// literal-identical statement realizes to a literal-identical cache, so there is no other
+    /// way round to report.
     pub fn push_cylinder(
         &mut self,
         cache: nacre_geom::Cylinder,
+        def: CylinderDef,
         motion: Option<Handle<MotionNode>>,
     ) -> Handle<Surface> {
-        self.push_raw(Surface::Cylinder(cache), SurfaceTruth::Cylinder { motion })
+        let key = (def.clone(), motion);
+        if let Some(&h) = self.cylinder_ids.get(&key) {
+            return h;
+        }
+        let h = self.push_raw(
+            Surface::Cylinder(cache),
+            SurfaceTruth::Cylinder { def, motion },
+        );
+        self.cylinder_ids.insert(key, h);
+        h
     }
 
     /// Push a plane with truth but **no name and no interning** — test-only.
@@ -1364,12 +1464,52 @@ impl Model {
         let p_bot = c0 + u * radius; // seam point on the bottom rim (angle 0)
         let p_top = c1 + u * radius; // seam point on the top rim
 
+        // The exact truth (M6-0): a direct lift of the caller's statement — origin and the raw,
+        // unnormalized axis (normalizing would destroy the exact form; the `normal_def`
+        // precedent). `ref_dir` replicates `any_perpendicular`'s own rule in rationals: cross
+        // the axis with the basis axis of its smallest |component| (ties X→Y→Z). The choice
+        // reads the same f64s that rule reads — normalization scales all components by one
+        // positive factor, so the |·| order is the cache's — and the raw cross is positively
+        // parallel to the realized `u`: the seam direction is exact, not approximately close.
+        // A statement outside the decimal window is a caller bug → panic (the radius/height
+        // precedent above).
+        let lift = |x: f64| -> nacre_scalar::Rat {
+            nacre_scalar::Rat::from_decimal(x)
+                .expect("cylinder statement inside the decimal window")
+        };
+        let def = {
+            let zero = nacre_scalar::Rat::from_int(0);
+            // Lift then negate (not lift the negated f64): `-0.0` has no decimal of its own.
+            let neg = |x: f64| {
+                zero.checked_sub(lift(x))
+                    .expect("negating a lifted decimal cannot overflow")
+            };
+            let a = axis.as_array();
+            let ax = a.map(f64::abs);
+            // ê_k × axis, k = the smallest-|component| basis axis — `any_perpendicular`'s rule.
+            let ref_dir = if ax[0] <= ax[1] && ax[0] <= ax[2] {
+                [zero, neg(a[2]), lift(a[1])]
+            } else if ax[1] <= ax[2] {
+                [lift(a[2]), zero, neg(a[0])]
+            } else {
+                [neg(a[1]), lift(a[0]), zero]
+            };
+            CylinderDef::new(
+                base.as_array().map(lift),
+                a.map(lift),
+                ref_dir,
+                lift(radius),
+            )
+            .expect("non-degenerate cylinder")
+        };
+
         // ★ **Surfaces before edges** (S8): an edge states its two carriers, so the lateral
         // cylinder and both cap planes must exist first. Separate arenas — the interleaving
         // moves no handle; the surfaces' order among themselves (lateral → bottom cap → top
         // cap) is what matters and it is unchanged (the `add_cuboid` precedent).
         let lateral_surface = self.push_cylinder(
             Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
+            def,
             None,
         );
         // A cap plane's three exact points: the decimal truth of the realized center and two
@@ -1401,8 +1541,9 @@ impl Model {
         );
 
         // A seam vertex lies on two surfaces only — the rim circle's `θ = 0` point. `OnSeam`
-        // states exactly that (S7); the coordinate stays load-bearing until M6's `ref_dir`
-        // truth (see `VertexDef::OnSeam`).
+        // states exactly that (S7), and since M6-0 the designation is complete: the cylinder's
+        // truth carries `ref_dir`, so the pair means "rim ∩ the `+ref_dir` ray" — one point
+        // (see `VertexDef::OnSeam`; regenerating the cached coordinate stays deferred with 3b).
         let v_bot = self.push_vertex(
             VertexDef::OnSeam([lateral_surface, bottom_cap_surface]),
             p_bot,
@@ -1423,7 +1564,8 @@ impl Model {
             .push_edge([lateral_surface, top_cap_surface], [v_top, v_top])
             .expect("a rim derives its circle from the cap and the cylinder");
         // Self-adjacent: a seam is a parameterization joint of ONE surface, not an
-        // intersection of two — the provisional S8 spelling (see `Edge::surfaces`).
+        // intersection of two — the confirmed spelling (M6-0; see `Edge::surfaces`), guarded
+        // by validate's "self-adjacent ⇔ cylinder" carrier rule.
         let seam = self
             .push_edge([lateral_surface, lateral_surface], [v_bot, v_top])
             .expect("positive height");

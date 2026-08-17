@@ -2929,7 +2929,9 @@ mod frame_differential {
         for i in 0..m.surface_count() as u32 {
             let h = m.surface_handle_at(i).expect("in range");
             let motion = match m.surface_truth(h) {
-                SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion } => *motion,
+                SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion, .. } => {
+                    *motion
+                }
             };
             if let Some(node) = motion {
                 seen.insert(node.index());

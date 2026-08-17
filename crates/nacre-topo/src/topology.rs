@@ -39,8 +39,9 @@ pub struct Edge {
     ///
     /// Stored in ascending handle-index order — the pair is a set, not a sequence.
     /// A cylinder seam is self-adjacent: both entries are the lateral surface (its loop already
-    /// uses the seam edge twice) — a provisional spelling until M6 decides the seam's carrier
-    /// representation together with the cylinder's truth (`docs/truth-and-cache.md` open item 5).
+    /// uses the seam edge twice) — the **confirmed** spelling (M6-0): a seam is a
+    /// parameterization joint of one surface, and the self-pair is that sentence's honest
+    /// carrier form, guarded by validate's "self-adjacent ⇔ cylinder" rule.
     pub surfaces: [Handle<Surface>; 2],
     /// Endpoint vertices — the boundary (S8: no longer `Option`).
     ///

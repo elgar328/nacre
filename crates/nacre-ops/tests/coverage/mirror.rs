@@ -274,7 +274,7 @@ fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
         for &fh in &m.shells.get(shell).faces {
             motions.push(match m.surface_truth(m.faces.get(fh).surface) {
                 nacre_topo::SurfaceTruth::Plane { motion, .. }
-                | nacre_topo::SurfaceTruth::Cylinder { motion } => motion.is_some(),
+                | nacre_topo::SurfaceTruth::Cylinder { motion, .. } => motion.is_some(),
             });
         }
         assert!(!motions.is_empty(), "walked no faces");

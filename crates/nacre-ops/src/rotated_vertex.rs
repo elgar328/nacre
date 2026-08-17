@@ -375,11 +375,11 @@ pub(crate) fn frame_chain(
         nacre_topo::SurfaceTruth::Plane {
             motion: Some(m), ..
         }
-        | nacre_topo::SurfaceTruth::Cylinder { motion: Some(m) } => {
-            chain.append(&mut motion_chain(model, *m)?)
-        }
+        | nacre_topo::SurfaceTruth::Cylinder {
+            motion: Some(m), ..
+        } => chain.append(&mut motion_chain(model, *m)?),
         nacre_topo::SurfaceTruth::Plane { motion: None, .. }
-        | nacre_topo::SurfaceTruth::Cylinder { motion: None } => {}
+        | nacre_topo::SurfaceTruth::Cylinder { motion: None, .. } => {}
     }
     Some(chain)
 }
@@ -582,7 +582,7 @@ mod tests {
                         };
                         let motion_of = |h| match m.surface_truth(h) {
                             nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
-                            nacre_topo::SurfaceTruth::Cylinder { motion } => *motion,
+                            nacre_topo::SurfaceTruth::Cylinder { motion, .. } => *motion,
                         };
                         // The solvable population mirrors `solid_points`' own criterion: the
                         // moved carriers share one leaf, and a world-stated carrier among

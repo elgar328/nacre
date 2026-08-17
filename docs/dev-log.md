@@ -9656,3 +9656,34 @@ M6 진입 재조사(원통-우선 M6a, `sign(a+b√c)` 원시, 유리수 반각 
 - 착수 전 프로브(사전-측정 리터럴): 오늘 코드의 seam 정점·캐시 비트패턴 4픽스처 40줄 채집
   완료(스크래치 보관) — 커밋 2의 기대 리터럴로 쓴다. 발견: near-tie 픽스처는 오늘도 캐시
   ref_dir과 정점-u가 1ulp 다르다(두 정규화 경로) — 커밋 2의 ≤ulp 관문이 이를 존중해야 한다.
+
+---
+
+## M6-0 커밋 2 — CylinderDef: 원통의 진실이 유리수로 적힌다 (2026-08-17)
+
+- **타입**: `CylinderDef { origin, dir, ref_dir, radius }` 전부 유리수, dir·ref_dir 비정규화
+  원시. 검사형 생성자(`new` — 영 축·비양 반지름·축-평행 ref_dir은 `None`, 외적은 checked Rat라
+  넘침도 보수 거절), 필드 private(SketchFrame 선례 — 리터럴 우회 봉쇄).
+  `SurfaceTruth::Cylinder { def, motion }`.
+- **ref_dir 유도**: `any_perpendicular` 자신의 규칙을 그 f64 그대로 읽어(최소-|성분| 축, 동률
+  X→Y→Z) 기저 외적을 성분 셔플로 — 정규화는 전 성분 동일 양수 배라 |·| 순서가 캐시와 같고,
+  원시 외적은 실현 u와 양의 평행: seam 방향이 정확히 보존된다. 음수 성분은 리프트 후 부정
+  (−0.0은 제 십진이 없어서 리프트 전 부정 금지).
+- **interning**: `cylinder_ids` 별도 맵, (def 문자 동일, motion) 키 — flipped 보고 없음(문자
+  동일 진술은 캐시 구성도 동일). 다른 ref_dir = 다른 핸들(보수 — seam 분열 방지).
+- **수송**: `transport_cylinder` 하나를 프로브(`points_move`)와 pass 1이 공유("probe IS the
+  transport"). Rigid = origin은 `point_rat`, 방향 둘은 신설 scalar `Isometry::dir_rat`(회전
+  성분만 — 방향은 점의 차라 pivot·translation 상쇄), radius 수송 불변. Mirror 팔은 보수
+  `None`(pass 1의 `MirrorNotPlanar` 선점 — 패닉 금지). 노드 기록 시 def verbatim(기록은
+  모션-이전 진술), 무기록 정확 이동은 def도 수송 — 평면 규칙 그대로. 위생 커밋이 심은
+  컴파일-강제 지점들이 예정대로 발화(`points_move` Cylinder 팔 재작성 의무 등 9곳).
+- **문서 갱신**: OnSeam 정의 완성(rim ∩ +ref_dir ray — 좌표 캐시 load-bearing 해제 선언, 재생
+  기계는 3b와 유예), `[s,s]` 잠정 딱지 제거(확정 철자).
+- **실측**: 사전-측정 리터럴 관문 `cylinder_truth.rs` 6종 — 4픽스처의 seam 정점·캐시 비트가
+  변경 전 프로브 리터럴과 **비트 동일**(예측 적중: z축·피타고라스는 def 실현도 캐시와 비트
+  동일, 기울어진 [1,2,3]·준-동률 [1,1,2]는 ≤1ulp — 준-동률은 오늘도 두 정규화 경로가 1ulp
+  달랐음을 리터럴이 정직 기록), X→Y→Z tie-break 행사, 보수 interning 양·음성, 생성자 거절
+  4종. 리터럴 1비트 교란 → red 확인 후 원복(자물쇠가 문다). 90° 정확 회전은 무기록 수송(def가
+  회전상과 일치), 31°는 노드 + def verbatim — 둘 다 새 테스트. bit census 159줄 **HEAD
+  worktree 대조 비트 동일**, reject census 단정 green, 전 스위트 0 실패, clippy 0, no-default
+  클린, kit 3게이트 클린.
