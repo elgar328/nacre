@@ -99,10 +99,7 @@ pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
             surfs.insert(model.faces.get(fh).surface);
         }
     }
-    let named = |def: &VertexDef| match def {
-        VertexDef::ThreePlane(planes) => planes.iter().all(|s| surfs.contains(s)),
-        VertexDef::OnSeam(pair) => pair.iter().all(|s| surfs.contains(s)),
-    };
+    let named = |def: &VertexDef| def.carriers().all(|s| surfs.contains(&s));
     for &sh in &shells {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
@@ -757,6 +754,28 @@ fn transform_solid(
         let def = match model.vertices.get(vh).def {
             VertexDef::ThreePlane(planes) => VertexDef::ThreePlane(planes.map(remap)),
             VertexDef::OnSeam(pair) => VertexDef::OnSeam(pair.map(remap)),
+            // ★ `.map(remap)` alone would be wrong here: pass 1 issues new surface handles in
+            // face-traversal order, so the two planes' handle order can invert. The pair is
+            // re-sorted (the stored-ascending invariant) — and a swap flips the canonical
+            // line direction ℓ = n₁×n₂, so `root` must toggle with it or `Lo` silently
+            // starts naming the other point.
+            VertexDef::Branch {
+                planes: [p0, p1],
+                cylinder,
+                root,
+            } => {
+                let (a, b) = (remap(p0), remap(p1));
+                let (planes, root) = if b.index() < a.index() {
+                    ([b, a], root.flipped())
+                } else {
+                    ([a, b], root)
+                };
+                VertexDef::Branch {
+                    planes,
+                    cylinder: remap(cylinder),
+                    root,
+                }
+            }
         };
         let coord = motion.point(model.vertex_point(vh));
         // Tolerance rule (S7, letter-preserving): an exact move of a history-less solid used to
@@ -1105,6 +1124,129 @@ mod tests {
                 assert_eq!(def.dir(), [z, z, Rat::from_int(1)]);
             }
             other => panic!("a moved cylinder's truth must carry the motion, got {other:?}"),
+        }
+    }
+
+    /// ★ M6-1: the remap of a `Branch` definition is not `.map(remap)` — pass 1 issues new
+    /// surface handles in face-traversal order, so the two planes' handle order can invert,
+    /// and re-sorting flips the canonical line direction ℓ = n₁×n₂, so the root must toggle
+    /// with the swap or `Lo` silently names the other point.
+    ///
+    /// The fixture makes the swap *actually happen*: the branch planes are the cylinder's
+    /// bottom cap (a fresh handle after a z-translation) and the world x = 0 seed (invariant
+    /// under that translation — it keeps handle 1), so `[cap(0), x0(1)]` remaps to
+    /// `[N, 1] → sorted [1, N]` — swapped. Geometry agrees with the toggle: with planes
+    /// `[cap, x0]` the canonical ℓ is +y and the y = −2 point is `Lo`; with `[x0, cap′]` ℓ
+    /// is −y and that same point is `Hi`.
+    #[test]
+    fn a_branch_definition_swap_toggles_its_root() {
+        use nacre_topo::QuadRoot;
+        let mut m = Model::new();
+        let s = m.add_cylinder(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        m.rebuild_adjacency();
+        let shell = m.solids.get(s).outer;
+        let faces = m.shells.get(shell).faces.clone();
+        let lateral = faces
+            .iter()
+            .map(|&f| m.faces.get(f).surface)
+            .find(|&su| matches!(m.surface(su), Surface::Cylinder(_)))
+            .expect("lateral");
+        let bottom = m.world_plane(Axis::Z); // the z = 0 cap interned onto the world seed
+        let x0 = m.world_plane(Axis::X);
+        assert!(bottom.index() < x0.index(), "the fixture's premise");
+        // The two branch points of {z = 0} ∧ {x = 0} against the cylinder: (0, ∓2, 0).
+        // Canonical normals (0,0,1) × (1,0,0) = +y, so y = −2 is the smaller parameter: Lo.
+        let v_lo = m.push_vertex(
+            VertexDef::Branch {
+                planes: [bottom, x0],
+                cylinder: lateral,
+                root: QuadRoot::Lo,
+            },
+            Point3::from_array([0.0, -2.0, 0.0]),
+            None,
+        );
+        let v_hi = m.push_vertex(
+            VertexDef::Branch {
+                planes: [bottom, x0],
+                cylinder: lateral,
+                root: QuadRoot::Hi,
+            },
+            Point3::from_array([0.0, 2.0, 0.0]),
+            None,
+        );
+        // Wire the vertices into the solid (a franken-face on the x = 0 seed): transform
+        // remaps only what its face walk reaches, and `defs_are_remappable` requires every
+        // carrier among the face surfaces.
+        let edge = m
+            .push_edge([bottom, x0], [v_lo, v_hi])
+            .expect("a line through distinct endpoints");
+        let franken = m.faces.push(Face {
+            surface: x0,
+            outer: Loop {
+                half_edges: vec![HalfEdge {
+                    edge,
+                    forward: true,
+                }],
+            },
+            inner: vec![],
+            orientation: nacre_topo::Orientation::Forward,
+        });
+        let mut new_faces = faces.clone();
+        new_faces.push(franken);
+        let sh = m.shells.push(Shell { faces: new_faces });
+        let franken_solid = m.push_solid(Solid {
+            outer: sh,
+            cavities: vec![],
+        });
+        m.live_solids.retain(|&x| x == franken_solid);
+
+        let iso = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)]);
+        let moved = transform_solid(&mut m, franken_solid, &Xform::Rigid(&iso)).expect("moves");
+
+        // Find the two branch vertices of the moved solid and read their defs.
+        let mut seen = Vec::new();
+        let solid = m.solids.get(moved).clone();
+        for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
+            for &fh in &m.shells.get(sh).faces {
+                let face = m.faces.get(fh).clone();
+                for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                    for he in &lp.half_edges {
+                        for &vh in m.edges.get(he.edge).vertices.iter() {
+                            if let VertexDef::Branch { planes, root, .. } = m.vertices.get(vh).def {
+                                seen.push((m.vertex_point(vh).as_array(), planes, root));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        seen.sort_by(|a, b| a.0[1].partial_cmp(&b.0[1]).unwrap());
+        seen.dedup_by_key(|e| e.0[1] as i64);
+        assert_eq!(seen.len(), 2, "both branch vertices survive the move");
+        for (p, planes, root) in &seen {
+            assert!(
+                planes[0].index() < planes[1].index(),
+                "stored order stays ascending"
+            );
+            // x = 0 kept its seed handle (invariant restatement); the cap moved to a fresh
+            // one — so the pair swapped, and the root must have toggled with it.
+            assert_eq!(planes[0], x0, "the surviving seed now sorts first");
+            let want = if p[1] < 0.0 {
+                QuadRoot::Hi
+            } else {
+                QuadRoot::Lo
+            };
+            assert_eq!(
+                *root, want,
+                "at y = {}: ℓ flipped to −y, so the root names the same point only if it \
+                 toggled",
+                p[1]
+            );
         }
     }
 

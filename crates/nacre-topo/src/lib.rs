@@ -44,9 +44,74 @@ pub enum VertexDef {
     /// **is** "the rim ∩ the `+ref_dir` ray" — a unique point, exactly designated. The
     /// definition is complete; what remains deferred (with 3b, recorded honestly) is the
     /// machinery that *regenerates* the cached coordinate from it.
-    /// M6 grows the vocabulary by variants (`Branch { surfaces, branch }`, an apex, …), each
-    /// stating its own truth — the invariants are per-variant (Q5's doctrine).
+    /// M6 grows the vocabulary by variants, each stating its own truth — the invariants are
+    /// per-variant (Q5's doctrine); [`VertexDef::Branch`] (M6-1) is the first.
     OnSeam([Handle<Surface>; 2]),
+    /// One of the (at most two) points where two planes' meet line crosses a cylinder's
+    /// lateral surface (M6-1) — the structure says the carrier kinds, deliberately not an
+    /// array of three lookalike handles (validate's carrier check becomes structural).
+    ///
+    /// ★ **`root` picks the point; its meaning is a convention.** The meet line's direction
+    /// is `ℓ = n₁ × n₂` where `n₁`/`n₂` are the **canonical-name normals** of `planes[0]`/
+    /// `planes[1]` **in stored (ascending-handle) order** — canonicalization fixes each
+    /// normal's sign ("first nonzero component positive"), so ℓ is deterministic; `Lo`/`Hi`
+    /// is ascending parameter along ℓ (`nacre_scalar::quad`'s pair order). A tangency
+    /// (double root) is one point and spells it `Lo`. ★★ Anything that re-sorts the two
+    /// plane handles (a transform remapping them) must **toggle `root` when they swap** —
+    /// swapping flips ℓ and with it the meaning of `Lo`/`Hi`.
+    ///
+    /// The producer arrives with M6-2's boolean; until then hand-built fixtures and validate
+    /// are the consumers (the `FaceMisoriented`-control precedent).
+    Branch {
+        /// The two cutting planes, ascending handle order (the `ThreePlane` precedent).
+        planes: [Handle<Surface>; 2],
+        /// The cylinder whose lateral surface the meet line crosses.
+        cylinder: Handle<Surface>,
+        /// Which of the two crossings, along the canonical line direction.
+        root: QuadRoot,
+    },
+}
+
+/// Which root of the two-point plane·plane·cylinder crossing a [`VertexDef::Branch`] means —
+/// ascending parameter along the canonical meet-line direction (see `Branch`'s doc for the
+/// full convention). Definition vocabulary, so it lives here beside [`VertexDef`], not in
+/// scalar (whose pair is positional).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum QuadRoot {
+    /// The smaller parameter — and the spelling a tangency's single point takes.
+    Lo,
+    /// The larger parameter.
+    Hi,
+}
+
+impl QuadRoot {
+    /// The other root — what a re-sort that swaps the two plane handles must apply.
+    #[inline]
+    pub fn flipped(self) -> QuadRoot {
+        match self {
+            QuadRoot::Lo => QuadRoot::Hi,
+            QuadRoot::Hi => QuadRoot::Lo,
+        }
+    }
+}
+
+impl VertexDef {
+    /// Every carrier handle the definition references, in stored order — the one spelling of
+    /// "the surfaces this vertex is defined by" (reference integrity, the off-definition
+    /// check and the remappability gate all ask exactly this; carrier *kinds* stay
+    /// per-variant checks).
+    pub fn carriers(&self) -> impl Iterator<Item = Handle<Surface>> {
+        let (arr, n): ([Handle<Surface>; 3], usize) = match *self {
+            VertexDef::ThreePlane(s) => (s, 3),
+            VertexDef::OnSeam([a, b]) => ([a, b, b], 2),
+            VertexDef::Branch {
+                planes: [a, b],
+                cylinder,
+                ..
+            } => ([a, b, cylinder], 3),
+        };
+        arr.into_iter().take(n)
+    }
 }
 
 /// One motion in a history — what a [`MotionNode`] carries.
@@ -943,8 +1008,13 @@ impl Model {
         let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
         let mut frame = None;
         for (i, vh) in vertices.iter().enumerate() {
-            let VertexDef::ThreePlane(tri) = self.vertices.get(*vh).def else {
-                return None; // OnSeam pins a curve, not a point
+            let tri = match self.vertices.get(*vh).def {
+                VertexDef::ThreePlane(tri) => tri,
+                // OnSeam pins a curve, not a point; a Branch *is* a point but its coordinates
+                // are quadratic-irrational — neither has the rational meet a datum statement
+                // needs, so both decline here (honest, and spelled per variant so the next
+                // variant is a compile error, not a silent fall-through).
+                VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
             };
             let mine = self.plane_motion(tri[0]);
             if tri.iter().any(|h| self.plane_motion(*h) != mine) {
@@ -1123,11 +1193,22 @@ impl Model {
         coord: Point3,
         tol: Option<f64>,
     ) -> Handle<Vertex> {
-        if let VertexDef::ThreePlane([a, b, c]) = def {
-            debug_assert!(
+        match def {
+            VertexDef::ThreePlane([a, b, c]) => debug_assert!(
                 a != b && b != c && a != c,
                 "a three-plane definition needs three distinct planes"
-            );
+            ),
+            VertexDef::OnSeam([a, b]) => {
+                debug_assert!(a != b, "a seam vertex needs two distinct carriers")
+            }
+            VertexDef::Branch {
+                planes: [a, b],
+                cylinder,
+                ..
+            } => debug_assert!(
+                a.index() < b.index() && cylinder != a && cylinder != b,
+                "a branch definition needs two sorted distinct planes and a distinct cylinder"
+            ),
         }
         let h = self.vertices.push(Vertex { def });
         self.vertex_cache.push(PointCache { coord, tol });

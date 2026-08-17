@@ -131,8 +131,15 @@ pub(crate) fn through_judged_points(
     use nacre_cip::JudgedPoint;
     let mut out: [Option<JudgedPoint>; 3] = [None, None, None];
     for (o, vh) in out.iter_mut().zip(vs) {
-        let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
-            return None; // OnSeam pins a curve, not a point
+        let tri = match model.vertices.get(vh).def {
+            nacre_topo::VertexDef::ThreePlane(tri) => tri,
+            // OnSeam pins a curve, not a point; a Branch point's coordinates are
+            // quadratic-irrational, and this table's witnesses are rational by type —
+            // both decline, per variant (M6-2's judging of branch points is new machinery,
+            // not this road).
+            nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Branch { .. } => {
+                return None;
+            }
         };
         let mine = model.plane_motion(tri[0]);
         let pure = if tri.iter().all(|h| model.plane_motion(*h) == mine) {

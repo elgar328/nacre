@@ -21,7 +21,7 @@ use nacre_math::{Point2, Point3};
 use nacre_ops::{BoolKind, Operation, Profile2d, SketchFrame, apply, boolean};
 use nacre_scalar::Axis;
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, VertexDef};
+use nacre_topo::{Model, Solid};
 
 fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     let profile =
@@ -54,11 +54,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
             continue; // no measured figure: the checker uses its own epsilon, not this proposition
         };
         measured += 1;
-        let surfaces: &[Handle<nacre_geom::Surface>] = match &v.def {
-            VertexDef::ThreePlane(s) => s,
-            VertexDef::OnSeam(s) => s,
-        };
-        for &sh in surfaces {
+        for sh in v.def.carriers() {
             let residual = m.surface(sh).distance(m.vertex_point(vh));
             assert!(
                 residual <= tol,

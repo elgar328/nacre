@@ -17,7 +17,7 @@ use nacre_ops::{
     SketchPlane, apply, boolean,
 };
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, VertexDef};
+use nacre_topo::{Model, Solid};
 
 fn cube(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
     let s = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
@@ -59,22 +59,11 @@ fn foreign_definitions(m: &Model, s: Handle<Solid>) -> Vec<String> {
     }
     let mut bad = Vec::new();
     for v in vertices_of(m, s) {
-        // ★ A `match`, not a `let`: `VertexDef` has a second variant (`OnSeam`), and a `let`
-        // binding would need an else-arm that silently passes everything it cannot read.
-        match m.vertices.get(v).def {
-            VertexDef::ThreePlane(tri) => {
-                for t in tri {
-                    if !own.contains(&t) {
-                        bad.push(format!("vertex {} names surface {}", v.index(), t.index()));
-                    }
-                }
-            }
-            VertexDef::OnSeam(pair) => {
-                for t in pair {
-                    if !own.contains(&t) {
-                        bad.push(format!("vertex {} names surface {}", v.index(), t.index()));
-                    }
-                }
+        // ★ `carriers()` is total over the variants by construction — the question here is
+        // exactly "every surface the definition references", never a per-variant read.
+        for t in m.vertices.get(v).def.carriers() {
+            if !own.contains(&t) {
+                bad.push(format!("vertex {} names surface {}", v.index(), t.index()));
             }
         }
     }

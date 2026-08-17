@@ -9777,3 +9777,28 @@ M6 진입 재조사(원통-우선 M6a, `sign(a+b√c)` 원시, 유리수 반각 
   x=c 5절단 10점의 exact 정렬 ≡ atan2 정렬 · seam 지름 픽스처(θ=0은 SeamIncident, θ=π는
   보통 계급) · **1e-18 분리 양성 대조**(두 절단의 위쪽 근이 f64로 비트 동일 각인데 exact가
   strict 순서 — 이 탑의 존재 이유). 16 테스트 green.
+
+---
+
+## M6-1 커밋 3 — VertexDef::Branch: 정점 어휘가 이차곡면을 배운다 (2026-08-18)
+
+- **변종**: `Branch { planes: [H;2], cylinder: H, root: QuadRoot{Lo|Hi} }` — 담체 종류를 구조가
+  말한다(3-핸들 배열에 안 섞음 — validate carrier 검사가 구조적). planes 정렬 저장, root =
+  정렬된 두 평면의 정준 법선 외적 ℓ 방향 s 오름차순(접점은 Lo 하나). 생산자는 M6-2; 이번
+  소비자는 validate 픽스처·테스트(FaceMisoriented 대조 선례).
+- **`VertexDef::carriers()`** 신설 — "정의가 참조하는 담체 전부"를 한 철자로(참조 무결성·
+  OffDefinition·remappability + 테스트 3곳이 같은 질문을 하고 있었다 — [rule-lives-inline-
+  next-door]의 처방; 담체 *종류* 검사는 변종별로 남는다).
+- **★ remap 토글**(플랜 적대 검토의 HIGH): pass 3 remap이 재정렬하며 **스왑 시 root를
+  토글** — x0 씨앗(불변 재진술로 핸들 유지)과 캡(새 핸들)의 쌍이 실제로 스왑되는 franken
+  픽스처로 잠금; 기하 합치도 확인(ℓ이 +y→−y로 뒤집혀 y=−2 점이 Lo→Hi). **토글 제거 → red
+  실측 후 원복.**
+- **흡수 지점 전수 리뷰**: 망라 match 5곳은 컴파일러가 강제(참조 무결성·carrier·OffDefinition·
+  remappability·pass3) + 통합테스트 4곳. 조용한 let-else 5곳은 명시 match로(through_meets·
+  rotated_vertex probe·reuse — "a cylinder never reaches a boolean" 전제의 M6-2 만료 명기 —
+  ·datum 두 곳은 `VertexNotThreePlane` 정직 거절 유지), push_vertex debug_assert에 Branch
+  팔(정렬·상이).
+- **validate 대조**: 건전 Branch 정점 clean + 원통 담체가 1e-3 거짓 좌표를 OffDefinition으로
+  잡음(평면 잔차 0인 채 — 변종이 더한 담체가 무는 증거) + carrier 모순 2종 flagged.
+- **관문**: census 165줄 비트 동일(생산자 없음 — 예측 적중), reject census 불변, 전 스위트
+  0 실패, clippy 0, kit 게이트 0/0.

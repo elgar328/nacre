@@ -331,11 +331,7 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     // Every vertex's definition references surfaces by handle (S7: the definition is the
     // vertex, so this covers all of them, not just the discovered population).
     for (vh, vertex) in m.vertices.iter() {
-        let surfaces: &[Handle<Surface>] = match &vertex.def {
-            VertexDef::ThreePlane(s) => s,
-            VertexDef::OnSeam(s) => s,
-        };
-        for &s in surfaces {
+        for s in vertex.def.carriers() {
             if s.index() as usize >= m.surface_count() {
                 out.push(Violation::DanglingReference {
                     kind: RefKind::VertexDefSurface,
@@ -397,6 +393,15 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
             VertexDef::OnSeam(pair) => pair
                 .iter()
                 .all(|&s| matches!(m.surface(s), Surface::Plane(_))),
+            // The structure says the kinds (M6-1): two planes and one cylinder, positionally.
+            VertexDef::Branch {
+                planes, cylinder, ..
+            } => {
+                planes
+                    .iter()
+                    .any(|&s| !matches!(m.surface(s), Surface::Plane(_)))
+                    || !matches!(m.surface(*cylinder), Surface::Cylinder(_))
+            }
         };
         if bad {
             out.push(Violation::VertexDefCarrierMismatch { vertex: vh });
@@ -785,11 +790,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             continue;
         }
         let tol = tol_of(m, vh);
-        let surfaces: &[Handle<Surface>] = match &vertex.def {
-            VertexDef::ThreePlane(s) => s,
-            VertexDef::OnSeam(s) => s,
-        };
-        for &sh in surfaces {
+        for sh in vertex.def.carriers() {
             let residual = m.surface(sh).distance(m.vertex_point(vh));
             if residual > tol {
                 out.push(Violation::VertexOffDefinition {
@@ -1463,6 +1464,135 @@ mod tests {
             )),
             "the lying radius must be caught: {vs:?}"
         );
+    }
+
+    /// ★ M6-1: a well-formed `Branch` vertex passes every check, and its coordinate is held
+    /// to **all three** carriers — the cylinder included, which is the carrier the variant
+    /// adds. The branch points of {z = 0} ∧ {x = 0} against the r = 2 z-cylinder are
+    /// (0, ∓2, 0); the good one is clean, the one 1e−3 off the cylinder is flagged by
+    /// `VertexOffDefinition` through the cylinder carrier while both plane residuals stay 0
+    /// (the fixture is deliberately open — other violations may fire; the assertions are
+    /// per-proposition).
+    #[test]
+    fn a_branch_vertex_is_held_to_its_cylinder() {
+        use nacre_topo::QuadRoot;
+        let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        let lateral = m
+            .faces
+            .iter()
+            .map(|(_, f)| f.surface)
+            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .expect("lateral");
+        let bottom = m.world_plane(nacre_scalar::Axis::Z);
+        let x0 = m.world_plane(nacre_scalar::Axis::X);
+        // The good statement, free-floating: reference integrity and the carrier-kind check
+        // run over every vertex, and neither may fire.
+        let _good = m.push_vertex(
+            VertexDef::Branch {
+                planes: [bottom, x0],
+                cylinder: lateral,
+                root: QuadRoot::Lo,
+            },
+            Point3::from_array([0.0, -2.0, 0.0]),
+            None,
+        );
+        assert_eq!(validate(&m), vec![], "a sound branch statement is clean");
+        // The lying coordinate, wired into a reachable face so the off-definition check
+        // sees it.
+        let bad = m.push_vertex(
+            VertexDef::Branch {
+                planes: [bottom, x0],
+                cylinder: lateral,
+                root: QuadRoot::Hi,
+            },
+            Point3::from_array([0.0, 2.001, 0.0]),
+            None,
+        );
+        let anchor = m.push_vertex(
+            VertexDef::Branch {
+                planes: [bottom, x0],
+                cylinder: lateral,
+                root: QuadRoot::Lo,
+            },
+            Point3::from_array([0.0, -2.0, 0.0]),
+            None,
+        );
+        let edge = m.push_edge([bottom, x0], [anchor, bad]).expect("a line");
+        let face = m.faces.push(Face {
+            surface: x0,
+            outer: Loop {
+                half_edges: vec![HalfEdge {
+                    edge,
+                    forward: true,
+                }],
+            },
+            inner: vec![],
+            orientation: Orientation::Forward,
+        });
+        let shell = m.shells.push(Shell { faces: vec![face] });
+        m.push_solid(Solid {
+            outer: shell,
+            cavities: vec![],
+        });
+        let vs = validate(&m);
+        assert!(
+            vs.iter().any(|v| matches!(
+                v,
+                Violation::VertexOffDefinition { vertex, surface_index, .. }
+                    if *vertex == bad && *surface_index == lateral.index()
+            )),
+            "the cylinder carrier must catch the lying coordinate: {vs:?}"
+        );
+        assert!(
+            !vs.iter().any(|v| matches!(
+                v,
+                Violation::VertexOffDefinition { vertex, .. } if *vertex == anchor
+            )),
+            "the honest coordinate stays clean: {vs:?}"
+        );
+    }
+
+    /// ★ M6-1 negative controls: a `Branch` whose carrier kinds contradict the structure is
+    /// flagged — a cylinder in a plane slot, and a plane in the cylinder slot.
+    #[test]
+    fn a_contradictory_branch_def_is_flagged() {
+        use nacre_topo::QuadRoot;
+        let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        let lateral = m
+            .faces
+            .iter()
+            .map(|(_, f)| f.surface)
+            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .expect("lateral");
+        let bottom = m.world_plane(nacre_scalar::Axis::Z);
+        let x0 = m.world_plane(nacre_scalar::Axis::X);
+        let cyl_in_plane_slot = m.push_vertex(
+            VertexDef::Branch {
+                planes: [bottom, lateral],
+                cylinder: x0,
+                root: QuadRoot::Lo,
+            },
+            Point3::origin(),
+            None,
+        );
+        let plane_in_cyl_slot = m.push_vertex(
+            VertexDef::Branch {
+                planes: [bottom, x0],
+                cylinder: m.world_plane(nacre_scalar::Axis::Y),
+                root: QuadRoot::Lo,
+            },
+            Point3::origin(),
+            None,
+        );
+        let vs = validate(&m);
+        for bad in [cyl_in_plane_slot, plane_in_cyl_slot] {
+            assert!(
+                vs.iter().any(
+                    |v| matches!(v, Violation::VertexDefCarrierMismatch { vertex } if *vertex == bad)
+                ),
+                "a contradictory branch def must be flagged: {vs:?}"
+            );
+        }
     }
 
     /// ★ M6-0: the population that refuted the net's first (ulp-based) metric, pinned. A

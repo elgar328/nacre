@@ -89,8 +89,14 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     if model.vertex_tol(vh).is_some() {
                         return None; // measured — an implicit point has no rational base
                     }
-                    let VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
-                        return None; // OnSeam: a cylinder never reaches a boolean anyway
+                    let tri = match model.vertices.get(vh).def {
+                        VertexDef::ThreePlane(tri) => tri,
+                        // No rational base point: OnSeam and Branch coordinates are not
+                        // rational, so reuse declines and the boolean takes the slower road.
+                        // ★ The old comment's premise ("a cylinder never reaches a boolean")
+                        // expires at M6-2 — the decline stays correct then, the premise does
+                        // not.
+                        VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
                     };
                     let motions = tri.map(|h| model.plane_motion(h));
                     out.push(if motions.iter().all(Option::is_none) {

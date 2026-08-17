@@ -1008,8 +1008,14 @@ fn datum_plane(
         let mut mixed = false;
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
-            let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(*vh).def else {
-                return Err(OpError::VertexNotThreePlane);
+            let tri = match model.vertices.get(*vh).def {
+                nacre_topo::VertexDef::ThreePlane(tri) => tri,
+                // A through-vertices datum needs three-plane meets; a seam vertex has no
+                // point-meet at all and a branch point has no rational one — the same honest
+                // reject, spelled per variant.
+                nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Branch { .. } => {
+                    return Err(OpError::VertexNotThreePlane);
+                }
             };
             let mine = model.plane_motion(tri[0]);
             if tri.iter().any(|h| model.plane_motion(*h) != mine) {

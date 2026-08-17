@@ -16,7 +16,7 @@ use nacre_ops::{
 };
 use nacre_scalar::{Angle, Axis, Isometry, Rat};
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, VertexDef};
+use nacre_topo::{Model, Solid};
 
 /// The playground script's part: an L-ish plate with a notch, plus a bar across it.
 fn unit(m: &mut Model) -> Handle<Solid> {
@@ -108,10 +108,7 @@ fn foreign_definitions(m: &Model, solid: Handle<Solid>) -> Vec<String> {
                         if !seen.insert(vh.index()) {
                             continue;
                         }
-                        let names = match &m.vertices.get(*vh).def {
-                            VertexDef::ThreePlane(p) => p.to_vec(),
-                            VertexDef::OnSeam(p) => p.to_vec(),
-                        };
+                        let names: Vec<_> = m.vertices.get(*vh).def.carriers().collect();
                         let missing: Vec<u32> = names
                             .iter()
                             .filter(|s| !mine.contains(s))
