@@ -1125,6 +1125,15 @@ mod tests {
             }
             other => panic!("a moved cylinder's truth must carry the motion, got {other:?}"),
         }
+        // ★ **The measurement this file was missing.** Nothing here used to call `validate`, so
+        // the *moved* cylinder population never met the net — and the net's newest rule reads a
+        // cap's rim circle against its plane, two caches that a motion carries together. If they
+        // ever stopped travelling together this is where it would show.
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
     }
 
     /// ★ M6-1: the remap of a `Branch` definition is not `.map(remap)` — pass 1 issues new

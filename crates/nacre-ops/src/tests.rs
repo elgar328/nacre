@@ -6990,3 +6990,114 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     };
     check(&m, faces, "an existing face's plane");
 }
+
+/// ★★ **A hole must wind the other way round, and now something checks it.**
+///
+/// `build_prism` is the single place that decides winding — outer CCW about the
+/// sweep, holes the opposite — and until now nothing verified that decision:
+/// `shell_signed_volume` takes an *unsigned* area and subtracts, so it assumes the
+/// convention rather than reading it.
+///
+/// The defect is built by hand, and the twin's **orientation** is what gets flipped
+/// rather than the loop's direction: reversing a rim half-edge would make
+/// `NonOpposedEdge` fire first (the rim is shared with the cylinder's wall) and this
+/// check's specificity would be lost. Flipping the flag leaves edge traversal alone,
+/// so the two violations that come back are both this rule's — and **`cos`'s sign
+/// says which loop spoke**: `−1` the outer polygon, `+1` the inner rim.
+#[test]
+fn a_holes_winding_is_checked_too() {
+    let plate =
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(4.0, 0.0), p2(4.0, 4.0), p2(0.0, 4.0)]).unwrap();
+    let mut scratch = Model::new();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&scratch, Axis::Z),
+        profile: plate,
+        dist: 2.0,
+    };
+    let OpOutput::Extrude { solid: a, .. } = apply(&mut scratch, &extrude).unwrap() else {
+        panic!("an extrude answers with an extrude");
+    };
+    let below = Operation::DatumPlane {
+        def: DatumDef::Stated(
+            crate::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, -0.5])),
+        ),
+    };
+    let OpOutput::DatumPlane { frame, .. } = apply(&mut scratch, &below).unwrap() else {
+        panic!("a datum answers with a datum");
+    };
+    let drill = Operation::Cylinder {
+        frame,
+        center: [2.0, 2.0],
+        radius: 0.5,
+        dist: 3.0,
+    };
+    let OpOutput::Cylinder { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    let mut m = replay(&[
+        extrude,
+        below,
+        drill,
+        Operation::Boolean {
+            kind: BoolKind::Cut,
+            a,
+            b,
+        },
+    ])
+    .expect("a logged drill");
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "the drilled plate is clean to begin with: {:?}",
+        nacre_validate::validate(&m)
+    );
+
+    // A drilled face: an outer polygon with one rim hole.
+    let solid = m.live_solids[0];
+    let shell = m.solids.get(solid).outer;
+    let faces = m.shells.get(shell).faces.clone();
+    let victim = *faces
+        .iter()
+        .find(|&&fh| {
+            let f = m.faces.get(fh);
+            f.inner.len() == 1 && f.inner[0].half_edges.len() == 1
+        })
+        .expect("a through hole leaves two drilled faces");
+    let twin = {
+        let f = m.faces.get(victim).clone();
+        m.faces.push(nacre_topo::Face {
+            orientation: f.orientation.flipped(),
+            ..f
+        })
+    };
+    let sh = m.shells.push(nacre_topo::Shell {
+        faces: faces
+            .iter()
+            .map(|&h| if h == victim { twin } else { h })
+            .collect(),
+    });
+    let replaced = m.push_solid(nacre_topo::Solid {
+        outer: sh,
+        cavities: vec![],
+    });
+    m.live_solids.retain(|&s| s == replaced);
+    m.rebuild_adjacency();
+
+    let vs = nacre_validate::validate(&m);
+    let cosines: Vec<f64> = vs
+        .iter()
+        .filter_map(|v| match v {
+            nacre_validate::Violation::FaceMisoriented { face, cos } if *face == twin => Some(*cos),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(vs.len(), 2, "both loops of that face should speak: {vs:?}");
+    assert!(
+        cosines.iter().any(|c| *c < -0.5),
+        "the outer polygon must report a flipped flag: {cosines:?}"
+    );
+    assert!(
+        cosines.iter().any(|c| *c > 0.5),
+        "the hole must report that it now winds like an outer loop — this is the \
+         assertion that says the inner branch ran: {cosines:?}"
+    );
+}

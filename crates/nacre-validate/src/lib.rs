@@ -173,13 +173,20 @@ pub enum Violation {
         signed_volume: f64,
     },
 
-    /// A planar face's outer-loop winding disagrees with its stated orientation:
-    /// the loop's Newell area vector and the outward normal the face states
-    /// (`plane.normal()` × `orientation`, the same normal [`shell_signed_volume`]
-    /// integrates) are not aligned. `cos` is their unit dot — a healthy face has
-    /// `cos ≈ +1`; `≈ −1` is a flipped orientation flag, `≈ 0` a loop that does
-    /// not span its own plane. Both are one defect ("the face lies about which
-    /// way it faces"), so one variant carries the measurement.
+    /// A planar face's **loop winding disagrees with its stated orientation**: the
+    /// loop's own witness (a polygon's Newell area vector, or a closed rim's
+    /// circle) and the outward normal the face states (`plane.normal()` ×
+    /// `orientation`, the same normal [`shell_signed_volume`] integrates) do not
+    /// stand as they must. `cos` is their unit dot, and it says which loop spoke:
+    ///
+    /// * an **outer** loop must *agree* — healthy is `cos ≈ +1`, so `≈ −1` is a
+    ///   flipped orientation flag and `≈ 0` a loop that does not span its plane;
+    /// * an **inner** loop must *oppose* (a hole winds the other way round, the
+    ///   rule `build_prism` states once for every producer) — healthy is
+    ///   `cos ≈ −1`, so a reported `≈ +1` is a hole wound like an outer loop.
+    ///
+    /// All of them are one defect ("the face lies about which way it faces"), so
+    /// one variant carries the measurement.
     ///
     /// This is the release-side net for the invariant `collect_planes` guards
     /// with `debug_assert`s at every boolean: a wrong flag or winding survives
@@ -560,13 +567,66 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     Some(flux / 3.0)
 }
 
-/// Each live planar face's outer-loop winding must agree with the outward
-/// normal the face states. The loop is the one independent witness of "which
-/// way is out" (b-rep loops wind CCW about the outward normal), so its Newell
-/// sum — which no single collinear corner can fool — is compared against
-/// `plane.normal()` × `orientation`. Skipped where there is no polygon to wind:
-/// non-planar faces, loops of fewer than three points (a cylinder cap's rim
-/// loop is one closed edge), and a Newell sum of exactly zero.
+/// **A loop's own witness of which way its face points**, unit — the normal the
+/// loop winds CCW about.
+///
+/// Two shapes answer, and neither reads the face's own plane, which is what
+/// makes the witness independent of the thing it checks:
+///
+/// * a **polygon**: the Newell area vector, which no single collinear corner can
+///   fool;
+/// * a **closed rim**: one half-edge whose curve is a full circle — a cylinder
+///   cap's loop, where there is no polygon at all. Its direction comes from the
+///   *cylinder's* axis ([`nacre_topo::Model::derive_edge_curve`] builds the
+///   circle from `axis.direction()`; the plane only says where the centre sits),
+///   so comparing it against the cap plane's normal compares two surfaces, not a
+///   value with itself. `forward` reads as it must for a rim whose start is its
+///   end: along the circle's own parameterization.
+///
+/// `None` where the loop witnesses nothing: an unclosed chain (`OpenLoop`
+/// already names that face's defect, and measuring a broken chain would only add
+/// noise beside it — the more-specific-defect-first rule), fewer than three
+/// points with no circle to fall back on, or a Newell sum of exactly zero.
+///
+/// Not answered here, deliberately: a loop mixing **arcs** with straight edges —
+/// a disk cut by a plane, the M6-2b population. It has no producer yet, and the
+/// rule for it is not measured; when that population arrives, this is where it
+/// lands (its arc is a witness the same way a full rim is).
+fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
+    if let [he] = lp.half_edges[..] {
+        if let nacre_geom::Curve::Circle(c) = m.edge_curve(he.edge) {
+            return Some(c.normal() * if he.forward { 1.0 } else { -1.0 });
+        }
+    }
+    let pts = loop_points(m, lp);
+    let n = pts.len();
+    if n < 3 {
+        return None;
+    }
+    let ends = |he: &nacre_topo::HalfEdge| {
+        let [a, b] = m.edges.get(he.edge).vertices;
+        if he.forward { (a, b) } else { (b, a) }
+    };
+    let hes = &lp.half_edges;
+    if (0..n).any(|i| ends(&hes[i]).1 != ends(&hes[(i + 1) % n]).0) {
+        return None;
+    }
+    (0..n)
+        .fold(Vector3::zero(), |acc, i| {
+            acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
+        })
+        .normalize()
+}
+
+/// Each live planar face's loops must stand the way the face says it faces: the
+/// **outer** loop winds CCW about the stated outward normal, and every **inner**
+/// loop the other way round (the rule `build_prism` states once, for every
+/// producer). The loops are the one independent witness of "which way is out",
+/// so [`loop_winding`] is compared against `plane.normal()` × `orientation`.
+///
+/// Skipped where a face cannot be asked: **non-planar** ones — a cylinder's
+/// lateral normal changes from point to point, so "the face's normal" is not a
+/// question — and loops that witness nothing ([`loop_winding`] returns `None`).
 fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
     for (fh, face) in m.faces.iter() {
         if !reach.faces.contains(&fh) {
@@ -575,34 +635,31 @@ fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>
         let Surface::Plane(plane) = m.surface(face.surface) else {
             continue;
         };
-        let pts = loop_points(m, &face.outer);
-        let n = pts.len();
-        if n < 3 {
-            continue;
-        }
-        // An unclosed loop has no winding to speak of — `OpenLoop` already names
-        // that face's defect, and a measurement of the broken chain would only
-        // add noise beside it (the more-specific-defect-first rule).
-        let ends = |he: &nacre_topo::HalfEdge| {
-            let [a, b] = m.edges.get(he.edge).vertices;
-            if he.forward { (a, b) } else { (b, a) }
-        };
-        let hes = &face.outer.half_edges;
-        if (0..n).any(|i| ends(&hes[i]).1 != ends(&hes[(i + 1) % n]).0) {
-            continue;
-        }
-        let newell = (0..n).fold(Vector3::zero(), |acc, i| {
-            acc + (pts[i] - pts[0]).cross(pts[(i + 1) % n] - pts[0])
-        });
-        let Some(dir) = newell.normalize() else {
-            continue;
-        };
-        let sign = f64::from(face.orientation.sign());
-        let cos = dir.dot(plane.normal() * sign);
+        let stated = plane.normal() * f64::from(face.orientation.sign());
         // Two aligned unit vectors sit at ±1; 0.5 is the same "a full unit from
-        // the sign boundary" margin the boolean's own asserts use.
-        if cos <= 0.5 {
-            out.push(Violation::FaceMisoriented { face: fh, cos });
+        // the sign boundary" margin the boolean's own asserts use. A middling
+        // `cos` is reported rather than skipped — for a rim it means the circle
+        // does not lie in this face's plane, which is as much a defect as a
+        // flipped flag, and one more silent skip is what let a cylinder ship
+        // with both caps facing the same way.
+        if let Some(dir) = loop_winding(m, &face.outer) {
+            let cos = dir.dot(stated);
+            if cos <= 0.5 {
+                out.push(Violation::FaceMisoriented { face: fh, cos });
+            }
+        }
+        for hole in &face.inner {
+            // Rim holes only for now — the polygonal-hole population is measured
+            // on its own before it is admitted (V1b).
+            if !matches!(hole.half_edges[..], [_]) {
+                continue;
+            }
+            if let Some(dir) = loop_winding(m, hole) {
+                let cos = dir.dot(stated);
+                if cos >= -0.5 {
+                    out.push(Violation::FaceMisoriented { face: fh, cos });
+                }
+            }
         }
     }
 }
@@ -1369,6 +1426,68 @@ mod tests {
                 "a contradictory def must be flagged: {vs:?}"
             );
         }
+    }
+
+    /// ★★ **The positive control for a cap** — the loop with no polygon in it.
+    ///
+    /// A cylinder cap's boundary is one closed rim, so the Newell path above has
+    /// nothing to wind and used to skip it. That skip let a cylinder ship with
+    /// **both caps facing the same way** (K2: a cap plane that interns with an
+    /// existing, oppositely-stated plane), a solid no other check here can see —
+    /// edge opposition, Euler and the signed volume are all blind to it (the
+    /// broken cylinder's signed volume stays positive, just wrong).
+    ///
+    /// The witness the rim does have is its circle, and its direction comes from
+    /// the *cylinder's* axis rather than from this plane — which is what makes it
+    /// evidence rather than an echo.
+    #[test]
+    fn a_cap_whose_flag_lies_is_caught_by_its_rim() {
+        let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
+        let solid = m.live_solids[0];
+        let shell = m.solids.get(solid).outer;
+        let faces = m.shells.get(shell).faces.clone();
+        // The bottom cap: a planar face whose outer loop is a single half-edge.
+        let victim = *faces
+            .iter()
+            .find(|&&fh| {
+                let f = m.faces.get(fh);
+                matches!(m.surface(f.surface), Surface::Plane(_)) && f.outer.half_edges.len() == 1
+            })
+            .expect("a cylinder has two disk caps");
+        let twin = {
+            let f = m.faces.get(victim).clone();
+            m.faces.push(Face {
+                orientation: f.orientation.flipped(),
+                ..f
+            })
+        };
+        let sh = m.shells.push(Shell {
+            faces: faces
+                .iter()
+                .map(|&h| if h == victim { twin } else { h })
+                .collect(),
+        });
+        let replaced = m.push_solid(Solid {
+            outer: sh,
+            cavities: vec![],
+        });
+        m.live_solids.retain(|&s| s == replaced);
+        m.rebuild_adjacency();
+        let vs = validate(&m);
+        assert_eq!(vs.len(), 1, "only the flag lie should fire: {vs:?}");
+        assert!(
+            matches!(vs[0], Violation::FaceMisoriented { face, cos } if face == twin && cos < -0.5),
+            "{vs:?}"
+        );
+    }
+
+    /// The other half of the pair: the same cylinder, untouched, is clean — so the
+    /// check above is measuring the lie and not the shape.
+    #[test]
+    fn an_honest_cylinder_passes_the_rim_check() {
+        let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
+        m.rebuild_adjacency();
+        assert!(validate(&m).is_empty(), "{:?}", validate(&m));
     }
 
     /// ★ The positive control for `FaceMisoriented`. The stores are sealed against
