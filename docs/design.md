@@ -320,7 +320,7 @@ pub struct Edge {
     /// 끝점 정점, 또는 진짜 닫힌 엣지(끝점 없음)면 None.
     /// **닫힌 솔리드의 원형 rim은 None이 아니다** — seam 정점을 써 Some([v, v])
     /// (start == end)로 둔다. 그래야 b-rep이 유효 CW-복합체(V−E+F=2)로 남아
-    /// validate의 오일러-푸앵카레를 통과한다(실린더 rim이 대표 사례, add_cylinder).
+    /// validate의 오일러-푸앵카레를 통과한다(실린더 rim이 대표 사례).
     /// None은 seam 없는 독립 전체 원(끝점 없는 곡선) — 와이어프레임/열린 면 요소라
     /// v1 비목표(§9)이며 현재 미사용.
     pub bounds: Option<[Handle<Vertex>; 2]>,
@@ -431,6 +431,10 @@ pub enum Operation {
     // 기존 면 위에 작업하는 M4(PadOnFace/PocketOnFace)에서 비로소 필연적으로 도입된다.
     // M2는 매 Extrude 결과가 닫힌 솔리드라 validate가 빈틈없이 걸린다.
     Extrude { frame: SketchFrame, profile: Profile2d, dist: f64 },   // ← 평면을 «이름 부른다»(S5(i)-b)
+    // M6-2(K2): 원통 원시체. 스케치에 원이 없어서(Curve2d는 Line뿐) 프로파일이 아니라 원시체다 —
+    // 로그가 원통을 나를 수 있게 하는 **가장 작은** 어휘. 프레임이 축(단위 법선)·seam 기준(+u)·
+    // 밑면 중심을 전부 유리수로 주므로 진술이 유리수를 떠나지 않는다(`add_cylinder_exact`).
+    Cylinder { frame: SketchFrame, center: [f64; 2], radius: f64, dist: f64 },
     Revolve { plane: SketchPlane, profile: Profile2d, axis: Axis, angle: f64 },
     PadOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 }, // M4: 기존 면 위 — Handle<Face> 참조
     Boolean { kind: BoolKind, a: Handle<Solid>, b: Handle<Solid> },
@@ -446,6 +450,12 @@ pub enum Operation {
 | 세계 평면 위 스케치 | `SketchFrame::world(&m, Axis)` — 씨앗을 이름 부른다 |
 | 기존 면 위 스케치 | `face_sketch_frame(&m, face)` |
 | 그 밖의 평면 | `Operation::DatumPlane` 로 **먼저 진술**하고 돌려받은 프레임을 쓴다 |
+
+**방향은 프레임의 것이고, `flip`은 재는 값이다.** `dist > 0`은 두께이고 어디로 가는지는 프레임의
+ŵ이다. `flip`은 소비 연산이 `measured_frame`에서 **한 곳에서만** 재므로(S9) 호출자가 뒤집힌 프레임을
+진술할 수 없다 — 면의 프레임은 그 면의 바깥을 향한다. 그래서 «면에 그려 안쪽으로» 파는 것은
+`toward`를 안쪽으로 재는 **복합 연산**(`PadOnFace`/`PocketOnFace`가 `extrude_and_boolean`의 부호 있는
+sweep으로 하는 일)이고, 원시체 연산의 어휘가 아니다. 원통에 대응하는 복합(면 정박 드릴)은 아직 없다.
 
 - **방향은 `flip` 이 들고, 프레임을 만든 쪽이 잰다.** 평면의 정준 이름에는 방향이 없고 평면은
   interning 되므로(같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들**, 실측), 프레임이 방향을
@@ -803,7 +813,7 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
 - **밴드 경계는 평면 배열이 실제로 방출한 원 경계**(+ 측면 자신의 rim)다. 임의의 ⊥ 클래스로
   자르지 않는 이유는 rim 공유다 — 캡 면의 원 루프와 밴드의 rim이 **같은 엣지 핸들**이어야
   닫힌-셸 가드가 사용 횟수 2를 본다.
-- **조립**은 `add_cylinder`의 rim 기계를 그대로 쓴다: `OnSeam([측면, 평면])` 정점, 자기루프 rim
+- **조립**은 원통 b-rep 몸통(`cylinder_solid`)의 rim 기계를 그대로 쓴다: `OnSeam([측면, 평면])` 정점, 자기루프 rim
   엣지(`derive_edge_curve`가 원을 파생), 밴드의 seam은 `[측면, 측면]`. 성분 결합에는 **둘째
   규칙**이 붙는다 — 캡과 밴드는 Node를 하나도 공유하지 않으므로 **rim 키**로 잇는다.
 - 감김은 규칙으로 유도한다: rim 원은 축 방향에 대해 CCW이므로 `sign(면의 바깥 법선 · 축)`이
@@ -885,7 +895,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 트리밍 곡면의 pcurve 표현 시점(M3에 선행 도입 vs M5까지 지연), 닫힌 엣지의 seam 처리(방식 확정 — 아래 "원통 seam: A vs B" 항목), Sketch 제약 솔버의 범위(초기엔 무제약 프로파일만), OpRef 계보 참조의 도입 시점과 직렬화 포맷 여유분, `Store` 스냅샷·직렬화 포맷(자체 vs STEP 재활용) — 이와 함께 **세션 중 메모리 관리: compact보다 재구축(rebuild-from-log) 우선**(§2 "재검토 예정 (v2)" 참조; 재구축=주력 정리·undo 유지, live 폐포 필터링=저장, compact=비상 회수), OCCT history → 출처 매핑의 실제 충실도(M5에서 실측 필요), 멀티스레딩 경계(Store가 &mut 독점인 설계라 연산 단위 병렬은 미지원 — 의도적 단순화).
 
 **원통 seam: A(seam 엣지) vs B(seamless periodic) — A 채택 (M3.3a에서 확정).** 주기 곡면(원통·구·토러스)의 옆면을 b-rep로 담는 두 방식이 있고, 둘 다 유효 AP242·유효 CW-복합체다(초기 판단에서 "B는 오일러가 깨진다"고 봤으나 **오류** — 깨지는 건 정점조차 없는 제3의 변형 C[`bounds:None`, V0]이고, B는 각 원을 seam 정점 `Some([v,v])`로 두고 옆면을 두 루프[outer=아래원, inner=위원]로 담아 `V−E+F−L_i = 2−2+3−1 = 2`로 통과한다).
-- **A(채택):** 위 원 + 아래 원 + **세로 seam 직선 엣지**, 옆면 = 4-엣지 단일 닫힌 루프 `[bottom, seam, top⁻, seam⁻]`(seam이 같은 면에서 2회 반대 — self-adjacent). `add_cylinder`가 이 방식. STEP 출력도 A(OCCT 계열이 생산·기대하는 형태; step-io 검증 테스트와 동형).
+- **A(채택):** 위 원 + 아래 원 + **세로 seam 직선 엣지**, 옆면 = 4-엣지 단일 닫힌 루프 `[bottom, seam, top⁻, seam⁻]`(seam이 같은 면에서 2회 반대 — self-adjacent). 원통 생성자(`cylinder_solid`)가 이 방식. STEP 출력도 A(OCCT 계열이 생산·기대하는 형태; step-io 검증 테스트와 동형).
 - **B(미채택):** seam 엣지 없이 위·아래 원 두 개로만 옆면 경계(옆면이 두 루프). NIST 샘플 계열.
 
 **결정 근거(정직한 저울질):**
