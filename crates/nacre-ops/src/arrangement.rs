@@ -5169,8 +5169,8 @@ mod tests {
 
     /// The gated drill population's fixture: a `[0,2]³` box and an axis-aligned cylinder at
     /// `(1,1)`, r=0.5 — every wall is a full unit from the axis, so the population gate passes
-    /// and [`plane_index_setup`] hands the arrangement bricks a cylinder-bearing
-    /// table (production stays behind `CylinderBooleanNotYet` until C4b).
+    /// and [`plane_index_setup`] hands the arrangement bricks a cylinder-bearing table. (It stood
+    /// behind a stopper until C4b removed it; the fixture outlived the stopper.)
     fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
         let b = m.add_cylinder(

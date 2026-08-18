@@ -12,8 +12,9 @@
 //!
 //! ★ The theorem replaced a wrong one. "The band is in the other solid iff its z-range is" reads
 //! plausibly and is **false**: an L-notch's inner corner is clear of every wall by more than `r`
-//! while sitting outside the material. The witness query is what fixes it, and the counterexample
-//! is a fixture of the road that answers it (`combinatorics::point_in_faces_rat`).
+//! while sitting outside the material. Asking the arrangement is what fixes it, and the
+//! counterexample is a fixture of this pass (`a_cylinder_in_the_notch_keeps_no_band`, with its
+//! end-to-end twin: cutting with a drill standing in the notch removes nothing).
 //!
 //! ★★ **The chamber is read off the arrangement, not measured.** The plane arrangement already
 //! makes a **disk cell** for every circle a cylinder leaves on a class, and `label_cells` writes

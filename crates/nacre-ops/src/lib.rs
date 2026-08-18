@@ -509,9 +509,6 @@ pub enum RejectReason {
     /// honest answer is that this arrangement cannot be ordered rather than an order picked
     /// arbitrarily — the ordering feeds `next`, so a guess there is a wrong face, silently.
     UnorderedEdges,
-    /// A result face's edge is used by only one plane, so the boundary is open there. The
-    /// under-used twin of [`Self::NonManifoldEdge`], which is the over-used case.
-    UnpairedSeamEdge,
     /// **Two facts about one edge disagree**: a graze coincident with a same-solid crossing, two
     /// seated faces claiming opposite sides, or one solid crossing the same edge twice. Whichever
     /// is right, nothing on that edge says which.
@@ -653,10 +650,6 @@ pub enum RejectReason {
     /// with no narrow rational description, a rotated class, a moved cylinder (its def is
     /// pre-motion), or checked-`Rat` overflow. Conservative honest refusal, never a guess.
     CylinderGateUndecided,
-    /// The operands passed the M6-2a population gate (⊥ cuts and clear walls only), and the
-    /// cylinder arrangement that serves them is still being built — the temporary stopper
-    /// C4b removes. Its own name so the census diff shows the population the moment it opens.
-    CylinderBooleanNotYet,
     /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
     /// (Its sibling `DegenerateNormal` — a zero-length triangle normal — died when `n_out`
     /// moved to the stored orientation: no triangle cross is taken, so there is nothing
@@ -735,16 +728,19 @@ pub enum RejectReason {
     /// dimension down with no firing population, `point_in_ring`'s rayless case and
     /// `ring_in_ring`'s probe exhaustion.
     NoClearRay,
-    /// **A containment question about a rational point met a class that cannot state itself
-    /// exactly.** The coordinate-bearing road (`combinatorics::point_in_faces_rat`, the cylinder
-    /// band's uniform-slab witness) needs every face plane it crosses as narrow rational
-    /// coefficients; a rotated class, a class with no narrow name, or checked-`Rat` overflow
-    /// leaves it with nothing exact to divide by.
+    /// **An exact *value* could not be formed** — a class with no narrow rational description (a
+    /// rotated one, say) or a coordinate past `Rat`'s ceiling.
     ///
-    /// **Not an abstention.** Choosing another ray direction is the remedy for a grazed boundary,
-    /// and this is not that: no direction avoids a face that has no description. Sharing
-    /// [`Self::NoClearRay`] would hide a substrate limit inside a geometry accident — the same
-    /// mistake `FourPlane` was split out of.
+    /// Raised where the cylinder work needs a number rather than a sign: a plane's axis parameter
+    /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the
+    /// transversal-circle test) and the rational chart the circle nesting projects a ring into
+    /// (`arrangement::circle_center_in_ring`).
+    ///
+    /// ★ **Distinct from the gate's own name on purpose.** The population gate asks *signs*, and
+    /// those were made total (they clear denominators and answer in `BigInt`), so
+    /// [`Self::CylinderGateUndecided`] means the geometry — a rotated class, a moved cylinder, a
+    /// surface contact. This one means the arithmetic: the wall a wide model meets after the gate
+    /// has already said yes. Sharing one name would put a width limit inside a geometric verdict.
     WitnessNotRational,
     /// **A result in several pieces has a piece bounded by a curved face.** Which piece is
     /// material and which is a cavity is decided by a ray cast from a component's own vertices
@@ -877,7 +873,6 @@ impl RejectReason {
             Self::StraightAngle => "straight_angle",
             Self::AmbiguousCorner => "ambiguous_corner",
             Self::UnorderedEdges => "unordered_edges",
-            Self::UnpairedSeamEdge => "unpaired_seam_edge",
             Self::EdgeOccupancyConflict => "edge_occupancy_conflict",
             Self::RingOrientation => "ring_orientation",
             Self::RingParity => "ring_parity",
@@ -898,7 +893,6 @@ impl RejectReason {
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::SeatedCylinderCap => "seated_cylinder_cap",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
-            Self::CylinderBooleanNotYet => "cylinder_boolean_not_yet",
             Self::DegenerateFace => "degenerate_face",
             Self::FrameOutOfRange => "frame_out_of_range",
             Self::PrecisionBudget { .. } => "precision_budget",
@@ -938,7 +932,6 @@ impl RejectReason {
             | Self::CylinderPairContact
             | Self::SeatedCylinderCap
             | Self::CylinderGateUndecided
-            | Self::CylinderBooleanNotYet
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.
             // Likewise a frame past `i128`: a wider rational would lift it.
@@ -975,7 +968,6 @@ impl RejectReason {
             // The arrangement built something that is not a subdivision: a ring that bounds
             // nothing, an edge used once, faces that will not close, a cell with no side.
             | Self::DegenerateRing
-            | Self::UnpairedSeamEdge
             | Self::RingOrientation
             | Self::RingParity
             | Self::UnreachedCell
