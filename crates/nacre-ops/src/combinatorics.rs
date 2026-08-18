@@ -1261,6 +1261,39 @@ impl Chart2dRat {
 #[cfg_attr(not(test), allow(dead_code))] // the production consumer is C4b's band membership
 pub(crate) type ComponentTriples = Vec<(usize, Vec<Vec<[usize; 3]>>)>;
 
+/// **A solid's faces as the rational road takes them.**
+///
+/// The builder the contract above names: a face whose outer bound is a circle, or whose holes
+/// include one, makes this **decline** — the vessel cannot carry a curved bound, and dropping it
+/// would read a bore as solid material. A lateral face declines for the same reason (it is not a
+/// plane at all).
+pub(crate) fn component_triples_of(
+    model: &Model,
+    solid: Handle<Solid>,
+    surf_ix: &HashMap<Handle<Face>, usize>,
+    inc: &EdgeFaces,
+    jd: &Judge<'_, WorkingPlane>,
+    plane_ix: &[ClassIx],
+) -> Result<ComponentTriples, BoolError> {
+    let curved = || reject(RejectReason::BandWitnessNotPlanar);
+    let mut out = ComponentTriples::new();
+    for sh in crate::planes::solid_shell_handles(model, solid) {
+        for &fh in &model.shells.get(sh).faces {
+            let fp = surf_ix[&fh];
+            let ClassIx::Plane(cls) = plane_ix[fp] else {
+                return Err(curved());
+            };
+            let outer = face_vertex_triples(model, fh, fp, inc, jd, plane_ix)?;
+            let mut rings = vec![outer.poly().ok_or_else(curved)?.triples.clone()];
+            for h in hole_rings(model, fh, fp, inc, jd, plane_ix)? {
+                rings.push(h.poly().ok_or_else(curved)?.triples.clone());
+            }
+            out.push((cls, rings));
+        }
+    }
+    Ok(out)
+}
+
 /// **Whether a rational point lies inside a component** — the coordinate-bearing twin of
 /// [`point_in_component`], and the road the cylinder band's uniform-slab witness travels.
 ///

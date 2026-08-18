@@ -1927,7 +1927,11 @@ fn circle_center_in_ring(
     ring: &[combinatorics::RingEdge],
 ) -> Result<bool, BoolError> {
     use nacre_scalar::Rat;
-    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    // ★ Every refusal below is a **value** that could not be formed exactly — a class with no
+    // narrow description, a coordinate past `Rat` — which is the road's name, not the gate's.
+    // (The gate's own questions are signs and were made total; borrowing its name here pointed
+    // at a layer that had already answered.)
+    let undecided = || reject(RejectReason::WitnessNotRational);
     let zero = Rat::from_int(0);
     let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
@@ -1972,7 +1976,7 @@ fn node_in_circle(
     ring: &[combinatorics::RingEdge],
     circle: &MergedCircle,
 ) -> Result<bool, BoolError> {
-    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    let undecided = || reject(RejectReason::WitnessNotRational);
     let node = ring.first().ok_or_else(undecided)?.node;
     let p = combinatorics::node_coords_rat(jd, node).ok_or_else(undecided)?;
     match nacre_scalar::cylinder_radial_side(
@@ -1983,9 +1987,9 @@ fn node_in_circle(
     ) {
         nacre_scalar::Orient::Negative => Ok(true),
         nacre_scalar::Orient::Positive => Ok(false),
-        // On the surface: the gate-impossible contact — refuse honestly. (The predicate is
-        // total now, so this arm is the geometry alone; it used to swallow overflow too.)
-        nacre_scalar::Orient::Zero => Err(undecided()),
+        // On the surface: the gate-impossible contact — a *geometric* degeneracy, so it keeps
+        // the gate's name while the width causes above take the road's.
+        nacre_scalar::Orient::Zero => Err(reject(RejectReason::CylinderGateUndecided)),
     }
 }
 
@@ -2893,6 +2897,7 @@ pub(crate) fn boolean(
         geom,
         plane_ix,
         class_owner,
+        cyls,
         standard,
         notes,
         ..
@@ -3003,6 +3008,29 @@ pub(crate) fn boolean(
 
         // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
         // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
+        // ★ **The lateral bands, appended after the differential above** (M6-2a C4b): reuse can
+        // only change what the *plane* arrangement emits, so the two routes are compared on that
+        // list; the bands are a separate pass over the same operands and belong to neither route.
+        // From here on there is one face list — the grouping, the closed-shell guard and the
+        // assembly all read it.
+        let faces = if cyls.is_empty() {
+            faces
+        } else {
+            let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
+            // The witness road reads the **counterpart** solid, which this population guarantees
+            // is planar (a cylinder on both sides is refused inside `band_faces`).
+            let (other, other_inc) = match rows.first().map(|r| r.side) {
+                Some(crate::planes::SolidSide::A) => (b, &inc_b),
+                _ => (a, &inc_a),
+            };
+            let road = combinatorics::component_triples_of(
+                model, other, &surf_ix, other_inc, &jd, &plane_ix,
+            )?;
+            let mut faces = faces;
+            faces.extend(crate::bands::band_faces(kind, &faces, &rows, &jd, &road)?);
+            faces
+        };
+
         let seam = {
             watch!(SEAM);
             let mut seam: Vec<SeamVertex> = Vec::new();
@@ -3050,7 +3078,10 @@ pub(crate) fn boolean(
             seam
         };
 
-        timed!(ASSEMBLE, assemble_fuse_cut(model, a, b, &jd, &seam, &faces))
+        timed!(
+            ASSEMBLE,
+            assemble_fuse_cut(model, a, b, &jd, &seam, &faces, &cyls)
+        )
     };
     let out = run(model);
     // **The cause outranks the symptom, on both paths.** An undecided judgement has already been
@@ -5060,7 +5091,8 @@ mod tests {
             n_a,
             standard,
             notes,
-        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let trace_in = combinatorics::trace_input(
             &m,
@@ -5105,7 +5137,7 @@ mod tests {
 
     /// The gated drill population's fixture: a `[0,2]³` box and an axis-aligned cylinder at
     /// `(1,1)`, r=0.5 — every wall is a full unit from the axis, so the population gate passes
-    /// and [`plane_index_setup_past_stopper`] hands the arrangement bricks a cylinder-bearing
+    /// and [`plane_index_setup`] hands the arrangement bricks a cylinder-bearing
     /// table (production stays behind `CylinderBooleanNotYet` until C4b).
     fn drilled(m: &mut Model, z0: f64, h: f64) -> (Handle<Solid>, Handle<Solid>) {
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
@@ -5145,7 +5177,7 @@ mod tests {
             standard,
             notes,
             ..
-        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = class_at_z(&planes, 3.0);
 
@@ -5249,7 +5281,7 @@ mod tests {
             standard,
             notes,
             ..
-        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = class_at_z(&planes, 0.0);
 
@@ -5355,7 +5387,7 @@ mod tests {
             standard,
             notes,
             ..
-        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
         let wc = class_at_z(&planes, 0.0);
 
@@ -5420,7 +5452,7 @@ mod tests {
             standard,
             notes,
             ..
-        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
 
         // The box's top cap at z=2 is past the rim span [−1, 1.5]: no circle, no decline.

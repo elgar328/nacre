@@ -307,18 +307,24 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
     let mut out: Vec<_> = faces
         .iter()
         .map(|f| {
-            // Circle bounds canonicalize as empty node lists beside the polygons — the
-            // differential's job is "same faces either route", and neither route emits
-            // circles until C4b.
+            // ★ A **curved** bound canonicalizes by its classes rather than by nodes, because it
+            // has none. The key still has to *separate* faces the two routes could disagree
+            // about, so a circle contributes its cylinder class and a band its two rims —
+            // spelled as one-element triples so they share the vessel with the node lists.
             let ring_b = |b: &crate::boolean::Bound| match b {
                 crate::boolean::Bound::Ring(r) => ring(r),
-                crate::boolean::Bound::Circle { .. } | crate::boolean::Bound::Band { .. } => {
-                    Vec::new()
-                }
+                crate::boolean::Bound::Circle { cyl } => vec![[usize::MAX, *cyl, *cyl]],
+                crate::boolean::Bound::Band { lo, hi } => vec![[usize::MAX, *lo, *hi]],
             };
             let mut inner: Vec<Vec<[usize; 3]>> = f.inner.iter().map(ring_b).collect();
             inner.sort();
-            (f.surf.plane(), f.flip, ring_b(&f.outer), inner)
+            // A cylinder face has no plane class; `usize::MAX − k` keeps the key total and keeps
+            // the two kinds apart (a plane index can never reach it).
+            let cls = match f.surf {
+                crate::planes::ClassIx::Plane(c) => c,
+                crate::planes::ClassIx::Cyl(k) => usize::MAX - k,
+            };
+            (cls, f.flip, ring_b(&f.outer), inner)
         })
         .collect();
     out.sort();

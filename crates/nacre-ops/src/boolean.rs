@@ -6,7 +6,7 @@
 //! [`unify_coplanar_faces`] to build and clean the shells (a legal module cycle).
 
 use crate::combinatorics;
-use crate::planes::{WorkingPlane, uf_find};
+use crate::planes::{ClassIx, WorkingPlane, uf_find};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
 use nacre_cip::Decision;
@@ -295,7 +295,30 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
             }
         }
     }
-    for us in users.values() {
+    // ★ **The second joining rule** (M6-2a C4b): a cap face and the band that meets it on a rim
+    // share **no node at all** — a circle has none — so the node rule above would leave a drilled
+    // box's wall in its own component and send the result down the cavity/containment branch.
+    // They do share the rim, keyed exactly as `reconstruct` keys it.
+    //
+    // The condition is the node rule's, deliberately: join only where **exactly two** faces use
+    // the rim. More than two is a contact, not a join, and the closed-shell guard is what names
+    // it.
+    let mut rim_users: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+    for (i, lf) in faces.iter().enumerate() {
+        for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
+            match (b, lf.surf) {
+                (Bound::Circle { cyl }, ClassIx::Plane(c)) => {
+                    rim_users.entry((*cyl, c)).or_default().push(i)
+                }
+                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => {
+                    rim_users.entry((k, *lo)).or_default().push(i);
+                    rim_users.entry((k, *hi)).or_default().push(i);
+                }
+                _ => {}
+            }
+        }
+    }
+    for us in users.values().chain(rim_users.values()) {
         if let [a, b] = us[..] {
             let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
             parent[ra] = rb;
@@ -672,6 +695,12 @@ impl Bound {
     }
 }
 
+/// The rim a curved bound is assembled on: `(group, cylinder class, plane class) → (seam vertex,
+/// rim edge)`. The group is in the key for the reason it is in the seam vertices' — two result
+/// solids never share a handle — and the rest is what makes a cap face and the band that meets it
+/// pick up the *same* edge.
+type RimTable = HashMap<(usize, usize, usize), (Handle<Vertex>, Handle<Edge>)>;
+
 /// A reconstructed result face: which combined plane it is on, its boundaries, and whether to
 /// flip it (cut's inside-A B-pieces).
 #[derive(Clone, Debug)]
@@ -726,8 +755,9 @@ pub(crate) fn assemble_fuse_cut(
     jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],
     faces: &[LocalFace],
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let out = reconstruct(model, jd, seam, faces)?;
+    let out = reconstruct(model, jd, seam, faces, cyls)?;
     model.live_solids.retain(|&s| s != a && s != b);
     Ok(out)
 }
@@ -783,9 +813,18 @@ fn self_touch_reject(
         .map(|sv| (sv.triple, (sv.point, sv.tol)))
         .collect();
     for g in groups {
+        // ★ **Planar faces only** (M6-2a C4b). The proposition this sieve tests — "an edge of
+        // this solid lies in the interior of one of its own faces" — is asked through plane
+        // membership and in-plane boxes, and a lateral band has neither a plane nor a node to
+        // offer. It abstains rather than pretending: the edge-use guard, the non-manifold vertex
+        // check and `validate` all still stand behind it, so a curved self-touch surfaces there
+        // instead of being missed silently. A band that pinches against a *plane* face is
+        // therefore the case this does not see yet, and it is written down rather than assumed
+        // away.
         let faces: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
+            .filter(|lf| matches!(lf.surf, ClassIx::Plane(_)))
             .collect();
         // One pass: which faces sit on each plane, which two faces own each edge, and a box per
         // face already widened by its own vertices' tolerances.
@@ -875,6 +914,7 @@ fn reconstruct(
     jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],
     faces: &[LocalFace],
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes = jd.planes;
     // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
@@ -1082,6 +1122,56 @@ fn reconstruct(
         }
     }
 
+    // ★★ **The rim table** (M6-2a C4b): a curved bound has no node and no triple, so it is not
+    // welded through the seam table at all — it is minted here, once per `(group, cylinder class,
+    // plane class)`, and every face that meets that rim asks for the same pair back. That sharing
+    // is what makes the rim edge's use count two (the cap face once, the band once) rather than
+    // two separate edges the closed-shell guard would call dangling.
+    //
+    // The group is in the key for the reason it is in `vh`'s: two result solids must not share a
+    // handle.
+    let mut rim: RimTable = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
+        let g = group_of[fi];
+        let keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
+            .chain(lf.inner.iter())
+            .flat_map(|b| match (b, lf.surf) {
+                (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
+                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => vec![(k, *lo), (k, *hi)],
+                _ => Vec::new(),
+            })
+            .collect();
+        for (k, c) in keys {
+            if rim.contains_key(&(g, k, c)) {
+                continue;
+            }
+            let (lat, plane) = (cyls[k].surf, planes[c].surf);
+            // The seam point of this rim, spelled as `add_cylinder` spells one: the axis meets the
+            // plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
+            let cache = cyls[k].cache;
+            let centre = nacre_geom::intersect::line_plane(
+                &cache.axis(),
+                match model.surface(plane) {
+                    nacre_geom::Surface::Plane(p) => p,
+                    _ => return Err(reject(RejectReason::ThreePlanes)),
+                },
+            )
+            .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
+            let point = centre + cache.ref_dir() * cache.radius();
+            // The tolerance is measured, not assumed — the same rule the three-plane vertices
+            // above follow: how far the realized point sits from each surface that defines it.
+            let tol = model
+                .surface(lat)
+                .distance(point)
+                .max(model.surface(plane).distance(point));
+            let v = model.push_vertex(VertexDef::OnSeam([lat, plane]), point, Some(tol));
+            let e = model
+                .push_edge(Edge::carrier_pair(lat, plane), [v, v])
+                .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+            rim.insert((g, k, c), (v, e));
+        }
+    }
+
     // ★ **An edge's carriers are the two faces that use it — read off the whole result, not
     // guessed from one side.** The obvious per-face answer ("my plane, plus the wall my
     // arrangement says the edge rides") is wrong exactly where the resolved four-plane
@@ -1092,7 +1182,13 @@ fn reconstruct(
     let mut pair_surfs: HashMap<(usize, usize), Vec<Handle<Surface>>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        let fsurf = planes[lf.surf.plane()].surf;
+        // A band contributes no node edge — its rims and seam are minted with their carriers
+        // stated (`[lateral, plane]`, `[lateral, lateral]`), so there is nothing for this scan
+        // to read off it.
+        let ClassIx::Plane(fc) = lf.surf else {
+            continue;
+        };
+        let fsurf = planes[fc].surf;
         for r in lf.poly_rings() {
             let k = r.nodes.len();
             for t in 0..k {
@@ -1139,11 +1235,14 @@ fn reconstruct(
     let mut face_handles = Vec::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        let face_surf = planes[lf.surf.plane()].surf;
+        let face_surf = match lf.surf {
+            ClassIx::Plane(c) => planes[c].surf,
+            ClassIx::Cyl(k) => cyls[k].surf,
+        };
         let mut ring = |model: &mut Model, r: &Ring| -> Result<Loop, BoolError> {
             let handles: Vec<Handle<Vertex>> = r.nodes.iter().map(|nd| vh[&(g, *nd)]).collect();
             let k = handles.len();
-            let mut half_edges: Vec<HalfEdge> = (0..k)
+            let half_edges: Vec<HalfEdge> = (0..k)
                 .map(|t| {
                     let (va, vb) = (handles[t], handles[(t + 1) % k]);
                     let e = edge_for(model, va, vb, [planes[r.walls[t]].surf, face_surf])?;
@@ -1151,47 +1250,121 @@ fn reconstruct(
                     Ok(HalfEdge { edge: e, forward })
                 })
                 .collect::<Result<Vec<_>, BoolError>>()?;
+            Ok(Loop { half_edges })
+        };
+        // ★★ **Which way a rim circle is walked.** `derive_edge_curve` builds it as
+        // `Circle::from_center_normal(centre, axis, ref_dir, r)`, so its parameter runs **CCW
+        // about the axis direction `d`**. A loop must run CCW about its own face's outward
+        // normal, so a bound on a face whose normal agrees with `d` is walked forward and one
+        // whose normal opposes it backward — exactly the convention `add_cylinder` writes down
+        // (top cap `forward: true`, bottom cap `false`). A *hole* runs the other way again,
+        // because an inner loop keeps the material on its left by winding against the outer.
+        //
+        // The face's outward normal is the stored surface normal when the face is `Forward` and
+        // its negation when `Reversed`, which is the `flip` decision made below — so the sign is
+        // read off `frame_sign` and `flip` here rather than carried in from anywhere.
+        // The **unflipped** face normal against the axis: `flip` is applied once, to every kind of
+        // bound, right below — reading it here too would toggle the winding twice.
+        let axis_sign = |k: usize| -> f64 {
+            let c = lf.surf.plane();
+            let s = if planes[c].frame_sign > 0 { 1.0 } else { -1.0 };
+            planes[c]
+                .plane
+                .normal()
+                .dot(cyls[k].cache.axis().direction())
+                * s
+        };
+        let circle_loop =
+            |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {
+                let (_, e) = *rim
+                    .get(&(g, cyl, cls))
+                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                let _ = model;
+                let mut forward = axis_sign(cyl) > 0.0;
+                if hole {
+                    forward = !forward;
+                }
+                Ok(Loop {
+                    half_edges: vec![HalfEdge { edge: e, forward }],
+                })
+            };
+        // A band's boundary is the lateral face `add_cylinder` builds: two rims joined by the
+        // seam, which the one face uses twice in opposite senses.
+        let band_loop =
+            |model: &mut Model, k: usize, lo: usize, hi: usize| -> Result<Loop, BoolError> {
+                let (v_lo, e_lo) = *rim
+                    .get(&(g, k, lo))
+                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                let (v_hi, e_hi) = *rim
+                    .get(&(g, k, hi))
+                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                let lat = cyls[k].surf;
+                let seam_edge = model
+                    .push_edge(Edge::carrier_pair(lat, lat), [v_lo, v_hi])
+                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                Ok(Loop {
+                    half_edges: vec![
+                        HalfEdge {
+                            edge: e_lo,
+                            forward: true,
+                        },
+                        HalfEdge {
+                            edge: seam_edge,
+                            forward: true,
+                        },
+                        HalfEdge {
+                            edge: e_hi,
+                            forward: false,
+                        },
+                        HalfEdge {
+                            edge: seam_edge,
+                            forward: false,
+                        },
+                    ],
+                })
+            };
+        let mut ring_of = |b: &Bound, hole: bool| -> Result<Loop, BoolError> {
+            let mut lp = match b {
+                Bound::Ring(r) => ring(model, r)?,
+                Bound::Circle { cyl } => circle_loop(model, *cyl, lf.surf.plane(), hole)?,
+                Bound::Band { lo, hi } => {
+                    let k = lf
+                        .surf
+                        .cyl()
+                        .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                    band_loop(model, k, *lo, *hi)?
+                }
+            };
             if lf.flip {
-                // Cut's inside-A B-pieces: reverse every loop and toggle the
-                // orientation below, so the outward normal points into the removed
-                // region and each loop still keeps material on its left.
-                half_edges.reverse();
-                for he in &mut half_edges {
+                // Cut's inside-A B-pieces, and a bore's wall: reverse every loop and toggle the
+                // orientation below, so the outward normal points into the removed region and
+                // each loop still keeps material on its left. ★ One place for every bound kind —
+                // a curved loop reversed only by its own builder was how the first drilled box
+                // came out with its rim used twice in the same sense (`NonOpposedEdge`).
+                lp.half_edges.reverse();
+                for he in &mut lp.half_edges {
                     he.forward = !he.forward;
                 }
             }
-            Ok(Loop { half_edges })
+            Ok(lp)
         };
-        // ★ Circle bounds do not assemble through the seam table — their loops are the rim
-        // machinery's (`push_edge([lateral, plane], [v, v])` + `OnSeam`), which lands with the
-        // cylinder arrangement (C4b). Until that commit no production path emits one (the C2
-        // population stopper holds), so reaching here with a circle is a wiring bug, not an
-        // input.
-        let mut ring_of = |b: &Bound| -> Result<Loop, BoolError> {
-            match b {
-                Bound::Ring(r) => ring(model, r),
-                Bound::Circle { cyl } => {
-                    unreachable!("circle bound (cyl {cyl}) reached assembly before C4b-3")
-                }
-                Bound::Band { lo, hi } => {
-                    unreachable!("band bound ({lo}..{hi}) reached assembly before C4b-3")
-                }
-            }
-        };
-        let outer = ring_of(&lf.outer)?;
+        let outer = ring_of(&lf.outer, false)?;
         let inner: Vec<Loop> = lf
             .inner
             .iter()
-            .map(ring_of)
+            .map(|b| ring_of(b, true))
             .collect::<Result<Vec<_>, BoolError>>()?;
         // The plane's frame *is* the root face's orientation: `frame_sign` carries that face's
         // `Forward`/`Reversed` as a sign (read off the stored flag since the cutover). Reading it
         // here is what used to be `planes[plane_idx].orient` — a face field indexed by a plane,
         // the shape of every bug this split exists to prevent.
-        let framed = if planes[lf.surf.plane()].frame_sign > 0 {
-            Orientation::Forward
-        } else {
-            Orientation::Reversed
+        // A cylinder's stored normal points away from its axis, and that *is* the face's outward
+        // normal for a boss — so its "framed" sense is `Forward`, and `flip` (material outside
+        // the wall: a hole) is what reverses it. Planes read their class's frame instead.
+        let framed = match lf.surf {
+            ClassIx::Cyl(_) => Orientation::Forward,
+            ClassIx::Plane(c) if planes[c].frame_sign > 0 => Orientation::Forward,
+            ClassIx::Plane(_) => Orientation::Reversed,
         };
         let orientation = if lf.flip {
             match framed {
@@ -1202,7 +1375,7 @@ fn reconstruct(
             framed
         };
         face_handles.push(model.faces.push(Face {
-            surface: planes[lf.surf.plane()].surf,
+            surface: face_surf,
             outer,
             inner,
             orientation,

@@ -105,11 +105,15 @@ pub(crate) fn band_faces(
     for (k, row) in rows.iter().enumerate() {
         for (lo, hi) in bands_of(k, row, plane_faces, jd)? {
             let (lo_t, hi_t) = (param(jd, lo, row)?, param(jd, hi, row)?);
+            // ★ The witness is a **value**, not a sign, and values still have an `i128`
+            // ceiling: `o + t·m` for a sub-micron axis spelled to a full f64's digits leaves
+            // `Rat`. That is the road's own name for "I could not form this exactly" — the gate
+            // decided fine, so borrowing its name here would point at the wrong layer.
             let Some(mid) = midpoint(lo_t, hi_t) else {
-                return Err(reject(RejectReason::CylinderGateUndecided));
+                return Err(reject(RejectReason::WitnessNotRational));
             };
             let Some(witness) = axis_point(&row.def, mid) else {
-                return Err(reject(RejectReason::CylinderGateUndecided));
+                return Err(reject(RejectReason::WitnessNotRational));
             };
             let Some(in_other) = decide(jd, &witness, &row.def, counterpart)? else {
                 return Err(reject(RejectReason::NoClearRay));
@@ -167,10 +171,20 @@ fn bands_of(
         }
     }
     for c in 0..jd.planes.len() {
-        if let Some(t) = param_opt(jd, c, row) {
-            if t == row.span[0] || t == row.span[1] {
-                push(c, &mut classes);
-            }
+        // ★ A class ⊥ to the axis is a **potential band boundary**, so failing to place it is a
+        // refusal, not a skip: silently missing one would merge two bands whose membership
+        // differs and hand back a closed, wrong solid. Classes that are not ⊥ cannot bound a
+        // band at all (the gate proved the ∥ ones clear), so those are skipped for cause.
+        let Some(coeffs) = combinatorics::class_coeffs_rat(jd, c) else {
+            continue;
+        };
+        let n = [coeffs[0], coeffs[1], coeffs[2]];
+        if !nacre_scalar::parallel_rat(&n, &row.def.dir()) {
+            continue;
+        }
+        let t = param(jd, c, row)?;
+        if t == row.span[0] || t == row.span[1] {
+            push(c, &mut classes);
         }
     }
     let mut keyed: Vec<(Rat, usize)> = classes
@@ -182,10 +196,11 @@ fn bands_of(
     Ok(keyed.windows(2).map(|w| (w[0].1, w[1].1)).collect())
 }
 
-/// The axis parameter of a plane class, or the honest refusal a class without an exact
-/// description earns.
+/// The axis parameter of a plane class, or the honest refusal earned by a class with no exact
+/// description — and by one whose parameter is a **value** too wide for `Rat` (the road's own
+/// name: the gate's questions are signs and were made total, this one is not).
 fn param(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Result<Rat, BoolError> {
-    param_opt(jd, c, row).ok_or_else(|| reject(RejectReason::CylinderGateUndecided))
+    param_opt(jd, c, row).ok_or_else(|| reject(RejectReason::WitnessNotRational))
 }
 
 fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Option<Rat> {
@@ -265,7 +280,7 @@ fn decide(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::planes::{PlaneSetup, plane_index_setup_past_stopper};
+    use crate::planes::{PlaneSetup, plane_index_setup};
     use nacre_math::{Point3, Vector3};
     use nacre_store::Handle;
     use nacre_topo::{Model, Solid};
@@ -278,7 +293,7 @@ mod tests {
         b: Handle<Solid>,
         kind: BoolKind,
     ) -> (Vec<LocalFace>, Vec<(usize, f64)>) {
-        let setup = plane_index_setup_past_stopper(m, a, b).unwrap();
+        let setup = plane_index_setup(m, a, b).unwrap();
         let PlaneSetup {
             planes: faces_tab,
             geom,
@@ -290,6 +305,7 @@ mod tests {
             n_a,
             standard,
             notes,
+            ..
         } = &setup;
         let jd = Judge::new(geom, *standard, notes);
         let trace_in = crate::combinatorics::trace_input(
@@ -401,6 +417,60 @@ mod tests {
         assert!(out[0].flip);
     }
 
+    /// ★★ **The first end-to-end cylinder boolean.** A `[0,2]³` box drilled through by a
+    /// radius-0.5 bore: seven faces (four walls, two drilled caps, one hole wall), genus 1, and a
+    /// volume of `8 − π·0.25·2`. The volume is the **winding lock** — props integrates by the
+    /// divergence theorem, so a hole loop wound the wrong way returns `8 + πr²h` instead.
+    #[test]
+    fn a_through_hole_is_built_and_measures_what_it_should() {
+        let (mut m, a, b) = box_and_drill(-1.0, 4.0);
+        let out = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("the drill cuts");
+        assert_eq!(out.len(), 1, "one body");
+        let s = out[0];
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let faces = crate::planes::solid_shell_handles(&m, s)
+            .into_iter()
+            .map(|sh| m.shells.get(sh).faces.len())
+            .sum::<usize>();
+        assert_eq!(faces, 7, "4 walls + 2 drilled caps + the bore's wall");
+        // ★ **Genus 1, re-derived rather than quoted.** An earlier plan wrote `V10−E15+F7−L2`
+        // from memory; the counts are measured here and what is asserted is the relation
+        // (`χ = V − E + F − L = 2(S − G)`, so one shell with one through hole gives `χ = 0`).
+        let reach = m.reachable();
+        let (v_n, e_n) = (reach.vertices.len() as i64, reach.edges.len() as i64);
+        let f_n = reach.faces.len() as i64;
+        let l_n: i64 = reach
+            .faces
+            .iter()
+            .map(|fh| m.faces.get(*fh).inner.len() as i64)
+            .sum();
+        assert_eq!(
+            v_n - e_n + f_n - l_n,
+            0,
+            "genus 1: V{v_n} E{e_n} F{f_n} L{l_n}"
+        );
+        let v = nacre_props::mass_props(&m, s)
+            .expect("a closed solid has mass props")
+            .volume;
+        let want = 8.0 - std::f64::consts::PI * 0.25 * 2.0;
+        assert!(
+            (v - want).abs() < 1e-6,
+            "volume {v} vs {want} — a bore removes material, it does not add it"
+        );
+        // The same box without the bore, for the sign of the correction rather than its value.
+        let mut m2 = Model::new();
+        let plain = m2.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        m2.rebuild_adjacency();
+        let plain_v = nacre_props::mass_props(&m2, plain)
+            .expect("a box has mass props")
+            .volume;
+        assert!(v < plain_v, "the bore removes material: {v} vs {plain_v}");
+    }
+
     /// ★ **The uniform-slab theorem's counterexample, as a band case.** A cylinder standing in an
     /// L-prism's notch is clear of every wall by more than `r` — the refuted "z-range" rule would
     /// keep its wall — but it is outside the material, so `Cut` changes nothing and no band
@@ -430,6 +500,18 @@ mod tests {
         assert!(
             out.is_empty(),
             "the notch is void — nothing to cut: {out:?}"
+        );
+
+        // ★ …and end to end: `Cut` returns the prism untouched. That is the counterexample's real
+        // assertion — a band pass answering by z-range would run a wall through the notch, and
+        // this volume would move.
+        let before = nacre_props::mass_props(&m, a).expect("props").volume;
+        let cut = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("a cut that changes nothing");
+        assert_eq!(cut.len(), 1);
+        let after = nacre_props::mass_props(&m, cut[0]).expect("props").volume;
+        assert!(
+            (after - before).abs() < 1e-12,
+            "the notch drill removes nothing: {before} → {after}"
         );
     }
 }

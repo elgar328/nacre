@@ -465,6 +465,47 @@ centroid 1 1.5 2
         }
     }
 
+    /// ★ **The first curved boolean, scored by an independent kernel** (M6-2a C4b). A `[0,2]³`
+    /// box drilled through by a radius-0.5 bore: volume catches a bore that never opened, area
+    /// catches a missing or inverted wall, and the face count catches a cap whose inner loop was
+    /// dropped. Our own analytic figure (`8 − πr²h`) is not evidence about the *topology* — OCCT
+    /// reading the STEP back is.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn through_hole_cut_matches_occt() {
+        let mut model = Model::new();
+        let a = model.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b = model.add_cylinder(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            4.0,
+        );
+        model.rebuild_adjacency();
+        let s = boolean_one(&mut model, BoolKind::Cut, a, b).unwrap();
+        let ours = mass_props(&model, s).unwrap();
+        let p = occt_props_of(&model).unwrap();
+        // `approx`, not a hand-picked epsilon: the harness reports OCCT's figures to six
+        // significant digits, so a tighter comparison measures the *printout* rather than the
+        // two kernels (measured — 1e-6 absolute failed on 6.4292 vs 6.4292036732051026).
+        assert!(
+            approx(ours.volume, p.volume),
+            "volume: nacre {} vs occt {}",
+            ours.volume,
+            p.volume
+        );
+        assert!(
+            approx(ours.area, p.area),
+            "area: nacre {} vs occt {}",
+            ours.area,
+            p.area
+        );
+        assert_eq!(p.faces, 7, "4 walls + 2 drilled caps + the bore wall");
+        // And the analytic figure, so a *pair* of kernels agreeing on a wrong number would still
+        // have to agree with arithmetic.
+        assert!((ours.volume - (8.0 - PI * 0.25 * 2.0)).abs() < 1e-9);
+    }
+
     /// A donut prism scored by an independent kernel: the hole has to be a hole to OCCT too.
     /// Volume catches a hole that never opened, area catches missing or inverted hole walls, and
     /// the face count catches a cap whose inner loop was dropped. It also exercises the STEP

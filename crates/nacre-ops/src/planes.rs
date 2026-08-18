@@ -736,6 +736,16 @@ impl ClassIx {
             ClassIx::Cyl(k) => panic!("a plane-only path got cylinder class {k}"),
         }
     }
+
+    /// The cylinder-class index, `None` on a plane — the curved paths' filter (they are the ones
+    /// that *choose* per kind rather than assuming one).
+    #[inline]
+    pub(crate) fn cyl(self) -> Option<usize> {
+        match self {
+            ClassIx::Cyl(k) => Some(k),
+            ClassIx::Plane(_) => None,
+        }
+    }
 }
 
 /// A cylinder class of one boolean (M6-2a): the exact statement the population gate reasons
@@ -879,6 +889,10 @@ pub(crate) struct PlaneSetup {
     pub(crate) plane_ix: Vec<ClassIx>,
     /// Whose faces each plane class carries — see [`class_owners`].
     pub(crate) class_owner: Vec<Option<SolidSide>>,
+    /// The cylinder classes, in [`ClassIx::Cyl`] numbering order — empty for an all-planar
+    /// boolean. Filled by the population gate, which is also what refuses the interactions this
+    /// milestone does not build.
+    pub(crate) cyls: Vec<WorkingCyl>,
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
     /// operation rather than to any one plane. The caller pairs them with a table to make a
     /// [`Judge`].
@@ -933,31 +947,13 @@ pub(crate) fn plane_index_setup(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<PlaneSetup, BoolError> {
-    let (setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
-    // ★ The cylinder door, C2 form: the population gate decides **by name** what stands in the
-    // way (an oblique cut, a wall touching the lateral surface, a seated cap, an undecidable
-    // pair) — and the population that passes still waits behind its own stopper until the
-    // cylinder arrangement lands (C4b removes `CylinderBooleanNotYet`).
+    let (mut setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
+    // ★ The cylinder door: the population gate decides **by name** what stands in the way (an
+    // oblique cut, a wall touching the lateral surface, a seated cap, an undecidable pair), and
+    // what passes now goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here
+    // from C2 to C4b-2 is gone — the bands and the assembly that serve this population landed.
     if !cyl_surfs.is_empty() {
-        let _cyls = cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner)?;
-        return Err(reject(RejectReason::CylinderBooleanNotYet));
-    }
-    Ok(setup)
-}
-
-/// The same setup and the same population gate, minus the final `CylinderBooleanNotYet`
-/// stopper — the test door through which the arrangement bricks are exercised on the gated
-/// cylinder population before C4b opens the production path. Gate-refused inputs still
-/// reject here, so a test cannot wander outside the population by mistake.
-#[cfg(test)]
-pub(crate) fn plane_index_setup_past_stopper(
-    model: &Model,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<PlaneSetup, BoolError> {
-    let (setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
-    if !cyl_surfs.is_empty() {
-        cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner)?;
+        setup.cyls = cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner)?;
     }
     Ok(setup)
 }
@@ -1011,6 +1007,7 @@ fn plane_index_setup_inner(
             geom,
             plane_ix,
             class_owner,
+            cyls: Vec::new(),
             standard,
             notes,
         },

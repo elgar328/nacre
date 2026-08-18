@@ -404,29 +404,31 @@ const CORPUS: [Fixture; 12] = [
     },
     Fixture {
         name: "cylinder-notyet",
-        // The drill-population pass: walls clear (distance 1 > r = 0.5), caps unshared —
-        // held only by the C4b stopper, and this row is the diff that shows it opening.
-        expect: Some(RejectReason::CylinderBooleanNotYet),
+        // ★ **This row is the diff C4b promised.** It stood as `CylinderBooleanNotYet` from C2
+        // through C4b-2 — the drill population passing the gate and waiting for the machinery —
+        // and it now **builds**: a through hole, walls clear (distance 1 > r = 0.5), caps
+        // unshared. The name it used to carry no longer exists in the code.
+        expect: None,
         run: cylinder_notyet,
-        raised: &[(
-            "cylinder_boolean_not_yet",
-            None,
-            "crates/nacre-ops/src/planes.rs",
-        )],
-        surfaced: &[("cylinder_boolean_not_yet", None)],
+        raised: &[],
+        surfaced: &[],
     },
     Fixture {
         name: "cylinder-wide-axis",
-        // The same population, spelled with long decimals — the gate must answer the geometry,
-        // not the width of the arithmetic.
-        expect: Some(RejectReason::CylinderBooleanNotYet),
+        // ★ The same population spelled with long decimals. The **gate** answers it (S2 made its
+        // questions total), and the wall this input now meets is the **value** path: the circle
+        // nesting projects the ring's corners into the class's rational chart, and a sub-micron
+        // model at full f64 precision leaves `Rat` there. Exactly what S2 said it was buying and
+        // what it said it was *not* — "the decline moves to the place that genuinely cannot do
+        // it" — measured here rather than argued.
+        expect: Some(RejectReason::WitnessNotRational),
         run: cylinder_wide_axis,
         raised: &[(
-            "cylinder_boolean_not_yet",
+            "witness_not_rational",
             None,
-            "crates/nacre-ops/src/planes.rs",
+            "crates/nacre-ops/src/arrangement.rs",
         )],
-        surfaced: &[("cylinder_boolean_not_yet", None)],
+        surfaced: &[("witness_not_rational", None)],
     },
     Fixture {
         name: "cylinder-wall-contact",
