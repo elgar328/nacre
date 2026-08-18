@@ -649,11 +649,6 @@ fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>
             }
         }
         for hole in &face.inner {
-            // Rim holes only for now — the polygonal-hole population is measured
-            // on its own before it is admitted (V1b).
-            if !matches!(hole.half_edges[..], [_]) {
-                continue;
-            }
             if let Some(dir) = loop_winding(m, hole) {
                 let cos = dir.dot(stated);
                 if cos >= -0.5 {

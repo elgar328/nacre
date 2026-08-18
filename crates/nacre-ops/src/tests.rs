@@ -7101,3 +7101,77 @@ fn a_holes_winding_is_checked_too() {
          assertion that says the inner branch ran: {cosines:?}"
     );
 }
+
+/// The polygonal twin of `a_holes_winding_is_checked_too`: a prism with a square
+/// hole. Same rule, same convention, and — measured across the suite — a real
+/// population (444 polygonal hole loops, all of them already honouring it).
+///
+/// Worth its own fixture because the two shapes reach the rule by different roads:
+/// a rim answers from its circle, a polygon from its Newell sum, and only running
+/// both says the shared `loop_winding` serves both.
+#[test]
+fn a_polygonal_holes_winding_is_checked_too() {
+    let profile = Profile2d::with_holes(
+        vec![p2(0.0, 0.0), p2(4.0, 0.0), p2(4.0, 4.0), p2(0.0, 4.0)],
+        vec![vec![p2(1.0, 1.0), p2(3.0, 1.0), p2(3.0, 3.0), p2(1.0, 3.0)]],
+    )
+    .expect("a square ring");
+    let mut m = Model::new();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&m, Axis::Z),
+        profile,
+        dist: 1.0,
+    };
+    let OpOutput::Extrude { solid, .. } = apply(&mut m, &extrude).expect("a ring prism") else {
+        panic!("an extrude answers with an extrude");
+    };
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "the ring prism is clean to begin with: {:?}",
+        nacre_validate::validate(&m)
+    );
+
+    let shell = m.solids.get(solid).outer;
+    let faces = m.shells.get(shell).faces.clone();
+    let victim = *faces
+        .iter()
+        .find(|&&fh| {
+            let f = m.faces.get(fh);
+            f.inner.len() == 1 && f.inner[0].half_edges.len() >= 3
+        })
+        .expect("a ring prism has two holed caps");
+    let twin = {
+        let f = m.faces.get(victim).clone();
+        m.faces.push(nacre_topo::Face {
+            orientation: f.orientation.flipped(),
+            ..f
+        })
+    };
+    let sh = m.shells.push(nacre_topo::Shell {
+        faces: faces
+            .iter()
+            .map(|&h| if h == victim { twin } else { h })
+            .collect(),
+    });
+    let replaced = m.push_solid(nacre_topo::Solid {
+        outer: sh,
+        cavities: vec![],
+    });
+    m.live_solids.retain(|&s| s == replaced);
+    m.rebuild_adjacency();
+
+    let vs = nacre_validate::validate(&m);
+    let cosines: Vec<f64> = vs
+        .iter()
+        .filter_map(|v| match v {
+            nacre_validate::Violation::FaceMisoriented { face, cos } if *face == twin => Some(*cos),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(vs.len(), 2, "both loops of that face should speak: {vs:?}");
+    assert!(
+        cosines.iter().any(|c| *c < -0.5) && cosines.iter().any(|c| *c > 0.5),
+        "one report per loop, told apart by sign: {cosines:?}"
+    );
+}
