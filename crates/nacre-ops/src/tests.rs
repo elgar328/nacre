@@ -6885,6 +6885,15 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
         ),
         _ => panic!("the first face is the lateral"),
     }
+    // ★ The caches are realized from the same *local* rationals the truth is stated in — the
+    // prism road's deal (`SweptRat::motion`). `validate` reads truth against cache, so a
+    // world/local mix-up here would surface as `CylinderTruthCacheMismatch` rather than as a
+    // wrong model much later.
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
     assert!(
         matches!(
             boolean(&mut m, BoolKind::Cut, cube_h, drill),
