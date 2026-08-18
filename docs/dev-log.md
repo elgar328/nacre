@@ -9990,3 +9990,39 @@ i128 → `None` → 호출부의 `.expect("non-degenerate cylinder")`가 터짐.
   3의 거듭제곱으로 분모만 넓히니 **발화 110 / 침묵 148** — 양쪽이 다 잡힌다. (기구의 대역을 재지
   않으면 "차등 통과"는 아무 말도 아니다.)
 - 관문: 워크스페이스 990 통과, clippy 0, census 비트 동일.
+
+---
+
+## 원통 판정 S2 — 게이트가 벽이기를 그만두고, 거절이 자기 이름대로만 발화한다 (2026-08-18)
+
+S1의 도구로 M6-2a 게이트의 **나머지 부호 질문**을 총체화했다. 전부 "부호가 답"이라 값 그릇이
+필요 없다 — 넘치던 건 길이지 목적지가 아니었다.
+
+- **scalar 신설/변경**: `dot_sign_rat`(동차 — 분모 소거), `point_plane_clearance_rat`
+  (`sign((n·p+d)² − r²|n|²)` — **비동차**라 점의 분모 `Dp`와 반지름의 `S`를 식에 곱해 넣는다),
+  `cylinder_radial_side`는 `Option<Orient>` → **`Orient`**(총체; 소비처의 `Zero → decline`은
+  그대로 — 사라진 건 넘침 원인뿐), 신설 `parallel_axes_clear`(평행 두 축이 반지름 **합**보다
+  머냐 — 합을 정수 안에서 만든다. `r₁.checked_add(r₂)`로 먼저 더하면 폭 없는 질문 앞에 천장을
+  다시 세우는 것).
+- **ops**: `cylinder_gate`의 지역 checked 클로저 삭제 → 위 술어 호출. 원통쌍 이차식이
+  `parallel_axes_clear` 한 줄로 접히며 손으로 다시 쓴 복제가 사라졌다. `transversal_circle`의
+  ⊥ 판정도 `parallel_rat`으로(비-⊥는 이제 decline이 아니라 miss).
+- **`CylinderGateUndecided`의 넘침 원인이 사라졌다** — 남은 원인은 회전 class·narrow 이름 부재·
+  이동 원통뿐이라 그 이름이 이제 정확하다.
+- **잠금과 red 실측**:
+  - 새 reject census 행 `cylinder-wide-axis`: 옛 산술에서 `CylinderGateUndecided`, 지금
+    `CylinderBooleanNotYet`(= 게이트 통과) — **실측으로 확인**.
+    ★ 픽스처를 두 번 고쳐 잡았다: **기운** 넓은 축은 이 인구를 못 잰다(진짜 기울면 평면이
+    oblique라 게이트가 그걸 먼저 거절한다), 단위 스케일 + 넓은 반지름도 **안 넘친다**
+    (`0.5000000000000001²`은 i128에 들어간다). 무는 성질은 **작은 스케일 + 전자릿수**다
+    (서브마이크론 상자와 보어 — 분모 ~10²³).
+  - `cylinder_radial_side`/`parallel_axes_clear`: 옛 철자를 테스트 안 사본으로 두고 그것이
+    `None`인 입력에서 새 답이 나오는 것을 확인(껍질 위 `Zero` 포함).
+  - **동차성 음성 대조**: 점의 분모를 떨구는 순진한 철자를 심었을 때 **처음 쓴 proptest는
+    green이었다** — 생성기가 "점이 반지름 안쪽"인 영역을 못 만들어 두 구현이 늘 `Positive`로
+    합의했기 때문. 원점 통과 정수 법선 + 분모 2²⁴ 점 + 비슷한 크기 반지름으로 **걸치게** 바꾸니
+    즉시 red(그 시드는 회귀로 체크인). 그 사이 실제로 잡아낸 건 두 크레이트 건너의 reject
+    census였다 — 단위 테스트가 자기 명제를 못 재고 있었다는 뜻.
+- **비용**: 게이트는 (평면 class × 원통) 쌍당 1회, 불리언당 1회다. census 165행 중 원통이 든
+  것은 4행뿐이라 벽시계(3.95s)는 잡음 수준 — 포크(narrow-first)는 측정이 요구할 때만.
+- 관문: 워크스페이스 994 통과, clippy 0, census 비트 동일, reject census 11→12행.

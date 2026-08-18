@@ -36,7 +36,7 @@
 pub mod mag;
 pub mod quad;
 pub use mag::Mag;
-pub use quad::{QuadVal, biquad_sign, cylinder_radial_side};
+pub use quad::{QuadVal, biquad_sign, cylinder_radial_side, parallel_axes_clear};
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
@@ -865,6 +865,68 @@ pub fn parallel_rat(a: &[Rat; 3], b: &[Rat; 3]) -> bool {
     let (y, _) = lift3(b);
     let term = |i: usize, j: usize| &x[i] * &y[j] - &x[j] * &y[i];
     term(1, 2).is_zero() && term(2, 0).is_zero() && term(0, 1).is_zero()
+}
+
+/// **The sign of `a · b`** for rational vectors, exactly and always — [`Orient::Zero`] exactly
+/// when they are perpendicular. Bilinear, so each vector's positive denominator factors out of
+/// the answer and the lift's scales are dropped.
+pub fn dot_sign_rat(a: &[Rat; 3], b: &[Rat; 3]) -> Orient {
+    let (x, _) = lift3(a);
+    let (y, _) = lift3(b);
+    orient_of(big_sign(
+        &(0..3).map(|i| &x[i] * &y[i]).sum::<num_bigint::BigInt>(),
+    ))
+}
+
+/// **How a point's distance from a plane compares with `r`** — [`Orient::Negative`] inside the
+/// slab of half-width `r` about the plane, [`Orient::Zero`] exactly at distance `r`,
+/// [`Orient::Positive`] clear of it. Exact and total.
+///
+/// `sign((n·p + d)² − r²|n|²)`, which is `sign(dist² − r²)` scaled by the positive `|n|²` — no
+/// normalization and no square root. Stated in **plane** vocabulary on purpose: the cylinder
+/// gate asks it about an axis point (a wall parallel to the axis is the same distance from every
+/// point of it), but nothing here is about cylinders.
+///
+/// ★ **Not homogeneous in `p`** — the `d` term is why — so `p`'s denominator and the radius'
+/// ride into the formula instead of dropping out: for `coeffs = C/Dc`, `p = P/Dp`, `r = R/S`
+/// the answer is `sign(S²(C₀₋₂·P + C₃·Dp)² − R²|C₀₋₂|²Dp²)` (`Dc²` *is* a positive common factor
+/// and does cancel). Dropping `Dp` instead — the obvious spelling — states a different
+/// proposition, and disagrees with the truth on 1.3% of mixed-denominator inputs (measured).
+///
+/// **Precondition:** `r ≥ 0`; a negative radius has no distance to compare with.
+pub fn point_plane_clearance_rat(coeffs: &[Rat; 4], p: &[Rat; 3], r: Rat) -> Orient {
+    use num_bigint::BigInt;
+    debug_assert!(
+        r >= Rat::from_int(0),
+        "clearance compares against a non-negative radius"
+    );
+    let (c, _dc) = lift4(coeffs);
+    let (pp, dp) = lift3(p);
+    let (rn, rd) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let dot: BigInt = (0..3).map(|i| &c[i] * &pp[i]).sum::<BigInt>() + &c[3] * &dp;
+    let nn: BigInt = (0..3).map(|i| &c[i] * &c[i]).sum();
+    orient_of(big_sign(
+        &(&rd * &rd * (&dot * &dot) - &rn * &rn * nn * (&dp * &dp)),
+    ))
+}
+
+/// A rational 4-vector (plane coefficients) as **(integer components, positive denominator)**.
+fn lift4(v: &[Rat; 4]) -> ([num_bigint::BigInt; 4], num_bigint::BigInt) {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    let den: [BigInt; 4] = core::array::from_fn(|i| BigInt::from(v[i].denom()));
+    let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+    let num = core::array::from_fn(|i| BigInt::from(v[i].numer()) * (&d / &den[i]));
+    (num, d)
+}
+
+/// `big_sign`'s answer as the geometry's [`Orient`].
+fn orient_of(s: i8) -> Orient {
+    match s {
+        1 => Orient::Positive,
+        -1 => Orient::Negative,
+        _ => Orient::Zero,
+    }
 }
 
 /// **Which side of the plane `j` the implicit point `∩(p₀, p₁, p₂)` lies on**, over integer
@@ -3302,6 +3364,85 @@ mod tests {
                 let s = [s[0], s[1], s[2]];
                 prop_assert_eq!(parallel_rat(&s, &b), parallel_rat(&a, &b), "scale-invariance");
             }
+        }
+
+        /// **The clearance predicate must not drop the point's scale** — the negative control
+        /// for the one decision in this section that is not a matter of taste.
+        ///
+        /// `(n·p + d)² − r²|n|²` is *not* homogeneous in `p`: clearing `p`'s denominators
+        /// multiplies `n·p` while leaving `d` where it was, which states a different
+        /// proposition. The naive spelling is written out here and compared with the truth in
+        /// exact rationals; on mixed denominators the two part company (measured: 1.3% of
+        /// random cases, so this test bites without needing a hand-picked adversary).
+        #[test]
+        fn clearance_keeps_the_points_scale(
+            ns in prop::array::uniform3(-10i128..10),
+            ps in prop::array::uniform3(-1000i128..1000),
+            pd in prop::array::uniform3(1i128..(1i128 << 24)),
+            rn in 1i128..100,
+            rd in 1i128..100_000,
+        ) {
+            // ★ The generator is aimed at the **straddle**: an integer normal through the
+            // origin, a point a hair off the plane (denominators up to 2²⁴), and a radius of
+            // comparable size — so the answer is genuinely `Negative` about as often as
+            // `Positive`. A generator whose points sit far outside every radius would compare
+            // two implementations that always say `Positive`, which is how the first spelling
+            // of this test passed while the scale-dropping defect was installed (measured: the
+            // probe went green here and was caught only by a fixture two crates away).
+            let coeffs: [Rat; 4] = [
+                Rat::from_int(ns[0]),
+                Rat::from_int(ns[1]),
+                Rat::from_int(ns[2]),
+                Rat::from_int(0),
+            ];
+            prop_assume!(coeffs[..3].iter().any(|c| *c != Rat::from_int(0)));
+            let p: [Rat; 3] = core::array::from_fn(|i| Rat::new(ps[i], pd[i]).unwrap());
+            let r = Rat::new(rn, rd).unwrap();
+
+            // The truth, in exact rationals — no lifting, no scales, just the definition.
+            let truth = (|| -> Option<Orient> {
+                let dot = (0..3).try_fold(Rat::from_int(0), |a, i| {
+                    a.checked_add(coeffs[i].checked_mul(p[i])?)
+                })?.checked_add(coeffs[3])?;
+                let nn = (0..3).try_fold(Rat::from_int(0), |a, i| {
+                    a.checked_add(coeffs[i].checked_mul(coeffs[i])?)
+                })?;
+                let val = dot.checked_mul(dot)?
+                    .checked_sub(r.checked_mul(r)?.checked_mul(nn)?)?;
+                Some(match val.cmp(&Rat::from_int(0)) {
+                    core::cmp::Ordering::Less => Orient::Negative,
+                    core::cmp::Ordering::Equal => Orient::Zero,
+                    core::cmp::Ordering::Greater => Orient::Positive,
+                })
+            })();
+            if let Some(want) = truth {
+                prop_assert_eq!(point_plane_clearance_rat(&coeffs, &p, r), want,
+                    "coeffs {:?} p {:?} r {:?}", coeffs, p, r);
+            }
+        }
+
+        /// The dot sign is the sign of the rational dot product, wherever that can be formed at
+        /// all — and is total where it cannot.
+        #[test]
+        fn dot_sign_is_the_sign_of_the_dot(
+            xs in prop::array::uniform6(-(1i128 << 30)..(1i128 << 30)),
+            ds in prop::array::uniform6(1i128..(1i128 << 30)),
+        ) {
+            let r = |i: usize| Rat::new(xs[i], ds[i]).unwrap();
+            let (a, b) = ([r(0), r(1), r(2)], [r(3), r(4), r(5)]);
+            let checked = (0..3).try_fold(Rat::from_int(0), |acc, i| {
+                acc.checked_add(a[i].checked_mul(b[i])?)
+            });
+            if let Some(v) = checked {
+                let want = match v.cmp(&Rat::from_int(0)) {
+                    core::cmp::Ordering::Less => Orient::Negative,
+                    core::cmp::Ordering::Equal => Orient::Zero,
+                    core::cmp::Ordering::Greater => Orient::Positive,
+                };
+                prop_assert_eq!(dot_sign_rat(&a, &b), want);
+            }
+            // Perpendicularity is symmetric, whatever the widths.
+            prop_assert_eq!(dot_sign_rat(&a, &b), dot_sign_rat(&b, &a));
         }
 
         /// A vector is parallel to itself, to its multiples, and to zero — and **not** to a

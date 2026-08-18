@@ -494,33 +494,89 @@ pub fn plane_plane_cylinder(
 }
 
 /// The **radial side** of a cylinder's lateral surface a rational point lies on — negative
-/// inside, zero on the surface, positive outside. Exact:
+/// inside, zero on the surface, positive outside. Exact and **total**:
 /// `sign(|w|²|m|² − (w·m)² − r²|m|²)` with `w = p − origin` — the same constant term the meet
-/// quadratic carries, scaled by the positive `|m|²` so no normalization is needed. `None` on
-/// checked-`Rat` overflow (honest decline). Preconditions `dir ≠ 0`, `radius > 0` as in
-/// [`plane_plane_cylinder`].
+/// quadratic carries, scaled by the positive `|m|²` so no normalization is needed.
+/// Preconditions `dir ≠ 0`, `radius > 0` as in [`plane_plane_cylinder`].
 ///
 /// This is the "axis distance² vs r²" question the M6-2a population gate and the circle
 /// containment tests ask; the axial (z-range) half of point-vs-cylinder-solid is
 /// [`plane_side`]-against-the-caps, deliberately separate.
-pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, radius: Rat) -> Option<Orient> {
+///
+/// ★ **It used to answer `None` on checked-`Rat` overflow, and no longer can.** The expression
+/// is one sign, and a sign has no width — only the road to it did. Denominators are cleared once
+/// and the arithmetic runs in `BigInt`, so a caller's decline now means the geometry (a point on
+/// the surface), never the arithmetic. The scales are **carried, not dropped**: the `r²|m|²` term
+/// makes the expression inhomogeneous in `w`, so `w`'s denominator `Dw` and the radius' `S` ride
+/// in — `sign(S²(|W|²|M|² − (W·M)²) − R²|M|²Dw²)`, with `Dm²` cancelling as a positive factor.
+pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, radius: Rat) -> Orient {
     debug_assert!(!is_zero3(dir), "cylinder axis must be nonzero");
     debug_assert!(
         radius > Rat::from_int(0),
         "cylinder radius must be positive"
     );
-    let w = sub3(p, origin)?;
-    let mm = dot3(dir, dir)?;
-    let wm = dot3(&w, dir)?;
-    let val = dot3(&w, &w)?
-        .checked_mul(mm)?
-        .checked_sub(wm.checked_mul(wm)?)?
-        .checked_sub(radius.checked_mul(radius)?.checked_mul(mm)?)?;
-    Some(match val.cmp(&Rat::from_int(0)) {
-        core::cmp::Ordering::Less => Orient::Negative,
-        core::cmp::Ordering::Equal => Orient::Zero,
-        core::cmp::Ordering::Greater => Orient::Positive,
-    })
+    radial_side_int(p, origin, dir, &[radius])
+}
+
+/// [`cylinder_radial_side`]'s body, with the radius given as **parts to be summed** — one part
+/// for the point-vs-cylinder question, two for [`parallel_axes_clear`], where the comparison is
+/// against `r₁ + r₂` and forming that sum in `Rat` first would reintroduce the ceiling this
+/// function exists to remove.
+fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    // `w = p − origin` as integers: one common denominator for both points, so the subtraction
+    // is exact without a `Rat` step that could overflow.
+    let lift = |v: &V3| -> ([BigInt; 3], BigInt) {
+        let den: [BigInt; 3] = core::array::from_fn(|i| BigInt::from(v[i].denom()));
+        let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+        (
+            core::array::from_fn(|i| BigInt::from(v[i].numer()) * (&d / &den[i])),
+            d,
+        )
+    };
+    let (pi, dp) = lift(p);
+    let (oi, doo) = lift(origin);
+    let dw = &dp * &doo;
+    let w: [BigInt; 3] = core::array::from_fn(|i| &pi[i] * &doo - &oi[i] * &dp);
+    let (m, _dm) = lift(dir);
+    // The radius sum over a common denominator, kept as (numerator, denominator).
+    let (mut rn, mut rd) = (BigInt::from(0), BigInt::from(1));
+    for r in radii {
+        let (n, d) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+        rn = &rn * &d + &n * &rd;
+        rd *= d;
+    }
+    let ww: BigInt = (0..3).map(|i| &w[i] * &w[i]).sum();
+    let mm: BigInt = (0..3).map(|i| &m[i] * &m[i]).sum();
+    let wm: BigInt = (0..3).map(|i| &w[i] * &m[i]).sum();
+    let val = &rd * &rd * (&ww * &mm - &wm * &wm) - &rn * &rn * &mm * (&dw * &dw);
+    match val.sign() {
+        num_bigint::Sign::Minus => Orient::Negative,
+        num_bigint::Sign::NoSign => Orient::Zero,
+        num_bigint::Sign::Plus => Orient::Positive,
+    }
+}
+
+/// **Whether two parallel axes stand further apart than `r_a + r_b`** — [`Orient::Positive`]
+/// when they are clear of each other, `Zero` at tangency, `Negative` when the two cylinders'
+/// surfaces overlap. Exact and total.
+///
+/// The same quadratic [`cylinder_radial_side`] evaluates, with `b`'s origin as the point and the
+/// **radius sum** as the radius: a point further from `a`'s axis than `r_a + r_b` is exactly a
+/// second axis whose cylinder cannot touch `a`'s. ★ The sum is formed **inside** the integer
+/// arithmetic — `r_a.checked_add(r_b)` would put an `i128` ceiling back in front of a question
+/// that has no width.
+///
+/// **Precondition:** the axes are parallel (`parallel_rat(m_a, m_b)`) — the caller establishes
+/// that; distance between skew or crossing axes is not this question.
+pub fn parallel_axes_clear(o_a: &V3, dir: &V3, r_a: Rat, o_b: &V3, r_b: Rat) -> Orient {
+    debug_assert!(!is_zero3(dir), "cylinder axis must be nonzero");
+    debug_assert!(
+        r_a > Rat::from_int(0) && r_b > Rat::from_int(0),
+        "cylinder radii must be positive"
+    );
+    radial_side_int(o_b, o_a, dir, &[r_a, r_b])
 }
 
 /// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, one

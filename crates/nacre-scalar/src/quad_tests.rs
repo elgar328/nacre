@@ -541,7 +541,7 @@ fn the_radial_side_knows_its_shell() {
     for (p, want) in cases {
         assert_eq!(
             cylinder_radial_side(&p, &o, &m, radius),
-            Some(want),
+            want,
             "point {p:?}"
         );
     }
@@ -555,7 +555,7 @@ fn the_radial_side_knows_its_shell() {
         [ri(1), r(-1, 2), ri(2)],
         [r(5, 2), r(5, 2), ri(5)],
     ] {
-        let got = cylinder_radial_side(&p, &o2, &m2, r2).expect("fits");
+        let got = cylinder_radial_side(&p, &o2, &m2, r2);
         let pf: Vec<f64> = p.iter().map(|x| x.to_f64()).collect();
         let w = [pf[0] - 1.0, pf[1] + 0.5, pf[2] - 2.0];
         let mf = [1.0, 2.0, 2.0];
@@ -570,4 +570,108 @@ fn the_radial_side_knows_its_shell() {
         };
         assert_eq!(got, want, "point {pf:?}");
     }
+}
+
+/// **The radial side answers where the checked spelling had to give up.** A point and an axis
+/// whose coordinates carry ~10²³ denominators: `|w|²|m|²` alone leaves `i128`, so the retired
+/// `Option` version returned `None` and its callers rejected for the arithmetic. The total one
+/// answers, and the answer is checked against the geometry by hand — the point sits at radius
+/// `2·r` from the axis, so it is outside; halving that puts it inside.
+#[test]
+fn the_radial_side_answers_where_the_checked_one_could_not() {
+    let wide = |x: f64| Rat::from_decimal(x).expect("in the decimal window");
+    // A sub-micron cylinder on ẑ: radius 5e-8, axis through (1e-7, 1e-7).
+    let o = [
+        wide(1.0000000000000002e-7),
+        wide(1.0000000000000002e-7),
+        ri(0),
+    ];
+    let m = [ri(0), ri(0), ri(1)];
+    let radius = wide(5.000000000000001e-8);
+    // The retired spelling, verbatim — it cannot even form `|w|²`.
+    let checked = |p: &[Rat; 3]| -> Option<Orient> {
+        let w = [
+            p[0].checked_sub(o[0])?,
+            p[1].checked_sub(o[1])?,
+            p[2].checked_sub(o[2])?,
+        ];
+        let dot = |x: &[Rat; 3], y: &[Rat; 3]| {
+            x[0].checked_mul(y[0])?
+                .checked_add(x[1].checked_mul(y[1])?)?
+                .checked_add(x[2].checked_mul(y[2])?)
+        };
+        let mm = dot(&m, &m)?;
+        let wm = dot(&w, &m)?;
+        let val = dot(&w, &w)?
+            .checked_mul(mm)?
+            .checked_sub(wm.checked_mul(wm)?)?
+            .checked_sub(radius.checked_mul(radius)?.checked_mul(mm)?)?;
+        Some(match val.cmp(&Rat::from_int(0)) {
+            core::cmp::Ordering::Less => Orient::Negative,
+            core::cmp::Ordering::Equal => Orient::Zero,
+            core::cmp::Ordering::Greater => Orient::Positive,
+        })
+    };
+    let outside = [
+        o[0].checked_add(radius)
+            .and_then(|x| x.checked_add(radius))
+            .expect("small sum"),
+        o[1],
+        ri(3),
+    ];
+    let inside = [
+        o[0].checked_add(Rat::new(radius.numer(), radius.denom() * 2).expect("half r"))
+            .expect("small sum"),
+        o[1],
+        ri(-4),
+    ];
+    assert_eq!(
+        checked(&outside),
+        None,
+        "the fixture must actually overflow the old road"
+    );
+    assert_eq!(checked(&inside), None, "…on both witnesses");
+    assert_eq!(
+        cylinder_radial_side(&outside, &o, &m, radius),
+        Orient::Positive
+    );
+    assert_eq!(
+        cylinder_radial_side(&inside, &o, &m, radius),
+        Orient::Negative
+    );
+    // And exactly on the shell — the case only exact arithmetic can witness.
+    let on = [o[0].checked_add(radius).expect("small sum"), o[1], ri(9)];
+    assert_eq!(cylinder_radial_side(&on, &o, &m, radius), Orient::Zero);
+}
+
+/// Two parallel axes: clear when their distance exceeds `r₁ + r₂`, tangent at equality, and
+/// overlapping below it — **with the sum formed inside the integer arithmetic**. The radii here
+/// are wide enough that `r₁.checked_add(r₂)` still works but `(r₁+r₂)²·|m|²` does not, which is
+/// what the retired gate computed.
+#[test]
+fn parallel_axes_clear_compares_against_the_radius_sum() {
+    let wide = |x: f64| Rat::from_decimal(x).expect("in the decimal window");
+    let m = [ri(0), ri(0), ri(1)];
+    let (ra, rb) = (wide(5.000000000000001e-8), wide(3.000000000000001e-8));
+    let o_a = [ri(0), ri(0), ri(0)];
+    let far = [wide(1.0000000000000002e-7), ri(0), ri(5)];
+    // Short on purpose: `near` only has to sit inside the radius sum — the width that matters
+    // is in `ra`, `rb` and `far`, which is where the old arithmetic gave out.
+    let near = [wide(7e-8), ri(0), ri(5)];
+    assert_eq!(
+        crate::parallel_axes_clear(&o_a, &m, ra, &far, rb),
+        Orient::Positive,
+        "1e-7 apart, radii summing to 8e-8: clear"
+    );
+    assert_eq!(
+        crate::parallel_axes_clear(&o_a, &m, ra, &near, rb),
+        Orient::Negative,
+        "7e-8 apart, radii summing to 8e-8: overlapping"
+    );
+    let touching = [ra.checked_add(rb).expect("small sum"), ri(0), ri(5)];
+    assert_eq!(
+        crate::parallel_axes_clear(&o_a, &m, ra, &touching, rb),
+        Orient::Zero,
+        "exactly tangent"
+    );
 }

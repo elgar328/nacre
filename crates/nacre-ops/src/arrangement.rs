@@ -1018,22 +1018,11 @@ fn transversal_circle(
             .checked_add(x[1].checked_mul(y[1])?)?
             .checked_add(x[2].checked_mul(y[2])?)
     };
-    let cross_zero = (|| -> Option<bool> {
-        let c0 = n[1]
-            .checked_mul(m[2])?
-            .checked_sub(n[2].checked_mul(m[1])?)?;
-        let c1 = n[2]
-            .checked_mul(m[0])?
-            .checked_sub(n[0].checked_mul(m[2])?)?;
-        let c2 = n[0]
-            .checked_mul(m[1])?
-            .checked_sub(n[1].checked_mul(m[0])?)?;
-        Some(c0 == zero && c1 == zero && c2 == zero)
-    })();
-    match cross_zero {
-        None => return Err(DeclineKind::CylSpan),
-        Some(false) => return Ok(None),
-        Some(true) => {}
+    // ⊥ to the axis, decided **totally** (`parallel_rat` clears denominators and answers in
+    // integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
+    // all — a miss, like a parallel plane, not a decline.
+    if !nacre_scalar::parallel_rat(&n, &m) {
+        return Ok(None);
     }
     let Some(span) = cf.span else {
         return Err(DeclineKind::CylSpan);
@@ -2005,10 +1994,11 @@ fn node_in_circle(
         &circle.def.dir(),
         circle.def.radius(),
     ) {
-        Some(nacre_scalar::Orient::Negative) => Ok(true),
-        Some(nacre_scalar::Orient::Positive) => Ok(false),
-        // On the surface, or overflow: the gate-impossible contact — refuse honestly.
-        _ => Err(undecided()),
+        nacre_scalar::Orient::Negative => Ok(true),
+        nacre_scalar::Orient::Positive => Ok(false),
+        // On the surface: the gate-impossible contact — refuse honestly. (The predicate is
+        // total now, so this arm is the geometry alone; it used to swallow overflow too.)
+        nacre_scalar::Orient::Zero => Err(undecided()),
     }
 }
 

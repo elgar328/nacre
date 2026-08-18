@@ -224,6 +224,42 @@ fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
+/// **The same drill, at a scale where the exact arithmetic used to run out.** Geometry decides
+/// nothing new here — an axis-aligned box with an axis-aligned bore through it, walls clear of
+/// the lateral surface — but every coordinate is a sub-micron value carried to a full f64's
+/// digits, so its exact rational has a ~10²³ denominator and the gate's `(n·o+d)² vs r²|n|²`
+/// squares it past `i128`.
+///
+/// ★ **Chosen from the algebra, not the story** (measured): a *tilted* wide axis cannot test
+/// this — a real tilt makes the box's planes oblique and the gate rejects for that first — and
+/// a unit-scale box with a wide radius does not overflow at all (`0.5000000000000001²` fits).
+/// Smallness with full digits is the property that bites. Before the gate's predicates became
+/// total this fixture answered `CylinderGateUndecided`: the arithmetic ran out, and the reject
+/// named the symptom instead of the geometry.
+fn cylinder_wide_axis(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let a = cub(
+        m,
+        [0.0; 3],
+        [
+            2.0000000000000003e-7,
+            2.0000000000000003e-7,
+            2.0000000000000003e-7,
+        ],
+    );
+    let cyl = m.add_cylinder(
+        Point3::from_array([
+            1.0000000000000002e-7,
+            1.0000000000000002e-7,
+            -1.0000000000000002e-7,
+        ]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        5.000000000000001e-8,
+        4.000000000000001e-7,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Cut, a, cyl)
+}
+
 fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
     let cyl = m.add_cylinder(
@@ -317,7 +353,7 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
 
-const CORPUS: [Fixture; 11] = [
+const CORPUS: [Fixture; 12] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
@@ -372,6 +408,19 @@ const CORPUS: [Fixture; 11] = [
         // held only by the C4b stopper, and this row is the diff that shows it opening.
         expect: Some(RejectReason::CylinderBooleanNotYet),
         run: cylinder_notyet,
+        raised: &[(
+            "cylinder_boolean_not_yet",
+            None,
+            "crates/nacre-ops/src/planes.rs",
+        )],
+        surfaced: &[("cylinder_boolean_not_yet", None)],
+    },
+    Fixture {
+        name: "cylinder-wide-axis",
+        // The same population, spelled with long decimals — the gate must answer the geometry,
+        // not the width of the arithmetic.
+        expect: Some(RejectReason::CylinderBooleanNotYet),
+        run: cylinder_wide_axis,
         raised: &[(
             "cylinder_boolean_not_yet",
             None,

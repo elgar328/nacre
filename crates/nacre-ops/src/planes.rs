@@ -754,25 +754,10 @@ pub(crate) fn cylinder_gate(
     geom: &[WorkingPlane],
     class_owner: &[Option<SolidSide>],
 ) -> Result<Vec<WorkingCyl>, BoolError> {
-    use nacre_scalar::Rat;
-    let zero = Rat::from_int(0);
-    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
-    let cross_is_zero = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<bool> {
-        let c0 = x[1]
-            .checked_mul(y[2])?
-            .checked_sub(x[2].checked_mul(y[1])?)?;
-        let c1 = x[2]
-            .checked_mul(y[0])?
-            .checked_sub(x[0].checked_mul(y[2])?)?;
-        let c2 = x[0]
-            .checked_mul(y[1])?
-            .checked_sub(x[1].checked_mul(y[0])?)?;
-        Some(c0 == zero && c1 == zero && c2 == zero)
-    };
+    // ★ Every question below is a **sign**, and the scalar layer answers signs totally: the
+    // local checked-`Rat` closures this used to carry declined on overflow, which put a width
+    // limit inside `CylinderGateUndecided` and made that name say less than it claimed.
+    use nacre_scalar::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
@@ -806,31 +791,19 @@ pub(crate) fn cylinder_gate(
                 return Err(undecided());
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
-            match cross_is_zero(&n, &m) {
-                None => return Err(undecided()),
-                Some(true) => {
-                    // Perpendicular cut — the circle population, unless coplanar-seated.
-                    if class_owner[c].is_none() {
-                        return Err(reject(RejectReason::SeatedCylinderCap));
-                    }
+            if nacre_scalar::parallel_rat(&n, &m) {
+                // Perpendicular cut — the circle population, unless coplanar-seated.
+                if class_owner[c].is_none() {
+                    return Err(reject(RejectReason::SeatedCylinderCap));
                 }
-                Some(false) => {
-                    let nm = dot3(&n, &m).ok_or_else(undecided)?;
-                    if nm != zero {
-                        return Err(reject(RejectReason::ObliqueCylinderCut));
-                    }
-                    // A parallel wall: it must provably miss the lateral surface.
-                    let no_d = dot3(&n, &o)
-                        .and_then(|x| x.checked_add(coeffs[3]))
-                        .ok_or_else(undecided)?;
-                    let lhs = no_d.checked_mul(no_d).ok_or_else(undecided)?;
-                    let rhs = r
-                        .checked_mul(r)
-                        .and_then(|rr| rr.checked_mul(dot3(&n, &n)?))
-                        .ok_or_else(undecided)?;
-                    if lhs <= rhs {
-                        return Err(reject(RejectReason::WallMeetsLateral));
-                    }
+            } else {
+                if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
+                    return Err(reject(RejectReason::ObliqueCylinderCut));
+                }
+                // A parallel wall: it must provably miss the lateral surface — the axis stands
+                // further from the plane than r (any axis point answers; they are equidistant).
+                if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) != Orient::Positive {
+                    return Err(reject(RejectReason::WallMeetsLateral));
                 }
             }
         }
@@ -839,39 +812,22 @@ pub(crate) fn cylinder_gate(
     for (i, a) in cyls.iter().enumerate() {
         for b in &cyls[i + 1..] {
             let (m1, m2) = (a.def.dir(), b.def.dir());
-            match cross_is_zero(&m1, &m2) {
-                None => return Err(undecided()),
-                Some(false) => return Err(reject(RejectReason::CylinderPairContact)),
-                Some(true) => {
-                    // Parallel axes: clear iff axis distance exceeds the radius sum —
-                    // dist²·|m₁|² = |w|²|m₁|² − (w·m₁)² with w the origin difference.
-                    let w: [Rat; 3] = {
-                        let (oa, ob) = (a.def.origin(), b.def.origin());
-                        let mut w = [zero; 3];
-                        for k in 0..3 {
-                            w[k] = ob[k].checked_sub(oa[k]).ok_or_else(undecided)?;
-                        }
-                        w
-                    };
-                    let mm = dot3(&m1, &m1).ok_or_else(undecided)?;
-                    let wm = dot3(&w, &m1).ok_or_else(undecided)?;
-                    let lhs = dot3(&w, &w)
-                        .and_then(|ww| ww.checked_mul(mm))
-                        .and_then(|x| x.checked_sub(wm.checked_mul(wm)?))
-                        .ok_or_else(undecided)?;
-                    let rsum = a
-                        .def
-                        .radius()
-                        .checked_add(b.def.radius())
-                        .ok_or_else(undecided)?;
-                    let rhs = rsum
-                        .checked_mul(rsum)
-                        .and_then(|x| x.checked_mul(mm))
-                        .ok_or_else(undecided)?;
-                    if lhs <= rhs {
-                        return Err(reject(RejectReason::CylinderPairContact));
-                    }
-                }
+            if !nacre_scalar::parallel_rat(&m1, &m2) {
+                return Err(reject(RejectReason::CylinderPairContact));
+            }
+            // Parallel axes: clear iff the axis distance exceeds the radius **sum** — the same
+            // quadratic as the point-vs-cylinder side, with `b`'s origin as the point. The sum
+            // is formed inside that predicate's integer arithmetic; adding the two radii in
+            // `Rat` first would put the ceiling back in front of a question that has no width.
+            if nacre_scalar::parallel_axes_clear(
+                &a.def.origin(),
+                &m1,
+                a.def.radius(),
+                &b.def.origin(),
+                b.def.radius(),
+            ) != Orient::Positive
+            {
+                return Err(reject(RejectReason::CylinderPairContact));
             }
         }
     }
