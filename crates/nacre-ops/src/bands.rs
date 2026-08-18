@@ -471,6 +471,143 @@ mod tests {
         assert!(v < plain_v, "the bore removes material: {v} vs {plain_v}");
     }
 
+    /// ★ **The two-hole plate declines, and the reason is the road's, not the boolean's.**
+    ///
+    /// Drilling a second bore means cutting a solid that **already has a cylinder face**, so the
+    /// band witness would have to ask "is this axis point inside a body bounded partly by a
+    /// cylinder" — a question `point_in_faces_rat` cannot take. The gate would pass the pair
+    /// (parallel axes, clear of each other by more than `r₁+r₂`), and the geometry is ordinary;
+    /// what is missing is one road, and until it exists the refusal is named rather than guessed.
+    ///
+    /// Recorded as a **test** rather than a note because the day the road learns cylinders, this
+    /// is the line that has to change — and the volume it should then produce is written here.
+    #[test]
+    fn a_two_hole_plate_declines_for_want_of_a_curved_road() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 2.0, 1.0]),
+        );
+        let d1 = m.add_cylinder(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.25,
+            3.0,
+        );
+        let d2 = m.add_cylinder(
+            Point3::from_array([3.0, 1.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.25,
+            3.0,
+        );
+        m.rebuild_adjacency();
+        // The first bore builds — one cylinder, a planar counterpart.
+        let one = crate::boolean(&mut m, BoolKind::Cut, a, d1).expect("first bore");
+        let v1 = nacre_props::mass_props(&m, one[0]).expect("props").volume;
+        assert!(
+            (v1 - (8.0 - std::f64::consts::PI * 0.0625)).abs() < 1e-9,
+            "{v1}"
+        );
+        // The second does not: its counterpart is no longer planar.
+        let live_before = m.live_solids.clone();
+        let err = crate::boolean(&mut m, BoolKind::Cut, one[0], d2)
+            .expect_err("the counterpart now carries a cylinder face");
+        assert_eq!(
+            m.live_solids, live_before,
+            "a refused boolean retires nothing — including one refused after the gate"
+        );
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::BandWitnessNotPlanar,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        // When the road learns cylinders, this is the figure to expect: `8 − 2πr²h`.
+        let _ = 8.0 - 2.0 * std::f64::consts::PI * 0.0625 * 1.0;
+    }
+
+    /// ★ **A cap coplanar with the other body's cap declines as "seated", even standing far
+    /// away.** The gate asks the question **per class**, and two coplanar caps are one class
+    /// whichever way they sit — so a cylinder that merely happens to start and end on the box's
+    /// cap planes is refused with the flush-seating name. Conservative, not wrong: the honest
+    /// answer to "are these seated" from class membership alone is yes.
+    ///
+    /// It is a fixture because it is the one place the population's *name* is wider than its
+    /// geometry, and because a future seated-coplanar population must not silently absorb it.
+    #[test]
+    fn a_distant_cap_on_the_boxs_own_plane_declines_as_seated() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        // Far from the box in x/y, but its caps land exactly on z = 0 and z = 2.
+        let b = m.add_cylinder(
+            Point3::from_array([10.0, 10.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let before = m.live_solids.clone();
+        let err = crate::boolean(&mut m, BoolKind::Cut, a, b).expect_err("coplanar caps");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::SeatedCylinderCap,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        // ★ **A reject consumes nothing.** The operands are still live and still the same two, in
+        // the same order — the property the arena residue note is about, checked on the cylinder
+        // population where the refusals are new.
+        assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+    }
+
+    /// **A drill that misses.** `Cut` returns the box untouched and `Fuse` returns two bodies —
+    /// the population where a cylinder is present but no circle is ever emitted, so the whole
+    /// curved path has to stay out of the way.
+    #[test]
+    fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
+        let (mut m, a, b) = {
+            let mut m = Model::new();
+            let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+            let b = m.add_cylinder(
+                Point3::from_array([10.0, 10.0, 0.5]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            (m, a, b)
+        };
+        let cut = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("a cut that misses");
+        assert_eq!(cut.len(), 1);
+        let v = nacre_props::mass_props(&m, cut[0]).expect("props").volume;
+        assert!((v - 8.0).abs() < 1e-12, "the box is untouched: {v}");
+    }
+
+    /// **A blind hole, end to end.** The bore stops inside the box, so its own cap closes the
+    /// bottom — a disk face that only the seated-circle path can emit.
+    #[test]
+    fn a_blind_hole_is_built_and_measures_what_it_should() {
+        let (mut m, a, b) = box_and_drill(-1.0, 2.0); // z ∈ [−1, 1]
+        let out = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("the blind bore cuts");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 8.0 - std::f64::consts::PI * 0.25 * 1.0; // the bore reaches z = 1
+        assert!((v - want).abs() < 1e-9, "volume {v} vs {want}");
+    }
+
     /// ★ **The uniform-slab theorem's counterexample, as a band case.** A cylinder standing in an
     /// L-prism's notch is clear of every wall by more than `r` — the refuted "z-range" rule would
     /// keep its wall — but it is outside the material, so `Cut` changes nothing and no band

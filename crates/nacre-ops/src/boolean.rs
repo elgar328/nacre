@@ -732,12 +732,18 @@ impl LocalFace {
             .filter_map(Bound::ring_mut)
     }
 
-    /// Whether any boundary is a circle — the unify partition reads this (circle-bounded
-    /// faces are never merge candidates).
-    pub(crate) fn has_circle(&self) -> bool {
+    /// Whether any boundary is **curved** — the unify partition reads this (a face with a
+    /// curved bound is never a merge candidate: `merge_component` rebuilds a boundary from node
+    /// rings, and a bound with no nodes would vanish from the rebuilt face).
+    ///
+    /// ★ Bands are covered as well as circles, even though a band reaches the merge path only if
+    /// something else changes: it has no node ring, so it joins no edge-connected component and
+    /// is emitted as a singleton. Stating the property is what keeps that an *invariant* rather
+    /// than an accident of today's component rule.
+    pub(crate) fn has_curved_bound(&self) -> bool {
         std::iter::once(&self.outer)
             .chain(self.inner.iter())
-            .any(|b| matches!(b, Bound::Circle { .. }))
+            .any(|b| matches!(b, Bound::Circle { .. } | Bound::Band { .. }))
     }
 }
 
@@ -1580,7 +1586,7 @@ pub(crate) fn unify_coplanar_faces(
         // separate faces: a tidiness loss, never a correctness one (this pass's own charter).
         if mem
             .iter()
-            .any(|&fi| kept[fi].as_ref().is_some_and(LocalFace::has_circle))
+            .any(|&fi| kept[fi].as_ref().is_some_and(LocalFace::has_curved_bound))
         {
             continue;
         }
