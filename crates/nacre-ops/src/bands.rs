@@ -15,11 +15,20 @@
 //! while sitting outside the material. The witness query is what fixes it, and the counterexample
 //! is a fixture of the road that answers it (`combinatorics::point_in_faces_rat`).
 //!
-//! The witness is a **rational point on the axis** — the band's midpoint — which is why the road
-//! had to take coordinates rather than a plane triple (C4a).
+//! ★★ **The chamber is read off the arrangement, not measured.** The plane arrangement already
+//! makes a **disk cell** for every circle a cylinder leaves on a class, and `label_cells` writes
+//! four bits on it: which solid's material lies immediately above and below that plane *inside the
+//! circle*. That is the band's chamber, stated by the engine that decided it.
+//!
+//! ★ This replaced a witness ray (C4a's `point_in_faces_rat`): a rational point on the axis, cast
+//! through the counterpart's faces, counting crossings. It gave the same answers, but it answered
+//! a **3D containment** question — the shape the *component* probe asks — when the band's question
+//! is the same shape as "does this face survive": two chambers either side of a boundary. Reading
+//! the label needs no coordinates, no ray direction, no abstention retry, and has no width
+//! ceiling, and it is why a cylinder may now stand on either side of the boolean.
 
 use crate::boolean::{Bound, LocalFace};
-use crate::combinatorics::{self, ComponentTriples};
+use crate::combinatorics;
 use crate::planes::SolidSide;
 use crate::planes::{ClassIx, FaceRow, WorkingPlane, axis_param_of_plane};
 use crate::tolerant::Judge;
@@ -84,54 +93,36 @@ pub(crate) fn cyl_rows(
 /// Emitted in `(cylinder class, lower t)` order — `reconstruct` mints handles in face order, so
 /// this ordering is the replay contract.
 #[cfg_attr(not(test), allow(dead_code))] // the production caller arrives with C4b-3
-/// `counterpart` is the **other operand's** planar faces — the only road the witness travels.
-/// Taking one road rather than both is the API saying what the decline below enforces: every
-/// cylinder in this population belongs to one side, and the side that is asked about is planar.
+/// `labels` is the arrangement's own answer per `(cylinder class, plane class)` — see the module
+/// docs. Cylinders may sit on **both** operands: nothing here asks a solid to describe itself.
 pub(crate) fn band_faces(
     kind: BoolKind,
     plane_faces: &[LocalFace],
     rows: &[CylRow],
     jd: &Judge<'_, WorkingPlane>,
-    counterpart: &ComponentTriples,
+    labels: &crate::arrangement::DiskLabels,
 ) -> Result<Vec<LocalFace>, BoolError> {
-    // The witness road reads **planar** faces. A counterpart that is itself a cylinder has no
-    // road yet, and the gate's "parallel axes, clear of each other" proof is the *gate's*, not an
-    // answer this pass derived — borrowing it here would be a shortcut resting on someone else's
-    // assumption. Named decline instead.
-    if rows.iter().any(|r| r.side == SolidSide::A) && rows.iter().any(|r| r.side == SolidSide::B) {
-        return Err(reject(RejectReason::BandWitnessNotPlanar));
-    }
     let mut out = Vec::new();
     for (k, row) in rows.iter().enumerate() {
         for (lo, hi) in bands_of(k, row, plane_faces, jd)? {
-            let (lo_t, hi_t) = (param(jd, lo, row)?, param(jd, hi, row)?);
-            // ★ The witness is a **value**, not a sign, and values still have an `i128`
-            // ceiling: `o + t·m` for a sub-micron axis spelled to a full f64's digits leaves
-            // `Rat`. That is the road's own name for "I could not form this exactly" — the gate
-            // decided fine, so borrowing its name here would point at the wrong layer.
-            let Some(mid) = midpoint(lo_t, hi_t) else {
-                return Err(reject(RejectReason::WitnessNotRational));
+            let (in_own_inside, in_other) = chamber(jd, row, k, lo, hi, labels)?;
+            // ★ **The wall is a boundary face of its own solid, so that solid's membership flips
+            // across it** — read inside from the label, and outside is its negation. The
+            // counterpart does *not* flip: the gate keeps its boundary clear of the lateral, so
+            // the slab theorem covers both sides. The face survives exactly when the two chambers
+            // disagree under `keep`.
+            let keep_side = |in_own: bool| match row.side {
+                SolidSide::A => crate::arrangement::keep(kind, in_own, in_other),
+                SolidSide::B => crate::arrangement::keep(kind, in_other, in_own),
             };
-            let Some(witness) = axis_point(&row.def, mid) else {
-                return Err(reject(RejectReason::WitnessNotRational));
-            };
-            let Some(in_other) = decide(jd, &witness, &row.def, counterpart)? else {
-                return Err(reject(RejectReason::NoClearRay));
-            };
-            // Inside the wall the cylinder's solid is present, outside it is not; the other
-            // operand is uniform across the slab (the theorem above). The face survives exactly
-            // when those two chambers disagree under `keep`.
-            let keep_side = |in_cyl: bool| match row.side {
-                SolidSide::A => crate::arrangement::keep(kind, in_cyl, in_other),
-                SolidSide::B => crate::arrangement::keep(kind, in_other, in_cyl),
-            };
-            let (keep_in, keep_out) = (keep_side(true), keep_side(false));
+            let (keep_in, keep_out) = (keep_side(in_own_inside), keep_side(!in_own_inside));
             if keep_in == keep_out {
                 continue;
             }
             // The stored cylinder normal points **away from the axis**. It is the result face's
             // outward normal when the kept material is inside the wall (a boss), and must be
-            // flipped when the material is outside it (a hole).
+            // flipped when the material is outside it (a hole). `keep_in` is that question
+            // directly, whichever solid the wall came from.
             out.push(LocalFace {
                 surf: ClassIx::Cyl(k),
                 outer: Bound::Band { lo, hi },
@@ -208,73 +199,75 @@ fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Option<Rat
     axis_param_of_plane(&coeffs, &row.def)
 }
 
-/// The exact midpoint of two axis parameters.
-fn midpoint(a: Rat, b: Rat) -> Option<Rat> {
-    a.checked_add(b)?.checked_mul(Rat::new(1, 2)?)
-}
-
-/// `origin + t·dir`, exactly.
-fn axis_point(def: &nacre_topo::CylinderDef, t: Rat) -> Option<[Rat; 3]> {
-    let (o, m) = (def.origin(), def.dir());
-    let mut p = o;
-    for k in 0..3 {
-        p[k] = p[k].checked_add(t.checked_mul(m[k])?)?;
-    }
-    Some(p)
-}
-
-/// Whether the witness lies inside the counterpart solid, asking along several directions until
-/// one decides.
+/// **Which chamber the band sits in, read off the arrangement.**
 ///
-/// Several, because a single ray can graze a face boundary and abstain — the road says so in its
-/// type, and the remedy is another direction. ★ **The order is not load-bearing** and this
-/// comment used to claim it was: "the axis is the worst direction, a drilled cap's hole is
-/// centred on it". Measured false for this pass — the road reads the **operand's** faces, not the
-/// result's, and the operand's cap is not drilled. (Where a hole *does* exist in an operand — a
-/// plate from an earlier boolean — the road's input cannot describe it at all, which is that
-/// builder's contract, not this ordering's job; see `point_in_faces_rat`.)
-fn decide(
+/// The disk cell on a boundary class carries `[inA_above, inA_below, inB_above, inB_below]` — the
+/// material immediately above and below that plane *inside the circle*. The band leaves `lo`
+/// going up in the axis parameter, so which of "above"/"below" faces it is decided by the class
+/// normal against the axis (`sign(n · m)`); at `hi` the band is on the other side.
+///
+/// ★ **Both ends are read, and they must agree.** The uniform-slab theorem says the counterpart's
+/// membership is constant across the open slab; two ends disagreeing means the theorem's premise
+/// broke (a ∥ wall crossed the slab — the gate's clearance proof failing), and that is refused
+/// rather than resolved by picking one. Free, because both labels are already in hand.
+///
+/// ★★ **Both solids' bits are data, not a control — and assuming one of them was a real bug.**
+/// The first spelling asserted "the band lies inside its own cylinder, so its own solid's bit is
+/// true". That holds for a *tool* (a drill solid fills its own cylinder) and is **false for a wall
+/// inherited from an earlier bore**: inside that circle the plate has no material — the bore is a
+/// hole. Both are ordinary inputs the moment a cylinder may sit on either operand, so the own-solid
+/// membership is read from the label too, and the wall's other side follows from what the wall
+/// *is*: a boundary face of that solid, so its own membership flips across it while the
+/// counterpart's (by the slab theorem) does not.
+fn chamber(
     jd: &Judge<'_, WorkingPlane>,
-    witness: &[Rat; 3],
-    def: &nacre_topo::CylinderDef,
-    other: &ComponentTriples,
-) -> Result<Option<bool>, BoolError> {
-    let (m, u) = (def.dir(), def.ref_dir());
-    let neg = |v: &[Rat; 3]| -> Option<[Rat; 3]> {
-        let zero = Rat::from_int(0);
-        Some([
-            zero.checked_sub(v[0])?,
-            zero.checked_sub(v[1])?,
-            zero.checked_sub(v[2])?,
-        ])
+    row: &CylRow,
+    k: usize,
+    lo: usize,
+    hi: usize,
+    labels: &crate::arrangement::DiskLabels,
+) -> Result<(bool, bool), BoolError> {
+    let (cyl_bit, other_bit) = match row.side {
+        SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
+        SolidSide::B => (2usize, 0usize),
     };
-    let cross = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<[Rat; 3]> {
-        Some([
-            x[1].checked_mul(y[2])?
-                .checked_sub(x[2].checked_mul(y[1])?)?,
-            x[2].checked_mul(y[0])?
-                .checked_sub(x[0].checked_mul(y[2])?)?,
-            x[0].checked_mul(y[1])?
-                .checked_sub(x[1].checked_mul(y[0])?)?,
-        ])
+    // `above` in the label is the class normal's side; the band leaves `lo` toward `hi`, i.e.
+    // toward increasing axis parameter.
+    let toward_hi = |c: usize| -> bool { jd.planes[c].plane.normal().dot(dir_f64(&row.def)) > 0.0 };
+    let read = |c: usize, band_is_above: bool| -> Option<(bool, bool)> {
+        let l = labels.get(&(k, c))?;
+        let i = usize::from(!band_is_above);
+        Some((l[cyl_bit + i], l[other_bit + i]))
     };
-    let mut dirs: Vec<[Rat; 3]> = vec![u];
-    if let Some(d) = neg(&u) {
-        dirs.push(d);
-    }
-    if let Some(w) = cross(&m, &u) {
-        dirs.push(w);
-        if let Some(d) = neg(&w) {
-            dirs.push(d);
+    let ends = [(lo, toward_hi(lo)), (hi, !toward_hi(hi))];
+    let mut answer: Option<(bool, bool)> = None;
+    for (c, band_is_above) in ends {
+        let Some(pair) = read(c, band_is_above) else {
+            continue; // this end carries no disk cell — the other end speaks
+        };
+        match answer {
+            None => answer = Some(pair),
+            // ★ The slab is uniform by the gate's clearance proof — **both** bits must agree at
+            // the two ends. Ends disagreeing means that proof failed (something crossed the open
+            // slab), and guessing which end to believe is exactly what this kernel does not do.
+            // This is also where a flipped side selection surfaces: the two ends read opposite
+            // sides, so getting the sign wrong makes them contradict.
+            Some(prev) if prev != pair => {
+                return Err(reject(RejectReason::CylinderGateUndecided));
+            }
+            Some(_) => {}
         }
     }
-    dirs.push(m);
-    for d in dirs {
-        if let Some(v) = combinatorics::point_in_faces_rat(jd, witness, &d, other)? {
-            return Ok(Some(v));
-        }
-    }
-    Ok(None)
+    // Every boundary class of a band carries a disk cell (the emitted circles put them there, and
+    // the cylinder's own caps are always arranged) — so this is a wiring failure, not an input.
+    answer.ok_or_else(|| reject(RejectReason::CylinderGateUndecided))
+}
+
+/// The cylinder's axis direction as `f64` — used only for the class-normal sign, where the class
+/// is ⊥ to the axis and the dot is a full magnitude from zero.
+fn dir_f64(def: &nacre_topo::CylinderDef) -> nacre_math::Vector3 {
+    let m = def.dir();
+    nacre_math::Vector3::from_array([m[0].to_f64(), m[1].to_f64(), m[2].to_f64()])
 }
 
 #[cfg(test)]
@@ -316,7 +309,7 @@ mod tests {
             &jd,
             plane_ix,
         );
-        let plane_faces = crate::arrangement::trace_result_faces_for_test(
+        let (plane_faces, disk_labels) = crate::arrangement::trace_result_faces_full_for_test(
             m,
             kind,
             a,
@@ -330,18 +323,17 @@ mod tests {
         )
         .expect("the drill population traces");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("cylinder rows");
-        // Only the planar operand gets a road — the cylinder-bearing one is never asked about
-        // (and `component_triples` would rightly refuse to describe its lateral face).
-        let counterpart = crate::tests::component_triples(m, a, &setup, &jd);
-        let out = band_faces(kind, &plane_faces, &rows, &jd, &counterpart).expect("bands");
+        let out = band_faces(kind, &plane_faces, &rows, &jd, &disk_labels).expect("bands");
         // The classes' **z**, not their axis parameter: `t` is measured from the cylinder's own
         // origin along its raw `dir`, so a drill starting at z=−1 puts the box's cap at t=1. The
         // assertions read in world z, which is the vocabulary the fixtures are written in.
         let ts = (0..geom.len())
             .filter_map(|c| {
                 let t = param_opt(&jd, c, &rows[0])?;
-                let p = axis_point(&rows[0].def, t)?;
-                Some((c, p[2].to_f64()))
+                // The class's world z, via the axis point at that parameter.
+                let (o, m) = (rows[0].def.origin(), rows[0].def.dir());
+                let z = o[2].checked_add(t.checked_mul(m[2])?)?;
+                Some((c, z.to_f64()))
             })
             .collect();
         (out, ts)
@@ -471,18 +463,19 @@ mod tests {
         assert!(v < plain_v, "the bore removes material: {v} vs {plain_v}");
     }
 
-    /// ★ **The two-hole plate declines, and the reason is the road's, not the boolean's.**
+    /// ★★ **Two bores in one plate — the case the band pass was rebuilt for.**
     ///
-    /// Drilling a second bore means cutting a solid that **already has a cylinder face**, so the
-    /// band witness would have to ask "is this axis point inside a body bounded partly by a
-    /// cylinder" — a question `point_in_faces_rat` cannot take. The gate would pass the pair
-    /// (parallel axes, clear of each other by more than `r₁+r₂`), and the geometry is ordinary;
-    /// what is missing is one road, and until it exists the refusal is named rather than guessed.
+    /// The second cut's counterpart already carries a cylinder face (the first bore's wall), and
+    /// the old witness road could not describe such a body, so this used to decline by name. The
+    /// band pass now reads the arrangement's own disk labels, and a curved counterpart is no
+    /// longer a question anyone has to answer.
     ///
-    /// Recorded as a **test** rather than a note because the day the road learns cylinders, this
-    /// is the line that has to change — and the volume it should then produce is written here.
+    /// ★ It is also where the wall's **own** membership stopped being assumed: the first bore's
+    /// wall bounds the *plate*, and inside that circle the plate has no material — the opposite of
+    /// a drill, which fills its own cylinder. Assuming the drill's case (as the pass did while
+    /// only drills were tested) puts the second bore's `keep` on the wrong chamber.
     #[test]
-    fn a_two_hole_plate_declines_for_want_of_a_curved_road() {
+    fn a_two_hole_plate_drills_both() {
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -501,33 +494,32 @@ mod tests {
             3.0,
         );
         m.rebuild_adjacency();
-        // The first bore builds — one cylinder, a planar counterpart.
         let one = crate::boolean(&mut m, BoolKind::Cut, a, d1).expect("first bore");
         let v1 = nacre_props::mass_props(&m, one[0]).expect("props").volume;
         assert!(
             (v1 - (8.0 - std::f64::consts::PI * 0.0625)).abs() < 1e-9,
-            "{v1}"
+            "one bore: {v1}"
         );
-        // The second does not: its counterpart is no longer planar.
-        let live_before = m.live_solids.clone();
-        let err = crate::boolean(&mut m, BoolKind::Cut, one[0], d2)
-            .expect_err("the counterpart now carries a cylinder face");
-        assert_eq!(
-            m.live_solids, live_before,
-            "a refused boolean retires nothing — including one refused after the gate"
-        );
+        let two = crate::boolean(&mut m, BoolKind::Cut, one[0], d2).expect("second bore");
+        assert_eq!(two.len(), 1, "one body");
         assert!(
-            matches!(
-                err,
-                BoolError::Rejected {
-                    reason: RejectReason::BandWitnessNotPlanar,
-                    ..
-                }
-            ),
-            "{err:?}"
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
         );
-        // When the road learns cylinders, this is the figure to expect: `8 − 2πr²h`.
-        let _ = 8.0 - 2.0 * std::f64::consts::PI * 0.0625 * 1.0;
+        let v2 = nacre_props::mass_props(&m, two[0]).expect("props").volume;
+        let want = 8.0 - 2.0 * std::f64::consts::PI * 0.0625;
+        assert!((v2 - want).abs() < 1e-9, "two bores: {v2} vs {want}");
+        // Genus 2: two through holes in one shell.
+        let reach = m.reachable();
+        let l: i64 = reach
+            .faces
+            .iter()
+            .map(|fh| m.faces.get(*fh).inner.len() as i64)
+            .sum();
+        let chi =
+            reach.vertices.len() as i64 - reach.edges.len() as i64 + reach.faces.len() as i64 - l;
+        assert_eq!(chi, -2, "two handles: χ = 2(1 − 2)");
     }
 
     /// ★ **A cap coplanar with the other body's cap declines as "seated", even standing far

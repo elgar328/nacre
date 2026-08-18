@@ -506,6 +506,49 @@ centroid 1 1.5 2
         assert!((ours.volume - (8.0 - PI * 0.25 * 2.0)).abs() < 1e-9);
     }
 
+    /// ★ **Two bores in one plate, scored independently** (M6-2a K1). The second cut's counterpart
+    /// already carries a cylinder face, which is the case the band pass was rebuilt for — and the
+    /// case where assuming "a wall's own solid fills its cylinder" puts `keep` on the wrong
+    /// chamber. Volume catches that directly; OCCT reading the STEP back catches a topology that
+    /// merely *measures* right.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn two_bores_match_occt() {
+        let mut model = Model::new();
+        let a = model.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 2.0, 1.0]),
+        );
+        let bore = |m: &mut Model, x: f64| {
+            m.add_cylinder(
+                Point3::from_array([x, 1.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.25,
+                3.0,
+            )
+        };
+        let d1 = bore(&mut model, 1.0);
+        let d2 = bore(&mut model, 3.0);
+        model.rebuild_adjacency();
+        let one = boolean_one(&mut model, BoolKind::Cut, a, d1).unwrap();
+        let two = boolean_one(&mut model, BoolKind::Cut, one, d2).unwrap();
+        let ours = mass_props(&model, two).unwrap();
+        let p = occt_props_of(&model).unwrap();
+        assert!(
+            approx(ours.volume, p.volume),
+            "volume: nacre {} vs occt {}",
+            ours.volume,
+            p.volume
+        );
+        assert!(
+            approx(ours.area, p.area),
+            "area: nacre {} vs occt {}",
+            ours.area,
+            p.area
+        );
+        assert!((ours.volume - (8.0 - 2.0 * PI * 0.0625)).abs() < 1e-9);
+    }
+
     /// A donut prism scored by an independent kernel: the hole has to be a hole to OCCT too.
     /// Volume catches a hole that never opened, area catches missing or inverted hole walls, and
     /// the face count catches a cap whose inner loop was dropped. It also exercises the STEP

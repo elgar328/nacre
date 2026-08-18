@@ -746,15 +746,6 @@ pub enum RejectReason {
     /// [`Self::NoClearRay`] would hide a substrate limit inside a geometry accident — the same
     /// mistake `FourPlane` was split out of.
     WitnessNotRational,
-    /// **A cylinder band's membership witness has no road to travel.** The band pass asks
-    /// whether an axis point lies inside the *other* operand, and the rational point-in-solid
-    /// road reads planar faces; a counterpart that is itself a cylinder cannot be asked yet.
-    ///
-    /// The population gate does pass clear parallel cylinder pairs, and for those the answer is
-    /// "outside" by the gate's own clearance proof — but that proof belongs to the gate, and
-    /// borrowing it here would make this pass correct only while that reasoning holds elsewhere.
-    /// Named refusal instead, until the road learns to answer about a cylinder.
-    BandWitnessNotPlanar,
     /// **A result in several pieces has a piece bounded by a curved face.** Which piece is
     /// material and which is a cavity is decided by a ray cast from a component's own vertices
     /// (`combinatorics::point_in_component`), and that probe is described a component **face by
@@ -915,7 +906,6 @@ impl RejectReason {
             Self::DegenerateWitness => "degenerate_witness",
             Self::NoClearRay => "no_clear_ray",
             Self::CurvedComponentDepth => "curved_component_depth",
-            Self::BandWitnessNotPlanar => "band_witness_not_planar",
             Self::WitnessNotRational => "witness_not_rational",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
@@ -971,7 +961,6 @@ impl RejectReason {
             | Self::NoClearRay
             | Self::WitnessNotRational
             | Self::CurvedComponentDepth
-            | Self::BandWitnessNotPlanar
             | Self::PointOnRing
             | Self::HoleDepth
             | Self::CoplanarMerge => RejectClass::NotSupported,

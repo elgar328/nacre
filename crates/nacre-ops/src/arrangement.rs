@@ -2268,7 +2268,7 @@ fn emit_faces(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
-) -> Vec<LocalFace> {
+) -> (Vec<LocalFace>, Vec<(usize, Label)>) {
     let planes = jd.planes;
     // `crate::boolean::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
     // three-valued-scan struct) shadows it here.
@@ -2318,7 +2318,25 @@ fn emit_faces(
             flip,
         });
     }
-    out
+    // ★★ **Every circle's disk label, whether or not a face was kept** (M6-2a K1). The four bits
+    // of a disk cell say which solid's material lies immediately above and below this plane
+    // *inside the circle* — which is exactly the chamber of the cylinder slab that starts here,
+    // so the band pass reads them instead of casting a witness ray.
+    //
+    // ★ Collected from the **cells**, deliberately outside the keep filter above. A through
+    // hole's outermost bands end on the cylinder's own cap classes, and `Cut` drops those cap
+    // faces — following the faces would leave those bands with no label to read, while the cell
+    // (and its label) is right here.
+    let disk_labels = circles
+        .iter()
+        .enumerate()
+        .filter_map(|(i, mc)| {
+            let he = 2 * segs.len() + 2 * i;
+            let c = cells.iter().position(|cell| cell.half_edges == [he])?;
+            Some((mc.cyl, labels[c]))
+        })
+        .collect();
+    (out, disk_labels)
 }
 
 /// A face's box, from its vertices' cached coordinates.
@@ -2357,7 +2375,7 @@ fn face_points(model: &Model, fh: Handle<Face>) -> Vec<[f64; 3]> {
 /// the cylinder guard inside is what turns it off.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn trace_result_faces_for_test(
+pub(crate) fn trace_result_faces_full_for_test(
     model: &Model,
     kind: BoolKind,
     a: Handle<Solid>,
@@ -2368,7 +2386,7 @@ pub(crate) fn trace_result_faces_for_test(
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     trace_in: &combinatorics::TraceInput,
-) -> Result<Vec<LocalFace>, BoolError> {
+) -> Result<(Vec<LocalFace>, DiskLabels), BoolError> {
     trace_result_faces(
         model,
         kind,
@@ -2383,6 +2401,11 @@ pub(crate) fn trace_result_faces_for_test(
         trace_in,
     )
 }
+
+/// Per `(cylinder class, plane class)`, the four bits of that circle's disk cell — see the band
+/// pass. Keyed rather than positional because a class carries a circle only when a cylinder cuts
+/// it, and a cylinder cuts only some classes.
+pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
 
 /// Every result face across all plane classes, before assembly (the driver's risky half, testable
 /// by face count without mutating the model). A declining class aborts the whole boolean.
@@ -2402,7 +2425,7 @@ fn trace_result_faces(
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
     trace_in: &combinatorics::TraceInput,
-) -> Result<Vec<LocalFace>, BoolError> {
+) -> Result<(Vec<LocalFace>, DiskLabels), BoolError> {
     let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
@@ -2528,7 +2551,10 @@ fn trace_result_faces(
     let per_class = crate::par::try_map_range(splits.len(), |k| {
         let wc = work[k];
         let (split, circles) = &splits[k];
-        let arrange = |wc: usize| -> Result<Vec<LocalFace>, BoolError> {
+        // The per-class product: the faces, and the disk labels the band pass reads (empty for a
+        // class with no circles — and for a reused class, which is why cylinders switch reuse off).
+        type ClassOut = (Vec<LocalFace>, Vec<(usize, Label)>);
+        let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
             let (cells, face_of) = timed!(C_EXTRACT, extract_cells(jd, wc, split, circles))?;
             let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, split, circles))?;
@@ -2581,14 +2607,18 @@ fn trace_result_faces(
             }
         };
         match reused {
-            Some(f) => Ok(f),
+            Some(f) => Ok((f, Vec::new())),
             None => arrange(wc),
         }
     })?;
-    for faces in per_class {
+    let mut disk_labels: DiskLabels = HashMap::new();
+    for (k, (faces, labels)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);
+        for (cyl, label) in labels {
+            disk_labels.insert((cyl, work[k]), label);
+        }
     }
-    Ok(local_faces)
+    Ok((local_faces, disk_labels))
 }
 
 /// One arrangement vertex a boolean named, with **every** plane through it.
@@ -2941,7 +2971,9 @@ pub(crate) fn boolean(
                 &plane_ix,
             )
         );
-        let faces = trace_result_faces(
+        // `disk_labels`: per (cylinder class, plane class), the four bits of that circle's disk
+        // cell — what the band pass reads instead of casting a witness ray (M6-2a K1).
+        let (faces, disk_labels) = trace_result_faces(
             model,
             kind,
             a,
@@ -2990,7 +3022,10 @@ pub(crate) fn boolean(
                 &plain_in,
             );
             match &plain {
-                Ok(p) => assert_eq!(
+                // ★ **Faces only.** The disk labels are the same arrangement's product, so
+                // comparing them would widen this differential's proposition ("reuse does not
+                // change the faces") into one it was not built to make.
+                Ok((p, _)) => assert_eq!(
                     crate::reuse::canonical(&faces),
                     crate::reuse::canonical(p),
                     "reuse changed the faces this boolean emits"
@@ -3017,17 +3052,14 @@ pub(crate) fn boolean(
             faces
         } else {
             let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
-            // The witness road reads the **counterpart** solid, which this population guarantees
-            // is planar (a cylinder on both sides is refused inside `band_faces`).
-            let (other, other_inc) = match rows.first().map(|r| r.side) {
-                Some(crate::planes::SolidSide::A) => (b, &inc_b),
-                _ => (a, &inc_a),
-            };
-            let road = combinatorics::component_triples_of(
-                model, other, &surf_ix, other_inc, &jd, &plane_ix,
-            )?;
             let mut faces = faces;
-            faces.extend(crate::bands::band_faces(kind, &faces, &rows, &jd, &road)?);
+            faces.extend(crate::bands::band_faces(
+                kind,
+                &faces,
+                &rows,
+                &jd,
+                &disk_labels,
+            )?);
             faces
         };
 
@@ -4175,7 +4207,7 @@ mod tests {
         let near = |c: [f64; 2], x: f64, y: f64| (c[0] - x).abs() < 1e-9 && (c[1] - y).abs() < 1e-9;
 
         // Fuse: all 5 bounded cells (the plus cap).
-        let fuse = emit_faces(
+        let (fuse, _) = emit_faces(
             BoolKind::Fuse,
             &labels,
             &cells,
@@ -4187,7 +4219,7 @@ mod tests {
         );
         assert_eq!(fuse.len(), 5, "Fuse keeps the whole plus cap");
         // Cut a−b: exactly the two a-arms.
-        let cut = emit_faces(
+        let (cut, _) = emit_faces(
             BoolKind::Cut,
             &labels,
             &cells,
@@ -4204,7 +4236,7 @@ mod tests {
             "the two survivors are the a-arms at (0.5,1.5),(2.5,1.5): {cut_c:?}"
         );
         // Common: exactly the center square.
-        let common = emit_faces(
+        let (common, _) = emit_faces(
             BoolKind::Common,
             &labels,
             &cells,
@@ -4332,7 +4364,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let faces = trace_result_faces(
+        let (faces, _) = trace_result_faces(
             &m,
             BoolKind::Fuse,
             a,
@@ -4541,7 +4573,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let faces = trace_result_faces(
+        let (faces, _) = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,
@@ -4649,7 +4681,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let faces = trace_result_faces(
+        let (faces, _) = trace_result_faces(
             &m,
             BoolKind::Fuse,
             u,
@@ -4931,7 +4963,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let faces = trace_result_faces(
+        let (faces, _) = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,
@@ -5102,7 +5134,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let faces = trace_result_faces(
+        let (faces, _) = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,
@@ -5243,7 +5275,7 @@ mod tests {
         );
         // Fuse keeps below and not above across the disk → the disk is a result face, and its
         // outer boundary is the circle — no ring, no nodes.
-        let out = emit_faces(
+        let (out, _) = emit_faces(
             BoolKind::Fuse,
             &labels,
             &cells,
@@ -5350,7 +5382,7 @@ mod tests {
             "inside the circle the cylinder straddles W, the box side is unchanged"
         );
 
-        let out = emit_faces(
+        let (out, _) = emit_faces(
             BoolKind::Cut,
             &labels,
             &cells,
