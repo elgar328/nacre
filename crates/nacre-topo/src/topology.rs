@@ -69,6 +69,13 @@ impl Edge {
 ///
 /// `forward == true` traverses the edge start→end (`vertices[0]` → `vertices[1]`);
 /// `false` traverses it in reverse.
+///
+/// ★ **A closed rim starts where it ends**, so those vertices settle nothing for it:
+/// there, `forward` reads as *along the curve's own parameterization* — CCW about the
+/// circle's normal, which is the cylinder's axis direction. That is the only reading
+/// available and the one every producer writes (a bottom cap's rim is `false`, and its
+/// face states `−axis` as its outward). `validate`'s face-orientation check is what
+/// holds producers to it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct HalfEdge {
     pub edge: Handle<Edge>,

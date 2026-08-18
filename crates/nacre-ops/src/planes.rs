@@ -442,6 +442,12 @@ pub(crate) fn collect_planes(
             // boolean in debug. A failure is a producer bug — a lying flag or a
             // mis-wound loop — never a conditioning artifact (`outer_tri` picks the
             // widest corner).
+            //
+            // ★ This assertion needs three points, so it says nothing about a **disk**
+            // face (one closed rim) or about a face's **holes**. Those belong to the
+            // same invariant and `validate` owns them — it reads a rim's circle and
+            // every inner loop. Replicating that here would be a second spelling of one
+            // rule, which is the shape this kernel keeps having to undo.
             debug_assert!(
                 (tri[1] - tri[0])
                     .cross(tri[2] - tri[0])
