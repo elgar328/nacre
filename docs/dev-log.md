@@ -10326,3 +10326,41 @@ M6-1의 `plane_plane_cylinder`가 바로 그런 선이 원통과 무엇을 하�
   `from_decimal(1/3의 f64) ≠ 1/3`을 함께 단언해야 이 테스트가 무엇을 재는지가 산다),
   거절 5종이 이름을 갖고 **아레나에 아무것도 남기지 않는다**(surface/vertex/edge/live 길이 불변).
 - 관문: M6-0 비트 리터럴 4 픽스처 무변화, 워크스페이스 53타깃 green, clippy 0, doc 경고 증가 0.
+
+---
+
+## K2-2/3 — 원통이 연산 로그에 실린다 (`Operation::Cylinder`) (2026-08-18)
+
+`Extrude`와 같은 모양의 원시체 연산: 프레임 위의 (중심, 반지름)을 ŵ 방향으로 `dist`만큼. 프레임이
+축(단위 법선)·seam 기준(+u)·밑면 중심(ring 점)을 **전부 유리수로** 주므로 `add_cylinder_exact`가
+그대로 받는다. 새 기하는 없다 — `RatFrame::cylinder`는 `ring`+`normal`을 한 번 더 쓰는 것뿐이다.
+
+- **어휘**: `Operation::Cylinder{frame, center, radius, dist}` · `OpOutput::Cylinder{solid, faces:3}`
+  · `NonPositiveRadius`/`RadiusOutsideDecimalWindow`/`CenterOutsideDecimalWindow` ·
+  `rebind`의 프레임 재정박. kit은 부분 match/`let-else`뿐이라 **컴파일 무변화**(예측대로).
+- **거절은 push 이전에**: frame-node 도로에서 노드는 아레나 셀이므로, 배치를 *먼저* 계산하고
+  노드는 그 다음에 민팅한다. 거절 6종(반지름 0/음수, 창 밖 반지름, 창 밖 중심, dist 0, 원통 면 위
+  프레임) 각각에서 surface/vertex/edge/face/live 길이 불변을 단언.
+- **정확성 실측**: 세계 XY 원통의 `def`가 축 `(0,0,1)`·ref_dir `(1,0,0)`·중심 `(1/2,1/4,0)`·
+  반지름 `1/10` — **전부 정수 또는 짧은 유리수**. 기운 프레임은 identity로 떨어지므로 거기서도
+  기저는 `{0,±1}`이다. 즉 op 도로에는 f64 정규화가 남기던 10¹⁷급 분모가 아예 없다(S3 천장에 유리).
+
+★★ **계획을 고친 두 가지 — 둘 다 코드가 가르쳐 줬다.**
+
+1. **`flip`은 호출자가 *진술*하는 비트가 아니라 소비 연산이 *재는* 값이다**(`measured_frame`, S9 —
+   "이 한 곳에서만 정한다"). `SketchFrame::{world,canonical,named}`는 전부 `flip: false`이고 공개
+   뒤집개가 없다. 계획의 "뚫는 방향은 flip 비트로 말한다"는 절반 틀렸다: 방향은 **프레임의 ŵ**이고,
+   면 프레임의 ŵ는 바깥을 향한다. 그래서 "면에 그려 안쪽으로 뚫기"는 `toward`를 안쪽으로 재는
+   **복합 연산**(`PocketOnFace`의 형제)의 일이며 아직 없다. 방향 주장은 불리언이 아니라 **배치
+   질문**으로 물었다 — 면 프레임 위 원통의 seam 정점이 z=2, z=3에 있다(판 안쪽이 아니라 위).
+2. ★★★ **플러시 캡 드릴은 거절된다 — `class_owner[c].is_none()`을 반대로 읽었다.** 그건 "이 클래스에
+   평면 주인이 없다"가 아니라 **"두 피연산자가 *모두* 그 클래스에 면을 갖는다"**(coplanar contact,
+   planes.rs:693)이다. 그러니 드릴의 캡 평면이 판의 면과 같은 평면에 서면 그게 바로 M6-2a가
+   `SeatedCylinderCap`으로 미뤄 둔 인구다 — 첫 e2e가 정확히 그렇게 발화했다(예측 실패, 실측으로
+   교정). e2e는 판을 **관통해 넘치도록**(datum z=−0.5, 길이 3) 세웠다. "through all" 드릴은 원래
+   넘치게 뚫으므로 이건 우회가 아니라 정상 어휘지만, **A1의 kit 스텝은 반드시 넘치게 만들어야 한다**.
+- 잠금 7: 정수 진술, replay 결정성(로그 두 번 → 좌표·핸들 동일), 거절 6종+아레나 불변, 로그만으로
+  관통 구멍(부피 `4·4·2 − π·0.25·2`, validate 클린), **음성 대조**(판에서 비켜선 같은 드릴은 부피를
+  안 바꾼다 — 없으면 "아무 원통이나 구멍을 낸다"와 구별 못 한다), 면 프레임은 바깥으로 선다,
+  기운 프레임은 motion을 달고 지어지고 불리언은 `CylinderGateUndecided`로 거절한다.
+- 관문: census 비트 동일, reject census 불변, 워크스페이스 green, clippy 0, kit green.

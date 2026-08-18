@@ -6525,3 +6525,374 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
         );
     }
 }
+
+// ── K2: a cylinder in the operation log ───────────────────────────────────────────────────────
+//
+// `Model::add_cylinder` is a test convenience behind a feature; the road an application takes is
+// `Operation::Cylinder`, which is what these gates measure. What the frame buys is that the
+// statement never leaves the rationals: the axis is the frame's unit normal, the seam its `+u`.
+
+/// The lateral surface's exact truth in a model holding exactly one cylinder.
+fn lone_cylinder_def(m: &Model) -> nacre_topo::CylinderDef {
+    let mut found = None;
+    for (h, _) in m.faces.iter() {
+        let s = m.faces.get(h).surface;
+        if let nacre_topo::SurfaceTruth::Cylinder { def, .. } = m.surface_truth(s) {
+            found = Some(def.clone());
+        }
+    }
+    found.expect("a cylinder solid has a lateral face")
+}
+
+fn cylinder_op(m: &Model, center: [f64; 2], radius: f64, dist: f64) -> Operation {
+    Operation::Cylinder {
+        frame: SketchFrame::world(m, Axis::Z),
+        center,
+        radius,
+        dist,
+    }
+}
+
+/// ★★ **The frame keeps the statement rational.** On world XY the axis is exactly `(0,0,1)` and
+/// the seam reference exactly `(1,0,0)` — small integers, not decimals lifted back out of a
+/// normalization. The centre and radius are the caller's own written decimals, lifted once.
+///
+/// This is the whole reason the op exists as it does: `add_cylinder` reaches the same shape by
+/// normalizing an f64 axis, and the `1/3`-base gate in `nacre-topo` shows what that costs.
+#[test]
+fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
+    let mut m = Model::new();
+    let op = cylinder_op(&m, [0.5, 0.25], 0.1, 2.0);
+    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).expect("a world-XY cylinder builds")
+    else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    let def = lone_cylinder_def(&m);
+    let int = |n: i128| nacre_scalar::Rat::from_int(n);
+    let rat = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+    assert_eq!(
+        def.dir(),
+        [int(0), int(0), int(1)],
+        "the frame's unit normal"
+    );
+    assert_eq!(def.ref_dir(), [int(1), int(0), int(0)], "the frame's +u");
+    assert_eq!(
+        def.origin(),
+        [rat(1, 2), rat(1, 4), int(0)],
+        "the centre, placed"
+    );
+    assert_eq!(def.radius(), rat(1, 10));
+    assert_eq!(faces.len(), 3, "lateral, bottom cap, top cap");
+}
+
+/// A cylinder in a log replays to the same model — handles and coordinates both. The op is only
+/// worth having if the log stays reproducible with it in there.
+#[test]
+fn a_cylinder_op_replays_deterministically() {
+    let log = vec![
+        extrude_log_op(square(), 1.0),
+        cylinder_op(&Model::new(), [0.5, 0.5], 0.2, 1.0),
+    ];
+    let (m1, m2) = (replay(&log).unwrap(), replay(&log).unwrap());
+    let pts = |m: &Model| {
+        m.vertices
+            .iter()
+            .map(|(vh, _)| m.vertex_point(vh).as_array())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(pts(&m1), pts(&m2));
+    assert_eq!(m1.faces.len(), m2.faces.len());
+    assert_eq!(m1.surface_count(), m2.surface_count());
+}
+
+/// ★★ **Every refusal is a name, and none of them leaves a cell behind.** The topo entry panics
+/// on the first two; an application's numbers are input, so here they are values. The store
+/// lengths are the other half — a refusal that had already pushed would shift every later log
+/// index (`apply`'s own doc says so).
+#[test]
+fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
+    let mut m = Model::new();
+    // A cylinder surface to aim a frame at — the one thing a `SketchFrame` can name that is not
+    // a plane.
+    let fixture = cylinder_op(&m, [0.0, 0.0], 1.0, 1.0);
+    let OpOutput::Cylinder { faces, .. } =
+        apply(&mut m, &fixture).expect("the fixture cylinder builds")
+    else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    let on_lateral = SketchFrame::canonical(m.faces.get(faces[0]).surface);
+
+    let before = (
+        m.surface_count(),
+        m.vertices.iter().count(),
+        m.edges.iter().count(),
+        m.faces.len(),
+        m.live_solids.len(),
+    );
+    let wide = 1e300;
+    let cases: [(Operation, OpError); 6] = [
+        (
+            cylinder_op(&m, [0.0, 0.0], 0.0, 1.0),
+            OpError::NonPositiveRadius,
+        ),
+        (
+            cylinder_op(&m, [0.0, 0.0], -1.0, 1.0),
+            OpError::NonPositiveRadius,
+        ),
+        (
+            cylinder_op(&m, [0.0, 0.0], 1.0, 0.0),
+            OpError::NonPositiveDistance,
+        ),
+        (
+            cylinder_op(&m, [0.0, 0.0], wide, 1.0),
+            OpError::RadiusOutsideDecimalWindow,
+        ),
+        (
+            cylinder_op(&m, [wide, 0.0], 1.0, 1.0),
+            OpError::CenterOutsideDecimalWindow,
+        ),
+        (
+            Operation::Cylinder {
+                frame: on_lateral,
+                center: [0.0, 0.0],
+                radius: 1.0,
+                dist: 1.0,
+            },
+            OpError::NonPlanarFace,
+        ),
+    ];
+    for (op, want) in cases {
+        assert_eq!(apply(&mut m, &op).unwrap_err(), want, "op: {op:?}");
+    }
+    assert_eq!(
+        (
+            m.surface_count(),
+            m.vertices.iter().count(),
+            m.edges.iter().count(),
+            m.faces.len(),
+            m.live_solids.len()
+        ),
+        before,
+        "a refusal is decided before anything is pushed"
+    );
+}
+
+/// ★★★ **What the app will do, done through the log alone**: a plate, a drill standing through
+/// it, and a `Cut`.
+///
+/// ★ The drill **overshoots** the plate, and that is not decoration. A cylinder whose cap plane
+/// is flush with a face of the body it cuts is the seated-cap population M6-2a defers by name
+/// (`SeatedCylinderCap`): `class_owner[c] == None` means *both* operands have a face on that
+/// class, and a cap face there is the contact the gate declines. Measured here first — the drill
+/// standing exactly on the plate's own base plane came back `Rejected { SeatedCylinderCap }`. A
+/// "through all" drill overshoots anyway, which is what a kit step will have to do.
+#[test]
+fn a_logged_cylinder_cuts_a_through_hole() {
+    let plate =
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(4.0, 0.0), p2(4.0, 4.0), p2(0.0, 4.0)]).unwrap();
+    // The log is assembled against a scratch model built the same way, so its handles are the
+    // index vocabulary `replay` re-anchors (the `two_extrudes_make_two_solids` precedent).
+    let mut scratch = Model::new();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&scratch, Axis::Z),
+        profile: plate,
+        dist: 2.0,
+    };
+    let OpOutput::Extrude { solid: a, .. } = apply(&mut scratch, &extrude).unwrap() else {
+        panic!("an extrude answers with an extrude");
+    };
+    let below = Operation::DatumPlane {
+        def: DatumDef::Stated(
+            crate::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, -0.5])),
+        ),
+    };
+    let OpOutput::DatumPlane { frame, .. } = apply(&mut scratch, &below).unwrap() else {
+        panic!("a datum answers with a datum");
+    };
+    let drill = Operation::Cylinder {
+        frame,
+        center: [2.0, 2.0],
+        radius: 0.5,
+        dist: 3.0,
+    };
+    let OpOutput::Cylinder { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    let log = vec![
+        extrude,
+        below,
+        drill,
+        Operation::Boolean {
+            kind: BoolKind::Cut,
+            a,
+            b,
+        },
+    ];
+    let m = replay(&log).expect("a logged drill");
+    assert_eq!(m.live_solids.len(), 1, "one drilled plate");
+    let v = nacre_props::mass_props(&m, m.live_solids[0])
+        .expect("props")
+        .volume;
+    let want = 4.0 * 4.0 * 2.0 - std::f64::consts::PI * 0.25 * 2.0;
+    assert!(
+        (v - want).abs() < 1e-9,
+        "volume {v} is not the plate minus the bore {want}"
+    );
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+}
+
+/// ★★ **The negative control the hole above needs**: the same drill, moved clear of the plate,
+/// removes nothing. Without it, "the volume dropped by πr²t" could be read as "any cylinder in
+/// the log makes a hole".
+#[test]
+fn a_cylinder_clear_of_the_plate_removes_nothing() {
+    let mut m = Model::new();
+    let plate =
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(4.0, 0.0), p2(4.0, 4.0), p2(0.0, 4.0)]).unwrap();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&m, Axis::Z),
+        profile: plate,
+        dist: 2.0,
+    };
+    let OpOutput::Extrude { solid: plate_h, .. } = apply(&mut m, &extrude).expect("the plate")
+    else {
+        panic!("an extrude answers with an extrude");
+    };
+    let before = nacre_props::mass_props(&m, plate_h).expect("props").volume;
+    let above = datum_frame(
+        &mut m,
+        crate::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 3.0])),
+    );
+    let clear = Operation::Cylinder {
+        frame: above,
+        center: [2.0, 2.0],
+        radius: 0.5,
+        dist: 1.0,
+    };
+    let OpOutput::Cylinder { solid: drill, .. } = apply(&mut m, &clear).expect("a clear cylinder")
+    else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    let solids = boolean(&mut m, BoolKind::Cut, plate_h, drill).expect("a disjoint cut answers");
+    assert_eq!(solids.len(), 1, "cutting away nothing leaves one solid");
+    let after = nacre_props::mass_props(&m, solids[0])
+        .expect("props")
+        .volume;
+    assert!(
+        (after - before).abs() < 1e-9,
+        "a drill clear of the plate removed {} of material",
+        before - after
+    );
+}
+
+/// ★★ **A face's frame faces *out* of its solid, so a cylinder on it stands on top rather than
+/// drilling in.** Asked as a placement question, which is where it is decided — the seam
+/// vertices sit at the plate's top face and one unit above it, not below.
+///
+/// This is the honest statement of what the log expresses today: `flip` is *measured* by the
+/// consuming operation (`measured_frame`), never stated by a caller, so drilling into a face is a
+/// composite that measures `toward` inward — `PocketOnFace`'s sibling, and not yet written.
+#[test]
+fn a_cylinder_on_a_face_frame_stands_outward() {
+    let mut m = Model::new();
+    let plate =
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(4.0, 0.0), p2(4.0, 4.0), p2(0.0, 4.0)]).unwrap();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&m, Axis::Z),
+        profile: plate,
+        dist: 2.0,
+    };
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &extrude).expect("the plate builds") else {
+        panic!("an extrude answers with an extrude");
+    };
+    // faces[1] is the top cap; its frame is measured against that face's outward normal.
+    let top = face_sketch_frame(&m, faces[1]).expect("a face has a frame");
+    let before = m.vertices.iter().count();
+    let boss = Operation::Cylinder {
+        frame: top,
+        center: [2.0, 2.0],
+        radius: 0.5,
+        dist: 1.0,
+    };
+    apply(&mut m, &boss).expect("a cylinder on a face frame builds");
+    let seam_z: Vec<f64> = m
+        .vertices
+        .iter()
+        .skip(before)
+        .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
+        .map(|(h, _)| m.vertex_point(h).as_array()[2])
+        .collect();
+    assert_eq!(seam_z.len(), 2, "one seam vertex per rim");
+    assert!(
+        seam_z.iter().all(|z| *z >= 2.0 - 1e-12),
+        "the cylinder stands outward from the face, not into the plate: {seam_z:?}"
+    );
+    assert!(
+        seam_z.iter().any(|z| (*z - 3.0).abs() < 1e-12),
+        "and reaches its full height above it: {seam_z:?}"
+    );
+}
+
+/// ★★ **A tilted frame builds a cylinder and cannot yet cut with it — and both halves are the
+/// point.** The frame has no exact rational basis, so the statement is written in the plane's own
+/// frame and a motion node carries it out (the road a tilted prism already takes). The gate then
+/// declines a *moved* cylinder by name, because its truth is stated before its motion.
+///
+/// If the first half ever fails, the op stopped taking the frame-node road; if the second starts
+/// succeeding, M6-3 landed and this test should be re-read, not deleted.
+#[test]
+fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
+    let mut m = Model::new();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&m, Axis::Z),
+        profile: square(),
+        dist: 1.0,
+    };
+    let OpOutput::Extrude { solid: cube_h, .. } = apply(&mut m, &extrude).expect("the cube builds")
+    else {
+        panic!("an extrude answers with an extrude");
+    };
+    let tilted = datum_frame(
+        &mut m,
+        crate::SketchPlane::from_origin_normal(
+            Point3::from_array([0.5, 0.5, -1.0]),
+            nacre_math::Vector3::from_array([0.3141592653589793, -0.2718281828459045, 1.0]),
+        )
+        .expect("a tilted plane"),
+    );
+    let op = Operation::Cylinder {
+        frame: tilted,
+        center: [0.0, 0.0],
+        radius: 0.2,
+        dist: 4.0,
+    };
+    let OpOutput::Cylinder {
+        solid: drill,
+        faces,
+    } = apply(&mut m, &op).expect("a tilted cylinder")
+    else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    let lateral = m.faces.get(faces[0]).surface;
+    match m.surface_truth(lateral) {
+        nacre_topo::SurfaceTruth::Cylinder { motion, .. } => assert!(
+            motion.is_some(),
+            "a tilted frame states its cylinder inside a motion node"
+        ),
+        _ => panic!("the first face is the lateral"),
+    }
+    assert!(
+        matches!(
+            boolean(&mut m, BoolKind::Cut, cube_h, drill),
+            Err(BoolError::Rejected {
+                reason: RejectReason::CylinderGateUndecided,
+                ..
+            })
+        ),
+        "a moved cylinder is declined by name, not silently mis-cut"
+    );
+}

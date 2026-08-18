@@ -168,6 +168,33 @@ impl RatFrame {
         scale(&self.normal()?, Rat::from_decimal(dist)?)
     }
 
+    /// **A cylinder standing on this frame** — the circular-profile twin of [`RatFrame::ring`]
+    /// plus [`RatFrame::sweep`], and the whole of what a cylinder needs to be stated exactly.
+    ///
+    /// ★ The frame gives all four directions for free: the base centre is a ring point, the axis
+    /// is the unit normal, the seam reference is `x̂` — a direction the *user* named, rather than
+    /// the `ê_k × axis` rule a bare axis has to fall back on — and the height is the sweep along
+    /// that axis. Because `x` and the normal are unit rationals here,
+    /// [`nacre_topo::Model::add_cylinder_exact`] can derive its caps and seams by rational
+    /// multiplication instead of lifting computed floats.
+    ///
+    /// `None` on `i128` overflow in the placement arithmetic — the same meaning it has for a
+    /// prism's rings.
+    pub(crate) fn cylinder(
+        &self,
+        center: [Rat; 2],
+        radius: Rat,
+        height: Rat,
+    ) -> Option<CylinderPlacement> {
+        Some(CylinderPlacement {
+            base: self.ring(&[center])?.pop()?,
+            axis: self.normal()?,
+            ref_dir: self.x,
+            radius,
+            height,
+        })
+    }
+
     /// A ring's sketch coordinates placed in space: `origin + x·u + y·v`, the first of
     /// the two steps.
     ///
@@ -183,6 +210,23 @@ impl RatFrame {
             })
             .collect()
     }
+}
+
+/// A cylinder placed on a frame, exactly — what [`RatFrame::cylinder`] works out and
+/// [`nacre_topo::Model::add_cylinder_exact`] consumes.
+///
+/// Written in whichever coordinates the frame is: the world when the frame lifted to exact
+/// rationals, the plane's own frame otherwise — in which case the motion node carries it out, the
+/// same deal [`SweptRat::motion`] states for a prism.
+pub(crate) struct CylinderPlacement {
+    pub base: [Rat; 3],
+    /// Unit, by construction of the frame.
+    pub axis: [Rat; 3],
+    /// Unit and perpendicular to `axis` — the frame's own `x̂`, so the seam lands where the
+    /// sketch's `+u` points.
+    pub ref_dir: [Rat; 3],
+    pub radius: Rat,
+    pub height: Rat,
 }
 
 /// Translate a ring by the sweep — where the two dimensions have to meet.
