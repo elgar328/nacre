@@ -522,14 +522,83 @@ mod tests {
         assert_eq!(chi, -2, "two handles: χ = 2(1 − 2)");
     }
 
-    /// ★ **A cap coplanar with the other body's cap declines as "seated", even standing far
-    /// away.** The gate asks the question **per class**, and two coplanar caps are one class
-    /// whichever way they sit — so a cylinder that merely happens to start and end on the box's
-    /// cap planes is refused with the flush-seating name. Conservative, not wrong: the honest
-    /// answer to "are these seated" from class membership alone is yes.
+    /// **Three bores.** Two was the case the label route was built for; three is the check that
+    /// nothing in it counts to two — each cut's counterpart carries one more cylinder face than
+    /// the last.
+    #[test]
+    fn three_bores_in_a_row() {
+        let mut m = Model::new();
+        let mut solid = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([6.0, 2.0, 1.0]),
+        );
+        for x in [1.0, 3.0, 5.0] {
+            let d = m.add_cylinder(
+                Point3::from_array([x, 1.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.25,
+                3.0,
+            );
+            m.rebuild_adjacency();
+            solid = crate::boolean(&mut m, BoolKind::Cut, solid, d).expect("a bore")[0];
+        }
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, solid).expect("props").volume;
+        let want = 12.0 - 3.0 * std::f64::consts::PI * 0.0625;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★ **A drilled plate cut by a body flush with its faces** — the population the seated rule
+    /// was refusing while its own sentence promised something narrower.
     ///
-    /// It is a fixture because it is the one place the population's *name* is wider than its
-    /// geometry, and because a future seated-coplanar population must not silently absorb it.
+    /// `Common` of a drilled plate with a box covering half of it: the two operands share the
+    /// plate's top and bottom planes, which used to read as "a cylinder cap lies flush" and
+    /// decline. No cap lies anywhere near them — the bore's rims end on *holed* faces — and the
+    /// engine gets the answer exactly right, which is what the guard now lets it do.
+    #[test]
+    fn a_drilled_plate_can_be_cut_by_a_body_flush_with_its_faces() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 2.0, 1.0]),
+        );
+        let d = m.add_cylinder(
+            Point3::from_array([1.0, 1.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.25,
+            3.0,
+        );
+        m.rebuild_adjacency();
+        let drilled = crate::boolean(&mut m, BoolKind::Cut, plate, d).expect("bore")[0];
+        let half = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 2.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Common, drilled, half).expect("flush common");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4.0 - std::f64::consts::PI * 0.0625;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★ **A cylinder whose own cap is coplanar with the other body's face declines as
+    /// "seated" — even standing far away.** Two coplanar planes are one class whichever way they
+    /// sit, so a *disk* of this cylinder on a class the other operand also has faces on is the
+    /// deferred flush-seating population, distance notwithstanding.
+    ///
+    /// ★★ The rule used to fire on **any** shared ⊥ class, which refused ordinary work: a drilled
+    /// plate cut by a body flush with its faces (see the test above). It now asks for this
+    /// cylinder's own **cap face**, which is what its user-facing sentence always claimed.
     #[test]
     fn a_distant_cap_on_the_boxs_own_plane_declines_as_seated() {
         let mut m = Model::new();

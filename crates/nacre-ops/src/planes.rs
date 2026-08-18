@@ -781,6 +781,7 @@ pub(crate) fn cylinder_gate(
     cyl_surfs: &[Handle<Surface>],
     geom: &[WorkingPlane],
     class_owner: &[Option<SolidSide>],
+    caps: &[Vec<usize>],
 ) -> Result<Vec<WorkingCyl>, BoolError> {
     // ★ Every question below is a **sign**, and the scalar layer answers signs totally: the
     // local checked-`Rat` closures this used to carry declined on overflow, which put a width
@@ -809,7 +810,7 @@ pub(crate) fn cylinder_gate(
         });
     }
 
-    for cyl in &cyls {
+    for (cyl_ix, cyl) in cyls.iter().enumerate() {
         let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
         for (c, wp) in geom.iter().enumerate() {
             if wp.rotated {
@@ -820,8 +821,21 @@ pub(crate) fn cylinder_gate(
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             if nacre_scalar::parallel_rat(&n, &m) {
-                // Perpendicular cut — the circle population, unless coplanar-seated.
-                if class_owner[c].is_none() {
+                // Perpendicular cut — the circle population. ★ **Seating is about *this*
+                // cylinder's own **cap face**, not about any plane the operands happen to
+                // share.** The deferred population is a disk lying flush on a face of the other
+                // body, where seated circles arrive from both solids on one class. A ⊥ class the
+                // two operands merely share — a drilled plate's own face, flush with whatever is
+                // cutting it — carries no such contact, and the engine handles it (measured:
+                // `Common` of a drilled plate against a box sharing both its faces comes out
+                // exact and validates clean, while this guard was refusing it and the user-facing
+                // sentence promised the narrower thing).
+                //
+                // ★ A rim is not a cap: an inherited bore's wall ends on the plate's faces, and
+                // those carry a *holed* plane face, not a disk. Asking for the cap **face** is
+                // what tells the two apart (the span ends cannot — they are the same planes).
+                let seated = class_owner[c].is_none() && caps[cyl_ix].contains(&c);
+                if seated {
                     return Err(reject(RejectReason::SeatedCylinderCap));
                 }
             } else {
@@ -953,7 +967,25 @@ pub(crate) fn plane_index_setup(
     // what passes now goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here
     // from C2 to C4b-2 is gone — the bands and the assembly that serve this population landed.
     if !cyl_surfs.is_empty() {
-        setup.cyls = cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner)?;
+        // Each cylinder's **cap classes**: a plane face whose *outer* loop is a single rim of
+        // that cylinder is a disk — the shape the seated rule is about. A face that merely has
+        // such a rim as an *inner* loop is a drilled face, and that is an ordinary hole.
+        let mut caps: Vec<Vec<usize>> = vec![Vec::new(); cyl_surfs.len()];
+        for (i, row) in setup.planes.iter().enumerate() {
+            let (ClassIx::Plane(c), FaceRow::Plane(fi)) = (setup.plane_ix[i], row) else {
+                continue;
+            };
+            let Some(fh) = fi.face else { continue };
+            let outer = &model.faces.get(fh).outer;
+            let [he] = outer.half_edges[..] else { continue };
+            let carriers = model.edges.get(he.edge).surfaces;
+            for (k, &cyl_surf) in cyl_surfs.iter().enumerate() {
+                if carriers.contains(&cyl_surf) && !caps[k].contains(&c) {
+                    caps[k].push(c);
+                }
+            }
+        }
+        setup.cyls = cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner, &caps)?;
     }
     Ok(setup)
 }
