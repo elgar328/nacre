@@ -14,6 +14,8 @@ use nacre_store::Handle;
 use nacre_topo::{Face, HalfEdge, Model, Solid, Vertex};
 
 mod arrangement;
+/// The cylinder-band pass (M6-2a C4b) — see the module docs.
+mod bands;
 mod boolean;
 mod combinatorics;
 mod exact;
@@ -744,6 +746,15 @@ pub enum RejectReason {
     /// [`Self::NoClearRay`] would hide a substrate limit inside a geometry accident — the same
     /// mistake `FourPlane` was split out of.
     WitnessNotRational,
+    /// **A cylinder band's membership witness has no road to travel.** The band pass asks
+    /// whether an axis point lies inside the *other* operand, and the rational point-in-solid
+    /// road reads planar faces; a counterpart that is itself a cylinder cannot be asked yet.
+    ///
+    /// The population gate does pass clear parallel cylinder pairs, and for those the answer is
+    /// "outside" by the gate's own clearance proof — but that proof belongs to the gate, and
+    /// borrowing it here would make this pass correct only while that reasoning holds elsewhere.
+    /// Named refusal instead, until the road learns to answer about a cylinder.
+    BandWitnessNotPlanar,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
@@ -892,6 +903,7 @@ impl RejectReason {
             Self::JudgeExhausted => "judge_exhausted",
             Self::DegenerateWitness => "degenerate_witness",
             Self::NoClearRay => "no_clear_ray",
+            Self::BandWitnessNotPlanar => "band_witness_not_planar",
             Self::WitnessNotRational => "witness_not_rational",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
@@ -946,6 +958,7 @@ impl RejectReason {
             | Self::EdgeOccupancyConflict
             | Self::NoClearRay
             | Self::WitnessNotRational
+            | Self::BandWitnessNotPlanar
             | Self::PointOnRing
             | Self::HoleDepth
             | Self::CoplanarMerge => RejectClass::NotSupported,

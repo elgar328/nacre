@@ -1252,6 +1252,12 @@ impl Chart2dRat {
 /// A component's faces for the rational road: `(plane class, rings)`, `rings[0]` the outer loop
 /// and the rest holes, each ring a list of node triples. The triples are what
 /// [`face_vertex_triples`] and [`hole_rings`] already produce.
+///
+/// ★ **Polygon-complete, and the builder owes that.** This type cannot describe a *circular*
+/// bound, so a face carrying one — a plate drilled by an earlier boolean — must make its builder
+/// **decline**, never quietly drop the hole: a dropped hole reads as solid material, and the
+/// parity below would answer "inside" for a point sitting in the bore. The road cannot check
+/// this (it never sees what was left out), which is exactly why it is written down here.
 #[cfg_attr(not(test), allow(dead_code))] // the production consumer is C4b's band membership
 pub(crate) type ComponentTriples = Vec<(usize, Vec<Vec<[usize; 3]>>)>;
 

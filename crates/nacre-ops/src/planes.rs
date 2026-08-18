@@ -543,18 +543,42 @@ pub(crate) fn collect_planes(
 /// ⊥-ness guarantees `n·m ≠ 0`). Two distinct rim planes give the span; anything else (a
 /// nameless rim carrier, a non-⊥ rim, fewer or more than two distinct rims) answers `None`
 /// and the consumer declines the face.
+/// **Where a plane meets a cylinder's axis, as the axis parameter `t`** — the one spelling of
+/// `t = −(n·o + d)/(n·m)` for `axis(t) = o + t·m`.
+///
+/// `None` when the plane is parallel to the axis (`n·m = 0`, no meeting point) or when the
+/// checked `Rat` arithmetic overflows. ★ Three consumers ask this question — the lateral's rim
+/// span, the transversal-circle test, and the band pass — and a rule that lives inlined in one
+/// place while a second site spells a reduced version of it is this repo's dominant defect
+/// shape, so it lives here once.
+pub(crate) fn axis_param_of_plane(
+    coeffs: &[nacre_scalar::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+) -> Option<nacre_scalar::Rat> {
+    use nacre_scalar::Rat;
+    let (o, m) = (def.origin(), def.dir());
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    let nm = dot3(&n, &m)?;
+    if nm == Rat::from_int(0) {
+        return None;
+    }
+    let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
+    Rat::from_int(0)
+        .checked_sub(no_d)?
+        .checked_mul(Rat::new(nm.denom(), nm.numer())?)
+}
+
 fn lateral_axis_span(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
 ) -> Option<[nacre_scalar::Rat; 2]> {
     use nacre_scalar::Rat;
-    let (o, m) = (def.origin(), def.dir());
-    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
     let mut ts: Vec<Rat> = Vec::new();
     for he in &face.outer.half_edges {
         let e = model.edges.get(he.edge);
@@ -564,15 +588,9 @@ fn lateral_axis_span(
             continue; // the seam edge is self-adjacent — not a rim
         }
         let coeffs = *model.surface_name.get(&cap)?.narrow()?;
-        let n = [coeffs[0], coeffs[1], coeffs[2]];
-        let nm = dot3(&n, &m)?;
-        if nm == Rat::from_int(0) {
-            return None; // a rim carrier not ⊥ the axis — outside this vocabulary
-        }
-        let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
-        let t = Rat::from_int(0)
-            .checked_sub(no_d)?
-            .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
+        // `None` here is a rim carrier parallel to the axis (or overflow) — outside this
+        // vocabulary either way.
+        let t = axis_param_of_plane(&coeffs, def)?;
         if !ts.contains(&t) {
             ts.push(t);
         }

@@ -1003,8 +1003,6 @@ fn transversal_circle(
     cf: &crate::planes::CylFaceInfo,
     wp: &WorkingPlane,
 ) -> Result<Option<()>, DeclineKind> {
-    use nacre_scalar::Rat;
-    let zero = Rat::from_int(0);
     let Some(coeffs) = wp.base_rat else {
         return Err(DeclineKind::CylSpan);
     };
@@ -1013,11 +1011,6 @@ fn transversal_circle(
     }
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let m = cf.def.dir();
-    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
     // ⊥ to the axis, decided **totally** (`parallel_rat` clears denominators and answers in
     // integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
     // all — a miss, like a parallel plane, not a decline.
@@ -1027,13 +1020,7 @@ fn transversal_circle(
     let Some(span) = cf.span else {
         return Err(DeclineKind::CylSpan);
     };
-    let t = (|| -> Option<Rat> {
-        let nm = dot3(&n, &m)?;
-        let no_d = dot3(&n, &cf.def.origin())?.checked_add(coeffs[3])?;
-        zero.checked_sub(no_d)?
-            .checked_mul(Rat::new(nm.denom(), nm.numer())?)
-    })();
-    match t {
+    match crate::planes::axis_param_of_plane(&coeffs, &cf.def) {
         None => Err(DeclineKind::CylSpan),
         Some(t) => Ok((span[0] < t && t < span[1]).then_some(())),
     }
@@ -2243,7 +2230,7 @@ fn label_cells(
 }
 
 /// The boolean keep predicate on one chamber's `(inA, inB)`.
-fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
+pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
     match kind {
         BoolKind::Fuse => in_a || in_b,
         BoolKind::Cut => in_a && !in_b,
@@ -2360,6 +2347,37 @@ fn face_points(model: &Model, fh: Handle<Face>) -> Vec<[f64; 3]> {
         }
     }
     out
+}
+
+/// [`trace_result_faces`] for the band pass's tests, with the reuse mode fixed at `Proved` so
+/// the cylinder guard inside is what turns it off.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn trace_result_faces_for_test(
+    model: &Model,
+    kind: BoolKind,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+    jd: &Judge<'_, WorkingPlane>,
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    n_a: usize,
+    class_owner: &[Option<SolidSide>],
+    trace_in: &combinatorics::TraceInput,
+) -> Result<Vec<LocalFace>, BoolError> {
+    trace_result_faces(
+        model,
+        kind,
+        a,
+        b,
+        jd,
+        faces,
+        plane_ix,
+        n_a,
+        class_owner,
+        crate::reuse::ClassReuse::Proved,
+        trace_in,
+    )
 }
 
 /// Every result face across all plane classes, before assembly (the driver's risky half, testable

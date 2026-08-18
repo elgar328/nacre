@@ -77,7 +77,7 @@ fn square() -> Profile2d {
 /// (`docs/design.md` §2). The world planes are seeded at fixed indices, so `world(Axis::Z)`
 /// names the same plane in every model. Do **not** `apply` one of these to a live model —
 /// that is the cross-model misuse `Store::get`'s debug guard exists to catch.
-fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
+pub(crate) fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
     extrude_op(&Model::new(), profile, dist)
 }
 
@@ -6536,7 +6536,7 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
 // ---------------------------------------------------------------------------
 
 /// A solid's faces as the rational road takes them: `(plane class, rings of node triples)`.
-fn component_triples(
+pub(crate) fn component_triples(
     m: &Model,
     s: Handle<Solid>,
     setup: &PlaneSetup,
@@ -6581,7 +6581,7 @@ fn l_prism_oracle(p: [f64; 3]) -> bool {
     inside_2d && p[2] > 0.0 && p[2] < 1.0
 }
 
-fn rat3(p: [f64; 3]) -> [Rat; 3] {
+pub(crate) fn rat3(p: [f64; 3]) -> [Rat; 3] {
     p.map(|x| Rat::from_decimal(x).expect("a fixture coordinate is a decimal"))
 }
 
