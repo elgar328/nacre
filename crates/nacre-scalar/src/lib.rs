@@ -825,6 +825,48 @@ fn cramer_big(p: [&[num_bigint::BigInt; 4]; 3]) -> ([num_bigint::BigInt; 3], num
     )
 }
 
+// ---------------------------------------------------------------------------
+// Total rational-vector predicates.
+//
+// A question whose answer is a **sign** has no width: the answer is one of three values, and
+// only the road to it can overflow. These clear the denominators once and run in `BigInt`, so
+// they cannot decline — which is what lets their callers say `None`/reject for the geometry
+// alone. The same move `three_planes_rat` makes for its value ("the caller resolves the
+// conflation by asking the integer core") and `plane_name_exact` for its name.
+//
+// ★ **The lift keeps each vector's denominator.** Clearing denominators multiplies a vector by
+// a positive factor, which is harmless for an expression that is *homogeneous* in that vector
+// (a cross, a dot) and **wrong** for one that is not — an expression mixing a term in `p` with
+// a constant would state a different proposition after scaling `p` alone. Every predicate here
+// says which case it is in, so the ones that need the scale can multiply it back in.
+// ---------------------------------------------------------------------------
+
+/// A rational 3-vector as **(integer components, positive denominator)**: `v = out.0 / out.1`.
+fn lift3(v: &[Rat; 3]) -> ([num_bigint::BigInt; 3], num_bigint::BigInt) {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    let den: [BigInt; 3] = core::array::from_fn(|i| BigInt::from(v[i].denom()));
+    let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+    let num = core::array::from_fn(|i| BigInt::from(v[i].numer()) * (&d / &den[i]));
+    (num, d)
+}
+
+/// **Whether two rational directions are parallel** — `a × b = 0`, exactly and always.
+///
+/// The cross is homogeneous in each argument, so each vector's own denominator is a positive
+/// factor of the result and clearing it cannot move the zero test.
+///
+/// **A zero vector is parallel to everything**, this predicate included: `0 × b = 0`. Callers
+/// that mean "these two span a plane" therefore get the answer they want — a zero direction
+/// spans nothing — without a separate zero check.
+pub fn parallel_rat(a: &[Rat; 3], b: &[Rat; 3]) -> bool {
+    use num_traits::Zero;
+    let (x, _) = lift3(a);
+    let (y, _) = lift3(b);
+    let term = |i: usize, j: usize| &x[i] * &y[j] - &x[j] * &y[i];
+    term(1, 2).is_zero() && term(2, 0).is_zero() && term(0, 1).is_zero()
+}
+
 /// **Which side of the plane `j` the implicit point `∩(p₀, p₁, p₂)` lies on**, over integer
 /// coefficients — `sign(j·[Dvec : D]) · sign(D)`, the integer twin of
 /// `nacre_predicates::indirect_plane_side` (same convention: `+1` on the side `j`'s normal
@@ -3207,6 +3249,105 @@ mod tests {
     }
 
     proptest! {
+        /// ★★★★★ **The total predicate must answer what the checked one answered.**
+        ///
+        /// `parallel_rat` replaced a checked-`Rat` cross that declined on overflow, and the
+        /// change is only sound if the two agree wherever the old one could speak at all. The
+        /// old spelling is kept here as the oracle — an independent derivation, not a call back
+        /// into the code under test — and compared on every input it can answer.
+        ///
+        /// ★ **The width is drawn, not fixed**, because both halves of the range have to be
+        /// visited: at `bits ≈ 30` the checked cross answers everything (so the two must agree),
+        /// past `bits ≈ 63` its products leave `i128` and it falls silent (so the total one is
+        /// alone). Measured with a counter before this spelling settled — a fixed narrow range
+        /// left the oracle answering 100% of the time (differential, no coverage of the new
+        /// behaviour) and a fixed wide one left it silent 100% of the time (coverage, no
+        /// differential). Either way the test would have been half a test.
+        #[test]
+        fn the_total_cross_answers_what_the_checked_one_did(
+            m in 0u32..40,
+            xs in prop::array::uniform6(-(1i128 << 20)..(1i128 << 20)),
+            ds in prop::array::uniform6(1i128..(1i128 << 20)),
+        ) {
+            // ★ The denominator's width is what decides whether the checked route survives, and
+            // it is **drawn** so both halves of the range are visited. The scale is a power of
+            // **three**, not two: scaling numerator and denominator by the same power of two
+            // reduces straight back out (measured — the first spelling did exactly that and left
+            // every case narrow), so the fraction has to be widened where the gcd cannot undo it.
+            let scale = 3i128.saturating_pow(m);
+            let r = |i: usize| {
+                Rat::new(xs[i], (2 * ds[i] + 1).saturating_mul(scale)).unwrap()
+            };
+            let (a, b) = ([r(0), r(1), r(2)], [r(3), r(4), r(5)]);
+            // The retired spelling, verbatim: checked `Rat`, `None` on overflow.
+            let checked = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<bool> {
+                let term = |i: usize, j: usize| -> Option<Rat> {
+                    x[i].checked_mul(y[j])?.checked_sub(x[j].checked_mul(y[i])?)
+                };
+                let zero = Rat::from_int(0);
+                Some(term(1, 2)? == zero && term(2, 0)? == zero && term(0, 1)? == zero)
+            };
+            if let Some(want) = checked(&a, &b) {
+                prop_assert_eq!(parallel_rat(&a, &b), want, "{:?} x {:?}", a, b);
+            }
+            // Parallelism is symmetric and scale-invariant — properties the checked route could
+            // not always demonstrate, and the total one must. (The scaling is asserted only when
+            // every component survived it: a `Rat` whose numerator is already near the ceiling
+            // has no ×3, and asserting through an `unwrap_or` fallback would compare a *different
+            // vector* — the shape of a test that measures nothing.)
+            prop_assert_eq!(parallel_rat(&a, &b), parallel_rat(&b, &a));
+            let three = Rat::from_int(3);
+            let scaled: Option<Vec<Rat>> = a.iter().map(|c| c.checked_mul(three)).collect();
+            if let Some(s) = scaled {
+                let s = [s[0], s[1], s[2]];
+                prop_assert_eq!(parallel_rat(&s, &b), parallel_rat(&a, &b), "scale-invariance");
+            }
+        }
+
+        /// A vector is parallel to itself, to its multiples, and to zero — and **not** to a
+        /// vector off its line. Without this the test above passes for a predicate that always
+        /// answers `false` on the inputs the oracle cannot check.
+        #[test]
+        fn parallel_knows_a_line_from_a_plane(
+            xs in prop::array::uniform3(-(1i128 << 40)..(1i128 << 40)),
+            ds in prop::array::uniform3(1i128..(1i128 << 40)),
+            k in 1i128..(1i128 << 20),
+        ) {
+            let v = [
+                Rat::new(xs[0], ds[0]).unwrap(),
+                Rat::new(xs[1], ds[1]).unwrap(),
+                Rat::new(xs[2], ds[2]).unwrap(),
+            ];
+            let zero = [Rat::from_int(0); 3];
+            prop_assert!(parallel_rat(&v, &v));
+            prop_assert!(parallel_rat(&v, &zero), "zero is parallel to everything");
+            let scaled: [Rat; 3] = core::array::from_fn(|i| {
+                Rat::new(xs[i], ds[i]).unwrap().checked_mul(Rat::new(k, 1).unwrap()).unwrap_or(v[i])
+            });
+            prop_assert!(parallel_rat(&v, &scaled), "a multiple stays on the line");
+            // A vector with one coordinate moved off the line is not parallel — unless `v` was
+            // itself degenerate in that coordinate's plane, which the cross decides exactly.
+            let mut off = v;
+            off[0] = v[0].checked_add(Rat::from_int(1)).unwrap_or(v[0]);
+            off[1] = v[1].checked_sub(Rat::from_int(1)).unwrap_or(v[1]);
+            let cross_zero = {
+                let t = |i: usize, j: usize| {
+                    v[i].checked_mul(off[j])
+                        .and_then(|a| a.checked_sub(v[j].checked_mul(off[i])?))
+                };
+                match (t(1, 2), t(2, 0), t(0, 1)) {
+                    (Some(a), Some(b), Some(c)) => {
+                        let z = Rat::from_int(0);
+                        Some(a == z && b == z && c == z)
+                    }
+                    _ => None,
+                }
+            };
+            if let Some(want) = cross_zero {
+                prop_assert_eq!(parallel_rat(&v, &off), want);
+            }
+        }
+
         /// ★★★★★ **The two derivations must be the same function.**
         ///
         /// `plane_name_exact` runs the `Rat` route first and only falls back, so wherever the

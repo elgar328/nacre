@@ -362,22 +362,24 @@ pub struct CylinderDef {
 }
 
 impl CylinderDef {
-    /// The checked constructor — `None` when the statement means no cylinder: a zero `dir`, a
-    /// non-positive `radius`, or a `ref_dir` with no component perpendicular to the axis
-    /// (`ref_dir × dir = 0`, exact). The cross runs in checked `Rat`, so an overflow also
-    /// answers `None` — a conservative refusal, never a wrong acceptance.
+    /// The checked constructor — `None` when the statement means no cylinder, and **only then**:
+    /// a zero `dir`, a non-positive `radius`, or a `ref_dir` with no component perpendicular to
+    /// the axis (`ref_dir × dir = 0`, which a zero `ref_dir` satisfies too).
+    ///
+    /// ★ **Width is not a cause.** The parallelism test runs in
+    /// [`nacre_scalar::parallel_rat`], which clears denominators and answers in integers, so it
+    /// cannot decline. It used to run in checked `Rat` and answer `None` on overflow — a
+    /// "conservative refusal" that conflated *no cylinder* with *the arithmetic ran out*, and
+    /// the callers below read it as the first: a statement whose axis carries a small component
+    /// with a long decimal (denominator ~10²⁰, whose square leaves `i128`) crashed the
+    /// constructor's `expect`. Measured population: 80% of computed near-axis-aligned
+    /// directions, 0% of hand-written short decimals.
     pub fn new(origin: [Rat; 3], dir: [Rat; 3], ref_dir: [Rat; 3], radius: Rat) -> Option<Self> {
         let zero = Rat::from_int(0);
         if dir.iter().all(|c| *c == zero) || radius <= zero {
             return None;
         }
-        let cross = |a: Rat, b: Rat, c: Rat, d: Rat| -> Option<Rat> {
-            a.checked_mul(b)?.checked_sub(c.checked_mul(d)?)
-        };
-        let cx = cross(ref_dir[1], dir[2], ref_dir[2], dir[1])?;
-        let cy = cross(ref_dir[2], dir[0], ref_dir[0], dir[2])?;
-        let cz = cross(ref_dir[0], dir[1], ref_dir[1], dir[0])?;
-        if cx == zero && cy == zero && cz == zero {
+        if nacre_scalar::parallel_rat(&ref_dir, &dir) {
             return None;
         }
         Some(CylinderDef {
@@ -1584,6 +1586,16 @@ impl Model {
             } else {
                 [neg(a[1]), lift(a[0]), zero]
             };
+            // ★ **Unreachable, and now provably so.** `CylinderDef::new` refuses a zero axis,
+            // a non-positive radius, and a `ref_dir` parallel to the axis. The first two are
+            // the caller's debug_asserts above; the third cannot happen here: `ref_dir` is
+            // `ê_k × a` for the basis axis `k` of *smallest* |component|, and `a ∥ ê_k` would
+            // need `|a_k|` to be both the largest and the smallest component — true only for
+            // the zero axis. (Positive scaling preserves parallelism, so picking `k` from the
+            // normalized `d` while crossing the raw `a` does not disturb the argument.)
+            // Before the parallelism test became total, this `expect` also fired on statements
+            // it had no business rejecting — a long-decimal axis component whose square left
+            // `i128`.
             CylinderDef::new(
                 base.as_array().map(lift),
                 a.map(lift),
@@ -2172,6 +2184,37 @@ mod tests {
             prop_assert_eq!(m.edges.len(), 3);
             prop_assert_eq!(m.faces.len(), 3);
             // Every edge used exactly twice, opposite orientation (seam included).
+            for uses in m.adj.edge_uses.values() {
+                prop_assert_eq!(uses.len(), 2);
+                prop_assert_ne!(uses[0].1, uses[1].1);
+            }
+        }
+
+        /// The same structure over the population that **actually stressed the exact
+        /// arithmetic**: an axis a hair off `ẑ`, whose tiny components carry a full f64's worth
+        /// of decimal digits and so lift to rationals with ~10²⁰ denominators. Squaring one of
+        /// those leaves `i128`, which is what the parallelism test used to refuse — and
+        /// `add_cylinder` read that refusal as "degenerate cylinder" and panicked.
+        ///
+        /// ★ The sibling above cannot stand in for this: its uniform axis reaches this family
+        /// about **0.01%** of the time (measured), which is why the defect sat green for a
+        /// milestone and then surfaced from one unlucky seed. Here it is ~80%.
+        #[test]
+        fn prop_cylinder_near_axis_aligned_is_built_not_refused(
+            u in -1.0f64..1.0,
+            v in -1.0f64..1.0,
+            k in 1i32..9,
+            j in 1i32..9,
+            r in 0.5f64..10.0,
+            h in 0.1f64..10.0,
+        ) {
+            let axis = Vector3::from_array([u * 10f64.powi(-k), v * 10f64.powi(-j), 1.0]);
+            let mut m = Model::new();
+            m.add_cylinder(Point3::origin(), axis, r, h);
+            m.rebuild_adjacency();
+            prop_assert_eq!(m.vertices.len(), 2);
+            prop_assert_eq!(m.edges.len(), 3);
+            prop_assert_eq!(m.faces.len(), 3);
             for uses in m.adj.edge_uses.values() {
                 prop_assert_eq!(uses.len(), 2);
                 prop_assert_ne!(uses[0].1, uses[1].1);

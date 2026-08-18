@@ -336,3 +336,62 @@ fn the_checked_constructor_refuses_what_means_no_cylinder() {
         "the sane statement stands"
     );
 }
+
+/// **A statement the arithmetic used to lose.** The axis carries a component that is small and
+/// spelled with a full f64's digits, so its exact rational has a ~10²⁰ denominator; the
+/// parallelism test squares it, and in `i128` that overflowed. The old constructor answered
+/// `None` — "no cylinder" — and `add_cylinder`'s `expect` turned a width limit into a crash.
+///
+/// The three inputs are one family, chosen from the algebra rather than a story: a tiny
+/// component at 1e-7 (the seed a proptest actually found), one at 1e-9, and one where **both**
+/// off-axis components are wide, so the cross has no zero term to hide behind.
+#[test]
+fn a_wide_decimal_axis_is_a_cylinder_not_a_refusal() {
+    let zero = || rat(0.0);
+    let o = [zero(), zero(), zero()];
+    let r = rat(1.0);
+    for axis in [
+        [rat(2.088798035473136e-7), zero(), rat(0.7055489621854671)],
+        [rat(3.141592653589793e-9), zero(), rat(0.8414709848078965)],
+        [
+            rat(1.414213562373095e-8),
+            rat(2.7182818284590453e-6),
+            rat(0.9092974268256817),
+        ],
+    ] {
+        // `ref_dir` as `add_cylinder` builds it for a nearly-`ẑ` axis: `ê_x × axis`.
+        let neg = |x: Rat| {
+            Rat::from_int(0)
+                .checked_sub(x)
+                .expect("negating a lifted decimal")
+        };
+        let ref_dir = [zero(), neg(axis[2]), axis[1]];
+        assert!(
+            CylinderDef::new(o, axis, ref_dir, r).is_some(),
+            "a wide-decimal axis states a cylinder: {axis:?}"
+        );
+    }
+}
+
+/// The negative control for the totalization: making the test unable to overflow must not make
+/// it unable to **refuse**. A `ref_dir` parallel to the axis still pins no seam when both are
+/// written with wide decimals — where the old checked test could only shrug.
+#[test]
+fn a_wide_parallel_ref_dir_is_still_refused() {
+    let zero = || rat(0.0);
+    let o = [zero(), zero(), zero()];
+    let axis = [rat(2.088798035473136e-7), zero(), rat(0.7055489621854671)];
+    let doubled = [
+        axis[0].checked_add(axis[0]).expect("small doubling"),
+        zero(),
+        axis[2].checked_add(axis[2]).expect("small doubling"),
+    ];
+    assert!(
+        CylinderDef::new(o, axis, doubled, rat(1.0)).is_none(),
+        "a parallel ref_dir pins no seam, however wide its spelling"
+    );
+    assert!(
+        CylinderDef::new(o, axis, [zero(), zero(), zero()], rat(1.0)).is_none(),
+        "a zero ref_dir pins no seam either"
+    );
+}
