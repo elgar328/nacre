@@ -6905,3 +6905,88 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
         "a moved cylinder is declined by name, not silently mis-cut"
     );
 }
+
+/// ★★★ **A cylinder's two caps face opposite ways — even when their planes already exist.**
+///
+/// The bottom cap lies on the very plane the frame names, so it always interns; a plane's
+/// canonical name has no direction, so the surface handed back can be the one that faces the
+/// other way. Measured before the fix: a cylinder on a plate's top face came out with **both
+/// caps facing +Z**, because the b-rep body dropped `push_plane`'s `flipped` bit (the bit
+/// `add_cuboid` has always honoured). Not a solid at all, and no earlier fixture looked.
+///
+/// The three cases are the three ways a frame's plane can arrive: a seeded world plane, one a
+/// `DatumPlane` stated, and one an earlier face already put there.
+#[test]
+fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
+    let outward = |m: &Model, fh: Handle<Face>| -> [f64; 3] {
+        let f = m.faces.get(fh);
+        let Surface::Plane(p) = m.surface(f.surface) else {
+            panic!("a cap is planar")
+        };
+        let s = f.orientation.sign() as f64;
+        p.normal().as_array().map(|c| c * s)
+    };
+    let check = |m: &Model, faces: [Handle<Face>; 3], what: &str| {
+        let (bot, top) = (outward(m, faces[1]), outward(m, faces[2]));
+        assert!(
+            bot[2] < 0.0,
+            "{what}: the bottom cap must face down, got {bot:?}"
+        );
+        assert!(
+            top[2] > 0.0,
+            "{what}: the top cap must face up, got {top:?}"
+        );
+        assert!(
+            nacre_validate::validate(m).is_empty(),
+            "{what}: {:?}",
+            nacre_validate::validate(m)
+        );
+    };
+
+    // (a) a seeded world plane
+    let mut m = Model::new();
+    let op = cylinder_op(&m, [0.0, 0.0], 1.0, 2.0);
+    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).unwrap() else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    check(&m, faces, "world XY");
+
+    // (b) a plane the log stated as a datum, facing +Z
+    let mut m = Model::new();
+    let below = datum_frame(
+        &mut m,
+        crate::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, -0.5])),
+    );
+    let op = Operation::Cylinder {
+        frame: below,
+        center: [0.0, 0.0],
+        radius: 1.0,
+        dist: 2.0,
+    };
+    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).unwrap() else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    check(&m, faces, "stated datum");
+
+    // (c) the plane of a face that already exists — the case that was wrong
+    let mut m = Model::new();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&m, Axis::Z),
+        profile: square(),
+        dist: 1.0,
+    };
+    let OpOutput::Extrude { faces: plate, .. } = apply(&mut m, &extrude).unwrap() else {
+        panic!("an extrude answers with an extrude");
+    };
+    let top = face_sketch_frame(&m, plate[1]).expect("a face has a frame");
+    let op = Operation::Cylinder {
+        frame: top,
+        center: [0.5, 0.5],
+        radius: 0.2,
+        dist: 1.0,
+    };
+    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).unwrap() else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+    check(&m, faces, "an existing face's plane");
+}

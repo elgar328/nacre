@@ -3301,7 +3301,13 @@ mod tests {
                 let e = Rat::try_from_f64(y).and_then(|yr| r.checked_sub(yr))?;
                 if e < zero { zero.checked_sub(e) } else { Some(e) }
             };
-            let here = err(q).expect("in range");
+            // ★ The *check* has a range, and it is narrower than the generator: comparing exactly
+            // needs `r`'s denominator times `q`'s power of two, which for a small enough value
+            // leaves `i128` (measured: `n = 1, d = 500930446045` — 2^39 · 2^91). The two
+            // neighbours below have always skipped on the same limit; `here` said `expect` and
+            // so turned a limit of the instrument into a failure of the thing measured.
+            prop_assume!(err(q).is_some());
+            let here = err(q).expect("just assumed representable");
             for nb in [f64::from_bits(q.to_bits() + 1), f64::from_bits(q.to_bits() - 1)] {
                 if let Some(there) = err(nb) {
                     prop_assert!(here <= there, "{r:?}: {q:?} is not nearest ({nb:?} is closer)");

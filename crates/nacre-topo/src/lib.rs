@@ -1812,8 +1812,23 @@ impl Model {
         // moves no handle; the surfaces' order among themselves (lateral → bottom cap → top
         // cap) is what matters and it is unchanged (the `add_cuboid` precedent).
         let lateral_surface = self.push_cylinder(lateral_cache, def, motion);
-        let (bottom_cap_surface, _) = self.push_plane(bottom_plane, bottom_points, motion);
-        let (top_cap_surface, _) = self.push_plane(top_plane, top_points, motion);
+        // ★★★ **A cap's plane may already be in the model, facing the other way** — and it is the
+        // *rule*, not the exception, once cylinders come from operations: the bottom cap lies on
+        // the very plane the sketch frame names. `push_plane` interns by the plane's canonical
+        // name, which has no direction, so it hands back "the surface exists, its cache points
+        // the other way" and the face must record `Orientation::flipped()` — the `add_cuboid`
+        // spelling. Dropping the bit gave a cylinder standing on a face **two upward caps**
+        // (measured: bottom cap outward `+Z` on a top-face frame), which is not a solid at all.
+        let (bottom_cap_surface, bottom_flipped) =
+            self.push_plane(bottom_plane, bottom_points, motion);
+        let (top_cap_surface, top_flipped) = self.push_plane(top_plane, top_points, motion);
+        let facing = |flipped: bool| {
+            if flipped {
+                Orientation::Forward.flipped()
+            } else {
+                Orientation::Forward
+            }
+        };
 
         // A seam vertex lies on two surfaces only — the rim circle's `θ = 0` point. `OnSeam`
         // states exactly that (S7), and since M6-0 the designation is complete: the cylinder's
@@ -1880,7 +1895,7 @@ impl Model {
                 surface: bottom_cap_surface,
                 outer,
                 inner: vec![],
-                orientation: Orientation::Forward,
+                orientation: facing(bottom_flipped),
             })
         };
         // Top cap: outward normal +d, the top rim forward.
@@ -1895,7 +1910,7 @@ impl Model {
                 surface: top_cap_surface,
                 outer,
                 inner: vec![],
-                orientation: Orientation::Forward,
+                orientation: facing(top_flipped),
             })
         };
 
