@@ -395,3 +395,173 @@ fn a_wide_parallel_ref_dir_is_still_refused() {
         "a zero ref_dir pins no seam either"
     );
 }
+
+// ── K2: the exact entry ───────────────────────────────────────────────────────────────────────
+//
+// Everything above measures the f64 entry, which *derives* its truth by lifting computed floats.
+// `add_cylinder_exact` is handed the truth instead, and these gates measure what that buys:
+// statements no decimal window can hold, refusals with names rather than panics, and — where the
+// two roads can say the same thing — the same model.
+
+fn int3(v: [i128; 3]) -> [Rat; 3] {
+    v.map(Rat::from_int)
+}
+
+/// The three faces `add_cylinder_exact` hands back, in push order.
+type CylFaces = [nacre_store::Handle<nacre_topo::Face>; 3];
+
+/// The lateral surface's truth and the two seam coordinates of a model built exactly.
+fn read_exact(m: &Model, faces: CylFaces) -> (CylinderDef, Point3, Point3) {
+    let lateral = m.faces.get(faces[0]).surface;
+    let def = match m.surface_truth(lateral) {
+        SurfaceTruth::Cylinder { def, motion } => {
+            assert!(motion.is_none(), "this fixture states the world");
+            def.clone()
+        }
+        _ => panic!("the first face of a cylinder solid is its lateral"),
+    };
+    let mut seams: Vec<_> = m
+        .vertices
+        .iter()
+        .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
+        .map(|(h, _)| h)
+        .collect();
+    seams.sort_by_key(|h| h.index());
+    assert_eq!(seams.len(), 2, "one seam vertex per rim");
+    (def, m.vertex_point(seams[0]), m.vertex_point(seams[1]))
+}
+
+/// ★ **The two roads are one spelling.** For a z-axis statement the f64 entry derives
+/// `ref_dir = ê_x × axis = (0, −1, 0)`; handing the exact entry that same truth must produce the
+/// same model — same def, same seam coordinates, bit for bit. If this ever parts, the shared
+/// b-rep body grew a second version of a rule (the one thing extracting it was meant to prevent).
+#[test]
+fn both_roads_state_the_same_z_axis_cylinder() {
+    let (bot_f64, top_f64, _, def_f64) = build(pt(0.0, 0.0, 0.0), vec(0.0, 0.0, 1.0), 2.0, 5.0);
+
+    let mut m = Model::new();
+    let (_, faces) = m
+        .add_cylinder_exact(
+            int3([0, 0, 0]),
+            int3([0, 0, 1]),
+            int3([0, -1, 0]),
+            Rat::from_int(2),
+            Rat::from_int(5),
+            None,
+        )
+        .expect("an orthonormal statement builds");
+    let (def, bot, top) = read_exact(&m, faces);
+
+    assert_eq!(def.origin(), def_f64.origin(), "same axis point");
+    assert_eq!(def.dir(), def_f64.dir(), "same axis direction");
+    assert_eq!(def.ref_dir(), def_f64.ref_dir(), "same seam reference");
+    assert_eq!(def.radius(), def_f64.radius(), "same radius");
+    assert_eq!(bits3(bot.as_array()), bits3(bot_f64.as_array()));
+    assert_eq!(bits3(top.as_array()), bits3(top_f64.as_array()));
+}
+
+/// ★★ **A third is a cylinder.** `1/3` has no decimal spelling, so the f64 entry cannot state
+/// this base at all: it would lift `Rat::from_decimal(0.333…)`, a *different* point. The exact
+/// entry keeps what it was given — and the second assertion is what gives the first its meaning
+/// (without it this test would pass on a road that quietly rounded).
+#[test]
+fn a_base_with_no_decimal_form_is_stated_exactly() {
+    let third = Rat::new(1, 3).expect("nonzero denominator");
+    let mut m = Model::new();
+    let (_, faces) = m
+        .add_cylinder_exact(
+            [third, Rat::from_int(0), Rat::from_int(0)],
+            int3([0, 0, 1]),
+            int3([1, 0, 0]),
+            Rat::from_int(1),
+            Rat::from_int(4),
+            None,
+        )
+        .expect("a rational base is a statement, not a decimal");
+    let (def, _, _) = read_exact(&m, faces);
+    assert_eq!(def.origin()[0], third, "the truth is a third, exactly");
+    assert_ne!(
+        rat(third.to_f64()),
+        third,
+        "the decimal road's nearest statement is a different point — the window is why this \
+         entry takes rationals"
+    );
+}
+
+/// ★★ **Every refusal has a name, and none of them touches the arena.** The f64 entry answers
+/// these four with `expect`/`debug_assert`; here they are values, because an application's
+/// numbers are input and a panic in wasm is a dead session. The store-length assertion is the
+/// other half: a late refusal would leave cells behind and shift every later log index.
+#[test]
+fn a_refused_statement_is_named_and_leaves_nothing_behind() {
+    use nacre_topo::CylinderError;
+
+    let mut m = Model::new();
+    let before = (
+        m.surface_count(),
+        m.vertices.iter().count(),
+        m.edges.iter().count(),
+        m.live_solids.len(),
+    );
+    let two = Rat::from_int(2);
+    let five = Rat::from_int(5);
+    /// A refused statement: axis, seam reference, radius, height — and the name it earns.
+    type Case = ([Rat; 3], [Rat; 3], Rat, Rat, CylinderError);
+    let cases: [Case; 5] = [
+        // A raw axis: the right direction, but not unit — every derived point would be scaled.
+        (
+            int3([0, 0, 2]),
+            int3([1, 0, 0]),
+            two,
+            five,
+            CylinderError::FrameNotOrthonormal,
+        ),
+        // Unit, but the seam reference lies along the axis: it pins no angle.
+        (
+            int3([0, 0, 1]),
+            int3([0, 0, 1]),
+            two,
+            five,
+            CylinderError::FrameNotOrthonormal,
+        ),
+        // Unit and perpendicular directions, but a non-unit reference length.
+        (
+            int3([0, 0, 1]),
+            int3([3, 0, 0]),
+            two,
+            five,
+            CylinderError::FrameNotOrthonormal,
+        ),
+        (
+            int3([0, 0, 1]),
+            int3([1, 0, 0]),
+            Rat::from_int(0),
+            five,
+            CylinderError::NonPositiveRadius,
+        ),
+        (
+            int3([0, 0, 1]),
+            int3([1, 0, 0]),
+            two,
+            Rat::from_int(-5),
+            CylinderError::NonPositiveHeight,
+        ),
+    ];
+    for (axis, ref_dir, radius, height, want) in cases {
+        assert_eq!(
+            m.add_cylinder_exact(int3([0, 0, 0]), axis, ref_dir, radius, height, None)
+                .unwrap_err(),
+            want
+        );
+    }
+    assert_eq!(
+        (
+            m.surface_count(),
+            m.vertices.iter().count(),
+            m.edges.iter().count(),
+            m.live_solids.len()
+        ),
+        before,
+        "a refusal is decided before anything is pushed"
+    );
+}

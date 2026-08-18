@@ -412,6 +412,43 @@ impl CylinderDef {
     }
 }
 
+/// Why [`Model::add_cylinder_exact`] refused a statement — **every way in, named**.
+///
+/// The entry promises no panics: an application's numbers are input, not a caller bug, and a
+/// panic in wasm is a dead session rather than a sentence. The first three are the caller's
+/// statement; the last two cannot happen for a statement that passed them (see the entry's doc)
+/// and exist so that "cannot happen" never has to be spelled `expect`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CylinderError {
+    /// `axis` or `ref_dir` is not a unit vector, or the two are not perpendicular. This is the
+    /// precondition that makes every point the entry derives exact.
+    FrameNotOrthonormal,
+    NonPositiveRadius,
+    NonPositiveHeight,
+    /// An exact product left `i128` — the statement is representable, its derived points are not.
+    Overflow,
+    /// The truth, a cache, or an edge's curve refused what the statement said.
+    Degenerate,
+}
+
+/// Everything a cylinder solid is assembled from, already derived: the **exact truth** (`def`,
+/// the caps' points) and its **realization** (the caches, the seam coordinates).
+///
+/// ★ The two cylinder constructors differ only in *how they reach here* — a caller's f64
+/// statement (`Model::add_cylinder`) or an exact orthonormal frame
+/// ([`Model::add_cylinder_exact`]) — so the b-rep below is written once. The f64 road cannot
+/// simply delegate to the exact one: its axis comes out of `normalize()`, and a normalized f64
+/// direction has no rational form to hand over.
+struct CylinderParts {
+    def: CylinderDef,
+    lateral: Cylinder,
+    /// Bottom then top: each cap's realized plane beside its three exact points.
+    caps: [(Plane, [[Rat; 3]; 3]); 2],
+    /// The rims' `θ = 0` points (bottom, top) — where the seam vertices sit.
+    seam_pts: [Point3; 2],
+    motion: Option<Handle<MotionNode>>,
+}
+
 /// The truth-only aggregate: exact geometry + topology stores + the derived
 /// adjacency cache. No `tess`, no `ops` (see the crate docs).
 #[derive(Debug)]
@@ -1513,20 +1550,20 @@ impl Model {
     }
 
     /// Add a closed cylinder solid and return it: the axis runs from `base` along
-    /// `axis` for `height`, with the given `radius`.
+    /// `axis` for `height`, with the given `radius`. The b-rep is the shared seam form
+    /// (`Model::cylinder_solid`); this entry's own work is **deriving the exact truth from a
+    /// caller's f64 statement**.
     ///
-    /// Built as the standard **seam b-rep** (V2/E3/F3): two seam vertices, two
-    /// full-circle rim edges (`bounds: Some([seam, seam])`, start == end), one
-    /// straight seam edge, a cylindrical lateral face whose loop uses the seam
-    /// edge twice (opposite orientation), and two planar caps (each a
-    /// single-half-edge rim loop). This forms a valid CW-complex (Euler χ = 2)
-    /// that [`validate`](../nacre_validate/fn.validate.html) accepts — a closed
-    /// periodic surface needs a seam vertex, so the rims are `Some([v, v])`, not
-    /// `bounds: None` (that form is for a standalone full circle; §4).
+    /// `radius`/`height` must be positive, `axis` nonzero, and every stated coordinate inside
+    /// the decimal window (caller bug → panic). Does **not** rebuild adjacency — call
+    /// [`Model::rebuild_adjacency`] once after all additions.
     ///
-    /// `radius`/`height` must be positive and `axis` nonzero (caller bug →
-    /// panic). Does **not** rebuild
-    /// adjacency — call [`Model::rebuild_adjacency`] once after all additions.
+    /// ★ **The panics are why this is a test convenience.** A statement whose *computed*
+    /// coordinates leave the decimal window is not a caller bug when the caller is an
+    /// application — it is an input. The production road states a cylinder through
+    /// [`Model::add_cylinder_exact`], whose frame makes those coordinates rational by
+    /// construction and which names every refusal instead of panicking.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn add_cylinder(
         &mut self,
         base: Point3,
@@ -1605,15 +1642,6 @@ impl Model {
             .expect("non-degenerate cylinder")
         };
 
-        // ★ **Surfaces before edges** (S8): an edge states its two carriers, so the lateral
-        // cylinder and both cap planes must exist first. Separate arenas — the interleaving
-        // moves no handle; the surfaces' order among themselves (lateral → bottom cap → top
-        // cap) is what matters and it is unchanged (the `add_cuboid` precedent).
-        let lateral_surface = self.push_cylinder(
-            Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
-            def,
-            None,
-        );
         // A cap plane's three exact points: the decimal truth of the realized center and two
         // rim-direction offsets the construction already computed (the `add_cuboid` precedent —
         // the producer's own f64 is its statement). For an axis whose normalization is exact
@@ -1631,16 +1659,161 @@ impl Model {
             };
             [lift(c), lift(c + u * radius), lift(c + w * radius)]
         };
-        let (bottom_cap_surface, _) = self.push_plane(
-            Plane::from_point_normal(c0, -d).expect("nonzero axis"),
-            cap_points(c0),
-            None,
+        self.cylinder_solid(CylinderParts {
+            def,
+            lateral: Cylinder::from_axis(c0, d, u, radius).expect("non-degenerate cylinder"),
+            caps: [
+                (
+                    Plane::from_point_normal(c0, -d).expect("nonzero axis"),
+                    cap_points(c0),
+                ),
+                (
+                    Plane::from_point_normal(c1, d).expect("nonzero axis"),
+                    cap_points(c1),
+                ),
+            ],
+            seam_pts: [p_bot, p_top],
+            motion: None,
+        })
+        .expect("a rim derives its circle from the cap and the cylinder")
+        .0
+    }
+
+    /// **State a cylinder exactly** — the production road, and the one with no panics in it.
+    ///
+    /// `axis` and `ref_dir` must be **unit and perpendicular** (checked, exactly). That single
+    /// precondition is what makes everything below exact rather than realized-then-lifted: the
+    /// far centre `base + axis·height`, both seam points `c + ref_dir·radius`, and each cap
+    /// plane's third point `c + (axis × ref_dir)·radius` are rational products of rational
+    /// inputs. `Model::add_cylinder` (the test entry) cannot do this — it normalizes an f64 axis, so its caps
+    /// and seams have to be lifted back out of computed floats, and a statement whose computed
+    /// coordinates leave the decimal window panics there.
+    ///
+    /// ★ The precondition is not a restriction on *what can be built*: an application states a
+    /// cylinder on a sketch frame, and a frame either has an exact orthonormal basis or is
+    /// carried by `motion` — in which case the cylinder is stated in the frame's own coordinates,
+    /// where the basis is `{0, ±1}`. So the tilted case is not the irrational case.
+    ///
+    /// Returns the solid beside its three faces (lateral, bottom cap, top cap). Does **not**
+    /// rebuild adjacency.
+    pub fn add_cylinder_exact(
+        &mut self,
+        base: [Rat; 3],
+        axis: [Rat; 3],
+        ref_dir: [Rat; 3],
+        radius: Rat,
+        height: Rat,
+        motion: Option<Handle<MotionNode>>,
+    ) -> Result<(Handle<Solid>, [Handle<Face>; 3]), CylinderError> {
+        let zero = Rat::from_int(0);
+        let one = Rat::from_int(1);
+        if radius <= zero {
+            return Err(CylinderError::NonPositiveRadius);
+        }
+        if height <= zero {
+            return Err(CylinderError::NonPositiveHeight);
+        }
+        let dot = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<Rat> {
+            let mut acc = zero;
+            for k in 0..3 {
+                acc = acc.checked_add(a[k].checked_mul(b[k])?)?;
+            }
+            Some(acc)
+        };
+        let (aa, rr, ar) = (
+            dot(&axis, &axis).ok_or(CylinderError::Overflow)?,
+            dot(&ref_dir, &ref_dir).ok_or(CylinderError::Overflow)?,
+            dot(&axis, &ref_dir).ok_or(CylinderError::Overflow)?,
         );
-        let (top_cap_surface, _) = self.push_plane(
-            Plane::from_point_normal(c1, d).expect("nonzero axis"),
-            cap_points(c1),
-            None,
-        );
+        if aa != one || rr != one || ar != zero {
+            return Err(CylinderError::FrameNotOrthonormal);
+        }
+        // The third direction of the frame, so a cap plane gets a second rim point rather than a
+        // second statement of the same one — three points on a circle name its plane.
+        let cross = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<[Rat; 3]> {
+            let term =
+                |i: usize, j: usize| a[i].checked_mul(b[j])?.checked_sub(a[j].checked_mul(b[i])?);
+            Some([term(1, 2)?, term(2, 0)?, term(0, 1)?])
+        };
+        let w = cross(&axis, &ref_dir).ok_or(CylinderError::Overflow)?;
+        // `p + dir·s`, exactly — the only arithmetic this entry does, and the reason the
+        // orthonormal precondition is worth checking.
+        let step = |p: &[Rat; 3], dir: &[Rat; 3], s: Rat| -> Option<[Rat; 3]> {
+            let mut out = *p;
+            for k in 0..3 {
+                out[k] = p[k].checked_add(dir[k].checked_mul(s)?)?;
+            }
+            Some(out)
+        };
+        let over = CylinderError::Overflow;
+        let c0 = base;
+        let c1 = step(&c0, &axis, height).ok_or(over)?;
+        let cap_points = |c: &[Rat; 3]| -> Option<[[Rat; 3]; 3]> {
+            Some([*c, step(c, &ref_dir, radius)?, step(c, &w, radius)?])
+        };
+        let (bottom_points, top_points) =
+            (cap_points(&c0).ok_or(over)?, cap_points(&c1).ok_or(over)?);
+        let (p_bot, p_top) = (bottom_points[1], top_points[1]);
+        let def = CylinderDef::new(base, axis, ref_dir, radius).ok_or(CylinderError::Degenerate)?;
+
+        // The caches are the realization of exactly these statements — nothing here is measured
+        // or re-derived, so a cache cannot disagree with the truth beside it.
+        let point = |p: [Rat; 3]| Point3::from_array(p.map(Rat::to_f64));
+        let vector = |p: [Rat; 3]| Vector3::from_array(p.map(Rat::to_f64));
+        let (d, u) = (vector(axis), vector(ref_dir));
+        let deg = CylinderError::Degenerate;
+        self.cylinder_solid(CylinderParts {
+            def,
+            lateral: Cylinder::from_axis(point(c0), d, u, radius.to_f64()).ok_or(deg)?,
+            caps: [
+                (
+                    Plane::from_point_normal(point(c0), -d).ok_or(deg)?,
+                    bottom_points,
+                ),
+                (
+                    Plane::from_point_normal(point(c1), d).ok_or(deg)?,
+                    top_points,
+                ),
+            ],
+            seam_pts: [point(p_bot), point(p_top)],
+            motion,
+        })
+        .ok_or(deg)
+    }
+
+    /// Assemble a cylinder's b-rep from parts already derived — **the one spelling** of the
+    /// V2/E3/F3 seam form, shared by both constructors.
+    ///
+    /// Two seam vertices, two full-circle rim edges (`bounds: Some([seam, seam])`,
+    /// start == end), one straight seam edge, a cylindrical lateral face whose loop uses the
+    /// seam edge twice (opposite orientation), and two planar caps (each a single-half-edge rim
+    /// loop). This forms a valid CW-complex (Euler χ = 2) that
+    /// [`validate`](../nacre_validate/fn.validate.html) accepts — a closed periodic surface
+    /// needs a seam vertex, so the rims are `Some([v, v])`, not `bounds: None` (that form is for
+    /// a standalone full circle; §4).
+    ///
+    /// Returns the solid beside its three faces in push order (lateral, bottom cap, top cap).
+    /// `None` if an edge cannot derive its curve from the carriers it states — each caller says
+    /// what that means for it. Does **not** rebuild adjacency.
+    fn cylinder_solid(
+        &mut self,
+        parts: CylinderParts,
+    ) -> Option<(Handle<Solid>, [Handle<Face>; 3])> {
+        let CylinderParts {
+            def,
+            lateral: lateral_cache,
+            caps: [(bottom_plane, bottom_points), (top_plane, top_points)],
+            seam_pts: [p_bot, p_top],
+            motion,
+        } = parts;
+
+        // ★ **Surfaces before edges** (S8): an edge states its two carriers, so the lateral
+        // cylinder and both cap planes must exist first. Separate arenas — the interleaving
+        // moves no handle; the surfaces' order among themselves (lateral → bottom cap → top
+        // cap) is what matters and it is unchanged (the `add_cuboid` precedent).
+        let lateral_surface = self.push_cylinder(lateral_cache, def, motion);
+        let (bottom_cap_surface, _) = self.push_plane(bottom_plane, bottom_points, motion);
+        let (top_cap_surface, _) = self.push_plane(top_plane, top_points, motion);
 
         // A seam vertex lies on two surfaces only — the rim circle's `θ = 0` point. `OnSeam`
         // states exactly that (S7), and since M6-0 the designation is complete: the cylinder's
@@ -1659,18 +1832,12 @@ impl Model {
 
         // Rims are full circles seamed at their vertex (start == end); the seam is
         // a straight edge joining the two rim seam points.
-        let bottom = self
-            .push_edge([lateral_surface, bottom_cap_surface], [v_bot, v_bot])
-            .expect("a rim derives its circle from the cap and the cylinder");
-        let top = self
-            .push_edge([lateral_surface, top_cap_surface], [v_top, v_top])
-            .expect("a rim derives its circle from the cap and the cylinder");
+        let bottom = self.push_edge([lateral_surface, bottom_cap_surface], [v_bot, v_bot])?;
+        let top = self.push_edge([lateral_surface, top_cap_surface], [v_top, v_top])?;
         // Self-adjacent: a seam is a parameterization joint of ONE surface, not an
         // intersection of two — the confirmed spelling (M6-0; see `Edge::surfaces`), guarded
         // by validate's "self-adjacent ⇔ cylinder" carrier rule.
-        let seam = self
-            .push_edge([lateral_surface, lateral_surface], [v_bot, v_top])
-            .expect("positive height");
+        let seam = self.push_edge([lateral_surface, lateral_surface], [v_bot, v_top])?;
 
         // Lateral cylindrical face: one loop wrapping the seam twice (opposite).
         let lateral = {
@@ -1735,10 +1902,11 @@ impl Model {
         let shell = self.shells.push(Shell {
             faces: vec![lateral, bottom_cap, top_cap],
         });
-        self.push_solid(Solid {
+        let solid = self.push_solid(Solid {
             outer: shell,
             cavities: vec![],
-        })
+        });
+        Some((solid, [lateral, bottom_cap, top_cap]))
     }
 }
 

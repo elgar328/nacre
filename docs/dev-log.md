@@ -10293,3 +10293,36 @@ M6-1의 `plane_plane_cylinder`가 바로 그런 선이 원통과 무엇을 하�
 - 범위 밖으로 둔 발견: `cargo doc -p nacre-ops` 경고 6건(전부 이번 세션과 무관)이 있고 **훅은 doc을
   돌리지 않는다** — "없는/비공개 항목을 가리키는 문서" 부패는 현재 무방비다. 고치는 것보다 게이트에
   넣을지가 결정거리라 따로 판단한다.
+
+---
+
+## K2-1 — 원통을 *정확히* 진술하는 입구, f64 입구는 문 뒤로 (2026-08-18)
+
+앱이 원통을 만들려면 원통이 연산 로그에 실려야 하고(K2-2), 그 전에 **패닉하지 않는 생성자**가
+있어야 한다. `add_cylinder`의 `expect` 7개 중 둘은 *계산된* f64를 소수로 되올리다 터진다
+(`cylinder statement inside the decimal window`, `cylinder caps inside the decimal window`) —
+앱의 입력에 대해 그건 호출자 버그가 아니라 입력이고, wasm에서 패닉은 문장이 아니라 세션 사망이다.
+
+- **공유 몸통 추출**(`cylinder_solid`): surface 3 → OnSeam 정점 2 → rim/seam 엣지 3 → 면 3 →
+  shell/solid. 두 입구는 **전문(prologue)만** 다르다 — f64 진술을 리프트하느냐, 정확한 프레임을
+  받느냐. ★ f64 입구는 새 입구에 **위임할 수 없다**: 그 축은 `normalize()`의 결과라 넘겨줄 유리수
+  형태가 없다. 그래서 "두 벌"이 아니라 "한 몸통 + 두 전문"이 답이었다.
+- **`add_cylinder_exact`**: 축·ref_dir이 **단위·직교**임을 유리수에서 정확히 검사하고, 그 전제
+  하나로 아래가 전부 정확해진다 — 반대편 중심 `base + axis·h`, seam 점 `c + ref_dir·r`, 캡의
+  세 번째 점 `c + (axis × ref_dir)·r`. `expect` 0개, 거절 5종 전부 이름(`CylinderError`).
+- **전제는 제약이 아니다**: 프레임은 정확한 정규직교 기저를 갖거나, 아니면 motion이 실어 나른다 —
+  후자에선 원통이 프레임 자신의 좌표에서 진술되고 거기서 기저는 `{0, ±1}`이다. **기운 경우가
+  무리수 경우가 아니다**.
+- **문 옮기기**: `add_cylinder`에 `#[cfg(any(test, feature = "test-util"))]`. topo Cargo.toml이
+  M6부터 예고해 둔 그 자리다.
+  - ★ **계획이 틀린 곳 하나**: "Cargo 작업은 없다"는 소비 크레이트 7곳에 대해선 맞았지만(이미 전부
+    `add_cuboid` 때문에 켜 둠) **topo 자신의 통합 테스트**에는 틀렸다 — 통합 테스트는 `cfg(test)`
+    없이 라이브러리를 컴파일한다. 파사드 크레이트가 쓰는 그 수를 그대로: **자기 자신에 대한
+    dev-dependency**(`nacre-topo = { path = ".", features = ["test-util"] }`).
+  - **기계로 확인**: `cargo doc -p nacre-topo`(기본 피처)의 `struct.Model.html`에
+    `id="method.add_cylinder_exact"`는 있고 `method.add_cylinder`·`method.add_cuboid`는 **없다**.
+- 잠금 3: 두 도로가 같은 z축 원통을 만든다(def 동일 + seam 좌표 **비트 동일** — 몸통이 한 벌임을
+  재는 자), **1/3을 밑점으로 갖는 원통**(소수 형태가 없는 진술 — 음성 대조로
+  `from_decimal(1/3의 f64) ≠ 1/3`을 함께 단언해야 이 테스트가 무엇을 재는지가 산다),
+  거절 5종이 이름을 갖고 **아레나에 아무것도 남기지 않는다**(surface/vertex/edge/live 길이 불변).
+- 관문: M6-0 비트 리터럴 4 픽스처 무변화, 워크스페이스 53타깃 green, clippy 0, doc 경고 증가 0.

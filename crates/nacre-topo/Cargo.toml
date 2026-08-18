@@ -18,11 +18,16 @@ nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 # Exposes the test-only solid primitive `Model::add_cuboid` (a topo convenience that bypasses
 # the ops modelling layer). Off by default, so production consumers never see it; crates below
 # nacre-ops enable it in their [dev-dependencies] to build test solids at the topo layer.
-# `add_cylinder` stays public for now — it is the only cylinder constructor (no ops equivalent
-# until M6), so it is gated later when ops gains one.
+# `add_cylinder` joined it in M6-2 (K2), when `ops::Operation::Cylinder` became the production
+# road: the f64 entry derives its truth by lifting computed floats and panics outside the decimal
+# window, which is a test convenience, not something an application should be able to reach.
 test-util = []
 
 [dev-dependencies]
 proptest.workspace = true
+# Self dev-dependency: `tests/cylinder_truth.rs` pins the f64 entry's derivation, and an
+# integration test compiles against the lib without `cfg(test)`. Enabling the feature here — the
+# same move the facade crate makes — keeps those tests in the default `cargo test` run.
+nacre-topo = { path = ".", features = ["test-util"] }
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

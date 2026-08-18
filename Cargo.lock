@@ -393,6 +393,7 @@ dependencies = [
  "nacre-math",
  "nacre-scalar",
  "nacre-store",
+ "nacre-topo",
  "proptest",
 ]
 
