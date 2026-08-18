@@ -1321,6 +1321,13 @@ pub(crate) fn point_in_faces_rat(
         let chart = Chart2dRat::of_normal(&n).ok_or_else(not_rational)?;
         let x2 = chart.project(&x).ok_or_else(not_rational)?;
         let side = |ring: &[[usize; 3]]| -> Result<RingSide, BoolError> {
+            // ★ Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract — which
+            // would make a degenerate ring *invisible* to the parity instead of loud. A face of
+            // a valid solid has no such ring, so saying so is free; swallowing it would be a
+            // silent wrong answer, the one outcome this road exists to avoid.
+            if ring.len() < 3 {
+                return Err(reject(RejectReason::DegenerateRing));
+            }
             let ring2 = chart.ring(jd, ring).ok_or_else(not_rational)?;
             Ok(point_in_ring_2d_rat(x2, &ring2))
         };

@@ -6598,33 +6598,55 @@ fn the_rational_road_agrees_with_the_profile_over_the_l_notch() {
 
     let coords = [0.25, 0.75, 1.25, 1.75, 2.25];
     let mut inside = 0;
-    let mut checked = 0;
+    let mut answers = 0;
+    let mut silent: Vec<[f64; 3]> = Vec::new();
+    let mut abstained: Vec<([f64; 3], [i128; 3])> = Vec::new();
     for x in coords {
         for y in coords {
             let p = [x, y, 0.5];
             let want = l_prism_oracle(p);
+            let mut answered = 0;
             for dir in [[0, 0, 1], [1, 0, 0], [0, 1, 0], [1, 1, 1]] {
                 let d = dir.map(Rat::from_int);
                 let got = combinatorics::point_in_faces_rat(&jd, &rat3(p), &d, &faces)
                     .unwrap_or_else(|e| panic!("{p:?} along {dir:?}: {e:?}"));
+                // An abstention is a legal answer (a grazing ray), so it is not asserted
+                // against here — it is collected and named below instead.
                 let Some(got) = got else {
-                    // An abstention is allowed (a grazing ray), but it must not be the only
-                    // answer this point ever gets — the loop's other directions cover it.
+                    abstained.push((p, dir));
                     continue;
                 };
                 assert_eq!(got, want, "point {p:?} along {dir:?}");
-                checked += 1;
+                answered += 1;
             }
+            if answered == 0 {
+                silent.push(p);
+            }
+            answers += answered;
             inside += usize::from(want);
         }
     }
-    // The instrument moved: the grid is not all-outside or all-inside, and the notch column is
+    // The instrument moved: the grid is not all-outside or all-inside — the notch column is
     // genuinely void while the bar beside it is material.
     assert_eq!(inside, 12, "12 of 25 grid points are material");
-    assert!(
-        checked >= 25,
-        "every grid point answered along some direction: {checked}"
+    // ★ **Every abstention is named, not counted.** The three are the diagonal ray from a
+    // point 0.25 short of a vertical edge, which meets that edge exactly — at the reflex corner
+    // (1,1) and at the convex corners (1,2) and (2,1). That the grazing detector fires there,
+    // and only there, is this grid's negative control: a road that never abstained and a road
+    // that abstained everywhere would both fail this line.
+    assert_eq!(
+        abstained,
+        vec![
+            ([0.75, 0.75, 0.5], [1, 1, 1]),
+            ([0.75, 1.75, 0.5], [1, 1, 1]),
+            ([1.75, 0.75, 0.5], [1, 1, 1]),
+        ],
+        "the grazing rays are exactly the diagonals through the vertical edges"
     );
+    // And no point was left undecided: a grazed direction is repaired by the others, which is
+    // the abstention protocol's whole claim.
+    assert!(silent.is_empty(), "points no direction decided: {silent:?}");
+    assert_eq!(answers, 25 * 4 - 3, "every other query decided");
 }
 
 /// The three non-generic rays, each abstaining rather than guessing: a ray that **starts on** the
