@@ -755,6 +755,17 @@ pub enum RejectReason {
     /// borrowing it here would make this pass correct only while that reasoning holds elsewhere.
     /// Named refusal instead, until the road learns to answer about a cylinder.
     BandWitnessNotPlanar,
+    /// **A result in several pieces has a piece bounded by a curved face.** Which piece is
+    /// material and which is a cavity is decided by a ray cast from a component's own vertices
+    /// (`combinatorics::point_in_component`), and that probe is described a component **face by
+    /// face** — a lateral surface has no polygon ring to hand it, and leaving one out would not
+    /// be a gap but a **wrong count**: a ray through the missing wall comes back with inverted
+    /// parity.
+    ///
+    /// So the classification is refused rather than guessed. The extension is symbolic and
+    /// already half-built: that ray is the meet of two of the query's planes, and
+    /// `nacre_scalar::plane_plane_cylinder` names what such a line does against a cylinder.
+    CurvedComponentDepth,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
@@ -903,6 +914,7 @@ impl RejectReason {
             Self::JudgeExhausted => "judge_exhausted",
             Self::DegenerateWitness => "degenerate_witness",
             Self::NoClearRay => "no_clear_ray",
+            Self::CurvedComponentDepth => "curved_component_depth",
             Self::BandWitnessNotPlanar => "band_witness_not_planar",
             Self::WitnessNotRational => "witness_not_rational",
             Self::PointOnRing => "point_on_ring",
@@ -958,6 +970,7 @@ impl RejectReason {
             | Self::EdgeOccupancyConflict
             | Self::NoClearRay
             | Self::WitnessNotRational
+            | Self::CurvedComponentDepth
             | Self::BandWitnessNotPlanar
             | Self::PointOnRing
             | Self::HoleDepth

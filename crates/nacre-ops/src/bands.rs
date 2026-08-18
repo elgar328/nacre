@@ -589,6 +589,39 @@ mod tests {
         assert_eq!(cut.len(), 1);
         let v = nacre_props::mass_props(&m, cut[0]).expect("props").volume;
         assert!((v - 8.0).abs() < 1e-12, "the box is untouched: {v}");
+
+        // ★ **The fuse this test's name promises — and the case that used to abort the kernel.**
+        // Two disjoint bodies means `n = 2`, and classifying them asks a ray probe that cannot be
+        // handed a lateral face. Until the guard landed, that asked a band face for its plane
+        // class and panicked; the honest answer is a named refusal, and this is where it is
+        // measured. (The name said "fuses apart" for a while before the body did — the fixture
+        // owed the population its own name promised.)
+        let mut m2 = Model::new();
+        let a2 = m2.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b2 = m2.add_cylinder(
+            Point3::from_array([10.0, 10.0, 0.5]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            1.0,
+        );
+        m2.rebuild_adjacency();
+        let live_before = m2.live_solids.clone();
+        let err = crate::boolean(&mut m2, BoolKind::Fuse, a2, b2)
+            .expect_err("two bodies, one of them curved");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::CurvedComponentDepth,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert_eq!(
+            m2.live_solids, live_before,
+            "a refused boolean retires nothing"
+        );
     }
 
     /// **A blind hole, end to end.** The bore stops inside the box, so its own cap closes the

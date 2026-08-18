@@ -385,6 +385,27 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
     // exact predicate per node, so doing it unconditionally put **12x** on the 80-fold star
     // (measured). Built once per component rather than once per query for the same reason: the
     // label below retries with another node when one grazes.
+    // ★★ **A curved face cannot be described to this probe, and dropping it would be a silent
+    // wrong answer** (M6-2a). `point_in_component` counts a ray's crossings of the component's
+    // faces; a lateral face left out of the description is a crossing never counted, and the
+    // parity comes back inverted for a ray that passes through it. So a component that must be
+    // *classified* (`n > 1`) and carries a curved face is refused by name instead.
+    //
+    // ★ Measured, not assumed: before this guard, `Fuse(box, a distant cylinder)` — two bodies,
+    // so `n = 2` — aborted the kernel on `ClassIx::plane()`. The population never reached the
+    // suite because every cylinder fixture until then returned a single component.
+    //
+    // The real answer is symbolic and already half-built: this probe's ray is the meet of two of
+    // the query's own planes, and `nacre_scalar::plane_plane_cylinder` names exactly what such a
+    // line does against a cylinder. Counting those crossings is the extension this guard is
+    // holding the door for.
+    if n > 1 {
+        for comp in by_comp_lf.iter().take(n) {
+            if comp.iter().any(|lf| lf.surf.cyl().is_some()) {
+                return Err(reject(RejectReason::CurvedComponentDepth));
+            }
+        }
+    }
     let comp_faces: Vec<combinatorics::ComponentFaces> = (0..if n > 1 { n } else { 0 })
         .map(|c| {
             by_comp_lf[c]
