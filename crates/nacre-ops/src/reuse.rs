@@ -312,11 +312,13 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
             // circles until C4b.
             let ring_b = |b: &crate::boolean::Bound| match b {
                 crate::boolean::Bound::Ring(r) => ring(r),
-                crate::boolean::Bound::Circle { .. } => Vec::new(),
+                crate::boolean::Bound::Circle { .. } | crate::boolean::Bound::Band { .. } => {
+                    Vec::new()
+                }
             };
             let mut inner: Vec<Vec<[usize; 3]>> = f.inner.iter().map(ring_b).collect();
             inner.sort();
-            (f.plane_idx, f.flip, ring_b(&f.outer), inner)
+            (f.surf.plane(), f.flip, ring_b(&f.outer), inner)
         })
         .collect();
     out.sort();
@@ -387,7 +389,7 @@ pub(crate) fn pass_through(
             .faces
             .get(fa.face().expect("reuse only sees real faces"));
         out.push(LocalFace {
-            plane_idx: wc,
+            surf: crate::planes::ClassIx::Plane(wc),
             outer: crate::boolean::Bound::Ring(ring(&f.outer)?),
             inner: f
                 .inner

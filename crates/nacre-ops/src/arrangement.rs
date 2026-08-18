@@ -2321,7 +2321,7 @@ fn emit_faces(
             .map(|hs| hs.iter().map(|&h| bound_of(&cells[h])).collect())
             .unwrap_or_default();
         out.push(LocalFace {
-            plane_idx: wc,
+            surf: crate::planes::ClassIx::Plane(wc),
             outer: bound_of(cell),
             inner,
             flip,
@@ -2386,6 +2386,18 @@ fn trace_result_faces(
 
     // **What each class contributes, for the classes the other operand cannot reach.** Everything
     // else stays `Arrange`, which is the whole engine as it was.
+    // ★ **A cylinder in the operands turns the reuse shortcut off entirely** (M6-2a C4b).
+    // `reuse::pass_through` moves faces **per plane class** (`plane_ix[fi].plane() != wc →
+    // continue`), and a lateral face belongs to no plane class — so a class decided
+    // `PassThrough` would carry the planes across and leave the cylinder's own faces behind,
+    // silently. The guard also keeps `VertexClasses::of` (which walks face slots and asks each
+    // for its plane row) away from cylinder rows, so it does double duty.
+    let has_cyl = plane_ix.iter().any(|c| matches!(c, ClassIx::Cyl(_)));
+    let reuse = if has_cyl {
+        crate::reuse::ClassReuse::Off
+    } else {
+        reuse
+    };
     let plans = crate::reuse::class_plans(model, reuse, kind, a, b, planes, class_owner);
 
     // ★ Two passes, because an identity must not depend on the order classes happen to be visited.
@@ -2402,11 +2414,19 @@ fn trace_result_faces(
     // ★ **Every class that has anything to arrange, in a fixed order.** Only the classes an operand
     // face lies on: a result face on `W` is part of `∂A` or `∂B`, so `W` carries an operand face.
     let work: Vec<usize> = {
+        // ★ **Plane classes only.** A cylinder row rides in `trace_in` too (its lateral face is
+        // what leaves circles on the ⊥ classes), and a lateral surface *is* not a plane class —
+        // asking which one it is has no answer, which is exactly what `ClassIx::plane`'s panic
+        // says. Filtering here is the upstream filter that panic is a detector for; without it
+        // the first cylinder boolean past the C2 stopper aborts the kernel.
         let mut c: Vec<usize> = trace_in
             .faces
             .iter()
             .flatten()
-            .map(|(fp, _)| plane_ix[*fp].plane())
+            .filter_map(|(fp, _)| match plane_ix[*fp] {
+                ClassIx::Plane(i) => Some(i),
+                ClassIx::Cyl(_) => None,
+            })
             .collect();
         c.sort_unstable();
         c.dedup();
@@ -2447,7 +2467,10 @@ fn trace_result_faces(
             // reported, and `try_map_range` picks the lowest-numbered class, which is the one
             // the sequential loop returned at.
             if let Some(&(fp, kind)) = tr.declined.first() {
-                return Err(reject(decline_to_reject(kind, faces[fp].plane().face)));
+                // The witness is the face handle, read **kind-agnostically**: a lateral face can
+                // decline too (`DeclineKind::CylSpan` is exactly that), and asking it for its
+                // plane row would abort where an honest reject belongs.
+                return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
             let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
@@ -2869,9 +2892,15 @@ pub(crate) fn boolean(
     // this is the only honest answer to *"which surface did my face's plane end up as?"*. A caller
     // that asks it afterwards, by comparing handles or coordinates, is re-deciding a question this
     // engine already settled with evidence (see `ops::find_face_coplanar_with`).
+    // Plane rows only: "which plane class did my face end up on" is not a question a lateral
+    // face has an answer to, and the report's consumers ask it of planar faces
+    // (`ops::find_face_coplanar_with`).
     let class_of: ClassOf = surf_ix
         .iter()
-        .map(|(&f, &i)| (f, geom[plane_ix[i].plane()].surf))
+        .filter_map(|(&f, &i)| match plane_ix[i] {
+            ClassIx::Plane(c) => Some((f, geom[c].surf)),
+            ClassIx::Cyl(_) => None,
+        })
         .collect();
     // ★ **A closure so a `?` inside cannot skip the evidence check below.** Everything from here on
     // may reject, and every one of those rejects has to pass through `undecided_reject` first —
@@ -4984,6 +5013,76 @@ mod tests {
                 seats(a) && seats(b)
             })
             .expect("a shared z=1 cap class")
+    }
+
+    /// ★★ **The production path, run past the C2 stopper on a cylinder-bearing model.**
+    ///
+    /// Three `.plane()` calls sat on the production road with cylinder rows flowing into them —
+    /// the `work` class list, the decline witness, and the report's `class_of` — and every one
+    /// of them would have aborted the kernel on the first drill the moment C4b-3 removes the
+    /// stopper. None was reachable while the stopper stood, so neither the suite nor the census
+    /// said a word; reading the ~30 call sites did not find them either. **Running the road is
+    /// what finds them**, which is why this test exists before the bands do.
+    ///
+    /// What it asserts is deliberately weak on geometry and strong on survival: the tracer
+    /// completes, every face it emits is still a plane face (bands arrive in C4b-2), and the
+    /// drilled cap carries its circular hole.
+    #[test]
+    fn the_production_road_survives_a_cylinder_past_the_stopper() {
+        let mut m = Model::new();
+        let (a, b) = drilled(&mut m, -1.0, 4.0); // a through-hole: circles on both box caps
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            class_owner,
+            n_a,
+            standard,
+            notes,
+        } = plane_index_setup_past_stopper(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        let trace_in = combinatorics::trace_input(
+            &m,
+            [(a, &inc_a), (b, &inc_b)],
+            &surf_ix,
+            faces_tab.len(),
+            &jd,
+            &plane_ix,
+        );
+        let faces = trace_result_faces(
+            &m,
+            BoolKind::Cut,
+            a,
+            b,
+            &jd,
+            &faces_tab,
+            &plane_ix,
+            n_a,
+            &class_owner,
+            // `Proved` on purpose: the reuse guard must be what turns the shortcut off, not the
+            // caller. Without it `pass_through` would carry planes across and drop the lateral.
+            crate::reuse::ClassReuse::Proved,
+            &trace_in,
+        )
+        .expect("the drill population traces");
+        assert!(
+            faces.iter().all(|f| matches!(f.surf, ClassIx::Plane(_))),
+            "the plane arrangement emits plane faces only; bands are C4b-2"
+        );
+        // The box: 4 walls + 2 caps, and each cap carries the drill's circular hole.
+        assert_eq!(faces.len(), 6, "{faces:?}");
+        let holed = faces
+            .iter()
+            .filter(|f| {
+                f.inner
+                    .iter()
+                    .any(|b| matches!(b, crate::boolean::Bound::Circle { .. }))
+            })
+            .count();
+        assert_eq!(holed, 2, "both caps are drilled: {faces:?}");
     }
 
     /// The gated drill population's fixture: a `[0,2]³` box and an axis-aligned cylinder at

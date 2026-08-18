@@ -4203,7 +4203,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
 /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
 fn face(plane_idx: usize, nodes: Vec<Node>, inner: Vec<Vec<Node>>) -> LocalFace {
     LocalFace {
-        plane_idx,
+        surf: crate::planes::ClassIx::Plane(plane_idx),
         outer: crate::boolean::Bound::Ring(crate::boolean::Ring::from_clean_names(
             plane_idx, nodes,
         )),
@@ -4376,7 +4376,7 @@ fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
     ];
     let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
     assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
-    let merged = out.iter().find(|lf| lf.plane_idx == 0).unwrap();
+    let merged = out.iter().find(|lf| lf.surf.plane() == 0).unwrap();
     assert!(
         merged.outer.expect_ring().contains(&v100),
         "corner-elsewhere vertex kept (no T-junction)"

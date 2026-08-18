@@ -371,9 +371,9 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
                     // rim rule's (C4b); a node-level containment probe reads polygons only.
                     let rings = lf
                         .poly_rings()
-                        .map(|r| r.edges(jd, lf.plane_idx))
+                        .map(|r| r.edges(jd, lf.surf.plane()))
                         .collect::<Result<Vec<_>, BoolError>>()?;
-                    Ok((lf.plane_idx, rings))
+                    Ok((lf.surf.plane(), rings))
                 })
                 .collect::<Result<_, BoolError>>()
         })
@@ -623,40 +623,51 @@ impl Ring {
     }
 }
 
-/// One boundary of a result face (M6-2a): a polygon of seam nodes, or a **full circle** of a
-/// cylinder class. A circle has no nodes and no walls; it is assembled through the rim
-/// machinery (`push_edge([lateral, plane], [v, v])` + an `OnSeam` vertex), never through the
-/// seam-vertex table.
+/// One boundary of a result face (M6-2a): a polygon of seam nodes, a **full circle** of a
+/// cylinder class, or a lateral **band** between two of them. Neither curved bound has nodes or
+/// walls; both are assembled through the rim machinery (`push_edge([lateral, plane], [v, v])` +
+/// an `OnSeam` vertex), never through the seam-vertex table.
 #[derive(Clone, Debug)]
 pub(crate) enum Bound {
     Ring(Ring),
-    Circle { cyl: usize },
+    Circle {
+        cyl: usize,
+    },
+    /// A lateral band's whole boundary: the two plane classes its rims sit on, `lo` the one with
+    /// the smaller axis parameter. The face it bounds is the cylinder itself, so the class is on
+    /// [`LocalFace::surf`] rather than repeated here.
+    #[allow(dead_code)] // the producer is C4b-2's band pass
+    Band {
+        lo: usize,
+        hi: usize,
+    },
 }
 
 impl Bound {
-    /// The polygon ring, `None` for a circle — the node-walking consumers' filter.
+    /// The polygon ring, `None` for a curved bound — the node-walking consumers' filter.
     pub(crate) fn ring(&self) -> Option<&Ring> {
         match self {
             Bound::Ring(r) => Some(r),
-            Bound::Circle { .. } => None,
+            Bound::Circle { .. } | Bound::Band { .. } => None,
         }
     }
 
     pub(crate) fn ring_mut(&mut self) -> Option<&mut Ring> {
         match self {
             Bound::Ring(r) => Some(r),
-            Bound::Circle { .. } => None,
+            Bound::Circle { .. } | Bound::Band { .. } => None,
         }
     }
 
-    /// The polygon ring, asserted — for consumers whose population cannot carry circles (and
-    /// tests). Panics on a circle with the caller's location.
+    /// The polygon ring, asserted — for consumers whose population cannot carry curved bounds
+    /// (and tests). Panics with the caller's location.
     #[cfg_attr(not(test), allow(dead_code))]
     #[track_caller]
     pub(crate) fn expect_ring(&self) -> &Ring {
         match self {
             Bound::Ring(r) => r,
             Bound::Circle { cyl } => panic!("a polygon-only path got a circle bound (cyl {cyl})"),
+            Bound::Band { lo, hi } => panic!("a polygon-only path got a band bound ({lo}..{hi})"),
         }
     }
 }
@@ -665,7 +676,10 @@ impl Bound {
 /// flip it (cut's inside-A B-pieces).
 #[derive(Clone, Debug)]
 pub(crate) struct LocalFace {
-    pub(crate) plane_idx: usize,
+    /// Which class table this face's surface lives in — a plane class, or (M6-2a C4b) a cylinder
+    /// class whose band this face is. Plane-only consumers project with [`ClassIx::plane`], whose
+    /// panic is the upstream-filter-bug detector the type was introduced with.
+    pub(crate) surf: crate::planes::ClassIx,
     pub(crate) outer: Bound,
     /// Hole boundaries, each already wound so the kept material stays on its left
     /// about the face's outward normal.
@@ -779,7 +793,7 @@ fn self_touch_reject(
         let mut owners: HashMap<[[usize; 3]; 2], Vec<usize>> = HashMap::new();
         let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::with_capacity(faces.len());
         for (j, lf) in faces.iter().enumerate() {
-            by_plane.entry(lf.plane_idx).or_default().push(j);
+            by_plane.entry(lf.surf.plane()).or_default().push(j);
             let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
             for r in rings_of(lf) {
                 let k = r.nodes.len();
@@ -830,7 +844,8 @@ fn self_touch_reject(
                     // concur the endpoints' canonical triples need not share a second plane at all
                     // (31 pairs in the rotation sweep). An edge's two faces always give one, because
                     // that is what the edge *is*.
-                    let Some(w2) = own.iter().map(|&o| faces[o].plane_idx).find(|&x| x != q) else {
+                    let Some(w2) = own.iter().map(|&o| faces[o].surf.plane()).find(|&x| x != q)
+                    else {
                         continue; // an edge whose faces are both on `q` is not an edge
                     };
                     if combinatorics::segment_meets_face(jd, q, w2, u, v, &rings_of_face[&j])? {
@@ -945,7 +960,7 @@ fn reconstruct(
                 edge_faces
                     .entry((group_of[fi], norm_edge(ring[t], ring[(t + 1) % k])))
                     .or_default()
-                    .push(lf.plane_idx);
+                    .push(lf.surf.plane());
             }
         }
     }
@@ -972,8 +987,8 @@ fn reconstruct(
                     continue;
                 }
                 let (Some(prev), Some(next)) = (
-                    far_plane(g, ring[(t + k - 1) % k], node, lf.plane_idx),
-                    far_plane(g, node, ring[(t + 1) % k], lf.plane_idx),
+                    far_plane(g, ring[(t + k - 1) % k], node, lf.surf.plane()),
+                    far_plane(g, node, ring[(t + 1) % k], lf.surf.plane()),
                 ) else {
                     continue;
                 };
@@ -992,10 +1007,10 @@ fn reconstruct(
                 // line: names no point") answers here. Measured: it fires nowhere in the suite,
                 // which is why the check is here rather than trusted — the argument above claims
                 // the meet *is* this vertex, and this is what makes that true by construction.
-                if jd.plane_pair_dir_sign(lf.plane_idx, prev, next) == 0 {
+                if jd.plane_pair_dir_sign(lf.surf.plane(), prev, next) == 0 {
                     continue;
                 }
-                let mut tri = [lf.plane_idx, prev, next];
+                let mut tri = [lf.surf.plane(), prev, next];
                 tri.sort_unstable();
                 def_triple.insert((g, node), tri);
             }
@@ -1077,7 +1092,7 @@ fn reconstruct(
     let mut pair_surfs: HashMap<(usize, usize), Vec<Handle<Surface>>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        let fsurf = planes[lf.plane_idx].surf;
+        let fsurf = planes[lf.surf.plane()].surf;
         for r in lf.poly_rings() {
             let k = r.nodes.len();
             for t in 0..k {
@@ -1124,7 +1139,7 @@ fn reconstruct(
     let mut face_handles = Vec::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
-        let face_surf = planes[lf.plane_idx].surf;
+        let face_surf = planes[lf.surf.plane()].surf;
         let mut ring = |model: &mut Model, r: &Ring| -> Result<Loop, BoolError> {
             let handles: Vec<Handle<Vertex>> = r.nodes.iter().map(|nd| vh[&(g, *nd)]).collect();
             let k = handles.len();
@@ -1156,7 +1171,10 @@ fn reconstruct(
             match b {
                 Bound::Ring(r) => ring(model, r),
                 Bound::Circle { cyl } => {
-                    unreachable!("circle bound (cyl {cyl}) reached assembly before C4b")
+                    unreachable!("circle bound (cyl {cyl}) reached assembly before C4b-3")
+                }
+                Bound::Band { lo, hi } => {
+                    unreachable!("band bound ({lo}..{hi}) reached assembly before C4b-3")
                 }
             }
         };
@@ -1170,7 +1188,7 @@ fn reconstruct(
         // `Forward`/`Reversed` as a sign (read off the stored flag since the cutover). Reading it
         // here is what used to be `planes[plane_idx].orient` — a face field indexed by a plane,
         // the shape of every bug this split exists to prevent.
-        let framed = if planes[lf.plane_idx].frame_sign > 0 {
+        let framed = if planes[lf.surf.plane()].frame_sign > 0 {
             Orientation::Forward
         } else {
             Orientation::Reversed
@@ -1184,7 +1202,7 @@ fn reconstruct(
             framed
         };
         face_handles.push(model.faces.push(Face {
-            surface: planes[lf.plane_idx].surf,
+            surface: planes[lf.surf.plane()].surf,
             outer,
             inner,
             orientation,
@@ -1343,7 +1361,7 @@ pub(crate) fn unify_coplanar_faces(
     // product was `|n|² > 0` — identically true. It was redundant with `flip` besides, which is
     // already in the key: `assemble_fuse_cut` derives a result face's `Orientation` from exactly
     // `(the plane's frame, flip)`, so two faces in one group orient the same way by construction.
-    let group_key = |lf: &LocalFace| -> (usize, bool) { (lf.plane_idx, lf.flip) };
+    let group_key = |lf: &LocalFace| -> (usize, bool) { (lf.surf.plane(), lf.flip) };
 
     // Edge-connected components within a group.
     let mut comp: Vec<usize> = (0..n).collect();
@@ -1403,9 +1421,9 @@ pub(crate) fn unify_coplanar_faces(
         let Some(rings) = merge_component(&group, jd)? else {
             continue;
         };
-        let (plane_idx, flip) = (group[0].plane_idx, group[0].flip);
+        let (plane_idx, flip) = (group[0].surf.plane(), group[0].flip);
         merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
-            plane_idx,
+            surf: crate::planes::ClassIx::Plane(plane_idx),
             outer: Bound::Ring(outer),
             inner: inner.into_iter().map(Bound::Ring).collect(),
             flip,
@@ -1530,7 +1548,7 @@ fn merge_component(
     }
     // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in. (This
     // used to canon the index first — `plane_idx` names a plane now, so there is nothing to fold.)
-    let wc = group[0].plane_idx;
+    let wc = group[0].surf.plane();
     let mut outers: Vec<Ring> = Vec::new();
     let mut holes: Vec<Ring> = Vec::new();
     for cyc in cycles {
@@ -1600,7 +1618,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
                 nbrs.entry(a).or_default().insert(b);
                 nbrs.entry(b).or_default().insert(a);
                 for nd in [a, b] {
-                    match first_wall.entry((nd, lf.plane_idx)) {
+                    match first_wall.entry((nd, lf.surf.plane())) {
                         std::collections::hash_map::Entry::Occupied(e) => {
                             if *e.get() != ring.walls[i] {
                                 bent.insert(nd);
