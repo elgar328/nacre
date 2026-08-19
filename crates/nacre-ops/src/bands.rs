@@ -267,9 +267,10 @@ fn chamber(
         SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
         SolidSide::B => (2usize, 0usize),
     };
-    // `above` in the label is the class normal's side; the band leaves `lo` toward `hi`, i.e.
-    // toward increasing axis parameter.
-    let toward_hi = |c: usize| -> bool { jd.planes[c].plane.normal().dot(dir_f64(&row.def)) > 0.0 };
+    // `above` in the label is the class's **stored** normal side; the band leaves `lo` toward
+    // `hi`, i.e. toward increasing axis parameter — which `plus_t_is_above` answers (and where the
+    // f64 dot's exactness argument lives).
+    let toward_hi = |c: usize| -> bool { crate::planes::plus_t_is_above(&jd.planes[c], &row.def) };
     let read = |c: usize, band_is_above: bool| -> Option<(bool, bool)> {
         let l = labels.get(&(k, c))?;
         let i = usize::from(!band_is_above);
@@ -297,13 +298,6 @@ fn chamber(
     // Every boundary class of a band carries a disk cell (the emitted circles put them there, and
     // the cylinder's own caps are always arranged) — so this is a wiring failure, not an input.
     answer.ok_or_else(|| reject(RejectReason::CylinderGateUndecided))
-}
-
-/// The cylinder's axis direction as `f64` — used only for the class-normal sign, where the class
-/// is ⊥ to the axis and the dot is a full magnitude from zero.
-fn dir_f64(def: &nacre_topo::CylinderDef) -> nacre_math::Vector3 {
-    let m = def.dir();
-    nacre_math::Vector3::from_array([m[0].to_f64(), m[1].to_f64(), m[2].to_f64()])
 }
 
 #[cfg(test)]

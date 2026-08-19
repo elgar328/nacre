@@ -557,6 +557,24 @@ pub(crate) fn collect_planes(
 /// span, the transversal-circle test, and the band pass — and a rule that lives inlined in one
 /// place while a second site spells a reduced version of it is this repo's dominant defect
 /// shape, so it lives here once.
+/// **Does an increasing axis parameter move toward this class's "above"?** — where "above" is the
+/// side of the class's **stored** plane normal, which is the frame every cell label is written in
+/// (`arrangement`'s `w_normal`).
+///
+/// ★ The `f64` dot is exact enough by construction: this is only ever asked of a class ⊥ to the
+/// axis, so the dot is `±|n||m|` — a full magnitude from the sign boundary, not a near-zero
+/// comparison.
+///
+/// ★★ **Ask this, do not re-derive it from the class's rational name.** `base_rat` is the
+/// *canonical* name (first nonzero component positive), which points the other way from the stored
+/// normal on half the classes; a rule spelled against it reads "above" backwards exactly there.
+/// That mistake, made while adding the second consumer below, turned 36 tests red at once.
+pub(crate) fn plus_t_is_above(wp: &WorkingPlane, def: &nacre_topo::CylinderDef) -> bool {
+    let m = def.dir();
+    let axis = Vector3::from_array([m[0].to_f64(), m[1].to_f64(), m[2].to_f64()]);
+    wp.plane.normal().dot(axis) > 0.0
+}
+
 pub(crate) fn axis_param_of_plane(
     coeffs: &[nacre_scalar::Rat; 4],
     def: &nacre_topo::CylinderDef,
