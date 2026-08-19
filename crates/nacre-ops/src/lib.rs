@@ -630,10 +630,17 @@ pub enum RejectReason {
     /// concurrency — this was never an artefact of `f64` construction, which is why exact
     /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
-    /// A wall plane parallel to a cylinder's axis touches or pierces its lateral surface —
-    /// the crossing makes Branch vertices and angular-partial faces, which is M6-2b's
-    /// machinery (rulings, arcs, the chart arrangement). The M6-2a population gate holds it
-    /// by name until then.
+    /// A wall parallel to a cylinder's axis **could not be shown to stand clear** of its lateral
+    /// surface. Where a wall really does cross it, the crossing makes Branch vertices and
+    /// angular-partial faces — M6-2b's machinery (rulings, arcs, the chart arrangement) — and the
+    /// M6-2a population gate holds that by name until then.
+    ///
+    /// ★ **"Could not be shown", not "touches or pierces".** The gate's tests are *sufficient*
+    /// conditions for clearance, so failing them is not evidence of a meeting: a face may miss the
+    /// lateral in a way no test here proves. The name used to make the stronger claim, and it was
+    /// false for a whole family — a boss standing far away whose wall *plane*, extended to
+    /// infinity, happened to pass through a hole. Stating what was verified keeps the sentence
+    /// true however far the tests are later widened.
     WallMeetsLateral,
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).
