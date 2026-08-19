@@ -786,6 +786,8 @@ pub(crate) fn cylinder_gate(
     model: &Model,
     cyl_surfs: &[Handle<Surface>],
     geom: &[WorkingPlane],
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
 ) -> Result<Vec<WorkingCyl>, BoolError> {
     // ★ Every question below is a **sign**, and the scalar layer answers signs totally: the
     // local checked-`Rat` closures this used to carry declined on overflow, which put a width
@@ -816,7 +818,7 @@ pub(crate) fn cylinder_gate(
 
     for cyl in cyls.iter() {
         let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
-        for wp in geom.iter() {
+        for (c, wp) in geom.iter().enumerate() {
             if wp.rotated {
                 return Err(undecided());
             }
@@ -846,10 +848,25 @@ pub(crate) fn cylinder_gate(
                 if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
                     return Err(reject(RejectReason::ObliqueCylinderCut));
                 }
-                // A parallel wall: it must provably miss the lateral surface — the axis stands
-                // further from the plane than r (any axis point answers; they are equidistant).
+                // A parallel wall must provably miss the lateral surface. ★ **The question is
+                // about the wall's *faces*, not its plane** — the uniform-slab theorem this feeds
+                // says so in its own words ("the other operand's **boundary** does not meet the
+                // open cylinder slab"). Judging the infinite plane is a cheaper *sufficient*
+                // condition, so it is asked first and still decides most inputs; when it fails,
+                // the faces on this class get to answer for themselves. Refusing on the plane
+                // alone turned away a whole family the engine serves — a boss standing far away
+                // whose wall plane, extended, happens to pass through a hole.
                 if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) != Orient::Positive {
-                    return Err(reject(RejectReason::WallMeetsLateral));
+                    // ★ The class's coefficients come from its root's *name*, which is the world
+                    // only while that plane carries no motion; the cylinder's `def` is world by
+                    // the check above. Comparing across those two frames would be a silent wrong
+                    // answer, so a moved class is refused rather than measured.
+                    if model.plane_motion(wp.surf).is_some() {
+                        return Err(undecided());
+                    }
+                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r)? {
+                        return Err(reject(RejectReason::WallMeetsLateral));
+                    }
                 }
             }
         }
@@ -877,6 +894,92 @@ pub(crate) fn cylinder_gate(
         }
     }
     Ok(cyls)
+}
+
+/// **Does every face on plane class `c` provably miss this cylinder?** — the boundary question
+/// [`cylinder_gate`]'s wall rule asks once the cheaper plane-level one has failed.
+///
+/// `Err` is the honest "could not decide exactly"; `Ok(false)` means some face was not shown to
+/// clear, which is the wall refusal's whole content.
+///
+/// ★ **No table is built for this.** The scan runs only on the class that failed the plane test —
+/// rare — so walking the face rows there costs nothing on the common path and allocates nothing.
+/// A per-class face table computed for every boolean would be the shape M6-2's `caps` had, built
+/// for everyone and read by almost no one.
+#[allow(clippy::too_many_arguments)]
+fn wall_faces_clear(
+    model: &Model,
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    c: usize,
+    coeffs: &[nacre_scalar::Rat; 4],
+    o: &[nacre_scalar::Rat; 3],
+    m: &[nacre_scalar::Rat; 3],
+    r: nacre_scalar::Rat,
+) -> Result<bool, BoolError> {
+    for (i, row) in faces.iter().enumerate() {
+        let (ClassIx::Plane(k), FaceRow::Plane(fi)) = (plane_ix[i], row) else {
+            continue;
+        };
+        if k != c {
+            continue;
+        }
+        let Some(fh) = fi.face else {
+            return Err(reject(RejectReason::CylinderGateUndecided));
+        };
+        if !face_clears_strip(model, model.faces.get(fh), coeffs, o, m, r)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Whether one planar face lies wholly to one side of the strip the cylinder cuts from its plane.
+///
+/// **Only the outer loop is walked**, and that is sound: a face is contained in the convex hull of
+/// its outer loop's vertices, a half-space is convex, and inner loops only *remove* material. It
+/// is also what keeps the test reachable — a wall drilled by a crosswise bore carries that bore's
+/// rim as an inner loop, whose vertices have no rational meet at all.
+///
+/// ★★ **The straight-edge demand is soundness, not convenience.** This plane may be some *other*
+/// cylinder's cap plane (one whose axis is perpendicular to it), and such a cap face's outer loop
+/// is a single circle with one seam vertex — "all vertices on one side" would then be satisfied by
+/// a single point and would pass a disk that crosses the strip. Today `vertex_meet` happens to
+/// decline that vertex, but relying on the coincidence would leave the barrier to vanish silently
+/// the day seam coordinates become solvable.
+fn face_clears_strip(
+    model: &Model,
+    face: &Face,
+    coeffs: &[nacre_scalar::Rat; 4],
+    o: &[nacre_scalar::Rat; 3],
+    m: &[nacre_scalar::Rat; 3],
+    r: nacre_scalar::Rat,
+) -> Result<bool, BoolError> {
+    use nacre_scalar::StripSide;
+    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    let mut side: Option<StripSide> = None;
+    for he in &face.outer.half_edges {
+        if !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_)) {
+            return Err(undecided());
+        }
+        let Some((p, frame)) = model.vertex_meet(he_start(model, *he)) else {
+            return Err(undecided());
+        };
+        // The point is stated in `frame`; the cylinder and the coefficients are world.
+        if frame.is_some() {
+            return Err(undecided());
+        }
+        match nacre_scalar::cylinder_strip_side(coeffs, &p, o, m, r) {
+            StripSide::Inside => return Ok(false),
+            s => match side {
+                None => side = Some(s),
+                Some(prev) if prev != s => return Ok(false), // the face straddles the strip
+                Some(_) => {}
+            },
+        }
+    }
+    // An empty outer loop names no half-space, so it proves nothing.
+    Ok(side.is_some())
 }
 
 /// The minimal per-op plane table two solids share: the
@@ -970,7 +1073,14 @@ pub(crate) fn plane_index_setup(
     // goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here from C2 to
     // C4b-2 is gone — the bands and the assembly that serve this population landed.
     if !cyl_surfs.is_empty() {
-        setup.cyls = cylinder_gate(model, &cyl_surfs, &setup.geom)?;
+        let cyls = cylinder_gate(
+            model,
+            &cyl_surfs,
+            &setup.geom,
+            &setup.planes,
+            &setup.plane_ix,
+        )?;
+        setup.cyls = cyls;
     }
     Ok(setup)
 }

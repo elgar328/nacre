@@ -838,6 +838,231 @@ mod tests {
         assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
     }
 
+    // ---- Wall faces: the gate asks the boundary, not the infinite plane (M6-2b preparation) ----
+    //
+    // ★★ The uniform-slab theorem's premise is about the other operand's **boundary**. The gate
+    // used to test the wall's infinite *plane*, which is a cheaper sufficient condition — and it
+    // refused a whole family the engine serves: a body standing well clear of a bore whose wall
+    // plane, extended, happens to pass through it. These lock what that opened and what it did not.
+
+    /// A plate with a bore, fused to a boss standing far away in `x` — whose `y = 12` wall **plane**
+    /// stands only 2 from the bore's axis (`r = 3`). The boss's face is 20 away; nothing meets.
+    fn plate_bore_and_boss(hole_y: f64, boss_z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let hole = m.add_cylinder(
+            Point3::from_array([8.0, hole_y, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            7.0,
+        );
+        m.rebuild_adjacency();
+        let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        let boss = m.add_cuboid(
+            Point3::from_array([28.0, 4.0, boss_z0]),
+            Point3::from_array([36.0, 12.0, 8.0]),
+        );
+        m.rebuild_adjacency();
+        (m, holed, boss)
+    }
+
+    #[test]
+    fn a_boss_whose_wall_plane_crosses_a_distant_bore_still_fuses() {
+        let (mut m, holed, boss) = plate_bore_and_boss(10.0, 5.0);
+        let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("the boss fuses");
+        assert_eq!(out.len(), 1, "one body");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4000.0 - std::f64::consts::PI * 9.0 * 5.0 + 8.0 * 8.0 * 3.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// The `Cut` twin — the same wall planes reach the gate whichever way the operation runs.
+    /// The tool is sunk into the plate (`z` from 3) so it removes material: a body merely *resting*
+    /// on the top face is a coplanar contact and meets a different guard entirely, which would make
+    /// this fixture measure that instead of the wall rule.
+    #[test]
+    fn the_same_boss_cuts_the_bored_plate() {
+        let (mut m, holed, boss) = plate_bore_and_boss(10.0, 3.0);
+        let out = crate::boolean(&mut m, BoolKind::Cut, holed, boss).expect("the boss cuts");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4000.0 - std::f64::consts::PI * 9.0 * 5.0 - 8.0 * 8.0 * 2.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **Two bores, one wall plane crossing both.** The rule is per (cylinder, class), so a second
+    /// cylinder is a second set of questions about the same face — and the face answers for each.
+    #[test]
+    fn one_wall_plane_may_cross_two_bores() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let mut holed = plate;
+        for x in [8.0, 20.0] {
+            let hole = m.add_cylinder(
+                Point3::from_array([x, 10.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                3.0,
+                7.0,
+            );
+            m.rebuild_adjacency();
+            holed = crate::boolean(&mut m, BoolKind::Cut, holed, hole).expect("bore")[0];
+        }
+        let boss = m.add_cuboid(
+            Point3::from_array([28.0, 4.0, 5.0]),
+            Point3::from_array([36.0, 12.0, 8.0]),
+        );
+        m.rebuild_adjacency();
+        let out =
+            crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("two bores and a boss");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4000.0 - 2.0 * std::f64::consts::PI * 9.0 * 5.0 + 8.0 * 8.0 * 3.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **The fence: a wall face that really does cross the bore.** The plate's own `y = 20` wall
+    /// would clear, so the tool here is a slab whose face runs right across the hole — the wall
+    /// rule's true population, and M6-2b's.
+    #[test]
+    fn a_wall_face_that_really_crosses_the_bore_is_refused() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let hole = m.add_cylinder(
+            Point3::from_array([8.0, 10.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            7.0,
+        );
+        m.rebuild_adjacency();
+        let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        // A slab covering x ∈ [0, 40]: its y = 12 face passes straight through the bore.
+        let slab = m.add_cuboid(
+            Point3::from_array([0.0, 12.0, 0.0]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        m.rebuild_adjacency();
+        let before = m.live_solids.clone();
+        let err = crate::boolean(&mut m, BoolKind::Cut, holed, slab).expect_err("a real crossing");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::WallMeetsLateral,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+    }
+
+    /// **The fence: exact tangency.** The slab's face stands exactly `r` from the axis, so it
+    /// touches the lateral surface along one ruling — the boundary case, and `Inside` includes it.
+    #[test]
+    fn a_wall_face_tangent_to_the_bore_is_refused() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let hole = m.add_cylinder(
+            Point3::from_array([8.0, 10.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            7.0,
+        );
+        m.rebuild_adjacency();
+        let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        let slab = m.add_cuboid(
+            Point3::from_array([0.0, 13.0, 0.0]), // y = 13 is exactly r = 3 from y = 10
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Cut, holed, slab).expect_err("tangency");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::WallMeetsLateral,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// ★★ **The fence that measures the straight-edge barrier** — the only fixture that does.
+    ///
+    /// The plate carries a **crosswise** bore, so the plane `x = 30` holds that bore's circular cap
+    /// face: an outer loop of one arc and one seam vertex. That plane is also parallel to the
+    /// vertical drill's axis and passes within `r` of it, so the face test is reached — and a rule
+    /// reading vertices alone would find "every vertex on one side" true of a **single point** and
+    /// wave a disk straight through the strip. Asking the edge's curve kind is what stops it.
+    #[test]
+    fn a_disk_face_on_a_wall_plane_is_undecided_not_waved_through() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 10.0]),
+        );
+        // A crosswise bore along +X, ending inside the plate at x = 30: its cap lies on x = 30.
+        let cross = m.add_cylinder(
+            Point3::from_array([-1.0, 10.0, 5.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            2.0,
+            31.0,
+        );
+        m.rebuild_adjacency();
+        let bored = crate::boolean(&mut m, BoolKind::Cut, plate, cross).expect("crosswise bore")[0];
+        // A vertical drill whose axis stands 1 from the plane x = 30 — inside its radius 3 — and
+        // ★ **6 from the crosswise bore's axis**, clear of the radius sum 5, so the pair rule is
+        // not what answers here. (At y = 10 the two axes actually meet and this fixture would be
+        // measuring `CylinderPairContact` instead — the adjacent proposition.)
+        let drill = m.add_cylinder(
+            Point3::from_array([31.0, 4.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            12.0,
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Cut, bored, drill)
+            .expect_err("a disk face on the wall plane cannot be judged by its vertices");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::CylinderGateUndecided,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
     /// **A drill that misses.** `Cut` returns the box untouched and `Fuse` returns two bodies —
     /// the population where a cylinder is present but no circle is ever emitted, so the whole
     /// curved path has to stay out of the way.
