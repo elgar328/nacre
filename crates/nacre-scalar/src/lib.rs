@@ -954,6 +954,11 @@ pub enum StripSide {
 ///
 /// No normalization and **no square root** — `h` never has to be formed.
 ///
+/// ★ **This is one of two axes, not a rule of its own.** What the cylinder occupies in this plane
+/// is a *rectangle*: this strip across, and the lateral face's axis-parameter span along
+/// ([`point_axis_side`]). Clearing either axis clears the rectangle, so a caller asking whether a
+/// face misses the cylinder asks both and stops at the first that separates.
+///
 /// ★ **`U = 0` answers [`StripSide::Inside`] before the magnitude test.** With a non-empty strip
 /// that is the truth (the point sits on the axis' own in-plane line). With an empty one it is
 /// merely conservative — and a caller that cares has already passed the plane through
@@ -1020,6 +1025,62 @@ pub fn cylinder_strip_side(
         StripSide::Plus
     } else {
         StripSide::Minus
+    }
+}
+
+/// **Which side of the plane at axis parameter `t` a point stands on.** Exact and total, at any
+/// width.
+///
+/// ★ **This is the second separating axis of one rectangle, not a second rule.** A wall parallel
+/// to a cylinder's axis meets that cylinder in a rectangle of the wall's own plane: the strip
+/// across ([`cylinder_strip_side`], the first axis) and the lateral face's axis-parameter span
+/// along (this one). A face misses the rectangle as soon as it clears *either* axis, because a
+/// rectangle is the intersection of the two bands — so the two are read together and neither
+/// stands as a rule of its own.
+///
+/// The parameter is written in the **raw** direction's scale — `axis(t) = o + t·m` with `m`
+/// unnormalized, the scale `axis_param_of_plane` produces and a lateral face's span is stored in.
+/// Re-scaling to a unit axis here would silently mismatch those spans.
+///
+/// With `s = (p − o)·m / (m·m)` the point's own parameter and `m·m > 0`,
+///
+/// ```text
+/// sign(s − t) = sign((p − o)·m − t·(m·m))
+/// ```
+///
+/// so no division is formed and no square root ever appears. [`Orient::Zero`] is the point sitting
+/// exactly on that plane — which the footprint reading treats as *clear*, the uniform-slab theorem
+/// speaking of the **open** slab.
+///
+/// **Precondition:** `m ≠ 0` (`debug_assert`ed) — a zero direction names no axis. Unlike the strip
+/// test there is no on-plane precondition: a point's axis parameter is defined wherever it sits.
+pub fn point_axis_side(p: &MeetPoint, o: &[Rat; 3], m: &[Rat; 3], t: Rat) -> Orient {
+    use num_bigint::BigInt;
+    let (oo, d_o) = lift3(o);
+    let (mm, d_m) = lift3(m);
+    let (pp, dp) = p.lift();
+    let (tn, td) = (BigInt::from(t.numer()), BigInt::from(t.denom()));
+    let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
+        (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
+    };
+    let m2 = dot(&mm, &mm);
+    debug_assert!(
+        m2 != BigInt::from(0),
+        "a zero direction names no axis, so no parameter along it"
+    );
+    // `w = p − o` over the common denominator `dp·d_o`, integer throughout.
+    let w: [BigInt; 3] = core::array::from_fn(|i| &pp[i] * &d_o - &oo[i] * &dp);
+    // sign((p−o)·m − t·|m|²) with the positive common denominator `dp·d_o·d_m²·td` cleared:
+    //   (W·M)·d_m·td  vs  tn·|M|²·dp·d_o
+    // ★ Every cleared factor is positive — `lift3`/`lift` build denominators from an lcm of
+    // `Rat` denominators, and `Rat` keeps its sign in the numerator — so the comparison is the
+    // sign it claims to be.
+    let lhs = dot(&w, &mm) * &d_m * &td;
+    let rhs = &tn * &m2 * &dp * &d_o;
+    match big_sign(&(lhs - rhs)) {
+        1 => Orient::Positive,
+        -1 => Orient::Negative,
+        _ => Orient::Zero,
     }
 }
 
@@ -5162,6 +5223,106 @@ mod tests {
             assert!(wide.narrow().is_none(), "the fixture must really be wide");
             assert_eq!(side(&wall(12), &wide, 8), StripSide::Plus);
             assert_eq!(side(&wall(12), &wide, 10), StripSide::Inside);
+        }
+    }
+
+    // ---- the same rectangle's other axis: along the cylinder (M6-2b preparation) ----
+
+    /// The running fixture: the cylinder of `mod strip`, whose axis starts at `z = −1` and runs
+    /// `+z`. With the raw direction `(0,0,1)` the parameter is simply `t = z + 1`.
+    mod axis {
+        use crate::*;
+
+        fn r3(v: [i128; 3]) -> [Rat; 3] {
+            v.map(Rat::from_int)
+        }
+        fn at(x: i128, y: i128, z: i128) -> MeetPoint {
+            MeetPoint::Narrow(r3([x, y, z]))
+        }
+        fn side(p: &MeetPoint, t: Rat) -> Orient {
+            point_axis_side(p, &r3([8, 10, -1]), &r3([0, 0, 1]), t)
+        }
+
+        #[test]
+        fn a_point_each_side_of_the_plane_says_which() {
+            // z = 6 is t = 7, z = 0 is t = 1.
+            assert_eq!(side(&at(8, 10, 6), Rat::from_int(5)), Orient::Positive);
+            assert_eq!(side(&at(8, 10, 0), Rat::from_int(5)), Orient::Negative);
+        }
+
+        /// ★★ **The `Zero` this predicate exists to distinguish.** A face resting exactly on a
+        /// band's cap plane is what the footprint reading calls *clear* — the uniform-slab theorem
+        /// speaks of the **open** slab. A predicate that folded this into one of the sides would
+        /// decide that question here, out of sight of the rule that owns it.
+        #[test]
+        fn a_point_exactly_on_the_plane_is_zero() {
+            assert_eq!(side(&at(8, 10, 4), Rat::from_int(5)), Orient::Zero);
+            // Off the axis, at the same height — the parameter does not care how far out it is.
+            assert_eq!(side(&at(100, -7, 4), Rat::from_int(5)), Orient::Zero);
+        }
+
+        /// A `t` with a denominator is ordinary: `t = 11/2` is the plane `z = 4.5`.
+        #[test]
+        fn a_fractional_parameter_is_ordinary() {
+            let t = Rat::new(11, 2).unwrap();
+            assert_eq!(side(&at(8, 10, 5), t), Orient::Positive);
+            assert_eq!(side(&at(8, 10, 4), t), Orient::Negative);
+        }
+
+        /// ★ **The direction's scale is part of the parameter's meaning, and the predicate honours
+        /// it.** `axis(t) = o + t·m` with the *raw* `m`, so stretching `m` sevenfold divides every
+        /// parameter by seven — and the same plane keeps the same answer.
+        #[test]
+        fn the_parameter_lives_in_the_raw_directions_scale() {
+            let p = at(8, 10, 8); // t = 9 with m = (0,0,1); t = 9/7 with m = (0,0,7)
+            let o = r3([8, 10, -1]);
+            let plain = point_axis_side(&p, &o, &r3([0, 0, 1]), Rat::from_int(7));
+            let stretched = point_axis_side(&p, &o, &r3([0, 0, 7]), Rat::from_int(1));
+            assert_eq!(plain, stretched, "both name the plane z = 6");
+            assert_eq!(plain, Orient::Positive);
+            // ★ And reading the stretched axis on the *unstretched* scale gets it wrong — which is
+            // what proves the scale is doing work here rather than cancelling out.
+            assert_eq!(
+                point_axis_side(&p, &o, &r3([0, 0, 7]), Rat::from_int(7)),
+                Orient::Negative,
+                "t = 7 on a sevenfold direction is z = 48, well above the point"
+            );
+        }
+
+        /// ★ **The negative control.** The same point and the same `t` — move the origin and the
+        /// answer must change, or every assertion above could be passing for some other reason.
+        #[test]
+        fn moving_the_origin_moves_the_answer() {
+            let p = at(8, 10, 4);
+            let m = r3([0, 0, 1]);
+            let t = Rat::from_int(5);
+            assert_eq!(point_axis_side(&p, &r3([8, 10, -1]), &m, t), Orient::Zero);
+            assert_eq!(
+                point_axis_side(&p, &r3([8, 10, -3]), &m, t),
+                Orient::Positive
+            );
+        }
+
+        /// A point too wide for `Rat` is an ordinary point of the geometry — the reason this takes
+        /// a [`MeetPoint`] rather than a `[Rat; 3]`.
+        #[test]
+        fn a_point_wider_than_rat_travels_the_same_road() {
+            use num_bigint::BigInt;
+            let huge: BigInt = BigInt::from(10u8).pow(40);
+            let wide = |z: i128| {
+                MeetPoint::Wide([
+                    (BigInt::from(8) * &huge, huge.clone()),
+                    (BigInt::from(10) * &huge, huge.clone()),
+                    (BigInt::from(z) * &huge, huge.clone()),
+                ])
+            };
+            assert!(
+                wide(6).narrow().is_none(),
+                "the fixture must really be wide"
+            );
+            assert_eq!(side(&wide(6), Rat::from_int(5)), Orient::Positive);
+            assert_eq!(side(&wide(4), Rat::from_int(5)), Orient::Zero);
+            assert_eq!(side(&wide(0), Rat::from_int(5)), Orient::Negative);
         }
     }
 }
