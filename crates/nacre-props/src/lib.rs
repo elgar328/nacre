@@ -421,6 +421,75 @@ mod tests {
         assert!(close(props.area, 28.0 * PI), "area {}", props.area); // 2πr² + 2πrh
     }
 
+    /// ★ **Two doors, one fact.** A planar face's normal is answered twice — by
+    /// [`face_props`] for the whole face and by [`face_normal_at`] at a point — and the two
+    /// must say the same thing, or a caller would get a different answer depending on which
+    /// it happened to ask. (The point plays no part on a plane, which this also shows.)
+    #[test]
+    fn the_two_normal_doors_agree_on_a_plane() {
+        let mut m = Model::new();
+        let s = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 4.0]),
+        );
+        m.rebuild_adjacency();
+        let shell = m.solids.get(s).outer;
+        for &fh in &m.shells.get(shell).faces {
+            let whole = face_props(&m, fh)
+                .unwrap()
+                .normal
+                .expect("a box face is planar");
+            // Two different points of the same face — its own centroid and a corner.
+            let corner = m.vertex_point(he_start(&m, m.faces.get(fh).outer.half_edges[0]).unwrap());
+            for p in [face_props(&m, fh).unwrap().centroid, corner] {
+                let at = face_normal_at(&m, fh, p).expect("a planar face has a normal anywhere");
+                assert!((at - whole).norm() < 1e-12, "{at:?} vs {whole:?}");
+            }
+        }
+    }
+
+    /// The cylinder branch of the same door, where the point is the whole question: a free
+    /// cylinder's wall faces away from its axis, everywhere on it.
+    #[test]
+    fn a_free_cylinders_wall_faces_away_from_its_axis() {
+        let mut m = Model::new();
+        let s = m.add_cylinder(
+            Point3::origin(),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            5.0,
+        );
+        m.rebuild_adjacency();
+        let shell = m.solids.get(s).outer;
+        let wall = *m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .find(|&&fh| matches!(m.surface(m.faces.get(fh).surface), Surface::Cylinder(_)))
+            .expect("a lateral face");
+        assert!(
+            face_props(&m, wall).unwrap().normal.is_none(),
+            "a curved face has no single normal — that is why the point door exists"
+        );
+        let cyl = match m.surface(m.faces.get(wall).surface) {
+            Surface::Cylinder(c) => *c,
+            _ => unreachable!(),
+        };
+        for k in 0..8 {
+            let u = std::f64::consts::TAU * f64::from(k) / 8.0;
+            let p = cyl.point_at(u, 2.5);
+            let n = face_normal_at(&m, wall, p).expect("off the axis");
+            let radial = p - cyl.axis().origin();
+            let radial = radial - cyl.axis().direction() * radial.dot(cyl.axis().direction());
+            assert!(
+                n.dot(radial) > 0.0,
+                "u={u}: the wall faces away from the axis"
+            );
+            assert!((n.norm() - 1.0).abs() < 1e-12, "unit");
+        }
+    }
+
     #[test]
     fn concave_extrude_mass() {
         // An L-shaped profile: a 2×2 square with the top-right 1×1 corner removed.
