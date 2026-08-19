@@ -5128,9 +5128,9 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
 
 // ---- boolean Common algorithm (M5-c3 commit 2) ----
 
-/// The oblique twin of the seated `Common` in `bands`: a cylinder lying on its side inside the
-/// box. Its caps cut the box's planes at an angle, so the intersection curve is an ellipse — the
-/// population M6-3 opens, and the one this door still names.
+/// The oblique twin of the seated `Common` in `bands`: the same box, but the cylinder's axis runs
+/// down the body diagonal, so none of the box's planes is either ⊥ or ∥ to it. Every crossing is
+/// an ellipse — the population M6-3 opens, and the one this door still names.
 #[test]
 fn common_rejects_an_oblique_cylinder() {
     let mut m = Model::new();

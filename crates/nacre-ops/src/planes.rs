@@ -836,9 +836,12 @@ pub(crate) fn cylinder_gate(
             // the counterpart's face — measured across the family (through hole, blind hole, boss
             // fuse, common, drilling a pocket floor): every one exact and validating clean.
             //
-            // A degenerate seating — a disk cell's ring point landing *on* the lateral surface —
-            // is still caught, downstream and by name, where it is actually undecidable
-            // (`arrangement`'s `CylinderGateUndecided`).
+            // ★ **Nothing downstream has to catch a degenerate seating, because this gate still
+            // does** — by the two rules below rather than by a rule about seating. A seated
+            // circle can only reach the counterpart's boundary through a plane parallel to the
+            // axis (which must prove clearance > r) or an oblique one (refused outright) or
+            // another cylinder's rim (the pair rule), so a tangency or a crossing is named
+            // before the arrangement ever sees it.
             if !nacre_scalar::parallel_rat(&n, &m) {
                 if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
                     return Err(reject(RejectReason::ObliqueCylinderCut));
