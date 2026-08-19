@@ -539,15 +539,6 @@ pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, radius: R
     use num_bigint::BigInt;
     use num_integer::Integer;
     debug_assert!(p0 != p1, "a zero-length segment has no distance to give");
-    debug_assert!(
-        {
-            let d: V3 = core::array::from_fn(|i| {
-                p1[i].checked_sub(p0[i]).unwrap_or_else(|| Rat::from_int(0))
-            });
-            crate::dot_sign_rat(&d, dir) == Orient::Zero
-        },
-        "the segment must lie in a plane perpendicular to the axis"
-    );
     // Either endpoint already inside (or on) the cylinder settles it — and that is exactly the
     // question `cylinder_radial_side` answers, so it is asked rather than re-derived.
     for p in [p0, p1] {
@@ -582,11 +573,19 @@ pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, radius: R
         (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
     };
     // `s* ∈ [0,1]` ⟺ `w₀·d ≤ 0 ≤ w₁·d` (because `w₁ = w₀ + d`).
+    let (m, _dm) = lift(dir);
+    // ★ The perpendicularity contract, checked on the **lifted integers**. Spelling it in `Rat`
+    // needs a subtraction that can overflow, and the obvious `unwrap_or(0)` there makes the
+    // assertion pass *vacuously* on exactly the inputs it exists to catch — a check that measures
+    // nothing is worse than none.
+    debug_assert!(
+        dot(&dv, &m) == BigInt::from(0),
+        "the segment must lie in a plane perpendicular to the axis"
+    );
     let (f0, f1) = (dot(&w0, &dv), dot(&w1, &dv));
     if f0 > BigInt::from(0) || f1 < BigInt::from(0) {
         return false; // the nearest point of the segment is an end, and both are outside
     }
-    let (m, _dm) = lift(dir);
     let (rn, rd) = (BigInt::from(radius.numer()), BigInt::from(radius.denom()));
     let (ww, dvdv, mm) = (dot(&w0, &w0), dot(&dv, &dv), dot(&m, &m));
     let (w0d, w0m) = (dot(&w0, &dv), dot(&w0, &m));

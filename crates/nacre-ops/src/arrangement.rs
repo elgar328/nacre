@@ -1686,10 +1686,16 @@ fn circles_meet_no_segment(
                 // this cannot answer it, which is a decline rather than a pass.
                 return Err(reject(RejectReason::WitnessNotRational));
             };
-            if p0 == p1 {
-                continue; // a collapsed edge carries no distance; `ZeroLengthEdge` is its owner
-            }
-            if nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r) {
+            // ★ A collapsed edge is a *point*, and «is this point inside the disk» is still a
+            // real question — skipping it would let the one case it can express slip through.
+            // (`extract_cells`' `CoincidentNodes` owns the malformed-edge story; this only avoids
+            // asking a segment predicate about something that is not a segment.)
+            let hit = if p0 == p1 {
+                nacre_scalar::cylinder_radial_side(&p0, &o, &m, r) != nacre_scalar::Orient::Positive
+            } else {
+                nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r)
+            };
+            if hit {
                 return Err(reject(RejectReason::CircleMeetsSegment));
             }
         }
