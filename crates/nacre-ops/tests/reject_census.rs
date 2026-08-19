@@ -272,6 +272,22 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
+/// A boss standing on a plate's edge, its circle hanging over the side. The wall below it is
+/// parallel to the axis but lies entirely *under* the boss's span, so the footprint's axis along
+/// the cylinder clears it — and the real obstruction names itself where the circles and segments
+/// are: the rim crosses the top face's boundary.
+fn circle_meets_segment(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let a = cub(m, [0.0; 3], [4.0, 4.0, 2.0]);
+    let boss = m.add_cylinder(
+        Point3::from_array([4.0, 2.0, 2.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        1.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Fuse, a, boss)
+}
+
 fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     // A tilted rational axis against an axis-aligned box: the box's planes are neither ⊥ nor
     // ∥ to (0,1,1), and — unlike rotating the box — every description stays world-rational,
@@ -353,7 +369,7 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
 
-const CORPUS: [Fixture; 12] = [
+const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
@@ -438,6 +454,19 @@ const CORPUS: [Fixture; 12] = [
         run: cylinder_wall_contact,
         raised: &[("wall_meets_lateral", None, "crates/nacre-ops/src/planes.rs")],
         surfaced: &[("wall_meets_lateral", None)],
+    },
+    Fixture {
+        name: "circle-meets-segment",
+        // A boss overhanging the plate's edge: its rim crosses the top face's boundary segment.
+        // The wall below it clears, the footprint's axis along the cylinder having let it past.
+        expect: Some(RejectReason::CircleMeetsSegment),
+        run: circle_meets_segment,
+        raised: &[(
+            "circle_meets_segment",
+            None,
+            "crates/nacre-ops/src/arrangement.rs",
+        )],
+        surfaced: &[("circle_meets_segment", None)],
     },
     Fixture {
         name: "cylinder-oblique",

@@ -1293,6 +1293,102 @@ mod tests {
         );
     }
 
+    // ---- The footprint's other axis: along the cylinder (M6-2b preparation) ----
+    //
+    // ★★ A wall parallel to the axis meets the cylinder in a **rectangle** of the wall's own
+    // plane — the strip across, a lateral face's span along — so "does this face miss it" is one
+    // question with two separating axes. The gate used to read only the first, and refused every
+    // wall that stood clear of the cylinder along its length.
+    //
+    // ★ With several lateral faces there are several rectangles: the strip is shared, the spans
+    // are not. That is why the gap between two bands is passable at all, and it is not a special
+    // case bolted on — `bands_of` clips every cut to its own row's span, so no band is ever built
+    // in a gap and there is no premise there for a wall to break.
+
+    /// **The case this opened.** The two-banded bore of `plate_with_a_split_bore` has bands at
+    /// `z ∈ [0,4]` and `[6,10]` — `t ∈ [1,5]` and `[7,11]`. A tool whose `y = 6` wall stands only 1
+    /// from the axis (`r = 2`) crosses the strip, and its face runs the plate's whole width, so the
+    /// axis across cannot clear it. Along the axis it is `t ∈ [5.5, 6.5]` — inside the gap, missing
+    /// both rectangles.
+    #[test]
+    fn a_wall_face_in_the_gap_between_two_bands_clears() {
+        let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+        let tool = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 4.5]),
+            Point3::from_array([10.0, 6.0, 5.5]),
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, s, tool).expect("the wall clears in t");
+        assert_eq!(out.len(), 1, "one body");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        assert_eq!(
+            lateral_face_counts(&m, out[0]),
+            vec![2],
+            "the tool passes between the bands and leaves both"
+        );
+        // 1000 − bore(π·4·10) − the middle cut(6·6·2 − π·4·2) − this tool, which meets the solid
+        // over 10×6 minus the 6×4 the middle cut already took, one deep.
+        let want = 1000.0
+            - std::f64::consts::PI * 40.0
+            - (72.0 - std::f64::consts::PI * 8.0)
+            - (60.0 - 24.0);
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★★ **The two axes are one judgement, measured as one.** The same tool three ways against
+    /// the same two-banded bore, with only the numbers moved: clearing *either* axis is enough,
+    /// and clearing neither is the refusal. A rule that had merely gained a second, independent
+    /// test would pass (a) and (b) too — what this pins is (c), that the two are OR-ed rather
+    /// than each able to wave a face through on its own terms.
+    #[test]
+    fn either_axis_clears_the_footprint_and_neither_does_not() {
+        // (a) Across only: the `y = 6` face sits at `x ∈ [0, 2.5]`, clear of the strip
+        //     `x ∈ [3.27, 6.73]`, while its plane still crosses the bore. Along the axis it runs
+        //     `t ∈ [4,8]`, straddling both bands. ★ The `x = 2.5` wall must stand clear of the axis
+        //     by more than `r`, or *it* becomes the face under test — at `x = 3` it is exactly
+        //     tangent and this arm measures that instead (measured: it refuses).
+        let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+        let across = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 3.0]),
+            Point3::from_array([2.5, 6.0, 7.0]),
+        );
+        m.rebuild_adjacency();
+        crate::boolean(&mut m, BoolKind::Cut, s, across).expect("clear across the strip");
+
+        // (b) Along only: the face spans the full width, so only the gap saves it.
+        let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+        let along = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 4.5]),
+            Point3::from_array([10.0, 6.0, 5.5]),
+        );
+        m.rebuild_adjacency();
+        crate::boolean(&mut m, BoolKind::Cut, s, along).expect("clear along the axis");
+
+        // (c) Neither: full width *and* straddling both bands.
+        let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+        let neither = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 3.0]),
+            Point3::from_array([10.0, 6.0, 7.0]),
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Cut, s, neither).expect_err("crosses both");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::WallMeetsLateral,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
     // ---- A blind bore is usable, not just buildable ----
     //
     // ★★ A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the

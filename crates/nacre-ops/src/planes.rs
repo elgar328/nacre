@@ -1007,6 +1007,11 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
 /// clear  ⟺  clear across the strip  ∨  clear along **every** span
 /// ```
 ///
+/// ★★★ **"Every" over an empty list is a pass, and that one is not on offer.** With no usable
+/// span the axis along is skipped outright rather than answered vacuously. Not a hypothetical:
+/// measured with the emptiness guard removed, a wall that genuinely crosses the bore and one
+/// tangent to it were both waved straight through.
+///
 /// ★ **The span reading is an open interval** — a face resting exactly on a cap plane is clear,
 /// because the theorem being fed speaks of the *open* slab. What such a face touches is the rim's
 /// own plane, and whether its edge crosses the rim circle there is a question the arrangement asks
