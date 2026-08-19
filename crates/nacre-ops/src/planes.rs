@@ -917,6 +917,7 @@ fn wall_faces_clear(
     m: &[nacre_scalar::Rat; 3],
     r: nacre_scalar::Rat,
 ) -> Result<bool, BoolError> {
+    let mut seen = 0usize;
     for (i, row) in faces.iter().enumerate() {
         let (ClassIx::Plane(k), FaceRow::Plane(fi)) = (plane_ix[i], row) else {
             continue;
@@ -927,9 +928,15 @@ fn wall_faces_clear(
         let Some(fh) = fi.face else {
             return Err(reject(RejectReason::CylinderGateUndecided));
         };
+        seen += 1;
         if !face_clears_strip(model, model.faces.get(fh), coeffs, o, m, r)? {
             return Ok(false);
         }
+    }
+    // A class exists because faces made it, so finding none is a wiring failure rather than an
+    // input — and "every one of no faces clears" is a pass this must not hand out by default.
+    if seen == 0 {
+        return Err(reject(RejectReason::CylinderGateUndecided));
     }
     Ok(true)
 }
@@ -967,6 +974,16 @@ fn face_clears_strip(
         };
         // The point is stated in `frame`; the cylinder and the coefficients are world.
         if frame.is_some() {
+            return Err(undecided());
+        }
+        // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
+        // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
+        // sit in a class whose exact name its own vertices do not satisfy (the two-descriptions
+        // hazard `FaceInfo::exact_coeffs` documents). The strip decomposition takes the plane's
+        // distance from the axis as the point's, so judging a point against a plane it is not on
+        // would answer about geometry that is not there. Checked, not assumed: a `debug_assert`
+        // would say nothing in the build that ships.
+        if !nacre_scalar::point_on_plane_exact(coeffs, &p) {
             return Err(undecided());
         }
         match nacre_scalar::cylinder_strip_side(coeffs, &p, o, m, r) {

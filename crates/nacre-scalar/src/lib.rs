@@ -910,6 +910,21 @@ pub fn point_plane_clearance_rat(coeffs: &[Rat; 4], p: &[Rat; 3], r: Rat) -> Ori
     ))
 }
 
+/// **Does `p` satisfy these coefficients exactly?** — `n·p + c = 0`, at any width.
+///
+/// The consumer-side net for [`cylinder_strip_side`]'s on-plane precondition. A plane has two
+/// exact descriptions — its coefficients and the triangle its points span — and they need not
+/// agree; a face merged into a class by *rounded* coefficients can therefore have vertices that
+/// do not satisfy the class root's exact name. Asking here turns that into a fact the caller can
+/// refuse on, instead of a `debug_assert` that says nothing in a release build.
+pub fn point_on_plane_exact(coeffs: &[Rat; 4], p: &MeetPoint) -> bool {
+    use num_bigint::BigInt;
+    let (c, _dc) = lift4(coeffs);
+    let (pp, dp) = p.lift();
+    // (C₀₋₂·P + C₃·Dp) / (Dc·Dp) — the denominators are positive, so only the numerator decides.
+    (0..3).map(|i| &c[i] * &pp[i]).sum::<BigInt>() + &c[3] * &dp == BigInt::from(0)
+}
+
 /// Which side of the **strip** a cylinder cuts out of a plane parallel to its axis a point lies
 /// on — see [`cylinder_strip_side`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -5067,6 +5082,39 @@ mod tests {
         fn a_plane_clear_of_the_axis_cuts_no_strip() {
             assert_eq!(side(&wall(12), &at(10, 12, 0), 8), StripSide::Inside);
             assert_eq!(side(&wall(14), &at(10, 14, 0), 8), StripSide::Plus);
+        }
+
+        /// **The consumer-side net for the on-plane precondition.** `cylinder_strip_side` takes
+        /// the plane's distance from the axis as the point's, so a point that does not satisfy the
+        /// coefficients is judged against geometry that is not there. The gate asks this first.
+        #[test]
+        fn a_point_is_on_the_plane_only_when_it_satisfies_the_coefficients() {
+            let w = wall(12);
+            assert!(point_on_plane_exact(&w, &at(11, 12, 0)));
+            assert!(!point_on_plane_exact(&w, &at(11, 13, 0)));
+            // Scaling the coefficients states the same plane, so it cannot move the answer.
+            let scaled = [0, 5, 0, -60].map(Rat::from_int);
+            assert!(point_on_plane_exact(&scaled, &at(11, 12, 0)));
+            assert!(!point_on_plane_exact(&scaled, &at(11, 13, 0)));
+        }
+
+        /// The same question at a width `Rat` cannot hold.
+        #[test]
+        fn a_wide_point_is_placed_against_the_plane_too() {
+            use num_bigint::BigInt;
+            let huge: BigInt = BigInt::from(10u8).pow(40);
+            let on = MeetPoint::Wide([
+                (BigInt::from(11) * &huge, huge.clone()),
+                (BigInt::from(12) * &huge, huge.clone()),
+                (BigInt::from(0), huge.clone()),
+            ]);
+            let off = MeetPoint::Wide([
+                (BigInt::from(11) * &huge, huge.clone()),
+                (BigInt::from(12) * &huge + BigInt::from(1), huge.clone()),
+                (BigInt::from(0), huge.clone()),
+            ]);
+            assert!(point_on_plane_exact(&wall(12), &on));
+            assert!(!point_on_plane_exact(&wall(12), &off));
         }
 
         /// ★★ **The one case the `U = 0` early answer exists for, and the only one that measures
