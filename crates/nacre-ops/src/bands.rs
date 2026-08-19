@@ -2,13 +2,18 @@
 //!
 //! The plane arrangement decides one plane class at a time; a cylinder's wall is not a plane, so
 //! it is decided here instead — and it is decided *coarsely*, because in this population it can
-//! be. The M6-2a gate admits only ⊥ cuts and walls that stand clear of the lateral surface by
-//! more than `r`, and those two facts together give the **uniform-slab theorem**:
+//! be. The M6-2a gate admits only ⊥ cuts and ∥ walls whose **faces** stand clear of the lateral
+//! surface, and those two facts together give the **uniform-slab theorem**:
 //!
 //! > Between two consecutive ⊥ cuts, the other operand's boundary does not meet the open
-//! > cylinder slab at all — the ⊥ faces are the cuts themselves and every ∥ wall misses the
-//! > lateral. So membership in the other operand is **uniform** over that slab, and one witness
-//! > decides the whole band.
+//! > cylinder slab at all — the ⊥ faces are the cuts themselves and every ∥ wall **face** misses
+//! > the lateral. So membership in the other operand is **uniform** over that slab, and one
+//! > witness decides the whole band.
+//!
+//! ★ **Faces, because that is what a boundary is made of.** The gate long tested each ∥ wall's
+//! infinite *plane*, which is a cheaper sufficient condition and reads almost the same — but it
+//! refused bodies standing well clear of the cylinder whose plane, extended, crossed it. The
+//! theorem never asked for that; it asks about the boundary, and the gate now does too.
 //!
 //! ★ The theorem replaced a wrong one. "The band is in the other solid iff its z-range is" reads
 //! plausibly and is **false**: an L-notch's inner corner is clear of every wall by more than `r`
@@ -109,7 +114,7 @@ pub(crate) fn band_faces(
             let (in_own_inside, in_other) = chamber(jd, row, k, lo, hi, labels)?;
             // ★ **The wall is a boundary face of its own solid, so that solid's membership flips
             // across it** — read inside from the label, and outside is its negation. The
-            // counterpart does *not* flip: the gate keeps its boundary clear of the lateral, so
+            // counterpart does *not* flip: the gate keeps its boundary faces clear of the lateral, so
             // the slab theorem covers both sides. The face survives exactly when the two chambers
             // disagree under `keep`.
             let keep_side = |in_own: bool| match row.side {

@@ -204,8 +204,9 @@ pub(crate) struct Seg {
 /// A **full circle** of a solid's trace on a plane class (M6-2a): a cylinder's mark, closed —
 /// no endpoints, no wall, no place in the segment machinery. Seated circles come from disk
 /// faces and circular holes lying in the class; transversal circles from a lateral surface
-/// crossing it. The population gate proves a circle meets no segment (every wall is clear of
-/// the lateral by more than r), so circles join the arrangement only at the cell stage.
+/// crossing it. The population gate proves a circle meets no segment — every ∥ wall **face** is
+/// clear of the lateral, and a segment on this class is that face's own trace, so it inherits the
+/// clearance — and circles therefore join the arrangement only at the cell stage.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CircleTrace {
     /// The cylinder class ([`ClassIx::Cyl`] payload) whose circle this is.
@@ -1969,7 +1970,7 @@ fn circle_center_in_ring(
 }
 
 /// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
-/// planes, all clear of the axis by more than r), but computed honestly from one node's
+/// faces, all of them clear of the lateral), but computed honestly from one node's
 /// radial side rather than assumed.
 fn node_in_circle(
     jd: &Judge<'_, WorkingPlane>,
