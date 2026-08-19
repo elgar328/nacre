@@ -73,6 +73,11 @@ pub(crate) struct CylRow {
 /// the contract generalizes rather than bends. With one face per class it *is* the old class-index
 /// order, which is why existing results do not move.
 ///
+/// ★★ **That disjointness holds because every lateral face is a full 2π band today.** M6-2b's
+/// θ-partial faces will put two faces at the *same* `t`, and the tie then falls to the stable
+/// sort's face order — still deterministic, but the sentence above stops being the reason. Naming
+/// the premise here so the day it expires is a thing a reader can check, not a surprise.
+///
 /// A face whose rim span cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
 /// declines it for the same reason.
 pub(crate) fn cyl_rows(
@@ -161,12 +166,16 @@ pub(crate) fn band_faces(
     Ok(out)
 }
 
-/// The plane classes bounding this cylinder's bands, as consecutive `(lo, hi)` pairs ordered by
+/// The plane classes bounding **this face's** bands, as consecutive `(lo, hi)` pairs ordered by
 /// axis parameter.
 ///
-/// The boundaries are the classes that **emitted a circle** for this cylinder, plus the classes
-/// the lateral's own rims sit on (found by matching the span's parameters — two ⊥ planes with the
-/// same axis parameter *are* one plane, so the match is exact, not a tolerance).
+/// The boundaries are the classes that **emitted a circle** for this face's cylinder, plus the
+/// classes this face's own rims sit on (found by matching the span's parameters — two ⊥ planes
+/// with the same axis parameter *are* one plane, so the match is exact, not a tolerance).
+///
+/// ★ Circles are gathered per *class*, so a sibling face's boundaries are collected here too — and
+/// then clipped away by this face's span. That clip is what keeps two faces of one surface from
+/// borrowing each other's cuts.
 fn bands_of(
     row: &CylRow,
     plane_faces: &[LocalFace],
@@ -1262,8 +1271,11 @@ mod tests {
         let mut spans: Vec<(f64, f64)> = out.iter().map(|lf| ends(lf, &ts)).collect();
         spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         for (lo, hi) in &spans {
+            // Disjoint from the open gap (4, 6): a band either ends at or below 4, or starts at or
+            // above 6. ★ Measured: with the spans merged into one `min..max` this fires with
+            // "a band 4..6 crosses the gap", which is the whole reason the clause is here.
             assert!(
-                !(*lo < 6.0 && *hi > 4.0 && !(*hi <= 4.0 || *lo >= 6.0)),
+                *hi <= 4.0 || *lo >= 6.0,
                 "a band {lo}..{hi} crosses the gap z 4..6 where there is no face"
             );
         }
