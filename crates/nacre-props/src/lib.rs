@@ -118,6 +118,33 @@ pub struct FaceProps {
     pub normal: Option<Vector3>,
 }
 
+/// **The face's outward normal at one point of it** — [`FaceProps::normal`]'s answer for the
+/// faces that have no single one.
+///
+/// A planar face faces the same way everywhere, so `p` changes nothing there; a cylindrical one
+/// faces radially, so it changes everything. Both come back as the **outward** normal — the
+/// surface's natural direction turned by the face's `orientation` — which is the sense a caller
+/// means when it asks which way a face looks:
+///
+/// * a boss's wall points **away** from its axis, and
+/// * a bore's wall points **toward** it, because the material is outside the wall.
+///
+/// That flip is the kernel's convention (the boolean's `flip` is exactly it), so it lives here
+/// rather than in each caller that draws or measures a face.
+///
+/// `p` is taken on trust: it should lie on the face's surface, and a mesh corner or a sampled
+/// point does. `None` only where the direction genuinely has no name — a point on a cylinder's
+/// own axis.
+pub fn face_normal_at(model: &Model, face: Handle<Face>, p: Point3) -> Option<Vector3> {
+    let f = model.faces.get(face);
+    let sign = f64::from(f.orientation.sign());
+    let natural = match model.surface(f.surface) {
+        Surface::Plane(plane) => plane.normal(),
+        Surface::Cylinder(cyl) => cyl.normal_toward(p)?,
+    };
+    Some(natural * sign)
+}
+
 /// [`FaceProps`] of one face.
 pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsError> {
     let face = model.faces.get(face);

@@ -7175,3 +7175,87 @@ fn a_polygonal_holes_winding_is_checked_too() {
         "one report per loop, told apart by sign: {cosines:?}"
     );
 }
+
+/// ★★ **A boss's wall faces away from its axis; a bore's faces toward it.**
+///
+/// Same geometry, opposite sense — the material is inside the wall for one and outside it for
+/// the other — and the boolean says so in its own words when it mints a curved face: *"a
+/// cylinder's stored normal points away from its axis, and that is the face's outward normal
+/// for a boss … `flip` (material outside the wall: a hole) is what reverses it."*
+///
+/// This asks that sentence back from a different layer: `props::face_normal_at` reads the
+/// stored `orientation` and turns the radial direction by it. If the two ever disagreed, a
+/// viewer would light a bore inside out and nothing else would notice.
+#[test]
+fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
+    let plate =
+        Profile2d::polygon(vec![p2(0.0, 0.0), p2(4.0, 0.0), p2(4.0, 4.0), p2(0.0, 4.0)]).unwrap();
+    let mut scratch = Model::new();
+    let extrude = Operation::Extrude {
+        frame: SketchFrame::world(&scratch, Axis::Z),
+        profile: plate,
+        dist: 2.0,
+    };
+    let OpOutput::Extrude { solid: a, .. } = apply(&mut scratch, &extrude).unwrap() else {
+        panic!("an extrude answers with an extrude");
+    };
+    let below = Operation::DatumPlane {
+        def: DatumDef::Stated(
+            crate::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, -0.5])),
+        ),
+    };
+    let OpOutput::DatumPlane { frame, .. } = apply(&mut scratch, &below).unwrap() else {
+        panic!("a datum answers with a datum");
+    };
+    let drill = Operation::Cylinder {
+        frame,
+        center: [2.0, 2.0],
+        radius: 0.5,
+        dist: 3.0,
+    };
+    let OpOutput::Cylinder { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
+        panic!("a cylinder op answers with a cylinder");
+    };
+
+    // The axis of both the bore and the free-standing drill, as a line to measure against.
+    let axis_at = |z: f64| Point3::from_array([2.0, 2.0, z]);
+    let radial_sense = |m: &Model, solid: Handle<Solid>| -> f64 {
+        let shell = m.solids.get(solid).outer;
+        let wall = *m
+            .shells
+            .get(shell)
+            .faces
+            .iter()
+            .find(|&&fh| matches!(m.surface(m.faces.get(fh).surface), Surface::Cylinder(_)))
+            .expect("a cylindrical wall");
+        // A point on that wall: the seam vertex of one of its rims.
+        let he = m.faces.get(wall).outer.half_edges[0];
+        let p = m.vertex_point(m.edges.get(he.edge).vertices[0]);
+        let n = nacre_props::face_normal_at(m, wall, p).expect("off the axis");
+        let out = p - axis_at(p.as_array()[2]);
+        n.dot(out)
+    };
+
+    // The drill on its own is a boss: its wall faces outward.
+    assert!(
+        radial_sense(&scratch, b) > 0.0,
+        "a free-standing cylinder's wall faces away from its axis"
+    );
+
+    // The same cylinder, once it is a hole, faces the other way.
+    let m = replay(&[
+        extrude,
+        below,
+        drill,
+        Operation::Boolean {
+            kind: BoolKind::Cut,
+            a,
+            b,
+        },
+    ])
+    .expect("a logged drill");
+    assert!(
+        radial_sense(&m, m.live_solids[0]) < 0.0,
+        "a bore's wall faces its axis — the material is outside the wall"
+    );
+}

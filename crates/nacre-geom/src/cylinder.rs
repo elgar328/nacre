@@ -113,6 +113,25 @@ impl Cylinder {
         self.ref_dir * cos + self.binormal() * sin
     }
 
+    /// The natural outward unit normal **at a point** — [`normal_at`](Cylinder::normal_at)'s
+    /// sibling for a caller holding a position rather than an angle: the direction from the
+    /// axis to `p`, with the axial part removed.
+    ///
+    /// `None` when `p` sits on the axis, where there is no radial direction to name. `p` is
+    /// assumed to lie on the surface; nothing here checks it, because the answer — the radial
+    /// direction — is well defined for any point off the axis, and a mesh corner is on the
+    /// surface by construction.
+    ///
+    /// ★ Why a point version exists at all: a mesh corner *does* carry its angle in the
+    /// tessellation's provenance tag, but a **seam** vertex is tagged as a model vertex and has
+    /// no angle. Reading the position asks no question about how the point was made.
+    #[inline]
+    pub fn normal_toward(self, p: Point3) -> Option<Vector3> {
+        let d = self.axis.direction();
+        let from_axis = p - self.axis.origin();
+        (from_axis - d * from_axis.dot(d)).normalize()
+    }
+
     /// The circumferential partial derivative `∂P/∂u` at angle `u`:
     /// `r·(−sin u · ref_dir + cos u · (axis × ref_dir))`.
     ///
@@ -285,5 +304,52 @@ mod tests {
             let dv_num = (c0.point_at(u, v + h) - c0.point_at(u, v - h)) / (2.0 * h);
             prop_assert!((c0.axis().direction() - dv_num).norm() <= tol);
         }
+    }
+    /// The point form answers what the angle form does, at the point the angle names —
+    /// two roads to one direction, which is the only way to know either is right.
+    #[test]
+    fn the_point_normal_agrees_with_the_angle_normal() {
+        let c = unit_cylinder();
+        for k in 0..16 {
+            let u = std::f64::consts::TAU * f64::from(k) / 16.0;
+            for v in [-3.0, 0.0, 7.5] {
+                let n = c.normal_toward(c.point_at(u, v)).expect("off the axis");
+                assert!((n - c.normal_at(u)).norm() < EPS, "u={u} v={v}");
+            }
+        }
+    }
+
+    /// Radial means: unit, perpendicular to the axis, and pointing away from it. Measured on a
+    /// **tilted** cylinder so that no coordinate axis is doing the work by accident.
+    #[test]
+    fn a_point_normal_is_radial_whatever_the_axis() {
+        let c = Cylinder::from_axis(
+            Point3::from_array([1.0, -2.0, 0.5]),
+            Vector3::from_array([1.0, 2.0, 3.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.5,
+        )
+        .expect("a tilted cylinder");
+        let d = c.axis().direction();
+        for k in 0..8 {
+            let u = std::f64::consts::TAU * f64::from(k) / 8.0;
+            let p = c.point_at(u, 4.0);
+            let n = c.normal_toward(p).expect("off the axis");
+            assert!((n.norm() - 1.0).abs() < EPS, "unit");
+            assert!(n.dot(d).abs() < EPS, "perpendicular to the axis");
+            let from_axis = p - c.axis().origin();
+            assert!(
+                n.dot(from_axis - d * from_axis.dot(d)) > 0.0,
+                "away from the axis"
+            );
+        }
+    }
+
+    /// On the axis there is no radial direction, and the answer says so rather than picking one.
+    #[test]
+    fn a_point_on_the_axis_has_no_radial_direction() {
+        let c = unit_cylinder();
+        assert!(c.normal_toward(Point3::origin()).is_none());
+        assert!(c.normal_toward(c.axis().point_at(9.0)).is_none());
     }
 }

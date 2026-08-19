@@ -104,7 +104,9 @@ pub mod prelude {
         RejectClass, RejectReason, RejectWhere, SketchError, SketchFrame, SketchPlane, apply,
         boolean, face_plane, face_sketch_frame, from_edges, from_rings, replay,
     };
-    pub use nacre_props::{FaceProps, MassProps, bounds, centroid, face_props, mass_props};
+    pub use nacre_props::{
+        FaceProps, MassProps, bounds, centroid, face_normal_at, face_props, mass_props,
+    };
     // `Rotation` here is the exact definition (`scalar`), not `topo`'s history node.
     pub use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     pub use nacre_store::Handle;
