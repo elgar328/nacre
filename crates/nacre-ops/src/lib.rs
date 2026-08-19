@@ -642,6 +642,15 @@ pub enum RejectReason {
     /// infinity, happened to pass through a hole. Stating what was verified keeps the sentence
     /// true however far the tests are later widened.
     WallMeetsLateral,
+    /// A cylinder's circle on a perpendicular class **crosses a segment** of the counterpart's
+    /// trace there. Splitting that circle into arcs — and giving the arcs endpoints the segment
+    /// machinery can carry — is M6-2b's work; until then the arrangement refuses rather than
+    /// treating the circle as the closed cell it no longer is.
+    ///
+    /// ★ This is the promise the population gate's wall rule used to keep as a side effect. It is
+    /// checked now where the circle and the segments actually are, so the gate is free to become
+    /// precise about its own question without silently removing this one.
+    CircleMeetsSegment,
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).
     ObliqueCylinderCut,
@@ -898,6 +907,7 @@ impl RejectReason {
             Self::ZeroLengthEdge => "zero_length_edge",
             Self::FourPlane => "fourplane",
             Self::WallMeetsLateral => "wall_meets_lateral",
+            Self::CircleMeetsSegment => "circle_meets_segment",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
@@ -936,6 +946,7 @@ impl RejectReason {
             | Self::ThreePlanes
             | Self::FourPlane
             | Self::WallMeetsLateral
+            | Self::CircleMeetsSegment
             | Self::ObliqueCylinderCut
             | Self::CylinderPairContact
             | Self::CylinderGateUndecided

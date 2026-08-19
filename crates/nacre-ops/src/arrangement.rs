@@ -204,9 +204,14 @@ pub(crate) struct Seg {
 /// A **full circle** of a solid's trace on a plane class (M6-2a): a cylinder's mark, closed —
 /// no endpoints, no wall, no place in the segment machinery. Seated circles come from disk
 /// faces and circular holes lying in the class; transversal circles from a lateral surface
-/// crossing it. The population gate proves a circle meets no segment — every ∥ wall **face** is
-/// clear of the lateral, and a segment on this class is that face's own trace, so it inherits the
-/// clearance — and circles therefore join the arrangement only at the cell stage.
+/// crossing it, and circles join the arrangement only at the cell stage.
+///
+/// ★★ **That it is *full* is checked, not inherited.** The population gate's wall rule used to
+/// keep this as a side effect — every ∥ wall face stands clear of the lateral, and a segment on
+/// this class is that face's own trace, so it inherited the clearance — which made a promise about
+/// *circles* rest on a rule about *walls*. [`circles_meet_no_segment`] asks it of the segments
+/// themselves now, so a crossed circle is named (`CircleMeetsSegment`) rather than treated as the
+/// closed cell it is not, and the wall rule is free to become precise about its own question.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CircleTrace {
     /// The cylinder class ([`ClassIx::Cyl`] payload) whose circle this is.
@@ -1651,6 +1656,47 @@ fn component_count(segs: &[MergedSeg]) -> usize {
         .count()
 }
 
+/// **The premise the circle shortcut below rests on, checked.**
+///
+/// [`extract_cells`] appends each circle as a **one-edge closed cell** (`2n + 2i` and its twin),
+/// which is only a cell at all while the circle meets no segment: a crossed circle is arcs with
+/// endpoints, and those belong in the segment machinery. That premise used to be kept as a side
+/// effect of the population gate's wall rule — a rule about something else — so this asks it
+/// directly, of the very segments the cells are about to be built from.
+///
+/// ★ **The segments, not the faces they came from.** A face-level question would be a proxy: what
+/// must hold is a fact about the objects the cell/label machinery consumes, and asking anything
+/// wider refuses shapes whose segments never come near the circle (measured: ten edges in today's
+/// corpus have a line within `r` whose nearest approach lies off the segment).
+///
+/// ★ Both copies of the per-class pipeline — the boolean's and the audit's replay — reach the
+/// cells through [`extract_cells`], so living here is what keeps the two from disagreeing about
+/// where a class stopped.
+fn circles_meet_no_segment(
+    jd: &Judge<'_, WorkingPlane>,
+    segs: &[MergedSeg],
+    circles: &[MergedCircle],
+) -> Result<(), BoolError> {
+    for circ in circles {
+        let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
+        for sg in segs {
+            let ends = sg.end.map(|t| combinatorics::node_coords_rat(jd, t));
+            let [Some(p0), Some(p1)] = ends else {
+                // A node whose coordinates do not fit the road's vessel: the question is real and
+                // this cannot answer it, which is a decline rather than a pass.
+                return Err(reject(RejectReason::WitnessNotRational));
+            };
+            if p0 == p1 {
+                continue; // a collapsed edge carries no distance; `ZeroLengthEdge` is its owner
+            }
+            if nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r) {
+                return Err(reject(RejectReason::CircleMeetsSegment));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Extract the arrangement's cells (faces) from the split 1-skeleton by a DCEL face-walk. Returns
 /// the cells plus `face_of[he] = cell index`, which the label brick uses to reach a neighbour cell
 /// across an edge as `face_of[twin(he)]`.
@@ -1666,6 +1712,7 @@ fn extract_cells(
     segs: &[MergedSeg],
     circles: &[MergedCircle],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
+    circles_meet_no_segment(jd, segs, circles)?;
     let n = segs.len();
     let he_count = 2 * n;
     let origin = |he: usize| segs[he / 2].end[he % 2]; // he%2==0: end[0]; ==1: end[1]
