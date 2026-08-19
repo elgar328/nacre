@@ -15,6 +15,15 @@
 //! refused bodies standing well clear of the cylinder whose plane, extended, crossed it. The
 //! theorem never asked for that; it asks about the boundary, and the gate now does too.
 //!
+//! ★★ **A wall face is asked about a rectangle, and the "consecutive cuts" above are per face.**
+//! What a ∥ plane meets of the solid cylinder is a rectangle of that plane: the strip across, a
+//! lateral face's axis-parameter span along. So the gate reads two separating axes, and a wall
+//! clear on either one misses the rectangle (`planes.rs`' `face_clears_footprint`). With several
+//! lateral faces there are several rectangles, and that is exactly the granularity the theorem
+//! needs: `bands_of` clips every cut to its own row's span, so no band is ever built in the gap
+//! between two of them, and a wall sitting in such a gap breaks no premise — there is none there
+//! to break. Reading the spans as one `min..max` would invent both the band and the refusal.
+//!
 //! ★ The theorem replaced a wrong one. "The band is in the other solid iff its z-range is" reads
 //! plausibly and is **false**: an L-notch's inner corner is clear of every wall by more than `r`
 //! while sitting outside the material. Asking the arrangement is what fixes it, and the
@@ -201,7 +210,9 @@ fn bands_of(
         // ★ A class ⊥ to the axis is a **potential band boundary**, so failing to place it is a
         // refusal, not a skip: silently missing one would merge two bands whose membership
         // differs and hand back a closed, wrong solid. Classes that are not ⊥ cannot bound a
-        // band at all (the gate proved the ∥ ones clear), so those are skipped for cause.
+        // band at all (the gate proved the ∥ ones clear of **every band** — its wall rule reads a
+        // footprint rectangle per lateral face, so a wall it passed misses each of them), so
+        // those are skipped for cause.
         let Some(coeffs) = combinatorics::class_coeffs_rat(jd, c) else {
             continue;
         };

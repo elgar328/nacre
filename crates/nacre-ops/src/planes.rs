@@ -792,8 +792,11 @@ pub(crate) struct WorkingCyl {
 /// Per (plane class, cylinder) pair, with `n` the class's rational normal and `m`/`o`/`r` the
 /// cylinder's raw axis/origin/radius:
 /// - `n × m = 0` — a perpendicular cut. Passes, a cap seated flush on the other body included.
-/// - `n · m = 0` — a wall parallel to the axis. Passes iff it provably misses the lateral
-///   surface: `(n·o + d)² > r²·|n|²`; touching or piercing is
+/// - `n · m = 0` — a wall parallel to the axis. It must provably miss the **rectangle** the
+///   cylinder occupies in that plane. The infinite plane clearing the axis by more than `r`
+///   (`(n·o + d)² > r²·|n|²`) settles it outright and decides most inputs; otherwise each face on
+///   the class answers for itself, across the strip or along a lateral face's span
+///   ([`face_clears_footprint`]). A face not shown to miss is
 ///   [`RejectReason::WallMeetsLateral`] (M6-2b's rulings and arcs).
 /// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
 ///
