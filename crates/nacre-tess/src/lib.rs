@@ -628,6 +628,8 @@ mod tests {
                 if ring.len() < 3 {
                     continue; // a straight seam edge has no turn to measure
                 }
+                // Wrapping is right because every multi-point polyline here is a closed
+                // rim; an arc would need the two end turns left out (M6-3).
                 let p: Vec<Point3> = ring.iter().map(|&h| t.vertices.get(h).pos).collect();
                 for i in 0..p.len() {
                     let (a, b, c) = (p[i], p[(i + 1) % p.len()], p[(i + 2) % p.len()]);
@@ -686,7 +688,16 @@ mod tests {
             h in 0.1f64..10.0,
         ) {
             prop_assume!(Vector3::from_array(axis).norm() > 0.1);
-            let cfg = TessConfig::default();
+            // ★ A **coarse** angle on purpose: this case is about the mesh's
+            // *structure* — the counts and watertightness — which do not depend on how
+            // finely the rim is cut. The 2° default puts 180 segments on every radius,
+            // which made this property 8.5× slower (0.92s → 7.8s, measured) for no
+            // coverage at all. Coarse also lets the sagitta budget lead at the larger
+            // radii, so `n` still varies across the cases.
+            let cfg = TessConfig {
+                max_angle_deg: 20.0,
+                ..Default::default()
+            };
             let n = circle_segments(&cfg, r);
             let t = tessellate(&cylinder([0.0, 0.0, 0.0], axis, r, h), &cfg).unwrap();
             prop_assert_eq!(t.vertices.len(), 2 * n);
