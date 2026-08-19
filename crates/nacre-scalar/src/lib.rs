@@ -36,7 +36,9 @@
 pub mod mag;
 pub mod quad;
 pub use mag::Mag;
-pub use quad::{QuadVal, biquad_sign, cylinder_radial_side, cylinders_clear};
+pub use quad::{
+    QuadVal, biquad_sign, cylinder_radial_side, cylinders_clear, segment_meets_cylinder,
+};
 
 use num_rational::Ratio;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};

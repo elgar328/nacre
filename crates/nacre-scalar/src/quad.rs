@@ -518,6 +518,85 @@ pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, radius: Rat) -> Orien
     radial_side_int(p, origin, dir, &[radius])
 }
 
+/// **Does a segment come within `r` of a cylinder's axis?** — exact, and total at any width.
+///
+/// The segment must lie in a plane **perpendicular to the axis**, which is what makes this a
+/// three-sign question instead of a general line–line distance: `dist(q, axis)² = |q−o|² −
+/// ((q−o)·m)²/(m·m)`, and along such a segment the second term is **constant** (its difference is
+/// `d·m = 0`). So the minimum of `dist²` sits where `|q−o|²` is smallest — at `s* = −(w₀·d)/(d·d)`
+/// clamped to `[0,1]` — and the two clamped ends are the endpoints, which
+/// [`cylinder_radial_side`] already answers.
+///
+/// ★ **No circle centre is formed.** Asking the axis directly avoids computing `o + t·m` for the
+/// plane's own axis parameter, which is a multiplication that can overflow — a width ceiling
+/// inside a question about *shape*. The caller passes the axis it already has.
+///
+/// **Preconditions** (both `debug_assert`ed): `p0 ≠ p1`, and `(p1−p0)·m = 0`. A zero-length
+/// segment makes the comparison `0 vs 0` and would answer "meets", which is a degeneracy, not a
+/// verdict; a segment that is not perpendicular to the axis breaks the constant-term argument
+/// this rests on.
+pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, radius: Rat) -> bool {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    debug_assert!(p0 != p1, "a zero-length segment has no distance to give");
+    debug_assert!(
+        {
+            let d: V3 = core::array::from_fn(|i| {
+                p1[i].checked_sub(p0[i]).unwrap_or_else(|| Rat::from_int(0))
+            });
+            crate::dot_sign_rat(&d, dir) == Orient::Zero
+        },
+        "the segment must lie in a plane perpendicular to the axis"
+    );
+    // Either endpoint already inside (or on) the cylinder settles it — and that is exactly the
+    // question `cylinder_radial_side` answers, so it is asked rather than re-derived.
+    for p in [p0, p1] {
+        if cylinder_radial_side(p, origin, dir, radius) != Orient::Positive {
+            return true;
+        }
+    }
+    // Otherwise the segment meets the cylinder only if its **interior** dips inside: the foot of
+    // the perpendicular must lie between the ends, and the distance there must not exceed `r`.
+    let lift = |v: &V3| -> ([BigInt; 3], BigInt) {
+        let den: [BigInt; 3] = core::array::from_fn(|i| BigInt::from(v[i].denom()));
+        let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+        (
+            core::array::from_fn(|i| BigInt::from(v[i].numer()) * (&d / &den[i])),
+            d,
+        )
+    };
+    let (a, da) = lift(p0);
+    let (b, db) = lift(p1);
+    let (oi, doo) = lift(origin);
+    // One common denominator `dd` for all three points, so the differences below are exact.
+    let dd = da.lcm(&db).lcm(&doo);
+    let at = |v: &[BigInt; 3], den: &BigInt| -> [BigInt; 3] {
+        let k = &dd / den;
+        core::array::from_fn(|i| &v[i] * &k)
+    };
+    let (a, b, oi) = (at(&a, &da), at(&b, &db), at(&oi, &doo));
+    let w0: [BigInt; 3] = core::array::from_fn(|i| &a[i] - &oi[i]);
+    let w1: [BigInt; 3] = core::array::from_fn(|i| &b[i] - &oi[i]);
+    let dv: [BigInt; 3] = core::array::from_fn(|i| &b[i] - &a[i]);
+    let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
+        (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
+    };
+    // `s* ∈ [0,1]` ⟺ `w₀·d ≤ 0 ≤ w₁·d` (because `w₁ = w₀ + d`).
+    let (f0, f1) = (dot(&w0, &dv), dot(&w1, &dv));
+    if f0 > BigInt::from(0) || f1 < BigInt::from(0) {
+        return false; // the nearest point of the segment is an end, and both are outside
+    }
+    let (m, _dm) = lift(dir);
+    let (rn, rd) = (BigInt::from(radius.numer()), BigInt::from(radius.denom()));
+    let (ww, dvdv, mm) = (dot(&w0, &w0), dot(&dv, &dv), dot(&m, &m));
+    let (w0d, w0m) = (dot(&w0, &dv), dot(&w0, &m));
+    // `dist²_min ≤ r²`, multiplied through by `dd²·(d·d)·(m·m)·rd² > 0`:
+    //   rd²·[ |w₀|²(d·d)(m·m) − (w₀·d)²(m·m) − (w₀·m)²(d·d) ]  ≤  rn²·dd²·(d·d)(m·m)
+    let lhs = &rd * &rd * (&ww * &dvdv * &mm - &w0d * &w0d * &mm - &w0m * &w0m * &dvdv);
+    let rhs = &rn * &rn * (&dd * &dd) * &dvdv * &mm;
+    lhs <= rhs
+}
+
 /// [`cylinder_radial_side`]'s body, with the radius given as **parts to be summed** — one part
 /// for the point-vs-cylinder question, two for [`parallel_axes_clear`], where the comparison is
 /// against `r₁ + r₂` and forming that sum in `Rat` first would reintroduce the ceiling this

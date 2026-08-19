@@ -720,3 +720,97 @@ fn skew_axes_are_compared_by_their_common_perpendicular() {
         "scale and axial offset change nothing"
     );
 }
+
+// ---- a segment against a cylinder's axis (M6-2b preparation) ----
+//
+// The running fixture: the axis is the vertical line through the origin with `r = 3`, and every
+// segment below lies in the plane `z = 0`, which is perpendicular to it.
+
+fn seg_meets(p0: [i128; 3], p1: [i128; 3], radius: i128) -> bool {
+    crate::segment_meets_cylinder(
+        &p0.map(ri),
+        &p1.map(ri),
+        &[ri(0), ri(0), ri(0)],
+        &[ri(0), ri(0), ri(1)],
+        ri(radius),
+    )
+}
+
+#[test]
+fn an_endpoint_inside_the_cylinder_meets_it() {
+    assert!(seg_meets([0, 0, 0], [10, 0, 0], 3), "starts on the axis");
+    assert!(seg_meets([2, 0, 0], [10, 0, 0], 3), "starts inside");
+    assert!(
+        !seg_meets([4, 0, 0], [10, 0, 0], 3),
+        "starts outside, runs away"
+    );
+}
+
+/// A **chord**: both ends outside, the middle through the disk.
+#[test]
+fn a_chord_meets_though_both_ends_are_outside() {
+    assert!(seg_meets([-10, 1, 0], [10, 1, 0], 3));
+}
+
+/// ★★ **The case the whole check turns on.** The line passes within `r`, but the segment stops
+/// before it gets there — the perpendicular foot lies outside `[0,1]`. Ten edges of today's
+/// corpus are exactly this shape (a boss standing far away whose wall plane, extended, crosses a
+/// bore), and answering "meets" here would close the family opened for them.
+#[test]
+fn a_near_line_whose_foot_is_off_the_segment_does_not_meet() {
+    // The line y = 1 passes 1 from the axis; this piece of it lives at x ∈ [20, 30].
+    assert!(!seg_meets([20, 1, 0], [30, 1, 0], 3));
+    // …and the piece that does reach the foot meets it.
+    assert!(seg_meets([-1, 1, 0], [30, 1, 0], 3));
+}
+
+/// Exact tangency: the closest approach is `r` itself, and the closed disk includes it.
+#[test]
+fn a_segment_grazing_at_exactly_r_meets_it() {
+    assert!(seg_meets([-10, 3, 0], [10, 3, 0], 3));
+    assert!(!seg_meets([-10, 4, 0], [10, 4, 0], 3));
+}
+
+/// The axis' direction magnitude and the points' denominators are not part of the question.
+#[test]
+fn the_answer_does_not_depend_on_scale() {
+    let long_axis = [ri(0), ri(0), ri(7)];
+    let plain = crate::segment_meets_cylinder(
+        &[r(-10, 1), r(1, 1), ri(0)],
+        &[r(10, 1), r(1, 1), ri(0)],
+        &[ri(0), ri(0), ri(0)],
+        &[ri(0), ri(0), ri(1)],
+        ri(3),
+    );
+    let scaled = crate::segment_meets_cylinder(
+        &[r(-20, 2), r(2, 2), ri(0)],
+        &[r(20, 2), r(2, 2), ri(0)],
+        &[ri(0), ri(0), ri(0)],
+        &long_axis,
+        ri(3),
+    );
+    assert_eq!(plain, scaled);
+}
+
+/// ★ **The negative control.** The same segment, the same radius — move the axis and the answer
+/// must change. Without it every assertion above could be passing for a reason that has nothing
+/// to do with the cylinder.
+#[test]
+fn moving_the_axis_moves_the_answer() {
+    let seg = ([ri(-10), ri(1), ri(0)], [ri(10), ri(1), ri(0)]);
+    let z = [ri(0), ri(0), ri(1)];
+    assert!(crate::segment_meets_cylinder(
+        &seg.0,
+        &seg.1,
+        &[ri(0), ri(0), ri(0)],
+        &z,
+        ri(3)
+    ));
+    assert!(!crate::segment_meets_cylinder(
+        &seg.0,
+        &seg.1,
+        &[ri(0), ri(40), ri(0)],
+        &z,
+        ri(3)
+    ));
+}
