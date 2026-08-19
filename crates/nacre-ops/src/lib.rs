@@ -638,9 +638,15 @@ pub enum RejectReason {
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).
     ObliqueCylinderCut,
-    /// Two distinct cylinder classes are not provably clear of each other (parallel axes
-    /// further apart than the radius sum is the only pair the gate can pass) —
-    /// cylinder∩cylinder is M6b's.
+    /// Two distinct cylinder classes **touch or overlap**: the distance between their axes is
+    /// not greater than the sum of their radii. Their intersection is a quartic curve, which is
+    /// M6b's.
+    ///
+    /// ★ The name used to promise more than the check delivered: the gate could only measure
+    /// the distance between *parallel* axes, so every other pair — a drill crossing a bore with
+    /// room to spare — was refused under this name too. The predicate now spells the distance
+    /// both ways ([`nacre_scalar::cylinders_clear`]), so the refusal states a fact about the
+    /// geometry rather than about the arithmetic that looked at it.
     CylinderPairContact,
     /// A perpendicular plane class carries faces of **both** operands beside a cylinder — a
     /// coplanar seating (a boss on a face, flush caps). The seated-coplanar merge with circle

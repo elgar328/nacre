@@ -558,25 +558,87 @@ fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
     }
 }
 
-/// **Whether two parallel axes stand further apart than `r_a + r_b`** — [`Orient::Positive`]
-/// when they are clear of each other, `Zero` at tangency, `Negative` when the two cylinders'
-/// surfaces overlap. Exact and total.
+/// **Whether two cylinders stand clear of each other** — [`Orient::Positive`] when their
+/// lateral surfaces cannot meet, `Zero` at tangency, `Negative` when they overlap. Exact,
+/// total, and **asks nothing of the caller**: any pair of axes, however oriented.
 ///
-/// The same quadratic [`cylinder_radial_side`] evaluates, with `b`'s origin as the point and the
-/// **radius sum** as the radius: a point further from `a`'s axis than `r_a + r_b` is exactly a
-/// second axis whose cylinder cannot touch `a`'s. ★ The sum is formed **inside** the integer
-/// arithmetic — `r_a.checked_add(r_b)` would put an `i128` ceiling back in front of a question
-/// that has no width.
+/// One proposition, two arithmetics, because the distance between two lines is written
+/// differently depending on whether they are parallel:
 ///
-/// **Precondition:** the axes are parallel (`parallel_rat(m_a, m_b)`) — the caller establishes
-/// that; distance between skew or crossing axes is not this question.
-pub fn parallel_axes_clear(o_a: &V3, dir: &V3, r_a: Rat, o_b: &V3, r_b: Rat) -> Orient {
-    debug_assert!(!is_zero3(dir), "cylinder axis must be nonzero");
+/// * **parallel** — the distance from `b`'s origin to `a`'s axis, which is the quadratic
+///   [`cylinder_radial_side`] already evaluates, with the **radius sum** as the radius.
+/// * **otherwise** — the common perpendicular: `d = |W·C| / (Dw·|C|)` with `W = o_b − o_a` and
+///   `C = m_a × m_b`, so the test is `sign((W·C)²·rd² − rn²·Dw²·(C·C))`. Crossing axes
+///   (`W·C = 0`) fall out as distance zero, which is a refusal, as it should be.
+///
+/// ★ The direction vectors' own denominators **cancel** in that ratio, and so does their
+/// magnitude — no normalization, and the numerators alone carry the answer (the same reason
+/// [`radial_side_int`] drops `_dm`).
+///
+/// ★ The radius sum is formed **inside** the integer arithmetic in both branches —
+/// `r_a.checked_add(r_b)` would put an `i128` ceiling back in front of a question that has no
+/// width.
+///
+/// Why this is one function rather than a parallel-only one plus a precondition: the caller
+/// that had to establish "these are parallel" answered the *other* case by refusing it, which
+/// turned a limit of the arithmetic into a limit of the kernel — a drill crossing a bore at a
+/// safe distance was declined as "touching".
+pub fn cylinders_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -> Orient {
+    debug_assert!(
+        !is_zero3(m_a) && !is_zero3(m_b),
+        "cylinder axis must be nonzero"
+    );
     debug_assert!(
         r_a > Rat::from_int(0) && r_b > Rat::from_int(0),
         "cylinder radii must be positive"
     );
-    radial_side_int(o_b, o_a, dir, &[r_a, r_b])
+    if crate::parallel_rat(m_a, m_b) {
+        return radial_side_int(o_b, o_a, m_a, &[r_a, r_b]);
+    }
+    skew_axes_clear(o_a, m_a, r_a, o_b, m_b, r_b)
+}
+
+/// [`cylinders_clear`]'s non-parallel branch: the common-perpendicular distance against the
+/// radius sum, in `BigInt`.
+fn skew_axes_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -> Orient {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    let lift = |v: &V3| -> ([BigInt; 3], BigInt) {
+        let den: [BigInt; 3] = core::array::from_fn(|i| BigInt::from(v[i].denom()));
+        let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
+        (
+            core::array::from_fn(|i| BigInt::from(v[i].numer()) * (&d / &den[i])),
+            d,
+        )
+    };
+    // `W = o_b − o_a` over one common denominator, as `radial_side_int` forms it.
+    let (bi, db) = lift(o_b);
+    let (ai, da) = lift(o_a);
+    let dw = &db * &da;
+    let w: [BigInt; 3] = core::array::from_fn(|i| &bi[i] * &da - &ai[i] * &db);
+    // `C = m_a × m_b`, numerators only — the two denominators cancel in `|W·C| / |C|`.
+    let (ma, _) = lift(m_a);
+    let (mb, _) = lift(m_b);
+    let c = [
+        &ma[1] * &mb[2] - &ma[2] * &mb[1],
+        &ma[2] * &mb[0] - &ma[0] * &mb[2],
+        &ma[0] * &mb[1] - &ma[1] * &mb[0],
+    ];
+    // The radius sum over a common denominator, kept as (numerator, denominator).
+    let (mut rn, mut rd) = (BigInt::from(0), BigInt::from(1));
+    for r in [r_a, r_b] {
+        let (n, d) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+        rn = &rn * &d + &n * &rd;
+        rd *= d;
+    }
+    let wc: BigInt = (0..3).map(|i| &w[i] * &c[i]).sum();
+    let cc: BigInt = (0..3).map(|i| &c[i] * &c[i]).sum();
+    let val = &wc * &wc * (&rd * &rd) - &rn * &rn * (&dw * &dw) * &cc;
+    match val.sign() {
+        num_bigint::Sign::Minus => Orient::Negative,
+        num_bigint::Sign::NoSign => Orient::Zero,
+        num_bigint::Sign::Plus => Orient::Positive,
+    }
 }
 
 /// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, one

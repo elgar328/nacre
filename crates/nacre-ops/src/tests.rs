@@ -7259,3 +7259,76 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
         "a bore's wall faces its axis — the material is outside the wall"
     );
 }
+
+/// ★★ **A tunnel crossing a bore is not a tunnel touching a bore** — the model a user brought,
+/// and the pair rule's real question.
+///
+/// A plate, a vertical bore through it, and a horizontal tunnel six away with radii summing to
+/// four. Nothing touches, and the volume says so exactly. It used to be refused as "two
+/// cylinders touch or overlap" because the gate could only measure the distance between
+/// *parallel* axes and read its own blind spot as contact.
+///
+/// ★ The pair rule fires on the **second** boolean — the first result already carries a
+/// cylindrical face — so a single cut would not exercise it at all.
+///
+/// The second half is what keeps the first honest: slide the tunnel onto the bore and the
+/// refusal must come back, because two cylinders that really do meet cross in a quartic curve
+/// nothing here computes. (Measured with the guard removed: the result kept the *same* volume
+/// as the disjoint case — a silent wrong answer, validate clean.)
+#[test]
+fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
+    let build = |x: f64| -> (Model, Handle<Solid>, Handle<Solid>, Handle<Solid>) {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([-10.0, -10.0, -1.5]),
+            Point3::from_array([10.0, 10.0, 1.5]),
+        );
+        let bore = m.add_cylinder(
+            Point3::from_array([0.0, 0.0, -10.0]),
+            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            20.0,
+        );
+        let tunnel = m.add_cylinder(
+            Point3::from_array([x, -25.0, 0.0]),
+            nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+            1.0,
+            50.0,
+        );
+        m.rebuild_adjacency();
+        (m, plate, bore, tunnel)
+    };
+
+    // Six apart: the two cuts go through, and the volume is the plate minus both voids.
+    let (mut m, plate, bore, tunnel) = build(-6.0);
+    let drilled = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+    m.rebuild_adjacency();
+    let both = boolean(&mut m, BoolKind::Cut, drilled, tunnel).expect("the tunnel cuts too")[0];
+    let vol = nacre_props::mass_props(&m, both).expect("props").volume;
+    let want = 20.0 * 20.0 * 3.0 - std::f64::consts::PI * 9.0 * 3.0 - std::f64::consts::PI * 20.0;
+    assert!(
+        (vol - want).abs() < 1e-9,
+        "plate minus a bore and a tunnel: {vol} vs {want}"
+    );
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+
+    // Straight through the bore: still refused, and by the name that now states a fact.
+    let (mut m, plate, bore, tunnel) = build(0.0);
+    let drilled = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+    m.rebuild_adjacency();
+    assert!(
+        matches!(
+            boolean(&mut m, BoolKind::Cut, drilled, tunnel),
+            Err(BoolError::Rejected {
+                reason: RejectReason::CylinderPairContact,
+                ..
+            })
+        ),
+        "a tunnel through the bore is a cylinder pair that meets"
+    );
+}

@@ -644,7 +644,7 @@ fn the_radial_side_answers_where_the_checked_one_could_not() {
     assert_eq!(cylinder_radial_side(&on, &o, &m, radius), Orient::Zero);
 }
 
-/// Two parallel axes: clear when their distance exceeds `r₁ + r₂`, tangent at equality, and
+/// Two **parallel** axes: clear when their distance exceeds `r₁ + r₂`, tangent at equality, and
 /// overlapping below it — **with the sum formed inside the integer arithmetic**. The radii here
 /// are wide enough that `r₁.checked_add(r₂)` still works but `(r₁+r₂)²·|m|²` does not, which is
 /// what the retired gate computed.
@@ -659,19 +659,64 @@ fn parallel_axes_clear_compares_against_the_radius_sum() {
     // is in `ra`, `rb` and `far`, which is where the old arithmetic gave out.
     let near = [wide(7e-8), ri(0), ri(5)];
     assert_eq!(
-        crate::parallel_axes_clear(&o_a, &m, ra, &far, rb),
+        crate::cylinders_clear(&o_a, &m, ra, &far, &m, rb),
         Orient::Positive,
         "1e-7 apart, radii summing to 8e-8: clear"
     );
     assert_eq!(
-        crate::parallel_axes_clear(&o_a, &m, ra, &near, rb),
+        crate::cylinders_clear(&o_a, &m, ra, &near, &m, rb),
         Orient::Negative,
         "7e-8 apart, radii summing to 8e-8: overlapping"
     );
     let touching = [ra.checked_add(rb).expect("small sum"), ri(0), ri(5)];
     assert_eq!(
-        crate::parallel_axes_clear(&o_a, &m, ra, &touching, rb),
+        crate::cylinders_clear(&o_a, &m, ra, &touching, &m, rb),
         Orient::Zero,
         "exactly tangent"
+    );
+}
+
+/// ★★ **Axes that are not parallel are the case the caller used to refuse outright.** The
+/// distance between two skew lines is their common perpendicular, and the same comparison
+/// against `r₁ + r₂` decides the pair — a drill crossing a bore six apart with radii summing to
+/// four does not touch it, whatever the angle between them.
+///
+/// Tangency is here because it is the boundary a `≥` would swallow: at exactly `r₁ + r₂` the two
+/// surfaces meet along a line, which is contact, not clearance.
+#[test]
+fn skew_axes_are_compared_by_their_common_perpendicular() {
+    let z = [ri(0), ri(0), ri(1)];
+    let y = [ri(0), ri(1), ri(0)];
+    let o_a = [ri(0), ri(0), ri(0)]; // the vertical bore
+    let (ra, rb) = (ri(3), ri(1));
+    // The user's own model: a horizontal tunnel six away from a vertical bore.
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &z, ra, &[ri(-6), ri(0), ri(0)], &y, rb),
+        Orient::Positive,
+        "six apart, radii summing to four: clear"
+    );
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &z, ra, &[ri(-4), ri(0), ri(0)], &y, rb),
+        Orient::Zero,
+        "exactly four apart: tangent, which is contact"
+    );
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &z, ra, &[ri(-2), ri(0), ri(0)], &y, rb),
+        Orient::Negative,
+        "two apart: the surfaces cut through each other"
+    );
+    // Axes that actually meet are distance zero, whatever the radii.
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &z, ra, &[ri(0), ri(0), ri(0)], &y, rb),
+        Orient::Negative,
+        "crossing axes cannot be clear"
+    );
+    // The answer does not depend on how long the direction vectors are, nor on where along its
+    // own axis each cylinder is measured from.
+    let long_y = [ri(0), ri(17), ri(0)];
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &z, ra, &[ri(-6), ri(40), ri(0)], &long_y, rb),
+        Orient::Positive,
+        "scale and axial offset change nothing"
     );
 }

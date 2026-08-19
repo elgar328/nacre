@@ -780,8 +780,9 @@ pub(crate) struct WorkingCyl {
 ///   [`RejectReason::WallMeetsLateral`] (M6-2b's rulings and arcs).
 /// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
 ///
-/// Per cylinder pair: parallel axes clear of each other (`dist > r₁+r₂`, same quadratic form)
-/// pass; every other pair is [`RejectReason::CylinderPairContact`] (M6b).
+/// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
+/// pass; a pair that touches or overlaps is [`RejectReason::CylinderPairContact`] (M6b, where
+/// the quartic intersection curve lives).
 pub(crate) fn cylinder_gate(
     model: &Model,
     cyl_surfs: &[Handle<Surface>],
@@ -859,19 +860,18 @@ pub(crate) fn cylinder_gate(
 
     for (i, a) in cyls.iter().enumerate() {
         for b in &cyls[i + 1..] {
-            let (m1, m2) = (a.def.dir(), b.def.dir());
-            if !nacre_scalar::parallel_rat(&m1, &m2) {
-                return Err(reject(RejectReason::CylinderPairContact));
-            }
-            // Parallel axes: clear iff the axis distance exceeds the radius **sum** — the same
-            // quadratic as the point-vs-cylinder side, with `b`'s origin as the point. The sum
-            // is formed inside that predicate's integer arithmetic; adding the two radii in
-            // `Rat` first would put the ceiling back in front of a question that has no width.
-            if nacre_scalar::parallel_axes_clear(
+            // Clear iff the distance between the two axes exceeds the radius **sum** — one
+            // proposition for any pair, parallel or not. ★ This used to demand parallel axes
+            // first and refuse everything else, which made a limit of the *arithmetic* read as
+            // a limit of the kernel: a drill crossing a bore at a safe distance came back as
+            // "two cylinders touch". The predicate now carries both spellings of the distance,
+            // so the refusal below means what it says.
+            if nacre_scalar::cylinders_clear(
                 &a.def.origin(),
-                &m1,
+                &a.def.dir(),
                 a.def.radius(),
                 &b.def.origin(),
+                &b.def.dir(),
                 b.def.radius(),
             ) != Orient::Positive
             {
