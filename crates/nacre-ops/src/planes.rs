@@ -836,6 +836,9 @@ pub(crate) fn cylinder_gate(
 
     for cyl in cyls.iter() {
         let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
+        // The footprint's second axis, gathered once: it depends on the cylinder, not on the
+        // plane class the loop below walks.
+        let spans = lateral_spans(faces, cyl.surf);
         for (c, wp) in geom.iter().enumerate() {
             if wp.rotated {
                 return Err(undecided());
@@ -874,6 +877,10 @@ pub(crate) fn cylinder_gate(
                 // the faces on this class get to answer for themselves. Refusing on the plane
                 // alone turned away a whole family the engine serves — a boss standing far away
                 // whose wall plane, extended, happens to pass through a hole.
+                //
+                // ★★ What a face is asked is whether it misses the **rectangle** this cylinder
+                // occupies in that plane: the strip across, the lateral face's span along. See
+                // [`face_clears_footprint`].
                 if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) != Orient::Positive {
                     // ★ The class's coefficients come from its root's *name*, which is the world
                     // only while that plane carries no motion; the cylinder's `def` is world by
@@ -882,7 +889,7 @@ pub(crate) fn cylinder_gate(
                     if model.plane_motion(wp.surf).is_some() {
                         return Err(undecided());
                     }
-                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r)? {
+                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, &spans)? {
                         return Err(reject(RejectReason::WallMeetsLateral));
                     }
                 }
@@ -934,6 +941,7 @@ fn wall_faces_clear(
     o: &[nacre_scalar::Rat; 3],
     m: &[nacre_scalar::Rat; 3],
     r: nacre_scalar::Rat,
+    spans: &[[nacre_scalar::Rat; 2]],
 ) -> Result<bool, BoolError> {
     let mut seen = 0usize;
     for (i, row) in faces.iter().enumerate() {
@@ -947,7 +955,7 @@ fn wall_faces_clear(
             return Err(reject(RejectReason::CylinderGateUndecided));
         };
         seen += 1;
-        if !face_clears_strip(model, model.faces.get(fh), coeffs, o, m, r)? {
+        if !face_clears_footprint(model, model.faces.get(fh), coeffs, o, m, r, spans)? {
             return Ok(false);
         }
     }
@@ -959,7 +967,59 @@ fn wall_faces_clear(
     Ok(true)
 }
 
-/// Whether one planar face lies wholly to one side of the strip the cylinder cuts from its plane.
+/// The axis-parameter spans this cylinder's lateral faces occupy — one per face, in the scale
+/// `axis_param_of_plane` produces.
+///
+/// ★★ **Empty means "unusable", never "nothing in the way".** A span this returns is a rectangle
+/// the wall rule must miss, and "every one of no rectangles is missed" is a pass no caller should
+/// hand out by default — so a face whose span could not be stated, and a cylinder with no lateral
+/// face in the table at all, both come back empty and leave the axis unused. The second could be
+/// argued safe (no lateral face, no band, nothing to protect), but that argument rests on the face
+/// table being complete here, which is a separate premise from the one this function is about.
+fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar::Rat; 2]> {
+    let mut out = Vec::new();
+    for row in faces {
+        let FaceRow::Cylinder(cf) = row else { continue };
+        // ★ Matched by **handle**, not by geometry: two operands may state the same cylinder
+        // twice, and each statement gets its own rows, its own bands clipped to its own spans,
+        // and its own turn through the gate's cylinder loop.
+        if cf.surf != surf {
+            continue;
+        }
+        let Some(span) = cf.span else {
+            return Vec::new();
+        };
+        out.push(span);
+    }
+    out
+}
+
+/// Whether one planar face misses the **rectangle** this cylinder occupies in the face's plane.
+///
+/// ★★ **One question, two separating axes.** A plane parallel to the axis meets the solid cylinder
+/// in a rectangle: the strip across ([`nacre_scalar::cylinder_strip_side`]) and a lateral face's
+/// axis-parameter span along ([`nacre_scalar::point_axis_side`]). A rectangle is the intersection
+/// of those two bands, so clearing *either* axis clears it — these are not two rules to be
+/// weighed, they are the two axes of one. With several lateral faces there are several rectangles
+/// (the strip is shared, the spans are not), and the face must miss them all:
+///
+/// ```text
+/// clear  ⟺  clear across the strip  ∨  clear along **every** span
+/// ```
+///
+/// ★ **The span reading is an open interval** — a face resting exactly on a cap plane is clear,
+/// because the theorem being fed speaks of the *open* slab. What such a face touches is the rim's
+/// own plane, and whether its edge crosses the rim circle there is a question the arrangement asks
+/// where the circles and segments are, by name.
+///
+/// ★ **The two axes are only *complete* for a face that is an axis-aligned rectangle** — then both
+/// rectangles' edge normals coincide and there are no other separating axes to try. An extruded
+/// wall is exactly that shape (its edges run along the axis or across it), chamfers included: what
+/// a chamfer tilts is the plane, not the edges within it. A face a previous boolean took a bite
+/// out of is not, and neither is a slanted or L-shaped one; those are refused as "not shown to
+/// clear", which is true. Completing the test means adding the face's own edge normals as further
+/// axes — the same test with more axes, not a different machine — and waits for a shape that
+/// needs it.
 ///
 /// **Only the outer loop is walked**, and that is sound: a face is contained in the convex hull of
 /// its outer loop's vertices, a half-space is convex, and inner loops only *remove* material. It
@@ -972,17 +1032,24 @@ fn wall_faces_clear(
 /// a single point and would pass a disk that crosses the strip. Today `vertex_meet` happens to
 /// decline that vertex, but relying on the coincidence would leave the barrier to vanish silently
 /// the day seam coordinates become solvable.
-fn face_clears_strip(
+#[allow(clippy::too_many_arguments)]
+fn face_clears_footprint(
     model: &Model,
     face: &Face,
     coeffs: &[nacre_scalar::Rat; 4],
     o: &[nacre_scalar::Rat; 3],
     m: &[nacre_scalar::Rat; 3],
     r: nacre_scalar::Rat,
+    spans: &[[nacre_scalar::Rat; 2]],
 ) -> Result<bool, BoolError> {
-    use nacre_scalar::StripSide;
+    use nacre_scalar::{Orient, StripSide};
     let undecided = || reject(RejectReason::CylinderGateUndecided);
     let mut side: Option<StripSide> = None;
+    let mut across = true;
+    // Per span, whether every vertex so far has stayed at or below its start, and at or above its
+    // end. Either one surviving the walk clears that rectangle along the axis.
+    let mut along: Vec<(bool, bool)> = vec![(true, true); spans.len()];
+    let mut vertices = 0usize;
     for he in &face.outer.half_edges {
         if !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_)) {
             return Err(undecided());
@@ -1004,17 +1071,36 @@ fn face_clears_strip(
         if !nacre_scalar::point_on_plane_exact(coeffs, &p) {
             return Err(undecided());
         }
+        vertices += 1;
+        // The axis across the strip.
         match nacre_scalar::cylinder_strip_side(coeffs, &p, o, m, r) {
-            StripSide::Inside => return Ok(false),
+            StripSide::Inside => across = false,
             s => match side {
                 None => side = Some(s),
-                Some(prev) if prev != s => return Ok(false), // the face straddles the strip
+                Some(prev) if prev != s => across = false, // the face straddles the strip
                 Some(_) => {}
             },
         }
+        // The axis along it — one rectangle per lateral face, and the span is open at both ends.
+        for (i, span) in spans.iter().enumerate() {
+            if nacre_scalar::point_axis_side(&p, o, m, span[0]) == Orient::Positive {
+                along[i].0 = false;
+            }
+            if nacre_scalar::point_axis_side(&p, o, m, span[1]) == Orient::Negative {
+                along[i].1 = false;
+            }
+        }
     }
-    // An empty outer loop names no half-space, so it proves nothing.
-    Ok(side.is_some())
+    // ★ An empty outer loop names no half-space and no interval, so it proves nothing — and
+    // "every vertex of none stayed below" would otherwise be a vacuous pass for any wall.
+    if vertices == 0 {
+        return Ok(false);
+    }
+    if across && side.is_some() {
+        return Ok(true);
+    }
+    // `spans` empty means the axis is unusable, not that every rectangle was missed.
+    Ok(!spans.is_empty() && along.iter().all(|(below, above)| *below || *above))
 }
 
 /// The minimal per-op plane table two solids share: the

@@ -800,9 +800,19 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// **The fence: a boss hanging over the plate's edge is still refused.** Its circle crosses the
-    /// boundary of the face it stands on, and the plane carrying that boundary is parallel to the
-    /// axis — so the wall rule names it. This is the neighbour of (c) that stays shut.
+    /// **The fence: a boss hanging over the plate's edge is still refused — and the refusal moved
+    /// to the name that is true.**
+    ///
+    /// It used to be `WallMeetsLateral`, because the plate's `x = 4` wall is parallel to the boss's
+    /// axis and the wall rule judged the whole infinite band across that plane. But the wall lies
+    /// *below* the boss (`t ∈ [−2, 0]` against the boss's span `[0, 1]`), touching only the plane
+    /// its base sits in — "the wall meets the lateral surface" was simply false. Reading the span
+    /// as the **open** interval the uniform-slab theorem asks for lets the wall through, and the
+    /// real obstruction then names itself where it lives: the boss's rim circle crosses the plate
+    /// top's boundary segment, which is [`RejectReason::CircleMeetsSegment`] (M6-2b's arcs).
+    ///
+    /// ★ **Measured, not reasoned:** with the span read as closed instead, this comes back to
+    /// `WallMeetsLateral` — that is the whole difference the open reading makes here.
     #[test]
     fn a_boss_overhanging_the_plates_edge_is_still_refused() {
         let mut m = Model::new();
@@ -824,7 +834,7 @@ mod tests {
             matches!(
                 err,
                 BoolError::Rejected {
-                    reason: RejectReason::WallMeetsLateral,
+                    reason: RejectReason::CircleMeetsSegment,
                     ..
                 }
             ),
