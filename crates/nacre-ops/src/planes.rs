@@ -773,8 +773,7 @@ pub(crate) struct WorkingCyl {
 ///
 /// Per (plane class, cylinder) pair, with `n` the class's rational normal and `m`/`o`/`r` the
 /// cylinder's raw axis/origin/radius:
-/// - `n × m = 0` — a perpendicular cut. Passes, unless the class carries faces of **both**
-///   operands (a coplanar seating → [`RejectReason::SeatedCylinderCap`]).
+/// - `n × m = 0` — a perpendicular cut. Passes, a cap seated flush on the other body included.
 /// - `n · m = 0` — a wall parallel to the axis. Passes iff it provably misses the lateral
 ///   surface: `(n·o + d)² > r²·|n|²`; touching or piercing is
 ///   [`RejectReason::WallMeetsLateral`] (M6-2b's rulings and arcs).
@@ -787,8 +786,6 @@ pub(crate) fn cylinder_gate(
     model: &Model,
     cyl_surfs: &[Handle<Surface>],
     geom: &[WorkingPlane],
-    class_owner: &[Option<SolidSide>],
-    caps: &[Vec<usize>],
 ) -> Result<Vec<WorkingCyl>, BoolError> {
     // ★ Every question below is a **sign**, and the scalar layer answers signs totally: the
     // local checked-`Rat` closures this used to carry declined on overflow, which put a width
@@ -817,9 +814,9 @@ pub(crate) fn cylinder_gate(
         });
     }
 
-    for (cyl_ix, cyl) in cyls.iter().enumerate() {
+    for cyl in cyls.iter() {
         let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
-        for (c, wp) in geom.iter().enumerate() {
+        for wp in geom.iter() {
             if wp.rotated {
                 return Err(undecided());
             }
@@ -827,25 +824,22 @@ pub(crate) fn cylinder_gate(
                 return Err(undecided());
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
-            if nacre_scalar::parallel_rat(&n, &m) {
-                // Perpendicular cut — the circle population. ★ **Seating is about *this*
-                // cylinder's own **cap face**, not about any plane the operands happen to
-                // share.** The deferred population is a disk lying flush on a face of the other
-                // body, where seated circles arrive from both solids on one class. A ⊥ class the
-                // two operands merely share — a drilled plate's own face, flush with whatever is
-                // cutting it — carries no such contact, and the engine handles it (measured:
-                // `Common` of a drilled plate against a box sharing both its faces comes out
-                // exact and validates clean, while this guard was refusing it and the user-facing
-                // sentence promised the narrower thing).
-                //
-                // ★ A rim is not a cap: an inherited bore's wall ends on the plate's faces, and
-                // those carry a *holed* plane face, not a disk. Asking for the cap **face** is
-                // what tells the two apart (the span ends cannot — they are the same planes).
-                let seated = class_owner[c].is_none() && caps[cyl_ix].contains(&c);
-                if seated {
-                    return Err(reject(RejectReason::SeatedCylinderCap));
-                }
-            } else {
+            // A perpendicular cut is the circle population, and it passes — **including a cap
+            // seated flush on the other body's face**. That seating used to be refused, and the
+            // refusal was wider than anything it could name: what makes a seated circle hard is
+            // its boundary meeting the counterpart's boundary, and a boundary is either an edge
+            // on a plane (that plane is parallel to the axis → the wall rule below, or oblique →
+            // the oblique rule; both are already conservative because the wall rule judges the
+            // *infinite* plane, not the face) or another cylinder's rim (two circles can only
+            // overlap when the axes stand closer than r₁+r₂ → the pair rule below). So what the
+            // seated rule turned away was exactly the population whose circle lies wholly inside
+            // the counterpart's face — measured across the family (through hole, blind hole, boss
+            // fuse, common, drilling a pocket floor): every one exact and validating clean.
+            //
+            // A degenerate seating — a disk cell's ring point landing *on* the lateral surface —
+            // is still caught, downstream and by name, where it is actually undecidable
+            // (`arrangement`'s `CylinderGateUndecided`).
+            if !nacre_scalar::parallel_rat(&n, &m) {
                 if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
                     return Err(reject(RejectReason::ObliqueCylinderCut));
                 }
@@ -969,29 +963,11 @@ pub(crate) fn plane_index_setup(
 ) -> Result<PlaneSetup, BoolError> {
     let (mut setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
     // ★ The cylinder door: the population gate decides **by name** what stands in the way (an
-    // oblique cut, a wall touching the lateral surface, a seated cap, an undecidable pair), and
-    // what passes now goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here
-    // from C2 to C4b-2 is gone — the bands and the assembly that serve this population landed.
+    // oblique cut, a wall touching the lateral surface, an undecidable pair), and what passes now
+    // goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here from C2 to
+    // C4b-2 is gone — the bands and the assembly that serve this population landed.
     if !cyl_surfs.is_empty() {
-        // Each cylinder's **cap classes**: a plane face whose *outer* loop is a single rim of
-        // that cylinder is a disk — the shape the seated rule is about. A face that merely has
-        // such a rim as an *inner* loop is a drilled face, and that is an ordinary hole.
-        let mut caps: Vec<Vec<usize>> = vec![Vec::new(); cyl_surfs.len()];
-        for (i, row) in setup.planes.iter().enumerate() {
-            let (ClassIx::Plane(c), FaceRow::Plane(fi)) = (setup.plane_ix[i], row) else {
-                continue;
-            };
-            let Some(fh) = fi.face else { continue };
-            let outer = &model.faces.get(fh).outer;
-            let [he] = outer.half_edges[..] else { continue };
-            let carriers = model.edges.get(he.edge).surfaces;
-            for (k, &cyl_surf) in cyl_surfs.iter().enumerate() {
-                if carriers.contains(&cyl_surf) && !caps[k].contains(&c) {
-                    caps[k].push(c);
-                }
-            }
-        }
-        setup.cyls = cylinder_gate(model, &cyl_surfs, &setup.geom, &setup.class_owner, &caps)?;
+        setup.cyls = cylinder_gate(model, &cyl_surfs, &setup.geom)?;
     }
     Ok(setup)
 }

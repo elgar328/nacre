@@ -391,16 +391,16 @@ const CORPUS: [Fixture; 12] = [
     // raised while reading the operands (`plane_index_setup`), before any arrangement work.
     Fixture {
         name: "cylinder-operand",
-        // Flush caps: the cylinder's z ∈ [0,2] caps intern onto the box's own cap planes, so
-        // the shared ⊥ classes are a coplanar seating.
-        expect: Some(RejectReason::SeatedCylinderCap),
+        // ★ **The seated-cap row, and the second diff of that kind.** Flush caps: the cylinder's
+        // z ∈ [0,2] caps intern onto the box's own cap planes, so every ⊥ class carries faces of
+        // both operands. That used to be `SeatedCylinderCap` — a rule wider than anything it
+        // could name, since what makes a seated circle hard is its *boundary*, and every way a
+        // boundary can be met is already refused by the wall, oblique or pair rule. It **builds**
+        // now, and the name it carried no longer exists in the code.
+        expect: None,
         run: cylinder_operand,
-        raised: &[(
-            "seated_cylinder_cap",
-            None,
-            "crates/nacre-ops/src/planes.rs",
-        )],
-        surfaced: &[("seated_cylinder_cap", None)],
+        raised: &[],
+        surfaced: &[],
     },
     Fixture {
         name: "cylinder-notyet",
@@ -609,20 +609,12 @@ fn instrument_answers_for_itself() {
     // else in this file would notice if that attribute were dropped, and every row of the table
     // would silently collapse onto one line in `lib.rs`.
     let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let cyl = m.add_cylinder(
-        Point3::from_array([1.0, 1.0, 0.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        0.5,
-        2.0,
-    );
-    m.rebuild_adjacency();
-    let _ = boolean(&mut m, BoolKind::Common, a, cyl);
+    let _ = cylinder_wall_contact(&mut m);
     let c = reject_census::take();
     let site = c
         .raised
         .iter()
-        .find(|(s, _)| s.id.reason == "seated_cylinder_cap")
+        .find(|(s, _)| s.id.reason == "wall_meets_lateral")
         .map(|(s, _)| *s)
         .expect("the cylinder guard rang");
     assert!(

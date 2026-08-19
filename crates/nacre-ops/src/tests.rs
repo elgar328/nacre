@@ -5128,19 +5128,22 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
 
 // ---- boolean Common algorithm (M5-c3 commit 2) ----
 
+/// The oblique twin of the seated `Common` in `bands`: a cylinder lying on its side inside the
+/// box. Its caps cut the box's planes at an angle, so the intersection curve is an ellipse — the
+/// population M6-3 opens, and the one this door still names.
 #[test]
-fn common_rejects_non_planar_input() {
+fn common_rejects_an_oblique_cylinder() {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
     let cyl = m.add_cylinder(
         Point3::from_array([1.0, 1.0, 0.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
+        Vector3::from_array([1.0, 1.0, 1.0]).normalize().unwrap(),
         0.5,
         2.0,
     );
     assert_rejects(
         || boolean_one(&mut m, BoolKind::Common, a, cyl),
-        RejectReason::SeatedCylinderCap,
+        RejectReason::ObliqueCylinderCut,
     );
 }
 
@@ -6680,12 +6683,9 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
 /// ★★★ **What the app will do, done through the log alone**: a plate, a drill standing through
 /// it, and a `Cut`.
 ///
-/// ★ The drill **overshoots** the plate, and that is not decoration. A cylinder whose cap plane
-/// is flush with a face of the body it cuts is the seated-cap population M6-2a defers by name
-/// (`SeatedCylinderCap`): `class_owner[c] == None` means *both* operands have a face on that
-/// class, and a cap face there is the contact the gate declines. Measured here first — the drill
-/// standing exactly on the plate's own base plane came back `Rejected { SeatedCylinderCap }`. A
-/// "through all" drill overshoots anyway, which is what a kit step will have to do.
+/// The drill **overshoots** the plate, the way a "through all" hole is drawn. A drill that stops
+/// exactly on the plate's own faces works too (`bands`' seated-cap block measures that family);
+/// this fixture is the overshooting gesture a kit step emits.
 #[test]
 fn a_logged_cylinder_cuts_a_through_hole() {
     let plate =

@@ -648,10 +648,6 @@ pub enum RejectReason {
     /// both ways ([`nacre_scalar::cylinders_clear`]), so the refusal states a fact about the
     /// geometry rather than about the arithmetic that looked at it.
     CylinderPairContact,
-    /// A perpendicular plane class carries faces of **both** operands beside a cylinder — a
-    /// coplanar seating (a boss on a face, flush caps). The seated-coplanar merge with circle
-    /// boundaries is its own deferred population.
-    SeatedCylinderCap,
     /// The population gate could not decide a (plane, cylinder) pair **exactly** — a plane
     /// with no narrow rational description, a rotated class, a moved cylinder (its def is
     /// pre-motion), or checked-`Rat` overflow. Conservative honest refusal, never a guess.
@@ -897,7 +893,6 @@ impl RejectReason {
             Self::WallMeetsLateral => "wall_meets_lateral",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
             Self::CylinderPairContact => "cylinder_pair_contact",
-            Self::SeatedCylinderCap => "seated_cylinder_cap",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
             Self::DegenerateFace => "degenerate_face",
             Self::FrameOutOfRange => "frame_out_of_range",
@@ -936,7 +931,6 @@ impl RejectReason {
             | Self::WallMeetsLateral
             | Self::ObliqueCylinderCut
             | Self::CylinderPairContact
-            | Self::SeatedCylinderCap
             | Self::CylinderGateUndecided
             // A coordinate outside `Rat`'s range: the *kernel* cannot represent it exactly, not
             // that no answer exists — a wider rational would lift this.

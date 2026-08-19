@@ -553,13 +553,9 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// ★ **A drilled plate cut by a body flush with its faces** — the population the seated rule
-    /// was refusing while its own sentence promised something narrower.
-    ///
-    /// `Common` of a drilled plate with a box covering half of it: the two operands share the
-    /// plate's top and bottom planes, which used to read as "a cylinder cap lies flush" and
-    /// decline. No cap lies anywhere near them — the bore's rims end on *holed* faces — and the
-    /// engine gets the answer exactly right, which is what the guard now lets it do.
+    /// **A drilled plate cut by a body flush with its faces.** `Common` of a drilled plate with a
+    /// box covering half of it: the two operands share the plate's top and bottom planes, and the
+    /// bore's rims end on *holed* faces rather than on disks.
     #[test]
     fn a_drilled_plate_can_be_cut_by_a_body_flush_with_its_faces() {
         let mut m = Model::new();
@@ -592,16 +588,12 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// ★ **A cylinder whose own cap is coplanar with the other body's face declines as
-    /// "seated" — even standing far away.** Two coplanar planes are one class whichever way they
-    /// sit, so a *disk* of this cylinder on a class the other operand also has faces on is the
-    /// deferred flush-seating population, distance notwithstanding.
-    ///
-    /// ★★ The rule used to fire on **any** shared ⊥ class, which refused ordinary work: a drilled
-    /// plate cut by a body flush with its faces (see the test above). It now asks for this
-    /// cylinder's own **cap face**, which is what its user-facing sentence always claimed.
+    /// **A cylinder standing far away, whose caps happen to land on the box's own planes.** Two
+    /// coplanar planes are one class whichever way they sit, so this cylinder's *disks* share a
+    /// class with the box's faces while touching nothing — the shape that made the retired seated
+    /// rule mistake a shared class for a contact. `Cut` takes nothing away.
     #[test]
-    fn a_distant_cap_on_the_boxs_own_plane_declines_as_seated() {
+    fn a_distant_cap_on_the_boxs_own_plane_removes_nothing() {
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
         // Far from the box in x/y, but its caps land exactly on z = 0 and z = 2.
@@ -612,21 +604,237 @@ mod tests {
             2.0,
         );
         m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, a, b).expect("a cut that misses");
+        assert_eq!(out.len(), 1);
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        assert!((v - 8.0).abs() < 1e-12, "the box is untouched: {v}");
+    }
+
+    // ---- Seated caps: a cap flush on the other body's face (M6-2 finish) ----
+    //
+    // ★★ These five are the population the `SeatedCylinderCap` rule refused. What actually makes a
+    // seated circle hard is its boundary meeting the counterpart's — and a boundary is either an
+    // edge on a plane (parallel to the axis → `WallMeetsLateral`, oblique → `ObliqueCylinderCut`)
+    // or another cylinder's rim (→ `CylinderPairContact`). The two fences at the end of this block
+    // are those names still standing, so this file says both what was opened and what was not.
+    //
+    // ★★★ **Measured against the pre-deletion kernel, all seven of these came back
+    // `SeatedCylinderCap` — the two fences included.** The rule stood before the wall and the
+    // curved-depth rules and answered for them: an overhanging boss and a pair of coplanar-capped
+    // cylinders are refused for reasons that have nothing to do with seating, and the sentence a
+    // user got named the seating anyway. Deleting it does not only open the five; it lets the two
+    // that stay shut say what is actually in the way.
+
+    /// **(a) A through hole whose two caps are flush with the plate's own faces.** The drill neither
+    /// overshoots nor stops short: both cap planes coincide with the plate's, and every ⊥ class in
+    /// the operation carries faces of both operands.
+    #[test]
+    fn a_flush_through_drill_bores_the_plate() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let drill = m.add_cylinder(
+            Point3::from_array([2.0, 2.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let out =
+            crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a flush through hole");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 32.0 - std::f64::consts::PI * 0.25 * 2.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **(b) A blind hole seated on the face it is drilled from.** Only the lower cap is flush;
+    /// the upper one stops inside the plate and closes the bore itself.
+    #[test]
+    fn a_blind_drill_seated_on_the_plates_base_bores_it() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let drill = m.add_cylinder(
+            Point3::from_array([2.0, 2.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            1.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a seated blind hole");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 32.0 - std::f64::consts::PI * 0.25;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **(c) A boss standing on the plate.** `Fuse` with the cylinder's base cap flush on the
+    /// plate's top face — the seating a person draws first, and the one the retired rule refused.
+    #[test]
+    fn a_boss_seated_on_the_plate_fuses_to_it() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([2.0, 2.0, 2.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            1.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("a seated boss");
+        assert_eq!(out.len(), 1, "one body, not two");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 32.0 + std::f64::consts::PI * 0.25;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **(d) `Common` where the cylinder's caps sit on the box's own faces.** The intersection is
+    /// the whole cylinder — every one of its faces is seated or shared.
+    #[test]
+    fn a_flush_cylinder_meets_the_box_in_itself() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b = m.add_cylinder(
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Common, a, b).expect("a flush common");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = std::f64::consts::PI * 0.25 * 2.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **(i) Drilling the floor of a pocket.** The seated face here is not an original operand
+    /// face at all — it is a *floor the previous boolean made*, so the seating arrives through the
+    /// arrangement rather than from the modeller. A blind bore down from that floor.
+    #[test]
+    fn a_drill_seated_on_a_pocket_floor_bores_it() {
+        let mut m = Model::new();
+        let block = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([6.0; 3]));
+        // Open at the top — a tool that stopped inside would leave a void, not a pocket.
+        let pocket_tool = m.add_cuboid(
+            Point3::from_array([1.0, 1.0, 2.0]),
+            Point3::from_array([5.0, 5.0, 7.0]),
+        );
+        m.rebuild_adjacency();
+        let pocketed =
+            crate::boolean(&mut m, BoolKind::Cut, block, pocket_tool).expect("pocket")[0];
+        // The bore hangs from the pocket floor (z = 2) down into the material below it.
+        let drill = m.add_cylinder(
+            Point3::from_array([3.0, 3.0, 1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            1.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, pocketed, drill).expect("a floor bore");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 216.0 - 64.0 - std::f64::consts::PI * 0.25;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **The fence: a boss hanging over the plate's edge is still refused.** Its circle crosses the
+    /// boundary of the face it stands on, and the plane carrying that boundary is parallel to the
+    /// axis — so the wall rule names it. This is the neighbour of (c) that stays shut.
+    #[test]
+    fn a_boss_overhanging_the_plates_edge_is_still_refused() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([4.0, 2.0, 2.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            1.0,
+        );
+        m.rebuild_adjacency();
         let before = m.live_solids.clone();
-        let err = crate::boolean(&mut m, BoolKind::Cut, a, b).expect_err("coplanar caps");
+        let err =
+            crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("overhanging boss");
         assert!(
             matches!(
                 err,
                 BoolError::Rejected {
-                    reason: RejectReason::SeatedCylinderCap,
+                    reason: RejectReason::WallMeetsLateral,
                     ..
                 }
             ),
             "{err:?}"
         );
-        // ★ **A reject consumes nothing.** The operands are still live and still the same two, in
-        // the same order — the property the arena residue note is about, checked on the cylinder
-        // population where the refusals are new.
+        assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+    }
+
+    /// **The fence: two cylinders with coplanar caps are still refused** — by the name that
+    /// describes what is actually hard about them (two curved bodies to classify), not by a rule
+    /// about seating.
+    #[test]
+    fn two_cylinders_with_coplanar_caps_are_still_refused() {
+        let mut m = Model::new();
+        let a = m.add_cylinder(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        let b = m.add_cylinder(
+            Point3::from_array([5.0, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let before = m.live_solids.clone();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, a, b).expect_err("two curved bodies");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::CurvedComponentDepth,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
         assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
     }
 
