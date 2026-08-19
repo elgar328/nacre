@@ -1047,30 +1047,50 @@ impl Model {
         let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
         let mut frame = None;
         for (i, vh) in vertices.iter().enumerate() {
-            let tri = match self.vertices.get(*vh).def {
-                VertexDef::ThreePlane(tri) => tri,
-                // OnSeam pins a curve, not a point; a Branch *is* a point but its coordinates
-                // are quadratic-irrational — neither has the rational meet a datum statement
-                // needs, so both decline here (honest, and spelled per variant so the next
-                // variant is a compile error, not a silent fall-through).
-                VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
-            };
-            let mine = self.plane_motion(tri[0]);
-            if tri.iter().any(|h| self.plane_motion(*h) != mine) {
-                return None; // this vertex's carriers straddle frames
-            }
+            let (p, mine) = self.vertex_meet(*vh)?;
             match frame {
                 None if i == 0 => frame = Some(mine),
                 f if f == Some(mine) => {}
                 _ => return None, // the three vertices do not share one frame
             }
-            let names = tri.map(|h| self.surface_name.get(&h));
-            let [Some(a), Some(b), Some(c)] = names else {
-                return None;
-            };
-            pts[i] = Some(nacre_scalar::three_planes_big([a, b, c])?);
+            pts[i] = Some(p);
         }
         Some([pts[0].take()?, pts[1].take()?, pts[2].take()?])
+    }
+
+    /// **One vertex's exact meeting point, and the frame it is stated in** — the per-vertex half
+    /// of [`Model::through_meets`], which is its caller for the three-vertex case.
+    ///
+    /// The frame comes back beside the point because a coordinate means nothing without it: `None`
+    /// is the world, `Some(node)` a pre-motion frame. A consumer comparing this against anything
+    /// stated in world coordinates must **require `None`** — the three-vertex caller above only
+    /// needs the three to *agree*, which is a weaker demand and would silently mix frames if it
+    /// were copied.
+    ///
+    /// `None` on any of: a vertex that is not a three-plane point, carriers that do not share one
+    /// motion (then no frame holds a rational coordinate at all), or a carrier with no recorded
+    /// name.
+    pub fn vertex_meet(
+        &self,
+        v: Handle<Vertex>,
+    ) -> Option<(nacre_scalar::MeetPoint, Option<Handle<MotionNode>>)> {
+        let tri = match self.vertices.get(v).def {
+            VertexDef::ThreePlane(tri) => tri,
+            // OnSeam pins a curve, not a point; a Branch *is* a point but its coordinates
+            // are quadratic-irrational — neither has the rational meet a datum statement
+            // needs, so both decline here (honest, and spelled per variant so the next
+            // variant is a compile error, not a silent fall-through).
+            VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
+        };
+        let frame = self.plane_motion(tri[0]);
+        if tri.iter().any(|h| self.plane_motion(*h) != frame) {
+            return None; // this vertex's carriers straddle frames
+        }
+        let names = tri.map(|h| self.surface_name.get(&h));
+        let [Some(a), Some(b), Some(c)] = names else {
+            return None;
+        };
+        Some((nacre_scalar::three_planes_big([a, b, c])?, frame))
     }
 
     /// [`Model::through_meets`]' all-narrow projection — the form a **witness triangle** takes,
@@ -2014,6 +2034,37 @@ mod tests {
             "the rationals have no scale to disagree about"
         );
         assert!(rat(2.2).is_some());
+    }
+
+    /// ★ **Two doors, one fact.** `through_meets` used to solve each vertex inline; that body is
+    /// now `vertex_meet`, and the three-vertex door is its caller. The two must agree point for
+    /// point — otherwise the extraction quietly created a second spelling of the solve, which is
+    /// this repo's dominant defect shape.
+    ///
+    /// The frame comes back too, and on an unmoved box it is the world (`None`). That is the bit a
+    /// consumer comparing against world coordinates has to demand: `through_meets` only asks the
+    /// three to *agree*, which would pass a solid whose points are all stated pre-motion.
+    #[test]
+    fn one_vertex_and_three_vertices_solve_the_same_meet() {
+        let m = build([0.0; 3], [2.0, 3.0, 5.0]);
+        let vs: Vec<Handle<Vertex>> = m.vertices.iter().map(|(h, _)| h).collect();
+        assert!(vs.len() >= 3, "a box has corners");
+        let tri = [vs[0], vs[1], vs[2]];
+        let together = m
+            .through_meets(tri)
+            .expect("a box's corners share the world");
+        for (i, v) in tri.iter().enumerate() {
+            let (alone, frame) = m.vertex_meet(*v).expect("a corner is a three-plane point");
+            assert_eq!(
+                alone.narrow(),
+                together[i].narrow(),
+                "vertex {i} solves differently through the two doors"
+            );
+            assert_eq!(
+                frame, None,
+                "an unmoved box states its corners in the world"
+            );
+        }
     }
 
     fn build(min: [f64; 3], max: [f64; 3]) -> Model {
