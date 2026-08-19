@@ -910,6 +910,102 @@ pub fn point_plane_clearance_rat(coeffs: &[Rat; 4], p: &[Rat; 3], r: Rat) -> Ori
     ))
 }
 
+/// Which side of the **strip** a cylinder cuts out of a plane parallel to its axis a point lies
+/// on — see [`cylinder_strip_side`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StripSide {
+    /// Clear of the strip, on the `+(n × m)` side.
+    Plus,
+    /// Clear of the strip, on the `−(n × m)` side.
+    Minus,
+    /// Inside the strip, boundary included — the point is within `r` of the axis.
+    Inside,
+}
+
+/// **Where a point on a plane parallel to a cylinder's axis stands relative to the strip the
+/// cylinder cuts out of that plane.** Exact and total, at any width.
+///
+/// A plane with `n · m = 0` meets the solid cylinder in a strip of half-width `h = √(r² − d²)`
+/// (empty when the plane clears, `d ≥ r`), running along the axis direction. Decomposing
+/// `p − o` into three **mutually orthogonal** parts — along `n` (magnitude `d`), along `m`, and
+/// along `e = n × m` — gives `dist(p, axis)² = d² + t²` where `t` is the `e` component. So with
+/// `U = (p − o) · e = t·|e|` and `|e| = |n||m|`:
+///
+/// ```text
+/// clear of the strip  ⟺  U² > (r²|n|² − (n·o + c)²) · |m|²
+/// ```
+///
+/// No normalization and **no square root** — `h` never has to be formed.
+///
+/// ★ **`U = 0` answers [`StripSide::Inside`] before the magnitude test.** With a non-empty strip
+/// that is the truth (the point sits on the axis' own in-plane line). With an empty one it is
+/// merely conservative — and a caller that cares has already passed the plane through
+/// [`point_plane_clearance_rat`], which is the cheaper question and the one that decides
+/// emptiness. That ordering makes this function total with no precondition to forget.
+///
+/// **Preconditions:** `r ≥ 0`; `n · m = 0` (a plane that is not parallel to the axis cuts a conic,
+/// not a strip); and **`p` lies on that plane** — the decomposition takes the perpendicular
+/// distance from the *axis*, so an off-plane point would be judged against a distance that is not
+/// its own. All three are `debug_assert`ed.
+pub fn cylinder_strip_side(
+    coeffs: &[Rat; 4],
+    p: &MeetPoint,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    r: Rat,
+) -> StripSide {
+    use num_bigint::BigInt;
+    debug_assert!(r >= Rat::from_int(0), "a radius is not negative");
+    debug_assert!(
+        dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], m) == Orient::Zero,
+        "the strip only exists on a plane parallel to the axis"
+    );
+    // ★ `_dc` and `_dm` go unused, and that is the derivation showing: the plane's and the
+    // direction's own denominators enter only as positive squares in the common denominator, so
+    // they cancel. The point's and the origin's do **not** — the `c` term breaks homogeneity in
+    // `p`, the same way it does in `point_plane_clearance_rat`.
+    let (c, _dc) = lift4(coeffs);
+    let (oo, d_o) = lift3(o);
+    let (mm, _dm) = lift3(m);
+    let (pp, dp) = p.lift();
+    let (rn, rd) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let n = [c[0].clone(), c[1].clone(), c[2].clone()];
+    let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
+        (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
+    };
+    debug_assert!(
+        (0..3).map(|i| &n[i] * &pp[i]).sum::<BigInt>() + &c[3] * &dp == BigInt::from(0),
+        "the point must lie on the plane — the decomposition takes its distance from the axis's, \
+         so an off-plane point would be measured against a distance that is not its own"
+    );
+    // e = n × m, and w = (p − o) scaled by dp·d_o — both integer, both carrying their own
+    // positive factor, which is why only the sign of the combination below matters.
+    let e: [BigInt; 3] = core::array::from_fn(|i| {
+        let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+        &n[j] * &mm[k] - &n[k] * &mm[j]
+    });
+    let w: [BigInt; 3] = core::array::from_fn(|i| &pp[i] * &d_o - &oo[i] * &dp);
+    let u = dot(&w, &e);
+    if u.sign() == num_bigint::Sign::NoSign {
+        return StripSide::Inside;
+    }
+    // `n·o + c` over the common denominator `dc·d_o`, and the two squared magnitudes.
+    let g = dot(&n, &oo) + &c[3] * &d_o;
+    let nn = dot(&n, &n);
+    let m2 = dot(&mm, &mm);
+    // sign(U² − (r²|n|² − (n·o+c)²)|m|²), with every positive common factor cleared:
+    //   (W·E)²·rd²  vs  (rn²|N|²·d_o² − G²·rd²)·|M|²·dp²
+    let lhs = &u * &u * (&rd * &rd);
+    let rhs = (&rn * &rn * &nn * (&d_o * &d_o) - &g * &g * (&rd * &rd)) * &m2 * (&dp * &dp);
+    if big_sign(&(lhs - rhs)) <= 0 {
+        StripSide::Inside
+    } else if u.sign() == num_bigint::Sign::Plus {
+        StripSide::Plus
+    } else {
+        StripSide::Minus
+    }
+}
+
 /// A rational 4-vector (plane coefficients) as **(integer components, positive denominator)**.
 fn lift4(v: &[Rat; 4]) -> ([num_bigint::BigInt; 4], num_bigint::BigInt) {
     use num_bigint::BigInt;
@@ -1124,6 +1220,28 @@ impl MeetPoint {
         match self {
             MeetPoint::Narrow(p) => Some(p),
             MeetPoint::Wide(_) => None,
+        }
+    }
+
+    /// **(integer components, positive common denominator)** — `lift3`'s twin for a point whose
+    /// width may exceed `Rat`.
+    ///
+    /// This is what lets a sign predicate take a meet *whatever* its width: the answer is a
+    /// polynomial in these integers, so `Narrow` and `Wide` travel the same road and no
+    /// consumer has to carry a width limit inside its refusal.
+    pub fn lift(&self) -> ([num_bigint::BigInt; 3], num_bigint::BigInt) {
+        use num_bigint::BigInt;
+        use num_integer::Integer;
+        match self {
+            MeetPoint::Narrow(p) => lift3(p),
+            MeetPoint::Wide(p) => {
+                let d = p.iter().fold(BigInt::from(1), |l, (_, den)| l.lcm(den));
+                let num = core::array::from_fn(|i| {
+                    let (n, den) = &p[i];
+                    n * (&d / den)
+                });
+                (num, d)
+            }
         }
     }
 
@@ -4879,6 +4997,121 @@ mod tests {
             let a = Angle::from_deg(Rat::from_int(deg)).unwrap();
             prop_assert!(a.deg() >= Rat::from_int(0));
             prop_assert!(a.deg() < Rat::from_int(360));
+        }
+    }
+    // ---- the cylinder's strip on a wall plane (M6-2b preparation) ----
+
+    /// The running fixture: the wall plane `y = 12`, and a cylinder on the vertical line
+    /// `x = 8, y = 10` with `r = 3`. The axis stands `d = 2` from the plane, so the strip has
+    /// half-width `h = √(9 − 4) = √5 ≈ 2.236` about `x = 8`, and `e = n × m = x̂` — which makes
+    /// `U` simply `p.x − 8`.
+    mod strip {
+        // `crate::*`, not `super::*`: a glob import does not re-export what the parent glob-imported.
+        use crate::*;
+
+        fn r3(v: [i128; 3]) -> [Rat; 3] {
+            v.map(Rat::from_int)
+        }
+        fn wall(d: i128) -> [Rat; 4] {
+            [0, 1, 0, -d].map(Rat::from_int) // y = d
+        }
+        fn at(x: i128, y: i128, z: i128) -> MeetPoint {
+            MeetPoint::Narrow(r3([x, y, z]))
+        }
+        fn side(coeffs: &[Rat; 4], p: &MeetPoint, ox: i128) -> StripSide {
+            cylinder_strip_side(
+                coeffs,
+                p,
+                &r3([ox, 10, -1]),
+                &r3([0, 0, 1]),
+                Rat::from_int(3),
+            )
+        }
+
+        #[test]
+        fn a_point_each_side_of_the_strip_is_clear_and_says_which_side() {
+            assert_eq!(side(&wall(12), &at(11, 12, 0), 8), StripSide::Plus);
+            assert_eq!(side(&wall(12), &at(5, 12, 0), 8), StripSide::Minus);
+        }
+
+        #[test]
+        fn a_point_inside_the_strip_is_inside() {
+            // |U| = 2, and 4 < 5 — the point stands 2√2 from the axis, inside r = 3.
+            assert_eq!(side(&wall(12), &at(10, 12, 0), 8), StripSide::Inside);
+            // On the axis' own in-plane line: U = 0, answered before the magnitude test.
+            assert_eq!(side(&wall(12), &at(8, 12, 0), 8), StripSide::Inside);
+        }
+
+        /// **Exact tangency, with no irrational to dodge.** Put the plane *through* the axis
+        /// (`d = 0`), where the half-width is `r` itself — then a point at `U = r` sits exactly
+        /// on the lateral surface, and "boundary included" is a statement this test can make.
+        #[test]
+        fn a_point_exactly_on_the_surface_is_inside() {
+            assert_eq!(side(&wall(10), &at(11, 10, 0), 8), StripSide::Inside);
+            assert_eq!(side(&wall(10), &at(12, 10, 0), 8), StripSide::Plus);
+        }
+
+        /// ★ **The negative control.** The same point, the same plane — move the axis under it
+        /// and the answer must change. Without this, every assertion above could be passing for
+        /// a reason that has nothing to do with the cylinder.
+        #[test]
+        fn moving_the_axis_moves_the_answer() {
+            let p = at(11, 12, 0);
+            assert_eq!(side(&wall(12), &p, 8), StripSide::Plus); // U = 3, 9 > 5
+            assert_eq!(side(&wall(12), &p, 10), StripSide::Inside); // U = 1, 1 < 5
+        }
+
+        /// A plane that already clears the axis by more than `r` cuts **no** strip, so every
+        /// point off the axis' line is clear — including one the near plane called `Inside`.
+        #[test]
+        fn a_plane_clear_of_the_axis_cuts_no_strip() {
+            assert_eq!(side(&wall(12), &at(10, 12, 0), 8), StripSide::Inside);
+            assert_eq!(side(&wall(14), &at(10, 14, 0), 8), StripSide::Plus);
+        }
+
+        /// ★★ **The one case the `U = 0` early answer exists for, and the only one that measures
+        /// it.** On a plane that clears the axis the strip is *empty*, so `U² > (negative)` holds
+        /// even at `U = 0` — and a "which side" read off a zero would **invent** one. Removing the
+        /// early answer makes this say `Minus` for a point that has no side at all; every other
+        /// test in this module stays green through that change (measured), which is why it is
+        /// written out rather than assumed to be covered.
+        #[test]
+        fn a_point_with_no_side_is_never_given_one() {
+            assert_eq!(side(&wall(14), &at(8, 14, 0), 8), StripSide::Inside);
+        }
+
+        /// The coefficients' and the direction's magnitudes cancel — the derivation says their
+        /// denominators enter only as positive squares — so doubling them cannot move an answer.
+        #[test]
+        fn the_answer_does_not_depend_on_how_the_plane_and_axis_are_scaled() {
+            let p = at(11, 12, 0);
+            let plain = side(&wall(12), &p, 8);
+            let scaled = cylinder_strip_side(
+                &[0, 2, 0, -24].map(Rat::from_int),
+                &p,
+                &r3([8, 10, -1]),
+                &r3([0, 0, 7]),
+                Rat::from_int(3),
+            );
+            assert_eq!(plain, scaled);
+        }
+
+        /// ★ **A point too wide for `Rat` gets the same answer.** This is why the predicate takes
+        /// a `MeetPoint`: a meet that overflows `Rat` is an ordinary point of the geometry, and a
+        /// gate that declined it would put a width limit inside a refusal that claims to be about
+        /// shape.
+        #[test]
+        fn a_point_wider_than_rat_travels_the_same_road() {
+            use num_bigint::BigInt;
+            let huge: BigInt = BigInt::from(10u8).pow(40);
+            let wide = MeetPoint::Wide([
+                (BigInt::from(11) * &huge, huge.clone()),
+                (BigInt::from(12) * &huge, huge.clone()),
+                (BigInt::from(0), huge.clone()),
+            ]);
+            assert!(wide.narrow().is_none(), "the fixture must really be wide");
+            assert_eq!(side(&wall(12), &wide, 8), StripSide::Plus);
+            assert_eq!(side(&wall(12), &wide, 10), StripSide::Inside);
         }
     }
 }
