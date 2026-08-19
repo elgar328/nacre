@@ -24,12 +24,22 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| "cylinder".to_string());
 
-    for (label, tol) in [("coarse", 1.0), ("fine", 0.02)] {
-        let obj = tessellate(&model, &TessConfig { tol })
-            .expect("cylinder meshes")
-            .to_obj();
+    // ★ Both budgets, because either one alone can be the binding constraint: the
+    // angular one decides for ordinary radii and the sagitta one for very large
+    // circles. Varying only `tol` would leave this example silently showing the same
+    // mesh twice.
+    for (label, tol, angle) in [("coarse", 1.0, 20.0), ("fine", 0.02, 2.0)] {
+        let obj = tessellate(
+            &model,
+            &TessConfig {
+                tol,
+                max_angle_deg: angle,
+            },
+        )
+        .expect("cylinder meshes")
+        .to_obj();
         let path = format!("{prefix}_{label}.obj");
         std::fs::write(&path, obj).expect("write OBJ file");
-        println!("wrote {path} (tol {tol}) — open in Quick Look");
+        println!("wrote {path} (tol {tol}, angle {angle}°) — open in Quick Look");
     }
 }

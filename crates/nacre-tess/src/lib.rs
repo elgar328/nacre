@@ -149,16 +149,40 @@ pub struct Tessellation {
     pub by_face: HashMap<Handle<Face>, Vec<Handle<TessTriangle>>>,
 }
 
-/// Tessellation tolerance: the maximum chord deviation (sagitta) a sampled
-/// polyline/mesh may have from the exact geometry.
+/// How finely a curve may be sampled — **two budgets, because they fail
+/// differently.**
+///
+/// * `tol` is an **absolute** chord deviation (sagitta): the sampled polyline may
+///   not stray further than this from the exact curve, in model units.
+/// * `max_angle_deg` is a **relative** one: consecutive chords may not turn by more
+///   than this. On a circle the two are one question asked twice — the sagitta is
+///   `r(1 − cos(θ/2))` for a turn of `θ` — so the angular budget is the same rule
+///   with the radius divided out, which is what makes it **scale-invariant**.
+///
+/// A single absolute budget is not "by curvature": it yields `n ≈ π√(r/2·tol)`, so a
+/// small circle gets *fewer* segments (its absolute error was small to begin with) and
+/// comes out visibly polygonal — a radius of `0.2` used to be a decagon. The angular
+/// budget is what a small circle needs; the absolute one is what a circle much larger
+/// than the tolerance needs. Neither substitutes for the other, so the segment count
+/// takes whichever asks for more.
 #[derive(Clone, Copy, Debug)]
 pub struct TessConfig {
     pub tol: f64,
+    /// Maximum turn between consecutive chords, in degrees.
+    ///
+    /// On a regular polygon this one number is three at once: the central angle of a
+    /// segment, the kink at each vertex, and the angle between adjacent facet normals
+    /// — so it bounds both how polygonal a silhouette looks and how banded its shading
+    /// is. `2°` puts a circle that fills an 800px viewport within 0.06px of round.
+    pub max_angle_deg: f64,
 }
 
 impl Default for TessConfig {
     fn default() -> Self {
-        Self { tol: 1e-2 }
+        Self {
+            tol: 1e-2,
+            max_angle_deg: 2.0,
+        }
     }
 }
 
@@ -262,7 +286,7 @@ fn sample_edge(
         Curve::Circle(c) => {
             // Full-circle rim (v0 == v1 = seam): point 0 is the seam vertex at
             // angle 0 (= centre + r·ref_dir), the rest are interior edge points.
-            let n = circle_segments(cfg.tol, c.radius());
+            let n = circle_segments(cfg, c.radius());
             let mut ring = Vec::with_capacity(n);
             ring.push(vertex_of(t, vmap, model, v0));
             for i in 1..n {
@@ -278,21 +302,43 @@ fn sample_edge(
     }
 }
 
-/// Segments to approximate a circle of `radius` within `tol` sagitta:
-/// `r(1 − cos(π/n)) ≤ tol` ⟹ `n ≥ π / acos(1 − tol/r)`. Clamped for roundness
-/// and against pathological inputs.
-fn circle_segments(tol: f64, radius: f64) -> usize {
+/// Segments for a circle of `radius`: **whichever of the two budgets asks for more**
+/// ([`TessConfig`] says why there are two).
+///
+/// * sagitta: `r(1 − cos(π/n)) ≤ tol` ⟹ `n ≥ π / acos(1 − tol/r)` — grows as `√r`, so
+///   it is the term that speaks for a circle large in model units;
+/// * angle: `360°/n ≤ Δθ` ⟹ `n ≥ 360/Δθ` — **the same for every radius**, so it is the
+///   term that keeps a small circle from being an octagon.
+///
+/// With the default `2°` the angular term leads until `r ≈ 66` (that is `tol` divided by
+/// `1 − cos(1°)`), which covers ordinary part sizes; past it the sagitta term takes over.
+///
+/// Pathological inputs are clamped rather than refused — a non-positive `tol` asks for
+/// the finest we allow, a non-positive or absurd angle falls back on the other term and
+/// the `[MIN, MAX]` clamp. The mesh is a cache; it answers rather than argues.
+fn circle_segments(cfg: &TessConfig, radius: f64) -> usize {
     const MIN: usize = 8;
     const MAX: usize = 4096;
-    let ratio = tol / radius;
-    if ratio <= 0.0 {
-        return MAX; // tol ≤ 0: as fine as we allow
-    }
-    if ratio >= 2.0 {
-        return MIN; // whole circle already within tol
-    }
-    let n = (std::f64::consts::PI / (1.0 - ratio).acos()).ceil();
-    (n as usize).clamp(MIN, MAX)
+    let by_sagitta = {
+        let ratio = cfg.tol / radius;
+        if ratio <= 0.0 {
+            MAX // tol ≤ 0: as fine as we allow
+        } else if ratio >= 2.0 {
+            MIN // whole circle already within tol
+        } else {
+            let n = (std::f64::consts::PI / (1.0 - ratio).acos()).ceil();
+            (n as usize).clamp(MIN, MAX)
+        }
+    };
+    let by_angle = {
+        let n = (360.0 / cfg.max_angle_deg).ceil();
+        if n.is_finite() && n >= 0.0 {
+            (n as usize).clamp(MIN, MAX)
+        } else {
+            MIN
+        }
+    };
+    by_sagitta.max(by_angle)
 }
 
 /// Gather a loop's boundary as an ordered ring of shared mesh vertices,
@@ -518,7 +564,7 @@ mod tests {
     #[test]
     fn cylinder_tessellates_watertight() {
         let cfg = TessConfig::default();
-        let n = circle_segments(cfg.tol, 2.0);
+        let n = circle_segments(&cfg, 2.0);
         let t = tessellate(&cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0), &cfg).unwrap();
         assert_eq!(t.vertices.len(), 2 * n); // two rim rings, seam vertices shared
         assert_eq!(t.triangles.len(), 4 * n - 4); // 2 caps (n−2) + band (2n)
@@ -542,18 +588,75 @@ mod tests {
         }
     }
 
+    /// ★ **The radius is 20 so that the sagitta budget is the one being measured.**
+    /// It used to be 2, and with the angular budget in place both tolerances would
+    /// answer the same 180 segments there — the test would have compared a number
+    /// with itself and passed on any `tol` at all. The angular term leads until
+    /// `r ≈ 66·(tol/0.01)`, so a radius past that is where "finer tolerance" still
+    /// means something.
     #[test]
     fn finer_tolerance_adds_triangles() {
-        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let coarse = tessellate(&m, &TessConfig { tol: 0.5 })
+        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 20.0, 5.0);
+        let at = |tol| {
+            tessellate(
+                &m,
+                &TessConfig {
+                    tol,
+                    ..Default::default()
+                },
+            )
             .unwrap()
             .triangles
-            .len();
-        let fine = tessellate(&m, &TessConfig { tol: 0.001 })
-            .unwrap()
-            .triangles
-            .len();
+            .len()
+        };
+        let (coarse, fine) = (at(0.5), at(0.001));
         assert!(fine > coarse, "fine {fine} should exceed coarse {coarse}");
+    }
+
+    /// ★★ **The promise, measured on the mesh rather than recomputed from the rule.**
+    ///
+    /// Every turn between consecutive chords of a rim must be within the angular
+    /// budget — that is what "the circle does not look polygonal" means, and it is a
+    /// property of the *output*, so it survives a change of formula.
+    #[test]
+    fn no_chord_turns_more_than_the_angular_budget() {
+        let cfg = TessConfig::default();
+        for r in [0.1, 0.5, 3.0, 20.0] {
+            let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r, 5.0);
+            let t = tessellate(&m, &cfg).unwrap();
+            for (_, ring) in t.by_edge.iter() {
+                if ring.len() < 3 {
+                    continue; // a straight seam edge has no turn to measure
+                }
+                let p: Vec<Point3> = ring.iter().map(|&h| t.vertices.get(h).pos).collect();
+                for i in 0..p.len() {
+                    let (a, b, c) = (p[i], p[(i + 1) % p.len()], p[(i + 2) % p.len()]);
+                    let (u, v) = ((b - a).normalize(), (c - b).normalize());
+                    let (Some(u), Some(v)) = (u, v) else { continue };
+                    let turn = u.dot(v).clamp(-1.0, 1.0).acos().to_degrees();
+                    assert!(
+                        turn <= cfg.max_angle_deg + 1e-9,
+                        "r={r}: a chord turned {turn}°, past the {}° budget",
+                        cfg.max_angle_deg
+                    );
+                }
+            }
+        }
+    }
+
+    /// ★ **Scale invariance**: the angular budget is a *relative* one, so a small
+    /// circle and a large one are cut into the same number of pieces. Under the old
+    /// absolute-only rule these were 10 and 100 — the very asymmetry that made small
+    /// holes look like polygons.
+    #[test]
+    fn a_small_circle_is_cut_as_finely_as_a_large_one() {
+        let cfg = TessConfig::default();
+        let n = |r| circle_segments(&cfg, r);
+        assert_eq!(n(0.2), n(20.0));
+        assert_eq!(n(0.2), 180, "360°/2°");
+        assert!(n(0.1) > 8, "a small circle is no longer the octagon floor");
+        // Past the crossover the sagitta budget leads and asks for more.
+        assert!(n(1000.0) > n(20.0));
     }
 
     proptest! {
@@ -584,7 +687,7 @@ mod tests {
         ) {
             prop_assume!(Vector3::from_array(axis).norm() > 0.1);
             let cfg = TessConfig::default();
-            let n = circle_segments(cfg.tol, r);
+            let n = circle_segments(&cfg, r);
             let t = tessellate(&cylinder([0.0, 0.0, 0.0], axis, r, h), &cfg).unwrap();
             prop_assert_eq!(t.vertices.len(), 2 * n);
             prop_assert_eq!(t.triangles.len(), 4 * n - 4);
