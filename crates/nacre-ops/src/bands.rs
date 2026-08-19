@@ -1283,6 +1283,136 @@ mod tests {
         );
     }
 
+    // ---- A blind bore is usable, not just buildable ----
+    //
+    // ★★ A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the
+    // same as any planar wall meeting a class along an edge. It used to contribute nothing, and
+    // `edge_mask`'s `Graze > Seated` precedence exists exactly for the corner where the two
+    // disagree — a **blind bore's ceiling**. Missing it, the cap's seated rule flipped the wrong
+    // label bit, the band's two ends contradicted each other, and the *next* boolean on that solid
+    // came back `CylinderGateUndecided`. A through bore has no ceiling and was always fine.
+
+    /// A plate bored to `hole_h` deep, ready to be operated on again.
+    fn plate_with_a_bore(hole_h: f64) -> (Model, Handle<Solid>) {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let hole = m.add_cylinder(
+            Point3::from_array([8.0, 10.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            hole_h,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore");
+        (m, out[0])
+    }
+
+    /// A boss well clear of the bore (walls 4+ from the axis, r = 3), fused onto the plate.
+    fn fuse_a_clear_boss(m: &mut Model, s: Handle<Solid>, z0: f64) -> Vec<Handle<Solid>> {
+        let boss = m.add_cuboid(
+            Point3::from_array([4.0, 4.0, z0]),
+            Point3::from_array([12.0, 6.0, 8.0]),
+        );
+        m.rebuild_adjacency();
+        crate::boolean(m, BoolKind::Fuse, s, boss).expect("the boss")
+    }
+
+    #[test]
+    fn a_blind_bore_can_be_fused_onto_afterwards() {
+        let (mut m, s) = plate_with_a_bore(3.0);
+        let out = fuse_a_clear_boss(&mut m, s, 5.0);
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        assert_eq!(
+            lateral_face_counts(&m, out[0]),
+            vec![1],
+            "the bore's wall survives"
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4000.0 - std::f64::consts::PI * 27.0 + 48.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// The `Cut` twin. ★ The tool is sunk into the plate (`z` from 3): a body merely *resting* on
+    /// the top face is a coplanar contact that meets `StraightAngle`, a different refusal
+    /// entirely, and this fixture would then be measuring that instead of the bore.
+    #[test]
+    fn a_blind_bore_can_be_cut_afterwards() {
+        let (mut m, s) = plate_with_a_bore(3.0);
+        let tool = m.add_cuboid(
+            Point3::from_array([4.0, 4.0, 3.0]),
+            Point3::from_array([12.0, 6.0, 8.0]),
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, s, tool).expect("the cut");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4000.0 - std::f64::consts::PI * 27.0 - 8.0 * 2.0 * 2.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★★ **The script a person actually writes**: a blind hole, then a second hole somewhere
+    /// else. It goes through the cylinder-pair rule and two lateral surfaces at once — a road the
+    /// boss fixtures above do not take.
+    #[test]
+    fn a_blind_bore_can_be_drilled_beside() {
+        let (mut m, s) = plate_with_a_bore(3.0);
+        let second = m.add_cylinder(
+            Point3::from_array([20.0, 10.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            7.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, s, second).expect("the second hole");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        assert_eq!(
+            lateral_face_counts(&m, out[0]),
+            vec![1, 1],
+            "two bores, one wall each"
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4000.0 - std::f64::consts::PI * 27.0 - std::f64::consts::PI * 45.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★ **The control**: a through bore and an overshooting one already worked, and must keep
+    /// working. Without this, a change that merely made *any* second boolean succeed would look
+    /// like the repair.
+    #[test]
+    fn a_through_bore_is_unaffected() {
+        for h in [5.0, 7.0] {
+            let (mut m, s) = plate_with_a_bore(h);
+            let out = fuse_a_clear_boss(&mut m, s, 5.0);
+            assert_eq!(out.len(), 1);
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "{:?}",
+                nacre_validate::validate(&m)
+            );
+            let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+            let want = 4000.0 - std::f64::consts::PI * 45.0 + 48.0;
+            assert!((v - want).abs() < 1e-9, "h={h}: {v} vs {want}");
+        }
+    }
+
     /// **A drill that misses.** `Cut` returns the box untouched and `Fuse` returns two bodies —
     /// the population where a cylinder is present but no circle is ever emitted, so the whole
     /// curved path has to stay out of the way.

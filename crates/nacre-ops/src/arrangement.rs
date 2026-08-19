@@ -866,22 +866,24 @@ fn trace_one(
     let w_normal = planes[wc].plane.normal();
     for (fp, fl) in faces_in {
         let fp = *fp;
-        // A **lateral face** (a cylinder row): its trace on a ⊥ class is a transversal circle
-        // when the class's axis parameter lies strictly inside the face's rim span — outside
-        // it (or at a rim, which coplanarity would have folded into a seated class) the
-        // lateral does not reach this plane. Non-⊥ classes cannot carry a circle, and the
-        // population gate has already named every such interaction.
+        // A **lateral face** (a cylinder row): what it leaves on a ⊥ class is a **transversal**
+        // circle where the class cuts it in two and a **graze** where the class carries one of its
+        // rims — see [`circle_on_class`]. Beyond the span it leaves nothing. Non-⊥ classes cannot
+        // carry a circle, and the population gate has already named every such interaction.
         if let ClassIx::Cyl(k) = plane_ix[fp] {
             let cf = match &faces[fp] {
                 FaceRow::Cylinder(cf) => cf,
                 FaceRow::Plane(_) => unreachable!("ClassIx::Cyl marks a cylinder row"),
             };
-            match transversal_circle(cf, &planes[wc]) {
-                Ok(Some(())) => out.circles.push(CircleTrace {
+            match circle_on_class(cf, &planes[wc]) {
+                Ok(Some(on)) => out.circles.push(CircleTrace {
                     cyl: k,
                     solid: which,
-                    kind: SegKind::Transversal {
-                        mat: cf.orient_sign,
+                    kind: match on {
+                        CylOnClass::Crosses => SegKind::Transversal {
+                            mat: cf.orient_sign,
+                        },
+                        CylOnClass::Grazes { body_above } => SegKind::Graze { body_above },
                     },
                 }),
                 Ok(None) => {}
@@ -1000,10 +1002,20 @@ fn trace_one(
 /// class with the rim's cap and traced seated). `Err` — the face cannot answer (no rim span,
 /// or the class has no exact description the gate would already have refused); declining
 /// beats a silently missing circle, which would corrupt every label on the class.
-fn transversal_circle(
+/// What a lateral face leaves on a ⊥ plane class — see [`circle_on_class`].
+pub(crate) enum CylOnClass {
+    /// The class cuts the face in two: the solid straddles it here.
+    Crosses,
+    /// The class carries one of the face's **rims**: the wall touches it along that circle with
+    /// its body to one side. `body_above` is that side, about the class's **stored** normal —
+    /// the frame every cell label is written in.
+    Grazes { body_above: bool },
+}
+
+fn circle_on_class(
     cf: &crate::planes::CylFaceInfo,
     wp: &WorkingPlane,
-) -> Result<Option<()>, DeclineKind> {
+) -> Result<Option<CylOnClass>, DeclineKind> {
     let Some(coeffs) = wp.base_rat else {
         return Err(DeclineKind::CylSpan);
     };
@@ -1021,10 +1033,32 @@ fn transversal_circle(
     let Some(span) = cf.span else {
         return Err(DeclineKind::CylSpan);
     };
-    match crate::planes::axis_param_of_plane(&coeffs, &cf.def) {
-        None => Err(DeclineKind::CylSpan),
-        Some(t) => Ok((span[0] < t && t < span[1]).then_some(())),
+    let Some(t) = crate::planes::axis_param_of_plane(&coeffs, &cf.def) else {
+        return Err(DeclineKind::CylSpan);
+    };
+    if span[0] < t && t < span[1] {
+        return Ok(Some(CylOnClass::Crosses));
     }
+    // ★★ **A rim is a graze, not a miss.** This used to answer "the lateral does not reach this
+    // plane", on the premise that coplanarity would have folded a rim into a seated class — but a
+    // *cylinder* face never becomes seated on a plane class, so the touch was simply dropped.
+    // Every planar wall meeting a class along an edge contributes a `Graze`; the lateral
+    // contributed nothing, and `edge_mask`'s precedence (`Graze > Seated`) exists exactly for the
+    // corner where the two disagree. On a convex cap they agree and the omission is invisible; at
+    // the **reflex dihedral of a blind bore's ceiling** they disagree, the seated rule then flipped
+    // the wrong label bit, and the *next* boolean on that solid came back
+    // `CylinderGateUndecided` — while a through bore, which has no ceiling, was fine.
+    //
+    // Which side the body is on: the face runs from `span[0]` toward `span[1]`, so at the low rim
+    // it lies toward `+t` and at the high rim toward `−t`.
+    let up = crate::planes::plus_t_is_above(wp, &cf.def);
+    if t == span[0] {
+        return Ok(Some(CylOnClass::Grazes { body_above: up }));
+    }
+    if t == span[1] {
+        return Ok(Some(CylOnClass::Grazes { body_above: !up }));
+    }
+    Ok(None)
 }
 
 /// Both operands' traces on plane class `wc`, merged into one `Trace` (segments keep their
@@ -2052,6 +2086,12 @@ fn innermost_host(
 }
 
 /// A per-solid, per-side material label of one cell: `[A_above, A_below, B_above, B_below]`.
+///
+/// ★★ **"Above" is the side of the class's *stored* plane normal** — `trace_one`'s `w_normal`,
+/// which is what every `body_above` in this file is measured against. Not the class's canonical
+/// rational name (that points the other way on half the classes) and not the root face's outward
+/// (`frame_sign` relates the two, and `emit`'s `flip` is what folds it back in). The absence of
+/// this sentence is what let a lateral face's rim contribution be written in the wrong frame.
 type Label = [bool; 4];
 
 /// The flip mask an edge applies when crossed, grouping its `merged` contributions **per solid**.
@@ -5193,10 +5233,10 @@ mod tests {
     }
 
     /// A cylinder cap alone on its class: the disk's circular outer traces as a **seated
-    /// circle**, and the cell bricks turn it into a disk `+1` / contour `−1` pair whose labels
-    /// say "body on the cap's inside" — with no segments anywhere. The emitted face's outer is
-    /// the circle itself ([`crate::boolean::Bound::Circle`]), the vocabulary C4b's assembly
-    /// will consume.
+    /// circle** — and the lateral, whose rim lies on this very plane, adds its **graze** beside it.
+    /// The cell bricks turn the pair into a disk `+1` / contour `−1` pair whose labels say "body on
+    /// the cap's inside", with no segments anywhere. The emitted face's outer is the circle itself
+    /// ([`crate::boolean::Bound::Circle`]), the vocabulary C4b's assembly will consume.
     #[test]
     fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
         let mut m = Model::new();
@@ -5233,16 +5273,23 @@ mod tests {
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
         // The class's normal is the cap's own outward +z (the cap is its only member), so the
-        // body — below z=3 — is `body_above: false`.
+        // body — below z=3 — is `body_above: false`. ★ **Two contributions, not one**: the cap is
+        // seated here and the lateral's rim grazes here, and on this convex cap they agree.
         assert!(planes[wc].plane.normal().as_array()[2] > 0.0);
+        let mut kinds: Vec<SegKind> = tr
+            .circles
+            .iter()
+            .inspect(|c| assert!(c.cyl == 0 && c.solid == SolidSide::B, "{:?}", tr.circles))
+            .map(|c| c.kind)
+            .collect();
+        kinds.sort_by_key(|k| matches!(k, SegKind::Graze { .. }));
         assert!(
             matches!(
-                tr.circles[..],
-                [CircleTrace {
-                    cyl: 0,
-                    solid: SolidSide::B,
-                    kind: SegKind::Seated { body_above: false },
-                }]
+                kinds[..],
+                [
+                    SegKind::Seated { body_above: false },
+                    SegKind::Graze { body_above: false },
+                ]
             ),
             "{:?}",
             tr.circles
@@ -5528,9 +5575,12 @@ mod tests {
             bottom.circles
         );
 
-        // The cylinder's own top cap at z=1.5 (inside the box): the rim-coincident plane traces
-        // the cap's **seated** circle, and the lateral adds no transversal twin (t = span end,
-        // not strictly inside).
+        // The cylinder's own top cap at z=1.5 (inside the box): the rim-coincident plane carries
+        // **two** contributions — the cap's `Seated` circle and the lateral's `Graze`, because a
+        // rim is a touch, not a miss. It adds no *transversal* twin (t = span end, not strictly
+        // inside). ★ On a **convex** cap the two agree about which side the body is on; the whole
+        // point of carrying both is the reflex corner (a blind bore's ceiling) where they do not,
+        // and `edge_mask`'s `Graze > Seated` then picks the right one.
         let cap = trace_on_class_of(
             &m,
             a,
@@ -5544,15 +5594,107 @@ mod tests {
             &plane_ix,
         );
         assert!(cap.declined.is_empty(), "{:?}", cap.declined);
-        assert_eq!(
-            cap.circles
-                .iter()
-                .map(|c| matches!(c.kind, SegKind::Seated { .. }))
-                .collect::<Vec<_>>(),
-            vec![true],
-            "one circle, seated: {:?}",
+        let sides: Vec<(bool, bool)> = cap
+            .circles
+            .iter()
+            .filter_map(|c| match c.kind {
+                SegKind::Seated { body_above } => Some((false, body_above)),
+                SegKind::Graze { body_above } => Some((true, body_above)),
+                SegKind::Transversal { .. } => None,
+            })
+            .collect();
+        assert_eq!(sides.len(), 2, "seated and graze: {:?}", cap.circles);
+        assert!(
+            sides.iter().any(|(g, _)| *g) && sides.iter().any(|(g, _)| !*g),
+            "one of each kind: {:?}",
             cap.circles
         );
+        assert_eq!(
+            sides[0].1, sides[1].1,
+            "a convex cap's two contributions agree on the body's side: {:?}",
+            cap.circles
+        );
+    }
+
+    /// ★★ **The corner the graze exists for.** On a convex cap the lateral's rim-graze and the
+    /// cap's seated circle say the same thing, so carrying both changes nothing — the test above
+    /// locks that. Here they **disagree**: at a blind bore's ceiling the plate's material is above
+    /// the cap while the bore's wall hangs below it, a reflex dihedral in the plane. `edge_mask`'s
+    /// `Graze > Seated` precedence then picks the wall's side, which is the whole mechanism of the
+    /// repair; before the graze existed, the seated rule flipped the wrong label bit and the next
+    /// boolean on that solid came back `CylinderGateUndecided`.
+    #[test]
+    fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+        let hole = m.add_cylinder(
+            Point3::from_array([5.0, 5.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            3.0,
+        );
+        m.rebuild_adjacency();
+        let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        // A second operand so the arrangement runs on the bored solid as an operand.
+        let boss = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 10.0]),
+            Point3::from_array([2.0, 2.0, 12.0]),
+        );
+        m.rebuild_adjacency();
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(&m, bored, boss).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        let tr = trace_on_class_of(
+            &m,
+            bored,
+            boss,
+            class_at_z(&planes, 3.0), // the bore's ceiling
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+        );
+        let seated: Vec<bool> = tr
+            .circles
+            .iter()
+            .filter_map(|c| match c.kind {
+                SegKind::Seated { body_above } => Some(body_above),
+                _ => None,
+            })
+            .collect();
+        let grazes: Vec<bool> = tr
+            .circles
+            .iter()
+            .filter_map(|c| match c.kind {
+                SegKind::Graze { body_above } => Some(body_above),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            seated.len(),
+            1,
+            "the ceiling is seated here: {:?}",
+            tr.circles
+        );
+        assert_eq!(grazes.len(), 1, "the wall grazes here: {:?}", tr.circles);
+        assert_ne!(
+            seated[0], grazes[0],
+            "a reflex dihedral: the cap and the wall put the body on opposite sides — this is the \
+             only place the precedence matters, and the only reason the graze is emitted at all"
+        );
+        // The wall hangs below the ceiling, and that is the side `edge_mask` believes.
+        assert!(!grazes[0], "the bore's wall is below its ceiling");
     }
 
     /// Partial overlap (E5) is NOT merged — different endpoints mean different edges. a and b share
