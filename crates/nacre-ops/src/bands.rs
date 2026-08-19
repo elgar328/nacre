@@ -41,53 +41,75 @@ use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, reject};
 use nacre_scalar::Rat;
 
-/// One cylinder class, as the band pass reads it.
-#[cfg_attr(not(test), allow(dead_code))] // the production caller arrives with C4b-3
+/// **One lateral face**, as the band pass reads it.
+///
+/// ★★ **The row is a face, not a class.** A cylinder *class* is one lateral `Surface` handle
+/// (`planes.rs`' `cyl_ix.entry(cf.surf)`), and one surface can carry **several faces of one
+/// solid** — bore a plate through and then cut away the middle of the bore, and its wall becomes
+/// two disjoint bands. "Which parts survive" is a question about a face; the class only says which
+/// surface that face lies on.
+///
+/// This used to be one row per class, with the first face speaking for the rest. The others' spans
+/// were then clipped away in [`bands_of`] and their bands never emitted, which left the result
+/// shell open — the boolean came back `OpenResultShell`, naming a symptom of our own omission.
+///
+/// ★ **Merging the spans into one `min..max` is not the fix either**: it would invent a band across
+/// the gap where the solid has no face at all.
 pub(crate) struct CylRow {
+    /// The [`ClassIx::Cyl`] payload — which lateral surface this face lies on. Several rows may
+    /// share it.
+    pub(crate) class: usize,
     pub(crate) def: nacre_topo::CylinderDef,
-    /// The lateral face's own extent in the axis parameter (its two rims).
+    /// **This face's** own extent in the axis parameter (its two rims).
     pub(crate) span: [Rat; 2],
-    /// Which operand the cylinder belongs to.
+    /// Which operand this face belongs to.
     pub(crate) side: SolidSide,
 }
 
-/// One row per cylinder class, in `ClassIx::Cyl` numbering order.
+/// One row per lateral **face**, ordered by `(class, lower t)`.
 ///
-/// `None` for a class whose lateral face could not state its rim span — the tracer declines that
-/// face for the same reason (`DeclineKind::CylSpan`), so a missing span here is a class the
-/// arrangement has already refused.
-#[cfg_attr(not(test), allow(dead_code))] // the production caller arrives with C4b-3
+/// ★ That order is [`band_faces`]' replay contract stated at the row level. A class's faces have
+/// disjoint spans, so sorting by `(class, span[0])` keeps each class's bands in ascending `t` —
+/// the contract generalizes rather than bends. With one face per class it *is* the old class-index
+/// order, which is why existing results do not move.
+///
+/// A face whose rim span cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
+/// declines it for the same reason.
 pub(crate) fn cyl_rows(
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     n_a: usize,
 ) -> Result<Vec<CylRow>, BoolError> {
-    let mut out: Vec<Option<CylRow>> = Vec::new();
+    let mut out: Vec<CylRow> = Vec::new();
+    let mut n_class = 0usize;
     for (i, row) in faces.iter().enumerate() {
         let (ClassIx::Cyl(k), FaceRow::Cylinder(cf)) = (plane_ix[i], row) else {
             continue;
         };
-        if out.len() <= k {
-            out.resize_with(k + 1, || None);
-        }
-        if out[k].is_some() {
-            continue; // one row per class; the first lateral face of it speaks
-        }
+        n_class = n_class.max(k + 1);
         let Some(span) = cf.span else {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
                 face: cf.face,
             }));
         };
-        out[k] = Some(CylRow {
+        out.push(CylRow {
+            class: k,
             def: cf.def.clone(),
             span,
             side: if i < n_a { SolidSide::A } else { SolidSide::B },
         });
     }
-    out.into_iter()
-        .map(|r| r.ok_or_else(|| reject(RejectReason::CylinderGateUndecided)))
-        .collect()
+    out.sort_by(|a, b| (a.class, a.span[0]).cmp(&(b.class, b.span[0])));
+    // ★ The guard the old per-class table carried, kept as its own sentence: a class exists
+    // because a face made it, so a class with no row is a wiring failure rather than an input.
+    // It has never fired; an unfired *guard* stays (an unfired *name* would not).
+    for k in 0..n_class {
+        if !out.iter().any(|r| r.class == k) {
+            return Err(reject(RejectReason::CylinderGateUndecided));
+        }
+    }
+    Ok(out)
 }
 
 /// **The surviving lateral bands, as result faces.**
@@ -98,7 +120,6 @@ pub(crate) fn cyl_rows(
 ///
 /// Emitted in `(cylinder class, lower t)` order — `reconstruct` mints handles in face order, so
 /// this ordering is the replay contract.
-#[cfg_attr(not(test), allow(dead_code))] // the production caller arrives with C4b-3
 /// `labels` is the arrangement's own answer per `(cylinder class, plane class)` — see the module
 /// docs. Cylinders may sit on **both** operands: nothing here asks a solid to describe itself.
 pub(crate) fn band_faces(
@@ -109,9 +130,9 @@ pub(crate) fn band_faces(
     labels: &crate::arrangement::DiskLabels,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let mut out = Vec::new();
-    for (k, row) in rows.iter().enumerate() {
-        for (lo, hi) in bands_of(k, row, plane_faces, jd)? {
-            let (in_own_inside, in_other) = chamber(jd, row, k, lo, hi, labels)?;
+    for row in rows {
+        for (lo, hi) in bands_of(row, plane_faces, jd)? {
+            let (in_own_inside, in_other) = chamber(jd, row, lo, hi, labels)?;
             // ★ **The wall is a boundary face of its own solid, so that solid's membership flips
             // across it** — read inside from the label, and outside is its negation. The
             // counterpart does *not* flip: the gate keeps its boundary faces clear of the lateral, so
@@ -130,7 +151,7 @@ pub(crate) fn band_faces(
             // flipped when the material is outside it (a hole). `keep_in` is that question
             // directly, whichever solid the wall came from.
             out.push(LocalFace {
-                surf: ClassIx::Cyl(k),
+                surf: ClassIx::Cyl(row.class),
                 outer: Bound::Band { lo, hi },
                 inner: Vec::new(),
                 flip: !keep_in,
@@ -147,11 +168,11 @@ pub(crate) fn band_faces(
 /// the lateral's own rims sit on (found by matching the span's parameters — two ⊥ planes with the
 /// same axis parameter *are* one plane, so the match is exact, not a tolerance).
 fn bands_of(
-    k: usize,
     row: &CylRow,
     plane_faces: &[LocalFace],
     jd: &Judge<'_, WorkingPlane>,
 ) -> Result<Vec<(usize, usize)>, BoolError> {
+    let k = row.class;
     let mut classes: Vec<usize> = Vec::new();
     let push = |c: usize, classes: &mut Vec<usize>| {
         if !classes.contains(&c) {
@@ -228,11 +249,11 @@ fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Option<Rat
 fn chamber(
     jd: &Judge<'_, WorkingPlane>,
     row: &CylRow,
-    k: usize,
     lo: usize,
     hi: usize,
     labels: &crate::arrangement::DiskLabels,
 ) -> Result<(bool, bool), BoolError> {
+    let k = row.class;
     let (cyl_bit, other_bit) = match row.side {
         SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
         SolidSide::B => (2usize, 0usize),
@@ -1065,6 +1086,194 @@ mod tests {
                 }
             ),
             "{err:?}"
+        );
+    }
+
+    // ---- One surface, several lateral faces: the band belongs to the face ----
+
+    /// The shape at the heart of it: a bored plate whose bore's **middle** is cut away, leaving two
+    /// disjoint bands on one lateral surface. Returns the model and that solid.
+    fn plate_with_a_split_bore(cut_x0: f64, cut_x1: f64) -> (Model, Handle<Solid>) {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
+        let hole = m.add_cylinder(
+            Point3::from_array([5.0, 5.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            12.0,
+        );
+        m.rebuild_adjacency();
+        let bored = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        // Walls 3 from the axis (r = 2), so the wall rule is not what this measures.
+        let mid = m.add_cuboid(
+            Point3::from_array([cut_x0, cut_x0, 4.0]),
+            Point3::from_array([cut_x1, cut_x1, 6.0]),
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, bored, mid).expect("the middle cut");
+        (m, out[0])
+    }
+
+    /// The lid tool the locks below cut with.
+    fn add_lid(m: &mut Model) -> Handle<Solid> {
+        let lid = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 8.0]),
+            Point3::from_array([10.0, 10.0, 12.0]),
+        );
+        m.rebuild_adjacency();
+        lid
+    }
+
+    /// How many faces of `s` lie on cylinder surfaces, grouped by surface.
+    fn lateral_face_counts(m: &Model, s: Handle<Solid>) -> Vec<usize> {
+        let mut counts: std::collections::HashMap<Handle<nacre_geom::Surface>, usize> =
+            Default::default();
+        let solid = m.solids.get(s);
+        for sh in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
+            for &fh in &m.shells.get(sh).faces {
+                let surf = m.faces.get(fh).surface;
+                if matches!(
+                    m.surface_truth(surf),
+                    nacre_topo::SurfaceTruth::Cylinder { .. }
+                ) {
+                    *counts.entry(surf).or_default() += 1;
+                }
+            }
+        }
+        let mut v: Vec<usize> = counts.into_values().collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// **Making it.** The split bore is an ordinary, correct solid — and nothing measured that
+    /// until this defect was found, which is why it is its own test: if building it ever breaks,
+    /// the test below (which *uses* it) must not be the one that goes red.
+    #[test]
+    fn a_bore_cut_across_the_middle_leaves_two_bands_on_one_surface() {
+        let (m, s) = plate_with_a_split_bore(2.0, 8.0);
+        assert_eq!(
+            lateral_face_counts(&m, s),
+            vec![2],
+            "one lateral surface, two faces"
+        );
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, s).expect("props").volume;
+        // 1000 − bore(π·4·10) − the middle cube outside the bore(6·6·2 − π·4·2)
+        let want = 1000.0 - std::f64::consts::PI * 40.0 - (72.0 - std::f64::consts::PI * 8.0);
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★★ **Using it.** The two-banded solid as an operand. `cyl_rows` used to let the first
+    /// lateral face speak for the class, so the second band's span was clipped away and never
+    /// emitted — the result shell came back open (`OpenResultShell`), naming a symptom of our own
+    /// omission rather than anything about the input.
+    #[test]
+    fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
+        let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+        let lid = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 8.0]),
+            Point3::from_array([10.0, 10.0, 12.0]),
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, s, lid).expect("the lid cut");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        // ★ The property under repair, counted directly — a volume alone does not say "two bands
+        // came out", and this defect is exactly one band going missing.
+        assert_eq!(
+            lateral_face_counts(&m, out[0]),
+            vec![2],
+            "both bands survive the cut"
+        );
+        let p = nacre_props::mass_props(&m, out[0]).expect("props");
+        let want = 1000.0
+            - std::f64::consts::PI * 40.0
+            - (72.0 - std::f64::consts::PI * 8.0)
+            - (200.0 - std::f64::consts::PI * 8.0);
+        assert!((p.volume - want).abs() < 1e-9, "{} vs {want}", p.volume);
+        // ★★ **Area is the sharper oracle for this defect.** A missing band does not change the
+        // volume — the boolean simply refuses — but it takes its `2πr·h` out of the surface. The
+        // two bands here are `z ∈ [0,4]` and `[6,8]`, so `16π + 8π` of lateral area must be in
+        // this number: 640 + 8π once every planar face is counted.
+        let want_area = 640.0 + std::f64::consts::PI * 8.0;
+        assert!(
+            (p.area - want_area).abs() < 1e-9,
+            "{} vs {want_area}",
+            p.area
+        );
+    }
+
+    /// ★ **The negative control.** Move the middle cut into a corner, away from the bore: the wall
+    /// stays **one** face and the same three steps already worked before the fix. Without this, a
+    /// change that merely made *any* third boolean succeed would look like a repair.
+    #[test]
+    fn a_middle_cut_that_misses_the_bore_leaves_one_band() {
+        let (mut m, s) = plate_with_a_split_bore(0.0, 2.0);
+        assert_eq!(lateral_face_counts(&m, s), vec![1], "the wall is untouched");
+        let lid = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 8.0]),
+            Point3::from_array([10.0, 10.0, 12.0]),
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, s, lid).expect("the lid cut");
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want =
+            1000.0 - std::f64::consts::PI * 40.0 - 8.0 - (200.0 - std::f64::consts::PI * 8.0);
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// **The mechanism, read directly.** Two rows, one per lateral face, with the spans the two
+    /// bands actually occupy — and the `t` axis here starts at the drill's origin `z = −1`, so the
+    /// bands `z ∈ [0,4]` and `[6,10]` are `t ∈ [1,5]` and `[7,11]`.
+    #[test]
+    fn cyl_rows_gives_one_row_per_lateral_face() {
+        let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+        let lid = add_lid(&mut m);
+        let setup = plane_index_setup(&m, s, lid).unwrap();
+        let rows = cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).expect("rows");
+        let spans: Vec<[f64; 2]> = rows
+            .iter()
+            .map(|r| [r.span[0].to_f64(), r.span[1].to_f64()])
+            .collect();
+        assert_eq!(
+            spans,
+            vec![[1.0, 5.0], [7.0, 11.0]],
+            "one row per face, in t order"
+        );
+        assert!(rows.iter().all(|r| r.class == 0), "both on the one surface");
+    }
+
+    /// ★★ **The band pass makes nothing in the gap.** This is where the right fix parts company
+    /// with the plausible one: merging the two faces' spans into a single `min..max` would put a
+    /// band across `z ∈ [4,6]`, where the solid has no lateral face at all.
+    #[test]
+    fn no_band_is_invented_where_the_solid_has_no_face() {
+        let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
+        let lid = add_lid(&mut m);
+        let (out, ts) = bands(&m, s, lid, BoolKind::Cut);
+        let mut spans: Vec<(f64, f64)> = out.iter().map(|lf| ends(lf, &ts)).collect();
+        spans.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        for (lo, hi) in &spans {
+            assert!(
+                !(*lo < 6.0 && *hi > 4.0 && !(*hi <= 4.0 || *lo >= 6.0)),
+                "a band {lo}..{hi} crosses the gap z 4..6 where there is no face"
+            );
+        }
+        assert!(
+            spans.iter().any(|(lo, _)| (*lo - 0.0).abs() < 1e-9),
+            "the lower band is emitted: {spans:?}"
+        );
+        assert!(
+            spans.iter().any(|(lo, _)| (*lo - 6.0).abs() < 1e-9),
+            "the upper band is emitted too: {spans:?}"
         );
     }
 
