@@ -839,9 +839,12 @@ pub(crate) fn cylinder_gate(
 
     for cyl in cyls.iter() {
         let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
-        // The footprint's second axis, gathered once: it depends on the cylinder, not on the
-        // plane class the loop below walks.
-        let spans = lateral_spans(faces, cyl.surf);
+        // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
+        // not depend on the plane class the loop below walks, but almost no boolean ever asks for
+        // it — the plane-level test decides first. ★ Measured before this was made lazy: one cut
+        // over a plate with 16 bores built the table 16 times and read it 0, which is exactly the
+        // shape `wall_faces_clear` warns about two doc comments below.
+        let mut spans: Option<Vec<[nacre_scalar::Rat; 2]>> = None;
         for (c, wp) in geom.iter().enumerate() {
             if wp.rotated {
                 return Err(undecided());
@@ -892,7 +895,8 @@ pub(crate) fn cylinder_gate(
                     if model.plane_motion(wp.surf).is_some() {
                         return Err(undecided());
                     }
-                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, &spans)? {
+                    let spans = spans.get_or_insert_with(|| lateral_spans(faces, cyl.surf));
+                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, spans)? {
                         return Err(reject(RejectReason::WallMeetsLateral));
                     }
                 }
@@ -933,7 +937,9 @@ pub(crate) fn cylinder_gate(
 /// ★ **No table is built for this.** The scan runs only on the class that failed the plane test —
 /// rare — so walking the face rows there costs nothing on the common path and allocates nothing.
 /// A per-class face table computed for every boolean would be the shape M6-2's `caps` had, built
-/// for everyone and read by almost no one.
+/// for everyone and read by almost no one. ★★ The `spans` this takes is held to the same rule: the
+/// caller builds it on first use, not per cylinder — measured, an ordinary cut over a 16-bore
+/// plate wants it **zero** times.
 #[allow(clippy::too_many_arguments)]
 fn wall_faces_clear(
     model: &Model,
@@ -992,6 +998,12 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
         let Some(span) = cf.span else {
             return Vec::new();
         };
+        // ★ The reader below asks "every vertex at or below `span[0]`, or every one at or above
+        // `span[1]`", which is only the interval's outside while the pair is ordered — reversed,
+        // that same phrasing reads "outside the *union* of two half-lines" and would clear a face
+        // sitting squarely in the band. `lateral_axis_span` orders it; this is where that is
+        // relied on, so this is where it is said.
+        debug_assert!(span[0] <= span[1], "a span is stated low end first");
         out.push(span);
     }
     out

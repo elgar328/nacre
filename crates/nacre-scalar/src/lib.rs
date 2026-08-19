@@ -5303,6 +5303,24 @@ mod tests {
             );
         }
 
+        /// ★★ **A negative parameter is ordinary, and the sign rides in the numerator.** The
+        /// derivation clears `dp·d_o·d_m²·td` as a *positive* factor; `Rat` guarantees that by
+        /// normalising a negative denominator into the numerator (`Rat::new(11, -2)` is `-11/2`),
+        /// and `axis_param_of_plane` builds parameters by inverting a ratio whose numerator may
+        /// well be negative. A wall standing below its cylinder — the overhanging boss's plate, at
+        /// `t ∈ [−2, 0]` — is exactly this case.
+        #[test]
+        fn a_negative_parameter_is_ordinary() {
+            // The axis starts at z = −1, so t = −1 is z = −2 and t = −3 is z = −4.
+            assert_eq!(side(&at(8, 10, -3), Rat::from_int(-1)), Orient::Negative);
+            assert_eq!(side(&at(8, 10, 0), Rat::from_int(-1)), Orient::Positive);
+            assert_eq!(side(&at(8, 10, -2), Rat::from_int(-1)), Orient::Zero);
+            // Written with the sign on the denominator instead — the same plane, the same answers.
+            let t = Rat::new(3, -2).unwrap(); // −3/2, i.e. z = −5/2
+            assert_eq!(side(&at(8, 10, -2), t), Orient::Positive);
+            assert_eq!(side(&at(8, 10, -3), t), Orient::Negative);
+        }
+
         /// A point too wide for `Rat` is an ordinary point of the geometry — the reason this takes
         /// a [`MeetPoint`] rather than a `[Rat; 3]`.
         #[test]
