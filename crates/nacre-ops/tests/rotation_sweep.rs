@@ -422,7 +422,7 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     offenders.retain(|o| {
         !o.contains("side_of(jd, nodes[i], q)")
             && !o.contains("side_of(jd, v, r)")
-            && !o.contains("side_of(&jd, three_plane_name(n), wc)")
+            && !o.contains("side_of(&jd, name, wc)")
     });
     assert_eq!(
         offenders,

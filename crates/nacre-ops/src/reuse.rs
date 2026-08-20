@@ -288,17 +288,53 @@ impl VertexClasses {
 /// first instinct on seeing that would be to "fix" an engine that is right. So each ring is
 /// rotated to begin at its least node and the faces are sorted.
 ///
+/// One element of a canonicalized bound: a node's name, or the class a curved bound is.
+///
+/// ★ **The vessel widened rather than refusing** (M6-2b). The differential's job is to *separate*
+/// faces the two routes could disagree about, so a branch node needs a spelling here — declining
+/// would silently stop covering every face that contains one, which is precisely the population
+/// being added. Making it an enum also **deletes the `usize::MAX` sentinels** a circle and a band
+/// used to be spelled with: those existed only because the vessel was a triple, which is the same
+/// defect one layer down. It separates strictly more than the sentinels did — a band with
+/// `lo == hi` used to collide with that class's circle.
+#[cfg(any(debug_assertions, test))]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(crate) enum CanonNode {
+    /// A three-plane vertex, by its sorted classes.
+    Three([usize; 3]),
+    /// A `plane ∩ plane ∩ cylinder` vertex, by everything that names it.
+    Branch {
+        planes: [usize; 2],
+        cyl: usize,
+        root: nacre_topo::QuadRoot,
+    },
+    /// A whole circle, by its cylinder class.
+    Circle(usize),
+    /// A band, by its two rim classes.
+    Band(usize, usize),
+}
+
 /// `(plane, flip, outer ring, hole rings)` — every field of a [`LocalFace`] but those freedoms.
 #[cfg(any(debug_assertions, test))]
-pub(crate) type CanonFace = (usize, bool, Vec<[usize; 3]>, Vec<Vec<[usize; 3]>>);
+impl CanonNode {
+    /// A node's spelling. ★ It reads the identity directly rather than through
+    /// `three_plane_name`: this caller's answer for a branch node is not "refused" but "the key
+    /// says which one it is", so the door's single answer is the wrong one here.
+    fn of(n: NodeId) -> CanonNode {
+        match n {
+            NodeId::ThreePlane(t) => CanonNode::Three(t),
+            NodeId::Branch { planes, cyl, root } => CanonNode::Branch { planes, cyl, root },
+        }
+    }
+}
+
+#[cfg(any(debug_assertions, test))]
+pub(crate) type CanonFace = (usize, bool, Vec<CanonNode>, Vec<Vec<CanonNode>>);
 
 #[cfg(any(debug_assertions, test))]
 pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
-    let ring = |r: &[NodeId]| -> Vec<[usize; 3]> {
-        let t: Vec<[usize; 3]> = r
-            .iter()
-            .map(|&n| crate::combinatorics::three_plane_name(n))
-            .collect();
+    let ring = |r: &[NodeId]| -> Vec<CanonNode> {
+        let t: Vec<CanonNode> = r.iter().map(|&n| CanonNode::of(n)).collect();
         match t.iter().enumerate().min_by_key(|(_, v)| **v) {
             Some((i, _)) => t[i..].iter().chain(&t[..i]).copied().collect(),
             None => t,
@@ -313,10 +349,10 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
             // spelled as one-element triples so they share the vessel with the node lists.
             let ring_b = |b: &crate::boolean::Bound| match b {
                 crate::boolean::Bound::Ring(r) => ring(r),
-                crate::boolean::Bound::Circle { cyl } => vec![[usize::MAX, *cyl, *cyl]],
-                crate::boolean::Bound::Band { lo, hi } => vec![[usize::MAX, *lo, *hi]],
+                crate::boolean::Bound::Circle { cyl } => vec![CanonNode::Circle(*cyl)],
+                crate::boolean::Bound::Band { lo, hi } => vec![CanonNode::Band(*lo, *hi)],
             };
-            let mut inner: Vec<Vec<[usize; 3]>> = f.inner.iter().map(ring_b).collect();
+            let mut inner: Vec<Vec<CanonNode>> = f.inner.iter().map(ring_b).collect();
             inner.sort();
             // A cylinder face has no plane class; `usize::MAX − k` keeps the key total and keeps
             // the two kinds apart (a plane index can never reach it).

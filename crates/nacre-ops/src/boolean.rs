@@ -422,14 +422,14 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
                 .collect::<Result<_, BoolError>>()
         })
         .collect::<Result<_, BoolError>>()?;
+    // A **probe list**, so a branch node may be dropped: `first_deciding` below tries each in
+    // turn, and an exhausted list is already `Ok(None)` — the caller's own rejection.
     let nodes_of = |c: usize| -> Vec<[usize; 3]> {
-        by_comp_lf[c]
-            .iter()
-            .flat_map(|lf| {
-                lf.poly_rings()
-                    .flat_map(|r| r.iter().map(|&n| combinatorics::three_plane_name(n)))
-            })
-            .collect()
+        combinatorics::three_plane_probes(
+            by_comp_lf[c]
+                .iter()
+                .flat_map(|lf| lf.poly_rings().flat_map(|r| r.iter().copied())),
+        )
     };
     // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
     // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
@@ -625,10 +625,12 @@ impl Ring {
         let k = nodes.len();
         let walls = (0..k)
             .map(|i| {
-                let (a, b) = (
-                    combinatorics::three_plane_name(nodes[i]),
-                    combinatorics::three_plane_name(nodes[(i + 1) % k]),
-                );
+                // Its own contract is "clean fixture rings only", so a branch node here is a
+                // fixture bug, not an input the kernel must survive.
+                let name = |n| {
+                    combinatorics::three_plane_name(n).expect("a clean fixture ring names triples")
+                };
+                let (a, b) = (name(nodes[i]), name(nodes[(i + 1) % k]));
                 a.iter()
                     .copied()
                     .find(|&c| c != p && b.contains(&c))
@@ -842,7 +844,9 @@ fn self_touch_reject(
         // check and `validate` all still stand behind it, so a curved self-touch surfaces there
         // instead of being missed silently. A band that pinches against a *plane* face is
         // therefore the case this does not see yet, and it is written down rather than assumed
-        // away.
+        // away. ★ **An edge with a branch endpoint joins that population** (M6-2b): it has no
+        // three-plane name for the plane-membership question below, so it is skipped by the same
+        // rule and for the same reason.
         let faces: Vec<&LocalFace> = g
             .iter()
             .flat_map(|&c| by_comp_lf[c].iter().copied())
@@ -877,10 +881,18 @@ fn self_touch_reject(
         }
         let mut rings_of_face: HashMap<usize, Vec<Vec<combinatorics::RingEdge>>> = HashMap::new();
         for (&[u, v], own) in &owners {
-            let (up, vp) = (
+            // ★ **Abstain, exactly as the paragraph above already does for a lateral band.** An
+            // edge with a branch endpoint has no three-plane name to intersect, and this is a
+            // *rejection guard*: declining here would turn "I cannot check this edge" into "this
+            // model is invalid" — a reject on a possibly-sound solid. The nets named above (the
+            // edge-use guard, the non-manifold vertex check, `validate`) still stand behind it,
+            // and this population joins the one already written down there.
+            let (Some(up), Some(vp)) = (
                 combinatorics::three_plane_name(u),
                 combinatorics::three_plane_name(v),
-            );
+            ) else {
+                continue;
+            };
             for q in up.iter().copied().filter(|x| vp.contains(x)) {
                 let Some(js) = by_plane.get(&q) else { continue };
                 for &j in js.iter().filter(|j| !own.contains(j)) {
@@ -1766,11 +1778,7 @@ fn merge_component(
         // about that vertex, and settling for `nodes[0]` is what lost whole bands of rotation
         // angles here. `ring_in_ring` holds that retry now, for this caller and the two in the
         // arrangement alike.
-        let probes: Vec<[usize; 3]> = hole
-            .nodes
-            .iter()
-            .map(|&n| combinatorics::three_plane_name(n))
-            .collect();
+        let probes = combinatorics::three_plane_probes(hole.nodes.iter().copied());
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             let ring = outer.edges(jd, wc)?;

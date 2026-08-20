@@ -456,16 +456,43 @@ impl Aliases {
     }
 }
 
+/// Why a ring of names could not become a ring of plane data.
+///
+/// ★ **It is not one label.** The two causes are different propositions — a triple that came out
+/// degenerate, versus a vertex that has no triple at all — and the four callers of [`plane_ring`]
+/// already map the old single failure onto *three* different [`DeclineKind`]s, so the label is the
+/// caller's to choose and this only says which cause it was.
+enum RingFail {
+    /// Two of a vertex's three planes coincide, so the name denotes no point.
+    Collapsed,
+    /// A branch point: named exactly, but not by three planes.
+    Branch,
+}
+
+/// The decline kind for a [`RingFail`] at a caller that has no finer fact to add.
+///
+/// ★ Two of the four callers *do* have one — they know which loop of the face failed and report
+/// `OuterRing`/`HoleRing` — so this is not "the mapping", only the default.
+fn decline_of(f: RingFail) -> DeclineKind {
+    match f {
+        RingFail::Collapsed => DeclineKind::CollapsedTriple,
+        RingFail::Branch => DeclineKind::BranchNode,
+    }
+}
+
 /// ★ **The one place a ring of *names* becomes a ring of *plane data*** for the tracer, which asks
 /// only "which side, which wall, which third plane" of each vertex. The sort that used to stand
 /// here is gone — [`NodeId`]'s only constructor sorts — so what remains is the collapse check, and
 /// that is the whole reason this function exists.
-fn plane_ring(ts: &[NodeId]) -> Option<Vec<[usize; 3]>> {
+fn plane_ring(ts: &[NodeId]) -> Result<Vec<[usize; 3]>, RingFail> {
     ts.iter()
         .map(|&n| {
-            let c = three_plane_name(n);
+            let c = three_plane_name(n).ok_or(RingFail::Branch)?;
             // Sorted by construction, so equal neighbours catch every duplicate.
-            (c[0] != c[1] && c[1] != c[2]).then_some(c)
+            if c[0] == c[1] || c[1] == c[2] {
+                return Err(RingFail::Collapsed);
+            }
+            Ok(c)
         })
         .collect()
 }
@@ -520,9 +547,9 @@ fn trace_transversal_face(
     // ride, never from the two endpoint names.
     let outer = match loops.outer.as_ref().and_then(|r| r.poly()) {
         Some(nr) => match plane_ring(&nr.triples) {
-            Some(ts) => (ts, nr.walls.as_slice()),
-            None => {
-                out.declined.push((fp, DeclineKind::CollapsedTriple));
+            Ok(ts) => (ts, nr.walls.as_slice()),
+            Err(f) => {
+                out.declined.push((fp, decline_of(f)));
                 return;
             }
         },
@@ -558,9 +585,9 @@ fn trace_transversal_face(
             // `L`, and a disjoint hole contributes no crossings to the 3-valued scan.
             combinatorics::LoopRing::Circle { .. } => continue,
             combinatorics::LoopRing::Poly(r) => match plane_ring(&r.triples) {
-                Some(ts) => holes.push((ts, r.walls.as_slice())),
-                None => {
-                    out.declined.push((fp, DeclineKind::CollapsedTriple));
+                Ok(ts) => holes.push((ts, r.walls.as_slice())),
+                Err(f) => {
+                    out.declined.push((fp, decline_of(f)));
                     return;
                 }
             },
@@ -913,9 +940,16 @@ fn trace_one(
         let mut rings = Vec::new();
         match &fl.outer {
             Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(&nr.triples) {
-                Some(ts) => rings.push(ts),
-                None => {
+                Ok(ts) => rings.push(ts),
+                // ★ `OuterRing` here, not `CollapsedTriple`: this caller reports *which loop*
+                // failed, which is the finer fact when a face has several. A branch node is a
+                // different cause and keeps its own name either way.
+                Err(RingFail::Collapsed) => {
                     out.declined.push((fp, DeclineKind::OuterRing));
+                    continue;
+                }
+                Err(RingFail::Branch) => {
+                    out.declined.push((fp, DeclineKind::BranchNode));
                     continue;
                 }
             },
@@ -931,7 +965,7 @@ fn trace_one(
                 continue;
             }
         }
-        let mut collapsed = false;
+        let mut failed: Option<DeclineKind> = None;
         // As above: an unnameable hole is a reject, not "no hole".
         let Some(raw) = &fl.holes else {
             out.declined.push((fp, DeclineKind::HoleRing));
@@ -945,13 +979,13 @@ fn trace_one(
                     kind,
                 }),
                 combinatorics::LoopRing::Poly(nr) => match plane_ring(&nr.triples) {
-                    Some(r) => rings.push(r),
-                    None => collapsed = true,
+                    Ok(r) => rings.push(r),
+                    Err(f) => failed = Some(decline_of(f)),
                 },
             }
         }
-        if collapsed {
-            out.declined.push((fp, DeclineKind::CollapsedTriple));
+        if let Some(kind) = failed {
+            out.declined.push((fp, kind));
             continue;
         }
         let fc = plane_ix[fp].plane();
@@ -1736,7 +1770,7 @@ fn circles_meet_no_segment(
                 // witness to choose). So this rule is *chosen*, not measured — which is why it is
                 // written out rather than left to whatever the locator would have returned.
                 breaks.push(Break {
-                    key: (circ.cyl, sg.wall, sg.end, 0),
+                    key: (circ.cyl, sg.wall, sg.end, None),
                     crossing: false,
                     at: RejectWhere::Point(realize(&p0)),
                 });
@@ -1747,14 +1781,21 @@ fn circles_meet_no_segment(
                 // into a different rejection — this pass only ever *adds* a place.
                 None => {}
                 Some(xs) if xs.is_empty() => breaks.push(Break {
-                    key: (circ.cyl, sg.wall, sg.end, 0),
+                    key: (circ.cyl, sg.wall, sg.end, None),
                     crossing: false,
                     at: RejectWhere::Segment([realize(&p0), realize(&p1)]),
                 }),
-                Some(xs) => breaks.extend(xs.into_iter().map(|(root, at)| Break {
-                    key: (circ.cyl, sg.wall, sg.end, root),
-                    crossing: true,
-                    at: RejectWhere::Point(at),
+                // ★ **The place comes from the name**, not from the solve that found it — so a
+                // name whose root did not follow its pair through canonical order points here at
+                // the other crossing, visibly. A realization that overflows drops that one break
+                // (the same rule the `None` arm above follows) rather than moving the rejection.
+                Some(xs) => breaks.extend(xs.into_iter().filter_map(|n| {
+                    let at = combinatorics::branch_point(jd, &circ.def, n)?;
+                    Some(Break {
+                        key: (circ.cyl, sg.wall, sg.end, Some(n)),
+                        crossing: true,
+                        at: RejectWhere::Point(Point3::from_array(at)),
+                    })
                 })),
             }
         }
@@ -1768,7 +1809,9 @@ fn circles_meet_no_segment(
 /// One place a circle's closed-cell premise is broken, carrying where.
 struct Break {
     /// **The identity the witness is chosen by** — the circle's cylinder class, the segment's
-    /// wall and canonical endpoint names, and which root. Never the coordinate: choosing the
+    /// wall and canonical endpoint names, and the crossing's own name (`None` where there is no
+    /// crossing: a containment has no root, and spelling that `0` was a small lie the type now
+    /// refuses). Never the coordinate: choosing the
     /// smallest `f64` would let rounding pick what the user is shown, and never the `Vec`
     /// position, which is the array spelling of the "map's first hit" `NonManifoldResultEdge`
     /// warns about.
@@ -1777,7 +1820,11 @@ struct Break {
     /// set, so two of them can carry the same endpoints on different walls; without the wall the
     /// two would tie, and a stable sort would hand the choice straight back to the `Vec` order
     /// this key exists to escape.
-    key: (usize, usize, [NodeId; 2], u8),
+    /// ★ The **name**, not its root alone: extracting the root would need a second door out of
+    /// the identity, which is exactly what this design has one of. The derived `Ord` does the work
+    /// and the order is unchanged — within a `(cyl, wall, ends)` tie the name's `planes` and `cyl`
+    /// are fixed, so it discriminates on `root`, and `Lo < Hi` reproduces the old `0 < 1`.
+    key: (usize, usize, [NodeId; 2], Option<NodeId>),
     /// A crossing outranks a containment: it names a point of the geometry, where a containment
     /// can only point at the edge that sits inside.
     crossing: bool,
@@ -1813,20 +1860,29 @@ fn realize(p: &[nacre_scalar::Rat; 3]) -> Point3 {
 /// The quadratic cannot degenerate either: its leading coefficient is `|d|² > 0` because `d ⊥ m`.
 ///
 /// `None` is overflow (the caller drops the witness, never the rejection).
+///
+/// ★★ **It returns the crossings' *names*, and the coordinate is derived from the name** (see
+/// [`combinatorics::branch_point`]). The pair is solved in this function's own call order —
+/// `(wc, sg.wall)` — and `NodeId::branch` puts it in canonical order, restating the root with it.
+/// Solving in ascending order instead would make the correspondence true by construction and leave
+/// the canonicalization unexercised, which is where a wrong rule hides; the next mint site (the arc
+/// split, walking segments in DCEL order) will not have that luxury either.
 fn circle_crossings(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     circ: &MergedCircle,
     sg: &MergedSeg,
     ends: [&[nacre_scalar::Rat; 3]; 2],
-) -> Option<Vec<(u8, Point3)>> {
+) -> Option<Vec<combinatorics::NodeId>> {
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    use nacre_topo::QuadRoot;
     let w = combinatorics::class_coeffs_rat(jd, wc)?;
     let v = combinatorics::class_coeffs_rat(jd, sg.wall)?;
     let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
     let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)? {
-        CylinderMeet::Pair { line, s } => (line, vec![(0u8, s[0]), (1, s[1])]),
-        CylinderMeet::Tangent { line, s } => (line, vec![(0u8, QuadVal::from_rat(s))]),
+        CylinderMeet::Pair { line, s } => (line, vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])]),
+        // ★ `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.
+        CylinderMeet::Tangent { line, s } => (line, vec![(QuadRoot::Double, QuadVal::from_rat(s))]),
         // ★ Unreachable while the caller's `hit` holds — a segment that meets the solid
         // cylinder has a line that meets its surface, and this line is ⊥ to the axis so it
         // cannot pass inside without crossing. Left returning "no crossings" rather than made
@@ -1871,14 +1927,7 @@ fn circle_crossings(
         if !inside {
             continue;
         }
-        // ★ The realization is `nacre_scalar`'s, and it is **total**: it builds the coordinate in
-        // `BigInt` rather than in `QuadVal`. The first spelling here assembled `base + s·dir` in
-        // checked `Rat` and propagated `None` on overflow — which lost the witness for a reason
-        // about arithmetic, on the very path whose job is to say *where*.
-        out.push((
-            root,
-            Point3::from_array(nacre_scalar::quad::branch_point_f64(&line, &s)),
-        ));
+        out.push(combinatorics::NodeId::branch(wc, sg.wall, circ.cyl, root));
     }
     Some(out)
 }
@@ -2140,9 +2189,8 @@ fn nest_cells(
                     }
                     // Vertex-disjoint: `ring_in_ring` casts from each of `c`'s nodes until one
                     // gives a clear ray; an exhausted ring is the genuine degeneracy it
-                    // rejects for.
-                    let probes: Vec<[usize; 3]> =
-                        rings[c].iter().map(|e| three_plane_name(e.node)).collect();
+                    // rejects for — which is also why dropping a branch node here is honest.
+                    let probes = combinatorics::three_plane_probes(rings[c].iter().map(|e| e.node));
                     if combinatorics::ring_in_ring(jd, wc, &probes, &rings[r])? {
                         hosts.push(r);
                     }
@@ -2296,7 +2344,7 @@ fn innermost_host(
         {
             return Ok(None); // adjacent, not nested — not comparable
         }
-        let probes: Vec<[usize; 3]> = rings[a].iter().map(|e| three_plane_name(e.node)).collect();
+        let probes = combinatorics::three_plane_probes(rings[a].iter().map(|e| e.node));
         combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
     };
     let mut found = None;
@@ -2996,17 +3044,19 @@ pub(crate) fn concurrency_audit(
                 //
                 // ★ The re-canonicalization that used to stand on both sides of this filter is
                 // gone: a ring's nodes are `NodeId`s, and the only constructor sorts.
-                names.extend(
-                    rings
-                        .into_iter()
-                        .filter(|&n| combinatorics::side_of(&jd, three_plane_name(n), wc) == 0),
-                );
+                names.extend(rings.into_iter().filter(|&n| {
+                    // The name is hoisted so the call stays on one line: the source-text meta-test
+                    // `no_production_code_walks_a_ring_past_the_shared_walk` allow-lists this site
+                    // by its argument text, and it reads line by line.
+                    let name = three_plane_name(n).expect("a three-plane node");
+                    combinatorics::side_of(&jd, name, wc) == 0
+                }));
             }
         }
         names.sort_unstable();
         names.dedup();
         for n in names {
-            let t = three_plane_name(n);
+            let t = three_plane_name(n).expect("a three-plane node");
             if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
                 continue; // names no point, so "the planes through it" is not a question
             }
@@ -3357,7 +3407,19 @@ pub(crate) fn boolean(
                         if seen.insert(node, ()).is_some() {
                             continue;
                         }
-                        let t = three_plane_name(node);
+                        // ★ **The one site behind the door that materializes a coordinate and
+                        // mints a `VertexDef`** — so this is where the next rung starts minting
+                        // `VertexDef::Branch`, and where the class-order/handle-order
+                        // correspondence has to be established a *second* time
+                        // (`NodeId::Branch` is canonical in plane **classes**, `VertexDef::Branch`
+                        // in `Handle<Surface>` index, and the class→surf map is not monotone).
+                        //
+                        // Declining, never `continue`: a skipped seam entry surfaces downstream as
+                        // `MissingSeam`, whose class is `SuspectedDefect` and whose sentence is
+                        // "a reconstruction dropped a crossing" — a wrong diagnosis for an input
+                        // the kernel simply does not build yet.
+                        let t = three_plane_name(node)
+                            .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
                         let point =
                             three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
                                 .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
@@ -3476,7 +3538,7 @@ mod tests {
 
     /// Point of a named vertex, for asserting geometry by hand.
     fn pt(n: NodeId, jd: &Judge<'_, WorkingPlane>) -> [f64; 3] {
-        let t = three_plane_name(n);
+        let t = three_plane_name(n).expect("a three-plane node");
         let planes = jd.planes;
         three_planes(
             &planes[t[0]].plane,
@@ -4241,7 +4303,8 @@ mod tests {
                     .half_edges
                     .iter()
                     .filter_map(|&h| {
-                        let t = three_plane_name(split[h / 2].end[h % 2]);
+                        let t =
+                            three_plane_name(split[h / 2].end[h % 2]).expect("a three-plane node");
                         three_planes(
                             &jd.planes[t[0]].plane,
                             &jd.planes[t[1]].plane,
@@ -4533,7 +4596,7 @@ mod tests {
                 .outer
                 .expect_ring()
                 .iter()
-                .map(|&n| three_plane_name(n))
+                .map(|&n| three_plane_name(n).expect("a three-plane node"))
                 .collect();
             assert!(ring.len() >= 3);
             assert_eq!(
@@ -4572,7 +4635,7 @@ mod tests {
                 .outer
                 .expect_ring()
                 .iter()
-                .map(|&n| three_plane_name(n))
+                .map(|&n| three_plane_name(n).expect("a three-plane node"))
                 .collect();
             for w in ns
                 .windows(2)
@@ -4667,7 +4730,7 @@ mod tests {
                 .outer
                 .expect_ring()
                 .iter()
-                .map(|&n| three_plane_name(n))
+                .map(|&n| three_plane_name(n).expect("a three-plane node"))
                 .collect();
             for w in ns
                 .windows(2)
@@ -4880,7 +4943,9 @@ mod tests {
 
         // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
         let triples = |ns: &[combinatorics::NodeId]| -> Vec<[usize; 3]> {
-            ns.iter().map(|&n| three_plane_name(n)).collect()
+            ns.iter()
+                .map(|&n| three_plane_name(n).expect("a three-plane node"))
+                .collect()
         };
         let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
         for f in &faces {
@@ -4983,7 +5048,9 @@ mod tests {
 
         // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
         let triples = |ns: &[combinatorics::NodeId]| -> Vec<[usize; 3]> {
-            ns.iter().map(|&n| three_plane_name(n)).collect()
+            ns.iter()
+                .map(|&n| three_plane_name(n).expect("a three-plane node"))
+                .collect()
         };
         let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
         for f in &faces {
@@ -5260,7 +5327,9 @@ mod tests {
             "the two annular caps survive rotation"
         );
         let triples = |ns: &[combinatorics::NodeId]| -> Vec<[usize; 3]> {
-            ns.iter().map(|&n| three_plane_name(n)).collect()
+            ns.iter()
+                .map(|&n| three_plane_name(n).expect("a three-plane node"))
+                .collect()
         };
         let mut count: HashMap<([usize; 3], [usize; 3]), usize> = HashMap::new();
         for f in &faces {

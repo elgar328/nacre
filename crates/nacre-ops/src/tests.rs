@@ -1432,7 +1432,7 @@ type Ring = Vec<[usize; 3]>;
 /// A ring of vertex names as the plane triples these fixtures assert about.
 fn names(ring: &[combinatorics::NodeId]) -> Ring {
     ring.iter()
-        .map(|&n| combinatorics::three_plane_name(n))
+        .map(|&n| combinatorics::three_plane_name(n).expect("a three-plane node"))
         .collect()
 }
 
@@ -2582,7 +2582,7 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
                 c.planes.len(),
                 c.planes
             );
-            let triple = combinatorics::three_plane_name(c.triple);
+            let triple = combinatorics::three_plane_name(c.triple).expect("a three-plane node");
             if !triple.contains(&c.wc) {
                 trace_rule_checked += 1;
                 let mut derived = triple.to_vec();

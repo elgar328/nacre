@@ -651,6 +651,19 @@ pub enum RejectReason {
     /// checked now where the circle and the segments actually are, so the gate is free to become
     /// precise about its own question without silently removing this one.
     CircleMeetsSegment,
+    /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **branch
+    /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle
+    /// derivation, the seam table. The point is exactly named; what is missing is that these paths
+    /// have no other name to carry it by, and dropping it from a ring would silently answer about a
+    /// different polygon.
+    ///
+    /// ★ **Not [`Self::RingNaming`].** That one's sentence is "these names do not chain" — a fact
+    /// about a *three-plane* naming that came out degenerate. A branch point has no such name to
+    /// begin with, so reporting it there would put two causes under one label.
+    ///
+    /// ★ Its per-face sibling is `DeclineKind::BranchNode`: the tracer's decline structure carries
+    /// a face handle, so the paths inside it say *where* instead of raising this.
+    BranchVertexUnnamed,
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).
     ObliqueCylinderCut,
@@ -817,6 +830,13 @@ pub enum RejectReason {
 pub enum DeclineKind {
     /// A ring vertex's plane triple collapses (two of its planes coincide), so it names no point.
     CollapsedTriple,
+    /// A ring vertex is a `plane ∩ plane ∩ cylinder` **branch point**, which the tracer's ring
+    /// machinery has no name to carry (the arc split is M6-2b's).
+    ///
+    /// ★ Distinct from [`Self::CollapsedTriple`] on purpose: that one's sentence is "two of its
+    /// planes coincide", which is simply not what happened here. The census keys its `detail` on
+    /// this name, so reusing the other would put a false cause in the ledger.
+    BranchNode,
     /// The face's outer ring could not be named as plane triples.
     OuterRing,
     /// One of the face's hole rings could not be named. Not "no hole": swallowing it would trace
@@ -853,6 +873,7 @@ impl DeclineKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::CollapsedTriple => "collapsed-triple",
+            Self::BranchNode => "branch-node",
             Self::OuterRing => "outer-ring",
             Self::HoleRing => "hole-ring",
             Self::AllOnPlane => "all-on-plane",
@@ -908,6 +929,7 @@ impl RejectReason {
             Self::FourPlane => "fourplane",
             Self::WallMeetsLateral => "wall_meets_lateral",
             Self::CircleMeetsSegment => "circle_meets_segment",
+            Self::BranchVertexUnnamed => "branch_vertex_unnamed",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
@@ -947,6 +969,7 @@ impl RejectReason {
             | Self::FourPlane
             | Self::WallMeetsLateral
             | Self::CircleMeetsSegment
+            | Self::BranchVertexUnnamed
             | Self::ObliqueCylinderCut
             | Self::CylinderPairContact
             | Self::CylinderGateUndecided
