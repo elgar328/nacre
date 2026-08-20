@@ -1876,14 +1876,14 @@ fn circle_crossings(
         if !inside {
             continue;
         }
-        let base = line.base();
-        let dir = line.dir();
-        let mut p = [0.0f64; 3];
-        for i in 0..3 {
-            let coord = QuadVal::from_rat(base[i]).checked_add(&s.checked_mul_rat(dir[i])?)?;
-            p[i] = coord.to_f64();
-        }
-        out.push((root, Point3::from_array(p)));
+        // ★ The realization is `nacre_scalar`'s, and it is **total**: it builds the coordinate in
+        // `BigInt` rather than in `QuadVal`. The first spelling here assembled `base + s·dir` in
+        // checked `Rat` and propagated `None` on overflow — which lost the witness for a reason
+        // about arithmetic, on the very path whose job is to say *where*.
+        out.push((
+            root,
+            Point3::from_array(nacre_scalar::quad::branch_point_f64(&line, &s)),
+        ));
     }
     Some(out)
 }

@@ -204,6 +204,9 @@ struct AxisCoord {
 /// `√(cn/cd) = √(cn·cd)/cd` folds the radicand's denominator into `b`, so the radicand comes out
 /// integral (`c`) and everything else rides one positive denominator.
 fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
+    // ★ Every consumer below divides by `d` or clears it as a positive factor, so its sign is
+    // load-bearing. It holds because `Ratio` keeps denominators positive — said here because this
+    // is where it is relied on.
     let big = |r: Rat| (BigInt::from(r.numer()), BigInt::from(r.denom()));
     let (base_n, base_d) = big(line.base()[axis]);
     let (dir_n, dir_d) = big(line.dir()[axis]);
@@ -214,6 +217,10 @@ fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
     let d = &base_d * &a_d * &dir_d * &b_d * &c_d;
     let a = &base_n * (&a_d * &dir_d * &b_d * &c_d) + &a_n * &dir_n * (&base_d * &b_d * &c_d);
     let b = &b_n * &dir_n * (&base_d * &a_d);
+    debug_assert!(
+        d.sign() == num_bigint::Sign::Plus,
+        "a denominator is positive"
+    );
     AxisCoord {
         a,
         b,
@@ -228,12 +235,20 @@ fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
 /// ★ Total: the exact coordinate is built in `BigInt`, so there is no width at which this stops
 /// answering. A caller that assembled the same expression in `QuadVal` would lose the point
 /// instead — which is what this replaces.
+///
+/// ★★ **And the division cannot go to `inf/inf`.** That was the worry worth checking: both parts
+/// are `BigInt` and `f64` runs out at `10^308`. It cannot happen *because of the input type* —
+/// every part comes from a `Rat` (i128, under `10^38`), and the products here reach at most five
+/// of them, so nothing exceeds about `10^190`. ⇒ the bound is the argument type's, not this
+/// function's: an input carrying `BigInt` coefficients would break it, and the `expect` below is
+/// where that would be heard rather than silently returning `NaN`.
 pub fn branch_point_f64(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
     core::array::from_fn(|axis| {
         let k = axis_coord(line, s, axis);
         let f = |x: &BigInt| -> f64 {
             use num_traits::ToPrimitive;
-            x.to_f64().unwrap_or(f64::NAN)
+            x.to_f64()
+                .expect("a coordinate built from `Rat` parts stays inside f64's range")
         };
         (f(&k.a) + f(&k.b) * f(&k.c).sqrt()) / f(&k.d)
     })
@@ -249,8 +264,10 @@ pub fn branch_point_f64(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
 /// `sign((m/dm) − (a + b√c)/d) = sign((m·d − a·dm) + (−b·dm)√c)` since both denominators are
 /// positive.
 ///
-/// **The caller supplies the `MeetPoint`.** How it was solved — `three_planes_big` from canonical
-/// names, or the integer core from any exact rows — is not this predicate's business.
+/// **The caller supplies the `MeetPoint`.** How it was solved is not this predicate's business —
+/// in the population that reaches here, every plane class carries a canonical name (the cylinder
+/// gate demands `base_rat`), so [`crate::three_planes_big`] answers; a caller without one would
+/// need a door onto the integer core, and none is opened until such a caller exists.
 ///
 /// ★★ **What this rests on: rational plane coefficients.** An arbitrarily rotated plane has
 /// irrational coefficients and no rational name, and then there is nothing to lift. That case does
