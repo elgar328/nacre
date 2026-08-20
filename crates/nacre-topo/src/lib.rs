@@ -56,9 +56,11 @@ pub enum VertexDef {
     /// `planes[1]` **in stored (ascending-handle) order** — canonicalization fixes each
     /// normal's sign ("first nonzero component positive"), so ℓ is deterministic; `Lo`/`Hi`
     /// is ascending parameter along ℓ (`nacre_scalar::quad`'s pair order). A tangency
-    /// (double root) is one point and spells it `Lo`. ★★ Anything that re-sorts the two
-    /// plane handles (a transform remapping them) must **toggle `root` when they swap** —
-    /// swapping flips ℓ and with it the meaning of `Lo`/`Hi`.
+    /// (double root) is one point and spells it [`QuadRoot::Double`] — **not `Lo`**, which
+    /// M6-1 chose and which left `Lo` unable to say which of the two it meant. ★★ Anything
+    /// that re-sorts the two plane handles (a transform remapping them, a mint site working in
+    /// class indices) must restate `root` with it, and **[`QuadRoot::canonical`] is the one
+    /// place that rule lives** — do not spell it again at the site.
     ///
     /// The producer arrives with M6-2's boolean; until then hand-built fixtures and validate
     /// are the consumers (the `FaceMisoriented`-control precedent).
@@ -76,21 +78,70 @@ pub enum VertexDef {
 /// ascending parameter along the canonical meet-line direction (see `Branch`'s doc for the
 /// full convention). Definition vocabulary, so it lives here beside [`VertexDef`], not in
 /// scalar (whose pair is positional).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+///
+/// ★ **The declaration order is load-bearing.** The derived `Ord` is `Lo < Hi`, which *is* the
+/// ascending-parameter convention, and comparison keys downstream read it (the arrangement's
+/// reject witness is chosen as the smallest name). Reordering these two variants would silently
+/// reverse those choices, so the order is a decision, not a listing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum QuadRoot {
-    /// The smaller parameter — and the spelling a tangency's single point takes.
+    /// The smaller parameter along the canonical meet-line direction.
     Lo,
     /// The larger parameter.
     Hi,
+    /// **A tangency: the two roots coincide, so there is one point.**
+    ///
+    /// ★ It is a stored variant, not just a solver's report, because otherwise the stored value
+    /// cannot say which it is: spelling a tangency `Lo` (M6-1's original convention) leaves
+    /// `Lo` meaning either "the smaller of two" or "the only one", and then nothing holding a
+    /// definition can tell whether a re-sort should toggle it. That ambiguity is what made the
+    /// remap rule below wrong for a tangency.
+    Double,
 }
 
 impl QuadRoot {
-    /// The other root — what a re-sort that swaps the two plane handles must apply.
+    /// **The name the same point takes once the two planes are swapped.**
+    ///
+    /// Not "the other root" — the *other name for this point*, which is what a swap needs. For a
+    /// genuine pair the swap sends `lo ↦ −hi` and `hi ↦ −lo` (see [`Self::canonical`]), so the
+    /// two names trade places. For a tangency `s = mid` and the swap sends `mid ↦ −mid` along
+    /// `ℓ ↦ −ℓ`: **the point goes to itself**, so its name does too.
     #[inline]
     pub fn flipped(self) -> QuadRoot {
         match self {
             QuadRoot::Lo => QuadRoot::Hi,
             QuadRoot::Hi => QuadRoot::Lo,
+            QuadRoot::Double => QuadRoot::Double,
+        }
+    }
+
+    /// **The one place "which root is it, once the pair is put in canonical order" is answered.**
+    ///
+    /// A [`VertexDef::Branch`] stores its two plane carriers ascending, and its root is defined
+    /// against the meet line `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's
+    /// `(pair, root)` in some other order has to restate the root — and the restatement is a
+    /// **derivation, not a convention**. Swapping the two planes in
+    /// `nacre_scalar::quad::plane_plane_cylinder` sends `ℓ ↦ −ℓ` while `base` is invariant (the
+    /// Cramer system's row swap and its row-2 sign change cancel in numerator and denominator
+    /// alike), leaves `a`, `c` and the discriminant alone and sends `b ↦ −b`. So the roots become
+    /// `lo′ = −hi` and `hi′ = −lo`, and `base + lo′·(−ℓ) = base + hi·ℓ`: the swapped `Lo` and the
+    /// original `Hi` are **the same point**.
+    ///
+    /// ★★ **A tangency is the exception, and it is not written here.** With `disc = 0` there is
+    /// one point and the swap fixes it, so its name must not change — which is exactly what
+    /// [`Self::flipped`] already says about [`QuadRoot::Double`]. The exception lives in the
+    /// primitive, so this function has no special case to get wrong.
+    ///
+    /// ★ **Generic over the index space on purpose.** `Handle<Surface>` orders by its `index` and
+    /// the arrangement names planes by bare `usize` **class** indices; both must answer the same
+    /// way, and one function answering both is what keeps a second copy from being written.
+    #[inline]
+    pub fn canonical<T: Ord>(pair: [T; 2], root: QuadRoot) -> ([T; 2], QuadRoot) {
+        let [first, second] = pair;
+        if second < first {
+            ([second, first], root.flipped())
+        } else {
+            ([first, second], root)
         }
     }
 }
@@ -3282,5 +3333,98 @@ mod tests {
         )
         .unwrap();
         m.push_plane(cache, pts, None).0
+    }
+
+    /// **A swap renames the root, because it renames the line.**
+    ///
+    /// The expected values are written out from the rule's own sentence rather than produced by
+    /// calling the constructor a second time — an oracle built from the function under test
+    /// measures the function against itself.
+    #[test]
+    fn a_swapped_pair_renames_the_same_root() {
+        let (a, b) = (2usize, 9usize);
+        assert_eq!(
+            QuadRoot::canonical([b, a], QuadRoot::Lo),
+            ([a, b], QuadRoot::Hi)
+        );
+        assert_eq!(
+            QuadRoot::canonical([b, a], QuadRoot::Hi),
+            ([a, b], QuadRoot::Lo)
+        );
+    }
+
+    /// **A pair already in order keeps its root** — the half its sibling above cannot see.
+    ///
+    /// ★ A constructor that toggled *unconditionally* satisfies
+    /// [`a_swapped_pair_renames_the_same_root`] on its own: both spellings flip and the equality
+    /// survives the double negation. Only this test separates "toggle on swap" from "toggle".
+    #[test]
+    fn an_ordered_pair_keeps_its_root() {
+        let (a, b) = (2usize, 9usize);
+        assert_eq!(
+            QuadRoot::canonical([a, b], QuadRoot::Lo),
+            ([a, b], QuadRoot::Lo)
+        );
+        assert_eq!(
+            QuadRoot::canonical([a, b], QuadRoot::Hi),
+            ([a, b], QuadRoot::Hi)
+        );
+    }
+
+    /// **A tangency keeps its name through a swap** — its two roots coincide, so the swap sends
+    /// the one point to itself.
+    ///
+    /// ★ This is the case that had no spelling before: M6-1 stored a tangency as `Lo`, the remap
+    /// toggled it unconditionally, and the same point came back named `Hi` — one point, two
+    /// names, which is exactly what canonicalization exists to prevent.
+    #[test]
+    fn a_tangency_keeps_its_name_through_a_swap() {
+        let (a, b) = (2usize, 9usize);
+        assert_eq!(
+            QuadRoot::canonical([b, a], QuadRoot::Double),
+            ([a, b], QuadRoot::Double)
+        );
+        assert_eq!(
+            QuadRoot::canonical([a, b], QuadRoot::Double),
+            ([a, b], QuadRoot::Double)
+        );
+    }
+
+    /// ★★ **The geometry the three locks above are about.** Without it they are statements about
+    /// a convention someone chose; with it they are statements about where the points are.
+    ///
+    /// `z = 0` and `x = 0` meet on the y-axis, and the cylinder about the x-axis with `r = 2` is
+    /// crossed there at `(0, ∓2, 0)`. Canonical normals give `ℓ = (0,0,1) × (1,0,0) = +y`, so
+    /// solved in that order the smaller parameter is `y = −2`. Solved the other way `ℓ` is `−y`,
+    /// and the algebra `lo′ = −hi`, `hi′ = −lo` says `s′[1]` names the *same point* as `s[0]`.
+    #[test]
+    fn swapping_the_planes_trades_the_two_roots_names() {
+        use nacre_scalar::Rat;
+        use nacre_scalar::quad::{CylinderMeet, branch_point_f64, plane_plane_cylinder};
+        let r = Rat::from_int;
+        let z0 = [r(0), r(0), r(1), r(0)];
+        let x0 = [r(1), r(0), r(0), r(0)];
+        let (origin, dir) = ([r(0), r(0), r(0)], [r(1), r(0), r(0)]);
+        let solve = |p1: &[Rat; 4], p2: &[Rat; 4]| {
+            let meet = plane_plane_cylinder(p1, p2, &origin, &dir, r(2));
+            match meet {
+                Some(CylinderMeet::Pair { line, s }) => (line, s),
+                other => panic!("the y-axis crosses this cylinder twice: {other:?}"),
+            }
+        };
+        let (l_ab, s_ab) = solve(&z0, &x0);
+        let (l_ba, s_ba) = solve(&x0, &z0);
+        let near = |p: [f64; 3], q: [f64; 3]| (0..3).all(|i| (p[i] - q[i]).abs() < 1e-12);
+        let at = |l: &nacre_scalar::quad::MeetLine, s| branch_point_f64(l, s);
+        assert!(near(at(&l_ab, &s_ab[0]), [0.0, -2.0, 0.0]), "lo is y = −2");
+        assert!(near(at(&l_ab, &s_ab[1]), [0.0, 2.0, 0.0]), "hi is y = +2");
+        assert!(
+            near(at(&l_ba, &s_ba[1]), [0.0, -2.0, 0.0]),
+            "hi′ is the old lo"
+        );
+        assert!(
+            near(at(&l_ba, &s_ba[0]), [0.0, 2.0, 0.0]),
+            "lo′ is the old hi"
+        );
     }
 }

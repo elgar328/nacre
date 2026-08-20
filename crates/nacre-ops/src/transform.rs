@@ -773,21 +773,16 @@ fn transform_solid(
             VertexDef::ThreePlane(planes) => VertexDef::ThreePlane(planes.map(remap)),
             VertexDef::OnSeam(pair) => VertexDef::OnSeam(pair.map(remap)),
             // ★ `.map(remap)` alone would be wrong here: pass 1 issues new surface handles in
-            // face-traversal order, so the two planes' handle order can invert. The pair is
-            // re-sorted (the stored-ascending invariant) — and a swap flips the canonical
-            // line direction ℓ = n₁×n₂, so `root` must toggle with it or `Lo` silently
-            // starts naming the other point.
+            // face-traversal order, so the two planes' handle order can invert, and the root is
+            // defined against the meet line of the *stored* order. `QuadRoot::canonical` owns
+            // that restatement — including the tangency, whose single point a swap fixes — and
+            // this site reads it rather than spelling it again.
             VertexDef::Branch {
                 planes: [p0, p1],
                 cylinder,
                 root,
             } => {
-                let (a, b) = (remap(p0), remap(p1));
-                let (planes, root) = if b.index() < a.index() {
-                    ([b, a], root.flipped())
-                } else {
-                    ([a, b], root)
-                };
+                let (planes, root) = nacre_topo::QuadRoot::canonical([remap(p0), remap(p1)], root);
                 VertexDef::Branch {
                     planes,
                     cylinder: remap(cylinder),
